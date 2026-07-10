@@ -1,1 +1,1 @@
-# skating-app
+# Skating App
