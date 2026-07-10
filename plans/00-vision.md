@@ -46,8 +46,10 @@ water body to see its name, surface area, and a feed of past reports (sorted by
    be near-instant. Cold + wind drains phone batteries fast; minimize taps,
    minimize battery use, support offline capture with later sync.
 3. **Respect the existing community & its safety culture.** Don't lecture experts.
-   Reference guides live elsewhere (link out); let people jump straight to
-   reading/submitting reports. Recruit and bridge, don't replace-by-force.
+   Reference guides live elsewhere — e.g. the **Nordic Skater** site
+   (<https://nordicskaters.squarespace.com/>), whose terminology this app adopts
+   (see `06-data-model.md` vocabulary) — so we link out and let people jump straight
+   to reading/submitting reports. Recruit and bridge, don't replace-by-force.
 4. **Privacy by default where it matters.** Home address is private to the user
    (a filter input only). Every report has one of four visibility settings
    (D13). Users can **delete their account and export their data**; deletion
@@ -83,7 +85,9 @@ Reports are seeded and kept fresh via:
   optionally public on profile.
 - **GPS providers** — connect Strava, Garmin, COROS, Polar, Apple Health, Google
   Health Connect; auto-detect ice-skate activities, prompt reports, ingest the
-  trusted GPS path (+ media where terms allow) (D24).
+  trusted GPS path (+ media where terms allow) (D24). Each skate is **resolved to the
+  water body it was on** (D44), so you can find "skates on Lake Morey" by name, not
+  by drawing a box on the map.
 - **Bounties** — request a report for a water body; skaters who were recently
   there get prompted; honest reports (esp. with photo evidence) earn reputation.
 - **Newsfeed** — reports/conversations within the user's drive radius, sorted by

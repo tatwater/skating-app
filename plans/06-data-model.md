@@ -13,8 +13,9 @@ Guiding constraints from `01-decisions.md`:
 - **4-level visibility (D13); real drive-time via cached isochrone (D18).**
 
 > ✅ **VOCABULARY CONFIRMED.** The ice-type / surface / hazard enums below use the
-> community's official terms (from the reference site), which the alpha crew uses
-> even colloquially.
+> community's official terms from the **Nordic Skater** reference site
+> (<https://nordicskaters.squarespace.com/>), which the alpha crew uses even
+> colloquially.
 
 ---
 
@@ -31,16 +32,24 @@ driveTimePrefMinutes: number // e.g. 30 / 60 / 90 (D18)
 cachedIsochrone?: geojson   // polygon; recomputed on home/pref change (D18)
 cachedIsochroneAt?: timestamp
 requireFollowApproval: boolean // account-level (D13)
-notificationPrefs: {         // per-type toggles (D16)
+notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16)
   activityDetected,          // ice-skate detected on ANY linked provider (D24)
   bountyRequest, followedPostedNearby,
   hazardConfirmation, bountyFulfilled, newFollower,
-  contentFlagResolved, ...: boolean
-}
+  reportRated,               // someone rated your report helpful/unhelpful (D17)
+  contentFlagResolved: boolean
+}                            // keys mirror notifications.type 1:1 (D16 invariant)
+minAge16Attested: boolean    // age gate at signup (D41); no birthdate stored
+isMinor: boolean             // self-attested under 18 → protective visibility default (D41)
+riskAckVersion?: string      // assumption-of-risk acknowledgment accepted (D45)
+riskAckAt?: timestamp
 reputationPoints: number     // cosmetic/reputational only (D17)
 badges?: string[]
-role: enum(member, moderator)  // moderator can hide/remove flagged content (D32)
-status: enum(active, deleted)  // deletion anonymizes authored content (D33)
+role: enum(member, moderator, admin)  // mod=content; admin ⊇ mod + bans/roles/PII (D32/D37)
+status: enum(active, suspended, banned, deleted)  // suspend/ban = D37; deleted = D33
+statusReason?: string          // mod-visible; optionally surfaced to the user (D37)
+suspendedUntil?: timestamp      // temp suspension; null on a ban = indefinite (D37)
+moderatedByUserId?: ref(users)  // who set the current suspend/ban state (D37)
 deletedAt?: timestamp
 createdAt: timestamp
 ```
@@ -48,6 +57,10 @@ createdAt: timestamp
 > "deleted user", drop `homeCoord`/`homeTownLabel`). Authored public/followers/friends
 > reports & comments are **anonymized, not erased** (preserve the ice record);
 > `just_me` content is removed. Users can also **export** their data.
+> **Ban/suspend (D37):** Convex is the source of truth — every function gates on
+> `status`; **also lock the account in Clerk** so no new session issues. A ban
+> preserves the account (appeal/reversal) — distinct from deletion, which scrubs PII.
+> A suspension (`suspendedUntil` set) auto-lapses back to `active` once the time passes.
 
 ### `activityConnections`  (a user's linked GPS providers; provider-agnostic, all six v1 — D24)
 ```
@@ -75,11 +88,18 @@ providerActivityId: string   // unique per provider — dedup webhook re-deliver
 sportType: string            // provider's ice-skate type (e.g. Strava "IceSkate")
 startTime: timestamp         // becomes report.skateTime if converted
 path?: geojson               // TRUSTED GPS track = skated extent (+ hazard proximity, Q11)
+waterBodyId?: ref(waterBodies)   // resolved at ingest from path (D44) — the lake this skate was on
+waterBodyIds?: ref(waterBodies)[] // when a skate spans connected bodies; waterBodyId = primary
 photoUrls?: string[]         // provider-dependent + subject to provider ToS
 promptState: enum(pending, prompted, converted, dismissed)
 linkedReportId?: ref(reports)
 detectedAt: timestamp
 ```
+> **Water-body resolution (D44):** at ingest, spatially match `path` against
+> `waterBodies` (bbox prefilter → Turf.js, the D5/D36 machinery) and store the
+> resolved `waterBodyId` so skates are findable **by lake identity/name**, not by
+> drawing a geospatial box ("5 miles on *Lake Morey*", not "5 miles somewhere here").
+> If the path matches no known body, fall back to the D14/D36 create-or-attach flow.
 
 ### `waterBodies`  (canonical + user-created, unified per D14)
 ```
@@ -93,6 +113,7 @@ bbox: { minLat, minLng, maxLat, maxLng }  // prefilter index
 centroid: { lat, lng }       // geospatial point index
 surfaceAreaSqM?: number      // from NHD/OSM, or estimated for user shapes
 createdByUserId?: ref(users) // when source == user
+reviewStatus?: enum(pending, approved, rejected)  // source==user only; auto-visible then review-after (D37)
 dedupStatus: enum(clean, suspected_duplicate, merged)  // default clean (D36)
 mergedIntoId?: ref(waterBodies)       // set when merged; reads follow the survivor
 duplicateCandidateIds?: ref(waterBodies)[]  // cached suspects for the review queue
@@ -150,7 +171,8 @@ conditions?: {
 
 photoIds: ref(photos)[]
 notes?: string               // free text
-visibility: enum(just_me, friends, followers, public)  // D13
+visibility: enum(just_me, friends, followers, public)  // D13; DEFAULT derived per D41
+                                                       // (public profile→public; locked/minor→followers)
 moderationStatus: enum(visible, hidden, removed)  // default visible (D32)
 hazardIdsCreated: ref(hazards)[]  // hazards drawn as part of this report
 createdAt, updatedAt: timestamp
@@ -241,12 +263,51 @@ targetId: string             // ref into the matching table
 reason: enum(unsafe_false_report, spam, harassment, inappropriate, other)
 note?: string
 status: enum(open, reviewing, actioned, dismissed)
-resolvedByUserId?: ref(users)   // a moderator (users.role == moderator)
+resolvedByUserId?: ref(users)   // a moderator or admin (users.role in {moderator, admin} — D37)
 createdAt, resolvedAt?: timestamp
 ```
 > `unsafe_false_report` is first-class: a dangerously false "ice is great" claim is
 > a **safety** issue (D3), not mere spam. Moderator action sets the target's
-> `moderationStatus` to `hidden`/`removed`.
+> `moderationStatus` to `hidden`/`removed`. In the admin flag queue (D37) it sits in a
+> **pinned priority lane**, not the FIFO — it's a safety incident, not spam.
+
+### `moderationActions`  (audit log — who did what, why; D37)
+```
+_id
+actorId: ref(users)          // the moderator/admin who acted
+action: enum(hide, remove, restore, ban, suspend, unban,
+             merge_waterbody, approve_waterbody, reject_waterbody,
+             resolve_flag, dismiss_flag, grant_role, revoke_role)
+targetType: enum(report, comment, photo, user, waterbody, contentFlag)
+targetId: string
+reason: string               // required — accountability for appeals/reversals
+metadata?: { ... }           // e.g. prior/new state, mergedIntoId, suspendedUntil
+createdAt: timestamp
+```
+> Append-only. Essential once there's more than one moderator, and for appeals and
+> reversals — mirrors the never-hard-delete / reversible ethos (D15/D33). Every admin
+> mutation writes exactly one row here.
+
+### `supportTickets`  (lightweight in-app support inbox; D37, not Zendesk per D35)
+```
+_id
+userId?: ref(users)          // null if submitted pre-auth
+category: enum(bug, account, safety, other)
+body: string
+status: enum(open, in_progress, resolved)
+assignedToUserId?: ref(users)
+context?: {                  // auto-captured — what an email can't give us
+  appVersion?, platform?, deviceModel?: string
+  sentryEventId?: string     // link to the crash/error (D29)
+}
+resolvedByUserId?: ref(users)
+createdAt, resolvedAt?: timestamp
+```
+> `category: safety` tickets route to the same priority attention as
+> `unsafe_false_report` flags (D3).
+> **Operator alert (D38):** creating a ticket emails the founder via Resend/React Email
+> (safety tickets + `unsafe_false_report` flags flagged as priority), deep-linking into
+> the `/admin` queue — email is the founder's inbox of record.
 
 ### `bounties`
 ```
@@ -259,9 +320,10 @@ rewardPoints: number         // cosmetic (D17)
 fulfillingReportIds: ref(reports)[]
 createdAt, expiresAt: timestamp
 ```
-> On create: notify **eligible reporters** = users with a report (or detected Strava
-> ice-skate) on this water body within `windowHours`. Fulfillment + reward gated by
-> requester's helpful/unhelpful rating (below).
+> On create: notify **eligible reporters** = users with a report *or* a detected GPS
+> ice-skate on this water body within `windowHours`. Both are cheap indexed lookups
+> now that `gpsActivities` carries a resolved `waterBodyId` (D44) — no per-bounty
+> geometry scan. Fulfillment + reward gated by requester's helpful/unhelpful rating (below).
 
 ### `reportRatings`  (helpful thumbs → reward allocation, D17)
 ```
@@ -276,13 +338,18 @@ createdAt: timestamp
 ### `photos`
 ```
 _id
-storageId: string            // Convex file storage ref
+storageId: string            // Convex file storage ref (optimized full image, D31)
+thumbStorageId: string       // ~400px thumbnail (D31)
 uploaderId: ref(users)
 caption?: string
-takenAt?: timestamp
-coord?: { lat, lng }         // if EXIF/known
+takenAt?: timestamp          // preserved from EXIF only if user opts in (D42)
+coord?: { lat, lng }         // preserved from EXIF only if placeOnMap == true (D42)
+placeOnMap: boolean          // opt-in: pin at coord on the lake map vs. report-only (D42)
 createdAt: timestamp
 ```
+> **EXIF (D42):** all EXIF is stripped client-side during the D31 optimize pass. Only
+> **timestamp** and **GPS coord** may be preserved, and only on opt-in. If `placeOnMap`
+> is false we **don't retain `coord`** at all — the photo attaches to the report only.
 
 ### `notifications`
 ```
@@ -345,7 +412,7 @@ createdAt: timestamp
 ## Relationships (textual ER)
 ```
 users 1─* activityConnections     (one per provider)
-users 1─* gpsActivities ─0/1 reports
+users 1─* gpsActivities ─0/1 reports ; gpsActivities *─1 waterBodies (resolved, D44)
 users 1─* reports *─1 waterBodies
 reports 1─* comments (self-nesting via parentCommentId)
 reports 1─* photos
@@ -354,6 +421,8 @@ hazards 1─* hazardConfirmations *─1 users
 users *─* users  (follows; mutual = friends)
 users *─* users  (blocks)
 users 1─* contentFlags ─1 (report | comment | photo | user)
+users(mod/admin) 1─* moderationActions ─1 (any moderated target)   (D37 audit log)
+users 0/1─* supportTickets                                          (D37 support inbox)
 users 1─* bounties *─1 waterBodies ; bounties *─* reports (fulfilling)
 reports 1─* reportRatings *─1 users
 users 1─* notifications
@@ -381,11 +450,15 @@ users 1─* pointEvents
   via indexed `bbox` fields + precise **Turf.js** in a Convex query/action.
 - **Suggested indexes:** `reports` by `waterBodyId + skateTime`, by `authorId`;
   `hazards` by `waterBodyId + status`; `follows` by `followerId` and by `followeeId`;
-  `gpsActivities` by `provider + providerActivityId` (unique, dedup); `comments`
+  `gpsActivities` by `provider + providerActivityId` (unique, dedup) and by
+  `waterBodyId` (per-lake skate history + bounty eligibility, D44); `comments`
   by `reportId`; `activityConnections` by `userId`; `bounties` by
   `waterBodyId + status`; `blocks` by `blockerId` and by `blockedId`;
   `contentFlags` by `status` and by `targetType + targetId`; `waterBodies` by
-  `dedupStatus` (review queue) — in addition to the bbox/centroid geo indexes.
+  `dedupStatus` (review queue) and by `reviewStatus` (user-body approval queue, D37);
+  `moderationActions` by `targetType + targetId` (target history) and by `actorId`;
+  `supportTickets` by `status`; `users` by `status` (ban/suspend admin views) — in
+  addition to the bbox/centroid geo indexes.
 - **Offline (D9):** client drafts `reports` + `photos` locally, upload on reconnect;
   `reportTime` = submit time, `skateTime` = user-set actual skate time.
 
@@ -404,6 +477,14 @@ users 1─* pointEvents
 - **Comment depth** → data model allows arbitrary depth; UI caps at 2–3 (D25).
 - **User-created location dedup** → match-on-create + soft-tombstone merge, v1
   moderator queue (D36); fields `dedupStatus` / `mergedIntoId` / `duplicateCandidateIds`.
+- **GPS activity → water body** → resolved `waterBodyId` on `gpsActivities` at ingest
+  (D44) so skates are findable by lake identity, not by geospatial area.
+- **Photo EXIF / geotag** → strip all EXIF on upload; preserve timestamp + coord only
+  on opt-in; `placeOnMap` gates spatial pinning and coord retention (D42).
+- **Age gate & default visibility** → 16+ minimum; visibility default derived from
+  profile privacy + minor status (D41); `minAge16Attested` / `isMinor` on `users`.
+- **Notification prefs ↔ types** → `notificationPrefs` keys mirror `notifications.type`
+  1:1 (every type toggleable, D16); `reportRated` added.
 
 **Still open:**
 - *(none in the data model right now — see `02-open-questions.md` for product-level

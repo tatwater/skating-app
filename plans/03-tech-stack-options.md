@@ -5,6 +5,9 @@ external services — options with pros/cons, biased toward generous free tiers 
 open-source-friendly licensing. Founder to narrow down.
 
 ## Decided (recap)
+- **Monorepo:** Turborepo + pnpm workspaces (D39).
+- **Testing:** Vitest everywhere (+ `fast-check`, `convex-test`; Playwright/Maestro
+  for E2E later); GitHub Actions CI (D40).
 - **DB / backend:** Convex (+ file storage + `@convex-dev/geospatial`).
 - **Language:** TypeScript everywhere.
 - **Mobile:** Expo / React Native + Tamagui.
@@ -19,8 +22,8 @@ open-source-friendly licensing. Founder to narrow down.
 - **Auth:** Clerk (D26). **Web host:** Vercel (D27).
 
 > **Cost posture (D35):** favor Vercel-hostable / hosted free tiers over
-> self-hosted infra; target **< ~$100/mo at ~1000 active users / ~600 posts per
-> month**. The stack below stays comfortably under that.
+> self-hosted infra; target **< ~$100/mo at ~1000 active users / ~600 reports+comments
+> per month**. The stack below stays comfortably under that.
 
 ---
 
@@ -129,9 +132,30 @@ Purpose-built draft queue — **not** a full replication engine:
 each draft idempotency-keyed. Rejected as overkill: WatermelonDB, PowerSync,
 Replicache.
 
+## 13. Monorepo & build orchestration (D39)
+**Turborepo** + **pnpm workspaces**. `apps/mobile` (Expo), `apps/web` (TanStack
+Start), `packages/*` (design tokens, Convex client, types/validators, shared logic).
+One `turbo.json` pipeline; local + remote task caching.
+
+## 14. Testing & CI (D40)
+| Layer | Tool |
+|---|---|
+| Unit / logic (shared packages, the bulk) | **Vitest** |
+| Invariants (visibility, dedup IoU, point-in-polygon) | **fast-check** (property-based) |
+| Convex functions (auth gating, sync, merges) | **`convex-test`** (Vitest) |
+| Web components | Vitest + `@testing-library/react` + jsdom |
+| Mobile components | `@testing-library/react-native` |
+| E2E (as flows stabilize) | **Playwright** (web) · **Maestro** (Expo) |
+| CI | **GitHub Actions** — `turbo lint typecheck test` + coverage gate |
+
+Strategy: push shared logic into `packages/*` so one Vitest suite covers both apps;
+property-test the correctness-/safety-sensitive math; ratchet the coverage threshold
+upward over time. Strict TS type-check is the first (cheapest) test tier.
+
 ---
 
 ## Locked default stack (low-ops, hosted, ~free — D35)
+- **Turborepo** + pnpm workspaces (D39); **Vitest** + GitHub Actions CI (D40)
 - **MapLibre** (D6) + **Protomaps** static tiles + **hosted OpenRouteService**
   isochrones (D18) + hosted Photon/MapTiler geocoding
 - **Open-Meteo** weather
@@ -142,7 +166,7 @@ Replicache.
 - **Vercel** (web hosting, D27) + EAS (mobile builds)
 - Data: **OSM** v1, **NHD** enrichment later
 
-**Cost sanity check (~1000 active users / ~600 posts per month):** Convex, Clerk
+**Cost sanity check (~1000 active users / ~600 reports+comments per month):** Convex, Clerk
 (free ≤10k MAU), Vercel, Open-Meteo, ORS (cached → tiny volume), Protomaps
 (unmetered static file), Sentry/PostHog free tiers — all comfortably within
 free/low tiers, well under the **< $100/mo** target (D35).

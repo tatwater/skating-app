@@ -101,8 +101,9 @@ always-on tracking, while still enabling hazard confirmation.
   pattern), orthogonal to per-report visibility.
 **Why:** "Public" carries specific meaning here (feeds the shared map), so it's
 genuinely distinct from "Followers." Familiar IG/Twitter mental model.
-**Note:** default visibility should lean **Public** (or Followers) so the shared
-map doesn't go sparse (cold-start), while fully respecting user choice.
+**Note:** default visibility is **derived** (public for adults with public profiles;
+followers for locked profiles and all under-18 accounts) so the shared map doesn't go
+sparse (cold-start) while fully respecting user choice — see **D41** for the mechanics.
 
 ## D14 — User-created (unmapped) locations allowed
 **Decided.** Users can drop a pin / draw a water body not present in OSM/NHD.
@@ -251,6 +252,20 @@ we want usage insight (also OSS, generous free tier). They overlap only partiall
 Sentry owns native crash quality; PostHog owns product analytics.
 **Why:** A field app used cold/offline needs early crash visibility. Both are
 open-source with free tiers, matching the project's ethos and cost posture (D35).
+**Session-replay gating (minors + location — resolves review item #1):** PostHog
+**session replay ships OFF** initially, and is **never recorded for minors** by
+construction. Mechanics:
+- Everyone is 16+ (D41), so the population is 16+; the sensitive slice is **under-18
+  (`isMinor`) users** plus the fact that this is a *location* app.
+- Initialize PostHog **with recording disabled** (`disable_session_recording: true`);
+  analytics *events* (counts) are fine for everyone. Only **`startSessionRecording()`
+  after the user resolves AND `isMinor === false`** — so a minor's session is never
+  captured even if replay is later enabled. This is a few lines, gated on the Convex
+  user record; the only nuance is that PostHog usually inits at boot before the user
+  loads, so start recording *after* auth resolves, not at init.
+- When replay is eventually turned on for adults, run it with input/text **masking**
+  on (`maskAllInputs`, mask location UI) so coordinates/PII don't leak into replays.
+- Update this notice/PRIVACY.md before enabling replay in production.
 
 ## D30 — Offline capture & sync mechanics (Expo)
 **Decided.** Implement D9 with a small, purpose-built draft queue — **not** a full
@@ -295,6 +310,11 @@ removed. Full policy wording waits on legal (Q10), but the product behavior is
 decided now.
 **Why:** Privacy/PII obligations (D11) and user trust; but community value lives in
 the report history, so anonymize-don't-erase is the default.
+**Export format:** a **JSON bundle** of the user's own data (profile, reports,
+comments, hazards created, follows, connections metadata — *not* secrets/tokens) plus
+their uploaded **photo files**. JSON is the right call: machine-readable, matches the
+TS stack, trivially generated from Convex, and easy to extend — no need for a
+heavier/standardized format at this scale.
 
 ## D34 — Accessibility & theming (high-contrast + dark mode)
 **Decided.** Two first-class themes: a **high-contrast / bright outdoor** mode for
@@ -349,3 +369,202 @@ one that never creates the duplicate.**
 **Why:** No clustering infra needed at our scale; the UX prevents most dups and the
 merge reuses patterns already in the plan (soft tombstones, moderator queue,
 reputation-weighted confirmations).
+
+## D37 — Admin/moderator surface: gated `/admin` in the web app (not a separate app)
+**Decided.** The operator experience (moderation + app administration + support) is a
+**role-gated `/admin` route tree inside the existing TanStack Start web app** (D1/D27),
+**not** a second application.
+**Why:**
+- The web surface exists precisely for the keyboard/big-screen tasks (D1); moderation
+  (reading flag context, comparing duplicate polygons on a map, writing ban reasons) is
+  exactly that. It's the web app's natural second job.
+- **Zero new infra**, which is the cost posture (D35): a separate app duplicates the
+  Vercel project, Clerk config, CI, and Convex wiring to serve *one* operator (founder)
+  at launch. Not justified.
+- **The security boundary is the Convex function, not the deployment.** Every admin
+  capability is a Convex function that hard-checks the caller's `role` server-side; a
+  separate frontend adds no real isolation. Never trust the client for authorization.
+- Operators need the same context members see (report, thread, map) **plus** extra
+  actions — sharing the app reuses those components instead of rebuilding them.
+**Role model.** Expand `users.role` from `member | moderator` to
+**`member | moderator | admin`**. Moderator = content (flags, takedowns, water-body
+merges/rejections). **Admin ⊇ moderator**, plus bans, role-granting, support, and
+anything touching PII / account lifecycle. Keeps the door open for external/volunteer
+moderators without handing them the keys. Role-granting is admin-only and audited.
+**Model additions (see `06-data-model.md`):**
+- **Ban/suspend state on `users`:** `status` gains `suspended | banned`
+  (+ `statusReason`, `suspendedUntil`, `moderatedByUserId`). Source of truth in Convex
+  (every function gates on `status`); **also lock the account in Clerk** so no new
+  session issues (belt + suspenders). A ban preserves the account for appeal/reversal —
+  distinct from D33 deletion, which scrubs PII.
+- **`moderationActions` audit log** (who/what/why/when) — essential for multiple mods,
+  appeals, and reversals; mirrors the never-hard-delete/reversible ethos (D15/D33).
+- **User-created water-body review:** `waterBodies` gains a `reviewStatus`
+  (`pending | approved | rejected`) for `source: user` bodies — distinct from
+  `dedupStatus` (D36 handles *duplicates*, not *approval*). Default **auto-visible +
+  review-after** (a skater on unmapped ice shouldn't wait on a human — cf. the
+  don't-block-shipping instinct in D24); mods can reject/merge later.
+- **`supportTickets`** — a lightweight in-app table + admin inbox, not Zendesk (D35);
+  auto-captures context (userId, app version, device, recent Sentry event) an email can't.
+**Surface = work queues, not pages:** flag queue (with **`unsafe_false_report` pinned to
+a priority lane** — a dangerously false "ice is great" report is a *safety* incident per
+D3, not FIFO spam), water-body review queue (D36 merge + user-body approve/reject on a
+map), user admin (search/history/ban/suspend/role), support inbox, and a dashboard
+(open/safety-flag counts, pending bodies, recent actions; later links to PostHog/Sentry
+per D29).
+**Scope.** Lands in **Phase 4** (the operator/moderation phase — the review split of
+the old Phase 3; see `07-roadmap.md`).
+
+## D38 — Transactional email: Resend + React Email
+**Decided.** **Resend** is the transactional email provider; email templates are authored
+with **React Email** (`@react-email/components`). Sent from **Convex actions** (Node
+runtime) via the Resend SDK/API; API key lives in Convex env vars (never client-side).
+**First use — operator alerts (D37):** email the founder on every **new
+`supportTickets` row**, and on any **safety-priority** item (`unsafe_false_report` flags,
+`category: safety` tickets). Without this, tickets pile up unseen — email is the founder's
+actual inbox of record. Alert emails deep-link into the `/admin` queue.
+**Why:**
+- Resend is developer-first with a **generous free tier** (fits D35's cost posture) and
+  is the natural pairing with React Email (same authors).
+- **React Email** = author templates as React/TSX with a live preview — same idiom as the
+  rest of the TS stack (D7), and templates can share the design-token package.
+- Convex actions already hold the other server secrets (D24/integrations); email send is
+  just another server-side action.
+**Boundaries.** Resend is for **app transactional/operator** mail. **Clerk still owns auth
+emails** (verification, magic links, password reset — D26); we don't duplicate those.
+User-facing product email (digests, etc.) stays deferred; in-app `notifications` (D16)
+remain the primary user channel. Wire alongside the D37 admin surface in **Phase 4**.
+
+## D39 — Monorepo tooling: Turborepo
+**Decided.** The monorepo is a **Turborepo** workspace (pnpm workspaces underneath),
+with the shared `packages/*` (design tokens, Convex client, types/validators, logic)
+and the two `apps/*` (Expo mobile, TanStack Start web) as workspace packages.
+**Why:** Turbo's task graph + remote/local caching makes `lint`/`typecheck`/`test`/
+`build` fast and incremental across packages, and it's the idiomatic choice for a
+TS monorepo sharing logic/tokens across surfaces (D7). No custom build orchestration
+to hand-roll.
+**Consequences:** one root `turbo.json` defines the pipeline; CI (D40) runs Turbo
+tasks and reuses the cache; each package owns its own `package.json` scripts.
+
+## D40 — Testing & CI: Vitest everywhere, layered strategy
+**Decided.** **Vitest** is the test runner across the whole monorepo, with as much
+coverage of *both apps' logic* as we can get. The strategy is layered so effort lands
+where bugs are most costly (spatial math, visibility, safety):
+- **Unit / logic (the bulk):** Vitest over the shared `packages/*` — visibility
+  resolution (D13), dedup scoring/IoU (D36), isochrone point-in-polygon (D18),
+  hazard-freshness derivation (D15), unit conversion (D25), the "weather-since"
+  reducer (D19). Pure functions, no I/O — fast and deterministic.
+- **Property-based tests (`fast-check`)** for the gnarly invariants where
+  example-based tests miss edge cases: visibility resolution (never wider than the
+  report's setting; blocks always win), dedup IoU thresholds, point-in-polygon near
+  boundaries. High value given these are *correctness- and safety-sensitive*.
+- **Convex functions:** **`convex-test`** (Vitest-based) to exercise queries/mutations
+  against an in-memory Convex — auth gating (every admin fn checks `role`, D37),
+  idempotent offline sync (D30), re-point-on-merge (D36).
+- **Web components:** Vitest + `@testing-library/react` + jsdom for the shadcn/Tailwind UI.
+- **Mobile:** Vitest for all RN *logic/hooks* (the shared logic already lives in
+  `packages/*`, so most of it is covered there); component-level RN testing via
+  `@testing-library/react-native`.
+- **End-to-end (added as flows stabilize):** **Playwright** for web; **Maestro** for
+  the Expo app (lighter than Detox, great for the offline-capture → sync flow, D9/D30).
+**CI (GitHub Actions):** on every PR run `turbo lint typecheck test` (D39 caching),
+publish **coverage** (Codecov or the Actions summary) with a ratcheting threshold on
+`packages/*` (start realistic, only ever raise it), and gate merges on green. Add an
+EAS build + `expo-doctor` check and a Convex deploy-preview later. Type-check counts
+as a test tier — strict TS is the cheapest bug filter we have.
+**Why:** A field safety app that runs cold/offline can't lean on manual QA; the
+spatial + visibility + safety logic is exactly what property tests and `convex-test`
+are good at. Vitest keeps one runner/config idiom across the stack (matches D7).
+
+## D41 — Minimum age 16; default report visibility derived from profile + age
+**Decided.**
+- **Minimum age is 16.** Under-16 accounts are not permitted (self-attested at signup;
+  we don't collect birthdates beyond an age gate — minimize PII, D11). The realistic
+  user base is overwhelmingly adults; 16 lets the occasional independent teen skater
+  participate without pulling us into full child-directed-service obligations.
+- **Default report visibility is *derived*, never a bare "public":**
+  - **Adult + public profile (the default):** new reports default **`public`**.
+  - **Private/locked profile** (account has `requireFollowApproval` on, i.e. the user
+    locked down — D13): new reports default **`followers`**, not public.
+  - **Any under-18 account:** reports default **`followers`** and **can never
+    *default* to public** (the user can still deliberately set an individual report
+    public, but it's never the pre-selected default).
+- **"If your profile is public, your reports are public (by default)"** is the mental
+  model — one obvious switch (lock the profile) cascades to a safer default. **New
+  features must honor existing per-user privacy settings** — a later feature never
+  silently widens exposure.
+**Why:** Public-by-default fights cold-start (D13) *without* overriding user choice:
+locking the profile is the one-tap privacy valve, and minors get a protective default
+regardless. Keeps the privacy-by-default principle (00-vision) and the cold-start
+need honestly reconciled instead of left as a "lean."
+**Note:** This is the resolution of the D13 tension flagged in review — D13's "lean
+public" now has concrete, safe mechanics.
+
+## D42 — Photo EXIF stripping + opt-in geotag placement
+**Decided.** **Strip all EXIF on upload by default**, with **two fields deliberately
+preserved when the user opts in**: capture **timestamp** and **GPS lat/lng**. Tying a
+photo to *when* during a session and *where on the lake* it was taken is genuinely
+useful (which end of the lake had the pressure ridge). But location is sensitive, so
+it's the user's call:
+- **Per-user default + per-photo override:** a `placeOnMap` choice. If on, the photo
+  is pinned at its coordinate within the water body on the map. If off, the photo is
+  **attached to the report only** — no spatial pin — and we **don't retain the coord**.
+- **Everything else in EXIF is stripped unconditionally** (device, lens, orientation
+  beyond what's needed to render upright, thumbnails-with-metadata, etc.).
+- Stripping happens **client-side during the D31 resize/compress pass** — one
+  on-device step, before the bytes ever leave the phone.
+**Why:** Privacy-by-default (00-vision) means we don't ship hidden geodata; but
+opt-in geotagging unlocks real value (spatial photo placement, and a corroborating
+signal for hazard location). Doing it during the existing D31 optimization pass costs
+nothing extra.
+
+## D43 — License: AGPL-3.0 + an App Store / Play distribution exception
+**Decided.** Keep the repo under **AGPL-3.0** (it's the right copyleft for a hosted
+service — it closes the SaaS loophole so nobody can run a closed fork of *this
+service*; our server logic is the in-repo Convex functions). **But** (A)GPL's
+anti-further-restriction terms conflict with the Apple App Store and Google Play
+distribution terms (the documented VLC / GNU Go removals). Since **we are the sole
+copyright holder**, we resolve it the standard way: **add a GPLv3 §7 "additional
+permission"** (an *App Store exception*) that lets recipients who obtain the app
+through Apple's App Store or Google Play comply with those stores' terms
+notwithstanding the license's usage/DRM/device-limit restrictions.
+- Full exception text lives in **`LICENSE-EXCEPTIONS.md`** (repo root), referenced
+  from `README.md` and from each app's about screen.
+- This is an *added permission*, not a relicense — the code stays AGPL-3.0; store
+  users simply get extra latitude. Being the sole author makes this unambiguous.
+- **Final wording is still legal-gated (Q10)** — the drafted exception is a solid,
+  conventional template, but a lawyer confirms before any public/store launch.
+**Why:** We want AGPL's copyleft *and* to ship on both stores. The §7 additional
+permission is exactly the mechanism the GPL provides for this, and it's how projects
+in this spot have historically resolved it (relicense-with-exception by the copyright
+holder). Dual-licensing (proprietary store binary) was considered and rejected as
+heavier for no added benefit at our scale.
+
+## D44 — Every ice skate resolves to a water-body ID (findable by lake, not just by area)
+**Decided.** A detected GPS activity (`gpsActivities`, D24) is **resolved to the
+`waterBodyId` it took place on** at ingest time (spatial match of the trusted path
+against `waterBodies` polygons — bbox prefilter → Turf.js, the D5/D36 machinery). We
+store the resolved `waterBodyId` on the activity (and, when a skate genuinely spans
+connected bodies, an optional `waterBodyIds[]` with the primary broken out).
+**Why:** Users must be able to find *"skates on Lake Morey"* **by the lake's identity
+(its ID/name), not by drawing a geospatial box**. "A 5-mile skate somewhere around
+here" is useless; "5 miles on Lake Morey specifically" is the whole point. Resolving
+once at ingest makes every downstream query (a lake's skate history, bounty
+eligibility, hazard-path proximity) a cheap indexed lookup instead of a repeated
+geometry scan.
+**Consequences (see `06-data-model.md`):** `gpsActivities` gains `waterBodyId?` (+
+optional `waterBodyIds?`); indexed by `waterBodyId`. Bounty eligibility (D-bounties)
+and the per-lake feed query off it. If the path matches no known body, we fall back
+to the D14/D36 create-or-attach flow (offer to create/attach a water body).
+
+## D45 — In-app assumption-of-risk acknowledgment at signup (interim, pre-legal)
+**Decided.** Because this is a *safety* app, signup includes a short, blocking
+**assumption-of-risk + non-authoritative acknowledgment** ("reports are peers'
+observations, never a safety guarantee; you alone decide whether to step on ice") and
+links to the privacy notice (`PRIVACY.md`) + interim terms (`TERMS.md`), recorded with
+a timestamp + version on the user record (`riskAckVersion`/`riskAckAt`, D-data-model).
+This is the **interim** safety/legal guardrail for the friends alpha; the full
+ToS/assumption-of-risk/disclaimer review remains **Q10** before any broad launch.
+**Why:** Reinforces D3 at the one moment we have the user's full attention, and gives
+us a recorded acknowledgment now without waiting on the full legal pass. Cheap,
+honest, and directly on-mission.

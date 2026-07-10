@@ -26,7 +26,10 @@ Two ingestion patterns:
   the mobile app observes new workouts locally (background delivery) and uploads the
   trusted path to Convex → prompt.
 
-All normalize to our canonical "ice skate" concept + `gpsActivities` (D24).
+All normalize to our canonical "ice skate" concept + `gpsActivities` (D24). At ingest,
+each activity's trusted path is **spatially resolved to the water body it was on** and
+that `waterBodyId` is stored (D44) — so a skate is findable by **lake name/ID**, not by
+geospatial area ("5 miles on Lake Morey", not "5 miles somewhere near here").
 
 **Canonical activity-type mapping** (verify each against current provider docs):
 
@@ -77,6 +80,21 @@ and prompts them to create a report — optionally pre-filling media/text/time.
   segment/leaderboard products; storage/retention constraints.
 - **Action:** read the current Strava API Agreement + brand guidelines before
   implementing media ingestion or any AI over Strava-sourced content.
+
+### "Powered by Strava" attribution — UI checklist
+Strava's brand guidelines are mandatory wherever Strava data appears. Treat these as
+build-time acceptance criteria (verify against current guidelines before launch):
+- [ ] **"Powered by Strava"** logo/text shown on any view rendering Strava-sourced data
+      (a report/activity ingested from Strava, a Strava path on the map).
+- [ ] **"Connect with Strava"** button uses Strava's official connect button asset
+      (don't hand-roll it).
+- [ ] Strava marks used in **approved colors/clear-space**; no altering or implying
+      Strava endorsement.
+- [ ] Activity/segment data displayed per the Agreement (no building competing
+      segment/leaderboard features; respect storage/retention limits).
+- [ ] Attribution persists in **exports** and any shared/deep-linked views.
+- [ ] Other providers' attribution requirements checked the same way when their
+      integrations land (Garmin/COROS/Polar/Apple/Google each have brand terms).
 
 ### Cross-user map display — our stance (D24/D35)
 We *want* to show a skater's trusted GPS path on the shared map. Plan:
@@ -172,3 +190,17 @@ for the water body's coordinates:
   above freezing · 6h sun · 0.3in rain"). No verdict, no color-coded "safe/unsafe".
 - Cache the fetch per (water body, window) to avoid refetching on every view;
   windows only extend, so results are append-friendly.
+
+## Transactional email — Resend + React Email (D38)
+
+- Provider: **Resend**; templates authored with **React Email**
+  (`@react-email/components`), sharing the design-token package (D7).
+- **Send path:** a **Convex action** (Node runtime) calls the Resend SDK; API key in
+  Convex env vars, never client-side. A ticket/flag mutation schedules the action.
+- **v1 use — operator alerts (D37):** on new `supportTickets`, and on safety-priority
+  items (`unsafe_false_report` flags, `category: safety` tickets). Each email
+  deep-links into the `/admin` queue.
+- **Setup gate:** verify a sending domain (DNS) so alerts don't land in spam
+  (see `05-accounts-and-credentials.md` #13).
+- **Boundaries:** Clerk owns auth emails (D26) — no duplication. User-facing product
+  email (digests) stays deferred; in-app `notifications` (D16) remain the user channel.

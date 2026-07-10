@@ -103,13 +103,23 @@ See `04-integrations.md` for per-provider integration detail.
 - **PostHog** — <https://posthog.com>; add later for product analytics + feature
   flags + session replay (generous free tier). OSS.
 
+### 13. Transactional email — **Resend** 🆓 tier (D38)
+- Sign up at <https://resend.com>; create an API key → store in **Convex env vars**.
+- **Verify a sending domain** (add DNS records) so operator alerts don't land in spam.
+- Templates authored with **React Email** (`@react-email/components`) — no account
+  needed, it's a library. First use = founder alerts on new support tickets / safety
+  flags (D37/D38). Clerk still owns auth emails (D26) — don't duplicate.
+
 ---
 
 ## Deferred (do NOT set up yet — see open questions)
 - **Meta / Facebook developer app** for group ingestion (Q8) — restricted APIs +
   ToS; only after a feasibility/legal pass.
 - **Google Groups ingestion** — no clean API; parked.
-- Anything requiring a **lawyer / ToS** (Q10) — after the friends POC.
+- **Full legal review** (Q10) — after the friends POC. **Interim guardrails already in
+  place:** a temporary privacy notice (`PRIVACY.md`), a signup **age gate (16+)** and
+  **assumption-of-risk acknowledgment** (D41/D45), and the AGPL **App Store exception**
+  (`LICENSE-EXCEPTIONS.md`, D43) — all of which a lawyer confirms before broad launch.
 
 ---
 

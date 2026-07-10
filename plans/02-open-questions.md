@@ -28,7 +28,12 @@ Strava-sourced data is involved. **Status:** deferred; make reports great first.
 
 ### Q10 — ToS / assumption-of-risk / disclaimers
 Needs real legal review before any broad launch. Shapes wording, data retention,
-and how reports are framed in-UI. **Status:** flagged, not started.
+and how reports are framed in-UI.
+**Interim (decided):** a signup **assumption-of-risk acknowledgment** (D45), an
+**age gate at 16** (D41), and a **temporary privacy notice** (`PRIVACY.md`) cover the
+friends alpha. The **License App Store exception** wording (D43) is also legal-gated
+here. **Status:** interim guardrails in place; full legal review still required before
+broad launch.
 
 ### Q11 — Strava-path hazard *deduction* (future edge)
 If many skaters' paths on the same day detour around the same stretch, that's a
@@ -55,3 +60,8 @@ because it's a genuine advantage over email forums.
 - **Data model (06) → D21–D25** — comments v1, structured ice thickness, dual
   rating, GPS-only skated extent, units/edits/comment-depth.
 - **Auth/hosting/nav → D26/D27/D28** — Clerk, Vercel, Map + Newsfeed co-primary.
+- **Tooling → D39/D40** — Turborepo monorepo; Vitest + GitHub Actions CI.
+- **Privacy/safety → D41/D42/D45** — 16+ age gate & derived visibility defaults;
+  EXIF strip + geotag opt-in; signup assumption-of-risk ack.
+- **License → D43** — AGPL-3.0 + App Store / Play distribution exception.
+- **Skate→lake → D44** — GPS activities resolved to a `waterBodyId` (findable by lake).
