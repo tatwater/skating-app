@@ -16,9 +16,11 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 ## Phase 0 — Foundations
 - **Turborepo + pnpm** monorepo (D39): `apps/mobile`, `apps/web`, shared `packages/*`
   (design tokens, Convex client, types/validators, logic) (D7).
-- **Vitest + CI from day one** (D40): GitHub Actions running `turbo lint typecheck
-  test`, coverage reporting wired even while suites are small. Test scaffolding is
-  boilerplate — stand it up now so every later phase lands with tests.
+- **Biome** lint/format + **Vitest + CI from day one** (D40/D46): GitHub Actions
+  running `pnpm lint` + `turbo check-types test`, coverage reporting wired even while
+  suites are small. Test scaffolding is boilerplate — stand it up now so every later
+  phase lands with tests. *(`@skating/core` is the first package: pure logic at 100%
+  coverage with example + property tests.)*
 - Convex project + schema from `06-data-model.md`.
 - **Clerk** auth wired to Convex (D26), on both Expo + web, with the **age gate (16+)**
   and **assumption-of-risk acknowledgment** at signup (D41/D45).

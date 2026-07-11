@@ -8,6 +8,9 @@
     "check-types": {
       "dependsOn": ["^check-types"]
     },
+    "test": {
+      "outputs": ["coverage/**"]
+    },
     "dev": {
       "persistent": true,
       "cache": false
