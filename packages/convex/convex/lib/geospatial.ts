@@ -12,9 +12,9 @@
  */
 
 import { GeospatialIndex } from '@convex-dev/geospatial'
-import type { REVIEW_STATUSES } from './enums'
 import { components } from '../_generated/api'
 import type { Id } from '../_generated/dataModel'
+import type { REVIEW_STATUSES } from './enums'
 
 type ReviewStatus = (typeof REVIEW_STATUSES)[number]
 

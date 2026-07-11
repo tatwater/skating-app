@@ -232,6 +232,15 @@ the GPS path (where they went) + the report's overall description, not a drawn a
 Convex.
 **Why:** Batteries-included UI, social login, works on both surfaces, generous free
 tier — fastest path to a friends alpha.
+**Implementation note (identity split).** Clerk owns the auth user; we own a **`profiles`**
+table (renamed from the data model's `users`) that mirrors it, tied by
+`profiles.clerkUserId` = Clerk `identity.subject`. Every other entity references a user by
+their `profiles._id`, never a Clerk id. `convex/auth.config.ts` registers Clerk as the
+Convex identity provider (needs the `CLERK_JWT_ISSUER_DOMAIN` deployment env var + a Clerk
+JWT template named `convex`); `convex/profiles.ts` provisions the row (`upsertFromClerk`,
+idempotent, enforces the 16+ gate and username uniqueness). The security boundary is the
+Convex function (D37), which resolves the caller's profile and gates on `status`/`role`
+server-side — not the deployment.
 
 ## D27 — Web hosting: Vercel
 **Decided.** Deploy the TanStack Start web app on **Vercel**.

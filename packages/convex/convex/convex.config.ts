@@ -8,8 +8,8 @@
  * `lib/geospatial.ts` for the typed client.
  */
 
-import { defineApp } from 'convex/server'
 import geospatial from '@convex-dev/geospatial/convex.config'
+import { defineApp } from 'convex/server'
 
 const app = defineApp()
 app.use(geospatial)

@@ -54,6 +54,17 @@ describe('roundTo', () => {
     expect(roundTo(1.6)).toBe(2)
     expect(roundTo(1.4)).toBe(1)
   })
+
+  it('rounds float-artifact half-values up, not down', () => {
+    // 1.005 is stored as 1.00499…; the naive `value * 100` approach rounds to 1.00.
+    expect(roundTo(1.005, 2)).toBe(1.01)
+    expect(roundTo(2.675, 2)).toBe(2.68)
+  })
+
+  it('passes non-finite input through untouched', () => {
+    expect(roundTo(Number.POSITIVE_INFINITY, 2)).toBe(Number.POSITIVE_INFINITY)
+    expect(roundTo(Number.NaN)).toBeNaN()
+  })
 })
 
 describe('formatters', () => {
@@ -64,6 +75,11 @@ describe('formatters', () => {
     expect(formatPrecipInches(25.4)).toBe('1 in')
     expect(formatDistanceMiles(1609.344)).toBe('1 mi')
     expect(formatAreaAcres(4046.8564224)).toBe('1 acre')
+  })
+
+  it('pluralizes acres for any non-1 value (incl. zero)', () => {
+    expect(formatAreaAcres(2 * 4046.8564224)).toBe('2 acres')
+    expect(formatAreaAcres(0)).toBe('0 acres')
   })
 })
 
