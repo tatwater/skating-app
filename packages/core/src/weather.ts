@@ -65,9 +65,9 @@ export function summarizeWeatherSince(
 
     totalPrecipMm += h.precipitationMm
 
-    if (h.sunshineSeconds !== undefined) {
+    if (typeof h.sunshineSeconds === 'number') {
       hoursOfSun += h.sunshineSeconds / 3600
-    } else if (h.cloudCoverPct !== undefined && h.cloudCoverPct <= sunnyMaxCloud) {
+    } else if (typeof h.cloudCoverPct === 'number' && h.cloudCoverPct <= sunnyMaxCloud) {
       hoursOfSun += 1
     }
   }
