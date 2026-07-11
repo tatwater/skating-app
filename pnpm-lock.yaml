@@ -20,6 +20,9 @@ importers:
 
   packages/convex:
     dependencies:
+      '@convex-dev/geospatial':
+        specifier: ^0.2.1
+        version: 0.2.1(convex@1.42.1)
       '@skating/core':
         specifier: workspace:*
         version: link:../core
@@ -147,6 +150,11 @@ packages:
     engines: {node: '>=14.21.3'}
     cpu: [x64]
     os: [win32]
+
+  '@convex-dev/geospatial@0.2.1':
+    resolution: {integrity: sha512-qSo5UJyX0il0zYbtdss9Gew5wVishL8jKxEwjx3FysxOWzzpODFN87ct/YUayAVuYCnXqdhxZ2xpvXADKqdrbg==}
+    peerDependencies:
+      convex: ^1.24.8
 
   '@edge-runtime/primitives@6.0.0':
     resolution: {integrity: sha512-FqoxaBT+prPBHBwE1WXS1ocnu/VLTQyZ6NMUBAdbP7N2hsFTTxMC/jMu2D/8GAlMQfxeuppcPuCUk/HO3fpIvA==}
@@ -731,6 +739,9 @@ packages:
   ast-v8-to-istanbul@0.3.12:
     resolution: {integrity: sha512-BRRC8VRZY2R4Z4lFIL35MwNXmwVqBityvOIwETtsCSwvjl0IdgFsy9NhdaA6j74nUdtJJlIypeRhpDam19Wq3g==}
 
+  async-channel@0.2.0:
+    resolution: {integrity: sha512-BJyjI/sfKlyijaBt2hbOSxT28xGNtLR0QLzAKO1Hlnv5BULY7sAoYoTPW3lfr1ZIC7y+FxabxO9T8GXpyoofGg==}
+
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
 
@@ -864,6 +875,10 @@ packages:
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
+
+  heap-js@2.7.1:
+    resolution: {integrity: sha512-EQfezRg0NCZGNlhlDR3Evrw1FVL2G3LhU7EgPoxufQKruNBSYA8MiRPHeWbU+36o+Fhel0wMwM+sLEiBAlNLJA==}
+    engines: {node: '>=10.0.0'}
 
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
@@ -1225,6 +1240,12 @@ snapshots:
 
   '@biomejs/cli-win32-x64@2.5.3':
     optional: true
+
+  '@convex-dev/geospatial@0.2.1(convex@1.42.1)':
+    dependencies:
+      async-channel: 0.2.0
+      convex: 1.42.1
+      heap-js: 2.7.1
 
   '@edge-runtime/primitives@6.0.0': {}
 
@@ -1597,6 +1618,8 @@ snapshots:
       estree-walker: 3.0.3
       js-tokens: 10.0.0
 
+  async-channel@0.2.0: {}
+
   balanced-match@1.0.2: {}
 
   balanced-match@4.0.4: {}
@@ -1750,6 +1773,8 @@ snapshots:
       path-scurry: 1.11.1
 
   has-flag@4.0.0: {}
+
+  heap-js@2.7.1: {}
 
   html-escaper@2.0.2: {}
 

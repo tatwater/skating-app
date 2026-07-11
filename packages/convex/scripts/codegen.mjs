@@ -16,12 +16,22 @@
  * `convex/dist/esm/cli/codegen_templates/*`.
  */
 
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const convexDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'convex')
 const generatedDir = join(convexDir, '_generated')
+
+// When a `convex.config.ts` exists, this app installs Convex *components* (D5:
+// `@convex-dev/geospatial`). Component codegen has a fully-typed form that needs
+// live deployment analysis — the exact thing we can't do offline — but that typing
+// only benefits `components.*` call sites, and installed components (e.g. the
+// geospatial client) re-apply their own precise types on top. So we emit the same
+// loosely-typed `components` *stub* that `convex dev` writes before its first push
+// (`componentApiStubDTS`): `componentsGeneric()` in `api.js`, `AnyComponents` in
+// `api.d.ts`. The app's own `api`/`internal` stay precisely derived, as before.
+const hasComponents = existsSync(join(convexDir, 'convex.config.ts'))
 
 const header = (desc) => `/* eslint-disable */
 /**
@@ -99,7 +109,15 @@ export type Id<TableName extends TableNames | SystemTableNames> = GenericId<Tabl
 export type DataModel = DataModelFromSchemaDefinition<typeof schema>;
 `
 
-const API_JS = `${header('Generated `api` utility.')}
+const API_JS = hasComponents
+  ? `${header('Generated `api` utility.')}
+import { anyApi, componentsGeneric } from "convex/server";
+
+export const api = anyApi;
+export const internal = anyApi;
+export const components = componentsGeneric();
+`
+  : `${header('Generated `api` utility.')}
 import { anyApi } from "convex/server";
 
 export const api = anyApi;
@@ -194,16 +212,22 @@ function apiDts(modules) {
     .map((m) => `import type * as ${moduleIdentifier(m)} from "../${m}.js";`)
     .join('\n')
   const entries = modules.map((m) => `  "${m}": typeof ${moduleIdentifier(m)};`).join('\n')
+  // Component apps also expose a `components` handle. We keep the derived `api`/`internal`
+  // typing and add only the loosely-typed stub (see `hasComponents` note above).
+  const componentsImport = hasComponents
+    ? 'import type { AnyComponents } from "convex/server";\n'
+    : ''
+  const componentsDecl = hasComponents ? '\nexport declare const components: AnyComponents;\n' : ''
   return `${header('Generated `api` utility.')}
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
-${imports}
+${componentsImport}${imports}
 
 declare const fullApi: ApiFromModules<{
 ${entries}
 }>;
 export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "public">>;
 export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;
-`
+${componentsDecl}`
 }
 
 const modules = functionModules().sort((a, b) => a.localeCompare(b, 'en-US'))

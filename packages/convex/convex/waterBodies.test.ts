@@ -1,3 +1,4 @@
+import geospatial from '@convex-dev/geospatial/test'
 import { convexTest } from 'convex-test'
 import { describe, expect, test } from 'vitest'
 import { api } from './_generated/api'
@@ -5,6 +6,17 @@ import type { Id } from './_generated/dataModel'
 import schema from './schema'
 
 const modules = import.meta.glob('./**/*.*s')
+
+/** A `convexTest` instance with the geospatial component registered (D5). */
+function convexTestWithGeo() {
+  const t = convexTest(schema, modules)
+  geospatial.register(t)
+  return t
+}
+
+/** A viewport (bbox) centered on SAMPLE_BODY's centroid, and one far away. */
+const VIEWPORT_CONTAINING = { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 }
+const VIEWPORT_ELSEWHERE = { minLat: 40, minLng: -80, maxLat: 41, maxLng: -79 }
 
 type Role = 'member' | 'moderator' | 'admin'
 type Status = 'active' | 'suspended' | 'banned' | 'deleted'
@@ -67,14 +79,14 @@ async function seedUser(
 
 describe('waterBodies.create', () => {
   test('rejects unauthenticated callers', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     await expect(t.mutation(api.waterBodies.create, SAMPLE_BODY)).rejects.toThrow(
       /not authenticated/i,
     )
   })
 
   test('rejects a banned account (status gate, D37)', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const asBanned = await seedUser(t, 'clerk_banned', 'member', 'banned')
     await expect(asBanned.mutation(api.waterBodies.create, SAMPLE_BODY)).rejects.toThrow(
       /not active/i,
@@ -82,7 +94,7 @@ describe('waterBodies.create', () => {
   })
 
   test('rejects an account under active suspension (D37)', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const future = Date.now() + 7 * 24 * 60 * 60 * 1000
     const asSuspended = await seedUser(t, 'clerk_susp', 'member', 'suspended', future)
     await expect(asSuspended.mutation(api.waterBodies.create, SAMPLE_BODY)).rejects.toThrow(
@@ -91,14 +103,14 @@ describe('waterBodies.create', () => {
   })
 
   test('allows an account whose suspension has lapsed (D37)', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const past = Date.now() - 1000
     const asLapsed = await seedUser(t, 'clerk_lapsed', 'member', 'suspended', past)
     await expect(asLapsed.mutation(api.waterBodies.create, SAMPLE_BODY)).resolves.toBeDefined()
   })
 
   test('a member creates a pending, user-sourced body attributed to them', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const asMember = await seedUser(t, 'clerk_member')
 
     const id = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY)
@@ -118,7 +130,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
   }
 
   test('a member cannot approve', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const bodyId = await seedPendingBody(t)
     const asMember = t.withIdentity({ subject: 'clerk_member' })
     await expect(
@@ -127,7 +139,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
   })
 
   test('a moderator approves and writes exactly one audit row', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const bodyId = await seedPendingBody(t)
     const asMod = await seedUser(t, 'clerk_mod', 'moderator')
 
@@ -145,7 +157,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
   })
 
   test('an admin may also approve (role precedence)', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const bodyId = await seedPendingBody(t)
     const asAdmin = await seedUser(t, 'clerk_admin', 'admin')
 
@@ -155,7 +167,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
   })
 
   test('cannot approve a body that is not pending (no rejection-reversal, no dup audit)', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const bodyId = await seedPendingBody(t)
     const asMod = await seedUser(t, 'clerk_mod', 'moderator')
 
@@ -170,7 +182,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
   })
 
   test('cannot approve a canonical (non-user) body', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const asMod = await seedUser(t, 'clerk_mod', 'moderator')
     const canonicalId = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
@@ -187,7 +199,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
   })
 
   test('approving a missing body throws', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const asMod = await seedUser(t, 'clerk_mod', 'moderator')
     // Create then delete to obtain a well-formed but dangling id.
     const bodyId = await t.run(async (ctx) => {
@@ -206,9 +218,69 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
   })
 })
 
+describe('waterBodies.listInViewport (geospatial, D5)', () => {
+  test('excludes a pending body (approved-only filter), includes it once approved', async () => {
+    const t = convexTestWithGeo()
+    const asMember = await seedUser(t, 'clerk_member')
+    const bodyId = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY)
+
+    // Pending: indexed, but the approved-only filter keeps it out of the public view.
+    const whilePending = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+    })
+    expect(whilePending).toHaveLength(0)
+
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator')
+    await asMod.mutation(api.waterBodies.approve, { waterBodyId: bodyId })
+
+    const afterApprove = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+    })
+    expect(afterApprove).toHaveLength(1)
+    expect(afterApprove[0]?._id).toEqual(bodyId)
+    expect(afterApprove[0]?.name).toBe('Lake Morey')
+  })
+
+  test('excludes an approved body whose centroid is outside the viewport', async () => {
+    const t = convexTestWithGeo()
+    const asMember = await seedUser(t, 'clerk_member')
+    const bodyId = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY)
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator')
+    await asMod.mutation(api.waterBodies.approve, { waterBodyId: bodyId })
+
+    const elsewhere = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_ELSEWHERE,
+    })
+    expect(elsewhere).toHaveLength(0)
+  })
+
+  test('returns only the bodies inside the viewport when several exist', async () => {
+    const t = convexTestWithGeo()
+    const asMember = await seedUser(t, 'clerk_member')
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator')
+
+    // Inside VIEWPORT_CONTAINING (centroid 0.5, 0.5).
+    const insideId = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY)
+    // Outside: centroid at (50, 50).
+    const outsideId = await asMember.mutation(api.waterBodies.create, {
+      ...SAMPLE_BODY,
+      name: 'Far Pond',
+      bbox: { minLat: 49, minLng: 49, maxLat: 51, maxLng: 51 },
+      centroid: { lat: 50, lng: 50 },
+    })
+    await asMod.mutation(api.waterBodies.approve, { waterBodyId: insideId })
+    await asMod.mutation(api.waterBodies.approve, { waterBodyId: outsideId })
+
+    const inView = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+    })
+    expect(inView.map((b) => b._id)).toEqual([insideId])
+  })
+})
+
 describe('waterBodies.listPendingReview', () => {
   test('a member cannot read the review queue', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const asMember = await seedUser(t, 'clerk_member')
     await expect(asMember.query(api.waterBodies.listPendingReview, {})).rejects.toThrow(
       /moderator/i,
@@ -216,7 +288,7 @@ describe('waterBodies.listPendingReview', () => {
   })
 
   test('a moderator sees pending bodies but not approved ones', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
     const asMember = await seedUser(t, 'clerk_member')
     const pendingId = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY)
     const otherId = await asMember.mutation(api.waterBodies.create, {
