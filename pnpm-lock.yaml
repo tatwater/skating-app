@@ -30,6 +30,18 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7
 
+  packages/design:
+    devDependencies:
+      '@vitest/coverage-v8':
+        specifier: ^3.0.0
+        version: 3.2.7(vitest@3.2.7)
+      fast-check:
+        specifier: ^3.23.0
+        version: 3.23.2
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7
+
 packages:
 
   '@ampproject/remapping@2.3.0':
