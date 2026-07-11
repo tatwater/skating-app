@@ -94,5 +94,6 @@ export function formatDistanceMiles(meters: number, decimals = 1): string {
 }
 
 export function formatAreaAcres(sqm: number, decimals = 1): string {
-  return `${roundTo(sqMetersToAcres(sqm), decimals)} acres`
+  const acres = roundTo(sqMetersToAcres(sqm), decimals)
+  return `${acres} ${acres === 1 ? 'acre' : 'acres'}`
 }
