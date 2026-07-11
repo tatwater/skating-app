@@ -46,8 +46,12 @@ and a Clerk JWT template named `convex`).
   filter. The decided target is **bbox-intersection** (a large lake shows when its bbox
   overlaps the viewport, even if its centroid is off-screen) via an expanded geospatial
   prefilter + `@skating/core`'s `bboxIntersects` refine — see the `listInViewport`
-  doc-comment. Still deferred: that refine, indexing `reports.point`, and tightening
-  `geoJson` from `v.any()` to a structured validator.
+  doc-comment. Still deferred: that refine and indexing `reports.point`.
+- **`geoJson` is now a structured GeoJSON-geometry validator** (`lib/validators.ts`),
+  not `v.any()` — a discriminated union over Point/MultiPoint/Line/MultiLine/Polygon/
+  MultiPolygon that rejects unknown `type`s and wrong nesting at the mutation boundary.
+  It validates shape, not geometric validity (ring closure / min vertices are the
+  Turf/`@skating/core` layer's job).
 - **Dedup-on-create (D36) is stubbed** in `waterBodies.create` (a `TODO`). The pure
   geometry it needs — `polygonIoU`, `pointInPolygon`, `bufferedLineOverlap` (rivers),
   `polygonBBox` — now lives in `@skating/core` with property tests; what remains is the

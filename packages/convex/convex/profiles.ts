@@ -7,6 +7,7 @@
  * idempotent so it's safe to call on every app launch.
  */
 
+import { isMinor, meetsMinimumAge } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import { getCurrentProfile } from './lib/auth'
@@ -28,20 +29,39 @@ export const upsertFromClerk = mutation({
   args: {
     displayName: v.string(),
     username: v.string(),
-    minAge16Attested: v.boolean(), // age gate at signup (D41)
-    isMinor: v.optional(v.boolean()),
+    dateOfBirth: v.number(), // UTC-midnight epoch ms; gate + minor status derived (D41)
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity()
     if (!identity) throw new ConvexError('Not authenticated')
 
-    // Hard 16+ minimum (D41). Enforced server-side, not just at the client gate.
-    if (!args.minAge16Attested) {
-      throw new ConvexError('You must attest to being at least 16 years old')
+    // Hard 16+ minimum (D41), derived from DOB and enforced server-side. Minor status
+    // is likewise derived, so it self-corrects on the user's 18th birthday with no
+    // re-attestation or scheduled job (same pattern as suspension lapse).
+    const now = Date.now()
+    if (!meetsMinimumAge(args.dateOfBirth, now)) {
+      throw new ConvexError('You must be at least 16 years old')
+    }
+    const minor = isMinor(args.dateOfBirth, now)
+
+    const existing = await ctx.db
+      .query('profiles')
+      .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
+      .unique()
+
+    // An inactive account must not mutate its identity via this app-launch sync:
+    //  - a banned/suspended user could squat a new username or rename to evade
+    //    moderation (D37);
+    //  - a *deleted* user would un-scrub the PII that deletion cleared (displayName →
+    //    "deleted user", dropped handle — D33).
+    // Idempotent sync still succeeds (returns the profile); it just applies no edits.
+    if (existing && existing.status !== 'active') {
+      return existing._id
     }
 
     // `username` is unique (06-data-model.md). Convex has no unique constraint, so
-    // check the index and reject a name already held by a *different* profile.
+    // check the index and reject a name already held by a *different* profile. (Only
+    // reached for new or active profiles — i.e. only when we're about to write it.)
     const usernameOwner = await ctx.db
       .query('profiles')
       .withIndex('by_username', (q) => q.eq('username', args.username))
@@ -50,33 +70,31 @@ export const upsertFromClerk = mutation({
       throw new ConvexError('Username is already taken')
     }
 
-    const existing = await ctx.db
-      .query('profiles')
-      .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
-      .unique()
-
     if (existing) {
+      // Re-assert follow-approval while the account is a minor; never silently *remove*
+      // an existing requirement. So on the 18th birthday (minor → false) protection
+      // persists — the public options simply become available for the user to choose (D41).
       await ctx.db.patch(existing._id, {
         displayName: args.displayName,
         username: args.username,
+        dateOfBirth: args.dateOfBirth,
+        requireFollowApproval: minor || existing.requireFollowApproval,
       })
       return existing._id
     }
 
-    const isMinor = args.isMinor ?? false
     return ctx.db.insert('profiles', {
       clerkUserId: identity.subject,
       displayName: args.displayName,
       username: args.username,
+      dateOfBirth: args.dateOfBirth,
       driveTimePrefMinutes: 60,
-      requireFollowApproval: isMinor, // minors default to approval-required (D41)
+      requireFollowApproval: minor, // minors default to approval-required (D41)
       notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
-      minAge16Attested: args.minAge16Attested,
-      isMinor,
       reputationPoints: 0,
       role: 'member',
       status: 'active',
-      createdAt: Date.now(),
+      createdAt: now,
     })
   },
 })

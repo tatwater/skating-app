@@ -71,8 +71,7 @@ export default defineSchema({
     cachedIsochroneAt: v.optional(v.number()),
     requireFollowApproval: v.boolean(), // account-level (D13)
     notificationPrefs, // every type toggleable (D16)
-    minAge16Attested: v.boolean(), // age gate at signup (D41); no birthdate stored
-    isMinor: v.boolean(), // self-attested under 18 → protective defaults (D41)
+    dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
     riskAckAt: v.optional(v.number()),
     reputationPoints: v.number(), // cosmetic/reputational only (D17)

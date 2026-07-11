@@ -492,17 +492,23 @@ are good at. Vitest keeps one runner/config idiom across the stack (matches D7).
 
 ## D41 — Minimum age 16; default report visibility derived from profile + age
 **Decided.**
-- **Minimum age is 16.** Under-16 accounts are not permitted (self-attested at signup;
-  we don't collect birthdates beyond an age gate — minimize PII, D11). The realistic
-  user base is overwhelmingly adults; 16 lets the occasional independent teen skater
-  participate without pulling us into full child-directed-service obligations.
+- **Minimum age is 16.** Under-16 accounts are not permitted. **We collect the user's
+  date of birth at signup** and *derive* the age gate (≥16) and minor status (<18) from
+  it (age math in `@skating/core`; stored as `profiles.dateOfBirth`). 16 lets the
+  occasional independent teen skater participate without pulling us into full
+  child-directed-service obligations; the realistic user base is overwhelmingly adults.
 - **Default report visibility is *derived*, never a bare "public":**
   - **Adult + public profile (the default):** new reports default **`public`**.
   - **Private/locked profile** (account has `requireFollowApproval` on, i.e. the user
     locked down — D13): new reports default **`followers`**, not public.
-  - **Any under-18 account:** reports default **`followers`** and **can never
-    *default* to public** (the user can still deliberately set an individual report
-    public, but it's never the pre-selected default).
+  - **Any under-18 account:** starts **locked** (`requireFollowApproval` seeded on at
+    signup), so via the locked-profile rule above their reports default **`followers`**
+    and never *default* to public — **not** via a live age check at post time. The lock
+    **persists past 18**, so a **birthday never changes a post default**; the public
+    options merely become available to select. The post default is therefore a pure
+    function of the stored privacy setting (`deriveDefaultVisibility` takes no age input).
+    *Corollary:* the profile-settings mutation must not let a minor unlock — the age
+    check belongs at the moment of *changing the setting*, not at post time.
 - **"If your profile is public, your reports are public (by default)"** is the mental
   model — one obvious switch (lock the profile) cascades to a safer default. **New
   features must honor existing per-user privacy settings** — a later feature never
@@ -513,6 +519,16 @@ regardless. Keeps the privacy-by-default principle (00-vision) and the cold-star
 need honestly reconciled instead of left as a "lean."
 **Note:** This is the resolution of the D13 tension flagged in review — D13's "lean
 public" now has concrete, safe mechanics.
+**Updated (2026-07-10):** originally this stored *no* birthdate — a bare self-attested
+16+ flag plus an `isMinor` boolean — to minimize PII (D11). Changed to store DOB because
+the boolean model made the **minor→adult transition undetectable**: `isMinor` could only
+flip via manual re-attestation, so protections were sticky-forever and the 18th birthday
+was a non-event. Deriving age from a stored DOB makes that transition automatic
+(recomputed at read time, like suspension lapse) — at 18 the public options simply become
+*available* to choose; nothing already set is silently widened. This is a deliberate,
+bounded relaxation of D11's minimization in exchange for correct lifecycle handling: DOB
+is treated as sensitive PII (**scrubbed on deletion, D33**), and the precise compliance
+posture around collecting minors' birthdates is flagged for the ToS/legal review (Q10).
 
 ## D42 — Photo EXIF stripping + opt-in geotag placement
 **Decided.** **Strip all EXIF on upload by default**, with **two fields deliberately

@@ -25,7 +25,7 @@ const SAMPLE_BODY = {
   name: 'Lake Morey',
   type: 'lake' as const,
   polygon: {
-    type: 'Polygon',
+    type: 'Polygon' as const,
     coordinates: [
       [
         [0, 0],
@@ -65,8 +65,7 @@ async function seedUser(
         reportRated: true,
         contentFlagResolved: true,
       },
-      minAge16Attested: true,
-      isMinor: false,
+      dateOfBirth: Date.UTC(1990, 0, 1),
       reputationPoints: 0,
       role,
       status,
@@ -107,6 +106,19 @@ describe('waterBodies.create', () => {
     const past = Date.now() - 1000
     const asLapsed = await seedUser(t, 'clerk_lapsed', 'member', 'suspended', past)
     await expect(asLapsed.mutation(api.waterBodies.create, SAMPLE_BODY)).resolves.toBeDefined()
+  })
+
+  test('rejects a malformed (non-GeoJSON) polygon at the validator boundary (D5)', async () => {
+    const t = convexTestWithGeo()
+    const asMember = await seedUser(t, 'clerk_member')
+    await expect(
+      asMember.mutation(api.waterBodies.create, {
+        ...SAMPLE_BODY,
+        // Deliberately invalid geometry — cast past the arg type to exercise the
+        // runtime validator (the whole point of the structured `geoJson` union).
+        polygon: { type: 'Blob', coordinates: [] } as unknown as (typeof SAMPLE_BODY)['polygon'],
+      }),
+    ).rejects.toThrow()
   })
 
   test('a member creates a pending, user-sourced body attributed to them', async () => {

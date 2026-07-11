@@ -63,6 +63,9 @@ importers:
       '@turf/truncate':
         specifier: ^7.3.5
         version: 7.3.5
+      '@types/geojson':
+        specifier: ^7946.0.16
+        version: 7946.0.16
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^3.0.0

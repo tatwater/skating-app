@@ -75,7 +75,8 @@ export function sqMetersToSqFeet(sqm: number): number {
 export function roundTo(value: number, decimals = 0): number {
   if (!Number.isFinite(value)) return value
   const scaled = Number(`${value}e${decimals}`)
-  return Number(`${Math.round(scaled)}e${-decimals}`)
+  const rounded = Math.sign(scaled) * Math.round(Math.abs(scaled))
+  return Number(`${rounded}e${-decimals}`)
 }
 
 // --- Imperial display formatters (D25) ---

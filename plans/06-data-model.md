@@ -40,8 +40,9 @@ notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D
   reportRated,               // someone rated your report helpful/unhelpful (D17)
   contentFlagResolved: boolean
 }                            // keys mirror notifications.type 1:1 (D16 invariant)
-minAge16Attested: boolean    // age gate at signup (D41); no birthdate stored
-isMinor: boolean             // self-attested under 18 → protective visibility default (D41)
+dateOfBirth: timestamp       // collected at signup (D41); age gate (≥16) + minor status
+                             // (<18, protective defaults) are DERIVED from it, recomputed
+                             // at read time so the 18th-birthday transition is automatic
 riskAckVersion?: string      // assumption-of-risk acknowledgment accepted (D45)
 riskAckAt?: timestamp
 reputationPoints: number     // cosmetic/reputational only (D17)
@@ -63,7 +64,7 @@ createdAt: timestamp
 > (`current`, `upsertFromClerk`). The rest of this doc still reads `ref(profiles)` for
 > clarity even though the pseudocode predates the rename.
 > **Deletion (D33):** on delete, set `status: deleted` and scrub PII (displayName →
-> "deleted user", drop `homeCoord`/`homeTownLabel`). Authored public/followers/friends
+> "deleted user", drop `homeCoord`/`homeTownLabel`, clear `dateOfBirth`). Authored public/followers/friends
 > reports & comments are **anonymized, not erased** (preserve the ice record);
 > `just_me` content is removed. Users can also **export** their data.
 > **Ban/suspend (D37):** Convex is the source of truth — every function gates on
@@ -441,7 +442,11 @@ profiles 1─* pointEvents
 ---
 
 ## Derived / computed (not stored raw)
-- **Drive-time filter:** cached isochrone polygon on `users` (D18) → point-in-polygon
+- **Age gate & minor status:** derived from `profiles.dateOfBirth` (D41) — the 16+
+  signup gate and the under-18 protective defaults (`@skating/core` age math). Computed
+  at read time, so the minor→adult transition needs no birthdate re-attestation or
+  scheduled job; protections persist past 18 until the user widens them.
+- **Drive-time filter:** cached isochrone polygon on `profiles` (D18) → point-in-polygon
   test against `waterBodies.centroid` / `reports.point`.
 - **Weather-since-report strip:** computed from Open-Meteo over [skateTime → now]
   (D19; spec in `04-integrations.md`); cache per (waterBody, window).

@@ -43,10 +43,23 @@ export const bbox = v.object({
 })
 
 /**
- * A GeoJSON geometry (Point / LineString / Polygon / MultiPolygon).
+ * A GeoJSON geometry — the shapes we actually store (`Point` / `MultiPoint` /
+ * `LineString` / `MultiLineString` / `Polygon` / `MultiPolygon`). The `type` literal
+ * discriminates the union even where coordinate nesting coincides (e.g. `MultiPoint`
+ * vs `LineString`), so an unknown `type` or wrong nesting depth is rejected at the
+ * mutation/DB boundary (D5).
  *
- * Loosely typed for v1: precise geometry validation happens in the Turf-backed
- * query/action layer (D5), and the `@convex-dev/geospatial` component indexes the
- * point fields separately. Tighten to a structured validator when that lands.
+ * This validates *shape*, not geometric validity: a `Position` is `number[]` (Convex
+ * can't pin tuple length), and ring closure / winding / min-vertex-count are enforced
+ * by the Turf-backed layer in `@skating/core`, not here. `GeometryCollection` is
+ * intentionally omitted — it's recursive and unused.
  */
-export const geoJson = v.any()
+const position = v.array(v.number()) // [lng, lat] (+ optional elevation)
+export const geoJson = v.union(
+  v.object({ type: v.literal('Point'), coordinates: position }),
+  v.object({ type: v.literal('MultiPoint'), coordinates: v.array(position) }),
+  v.object({ type: v.literal('LineString'), coordinates: v.array(position) }),
+  v.object({ type: v.literal('MultiLineString'), coordinates: v.array(v.array(position)) }),
+  v.object({ type: v.literal('Polygon'), coordinates: v.array(v.array(position)) }),
+  v.object({ type: v.literal('MultiPolygon'), coordinates: v.array(v.array(v.array(position))) }),
+)

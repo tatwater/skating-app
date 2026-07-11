@@ -58,20 +58,26 @@ export function canViewComment(
 }
 
 export interface DefaultVisibilityInput {
-  /** Whether the author's profile is public (vs. locked / private-account). */
+  /**
+   * Whether the author's profile is public — the inverse of the account-level
+   * `requireFollowApproval` "locked" setting (D13). This is the user's *stored* privacy
+   * setting; it is deliberately NOT a live age check (see below).
+   */
   profilePublic: boolean
-  /** Whether the author self-attested as under 18 (D41). */
-  isMinor: boolean
 }
 
 /**
  * The pre-selected default visibility for a new report (D41):
- * - under-18 accounts never *default* to public;
- * - locked/private profiles default to followers;
- * - otherwise (adult + public profile) default to public.
+ * public profile → `public`; locked/private profile → `followers`.
+ *
+ * Derived purely from the user's stored privacy setting, **never from a live minor
+ * check**, so a post default never changes on a user's birthday. Minor protection is
+ * applied by seeding `requireFollowApproval` (locked) at signup and persisting it past
+ * 18: a minor is always locked → never *defaults* to public, and turning 18 leaves the
+ * setting untouched → the default is unchanged until they choose to unlock. (Corollary:
+ * the profile-settings mutation must not let a minor unlock — the age check belongs at
+ * the moment of *changing the setting*, not at post time.)
  */
 export function deriveDefaultVisibility(input: DefaultVisibilityInput): Visibility {
-  if (input.isMinor) return 'followers'
-  if (!input.profilePublic) return 'followers'
-  return 'public'
+  return input.profilePublic ? 'public' : 'followers'
 }
