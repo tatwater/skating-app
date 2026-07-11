@@ -21,9 +21,10 @@ Guiding constraints from `01-decisions.md`:
 
 ## Entities
 
-### `users`
+### `profiles`  (was `users` in the original model — renamed in implementation, see note)
 ```
 _id
+clerkUserId: string         // ties this profile to its Clerk auth user (= identity.subject)
 displayName: string
 username: string            // unique, for search/follow
 homeCoord: { lat, lng }     // PRIVATE — filter input only (D11)
@@ -39,8 +40,9 @@ notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D
   reportRated,               // someone rated your report helpful/unhelpful (D17)
   contentFlagResolved: boolean
 }                            // keys mirror notifications.type 1:1 (D16 invariant)
-minAge16Attested: boolean    // age gate at signup (D41); no birthdate stored
-isMinor: boolean             // self-attested under 18 → protective visibility default (D41)
+dateOfBirth: timestamp       // collected at signup (D41); age gate (≥16) + minor status
+                             // (<18, protective defaults) are DERIVED from it, recomputed
+                             // at read time so the 18th-birthday transition is automatic
 riskAckVersion?: string      // assumption-of-risk acknowledgment accepted (D45)
 riskAckAt?: timestamp
 reputationPoints: number     // cosmetic/reputational only (D17)
@@ -49,12 +51,20 @@ role: enum(member, moderator, admin)  // mod=content; admin ⊇ mod + bans/roles
 status: enum(active, suspended, banned, deleted)  // suspend/ban = D37; deleted = D33
 statusReason?: string          // mod-visible; optionally surfaced to the user (D37)
 suspendedUntil?: timestamp      // temp suspension; null on a ban = indefinite (D37)
-moderatedByUserId?: ref(users)  // who set the current suspend/ban state (D37)
+moderatedByUserId?: ref(profiles)  // who set the current suspend/ban state (D37)
 deletedAt?: timestamp
 createdAt: timestamp
 ```
+> **Renamed `users` → `profiles` in implementation (D26).** Clerk owns the auth user;
+> this table is the domain profile that *mirrors* it, tied by `clerkUserId` (=
+> Clerk `identity.subject`). Every `ref(profiles)` below is a profile `_id`, never a
+> Clerk id. `clerkUserId` + its `by_clerk_user_id` index are the additions the original
+> `users` model didn't spell out; the auth wiring lives in `convex/auth.config.ts`
+> (registers Clerk as the Convex identity provider) and `convex/profiles.ts`
+> (`current`, `upsertFromClerk`). The rest of this doc still reads `ref(profiles)` for
+> clarity even though the pseudocode predates the rename.
 > **Deletion (D33):** on delete, set `status: deleted` and scrub PII (displayName →
-> "deleted user", drop `homeCoord`/`homeTownLabel`). Authored public/followers/friends
+> "deleted user", drop `homeCoord`/`homeTownLabel`, clear `dateOfBirth`). Authored public/followers/friends
 > reports & comments are **anonymized, not erased** (preserve the ice record);
 > `just_me` content is removed. Users can also **export** their data.
 > **Ban/suspend (D37):** Convex is the source of truth — every function gates on
@@ -65,7 +75,7 @@ createdAt: timestamp
 ### `activityConnections`  (a user's linked GPS providers; provider-agnostic, all six v1 — D24)
 ```
 _id
-userId: ref(users)
+userId: ref(profiles)
 provider: enum(strava, garmin, coros, polar, apple_health, google_health_connect, other)
 externalUserId: string       // e.g. Strava athleteId
 accessToken?, refreshToken?: string  // SERVER-ONLY; provider auth models differ
@@ -82,7 +92,7 @@ connectedAt: timestamp
 ### `gpsActivities`  (detected ice skates from any provider; dedup + trusted path)
 ```
 _id
-userId: ref(users)
+userId: ref(profiles)
 provider: enum(strava, garmin, coros, polar, apple_health, google_health_connect, other)
 providerActivityId: string   // unique per provider — dedup webhook re-deliveries
 sportType: string            // provider's ice-skate type (e.g. Strava "IceSkate")
@@ -112,7 +122,7 @@ polygon: geojson             // Polygon / MultiPolygon (rivers: the reach/segmen
 bbox: { minLat, minLng, maxLat, maxLng }  // prefilter index
 centroid: { lat, lng }       // geospatial point index
 surfaceAreaSqM?: number      // from NHD/OSM, or estimated for user shapes
-createdByUserId?: ref(users) // when source == user
+createdByUserId?: ref(profiles) // when source == user
 reviewStatus?: enum(pending, approved, rejected)  // source==user only; auto-visible then review-after (D37)
 dedupStatus: enum(clean, suspected_duplicate, merged)  // default clean (D36)
 mergedIntoId?: ref(waterBodies)       // set when merged; reads follow the survivor
@@ -131,7 +141,7 @@ createdAt: timestamp
 ### `reports`  (the core)
 ```
 _id
-authorId: ref(users)
+authorId: ref(profiles)
 waterBodyId: ref(waterBodies)
 point: { lat, lng }          // where the reporter was / representative point (geo index)
 skateTime: timestamp         // WHEN THEY SKATED — primary sort key everywhere
@@ -183,7 +193,7 @@ createdAt, updatedAt: timestamp
 _id
 reportId: ref(reports)          // the report the thread hangs on
 parentCommentId?: ref(comments) // null = top-level; set = nested reply
-authorId: ref(users)
+authorId: ref(profiles)
 body: string
 source: enum(native, imported)  // imported = from forum/email ingestion (Q8)
 moderationStatus: enum(visible, hidden, removed)  // default visible (D32)
@@ -205,7 +215,7 @@ waterBodyId: ref(waterBodies)
 type: enum[]                 // see hazard vocab below
 geometry: geojson            // Point | LineString | Polygon (in-polygon draw, D4)
 bbox: {...}                  // for proximity queries
-createdByUserId: ref(users)
+createdByUserId: ref(profiles)
 originReportId?: ref(reports)
 description?: string
 status: enum(active, archived)      // archived (not deleted) so it can resurface
@@ -224,7 +234,7 @@ createdAt: timestamp
 ```
 _id
 hazardId: ref(hazards)
-userId: ref(users)
+userId: ref(profiles)
 verdict: enum(still_there, gone)
 atCoord?: { lat, lng }       // where the user was when confirming
 via: enum(app_open_nearby, report_flow, strava_path)  // trigger (D12)
@@ -234,8 +244,8 @@ createdAt: timestamp
 ### `follows`  (follow is the primitive; mutual == friends, D13)
 ```
 _id
-followerId: ref(users)
-followeeId: ref(users)
+followerId: ref(profiles)
+followeeId: ref(profiles)
 status: enum(pending, accepted)  // pending only when followee requires approval
 createdAt: timestamp
 ```
@@ -247,8 +257,8 @@ createdAt: timestamp
 ### `blocks`  (mute/block a user, D32)
 ```
 _id
-blockerId: ref(users)
-blockedId: ref(users)
+blockerId: ref(profiles)
+blockedId: ref(profiles)
 createdAt: timestamp
 ```
 > A block hides each user's content/profile from the other and prevents follows.
@@ -257,13 +267,13 @@ createdAt: timestamp
 ### `contentFlags`  (abuse / safety reports, D32)
 ```
 _id
-flaggerId: ref(users)
+flaggerId: ref(profiles)
 targetType: enum(report, comment, photo, user)
 targetId: string             // ref into the matching table
 reason: enum(unsafe_false_report, spam, harassment, inappropriate, other)
 note?: string
 status: enum(open, reviewing, actioned, dismissed)
-resolvedByUserId?: ref(users)   // a moderator or admin (users.role in {moderator, admin} — D37)
+resolvedByUserId?: ref(profiles)   // a moderator or admin (users.role in {moderator, admin} — D37)
 createdAt, resolvedAt?: timestamp
 ```
 > `unsafe_false_report` is first-class: a dangerously false "ice is great" claim is
@@ -274,7 +284,7 @@ createdAt, resolvedAt?: timestamp
 ### `moderationActions`  (audit log — who did what, why; D37)
 ```
 _id
-actorId: ref(users)          // the moderator/admin who acted
+actorId: ref(profiles)          // the moderator/admin who acted
 action: enum(hide, remove, restore, ban, suspend, unban,
              merge_waterbody, approve_waterbody, reject_waterbody,
              resolve_flag, dismiss_flag, grant_role, revoke_role)
@@ -291,16 +301,16 @@ createdAt: timestamp
 ### `supportTickets`  (lightweight in-app support inbox; D37, not Zendesk per D35)
 ```
 _id
-userId?: ref(users)          // null if submitted pre-auth
+userId?: ref(profiles)          // null if submitted pre-auth
 category: enum(bug, account, safety, other)
 body: string
 status: enum(open, in_progress, resolved)
-assignedToUserId?: ref(users)
+assignedToUserId?: ref(profiles)
 context?: {                  // auto-captured — what an email can't give us
   appVersion?, platform?, deviceModel?: string
   sentryEventId?: string     // link to the crash/error (D29)
 }
-resolvedByUserId?: ref(users)
+resolvedByUserId?: ref(profiles)
 createdAt, resolvedAt?: timestamp
 ```
 > `category: safety` tickets route to the same priority attention as
@@ -312,7 +322,7 @@ createdAt, resolvedAt?: timestamp
 ### `bounties`
 ```
 _id
-requesterId: ref(users)
+requesterId: ref(profiles)
 waterBodyId: ref(waterBodies)
 windowHours: number          // "skated in last 24/48h" (tunable)
 status: enum(open, fulfilled, expired, cancelled)
@@ -329,7 +339,7 @@ createdAt, expiresAt: timestamp
 ```
 _id
 reportId: ref(reports)
-raterId: ref(users)          // typically the bounty requester
+raterId: ref(profiles)          // typically the bounty requester
 bountyId?: ref(bounties)
 verdict: enum(helpful, unhelpful)
 createdAt: timestamp
@@ -340,7 +350,7 @@ createdAt: timestamp
 _id
 storageId: string            // Convex file storage ref (optimized full image, D31)
 thumbStorageId: string       // ~400px thumbnail (D31)
-uploaderId: ref(users)
+uploaderId: ref(profiles)
 caption?: string
 takenAt?: timestamp          // preserved from EXIF only if user opts in (D42)
 coord?: { lat, lng }         // preserved from EXIF only if placeOnMap == true (D42)
@@ -354,7 +364,7 @@ createdAt: timestamp
 ### `notifications`
 ```
 _id
-userId: ref(users)           // recipient
+userId: ref(profiles)           // recipient
 type: enum(activity_detected, bounty_request, followed_posted_nearby,
            hazard_confirmation, bounty_fulfilled, new_follower, report_rated,
            content_flag_resolved)
@@ -367,7 +377,7 @@ createdAt: timestamp
 ### `pointEvents`  (optional reputation ledger, for transparency)
 ```
 _id
-userId: ref(users)
+userId: ref(profiles)
 delta: number
 reason: enum(report_submitted, photo_evidence, helpful_thumb,
              hazard_confirmed, bounty_fulfilled)
@@ -411,28 +421,32 @@ createdAt: timestamp
 
 ## Relationships (textual ER)
 ```
-users 1─* activityConnections     (one per provider)
-users 1─* gpsActivities ─0/1 reports ; gpsActivities *─1 waterBodies (resolved, D44)
-users 1─* reports *─1 waterBodies
+profiles 1─* activityConnections     (one per provider)
+profiles 1─* gpsActivities ─0/1 reports ; gpsActivities *─1 waterBodies (resolved, D44)
+profiles 1─* reports *─1 waterBodies
 reports 1─* comments (self-nesting via parentCommentId)
 reports 1─* photos
 reports 1─* hazards (created)      hazards *─1 waterBodies
-hazards 1─* hazardConfirmations *─1 users
-users *─* users  (follows; mutual = friends)
-users *─* users  (blocks)
-users 1─* contentFlags ─1 (report | comment | photo | user)
-users(mod/admin) 1─* moderationActions ─1 (any moderated target)   (D37 audit log)
-users 0/1─* supportTickets                                          (D37 support inbox)
-users 1─* bounties *─1 waterBodies ; bounties *─* reports (fulfilling)
-reports 1─* reportRatings *─1 users
-users 1─* notifications
-users 1─* pointEvents
+hazards 1─* hazardConfirmations *─1 profiles
+profiles *─* profiles  (follows; mutual = friends)
+profiles *─* profiles  (blocks)
+profiles 1─* contentFlags ─1 (report | comment | photo | user)
+profiles(mod/admin) 1─* moderationActions ─1 (any moderated target)   (D37 audit log)
+profiles 0/1─* supportTickets                                          (D37 support inbox)
+profiles 1─* bounties *─1 waterBodies ; bounties *─* reports (fulfilling)
+reports 1─* reportRatings *─1 profiles
+profiles 1─* notifications
+profiles 1─* pointEvents
 ```
 
 ---
 
 ## Derived / computed (not stored raw)
-- **Drive-time filter:** cached isochrone polygon on `users` (D18) → point-in-polygon
+- **Age gate & minor status:** derived from `profiles.dateOfBirth` (D41) — the 16+
+  signup gate and the under-18 protective defaults (`@skating/core` age math). Computed
+  at read time, so the minor→adult transition needs no birthdate re-attestation or
+  scheduled job; protections persist past 18 until the user widens them.
+- **Drive-time filter:** cached isochrone polygon on `profiles` (D18) → point-in-polygon
   test against `waterBodies.centroid` / `reports.point`.
 - **Weather-since-report strip:** computed from Open-Meteo over [skateTime → now]
   (D19; spec in `04-integrations.md`); cache per (waterBody, window).
@@ -446,8 +460,27 @@ users 1─* pointEvents
 - **Geospatial component (`@convex-dev/geospatial`)** indexes point fields
   (`waterBodies.centroid`, `reports.point`, `hazards` bbox center) for
   viewport/nearest queries.
+  - **Implemented (D5):** the component is installed (`convex/convex.config.ts`) and
+    `waterBodies.centroid` is indexed on `create`/`approve` with a `reviewStatus`
+    filter key, queried by `waterBodies.listInViewport`. The offline hermetic codegen
+    (`scripts/codegen.mjs`) emits the `components` handle so this typechecks/tests
+    without a deployment; see the convex package README. **Still to wire:**
+    `reports.point` / hazard-center indexing and the bbox-intersection refine (below).
+  - **Viewport semantic (decided): a body is "in view" when its `bbox` intersects the
+    viewport, not when its centroid is inside it** — a large lake can fill the screen
+    with its centroid off-screen. The component indexes *points*, so `listInViewport`
+    currently answers the narrower centroid-in-viewport (an under-approximation that's
+    fine for the pilot region's small bodies). The target implementation: query the
+    geospatial index over the viewport **expanded by the largest body's half-extent**
+    (a superset prefilter), then refine with `bboxIntersects(body.bbox, viewport)` from
+    `@skating/core` (+ optional Turf polygon clip for exact edges). Deferred to Phase 1,
+    where the OSM ETL's real polygons let us tune the expansion instead of guessing.
 - **Polygon tests** (in-isochrone, in-water-body, hazard proximity) = bbox prefilter
-  via indexed `bbox` fields + precise **Turf.js** in a Convex query/action.
+  via indexed `bbox` fields + precise **Turf.js** in a Convex query/action. The pure
+  Turf-backed primitives now live in `@skating/core` (`bboxIntersects`, `pointInPolygon`,
+  `polygonIoU`, `bufferedLineOverlap`, `polygonBBox`) with property tests, ready to wire
+  into a Convex query. *(The centroid/bbox prefilter exists; the Convex-side refine does
+  not yet.)*
 - **Suggested indexes:** `reports` by `waterBodyId + skateTime`, by `authorId`;
   `hazards` by `waterBodyId + status`; `follows` by `followerId` and by `followeeId`;
   `gpsActivities` by `provider + providerActivityId` (unique, dedup) and by
@@ -457,7 +490,8 @@ users 1─* pointEvents
   `contentFlags` by `status` and by `targetType + targetId`; `waterBodies` by
   `dedupStatus` (review queue) and by `reviewStatus` (user-body approval queue, D37);
   `moderationActions` by `targetType + targetId` (target history) and by `actorId`;
-  `supportTickets` by `status`; `users` by `status` (ban/suspend admin views) — in
+  `supportTickets` by `status`; `profiles` by `status` (ban/suspend admin views),
+  by `clerkUserId` (identity lookup, D26) and by `username` (search/uniqueness) — in
   addition to the bbox/centroid geo indexes.
 - **Offline (D9):** client drafts `reports` + `photos` locally, upload on reconnect;
   `reportTime` = submit time, `skateTime` = user-set actual skate time.

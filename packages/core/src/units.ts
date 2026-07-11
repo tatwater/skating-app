@@ -64,10 +64,19 @@ export function sqMetersToSqFeet(sqm: number): number {
 
 // --- Helpers ---
 
-/** Round to a fixed number of decimals (default: whole number). */
+/**
+ * Round to a fixed number of decimals (default: whole number), half away from zero.
+ *
+ * Scales via exponent-string notation rather than `value * 10**decimals` so that
+ * float artifacts don't swallow a digit: `1.005` is stored as `1.00499…`, so the
+ * naive `Math.round(1.005 * 100)` yields `100` → `1` instead of `1.01`. Parsing
+ * `"1.005e2"` lands on the true `100.5` first. Non-finite input passes through.
+ */
 export function roundTo(value: number, decimals = 0): number {
-  const factor = 10 ** decimals
-  return Math.round(value * factor) / factor
+  if (!Number.isFinite(value)) return value
+  const scaled = Number(`${value}e${decimals}`)
+  const rounded = Math.sign(scaled) * Math.round(Math.abs(scaled))
+  return Number(`${rounded}e${-decimals}`)
 }
 
 // --- Imperial display formatters (D25) ---

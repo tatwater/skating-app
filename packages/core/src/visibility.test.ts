@@ -63,15 +63,19 @@ describe('canViewComment', () => {
 })
 
 describe('deriveDefaultVisibility (D41)', () => {
-  it('adult + public profile → public', () => {
-    expect(deriveDefaultVisibility({ profilePublic: true, isMinor: false })).toBe('public')
+  it('public profile → public; locked/private profile → followers', () => {
+    expect(deriveDefaultVisibility({ profilePublic: true })).toBe('public')
+    expect(deriveDefaultVisibility({ profilePublic: false })).toBe('followers')
   })
-  it('locked profile → followers', () => {
-    expect(deriveDefaultVisibility({ profilePublic: false, isMinor: false })).toBe('followers')
-  })
-  it('minors never default to public, even with a public profile', () => {
-    expect(deriveDefaultVisibility({ profilePublic: true, isMinor: true })).toBe('followers')
-    expect(deriveDefaultVisibility({ profilePublic: false, isMinor: true })).toBe('followers')
+  it('depends only on the stored privacy setting, so it never changes on a birthday', () => {
+    // There is no age input to pass: minor protection is the persisted `requireFollowApproval`
+    // (locked) setting seeded at signup, not a live check here. Turning 18 leaves the
+    // profile locked → the default stays `followers` until the user unlocks.
+    for (const profilePublic of [true, false]) {
+      expect(deriveDefaultVisibility({ profilePublic })).toBe(
+        profilePublic ? 'public' : 'followers',
+      )
+    }
   })
 })
 
@@ -106,8 +110,8 @@ describe('visibility invariants (property)', () => {
 
   it('the default visibility is never wider than public and never just_me', () => {
     fc.assert(
-      fc.property(fc.boolean(), fc.boolean(), (profilePublic, isMinor) => {
-        const d: Visibility = deriveDefaultVisibility({ profilePublic, isMinor })
+      fc.property(fc.boolean(), (profilePublic) => {
+        const d: Visibility = deriveDefaultVisibility({ profilePublic })
         expect(d === 'public' || d === 'followers').toBe(true)
       }),
     )

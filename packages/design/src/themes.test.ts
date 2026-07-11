@@ -1,34 +1,36 @@
 import { describe, expect, it } from 'vitest'
 import { contrastRatio, WCAG_AA_LARGE, WCAG_AA_NORMAL } from './contrast'
-import { dark, light, type SemanticColorToken, THEME_NAMES, themes } from './themes'
+import { dark, light, type SemanticColorToken, THEME_NAMES, type Theme, themes } from './themes'
 
 const HEX = /^#[0-9a-fA-F]{6}$/
 
-/** Text/icon pairs held to AA normal (4.5:1). */
-const TEXT_PAIRS: Array<[SemanticColorToken, SemanticColorToken]> = [
-  ['foreground', 'background'],
-  ['foreground', 'surface'],
-  ['foreground', 'surfaceMuted'],
-  ['foregroundMuted', 'background'],
-  ['foregroundMuted', 'surface'],
-  ['foregroundMuted', 'surfaceMuted'],
-  ['primaryForeground', 'primary'],
-  ['dangerForeground', 'danger'],
-  ['warningForeground', 'warning'],
-  ['successForeground', 'success'],
-]
+// Surfaces anything can render on top of. Body text and graphical tokens are swept
+// against ALL of these, so a token that only passes on the page backdrop can't slip
+// through by never being tested on a card.
+const BACKGROUND_TOKENS = ['background', 'surface', 'surfaceMuted'] as const
+
+// Body-text / icon tokens: legible on any surface at AA normal (4.5:1).
+const BODY_TEXT_TOKENS = ['foreground', 'foregroundMuted'] as const
+
+// Non-text tokens that carry meaning: the focus ring and the load-bearing border must
+// hold the graphical-object minimum (3:1, WCAG 1.4.11) on any surface they sit on.
+const GRAPHICAL_TOKENS = ['ring', 'borderStrong'] as const
+
+// Intentionally exempt: `border` is a decorative divider, never a control's sole
+// boundary (that's `borderStrong`), so WCAG 1.4.11 doesn't apply (D34).
+const EXEMPT_TOKENS = ['border'] as const
 
 /**
- * Non-text UI pairs held to the graphical-object minimum (3:1, WCAG 1.4.11).
- * `borderStrong` is the load-bearing boundary token, so it must stay legible on
- * whatever it sits on (page or card); `border` is decorative and exempt.
+ * `*Foreground` tokens paired with the fill they sit on, derived from the theme's own
+ * keys (`primaryForeground` → `primary`). Deriving — rather than hand-listing — means a
+ * newly added `xForeground` token is contrast-tested automatically; it can't be
+ * forgotten. Body-text `foreground`/`foregroundMuted` are lowercase and excluded here.
  */
-const NON_TEXT_PAIRS: Array<[SemanticColorToken, SemanticColorToken]> = [
-  ['ring', 'background'],
-  ['borderStrong', 'background'],
-  ['borderStrong', 'surface'],
-  ['borderStrong', 'surfaceMuted'],
-]
+function foregroundPairs(theme: Theme): Array<[string, string]> {
+  return Object.keys(theme)
+    .filter((key) => /[a-z]Foreground$/.test(key))
+    .map((fg) => [fg, fg.replace(/Foreground$/, '')] as [string, string])
+}
 
 describe('theme structure', () => {
   it('exposes exactly the named themes', () => {
@@ -46,16 +48,42 @@ describe('theme structure', () => {
       }
     }
   })
+
+  it('categorizes every token so none escapes the contrast sweep', () => {
+    // If you add a token, it must fall into a tested category (background, body text,
+    // graphical, a `*Foreground`/its fill) or be explicitly exempt — else this fails.
+    const covered = new Set<string>([
+      ...BACKGROUND_TOKENS,
+      ...BODY_TEXT_TOKENS,
+      ...GRAPHICAL_TOKENS,
+      ...EXEMPT_TOKENS,
+      ...foregroundPairs(light).flat(),
+    ])
+    const uncovered = (Object.keys(light) as SemanticColorToken[]).filter((t) => !covered.has(t))
+    expect(uncovered, `uncategorized token(s): ${uncovered.join(', ')}`).toEqual([])
+  })
 })
 
 describe.each(THEME_NAMES)('%s theme contrast (D34)', (name) => {
   const theme = themes[name]
 
-  it.each(TEXT_PAIRS)('%s on %s meets WCAG AA for normal text', (fg, bg) => {
+  it.each(
+    BODY_TEXT_TOKENS.flatMap((fg) => BACKGROUND_TOKENS.map((bg) => [fg, bg] as const)),
+  )('body text %s on %s meets WCAG AA normal (4.5:1)', (fg, bg) => {
     expect(contrastRatio(theme[fg], theme[bg])).toBeGreaterThanOrEqual(WCAG_AA_NORMAL)
   })
 
-  it.each(NON_TEXT_PAIRS)('%s on %s meets WCAG non-text contrast', (fg, bg) => {
+  it.each(
+    foregroundPairs(theme),
+  )('foreground %s on its fill %s meets WCAG AA normal (4.5:1)', (fg, fill) => {
+    expect(
+      contrastRatio(theme[fg as SemanticColorToken], theme[fill as SemanticColorToken]),
+    ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL)
+  })
+
+  it.each(
+    GRAPHICAL_TOKENS.flatMap((fg) => BACKGROUND_TOKENS.map((bg) => [fg, bg] as const)),
+  )('graphical %s on %s meets WCAG non-text (3:1)', (fg, bg) => {
     expect(contrastRatio(theme[fg], theme[bg])).toBeGreaterThanOrEqual(WCAG_AA_LARGE)
   })
 })

@@ -66,18 +66,32 @@ describe('summarizeWeatherSince (D19)', () => {
       fc.property(fc.array(arbHour), (hours) => {
         const s = summarizeWeatherSince(hours)
         expect(s.hours).toBe(hours.length)
-        expect(s.hoursNearFreezing).toBeLessThanOrEqual(hours.length)
-        expect(s.hoursAboveFreezing).toBeLessThanOrEqual(hours.length)
-        expect(s.totalPrecipMm).toBeGreaterThanOrEqual(0)
-        expect(s.hoursOfSun).toBeGreaterThanOrEqual(0)
+
+        // Each aggregate must equal the value computed independently over the input —
+        // a stub returning 0/constant would pass "≥ 0" but fails these.
+        expect(s.hoursNearFreezing).toBe(
+          hours.filter((h) => h.temperatureC >= -2 && h.temperatureC <= 2).length,
+        )
+        expect(s.hoursAboveFreezing).toBe(hours.filter((h) => h.temperatureC > 0).length)
+        expect(s.totalPrecipMm).toBeCloseTo(
+          hours.reduce((sum, h) => sum + h.precipitationMm, 0),
+          6,
+        )
+        expect(s.hoursOfSun).toBeCloseTo(
+          hours.reduce((sum, h) => {
+            if (typeof h.sunshineSeconds === 'number') return sum + h.sunshineSeconds / 3600
+            if (typeof h.cloudCoverPct === 'number' && h.cloudCoverPct <= 20) return sum + 1
+            return sum
+          }, 0),
+          6,
+        )
+
         if (hours.length === 0) {
           expect(s.peakTempC).toBeNull()
           expect(s.maxWindKph).toBeNull()
         } else {
-          for (const h of hours) {
-            expect(s.peakTempC).toBeGreaterThanOrEqual(h.temperatureC)
-            expect(s.maxWindKph).toBeGreaterThanOrEqual(h.windSpeedKph)
-          }
+          expect(s.peakTempC).toBe(Math.max(...hours.map((h) => h.temperatureC)))
+          expect(s.maxWindKph).toBe(Math.max(...hours.map((h) => h.windSpeedKph)))
         }
       }),
     )
