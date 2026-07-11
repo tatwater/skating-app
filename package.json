@@ -6,7 +6,10 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
-    "check-types": "turbo run check-types"
+    "check-types": "turbo run check-types",
+    "test": "turbo run test",
+    "lint": "biome check .",
+    "format": "biome check --write ."
   },
   "keywords": [],
   "author": "",
@@ -15,10 +18,12 @@
   "devEngines": {
     "packageManager": {
       "name": "pnpm",
-      "version": "10.0.0"
+      "version": "^10.0.0"
     }
   },
   "devDependencies": {
-    "turbo": "^2.10.4"
+    "@biomejs/biome": "^2.0.0",
+    "turbo": "^2.10.4",
+    "typescript": "^5.7.0"
   }
 }

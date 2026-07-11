@@ -467,11 +467,16 @@ where bugs are most costly (spatial math, visibility, safety):
   `@testing-library/react-native`.
 - **End-to-end (added as flows stabilize):** **Playwright** for web; **Maestro** for
   the Expo app (lighter than Detox, great for the offline-capture → sync flow, D9/D30).
-**CI (GitHub Actions):** on every PR run `turbo lint typecheck test` (D39 caching),
-publish **coverage** (Codecov or the Actions summary) with a ratcheting threshold on
-`packages/*` (start realistic, only ever raise it), and gate merges on green. Add an
+**CI (GitHub Actions):** on every PR run **`pnpm lint`** (Biome, D46), **`pnpm
+check-types`** and **`pnpm test`** (both via Turbo, so they cache — D39), publish
+**coverage** (uploaded as an artifact now; Codecov later) with a ratcheting threshold
+on `packages/*` (start realistic, only ever raise it), and gate merges on green. Add an
 EAS build + `expo-doctor` check and a Convex deploy-preview later. Type-check counts
 as a test tier — strict TS is the cheapest bug filter we have.
+**Realized (Phase 0):** `@skating/core` is the first package — pure logic (units,
+visibility resolution, hazard freshness, weather-since) at **100% coverage** with
+example + `fast-check` property tests; the CI workflow (`.github/workflows/ci.yml`)
+runs the three checks on Node 22.
 **Why:** A field safety app that runs cold/offline can't lean on manual QA; the
 spatial + visibility + safety logic is exactly what property tests and `convex-test`
 are good at. Vitest keeps one runner/config idiom across the stack (matches D7).
@@ -568,3 +573,17 @@ ToS/assumption-of-risk/disclaimer review remains **Q10** before any broad launch
 **Why:** Reinforces D3 at the one moment we have the user's full attention, and gives
 us a recorded acknowledgment now without waiting on the full legal pass. Cheap,
 honest, and directly on-mission.
+
+## D46 — Lint + format: Biome (repo-wide)
+**Decided.** **Biome** is the single lint + format tool for the whole repo (one
+`biome.json` at root; `preset: recommended` rules + formatter: 2-space, 100 cols,
+single quotes, semicolons-as-needed). Run at the **root** (`pnpm lint` = `biome check
+.`, `pnpm format` = `biome check --write .`), not as a per-package Turbo task — Biome
+is fast enough repo-wide that per-package caching isn't worth the config. It respects
+`.gitignore` (`vcs.useIgnoreFile`) and skips unknown file types.
+**Why:** One fast Rust tool replaces ESLint + Prettier, near-zero config, matches the
+low-ops posture (D35) and the TS-everywhere idiom (D7). Formatting and linting share
+one pass, so "lint" also enforces formatting — no drift.
+**Boundary:** app-specific ESLint configs (e.g. `eslint-config-expo` for RN-specific
+rules) can be added **scoped to an app** later if a framework needs plugin rules Biome
+doesn't cover; Biome stays the repo-wide baseline.

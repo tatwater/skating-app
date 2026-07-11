@@ -6,6 +6,7 @@ open-source-friendly licensing. Founder to narrow down.
 
 ## Decided (recap)
 - **Monorepo:** Turborepo + pnpm workspaces (D39).
+- **Lint / format:** Biome, repo-wide (D46).
 - **Testing:** Vitest everywhere (+ `fast-check`, `convex-test`; Playwright/Maestro
   for E2E later); GitHub Actions CI (D40).
 - **DB / backend:** Convex (+ file storage + `@convex-dev/geospatial`).
@@ -146,7 +147,8 @@ One `turbo.json` pipeline; local + remote task caching.
 | Web components | Vitest + `@testing-library/react` + jsdom |
 | Mobile components | `@testing-library/react-native` |
 | E2E (as flows stabilize) | **Playwright** (web) · **Maestro** (Expo) |
-| CI | **GitHub Actions** — `turbo lint typecheck test` + coverage gate |
+| Lint / format | **Biome** repo-wide (D46) |
+| CI | **GitHub Actions** — `pnpm lint` + `turbo check-types test` + coverage |
 
 Strategy: push shared logic into `packages/*` so one Vitest suite covers both apps;
 property-test the correctness-/safety-sensitive math; ratchet the coverage threshold
@@ -155,7 +157,8 @@ upward over time. Strict TS type-check is the first (cheapest) test tier.
 ---
 
 ## Locked default stack (low-ops, hosted, ~free — D35)
-- **Turborepo** + pnpm workspaces (D39); **Vitest** + GitHub Actions CI (D40)
+- **Turborepo** + pnpm workspaces (D39); **Biome** lint/format (D46); **Vitest** +
+  GitHub Actions CI (D40)
 - **MapLibre** (D6) + **Protomaps** static tiles + **hosted OpenRouteService**
   isochrones (D18) + hosted Photon/MapTiler geocoding
 - **Open-Meteo** weather
