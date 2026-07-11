@@ -63,7 +63,7 @@ describe('formatters', () => {
     expect(formatWindMph(16.09344)).toBe('10 mph')
     expect(formatPrecipInches(25.4)).toBe('1 in')
     expect(formatDistanceMiles(1609.344)).toBe('1 mi')
-    expect(formatAreaAcres(4046.8564224)).toBe('1 acres')
+    expect(formatAreaAcres(4046.8564224)).toBe('1 acre')
   })
 })
 
