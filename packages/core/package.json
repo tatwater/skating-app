@@ -17,5 +17,13 @@
     "@vitest/coverage-v8": "^3.0.0",
     "fast-check": "^3.23.0",
     "vitest": "^3.0.0"
+  },
+  "dependencies": {
+    "@turf/area": "^7.3.5",
+    "@turf/boolean-point-in-polygon": "^7.3.5",
+    "@turf/buffer": "^7.3.5",
+    "@turf/helpers": "^7.3.5",
+    "@turf/intersect": "^7.3.5",
+    "@turf/truncate": "^7.3.5"
   }
 }

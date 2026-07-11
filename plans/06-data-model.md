@@ -457,15 +457,25 @@ profiles 1─* pointEvents
   viewport/nearest queries.
   - **Implemented (D5):** the component is installed (`convex/convex.config.ts`) and
     `waterBodies.centroid` is indexed on `create`/`approve` with a `reviewStatus`
-    filter key, queried by `waterBodies.listInViewport` (bbox → rectangle lookup,
-    approved-only). The offline hermetic codegen (`scripts/codegen.mjs`) emits the
-    `components` handle so this typechecks/tests without a deployment; see the convex
-    package README. **Still to wire:** `reports.point` / hazard-center indexing and the
-    Turf polygon-refine step (below) — the viewport query currently filters on centroid
-    only, not the true polygon.
+    filter key, queried by `waterBodies.listInViewport`. The offline hermetic codegen
+    (`scripts/codegen.mjs`) emits the `components` handle so this typechecks/tests
+    without a deployment; see the convex package README. **Still to wire:**
+    `reports.point` / hazard-center indexing and the bbox-intersection refine (below).
+  - **Viewport semantic (decided): a body is "in view" when its `bbox` intersects the
+    viewport, not when its centroid is inside it** — a large lake can fill the screen
+    with its centroid off-screen. The component indexes *points*, so `listInViewport`
+    currently answers the narrower centroid-in-viewport (an under-approximation that's
+    fine for the pilot region's small bodies). The target implementation: query the
+    geospatial index over the viewport **expanded by the largest body's half-extent**
+    (a superset prefilter), then refine with `bboxIntersects(body.bbox, viewport)` from
+    `@skating/core` (+ optional Turf polygon clip for exact edges). Deferred to Phase 1,
+    where the OSM ETL's real polygons let us tune the expansion instead of guessing.
 - **Polygon tests** (in-isochrone, in-water-body, hazard proximity) = bbox prefilter
-  via indexed `bbox` fields + precise **Turf.js** in a Convex query/action. *(Deferred —
-  the centroid/bbox prefilter exists; the Turf refine does not yet.)*
+  via indexed `bbox` fields + precise **Turf.js** in a Convex query/action. The pure
+  Turf-backed primitives now live in `@skating/core` (`bboxIntersects`, `pointInPolygon`,
+  `polygonIoU`, `bufferedLineOverlap`, `polygonBBox`) with property tests, ready to wire
+  into a Convex query. *(The centroid/bbox prefilter exists; the Convex-side refine does
+  not yet.)*
 - **Suggested indexes:** `reports` by `waterBodyId + skateTime`, by `authorId`;
   `hazards` by `waterBodyId + status`; `follows` by `followerId` and by `followeeId`;
   `gpsActivities` by `provider + providerActivityId` (unique, dedup) and by

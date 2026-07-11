@@ -30,23 +30,29 @@ and a Clerk JWT template named `convex`).
 - **`convex/waterBodies.ts`** — user `create` (queued for after-the-fact review, D37;
   indexes the centroid into geospatial), moderator `approve` (pending user bodies only;
   writes the `moderationActions` audit row + syncs the geo filter key), `listInViewport`
-  (approved bodies whose centroid is in the map bbox, D5), `listPendingReview`.
+  (approved bodies in the map viewport, D5 — interim centroid lookup; bbox-intersection
+  is the decided target, see its doc-comment), `listPendingReview`.
 - **`convex/*.test.ts`** — `convex-test` suites: auth/role/suspension gating, upsert
   idempotency + age/username invariants, the approve→audit-log path.
 
 ## Deviations & deferrals (flagged for review)
 
-- **`profiles` renames the doc's `users` table.** Per the identity model above; update
-  `plans/06-data-model.md` to match. `clerkUserId` (+ `by_clerk_user_id` index) is the
-  Clerk tie the doc didn't spell out.
-- **Geospatial (D5) is wired for centroids; polygon refine + `geoJson` typing remain.**
+- **`profiles` renames the doc's `users` table.** Per the identity model above;
+  `plans/06-data-model.md` and `01-decisions.md` (D26) have been reconciled to match.
+  `clerkUserId` (+ `by_clerk_user_id` index) is the Clerk tie the doc didn't spell out.
+- **Geospatial (D5) is wired for centroids; the bbox-intersection refine remains.**
   `@convex-dev/geospatial` indexes water-body centroids (`waterBodies.create`/`approve`)
-  and `listInViewport` does the centroid-in-bbox lookup with an approved-only filter.
-  Still deferred: the Turf.js step that clips results to the actual polygon (a centroid
-  in-bbox doesn't mean the polygon is, and vice-versa — see the `TODO(D5)`), indexing
-  `reports.point`, and tightening `geoJson` from `v.any()` to a structured validator.
-- **Dedup-on-create (D36) is stubbed** in `waterBodies.create` (a `TODO`), pending the
-  bbox-prefilter + Turf machinery.
+  and `listInViewport` does an interim centroid-in-viewport lookup with an approved-only
+  filter. The decided target is **bbox-intersection** (a large lake shows when its bbox
+  overlaps the viewport, even if its centroid is off-screen) via an expanded geospatial
+  prefilter + `@skating/core`'s `bboxIntersects` refine — see the `listInViewport`
+  doc-comment. Still deferred: that refine, indexing `reports.point`, and tightening
+  `geoJson` from `v.any()` to a structured validator.
+- **Dedup-on-create (D36) is stubbed** in `waterBodies.create` (a `TODO`). The pure
+  geometry it needs — `polygonIoU`, `pointInPolygon`, `bufferedLineOverlap` (rivers),
+  `polygonBBox` — now lives in `@skating/core` with property tests; what remains is the
+  Convex-side wiring (bbox prefilter → these helpers → name similarity) + threshold
+  tuning against the Phase 1 OSM corpus.
 
 ## Offline codegen (why `scripts/codegen.mjs` exists)
 

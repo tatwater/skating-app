@@ -97,12 +97,23 @@ export const approve = mutation({
 })
 
 /**
- * Public: approved water bodies whose centroid falls inside the map viewport (D5).
+ * Public: approved water bodies visible in the map viewport (D5).
  *
- * The geospatial component does the cheap centroid-in-rectangle prefilter and the
- * `reviewStatus` filter server-side; we then hydrate the matched ids to full rows.
- * A body's *polygon* may extend past the viewport even when its centroid sits inside
- * (and vice-versa) — precise polygon clipping is the Turf refine step, deferred.
+ * **Target semantic (decided):** a body is "in view" when its `bbox` *intersects* the
+ * viewport — not merely when its centroid is inside it. A large lake can fill the screen
+ * with its centroid off-screen, so centroid-in-viewport wrongly drops it.
+ *
+ * **Interim implementation (this version):** the geospatial component only indexes
+ * *points*, so it answers centroid-in-rectangle. That's an under-approximation of
+ * bbox-intersection (it can miss large partially-visible bodies). It's adequate for the
+ * pilot region's mostly small bodies and lets us ship the query now.
+ *
+ * **When the time is right:** switch to bbox-intersection — query the geospatial index
+ * over the viewport *expanded by the largest body's half-extent* (a superset prefilter),
+ * then refine each candidate with `bboxIntersects(body.bbox, viewport)` from
+ * `@skating/core`; optionally a further Turf polygon clip for exact edges. This needs the
+ * real polygon corpus from the Phase 1 OSM ETL to tune the expansion, so it rides along
+ * with Phase 1 rather than being guessed against synthetic shapes now.
  */
 export const listInViewport = query({
   args: { viewport: bbox, limit: v.optional(v.number()) },
@@ -120,7 +131,8 @@ export const listInViewport = query({
       filter: (q) => q.eq('reviewStatus', 'approved'),
       limit: limit ?? 64,
     })
-    // TODO(D5): Turf refine — clip to the actual polygon, not just centroid-in-bbox.
+    // TODO(D5): bbox-intersection via `@skating/core`'s bboxIntersects over an expanded
+    // geospatial prefilter (+ optional Turf polygon clip); see the doc-comment above.
     const bodies = await Promise.all(results.map(({ key }) => ctx.db.get(key)))
     return bodies.filter((body) => body !== null)
   },
