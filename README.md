@@ -69,7 +69,7 @@ apps/
   mobile/     # Expo / React Native app (primary)
   web/        # TanStack Start web app + /admin (secondary)
 packages/
-  tokens/     # shared design tokens (FUI theme, light/dark/high-contrast)
+  design/     # shared design tokens (FUI theme, light/dark/high-contrast)
   convex/     # Convex schema, functions, client
   core/       # shared logic, types, validators (visibility, dedup, geo, units)
 plans/        # design documentation (start here today)

@@ -24,10 +24,10 @@ export const light = {
   foreground: neutral[950],
   /** Secondary text, captions, placeholders. */
   foregroundMuted: neutral[600],
-  /** Hairline dividers and control outlines. */
+  /** Subtle, decorative dividers/outlines — NOT a control's sole boundary. */
   border: neutral[200],
-  /** Higher-emphasis borders. */
-  borderStrong: neutral[300],
+  /** Load-bearing boundary — use when a border alone identifies a control (≥3:1). */
+  borderStrong: neutral[500],
   /** Brand fill — primary buttons, active states, links. */
   primary: ice[700],
   /** Text/icon on top of `primary`. */
@@ -53,7 +53,7 @@ export const dark = {
   foreground: neutral[50],
   foregroundMuted: neutral[300],
   border: neutral[800],
-  borderStrong: neutral[700],
+  borderStrong: neutral[400],
   primary: ice[400],
   primaryForeground: neutral[950],
   ring: ice[400],

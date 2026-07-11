@@ -18,8 +18,17 @@ const TEXT_PAIRS: Array<[SemanticColorToken, SemanticColorToken]> = [
   ['successForeground', 'success'],
 ]
 
-/** Non-text UI pairs held to the graphical-object minimum (3:1). */
-const NON_TEXT_PAIRS: Array<[SemanticColorToken, SemanticColorToken]> = [['ring', 'background']]
+/**
+ * Non-text UI pairs held to the graphical-object minimum (3:1, WCAG 1.4.11).
+ * `borderStrong` is the load-bearing boundary token, so it must stay legible on
+ * whatever it sits on (page or card); `border` is decorative and exempt.
+ */
+const NON_TEXT_PAIRS: Array<[SemanticColorToken, SemanticColorToken]> = [
+  ['ring', 'background'],
+  ['borderStrong', 'background'],
+  ['borderStrong', 'surface'],
+  ['borderStrong', 'surfaceMuted'],
+]
 
 describe('theme structure', () => {
   it('exposes exactly the named themes', () => {
