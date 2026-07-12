@@ -15,6 +15,7 @@
   },
   "scripts": {
     "codegen": "node scripts/codegen.mjs",
+    "build": "pnpm codegen",
     "check-types": "pnpm codegen && tsc --noEmit",
     "test": "pnpm codegen && vitest run --coverage",
     "test:watch": "pnpm codegen && vitest"

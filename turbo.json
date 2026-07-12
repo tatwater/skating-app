@@ -3,7 +3,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"]
+      "outputs": ["dist/**"],
+      "env": ["SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN"]
     },
     "check-types": {
       "dependsOn": ["^check-types"]

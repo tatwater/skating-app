@@ -2,6 +2,9 @@
   "$schema": "https://turborepo.dev/schema.json",
   "extends": ["//"],
   "tasks": {
+    "build": {
+      "outputs": ["convex/_generated/**"]
+    },
     "check-types": {
       "dependsOn": ["^check-types"],
       "outputs": ["convex/_generated/**"]
