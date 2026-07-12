@@ -24,6 +24,16 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - Convex project + schema from `06-data-model.md`.
 - **Clerk** auth wired to Convex (D26), on both Expo + web, with the **age gate (16+)**
   and **assumption-of-risk acknowledgment** at signup (D41/D45).
+  - **Shipped:** the server contract is the trust boundary (D37) — `profiles.upsertFromClerk`
+    enforces the 16+ DOB gate and **requires + records** a current risk acknowledgment
+    (`RISK_ACK_VERSION` single-sourced in `@skating/core`). Mobile sign-up UI collects DOB +
+    shows the blocking acknowledgment.
+  - **⏳ Remaining Phase 0 (auth-provisioning PR):** wire the mobile client to actually
+    **call `upsertFromClerk`** (today it only stages DOB + ack in Clerk `unsafeMetadata`),
+    which also needs the **username/displayName collection UI**. Until then the client
+    gates are UX-level. Passing DOB + ack must go through the enforced mutation, never
+    `unsafeMetadata`. See D41/D45 status notes. (Also: a low-priority `@skating/core`
+    fix for the UTC-vs-local birthday boundary — D41.)
 - App shells: **Expo** (Expo Router tabs) + **TanStack Start** (deployed to
   **Vercel**, D27).
 - FUI design tokens consumed by Tailwind (web) + Tamagui (mobile) (D7), with

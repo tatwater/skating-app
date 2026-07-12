@@ -1,5 +1,5 @@
 import { useAuth, useUser } from '@clerk/clerk-expo'
-import { Link } from 'expo-router'
+import { Link, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Button, H1, Paragraph, Separator, YStack } from 'tamagui'
 
@@ -11,6 +11,14 @@ import { Button, H1, Paragraph, Separator, YStack } from 'tamagui'
 export default function YouScreen() {
   const { signOut } = useAuth()
   const { user } = useUser()
+  const router = useRouter()
+
+  // The parent Stack.Protected guard swaps the tree on sign-out, but from a nested tab
+  // that transition can leave us on a stale child route; replace explicitly as a fallback.
+  async function onSignOut() {
+    await signOut()
+    router.replace('/sign-in')
+  }
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
@@ -27,7 +35,7 @@ export default function YouScreen() {
           <Button>About &amp; licenses</Button>
         </Link>
 
-        <Button backgroundColor="$danger" color="$dangerForeground" onPress={() => signOut()}>
+        <Button backgroundColor="$danger" color="$dangerForeground" onPress={onSignOut}>
           Sign out
         </Button>
       </YStack>

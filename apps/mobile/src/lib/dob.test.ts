@@ -21,4 +21,11 @@ describe('parseDateOfBirth', () => {
     expect(parseDateOfBirth('2021-13-01')).toBeNull()
     expect(parseDateOfBirth('2021-00-10')).toBeNull()
   })
+
+  it('rejects implausibly ancient years that would sail past the age gate', () => {
+    expect(parseDateOfBirth('0100-01-01')).toBeNull()
+    expect(parseDateOfBirth('1899-12-31')).toBeNull()
+    // Boundary: 1900 is the earliest accepted year.
+    expect(parseDateOfBirth('1900-01-01')).toBe(Date.UTC(1900, 0, 1))
+  })
 })

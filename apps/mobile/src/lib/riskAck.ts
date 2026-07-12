@@ -1,10 +1,17 @@
 /**
- * Interim assumption-of-risk acknowledgment (D45). Recorded at signup with a version
- * so we can re-prompt if the wording changes. Stashed in Clerk `unsafeMetadata` at
- * sign-up; the Convex `profiles.upsertFromClerk` bridge persists it onto the profile
- * (`riskAckVersion` / `riskAckAt`). Full legal wording remains Q10.
+ * Interim assumption-of-risk acknowledgment (D45). The version is single-sourced in
+ * `@skating/core` so the app and the Convex backend agree on what "current" means; the
+ * backend now *requires* a current acknowledgment in `upsertFromClerk` (the trust
+ * boundary, D37). Full legal wording remains Q10.
+ *
+ * NOTE (still to come — auth-provisioning PR): signup currently only stages the DOB +
+ * acknowledgment in Clerk `unsafeMetadata`; the client does not yet *call*
+ * `upsertFromClerk`, so no profile (and no recorded acceptance) exists until that wiring
+ * lands. The server contract is ready and safe — it will reject any provisioning attempt
+ * that omits a current acknowledgment — so the gap is purely the client wiring + the
+ * username/displayName collection UI. Tracked in `plans/` (D45 / roadmap Phase 0).
  */
-export const RISK_ACK_VERSION = '2026-07-11'
+export { RISK_ACK_VERSION } from '@skating/core'
 
 export const RISK_ACK_COPY =
   'Reports in this app are peers’ observations at a specific time and place — never a ' +

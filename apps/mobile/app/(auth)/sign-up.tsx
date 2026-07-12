@@ -12,8 +12,10 @@ import { RISK_ACK_COPY, RISK_ACK_VERSION } from '../../src/lib/riskAck'
  * Sign-up with the two blocking Phase 0 gates:
  *  - 16+ age gate from a collected date of birth (D41) — validated via `@skating/core`.
  *  - Assumption-of-risk acknowledgment (D45).
- * Both DOB and the risk-ack (version + timestamp) ride along in Clerk `unsafeMetadata`
- * so the Convex profile bridge can persist them. Email-code verification finishes signup.
+ * These gates are UX-level for now: DOB + risk-ack are staged in Clerk `unsafeMetadata`
+ * and the real server-side enforcement (persist + require them in `upsertFromClerk`)
+ * lands with profile provisioning — see the note in `src/lib/riskAck.ts`. Email-code
+ * verification finishes signup.
  */
 export default function SignUpScreen() {
   const { signUp, setActive, isLoaded } = useSignUp()

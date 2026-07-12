@@ -1,6 +1,7 @@
 export * from './age'
 export * from './geometry'
 export * from './hazards'
+export * from './riskAck'
 export * from './types'
 export * from './units'
 export * from './visibility'

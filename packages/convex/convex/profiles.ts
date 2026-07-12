@@ -7,7 +7,7 @@
  * idempotent so it's safe to call on every app launch.
  */
 
-import { isMinor, meetsMinimumAge } from '@skating/core'
+import { isCurrentRiskAckVersion, isMinor, meetsMinimumAge } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import { getCurrentProfile } from './lib/auth'
@@ -30,6 +30,8 @@ export const upsertFromClerk = mutation({
     displayName: v.string(),
     username: v.string(),
     dateOfBirth: v.number(), // UTC-midnight epoch ms; gate + minor status derived (D41)
+    riskAckVersion: v.string(), // must be the current version (D45); rejected otherwise
+    riskAckAt: v.number(), // when the user accepted (client-supplied epoch ms)
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity()
@@ -43,6 +45,13 @@ export const upsertFromClerk = mutation({
       throw new ConvexError('You must be at least 16 years old')
     }
     const minor = isMinor(args.dateOfBirth, now)
+
+    // Assumption-of-risk acknowledgment (D45). The Convex function is the trust boundary
+    // (D37), so a profile can't be created OR kept in sync without a *current* recorded
+    // acceptance — never trust a client-side gate. Bumping the version re-prompts users.
+    if (!isCurrentRiskAckVersion(args.riskAckVersion)) {
+      throw new ConvexError('You must accept the current assumption-of-risk acknowledgment')
+    }
 
     const existing = await ctx.db
       .query('profiles')
@@ -74,11 +83,16 @@ export const upsertFromClerk = mutation({
       // Re-assert follow-approval while the account is a minor; never silently *remove*
       // an existing requirement. So on the 18th birthday (minor → false) protection
       // persists — the public options simply become available for the user to choose (D41).
+      // Keep the *original* acceptance time when the version is unchanged (a routine
+      // app-launch re-sync); only stamp a new time when the user accepts a bumped version.
+      const reAccepted = existing.riskAckVersion !== args.riskAckVersion
       await ctx.db.patch(existing._id, {
         displayName: args.displayName,
         username: args.username,
         dateOfBirth: args.dateOfBirth,
         requireFollowApproval: minor || existing.requireFollowApproval,
+        riskAckVersion: args.riskAckVersion,
+        riskAckAt: reAccepted ? args.riskAckAt : (existing.riskAckAt ?? args.riskAckAt),
       })
       return existing._id
     }
@@ -88,6 +102,8 @@ export const upsertFromClerk = mutation({
       displayName: args.displayName,
       username: args.username,
       dateOfBirth: args.dateOfBirth,
+      riskAckVersion: args.riskAckVersion,
+      riskAckAt: args.riskAckAt,
       driveTimePrefMinutes: 60,
       requireFollowApproval: minor, // minors default to approval-required (D41)
       notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
