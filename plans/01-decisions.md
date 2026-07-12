@@ -537,13 +537,15 @@ posture around collecting minors' birthdates is flagged for the ToS/legal review
 - **⏳ Still to come:** like the acknowledgment (see D45's status note), the mobile client
   doesn't yet *call* `upsertFromClerk`, so the client-side age gate is UX-level until the
   auth-provisioning PR wires it through the enforced mutation path.
-- **⏳ Known edge to address in `@skating/core` (low priority):** the age check compares a
-  **UTC-midnight DOB** against the **current instant**, so a user exactly on their 16th (or
-  18th) birthday in a timezone *ahead of* UTC is evaluated ~a day behind their local
-  calendar — briefly rejected until UTC catches up. It **fails safe** (never admits anyone
-  early) and client/server always agree (same core math), so it's a minor correctness nit,
-  not a hole. Fix in core (compare calendar-date to calendar-date in the user's local tz)
-  with its own tests, alongside the existing birthday-transition logic.
+- **Done — timezone birthday boundary (was review finding 4):** the signup gate
+  (`meetsMinimumAge`) previously compared a **UTC-midnight DOB** against the **current
+  instant**, so a user already 16 on their *local* calendar in a timezone ahead of UTC was
+  briefly rejected until UTC caught up. Fixed in `@skating/core` by evaluating the gate at
+  `now + MAX_UTC_OFFSET_AHEAD_MS` (UTC+14, the widest real offset) — a fixed cushion, so it
+  stays deterministic and client/server still agree (both pass `Date.now()`). `isMinor` is
+  deliberately left on plain-UTC semantics: the protections it drives persist past 18
+  regardless (a birthday never widens anything already set), so its sub-day boundary skew
+  removes no protection early and is immaterial.
 
 ## D42 — Photo EXIF stripping + opt-in geotag placement
 **Decided.** **Strip all EXIF on upload by default**, with **two fields deliberately

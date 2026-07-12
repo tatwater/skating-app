@@ -32,8 +32,7 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
     **call `upsertFromClerk`** (today it only stages DOB + ack in Clerk `unsafeMetadata`),
     which also needs the **username/displayName collection UI**. Until then the client
     gates are UX-level. Passing DOB + ack must go through the enforced mutation, never
-    `unsafeMetadata`. See D41/D45 status notes. (Also: a low-priority `@skating/core`
-    fix for the UTC-vs-local birthday boundary — D41.)
+    `unsafeMetadata`. See D41/D45 status notes.
 - App shells: **Expo** (Expo Router tabs) + **TanStack Start** (deployed to
   **Vercel**, D27).
 - FUI design tokens consumed by Tailwind (web) + Tamagui (mobile) (D7), with
