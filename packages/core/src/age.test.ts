@@ -29,8 +29,17 @@ describe('isMinor / meetsMinimumAge', () => {
   })
 
   it('enforces the hard 16+ minimum at the boundary', () => {
-    expect(meetsMinimumAge(dob, utc(2016, 5, 14))).toBe(false) // day before 16th
-    expect(meetsMinimumAge(dob, utc(2016, 5, 15))).toBe(true) // 16th birthday
+    expect(meetsMinimumAge(dob, utc(2016, 5, 14))).toBe(false) // day before 16th (UTC)
+    expect(meetsMinimumAge(dob, utc(2016, 5, 15))).toBe(true) // 16th birthday (UTC)
+  })
+
+  it('does not reject a signup already 16 on their local calendar ahead of UTC (finding 4)', () => {
+    // A few hours before UTC-midnight of the 16th birthday it is still "yesterday" in
+    // UTC, but already the birthday in a timezone ahead of UTC — must not be rejected.
+    const hoursBeforeUtcMidnight = utc(2016, 5, 15) - 3 * 60 * 60 * 1000
+    expect(meetsMinimumAge(dob, hoursBeforeUtcMidnight)).toBe(true)
+    // But a full day earlier is genuinely too young in every timezone.
+    expect(meetsMinimumAge(dob, utc(2016, 5, 13))).toBe(false)
   })
 
   it('keeps the constants in the expected relationship', () => {

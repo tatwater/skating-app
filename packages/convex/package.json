@@ -3,6 +3,16 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
+  "exports": {
+    "./api": {
+      "types": "./convex/_generated/api.d.ts",
+      "default": "./convex/_generated/api.js"
+    },
+    "./dataModel": {
+      "types": "./convex/_generated/dataModel.d.ts"
+    },
+    "./schema": "./convex/schema.ts"
+  },
   "scripts": {
     "codegen": "node scripts/codegen.mjs",
     "check-types": "pnpm codegen && tsc --noEmit",

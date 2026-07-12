@@ -1,4 +1,4 @@
-import { isMinor } from '@skating/core'
+import { isMinor, RISK_ACK_VERSION } from '@skating/core'
 import { convexTest } from 'convex-test'
 import { describe, expect, test } from 'vitest'
 import { api } from './_generated/api'
@@ -7,6 +7,14 @@ import schema from './schema'
 // Vite-glob of every function module, handed to convex-test (required in a monorepo
 // where the convex dir isn't the Vite project root).
 const modules = import.meta.glob('./**/*.*s')
+
+// Every provisioning call must carry a current assumption-of-risk acknowledgment (D45);
+// this fills those two args so each test only spells out what it's actually exercising.
+const withAck = <T extends object>(args: T) => ({
+  riskAckVersion: RISK_ACK_VERSION,
+  riskAckAt: Date.UTC(2026, 6, 11),
+  ...args,
+})
 
 // Dates of birth relative to the current year, so age math (which uses Date.now()) is
 // stable regardless of when the suite runs. Born Jan 1 → the age holds all year.
@@ -19,11 +27,10 @@ describe('profiles.upsertFromClerk', () => {
   test('throws when unauthenticated', async () => {
     const t = convexTest(schema, modules)
     await expect(
-      t.mutation(api.profiles.upsertFromClerk, {
-        displayName: 'Ada',
-        username: 'ada',
-        dateOfBirth: ADULT_DOB,
-      }),
+      t.mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+      ),
     ).rejects.toThrow(/not authenticated/i)
   })
 
@@ -31,11 +38,10 @@ describe('profiles.upsertFromClerk', () => {
     const t = convexTest(schema, modules)
     const asAda = t.withIdentity({ subject: 'clerk_ada' })
 
-    const id = await asAda.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Ada',
-      username: 'ada',
-      dateOfBirth: ADULT_DOB,
-    })
+    const id = await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
 
     const profile = await asAda.query(api.profiles.current, {})
     expect(profile?._id).toEqual(id)
@@ -49,20 +55,75 @@ describe('profiles.upsertFromClerk', () => {
     expect(profile?.notificationPrefs.hazardConfirmation).toBe(true)
   })
 
+  test('records a current assumption-of-risk acknowledgment on provision (D45)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+
+    await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
+
+    const profile = await asAda.query(api.profiles.current, {})
+    expect(profile?.riskAckVersion).toBe(RISK_ACK_VERSION)
+    expect(profile?.riskAckAt).toBe(Date.UTC(2026, 6, 11))
+  })
+
+  test('rejects a stale or missing risk acknowledgment (D45)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    await expect(
+      asAda.mutation(
+        api.profiles.upsertFromClerk,
+        withAck({
+          displayName: 'Ada',
+          username: 'ada',
+          dateOfBirth: ADULT_DOB,
+          riskAckVersion: '1970-01-01', // not the current version
+        }),
+      ),
+    ).rejects.toThrow(/assumption-of-risk/i)
+    // No profile should have been provisioned.
+    expect(await asAda.query(api.profiles.current, {})).toBeNull()
+  })
+
+  test('preserves the original acceptance time on a same-version re-sync (D45)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    const originalAt = Date.UTC(2026, 6, 11)
+
+    await asAda.mutation(api.profiles.upsertFromClerk, {
+      displayName: 'Ada',
+      username: 'ada',
+      dateOfBirth: ADULT_DOB,
+      riskAckVersion: RISK_ACK_VERSION,
+      riskAckAt: originalAt,
+    })
+    // A later app-launch sync (same version) passes a newer timestamp — we keep the first.
+    await asAda.mutation(api.profiles.upsertFromClerk, {
+      displayName: 'Ada',
+      username: 'ada',
+      dateOfBirth: ADULT_DOB,
+      riskAckVersion: RISK_ACK_VERSION,
+      riskAckAt: originalAt + 1_000_000,
+    })
+
+    const profile = await asAda.query(api.profiles.current, {})
+    expect(profile?.riskAckAt).toBe(originalAt)
+  })
+
   test('is idempotent — a second call patches the same profile', async () => {
     const t = convexTest(schema, modules)
     const asAda = t.withIdentity({ subject: 'clerk_ada' })
 
-    const first = await asAda.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Ada',
-      username: 'ada',
-      dateOfBirth: ADULT_DOB,
-    })
-    const second = await asAda.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Ada Lovelace',
-      username: 'ada',
-      dateOfBirth: ADULT_DOB,
-    })
+    const first = await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
+    const second = await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada Lovelace', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
 
     expect(second).toEqual(first)
     const profile = await asAda.query(api.profiles.current, {})
@@ -76,11 +137,10 @@ describe('profiles.upsertFromClerk', () => {
     const t = convexTest(schema, modules)
     const asKid = t.withIdentity({ subject: 'clerk_kid' })
     await expect(
-      asKid.mutation(api.profiles.upsertFromClerk, {
-        displayName: 'Kid',
-        username: 'kid',
-        dateOfBirth: UNDER_16_DOB,
-      }),
+      asKid.mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'Kid', username: 'kid', dateOfBirth: UNDER_16_DOB }),
+      ),
     ).rejects.toThrow(/16 years old/i)
     // No profile should have been provisioned.
     expect(await asKid.query(api.profiles.current, {})).toBeNull()
@@ -88,34 +148,34 @@ describe('profiles.upsertFromClerk', () => {
 
   test('rejects a username already held by another user', async () => {
     const t = convexTest(schema, modules)
-    await t.withIdentity({ subject: 'clerk_a' }).mutation(api.profiles.upsertFromClerk, {
-      displayName: 'A',
-      username: 'ada',
-      dateOfBirth: ADULT_DOB,
-    })
+    await t
+      .withIdentity({ subject: 'clerk_a' })
+      .mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'A', username: 'ada', dateOfBirth: ADULT_DOB }),
+      )
     await expect(
-      t.withIdentity({ subject: 'clerk_b' }).mutation(api.profiles.upsertFromClerk, {
-        displayName: 'B',
-        username: 'ada',
-        dateOfBirth: ADULT_DOB,
-      }),
+      t
+        .withIdentity({ subject: 'clerk_b' })
+        .mutation(
+          api.profiles.upsertFromClerk,
+          withAck({ displayName: 'B', username: 'ada', dateOfBirth: ADULT_DOB }),
+        ),
     ).rejects.toThrow(/already taken/i)
   })
 
   test('re-upsert keeping your own username is allowed', async () => {
     const t = convexTest(schema, modules)
     const asAda = t.withIdentity({ subject: 'clerk_ada' })
-    await asAda.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Ada',
-      username: 'ada',
-      dateOfBirth: ADULT_DOB,
-    })
+    await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
     await expect(
-      asAda.mutation(api.profiles.upsertFromClerk, {
-        displayName: 'Ada L',
-        username: 'ada',
-        dateOfBirth: ADULT_DOB,
-      }),
+      asAda.mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'Ada L', username: 'ada', dateOfBirth: ADULT_DOB }),
+      ),
     ).resolves.toBeDefined()
   })
 
@@ -123,11 +183,10 @@ describe('profiles.upsertFromClerk', () => {
     const t = convexTest(schema, modules)
     const asTeen = t.withIdentity({ subject: 'clerk_teen' })
 
-    await asTeen.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Teen',
-      username: 'teen',
-      dateOfBirth: MINOR_DOB,
-    })
+    await asTeen.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Teen', username: 'teen', dateOfBirth: MINOR_DOB }),
+    )
 
     const profile = await asTeen.query(api.profiles.current, {})
     expect(profile && isMinor(profile.dateOfBirth, Date.now())).toBe(true)
@@ -138,22 +197,20 @@ describe('profiles.upsertFromClerk', () => {
     const t = convexTest(schema, modules)
     const asUser = t.withIdentity({ subject: 'clerk_grows' })
     // Provisioned as a minor → approval required.
-    await asUser.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Teen',
-      username: 'teen',
-      dateOfBirth: MINOR_DOB,
-    })
+    await asUser.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Teen', username: 'teen', dateOfBirth: MINOR_DOB }),
+    )
     const asMinor = await asUser.query(api.profiles.current, {})
     expect(asMinor && isMinor(asMinor.dateOfBirth, Date.now())).toBe(true)
     expect(asMinor?.requireFollowApproval).toBe(true)
 
     // Reaching adulthood (here an adult DOB on the next sync) must NOT strip the
     // protection they held as a minor — it persists until they widen it themselves (D41).
-    await asUser.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Teen',
-      username: 'teen',
-      dateOfBirth: ADULT_DOB,
-    })
+    await asUser.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Teen', username: 'teen', dateOfBirth: ADULT_DOB }),
+    )
     const grown = await asUser.query(api.profiles.current, {})
     expect(grown && isMinor(grown.dateOfBirth, Date.now())).toBe(false)
     expect(grown?.requireFollowApproval).toBe(true)
@@ -162,19 +219,17 @@ describe('profiles.upsertFromClerk', () => {
   test('an inactive account cannot rename or squat a username via the upsert (D37)', async () => {
     const t = convexTest(schema, modules)
     const asUser = t.withIdentity({ subject: 'clerk_banned' })
-    const id = await asUser.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Real Name',
-      username: 'realname',
-      dateOfBirth: ADULT_DOB,
-    })
+    const id = await asUser.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Real Name', username: 'realname', dateOfBirth: ADULT_DOB }),
+    )
     await t.run((ctx) => ctx.db.patch(id, { status: 'banned' }))
 
     // App-launch sync with changed fields is a no-op for an inactive account.
-    await asUser.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Evasion Name',
-      username: 'newhandle',
-      dateOfBirth: ADULT_DOB,
-    })
+    await asUser.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Evasion Name', username: 'newhandle', dateOfBirth: ADULT_DOB }),
+    )
     const profile = await t.run((ctx) => ctx.db.get(id))
     expect(profile?.displayName).toBe('Real Name')
     expect(profile?.username).toBe('realname')
@@ -182,30 +237,27 @@ describe('profiles.upsertFromClerk', () => {
     // The attempted handle was never reserved — an active user can still claim it.
     const asOther = t.withIdentity({ subject: 'clerk_other' })
     await expect(
-      asOther.mutation(api.profiles.upsertFromClerk, {
-        displayName: 'Other',
-        username: 'newhandle',
-        dateOfBirth: ADULT_DOB,
-      }),
+      asOther.mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'Other', username: 'newhandle', dateOfBirth: ADULT_DOB }),
+      ),
     ).resolves.toBeDefined()
   })
 
   test('a deleted account keeps its scrubbed PII on re-sync (D33)', async () => {
     const t = convexTest(schema, modules)
     const asUser = t.withIdentity({ subject: 'clerk_deleted' })
-    const id = await asUser.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Jane Doe',
-      username: 'jane',
-      dateOfBirth: ADULT_DOB,
-    })
+    const id = await asUser.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Jane Doe', username: 'jane', dateOfBirth: ADULT_DOB }),
+    )
     // Simulate the D33 deletion scrub.
     await t.run((ctx) => ctx.db.patch(id, { status: 'deleted', displayName: 'deleted user' }))
 
-    await asUser.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Jane Doe',
-      username: 'jane',
-      dateOfBirth: ADULT_DOB,
-    })
+    await asUser.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Jane Doe', username: 'jane', dateOfBirth: ADULT_DOB }),
+    )
     const profile = await t.run((ctx) => ctx.db.get(id))
     expect(profile?.displayName).toBe('deleted user')
   })

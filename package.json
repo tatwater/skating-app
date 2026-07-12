@@ -6,6 +6,8 @@
   "scripts": {
     "build": "turbo run build",
     "dev": "turbo run dev",
+    "convex-dev": "pnpm --filter @skating/convex exec convex dev",
+    "convex-deploy": "pnpm --filter @skating/convex exec convex deploy",
     "check-types": "turbo run check-types",
     "test": "turbo run test",
     "lint": "biome check .",

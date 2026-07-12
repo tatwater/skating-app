@@ -46,8 +46,9 @@ water body to see its name, surface area, and a feed of past reports (sorted by
    be near-instant. Cold + wind drains phone batteries fast; minimize taps,
    minimize battery use, support offline capture with later sync.
 3. **Respect the existing community & its safety culture.** Don't lecture experts.
-   Reference guides live elsewhere — e.g. the **Nordic Skater** site
-   (<https://nordicskaters.squarespace.com/>), whose terminology this app adopts
+   Reference guides live elsewhere — e.g. the **Nordic Skater** sites
+   (<https://nordicskaters.squarespace.com/> and <http://lakeice.squarespace.com/>),
+   whose terminology this app adopts
    (see `06-data-model.md` vocabulary) — so we link out and let people jump straight
    to reading/submitting reports. Recruit and bridge, don't replace-by-force.
 4. **Privacy by default where it matters.** Home address is private to the user

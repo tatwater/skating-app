@@ -1,0 +1,23 @@
+/**
+ * Centralized, validated access to client env (D26/D2/D29). All three are *public*
+ * client keys, so they use Expo's `EXPO_PUBLIC_` prefix (Metro inlines them at build).
+ * Real values live in `.env.local` (gitignored); `.env.example` documents them.
+ *
+ * We fall back to obvious placeholders rather than throwing so the app still boots
+ * for UI work before keys are provisioned — sign-in / telemetry simply stay inert.
+ */
+
+const CONVEX_URL_PLACEHOLDER = 'https://placeholder.convex.cloud'
+
+export const env = {
+  clerkPublishableKey: process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '',
+  convexUrl: process.env.EXPO_PUBLIC_CONVEX_URL ?? CONVEX_URL_PLACEHOLDER,
+  sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN ?? '',
+} as const
+
+/** True once the corresponding real key has been provisioned (not a placeholder). */
+export const isConfigured = {
+  clerk: env.clerkPublishableKey.startsWith('pk_'),
+  convex: env.convexUrl !== CONVEX_URL_PLACEHOLDER,
+  sentry: env.sentryDsn.length > 0,
+} as const

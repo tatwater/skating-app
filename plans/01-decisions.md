@@ -529,6 +529,23 @@ was a non-event. Deriving age from a stored DOB makes that transition automatic
 bounded relaxation of D11's minimization in exchange for correct lifecycle handling: DOB
 is treated as sensitive PII (**scrubbed on deletion, D33**), and the precise compliance
 posture around collecting minors' birthdates is flagged for the ToS/legal review (Q10).
+**Implementation status (Phase 0, 2026-07-11):**
+- **Done — server gate:** `convex/profiles.upsertFromClerk` takes `dateOfBirth` and enforces
+  the hard 16+ minimum server-side (`meetsMinimumAge`, `@skating/core`); minor status is
+  derived, so it self-corrects at 18 with no job. `parseDateOfBirth` (mobile) now rejects
+  implausibly ancient years (< 1900) so junk dates can't sail past the gate as "very old".
+- **⏳ Still to come:** like the acknowledgment (see D45's status note), the mobile client
+  doesn't yet *call* `upsertFromClerk`, so the client-side age gate is UX-level until the
+  auth-provisioning PR wires it through the enforced mutation path.
+- **Done — timezone birthday boundary (was review finding 4):** the signup gate
+  (`meetsMinimumAge`) previously compared a **UTC-midnight DOB** against the **current
+  instant**, so a user already 16 on their *local* calendar in a timezone ahead of UTC was
+  briefly rejected until UTC caught up. Fixed in `@skating/core` by evaluating the gate at
+  `now + MAX_UTC_OFFSET_AHEAD_MS` (UTC+14, the widest real offset) — a fixed cushion, so it
+  stays deterministic and client/server still agree (both pass `Date.now()`). `isMinor` is
+  deliberately left on plain-UTC semantics: the protections it drives persist past 18
+  regardless (a birthday never widens anything already set), so its sub-day boundary skew
+  removes no protection early and is immaterial.
 
 ## D42 — Photo EXIF stripping + opt-in geotag placement
 **Decided.** **Strip all EXIF on upload by default**, with **two fields deliberately
@@ -598,6 +615,21 @@ ToS/assumption-of-risk/disclaimer review remains **Q10** before any broad launch
 **Why:** Reinforces D3 at the one moment we have the user's full attention, and gives
 us a recorded acknowledgment now without waiting on the full legal pass. Cheap,
 honest, and directly on-mission.
+**Implementation status (Phase 0, 2026-07-11):**
+- **Done — server contract (the trust boundary, D37):** `RISK_ACK_VERSION` is single-
+  sourced in `@skating/core`; `convex/profiles.upsertFromClerk` **requires a *current*
+  acknowledgment** (rejects stale/missing) and records `riskAckVersion`/`riskAckAt` on the
+  profile, preserving the original acceptance time on a same-version app-launch re-sync
+  (only re-stamped when the user accepts a bumped version). So a profile **cannot exist
+  without a recorded, current acceptance** — regardless of what any client does.
+- **Done — mobile UI:** the sign-up screen shows the blocking acknowledgment + collects DOB.
+- **⏳ Still to come (auth-provisioning PR):** the mobile client does **not yet call
+  `upsertFromClerk`** — at signup it only *stages* DOB + the acknowledgment in Clerk
+  `unsafeMetadata` (client-writable, read by nothing server-side). So today the age/risk
+  gates are **UX-level on the client**, backed by a ready-and-safe server contract that
+  isn't invoked yet. Wiring provisioning requires the username/displayName collection UI,
+  so it's scoped with that work — the client must pass DOB + the acknowledgment **from the
+  enforced mutation path**, never trusting `unsafeMetadata`. Tracked in roadmap Phase 0.
 
 ## D46 — Lint + format: Biome (repo-wide)
 **Decided.** **Biome** is the single lint + format tool for the whole repo (one
