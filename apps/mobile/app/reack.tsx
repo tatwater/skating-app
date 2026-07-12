@@ -5,8 +5,9 @@ import { ConvexError } from 'convex/values'
 import { useState } from 'react'
 import { ScrollView } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, H1, Paragraph, Text, XStack, YStack } from 'tamagui'
-import { RISK_ACK_COPY, RISK_ACK_VERSION } from '../src/lib/riskAck'
+import { Button, H1, Paragraph, Text, YStack } from 'tamagui'
+import { RiskAckConsent } from '../src/components/RiskAckConsent'
+import { RISK_ACK_VERSION } from '../src/lib/riskAck'
 
 /**
  * Re-acceptance gate (D45). Reached when a signed-in user already has a profile but its
@@ -53,14 +54,7 @@ export default function ReAckScreen() {
             Skating — nothing else about your account changes.
           </Paragraph>
 
-          <XStack gap="$3" alignItems="flex-start" onPress={() => setAck((v) => !v)}>
-            <Text color={ack ? '$primary' : '$foregroundMuted'} fontSize="$6">
-              {ack ? '☑' : '☐'}
-            </Text>
-            <Paragraph flex={1} color="$foregroundMuted">
-              {RISK_ACK_COPY}
-            </Paragraph>
-          </XStack>
+          <RiskAckConsent checked={ack} onToggle={() => setAck((v) => !v)} />
 
           {error ? <Text color="$danger">{error}</Text> : null}
 

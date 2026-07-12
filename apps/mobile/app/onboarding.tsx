@@ -12,9 +12,10 @@ import { ConvexError } from 'convex/values'
 import { useState } from 'react'
 import { ScrollView } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, H1, Input, Paragraph, Text, XStack, YStack } from 'tamagui'
+import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui'
+import { RiskAckConsent } from '../src/components/RiskAckConsent'
 import { parseDateOfBirth } from '../src/lib/dob'
-import { RISK_ACK_COPY, RISK_ACK_VERSION } from '../src/lib/riskAck'
+import { RISK_ACK_VERSION } from '../src/lib/riskAck'
 
 /**
  * Profile provisioning (D26). Reached only when the user is Clerk-authenticated but has
@@ -124,14 +125,7 @@ export default function OnboardingScreen() {
             ) : null}
           </YStack>
 
-          <XStack gap="$3" alignItems="flex-start" onPress={() => setAck((v) => !v)}>
-            <Text color={ack ? '$primary' : '$foregroundMuted'} fontSize="$6">
-              {ack ? '☑' : '☐'}
-            </Text>
-            <Paragraph flex={1} color="$foregroundMuted">
-              {RISK_ACK_COPY}
-            </Paragraph>
-          </XStack>
+          <RiskAckConsent checked={ack} onToggle={() => setAck((v) => !v)} />
 
           {error ? <Text color="$danger">{error}</Text> : null}
 

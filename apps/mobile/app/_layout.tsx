@@ -1,10 +1,10 @@
 import { useAuth } from '@clerk/clerk-expo'
 import * as Sentry from '@sentry/react-native'
 import { api } from '@skating/convex/api'
-import { isCurrentRiskAckVersion } from '@skating/core'
 import { useQuery } from 'convex/react'
 import { Stack } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { resolveAuthRoute } from '../src/lib/authRoute'
 import { initSentry } from '../src/lib/sentry'
 import { Providers } from '../src/providers/Providers'
 
@@ -32,30 +32,25 @@ function RootNavigator() {
   // Skip until Clerk confirms a session — unauthenticated the query would just be null.
   const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip')
 
-  const provisioning = isSignedIn && profile === undefined
-  if (!isLoaded || provisioning) return null
-
-  // A row is only "done" once it records the current acknowledgment (not mere existence).
-  const provisioned = !!profile && isCurrentRiskAckVersion(profile.riskAckVersion)
-  const needsOnboarding = isSignedIn && profile === null
-  const needsReAck = isSignedIn && !!profile && !provisioned
+  const route = resolveAuthRoute({ isLoaded, isSignedIn, profile })
+  if (route === 'loading') return null
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={provisioned}>
+      <Stack.Protected guard={route === 'app'}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="about"
           options={{ presentation: 'modal', headerShown: true, title: 'About' }}
         />
       </Stack.Protected>
-      <Stack.Protected guard={needsOnboarding}>
+      <Stack.Protected guard={route === 'onboarding'}>
         <Stack.Screen name="onboarding" />
       </Stack.Protected>
-      <Stack.Protected guard={needsReAck}>
+      <Stack.Protected guard={route === 'reack'}>
         <Stack.Screen name="reack" />
       </Stack.Protected>
-      <Stack.Protected guard={!isSignedIn}>
+      <Stack.Protected guard={route === 'auth'}>
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
     </Stack>
