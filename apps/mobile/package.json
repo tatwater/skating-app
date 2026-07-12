@@ -1,0 +1,50 @@
+{
+  "name": "@skating/mobile",
+  "version": "0.0.1",
+  "private": true,
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start --dev-client",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "prebuild": "expo prebuild",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@clerk/clerk-expo": "^2.19.31",
+    "@sentry/react-native": "~7.11.0",
+    "@skating/convex": "workspace:*",
+    "@skating/core": "workspace:*",
+    "@skating/design": "workspace:*",
+    "@tamagui/config": "^2.4.4",
+    "convex": "^1.42.1",
+    "expo": "latest",
+    "expo-auth-session": "~57.0.2",
+    "expo-constants": "~57.0.3",
+    "expo-dev-client": "~57.0.5",
+    "expo-linking": "~57.0.2",
+    "expo-router": "~57.0.4",
+    "expo-secure-store": "~57.0.0",
+    "expo-splash-screen": "~57.0.2",
+    "expo-status-bar": "~57.0.0",
+    "expo-system-ui": "~57.0.0",
+    "expo-web-browser": "~57.0.0",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-gesture-handler": "~2.32.0",
+    "react-native-reanimated": "4.5.0",
+    "react-native-safe-area-context": "~5.7.0",
+    "react-native-screens": "4.25.2",
+    "tamagui": "^2.4.4"
+  },
+  "devDependencies": {
+    "@tamagui/babel-plugin": "^2.4.4",
+    "@testing-library/react-native": "^14.0.1",
+    "@types/react": "^19.2.17",
+    "@vitest/coverage-v8": "^3.2.7",
+    "react-test-renderer": "^19.2.7",
+    "vitest": "^3.2.7"
+  }
+}

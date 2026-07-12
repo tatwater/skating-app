@@ -100,5 +100,5 @@ distribution through the Apple App Store and Google Play** — see
 ## Acknowledgments
 
 Ice terminology and safety culture draw on the Nordic skating community and the
-[Nordic Skater](https://nordicskaters.squarespace.com/) reference site. This project
+[Nordic Skater](https://nordicskaters.squarespace.com/) and [Lake Ice](http://lakeice.squarespace.com/) reference sites. This project
 aims to *support* that community's existing safety culture, not replace it.

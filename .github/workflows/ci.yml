@@ -42,5 +42,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage
-          path: packages/*/coverage
+          path: |
+            packages/*/coverage
+            apps/*/coverage
           if-no-files-found: ignore

@@ -13,8 +13,8 @@ Guiding constraints from `01-decisions.md`:
 - **4-level visibility (D13); real drive-time via cached isochrone (D18).**
 
 > ✅ **VOCABULARY CONFIRMED.** The ice-type / surface / hazard enums below use the
-> community's official terms from the **Nordic Skater** reference site
-> (<https://nordicskaters.squarespace.com/>), which the alpha crew uses even
+> community's official terms from the **Nordic Skater** reference sites
+> (<https://nordicskaters.squarespace.com/> and <http://lakeice.squarespace.com/>), which the alpha crew uses even
 > colloquially.
 
 ---
