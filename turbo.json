@@ -3,8 +3,8 @@
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
-      "outputs": ["dist/**"],
-      "env": ["SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN"]
+      "outputs": ["dist/**", ".output/**", ".vercel/output/**"],
+      "env": ["SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN", "VITE_SENTRY_DSN"]
     },
     "check-types": {
       "dependsOn": ["^check-types"]
