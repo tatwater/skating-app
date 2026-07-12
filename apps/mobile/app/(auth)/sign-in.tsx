@@ -1,5 +1,5 @@
 import { useSignIn } from '@clerk/clerk-expo'
-import { Link, useRouter } from 'expo-router'
+import { Link } from 'expo-router'
 import { useState } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui'
@@ -10,7 +10,6 @@ import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui'
  */
 export default function SignInScreen() {
   const { signIn, setActive, isLoaded } = useSignIn()
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -23,8 +22,9 @@ export default function SignInScreen() {
     try {
       const attempt = await signIn.create({ identifier: email, password })
       if (attempt.status === 'complete') {
+        // Activating the session flips `isSignedIn`; the root gate takes it from here,
+        // routing to the tabs (profile exists) or onboarding (D26) — see app/_layout.tsx.
         await setActive({ session: attempt.createdSessionId })
-        router.replace('/')
       } else {
         setError('Extra verification is required — not handled in this barebones build yet.')
       }

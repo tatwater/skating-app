@@ -28,11 +28,14 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
     enforces the 16+ DOB gate and **requires + records** a current risk acknowledgment
     (`RISK_ACK_VERSION` single-sourced in `@skating/core`). Mobile sign-up UI collects DOB +
     shows the blocking acknowledgment.
-  - **⏳ Remaining Phase 0 (auth-provisioning PR):** wire the mobile client to actually
-    **call `upsertFromClerk`** (today it only stages DOB + ack in Clerk `unsafeMetadata`),
-    which also needs the **username/displayName collection UI**. Until then the client
-    gates are UX-level. Passing DOB + ack must go through the enforced mutation, never
-    `unsafeMetadata`. See D41/D45 status notes.
+  - **Shipped (mobile auth-provisioning):** a **profile-provisioning gate** in the root
+    navigator routes a signed-in user with no `profiles` row to an **onboarding screen**
+    that collects **username + displayName + DOB + risk ack** and calls `upsertFromClerk`.
+    DOB + ack now flow through the enforced mutation — Clerk `unsafeMetadata` is no longer
+    used. Username/displayName rules (normalize + validate) are single-sourced in
+    `@skating/core` and re-enforced server-side (D37). The tabs mount only once a profile
+    exists, so the 16+ / risk-ack gates can't be bypassed. *Web sign-up still needs the
+    same onboarding flow when its shell lands.*
 - App shells: **Expo** (Expo Router tabs) + **TanStack Start** (deployed to
   **Vercel**, D27).
 - FUI design tokens consumed by Tailwind (web) + Tamagui (mobile) (D7), with

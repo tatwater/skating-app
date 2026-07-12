@@ -1,54 +1,36 @@
 import { useSignUp } from '@clerk/clerk-expo'
-import { MINIMUM_SIGNUP_AGE, meetsMinimumAge } from '@skating/core'
-import { Link, useRouter } from 'expo-router'
+import { Link } from 'expo-router'
 import { useState } from 'react'
 import { ScrollView } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, H1, Input, Paragraph, Text, XStack, YStack } from 'tamagui'
-import { parseDateOfBirth } from '../../src/lib/dob'
-import { RISK_ACK_COPY, RISK_ACK_VERSION } from '../../src/lib/riskAck'
+import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui'
 
 /**
- * Sign-up with the two blocking Phase 0 gates:
- *  - 16+ age gate from a collected date of birth (D41) — validated via `@skating/core`.
- *  - Assumption-of-risk acknowledgment (D45).
- * These gates are UX-level for now: DOB + risk-ack are staged in Clerk `unsafeMetadata`
- * and the real server-side enforcement (persist + require them in `upsertFromClerk`)
- * lands with profile provisioning — see the note in `src/lib/riskAck.ts`. Email-code
- * verification finishes signup.
+ * Clerk account creation (D26): email + password + email-code verification. The profile
+ * fields and the blocking Phase 0 gates (16+ age gate D41, assumption-of-risk ack D45)
+ * are collected right after, on the onboarding screen, where they're passed to the
+ * enforced `upsertFromClerk` mutation — never staged in Clerk `unsafeMetadata`. Once the
+ * session is active the root gate routes an unprovisioned user to onboarding, so no
+ * manual navigation is needed here.
  */
 export default function SignUpScreen() {
   const { signUp, setActive, isLoaded } = useSignUp()
-  const router = useRouter()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [dob, setDob] = useState('')
-  const [ack, setAck] = useState(false)
   const [pendingCode, setPendingCode] = useState(false)
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const dobMs = parseDateOfBirth(dob)
-  const oldEnough = dobMs !== null && meetsMinimumAge(dobMs, Date.now())
-  const dobTouched = dob.trim().length > 0
-  const canSubmit = isLoaded && !busy && !!email && !!password && oldEnough && ack
+  const canSubmit = isLoaded && !busy && !!email && !!password
 
   async function onSignUp() {
-    if (!isLoaded || !canSubmit || dobMs === null) return
+    if (!isLoaded || !canSubmit) return
     setBusy(true)
     setError(null)
     try {
-      await signUp.create({
-        emailAddress: email,
-        password,
-        unsafeMetadata: {
-          dateOfBirth: dobMs,
-          riskAckVersion: RISK_ACK_VERSION,
-          riskAckAt: Date.now(),
-        },
-      })
+      await signUp.create({ emailAddress: email, password })
       await signUp.prepareEmailAddressVerification({ strategy: 'email_code' })
       setPendingCode(true)
     } catch (e) {
@@ -65,8 +47,9 @@ export default function SignUpScreen() {
     try {
       const attempt = await signUp.attemptEmailAddressVerification({ code })
       if (attempt.status === 'complete') {
+        // Activating the session flips `isSignedIn`; the root gate then routes to
+        // onboarding (no profile yet) — see app/_layout.tsx.
         await setActive({ session: attempt.createdSessionId })
-        router.replace('/')
       } else {
         // Email verified, but the sign-up can't complete because the Clerk instance
         // still wants fields this screen doesn't collect (e.g. a required phone_number).
@@ -140,30 +123,6 @@ export default function SignUpScreen() {
             secureTextEntry
             autoComplete="new-password"
           />
-
-          <YStack gap="$1">
-            <Input
-              value={dob}
-              onChangeText={setDob}
-              placeholder="Date of birth (YYYY-MM-DD)"
-              autoCapitalize="none"
-              keyboardType="numbers-and-punctuation"
-            />
-            {dobTouched && !dobMs ? (
-              <Text color="$danger">Enter a valid date as YYYY-MM-DD.</Text>
-            ) : dobTouched && !oldEnough ? (
-              <Text color="$danger">You must be at least {MINIMUM_SIGNUP_AGE} to use Skating.</Text>
-            ) : null}
-          </YStack>
-
-          <XStack gap="$3" alignItems="flex-start" onPress={() => setAck((v) => !v)}>
-            <Text color={ack ? '$primary' : '$foregroundMuted'} fontSize="$6">
-              {ack ? '☑' : '☐'}
-            </Text>
-            <Paragraph flex={1} color="$foregroundMuted">
-              {RISK_ACK_COPY}
-            </Paragraph>
-          </XStack>
 
           {error ? <Text color="$danger">{error}</Text> : null}
 

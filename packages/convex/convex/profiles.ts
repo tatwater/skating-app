@@ -7,7 +7,15 @@
  * idempotent so it's safe to call on every app launch.
  */
 
-import { isCurrentRiskAckVersion, isMinor, meetsMinimumAge } from '@skating/core'
+import {
+  isCurrentRiskAckVersion,
+  isMinor,
+  isValidDisplayName,
+  isValidUsername,
+  meetsMinimumAge,
+  normalizeDisplayName,
+  normalizeUsername,
+} from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import { getCurrentProfile } from './lib/auth'
@@ -53,6 +61,18 @@ export const upsertFromClerk = mutation({
       throw new ConvexError('You must accept the current assumption-of-risk acknowledgment')
     }
 
+    // Normalize + validate the identity fields here too (D37): the client validates for
+    // instant feedback, but the trust boundary can't trust it. We store the canonical
+    // forms so `username` uniqueness is genuinely case-insensitive (06-data-model.md).
+    const username = normalizeUsername(args.username)
+    if (!isValidUsername(username)) {
+      throw new ConvexError('Username must be 3–30 characters: letters, numbers, or underscores')
+    }
+    const displayName = normalizeDisplayName(args.displayName)
+    if (!isValidDisplayName(displayName)) {
+      throw new ConvexError('Display name is required')
+    }
+
     const existing = await ctx.db
       .query('profiles')
       .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
@@ -73,7 +93,7 @@ export const upsertFromClerk = mutation({
     // reached for new or active profiles — i.e. only when we're about to write it.)
     const usernameOwner = await ctx.db
       .query('profiles')
-      .withIndex('by_username', (q) => q.eq('username', args.username))
+      .withIndex('by_username', (q) => q.eq('username', username))
       .first()
     if (usernameOwner && usernameOwner.clerkUserId !== identity.subject) {
       throw new ConvexError('Username is already taken')
@@ -87,8 +107,8 @@ export const upsertFromClerk = mutation({
       // app-launch re-sync); only stamp a new time when the user accepts a bumped version.
       const reAccepted = existing.riskAckVersion !== args.riskAckVersion
       await ctx.db.patch(existing._id, {
-        displayName: args.displayName,
-        username: args.username,
+        displayName,
+        username,
         dateOfBirth: args.dateOfBirth,
         requireFollowApproval: minor || existing.requireFollowApproval,
         riskAckVersion: args.riskAckVersion,
@@ -99,8 +119,8 @@ export const upsertFromClerk = mutation({
 
     return ctx.db.insert('profiles', {
       clerkUserId: identity.subject,
-      displayName: args.displayName,
-      username: args.username,
+      displayName,
+      username,
       dateOfBirth: args.dateOfBirth,
       riskAckVersion: args.riskAckVersion,
       riskAckAt: args.riskAckAt,

@@ -261,6 +261,62 @@ describe('profiles.upsertFromClerk', () => {
     const profile = await t.run((ctx) => ctx.db.get(id))
     expect(profile?.displayName).toBe('deleted user')
   })
+
+  test('rejects a malformed or empty username (D37 trust boundary)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    for (const username of ['ab', '', 'ada lovelace', '_ada']) {
+      await expect(
+        asAda.mutation(
+          api.profiles.upsertFromClerk,
+          withAck({ displayName: 'Ada', username, dateOfBirth: ADULT_DOB }),
+        ),
+      ).rejects.toThrow(/username must be/i)
+    }
+    expect(await asAda.query(api.profiles.current, {})).toBeNull()
+  })
+
+  test('rejects a blank display name (D37 trust boundary)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    await expect(
+      asAda.mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: '   ', username: 'ada', dateOfBirth: ADULT_DOB }),
+      ),
+    ).rejects.toThrow(/display name is required/i)
+    expect(await asAda.query(api.profiles.current, {})).toBeNull()
+  })
+
+  test('stores the normalized username + display name', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: '  Ada   Lovelace ', username: 'ADA_99', dateOfBirth: ADULT_DOB }),
+    )
+    const profile = await asAda.query(api.profiles.current, {})
+    expect(profile?.username).toBe('ada_99')
+    expect(profile?.displayName).toBe('Ada Lovelace')
+  })
+
+  test('username uniqueness is case-insensitive', async () => {
+    const t = convexTest(schema, modules)
+    await t
+      .withIdentity({ subject: 'clerk_a' })
+      .mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'A', username: 'Ada', dateOfBirth: ADULT_DOB }),
+      )
+    await expect(
+      t
+        .withIdentity({ subject: 'clerk_b' })
+        .mutation(
+          api.profiles.upsertFromClerk,
+          withAck({ displayName: 'B', username: 'ADA', dateOfBirth: ADULT_DOB }),
+        ),
+    ).rejects.toThrow(/already taken/i)
+  })
 })
 
 describe('profiles.current', () => {
