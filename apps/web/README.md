@@ -14,7 +14,11 @@ deep-dived in its own later-phase PR.
 - **Clerk** auth (`@clerk/tanstack-react-start`) wired to **Convex** via
   `ConvexProviderWithClerk` (D26/D2). Server request middleware lives in `src/start.ts`.
 - **next-themes** for the high-contrast/dark theme toggle (D34).
-- **Sentry** client-side crash/error reporting from day one (D29).
+- **Sentry** crash/error reporting from day one (D29), on **both** the client (`instrument.client.ts`,
+  loaded first by `client.tsx`, + router-aware browser tracing) and the **server**
+  (`instrument.server.ts` + `wrapFetchWithSentry` in `server.ts` + global request/function
+  middleware in `start.ts`), plus a root `Sentry.ErrorBoundary`. The `sentryTanstackStart` Vite
+  plugin uploads source maps when a build token is set. Session Replay is intentionally off (D29).
 - **Vitest** (+ Testing Library / jsdom) for logic, components, and the token-parity guard.
 
 ## Navigation (D28/D47)
@@ -39,9 +43,12 @@ src/
     AuthGate.tsx             # shared resolveAuthRoute → redirect (mobile parity, D7)
     AppShell.tsx             # signed-in nav chrome
     ui/                      # shadcn-style button / input / label
-  lib/                       # env, sentry, links, riskAck, authZone (+ tests)
+  lib/                       # env, links, riskAck, authZone (+ tests)
   styles/app.css             # Tailwind + design-token → CSS-variable bridge
-  router.tsx  start.ts       # router factory · Clerk server middleware
+  router.tsx  start.ts       # router factory (+ Sentry tracing) · Clerk + Sentry middleware
+  client.tsx  server.ts      # client + server entries (each loads its Sentry instrument first)
+  instrument.client.ts       # client Sentry.init (D29)
+  instrument.server.ts       # server Sentry.init (D29)
 ```
 
 Auth-route resolution (`resolveAuthRoute`) and DOB parsing (`parseDateOfBirth`) are shared
@@ -61,7 +68,9 @@ cp .env.example .env     # then fill in real keys (see below)
 | `CLERK_PUBLISHABLE_KEY` | Clerk client key (`pk_…`) — read server-side by the SDK | Clerk dashboard → API keys |
 | `CLERK_SECRET_KEY` | Clerk secret (`sk_…`) — **server-only** | Clerk dashboard → API keys |
 | `VITE_CONVEX_URL` | Convex deployment URL (public, client) | `pnpm convex-dev` / Convex dashboard |
-| `VITE_SENTRY_DSN` | Sentry client DSN (optional) | A **separate** `skating-web` Sentry project (same org as mobile) → project settings |
+| `VITE_SENTRY_DSN` | Sentry DSN — drives client **and** server (optional) | A **separate** `skating-web` Sentry project (same org as mobile) → project settings |
+| `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload target (build-time; set on Vercel) | Sentry org slug + the `skating-web` project slug |
+| `SENTRY_AUTH_TOKEN` | Enables source-map upload (build-time; set on Vercel) | Sentry → auth tokens. Absent ⇒ upload skipped, build still succeeds |
 
 Sentry uses its **own project** (`skating-web`), distinct from the mobile app's project but
 in the same org (D29): the two surfaces run different SDKs and ship on different cadences, so
