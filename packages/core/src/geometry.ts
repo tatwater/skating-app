@@ -82,6 +82,16 @@ export function pointInPolygon(point: LatLng, polygon: Polygon | MultiPolygon): 
  * and D20's "fit the map to this lake." `pointOnFeature` always returns a point within the
  * polygon (in the area of a Polygon, on one of the parts of a MultiPolygon), so a skater
  * tapping the map or a "nearest body" query never resolves to a point off the water.
+ *
+ * **MultiPolygon:** the point lands on *one* component. That's fine for the point index
+ * because the public viewport query (`waterBodies.listInViewport`) keys off **bbox
+ * intersection** — the stored `bbox` spans every component, so a viewport near any part
+ * returns the body. The single point is representative/framing only; a future
+ * nearest-point query over multipart bodies would want per-component points (not needed now).
+ *
+ * **Throws** on degenerate geometry (a collapsed ring `pointOnFeature` can't place a point
+ * on). The Convex `create` path only sees validator-checked shapes, but the OSM ETL sees raw
+ * data — it must guard **per feature** (log + skip) so one bad polygon can't abort the batch.
  */
 export function representativePoint(geom: Polygon | MultiPolygon): LatLng {
   // GeoJSON positions are `[lng, lat]`; cast past noUncheckedIndexedAccess.

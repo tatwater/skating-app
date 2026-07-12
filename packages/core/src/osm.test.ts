@@ -39,8 +39,18 @@ describe('waterBodyTypeFromOsmTags', () => {
     expect(waterBodyTypeFromOsmTags({ waterway: 'river' })).toBeNull()
     expect(waterBodyTypeFromOsmTags({ waterway: 'stream' })).toBeNull()
     expect(waterBodyTypeFromOsmTags({ waterway: 'riverbank' })).toBeNull()
-    // A `waterway` tag wins even alongside `natural=water` — it's flowing water, deferred.
+    // A `waterway` tag wins over a bare `natural=water` with no subtype — deferred.
     expect(waterBodyTypeFromOsmTags({ natural: 'water', waterway: 'canal' })).toBeNull()
+    expect(waterBodyTypeFromOsmTags({ natural: 'water', waterway: 'river' })).toBeNull()
+  })
+
+  it('keeps an explicit still-water classification alongside a through-waterway tag (P1)', () => {
+    // Legacy/relation tagging leaves waterway=* on some reservoir areas — don't drop them.
+    expect(waterBodyTypeFromOsmTags({ landuse: 'reservoir', waterway: 'river' })).toBe('reservoir')
+    expect(
+      waterBodyTypeFromOsmTags({ natural: 'water', water: 'reservoir', waterway: 'river' }),
+    ).toBe('reservoir')
+    expect(waterBodyTypeFromOsmTags({ natural: 'bay', waterway: 'stream' })).toBe('bay')
   })
 
   it('returns null for non-water features and empty tags', () => {
@@ -50,7 +60,7 @@ describe('waterBodyTypeFromOsmTags', () => {
     expect(waterBodyTypeFromOsmTags({})).toBeNull()
   })
 
-  it('always returns a valid type or null, and never lets flowing water through (property)', () => {
+  it('returns a valid type or null with the right flowing-water precedence (property)', () => {
     const arbTags: fc.Arbitrary<OsmTags> = fc.record(
       {
         natural: fc.constantFrom('water', 'bay', 'wetland', 'wood', 'scrub'),
@@ -66,14 +76,27 @@ describe('waterBodyTypeFromOsmTags', () => {
         const result = waterBodyTypeFromOsmTags(tags)
         // Result is always null or a member of our enum.
         expect(result === null || isWaterBodyType(result)).toBe(true)
-        // Flowing/linear water never leaks through as an importable body.
-        if (tags.waterway !== undefined) expect(result).toBeNull()
-        // We never emit a deferred river/stream from a `water=river|stream|canal` subtag.
-        if (
-          tags.waterway === undefined &&
-          ['river', 'stream', 'canal'].includes(tags.water ?? '')
-        ) {
+        // A flowing `water=*` subtag is always deferred, whatever else is present.
+        if (['river', 'stream', 'canal'].includes(tags.water ?? '')) {
           expect(result).toBeNull()
+        }
+        // A bare `waterway` with no positive still-water signal is deferred…
+        const stillWaterSignal =
+          tags.water !== undefined ||
+          tags.natural === 'bay' ||
+          tags.landuse === 'reservoir' ||
+          tags.wetland === 'marsh'
+        if (tags.waterway !== undefined && !stillWaterSignal) {
+          expect(result).toBeNull()
+        }
+        // …but an explicit `landuse=reservoir` wins over a coincident `waterway` (P1).
+        if (
+          tags.waterway !== undefined &&
+          tags.water === undefined &&
+          tags.natural !== 'bay' &&
+          tags.landuse === 'reservoir'
+        ) {
+          expect(result).toBe('reservoir')
         }
       }),
     )

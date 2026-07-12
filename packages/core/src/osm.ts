@@ -15,10 +15,7 @@ import { WATER_BODY_TYPES, type WaterBodyType } from './types'
 /** A raw OSM feature's tag bag (`key=value`), e.g. `{ natural: 'water', water: 'lake' }`. */
 export type OsmTags = Record<string, string | undefined>
 
-/**
- * `water=*` subtags that are **flowing / linear** — deferred (rivers) or drainage we skip.
- * Present on either the `water` subtag or as a `waterway` value; both route to `null`.
- */
+/** `water=*` subtags that are **flowing / linear** — deferred (rivers) or drainage we skip. */
 const FLOWING_WATER = new Set([
   'river',
   'stream',
@@ -40,34 +37,39 @@ const WATER_SUBTYPE: Partial<Record<string, WaterBodyType>> = {
 /**
  * Map an OSM feature's tags to our `WaterBodyType`, or `null` to **skip** the feature.
  *
- * Returns `null` for anything that isn't still water we import this phase — non-water
- * features, flowing/linear water (rivers/streams/canals — deferred), and non-marsh wetlands
- * (swamp/bog/fen). Returns `'other'` only once a feature is established as a water *area* of
- * an unrecognized kind (e.g. `natural=water` with a missing/odd `water` subtag), so the ETL
- * still imports the body rather than losing it — `other` is the safety net, not a skip.
+ * A **positive still-water classification wins over the flowing-water defer** heuristic: an
+ * explicit `water=reservoir` / `landuse=reservoir` / `natural=bay` / `wetland=marsh` isn't
+ * dropped just because the feature also carries a through-`waterway` tag (legacy/relation
+ * tagging leaves `waterway=river` on some reservoir areas). Only *bare* flowing water — a
+ * `waterway` (or `water=river|stream|canal|…`) with no still-water signal — is deferred.
+ *
+ * Returns `null` for anything that isn't still water we import this phase (non-water,
+ * flowing/linear water — rivers deferred, and non-marsh wetlands like swamp/bog/fen). Returns
+ * `'other'` once a feature is established as a water *area* of an unrecognized kind (e.g.
+ * `natural=water` with a missing/odd `water` subtag), so the ETL imports it rather than losing
+ * it — `other` is the safety net, not a skip.
  */
 export function waterBodyTypeFromOsmTags(tags: OsmTags): WaterBodyType | null {
   const { natural, water, waterway, landuse, wetland } = tags
 
-  // Flowing/linear water is deferred (rivers) or drainage we don't want — always skip.
-  if (waterway !== undefined) return null
-
-  // A water *area*: `natural=water` (standard) or a bare `water=*` subtag.
-  if (natural === 'water' || water !== undefined) {
-    if (water !== undefined) {
-      if (FLOWING_WATER.has(water)) return null // river/stream/canal/… — deferred
-      const mapped = WATER_SUBTYPE[water]
-      if (mapped !== undefined) return mapped
-    }
-    // Water area of unknown/unspecified kind (lagoon, oxbow, basin, no subtag, …).
-    return 'other'
+  // An explicit `water=*` subtag is the strongest signal and is checked first.
+  if (water !== undefined) {
+    if (FLOWING_WATER.has(water)) return null // water=river|stream|canal|… — deferred
+    const mapped = WATER_SUBTYPE[water]
+    if (mapped !== undefined) return mapped // water=lake|pond|reservoir
+    return 'other' // a water area of an unrecognized kind (lagoon, oxbow, basin, …)
   }
 
+  // Other positive still-water classifications — these beat the `waterway` defer below.
   if (natural === 'bay') return 'bay'
   if (landuse === 'reservoir') return 'reservoir'
+  if (wetland === 'marsh') return 'marsh' // only marshes; swamp/bog/fen are skipped
 
-  // Wetlands: only marshes are in-scope; swamp/bog/fen/etc. are skipped.
-  if (wetland === 'marsh') return 'marsh'
+  // Bare flowing/linear water (a `waterway` with no still-water signal above) — deferred.
+  if (waterway !== undefined) return null
+
+  // A `natural=water` area with no recognized `water=*` subtag — unknown kind, still imported.
+  if (natural === 'water') return 'other'
 
   return null
 }

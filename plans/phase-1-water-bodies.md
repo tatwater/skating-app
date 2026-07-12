@@ -89,6 +89,12 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
    **simplify** (`@turf/simplify`, tolerance ≈ `0.00005°` ≈ 5 m; coarsen a body past 5 m
    *only* if it would otherwise approach the 1 MiB/doc hard limit — see the fidelity note
    below), then `polygonBBox`, `representativePoint`, `surfaceAreaSqM`. Emit **NDJSON**.
+   - **Per-feature resilience (PR#1 review P2).** `representativePoint` (Turf `pointOnFeature`)
+     **throws** on a degenerate/collapsed ring; the core helpers stay pure and throwing (the
+     right layer for the error boundary is here, not the helper). So the transform **wraps each
+     feature in try/catch** — a bad polygon is **logged + skipped**, never aborting the batch —
+     and tallies skipped counts in the run summary. Raw OSM has enough junk geometry that a
+     single throw must not kill an import.
 4. **Load:** a script that batches the NDJSON into `importCanonical` (respecting Convex
    mutation size limits — chunk the batches).
 - **Fidelity-first sizing (D48).** The **primary target is a uniform ~5 m tolerance**
