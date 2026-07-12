@@ -4,12 +4,10 @@
  * backend now *requires* a current acknowledgment in `upsertFromClerk` (the trust
  * boundary, D37). Full legal wording remains Q10.
  *
- * NOTE (still to come — auth-provisioning PR): signup currently only stages the DOB +
- * acknowledgment in Clerk `unsafeMetadata`; the client does not yet *call*
- * `upsertFromClerk`, so no profile (and no recorded acceptance) exists until that wiring
- * lands. The server contract is ready and safe — it will reject any provisioning attempt
- * that omits a current acknowledgment — so the gap is purely the client wiring + the
- * username/displayName collection UI. Tracked in `plans/` (D45 / roadmap Phase 0).
+ * The onboarding screen collects the acknowledgment and passes it — with the DOB — to
+ * `upsertFromClerk`, which records it on the `profiles` row and rejects anything but the
+ * current version. It is never staged in Clerk `unsafeMetadata`. The copy below is the
+ * presentational wording shown at that point.
  */
 export { RISK_ACK_VERSION } from '@skating/core'
 

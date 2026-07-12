@@ -9,10 +9,10 @@ import schema from './schema'
 const modules = import.meta.glob('./**/*.*s')
 
 // Every provisioning call must carry a current assumption-of-risk acknowledgment (D45);
-// this fills those two args so each test only spells out what it's actually exercising.
+// this fills the version so each test only spells out what it's actually exercising. The
+// acceptance *time* is stamped server-side, so it's not an argument.
 const withAck = <T extends object>(args: T) => ({
   riskAckVersion: RISK_ACK_VERSION,
-  riskAckAt: Date.UTC(2026, 6, 11),
   ...args,
 })
 
@@ -55,10 +55,11 @@ describe('profiles.upsertFromClerk', () => {
     expect(profile?.notificationPrefs.hazardConfirmation).toBe(true)
   })
 
-  test('records a current assumption-of-risk acknowledgment on provision (D45)', async () => {
+  test('records a current, server-stamped assumption-of-risk acknowledgment (D45)', async () => {
     const t = convexTest(schema, modules)
     const asAda = t.withIdentity({ subject: 'clerk_ada' })
 
+    const before = Date.now()
     await asAda.mutation(
       api.profiles.upsertFromClerk,
       withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
@@ -66,7 +67,10 @@ describe('profiles.upsertFromClerk', () => {
 
     const profile = await asAda.query(api.profiles.current, {})
     expect(profile?.riskAckVersion).toBe(RISK_ACK_VERSION)
-    expect(profile?.riskAckAt).toBe(Date.UTC(2026, 6, 11))
+    // Stamped by the server at write time (never a client-supplied clock), so it lands
+    // within the window of this call rather than being any injectable value.
+    expect(profile?.riskAckAt).toBeGreaterThanOrEqual(before)
+    expect(profile?.riskAckAt).toBeLessThanOrEqual(Date.now())
   })
 
   test('rejects a stale or missing risk acknowledgment (D45)', async () => {
@@ -87,29 +91,48 @@ describe('profiles.upsertFromClerk', () => {
     expect(await asAda.query(api.profiles.current, {})).toBeNull()
   })
 
-  test('preserves the original acceptance time on a same-version re-sync (D45)', async () => {
+  test('preserves the recorded acceptance time across a same-version re-sync (D45)', async () => {
     const t = convexTest(schema, modules)
     const asAda = t.withIdentity({ subject: 'clerk_ada' })
-    const originalAt = Date.UTC(2026, 6, 11)
-
-    await asAda.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Ada',
-      username: 'ada',
-      dateOfBirth: ADULT_DOB,
-      riskAckVersion: RISK_ACK_VERSION,
-      riskAckAt: originalAt,
-    })
-    // A later app-launch sync (same version) passes a newer timestamp — we keep the first.
-    await asAda.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Ada',
-      username: 'ada',
-      dateOfBirth: ADULT_DOB,
-      riskAckVersion: RISK_ACK_VERSION,
-      riskAckAt: originalAt + 1_000_000,
-    })
+    const id = await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
+    // Pin a known acceptance time, then re-sync with the SAME version: the original must
+    // be kept (only a version bump re-stamps), and never restamped to "now".
+    const pinnedAt = Date.UTC(2020, 0, 1)
+    await t.run((ctx) => ctx.db.patch(id, { riskAckAt: pinnedAt }))
+    await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
 
     const profile = await asAda.query(api.profiles.current, {})
-    expect(profile?.riskAckAt).toBe(originalAt)
+    expect(profile?.riskAckAt).toBe(pinnedAt)
+  })
+
+  test('re-acking after a version bump re-stamps the acceptance time (D45)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    const id = await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
+    // Simulate a stale acceptance under an older version (as if RISK_ACK_VERSION was bumped).
+    await t.run((ctx) =>
+      ctx.db.patch(id, { riskAckVersion: '1970-01-01', riskAckAt: Date.UTC(2020, 0, 1) }),
+    )
+
+    const before = Date.now()
+    // Accepting the current version again re-stamps the time server-side.
+    await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
+
+    const profile = await asAda.query(api.profiles.current, {})
+    expect(profile?.riskAckVersion).toBe(RISK_ACK_VERSION)
+    expect(profile?.riskAckAt).toBeGreaterThanOrEqual(before)
   })
 
   test('is idempotent — a second call patches the same profile', async () => {
@@ -260,6 +283,128 @@ describe('profiles.upsertFromClerk', () => {
     )
     const profile = await t.run((ctx) => ctx.db.get(id))
     expect(profile?.displayName).toBe('deleted user')
+  })
+
+  test('rejects a malformed or empty username (D37 trust boundary)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    for (const username of ['ab', '', 'ada lovelace', '_ada']) {
+      await expect(
+        asAda.mutation(
+          api.profiles.upsertFromClerk,
+          withAck({ displayName: 'Ada', username, dateOfBirth: ADULT_DOB }),
+        ),
+      ).rejects.toThrow(/username must be/i)
+    }
+    expect(await asAda.query(api.profiles.current, {})).toBeNull()
+  })
+
+  test('rejects a blank display name (D37 trust boundary)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    await expect(
+      asAda.mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: '   ', username: 'ada', dateOfBirth: ADULT_DOB }),
+      ),
+    ).rejects.toThrow(/display name is required/i)
+    expect(await asAda.query(api.profiles.current, {})).toBeNull()
+  })
+
+  test('stores the normalized username + display name', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: '  Ada   Lovelace ', username: 'ADA_99', dateOfBirth: ADULT_DOB }),
+    )
+    const profile = await asAda.query(api.profiles.current, {})
+    expect(profile?.username).toBe('ada_99')
+    expect(profile?.displayName).toBe('Ada Lovelace')
+  })
+
+  test('username uniqueness is case-insensitive', async () => {
+    const t = convexTest(schema, modules)
+    await t
+      .withIdentity({ subject: 'clerk_a' })
+      .mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'A', username: 'Ada', dateOfBirth: ADULT_DOB }),
+      )
+    await expect(
+      t
+        .withIdentity({ subject: 'clerk_b' })
+        .mutation(
+          api.profiles.upsertFromClerk,
+          withAck({ displayName: 'B', username: 'ADA', dateOfBirth: ADULT_DOB }),
+        ),
+    ).rejects.toThrow(/already taken/i)
+  })
+})
+
+describe('profiles.acceptCurrentRiskAck', () => {
+  test('throws when unauthenticated', async () => {
+    const t = convexTest(schema, modules)
+    await expect(
+      t.mutation(api.profiles.acceptCurrentRiskAck, { riskAckVersion: RISK_ACK_VERSION }),
+    ).rejects.toThrow(/not authenticated/i)
+  })
+
+  test('throws for an authenticated identity with no provisioned profile', async () => {
+    const t = convexTest(schema, modules)
+    const asGhost = t.withIdentity({ subject: 'clerk_ghost' })
+    await expect(
+      asGhost.mutation(api.profiles.acceptCurrentRiskAck, { riskAckVersion: RISK_ACK_VERSION }),
+    ).rejects.toThrow(/not authenticated/i)
+  })
+
+  test('refreshes a stale acknowledgment without touching other fields (D45)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    const id = await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada Lovelace', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
+    // Simulate a stale acceptance under an older version (as if RISK_ACK_VERSION was bumped).
+    await t.run((ctx) =>
+      ctx.db.patch(id, { riskAckVersion: '1970-01-01', riskAckAt: Date.UTC(2020, 0, 1) }),
+    )
+
+    const before = Date.now()
+    await asAda.mutation(api.profiles.acceptCurrentRiskAck, { riskAckVersion: RISK_ACK_VERSION })
+
+    const profile = await asAda.query(api.profiles.current, {})
+    expect(profile?.riskAckVersion).toBe(RISK_ACK_VERSION)
+    expect(profile?.riskAckAt).toBeGreaterThanOrEqual(before)
+    // The profile fields the user never re-entered are preserved as-is.
+    expect(profile?.displayName).toBe('Ada Lovelace')
+    expect(profile?.username).toBe('ada')
+    expect(profile?.dateOfBirth).toBe(ADULT_DOB)
+  })
+
+  test('rejects a stale/non-current version (forces a fresh client build, D45)', async () => {
+    const t = convexTest(schema, modules)
+    const asAda = t.withIdentity({ subject: 'clerk_ada' })
+    await asAda.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Ada', username: 'ada', dateOfBirth: ADULT_DOB }),
+    )
+    await expect(
+      asAda.mutation(api.profiles.acceptCurrentRiskAck, { riskAckVersion: '1970-01-01' }),
+    ).rejects.toThrow(/assumption-of-risk/i)
+  })
+
+  test('a banned account cannot re-ack its way back in (D37)', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = t.withIdentity({ subject: 'clerk_banned' })
+    const id = await asUser.mutation(
+      api.profiles.upsertFromClerk,
+      withAck({ displayName: 'Real Name', username: 'realname', dateOfBirth: ADULT_DOB }),
+    )
+    await t.run((ctx) => ctx.db.patch(id, { status: 'banned' }))
+    await expect(
+      asUser.mutation(api.profiles.acceptCurrentRiskAck, { riskAckVersion: RISK_ACK_VERSION }),
+    ).rejects.toThrow(/not active/i)
   })
 })
 

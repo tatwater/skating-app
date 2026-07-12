@@ -1,7 +1,10 @@
 import { useAuth } from '@clerk/clerk-expo'
 import * as Sentry from '@sentry/react-native'
+import { api } from '@skating/convex/api'
+import { useQuery } from 'convex/react'
 import { Stack } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
+import { resolveAuthRoute } from '../src/lib/authRoute'
 import { initSentry } from '../src/lib/sentry'
 import { Providers } from '../src/providers/Providers'
 
@@ -9,24 +12,45 @@ import { Providers } from '../src/providers/Providers'
 initSentry()
 
 /**
- * Auth-gated root navigator (D26). Expo Router's `Stack.Protected` swaps the whole
- * navigation tree on `isSignedIn`: signed-in users get the tabs, everyone else the
- * auth flow. We hold on `!isLoaded` so we don't flash the sign-in screen at launch.
+ * Auth- + provisioning-gated root navigator (D26). Two declarative `Stack.Protected`
+ * gates, both driven by reactive state so the tree swaps itself:
+ *  1. Clerk `isSignedIn` — signed-out users get the auth flow.
+ *  2. A *fully provisioned* profile — a signed-in user is admitted to the tabs only once
+ *     their Convex `profiles` row carries a **current** risk acknowledgment (D45). The
+ *     other two signed-in states each get their own screen:
+ *       - no row yet → **onboarding** (collect profile fields + first consent);
+ *       - a row with a missing/stale ack (e.g. after we bump `RISK_ACK_VERSION`) →
+ *         **re-ack** (renew consent only — no re-entering profile fields).
+ *     Gating on row *existence* alone would let a stale ack sail past, defeating the
+ *     versioning, so we check the ack itself.
+ * We render a blank frame while Clerk loads or the profile query is still resolving, so
+ * we neither flash the sign-in screen at launch nor bounce a returning user through
+ * onboarding before their profile has loaded.
  */
 function RootNavigator() {
   const { isLoaded, isSignedIn } = useAuth()
-  if (!isLoaded) return null
+  // Skip until Clerk confirms a session — unauthenticated the query would just be null.
+  const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip')
+
+  const route = resolveAuthRoute({ isLoaded, isSignedIn, profile })
+  if (route === 'loading') return null
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={isSignedIn}>
+      <Stack.Protected guard={route === 'app'}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="about"
           options={{ presentation: 'modal', headerShown: true, title: 'About' }}
         />
       </Stack.Protected>
-      <Stack.Protected guard={!isSignedIn}>
+      <Stack.Protected guard={route === 'onboarding'}>
+        <Stack.Screen name="onboarding" />
+      </Stack.Protected>
+      <Stack.Protected guard={route === 'reack'}>
+        <Stack.Screen name="reack" />
+      </Stack.Protected>
+      <Stack.Protected guard={route === 'auth'}>
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
     </Stack>

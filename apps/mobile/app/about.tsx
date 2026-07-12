@@ -2,8 +2,7 @@ import Constants from 'expo-constants'
 import { openBrowserAsync } from 'expo-web-browser'
 import { ScrollView } from 'react-native'
 import { Anchor, H2, Paragraph, YStack } from 'tamagui'
-
-const REPO = 'https://github.com/tatwater/skating'
+import { DOC_URLS } from '../src/lib/links'
 
 /**
  * About + license disclosure (D43). The app is AGPL-3.0 with a GPLv3 §7 App
@@ -27,19 +26,16 @@ export default function AboutScreen() {
           Licensed under AGPL-3.0, with a GPLv3 §7 additional permission (an App Store / Google Play
           distribution exception) so the app can ship on both stores.
         </Paragraph>
-        <Anchor color="$primary" onPress={() => openBrowserAsync(`${REPO}/blob/main/LICENSE`)}>
+        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.license)}>
           AGPL-3.0 license
         </Anchor>
-        <Anchor
-          color="$primary"
-          onPress={() => openBrowserAsync(`${REPO}/blob/main/LICENSE-EXCEPTIONS.md`)}
-        >
+        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.licenseExceptions)}>
           App Store / Play exception
         </Anchor>
-        <Anchor color="$primary" onPress={() => openBrowserAsync(`${REPO}/blob/main/PRIVACY.md`)}>
+        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.privacy)}>
           Privacy notice
         </Anchor>
-        <Anchor color="$primary" onPress={() => openBrowserAsync(`${REPO}/blob/main/TERMS.md`)}>
+        <Anchor color="$primary" onPress={() => openBrowserAsync(DOC_URLS.terms)}>
           Terms (interim)
         </Anchor>
       </YStack>

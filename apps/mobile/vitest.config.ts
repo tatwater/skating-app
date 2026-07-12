@@ -13,7 +13,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       // Only the tested pure-logic surface for now; widen as hooks/components land.
-      include: ['src/lib/dob.ts'],
+      include: ['src/lib/dob.ts', 'src/lib/authRoute.ts'],
       thresholds: {
         lines: 90,
         functions: 90,
