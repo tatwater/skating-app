@@ -1,6 +1,7 @@
 import { useAuth } from '@clerk/clerk-expo'
 import * as Sentry from '@sentry/react-native'
 import { api } from '@skating/convex/api'
+import { isCurrentRiskAckVersion } from '@skating/core'
 import { useQuery } from 'convex/react'
 import { Stack } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
@@ -14,10 +15,14 @@ initSentry()
  * Auth- + provisioning-gated root navigator (D26). Two declarative `Stack.Protected`
  * gates, both driven by reactive state so the tree swaps itself:
  *  1. Clerk `isSignedIn` — signed-out users get the auth flow.
- *  2. A provisioned Convex `profiles` row — a signed-in user who doesn't have one yet is
- *     sent to onboarding to create it (the client half of `upsertFromClerk`). The tabs
- *     mount *only* once a profile exists, so the 16+ / risk-ack gates can't be bypassed
- *     by jumping straight into the app.
+ *  2. A *fully provisioned* profile — a signed-in user is admitted to the tabs only once
+ *     their Convex `profiles` row carries a **current** risk acknowledgment (D45). The
+ *     other two signed-in states each get their own screen:
+ *       - no row yet → **onboarding** (collect profile fields + first consent);
+ *       - a row with a missing/stale ack (e.g. after we bump `RISK_ACK_VERSION`) →
+ *         **re-ack** (renew consent only — no re-entering profile fields).
+ *     Gating on row *existence* alone would let a stale ack sail past, defeating the
+ *     versioning, so we check the ack itself.
  * We render a blank frame while Clerk loads or the profile query is still resolving, so
  * we neither flash the sign-in screen at launch nor bounce a returning user through
  * onboarding before their profile has loaded.
@@ -30,12 +35,14 @@ function RootNavigator() {
   const provisioning = isSignedIn && profile === undefined
   if (!isLoaded || provisioning) return null
 
-  const hasProfile = !!profile
+  // A row is only "done" once it records the current acknowledgment (not mere existence).
+  const provisioned = !!profile && isCurrentRiskAckVersion(profile.riskAckVersion)
   const needsOnboarding = isSignedIn && profile === null
+  const needsReAck = isSignedIn && !!profile && !provisioned
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Protected guard={hasProfile}>
+      <Stack.Protected guard={provisioned}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen
           name="about"
@@ -44,6 +51,9 @@ function RootNavigator() {
       </Stack.Protected>
       <Stack.Protected guard={needsOnboarding}>
         <Stack.Screen name="onboarding" />
+      </Stack.Protected>
+      <Stack.Protected guard={needsReAck}>
+        <Stack.Screen name="reack" />
       </Stack.Protected>
       <Stack.Protected guard={!isSignedIn}>
         <Stack.Screen name="(auth)" />

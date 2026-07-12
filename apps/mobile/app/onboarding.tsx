@@ -58,7 +58,7 @@ export default function OnboardingScreen() {
         username: normalizedUsername,
         dateOfBirth: dobMs,
         riskAckVersion: RISK_ACK_VERSION,
-        riskAckAt: Date.now(),
+        // The acceptance time is stamped server-side (trust boundary, D37) — not sent.
       })
       // Success: no navigation — the root gate reacts to the now-provisioned profile.
     } catch (e) {

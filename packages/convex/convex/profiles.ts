@@ -18,7 +18,7 @@ import {
 } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import { mutation, query } from './_generated/server'
-import { getCurrentProfile } from './lib/auth'
+import { getCurrentProfile, requireProfile } from './lib/auth'
 import { NOTIFICATION_PREF_KEYS } from './lib/enums'
 
 /** All notification types default on (D16); keys single-sourced with the schema. */
@@ -39,7 +39,8 @@ export const upsertFromClerk = mutation({
     username: v.string(),
     dateOfBirth: v.number(), // UTC-midnight epoch ms; gate + minor status derived (D41)
     riskAckVersion: v.string(), // must be the current version (D45); rejected otherwise
-    riskAckAt: v.number(), // when the user accepted (client-supplied epoch ms)
+    // Note: the acceptance *time* is deliberately NOT a client arg — the server stamps it
+    // (see `now` below) so a wrong/tampered device clock can't corrupt the audit record.
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity()
@@ -112,7 +113,9 @@ export const upsertFromClerk = mutation({
         dateOfBirth: args.dateOfBirth,
         requireFollowApproval: minor || existing.requireFollowApproval,
         riskAckVersion: args.riskAckVersion,
-        riskAckAt: reAccepted ? args.riskAckAt : (existing.riskAckAt ?? args.riskAckAt),
+        // Server-stamped: freshly on a new acceptance (version bump), otherwise the
+        // original time is preserved across routine re-syncs (never trust the client clock).
+        riskAckAt: reAccepted ? now : (existing.riskAckAt ?? now),
       })
       return existing._id
     }
@@ -123,7 +126,7 @@ export const upsertFromClerk = mutation({
       username,
       dateOfBirth: args.dateOfBirth,
       riskAckVersion: args.riskAckVersion,
-      riskAckAt: args.riskAckAt,
+      riskAckAt: now, // server-stamped, not client-supplied
       driveTimePrefMinutes: 60,
       requireFollowApproval: minor, // minors default to approval-required (D41)
       notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
@@ -132,5 +135,31 @@ export const upsertFromClerk = mutation({
       status: 'active',
       createdAt: now,
     })
+  },
+})
+
+/**
+ * Re-accept the *current* assumption-of-risk acknowledgment for an already-provisioned
+ * profile (D45). The lightweight counterpart to `upsertFromClerk`: when we bump
+ * `RISK_ACK_VERSION`, existing users are re-prompted for consent *only* — they don't
+ * re-enter their profile fields. The acceptance time is stamped server-side (D37), and
+ * `requireProfile` ensures a banned/suspended/deleted account can't re-ack its way in.
+ */
+export const acceptCurrentRiskAck = mutation({
+  args: {
+    // The client asserts the version it displayed; we reject anything but the current one
+    // so a stale app build (still showing old copy) can't satisfy the gate.
+    riskAckVersion: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const profile = await requireProfile(ctx)
+    if (!isCurrentRiskAckVersion(args.riskAckVersion)) {
+      throw new ConvexError('You must accept the current assumption-of-risk acknowledgment')
+    }
+    await ctx.db.patch(profile._id, {
+      riskAckVersion: args.riskAckVersion,
+      riskAckAt: Date.now(),
+    })
+    return profile._id
   },
 })
