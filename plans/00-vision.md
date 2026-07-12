@@ -107,16 +107,19 @@ create/detail/profile flows. They're two lenses on the same reports: Map is
 - **Bounties** (tab) — browse / request bounties.
 - **You** (tab) — profile, reputation, GPS connections, settings, notifications.
 
-### Web (TanStack Start routes)
-- `/` — Map
-- `/feed` — Newsfeed
-- `/water/:id` — water body detail + report/hazard feed (the "tap-a-lake" view)
-- `/report/new`, `/report/:id` — create / view a report (+ threaded comments)
-- `/bounties` — bounties
-- `/u/:username` — profile
-- `/settings` — settings + GPS provider connections
-- `/notifications` — notifications
-- Auth routes handled by **Clerk** (D26)
+### Web (TanStack Start routes) — see D47
+- `/` — Map (default). **Create-a-report** and **bounties** are surfaced *here*, not as
+  separate pages (D47).
+- `/feed` — Newsfeed, with **create-a-report** surfaced here too (D47).
+- `/u/:username` — profile (including the current user's own) — its own page.
+- `/settings` — settings + GPS provider connections.
+- `/notifications` — notifications.
+- **Detail child routes** — `/report/:id` (+ threaded comments), `/bounties/:id`,
+  `/water/:id` (water-body view) — are reached *from* `/` and `/feed`; there are **no
+  top-level `/report` or `/bounties` browse pages** (D47). Added as the summary-in-place
+  content outgrows the top-level pages — deferred, not built up-front.
+- Auth handled by **Clerk** (D26), with the same **profile-provisioning + risk-ack gate**
+  as mobile (onboarding / re-ack).
 
 Both surfaces read the same Convex data; mobile and web share logic/types/tokens,
 not UI components (D7).

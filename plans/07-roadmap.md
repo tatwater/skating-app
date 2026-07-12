@@ -37,11 +37,19 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
     ack flow through the enforced mutations — Clerk `unsafeMetadata` is no longer used, and
     the acceptance time is **server-stamped**, never client-supplied. Username/displayName
     rules (normalize + validate) are single-sourced in `@skating/core` and re-enforced
-    server-side (D37). *Web sign-up still needs the same flow when its shell lands.*
-- App shells: **Expo** (Expo Router tabs) + **TanStack Start** (deployed to
-  **Vercel**, D27).
-- FUI design tokens consumed by Tailwind (web) + Tamagui (mobile) (D7), with
-  **high-contrast + dark themes** scaffolded (D34).
+    server-side (D37).
+  - **Shipped (web auth/provisioning):** `apps/web` mirrors the mobile gate via the *same*
+    pure `resolveAuthRoute` (lifted to `@skating/core` alongside `parseDateOfBirth`, D7). A
+    client-side `AuthGate` redirects into the right zone; **onboarding** calls
+    `upsertFromClerk`, **re-ack** calls `acceptCurrentRiskAck`. Sign-in/up use Clerk's
+    prebuilt `<SignIn>/<SignUp>` (this SDK's custom-flow hooks moved to a newer "signals"
+    API; prebuilt is the durable choice and flows straight into onboarding).
+- App shells: **Expo** (Expo Router tabs) + **TanStack Start** (Vite 8, file-based routing;
+  deployed to **Vercel**, D27). **Web scaffold shipped:** Map (`/`) + Newsfeed (`/feed`)
+  top-level, Report/Bounties folded in, profiles at `/u/:username` (D47); placeholder pages
+  like mobile.
+- FUI design tokens consumed by Tailwind (web, via a CSS-variable bridge with a drift-guard
+  test) + Tamagui (mobile) (D7), with **high-contrast + dark themes** scaffolded (D34).
 - **Sentry** wired on both surfaces from day one (D29).
 - **License hygiene:** `LICENSE` (AGPL-3.0) + `LICENSE-EXCEPTIONS.md` (App Store /
   Play exception, D43) present and referenced from README + each app's about screen.

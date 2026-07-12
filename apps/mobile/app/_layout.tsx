@@ -1,10 +1,10 @@
 import { useAuth } from '@clerk/clerk-expo'
 import * as Sentry from '@sentry/react-native'
 import { api } from '@skating/convex/api'
+import { resolveAuthRoute } from '@skating/core'
 import { useQuery } from 'convex/react'
 import { Stack } from 'expo-router'
 import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { resolveAuthRoute } from '../src/lib/authRoute'
 import { initSentry } from '../src/lib/sentry'
 import { Providers } from '../src/providers/Providers'
 

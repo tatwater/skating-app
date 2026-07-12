@@ -252,6 +252,9 @@ server-side — not the deployment.
 create/detail/profile flows. Route structure documented in `00-vision.md`.
 **Why:** Newsfeed serves the "where's the community been lately?" browse/inspiration
 need that lake-by-lake tapping doesn't.
+**Web refinement (D47):** on web these two stay top-level, but **Report and Bounties are
+folded into them** (report surfaced on both; bounties on Map) rather than getting their
+own top-level routes — see D47. Mobile keeps its five tabs.
 
 ## D29 — Observability: Sentry (errors/crash) + PostHog (analytics/flags)
 **Decided.** **Sentry** for crash/error/performance monitoring from day one
@@ -644,3 +647,25 @@ one pass, so "lint" also enforces formatting — no drift.
 **Boundary:** app-specific ESLint configs (e.g. `eslint-config-expo` for RN-specific
 rules) can be added **scoped to an app** later if a framework needs plugin rules Biome
 doesn't cover; Biome stays the repo-wide baseline.
+
+## D47 — Web navigation: Map + Newsfeed top-level; Report & Bounties folded in
+**Decided (web surface).** The web app keeps **two top-level pages — Map (default) and
+Newsfeed** (D28) — but does **not** give Report or Bounties their own top-level routes:
+- **Create-a-report** is surfaced *in place* on **both** Map and Newsfeed (the two lenses
+  a planner is already looking at), not on a separate `/report/new` page.
+- **Bounties** are surfaced *in place* on **Map** only (they're inherently spatial —
+  "someone wants a report on this water body"). *(Tentative — revisit if bounties want
+  their own browse surface as the feature grows.)*
+- **Profiles are their own pages** (`/u/:username`), including the current user's own —
+  the one place that genuinely warrants a dedicated route.
+- **Detail *child* routes are expected** — `/report/:id`, `/bounties/:id` (and
+  `/water/:id`) for full detail views — but there are **no top-level `/report` or
+  `/bounties` browse pages**: `/` (Map) and `/feed` are expected to cover the browse +
+  create need, with these child routes reached from there. Built as the in-place content
+  proves it needs a dedicated view; deferred until we know how complex each gets.
+**Why:** The founder wants the web surface information-dense and powerful (FUI, 00-vision):
+fold the *actions* (report) and *spatial asks* (bounties) into the pages the user is
+already reading, and spend dedicated routes only where identity or depth demands them.
+**Scope note:** this refines the **web** route list only. **Mobile's shipped 5-tab
+structure** (Map · Newsfeed · ＋Report · Bounties · You) is **unchanged**; whether mobile
+later adopts the same fold is left open, not decided here.

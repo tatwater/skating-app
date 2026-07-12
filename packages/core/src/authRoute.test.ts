@@ -1,6 +1,6 @@
-import { RISK_ACK_VERSION } from '@skating/core'
 import { describe, expect, it } from 'vitest'
 import { resolveAuthRoute } from './authRoute'
+import { RISK_ACK_VERSION } from './riskAck'
 
 const current = { riskAckVersion: RISK_ACK_VERSION }
 const stale = { riskAckVersion: '1970-01-01' }

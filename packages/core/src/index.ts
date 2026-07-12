@@ -1,4 +1,6 @@
 export * from './age'
+export * from './authRoute'
+export * from './dob'
 export * from './geometry'
 export * from './hazards'
 export * from './profile'
