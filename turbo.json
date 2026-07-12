@@ -4,7 +4,13 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".output/**", ".vercel/output/**"],
-      "env": ["SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN", "VITE_SENTRY_DSN", "VITE_CONVEX_URL"]
+      "env": [
+        "SENTRY_ORG",
+        "SENTRY_PROJECT",
+        "SENTRY_AUTH_TOKEN",
+        "VITE_SENTRY_DSN",
+        "VITE_CONVEX_URL"
+      ]
     },
     "check-types": {
       "dependsOn": ["^check-types"]

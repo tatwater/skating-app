@@ -13,7 +13,17 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 > fast-follow, D24); Clerk, Convex, Vercel, Expo, **Sentry** accounts. See
 > `05-accounts-and-credentials.md`.
 
-## Phase 0 — Foundations
+## Phase 0 — Foundations ✅ Complete (2026-07-12)
+> **Status:** shipped and verified. Both apps sign in (age-gated, risk ack recorded); the
+> web app is **deployed to Vercel** (TanStack Start via the Nitro Vite plugin → a real SSR
+> Vercel Function) with Map + Newsfeed rendering behind the provisioning gate; CI (`pnpm lint`
+> + `turbo check-types test`) is green with coverage; crashes report to Sentry on both
+> surfaces (confirmed capturing a live server error). Getting the first deploy green took a
+> chain of fixes: a `build` task that runs Convex codegen (`_generated` is gitignored), the
+> Nitro plugin for a Vercel-servable server, an `apps/web`-local `@clerk/shared` v4 pin (the
+> web/mobile stacks need different majors under the hoisted linker), and piping the
+> `VITE_*`/`SENTRY_*` env vars through `turbo.json` so the build receives them.
+
 - **Turborepo + pnpm** monorepo (D39): `apps/mobile`, `apps/web`, shared `packages/*`
   (design tokens, Convex client, types/validators, logic) (D7).
 - **Biome** lint/format + **Vitest + CI from day one** (D40/D46): GitHub Actions
@@ -53,10 +63,13 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - **Sentry** wired on both surfaces from day one (D29).
 - **License hygiene:** `LICENSE` (AGPL-3.0) + `LICENSE-EXCEPTIONS.md` (App Store /
   Play exception, D43) present and referenced from README + each app's about screen.
-- **Done:** sign in on both apps (age-gated, risk ack recorded); empty Map + Newsfeed
+- **Done ✅:** sign in on both apps (age-gated, risk ack recorded); empty Map + Newsfeed
   pages render; CI is green with coverage reporting; deploy is green; crashes report
   to Sentry.
 - Needs: Convex, Clerk, Vercel, Expo, Apple (dev build), Sentry.
+- **Follow-ups (non-blocking):** set `SENTRY_AUTH_TOKEN` on Vercel to enable build-time
+  source-map upload (runtime crash reporting already works without it); Apple dev-build
+  distribution for the mobile alpha crew is still pending its own track.
 
 ## Phase 1 — Water-body data
 - OSM ETL for one **pilot region**: clip + simplify polygons; load `waterBodies`
