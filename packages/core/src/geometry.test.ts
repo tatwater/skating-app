@@ -9,6 +9,8 @@ import {
   pointInPolygon,
   polygonBBox,
   polygonIoU,
+  representativePoint,
+  surfaceAreaSqM,
 } from './geometry'
 
 // --- Test helpers (analytic ground truth) ---
@@ -183,6 +185,69 @@ describe('polygonIoU', () => {
         expect(iou).toBeCloseTo(polygonIoU(rect(b), rect(a)), 9)
       }),
     )
+  })
+})
+
+describe('representativePoint (on-water point, D48)', () => {
+  it('lands inside a simple polygon', () => {
+    const square = rect({ minLat: 0, minLng: 0, maxLat: 2, maxLng: 2 })
+    expect(pointInPolygon(representativePoint(square), square)).toBe(true)
+  })
+
+  it('lands ON the water for a concave (U-shaped) lake whose area centroid is off-water', () => {
+    // A U opening upward. Its area centroid sits at ~(lng 1.5, lat 1.29) — inside the notch,
+    // i.e. on dry land — which is exactly the crescent/horseshoe failure a raw centroid hits.
+    const uShape: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [0, 0],
+          [3, 0],
+          [3, 3],
+          [2.2, 3],
+          [2.2, 0.8],
+          [0.8, 0.8],
+          [0.8, 3],
+          [0, 3],
+          [0, 0],
+        ],
+      ],
+    }
+    // The naive area centroid is off-water…
+    expect(pointInPolygon({ lat: 1.29, lng: 1.5 }, uShape)).toBe(false)
+    // …but the representative point is guaranteed on the surface.
+    expect(pointInPolygon(representativePoint(uShape), uShape)).toBe(true)
+  })
+
+  it('lands on one of the parts of a MultiPolygon', () => {
+    const mp: MultiPolygon = {
+      type: 'MultiPolygon',
+      coordinates: [
+        rect({ minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 }).coordinates,
+        rect({ minLat: 10, minLng: 10, maxLat: 11, maxLng: 11 }).coordinates,
+      ],
+    }
+    expect(pointInPolygon(representativePoint(mp), mp)).toBe(true)
+  })
+
+  it('always returns a point on the surface, for any box (property)', () => {
+    fc.assert(
+      fc.property(arbBox, (b) => {
+        const poly = rect(b)
+        expect(pointInPolygon(representativePoint(poly), poly)).toBe(true)
+      }),
+    )
+  })
+})
+
+describe('surfaceAreaSqM', () => {
+  it('is positive and scales with the polygon (a ~1° box near the equator ≈ 1.2e10 m²)', () => {
+    const oneDeg = surfaceAreaSqM(rect({ minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 }))
+    expect(oneDeg).toBeGreaterThan(1.2e10)
+    expect(oneDeg).toBeLessThan(1.25e10)
+    // Doubling the width roughly doubles the area.
+    const twoDegWide = surfaceAreaSqM(rect({ minLat: 0, minLng: 0, maxLat: 1, maxLng: 2 }))
+    expect(twoDegWide).toBeCloseTo(2 * oneDeg, -8)
   })
 })
 

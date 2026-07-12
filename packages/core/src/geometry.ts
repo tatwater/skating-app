@@ -15,6 +15,7 @@ import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
 import buffer from '@turf/buffer'
 import { feature, featureCollection } from '@turf/helpers'
 import intersect from '@turf/intersect'
+import pointOnFeature from '@turf/point-on-feature'
 import truncate from '@turf/truncate'
 import type { Feature, LineString, MultiPolygon, Polygon, Position } from 'geojson'
 
@@ -70,6 +71,27 @@ export function polygonBBox(geom: Polygon | MultiPolygon | LineString): BBox {
 /** Is a point inside a polygon / multipolygon? (A point on the boundary counts as inside.) */
 export function pointInPolygon(point: LatLng, polygon: Polygon | MultiPolygon): boolean {
   return booleanPointInPolygon([point.lng, point.lat], polygon)
+}
+
+/**
+ * A representative point *guaranteed to lie on the water body's surface* (Turf
+ * `pointOnFeature`) — the **on-water** point stored as `waterBodies.centroid` (D48).
+ *
+ * NOT the area centroid: the centroid of a crescent / horseshoe / ring-shaped lake can
+ * land on dry land in the concavity, which would break both the geospatial point index
+ * and D20's "fit the map to this lake." `pointOnFeature` always returns a point within the
+ * polygon (in the area of a Polygon, on one of the parts of a MultiPolygon), so a skater
+ * tapping the map or a "nearest body" query never resolves to a point off the water.
+ */
+export function representativePoint(geom: Polygon | MultiPolygon): LatLng {
+  // GeoJSON positions are `[lng, lat]`; cast past noUncheckedIndexedAccess.
+  const [lng, lat] = pointOnFeature(feature(geom)).geometry.coordinates as [number, number]
+  return { lat, lng }
+}
+
+/** Surface area of a water body's polygon in square metres (geodesic; wraps `@turf/area`). */
+export function surfaceAreaSqM(geom: Polygon | MultiPolygon): number {
+  return area(feature(geom))
 }
 
 /**

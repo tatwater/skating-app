@@ -255,6 +255,9 @@ importers:
       '@turf/intersect':
         specifier: ^7.3.5
         version: 7.3.5
+      '@turf/point-on-feature':
+        specifier: ^7.3.5
+        version: 7.3.5
       '@turf/truncate':
         specifier: ^7.3.5
         version: 7.3.5
@@ -4021,6 +4024,12 @@ packages:
   '@turf/clone@7.3.5':
     resolution: {integrity: sha512-qfIaHj3410QEcTpiCRnTzhq8YrUp2gWrUIPLBAEFykopNxJkq1du1VrRzvuAo36ap2UV7KppkS6wGNypbcxswQ==}
 
+  '@turf/distance@7.3.5':
+    resolution: {integrity: sha512-uQAC63zg/l91KUxzfhqio7Ii3+UXTrPOVJScIdRj6EO6+9XHI4kC+AdyIS4cPAv14sZfJLIBxzMnzcGrss+kEA==}
+
+  '@turf/explode@7.3.5':
+    resolution: {integrity: sha512-Qdd7ehX5AF0DdpJl+JJyxws7jEmsZBRV35wTm+Lyhapuc3yLHU7tN5EqJ+2lVV7RkUgBXEFQV+34pmPLPGQn+w==}
+
   '@turf/helpers@7.3.5':
     resolution: {integrity: sha512-E/NMGV5MwbjjP7AJXBtsanC3yY8N2MQ87IGdIgkB2ji5AtBpwnH4L3gEqpYN4RlCJJWbLbzO91BbKv2waUd0eg==}
 
@@ -4035,6 +4044,12 @@ packages:
 
   '@turf/meta@7.3.5':
     resolution: {integrity: sha512-r+ohqxoyqeigFB0oFrQx/YEHIkOKqcKpCjvZkvZs7Tkv+IFco5MezAd2zd4rzK+0DfFgDP3KpJc7HqrYjvEjhg==}
+
+  '@turf/nearest-point@7.3.5':
+    resolution: {integrity: sha512-qcsbj9fo5CYhGeIDaJORoqiZyjNGu2+Te31MVaFoTTxqqkXypxp9e6HJGvUi2zPd1Zk3oAWXhvm1a+UXw2G56w==}
+
+  '@turf/point-on-feature@7.3.5':
+    resolution: {integrity: sha512-Y7W+JZJCmm9Qq93NHpk4dVhzAtAk2Uyau2Uk1ttCJ2Jsnuu4dwSjOurpmgDmMUe7yPmzihAUYhMFDumpAja8ZA==}
 
   '@turf/projection@7.3.5':
     resolution: {integrity: sha512-G4bejYKT0vCQZryMhEoS9aLmP7ThDg6nb3zi3wPzELiTrGNOd2YgkWVheQDGCk4hcqEIWZc9fI2alaRSSkkLVw==}
@@ -12320,6 +12335,20 @@ snapshots:
       '@types/geojson': 7946.0.16
       tslib: 2.8.1
 
+  '@turf/distance@7.3.5':
+    dependencies:
+      '@turf/helpers': 7.3.5
+      '@turf/invariant': 7.3.5
+      '@types/geojson': 7946.0.16
+      tslib: 2.8.1
+
+  '@turf/explode@7.3.5':
+    dependencies:
+      '@turf/helpers': 7.3.5
+      '@turf/meta': 7.3.5
+      '@types/geojson': 7946.0.16
+      tslib: 2.8.1
+
   '@turf/helpers@7.3.5':
     dependencies:
       '@types/geojson': 7946.0.16
@@ -12346,6 +12375,25 @@ snapshots:
   '@turf/meta@7.3.5':
     dependencies:
       '@turf/helpers': 7.3.5
+      '@types/geojson': 7946.0.16
+      tslib: 2.8.1
+
+  '@turf/nearest-point@7.3.5':
+    dependencies:
+      '@turf/clone': 7.3.5
+      '@turf/distance': 7.3.5
+      '@turf/helpers': 7.3.5
+      '@turf/meta': 7.3.5
+      '@types/geojson': 7946.0.16
+      tslib: 2.8.1
+
+  '@turf/point-on-feature@7.3.5':
+    dependencies:
+      '@turf/boolean-point-in-polygon': 7.3.5
+      '@turf/center': 7.3.5
+      '@turf/explode': 7.3.5
+      '@turf/helpers': 7.3.5
+      '@turf/nearest-point': 7.3.5
       '@types/geojson': 7946.0.16
       tslib: 2.8.1
 
