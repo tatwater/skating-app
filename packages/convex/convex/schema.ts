@@ -46,6 +46,7 @@ import {
   POINT_EVENT_REASONS,
   PRECIP_TYPES,
   RATING_VERDICTS,
+  REMOVAL_REASONS,
   REPORT_SOURCES,
   REVIEW_STATUSES,
   SKY_CONDITIONS,
@@ -131,10 +132,14 @@ export default defineSchema({
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)
     mergedIntoId: v.optional(v.id('waterBodies')), // reads follow the survivor (D36)
     duplicateCandidateIds: v.optional(v.array(v.id('waterBodies'))),
+    removedAt: v.optional(v.number()), // soft-delist (D48); reversible, cleared on restore
+    removedByUserId: v.optional(v.id('profiles')), // the admin who removed it (D48)
+    removalReason: v.optional(literals(REMOVAL_REASONS)), // why it was delisted (D48)
     createdAt: v.number(),
   })
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
-    .index('by_review_status', ['reviewStatus']), // user-body approval queue (D37)
+    .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
+    .index('by_external_id', ['source', 'externalId']), // idempotent canonical upsert (D14/D48)
 
   reports: defineTable({
     authorId: v.id('profiles'),

@@ -24,11 +24,23 @@ export const ACTIVITY_PROMPT_STATES = ['pending', 'prompted', 'converted', 'dism
 /** Where a water body came from (D14). */
 export const WATER_BODY_SOURCES = ['osm', 'nhd', 'user'] as const
 
+/** Canonical (non-user) sources — the external feeds `importCanonical` upserts (D14). */
+export const CANONICAL_SOURCES = ['osm', 'nhd'] as const
+
 /** Moderation review lifecycle for user-created water bodies (D37). */
 export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const
 
 /** Dedup state for user-created water bodies (D36). */
 export const DEDUP_STATUSES = ['clean', 'suspected_duplicate', 'merged'] as const
+
+/** Why an admin soft-delisted a water body — reversible, never a hard delete (D48). */
+export const REMOVAL_REASONS = [
+  'landowner_request',
+  'unskateable',
+  'junk',
+  'duplicate',
+  'other',
+] as const
 
 /** How a report entered the system. */
 export const REPORT_SOURCES = ['native', 'activity', 'imported'] as const
