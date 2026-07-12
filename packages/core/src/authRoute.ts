@@ -1,8 +1,10 @@
-import { isCurrentRiskAckVersion } from '@skating/core'
+import { isCurrentRiskAckVersion } from './riskAck'
 
 /**
- * Which top-level navigation surface a user should see. Pure so the root navigator's
- * gating (D26/D45) is unit-testable without an Expo Router / React render harness.
+ * Which top-level navigation surface a signed-in-or-not user should see (D26/D45). Pure so
+ * each app's root gating is unit-testable without a render harness — and shared (D7) so
+ * mobile (Expo Router) and web (TanStack Router) resolve the *same* four states from the
+ * same inputs, differing only in how they render each one.
  *
  *  - `loading`    — Clerk not ready yet, or (signed in) the profile query still resolving;
  *                   render a blank frame so we don't flash sign-in or bounce to onboarding.

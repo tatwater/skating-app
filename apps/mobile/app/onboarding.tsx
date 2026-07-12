@@ -6,6 +6,7 @@ import {
   meetsMinimumAge,
   normalizeDisplayName,
   normalizeUsername,
+  parseDateOfBirth,
 } from '@skating/core'
 import { useMutation } from 'convex/react'
 import { ConvexError } from 'convex/values'
@@ -14,7 +15,6 @@ import { ScrollView } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui'
 import { RiskAckConsent } from '../src/components/RiskAckConsent'
-import { parseDateOfBirth } from '../src/lib/dob'
 import { RISK_ACK_VERSION } from '../src/lib/riskAck'
 
 /**
@@ -118,7 +118,7 @@ export default function OnboardingScreen() {
               autoCapitalize="none"
               keyboardType="numbers-and-punctuation"
             />
-            {dobTouched && !dobMs ? (
+            {dobTouched && dobMs === null ? (
               <Text color="$danger">Enter a valid date as YYYY-MM-DD.</Text>
             ) : dobTouched && !oldEnough ? (
               <Text color="$danger">You must be at least {MINIMUM_SIGNUP_AGE} to use Skating.</Text>

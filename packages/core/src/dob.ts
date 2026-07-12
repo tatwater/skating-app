@@ -1,8 +1,8 @@
 /**
- * Strict date-of-birth parsing for the signup age gate (D41). We collect DOB as a
- * `YYYY-MM-DD` string and convert to UTC ms so `@skating/core`'s age math
- * (`meetsMinimumAge`, `isMinor`) can consume it. Pure + tested — the safety-relevant
- * bit (rejecting garbage / impossible dates) lives here, not in the screen.
+ * Strict date-of-birth parsing for the signup age gate (D41). Both apps collect DOB as a
+ * `YYYY-MM-DD` string and convert to UTC ms so the age math (`meetsMinimumAge`, `isMinor`)
+ * can consume it. Pure + tested — the safety-relevant bit (rejecting garbage / impossible
+ * dates) lives here, shared across surfaces (D7), not in any one screen.
  */
 /**
  * Plausible birth-year window. Without a lower bound, an implausibly ancient date like

@@ -1,0 +1,86 @@
+@import "tailwindcss";
+
+/* Dark mode is class-driven (next-themes toggles `.dark` on <html>), not media-driven,
+   so the user can pick a theme independent of OS (D34). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+ * Semantic theme tokens, single-sourced from @skating/design (themes.ts) — the web analog
+ * of the mobile Tamagui bridge (D7). Two first-class themes (D34): `:root` is the
+ * high-contrast bright-outdoor default (light); `.dark` is evening mode. The literal hex
+ * values below are held in sync with the design package by a Vitest parity test
+ * (styles/app.test.ts) that fails if any value drifts. Every pair here already meets WCAG
+ * AA in the design package — the FUI aesthetic must never cost that legibility.
+ */
+:root {
+  --background: #f4f7fa;
+  --foreground: #0b1016;
+  --surface: #ffffff;
+  --surface-muted: #e5edf3;
+  --foreground-muted: #405366;
+  --border: #c9d7e2;
+  --border-strong: #526b81;
+  --primary: #0e698b;
+  --primary-foreground: #ffffff;
+  --ring: #0884ab;
+  --danger: #c81e2b;
+  --danger-foreground: #ffffff;
+  --warning: #e39a09;
+  --warning-foreground: #0b1016;
+  --success: #137138;
+  --success-foreground: #ffffff;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: #0b1016;
+  --foreground: #f4f7fa;
+  --surface: #151d26;
+  --surface-muted: #232e3a;
+  --foreground-muted: #a1b6c7;
+  --border: #232e3a;
+  --border-strong: #728da3;
+  --primary: #1fc9ec;
+  --primary-foreground: #0b1016;
+  --ring: #1fc9ec;
+  --danger: #c81e2b;
+  --danger-foreground: #ffffff;
+  --warning: #e39a09;
+  --warning-foreground: #0b1016;
+  --success: #137138;
+  --success-foreground: #ffffff;
+}
+
+/* Expose the semantic tokens as Tailwind color/radius utilities (bg-background,
+   text-foreground-muted, border-border, bg-primary, …). */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+  --color-danger: var(--danger);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --radius-lg: var(--radius);
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+}
