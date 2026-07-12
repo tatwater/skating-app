@@ -127,8 +127,22 @@ reviewStatus?: enum(pending, approved, rejected)  // source==user only; auto-vis
 dedupStatus: enum(clean, suspected_duplicate, merged)  // default clean (D36)
 mergedIntoId?: ref(waterBodies)       // set when merged; reads follow the survivor
 duplicateCandidateIds?: ref(waterBodies)[]  // cached suspects for the review queue
+removedAt?: timestamp                 // soft-delist (D48); reversible, cleared on restore
+removedByUserId?: ref(profiles)       // the admin who removed it (D48)
+removalReason?: enum(landowner_request, unskateable, junk, duplicate, other)  // D48
 createdAt: timestamp
 ```
+> **Listing (`listed`, D48/D5).** Whether a body shows on the public map is a **derived
+> boolean** indexed as the `@convex-dev/geospatial` filter key: **`true`** for canonical
+> (`osm`/`nhd`) bodies and auto-visible/approved user bodies; **`false`** when `rejected`,
+> `merged`, or **removed** (`removedAt` set). `waterBodies.listInViewport` filters
+> `listed == true`. Removal (D48) is a **reversible soft-delist** (never a hard delete):
+> flip `listed` off, stamp `removed*`, write a `moderationActions` audit row, and — because
+> the OSM import re-runs — the idempotent `importCanonical` upsert **must preserve** a
+> removed state so a re-import never resurrects it.
+> **`centroid` is a guaranteed on-water representative point** (Turf `pointOnFeature`), not
+> a raw area centroid — the area centroid of a crescent/horseshoe lake can land on shore,
+> which would break both the geospatial point index and D20's "fit the map to this lake."
 > Rivers: model as **segments/reaches** (D4). A long river = multiple `waterBodies`
 > rows (or one row per named reach), so reports/hazards attach to the right stretch.
 > **Dedup (D36):** match on create (bbox prefilter → Turf IoU / point-in-polygon +
@@ -461,11 +475,16 @@ profiles 1─* pointEvents
   (`waterBodies.centroid`, `reports.point`, `hazards` bbox center) for
   viewport/nearest queries.
   - **Implemented (D5):** the component is installed (`convex/convex.config.ts`) and
-    `waterBodies.centroid` is indexed on `create`/`approve` with a `reviewStatus`
-    filter key, queried by `waterBodies.listInViewport`. The offline hermetic codegen
-    (`scripts/codegen.mjs`) emits the `components` handle so this typechecks/tests
-    without a deployment; see the convex package README. **Still to wire:**
-    `reports.point` / hazard-center indexing and the bbox-intersection refine (below).
+    `waterBodies.centroid` is indexed on `create`/`approve`, queried by
+    `waterBodies.listInViewport`. The offline hermetic codegen (`scripts/codegen.mjs`)
+    emits the `components` handle so this typechecks/tests without a deployment; see the
+    convex package README.
+  - **Phase 1 change (D48):** the filter key becomes the derived boolean **`listed`**
+    (replacing the Phase-0 `reviewStatus`-only filter, which would have hidden all
+    canonical bodies and all auto-visible `pending` user bodies). Set `listed` at
+    import/`create`/`approve`/`reject`/`remove`; `listInViewport` filters `listed == true`.
+  - **Still to wire:** `reports.point` / hazard-center indexing and the bbox-intersection
+    refine (below).
   - **Viewport semantic (decided): a body is "in view" when its `bbox` intersects the
     viewport, not when its centroid is inside it** — a large lake can fill the screen
     with its centroid off-screen. The component indexes *points*, so `listInViewport`
@@ -488,7 +507,8 @@ profiles 1─* pointEvents
   by `reportId`; `activityConnections` by `userId`; `bounties` by
   `waterBodyId + status`; `blocks` by `blockerId` and by `blockedId`;
   `contentFlags` by `status` and by `targetType + targetId`; `waterBodies` by
-  `dedupStatus` (review queue) and by `reviewStatus` (user-body approval queue, D37);
+  `dedupStatus` (review queue), by `reviewStatus` (user-body approval queue, D37), and by
+  `externalId` (idempotent canonical OSM/NHD upsert, D14/D48 — `by_external_id`);
   `moderationActions` by `targetType + targetId` (target history) and by `actorId`;
   `supportTickets` by `status`; `profiles` by `status` (ban/suspend admin views),
   by `clerkUserId` (identity lookup, D26) and by `username` (search/uniqueness) — in

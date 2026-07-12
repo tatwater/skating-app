@@ -72,13 +72,45 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
   distribution for the mobile alpha crew is still pending its own track.
 
 ## Phase 1 — Water-body data
-- OSM ETL for one **pilot region**: clip + simplify polygons; load `waterBodies`
-  (name, type, polygon, bbox, centroid, area) (D5/D14).
-- **Done:** water bodies queryable by bbox and rendering on the map.
-- Needs: OSM extract tooling (GDAL/QGIS), Convex.
+> **Detailed build plan:** [`phase-1-water-bodies.md`](./phase-1-water-bodies.md).
+> **Pilot region: Vermont** (compact; the Nordic-skating heartland — Lake Morey et al.).
+> **Rivers deferred** to a later release (reaches are hard; pilot skating is still-water) —
+> import lakes/ponds/reservoirs only.
+
+- **OSM ETL** (`scripts/etl`, run manually) for Vermont: filter water features, map OSM
+  tags → our `type` enum, **simplify to ~5 m fidelity** (Google/Apple-parity for click
+  zones + fill coloring), compute `bbox` / `centroid` (an **on-water** point, D48) /
+  `surfaceAreaSqM`; emit NDJSON keyed by OSM id (D5/D14). Store generously — clutter is a
+  *display* problem (zoom-based rendering), not a reason to under-populate (D48).
+- **Idempotent import** into `waterBodies`: an internal `importCanonical` mutation
+  (`source: 'osm'`, `listed: true`), upsert-keyed on `source + externalId` (new
+  **`by_external_id`** index), inserting centroids into the geospatial index. Re-runnable;
+  **preserves removed state** across re-imports (D48).
+- **`listed` filter-key refactor + bbox-intersection viewport (D5/D48):** replace the
+  Phase-0 `reviewStatus`-only geospatial filter with the derived `listed` boolean (fixes
+  canonical bodies being hidden + the D37 auto-visible contradiction), and implement the
+  decided bbox-intersection `listInViewport` (expanded geospatial prefilter → `@skating/core`
+  `bboxIntersects` refine), now tunable against the real polygon corpus.
+- **Admin remove/restore (D48):** minimal `remove`/`restore` mutations (soft-delist +
+  `removalReason` + `moderationActions` audit row) so the fresh import can be curated and a
+  landowner takedown honored. Request-intake UX defers to Phase 4.
+- **Read-only map layer (web):** a MapLibre map (**Protomaps `.pmtiles`** basemap, D6 —
+  start on hosted demo tiles, swap to a self-built Vermont extract) rendering the imported
+  polygons, to *confirm* the data. Full interactive map + report creation stays Phase 2.
+- **Attribution:** "© OpenStreetMap contributors" (**ODbL**) shown wherever the data/basemap
+  appears — a build-time acceptance criterion like "Powered by Strava" (see
+  `04-integrations.md`).
+- **Done:** Vermont water bodies queryable by bbox (bbox-intersection) and rendering on the
+  read-only web map, with OSM attribution; admins can remove/restore a body.
+- Needs: OSM extract tooling (osmium/GDAL + a JS simplify pass), Convex, a Protomaps
+  basemap (self-built or hosted demo).
 
 ## Phase 2 — Map + reports (the MVP)
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
+- **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived
+  display score (area now; popularity + admin `curatedBoost` later), decoupled from the D48
+  `listed` gate — so a small-but-beloved lake (Lake Morey) can still show at state zoom while
+  clutter drops. Phase 1 only stores `surfaceAreaSqM`; the score/threshold lands here.
 - Tap a water body → detail view (name, area, report feed by **skate time**).
 - Create + read a **report** (ice types, surface tags, coarse quality, structured
   thickness, photos, conditions, visibility) — **offline-capable** (D9/D30), with

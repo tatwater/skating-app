@@ -167,6 +167,22 @@ but the ingestion + AI use must still clear the source's own ToS + consent (Q8).
 
 ---
 
+## OpenStreetMap data (ODbL) — attribution + compliance
+
+Water-body polygons (Phase 1 ETL, D5/D14) and the Protomaps basemap (D6) both derive from
+**OpenStreetMap**, licensed under the **Open Database License (ODbL)**. Treat attribution as
+a **build-time acceptance criterion**, the same class of obligation as "Powered by Strava":
+
+- [ ] **"© OpenStreetMap contributors"** shown wherever OSM-derived data or the basemap is
+      displayed (the map view, at minimum) — visible, not buried.
+- [ ] The credit links to <https://www.openstreetmap.org/copyright> where practical.
+- [ ] Persist attribution in any exported/shared/deep-linked map view.
+- [ ] **Share-Alike awareness:** ODbL is share-alike on the *database*. Our derived
+      `waterBodies` extract is an OSM-derived database; if we ever *publish* that extract we
+      do so under ODbL. (Displaying it in-app is a "Produced Work" — attribution suffices;
+      the share-alike bite is on redistributing the data itself.) Full wording is
+      legal-gated with the rest of Q10.
+
 ## Weather (context, not prediction)
 
 - Provider: **Open-Meteo** — forecast + **historical archive**, free, no API key.

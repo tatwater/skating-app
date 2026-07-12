@@ -38,8 +38,16 @@ open-source-friendly licensing. Founder to narrow down.
 **Tiles (MapLibre):**
 | Option | Pros | Cons |
 |---|---|---|
-| **Protomaps** (leaning) | Single `.pmtiles` **static file** on any CDN/S3 — low-ops (no server) **and unmetered**, ~free, custom styles | You host the file; updates = re-extract |
-| MapTiler | Free tier, hosted vector tiles + styles, geocoding too | API key; usage caps |
+| **Protomaps** ✅ **chosen (D6)** | Single `.pmtiles` **static file** on any CDN/S3 — low-ops (no server) **and unmetered**, ~free, no API key, **offline-friendly** (cacheable file — fits the cold-field app, D9/D12), custom styles | You host the file; updates = re-extract |
+| MapTiler | Free tier, hosted vector tiles + styles, geocoding too | API key in client; usage-metered caps; vendor lock-in |
+
+**Why Protomaps over MapTiler (long-term):** unmetered static file matches the cost
+posture (D35); it's genuinely offline-friendly for a cold-weather field app (D9/D12); the
+OSM ETL we build in Phase 1 is the *same shape* of work as building a `.pmtiles` basemap;
+and it keeps the stack fully open (D43). MapTiler wins on instant setup + polished default
+styles — fine to borrow its free demo/hosted tiles to get pixels on screen early, then swap
+to a self-built regional extract (D5 keeps renderer/tiles/data independent, so it's a
+one-line style change). Attribution: **"© OpenStreetMap contributors"** (ODbL) either way.
 | Stadia Maps | Free tier, hosted | API key; usage caps |
 | Self-hosted tileserver-gl | Full control | Ops burden |
 

@@ -669,3 +669,76 @@ already reading, and spend dedicated routes only where identity or depth demands
 **Scope note:** this refines the **web** route list only. **Mobile's shipped 5-tab
 structure** (Map · Newsfeed · ＋Report · Bounties · You) is **unchanged**; whether mobile
 later adopts the same fold is left open, not decided here.
+
+## D48 — Water-body removal: reversible soft-delist (curation + landowner takedown)
+**Decided.** Admins can **remove a water body from the map** — but never a hard delete.
+It's a **reversible soft-delist**, consistent with the never-destroy ethos everywhere
+else (hazard archive D15, account anonymize D33, merge tombstone D36).
+**Two motivations, one mechanism:**
+- **Curation** — unskateable / inaccessible junk cluttering the map (the alpine tarn or
+  backyard pond nobody can get to).
+- **Landowner takedown** — "don't send people to my private pond." Partly
+  good-citizenship, partly **trespass-risk mitigation**, which is on-mission for a safety
+  app (D3).
+**Mechanics:**
+- Removal flips the derived geospatial filter key **`listed`** to `false`, dropping the
+  body off the map immediately with **no new query machinery**.
+- Record *why* on the document: `removedAt`, `removedByUserId`,
+  `removalReason: enum(landowner_request | unskateable | junk | duplicate | other)`.
+  **Restore** clears them.
+- Every remove/restore writes a **`moderationActions`** audit row (reuse the existing
+  `remove` / `restore` actions + `targetType: waterbody`, D37).
+- **Re-ETL safety:** the idempotent `importCanonical` upsert (keyed on `source +
+  externalId`) **must preserve a removed state** — a later re-import must NOT resurrect a
+  removed body, above all a landowner takedown.
+**The `listed` key (also resolves a Phase-0 latent bug).** This introduces a boolean
+`listed` geospatial filter key that replaces the old `reviewStatus`-only filter on
+`waterBodies.listInViewport`. `listed` is **true** for canonical (`osm`/`nhd`) bodies and
+for auto-visible/approved user bodies; **false** for `rejected`, `merged`, or `removed`.
+The old `reviewStatus === 'approved'` filter (Phase 0 scaffold) would have (a) **hidden
+every canonical body** — they carry no `reviewStatus` — which is the exact opposite of
+Phase 1's goal, and (b) contradicted D37's "**user bodies are auto-visible,
+review-after**" by hiding freshly-created `pending` bodies. `listed` fixes both.
+**Scope.** A **minimal admin `remove`/`restore` mutation lands in Phase 1** — data hygiene
+for curating the fresh OSM import the moment we look at it, and cheap given `listed`
+already exists. The **takedown *request* intake** (a form → a work queue an admin triages)
+rides with the **Phase 4** operator surface (D37), not hand-rolled now.
+**Deferred edges (logged, not built):** (a) a landowner's pond **re-created as a user body**
+(D14) — teaching dedup to honor a suppression list is future hardening; (b) the exact
+takedown **wording/obligation** is **legal-gated (Q10)** — we ship the mechanism now,
+settle the policy later.
+**Why:** A map that can't be curated fills with unskateable clutter, and a safety app that
+can direct people onto private land needs a takedown lever. This is the display-side
+complement to the storage decision: **store every lake** (discovery needs bodies to exist
+before anyone reports on them — D14/D28), but **control what displays** (soft-delist +
+zoom-based rendering), rather than under-populating the data.
+
+## D49 — Zoom-scored display prominence (the zoom-based rendering D48 gestured at)
+**Decided (mechanism); built in Phase 2, not Phase 1.** D48 said clutter is a *display*
+problem solved by "zoom-based rendering." This decision names that mechanism: which bodies
+*draw at a given zoom* is a derived **display score**, separate from whether a body is
+allowed on the map at all.
+**Decoupled from `listed` (D48).** `listed` is the binary "may this body appear on the map,
+ever" gate — Lake Morey is always `listed: true`. The zoom at which it actually **draws** is
+a distinct display-tier concept layered on top. Do **not** overload `listed` with prominence.
+**Score shape (when built):**
+```
+score = w_area · normalize(log(area))   // log — pond→Champlain spans orders of magnitude
+      + w_pop  · normalize(popularity)   // reports + distinct skaters, trailing & decayed
+      + curatedBoost                      // admin bump for known destinations
+→ minVisibleZoom(score)                   // higher score ⇒ draws at a lower (wider) zoom
+```
+- **Popularity is a boost, not a gate.** A pure popularity gate is rich-get-richer (popular
+  lakes draw more → get more reports → score higher), which buries obscure-but-good spots and
+  fights the discovery mission (D14/D28). Area guarantees a discoverability *floor* at the
+  appropriate zoom; popularity only promotes.
+- **`curatedBoost` is the cold-start answer.** In Phase 1 there is zero popularity signal (no
+  reports/skates/users), so "we know Lake Morey matters before we have data" is expressed as a
+  manual admin boost — the same curation muscle as the D48 remove/restore surface.
+**Phase 1 scope:** build **none** of the scoring. Phase 1 only populates `surfaceAreaSqM` (the
+raw material) and uses a soft viewport cap with truncation logging (see D5). The stored
+`displayScore` and threshold curve are optional Convex fields added in Phase 2 — free to defer
+(optional fields need no migration). See `phase-1-water-bodies.md` and Phase 2 in the roadmap.
+**Why:** area alone would let Champlain dominate and would drop a small-but-beloved lake like
+Morey from the state view; a score that combines area with (later) popularity and an
+admin-curated boost keeps the map legible at every zoom without under-populating the data.

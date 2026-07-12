@@ -18,6 +18,10 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
 | 06 | [Data model](./06-data-model.md) | Conceptual schema for every entity + vocabulary. |
 | 07 | [Roadmap](./07-roadmap.md) | Phased build sequence; each phase is independently useful. |
 
+**Phase build plans** (the *how* for a phase, linked from the roadmap):
+- [Phase 1 — Water-body data](./phase-1-water-bodies.md) — OSM ETL, import, `listed`
+  refactor, read-only map (Vermont pilot).
+
 ## How these fit together
 
 - **Vision (00)** sets the principles. Everything else must serve them — especially
