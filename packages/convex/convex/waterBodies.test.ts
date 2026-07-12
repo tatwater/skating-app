@@ -1,7 +1,7 @@
 import geospatial from '@convex-dev/geospatial/test'
 import { convexTest } from 'convex-test'
-import { describe, expect, test } from 'vitest'
-import { api } from './_generated/api'
+import { describe, expect, test, vi } from 'vitest'
+import { api, internal } from './_generated/api'
 import type { Id } from './_generated/dataModel'
 import schema from './schema'
 
@@ -38,6 +38,25 @@ const SAMPLE_BODY = {
   },
   bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
   centroid: { lat: 0.5, lng: 0.5 },
+}
+
+/** A canonical (OSM) body as the ETL would hand it to `importCanonical`. */
+const CANONICAL_ITEM = {
+  externalId: 'osm/way/1',
+  name: 'Lake Champlain',
+  type: 'lake' as const,
+  polygon: SAMPLE_BODY.polygon,
+  bbox: SAMPLE_BODY.bbox,
+  centroid: SAMPLE_BODY.centroid,
+  surfaceAreaSqM: 1_000_000,
+}
+
+/** The `_id` of the single water body in the DB (import/seed helpers create exactly one). */
+async function onlyBodyId(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodies'>> {
+  const bodies = await t.run((ctx) => ctx.db.query('waterBodies').collect())
+  const id = bodies[0]?._id
+  if (!id) throw new Error('expected exactly one water body')
+  return id
 }
 
 /** Seed a provisioned profile with a given role/status and return an identity-scoped tester. */
@@ -231,16 +250,17 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
 })
 
 describe('waterBodies.listInViewport (geospatial, D5)', () => {
-  test('excludes a pending body (approved-only filter), includes it once approved', async () => {
+  test('a pending user body is auto-visible (D37/D48) and stays visible after approval', async () => {
     const t = convexTestWithGeo()
     const asMember = await seedUser(t, 'clerk_member')
     const bodyId = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY)
 
-    // Pending: indexed, but the approved-only filter keeps it out of the public view.
+    // D48 fix: a fresh (pending) user body is listed immediately — not hidden until approved.
     const whilePending = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
     })
-    expect(whilePending).toHaveLength(0)
+    expect(whilePending.map((b) => b._id)).toEqual([bodyId])
+    expect(whilePending[0]?.name).toBe('Lake Morey')
 
     const asMod = await seedUser(t, 'clerk_mod', 'moderator')
     await asMod.mutation(api.waterBodies.approve, { waterBodyId: bodyId })
@@ -248,22 +268,94 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     const afterApprove = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
     })
-    expect(afterApprove).toHaveLength(1)
-    expect(afterApprove[0]?._id).toEqual(bodyId)
-    expect(afterApprove[0]?.name).toBe('Lake Morey')
+    expect(afterApprove.map((b) => b._id)).toEqual([bodyId])
   })
 
-  test('excludes an approved body whose centroid is outside the viewport', async () => {
+  test('excludes a body whose bbox does not intersect the viewport', async () => {
     const t = convexTestWithGeo()
     const asMember = await seedUser(t, 'clerk_member')
-    const bodyId = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY)
-    const asMod = await seedUser(t, 'clerk_mod', 'moderator')
-    await asMod.mutation(api.waterBodies.approve, { waterBodyId: bodyId })
+    await asMember.mutation(api.waterBodies.create, SAMPLE_BODY)
 
     const elsewhere = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_ELSEWHERE,
     })
     expect(elsewhere).toHaveLength(0)
+  })
+
+  test('returns a large body whose centroid is off-screen but whose bbox overlaps (D5)', async () => {
+    const t = convexTestWithGeo()
+    // A big lake centred at (0.8, 0.8), well outside the tiny viewport, but spanning it.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          externalId: 'osm/big',
+          name: 'Big Lake',
+          type: 'lake',
+          polygon: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [-1, -1],
+                [-1, 1],
+                [1, 1],
+                [1, -1],
+                [-1, -1],
+              ],
+            ],
+          },
+          bbox: { minLat: -1, minLng: -1, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.8, lng: 0.8 },
+        },
+      ],
+    })
+    const tinyViewport = { minLat: 0, minLng: 0, maxLat: 0.1, maxLng: 0.1 }
+    const inView = await t.query(api.waterBodies.listInViewport, { viewport: tinyViewport })
+    expect(inView.map((b) => b.name)).toEqual(['Big Lake'])
+  })
+
+  test('refines out a nearby body whose bbox does NOT intersect the viewport', async () => {
+    const t = convexTestWithGeo()
+    // Centroid (0.55, 0.55) falls inside the expanded prefilter but the body's bbox
+    // (0.5–0.6) doesn't touch the tiny viewport — the bboxIntersects refine drops it.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          externalId: 'osm/near',
+          name: 'Near Pond',
+          type: 'pond',
+          polygon: SAMPLE_BODY.polygon,
+          bbox: { minLat: 0.5, minLng: 0.5, maxLat: 0.6, maxLng: 0.6 },
+          centroid: { lat: 0.55, lng: 0.55 },
+        },
+      ],
+    })
+    const tinyViewport = { minLat: 0, minLng: 0, maxLat: 0.1, maxLng: 0.1 }
+    expect(await t.query(api.waterBodies.listInViewport, { viewport: tinyViewport })).toHaveLength(
+      0,
+    )
+  })
+
+  test('warns (does not silently drop) when the prefilter cap is hit at a wide zoom (D5/D49)', async () => {
+    const t = convexTestWithGeo()
+    // Three listed bodies inside the viewport; a limit of 2 forces the prefilter to truncate.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [0.3, 0.5, 0.7].map((c) => ({
+        externalId: `osm/${c}`,
+        name: `Body ${c}`,
+        type: 'pond' as const,
+        polygon: SAMPLE_BODY.polygon,
+        bbox: { minLat: c - 0.05, minLng: c - 0.05, maxLat: c + 0.05, maxLng: c + 0.05 },
+        centroid: { lat: c, lng: c },
+      })),
+    })
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const inView = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      limit: 2,
+    })
+    expect(inView).toHaveLength(2) // capped
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('prefilter cap'))
+    warn.mockRestore()
   })
 
   test('returns only the bodies inside the viewport when several exist', async () => {
@@ -287,6 +379,143 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
       viewport: VIEWPORT_CONTAINING,
     })
     expect(inView.map((b) => b._id)).toEqual([insideId])
+  })
+})
+
+describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
+  test('inserts a canonical body (listed) and is idempotent on re-import', async () => {
+    const t = convexTestWithGeo()
+
+    const r1 = await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    expect(r1).toEqual({ inserted: 1, updated: 0 })
+
+    // Re-import with a changed name: same row updated, geometry/name patched, no new row.
+    const r2 = await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, name: 'Lake Champlain (renamed)' }],
+    })
+    expect(r2).toEqual({ inserted: 0, updated: 1 })
+
+    const all = await t.run((ctx) => ctx.db.query('waterBodies').collect())
+    expect(all).toHaveLength(1)
+    expect(all[0]?.source).toBe('osm')
+    expect(all[0]?.name).toBe('Lake Champlain (renamed)')
+
+    // Canonical bodies are auto-listed (no reviewStatus), so they render on the map.
+    const inView = await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING })
+    expect(inView.map((b) => b._id)).toEqual([all[0]?._id])
+  })
+
+  test('a removed canonical body stays removed across re-import (landowner takedown, D48)', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    const bodyId = await onlyBodyId(t)
+
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin')
+    await asAdmin.mutation(api.waterBodies.remove, {
+      waterBodyId: bodyId,
+      reason: 'landowner_request',
+    })
+    expect(
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING }),
+    ).toHaveLength(0)
+
+    // The idempotent re-import must NOT resurrect the takedown.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    const body = await t.run((ctx) => ctx.db.get(bodyId))
+    expect(body?.removedAt).toBeDefined()
+    expect(
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING }),
+    ).toHaveLength(0)
+  })
+})
+
+describe('waterBodies.remove / restore (admin soft-delist, D48)', () => {
+  async function seedCanonical(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodies'>> {
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    return onlyBodyId(t)
+  }
+
+  test('a moderator cannot remove (admin-only)', async () => {
+    const t = convexTestWithGeo()
+    const id = await seedCanonical(t)
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator')
+    await expect(
+      asMod.mutation(api.waterBodies.remove, { waterBodyId: id, reason: 'junk' }),
+    ).rejects.toThrow(/admin/i)
+  })
+
+  test('an admin removes (off the map, audited) then restores (back on the map, audited)', async () => {
+    const t = convexTestWithGeo()
+    const id = await seedCanonical(t)
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin')
+
+    await asAdmin.mutation(api.waterBodies.remove, { waterBodyId: id, reason: 'landowner_request' })
+    let body = await t.run((ctx) => ctx.db.get(id))
+    expect(body?.removedAt).toBeDefined()
+    expect(body?.removedByUserId).toBeDefined()
+    expect(body?.removalReason).toBe('landowner_request')
+    expect(
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING }),
+    ).toHaveLength(0)
+
+    await asAdmin.mutation(api.waterBodies.restore, { waterBodyId: id })
+    body = await t.run((ctx) => ctx.db.get(id))
+    expect(body?.removedAt).toBeUndefined()
+    expect(body?.removedByUserId).toBeUndefined()
+    expect(body?.removalReason).toBeUndefined()
+    const restored = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+    })
+    expect(restored.map((b) => b._id)).toEqual([id])
+
+    // One audit row per action, correctly typed, with the reason captured in metadata.
+    const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect())
+    expect(actions.map((a) => a.action).sort()).toEqual(['remove', 'restore'])
+    const removeRow = actions.find((a) => a.action === 'remove')
+    expect(removeRow?.targetType).toBe('waterbody')
+    expect(removeRow?.targetId).toBe(id)
+    expect(removeRow?.metadata?.removalReason).toBe('landowner_request')
+  })
+
+  test('no double-remove or double-restore (idempotency guard, no duplicate audit rows)', async () => {
+    const t = convexTestWithGeo()
+    const id = await seedCanonical(t)
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin')
+
+    await asAdmin.mutation(api.waterBodies.remove, { waterBodyId: id, reason: 'junk' })
+    await expect(
+      asAdmin.mutation(api.waterBodies.remove, { waterBodyId: id, reason: 'junk' }),
+    ).rejects.toThrow(/already removed/i)
+
+    await asAdmin.mutation(api.waterBodies.restore, { waterBodyId: id })
+    await expect(asAdmin.mutation(api.waterBodies.restore, { waterBodyId: id })).rejects.toThrow(
+      /not removed/i,
+    )
+
+    const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect())
+    expect(actions).toHaveLength(2) // exactly one remove + one restore
+  })
+
+  test('remove/restore on a missing body throws', async () => {
+    const t = convexTestWithGeo()
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin')
+    const danglingId = await t.run(async (ctx) => {
+      const cid = await ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        source: 'osm',
+        externalId: 'osm/gone',
+        dedupStatus: 'clean',
+        createdAt: Date.now(),
+      })
+      await ctx.db.delete(cid)
+      return cid
+    })
+    await expect(
+      asAdmin.mutation(api.waterBodies.remove, { waterBodyId: danglingId, reason: 'other' }),
+    ).rejects.toThrow(/not found/i)
+    await expect(
+      asAdmin.mutation(api.waterBodies.restore, { waterBodyId: danglingId }),
+    ).rejects.toThrow(/not found/i)
   })
 })
 
