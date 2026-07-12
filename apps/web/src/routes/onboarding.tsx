@@ -119,7 +119,7 @@ function OnboardingPage() {
             value={dob}
             onChange={(e) => setDob(e.target.value)}
           />
-          {dobTouched && !dobMs ? (
+          {dobTouched && dobMs === null ? (
             <p className="text-danger text-sm">Enter a valid date as YYYY-MM-DD.</p>
           ) : dobTouched && !oldEnough ? (
             <p className="text-danger text-sm">
