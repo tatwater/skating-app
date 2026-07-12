@@ -42,6 +42,7 @@ const SAMPLE_BODY = {
 
 /** A canonical (OSM) body as the ETL would hand it to `importCanonical`. */
 const CANONICAL_ITEM = {
+  source: 'osm' as const,
   externalId: 'osm/way/1',
   name: 'Lake Champlain',
   type: 'lake' as const,
@@ -288,6 +289,7 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
+          source: 'osm',
           externalId: 'osm/big',
           name: 'Big Lake',
           type: 'lake',
@@ -320,6 +322,7 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
+          source: 'osm',
           externalId: 'osm/near',
           name: 'Near Pond',
           type: 'pond',
@@ -340,6 +343,7 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     // Three listed bodies inside the viewport; a limit of 2 forces the prefilter to truncate.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [0.3, 0.5, 0.7].map((c) => ({
+        source: 'osm' as const,
         externalId: `osm/${c}`,
         name: `Body ${c}`,
         type: 'pond' as const,
@@ -426,6 +430,65 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     expect(
       await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING }),
     ).toHaveLength(0)
+  })
+
+  test('keeps OSM and NHD distinct even when they share an externalId (source in the key)', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        { ...CANONICAL_ITEM, source: 'osm', externalId: 'shared/1', name: 'From OSM' },
+        { ...CANONICAL_ITEM, source: 'nhd', externalId: 'shared/1', name: 'From NHD' },
+      ],
+    })
+    const all = await t.run((ctx) => ctx.db.query('waterBodies').collect())
+    expect(all).toHaveLength(2) // not collapsed into one
+    expect(all.map((b) => b.source).sort()).toEqual(['nhd', 'osm'])
+  })
+
+  test('warns when an imported body exceeds MAX_BODY_EXTENT_DEG (viewport invariant, D5)', async () => {
+    const t = convexTestWithGeo()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/huge',
+          name: 'Huge Sea',
+          // ~3° tall — exceeds the 2° expansion the bbox-intersection proof relies on.
+          bbox: { minLat: 0, minLng: 0, maxLat: 3, maxLng: 0.5 },
+        },
+      ],
+    })
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('MAX_BODY_EXTENT_DEG'))
+    warn.mockRestore()
+  })
+})
+
+describe('waterBodies.backfillListed (listed key-switch migration, D48)', () => {
+  test('re-indexes a body that has no geospatial entry so it becomes queryable', async () => {
+    const t = convexTestWithGeo()
+    // Insert a row directly WITHOUT a geospatial entry — mimics a body indexed under the old
+    // reviewStatus key (which a `listed` filter can't find) / never indexed.
+    const bodyId = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        source: 'osm',
+        externalId: 'osm/stale',
+        dedupStatus: 'clean',
+        createdAt: Date.now(),
+      }),
+    )
+    // Not on the map before the backfill.
+    expect(
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING }),
+    ).toHaveLength(0)
+
+    const result = await t.mutation(internal.waterBodies.backfillListed, {})
+    expect(result).toEqual({ reindexed: 1 })
+
+    // Now visible.
+    const inView = await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING })
+    expect(inView.map((b) => b._id)).toEqual([bodyId])
   })
 })
 

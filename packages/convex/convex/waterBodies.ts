@@ -13,7 +13,7 @@ import { bboxIntersects, WATER_BODY_TYPES } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import { internalMutation, mutation, query } from './_generated/server'
 import { requireProfile, requireRole } from './lib/auth'
-import { REMOVAL_REASONS } from './lib/enums'
+import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums'
 import { waterBodiesGeo } from './lib/geospatial'
 import { isListed } from './lib/listing'
 import { bbox, geoJson, latLng, literals } from './lib/validators'
@@ -27,14 +27,20 @@ import { bbox, geoJson, latLng, literals } from './lib/validators'
  * with `bboxIntersects`. `MAX_BODY_EXTENT_DEG` must exceed the largest stored body's bbox span
  * in either axis (Vermont's driver is Lake Champlain, ~1.8° of latitude); tune against the
  * real corpus once the ETL lands. The zoom-scored replacement is D49 (Phase 2).
+ *
+ * **Invariant guard:** the "can't miss it" guarantee holds only while every body's bbox span
+ * ≤ this constant. `importCanonical` `console.warn`s if an imported body exceeds it — a body
+ * larger than the expansion could have its centroid fall outside the prefilter and be dropped
+ * before the refine — so we bump the constant before that silently happens.
  */
 const MAX_BODY_EXTENT_DEG = 2
 /** Pilot cap on the centroid prefilter. Raised from 64 so a wide zoom doesn't silently drop
  *  most of Vermont before the refine; a true fix is the D49 display score (Phase 2). */
 const DEFAULT_VIEWPORT_LIMIT = 512
 
-/** A canonical (OSM/NHD) body as prepared by the ETL, keyed by its source id. */
+/** A canonical (OSM/NHD) body as prepared by the ETL, keyed by its `(source, externalId)`. */
 const canonicalBody = v.object({
+  source: literals(CANONICAL_SOURCES), // osm | nhd — never user (D14)
   externalId: v.string(),
   name: v.string(),
   type: literals(WATER_BODY_TYPES),
@@ -44,10 +50,16 @@ const canonicalBody = v.object({
   surfaceAreaSqM: v.optional(v.number()),
 })
 
+/** Largest span of a bbox in either axis, in degrees — the extent the viewport must expand by. */
+function bboxExtentDeg(b: { minLat: number; minLng: number; maxLat: number; maxLng: number }) {
+  return Math.max(b.maxLat - b.minLat, b.maxLng - b.minLng)
+}
+
 /**
- * Internal, never client-callable: idempotently upsert a batch of canonical OSM bodies
- * (D14/D48). Load via `pnpm exec convex run` from the ETL (chunk batches for the mutation
- * size limit). Keyed on `by_external_id` (`source: 'osm'`):
+ * Internal, never client-callable: idempotently upsert a batch of canonical bodies (D14/D48).
+ * Load via `pnpm exec convex run` from the ETL (chunk batches for the mutation size limit).
+ * Keyed on `by_external_id` (`(source, externalId)`), so OSM and NHD stay distinct even when a
+ * feature shares an id across feeds:
  *  - **insert** a new body as `listed: true`;
  *  - **update** an existing body's geometry/name/area but **preserve** its `removed*` /
  *    `reviewStatus` / `dedupStatus`, re-deriving `listed` via `isListed` — so a re-import
@@ -60,9 +72,20 @@ export const importCanonical = internalMutation({
     let inserted = 0
     let updated = 0
     for (const item of bodies) {
+      // Guard the viewport-expansion invariant (see MAX_BODY_EXTENT_DEG): a body larger than the
+      // expansion could be dropped by listInViewport before the bboxIntersects refine.
+      const extent = bboxExtentDeg(item.bbox)
+      if (extent > MAX_BODY_EXTENT_DEG) {
+        console.warn(
+          `importCanonical: "${item.name}" (${item.source}/${item.externalId}) spans ${extent.toFixed(2)}° > MAX_BODY_EXTENT_DEG (${MAX_BODY_EXTENT_DEG}°); raise the constant or it may be dropped from wide viewports (D5/D49).`,
+        )
+      }
+
       const existing = await ctx.db
         .query('waterBodies')
-        .withIndex('by_external_id', (q) => q.eq('source', 'osm').eq('externalId', item.externalId))
+        .withIndex('by_external_id', (q) =>
+          q.eq('source', item.source).eq('externalId', item.externalId),
+        )
         .unique()
 
       if (existing) {
@@ -89,7 +112,7 @@ export const importCanonical = internalMutation({
         const id = await ctx.db.insert('waterBodies', {
           name: item.name,
           type: item.type,
-          source: 'osm',
+          source: item.source,
           externalId: item.externalId,
           polygon: item.polygon,
           bbox: item.bbox,
@@ -109,6 +132,32 @@ export const importCanonical = internalMutation({
       }
     }
     return { inserted, updated }
+  },
+})
+
+/**
+ * Internal, one-time migration for the `listed` key-switch (D48). The geospatial index used to
+ * be keyed on `reviewStatus`; entries written under the old key won't match a `listed` filter,
+ * so any body indexed before this deploy would drop off the map until re-indexed. This
+ * re-inserts every body under the `listed` key. Run once via `pnpm exec convex run` at the
+ * switch — canonical bodies get re-keyed by the ETL re-import anyway, so this mainly covers
+ * user-created bodies. Uses `collect()`: intended for the small pre-Phase-1 dataset (Phase 0
+ * shipped with no bodies); at national scale a paginated backfill would be needed instead.
+ */
+export const backfillListed = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const bodies = await ctx.db.query('waterBodies').collect()
+    for (const body of bodies) {
+      await waterBodiesGeo.insert(
+        ctx,
+        body._id,
+        { latitude: body.centroid.lat, longitude: body.centroid.lng },
+        { listed: isListed(body) },
+        body.createdAt,
+      )
+    }
+    return { reindexed: bodies.length }
   },
 })
 

@@ -24,6 +24,9 @@ export const ACTIVITY_PROMPT_STATES = ['pending', 'prompted', 'converted', 'dism
 /** Where a water body came from (D14). */
 export const WATER_BODY_SOURCES = ['osm', 'nhd', 'user'] as const
 
+/** Canonical (non-user) sources — the external feeds `importCanonical` upserts (D14). */
+export const CANONICAL_SOURCES = ['osm', 'nhd'] as const
+
 /** Moderation review lifecycle for user-created water bodies (D37). */
 export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const
 
