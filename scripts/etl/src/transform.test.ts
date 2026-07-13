@@ -3,10 +3,12 @@ import { pointInPolygon } from '@skating/core'
 import type { MultiPolygon, Polygon } from 'geojson'
 import { describe, expect, it } from 'vitest'
 import {
+  CONVEX_ARRAY_LIMIT,
   externalIdFromProperties,
   featureToCanonicalBody,
   largestRingSize,
   MAX_RING_VERTICES,
+  maxArrayLength,
   SIMPLIFY_TOLERANCE_DEG,
   transformFeatures,
 } from './transform'
@@ -209,6 +211,54 @@ describe('featureToCanonicalBody', () => {
       ],
     }
     expect(largestRingSize(mp)).toBe(5)
+  })
+
+  it('maxArrayLength accounts for component and ring counts, not just positions', () => {
+    // 3 tiny components (each a 4-point triangle): positions=4, rings=1, components=3 → 4.
+    const fewComponents: MultiPolygon = {
+      type: 'MultiPolygon',
+      coordinates: Array.from({ length: 3 }, () => [
+        [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 0],
+        ],
+      ]),
+    }
+    expect(maxArrayLength(fewComponents)).toBe(4)
+    // Many components dominates over the (small) ring size.
+    const manyComponents: MultiPolygon = {
+      type: 'MultiPolygon',
+      coordinates: Array.from({ length: 20 }, () => [
+        [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 0],
+        ],
+      ]),
+    }
+    expect(maxArrayLength(manyComponents)).toBe(20)
+  })
+
+  it('skips (throws) a body still over the array cap after coarsening — too many components', () => {
+    // >8192 tiny components: coarsening thins positions, not component count, so this can't be
+    // made to fit and must be skipped per-feature rather than poisoning a whole loader batch.
+    const coordinates = Array.from({ length: CONVEX_ARRAY_LIMIT + 1 }, (_, i) => [
+      [
+        [-72 + i * 1e-6, 44],
+        [-72 + i * 1e-6 + 5e-4, 44],
+        [-72 + i * 1e-6, 44.0005],
+        [-72 + i * 1e-6, 44],
+      ],
+    ])
+    const feature = {
+      type: 'Feature',
+      properties: { '@type': 'relation', '@id': 7, natural: 'water', water: 'lake' },
+      geometry: { type: 'MultiPolygon', coordinates },
+    } as unknown as OsmWaterFeature
+    expect(() => featureToCanonicalBody(feature)).toThrow(/array too large/)
   })
 })
 

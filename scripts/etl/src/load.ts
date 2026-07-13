@@ -4,10 +4,11 @@
  *
  * `importCanonical` is an `internalMutation` (never client-callable); the CLI invokes it with
  * the deployment's admin credentials from `packages/convex/.env.local`. Loads the **dev**
- * deployment (settled: dev first, confirm it renders, only then prod). Thin subprocess + file
- * I/O — excluded from coverage; all real work is in the tested transform.
+ * deployment (settled: dev first, confirm it renders, only then prod) — it refuses a non-dev
+ * target unless `--prod` is passed. Thin subprocess + file I/O — excluded from coverage; all
+ * real work is in the tested transform.
  *
- *   pnpm --filter @skating/etl load <bodies.ndjson>
+ *   pnpm --filter @skating/etl load <bodies.ndjson> [--prod]
  */
 
 import { execFileSync } from 'node:child_process'
@@ -59,22 +60,64 @@ function runImport(bodies: unknown[]): { inserted: number; updated: number } {
     { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 64 * 1024 * 1024 },
   )
   // convex run pretty-prints the function's return value as a multi-line JSON object on stdout
-  // (function logs go to the inherited stderr). Parse the whole thing; fall back to the last
-  // {...} block if anything else slipped onto stdout.
+  // (function logs go to the inherited stderr). Parse it; fall back to the last {...} block if
+  // anything else slipped onto stdout. Anything we can't read as {inserted, updated} is a hard
+  // error — the mutation may well have committed, so reporting zeroes would mislead the operator.
   const trimmed = stdout.trim()
-  const candidate = trimmed.startsWith('{') ? trimmed : (trimmed.match(/\{[\s\S]*\}/)?.[0] ?? '{}')
-  try {
-    const parsed = JSON.parse(candidate)
-    return { inserted: parsed.inserted ?? 0, updated: parsed.updated ?? 0 }
-  } catch {
-    return { inserted: 0, updated: 0 }
+  const candidate = trimmed.startsWith('{') ? trimmed : trimmed.match(/\{[\s\S]*\}/)?.[0]
+  const parsed: unknown = candidate ? JSON.parse(candidate) : undefined
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    typeof (parsed as { inserted?: unknown }).inserted !== 'number' ||
+    typeof (parsed as { updated?: unknown }).updated !== 'number'
+  ) {
+    throw new Error(`convex run returned an unexpected response: ${trimmed || '(empty)'}`)
   }
+  return parsed as { inserted: number; updated: number }
+}
+
+/**
+ * Best-effort read of the Convex deployment `convex run` will target, mirroring the CLI's
+ * resolution order: a `CONVEX_DEPLOY_KEY` (points anywhere — treated as non-dev so it needs
+ * opt-in), then `CONVEX_DEPLOYMENT` in the env, then the convex package's `.env.local`.
+ */
+function resolveDeployment(): { label: string; isDev: boolean } {
+  if (process.env.CONVEX_DEPLOY_KEY)
+    return { label: 'CONVEX_DEPLOY_KEY (target unknown)', isDev: false }
+  let deployment = process.env.CONVEX_DEPLOYMENT
+  if (!deployment) {
+    try {
+      const envLocal = readFileSync(
+        new URL('../../../packages/convex/.env.local', import.meta.url),
+        'utf8',
+      )
+      deployment = envLocal.match(/^CONVEX_DEPLOYMENT=(.+)$/m)?.[1]?.trim()
+    } catch {
+      // no .env.local reachable — fall through to unknown (treated as non-dev)
+    }
+  }
+  if (!deployment) return { label: 'unknown', isDev: false }
+  return { label: deployment, isDev: deployment.startsWith('dev:') }
 }
 
 function main(): void {
-  const inputPath = process.argv[2]
+  const args = process.argv.slice(2)
+  const allowNonDev = args.includes('--prod')
+  const inputPath = args.find((arg) => !arg.startsWith('--'))
   if (!inputPath) {
-    process.stderr.write('usage: pnpm --filter @skating/etl load <bodies.ndjson>\n')
+    process.stderr.write('usage: pnpm --filter @skating/etl load <bodies.ndjson> [--prod]\n')
+    process.exit(1)
+  }
+
+  // Dev-first (settled note): refuse a non-dev target unless the operator explicitly opts in,
+  // so the normal command can never upsert the extract into production by accident.
+  const target = resolveDeployment()
+  process.stderr.write(`[etl] target deployment: ${target.label}\n`)
+  if (!target.isDev && !allowNonDev) {
+    process.stderr.write(
+      '[etl] refusing: target is not a dev deployment. Confirm, then re-run with --prod to override.\n',
+    )
     process.exit(1)
   }
 
@@ -83,16 +126,28 @@ function main(): void {
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
   const batches = chunk(lines)
-
   process.stderr.write(`[etl] loading ${lines.length} bodies in ${batches.length} batch(es)…\n`)
+
   let inserted = 0
   let updated = 0
-  batches.forEach((batch, index) => {
-    const result = runImport(batch.map((line) => JSON.parse(line)))
-    inserted += result.inserted
-    updated += result.updated
-    process.stderr.write(`[etl] batch ${index + 1}/${batches.length} done\n`)
-  })
+  let applied = 0
+  try {
+    for (const [index, batch] of batches.entries()) {
+      const result = runImport(batch.map((line) => JSON.parse(line)))
+      inserted += result.inserted
+      updated += result.updated
+      applied++
+      process.stderr.write(`[etl] batch ${index + 1}/${batches.length} done\n`)
+    }
+  } catch (err) {
+    // A batch threw; earlier batches are already committed. Report progress so the operator
+    // can recover (a re-run is safe — importCanonical upserts idempotently) before rethrowing.
+    process.stderr.write(
+      `[etl] FAILED on batch ${applied + 1}/${batches.length}; ${applied} batch(es) applied ` +
+        `(${inserted} inserted · ${updated} updated). Re-running is safe (idempotent upsert).\n`,
+    )
+    throw err
+  }
   process.stderr.write(`[etl] load complete: ${inserted} inserted · ${updated} updated\n`)
 }
 

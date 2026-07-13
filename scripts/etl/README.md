@@ -153,9 +153,11 @@ pnpm --filter @skating/etl load .scratch/bodies.ndjson
 
 Chunks the NDJSON and calls the internal `waterBodies.importCanonical` mutation via
 `pnpm exec convex run` (which invokes internal functions with the deployment's admin creds
-from `packages/convex/.env.local`). It targets the **dev** deployment — confirm the data
-renders on the read-only web map before anything touches prod. The import is **idempotent**
-(upsert on `source + externalId`) and **preserves removed state**, so re-running is safe.
+from `packages/convex/.env.local`). It **refuses a non-dev target unless you pass `--prod`** —
+so the normal command can't upsert into production by accident — and prints the resolved
+deployment before loading. Confirm the data renders on the read-only web map before touching
+prod. The import is **idempotent** (upsert on `source + externalId`) and **preserves removed
+state**, so re-running (or resuming after a failed batch, which the loader reports) is safe.
 
 Batches are bounded by two limits (see `src/load.ts`):
 

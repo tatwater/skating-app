@@ -22,19 +22,28 @@ import type { CanonicalBody, OsmWaterFeature, OsmWaterProperties } from './types
 
 /**
  * Douglas–Peucker tolerance in degrees ≈ 5 m at Vermont's latitude (~0.00005° of latitude).
- * Applied uniformly to *every* body incl. Lake Champlain (D48): fidelity is the priority and
- * the 1 MiB Convex doc limit is the only hard line — Champlain's raw geometry is already
- * ~0.6 MiB, so a 5 m pass keeps it well under. Tunable: eyeball Champlain + a small pond on
- * the map once it renders and adjust (open item in the phase-1 plan).
+ * Applied uniformly to *every* body as the fidelity-first baseline (D48). A body is coarsened
+ * past this only to satisfy a Convex hard limit — the 1 MiB/doc size and the 8192-element array
+ * cap (see `simplifyForStorage` / `CONVEX_ARRAY_LIMIT`), which realistically only Lake Champlain
+ * hits. Tunable: eyeball Champlain + a small pond on the map once it renders and adjust (open
+ * item in the phase-1 plan).
  */
 export const SIMPLIFY_TOLERANCE_DEG = 0.00005
 
 /**
- * Convex rejects any array longer than **8192 elements** — including a polygon ring's
- * coordinate array. A uniform 5 m pass leaves Lake Champlain's outer ring at ~8,900 vertices
- * (its raw ring is ~19k), over the limit, so it can't be stored as-is. `MAX_RING_VERTICES`
- * keeps a safety margin under 8192 to absorb day-to-day drift in the Geofabrik extract.
- * Realistically Champlain is the *only* Vermont body this affects (it fits by ~7 m).
+ * Convex rejects any array longer than **8192 elements**. For a polygon that cap applies to
+ * *every* level — the position count in a ring, the ring count in a polygon, and the polygon
+ * count in a MultiPolygon — and `importCanonical` fails the whole loader batch if any body
+ * breaches it. See `maxArrayLength` (the complete check) and `largestRingSize` (the reducible
+ * dimension that adaptive coarsening drives).
+ */
+export const CONVEX_ARRAY_LIMIT = 8192
+
+/**
+ * Coarsening target for a ring's coordinate array — a safety margin under `CONVEX_ARRAY_LIMIT`
+ * to absorb day-to-day drift in the Geofabrik extract. A uniform 5 m pass leaves Lake
+ * Champlain's outer ring at ~8,900 vertices (raw is ~19k); realistically it's the *only*
+ * Vermont body over the limit, and it fits by ~7 m.
  */
 export const MAX_RING_VERTICES = 8000
 
@@ -46,10 +55,29 @@ export const MAX_RING_VERTICES = 8000
  */
 const SIMPLIFY_STEP_DEG = 0.00001
 
-/** Largest coordinate count across all rings of a (multi)polygon — the array-limit risk. */
+/**
+ * Largest coordinate count across all rings — the dimension coarsening can actually reduce
+ * (Douglas–Peucker thins vertices *within* a ring). Drives `simplifyForStorage`.
+ */
 export function largestRingSize(geom: Polygon | MultiPolygon): number {
   const rings = geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat()
   return rings.reduce((max, ring) => Math.max(max, ring.length), 0)
+}
+
+/**
+ * The largest array Convex will see anywhere in this geometry: the polygon count, any ring
+ * count, or any ring's position count. This is the *complete* array-limit check — coarsening
+ * only fixes the position count, so a (pathological, never-seen-in-hydrography) body with
+ * >8192 components or holes is caught here and skipped per-feature rather than failing a batch.
+ */
+export function maxArrayLength(geom: Polygon | MultiPolygon): number {
+  const polygons = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates
+  let max = polygons.length // MultiPolygon: number of components
+  for (const rings of polygons) {
+    max = Math.max(max, rings.length) // number of rings (outer + holes)
+    for (const ring of rings) max = Math.max(max, ring.length) // positions in the ring
+  }
+  return max
 }
 
 /**
@@ -92,8 +120,9 @@ function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygo
  * Transform one OSM feature into a canonical body, or `null` to **skip by classification**
  * (rivers / streams / generic wetland / … — `waterBodyTypeFromOsmTags` returns `null`).
  *
- * **Throws** on data we can't turn into a body: a missing `@type`/`@id`, a non-area geometry,
- * or a degenerate polygon `representativePoint` can't place a point on. Batching raw OSM must
+ * **Throws** on data we can't turn into a storable body: a missing `@type`/`@id`, a non-area
+ * geometry, a degenerate polygon `representativePoint` can't place a point on, or a geometry
+ * that still breaches Convex's 8192-element array cap after coarsening. Batching raw OSM must
  * catch per feature (see `transformFeatures`) — raw data carries enough junk geometry that a
  * single throw must not kill the import (phase-1 plan / PR#1 review P2).
  */
@@ -114,6 +143,14 @@ export function featureToCanonicalBody(feature: OsmWaterFeature): CanonicalBody 
 
   // Simplify first, then derive bbox / centroid / area from the geometry we actually store.
   const polygon = simplifyForStorage(geom)
+  // Coarsening thins ring positions but can't reduce component/hole counts; reject (→ skip)
+  // anything still over the array cap so one bad body never fails a whole loader batch.
+  const maxArray = maxArrayLength(polygon)
+  if (maxArray > CONVEX_ARRAY_LIMIT) {
+    throw new Error(
+      `geometry array too large (${maxArray} > ${CONVEX_ARRAY_LIMIT}) after coarsening`,
+    )
+  }
   const centroid = representativePoint(polygon) // throws on a collapsed / degenerate ring
   return {
     source: 'osm',
