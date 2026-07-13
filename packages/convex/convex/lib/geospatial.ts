@@ -6,12 +6,14 @@
  * each index by the owning document's `_id`, so a query result hydrates back to the
  * real row with a single `ctx.db.get`.
  *
- * `filterKeys` are indexed alongside the point for server-side prefiltering — we index the
- * derived boolean `listed` (D48/D5) so a public viewport query can ask the component for
- * on-the-map bodies only (`listed == true`), rather than fetching hidden ones and dropping
- * them afterward. `listed` replaces the Phase-0 `reviewStatus`-only key, which would have
- * hidden every canonical (OSM/NHD) body — they carry no `reviewStatus` — and every
- * auto-visible `pending` user body (D37). Derived by `isListed` (see `./listing`).
+ * `filterKeys` are indexed alongside the point (the derived boolean `listed`, D48/D5, replacing
+ * the Phase-0 `reviewStatus`-only key that would have hidden every canonical body — they carry no
+ * `reviewStatus` — and every auto-visible `pending` user body, D37; derived by `isListed`, see
+ * `./listing`). We keep the key indexed, but `listInViewport` **does not** filter on it in the
+ * geospatial query: the component's filter-stream intersection roughly halves the read-cap-safe
+ * `maxResults` ceiling, so a wide viewport crashes (Convex's 4,096-reads limit). Instead the
+ * viewport query fetches by rectangle and re-checks `isListed` in JS — cheap in Phase 1 (~no
+ * unlisted bodies). See the `listInViewport` tier-1 note for the full read-cap reasoning.
  */
 
 import { GeospatialIndex } from '@convex-dev/geospatial'

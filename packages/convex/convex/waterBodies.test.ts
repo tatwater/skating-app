@@ -436,6 +436,43 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     }
   })
 
+  test('clamps an over-large client limit so tier-1 stays under the read cap (D5, regression)', async () => {
+    // Guards the fix for a live crash: the geospatial component reads roughly ∝ `maxResults`, so
+    // a big client `limit` made it read past Convex's 4,096-reads cap and *crash* (not page
+    // slowly). `sanitizeLimit` clamps any client value to `MAX_VIEWPORT_LIMIT`. Seed *more* than
+    // the cap, all in-view + small (tier-1 only), and confirm a huge limit returns the same
+    // bounded set as the default — never the unclamped 300. (convex-test can't reproduce the real
+    // read cap itself; this locks the clamp that keeps us under it.)
+    const t = convexTestWithGeo()
+    const OVER = 300 // > MAX_VIEWPORT_LIMIT (256)
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: Array.from({ length: OVER }, (_, i) => {
+        const c = 0.001 + (i * 0.998) / OVER // spread across [0,1), inside VIEWPORT_CONTAINING
+        return {
+          source: 'osm' as const,
+          externalId: `osm/clamp/${i}`,
+          name: `Body ${i}`,
+          type: 'pond' as const,
+          polygon: SAMPLE_BODY.polygon,
+          bbox: { minLat: c - 0.0005, minLng: c - 0.0005, maxLat: c + 0.0005, maxLng: c + 0.0005 },
+          centroid: { lat: c, lng: c },
+        }
+      }),
+    })
+    const atDefault = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+    })
+    const atHugeLimit = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      limit: 1_000_000,
+    })
+    expect(atDefault.length).toBeLessThan(OVER) // clamped — not all 300 come back
+    expect(atHugeLimit.length).toBe(atDefault.length) // a huge limit is clamped to the same cap
+    // Seeding 300 bodies (each a geospatial insert reading ~15–20 S2-cell docs) + two viewport
+    // queries runs well past the 5 s default on a slow CI runner; this is inherently heavy, not
+    // flaky logic, so give it headroom rather than shrinking the seed below the 256 cap it tests.
+  }, 30_000)
+
   test('returns only the bodies inside the viewport when several exist', async () => {
     const t = convexTestWithGeo()
     const asMember = await seedUser(t, 'clerk_member')

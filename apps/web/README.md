@@ -66,11 +66,14 @@ so the pure logic (style + feature/viewport transforms) lives in the testable `s
 while `components/WaterMap.tsx` is the untestable WebGL shell (coverage-excluded via the `src/lib`-
 only coverage `include`).
 
-**Basemap.** Blank `VITE_PMTILES_URL` uses the **Protomaps hosted demo** `.pmtiles` (whole-planet,
-fine for confirming Phase 1). PR#5 swaps in a self-built Vermont extract by setting that var — no
-code change. Font/sprite assets stay on Protomaps' hosted CDN. **Attribution** ("© OpenStreetMap
-contributors", ODbL) is always visible via a non-compact `AttributionControl` — a launch gate
-(`04-integrations.md`).
+**Basemap.** `VITE_PMTILES_URL` picks the Protomaps `.pmtiles` vector source; blank falls back to
+the **hosted demo** (whole-planet — fine for local dev, but Protomaps asks it not ship to prod).
+PR#5 built a **self-hosted Vermont extract** (z0–14, ~280 MB) served from **Convex file storage**
+and set that var to the serving URL — a config swap, no code change. Build/host/wire steps live in
+[`scripts/basemap`](../../scripts/basemap/README.md); the URL is deployment-specific (dev vs prod),
+so set it per environment (local `.env` + Vercel). Font/sprite assets stay on Protomaps' hosted CDN.
+**Attribution** ("© OpenStreetMap contributors", ODbL) is always visible via a non-compact
+`AttributionControl` — a launch gate (`04-integrations.md`) — and is independent of the tile host.
 
 ## Setup
 
@@ -85,7 +88,7 @@ cp .env.example .env     # then fill in real keys (see below)
 | `CLERK_PUBLISHABLE_KEY` | Clerk client key (`pk_…`) — read server-side by the SDK | Clerk dashboard → API keys |
 | `CLERK_SECRET_KEY` | Clerk secret (`sk_…`) — **server-only** | Clerk dashboard → API keys |
 | `VITE_CONVEX_URL` | Convex deployment URL (public, client) | `pnpm convex-dev` / Convex dashboard |
-| `VITE_PMTILES_URL` | Basemap `.pmtiles` URL (public; blank ⇒ Protomaps hosted demo) | A self-built Vermont extract (PR#5) or leave blank |
+| `VITE_PMTILES_URL` | Basemap `.pmtiles` URL (public; blank ⇒ Protomaps hosted demo) | The self-hosted Vermont extract's Convex serving URL — see [`scripts/basemap`](../../scripts/basemap/README.md). Blank falls back to the demo (dev only) |
 | `VITE_SENTRY_DSN` | Sentry DSN — drives client **and** server (optional) | A **separate** `skating-web` Sentry project (same org as mobile) → project settings |
 | `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload target (build-time; set on Vercel) | Sentry org slug + the `skating-web` project slug |
 | `SENTRY_AUTH_TOKEN` | Enables source-map upload (build-time; set on Vercel) | Sentry → auth tokens. Absent ⇒ upload skipped, build still succeeds |
@@ -125,7 +128,10 @@ pnpm --filter @skating/web build         # production build (regenerates routeTr
 
 ## Deferred (later phases, intentionally not here)
 
-- MapLibre renderer (Phase 2) — the Map page is a placeholder for now.
+- Map interactivity — tap-a-body → detail, and in-place report creation (Phase 2). The Phase 1
+  map is read-only. Also deferred: low-detail outlines + lazy-load full geometry on tap (a
+  query-payload lever, Phase 2+), and D49 zoom-scored display prominence (Phase 2) replacing the
+  wide-zoom tier-1 cap.
 - In-place report creation + bounties (D47); real Newsfeed (Phase 6).
 - Client-side image optimization + EXIF stripping on upload (Phase 2, D31/D42).
 - PostHog analytics/session replay (D29, "later").

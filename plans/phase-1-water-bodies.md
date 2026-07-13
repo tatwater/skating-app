@@ -128,14 +128,18 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
 
 ---
 
-## Suggested PR breakdown
-1. **core:** tag mapping + representative point (+ tests). *(no infra)*
-2. **convex:** schema fields + `by_external_id` + `listed` refactor + `remove`/`restore` +
+## Suggested PR breakdown — all shipped ✅
+1. **core** ✅ (PR#7): tag mapping + representative point (+ tests). *(no infra)*
+2. **convex** ✅ (PR#8): schema fields + `by_external_id` + `listed` refactor + `remove`/`restore` +
    `importCanonical` + `listInViewport` bbox refine (+ `convex-test`).
-3. **etl:** `scripts/etl` pipeline + a committed **small fixture** (a handful of Vermont
+3. **etl** ✅ (PR#9): `scripts/etl` pipeline + a committed **small fixture** (a handful of Vermont
    bodies) so the load path is exercisable without the full extract.
-4. **web:** read-only MapLibre layer + Protomaps basemap + attribution.
-5. **basemap:** swap demo tiles → self-built Vermont `.pmtiles` (can trail #4).
+4. **web** ✅ (PR#10): read-only MapLibre layer + Protomaps basemap + attribution — plus the
+   two-tier `listInViewport` fix (the PR#4 prerequisite below).
+5. **basemap** ✅ (PR#11): swap demo tiles → self-built Vermont `.pmtiles`. Built via
+   `pmtiles extract` (z0–14, ~280 MB), hosted on Convex file storage; tooling in `scripts/basemap`.
+   The swap itself is a `VITE_PMTILES_URL` change (per environment) — see the roadmap's Phase 1
+   operational follow-ups.
 
 ## Settled before the build (2026-07-12)
 - **Loader mechanism.** `importCanonical` stays an `internalMutation` (never client-callable).
@@ -165,11 +169,19 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
   constant (~Champlain's half-height), not a per-query computation. **This is now known to be
   worse than a wide-zoom edge case — see "PR#4 prerequisite" below; the real fix must land in
   PR#4, not Phase 2.**
-- **`.pmtiles` hosting** — Convex file storage vs. a static host/R2 (either is fine; pick when
-  we swap off demo tiles).
-- **National storage later** — watch the Convex DB storage tier as regions are added; scope
-  Alaska to populated areas + named/area threshold (never the whole state). Not a Phase 1
-  concern, logged so it isn't forgotten.
+- **`.pmtiles` hosting — SETTLED (2026-07-13): Convex file storage.** Verified its serving URL
+  honors HTTP `Range` requests (`206` + correct `Content-Range`) *and* reflects CORS — the two
+  hard requirements for the browser `pmtiles://` protocol. Colocating on Convex (vs. a static
+  host/R2) keeps ops on one platform; at pilot scale the cost is negligible (range reads pull
+  only the viewed tiles, ~KBs/view, and the ~280 MB file is well under the free-tier storage
+  cap). **Off-ramp: Cloudflare R2** (zero egress, the standard pmtiles host) if per-tile egress
+  grows as regions expand — a `VITE_PMTILES_URL` swap, no app change. Tooling + reproducible
+  build/host/wire pipeline: `scripts/basemap` (+ internal `convex/basemap.ts` upload helpers).
+- **National storage later** — watch the Convex storage tier as regions are added; scope
+  Alaska to populated areas + named/area threshold (never the whole state). Now also counts the
+  **basemap `.pmtiles`** (Vermont ≈ 280 MB on Convex file storage) — each new region adds a
+  water-data slice *and* a basemap slice, so the R2 off-ramp (above) may arrive on storage
+  pressure, not just egress. Not a Phase 1 concern, logged so it isn't forgotten.
 
 ## PR#4 prerequisite: fix `listInViewport` (discovered during the PR#3 load)
 
@@ -203,6 +215,29 @@ core flaw.
 
 Add a `convex-test` case asserting a large body with an off-screen centroid **is** returned by a
 small shoreline viewport (the exact case that regressed), plus a normal small-viewport case.
+
+### PR#5 follow-on: `listInViewport` wide-zoom read-cap **crash** (2026-07-13)
+
+**Symptom.** After the map was live, panning to a wide / off-data viewport (e.g. panned east into
+NH, off the Vermont-only corpus) **crashed** the query: `Too many reads in a single function
+execution (limit: 4096)` inside the geospatial component. The PR#4 two-tier fix cured the
+*dense* case but not this one.
+
+**Root cause.** The `@convex-dev/geospatial` `query` runs as its own execution under Convex's
+**4,096-reads cap**, and it reads roughly **∝ `maxResults`** (internal read-ahead), *not* just the
+result count. So a wide viewport that **can't fill `maxResults`** exhausts a large S2 covering and
+blows the cap. Two compounding costs: (a) `maxResults` was 512, and (b) the `filter: listed==true`
+stream-*intersection* roughly **halved** the safe ceiling. Measured on the live 9,967-body corpus:
+unfiltered crashes at ~384 and survives at ≤320; filtered crashes at ~192.
+
+**Fix (shipped).** (1) Drop the `listed` filter from the geospatial query — the JS `isListed`
+refine already enforces listing, and Phase 1 has ~no unlisted bodies, so fetch-then-drop is free;
+(2) lower `DEFAULT_VIEWPORT_LIMIT` 512 → **256** and clamp `MAX_VIEWPORT_LIMIT` to it, so no client
+value can push `maxResults` past the safe zone (~20% margin under the 320 edge). Verified across
+every previously-crashing viewport + normal cases + the tier-2 large body (Champlain). Regression
+test: an over-cap seed confirms a huge client `limit` is clamped. **The real fix stays D49** (Phase
+2 zoom-scored display) — this keeps Phase 1 from crashing; it doesn't make wide-zoom show
+everything (it can't, and shouldn't — that's clutter).
 
 ## Risks / watch-outs
 - **Convex hard limits (two, both real)** — (1) **1 MiB/doc**; (2) **8192 elements per array**,
