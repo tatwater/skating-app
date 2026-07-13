@@ -158,6 +158,10 @@ so the normal command can't upsert into production by accident — and prints th
 deployment before loading. Confirm the data renders on the read-only web map before touching
 prod. The import is **idempotent** (upsert on `source + externalId`) and **preserves removed
 state**, so re-running (or resuming after a failed batch, which the loader reports) is safe.
+`importCanonical` also derives each body's `isLarge` flag from its bbox (the `listInViewport`
+tier-2 marker, D5), so **re-running the loader is how you backfill `isLarge` onto an
+already-loaded corpus** — the chunked batches stay under the per-mutation read cap, whereas the
+single-pass `backfillListed` mutation would blow it at Vermont scale.
 
 Batches are bounded by two limits (see `src/load.ts`):
 

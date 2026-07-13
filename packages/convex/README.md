@@ -22,31 +22,38 @@ and a Clerk JWT template named `convex`).
   backend-only enums live in `convex/lib/enums.ts`.
 - **`convex/lib/`** — `auth.ts` (identity + role/status gating), `validators.ts`
   (`literals`, `boolFlags`, `latLng`, `bbox`, `geoJson`), `enums.ts`, `geospatial.ts`
-  (typed `@convex-dev/geospatial` index of water-body centroids, D5).
+  (typed `@convex-dev/geospatial` index of water-body centroids, filtered by the derived
+  `listed` boolean, D5/D48), `listing.ts` (the `isListed` derivation).
 - **`convex/convex.config.ts`** — the app definition; `app.use(geospatial)` installs the
   geospatial component (its `components.geospatial` handle powers `lib/geospatial.ts`).
 - **`convex/profiles.ts`** — `current` + `upsertFromClerk` (idempotent Clerk→profile
   bridge; enforces the 16+ gate and username uniqueness).
-- **`convex/waterBodies.ts`** — user `create` (queued for after-the-fact review, D37;
-  indexes the centroid into geospatial), moderator `approve` (pending user bodies only;
-  writes the `moderationActions` audit row + syncs the geo filter key), `listInViewport`
-  (approved bodies in the map viewport, D5 — interim centroid lookup; bbox-intersection
-  is the decided target, see its doc-comment), `listPendingReview`.
+- **`convex/waterBodies.ts`** — internal `importCanonical` (idempotent OSM/NHD upsert keyed
+  on `by_external_id`, preserves removed state across re-import, D14/D48) + `backfillListed`
+  (small-scale key/field migration); user `create` (queued for after-the-fact review, D37),
+  moderator `approve`, admin `remove`/`restore` (reversible soft-delist + audit row, D48),
+  `listInViewport` (**two-tier bbox-intersection** viewport query, D5 — see below),
+  `listPendingReview`.
 - **`convex/*.test.ts`** — `convex-test` suites: auth/role/suspension gating, upsert
-  idempotency + age/username invariants, the approve→audit-log path.
+  idempotency + age/username invariants, approve/remove/restore → audit-log paths, and the
+  two-tier `listInViewport` (small-body prefilter, off-screen-centroid large body, refine,
+  cap-truncation log).
 
 ## Deviations & deferrals (flagged for review)
 
 - **`profiles` renames the doc's `users` table.** Per the identity model above;
   `plans/06-data-model.md` and `01-decisions.md` (D26) have been reconciled to match.
   `clerkUserId` (+ `by_clerk_user_id` index) is the Clerk tie the doc didn't spell out.
-- **Geospatial (D5) is wired for centroids; the bbox-intersection refine remains.**
-  `@convex-dev/geospatial` indexes water-body centroids (`waterBodies.create`/`approve`)
-  and `listInViewport` does an interim centroid-in-viewport lookup with an approved-only
-  filter. The decided target is **bbox-intersection** (a large lake shows when its bbox
-  overlaps the viewport, even if its centroid is off-screen) via an expanded geospatial
-  prefilter + `@skating/core`'s `bboxIntersects` refine — see the `listInViewport`
-  doc-comment. Still deferred: that refine and indexing `reports.point`.
+- **Geospatial (D5) `listInViewport` is the shipped two-tier bbox-intersection query.**
+  `@convex-dev/geospatial` indexes water-body centroids filtered by `listed`. A body is "in
+  view" when its **bbox** intersects the viewport (a large lake shows even with its centroid
+  off-screen), so the query is two-tier: (1) page the centroid index over the viewport + a
+  small margin, catching every body whose bbox spans ≤ the margin; (2) scan the `by_is_large`
+  short list (bbox extent > the margin) directly — the handful of big lakes. Both refined by
+  `@skating/core`'s `bboxIntersects` + `isListed`. A naïve single blanket expansion returned
+  **0** at the 9,967-body Vermont scale (read-cap truncation) — see the `listInViewport`
+  doc-comment + `plans/phase-1-water-bodies.md`. Still deferred: indexing `reports.point`, and
+  the D49 zoom-scored display score that replaces the wide-zoom cap (Phase 2).
 - **`geoJson` is now a structured GeoJSON-geometry validator** (`lib/validators.ts`),
   not `v.any()` — a discriminated union over Point/MultiPoint/Line/MultiLine/Polygon/
   MultiPolygon that rejects unknown `type`s and wrong nesting at the mutation boundary.

@@ -283,9 +283,11 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     expect(elsewhere).toHaveLength(0)
   })
 
-  test('returns a large body whose centroid is off-screen but whose bbox overlaps (D5)', async () => {
+  test('returns a large body whose centroid is off-screen but whose bbox overlaps (tier-2, D5)', async () => {
     const t = convexTestWithGeo()
-    // A big lake centred at (0.8, 0.8), well outside the tiny viewport, but spanning it.
+    // The exact case that regressed at corpus scale: a big lake centred at (0.8, 0.8) — well
+    // outside the tiny viewport AND outside the tier-1 margin — but whose bbox spans it. Only
+    // the tier-2 large-body scan can catch it; tier 1's small margin never reaches its centroid.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
@@ -315,10 +317,11 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     expect(inView.map((b) => b.name)).toEqual(['Big Lake'])
   })
 
-  test('refines out a nearby body whose bbox does NOT intersect the viewport', async () => {
+  test('refines out a small body whose centroid is in the tier-1 margin but bbox is not in view', async () => {
     const t = convexTestWithGeo()
-    // Centroid (0.55, 0.55) falls inside the expanded prefilter but the body's bbox
-    // (0.5–0.6) doesn't touch the tiny viewport — the bboxIntersects refine drops it.
+    // A small pond (0.03° span, < the 0.05° margin, so NOT large): its centroid (0.13, 0.13)
+    // falls inside the tier-1 rectangle (viewport + 0.05° margin) but its bbox (0.11–0.14)
+    // doesn't touch the viewport — the bboxIntersects refine drops it.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
@@ -327,8 +330,53 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
           name: 'Near Pond',
           type: 'pond',
           polygon: SAMPLE_BODY.polygon,
-          bbox: { minLat: 0.5, minLng: 0.5, maxLat: 0.6, maxLng: 0.6 },
-          centroid: { lat: 0.55, lng: 0.55 },
+          bbox: { minLat: 0.11, minLng: 0.11, maxLat: 0.14, maxLng: 0.14 },
+          centroid: { lat: 0.13, lng: 0.13 },
+        },
+      ],
+    })
+    const near = await t.run((ctx) => ctx.db.query('waterBodies').collect())
+    expect(near[0]?.isLarge).toBe(false) // caught by tier 1, not the large short list
+    const tinyViewport = { minLat: 0, minLng: 0, maxLat: 0.1, maxLng: 0.1 }
+    expect(await t.query(api.waterBodies.listInViewport, { viewport: tinyViewport })).toHaveLength(
+      0,
+    )
+  })
+
+  test('finds a small body at city zoom via the tier-1 centroid prefilter', async () => {
+    const t = convexTestWithGeo()
+    // A small pond fully inside a small viewport — the common case tier 1 serves.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm',
+          externalId: 'osm/small',
+          name: 'Small Pond',
+          type: 'pond',
+          polygon: SAMPLE_BODY.polygon,
+          bbox: { minLat: 0.04, minLng: 0.04, maxLat: 0.06, maxLng: 0.06 },
+          centroid: { lat: 0.05, lng: 0.05 },
+        },
+      ],
+    })
+    const cityViewport = { minLat: 0, minLng: 0, maxLat: 0.1, maxLng: 0.1 }
+    const inView = await t.query(api.waterBodies.listInViewport, { viewport: cityViewport })
+    expect(inView.map((b) => b.name)).toEqual(['Small Pond'])
+  })
+
+  test('excludes a large body whose bbox does not intersect the viewport (tier-2 refine)', async () => {
+    const t = convexTestWithGeo()
+    // A large body (extent 2°, so isLarge → always tier-2 scanned) far from the viewport.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm',
+          externalId: 'osm/far-big',
+          name: 'Far Big Lake',
+          type: 'lake',
+          polygon: SAMPLE_BODY.polygon,
+          bbox: { minLat: 40, minLng: 40, maxLat: 42, maxLng: 42 },
+          centroid: { lat: 41, lng: 41 },
         },
       ],
     })
@@ -338,9 +386,10 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     )
   })
 
-  test('warns (does not silently drop) when the prefilter cap is hit at a wide zoom (D5/D49)', async () => {
+  test('warns (does not silently drop) when the tier-1 cap is hit at a wide zoom (D5/D49)', async () => {
     const t = convexTestWithGeo()
-    // Three listed bodies inside the viewport; a limit of 2 forces the prefilter to truncate.
+    // Three small listed bodies (0.02° span, not large → tier-1 only) inside the viewport; a
+    // limit of 2 forces the tier-1 centroid prefilter to truncate before the refine.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [0.3, 0.5, 0.7].map((c) => ({
         source: 'osm' as const,
@@ -348,7 +397,7 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
         name: `Body ${c}`,
         type: 'pond' as const,
         polygon: SAMPLE_BODY.polygon,
-        bbox: { minLat: c - 0.05, minLng: c - 0.05, maxLat: c + 0.05, maxLng: c + 0.05 },
+        bbox: { minLat: c - 0.01, minLng: c - 0.01, maxLat: c + 0.01, maxLng: c + 0.01 },
         centroid: { lat: c, lng: c },
       })),
     })
@@ -445,22 +494,43 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     expect(all.map((b) => b.source).sort()).toEqual(['nhd', 'osm'])
   })
 
-  test('warns when an imported body exceeds MAX_BODY_EXTENT_DEG (viewport invariant, D5)', async () => {
+  test('flags isLarge from bbox extent — the tier-2 short list for listInViewport (D5)', async () => {
     const t = convexTestWithGeo()
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
           ...CANONICAL_ITEM,
-          externalId: 'osm/huge',
-          name: 'Huge Sea',
-          // ~3° tall — exceeds the 2° expansion the bbox-intersection proof relies on.
-          bbox: { minLat: 0, minLng: 0, maxLat: 3, maxLng: 0.5 },
+          externalId: 'osm/big',
+          name: 'Big',
+          // Wider than the 0.05° margin in latitude → large (tier-2 scanned).
+          bbox: { minLat: 0, minLng: 0, maxLat: 0.2, maxLng: 0.02 },
+        },
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/small',
+          name: 'Small',
+          // Both axes under the margin → not large (tier-1 only).
+          bbox: { minLat: 0, minLng: 0, maxLat: 0.02, maxLng: 0.02 },
         },
       ],
     })
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('MAX_BODY_EXTENT_DEG'))
-    warn.mockRestore()
+    const bodies = await t.run((ctx) => ctx.db.query('waterBodies').collect())
+    const flags = Object.fromEntries(bodies.map((b) => [b.name, b.isLarge]))
+    expect(flags).toEqual({ Big: true, Small: false })
+  })
+
+  test('re-import re-derives isLarge when a body grows past the threshold', async () => {
+    const t = convexTestWithGeo()
+    // Import small, then re-import the same externalId with a large bbox: the flag flips.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, bbox: { minLat: 0, minLng: 0, maxLat: 0.02, maxLng: 0.02 } }],
+    })
+    expect((await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0]?.isLarge).toBe(false)
+
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 } }],
+    })
+    expect((await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0]?.isLarge).toBe(true)
   })
 })
 
@@ -485,6 +555,9 @@ describe('waterBodies.backfillListed (listed key-switch migration, D48)', () => 
 
     const result = await t.mutation(internal.waterBodies.backfillListed, {})
     expect(result).toEqual({ reindexed: 1 })
+
+    // Backfill also derives isLarge (SAMPLE_BODY spans 1°) so tier 2 can find it.
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.isLarge).toBe(true)
 
     // Now visible.
     const inView = await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING })

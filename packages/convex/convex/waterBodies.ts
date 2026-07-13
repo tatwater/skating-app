@@ -11,6 +11,7 @@
 
 import { bboxIntersects, WATER_BODY_TYPES } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
+import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { requireProfile, requireRole } from './lib/auth'
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums'
@@ -19,23 +20,33 @@ import { isListed } from './lib/listing'
 import { bbox, geoJson, latLng, literals } from './lib/validators'
 
 /**
- * Viewport prefilter tuning (D5). The geospatial component indexes *points* (centroids), but
+ * Two-tier viewport tuning (D5). The geospatial component indexes *points* (centroids), but
  * "in view" means **bbox intersects the viewport** — a large lake fills the screen with its
- * centroid off-screen. So we query the centroid index over the viewport *expanded by the
- * largest body's bbox extent*: if a body's bbox intersects the viewport, its centroid lies
- * within one body-extent of it, so this superset can't miss it. We then refine each candidate
- * with `bboxIntersects`. `MAX_BODY_EXTENT_DEG` must exceed the largest stored body's bbox span
- * in either axis (Vermont's driver is Lake Champlain, ~1.8° of latitude); tune against the
- * real corpus once the ETL lands. The zoom-scored replacement is D49 (Phase 2).
+ * centroid off-screen. A single blanket expansion sized for the largest body (Lake Champlain,
+ * ~1.5°) fails at real corpus density: it covers ~all of Vermont, hits the component's internal
+ * ~1024-row read cap, and returns a spatially-arbitrary slice that the refine finds nothing in
+ * (this returned **0** for a normal city zoom over 9,967 bodies). So we decouple the outliers:
  *
- * **Invariant guard:** the "can't miss it" guarantee holds only while every body's bbox span
- * ≤ this constant. `importCanonical` `console.warn`s if an imported body exceeds it — a body
- * larger than the expansion could have its centroid fall outside the prefilter and be dropped
- * before the refine — so we bump the constant before that silently happens.
+ *  - **Tier 1 (the common case):** query the centroid index over the viewport expanded by a
+ *    *small* margin (`VIEWPORT_MARGIN_DEG`). A body whose bbox intersects the viewport has its
+ *    centroid within one bbox-extent of it, so this catches every body whose extent ≤ the margin
+ *    — the overwhelming majority (>99% of Vermont bodies span < 0.05°). At city zoom the query
+ *    rectangle holds ~100 rows, comfortably under the read cap, so the tier-1 result is correct.
+ *  - **Tier 2 (the handful of large bodies):** a body whose bbox spans more than the margin
+ *    (`isLarge`, set at import/create) can have its centroid outside the tier-1 rectangle, so we
+ *    scan the `by_is_large` short list directly and `bboxIntersects`-test it. Vermont: 12 bodies.
+ *
+ * **No-gap invariant:** `LARGE_BODY_EXTENT_DEG ≤ VIEWPORT_MARGIN_DEG`. Every body with extent ≤
+ * the margin is guaranteed caught by tier 1; everything larger is flagged `isLarge` and caught by
+ * tier 2 — so the two tiers cover the full corpus with no silent hole. The fully-general
+ * alternative (multi-cell / bbox-coverage indexing) is a larger geospatial rework deferred past
+ * Phase 1; the zoom-scored display score is D49 (Phase 2). As more regions load, the `isLarge`
+ * list grows — revisit the two-tier scan if it stops being a short list (national-scale, logged).
  */
-const MAX_BODY_EXTENT_DEG = 2
-/** Pilot cap on the centroid prefilter. Raised from 64 so a wide zoom doesn't silently drop
- *  most of Vermont before the refine; a true fix is the D49 display score (Phase 2). */
+const VIEWPORT_MARGIN_DEG = 0.05
+const LARGE_BODY_EXTENT_DEG = 0.05
+/** Cap on the tier-1 centroid prefilter — a backstop against a state-level zoom pulling the whole
+ *  corpus; truncation is logged, never silent (D5). The real fix is the D49 display score (Phase 2). */
 const DEFAULT_VIEWPORT_LIMIT = 512
 
 /** A canonical (OSM/NHD) body as prepared by the ETL, keyed by its `(source, externalId)`. */
@@ -50,9 +61,14 @@ const canonicalBody = v.object({
   surfaceAreaSqM: v.optional(v.number()),
 })
 
-/** Largest span of a bbox in either axis, in degrees — the extent the viewport must expand by. */
+/** Largest span of a bbox in either axis, in degrees. */
 function bboxExtentDeg(b: { minLat: number; minLng: number; maxLat: number; maxLng: number }) {
   return Math.max(b.maxLat - b.minLat, b.maxLng - b.minLng)
+}
+
+/** Whether a body is a `listInViewport` tier-2 outlier — bbox wider than the centroid margin (D5). */
+function isLargeBody(b: { minLat: number; minLng: number; maxLat: number; maxLng: number }) {
+  return bboxExtentDeg(b) > LARGE_BODY_EXTENT_DEG
 }
 
 /**
@@ -72,15 +88,6 @@ export const importCanonical = internalMutation({
     let inserted = 0
     let updated = 0
     for (const item of bodies) {
-      // Guard the viewport-expansion invariant (see MAX_BODY_EXTENT_DEG): a body larger than the
-      // expansion could be dropped by listInViewport before the bboxIntersects refine.
-      const extent = bboxExtentDeg(item.bbox)
-      if (extent > MAX_BODY_EXTENT_DEG) {
-        console.warn(
-          `importCanonical: "${item.name}" (${item.source}/${item.externalId}) spans ${extent.toFixed(2)}° > MAX_BODY_EXTENT_DEG (${MAX_BODY_EXTENT_DEG}°); raise the constant or it may be dropped from wide viewports (D5/D49).`,
-        )
-      }
-
       const existing = await ctx.db
         .query('waterBodies')
         .withIndex('by_external_id', (q) =>
@@ -96,6 +103,7 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
+          isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
         })
         // Re-derive listing from the preserved fields (removed stays removed, D48).
@@ -117,6 +125,7 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
+          isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
@@ -136,19 +145,28 @@ export const importCanonical = internalMutation({
 })
 
 /**
- * Internal, one-time migration for the `listed` key-switch (D48). The geospatial index used to
- * be keyed on `reviewStatus`; entries written under the old key won't match a `listed` filter,
- * so any body indexed before this deploy would drop off the map until re-indexed. This
- * re-inserts every body under the `listed` key. Run once via `pnpm exec convex run` at the
- * switch — canonical bodies get re-keyed by the ETL re-import anyway, so this mainly covers
- * user-created bodies. Uses `collect()`: intended for the small pre-Phase-1 dataset (Phase 0
- * shipped with no bodies); at national scale a paginated backfill would be needed instead.
+ * Internal, **small-scale** migration (run via `pnpm exec convex run`) that re-derives, in one
+ * `collect()` pass, the two fields a keying change can leave stale on an existing body:
+ *  1. **`listed` key-switch (D48).** The geospatial index used to be keyed on `reviewStatus`;
+ *     entries written under the old key won't match a `listed` filter, so a body indexed before
+ *     that switch drops off the map until re-inserted under the `listed` key.
+ *  2. **`isLarge` (D5).** The two-tier `listInViewport` scans the `by_is_large` short list; a body
+ *     with no `isLarge` is invisible to tier 2. Patched from bbox extent.
+ *
+ * **Scale limit:** `collect()` + a geospatial re-insert per body reads far past Convex's
+ * 4096-reads/mutation cap on a large corpus (the geospatial insert alone reads ~15–20 S2-cell docs
+ * per body). This is the path for the handful of **user-created / pre-Phase-1** bodies only. The
+ * **canonical corpus** (Vermont ~10k) instead gets both fields from a **re-run of the chunked ETL
+ * loader** (`pnpm --filter @skating/etl load <ndjson>`) — `importCanonical` sets `isLarge` and the
+ * loader batches to stay under the read cap. A national-scale backfill would need pagination.
  */
 export const backfillListed = internalMutation({
   args: {},
   handler: async (ctx) => {
     const bodies = await ctx.db.query('waterBodies').collect()
     for (const body of bodies) {
+      const isLarge = isLargeBody(body.bbox)
+      if (body.isLarge !== isLarge) await ctx.db.patch(body._id, { isLarge })
       await waterBodiesGeo.insert(
         ctx,
         body._id,
@@ -183,6 +201,7 @@ export const create = mutation({
       polygon: args.polygon,
       bbox: args.bbox,
       centroid: args.centroid,
+      isLarge: isLargeBody(args.bbox),
       surfaceAreaSqM: args.surfaceAreaSqM,
       createdByUserId: profile._id,
       reviewStatus: 'pending', // auto-visible, review-after (D37)
@@ -315,43 +334,68 @@ export const restore = mutation({
 })
 
 /**
- * Public: water bodies whose **bbox intersects** the viewport (D5/D48).
- *
- * Filters `listed == true` (canonical + auto-visible/approved user bodies; not rejected,
- * merged, or removed). Implements the decided bbox-intersection semantic: a superset
- * centroid prefilter over the viewport expanded by `MAX_BODY_EXTENT_DEG`, then a
- * `bboxIntersects` refine so a large lake with an off-screen centroid is still returned.
+ * Public: water bodies whose **bbox intersects** the viewport (D5/D48). Two-tier — see the
+ * `VIEWPORT_MARGIN_DEG` / `LARGE_BODY_EXTENT_DEG` note above for why:
+ *  - **Tier 1:** a centroid prefilter over the viewport + a small margin (`listed == true`),
+ *    catching every non-large body.
+ *  - **Tier 2:** the `by_is_large` short list, whose bodies can have off-screen centroids.
+ * Both tiers are refined by `bboxIntersects` + `isListed`, then merged (a large body can appear
+ * in both). `listed` filters to canonical + auto-visible/approved user bodies (not rejected,
+ * merged, or removed).
  */
 export const listInViewport = query({
   args: { viewport: bbox, limit: v.optional(v.number()) },
   handler: async (ctx, { viewport, limit }) => {
     const effectiveLimit = limit ?? DEFAULT_VIEWPORT_LIMIT
-    const { results } = await waterBodiesGeo.query(ctx, {
-      shape: {
-        type: 'rectangle',
-        rectangle: {
-          west: viewport.minLng - MAX_BODY_EXTENT_DEG,
-          east: viewport.maxLng + MAX_BODY_EXTENT_DEG,
-          south: viewport.minLat - MAX_BODY_EXTENT_DEG,
-          north: viewport.maxLat + MAX_BODY_EXTENT_DEG,
+
+    // Tier 1 — centroid prefilter over the viewport expanded by the (small) margin. The
+    // geospatial `query` bounds work per call and returns a *partial* page plus a continuation
+    // cursor, so we page through it, accumulating up to `effectiveLimit` centroids. Stopping with
+    // a cursor still pending means we capped a wide zoom — the D5 truncation, surfaced in logs
+    // rather than dropped silently (D49 display score is the real fix, Phase 2).
+    const rectangle = {
+      west: viewport.minLng - VIEWPORT_MARGIN_DEG,
+      east: viewport.maxLng + VIEWPORT_MARGIN_DEG,
+      south: viewport.minLat - VIEWPORT_MARGIN_DEG,
+      north: viewport.maxLat + VIEWPORT_MARGIN_DEG,
+    }
+    const keys: Id<'waterBodies'>[] = []
+    let cursor: string | undefined
+    let truncated = false
+    do {
+      const page = await waterBodiesGeo.query(
+        ctx,
+        {
+          shape: { type: 'rectangle', rectangle },
+          filter: (q) => q.eq('listed', true),
+          limit: effectiveLimit,
         },
-      },
-      filter: (q) => q.eq('listed', true),
-      limit: effectiveLimit,
-    })
-    // The cap truncates the prefilter *before* the refine, so a wide zoom can silently drop
-    // bodies. Surface it in logs rather than hiding it (D5); D49 is the real fix (Phase 2).
-    if (results.length === effectiveLimit) {
+        cursor,
+      )
+      for (const { key } of page.results) keys.push(key)
+      cursor = page.nextCursor
+      if (keys.length >= effectiveLimit && cursor !== undefined) truncated = true
+    } while (cursor !== undefined && keys.length < effectiveLimit)
+    if (truncated) {
       console.warn(
         `listInViewport hit the ${effectiveLimit}-row prefilter cap; some bodies may be omitted at this zoom (D5/D49).`,
       )
     }
-    const bodies = await Promise.all(results.map(({ key }) => ctx.db.get(key)))
-    // Refine the centroid-superset down to true bbox-intersection (drops nulls too).
-    return bodies.filter(
-      (body): body is NonNullable<typeof body> =>
-        body !== null && bboxIntersects(body.bbox, viewport),
-    )
+    const tier1 = await Promise.all(keys.slice(0, effectiveLimit).map((key) => ctx.db.get(key)))
+
+    // Tier 2 — the handful of large bodies, which tier 1's small margin can't guarantee to catch.
+    const tier2 = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_is_large', (q) => q.eq('isLarge', true))
+      .collect()
+
+    // Merge (dedup by _id — a large body may surface in both tiers), then refine to true
+    // bbox-intersection + current listing (tier 2 isn't `listed`-filtered by the index).
+    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>()
+    for (const body of [...tier1, ...tier2]) {
+      if (body && bboxIntersects(body.bbox, viewport) && isListed(body)) byId.set(body._id, body)
+    }
+    return [...byId.values()]
   },
 })
 

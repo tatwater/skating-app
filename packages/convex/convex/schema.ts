@@ -126,6 +126,11 @@ export default defineSchema({
     polygon: geoJson, // Polygon / MultiPolygon (rivers: the reach/segment)
     bbox, // prefilter index
     centroid: latLng, // geospatial point index (D5)
+    // Outlier flag for the two-tier `listInViewport` (D5): a body whose bbox spans more than the
+    // centroid prefilter's margin can have its centroid off-screen while its bbox fills the view,
+    // so it's queried by a direct short-list scan instead of the centroid index. Derived from
+    // bbox extent at import/create; see `waterBodies.listInViewport`.
+    isLarge: v.optional(v.boolean()),
     surfaceAreaSqM: v.optional(v.number()),
     createdByUserId: v.optional(v.id('profiles')), // when source == user
     reviewStatus: v.optional(literals(REVIEW_STATUSES)), // source==user only (D37)
@@ -139,7 +144,8 @@ export default defineSchema({
   })
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
     .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
-    .index('by_external_id', ['source', 'externalId']), // idempotent canonical upsert (D14/D48)
+    .index('by_external_id', ['source', 'externalId']) // idempotent canonical upsert (D14/D48)
+    .index('by_is_large', ['isLarge']), // large-body short list for listInViewport tier 2 (D5)
 
   reports: defineTable({
     authorId: v.id('profiles'),
