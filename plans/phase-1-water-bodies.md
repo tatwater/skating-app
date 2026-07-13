@@ -162,17 +162,54 @@ Not a workspace app — a manual `tsx` script directory. Pipeline stages:
 - **Viewport cap (D5).** The geospatial `limit` truncates *before* the bbox refine, so a wide
   (state-level) zoom silently drops bodies. Phase 1: raise the pilot cap (64 → ~512) and `log`
   a warning when truncation actually happens rather than drop silently; expansion is a tuned
-  constant (~Champlain's half-height), not a per-query computation. Real fix is D49 (Phase 2).
+  constant (~Champlain's half-height), not a per-query computation. **This is now known to be
+  worse than a wide-zoom edge case — see "PR#4 prerequisite" below; the real fix must land in
+  PR#4, not Phase 2.**
 - **`.pmtiles` hosting** — Convex file storage vs. a static host/R2 (either is fine; pick when
   we swap off demo tiles).
 - **National storage later** — watch the Convex DB storage tier as regions are added; scope
   Alaska to populated areas + named/area threshold (never the whole state). Not a Phase 1
   concern, logged so it isn't forgotten.
 
+## PR#4 prerequisite: fix `listInViewport` (discovered during the PR#3 load)
+
+**Status (2026-07-12): the ETL + import shipped (PR#9); `listInViewport` is broken at the real
+corpus scale and must be fixed as the first thing in PR#4, before the map can render.**
+
+**Symptom.** With all 9,967 Vermont bodies loaded, `listInViewport` returns **0** for a normal
+city-zoom viewport (e.g. the Burlington waterfront) even though a manual bbox scan finds 14
+bodies there, incl. Lake Champlain. So the data is correct; the *query* is broken.
+
+**Root cause.** `listInViewport` indexes **centroids** and expands the query rectangle by
+`MAX_BODY_EXTENT_DEG` (±2°, sized to catch Lake Champlain — 1.53° tall — via its off-screen
+centroid). At real density that ±2° expansion covers ~all of Vermont, so the
+`@convex-dev/geospatial` query hits the component's internal **~1024-row read cap**, returns a
+spatially-arbitrary ~505 centroids, and the `bboxIntersects` refine finds none inside the small
+actual viewport. One outsized body (Champlain) forcing a huge expansion for *every* query is the
+core flaw.
+
+**Recommended fix (PR#4).** Decouple the outliers from the common case:
+1. Query the centroid index over the **actual viewport plus a small margin** (~a typical medium
+   body's half-extent, e.g. ~0.05°) — bounded, well under the 1024-row cap, correct for the
+   overwhelming majority of small/medium bodies.
+2. Handle the **few large bodies explicitly** — flag bodies whose bbox extent exceeds a
+   threshold (an `isLarge` boolean, or a dedicated small index) and always `bboxIntersects`-test
+   that short list (Vermont: ~Champlain + Memphrémagog). This removes the need for the ±2°
+   blanket expansion entirely.
+   *(The fully-general alternative is multi-cell / bbox-coverage indexing — index each body under
+   every S2 cell its bbox touches so a rectangle query is exact regardless of size — but that's a
+   larger geospatial rework; the two-tier approach above is the pragmatic PR#4 scope.)*
+3. Keep the truncation `log` (D5) as a backstop, but it should stop firing in normal use.
+
+Add a `convex-test` case asserting a large body with an off-screen centroid **is** returned by a
+small shoreline viewport (the exact case that regressed), plus a normal small-viewport case.
+
 ## Risks / watch-outs
-- **Convex doc size (1 MiB hard limit)** — chunk import batches; keep uniform 5 m fidelity
-  and coarsen only a body that would otherwise breach 1 MiB (realistically just Champlain,
-  which should fit). Fidelity is the priority; the 1 MiB limit is the only hard line.
+- **Convex hard limits (two, both real)** — (1) **1 MiB/doc**; (2) **8192 elements per array**,
+  which applies to a polygon ring's coordinates and bit Lake Champlain (~8,900-vertex ring at
+  5 m). Keep uniform 5 m fidelity and coarsen a body past it *only* to fit a hard limit — the
+  ETL does this adaptively (+~1 m/step; Champlain settles ~7 m) and skips anything still over
+  the array cap per-feature. Fidelity is the priority; these two limits are the only hard lines.
 - **Query read size** — `listInViewport` returning many full polygons could get heavy at wide
   zoom; if so, return low-detail outlines + lazy-load detail on tap (a Phase 2+ lever, noted).
 - **OSM attribute quality** — names/types vary; the `other` bucket + later NHD enrichment
