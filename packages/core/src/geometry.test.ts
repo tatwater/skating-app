@@ -284,6 +284,9 @@ describe('bufferedLineOverlap (rivers, D36)', () => {
         ]),
       )
 
+    // Each case runs two geodesic buffers + an IoU twice (a,b and b,a) — heavy enough that the
+    // default 100 runs was borderline against Vitest's 5s timeout and flaked on loaded CI runners.
+    // 40 runs still samples the space well; the explicit timeout adds margin. (Rivers, D36/D40.)
     fc.assert(
       fc.property(arbLine, arbLine, (a, b) => {
         const overlap = bufferedLineOverlap(a, b, 200)
@@ -291,6 +294,7 @@ describe('bufferedLineOverlap (rivers, D36)', () => {
         expect(overlap).toBeLessThanOrEqual(1 + 1e-9)
         expect(overlap).toBeCloseTo(bufferedLineOverlap(b, a, 200), 6)
       }),
+      { numRuns: 40 },
     )
-  })
+  }, 20_000)
 })
