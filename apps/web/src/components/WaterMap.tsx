@@ -31,7 +31,11 @@ const EMPTY_FEATURES: GeoJSON.FeatureCollection = { type: 'FeatureCollection', f
 export default function WaterMap() {
   const containerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
-  const loadedRef = useRef(false)
+  // `loaded` is state (not a ref) so the source-update effect re-runs once the style finishes
+  // loading: that way, if results ever arrive *before* load (they can't today — the query is
+  // gated on the viewport, first set inside the load handler — but a future initial-viewport
+  // wouldn't hit this footgun), the retained features get drawn the moment the source exists.
+  const [loaded, setLoaded] = useState(false)
   const [viewport, setViewport] = useState<BBox | null>(null)
 
   const pmtilesUrl = env.pmtilesUrl || DEMO_PMTILES_URL
@@ -87,26 +91,26 @@ export default function WaterMap() {
         source: 'water',
         paint: { 'line-color': '#1e5aa0', 'line-width': 1 },
       })
-      loadedRef.current = true
+      setLoaded(true)
       syncViewport() // first query, framed on the initial view
     })
     map.on('moveend', syncViewport)
 
     return () => {
-      loadedRef.current = false
+      setLoaded(false)
       map.remove()
       mapRef.current = null
       maplibregl.removeProtocol('pmtiles')
     }
   }, [pmtilesUrl])
 
-  // Push query results into the source whenever they change (once the style has loaded).
+  // Push query results into the source once the style has loaded and whenever they change.
   useEffect(() => {
     const map = mapRef.current
-    if (!map || !loadedRef.current) return
+    if (!map || !loaded) return
     const source = map.getSource('water') as maplibregl.GeoJSONSource | undefined
     source?.setData(features)
-  }, [features])
+  }, [features, loaded])
 
   return (
     <div

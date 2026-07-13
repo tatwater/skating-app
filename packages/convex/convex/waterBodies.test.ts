@@ -411,6 +411,31 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     warn.mockRestore()
   })
 
+  test('sanitizes a bogus limit (0/negative) to the default rather than emptying tier 1', async () => {
+    const t = convexTestWithGeo()
+    // Three small (tier-1-only) bodies inside the viewport.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [0.3, 0.5, 0.7].map((c) => ({
+        source: 'osm' as const,
+        externalId: `osm/${c}`,
+        name: `Body ${c}`,
+        type: 'pond' as const,
+        polygon: SAMPLE_BODY.polygon,
+        bbox: { minLat: c - 0.01, minLng: c - 0.01, maxLat: c + 0.01, maxLng: c + 0.01 },
+        centroid: { lat: c, lng: c },
+      })),
+    })
+    // limit: 0 must NOT wipe the tier-1 prefilter (which would leave only large bodies); it falls
+    // back to the default, so all three small bodies still come back.
+    for (const limit of [0, -5]) {
+      const inView = await t.query(api.waterBodies.listInViewport, {
+        viewport: VIEWPORT_CONTAINING,
+        limit,
+      })
+      expect(inView).toHaveLength(3)
+    }
+  })
+
   test('returns only the bodies inside the viewport when several exist', async () => {
     const t = convexTestWithGeo()
     const asMember = await seedUser(t, 'clerk_member')

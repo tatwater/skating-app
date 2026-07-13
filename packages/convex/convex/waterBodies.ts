@@ -48,6 +48,20 @@ const LARGE_BODY_EXTENT_DEG = 0.05
 /** Cap on the tier-1 centroid prefilter — a backstop against a state-level zoom pulling the whole
  *  corpus; truncation is logged, never silent (D5). The real fix is the D49 display score (Phase 2). */
 const DEFAULT_VIEWPORT_LIMIT = 512
+/** Hard ceiling on the (client-supplied) tier-1 limit, so a huge value can't page past the query
+ *  read budget. See `sanitizeLimit`. */
+const MAX_VIEWPORT_LIMIT = 1024
+
+/**
+ * `listInViewport.limit` is public, client-supplied input, so guard it (D5/D37 — validate at the
+ * trust boundary): a `0`/negative/non-integer value would leave the tier-1 key set empty, silently
+ * returning *only* large bodies; a huge value would page until the query blew its read budget.
+ * Fall back to the default for anything that isn't a positive integer, and clamp to the ceiling.
+ */
+function sanitizeLimit(limit: number | undefined): number {
+  if (limit === undefined || !Number.isInteger(limit) || limit <= 0) return DEFAULT_VIEWPORT_LIMIT
+  return Math.min(limit, MAX_VIEWPORT_LIMIT)
+}
 
 /** A canonical (OSM/NHD) body as prepared by the ETL, keyed by its `(source, externalId)`. */
 const canonicalBody = v.object({
@@ -346,7 +360,7 @@ export const restore = mutation({
 export const listInViewport = query({
   args: { viewport: bbox, limit: v.optional(v.number()) },
   handler: async (ctx, { viewport, limit }) => {
-    const effectiveLimit = limit ?? DEFAULT_VIEWPORT_LIMIT
+    const effectiveLimit = sanitizeLimit(limit)
 
     // Tier 1 — centroid prefilter over the viewport expanded by the (small) margin. The
     // geospatial `query` bounds work per call and returns a *partial* page plus a continuation
