@@ -101,9 +101,17 @@ test plan.
 
 ## Workstreams (web PR — in dependency order)
 
-### A. `@skating/core` additions (pure, tested first)
+### A. `@skating/core` additions (pure, tested first) — ✅ DONE (2026-07-13)
 The logic both Convex and the apps need, kept framework-free and property-tested (D40). All land
 before anything consumes them.
+
+> **Shipped:** `display.ts` (`displayScore` + integer-bucket `minVisibleZoom`), `report.ts`
+> (`validateReportInput` + normalization, incl. the D41 visibility-ceiling check), and
+> `maxVisibilityForProfile` in `visibility.ts`. Also **relocated the shared report vocab** into
+> `@skating/core` `types.ts` so the form + validator draw from one source: `THICKNESS_METHODS`,
+> `SKY_CONDITIONS`, `PRECIP_TYPES`, `CONDITION_SOURCES` (were Convex-only in `lib/enums.ts`; the
+> schema now imports them from core), plus the `orange_peel` surface tag. Core: 138 tests, 100%
+> coverage; all packages typecheck.
 
 - **`display.ts` (D49):**
   - `displayScore({ surfaceAreaSqM, curatedBoost? }): number` — `normalize(log(area)) +

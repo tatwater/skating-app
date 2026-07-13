@@ -5,6 +5,7 @@ import {
   canViewComment,
   canViewReport,
   deriveDefaultVisibility,
+  maxVisibilityForProfile,
   type ViewerRelationship,
 } from './visibility'
 
@@ -75,6 +76,20 @@ describe('deriveDefaultVisibility (D41)', () => {
       expect(deriveDefaultVisibility({ profilePublic })).toBe(
         profilePublic ? 'public' : 'followers',
       )
+    }
+  })
+})
+
+describe('maxVisibilityForProfile (D41 ceiling)', () => {
+  it('a locked/private profile is capped below public; a public profile is not', () => {
+    expect(maxVisibilityForProfile({ profilePublic: true })).toBe('public')
+    expect(maxVisibilityForProfile({ profilePublic: false })).toBe('followers')
+  })
+  it('never returns a level narrower than its default (default is always allowed)', () => {
+    for (const profilePublic of [true, false]) {
+      const max = maxVisibilityForProfile({ profilePublic })
+      const dflt = deriveDefaultVisibility({ profilePublic })
+      expect(VISIBILITY_LEVELS.indexOf(max)).toBeGreaterThanOrEqual(VISIBILITY_LEVELS.indexOf(dflt))
     }
   })
 })

@@ -45,13 +45,11 @@ export const REMOVAL_REASONS = [
 /** How a report entered the system. */
 export const REPORT_SOURCES = ['native', 'activity', 'imported'] as const
 
-/** Ice-thickness reading trust level. */
-export const THICKNESS_METHODS = ['measured', 'estimated'] as const
+// THICKNESS_METHODS moved to `@skating/core` (shared report vocab — the report form + the
+// `validateReportInput` contract both need it), alongside ICE_TYPES / SURFACE_TAGS.
 
-/** Weather snapshot sky/precip vocab (conditions at skate time, D19). */
-export const SKY_CONDITIONS = ['clear', 'partly_cloudy', 'overcast', 'precip'] as const
-export const PRECIP_TYPES = ['none', 'rain', 'snow', 'sleet'] as const
-export const CONDITION_SOURCES = ['user', 'openmeteo'] as const
+// SKY_CONDITIONS / PRECIP_TYPES / CONDITION_SOURCES moved to `@skating/core` (shared report vocab —
+// the report form + `validateReportInput` need them), alongside ICE_TYPES / SURFACE_TAGS.
 
 /** Content moderation state shared by reports/comments (D32). */
 export const MODERATION_STATUSES = ['visible', 'hidden', 'removed'] as const

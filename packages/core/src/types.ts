@@ -48,12 +48,17 @@ export const ICE_TYPES = [
 ] as const
 export type IceType = (typeof ICE_TYPES)[number]
 
+/** Ice-thickness reading trust level (D22) — `estimated` is lower-trust than `measured`. */
+export const THICKNESS_METHODS = ['measured', 'estimated'] as const
+export type ThicknessMethod = (typeof THICKNESS_METHODS)[number]
+
 /** How the ice *skates* (community vocabulary, D23). */
 export const SURFACE_TAGS = [
   'glass',
   'smooth',
   'rough',
   'bumpy',
+  'orange_peel',
   'rubble',
   'cracked_surface',
   'snow_covered',
@@ -65,6 +70,17 @@ export const SURFACE_TAGS = [
   'windswept',
 ] as const
 export type SurfaceTag = (typeof SURFACE_TAGS)[number]
+
+/**
+ * Conditions AT skate time (D19). Phase 2 stores these as optional **manual** entry
+ * (`source: 'user'`); Open-Meteo auto-fill (`source: 'openmeteo'`) arrives in Phase 10.
+ */
+export const SKY_CONDITIONS = ['clear', 'partly_cloudy', 'overcast', 'precip'] as const
+export type SkyCondition = (typeof SKY_CONDITIONS)[number]
+export const PRECIP_TYPES = ['none', 'rain', 'snow', 'sleet'] as const
+export type PrecipType = (typeof PRECIP_TYPES)[number]
+export const CONDITION_SOURCES = ['user', 'openmeteo'] as const
+export type ConditionSource = (typeof CONDITION_SOURCES)[number]
 
 /** Localized hazards that drive the lifecycle (D15). */
 export const HAZARD_TYPES = [
