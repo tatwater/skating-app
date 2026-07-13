@@ -300,7 +300,7 @@ createdAt, resolvedAt?: timestamp
 _id
 actorId: ref(profiles)          // the moderator/admin who acted
 action: enum(hide, remove, restore, ban, suspend, unban,
-             merge_waterbody, approve_waterbody, reject_waterbody,
+             merge_waterbody, approve_waterbody, reject_waterbody, set_curated_boost,
              resolve_flag, dismiss_flag, grant_role, revoke_role)
 targetType: enum(report, comment, photo, user, waterbody, contentFlag)
 targetId: string

@@ -147,30 +147,42 @@ before anything consumes them.
     (property test); a minimal "notes-only" report validates; **a locked/minor profile can't set
     `public`** (clamp/reject).
 
-### B. Convex schema + geospatial
+### B. Convex schema + geospatial — ✅ DONE (2026-07-13)
 Minimal — the report/photo/comment tables already exist in full (Phase 0 schema). Only additive,
 migration-free optional fields.
+
+> **Shipped:** `displayScore`/`curatedBoost`/`minVisibleZoom` on `waterBodies`; `minVisibleZoom`
+> wired as the geospatial **`sortKey`** across every insert (import/create/approve/remove/restore/
+> backfill/setCuratedBoost). Confirmed the sortKey range filter works in `convex-test`.
 - **`waterBodies`:** add `displayScore?: number`, `curatedBoost?: number`, and the derived integer
   `minVisibleZoom?: number` (D49). Optional ⇒ no migration; computed on `importCanonical` /
   `create` / `setCuratedBoost`. Backfilled onto the existing Vermont corpus by re-running the
   chunked ETL loader (same path Phase 1 used for `isLarge`).
-- **`lib/geospatial.ts` (changed — the D49 fix, decided 2026-07-13):** the geospatial index gains a
-  **numeric `minVisibleZoom` filter dimension** alongside `listed`, so `listInViewport` filters
-  `minVisibleZoom <= zoom` *inside* the query. This is what makes wide zooms return the *few
-  prominent* bodies (Lake Morey guaranteed via `curatedBoost`) rather than an arbitrary read-capped
-  slice — a post-fetch JS refine could not, because the read cap fills before the prominent body is
-  reached. **Spike first:** confirm `@convex-dev/geospatial` supports a numeric **range** filter
-  key; if it only does equality, fall back to (a) an equality set over discrete integer zoom buckets
-  `minVisibleZoom in {…≤ zoom}`, or (b) a numeric **sort** by `displayScore` taking top-N. Reindex
-  cost: writing `minVisibleZoom` is one geospatial re-insert per body (the ETL loader batches under
-  the read cap; a full-corpus backfill paginates).
+- **`lib/geospatial.ts` (changed — the D49 fix; spike confirmed 2026-07-13):** store the integer
+  **`minVisibleZoom` as the geospatial entry's `sortKey`** (the 5th `insert` arg — Phase 1 parks
+  `createdAt` there, which nothing reads). `listInViewport` filters `q.lt('sortKey', zoom + 1)`
+  (i.e. `minVisibleZoom <= zoom`) *inside* the query, so wide zooms return only the *few prominent*
+  bodies (Lake Morey guaranteed via `curatedBoost`) rather than an arbitrary read-capped slice — a
+  post-fetch JS refine could not, because the read cap fills before the prominent body is reached.
+  **Confirmed:** `@convex-dev/geospatial@0.2.1` exposes `sortKey` with `.gte`/`.lt` range filters,
+  and results order by `sortKey` — so a capped query keeps the *most prominent* bodies, not an
+  arbitrary slice. `listed` stays a boolean `filterKey` (still refined in JS per the Phase 1
+  read-cap note, not passed to the query). Reindex cost: writing `minVisibleZoom` is one geospatial
+  re-insert per body (the ETL loader batches under the read cap; a full-corpus backfill paginates).
 - **`reports`:** no schema change for web. *(An optional `idempotencyKey?` for the offline queue
   lands with the **mobile** PR, D30 — additive then.)* `reports.point` is already required in the
   schema; `create` fills it from the optional put-in pin, else the body centroid (Workstream C).
 - **No `reports.point` geospatial index this phase** — report feeds query the existing
   `by_water_body_skate_time` DB index; near-me/cross-body geospatial is Phase 5/6.
 
-### C. Convex functions + `convex-test`
+### C. Convex functions + `convex-test` — ✅ DONE (2026-07-13)
+
+> **Shipped:** `waterBodies` `get` (merged→survivor redirect + unavailable signal) + `setCuratedBoost`
+> + `importCanonical`/`listInViewport` D49 wiring; `reports.ts` (`create`/`listByWaterBody`/`get`/
+> `update`) with the server-side visibility clamp + put-in-pin/centroid + merged-target resolution +
+> photo-ownership check; `photos.ts` (`generateUploadUrl`/`create` with the D42 coord gate/`getUrls`
+> with null-URL guard). `convex-test`: all convex source at 100% coverage.
+
 - **`waterBodies.ts` additions:**
   - `get` (query) — single body detail (name, type, area, polygon, centroid); **follows
     `mergedIntoId` to the survivor** (a link to a merged duplicate resolves to the canonical body,
@@ -360,9 +372,10 @@ PR; commits map to §A–§E):
   **→ Phase 4:** per-body `curatedBoost` must be **editable from the admin water-body surface**
   (set/adjust the boost on any body through the UI), not only via a seed script — same "don't bury
   it in code" principle as the score constants above.
-- **Geospatial numeric-filter spike** — before wiring Workstream B, confirm `@convex-dev/geospatial`
-  supports a numeric **range** filter key for `minVisibleZoom <= zoom`; pick the fallback (integer
-  bucket equality-set, or `displayScore` sort) if not.
+- **Geospatial numeric-filter spike — DONE (2026-07-13):** `@convex-dev/geospatial@0.2.1` supports a
+  numeric `sortKey` range (`.gte`/`.lt`). Approach locked: `minVisibleZoom` = `sortKey`;
+  `listInViewport` filters `q.lt('sortKey', zoom + 1)`. Validate the result counts against the
+  9,967-body corpus during implementation (the filter should shrink wide-zoom reads, not grow them).
 
 ## Risks / watch-outs
 - **Report-form surface area is large** — the ice/surface/thickness/conditions vocab is real

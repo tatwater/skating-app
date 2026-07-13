@@ -14,6 +14,11 @@
  * `maxResults` ceiling, so a wide viewport crashes (Convex's 4,096-reads limit). Instead the
  * viewport query fetches by rectangle and re-checks `isListed` in JS — cheap in Phase 1 (~no
  * unlisted bodies). See the `listInViewport` tier-1 note for the full read-cap reasoning.
+ *
+ * The per-entry **`sortKey`** (the 5th `insert` arg) holds a body's **`minVisibleZoom`** (D49) —
+ * NOT `createdAt`. The component supports a numeric `sortKey` range filter (`.gte`/`.lt`) and orders
+ * results by it, so `listInViewport` filters `sortKey <= zoom` in-query and, if it ever caps, keeps
+ * the *most prominent* bodies (lowest `minVisibleZoom`) instead of an arbitrary slice.
  */
 
 import { GeospatialIndex } from '@convex-dev/geospatial'

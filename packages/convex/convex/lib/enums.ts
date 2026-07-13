@@ -89,6 +89,7 @@ export const MODERATION_ACTIONS = [
   'merge_waterbody',
   'approve_waterbody',
   'reject_waterbody',
+  'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 2)
   'resolve_flag',
   'dismiss_flag',
   'grant_role',

@@ -132,6 +132,14 @@ export default defineSchema({
     // bbox extent at import/create; see `waterBodies.listInViewport`.
     isLarge: v.optional(v.boolean()),
     surfaceAreaSqM: v.optional(v.number()),
+    // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
+    // `minVisibleZoom` is its integer bucket, ALSO written as the geospatial `sortKey` so
+    // `listInViewport` filters `minVisibleZoom <= zoom` in-query. All optional ⇒ migration-free;
+    // computed on import/create/setCuratedBoost. `curatedBoost` is admin-set (D49), preserved on
+    // re-import like the other curation fields.
+    displayScore: v.optional(v.number()),
+    curatedBoost: v.optional(v.number()),
+    minVisibleZoom: v.optional(v.number()),
     createdByUserId: v.optional(v.id('profiles')), // when source == user
     reviewStatus: v.optional(literals(REVIEW_STATUSES)), // source==user only (D37)
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)

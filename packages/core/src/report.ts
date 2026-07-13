@@ -74,6 +74,16 @@ export interface NormalizedThicknessReading {
   note?: string
 }
 
+/** Normalized conditions — `source` is always set (defaulted to `user`), matching the stored shape. */
+export interface NormalizedConditions {
+  airTempC?: number
+  windSpeedKph?: number
+  windDir?: string
+  sky?: SkyCondition
+  precip?: PrecipType
+  source: ConditionSource
+}
+
 /** The clean, defaulted report ready for `reports.create` to server-stamp + insert. */
 export interface NormalizedReport {
   waterBodyId: string
@@ -84,7 +94,7 @@ export interface NormalizedReport {
   skateQuality?: SkateQuality
   iceThickness?: { readings: NormalizedThicknessReading[] }
   snowCoverCm?: number
-  conditions?: ReportConditionsInput
+  conditions?: NormalizedConditions
   notes?: string
   point?: LatLng
 }
@@ -182,8 +192,7 @@ function validateReading(
 function validateConditions(
   conditions: ReportConditionsInput,
   errors: ReportValidationError[],
-): ReportConditionsInput {
-  const before = errors.length
+): NormalizedConditions {
   if (conditions.airTempC !== undefined && !Number.isFinite(conditions.airTempC)) {
     errors.push({ field: 'conditions.airTempC', message: 'must be a number' })
   }
@@ -199,10 +208,10 @@ function validateConditions(
   if (conditions.source !== undefined && !isMember(CONDITION_SOURCES, conditions.source)) {
     errors.push({ field: 'conditions.source', message: 'is not a known source' })
   }
-  if (errors.length > before) return conditions
 
-  // Phase 2 conditions are manual entry (D19) — default the provenance to the user.
-  const normalized: ReportConditionsInput = { source: conditions.source ?? 'user' }
+  // Phase 2 conditions are manual entry (D19) — default the provenance to the user. Built even on
+  // error (the caller discards it when `errors` is non-empty), so the return type stays concrete.
+  const normalized: NormalizedConditions = { source: conditions.source ?? 'user' }
   if (conditions.airTempC !== undefined) normalized.airTempC = conditions.airTempC
   if (conditions.windSpeedKph !== undefined) normalized.windSpeedKph = conditions.windSpeedKph
   const windDir = conditions.windDir?.trim()
@@ -279,7 +288,7 @@ export function validateReportInput(
     errors.push({ field: 'snowCoverCm', message: 'must be a number ≥ 0' })
   }
 
-  let normalizedConditions: ReportConditionsInput | undefined
+  let normalizedConditions: NormalizedConditions | undefined
   if (input.conditions !== undefined) {
     normalizedConditions = validateConditions(input.conditions, errors)
   }
