@@ -34,6 +34,10 @@ and a Clerk JWT template named `convex`).
   moderator `approve`, admin `remove`/`restore` (reversible soft-delist + audit row, D48),
   `listInViewport` (**two-tier bbox-intersection** viewport query, D5 — see below),
   `listPendingReview`.
+- **`convex/basemap.ts`** — internal `generateUploadUrl` / `getServingUrl`: the ops path for
+  hosting the self-built Vermont `.pmtiles` basemap in Convex file storage (Phase 1, PR#5, D6 —
+  its serving URL honors HTTP `Range` + CORS, which `pmtiles://` requires). Invoked by
+  [`scripts/basemap`](../../scripts/basemap/README.md), never client-callable.
 - **`convex/*.test.ts`** — `convex-test` suites: auth/role/suspension gating, upsert
   idempotency + age/username invariants, approve/remove/restore → audit-log paths, and the
   two-tier `listInViewport` (small-body prefilter, off-screen-centroid large body, refine,

@@ -71,11 +71,23 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
   source-map upload (runtime crash reporting already works without it); Apple dev-build
   distribution for the mobile alpha crew is still pending its own track.
 
-## Phase 1 — Water-body data
+## Phase 1 — Water-body data ✅ Complete (2026-07-13)
 > **Detailed build plan:** [`phase-1-water-bodies.md`](./phase-1-water-bodies.md).
 > **Pilot region: Vermont** (compact; the Nordic-skating heartland — Lake Morey et al.).
 > **Rivers deferred** to a later release (reaches are hard; pilot skating is still-water) —
 > import lakes/ponds/reservoirs only.
+>
+> **Status:** shipped across PRs #7–#11. `@skating/core` OSM tag mapping + on-water point (#7);
+> Convex `listed` refactor + `by_external_id` + `importCanonical` + admin remove/restore (#8);
+> the `scripts/etl` OSM pipeline + the real 9,967-body Vermont import (#9); the read-only MapLibre
+> web map + the two-tier `listInViewport` fix that made the corpus queryable at scale (#10); and
+> the **self-hosted Vermont `.pmtiles` basemap** — built with `pmtiles extract` (z0–14, ~280 MB),
+> hosted on **Convex file storage** (colocated; its serving URL passes the `Range` + CORS checks
+> `pmtiles://` needs), tooling + reproducible pipeline in `scripts/basemap` (#11). All tests green
+> with coverage held. **Operational follow-ups (you own):** set `VITE_PMTILES_URL` to the dev
+> serving URL in local `.env`, confirm the map renders against self-hosted tiles, then re-run the
+> upload with `--prod` and set the prod URL in Vercel. Off-ramp to Cloudflare R2 (zero egress) is
+> documented if tile bandwidth grows.
 
 - **OSM ETL** (`scripts/etl`, run manually) for Vermont: filter water features, map OSM
   tags → our `type` enum, **simplify to ~5 m fidelity** (Google/Apple-parity for click
