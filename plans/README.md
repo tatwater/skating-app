@@ -23,8 +23,8 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
 - [Phase 1 — Water-body data](./phase-1-water-bodies.md) — OSM ETL, import, `listed`
   refactor, read-only map (Vermont pilot).
 - [Phase 2 — Map + reports (the MVP)](./phase-2-map-and-reports.md) — interactive map,
-  tap-to-detail, report create/read, photos, user-created bodies + dedup, D49 display
-  scoring. Web first, then mobile (two PRs).
+  tap-to-detail, report create/read, photos, D49 display scoring. Web first, then mobile
+  (two PRs). *(User-created bodies + dedup moved to Phase 7 — GPS-backed.)*
 
 ## How these fit together
 

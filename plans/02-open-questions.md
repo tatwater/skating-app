@@ -43,6 +43,29 @@ because it's a genuine advantage over email forums.
 
 ---
 
+## Corpus-derived signals (logged, not committed)
+
+Observations from analyzing 1,197 real community posts (`training_data/google_group/`, see
+`08-legal-feasibility-checklist.md` L5a). Not open *questions* — future-facing signals recorded so
+they aren't lost.
+
+### S1 — Access / put-ins are a dominant concern
+Access language pervades the corpus: `boat launch` (72), `town beach` (43), plus `shore`, `point`,
+`beach`, `island`, `access`, and gear/rescue talk (`dry suit` 41, `rescue` 167). Skaters obsess over
+**where to park and get on the ice** — which reinforces D18's "refine with put-in points later" note
+and D3's safety framing. **Possible future feature:** per-water-body **put-in / access points**
+(parking, launches) — not scoped to a phase yet, but clearly wanted. *(Also feeds the D18 drive-time
+approximation: testing the actual put-in, not the water-body centroid.)*
+
+### S2 — Big lakes are named by sub-area, spelling varies
+Large lakes are referred to by named arms/bays and nicknames, not the parent name: Lake Champlain's
+**Malletts Bay** appeared under **10 spellings** (Malletts/Mallets/Mallett's + Inner/Outer), and the
+NE arm as **"Inland Sea"** (55). Implication for **D4/D36/D48/D49**: the detector/dedup and the
+zoom-scored display should expect **named sub-areas** of one polygon and **spelling variants** — a
+big lake isn't one label. Relevant when modeling Champlain-scale bodies + seeding `curatedBoost`.
+
+---
+
 ## Recently resolved (see 01-decisions.md)
 
 - **Q1 → D12** — No live GPS; opportunistic location on app-open + post-hoc Strava path.

@@ -416,7 +416,8 @@ createdAt: timestamp
 - `candled_ice` — deteriorating vertical columns (spring rot)
 
 **`surfaceTags`** (how it *skates*):
-- `glass` / `smooth` · `rough` · `bumpy` · `rubble` · `cracked_surface`
+- `glass` / `smooth` · `rough` · `bumpy` · `orange_peel` (dimpled/textured, finer than bumpy)
+- `rubble` · `cracked_surface`
 - `snow_covered` · `drifted` · `slushy` · `wet` / `overflow`
 - `frozen_chop` (froze while wavy) · `windswept`
 
@@ -430,6 +431,41 @@ createdAt: timestamp
 - `drilled_hole` (ice-fishing holes)
 - `inlet_outlet_current` / `spring` (moving water = weak)
 - `shell_area` (air pocket zone)
+
+### Corpus validation (2026-07-13)
+Validated against **1,197 real posts** (Jul 2025–Jun 2026) from the community's VT/NH/ADK/ME
+Nordic-skating Google Groups (methodology + re-runnable scripts: `training_data/google_group/`,
+a private design input — see `08-legal-feasibility-checklist.md` L5a). **The enums hold up well** —
+every term appears, in the expected frequency order:
+- **Ice types:** `black_ice` (248 occ / 173 msgs — dominant, "the good stuff") ≫ `gray_ice` (100) >
+  `shell_ice` (44) > `snow_ice`/`white_ice` (20) > `sandwich_ice` (12) > `candled_ice` (10). All present.
+- **Surface tags:** `glass`/`smooth` (245) dominant; `cracked_surface` (89), `snow_covered` (73),
+  `rubble` (72), `bumpy` (66), `rough` (62), `slushy` (54), `drifted` (45) all well-used.
+- **Hazards:** `open_water`/`lead` (218) and `pressure_ridge` (116) dominate; `thin_ice` (49),
+  `shell_area` (44), `inlet/outlet/current/spring` (35) follow. The `dry` vs `wet` crack distinction
+  is corroborated — skaters explicitly call out "dry cracks" as normal.
+
+**Refinement candidates — RESOLVED for Phase 2 (2026-07-13), applied to `@skating/core` `SURFACE_TAGS`.**
+Decision: **keep a superset** — add clearly-useful terms, don't strip low-usage ones that still have
+real meaning (cheap to keep; a missing tag can't be picked, a rare tag just sits unused):
+- **Added:** `orange_peel` (49 occ) — a vivid, frequently-used dimpled/textured surface, finer-grained
+  than `bumpy`. Now a `surfaceTag`.
+- **Kept despite near-zero corpus usage (founder call — superset over stripping):** `windswept`
+  (0 occ; overlaps `drifted`, 45) and `frozen_chop` (1 occ). Both have clear meaning and may come up;
+  retained so the vocab is a superset.
+- **Not added — `glare_ice` (5 occ):** redundant with the IS-vs-SKATES split — "glare ice" = clear
+  glossy ice = `black_ice` (ice type) + `glass` (surface). Adding it as its own tag would create
+  cross-dimension ambiguity for little gain at 5 occurrences.
+- **Held — `resurfaced` (7 occ):** left out for now; overlaps `smooth`/`glass`. Revisit only if
+  report-form testing surfaces a real gap.
+- **Not an enum gap, but notable:** "wild ice" (53) is the sport's own name (wild/Nordic skating),
+  not a surface/ice descriptor. Informal quality words (`solid`, `supportable`, `skateable`) map to
+  the coarse `skateQuality` (D23).
+
+**Report-shape signals (validate which fields matter):** ~**40% of posts carry photos** (436 image
+attachments) — justifies a first-class photo pipeline (D31/D42); **41%** mention conditions; only
+**16%** mention thickness — corroborating that `iceThickness` is genuinely *optional* (D22). Thread
+data: 865 threads, 703 standalone vs. 162 with replies (~19%) — right-sizes comments-as-v1 (D21).
 
 ---
 

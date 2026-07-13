@@ -138,8 +138,8 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - Report `visibility` is stored now with the **derived default** (D41), but only
   **just_me / public** are meaningful until the follow graph lands (Phase 3) — fine
   for the earliest builds.
-- **User-created water bodies (D14)** with **match-on-create dedup** (D36): steer the
-  user onto a nearby existing body (bbox + IoU + name) before creating a new one.
+- *(User-created water bodies + dedup **moved to Phase 7**, decided 2026-07-13 — the good version is
+  GPS-path-backed, and the Vermont OSM corpus already covers the alpha. See Phase 7.)*
 - **Done:** friends can post and read reports on real lakes. *This is the usable MVP.*
 - Needs: MapLibre + tiles (Protomaps), Convex file storage.
 
@@ -201,8 +201,24 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - Detect ice-skate activities → prompt report → ingest **trusted path** (+ media
   where ToS allows). Normalize to `gpsActivities` and **resolve each to its
   `waterBodyId`** (D44) so skates are findable by lake.
+- **User-created water bodies (D14) + match-on-create dedup (D36)** *(moved here from Phase 2 on
+  2026-07-13 — needs GPS to be good)*. When an ingested path resolves to **no** known body (the D44
+  fallback), this is where a new body gets created — **GPS-path-backed, not freehand**:
+  - **Derive bounds from the trusted path** (buffer + concave hull of `gpsActivities.path`) to
+    propose a polygon + centroid + `surfaceAreaSqM`, instead of asking the user to draw one by hand
+    (freehand shapes are messy and low-trust; a real skated track is far better evidence).
+  - **Match-on-create dedup before inserting (D36):** bbox + geospatial-nearest prefilter → score
+    each candidate with `@skating/core` `geometry.ts` (`polygonIoU`, `pointInPolygon`,
+    `bboxIntersects`) + a new **`dedup.ts`** (`nameSimilarity`, `classifyDedup` with the D36
+    thresholds) → **steer the user onto a nearby existing body** ("attach here?") via a
+    `findMatchCandidates` query; require an explicit `confirmedNew` to insert when strong matches
+    exist. Stamp `dedupStatus` / `duplicateCandidateIds`; auto-visible then review-after (D37).
+  - The **moderator dedup review queue + merge** is already Phase 4; this feeds it.
+  - Deferred sub-decision: whether to also offer a **manual draw** path (e.g. Terra Draw) for users
+    without a GPS provider connected, or to gate creation on a path entirely. Decide at build.
 - **Done:** logging an ice skate on a supported device prompts a report with the
-  real path prefilled, and the skate shows up in that lake's history by name.
+  real path prefilled, the skate shows up in that lake's history by name, and a skate on **new**
+  water can create/attach a body from the trusted path (dedup-steered).
 - Needs: provider approvals/keys (all applied for in Phase 0).
 
 ## Phase 8 — Hazards
