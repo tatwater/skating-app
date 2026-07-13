@@ -468,7 +468,10 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     })
     expect(atDefault.length).toBeLessThan(OVER) // clamped — not all 300 come back
     expect(atHugeLimit.length).toBe(atDefault.length) // a huge limit is clamped to the same cap
-  })
+    // Seeding 300 bodies (each a geospatial insert reading ~15–20 S2-cell docs) + two viewport
+    // queries runs well past the 5 s default on a slow CI runner; this is inherently heavy, not
+    // flaky logic, so give it headroom rather than shrinking the seed below the 256 cap it tests.
+  }, 30_000)
 
   test('returns only the bodies inside the viewport when several exist', async () => {
     const t = convexTestWithGeo()
