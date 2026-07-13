@@ -47,6 +47,11 @@ if [[ -z "$STORAGE_ID" ]]; then echo "[basemap] upload failed: $RESP" >&2; exit 
 echo "[basemap] stored: $STORAGE_ID"
 
 SERVING_URL="$(run_convex basemap:getServingUrl "{\"storageId\":\"$STORAGE_ID\"}" 2>/dev/null | tr -d '"')"
+# getServingUrl returns null if the id can't be resolved; never print VITE_PMTILES_URL=null.
+if [[ -z "$SERVING_URL" || "$SERVING_URL" == "null" ]]; then
+  echo "[basemap] failed to resolve serving URL for: $STORAGE_ID" >&2
+  exit 1
+fi
 echo ""
 echo "[basemap] done. Set this ($TARGET) in VITE_PMTILES_URL:"
 echo ""

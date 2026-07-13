@@ -402,6 +402,14 @@ export const listInViewport = query({
       cursor = page.nextCursor
       if (keys.length >= effectiveLimit && cursor !== undefined) truncated = true
     } while (cursor !== undefined && keys.length < effectiveLimit)
+    // Since we don't filter on `listed` in the query (read-cap safety, above), an unlisted body
+    // (removed/rejected/merged) in the rectangle occupies a prefilter slot before the `isListed`
+    // refine drops it — so at the cap the visible count can undershoot while listed bodies remain
+    // behind the cursor. This only bites once the cursor is still pending at `effectiveLimit` —
+    // the wide-zoom regime already truncated-and-logged below (D5); at normal zoom the cursor
+    // exhausts and every listed body is returned. Inert in Phase 1 (~no unlisted bodies), and the
+    // real fix is the D49 zoom-scored display score (Phase 2) — re-adding the `listed` filter here
+    // would ~halve the safe `maxResults` and reintroduce the wide-zoom crash this two-tier avoids.
     if (truncated) {
       console.warn(
         `listInViewport hit the ${effectiveLimit}-row prefilter cap; some bodies may be omitted at this zoom (D5/D49).`,
