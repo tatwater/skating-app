@@ -6,7 +6,7 @@
  * `create` writes a `pending` body immediately (still listed), and a moderator later resolves
  * it via `approve`. Admins can `remove`/`restore` any body — a reversible soft-delist (D48).
  * Whether a body shows on the public map is the derived `listed` boolean (see `./lib/listing`),
- * indexed as the geospatial filter key and queried by `listInViewport`.
+ * which `listInViewport` enforces when refining viewport results (see its read-cap note).
  */
 
 import { bboxIntersects, WATER_BODY_TYPES } from '@skating/core'
@@ -45,18 +45,23 @@ import { bbox, geoJson, latLng, literals } from './lib/validators'
  */
 const VIEWPORT_MARGIN_DEG = 0.05
 const LARGE_BODY_EXTENT_DEG = 0.05
-/** Cap on the tier-1 centroid prefilter — a backstop against a state-level zoom pulling the whole
- *  corpus; truncation is logged, never silent (D5). The real fix is the D49 display score (Phase 2). */
-const DEFAULT_VIEWPORT_LIMIT = 512
-/** Hard ceiling on the (client-supplied) tier-1 limit, so a huge value can't page past the query
- *  read budget. See `sanitizeLimit`. */
-const MAX_VIEWPORT_LIMIT = 1024
+/** Cap on the tier-1 centroid prefilter — a backstop against a wide zoom pulling the whole corpus;
+ *  truncation is logged, never silent (D5). Also the **read-cap guard**: the geospatial component
+ *  reads ∝ `maxResults`, so this bounds a single query's reads. 256 sits ~20% under the measured
+ *  ~320 crash edge for the Vermont corpus (see the `listInViewport` tier-1 note). The real
+ *  display fix is the D49 zoom-scored score (Phase 2). */
+const DEFAULT_VIEWPORT_LIMIT = 256
+/** Hard ceiling on the (client-supplied) tier-1 limit. Clamped to the default so no caller can
+ *  push `maxResults` past the read-cap-safe zone — a large value crashes the geospatial query
+ *  (Convex's 4,096-reads limit), it doesn't just page slowly. See `sanitizeLimit`. */
+const MAX_VIEWPORT_LIMIT = DEFAULT_VIEWPORT_LIMIT
 
 /**
  * `listInViewport.limit` is public, client-supplied input, so guard it (D5/D37 — validate at the
  * trust boundary): a `0`/negative/non-integer value would leave the tier-1 key set empty, silently
- * returning *only* large bodies; a huge value would page until the query blew its read budget.
- * Fall back to the default for anything that isn't a positive integer, and clamp to the ceiling.
+ * returning *only* large bodies; a value past `MAX_VIEWPORT_LIMIT` would make the geospatial query
+ * exceed its read cap and crash. Fall back to the default for anything that isn't a positive
+ * integer, and clamp to the ceiling.
  */
 function sanitizeLimit(limit: number | undefined): number {
   if (limit === undefined || !Number.isInteger(limit) || limit <= 0) return DEFAULT_VIEWPORT_LIMIT
@@ -363,10 +368,21 @@ export const listInViewport = query({
     const effectiveLimit = sanitizeLimit(limit)
 
     // Tier 1 — centroid prefilter over the viewport expanded by the (small) margin. The
-    // geospatial `query` bounds work per call and returns a *partial* page plus a continuation
-    // cursor, so we page through it, accumulating up to `effectiveLimit` centroids. Stopping with
-    // a cursor still pending means we capped a wide zoom — the D5 truncation, surfaced in logs
-    // rather than dropped silently (D49 display score is the real fix, Phase 2).
+    // geospatial `query` returns a *partial* page plus a continuation cursor, so we page through
+    // it, accumulating up to `effectiveLimit` centroids. Stopping with a cursor still pending
+    // means we capped a wide zoom — the D5 truncation, surfaced in logs rather than dropped
+    // silently (D49 display score is the real fix, Phase 2).
+    //
+    // Read-cap safety (learned live at the 9,967-body scale — a crash, not theory): the geospatial
+    // component runs each `query` as its own execution under Convex's 4,096-reads cap, and it
+    // reads roughly ∝ `maxResults` (its internal read-ahead), *not* just the result count — so a
+    // wide viewport that can't fill `maxResults` exhausts a large S2 covering and blows the cap.
+    // Two levers keep every viewport safe: (1) we do **not** pass the `listed` filter here — the
+    // component's filter-stream *intersection* ~halves the safe `maxResults` ceiling, and the
+    // `isListed` refine below already enforces listing (Phase 1 has ~no unlisted bodies, so
+    // fetching-then-dropping them costs nothing); (2) `MAX_VIEWPORT_LIMIT` is tuned so even the
+    // worst exhausting rectangle (wide, panned off-data) stays well under the cap. Measured: at
+    // this corpus ~320 is the crash edge unfiltered, so the 256 default carries ~20% margin.
     const rectangle = {
       west: viewport.minLng - VIEWPORT_MARGIN_DEG,
       east: viewport.maxLng + VIEWPORT_MARGIN_DEG,
@@ -379,11 +395,7 @@ export const listInViewport = query({
     do {
       const page = await waterBodiesGeo.query(
         ctx,
-        {
-          shape: { type: 'rectangle', rectangle },
-          filter: (q) => q.eq('listed', true),
-          limit: effectiveLimit,
-        },
+        { shape: { type: 'rectangle', rectangle }, limit: effectiveLimit },
         cursor,
       )
       for (const { key } of page.results) keys.push(key)
