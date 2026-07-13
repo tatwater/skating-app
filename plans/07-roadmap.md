@@ -118,6 +118,12 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
   basemap (self-built or hosted demo).
 
 ## Phase 2 — Map + reports (the MVP)
+> **Detailed build plan:** [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md).
+> **Web first, then mobile (two PRs)** — web front-loads the shared Convex backend and proves the
+> whole data model online before the native-build + offline-capture (D30) lift. No store/dev-account
+> dependency blocks it (web ships on Vercel; mobile needs only an EAS dev build + — for physical
+> iPhones — Apple Developer enrollment, which should start now in parallel).
+
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
 - **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived
   display score (area now; popularity + admin `curatedBoost` later), decoupled from the D48
@@ -161,6 +167,10 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - **Water-body dedup review queue (D36):** moderator view of `suspected_duplicate`
   bodies with a manual **merge** (re-point children → survivor, soft-tombstone loser),
   plus **approve/reject** of user-drawn bodies (`reviewStatus`, D37).
+- **Display-tuning controls (D49):** admin UI to edit the `displayScore` curve constants
+  (log-area bounds + score→zoom map) and to set/adjust per-body **`curatedBoost`** from the
+  water-body surface. Phase 2 ships these as tuned constants + a seed; Phase 4 lifts them
+  behind admin controls so they're **never buried in code** a non-engineer can't reach.
 - Every admin mutation gates on `role` server-side and writes a **`moderationActions`**
   audit row.
 - **Operator alerts (D38):** Resend + React Email — email the founder on new
