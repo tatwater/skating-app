@@ -1,9 +1,9 @@
 # @skating/web
 
 The **TanStack Start** web app — the secondary surface, for keyboard/big-screen planning
-and longer reports (D1/D27). Barebones Phase 0 shell: auth-gated routing, themed via shared
-design tokens, wired to Clerk + Convex + Sentry. Each page is a placeholder to be
-deep-dived in its own later-phase PR.
+and longer reports (D1/D27). Auth-gated routing, themed via shared design tokens, wired to
+Clerk + Convex + Sentry. Most pages are still placeholders deep-dived in their own later-phase
+PRs; the **Map** (`/`) ships a read-only water-body layer in Phase 1 (see below).
 
 ## Stack
 
@@ -42,8 +42,9 @@ src/
     AppProviders.tsx         # Clerk → Convex → theme
     AuthGate.tsx             # shared resolveAuthRoute → redirect (mobile parity, D7)
     AppShell.tsx             # signed-in nav chrome
+    WaterMap.tsx             # read-only MapLibre map (Phase 1) — client-only WebGL shell
     ui/                      # shadcn-style button / input / label
-  lib/                       # env, links, riskAck, authZone (+ tests)
+  lib/                       # env, links, riskAck, authZone, waterMap (+ tests)
   styles/app.css             # Tailwind + design-token → CSS-variable bridge
   router.tsx  start.ts       # router factory (+ Sentry tracing) · Clerk + Sentry middleware
   client.tsx  server.ts      # client + server entries (each loads its Sentry instrument first)
@@ -54,6 +55,22 @@ src/
 Auth-route resolution (`resolveAuthRoute`) and DOB parsing (`parseDateOfBirth`) are shared
 with mobile via `@skating/core` (D7) — this app only adds the web-specific redirect mapping
 (`src/lib/authZone.ts`).
+
+## Map (Phase 1, D5/D6/D48)
+
+The Map page (`/`) renders a **read-only** MapLibre GL map to confirm the imported Vermont water
+bodies (`source: 'osm'`) render — no tap-to-detail or report creation yet (Phase 2). The map's
+viewport bbox drives `waterBodies.listInViewport`; results are drawn as a fill + outline over a
+**Protomaps** basemap (D6). It's loaded **client-only** (a mounted gate) since WebGL needs the DOM,
+so the pure logic (style + feature/viewport transforms) lives in the testable `src/lib/waterMap.ts`
+while `components/WaterMap.tsx` is the untestable WebGL shell (coverage-excluded via the `src/lib`-
+only coverage `include`).
+
+**Basemap.** Blank `VITE_PMTILES_URL` uses the **Protomaps hosted demo** `.pmtiles` (whole-planet,
+fine for confirming Phase 1). PR#5 swaps in a self-built Vermont extract by setting that var — no
+code change. Font/sprite assets stay on Protomaps' hosted CDN. **Attribution** ("© OpenStreetMap
+contributors", ODbL) is always visible via a non-compact `AttributionControl` — a launch gate
+(`04-integrations.md`).
 
 ## Setup
 
@@ -68,6 +85,7 @@ cp .env.example .env     # then fill in real keys (see below)
 | `CLERK_PUBLISHABLE_KEY` | Clerk client key (`pk_…`) — read server-side by the SDK | Clerk dashboard → API keys |
 | `CLERK_SECRET_KEY` | Clerk secret (`sk_…`) — **server-only** | Clerk dashboard → API keys |
 | `VITE_CONVEX_URL` | Convex deployment URL (public, client) | `pnpm convex-dev` / Convex dashboard |
+| `VITE_PMTILES_URL` | Basemap `.pmtiles` URL (public; blank ⇒ Protomaps hosted demo) | A self-built Vermont extract (PR#5) or leave blank |
 | `VITE_SENTRY_DSN` | Sentry DSN — drives client **and** server (optional) | A **separate** `skating-web` Sentry project (same org as mobile) → project settings |
 | `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload target (build-time; set on Vercel) | Sentry org slug + the `skating-web` project slug |
 | `SENTRY_AUTH_TOKEN` | Enables source-map upload (build-time; set on Vercel) | Sentry → auth tokens. Absent ⇒ upload skipped, build still succeeds |
