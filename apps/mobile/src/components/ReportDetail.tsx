@@ -1,0 +1,189 @@
+import { api } from '@skating/convex/api'
+import type { Id } from '@skating/convex/dataModel'
+import {
+  formatConditions,
+  formatSkateTime,
+  formatSnowCoverInches,
+  formatThicknessReading,
+  type ReportConditions,
+  SKATE_QUALITY_LABELS,
+  VISIBILITY_LABELS,
+} from '@skating/core'
+import { useQuery } from 'convex/react'
+import { useRouter } from 'expo-router'
+import * as WebBrowser from 'expo-web-browser'
+import { useEffect } from 'react'
+import { Image, Pressable } from 'react-native'
+import { H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui'
+import { Badge, Chips, DetailLoading, Section, Unavailable } from './detailUi'
+import { useMapSelection } from './MapSelectionContext'
+
+/**
+ * Report detail drawer (§F, D42/D47) for `/report/[id]`, the mobile mirror of web's `ReportDetail`.
+ * Reads the report (visibility-checked server-side), its author + lake name + serving photo URLs,
+ * and pushes the lake highlight, a fly-to on the put-in point, and any `placeOnMap` photo pins up to
+ * the persistent map via `useMapSelection`. Every stored value renders **imperial** (D25) via the
+ * shared `@skating/core` formatters.
+ */
+export function ReportDetail({ reportId }: { reportId: string }) {
+  const router = useRouter()
+  const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> })
+  const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip')
+  const authors = useQuery(
+    api.profiles.publicByIds,
+    report ? { profileIds: [report.authorId] } : 'skip',
+  )
+  const photos = useQuery(
+    api.photos.getUrls,
+    report && report.photoIds.length > 0 ? { photoIds: report.photoIds } : 'skip',
+  )
+  const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection()
+
+  // Fly to the report's put-in point as soon as the report loads.
+  useEffect(() => {
+    if (report) setFocus({ lat: report.point.lat, lng: report.point.lng, zoom: 13 })
+  }, [report, setFocus])
+
+  // Highlight the lake by its *resolved survivor* id (what the map's features carry).
+  useEffect(() => {
+    if (body?.available) setHighlightWaterBodyId(body.body._id)
+  }, [body, setHighlightWaterBodyId])
+
+  useEffect(() => {
+    setPhotoPins(
+      (photos ?? [])
+        .filter((photo) => photo.coord)
+        .map((photo) => ({
+          photoId: photo.photoId,
+          // biome-ignore lint/style/noNonNullAssertion: filtered to photos with a coord above.
+          coord: photo.coord!,
+        })),
+    )
+  }, [photos, setPhotoPins])
+
+  if (report === undefined) return <DetailLoading />
+  if (report === null) {
+    return (
+      <Unavailable
+        title="Report not available"
+        message="This report may have been removed, or isn't shared with you."
+      />
+    )
+  }
+
+  const bodyName = body?.available ? body.body.name : undefined
+  const authorName = authors?.[report.authorId]?.displayName
+  const readings = report.iceThickness?.readings ?? []
+  const conditions = report.conditions
+    ? formatConditions({
+        ...report.conditions,
+        source: report.conditions.source ?? 'user',
+      } as ReportConditions)
+    : []
+
+  return (
+    <YStack gap="$3">
+      <YStack gap="$1">
+        <H4 color="$foreground">{bodyName ?? 'Report'}</H4>
+        <Text color="$foregroundMuted">
+          {formatSkateTime(report.skateTime)}
+          {authorName ? ` · by ${authorName}` : ''}
+        </Text>
+      </YStack>
+
+      <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
+        {report.skateQuality ? (
+          <Badge tone="solid">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
+        ) : null}
+        <Badge>{VISIBILITY_LABELS[report.visibility]}</Badge>
+      </XStack>
+
+      {report.iceTypes && report.iceTypes.length > 0 ? (
+        <Section label="Ice types">
+          <Chips values={report.iceTypes} />
+        </Section>
+      ) : null}
+
+      {report.surfaceTags && report.surfaceTags.length > 0 ? (
+        <Section label="Surface">
+          <Chips values={report.surfaceTags} />
+        </Section>
+      ) : null}
+
+      {readings.length > 0 ? (
+        <Section label="Thickness">
+          <YStack gap="$0.5">
+            {readings.map((reading, i) => {
+              const formatted = formatThicknessReading(reading)
+              return formatted ? (
+                // biome-ignore lint/suspicious/noArrayIndexKey: readings are an ordered, stable list.
+                <Text key={i} color="$foreground">
+                  {formatted}
+                </Text>
+              ) : null
+            })}
+          </YStack>
+        </Section>
+      ) : null}
+
+      {report.snowCoverCm !== undefined ? (
+        <Section label="Snow cover">
+          <Text color="$foreground">{formatSnowCoverInches(report.snowCoverCm)}</Text>
+        </Section>
+      ) : null}
+
+      {conditions.length > 0 ? (
+        <Section label="Conditions">
+          <YStack gap="$1">
+            {conditions.map((row) => (
+              <XStack key={row.label} justifyContent="space-between">
+                <Text color="$foregroundMuted">{row.label}</Text>
+                <Text color="$foreground">{row.value}</Text>
+              </XStack>
+            ))}
+          </YStack>
+        </Section>
+      ) : null}
+
+      {report.notes ? (
+        <Section label="Notes">
+          <Paragraph color="$foreground">{report.notes}</Paragraph>
+        </Section>
+      ) : null}
+
+      {photos && photos.length > 0 ? (
+        <Section label="Photos">
+          <XStack gap="$2" flexWrap="wrap">
+            {photos.map((photo) =>
+              photo.thumbUrl ? (
+                <Pressable
+                  key={photo.photoId}
+                  onPress={() => {
+                    const full = photo.url ?? photo.thumbUrl
+                    if (full) WebBrowser.openBrowserAsync(full)
+                  }}
+                >
+                  <Image
+                    source={{ uri: photo.thumbUrl }}
+                    style={{ width: 96, height: 96, borderRadius: 8 }}
+                    accessibilityLabel={photo.caption ?? 'Report photo'}
+                  />
+                </Pressable>
+              ) : null,
+            )}
+          </XStack>
+        </Section>
+      ) : null}
+
+      <Separator />
+      <Text
+        color="$primary"
+        onPress={() =>
+          router.navigate({ pathname: '/water/[id]', params: { id: report.waterBodyId } })
+        }
+      >
+        View the lake
+      </Text>
+    </YStack>
+  )
+}
