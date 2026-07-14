@@ -1,38 +1,35 @@
 import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
+  buildReportInput,
   deriveDefaultVisibility,
+  emptyReportForm,
+  emptyThicknessReading,
+  humanizeEnum,
   ICE_TYPES,
   maxVisibilityForProfile,
+  PRECIP_LABELS,
   PRECIP_TYPES,
+  photoUploadCoord,
+  type ReportFormState,
   SKATE_QUALITIES,
+  SKATE_QUALITY_LABELS,
   SKY_CONDITIONS,
+  SKY_LABELS,
   SURFACE_TAGS,
+  THICKNESS_METHOD_LABELS,
   THICKNESS_METHODS,
+  type ThicknessFormReading,
+  VISIBILITY_LABELS,
   type Visibility,
   validateReportInput,
+  visibilityOptions,
 } from '@skating/core'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { photoUploadCoord } from '../lib/photo'
-import {
-  humanizeEnum,
-  PRECIP_LABELS,
-  SKATE_QUALITY_LABELS,
-  SKY_LABELS,
-  THICKNESS_METHOD_LABELS,
-  VISIBILITY_LABELS,
-} from '../lib/reportDisplay'
-import {
-  buildReportInput,
-  emptyReportForm,
-  emptyThicknessReading,
-  type ReportFormState,
-  type ThicknessFormReading,
-  visibilityOptions,
-} from '../lib/reportForm'
+import { datetimeLocalToMs, toDatetimeLocal } from '../lib/reportForm'
 import { useMapSelection } from './MapSelectionContext'
 import { processPhoto, uploadToStorage } from './photoPipeline'
 import { Button } from './ui/button'
@@ -191,8 +188,8 @@ export function ReportFormFields({
       <Field label="When did you skate?">
         <Input
           type="datetime-local"
-          value={form.skateTime}
-          onChange={(e) => patch({ skateTime: e.target.value })}
+          value={toDatetimeLocal(form.skateTime)}
+          onChange={(e) => patch({ skateTime: datetimeLocalToMs(e.target.value) })}
         />
       </Field>
 
