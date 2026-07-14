@@ -225,8 +225,28 @@ migration-free optional fields.
   high-`minVisibleZoom` (low-prominence) body is absent at wide zoom while a boosted body appears;
   `setCuratedBoost` gates on `admin`, recomputes `minVisibleZoom`, + writes the audit row.
 
-### D. Web UI — read + map (the loop, read side)
-- **`WaterMap.tsx`:** add a click/tap handler → set MapLibre **feature-state** highlight on the
+### D. Web UI — read + map (the loop, read side) — ✅ DONE (2026-07-13)
+
+> **Shipped:** interactive `MapView` (tap→`/water/$id`, feature-state highlight, zoom passed into
+> `listInViewport` for the D49 filter, browser-geolocation framing, drawer-driven fly-to + report
+> photo pins), kept mounted across a pathless `_map` layout with `/`, `/water/$id`, `/report/$id`
+> children so pan/zoom survive opening a drawer. Selection is **URL-backed + deep-linkable**;
+> water-body detail (merged→survivor silent redirect, not-found vs. removed states, imperial area,
+> report feed) and report detail (all fields imperial via a pure `reportDisplay`, photos, author,
+> back-link, `placeOnMap` pins) render in a shadcn **Sheet** drawer. Read-side needed a small
+> additive `profiles.publicByIds` query for author attribution (+ test). Pure helpers
+> (`reportDisplay`, `mapSelection`, `waterMap` additions) unit-tested at 100%; a `ReportView`
+> component test covers imperial rendering; MapLibre shell excluded from coverage.
+>
+> **shadcn/ui (Base UI) adopted (2026-07-13).** Initialized shadcn on the **Base UI** variant
+> (`@base-ui/react`, `base-nova` style) — `components.json`, a `@`→`src` alias (tsconfig + Vite +
+> Vitest), and parity-safe token aliases in `app.css` mapping shadcn roles onto the `@skating/design`
+> tokens (var-references, so the hex-parity guard is unaffected). Added `sheet`/`card`/`badge`/
+> `skeleton`/`separator`/`checkbox`; **full pass** migrated hand-rolled UI to shadcn primitives
+> (`Panel`/`AuthCard`/settings/crash-fallback → `Card`, `RiskAckConsent` → `Checkbox`, `Button`
+> regenerated). `pnpm build` green.
+
+- **`MapView.tsx` (was `WaterMap.tsx`):** add a click/tap handler → set MapLibre **feature-state** highlight on the
   tapped body → open its detail; pass `zoom` into `listInViewport`; render by the D49 zoom filter.
   Home/water framing on open via the **browser geolocation API** (D12/D20: on-water ⇒ fit to that
   body; else center on location; else fall back to the Vermont region), setting only the *initial*
@@ -244,7 +264,26 @@ migration-free optional fields.
   Testing Library) for detail rendering + imperial formatting; the imperative MapLibre shell stays
   excluded from coverage (Phase 1 precedent).
 
-### E. Web UI — write (report creation)
+### E. Web UI — write (report creation) — ✅ DONE (2026-07-13)
+
+> **Shipped:** `ReportForm` (a shadcn **Dialog** opened from the water-body drawer, D47) —
+> split into a presentational, Convex-free `ReportFormFields` (fully testable) + a container that
+> wires the profile-derived/clamped visibility (D41), the photo pipeline, and the map put-in pin.
+> All ice/surface/quality/sky/precip/method/visibility pickers ride the shadcn (Base UI)
+> `ToggleGroup` (multi + single-element patterns; no `Select`); multi-reading thickness add/remove
+> with a value⇄range toggle; imperial input → metric storage (D25) via a pure `lib/reportForm.ts`
+> (`buildReportInput`, `visibilityOptions`, datetime-local round-trip) validated by
+> `validateReportInput` before submit. **Photo pipeline** (`components/photoPipeline.ts`, browser-only
+> glue): HEIC→JPEG decode (`heic2any`), EXIF GPS/timestamp read (`exifr`) *before* a downscale +
+> EXIF-strip re-encode (`browser-image-compression`) → Convex storage upload → `photos.create`, with
+> `coord` sent only on the per-photo `placeOnMap` opt-in (`lib/photo.ts` `photoUploadCoord`, D42).
+> **Put-in pin:** the drawer went **non-modal** (`Sheet showOverlay={false}` + `modal={false}`) so the
+> map stays tappable; "Set access point" arms `pinDropMode` in `MapSelectionContext`, the next map tap
+> sets `putInPin` (green marker), and the Dialog stays mounted (state preserved) while hidden during
+> the drop. New deps: `exifr`, `browser-image-compression`, `heic2any`. Pure libs 100%; a
+> `ReportFormFields` component test covers the visibility clamp, thickness add/remove/XOR, put-in
+> pin, and the photo geotag opt-in. `pnpm build` green.
+
 - **Report create form** (in-place on Map/detail, D47): ice types (`ICE_TYPES` multi-select),
   surface tags (`SURFACE_TAGS`), coarse `skateQuality`, **multi-reading thickness** (add/remove;
   value XOR range; measured/estimated), snow cover, optional **manual** conditions, **photos**,
