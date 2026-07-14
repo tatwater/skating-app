@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vitest/config'
 
 /**
@@ -8,6 +9,9 @@ import { defineConfig } from 'vitest/config'
  * parity test just reads the CSS file, and component tests render plain React.
  */
 export default defineConfig({
+  // Mirror the app's `@` → `src` alias (vite.config.ts) so shadcn/ui's `@/…` imports resolve
+  // under Vitest too, letting component tests render the ui primitives.
+  resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],

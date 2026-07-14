@@ -71,6 +71,30 @@
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --radius-lg: var(--radius);
+
+  /*
+   * shadcn/ui (Base UI) token aliases — map shadcn's conventional role names onto our
+   * @skating/design semantic tokens so CLI-installed components style themselves from the
+   * single source of truth (D7). These are `var()` references, not new hex, so the app.css
+   * parity guard (styles/app.test.ts) is unaffected. Add a mapping here if a newly-added
+   * component references a role not yet listed.
+   */
+  --color-card: var(--surface);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--foreground);
+  --color-muted: var(--surface-muted);
+  --color-muted-foreground: var(--foreground-muted);
+  --color-accent: var(--surface-muted);
+  --color-accent-foreground: var(--foreground);
+  --color-secondary: var(--surface-muted);
+  --color-secondary-foreground: var(--foreground);
+  --color-destructive: var(--danger);
+  --color-destructive-foreground: var(--danger-foreground);
+  --color-input: var(--border-strong);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-xl: calc(var(--radius) + 4px);
 }
 
 @layer base {

@@ -32,6 +32,27 @@ export const current = query({
   handler: (ctx) => getCurrentProfile(ctx),
 })
 
+/**
+ * Public attribution for a set of profile ids — the *only* fields a report feed/detail needs to
+ * name its authors (`username` + `displayName`), never the private profile (home coord, DOB, etc.).
+ * Returned as a `_id → { username, displayName }` map keyed by id so the UI can look each author up
+ * without ordering assumptions; missing/deleted ids are simply absent. Full public profiles (D47)
+ * are a later phase; this is the minimal read the Phase 2 report loop consumes.
+ */
+export const publicByIds = query({
+  args: { profileIds: v.array(v.id('profiles')) },
+  handler: async (ctx, { profileIds }) => {
+    const result: Record<string, { username: string; displayName: string }> = {}
+    for (const profileId of [...new Set(profileIds)]) {
+      const profile = await ctx.db.get(profileId)
+      if (profile) {
+        result[profileId] = { username: profile.username, displayName: profile.displayName }
+      }
+    }
+    return result
+  },
+})
+
 /** Create or update the caller's profile from their Clerk identity (idempotent). */
 export const upsertFromClerk = mutation({
   args: {

@@ -1,11 +1,11 @@
 /**
- * Pure helpers for the read-only water-body map (Phase 1, D5/D6/D48). Kept out of the
- * imperative MapLibre component (`../components/WaterMap`) so the data transforms and the
- * basemap style are unit-testable without a DOM/WebGL context.
+ * Pure helpers for the water-body map (Phase 1 read-only; Phase 2 §D adds tap-to-detail +
+ * geolocation framing). Kept out of the imperative MapLibre component (`../components/MapView`)
+ * so the data transforms, feature-state lookup, basemap style, and framing math are unit-testable
+ * without a DOM/WebGL context.
  *
- * The map confirms that the imported OSM polygons render; interactivity + tap-to-detail is
- * Phase 2. Basemap is Protomaps (D6) over hosted demo `.pmtiles` first, swapped to a
- * self-built Vermont extract later — the tile URL is injected so that swap is a config change.
+ * Basemap is Protomaps (D6) over hosted demo `.pmtiles` first, swapped to a self-built Vermont
+ * extract later — the tile URL is injected so that swap is a config change.
  */
 
 import { layers, namedFlavor } from '@protomaps/basemaps'
@@ -26,7 +26,24 @@ export const OSM_ATTRIBUTION = '© OpenStreetMap contributors'
  */
 export const DEMO_PMTILES_URL = 'https://demo-bucket.protomaps.com/v4.pmtiles'
 const GLYPHS_URL = 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf'
-const SPRITE_URL = 'https://protomaps.github.io/basemaps-assets/sprites/v4/light'
+const SPRITE_BASE = 'https://protomaps.github.io/basemaps-assets/sprites/v4'
+
+/**
+ * Protomaps basemap flavor per app theme (D6/D34): `white` is the crisp, snowy light basemap — the
+ * "wintery-but-functional" look — and `dark` is the evening map. Mapped from `next-themes`'
+ * resolved theme in `MapView`. (Other Protomaps flavors: `light`, `grayscale`, `black`.)
+ */
+export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const
+export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS]
+
+/**
+ * Icy water fill/outline per theme, layered over the basemap. Pale ice-blue on the white basemap;
+ * a deeper glacial blue on the dark one. `AttributionControl` still surfaces the ODbL credit.
+ */
+export const WATER_PALETTE = {
+  white: { fill: '#8fbfe0', outline: '#2f6690' },
+  dark: { fill: '#3a6ea5', outline: '#9ecae1' },
+} as const
 
 /** Initial framing — Vermont's Champlain shoreline (Burlington), the pilot's headline water. */
 export const INITIAL_CENTER: [number, number] = [-73.15, 44.46]
@@ -38,15 +55,16 @@ export const VERMONT_MAX_BOUNDS: [[number, number], [number, number]] = [
 ]
 
 /**
- * A read-only MapLibre style: the Protomaps vector basemap (`pmtiles://` protocol, registered
- * in the component) under our water layers. `attribution` on the source is what the
- * `AttributionControl` surfaces. Layer theming comes from `@protomaps/basemaps` `layers()`.
+ * A MapLibre style: the Protomaps vector basemap (`pmtiles://` protocol, registered in the
+ * component) themed by `flavor` (D6/D34 — see `MAP_FLAVORS`), under our water layers (added
+ * imperatively in the component). `attribution` on the source is what the `AttributionControl`
+ * surfaces. The sprite matches the flavor's light/dark icon set.
  */
-export function buildMapStyle(pmtilesUrl: string): StyleSpecification {
+export function buildMapStyle(pmtilesUrl: string, flavor: MapFlavor = 'white'): StyleSpecification {
   return {
     version: 8,
     glyphs: GLYPHS_URL,
-    sprite: SPRITE_URL,
+    sprite: `${SPRITE_BASE}/${flavor === 'dark' ? 'dark' : 'light'}`,
     sources: {
       protomaps: {
         type: 'vector',
@@ -56,7 +74,7 @@ export function buildMapStyle(pmtilesUrl: string): StyleSpecification {
     },
     // `layers()` targets the source name ('protomaps') with the named flavor; cast bridges the
     // style-spec LayerSpecification from @protomaps/basemaps to maplibre-gl's identical type.
-    layers: layers('protomaps', namedFlavor('light'), {
+    layers: layers('protomaps', namedFlavor(flavor), {
       lang: 'en',
     }) as StyleSpecification['layers'],
   }
@@ -75,21 +93,37 @@ export interface MappableBody {
 }
 
 /**
- * Water bodies → a GeoJSON `FeatureCollection` for the map's `water` source. `_id`/name/type
- * ride along as feature properties (not the GeoJSON `id`, which must be numeric for feature
- * state and isn't needed for the non-interactive Phase-1 layer).
+ * Water bodies → a GeoJSON `FeatureCollection` for the map's `water` source. Each feature gets a
+ * **numeric `id`** (its array index) — required for MapLibre feature-state, which drives the
+ * tap/selection highlight (D47). The string `_id`/name/type ride along as feature properties (a
+ * tap reads `_id` to navigate; `featureIdForBody` maps a selected `_id` back to the numeric id so
+ * a deep-linked selection can be highlighted without a click).
  */
 export function waterBodiesToFeatureCollection(
   bodies: readonly MappableBody[],
 ): GeoJSON.FeatureCollection {
   return {
     type: 'FeatureCollection',
-    features: bodies.map((body) => ({
+    features: bodies.map((body, index) => ({
       type: 'Feature',
+      id: index,
       geometry: body.polygon,
-      properties: { id: body._id, name: body.name, type: body.type },
+      properties: { _id: body._id, name: body.name, type: body.type },
     })),
   }
+}
+
+/**
+ * The numeric feature `id` (see `waterBodiesToFeatureCollection`) for a given water-body `_id`,
+ * or `undefined` if that body isn't in the current collection — used to apply the selection
+ * feature-state for a deep-linked `/water/$id` where there was no click to read the id from.
+ */
+export function featureIdForBody(
+  fc: GeoJSON.FeatureCollection,
+  waterBodyId: string,
+): number | undefined {
+  const feature = fc.features.find((f) => f.properties?._id === waterBodyId)
+  return typeof feature?.id === 'number' ? feature.id : undefined
 }
 
 /** MapLibre `LngLatBounds` (structural) → our `{ minLat, … }` bbox, the `listInViewport` arg. */
@@ -105,4 +139,33 @@ export function boundsToViewport(bounds: {
     maxLng: bounds.getEast(),
     maxLat: bounds.getNorth(),
   }
+}
+
+/**
+ * The integer zoom the D49 filter keys off (`listInViewport`'s `zoom` arg). `minVisibleZoom` is a
+ * whole-number bucket and the server keeps bodies with `minVisibleZoom <= zoom`, so we floor the
+ * map's fractional zoom: a body surfaces the moment the map reaches its bucket, never a level late.
+ */
+export function zoomForViewport(mapZoom: number): number {
+  return Math.floor(mapZoom)
+}
+
+/** Zoom used when framing on the device location (D12/D20) — regional, not street-level. */
+export const GEOLOCATION_FRAME_ZOOM = 11
+
+/**
+ * Initial framing for a device geolocation fix (D12/D20). Returns `{ center, zoom }` when the fix
+ * falls inside the pilot region (the only data we have), else `null` so the caller keeps the
+ * default Vermont framing — a skater in California shouldn't be dropped onto empty ocean. Pure so
+ * the "in region?" decision is tested without the browser Geolocation API (that stays in the shell).
+ */
+export function frameForCoord(
+  coord: { lat: number; lng: number },
+  maxBounds: [[number, number], [number, number]] = VERMONT_MAX_BOUNDS,
+  zoom: number = GEOLOCATION_FRAME_ZOOM,
+): { center: [number, number]; zoom: number } | null {
+  const [[minLng, minLat], [maxLng, maxLat]] = maxBounds
+  const inRegion =
+    coord.lng >= minLng && coord.lng <= maxLng && coord.lat >= minLat && coord.lat <= maxLat
+  return inRegion ? { center: [coord.lng, coord.lat], zoom } : null
 }

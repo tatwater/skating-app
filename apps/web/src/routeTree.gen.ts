@@ -16,8 +16,11 @@ import { Route as ReackRouteImport } from './routes/reack'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as FeedRouteImport } from './routes/feed'
 import { Route as AboutRouteImport } from './routes/about'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as MapRouteImport } from './routes/_map'
+import { Route as MapIndexRouteImport } from './routes/_map.index'
 import { Route as UUsernameRouteImport } from './routes/u.$username'
+import { Route as MapWaterIdRouteImport } from './routes/_map.water.$id'
+import { Route as MapReportIdRouteImport } from './routes/_map.report.$id'
 
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
@@ -54,19 +57,33 @@ const AboutRoute = AboutRouteImport.update({
   path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
+const MapRoute = MapRouteImport.update({
+  id: '/_map',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MapIndexRoute = MapIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRouteImport,
+  getParentRoute: () => MapRoute,
 } as any)
 const UUsernameRoute = UUsernameRouteImport.update({
   id: '/u/$username',
   path: '/u/$username',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MapWaterIdRoute = MapWaterIdRouteImport.update({
+  id: '/water/$id',
+  path: '/water/$id',
+  getParentRoute: () => MapRoute,
+} as any)
+const MapReportIdRoute = MapReportIdRouteImport.update({
+  id: '/report/$id',
+  path: '/report/$id',
+  getParentRoute: () => MapRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
+  '/': typeof MapIndexRoute
   '/about': typeof AboutRoute
   '/feed': typeof FeedRoute
   '/onboarding': typeof OnboardingRoute
@@ -75,9 +92,10 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/u/$username': typeof UUsernameRoute
+  '/report/$id': typeof MapReportIdRoute
+  '/water/$id': typeof MapWaterIdRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/feed': typeof FeedRoute
   '/onboarding': typeof OnboardingRoute
@@ -86,10 +104,13 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/u/$username': typeof UUsernameRoute
+  '/': typeof MapIndexRoute
+  '/report/$id': typeof MapReportIdRoute
+  '/water/$id': typeof MapWaterIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
+  '/_map': typeof MapRouteWithChildren
   '/about': typeof AboutRoute
   '/feed': typeof FeedRoute
   '/onboarding': typeof OnboardingRoute
@@ -98,6 +119,9 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/u/$username': typeof UUsernameRoute
+  '/_map/': typeof MapIndexRoute
+  '/_map/report/$id': typeof MapReportIdRoute
+  '/_map/water/$id': typeof MapWaterIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,9 +135,10 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/u/$username'
+    | '/report/$id'
+    | '/water/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/'
     | '/about'
     | '/feed'
     | '/onboarding'
@@ -122,9 +147,12 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/u/$username'
+    | '/'
+    | '/report/$id'
+    | '/water/$id'
   id:
     | '__root__'
-    | '/'
+    | '/_map'
     | '/about'
     | '/feed'
     | '/onboarding'
@@ -133,10 +161,13 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/u/$username'
+    | '/_map/'
+    | '/_map/report/$id'
+    | '/_map/water/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
+  MapRoute: typeof MapRouteWithChildren
   AboutRoute: typeof AboutRoute
   FeedRoute: typeof FeedRoute
   OnboardingRoute: typeof OnboardingRoute
@@ -198,12 +229,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
+    '/_map': {
+      id: '/_map'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof MapRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_map/': {
+      id: '/_map/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
-      parentRoute: typeof rootRouteImport
+      preLoaderRoute: typeof MapIndexRouteImport
+      parentRoute: typeof MapRoute
     }
     '/u/$username': {
       id: '/u/$username'
@@ -212,11 +250,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UUsernameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_map/water/$id': {
+      id: '/_map/water/$id'
+      path: '/water/$id'
+      fullPath: '/water/$id'
+      preLoaderRoute: typeof MapWaterIdRouteImport
+      parentRoute: typeof MapRoute
+    }
+    '/_map/report/$id': {
+      id: '/_map/report/$id'
+      path: '/report/$id'
+      fullPath: '/report/$id'
+      preLoaderRoute: typeof MapReportIdRouteImport
+      parentRoute: typeof MapRoute
+    }
   }
 }
 
+interface MapRouteChildren {
+  MapIndexRoute: typeof MapIndexRoute
+  MapReportIdRoute: typeof MapReportIdRoute
+  MapWaterIdRoute: typeof MapWaterIdRoute
+}
+
+const MapRouteChildren: MapRouteChildren = {
+  MapIndexRoute: MapIndexRoute,
+  MapReportIdRoute: MapReportIdRoute,
+  MapWaterIdRoute: MapWaterIdRoute,
+}
+
+const MapRouteWithChildren = MapRoute._addFileChildren(MapRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
+  MapRoute: MapRouteWithChildren,
   AboutRoute: AboutRoute,
   FeedRoute: FeedRoute,
   OnboardingRoute: OnboardingRoute,

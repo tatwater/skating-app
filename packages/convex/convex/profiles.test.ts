@@ -420,3 +420,35 @@ describe('profiles.current', () => {
     expect(await asGhost.query(api.profiles.current, {})).toBeNull()
   })
 })
+
+describe('profiles.publicByIds', () => {
+  test('returns username + displayName keyed by id, deduped, missing ids absent', async () => {
+    const t = convexTest(schema, modules)
+    const ada = await t
+      .withIdentity({ subject: 'clerk_ada' })
+      .mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'Ada Lovelace', username: 'ada', dateOfBirth: ADULT_DOB }),
+      )
+    const bob = await t
+      .withIdentity({ subject: 'clerk_bob' })
+      .mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'Bob', username: 'bob', dateOfBirth: ADULT_DOB }),
+      )
+    // A valid id for a profile that no longer exists — simply omitted from the result.
+    const ghost = await t
+      .withIdentity({ subject: 'clerk_ghost' })
+      .mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'Ghost', username: 'ghost', dateOfBirth: ADULT_DOB }),
+      )
+    await t.run((ctx) => ctx.db.delete(ghost))
+
+    const result = await t.query(api.profiles.publicByIds, { profileIds: [ada, bob, ada, ghost] })
+    expect(result[ada]).toEqual({ username: 'ada', displayName: 'Ada Lovelace' })
+    expect(result[bob]).toEqual({ username: 'bob', displayName: 'Bob' })
+    expect(result[ghost]).toBeUndefined()
+    expect(Object.keys(result)).toHaveLength(2)
+  })
+})
