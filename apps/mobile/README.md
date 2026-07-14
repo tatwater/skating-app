@@ -1,15 +1,22 @@
 # @skating/mobile
 
 The **Expo / React Native** app — the primary surface for field ice-reporting (D1/D8).
-Barebones Phase 0 shell: auth-gated tab navigation, themed via shared design tokens,
-wired to Clerk + Convex + Sentry. Each screen is a placeholder to be deep-dived in its
-own later-phase PR.
+Auth-gated tab navigation, themed via shared design tokens, wired to Clerk + Convex + Sentry.
+**Phase 2 F1** built the online map + report loop (native MapLibre map, tap→detail→feed, report
+create with photos); the offline draft queue is F2. Newsfeed / Bounties / You stay placeholders
+for their later phases.
 
 ## Stack
 
 - **Expo SDK 57** (new architecture), **Expo Router** tab navigation (D28), EAS
   dev-client workflow with Continuous Native Generation — no committed `ios/`/`android/`.
 - **Tamagui** for UI, projecting `@skating/design` tokens (D7) — see `tamagui.config.ts`.
+- **`@maplibre/maplibre-react-native`** map (Phase 2 §F): reads the same Protomaps `.pmtiles`
+  basemap as web via the native `pmtiles://` scheme (no Mapbox token), and reuses the web basemap
+  style/palette (`src/lib/waterMap.ts`). Detail + report create render in a `@gorhom/bottom-sheet`
+  drawer over a persistent map (`app/(tabs)/(map)/`), URL-backed + deep-linkable (`/water/[id]`,
+  `/report/[id]`). Photo pipeline: `expo-image-picker` (EXIF) + `expo-image-manipulator` (resize +
+  EXIF strip). Report/display logic is shared from `@skating/core` (`reportForm`/`reportView`).
 - **Clerk** auth (`@clerk/clerk-expo`) wired to **Convex** via `ConvexProviderWithClerk`
   (D26/D2). Session tokens persist in the device keychain (`expo-secure-store`).
 - **Sentry** crash/error reporting from day one (D29).
@@ -22,11 +29,12 @@ app/                         # Expo Router routes (file-based)
   _layout.tsx                # Sentry wrap + providers + auth-gated Stack.Protected
   (auth)/                    # signed-out flow — sign-in, sign-up (16+ gate + risk ack)
   (tabs)/                    # Map · Newsfeed · ＋Report · Bounties · You
+    (map)/                   # persistent map + bottom-sheet drawer: index, water/[id], report/[id]
   about.tsx                  # license disclosure (AGPL-3.0 + App Store exception, D43)
 src/
   providers/Providers.tsx    # Clerk → Convex → Tamagui → SafeArea
-  lib/                       # env, convex client, sentry init, DOB parsing, risk-ack
-  components/                # shared UI (PlaceholderScreen)
+  lib/                       # env, convex client, sentry, risk-ack, waterMap + photo helpers
+  components/                # MapView, MapDrawer, WaterBody/Report detail, ReportForm, photoPipeline
 tamagui.config.ts            # design-token → Tamagui bridge
 app.config.ts                # dynamic Expo config (single source of truth; no app.json)
 ```
@@ -43,6 +51,7 @@ cp .env.example .env.local     # then fill in real keys (see below)
 |---|---|---|
 | `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk client key (`pk_…`) | Clerk dashboard → API keys |
 | `EXPO_PUBLIC_CONVEX_URL` | Convex deployment URL | `npx convex dev` / Convex dashboard |
+| `EXPO_PUBLIC_PMTILES_URL` | Basemap `.pmtiles` URL (public; **blank ⇒ the Protomaps demo, which is dev-only and expires — it will 404**) | The self-hosted extract's serving URL — the **same value as web's `VITE_PMTILES_URL`**; see [`scripts/basemap`](../../scripts/basemap/README.md) |
 | `EXPO_PUBLIC_SENTRY_DSN` | Sentry client DSN | Sentry project settings |
 
 The app boots with placeholders — sign-in, data, and crash reporting simply stay inert
@@ -51,7 +60,7 @@ until real keys land. Clerk also needs a JWT template named `convex` (D26) and t
 
 ## Run (dev build — not Expo Go)
 
-Native modules (secure-store, Sentry, and later `@rnmapbox/maps`) need a **dev build**,
+Native modules (secure-store, Sentry, and the `@maplibre/maplibre-react-native` map) need a **dev build**,
 so Expo Go won't work (D8). Build once per platform, then iterate over the JS with Metro:
 
 ```bash
@@ -100,9 +109,9 @@ npx expo-doctor                             # project health
 
 ## Deferred (later phases, intentionally not here)
 
-- MapLibre renderer `@rnmapbox/maps` (Phase 2) — the Map tab is a placeholder for now.
-- Offline draft queue + image pipeline: `expo-sqlite`/`expo-file-system`/
-  `expo-image-manipulator`/NetInfo (Phase 2, D30/D31).
+- Offline draft queue (Phase 2 **F2**, D30): `expo-sqlite` draft list + `expo-file-system` captured
+  photos + `@react-native-community/netinfo` reconnect flush + additive `reports.idempotencyKey?`.
+  Phase 2 **F1** ships the map + online report loop first.
 - PostHog analytics/session replay (D29, "later").
 - Component-level `@testing-library/react-native` rendering under Vitest — needs extra
   RN transform config; added as real screens arrive.

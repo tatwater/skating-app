@@ -305,16 +305,53 @@ migration-free optional fields.
   profile is not offered `public`**; thickness add/remove + value-XOR-range UI; geotag opt-in
   toggles coord retention; put-in pin sets/clears `point`.
 
-### F. Mobile (separate follow-on PR — outline only)
-Built after web ships; reuses **all** of §A–§C unchanged.
-- Install `@rnmapbox/maps` + an **EAS dev build** config (Expo dev client; native module can't run
-  in Expo Go). Native MapLibre map on the Map tab consuming the same `listInViewport`; tap →
-  detail; device geolocation framing (D12/D20).
-- The report create/read loop, mirroring web but native (Tamagui).
-- **Offline draft queue (D9/D30) — the hard part:** `expo-sqlite`/MMKV for draft reports +
-  `expo-file-system` for captured photos; NetInfo/`expo-network` reconnect flush (upload photos →
-  create mutation); each draft carries the `idempotencyKey` (adds the optional `reports` schema
-  field then). `expo-image-manipulator` for the optimize + EXIF-strip pass.
+### F. Mobile (separate follow-on PR(s)) — split into F1 (online) + F2 (offline queue), decided 2026-07-13
+Built after web ships; reuses **all** of §A–§C unchanged. **Split into two PRs** (decided 2026-07-13):
+the online loop lands and gets proven first, then the offline queue (the single hardest, mobile-only
+piece) lands on its own so its review is scoped (Greptile reviews are metered).
+
+**Shared prep (lands with F1):** lift the three pure web helpers out of `apps/web/src/lib` into
+`@skating/core` so both apps draw from one source (they were web-local by accident of build order):
+`reportDisplay` (`humanizeEnum`, the enum→label maps, imperial formatters), `reportForm`
+(`buildReportInput`, `visibilityOptions`, thickness form state) and `photo` (`photoUploadCoord`). The
+web-only glue stays in web: the datetime-**local** `<input>` round-trip and the browser photo pipeline
+(`heic2any`/`exifr`/`browser-image-compression`) — neither applies on native.
+
+#### F1 — native map + read + **online** report write
+- **Map lib = `@maplibre/maplibre-react-native`** (decided 2026-07-13; **not** `@rnmapbox/maps`).
+  Rationale: parity with web — it consumes the same MapLibre **style spec**, the same `pmtiles://`
+  protocol, and the same `@protomaps/basemaps` flavors, so `waterMap.ts`'s `buildMapStyle`/palette
+  reuse nearly verbatim, and there's **no Mapbox token** dependency. Needs an **EAS dev build** (native
+  module can't run in Expo Go) — buildable now on the Android emulator / iOS Simulator with no accounts.
+- Native map on the Map tab consuming the same `listInViewport` (viewport bbox + `zoom` → the D49
+  in-query prominence filter); tap a body → its detail; **device geolocation framing** (D12/D20) via
+  `expo-location` (in-region fix recenters, else the Vermont default) — the pure `frameForCoord` from
+  `waterMap.ts` decides "in region?".
+- **Detail UX mirrors web (decided 2026-07-13):** one **persistent map** with `@gorhom/bottom-sheet`
+  drawers over it and a ported `MapSelectionContext`, so (a) the **put-in pin** works (map stays
+  tappable while the report form drawer is open) and (b) selection is **URL-backed + deep-linkable**
+  at `/water/$id` `/report/$id` (expo-router deep links) — not full pushed screens. Tamagui for the
+  drawer content (D7: share tokens, not UI).
+- The report create/read loop, mirroring web §D/§E but native (Tamagui): water-body detail (merged→
+  survivor redirect, unavailable state, imperial area, feed by skate time), report detail (all fields
+  imperial, photos, author, `placeOnMap` pins), and the create form (ice/surface/quality/thickness/
+  conditions/visibility-clamped/notes/skate-time/put-in-pin) validated by `validateReportInput`.
+- **Photo pipeline (native — simpler than web):** `expo-image-picker` with `exif: true` returns GPS
+  directly (no `exifr`), and `expo-image-manipulator` resizes + **re-encodes to strip EXIF** and reads
+  HEIC natively (no `heic2any`/`browser-image-compression`). D42 invariant unchanged: coord leaves the
+  device only on the per-photo `placeOnMap` opt-in, and `photos.create` re-drops it server-side.
+- **Verify on the Android emulator** (`Pixel_6_Android_15`) as the primary target (user's first device
+  is a Pixel); iOS Simulator secondary.
+
+#### F2 — offline draft queue (D9/D30) — the hard part (separate follow-on PR)
+- **Storage (decided 2026-07-13): `expo-sqlite`** for the draft records (relational — a **list** of
+  independent drafts, each its own `idempotencyKey` + captured-photo file paths + report fields —
+  models cleanly and survives restarts) + **`expo-file-system`** for the captured photo files +
+  **`@react-native-community/netinfo`** for reconnect detection. (MMKV/`expo-network` considered;
+  sqlite chosen for the relational draft-list shape.)
+- Reconnect flush (upload photos → `create` mutation); each draft carries an `idempotencyKey` — this
+  is when the optional `reports.idempotencyKey?` schema field lands (additive, D30) and `reports.create`
+  becomes idempotent on it.
 - **Multiple concurrent drafts are a real case (not one-at-a-time):** a skater can hop **several
   lakes in a day with no signal**, capturing a report per lake, and they all sit in the queue until
   reconnect. So the queue is a **list** of independent drafts (each its own `idempotencyKey` +
@@ -328,6 +365,38 @@ Built after web ships; reuses **all** of §A–§C unchanged.
   status when it lands.
 - Confirm token/drift-guard tests still pass; keep OSM + "Powered by Strava" (N/A this phase) and
   ODbL attribution visible.
+
+### H. Regional expansion (post-MVP — Phase 2.5, its own PR) — decided 2026-07-14
+Runs **after the mobile MVP (F1 + F2)** and before Phase 3 (see roadmap "Phase 2.5"). Pure data +
+infra — no app features — so it's a separate PR. Widens the pilot's **single-state Vermont** corpus +
+basemap to the Northeast lake-skating states. **Nothing here changes until the mobile online loop
+ships**; and the map-bounds widening is the *last* step (after the data lands), never before.
+
+- **Region scope (decided 2026-07-14): NY (upstate/northern only — exclude NYC + Long Island), VT,
+  NH, ME, MA.** Explicitly **not** Geofabrik's `us/northeast` dump — it bundles NJ/PA/CT/RI, and we
+  want nothing south or west of NY (no lake-skating culture → clutter + storage cost). So pull
+  **per-state Geofabrik extracts** (`us/new-york`, `us/vermont`, `us/new-hampshire`, `us/maine`,
+  `us/massachusetts`) and process each; **clip the NY extract by bbox** to drop the NYC/Long Island
+  metro (roughly keep lat ≳ 41.3, and trim the SE corner) so downstate lakes never import.
+- **Water data (`scripts/etl`):** re-run the Phase 1 pipeline per state → `importCanonical` (each body
+  D49-scored on insert; the loader paginates under the read cap). Record each extract's download date +
+  md5 (per the ETL README). Corpus grows well past VT's ~9,970 bodies.
+- **Basemap tiles → Cloudflare R2 (decided 2026-07-14 — see "Settled").** Build one multi-state
+  `.pmtiles` via `pmtiles extract --bbox <5-state bbox minus downstate NY> --maxzoom=14` from a current
+  Protomaps planet build (the demo `v4.pmtiles` source in `scripts/basemap` is dead — use a live
+  `build.protomaps.com/<date>.pmtiles`). It far exceeds VT's ~280 MB and **overflows Convex free
+  storage**, so host on **R2**; migrate the VT tiles there too. `scripts/basemap/upload.sh` gains an R2
+  target (or a sibling script); the app is untouched — just repoint `VITE_PMTILES_URL` /
+  `EXPO_PUBLIC_PMTILES_URL` per environment.
+- **Map bounds + framing (LAST):** widen `VERMONT_MAX_BOUNDS` + `INITIAL_CENTER` + `frameForCoord`'s
+  in-region gate in **both** `apps/web/src/lib/waterMap.ts` and `apps/mobile/src/lib/waterMap.ts`
+  (kept in sync with each other **and** the tile-extract bbox), plus the `--bbox` in `scripts/basemap`.
+  Do this only once the water data is imported, so no pan area is ever empty of data.
+- **`curatedBoost` re-seed:** the existing VT seed (`training_data/google_group/curated_boost_seed_vt.csv`)
+  already lists NY/NH destinations (Lake George, Dillenbeck Bay, …) that were skipped for not being in
+  the VT-only import — apply them once those states land.
+- **Tests/hygiene:** ETL transform tests stay green; the widened bounds update `waterMap.test.ts` in
+  both apps; ODbL attribution unchanged.
 
 ---
 
@@ -349,7 +418,14 @@ PR; commits map to §A–§E):
    >
    > *(User-created water bodies + dedup are no longer in this plan — deferred to Phase 7, GPS-backed.)*
 
-**Mobile — a separate follow-on PR** (§F), with its own short build-plan doc once web is proven.
+**Mobile — two separate follow-on PRs** (§F, decided 2026-07-13), each with its own short build-plan
+doc once web is proven:
+1. **F1 — mobile online loop:** lift the shared `reportDisplay`/`reportForm`/`photo` helpers into
+   `@skating/core` (+ refactor web onto them); `@maplibre/maplibre-react-native` map + tap→detail;
+   bottom-sheet drawers + `MapSelectionContext`; report read + **online** create (native photo
+   pipeline via `expo-image-picker`/`expo-image-manipulator`); geolocation framing.
+2. **F2 — mobile offline draft queue:** `expo-sqlite` draft list + `expo-file-system` photos +
+   NetInfo reconnect flush; additive `reports.idempotencyKey?` + idempotent `reports.create`.
 
 ## Settled during review (2026-07-13)
 - **URL-backed, deep-linkable selection (both surfaces).** Water-body selection and report views
@@ -393,6 +469,22 @@ PR; commits map to §A–§E):
 - **Web report form is ephemeral; drafts are mobile-only.** No persisted web drafts (submit or lose,
   sidestepping orphan photos). The offline draft queue (§F) is the real draft feature and must hold
   **multiple** concurrent drafts (a day of offline lake-hopping), not one.
+
+- **Regional expansion = Phase 2.5, Northeast skating states only (decided 2026-07-14).** After the
+  mobile MVP (F1+F2), before Phase 3, expand the VT-only corpus + basemap to **NY (excl. NYC/Long
+  Island), VT, NH, ME, MA** — via **per-state** Geofabrik extracts (not the `us/northeast` dump, which
+  drags in NJ/PA/CT/RI we don't want) with NY bbox-clipped downstate. See Workstream H + roadmap
+  "Phase 2.5". Map-bounds widening happens **last**, after the water data lands.
+
+- **Basemap tiles move to Cloudflare R2 (decided 2026-07-14).** The 5-state `.pmtiles` extract
+  overflows Convex's free storage tier, so tiles host on **R2** (zero egress, standard pmtiles host —
+  the Phase 1-flagged off-ramp); the VT tiles migrate too. The app already reads the tile URL from
+  `VITE_PMTILES_URL` / `EXPO_PUBLIC_PMTILES_URL`, so this is a hosting + env swap, **no app change**.
+  (Operationally yours: create the R2 bucket + public base URL; `scripts/basemap` gains an R2 upload
+  target.) **Related fix (2026-07-14):** the old Protomaps demo `.pmtiles` default 404'd (they prune
+  dated builds) — both apps' `DEMO_PMTILES_URL` now points at a live build, but the demo is dev-only;
+  production must set `*_PMTILES_URL`. Mobile's `.env.example` now documents `EXPO_PUBLIC_PMTILES_URL`
+  (the missing-var gap that caused the 404).
 
 ## Open items to settle during the build (small)
 - **`displayScore` curve constants** — start with fixed log-area bounds + a linear score→zoom map;

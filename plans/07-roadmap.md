@@ -150,6 +150,33 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - **Done:** friends can post and read reports on real lakes. *This is the usable MVP.*
 - Needs: MapLibre + tiles (Protomaps), Convex file storage.
 
+## Phase 2.5 — Regional expansion (Northeast skating states)
+> **Detailed plan:** [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md) → *Workstream H*.
+> Slotted **after the mobile MVP (Phase 2 §F: F1 + F2) and before Phase 3** (decided 2026-07-14).
+> It's data + infra, not features, so it doesn't gate the social graph — but the corpus should be
+> region-complete before feeds / drive-time (Phase 5/6) reason over it.
+
+Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **lake-skating** states.
+- **Region scope (decided 2026-07-14):** **NY (upstate/northern only — exclude NYC + Long Island),
+  VT, NH, ME, MA.** Deliberately **not** the whole Geofabrik "us/northeast" dump: nothing south or
+  west of NY (no NJ/PA — and CT/RI omitted too) — no lake-skating culture there, so importing them is
+  pure clutter + cost. Use **per-state Geofabrik extracts** for exactly those 5 states; **clip NY by
+  bbox** to drop the NYC/Long Island metro.
+- **Water data:** re-run the Phase 1 ETL (`scripts/etl`) per state → `importCanonical` into Convex
+  (each body scored for D49 on insert). Much bigger corpus than VT's ~9,970.
+- **Basemap tiles → Cloudflare R2 (decided 2026-07-14):** the 5-state `.pmtiles` extract (z0–14) far
+  exceeds VT's ~280 MB and **blows past the Convex free storage tier**, so the tiles move to
+  **Cloudflare R2** now (zero egress, the standard pmtiles host — the off-ramp Phase 1 already flagged).
+  The VT tiles migrate too, so all environments serve from one host. **App change is nil** — it reads
+  `VITE_PMTILES_URL` / `EXPO_PUBLIC_PMTILES_URL`, so this is an env swap.
+- **Map bounds + framing:** widen `VERMONT_MAX_BOUNDS` / `INITIAL_CENTER` + the geolocation in-region
+  gate (web + mobile, kept in sync with the tile bbox) — **only after** the water data lands, so we
+  never expose pan area with no data.
+- **`curatedBoost` re-seed:** the VT seed CSV already lists NY/NH lakes (Lake George, Dillenbeck Bay)
+  skipped for not being in the VT import — apply them once those states are in.
+- **Done:** a skater anywhere in NY (north of the metro) / VT / NH / ME / MA opens the app and sees
+  their lakes with a real basemap, served from R2.
+
 ## Phase 3 — Social graph + comments (+ user-facing safety tools)
 *(Split from the old combined phase, and moved ahead of Drive-time/Newsfeed so
 `friends`/`followers` visibility is real before feeds filter on it.)*
