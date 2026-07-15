@@ -276,6 +276,12 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
 - Strava-path hazard *deduction* (Q11); auto-merge dedup + community confirmations (D36).
 - AI report summarization beyond weather facts (Q9); full ToS/legal review (Q10).
 - In-app guides; group-skate organizing; Fitbit as a GPS provider.
+- **Photo-orphan GC cron (cleanup/polish).** The Phase 2 photo pipeline uploads before
+  `reports.create`, so failed/abandoned/partial submits can strand storage; the client reclaims
+  best-effort (`photos.remove`/`removeBlob`) but can't catch an upload in flight at unmount. Add a
+  scheduled sweep of unreferenced `photos` rows + orphaned storage blobs past a grace window. See
+  `phase-2-map-and-reports.md` → "Settled during review" (2026-07-15). Low urgency until storage
+  quotas bite.
 
 ## Cross-cutting (every phase)
 - **Tests land with the feature** — Vitest unit/logic + property tests for

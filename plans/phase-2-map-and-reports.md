@@ -470,6 +470,19 @@ doc once web is proven:
   sidestepping orphan photos). The offline draft queue (§F) is the real draft feature and must hold
   **multiple** concurrent drafts (a day of offline lake-hopping), not one.
 
+- **Photo-orphan cleanup is client-side + best-effort; a server-side GC is deferred (2026-07-15).**
+  The report form uploads photos before `reports.create`, so a failed create, an abandoned form, or a
+  partial upload (one of the full/thumb pair lands, the other fails) can strand storage server-side.
+  Both surfaces now reclaim best-effort: each upload records its `storageId` the instant it lands, so
+  a retry reuses it; on form-close / photo-remove / unmount-without-submit the client deletes any
+  created row (`photos.remove` → row + blobs) **and** any bare uploaded-but-unrowed blob
+  (`photos.removeBlob`, auth-gated + idempotent). **Known residual:** if the component unmounts while
+  an upload is still *in flight* (its id not yet recorded), that blob can't be swept from the client.
+  Closing this fully needs a **server-side GC cron** (sweep `photos` rows unreferenced by any report,
+  and storage blobs with no `photos` row, older than a grace window) — **deferred to a future
+  cleanup/polish phase**; tracked in `07-roadmap.md` → "Later / deferred". Low urgency at alpha scale
+  (a few stranded blobs), but it should land before storage cost/quotas matter.
+
 - **Regional expansion = Phase 2.5, Northeast skating states only (decided 2026-07-14).** After the
   mobile MVP (F1+F2), before Phase 3, expand the VT-only corpus + basemap to **NY (excl. NYC/Long
   Island), VT, NH, ME, MA** — via **per-state** Geofabrik extracts (not the `us/northeast` dump, which
