@@ -15,29 +15,24 @@ function convexTestWithGeo() {
 const NOTIF_PREFS = {
   activityDetected: true,
   bountyRequest: true,
-  followedPostedNearby: true,
   hazardConfirmation: true,
   bountyFulfilled: true,
-  newFollower: true,
   reportRated: true,
   contentFlagResolved: true,
 }
 
-/** Seed a provisioned profile; `requireFollowApproval` true = a locked/private (minor-like) account. */
-async function seedUser(
-  t: ReturnType<typeof convexTest>,
-  subject: string,
-  requireFollowApproval = false,
-) {
+/** Seed a provisioned profile; `minor` true = an under-18 account (read-only — can't post, D41). */
+async function seedUser(t: ReturnType<typeof convexTest>, subject: string, minor = false) {
   await t.run((ctx) =>
     ctx.db.insert('profiles', {
       clerkUserId: subject,
       displayName: subject,
       username: subject,
       driveTimePrefMinutes: 60,
-      requireFollowApproval,
+      profileVisibility: minor ? ('private' as const) : ('public' as const),
       notificationPrefs: NOTIF_PREFS,
-      dateOfBirth: Date.UTC(1990, 0, 1),
+      // Adult by default; a minor gets a DOB ~16 years ago so `isMinor` is true at test time.
+      dateOfBirth: minor ? Date.UTC(new Date().getUTCFullYear() - 16, 0, 1) : Date.UTC(1990, 0, 1),
       reputationPoints: 0,
       role: 'member' as const,
       status: 'active' as const,
@@ -111,7 +106,6 @@ describe('reports.create', () => {
     expect(report?.point).toEqual(centroid) // no put-in pin → centroid
     expect(report?.notes).toBe('glassy') // normalized (trimmed)
     expect(report?.reportTime).toBeGreaterThan(0)
-    expect(report?.visibility).toBe('public') // public profile → default public (D41)
   })
 
   test('stores a fully-populated report (all optional sections)', async () => {
@@ -121,7 +115,6 @@ describe('reports.create', () => {
     const reportId = await asUser.mutation(api.reports.create, {
       waterBodyId: id,
       skateTime: SKATE_TIME,
-      visibility: 'public',
       iceTypes: ['black_ice'],
       surfaceTags: ['glass'],
       skateQuality: 'great',
@@ -152,24 +145,14 @@ describe('reports.create', () => {
     expect((await t.run((ctx) => ctx.db.get(reportId)))?.point).toEqual(point)
   })
 
-  test('clamps a locked/minor account away from public (D41)', async () => {
+  test('a minor cannot create a report — read-only (D13/D41)', async () => {
     const t = convexTestWithGeo()
     const { id } = await seedBody(t)
-    const asLocked = await seedUser(t, 'clerk_minor', true)
-    // Default visibility for a locked profile is followers — and public is refused outright.
+    const asMinor = await seedUser(t, 'clerk_minor', true)
+    // All reports are public (D13), so an under-18 author is refused outright.
     await expect(
-      asLocked.mutation(api.reports.create, {
-        waterBodyId: id,
-        skateTime: SKATE_TIME,
-        visibility: 'public',
-      }),
-    ).rejects.toThrow(/invalid_report/i)
-
-    const okId = await asLocked.mutation(api.reports.create, {
-      waterBodyId: id,
-      skateTime: SKATE_TIME,
-    })
-    expect((await t.run((ctx) => ctx.db.get(okId)))?.visibility).toBe('followers')
+      asMinor.mutation(api.reports.create, { waterBodyId: id, skateTime: SKATE_TIME }),
+    ).rejects.toThrow(/under 18/i)
   })
 
   test('rejects an invalid report at the server boundary (D37)', async () => {
@@ -230,63 +213,56 @@ describe('reports.create', () => {
   })
 })
 
-describe('reports.listByWaterBody (visibility, D13)', () => {
-  test('sorts by skate time desc, filters by viewer, excludes non-visible', async () => {
+describe('reports.listByWaterBody (all public, D13)', () => {
+  test('sorts by skate time desc and excludes moderation-hidden reports', async () => {
     const t = convexTestWithGeo()
     const { id } = await seedBody(t)
     const asAuthor = await seedUser(t, 'clerk_author')
 
-    // Two public (different skate times) + one just_me + one hidden.
+    // Two public reports (different skate times) + one hidden by moderation.
     const older = await asAuthor.mutation(api.reports.create, {
       waterBodyId: id,
       skateTime: SKATE_TIME - 1000,
-      visibility: 'public',
     })
     const newer = await asAuthor.mutation(api.reports.create, {
       waterBodyId: id,
       skateTime: SKATE_TIME,
-      visibility: 'public',
-    })
-    const priv = await asAuthor.mutation(api.reports.create, {
-      waterBodyId: id,
-      skateTime: SKATE_TIME,
-      visibility: 'just_me',
     })
     const hidden = await asAuthor.mutation(api.reports.create, {
       waterBodyId: id,
       skateTime: SKATE_TIME,
-      visibility: 'public',
     })
     await t.run((ctx) => ctx.db.patch(hidden, { moderationStatus: 'hidden' }))
 
-    // A different viewer sees only the two public reports, newest skate time first.
+    // Every viewer sees the same public, non-hidden reports, newest skate time first —
+    // author, another member, and an unauthenticated caller alike (all reports are public, D13).
+    const expected = [newer, older]
     const asViewer = await seedUser(t, 'clerk_viewer')
-    const seen = await asViewer.query(api.reports.listByWaterBody, { waterBodyId: id })
-    expect(seen.map((r) => r._id)).toEqual([newer, older])
-
-    // The author additionally sees their own just_me report.
-    const byAuthor = await asAuthor.query(api.reports.listByWaterBody, { waterBodyId: id })
-    expect(byAuthor.map((r) => r._id).sort()).toEqual([newer, older, priv].sort())
-
-    // An unauthenticated caller (no profile) still sees only the public reports.
-    const anon = await t.query(api.reports.listByWaterBody, { waterBodyId: id })
-    expect(anon.map((r) => r._id)).toEqual([newer, older])
+    expect(
+      (await asViewer.query(api.reports.listByWaterBody, { waterBodyId: id })).map((r) => r._id),
+    ).toEqual(expected)
+    expect(
+      (await asAuthor.query(api.reports.listByWaterBody, { waterBodyId: id })).map((r) => r._id),
+    ).toEqual(expected)
+    expect(
+      (await t.query(api.reports.listByWaterBody, { waterBodyId: id })).map((r) => r._id),
+    ).toEqual(expected)
   })
 })
 
-describe('reports.get (single, visibility-checked)', () => {
-  test('hides a just_me report from a non-author but shows it to the author', async () => {
+describe('reports.get (single, moderation-checked)', () => {
+  test('hides a moderation-hidden report from everyone', async () => {
     const t = convexTestWithGeo()
     const { id } = await seedBody(t)
     const asAuthor = await seedUser(t, 'clerk_author')
     const reportId = await asAuthor.mutation(api.reports.create, {
       waterBodyId: id,
       skateTime: SKATE_TIME,
-      visibility: 'just_me',
     })
+    await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }))
     const asOther = await seedUser(t, 'clerk_other')
     expect(await asOther.query(api.reports.get, { reportId })).toBeNull()
-    expect((await asAuthor.query(api.reports.get, { reportId }))?._id).toEqual(reportId)
+    expect(await asAuthor.query(api.reports.get, { reportId })).toBeNull()
   })
 
   test('returns null for a missing report; shows a public report to an anon viewer', async () => {
@@ -296,7 +272,6 @@ describe('reports.get (single, visibility-checked)', () => {
     const reportId = await asAuthor.mutation(api.reports.create, {
       waterBodyId: id,
       skateTime: SKATE_TIME,
-      visibility: 'public',
     })
     await t.run((ctx) => ctx.db.delete(reportId))
     expect(await t.query(api.reports.get, { reportId })).toBeNull() // missing
@@ -304,7 +279,6 @@ describe('reports.get (single, visibility-checked)', () => {
     const live = await asAuthor.mutation(api.reports.create, {
       waterBodyId: id,
       skateTime: SKATE_TIME,
-      visibility: 'public',
     })
     expect((await t.query(api.reports.get, { reportId: live }))?._id).toEqual(live) // anon sees public
   })

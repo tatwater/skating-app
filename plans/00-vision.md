@@ -52,9 +52,10 @@ water body to see its name, surface area, and a feed of past reports (sorted by
    (see `06-data-model.md` vocabulary) — so we link out and let people jump straight
    to reading/submitting reports. Recruit and bridge, don't replace-by-force.
 4. **Privacy by default where it matters.** Home address is private to the user
-   (a filter input only). Every report has one of four visibility settings
-   (D13). Users can **delete their account and export their data**; deletion
-   anonymizes (doesn't erase) their past community reports (D33).
+   (a filter input only). **Reports are always public** (D13) — the app is a community
+   commons, not a private log; the privacy control is at the **profile** level (public
+   & searchable, or private = name + photo only). Users can **delete their account and
+   export their data**; deletion anonymizes (doesn't erase) their past reports (D33).
 
 ## Who it's for / rollout
 
@@ -78,12 +79,15 @@ Reports are seeded and kept fresh via:
 ## Feature pillars
 
 - **Map** — home-centered, water-focused, drive-time filtered, custom icy/FUI style.
-- **Reports** — per-water-body feed; ice quality, hazards, photos, weather, time;
-  visibility controls (Just me / Friends / Followers / Public — D13).
+- **Reports** — per-water-body feed; ice quality, hazards, photos, weather, time.
+  Always **public** (D13) — post to the community or not at all.
 - **Hazards** — users draw points/lines/shaded areas *within* a water body to mark
   specific dangers; Waze-style "is this still there?" confirmation loop.
-- **Social** — follow friends; threaded comments on reports; town (not address)
-  optionally public on profile.
+- **Community (no social graph — D13)** — threaded comments on reports; **searchable
+  profiles** (public or private) that coalesce a skater's reports; a **trust score**
+  earned from corroboration + helpful marks (D50); town (not address) optionally public
+  on profile. Deliberately **no follow/friend graph** — a report is a report regardless
+  of who made it, and any private coordination belongs off-platform.
 - **GPS providers** — connect Strava, Garmin, COROS, Polar, Apple Health, Google
   Health Connect; auto-detect ice-skate activities, prompt reports, ingest the
   trusted GPS path (+ media where terms allow) (D24). Each skate is **resolved to the

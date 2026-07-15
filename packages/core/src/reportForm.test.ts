@@ -4,7 +4,6 @@ import {
   emptyReportForm,
   emptyThicknessReading,
   type ReportFormState,
-  visibilityOptions,
 } from './reportForm'
 import { cmToInches, cToF, kphToMph } from './units'
 
@@ -20,22 +19,10 @@ describe('emptyThicknessReading', () => {
   })
 })
 
-describe('visibilityOptions', () => {
-  it('offers every level up to a public author’s ceiling', () => {
-    expect(visibilityOptions('public')).toEqual(['just_me', 'friends', 'followers', 'public'])
-  })
-
-  it('never offers public to a locked/minor author (D41)', () => {
-    expect(visibilityOptions('followers')).toEqual(['just_me', 'friends', 'followers'])
-    expect(visibilityOptions('followers')).not.toContain('public')
-  })
-})
-
 describe('emptyReportForm', () => {
-  it('defaults skate time to now (ms) and visibility to the passed default (D41)', () => {
+  it('defaults skate time to now (ms), no ice fields required (D3)', () => {
     const now = Date.UTC(2026, 0, 5, 19, 30)
-    const form = emptyReportForm(now, 'friends')
-    expect(form.visibility).toBe('friends')
+    const form = emptyReportForm(now)
     expect(form.skateTime).toBe(now)
     expect(form.iceTypes).toEqual([])
     expect(form.thickness).toEqual([])
@@ -43,7 +30,7 @@ describe('emptyReportForm', () => {
 })
 
 const NOW = Date.UTC(2026, 0, 5, 19, 30)
-const BASE: ReportFormState = emptyReportForm(NOW, 'public')
+const BASE: ReportFormState = emptyReportForm(NOW)
 
 describe('buildReportInput', () => {
   it('keeps a notes-only report minimal — no empty optional fields (D3)', () => {
@@ -51,7 +38,6 @@ describe('buildReportInput', () => {
     expect(input).toEqual({
       waterBodyId: 'wb1',
       skateTime: NOW,
-      visibility: 'public',
       notes: 'did not skate',
     })
     expect('iceTypes' in input).toBe(false)

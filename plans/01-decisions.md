@@ -12,7 +12,7 @@ reporting; web (TanStack Start) is secondary for planning/long-form.
 Web serves the "big screen + keyboard" planning use case.
 
 ## D2 — Convex as the app database
-**Decided.** Convex for reactive data (feeds, follows, notifications, reports),
+**Decided.** Convex for reactive data (feeds, notifications, reports),
 file storage (photos), and its geospatial component for point queries.
 **Why:** Real-time reactivity fits live reports/feeds; TS-native; batteries
 included (files, geo). Not a geospatial DB for polygons — see D5.
@@ -73,8 +73,8 @@ Never reward the act of skating/going onto ice.
 ## D11 — Home address is private; town optionally public
 **Decided.** Home address is used only to compute drive-time filtering; stored as
 a coordinate, visible to no one else. Users may optionally show their **town** on
-their profile. Every report has one of **four** visibility levels:
-Just me / Friends / Followers / Public (see D13).
+their (public) profile. **Reports are always public** (D13) — there is no per-report
+privacy level; the profile-privacy switch controls personal discoverability, not reports.
 **Why:** Address is sensitive PII (where you live + when you're away).
 
 ## D12 — Location model: opportunistic + post-hoc, never live GPS
@@ -88,22 +88,41 @@ other apps/devices. Instead:
 **Why:** Preserves battery (cold + wind drains phones fast) and avoids creepy
 always-on tracking, while still enabling hazard confirmation.
 
-## D13 — Social graph & report visibility
-**Decided.**
-- **Follow is the primitive; a mutual follow == "friends."** No separate
-  friend-request concept.
-- **Per-report visibility (4 levels):** *Just me* → *Friends* (mutual) →
-  *Followers* → *Public*.
-  - **Public** = contributes to the shared map/newsfeed any nearby user sees.
-  - **Followers** = only your followers' feeds; does **not** populate strangers'
-    maps. (This is the "spot secrecy" valve.)
-- **Account-level "require approval for followers"** toggle (private-account
-  pattern), orthogonal to per-report visibility.
-**Why:** "Public" carries specific meaning here (feeds the shared map), so it's
-genuinely distinct from "Followers." Familiar IG/Twitter mental model.
-**Note:** default visibility is **derived** (public for adults with public profiles;
-followers for locked profiles and all under-18 accounts) so the shared map doesn't go
-sparse (cold-start) while fully respecting user choice — see **D41** for the mechanics.
+## D13 — Reports are always public; profiles are public or private (no social graph)
+**Decided (2026-07-15, revised twice — see "Evolution" below).**
+- **No follow/friend graph.** No follow, no mutual "friends," no follower-approval. A report is a
+  report regardless of who made it, so there is no social layer to build.
+- **Reports are ALWAYS public.** There is no per-report privacy level — no `just_me`, no
+  `friends`/`followers`. Every report contributes to the shared map/newsfeed everyone in range
+  sees; that *is* the app. If you don't want to share an observation with the community, don't
+  post it (keep a private log in Strava/notes instead — a solo private log here would just recreate
+  the anti-commons dynamic we rejected with the follow graph, for negligible benefit).
+  - Reads are gated only by **moderation** (`moderationStatus`, D32) and **blocks** (below) — not
+    by any visibility level.
+- **Profile visibility (`public` / `private`).** This is the *only* privacy switch, and it governs
+  **personal discoverability**, not reports:
+  - **Public profile:** searchable by name; a browsable page showing name, photo, **town/state**,
+    **bio**, **#reports / #comments**, **reputation score/class** (D50), and the user's full public
+    report history.
+  - **Private profile:** **name + photo only** — no bio/stats/history, and **not searchable**.
+  - **A private profile's reports are still public and name-attributed** (D3): "private profile"
+    means *you're not a browsable/searchable personage*, not that your activity is hidden. It is
+    deliberately **not** a spot-secrecy valve.
+  - **Minors (<18) are forced private** (see D41).
+- **Blocks still exist** (D32): a block hides two users' content/profiles from each other — pure
+  "stop showing me this person," no follow state to unwind.
+**Why:** The app is a planning/reporting **commons**, not a social network. Flattening to
+"public-or-don't-post" keeps the shared map maximally populated and the model dead simple. The one
+real benefit of a social layer — knowing *whose* reports to trust — is served by an asymmetric,
+public **trust score** (D50), not by friending or private tiers.
+**Evolution.**
+- *v1 (superseded):* a follow primitive (mutual = "friends"), 4 report levels
+  (*Just me / Friends / Followers / Public*), follower-approval — with a "followers" tier as a
+  spot-secrecy valve. Removed 2026-07-15: the secrecy valve is a net negative for a safety commons.
+- *interim (superseded same day):* dropped to 2 report levels (`just_me` / `public`). Then removed
+  `just_me` too — a private-only report is a thin use case that still withholds from the commons;
+  "public or don't post" is cleaner. Reports now carry **no visibility field**; the `follows` table,
+  `requireFollowApproval`, and the report `visibility` enum are all gone (see `06-data-model.md`).
 
 ## D14 — User-created (unmapped) locations allowed
 **Decided.** Users can drop a pin / draw a water body not present in OSM/NHD.
@@ -125,7 +144,7 @@ locations that overlap each other or official polygons. Kept simple for now.
 
 ## D16 — Notifications are per-type toggleable
 **Decided.** Every notification type (Strava/GPS provider ice-skate detected, bounty request on
-a lake you skated, followed-user posted nearby, hazard-confirmation request, …) is
+a lake you skated, hazard-confirmation request, report you made was rated helpful, …) is
 individually mutable in user settings.
 **Why:** Avoid notification fatigue as the community grows.
 
@@ -133,6 +152,9 @@ individually mutable in user settings.
 **Decided.** Points/badges are status only — no unlocks, no economy. Bonuses for
 photo evidence + "helpful" thumbs from requesters. Never rewards going onto ice.
 **Why:** Avoids building a real economy and avoids unsafe incentives.
+**See D50** for the **trust score** — the reputation signal (corroboration + helpful marks)
+that also stands in for the removed social graph (D13). It is subject to the same rule as
+points: reputational/cosmetic only, never a safety weight.
 
 ## D18 — Real drive-time filtering via cached per-user isochrone
 **Decided.** Filter by **actual drive time** from home, not straight-line radius.
@@ -304,26 +326,29 @@ D9), cut Convex storage cost, and need no extra service. Revisit Cloudflare Imag
 only if we later need on-the-fly variants.
 
 ## D32 — Content moderation, abuse reporting & safety enforcement
-**Decided.** As a public UGC app with a social graph, we build basic safety tools
-in v1-social scope: **block/mute** other users, **flag/report** a report, comment,
-photo, or user for abuse, and a lightweight **takedown/hide** path for moderators
-(founder initially). A dangerously false "the ice is great!" report is a *safety*
-issue, not just spam — flagging must be prominent.
+**Decided.** As a public user-generated-content app, we build basic safety tools:
+**block/mute** other users, **flag/report** a report, comment, photo, or user for abuse,
+and a lightweight **takedown/hide** path for moderators (founder initially). A dangerously
+false "the ice is great!" report is a *safety* issue, not just spam — flagging must be
+prominent.
 **Why:** Required for any public community; interacts directly with the safety-first
 principle (D3). Data model adds `blocks` + `contentFlags` and moderation status
 on user-generated content.
+**Note (no social graph, D13):** with follows removed, a **block** is pure "hide this
+person's content/profile from me and mine from them" — there is no friendship/follow state
+to also tear down. Block/mute ship in **Phase 3** alongside comments + flagging.
 
 ## D33 — Account lifecycle: deletion, retention, export
 **Decided.** Users can **delete their account** and **export their data**. On
 deletion we **anonymize** their past reports/comments (author replaced with a
 "deleted user" tombstone) rather than hard-deleting the content, preserving the
-community's historical ice record — unless a report is set to `just_me`, which is
-removed. Full policy wording waits on legal (Q10), but the product behavior is
-decided now.
+community's historical ice record. Since **all reports are public** (D13), there's no
+private content to selectively remove — every report is anonymized-not-erased uniformly.
+Full policy wording waits on legal (Q10), but the product behavior is decided now.
 **Why:** Privacy/PII obligations (D11) and user trust; but community value lives in
 the report history, so anonymize-don't-erase is the default.
 **Export format:** a **JSON bundle** of the user's own data (profile, reports,
-comments, hazards created, follows, connections metadata — *not* secrets/tokens) plus
+comments, hazards created, connections metadata — *not* secrets/tokens) plus
 their uploaded **photo files**. JSON is the right call: machine-readable, matches the
 TS stack, trivially generated from Convex, and easy to extend — no need for a
 heavier/standardized format at this scale.
@@ -424,8 +449,8 @@ D3, not FIFO spam), water-body review queue (D36 merge + user-body approve/rejec
 map), user admin (search/history/ban/suspend/role), support inbox, and a dashboard
 (open/safety-flag counts, pending bodies, recent actions; later links to PostHog/Sentry
 per D29).
-**Scope.** Lands in **Phase 4** (the operator/moderation phase — the review split of
-the old Phase 3; see `07-roadmap.md`).
+**Scope.** Lands in **Phase 7** (the operator/moderation phase — the founder-facing back
+office; see `07-roadmap.md`).
 
 ## D38 — Transactional email: Resend + React Email
 **Decided.** **Resend** is the transactional email provider; email templates are authored
@@ -445,7 +470,7 @@ actual inbox of record. Alert emails deep-link into the `/admin` queue.
 **Boundaries.** Resend is for **app transactional/operator** mail. **Clerk still owns auth
 emails** (verification, magic links, password reset — D26); we don't duplicate those.
 User-facing product email (digests, etc.) stays deferred; in-app `notifications` (D16)
-remain the primary user channel. Wire alongside the D37 admin surface in **Phase 4**.
+remain the primary user channel. Wire alongside the D37 admin surface in **Phase 7**.
 
 ## D39 — Monorepo tooling: Turborepo
 **Decided.** The monorepo is a **Turborepo** workspace (pnpm workspaces underneath),
@@ -493,35 +518,33 @@ runs the three checks on Node 22.
 spatial + visibility + safety logic is exactly what property tests and `convex-test`
 are good at. Vitest keeps one runner/config idiom across the stack (matches D7).
 
-## D41 — Minimum age 16; default report visibility derived from profile + age
-**Decided.**
+## D41 — Minimum age 16; minors get private profiles and are read-only (interim)
+**Decided (mechanics revised 2026-07-15 alongside the D13 "reports are always public" simplification).**
 - **Minimum age is 16.** Under-16 accounts are not permitted. **We collect the user's
   date of birth at signup** and *derive* the age gate (≥16) and minor status (<18) from
   it (age math in `@skating/core`; stored as `profiles.dateOfBirth`). 16 lets the
   occasional independent teen skater participate without pulling us into full
   child-directed-service obligations; the realistic user base is overwhelmingly adults.
-- **Default report visibility is *derived*, never a bare "public":**
-  - **Adult + public profile (the default):** new reports default **`public`**.
-  - **Private/locked profile** (account has `requireFollowApproval` on, i.e. the user
-    locked down — D13): new reports default **`followers`**, not public.
-  - **Any under-18 account:** starts **locked** (`requireFollowApproval` seeded on at
-    signup), so via the locked-profile rule above their reports default **`followers`**
-    and never *default* to public — **not** via a live age check at post time. The lock
-    **persists past 18**, so a **birthday never changes a post default**; the public
-    options merely become available to select. The post default is therefore a pure
-    function of the stored privacy setting (`deriveDefaultVisibility` takes no age input).
-    *Corollary:* the profile-settings mutation must not let a minor unlock — the age
-    check belongs at the moment of *changing the setting*, not at post time.
-- **"If your profile is public, your reports are public (by default)"** is the mental
-  model — one obvious switch (lock the profile) cascades to a safer default. **New
-  features must honor existing per-user privacy settings** — a later feature never
-  silently widens exposure.
-**Why:** Public-by-default fights cold-start (D13) *without* overriding user choice:
-locking the profile is the one-tap privacy valve, and minors get a protective default
-regardless. Keeps the privacy-by-default principle (00-vision) and the cold-start
-need honestly reconciled instead of left as a "lean."
-**Note:** This is the resolution of the D13 tension flagged in review — D13's "lean
-public" now has concrete, safe mechanics.
+- **Minors (<18) cannot post public reports — and since all reports are public (D13), minors are
+  effectively read-only** (they can read reports and plan; they can't create reports). Enforced at
+  the trust boundary: `reports.create` rejects a minor author (server derives minor status from the
+  stored DOB), and the client hides the create surface for minors. At 18 posting simply becomes
+  available. **This is an interim guardrail (like the age gate + risk ack), not a settled policy —
+  it is explicitly revisitable at the Q10 legal review (L2).**
+- **Minors' profiles are forced private** (name + photo only, not searchable — D13). Adults default
+  public and may switch to private; a former-minor's private profile is **never auto-widened** at 18.
+- **Mental model:** "everyone's reports are public and help the community; under-18 users read and
+  plan but don't broadcast their location until 18; whether your *profile* is searchable is a
+  separate adult choice." **New features must honor existing settings** — never silently widen exposure.
+**Why:** The *product* risk of a minor's past-tense report is low (no live GPS — D12; no follow/DM —
+D13). But this is a **location** app that *knows* who is a minor, and publicly broadcasting a known
+minor's whereabouts is exactly what child-safety regimes (UK AADC, state privacy laws — L2/Q10) scrutinize.
+Read-only-until-18 costs almost nothing (tiny population; core value is *reading*) and removes that risk
+category by construction. It's a **one-line flip** if the Q10 lawyer greenlights minor posting.
+**Note (supersedes the old mechanics):** earlier iterations derived a *default report visibility* from a
+persisted "locked profile" flag, then from age. With reports now always public (D13), there is **no report
+visibility to derive** — the age check simply gates *whether a minor may post at all*. `requireFollowApproval`,
+`deriveDefaultVisibility`, and `maxVisibilityForProfile` are all retired.
 **Updated (2026-07-10):** originally this stored *no* birthdate — a bare self-attested
 16+ flag plus an `isMinor` boolean — to minimize PII (D11). Changed to store DOB because
 the boolean model made the **minor→adult transition undetectable**: `isMinor` could only
@@ -702,7 +725,7 @@ review-after**" by hiding freshly-created `pending` bodies. `listed` fixes both.
 **Scope.** A **minimal admin `remove`/`restore` mutation lands in Phase 1** — data hygiene
 for curating the fresh OSM import the moment we look at it, and cheap given `listed`
 already exists. The **takedown *request* intake** (a form → a work queue an admin triages)
-rides with the **Phase 4** operator surface (D37), not hand-rolled now.
+rides with the **Phase 7** operator surface (D37), not hand-rolled now.
 **Deferred edges (logged, not built):** (a) a landowner's pond **re-created as a user body**
 (D14) — teaching dedup to honor a suppression list is future hardening; (b) the exact
 takedown **wording/obligation** is **legal-gated (Q10)** — we ship the mechanism now,
@@ -742,3 +765,33 @@ raw material) and uses a soft viewport cap with truncation logging (see D5). The
 **Why:** area alone would let Champlain dominate and would drop a small-but-beloved lake like
 Morey from the state view; a score that combines area with (later) popularity and an
 admin-curated boost keeps the map legible at every zoom without under-populating the data.
+
+## D50 — Trust score (reputation signal; the asymmetric stand-in for the removed social graph)
+**Decided (2026-07-15); built in Phase 6 with bounties.** When the follow/friend graph was
+removed (D13), the one benefit worth keeping was **trust** — in a safety-critical, perishable-
+information domain, a reporter's track record is real signal. We capture that as a public,
+**asymmetric reputation ("trust") score** rather than a symmetric social graph: nobody follows
+anybody; the score is earned from the community's reaction to your reports.
+**Two positive signals raise a reporter's trust score:**
+- **(a) Corroboration within a similar timeframe.** An *independent* report on the **same water
+  body within a tunable time window** that **agrees** with yours (similar `skateQuality` /
+  `iceTypes` / hazards) raises the trust of both reporters. **Timeframe is essential:** ice changes
+  fast, so a *later* report describing *different* conditions is **not** counter-evidence — it just
+  means conditions moved on. Corroboration is therefore **boost-only**: divergence never lowers a
+  score, so **nobody is punished for conditions changing** (protects the D3 "don't do it" and
+  honest-negative reports too).
+- **(b) Helpful marks.** Users mark a report **useful/helpful** (`reportRatings`, extending D17's
+  requester-thumbs to *any* viewer). Helpful thumbs add to the reporter's score.
+**Hard constraints (inherit D17 + D3):**
+- **Reputational/cosmetic only.** The trust score is status (points/badges) — it **never** weights
+  a report's safety, **never** gates visibility or ranking of *safety* content, and **never** makes
+  the app assert ice is safe (D3). A high-trust "ice is great" is still just one peer's observation.
+- **Boost-only, no punishment.** No downvote-to-zero dynamics; `unhelpful` marks and non-
+  corroboration inform moderation/quality signals, not a public penalty score.
+- **Cold-start safe.** With no reports yet, everyone starts flat; the score accrues as the community
+  reacts, exactly like the D49 popularity term.
+**Why:** This recovers the *"whose judgment do I trust"* value of a social layer without its walled-
+garden downsides (D13) — it's public, earned, and one-directional. It also composes cleanly with the
+existing model: `reportRatings` (D17) already exists, and corroboration is derivable from `reports`
+on the same body within a window (no new social edges). See **Phase 6** (`07-roadmap.md`) and the
+`reportRatings` / `pointEvents` notes in `06-data-model.md`.

@@ -16,8 +16,8 @@ function ProfilePage() {
       title={`@${username}`}
       subtitle={
         isSelf
-          ? 'This is your profile. Reputation, your reports, and connections land in later phases.'
-          : 'Public profiles land in a later phase — reputation, recent reports, and follows.'
+          ? 'This is your profile. Your reports, trust score, and settings land in later phases.'
+          : 'Public profiles land in a later phase — bio, trust score, and recent reports.'
       }
     />
   )

@@ -2,12 +2,11 @@ import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
   buildReportInput,
-  deriveDefaultVisibility,
   emptyReportForm,
   emptyThicknessReading,
   humanizeEnum,
   ICE_TYPES,
-  maxVisibilityForProfile,
+  isMinor,
   PRECIP_LABELS,
   PRECIP_TYPES,
   photoUploadCoord,
@@ -20,10 +19,7 @@ import {
   THICKNESS_METHOD_LABELS,
   THICKNESS_METHODS,
   type ThicknessFormReading,
-  VISIBILITY_LABELS,
-  type Visibility,
   validateReportInput,
-  visibilityOptions,
 } from '@skating/core'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
@@ -144,7 +140,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export interface ReportFormFieldsProps {
   form: ReportFormState
   onFormChange: (form: ReportFormState) => void
-  maxVisibility: Visibility
   putInPin: { lat: number; lng: number } | null
   onRequestPin: () => void
   onClearPin: () => void
@@ -161,7 +156,6 @@ export interface ReportFormFieldsProps {
 export function ReportFormFields({
   form,
   onFormChange,
-  maxVisibility,
   putInPin,
   onRequestPin,
   onClearPin,
@@ -439,16 +433,6 @@ export function ReportFormFields({
         )}
       </Field>
 
-      <Field label="Visibility">
-        <SingleToggle
-          value={form.visibility}
-          options={visibilityOptions(maxVisibility)}
-          label={(v) => VISIBILITY_LABELS[v]}
-          onChange={(visibility) => visibility !== '' && patch({ visibility })}
-          allowEmpty={false}
-        />
-      </Field>
-
       <Field label="Notes">
         <Textarea
           value={form.notes}
@@ -498,15 +482,15 @@ export function ReportForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const profilePublic = profile ? !profile.requireFollowApproval : true
-  const maxVisibility = maxVisibilityForProfile({ profilePublic })
+  // Minors are read-only — all reports are public (D13), so under-18 users can't post (D41).
+  const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false
 
-  // Initialize the form once the profile (and thus the default visibility, D41) is known.
+  // Initialize the form once the profile is known (and the author is allowed to post).
   useEffect(() => {
-    if (profile !== undefined && form === null) {
-      setForm(emptyReportForm(Date.now(), deriveDefaultVisibility({ profilePublic })))
+    if (profile !== undefined && !minor && form === null) {
+      setForm(emptyReportForm(Date.now()))
     }
-  }, [profile, form, profilePublic])
+  }, [profile, form, minor])
 
   // Reclaim whatever a draft has already uploaded so nothing is stranded server-side: a created row
   // (deletes the row + both blobs) or, for a partial/interrupted upload, the bare blobs that never
@@ -603,7 +587,7 @@ export function ReportForm({
     if (!form) return
     setError(null)
     const input = buildReportInput(form, waterBodyId, putInPin ?? undefined)
-    const result = validateReportInput(input, { now: Date.now(), maxVisibility })
+    const result = validateReportInput(input, { now: Date.now() })
     if (!result.ok) {
       setError(result.errors.map((e) => `${e.field}: ${e.message}`).join('; '))
       return
@@ -694,11 +678,16 @@ export function ReportForm({
         <DialogHeader>
           <DialogTitle>Report on {bodyName}</DialogTitle>
         </DialogHeader>
-        {form ? (
+        {minor ? (
+          // Under-18 accounts are read-only — all reports are public, so minors can't post (D41).
+          <p className="text-sm text-muted-foreground">
+            Reports are shared publicly with the community, so posting opens when you turn 18. You
+            can keep reading reports in the meantime.
+          </p>
+        ) : form ? (
           <ReportFormFields
             form={form}
             onFormChange={setForm}
-            maxVisibility={maxVisibility}
             putInPin={putInPin}
             onRequestPin={() => setPinDropMode(true)}
             onClearPin={() => setPutInPin(null)}

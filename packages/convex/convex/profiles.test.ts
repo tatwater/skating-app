@@ -51,7 +51,7 @@ describe('profiles.upsertFromClerk', () => {
     expect(profile?.status).toBe('active')
     expect(profile?.reputationPoints).toBe(0)
     expect(profile?.driveTimePrefMinutes).toBe(60)
-    expect(profile?.requireFollowApproval).toBe(false)
+    expect(profile?.profileVisibility).toBe('public')
     expect(profile?.notificationPrefs.hazardConfirmation).toBe(true)
   })
 
@@ -202,7 +202,7 @@ describe('profiles.upsertFromClerk', () => {
     ).resolves.toBeDefined()
   })
 
-  test('minors default to follow-approval required (D41)', async () => {
+  test('minors default to a private profile (D13/D41)', async () => {
     const t = convexTest(schema, modules)
     const asTeen = t.withIdentity({ subject: 'clerk_teen' })
 
@@ -213,30 +213,30 @@ describe('profiles.upsertFromClerk', () => {
 
     const profile = await asTeen.query(api.profiles.current, {})
     expect(profile && isMinor(profile.dateOfBirth, Date.now())).toBe(true)
-    expect(profile?.requireFollowApproval).toBe(true)
+    expect(profile?.profileVisibility).toBe('private')
   })
 
-  test('a minor who reaches adulthood keeps their follow-approval protection (D41)', async () => {
+  test('a minor who reaches adulthood keeps their private profile (D13/D41)', async () => {
     const t = convexTest(schema, modules)
     const asUser = t.withIdentity({ subject: 'clerk_grows' })
-    // Provisioned as a minor → approval required.
+    // Provisioned as a minor → forced private.
     await asUser.mutation(
       api.profiles.upsertFromClerk,
       withAck({ displayName: 'Teen', username: 'teen', dateOfBirth: MINOR_DOB }),
     )
     const asMinor = await asUser.query(api.profiles.current, {})
     expect(asMinor && isMinor(asMinor.dateOfBirth, Date.now())).toBe(true)
-    expect(asMinor?.requireFollowApproval).toBe(true)
+    expect(asMinor?.profileVisibility).toBe('private')
 
-    // Reaching adulthood (here an adult DOB on the next sync) must NOT strip the
-    // protection they held as a minor — it persists until they widen it themselves (D41).
+    // Reaching adulthood (here an adult DOB on the next sync) must NOT auto-widen the
+    // private profile they held as a minor — it persists until they make it public themselves (D13).
     await asUser.mutation(
       api.profiles.upsertFromClerk,
       withAck({ displayName: 'Teen', username: 'teen', dateOfBirth: ADULT_DOB }),
     )
     const grown = await asUser.query(api.profiles.current, {})
     expect(grown && isMinor(grown.dateOfBirth, Date.now())).toBe(false)
-    expect(grown?.requireFollowApproval).toBe(true)
+    expect(grown?.profileVisibility).toBe('private')
   })
 
   test('an inactive account cannot rename or squat a username via the upsert (D37)', async () => {

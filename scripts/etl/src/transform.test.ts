@@ -173,7 +173,9 @@ describe('featureToCanonicalBody', () => {
     if (body === null) return
     expect(largestRingSize(body.polygon)).toBeLessThanOrEqual(MAX_RING_VERTICES)
     expect(body.surfaceAreaSqM).toBeGreaterThan(0)
-  })
+    // Adaptive coarsening of a ~9k-vertex ring is genuinely CPU-heavy; CI runs ~8× slower than
+    // local, so give this a longer-than-default (5s) timeout to avoid flaky timeouts.
+  }, 30_000)
 
   it('largestRingSize reports the biggest ring across polygons and holes', () => {
     expect(

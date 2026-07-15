@@ -12,7 +12,7 @@ test plan.
 >
 > **This is the usable MVP** — the "Done" line of the roadmap: *friends can post and read reports
 > on real lakes.* The pilot region's OSM corpus (9,967 Vermont bodies, imported in Phase 1) covers
-> the alpha crew's destinations, so **user-created water bodies are deferred to Phase 7** (see Scope)
+> the alpha crew's destinations, so **user-created water bodies are deferred to Phase 8** (see Scope)
 > — the MVP reads and writes reports on the *canonical* corpus.
 
 ## Surface sequencing (decided 2026-07-13)
@@ -44,10 +44,13 @@ test plan.
   creation surfaced **in place** (D47), not a separate top-level route.
 - **Reports (create + read, online)** — full ice description (ice types, surface tags, coarse
   quality, structured multi-reading thickness, snow cover), optional **manual** conditions,
-  photos (client-optimized + EXIF-stripped, opt-in geotag), **derived-default visibility (clamped
-  so a locked/minor author can't post `public`, D41)**, notes, skate time, and an optional
+  photos (client-optimized + EXIF-stripped, opt-in geotag), notes, skate time, and an optional
   **put-in pin** (`reports.point`; defaults to the body centroid) marking the access point the
   skater used. Metric storage / imperial display (D25).
+  > **⚠️ Historical:** as shipped, Phase 2 included a 2-level report **visibility** selector +
+  > `deriveDefaultVisibility`/`maxVisibilityForProfile` clamp. **The D13 revision removed report
+  > visibility entirely — reports are always public** — so ignore every visibility mechanic in the
+  > workstreams below (they were deleted). Minors are now read-only (D41).
 - **Photos** — Convex file storage upload with **client-side optimize + EXIF strip** (D31/D42),
   including a **HEIC→JPEG decode step** so iPhone uploads work on desktop web; opt-in `placeOnMap`
   geotag pinning (coord retained *only* on opt-in).
@@ -56,32 +59,32 @@ test plan.
 **offline draft queue** (D9/D30), device geolocation framing, `expo-image-manipulator` optimize.
 
 **Explicitly OUT of Phase 2 (deferred, by decision):**
-- **User-created water bodies (D14) + match-on-create dedup (D36)** → **Phase 7** (decided
+- **User-created water bodies (D14) + match-on-create dedup (D36)** → **Phase 8** (decided
   2026-07-13). Rationale: the good version is **GPS-path-backed** (derive bounds / verify the skater
   was on new water from a real Strava/Garmin/etc. track) rather than error-prone freehand polygon
-  drawing — and GPS provider integrations don't exist until Phase 7 anyway. The pilot region's OSM
+  drawing — and GPS provider integrations don't exist until Phase 8 anyway. The pilot region's OSM
   corpus (9,967 Vermont bodies) covers the alpha crew's destinations, so nothing in the MVP needs
   it. Phase 2 therefore builds **no** `dedup.ts`, no `waterBodies.create` dedup, no
   `findMatchCandidates`, and no draw tool; `waterBodies.create` stays the existing v1 scaffold stub.
-  Fully detailed in Phase 7 of `07-roadmap.md`.
-- **Hazards** → Phase 8. Report-create leaves `hazardIdsCreated` empty; **no** in-polygon hazard
+  Fully detailed in Phase 8 of `07-roadmap.md`.
+- **Hazards** → Phase 9. Report-create leaves `hazardIdsCreated` empty; **no** in-polygon hazard
   drawing. *(Mind the seam: D4 ties reports to hazard geometry, so the report data path should
   leave room for it — but we build none of it now.)*
 - **Weather auto-fill of `conditions`** → Phase 10 (Open-Meteo). Phase 2 stores `conditions` as
   optional **manual** entry (`source: 'user'`).
-- **Moderator dedup review queue + merge** → Phase 4. With user-created bodies deferred (above),
-  Phase 2 produces no new duplicates; the merge tooling still lands in Phase 4 for any canonical
+- **Moderator dedup review queue + merge** → Phase 7. With user-created bodies deferred (above),
+  Phase 2 produces no new duplicates; the merge tooling still lands in Phase 7 for any canonical
   overlaps. Phase 2 *does* keep `get`'s `mergedIntoId` redirect so a link to a merged body already
   resolves to its survivor (forward-correct, cheap).
 - **Popularity term in `displayScore`** → Phase 3+ (needs report/skate signal that doesn't exist
   until this phase lands).
 - **Comments** → Phase 3. Report detail renders the report + photos only.
-- **Follow graph / full visibility resolution** → Phase 3. Visibility is stored + filtered now
-  (via `@skating/core`), but only **just_me / public** are meaningful (friends/followers resolve
-  to author-only until follows exist). Correct-by-construction when Phase 3 lands.
-- **Stored `homeCoord` / drive-time filtering** → Phase 5. Map framing uses **device geolocation**
+- **Comments + blocks** → Phase 3. Reports carry **no visibility** at all now — the D13 revision made
+  every report public, so reads are just *moderation-visible + not-blocked*. The block filter (which
+  subtracts blocked users) lands with the Phase 3 safety tools.
+- **Stored `homeCoord` / drive-time filtering** → Phase 4. Map framing uses **device geolocation**
   (D12), not a stored home.
-- **Cross-water-body / near-me report queries + a `reports.point` geospatial index** → Phase 5/6
+- **Cross-water-body / near-me report queries + a `reports.point` geospatial index** → Phase 4/5
   (Newsfeed + drive-time). Phase 2 queries reports **by water body** off the existing DB index.
 
 ## Done criteria (web PR)
@@ -127,7 +130,7 @@ before anything consumes them.
   - **Tests:** monotonicity (bigger area ⇒ score up ⇒ minVisibleZoom down; `curatedBoost` raises
     prominence), floor/ceiling clamps, and a property that every body is visible by the floor zoom.
 
-  *(`dedup.ts` moved to Phase 7 with user-created water bodies — see Scope.)*
+  *(`dedup.ts` moved to Phase 8 with user-created water bodies — see Scope.)*
 
 - **`report.ts` (validation/normalization — D22–D25/D41):**
   - `validateReportInput(input, now): { ok: true; normalized } | { ok: false; errors }` — the
@@ -173,7 +176,7 @@ migration-free optional fields.
   lands with the **mobile** PR, D30 — additive then.)* `reports.point` is already required in the
   schema; `create` fills it from the optional put-in pin, else the body centroid (Workstream C).
 - **No `reports.point` geospatial index this phase** — report feeds query the existing
-  `by_water_body_skate_time` DB index; near-me/cross-body geospatial is Phase 5/6.
+  `by_water_body_skate_time` DB index; near-me/cross-body geospatial is Phase 4/5.
 
 ### C. Convex functions + `convex-test` — ✅ DONE (2026-07-13)
 
@@ -198,7 +201,7 @@ migration-free optional fields.
     slice. Keeps the two-tier viewport lookup + the read-cap backstop; the in-query zoom filter is
     what actually makes wide zooms legible instead of truncated (and guarantees the Morey criterion).
 
-  *(`create` stays the existing v1 scaffold stub; dedup + `findMatchCandidates` moved to Phase 7.)*
+  *(`create` stays the existing v1 scaffold stub; dedup + `findMatchCandidates` moved to Phase 8.)*
 - **`reports.ts` (new):**
   - `create` (mutation) — `requireProfile`; `validateReportInput` (server re-enforce, D37);
     `deriveDefaultVisibility` from the caller's profile if unset **and clamp to
@@ -388,7 +391,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 - Confirm token/drift-guard tests still pass; keep OSM + "Powered by Strava" (N/A this phase) and
   ODbL attribution visible.
 
-### H. Regional expansion (post-MVP — Phase 2.5, its own PR) — decided 2026-07-14
+### H. Regional expansion (post-MVP — Phase 2.5, its own PR) — decided 2026-07-14 — ✅ DONE (2026-07-15, PR #14)
 
 > **Execution runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md) — the
 > step-by-step ops (per-state ETL + NY clip, multi-state `.pmtiles` → R2, bounds widening) and the
@@ -444,7 +447,7 @@ PR; commits map to §A–§E):
    > *Optional split seam if the single PR gets too large for one review: read path (commits 1–3)
    > vs. write path (commit 4). Default is one PR unless it balloons.*
    >
-   > *(User-created water bodies + dedup are no longer in this plan — deferred to Phase 7, GPS-backed.)*
+   > *(User-created water bodies + dedup are no longer in this plan — deferred to Phase 8, GPS-backed.)*
 
 **Mobile — two separate follow-on PRs** (§F, decided 2026-07-13), each with its own short build-plan
 doc once web is proven:
@@ -488,8 +491,8 @@ doc once web is proven:
   the **access point** they used; it sets the required `reports.point` (default: body centroid). Named
   access points / put-ins are a nice future first-class concept — for now the data rides on `point`.
 
-- **User-created water bodies deferred to Phase 7 (decided 2026-07-13).** Cut from Phase 2 entirely;
-  the good version is GPS-path-backed and GPS integrations are Phase 7. See Scope + `07-roadmap.md`.
+- **User-created water bodies deferred to Phase 8 (decided 2026-07-13).** Cut from Phase 2 entirely;
+  the good version is GPS-path-backed and GPS integrations are Phase 8. See Scope + `07-roadmap.md`.
 
 - **HEIC on web supported (decided 2026-07-13).** The photo pipeline decodes HEIC/HEIF before the
   canvas optimize/strip pass (via `heic2any`), so iPhone photos upload from desktop browsers.
@@ -533,9 +536,9 @@ doc once web is proven:
 ## Open items to settle during the build (small)
 - **`displayScore` curve constants** — start with fixed log-area bounds + a linear score→zoom map;
   eyeball Champlain, Morey, and a small pond across z6–z14 and adjust the floor/span.
-  **→ Phase 4:** these constants must get **admin-UI modification controls** in the operator
+  **→ Phase 7:** these constants must get **admin-UI modification controls** in the operator
   surface (D37) — they should be tunable through the UI, **never buried as code constants** a
-  non-engineer can't reach. Phase 2 ships them as tuned constants; Phase 4 lifts them behind admin
+  non-engineer can't reach. Phase 2 ships them as tuned constants; Phase 7 lifts them behind admin
   controls.
 - **`curatedBoost` seeding** — which known Vermont destinations get a manual boost at launch. **A
   data-derived VT seed already exists:** `training_data/google_group/curated_boost_seed_vt.csv`
@@ -544,7 +547,7 @@ doc once web is proven:
   actually in the VT OSM import** — the seed's region tag is "which community discusses it," so it
   includes NY/NH lakes VT skaters frequent (Lake George, Dillenbeck Bay) that won't exist in a
   VT-only import. Apply via a tiny admin action or one-off internal mutation.
-  **→ Phase 4:** per-body `curatedBoost` must be **editable from the admin water-body surface**
+  **→ Phase 7:** per-body `curatedBoost` must be **editable from the admin water-body surface**
   (set/adjust the boost on any body through the UI), not only via a seed script — same "don't bury
   it in code" principle as the score constants above.
 - **Geospatial numeric-filter spike — DONE (2026-07-13):** `@convex-dev/geospatial@0.2.1` supports a
@@ -563,14 +566,14 @@ doc once web is proven:
 - **EXIF must be stripped by construction (D42)** — the *only* metadata that may survive is
   timestamp + GPS, and GPS *only* on `placeOnMap`. Enforce on **both** client (strip) and server
   (`photos.create` drops `coord`) so a client bug can't leak location.
-- **Visibility is forward-loaded** — friends/followers resolve to author-only now; make sure the
-  filter uses `@skating/core` `canViewReport` so Phase 3's follow graph flips it on with no report
-  re-write, and **no feature silently widens exposure** (D41).
+- **Reports have no visibility field (D13)** — every report is public; reads gate on moderation +
+  blocks only. Keep the read behind `@skating/core` `canViewReport` (now block-only) so the Phase 3
+  **block** filter drops in with no report re-write.
 - **`listInViewport` read-cap** — the D49 **in-query** `minVisibleZoom` filter is the real fix (wide
   zooms return few prominent bodies, so the cap isn't hit in normal use), but keep the Phase 1
   read-cap safety (limit, `isListed` JS refine, truncation `log`) as a backstop. Watch the filter
   interaction: the read-cap note warned that a filter-stream *intersection* lowers the safe
   `maxResults` ceiling — validate the `minVisibleZoom` filter against the 9,967-body corpus during
   the spike so it doesn't reintroduce the wide-zoom crash it's meant to prevent.
-- **Hazard seam (Phase 8)** — don't paint the report data path into a corner that makes in-polygon
+- **Hazard seam (Phase 9)** — don't paint the report data path into a corner that makes in-polygon
   hazard geometry hard to add later; `hazardIdsCreated` already exists in the schema, leave it be.

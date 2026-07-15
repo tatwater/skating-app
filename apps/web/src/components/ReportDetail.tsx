@@ -10,8 +10,6 @@ import {
   SKATE_QUALITY_LABELS,
   type SkateQuality,
   type ThicknessReading,
-  VISIBILITY_LABELS,
-  type Visibility,
 } from '@skating/core'
 import { Link } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
@@ -28,7 +26,6 @@ export interface ReportViewData {
   bodyName?: string
   authorName?: string
   skateTime: number
-  visibility: Visibility
   skateQuality?: SkateQuality
   iceTypes: string[]
   surfaceTags: string[]
@@ -58,12 +55,11 @@ export function ReportView({ data }: { data: ReportViewData }) {
         </SheetDescription>
       </SheetHeader>
       <div className="flex flex-col gap-4 px-4 pb-4">
-        <div className="flex flex-wrap items-center gap-1">
-          {data.skateQuality ? (
+        {data.skateQuality ? (
+          <div className="flex flex-wrap items-center gap-1">
             <Badge variant="secondary">{SKATE_QUALITY_LABELS[data.skateQuality]}</Badge>
-          ) : null}
-          <Badge variant="outline">{VISIBILITY_LABELS[data.visibility]}</Badge>
-        </div>
+          </div>
+        ) : null}
 
         {data.iceTypes.length > 0 ? (
           <Section label="Ice types">
@@ -234,7 +230,6 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         bodyName: body?.available ? body.body.name : undefined,
         authorName: authors?.[report.authorId]?.displayName,
         skateTime: report.skateTime,
-        visibility: report.visibility,
         skateQuality: report.skateQuality,
         iceTypes: report.iceTypes,
         surfaceTags: report.surfaceTags,

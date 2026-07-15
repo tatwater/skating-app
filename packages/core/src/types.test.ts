@@ -10,7 +10,6 @@ import {
   THICKNESS_METHODS,
   USER_ROLES,
   USER_STATUSES,
-  VISIBILITY_LEVELS,
   WATER_BODY_TYPES,
 } from './types'
 
@@ -94,10 +93,6 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
       'marsh',
       'other',
     ])
-  })
-
-  it('visibility levels are ordered narrowest → widest (D13)', () => {
-    expect([...VISIBILITY_LEVELS]).toEqual(['just_me', 'friends', 'followers', 'public'])
   })
 
   it('roles and statuses match the account model (D37/D33)', () => {

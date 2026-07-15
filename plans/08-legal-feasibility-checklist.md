@@ -63,16 +63,20 @@ Min age is **16**, so under-13 COPPA is avoided by construction — but **16–1
 minors**, and we now **store DOB** (sensitive PII, D41). Various regimes may still apply (this is a
 question *for the lawyer*, not an assertion): US state privacy laws, GDPR's digital-consent age
 (16 default, varies 13–16 by member state), the UK Age Appropriate Design Code, etc.
-- **Interim posture:** minors start **locked** (reports default `followers`, never public, D41);
-  DOB is treated as sensitive PII (**scrubbed on deletion**, D33); minor status is derived at read
-  time (self-corrects at 18).
+- **Interim posture:** minors are **read-only** — since all reports are public (D13), a minor
+  **cannot post reports** (server + client enforced), so we never broadcast a known minor's
+  location; their profile is forced private (D41). DOB is treated as sensitive PII (**scrubbed on
+  deletion**, D33); minor status is derived at read time (self-corrects at 18). **This read-only
+  stance is an interim guardrail, revisitable here:** if the review clears public minor posting, it's
+  a one-line flip.
 - [ ] Lawyer confirms the minor-data collection + retention posture for our target regions.
+- [ ] **Decide whether minors may post public reports at all** (currently no — read-only until 18).
 - [ ] Confirm whether we need parental-consent flows anywhere we operate (likely not at 16+, but ask).
 - [ ] Confirm DOB storage vs. minimization trade-off (D41's deliberate relaxation of D11) is defensible.
 
 ## L3 — Account deletion / retention / export (D33) 🟡
-Product behavior is **decided** (anonymize-don't-erase past public reports; scrub PII; `just_me`
-content removed; JSON export bundle). The **policy wording** waits on Q10.
+Product behavior is **decided** (anonymize-don't-erase past reports — all public, D13; scrub PII;
+JSON export bundle). The **policy wording** waits on Q10.
 - [ ] Lawyer confirms the anonymize-don't-erase approach + retention windows.
 - [ ] Confirm export contents (no secrets/tokens) meet any data-portability obligations.
 
@@ -142,7 +146,7 @@ storage/retention limits.
 Garmin / COROS / Polar (partner-program terms + brand) and Apple HealthKit / Google Health Connect
 (on-device; Google Play **health-data access review** for sensitive permissions). Each has its own
 brand terms and data-use limits.
-- [ ] Per-provider ToS + brand checklist at the point each integration lands (Phase 7).
+- [ ] Per-provider ToS + brand checklist at the point each integration lands (Phase 8).
 - [ ] Google Play health-data access review for Health Connect permissions.
 
 ## L9 — Strava-path hazard deduction (Q11) 🔬
@@ -158,7 +162,7 @@ it in-app is a "Produced Work" (attribution suffices).
 
 ## L11 — Landowner takedown wording / obligation (D48) 🟡
 The takedown **mechanism** shipped in Phase 1 (reversible soft-delist + audit). The **request
-intake** rides with Phase 4. The exact **wording/obligation** is legal-gated (Q10).
+intake** rides with Phase 7. The exact **wording/obligation** is legal-gated (Q10).
 - [ ] Lawyer confirms takedown policy + any obligation to honor requests + the intake wording.
 - [ ] (Future hardening) teach dedup to honor a suppression list so a removed pond can't be
       re-created as a user body (D48 deferred edge).

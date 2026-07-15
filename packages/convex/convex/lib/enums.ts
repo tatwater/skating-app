@@ -64,9 +64,6 @@ export const HAZARD_STATUSES = ['active', 'archived'] as const
 export const HAZARD_CONFIRM_VERDICTS = ['still_there', 'gone'] as const
 export const HAZARD_CONFIRM_VIA = ['app_open_nearby', 'report_flow', 'strava_path'] as const
 
-/** Follow request state; pending only when the followee requires approval (D13). */
-export const FOLLOW_STATUSES = ['pending', 'accepted'] as const
-
 /** Abuse/safety flag targets, reasons, and lifecycle (D32/D37). */
 export const FLAG_TARGET_TYPES = ['report', 'comment', 'photo', 'user'] as const
 export const FLAG_REASONS = [
@@ -121,29 +118,26 @@ export const RATING_VERDICTS = ['helpful', 'unhelpful'] as const
 export const NOTIFICATION_TYPES = [
   'activity_detected',
   'bounty_request',
-  'followed_posted_nearby',
   'hazard_confirmation',
   'bounty_fulfilled',
-  'new_follower',
   'report_rated',
   'content_flag_resolved',
 ] as const
 export const NOTIFICATION_PREF_KEYS = [
   'activityDetected',
   'bountyRequest',
-  'followedPostedNearby',
   'hazardConfirmation',
   'bountyFulfilled',
-  'newFollower',
   'reportRated',
   'contentFlagResolved',
 ] as const
 
-/** Reputation ledger reasons (D17). */
+/** Reputation/trust ledger reasons (D17/D50). Boost-only in practice; no public penalties. */
 export const POINT_EVENT_REASONS = [
   'report_submitted',
   'photo_evidence',
   'helpful_thumb',
+  'report_corroborated', // independent same-body report agreed within the window (D50)
   'hazard_confirmed',
   'bounty_fulfilled',
 ] as const

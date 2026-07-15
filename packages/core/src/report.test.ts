@@ -6,19 +6,17 @@ import {
   type ThicknessReadingInput,
   validateReportInput,
 } from './report'
-import type { Visibility } from './types'
 
 const NOW = 1_700_000_000_000
-const PUBLIC_CTX = { now: NOW, maxVisibility: 'public' as Visibility }
-const LOCKED_CTX = { now: NOW, maxVisibility: 'followers' as Visibility }
+const CTX = { now: NOW }
 
 /** A minimal valid report; override fields per test. */
 function base(overrides: Partial<ReportInput> = {}): ReportInput {
-  return { waterBodyId: 'wb1', skateTime: NOW - 1000, visibility: 'public', ...overrides }
+  return { waterBodyId: 'wb1', skateTime: NOW - 1000, ...overrides }
 }
 
 /** Assert failure and return the set of error fields. */
-function fieldsOf(input: ReportInput, ctx = PUBLIC_CTX): string[] {
+function fieldsOf(input: ReportInput, ctx = CTX): string[] {
   const result = validateReportInput(input, ctx)
   expect(result.ok).toBe(false)
   if (result.ok) throw new Error('expected failure')
@@ -27,7 +25,7 @@ function fieldsOf(input: ReportInput, ctx = PUBLIC_CTX): string[] {
 
 describe('validateReportInput — valid reports', () => {
   it('accepts a minimal notes-only observation (D3) and defaults the arrays', () => {
-    const result = validateReportInput(base({ notes: '  do not skate — open leads  ' }), PUBLIC_CTX)
+    const result = validateReportInput(base({ notes: '  do not skate — open leads  ' }), CTX)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.normalized.iceTypes).toEqual([])
@@ -69,7 +67,7 @@ describe('validateReportInput — valid reports', () => {
         },
         point: { lat: 44.2, lng: -72.5 },
       }),
-      PUBLIC_CTX,
+      CTX,
     )
     expect(result.ok).toBe(true)
     if (!result.ok) return
@@ -91,7 +89,7 @@ describe('validateReportInput — valid reports', () => {
   })
 
   it('defaults conditions.source to user (manual entry, D19) and drops absent fields', () => {
-    const result = validateReportInput(base({ conditions: { airTempC: -2 } }), PUBLIC_CTX)
+    const result = validateReportInput(base({ conditions: { airTempC: -2 } }), CTX)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.normalized.conditions).toEqual({ source: 'user', airTempC: -2 })
@@ -99,27 +97,21 @@ describe('validateReportInput — valid reports', () => {
 
   it('allows a skate time within the clock-skew tolerance', () => {
     const soon = base({ skateTime: NOW + SKATE_TIME_FUTURE_TOLERANCE_MS - 1 })
-    expect(validateReportInput(soon, PUBLIC_CTX).ok).toBe(true)
+    expect(validateReportInput(soon, CTX).ok).toBe(true)
   })
 
   it('drops an empty thickness section', () => {
-    const result = validateReportInput(base({ iceThickness: { readings: [] } }), PUBLIC_CTX)
+    const result = validateReportInput(base({ iceThickness: { readings: [] } }), CTX)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.normalized.iceThickness).toBeUndefined()
   })
 
   it('drops whitespace-only notes', () => {
-    const result = validateReportInput(base({ notes: '   ' }), PUBLIC_CTX)
+    const result = validateReportInput(base({ notes: '   ' }), CTX)
     expect(result.ok).toBe(true)
     if (!result.ok) return
     expect(result.normalized.notes).toBeUndefined()
-  })
-
-  it('lets a locked/minor account post at or below its ceiling', () => {
-    for (const visibility of ['followers', 'friends', 'just_me'] as Visibility[]) {
-      expect(validateReportInput(base({ visibility }), LOCKED_CTX).ok).toBe(true)
-    }
   })
 })
 
@@ -137,26 +129,10 @@ describe('validateReportInput — required fields', () => {
 
   it('rejects an implausibly-future skate time', () => {
     const future = base({ skateTime: NOW + SKATE_TIME_FUTURE_TOLERANCE_MS + 60_000 })
-    const result = validateReportInput(future, PUBLIC_CTX)
+    const result = validateReportInput(future, CTX)
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.errors).toContainEqual({ field: 'skateTime', message: 'cannot be in the future' })
-  })
-
-  it('rejects an unknown visibility', () => {
-    expect(fieldsOf(base({ visibility: 'everyone' as Visibility }))).toContain('visibility')
-  })
-})
-
-describe('validateReportInput — visibility ceiling (D41)', () => {
-  it('rejects public from a locked/minor account', () => {
-    const result = validateReportInput(base({ visibility: 'public' }), LOCKED_CTX)
-    expect(result.ok).toBe(false)
-    if (result.ok) return
-    expect(result.errors[0]).toEqual({
-      field: 'visibility',
-      message: 'cannot exceed followers for this account',
-    })
   })
 })
 
@@ -240,10 +216,7 @@ describe('validateReportInput — thickness readings (D22)', () => {
             reading.minCm = lo
             reading.maxCm = hi
           }
-          const result = validateReportInput(
-            base({ iceThickness: { readings: [reading] } }),
-            PUBLIC_CTX,
-          )
+          const result = validateReportInput(base({ iceThickness: { readings: [reading] } }), CTX)
           // Valid iff exactly one of {single value, min/max range} is present.
           expect(result.ok).toBe(hasValue !== hasRange)
         },
@@ -291,8 +264,8 @@ describe('validateReportInput — put-in pin coordinate bounds', () => {
 describe('validateReportInput — error collection', () => {
   it('reports every problem at once, not just the first', () => {
     const result = validateReportInput(
-      base({ waterBodyId: '', visibility: 'nope' as Visibility, snowCoverCm: -1 }),
-      PUBLIC_CTX,
+      base({ waterBodyId: '', skateQuality: 'amazing' as never, snowCoverCm: -1 }),
+      CTX,
     )
     expect(result.ok).toBe(false)
     if (result.ok) return

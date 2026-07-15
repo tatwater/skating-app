@@ -9,7 +9,6 @@ import {
   SKATE_QUALITY_LABELS,
   SKY_LABELS,
   THICKNESS_METHOD_LABELS,
-  VISIBILITY_LABELS,
 } from './reportView'
 import { inchesToCm } from './units'
 
@@ -26,8 +25,6 @@ describe('humanizeEnum', () => {
 
 describe('label maps', () => {
   it('cover every level with reader-facing wording', () => {
-    expect(VISIBILITY_LABELS.just_me).toBe('Only me')
-    expect(VISIBILITY_LABELS.public).toBe('Public')
     expect(SKATE_QUALITY_LABELS.great).toBe('Great')
     expect(SKY_LABELS.partly_cloudy).toBe('Partly cloudy')
     expect(PRECIP_LABELS.none).toBe('None')

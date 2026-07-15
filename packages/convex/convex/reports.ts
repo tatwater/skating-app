@@ -3,25 +3,22 @@
  *
  * The validation + normalization contract lives in `@skating/core` `validateReportInput` and is
  * **re-enforced here** at the trust boundary (D37) — the client runs the same check before submit,
- * but the server never trusts it. Visibility is derived (D41) and clamped to the author's ceiling
- * so a locked/minor account can't post `public`. Reads are visibility-filtered per viewer via
- * `canViewReport`; the viewer relationship is self/none until the follow graph lands (Phase 3),
- * so `friends`/`followers` resolve to author-only today and flip on for free later.
+ * but the server never trusts it. **All reports are public (D13)** — there is no visibility field;
+ * minors can't post at all (D41). Reads gate on moderation + blocks via `canViewReport`; the viewer
+ * relationship carries only a block flag, self/none until blocks land (Phase 3).
  */
 
 import {
   CONDITION_SOURCES,
   canViewReport,
-  deriveDefaultVisibility,
   ICE_TYPES,
-  maxVisibilityForProfile,
+  isMinor,
   PRECIP_TYPES,
   type ReportInput,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
   THICKNESS_METHODS,
-  VISIBILITY_LEVELS,
   validateReportInput,
 } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
@@ -35,7 +32,6 @@ import { latLng, literals } from './lib/validators'
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
 const reportContent = {
   skateTime: v.number(),
-  visibility: v.optional(literals(VISIBILITY_LEVELS)), // unset ⇒ derived default (D41)
   iceTypes: v.optional(v.array(literals(ICE_TYPES))),
   surfaceTags: v.optional(v.array(literals(SURFACE_TAGS))),
   skateQuality: v.optional(literals(SKATE_QUALITIES)),
@@ -95,7 +91,7 @@ async function assertOwnedPhotos(
   }
 }
 
-/** Build the `@skating/core` validation input from mutation args + the resolved visibility. */
+/** Build the `@skating/core` validation input from mutation args (all reports are public, D13). */
 function toReportInput(
   args: {
     skateTime: number
@@ -109,12 +105,10 @@ function toReportInput(
     point?: { lat: number; lng: number }
   },
   waterBodyId: string,
-  visibility: ReportInput['visibility'],
 ): ReportInput {
   return {
     waterBodyId,
     skateTime: args.skateTime,
-    visibility,
     iceTypes: args.iceTypes as ReportInput['iceTypes'],
     surfaceTags: args.surfaceTags as ReportInput['surfaceTags'],
     skateQuality: args.skateQuality as ReportInput['skateQuality'],
@@ -127,27 +121,25 @@ function toReportInput(
 }
 
 /**
- * Create a report (D3/D41). `requireProfile`; derive the default visibility from the caller's
- * privacy setting when unset and clamp it to their ceiling; re-validate via `@skating/core`; resolve
- * a merged target body to its survivor; set `point` from the put-in pin else the body centroid;
- * server-stamp `reportTime`; insert as a `native`, `visible` report.
+ * Create a report (D3/D13/D41). `requireProfile`; **reject minors** (all reports are public, so a
+ * minor can't post — D41); re-validate via `@skating/core`; resolve a merged target body to its
+ * survivor; set `point` from the put-in pin else the body centroid; server-stamp `reportTime`;
+ * insert as a `native`, `visible` report.
  */
 export const create = mutation({
   args: { waterBodyId: v.id('waterBodies'), ...reportContent },
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx)
-    const profilePublic = !profile.requireFollowApproval // locked accounts are private (D41)
-    const maxVisibility = maxVisibilityForProfile({ profilePublic })
-    const visibility = args.visibility ?? deriveDefaultVisibility({ profilePublic })
+    const now = Date.now()
+    // Minors are read-only (D41): reports are always public (D13), so we never let a minor broadcast.
+    if (isMinor(profile.dateOfBirth, now)) {
+      throw new ConvexError('Users under 18 cannot post reports')
+    }
 
     const body = await resolveSurvivor(ctx, args.waterBodyId)
     if (!body || !isListed(body)) throw new ConvexError('Water body not found')
 
-    const now = Date.now()
-    const result = validateReportInput(toReportInput(args, args.waterBodyId, visibility), {
-      now,
-      maxVisibility,
-    })
+    const result = validateReportInput(toReportInput(args, args.waterBodyId), { now })
     if (!result.ok) {
       throw new ConvexError({
         code: 'invalid_report',
@@ -173,7 +165,6 @@ export const create = mutation({
       ...(n.snowCoverCm !== undefined ? { snowCoverCm: n.snowCoverCm } : {}),
       ...(n.conditions !== undefined ? { conditions: n.conditions } : {}),
       ...(n.notes !== undefined ? { notes: n.notes } : {}),
-      visibility: n.visibility,
       moderationStatus: 'visible',
       photoIds,
       hazardIdsCreated: [], // hazards are Phase 8 (D4 seam); always empty here
@@ -184,8 +175,8 @@ export const create = mutation({
 })
 
 /**
- * A water body's report feed — newest **skate time** first (D28), visibility-filtered per viewer
- * (D13) and excluding non-visible (hidden/removed) reports (D32).
+ * A water body's report feed — newest **skate time** first (D28). All reports are public (D13), so
+ * the filter is moderation (excludes hidden/removed, D32) + blocks; the block seam is `canViewReport`.
  */
 export const listByWaterBody = query({
   args: { waterBodyId: v.id('waterBodies') },
@@ -200,12 +191,15 @@ export const listByWaterBody = query({
     return reports.filter(
       (r) =>
         r.moderationStatus === 'visible' &&
-        canViewReport(viewerId, r.authorId, r.visibility, NO_RELATIONSHIP),
+        // TODO(Phase 3): replace NO_RELATIONSHIP with the viewer↔author block state. This is the
+        // list-feed twin of the seam in `getViewableReport` (which covers `get` + `photos.getUrls`);
+        // both sites must gain real block lookups together.
+        canViewReport(viewerId, r.authorId, NO_RELATIONSHIP),
     )
   },
 })
 
-/** A single report for its detail view — visibility-checked, hidden/removed excluded. */
+/** A single report for its detail view — moderation-checked (hidden/removed excluded, D32). */
 export const get = query({
   args: { reportId: v.id('reports') },
   handler: (ctx, { reportId }) => getViewableReport(ctx, reportId),
@@ -213,8 +207,8 @@ export const get = query({
 
 /**
  * Author-only edit (D25): last-write-wins over the content fields + a fresh `updatedAt`. Re-runs the
- * full `@skating/core` contract (incl. the visibility ceiling). The target water body isn't editable
- * here; an unprovided put-in pin preserves the existing `point` rather than silently clearing it.
+ * full `@skating/core` contract. The target water body isn't editable here; an unprovided put-in pin
+ * preserves the existing `point` rather than silently clearing it.
  */
 export const update = mutation({
   args: { reportId: v.id('reports'), ...reportContent },
@@ -225,15 +219,8 @@ export const update = mutation({
     if (existing.authorId !== profile._id)
       throw new ConvexError('Only the author can edit a report')
 
-    const profilePublic = !profile.requireFollowApproval
-    const maxVisibility = maxVisibilityForProfile({ profilePublic })
-    const visibility = args.visibility ?? existing.visibility
-
     const now = Date.now()
-    const result = validateReportInput(toReportInput(args, existing.waterBodyId, visibility), {
-      now,
-      maxVisibility,
-    })
+    const result = validateReportInput(toReportInput(args, existing.waterBodyId), { now })
     if (!result.ok) {
       throw new ConvexError({
         code: 'invalid_report',
@@ -255,7 +242,6 @@ export const update = mutation({
       snowCoverCm: n.snowCoverCm,
       conditions: n.conditions,
       notes: n.notes,
-      visibility: n.visibility,
       photoIds,
       updatedAt: now,
     })

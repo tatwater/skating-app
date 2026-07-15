@@ -5,8 +5,8 @@
  *
  * Observation-friendly (D3): nothing about ice *quality* is required — a "don't skate here" report
  * carrying only `notes` is valid. What's required is just the anchor: a water body, when it was
- * skated, and who can see it. Visibility is additionally capped at the author's
- * `maxVisibilityForProfile` ceiling (D41) so a locked/minor author can never post `public`.
+ * skated. All reports are public (D13) — there is no visibility field. (Minors can't create
+ * reports at all; that gate lives in `reports.create`, not here — D41.)
  */
 
 import type { LatLng } from './geometry'
@@ -25,8 +25,6 @@ import {
   type SurfaceTag,
   THICKNESS_METHODS,
   type ThicknessMethod,
-  VISIBILITY_LEVELS,
-  type Visibility,
 } from './types'
 
 /** A skate time more than this far past `now` is treated as implausibly future and rejected. */
@@ -53,7 +51,6 @@ export interface ReportConditionsInput {
 export interface ReportInput {
   waterBodyId: string
   skateTime: number
-  visibility: Visibility
   iceTypes?: IceType[]
   surfaceTags?: SurfaceTag[]
   skateQuality?: SkateQuality
@@ -88,7 +85,6 @@ export interface NormalizedConditions {
 export interface NormalizedReport {
   waterBodyId: string
   skateTime: number
-  visibility: Visibility
   iceTypes: IceType[]
   surfaceTags: SurfaceTag[]
   skateQuality?: SkateQuality
@@ -111,8 +107,6 @@ export type ReportValidationResult =
 export interface ReportValidationContext {
   /** Current time (epoch ms) — injected, not read, so validation stays pure/testable. */
   now: number
-  /** Widest visibility this author may post at — `maxVisibilityForProfile` (D41). */
-  maxVisibility: Visibility
 }
 
 function isMember<T extends string>(arr: readonly T[], value: unknown): value is T {
@@ -243,17 +237,6 @@ export function validateReportInput(
     errors.push({ field: 'skateTime', message: 'cannot be in the future' })
   }
 
-  if (!isMember(VISIBILITY_LEVELS, input.visibility)) {
-    errors.push({ field: 'visibility', message: 'is required' })
-  } else if (
-    VISIBILITY_LEVELS.indexOf(input.visibility) > VISIBILITY_LEVELS.indexOf(ctx.maxVisibility)
-  ) {
-    errors.push({
-      field: 'visibility',
-      message: `cannot exceed ${ctx.maxVisibility} for this account`,
-    })
-  }
-
   const iceTypes = input.iceTypes ?? []
   for (const [i, t] of iceTypes.entries()) {
     if (!isMember(ICE_TYPES, t))
@@ -302,7 +285,6 @@ export function validateReportInput(
   const normalized: NormalizedReport = {
     waterBodyId: input.waterBodyId,
     skateTime: input.skateTime,
-    visibility: input.visibility,
     iceTypes,
     surfaceTags,
   }

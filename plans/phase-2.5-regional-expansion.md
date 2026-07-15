@@ -48,8 +48,8 @@ code changes, and the tuning knobs.
   Dillenbeck, Saranac Lake → not-found), and a few (South Bay, Button Bay, Half Moon Cove, Foster
   Pond → matched Maine namesakes; Mill Pond → a NY namesake) **mis-matched a same-named body
   elsewhere** — the seed has no coordinates, so the name→body map isn't clean. This is exactly the
-  curation the **Phase 4 admin water-body UI** owns (set/adjust/remove per-body boost with the map in
-  front of you). Mechanism proven; data curation is Phase 4.
+  curation the **Phase 7 admin water-body UI** owns (set/adjust/remove per-body boost with the map in
+  front of you). Mechanism proven; data curation is Phase 7.
 - **Prod — ⬜ DEFERRED** (Convex prod uninitialized, as planned).
 
 ## Status / prerequisites
@@ -183,7 +183,7 @@ apply them:
 - Apply via the existing `waterBodies.setCuratedBoost` admin mutation (recomputes `displayScore` +
   `minVisibleZoom`, re-inserts the geospatial key, writes a `moderationActions` row) — a small
   one-off internal-mutation/script pass, same shape as the Phase 1 VT seed apply.
-- **Phase 4** lifts per-body boost editing into the admin water-body surface (don't bury it in a
+- **Phase 7** lifts per-body boost editing into the admin water-body surface (don't bury it in a
   script long-term — see §H open items).
 
 ## §6 — Bounds + framing widening (LAST)

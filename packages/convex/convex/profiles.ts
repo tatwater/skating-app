@@ -122,9 +122,10 @@ export const upsertFromClerk = mutation({
     }
 
     if (existing) {
-      // Re-assert follow-approval while the account is a minor; never silently *remove*
-      // an existing requirement. So on the 18th birthday (minor → false) protection
-      // persists — the public options simply become available for the user to choose (D41).
+      // Force a minor's profile private; never silently *widen* an adult's existing choice. So on
+      // the 18th birthday (minor → false) an already-private profile stays private until the user
+      // opts to make it public — nothing is auto-widened (D13/D41). Posting also unlocks at 18
+      // separately (reports.create gates on age), since all reports are public (D13).
       // Keep the *original* acceptance time when the version is unchanged (a routine
       // app-launch re-sync); only stamp a new time when the user accepts a bumped version.
       const reAccepted = existing.riskAckVersion !== args.riskAckVersion
@@ -132,7 +133,7 @@ export const upsertFromClerk = mutation({
         displayName,
         username,
         dateOfBirth: args.dateOfBirth,
-        requireFollowApproval: minor || existing.requireFollowApproval,
+        profileVisibility: minor ? 'private' : existing.profileVisibility,
         riskAckVersion: args.riskAckVersion,
         // Server-stamped: freshly on a new acceptance (version bump), otherwise the
         // original time is preserved across routine re-syncs (never trust the client clock).
@@ -149,7 +150,7 @@ export const upsertFromClerk = mutation({
       riskAckVersion: args.riskAckVersion,
       riskAckAt: now, // server-stamped, not client-supplied
       driveTimePrefMinutes: 60,
-      requireFollowApproval: minor, // minors default to approval-required (D41)
+      profileVisibility: minor ? 'private' : 'public', // minors forced private (D13/D41)
       notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
       reputationPoints: 0,
       role: 'member',

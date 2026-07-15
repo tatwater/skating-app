@@ -2,8 +2,8 @@
  * Pure form-state ⇆ domain logic for the report create form (§E, D22–D25/D41), shared by **both**
  * apps (D7/D40). Each surface's form holds the imperial strings the skater types; these helpers turn
  * that into the metric `ReportInput` the shared validator + `reports.create` consume (D25 — store
- * metric, enter/display imperial). Kept pure so the conversions, the thickness value-XOR-range
- * assembly, and the D41 visibility clamp are unit-tested without a DOM.
+ * metric, enter/display imperial). Kept pure so the conversions and the thickness value-XOR-range
+ * assembly are unit-tested without a DOM. (Reports have no visibility — all public, D13.)
  *
  * `skateTime` is carried as **epoch ms** (canonical, platform-neutral). Each surface adapts at its
  * own input boundary: web's `<input type="datetime-local">` round-trip lives in `apps/web`, mobile's
@@ -11,15 +11,13 @@
  */
 
 import type { ReportInput } from './report'
-import {
-  type IceType,
-  type PrecipType,
-  type SkateQuality,
-  type SkyCondition,
-  type SurfaceTag,
-  type ThicknessMethod,
-  VISIBILITY_LEVELS,
-  type Visibility,
+import type {
+  IceType,
+  PrecipType,
+  SkateQuality,
+  SkyCondition,
+  SurfaceTag,
+  ThicknessMethod,
 } from './types'
 import { fToC, inchesToCm, mphToKph } from './units'
 
@@ -34,7 +32,6 @@ export interface ThicknessFormReading {
 
 export interface ReportFormState {
   skateTime: number // epoch ms (each surface adapts its own picker at the input boundary)
-  visibility: Visibility
   iceTypes: IceType[]
   surfaceTags: SurfaceTag[]
   skateQuality: SkateQuality | ''
@@ -56,14 +53,13 @@ export function emptyThicknessReading(): ThicknessFormReading {
 }
 
 /**
- * A blank form defaulted for `now` at the author's derived default visibility — the caller passes
- * the default so the D41 policy stays in `@skating/core`. Skate time defaults to now (editable to
- * the past for offline reports, D9); no ice fields are required (an observation-only report, D3).
+ * A blank form defaulted for `now`. Skate time defaults to now (editable to the past for offline
+ * reports, D9); no ice fields are required (an observation-only report, D3). All reports are public
+ * (D13), so there's no visibility to default.
  */
-export function emptyReportForm(now: number, defaultVisibility: Visibility): ReportFormState {
+export function emptyReportForm(now: number): ReportFormState {
   return {
     skateTime: now,
-    visibility: defaultVisibility,
     iceTypes: [],
     surfaceTags: [],
     skateQuality: '',
@@ -72,15 +68,6 @@ export function emptyReportForm(now: number, defaultVisibility: Visibility): Rep
     conditions: { airTempF: '', windMph: '', windDir: '', sky: '', precip: '' },
     notes: '',
   }
-}
-
-/**
- * The visibility levels this author may pick, clamped to their ceiling (D41) — a locked/minor author
- * (`maxVisibility` below `public`) is never offered `public`. Ordered narrowest → widest.
- */
-export function visibilityOptions(maxVisibility: Visibility): Visibility[] {
-  const ceiling = VISIBILITY_LEVELS.indexOf(maxVisibility)
-  return VISIBILITY_LEVELS.filter((_, i) => i <= ceiling)
 }
 
 /** Parse a numeric input string; `undefined` when blank or not a finite number. */
@@ -136,7 +123,6 @@ export function buildReportInput(
   return {
     waterBodyId,
     skateTime: form.skateTime,
-    visibility: form.visibility,
     ...(form.iceTypes.length > 0 ? { iceTypes: form.iceTypes } : {}),
     ...(form.surfaceTags.length > 0 ? { surfaceTags: form.surfaceTags } : {}),
     ...(form.skateQuality !== '' ? { skateQuality: form.skateQuality } : {}),
