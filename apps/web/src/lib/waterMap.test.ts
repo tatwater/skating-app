@@ -6,8 +6,8 @@ import {
   frameForCoord,
   GEOLOCATION_FRAME_ZOOM,
   type MappableBody,
+  NORTHEAST_MAX_BOUNDS,
   OSM_ATTRIBUTION,
-  VERMONT_MAX_BOUNDS,
   waterBodiesToFeatureCollection,
   zoomForViewport,
 } from './waterMap'
@@ -116,6 +116,11 @@ describe('frameForCoord', () => {
     expect(frameForCoord({ lat: 34.05, lng: -118.24 })).toBeNull() // Los Angeles
   })
 
+  it('includes the wider Northeast region (Phase 2.5) — fixes the old VT-only bounds excluded', () => {
+    expect(frameForCoord({ lat: 43.66, lng: -70.25 })).not.toBeNull() // Portland, ME (E of old bounds)
+    expect(frameForCoord({ lat: 42.89, lng: -78.88 })).not.toBeNull() // Buffalo, NY (W of old bounds)
+  })
+
   it('honors custom bounds and zoom', () => {
     const bounds: [[number, number], [number, number]] = [
       [0, 0],
@@ -126,7 +131,7 @@ describe('frameForCoord', () => {
   })
 
   it('treats the region edge as inside', () => {
-    const [[minLng, minLat]] = VERMONT_MAX_BOUNDS
+    const [[minLng, minLat]] = NORTHEAST_MAX_BOUNDS
     expect(frameForCoord({ lat: minLat, lng: minLng })).not.toBeNull()
   })
 })

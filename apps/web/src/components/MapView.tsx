@@ -17,8 +17,8 @@ import {
   INITIAL_CENTER,
   INITIAL_ZOOM,
   MAP_FLAVORS,
+  NORTHEAST_MAX_BOUNDS,
   OSM_ATTRIBUTION,
-  VERMONT_MAX_BOUNDS,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
   zoomForViewport,
@@ -123,7 +123,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       // Restore pan/zoom across a theme-driven re-create; else the initial Champlain framing.
       center: lastViewRef.current?.center ?? INITIAL_CENTER,
       zoom: lastViewRef.current?.zoom ?? INITIAL_ZOOM,
-      maxBounds: VERMONT_MAX_BOUNDS,
+      maxBounds: NORTHEAST_MAX_BOUNDS,
       attributionControl: false, // replaced below with an always-visible (non-compact) control
     })
     mapRef.current = map

@@ -42,13 +42,18 @@ export const WATER_PALETTE = {
 export const PUT_IN_PIN_COLOR = '#137138'
 export const PHOTO_PIN_COLOR = '#f59e0b'
 
-/** Initial framing — Vermont's Champlain shoreline (Burlington), the pilot's headline water. */
+/** Initial framing — Burlington sits near the center of the region; the fallback when no device
+ *  fix is available (device geolocation reframes on open when in-region, D12/D20). */
 export const INITIAL_CENTER: [number, number] = [-73.15, 44.46]
-export const INITIAL_ZOOM = 8.5
-/** Bounds the pilot data lives in — roughly Vermont + a margin. */
-export const VERMONT_MAX_BOUNDS: [[number, number], [number, number]] = [
-  [-74.5, 42.0],
-  [-70.5, 45.9],
+export const INITIAL_ZOOM = 6.5
+/**
+ * Bounds the region's data lives in — the Phase 2.5 Northeast skating region (NY north of the
+ * NYC/Long Island metro + VT/NH/ME/MA). Kept in sync with the web bounds, the basemap `--bbox`,
+ * and the NY ETL downstate clip (see `plans/phase-2.5-regional-expansion.md`).
+ */
+export const NORTHEAST_MAX_BOUNDS: [[number, number], [number, number]] = [
+  [-79.9, 41.2],
+  [-66.8, 47.5],
 ]
 
 /**
@@ -130,7 +135,7 @@ export const GEOLOCATION_FRAME_ZOOM = 11
  */
 export function frameForCoord(
   coord: { lat: number; lng: number },
-  maxBounds: [[number, number], [number, number]] = VERMONT_MAX_BOUNDS,
+  maxBounds: [[number, number], [number, number]] = NORTHEAST_MAX_BOUNDS,
   zoom: number = GEOLOCATION_FRAME_ZOOM,
 ): { center: [number, number]; zoom: number } | null {
   const [[minLng, minLat], [maxLng, maxLat]] = maxBounds

@@ -25,9 +25,9 @@ import {
   INITIAL_CENTER,
   INITIAL_ZOOM,
   MAP_FLAVORS,
+  NORTHEAST_MAX_BOUNDS,
   PHOTO_PIN_COLOR,
   PUT_IN_PIN_COLOR,
-  VERMONT_MAX_BOUNDS,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
   zoomForViewport,
@@ -55,10 +55,10 @@ const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', feature
 // pan/zoom refines it. Mirrors web framing on Champlain at z8.5.
 const INITIAL_QUERY: { viewport: BBox; zoom: number } = {
   viewport: {
-    minLng: VERMONT_MAX_BOUNDS[0][0],
-    minLat: VERMONT_MAX_BOUNDS[0][1],
-    maxLng: VERMONT_MAX_BOUNDS[1][0],
-    maxLat: VERMONT_MAX_BOUNDS[1][1],
+    minLng: NORTHEAST_MAX_BOUNDS[0][0],
+    minLat: NORTHEAST_MAX_BOUNDS[0][1],
+    maxLng: NORTHEAST_MAX_BOUNDS[1][0],
+    maxLat: NORTHEAST_MAX_BOUNDS[1][1],
   },
   zoom: Math.floor(INITIAL_ZOOM),
 }
@@ -215,10 +215,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         ref={cameraRef}
         initialViewState={{ center: INITIAL_CENTER, zoom: INITIAL_ZOOM }}
         maxBounds={[
-          VERMONT_MAX_BOUNDS[0][0],
-          VERMONT_MAX_BOUNDS[0][1],
-          VERMONT_MAX_BOUNDS[1][0],
-          VERMONT_MAX_BOUNDS[1][1],
+          NORTHEAST_MAX_BOUNDS[0][0],
+          NORTHEAST_MAX_BOUNDS[0][1],
+          NORTHEAST_MAX_BOUNDS[1][0],
+          NORTHEAST_MAX_BOUNDS[1][1],
         ]}
       />
 

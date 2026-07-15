@@ -12,8 +12,8 @@ import {
   DEMO_PMTILES_URL,
   INITIAL_CENTER,
   INITIAL_ZOOM,
+  NORTHEAST_MAX_BOUNDS,
   OSM_ATTRIBUTION,
-  VERMONT_MAX_BOUNDS,
   waterBodiesToFeatureCollection,
 } from '../lib/waterMap'
 
@@ -65,7 +65,7 @@ export default function WaterMap() {
       style: buildMapStyle(pmtilesUrl),
       center: INITIAL_CENTER,
       zoom: INITIAL_ZOOM,
-      maxBounds: VERMONT_MAX_BOUNDS,
+      maxBounds: NORTHEAST_MAX_BOUNDS,
       attributionControl: false, // replaced below with an always-visible (non-compact) control
     })
     mapRef.current = map
