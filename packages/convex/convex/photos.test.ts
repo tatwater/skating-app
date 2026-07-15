@@ -1,9 +1,68 @@
+import geospatial from '@convex-dev/geospatial/test'
 import { convexTest } from 'convex-test'
 import { describe, expect, test } from 'vitest'
-import { api } from './_generated/api'
+import { api, internal } from './_generated/api'
+import type { Id } from './_generated/dataModel'
 import schema from './schema'
 
 const modules = import.meta.glob('./**/*.*s')
+
+function convexTestWithGeo() {
+  const t = convexTest(schema, modules)
+  geospatial.register(t)
+  return t
+}
+
+const POLYGON = {
+  type: 'Polygon' as const,
+  coordinates: [
+    [
+      [0, 0],
+      [0, 1],
+      [1, 1],
+      [1, 0],
+      [0, 0],
+    ],
+  ],
+}
+
+/** Seed a canonical water body (needed as a report's target). */
+async function seedBody(t: ReturnType<typeof convexTest>) {
+  await t.mutation(internal.waterBodies.importCanonical, {
+    bodies: [
+      {
+        source: 'osm',
+        externalId: 'osm/1',
+        name: 'Lake Morey',
+        type: 'lake',
+        polygon: POLYGON,
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.5, lng: 0.5 },
+        surfaceAreaSqM: 1_000_000,
+      },
+    ],
+  })
+  const body = (await t.run((ctx) => ctx.db.query('waterBodies').collect())).find(
+    (b) => b.externalId === 'osm/1',
+  )
+  if (!body) throw new Error('seed failed')
+  return body._id
+}
+
+/** Attach `photoIds` to a fresh report by `asAuthor` at the given visibility. */
+async function seedReport(
+  asAuthor: ReturnType<ReturnType<typeof convexTest>['withIdentity']>,
+  waterBodyId: Id<'waterBodies'>,
+  photoIds: Id<'photos'>[],
+  visibility: 'public' | 'just_me' = 'public',
+) {
+  return asAuthor.mutation(api.reports.create, {
+    waterBodyId,
+    skateTime: SKATE,
+    visibility,
+    photoIds,
+  })
+}
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -98,9 +157,10 @@ describe('photos.create (D42 coord gate)', () => {
   })
 })
 
-describe('photos.getUrls', () => {
+describe('photos.getUrls (report-gated, D13/D42)', () => {
   test('resolves full + thumb serving URLs and echoes safe metadata', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
+    const bodyId = await seedBody(t)
     const asUser = await seedUser(t, 'clerk_a')
     const storageId = await storeBlob(t)
     const thumbStorageId = await storeBlob(t)
@@ -111,7 +171,8 @@ describe('photos.getUrls', () => {
       coord: COORD,
       placeOnMap: true,
     })
-    const [row] = await t.query(api.photos.getUrls, { photoIds: [photoId] })
+    const reportId = await seedReport(asUser, bodyId, [photoId])
+    const [row] = await asUser.query(api.photos.getUrls, { reportId })
     expect(row?.photoId).toEqual(photoId)
     expect(typeof row?.url).toBe('string')
     expect(typeof row?.thumbUrl).toBe('string')
@@ -119,8 +180,45 @@ describe('photos.getUrls', () => {
     expect(row?.coord).toEqual(COORD)
   })
 
+  test('a non-author cannot resolve URLs for a just_me report (no visibility bypass)', async () => {
+    const t = convexTestWithGeo()
+    const bodyId = await seedBody(t)
+    const asAuthor = await seedUser(t, 'clerk_author')
+    const storageId = await storeBlob(t)
+    const photoId = await asAuthor.mutation(api.photos.create, {
+      storageId,
+      thumbStorageId: storageId,
+      coord: COORD,
+      placeOnMap: true,
+    })
+    const reportId = await seedReport(asAuthor, bodyId, [photoId], 'just_me')
+
+    // The author still sees the media…
+    expect((await asAuthor.query(api.photos.getUrls, { reportId })).length).toBe(1)
+    // …but another signed-in user (and an anon caller) get nothing — no URL, no coord leak.
+    const asOther = await seedUser(t, 'clerk_other')
+    expect(await asOther.query(api.photos.getUrls, { reportId })).toEqual([])
+    expect(await t.query(api.photos.getUrls, { reportId })).toEqual([])
+  })
+
+  test('returns [] for a hidden (moderated) report', async () => {
+    const t = convexTestWithGeo()
+    const bodyId = await seedBody(t)
+    const asAuthor = await seedUser(t, 'clerk_author')
+    const storageId = await storeBlob(t)
+    const photoId = await asAuthor.mutation(api.photos.create, {
+      storageId,
+      thumbStorageId: storageId,
+      placeOnMap: false,
+    })
+    const reportId = await seedReport(asAuthor, bodyId, [photoId])
+    await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }))
+    expect(await asAuthor.query(api.photos.getUrls, { reportId })).toEqual([])
+  })
+
   test('skips a missing photo row', async () => {
-    const t = convexTest(schema, modules)
+    const t = convexTestWithGeo()
+    const bodyId = await seedBody(t)
     const asUser = await seedUser(t, 'clerk_a')
     const storageId = await storeBlob(t)
     const photoId = await asUser.mutation(api.photos.create, {
@@ -128,12 +226,81 @@ describe('photos.getUrls', () => {
       thumbStorageId: storageId,
       placeOnMap: false,
     })
+    const reportId = await seedReport(asUser, bodyId, [photoId])
     // Delete the row → getUrls should skip it (returns empty, not throw).
     await t.run((ctx) => ctx.db.delete(photoId))
-    expect(await t.query(api.photos.getUrls, { photoIds: [photoId] })).toEqual([])
+    expect(await asUser.query(api.photos.getUrls, { reportId })).toEqual([])
   })
 
   test('returns a null URL for a photo whose stored file is gone (guarded)', async () => {
+    const t = convexTestWithGeo()
+    const bodyId = await seedBody(t)
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await storeBlob(t)
+    const photoId = await asUser.mutation(api.photos.create, {
+      storageId,
+      thumbStorageId: storageId,
+      placeOnMap: false,
+    })
+    const reportId = await seedReport(asUser, bodyId, [photoId])
+    // Delete the underlying blob but keep the row → serving URL resolves to null.
+    await t.run((ctx) => ctx.storage.delete(storageId))
+    const [row] = await asUser.query(api.photos.getUrls, { reportId })
+    expect(row?.url).toBeNull()
+  })
+})
+
+describe('photos.remove (orphan cleanup)', () => {
+  test('the uploader deletes their photo row + stored blobs', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await storeBlob(t)
+    const thumbStorageId = await storeBlob(t)
+    const photoId = await asUser.mutation(api.photos.create, {
+      storageId,
+      thumbStorageId,
+      placeOnMap: false,
+    })
+    await asUser.mutation(api.photos.remove, { photoId })
+    expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull()
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toBeNull()
+    expect(await t.run((ctx) => ctx.storage.getUrl(thumbStorageId))).toBeNull()
+  })
+
+  test('a non-owner cannot remove someone else’s photo', async () => {
+    const t = convexTest(schema, modules)
+    const asOwner = await seedUser(t, 'clerk_owner')
+    const storageId = await storeBlob(t)
+    const photoId = await asOwner.mutation(api.photos.create, {
+      storageId,
+      thumbStorageId: storageId,
+      placeOnMap: false,
+    })
+    const asOther = await seedUser(t, 'clerk_other')
+    await expect(asOther.mutation(api.photos.remove, { photoId })).rejects.toThrow(
+      /not your photo/i,
+    )
+    expect(await t.run((ctx) => ctx.db.get(photoId))).not.toBeNull() // untouched
+  })
+
+  test('still deletes the row when a blob is already gone (concurrent teardown reclaim)', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await storeBlob(t)
+    const thumbStorageId = await storeBlob(t)
+    const photoId = await asUser.mutation(api.photos.create, {
+      storageId,
+      thumbStorageId,
+      placeOnMap: false,
+    })
+    // Simulate a racing `removeBlob` having already reclaimed one blob.
+    await t.run((ctx) => ctx.storage.delete(storageId))
+    await asUser.mutation(api.photos.remove, { photoId }) // must not throw on the missing blob
+    expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull() // row still cleaned up
+    expect(await t.run((ctx) => ctx.storage.getUrl(thumbStorageId))).toBeNull()
+  })
+
+  test('is idempotent — removing a since-deleted photo is a no-op', async () => {
     const t = convexTest(schema, modules)
     const asUser = await seedUser(t, 'clerk_a')
     const storageId = await storeBlob(t)
@@ -142,9 +309,49 @@ describe('photos.getUrls', () => {
       thumbStorageId: storageId,
       placeOnMap: false,
     })
-    // Delete the underlying blob but keep the row → serving URL resolves to null.
+    await t.run((ctx) => ctx.db.delete(photoId))
+    // A double-cleanup (or a since-deleted photo) must not throw.
+    await asUser.mutation(api.photos.remove, { photoId })
+    expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull()
+  })
+
+  test('requires authentication', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await storeBlob(t)
+    const photoId = await asUser.mutation(api.photos.create, {
+      storageId,
+      thumbStorageId: storageId,
+      placeOnMap: false,
+    })
+    await expect(t.mutation(api.photos.remove, { photoId })).rejects.toThrow(/not authenticated/i)
+  })
+})
+
+describe('photos.removeBlob (storage-only cleanup)', () => {
+  test('deletes an uploaded-but-unattached blob', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await storeBlob(t)
+    await asUser.mutation(api.photos.removeBlob, { storageId })
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toBeNull()
+  })
+
+  test('is idempotent — removing a since-deleted blob is a no-op', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await storeBlob(t)
     await t.run((ctx) => ctx.storage.delete(storageId))
-    const [row] = await t.query(api.photos.getUrls, { photoIds: [photoId] })
-    expect(row?.url).toBeNull()
+    await asUser.mutation(api.photos.removeBlob, { storageId }) // must not throw
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toBeNull()
+  })
+
+  test('requires authentication', async () => {
+    const t = convexTest(schema, modules)
+    const storageId = await storeBlob(t)
+    await expect(t.mutation(api.photos.removeBlob, { storageId })).rejects.toThrow(
+      /not authenticated/i,
+    )
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).not.toBeNull() // untouched
   })
 })

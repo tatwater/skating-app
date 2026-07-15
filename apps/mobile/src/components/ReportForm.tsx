@@ -29,7 +29,7 @@ import {
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { useRouter } from 'expo-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Platform } from 'react-native'
 import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui'
 import { useMapSelection } from './MapSelectionContext'
@@ -42,9 +42,19 @@ interface PhotoDraft {
   thumbUri: string
   coord?: { lat: number; lng: number }
   placeOnMap: boolean
-  /** Set once uploaded, so a submit retry after a mid-flight failure doesn't re-upload it. */
+  /**
+   * Storage IDs recorded as each object lands, so a submit retry after a partial-upload failure
+   * reuses the already-uploaded object instead of orphaning it and uploading a fresh copy.
+   */
+  fullStorageId?: Id<'_storage'>
+  thumbStorageId?: Id<'_storage'>
+  /** Set once the photo row exists, so a retry doesn't re-create it (and re-attach it twice). */
   uploadedId?: Id<'photos'>
 }
+
+// Monotonic per-session counter for draft keys — unique even when the same library asset is picked
+// twice (deriving the id from asset/file identifiers would collide and corrupt retry state).
+let draftSeq = 0
 
 // --- Selectable pill toggles (the native analog of web's ToggleGroup) ---
 
@@ -212,6 +222,8 @@ export function ReportForm({
   const profile = useQuery(api.profiles.current, {})
   const generateUploadUrl = useMutation(api.photos.generateUploadUrl)
   const createPhoto = useMutation(api.photos.create)
+  const deletePhoto = useMutation(api.photos.remove)
+  const removeBlob = useMutation(api.photos.removeBlob)
   const createReport = useMutation(api.reports.create)
   const { putInPin, setPutInPin, setPinDropMode } = useMapSelection()
 
@@ -231,6 +243,39 @@ export function ReportForm({
     }
   }, [profile, form, profilePublic])
 
+  // Reclaim whatever a draft has already uploaded so nothing is stranded server-side: a created row
+  // (deletes the row + both blobs) or, for a partial/interrupted upload, the bare blobs that never
+  // got a row (each recorded the instant it landed — see `handleSubmit`). Best-effort; failures are
+  // swallowed. Mirrors web's `ReportForm` cleanup (minus its object-URL revocation — native uses URIs).
+  const reclaim = useCallback(
+    (p: PhotoDraft) => {
+      if (p.uploadedId) {
+        void deletePhoto({ photoId: p.uploadedId }).catch(() => {})
+        return
+      }
+      if (p.fullStorageId) void removeBlob({ storageId: p.fullStorageId }).catch(() => {})
+      if (p.thumbStorageId) void removeBlob({ storageId: p.thumbStorageId }).catch(() => {})
+    },
+    [deletePhoto, removeBlob],
+  )
+
+  // Reclaim any photos uploaded for a report that never got created — a failed `reports.create` or an
+  // abandoned form would otherwise strand blobs (+ a row). `submittedRef` skips a successful submit,
+  // whose photos are now attached. Read via a ref so this stays an unmount-only sweep.
+  const photosRef = useRef<PhotoDraft[]>([])
+  photosRef.current = photos
+  const submittedRef = useRef(false)
+  // Flipped at teardown so an upload / row-create that resolves *after* the sweep (see `handleSubmit`)
+  // reclaims itself — the sweep only sees what's already recorded, not what's still in flight.
+  const disposedRef = useRef(false)
+  useEffect(() => {
+    return () => {
+      disposedRef.current = true
+      if (submittedRef.current) return
+      for (const p of photosRef.current) reclaim(p)
+    }
+  }, [reclaim])
+
   // Clear the map put-in-pin state when the form goes away — including an unmount mid-pin-drop, which
   // would otherwise strand the map in peek mode.
   useEffect(() => {
@@ -239,6 +284,19 @@ export function ReportForm({
       setPinDropMode(false)
     }
   }, [setPutInPin, setPinDropMode])
+
+  // Reclaim an already-uploaded photo's blobs (+ row) when the user removes it (a prior failed submit
+  // may have uploaded it); dropping it from state alone would strand it — it's no longer swept.
+  const removePhoto = useCallback(
+    (id: string) => {
+      setPhotos((prev) => {
+        const removed = prev.find((p) => p.id === id)
+        if (removed) reclaim(removed)
+        return prev.filter((p) => p.id !== id)
+      })
+    },
+    [reclaim],
+  )
 
   const onAddPhotos = useCallback(async () => {
     setError(null)
@@ -249,7 +307,7 @@ export function ReportForm({
         assets.map(async (asset) => {
           const processed = await processPhoto(asset)
           return {
-            id: `${asset.assetId ?? asset.uri}-${asset.fileName ?? ''}`,
+            id: `draft-${draftSeq++}`,
             fullUri: processed.fullUri,
             thumbUri: processed.thumbUri,
             coord: processed.coord,
@@ -289,26 +347,62 @@ export function ReportForm({
       const photoIds = await Promise.all(
         photos.map(async (photo) => {
           if (photo.uploadedId) return photo.uploadedId
+          // Upload the full + thumb independently, each recording its storage id the instant it lands
+          // (not after both settle). So a partial failure keeps the object that DID upload — a retry
+          // reuses it instead of orphaning a duplicate, and the cleanup sweep can reclaim it.
+          const ensure = (
+            existing: Id<'_storage'> | undefined,
+            uri: string,
+            key: 'fullStorageId' | 'thumbStorageId',
+          ): Promise<Id<'_storage'>> =>
+            existing !== undefined
+              ? Promise.resolve(existing)
+              : generateUploadUrl()
+                  .then((url) => uploadToStorage(url, uri))
+                  .then((sid) => {
+                    const id = sid as Id<'_storage'>
+                    // If the form was torn down while this was in flight (and we're not mid-successful-
+                    // submit), no draft remains to record or sweep it — reclaim the blob here instead.
+                    if (disposedRef.current && !submittedRef.current) {
+                      void removeBlob({ storageId: id }).catch(() => {})
+                    } else {
+                      setPhotos((prev) =>
+                        prev.map((p) => (p.id === photo.id ? { ...p, [key]: id } : p)),
+                      )
+                    }
+                    return id
+                  })
           const [storageId, thumbStorageId] = await Promise.all([
-            generateUploadUrl().then((url) => uploadToStorage(url, photo.fullUri)),
-            generateUploadUrl().then((url) => uploadToStorage(url, photo.thumbUri)),
+            ensure(photo.fullStorageId, photo.fullUri, 'fullStorageId'),
+            ensure(photo.thumbStorageId, photo.thumbUri, 'thumbStorageId'),
           ])
           const id = await createPhoto({
-            storageId: storageId as Id<'_storage'>,
-            thumbStorageId: thumbStorageId as Id<'_storage'>,
+            storageId,
+            thumbStorageId,
             placeOnMap: photo.placeOnMap,
             coord: photoUploadCoord(photo.placeOnMap, photo.coord),
           })
-          setPhotos((prev) => prev.map((p) => (p.id === photo.id ? { ...p, uploadedId: id } : p)))
+          // Same teardown race one level up: the row was created after the form unmounted, so nothing
+          // will attach it to a report — reclaim the row (+ its blobs) rather than strand it.
+          if (disposedRef.current && !submittedRef.current) {
+            void deletePhoto({ photoId: id }).catch(() => {})
+          } else {
+            setPhotos((prev) => prev.map((p) => (p.id === photo.id ? { ...p, uploadedId: id } : p)))
+          }
           return id
         }),
       )
+      // Flip the guard BEFORE createReport, not after: an unmount *during* the mutation would
+      // otherwise sweep (submittedRef still false) and delete the very photo rows the committing
+      // report is about to reference — leaving it with permanently missing images.
+      submittedRef.current = true
       const reportId = await createReport({ ...input, waterBodyId, photoIds })
       setPutInPin(null)
       setPinDropMode(false)
       onClose()
       router.navigate({ pathname: '/report/[id]', params: { id: reportId } })
     } catch (err) {
+      submittedRef.current = false // creation didn't complete — these uploads are reclaimable again
       setError(
         err instanceof ConvexError
           ? String(err.data)
@@ -505,11 +599,7 @@ export function ReportForm({
                   }
                 />
               ) : null}
-              <Button
-                size="$2"
-                chromeless
-                onPress={() => setPhotos((prev) => prev.filter((p) => p.id !== photo.id))}
-              >
+              <Button size="$2" chromeless onPress={() => removePhoto(photo.id)}>
                 Remove
               </Button>
             </XStack>
