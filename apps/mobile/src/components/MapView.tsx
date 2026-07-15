@@ -84,6 +84,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const pmtilesUrl = env.pmtilesUrl || DEMO_PMTILES_URL
   const mapStyle = useMemo(() => buildMapStyle(pmtilesUrl, flavor), [pmtilesUrl, flavor])
 
+  // The demo archive is dated and Protomaps prunes old builds (it will 404), so it's DEV-ONLY. A
+  // release build that omits EXPO_PUBLIC_PMTILES_URL is a misconfiguration that would silently ship
+  // a basemap destined to go blank — surface it loudly (flows to Sentry via the console integration)
+  // instead. Fires once on mount; env is build-time constant.
+  useEffect(() => {
+    if (!__DEV__ && !env.pmtilesUrl) {
+      console.error(
+        'EXPO_PUBLIC_PMTILES_URL is unset in a release build — falling back to the dev-only ' +
+          'Protomaps demo tiles, which will eventually 404. Set it to the self-hosted extract URL.',
+      )
+    }
+  }, [])
+
   // Viewport bbox + zoom are the query key; seeded to the region so data shows before the first
   // region event, then `onRegionDidChange` refines it.
   const [queryArgs, setQueryArgs] = useState<{ viewport: BBox; zoom: number }>(INITIAL_QUERY)

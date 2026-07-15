@@ -48,7 +48,8 @@ const config: ExpoConfig = {
       'expo-image-picker',
       {
         photosPermission: 'Skating accesses your photos so you can attach them to an ice report.',
-        cameraPermission: 'Skating uses the camera so you can photograph ice conditions for a report.',
+        cameraPermission:
+          'Skating uses the camera so you can photograph ice conditions for a report.',
       },
     ],
     // Placeholder logo (D8) — swap `assets/splash-icon.png` for the real brand mark later.
