@@ -13,6 +13,9 @@ export const env = {
   clerkPublishableKey: process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '',
   convexUrl: process.env.EXPO_PUBLIC_CONVEX_URL ?? CONVEX_URL_PLACEHOLDER,
   sentryDsn: process.env.EXPO_PUBLIC_SENTRY_DSN ?? '',
+  // Self-built Vermont `.pmtiles` extract later; empty ⇒ the map falls back to the Protomaps demo
+  // tiles (§F, mirrors web's VITE_PMTILES_URL). Read natively by MapLibre via the pmtiles:// scheme.
+  pmtilesUrl: process.env.EXPO_PUBLIC_PMTILES_URL ?? '',
 } as const
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */

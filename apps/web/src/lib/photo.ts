@@ -1,7 +1,8 @@
 /**
- * Pure photo-pipeline helpers (§E, D31/D42). The heavy work — HEIC decode, EXIF read, downscale +
- * EXIF-strip re-encode, upload — is browser-only glue in `../components/photoPipeline`; the
- * privacy-critical *decisions* live here so they're unit-testable and can't silently regress.
+ * Web-only photo helper (§E, D31). The privacy-critical `photoUploadCoord` gate (D42) is shared
+ * from `@skating/core`; this `isHeic` check is browser-specific (only browsers can't decode HEIC in
+ * a `<canvas>`, so only web needs to detect it and route through `heic2any` first — native decodes
+ * HEIC natively via `expo-image-manipulator`).
  */
 
 /**
@@ -13,16 +14,4 @@ export function isHeic(file: { type: string; name: string }): boolean {
   const type = file.type.toLowerCase()
   if (type === 'image/heic' || type === 'image/heif') return true
   return /\.(heic|heif)$/i.test(file.name)
-}
-
-/**
- * D42 gate, client side: a photo's GPS `coord` is sent to the server **only** when the uploader
- * opted into `placeOnMap`. The server re-drops it regardless (defense in depth), but gating here
- * means a non-opted coord never leaves the browser in the first place.
- */
-export function photoUploadCoord(
-  placeOnMap: boolean,
-  coord: { lat: number; lng: number } | undefined,
-): { lat: number; lng: number } | undefined {
-  return placeOnMap ? coord : undefined
 }

@@ -1,9 +1,5 @@
 import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
-import type { SkateQuality, Visibility } from '@skating/core'
-import { Link } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import { useEffect } from 'react'
 import {
   formatConditions,
   formatSkateTime,
@@ -12,9 +8,14 @@ import {
   humanizeEnum,
   type ReportConditions,
   SKATE_QUALITY_LABELS,
+  type SkateQuality,
   type ThicknessReading,
   VISIBILITY_LABELS,
-} from '../lib/reportDisplay'
+  type Visibility,
+} from '@skating/core'
+import { Link } from '@tanstack/react-router'
+import { useQuery } from 'convex/react'
+import { useEffect } from 'react'
 import { DetailSkeleton, UnavailableState } from './DrawerStates'
 import { useMapSelection } from './MapSelectionContext'
 import { Badge } from './ui/badge'

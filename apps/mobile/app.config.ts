@@ -28,6 +28,30 @@ const config: ExpoConfig = {
     'expo-router',
     'expo-secure-store',
     'expo-web-browser',
+    // Native date/time picker for editing a report's skate time (D9 — past times for offline).
+    '@react-native-community/datetimepicker',
+    // Native MapLibre map (Phase 2 §F). The plugin wires the iOS Podfile post_install; the native
+    // SDK bundled by v11.3.x reads Protomaps `.pmtiles` directly (no JS protocol), so the map shares
+    // the web basemap. Can't run in Expo Go — needs the EAS/dev build (already our workflow, D8).
+    '@maplibre/maplibre-react-native',
+    // Device geolocation for home/water framing (D12/D20) — declares the location permission + copy.
+    [
+      'expo-location',
+      {
+        locationWhenInUsePermission:
+          'Skating uses your location to frame the map on nearby lakes and mark where you skated.',
+      },
+    ],
+    // Report photos (D31/D42): the picker returns EXIF (incl. GPS) so the pipeline can offer the
+    // opt-in `placeOnMap` geotag; expo-image-manipulator (no plugin) does the resize + EXIF strip.
+    [
+      'expo-image-picker',
+      {
+        photosPermission: 'Skating accesses your photos so you can attach them to an ice report.',
+        cameraPermission:
+          'Skating uses the camera so you can photograph ice conditions for a report.',
+      },
+    ],
     // Placeholder logo (D8) — swap `assets/splash-icon.png` for the real brand mark later.
     // The image is required on Android: expo-splash-screen always references a splash
     // drawable, so without one, resource linking fails at build time.

@@ -1,4 +1,3 @@
-import { inchesToCm } from '@skating/core'
 import { describe, expect, it } from 'vitest'
 import {
   formatConditions,
@@ -11,7 +10,8 @@ import {
   SKY_LABELS,
   THICKNESS_METHOD_LABELS,
   VISIBILITY_LABELS,
-} from './reportDisplay'
+} from './reportView'
+import { inchesToCm } from './units'
 
 describe('humanizeEnum', () => {
   it('sentence-cases a snake_case token', () => {

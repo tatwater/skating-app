@@ -66,11 +66,32 @@ export const remove = mutation({
     const photo = await ctx.db.get(photoId)
     if (!photo) return // already gone — idempotent
     if (photo.uploaderId !== profile._id) throw new ConvexError('Not your photo')
+    // Tolerate an already-gone blob (e.g. a concurrent `removeBlob` during form teardown) so row
+    // cleanup still completes — a throw here would otherwise strand the row.
     await Promise.all([
-      ctx.storage.delete(photo.storageId as Id<'_storage'>),
-      ctx.storage.delete(photo.thumbStorageId as Id<'_storage'>),
+      ctx.storage.delete(photo.storageId as Id<'_storage'>).catch(() => {}),
+      ctx.storage.delete(photo.thumbStorageId as Id<'_storage'>).catch(() => {}),
     ])
     await ctx.db.delete(photoId)
+  },
+})
+
+/**
+ * Delete a storage blob the client uploaded but never attached to a `photos` row — the cleanup path
+ * for a partial upload (one of the full/thumb pair lands, its sibling or `create` fails) or a form
+ * abandoned between `generateUploadUrl` and `create`. Auth-gated; a bare blob carries no owner row so
+ * we can't owner-check it, but a storage id is only ever handed back to the uploader (from an upload
+ * URL POST) and isn't enumerable. Idempotent — an already-gone / never-finalized id is a no-op.
+ */
+export const removeBlob = mutation({
+  args: { storageId: v.id('_storage') },
+  handler: async (ctx, { storageId }) => {
+    await requireProfile(ctx)
+    try {
+      await ctx.storage.delete(storageId)
+    } catch {
+      // Already deleted, or an upload URL that was never finalized — nothing to reclaim.
+    }
   },
 })
 

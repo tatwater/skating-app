@@ -1,38 +1,35 @@
 import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
+  buildReportInput,
   deriveDefaultVisibility,
+  emptyReportForm,
+  emptyThicknessReading,
+  humanizeEnum,
   ICE_TYPES,
   maxVisibilityForProfile,
+  PRECIP_LABELS,
   PRECIP_TYPES,
+  photoUploadCoord,
+  type ReportFormState,
   SKATE_QUALITIES,
+  SKATE_QUALITY_LABELS,
   SKY_CONDITIONS,
+  SKY_LABELS,
   SURFACE_TAGS,
+  THICKNESS_METHOD_LABELS,
   THICKNESS_METHODS,
+  type ThicknessFormReading,
+  VISIBILITY_LABELS,
   type Visibility,
   validateReportInput,
+  visibilityOptions,
 } from '@skating/core'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
-import { photoUploadCoord } from '../lib/photo'
-import {
-  humanizeEnum,
-  PRECIP_LABELS,
-  SKATE_QUALITY_LABELS,
-  SKY_LABELS,
-  THICKNESS_METHOD_LABELS,
-  VISIBILITY_LABELS,
-} from '../lib/reportDisplay'
-import {
-  buildReportInput,
-  emptyReportForm,
-  emptyThicknessReading,
-  type ReportFormState,
-  type ThicknessFormReading,
-  visibilityOptions,
-} from '../lib/reportForm'
+import { datetimeLocalToMs, toDatetimeLocal } from '../lib/reportForm'
 import { useMapSelection } from './MapSelectionContext'
 import { processPhoto, uploadToStorage } from './photoPipeline'
 import { Button } from './ui/button'
@@ -51,7 +48,13 @@ interface PhotoDraft {
   thumb: File
   coord?: { lat: number; lng: number }
   placeOnMap: boolean
-  /** Set once uploaded, so a submit retry after a mid-flight failure doesn't re-upload it. */
+  /**
+   * Storage IDs recorded as each blob lands, so a submit retry after a partial-upload failure
+   * reuses the already-uploaded object instead of orphaning it and uploading a fresh copy.
+   */
+  fullStorageId?: Id<'_storage'>
+  thumbStorageId?: Id<'_storage'>
+  /** Set once the photo row exists, so a retry doesn't re-create it (and re-attach it twice). */
   uploadedId?: Id<'photos'>
 }
 
@@ -191,8 +194,8 @@ export function ReportFormFields({
       <Field label="When did you skate?">
         <Input
           type="datetime-local"
-          value={form.skateTime}
-          onChange={(e) => patch({ skateTime: e.target.value })}
+          value={toDatetimeLocal(form.skateTime)}
+          onChange={(e) => patch({ skateTime: datetimeLocalToMs(e.target.value) })}
         />
       </Field>
 
@@ -486,6 +489,7 @@ export function ReportForm({
   const generateUploadUrl = useMutation(api.photos.generateUploadUrl)
   const createPhoto = useMutation(api.photos.create)
   const deletePhoto = useMutation(api.photos.remove)
+  const removeBlob = useMutation(api.photos.removeBlob)
   const createReport = useMutation(api.reports.create)
   const { putInPin, setPutInPin, setPinDropMode, pinDropMode } = useMapSelection()
 
@@ -504,26 +508,42 @@ export function ReportForm({
     }
   }, [profile, form, profilePublic])
 
+  // Reclaim whatever a draft has already uploaded so nothing is stranded server-side: a created row
+  // (deletes the row + both blobs) or, for a partial/interrupted upload, the bare blobs that never
+  // got a row (each recorded the instant it landed — see `handleSubmit`). Best-effort; failures are
+  // swallowed.
+  const reclaim = useCallback(
+    (p: PhotoDraft) => {
+      if (p.uploadedId) {
+        void deletePhoto({ photoId: p.uploadedId }).catch(() => {})
+        return
+      }
+      if (p.fullStorageId) void removeBlob({ storageId: p.fullStorageId }).catch(() => {})
+      if (p.thumbStorageId) void removeBlob({ storageId: p.thumbStorageId }).catch(() => {})
+    },
+    [deletePhoto, removeBlob],
+  )
+
   // Revoke every preview object URL on unmount — via a ref so we don't revoke still-displayed
   // previews on each add/remove (a `[photos]` dep would run cleanup on every list change).
-  // Individual removals revoke their own URL in `removePhoto`. Also reclaim any photos that were
-  // uploaded for a report that never got created — a failed `reports.create` or an abandoned form
-  // would otherwise strand a storage blob + photo row (`submittedRef` skips a successful submit,
-  // whose photos are now attached to the report). `useMutation` is a stable ref, so `[deletePhoto]`
-  // never re-runs this — it stays an unmount-only cleanup.
+  // Individual removals revoke their own URL in `removePhoto`. Also reclaim any photos uploaded for a
+  // report that never got created — a failed `reports.create` or an abandoned form would otherwise
+  // strand blobs (+ a row); `submittedRef` skips a successful submit, whose photos are now attached.
   const photosRef = useRef<PhotoDraft[]>([])
   photosRef.current = photos
   const submittedRef = useRef(false)
+  // Flipped at teardown so an upload / row-create that resolves *after* the sweep (see `handleSubmit`)
+  // reclaims itself — the sweep only sees what's already recorded, not what's still in flight.
+  const disposedRef = useRef(false)
   useEffect(() => {
     return () => {
+      disposedRef.current = true
       for (const p of photosRef.current) {
         URL.revokeObjectURL(p.previewUrl)
-        if (!submittedRef.current && p.uploadedId) {
-          void deletePhoto({ photoId: p.uploadedId }).catch(() => {})
-        }
+        if (!submittedRef.current) reclaim(p)
       }
     }
-  }, [deletePhoto])
+  }, [reclaim])
 
   // Clear the map put-in-pin state when the form goes away — including an unmount from navigating
   // away mid-pin-drop, which would otherwise strand the map in crosshair/banner mode.
@@ -546,14 +566,14 @@ export function ReportForm({
         const removed = prev.find((p) => p.id === id)
         if (removed) {
           URL.revokeObjectURL(removed.previewUrl)
-          // If it had already been uploaded (on a prior failed submit), reclaim its blob + row now —
-          // dropping it from state alone would strand it (it's no longer in the unmount sweep).
-          if (removed.uploadedId) void deletePhoto({ photoId: removed.uploadedId }).catch(() => {})
+          // Reclaim anything a prior failed submit uploaded (row and/or bare blobs) — dropping it
+          // from state alone would strand it (it's no longer in the unmount sweep).
+          reclaim(removed)
         }
         return prev.filter((p) => p.id !== id)
       })
     },
-    [deletePhoto],
+    [reclaim],
   )
 
   const onAddFiles = useCallback(async (files: FileList) => {
@@ -596,26 +616,61 @@ export function ReportForm({
       const photoIds = await Promise.all(
         photos.map(async (photo) => {
           if (photo.uploadedId) return photo.uploadedId
+          // Upload the full + thumb independently, each recording its storage id the instant it lands
+          // (not after both settle). So a partial failure keeps the blob that DID upload — a retry
+          // reuses it instead of orphaning a duplicate, and the cleanup sweep can reclaim it.
+          const ensure = (
+            existing: Id<'_storage'> | undefined,
+            file: File,
+            key: 'fullStorageId' | 'thumbStorageId',
+          ): Promise<Id<'_storage'>> =>
+            existing !== undefined
+              ? Promise.resolve(existing)
+              : generateUploadUrl()
+                  .then((url) => uploadToStorage(url, file))
+                  .then((sid) => {
+                    const id = sid as Id<'_storage'>
+                    // If the form was torn down while this was in flight (and we're not mid-successful-
+                    // submit), no draft remains to record or sweep it — reclaim the blob here instead.
+                    if (disposedRef.current && !submittedRef.current) {
+                      void removeBlob({ storageId: id }).catch(() => {})
+                    } else {
+                      setPhotos((prev) =>
+                        prev.map((p) => (p.id === photo.id ? { ...p, [key]: id } : p)),
+                      )
+                    }
+                    return id
+                  })
           const [storageId, thumbStorageId] = await Promise.all([
-            generateUploadUrl().then((url) => uploadToStorage(url, photo.full)),
-            generateUploadUrl().then((url) => uploadToStorage(url, photo.thumb)),
+            ensure(photo.fullStorageId, photo.full, 'fullStorageId'),
+            ensure(photo.thumbStorageId, photo.thumb, 'thumbStorageId'),
           ])
           const id = await createPhoto({
-            storageId: storageId as Id<'_storage'>,
-            thumbStorageId: thumbStorageId as Id<'_storage'>,
+            storageId,
+            thumbStorageId,
             placeOnMap: photo.placeOnMap,
             coord: photoUploadCoord(photo.placeOnMap, photo.coord),
           })
-          setPhotos((prev) => prev.map((p) => (p.id === photo.id ? { ...p, uploadedId: id } : p)))
+          // Same teardown race one level up: the row was created after the form unmounted, so nothing
+          // will attach it to a report — reclaim the row (+ its blobs) rather than strand it.
+          if (disposedRef.current && !submittedRef.current) {
+            void deletePhoto({ photoId: id }).catch(() => {})
+          } else {
+            setPhotos((prev) => prev.map((p) => (p.id === photo.id ? { ...p, uploadedId: id } : p)))
+          }
           return id
         }),
       )
+      // Flip the guard BEFORE createReport, not after: an unmount *during* the mutation would
+      // otherwise sweep (submittedRef still false) and delete the very photo rows the committing
+      // report is about to reference — leaving it with permanently missing images.
+      submittedRef.current = true
       const reportId = await createReport({ ...input, waterBodyId, photoIds })
-      submittedRef.current = true // photos are attached now — keep the unmount sweep off them
       setPutInPin(null)
       onOpenChange(false)
       navigate({ to: '/report/$id', params: { id: reportId } })
     } catch (err) {
+      submittedRef.current = false // creation didn't complete — these uploads are reclaimable again
       setError(
         err instanceof ConvexError
           ? String(err.data)

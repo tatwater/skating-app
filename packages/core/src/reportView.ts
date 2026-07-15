@@ -1,10 +1,10 @@
 /**
  * Pure presentation helpers for rendering a report (Phase 2 §D, D22–D25). Turns the metric,
- * enum-coded report the server stores into the **imperial**, human-readable strings the web UI
- * shows (D25) — kept out of the React components so the formatting is unit-testable without a DOM
- * (the web analog of `waterMap.ts`). Mobile owns its own copy of these presentational bits.
+ * enum-coded report the server stores into the **imperial**, human-readable strings the UI shows
+ * (D25) — kept framework-free in `@skating/core` so **both** the web and mobile apps draw from one
+ * source (D7/D40) and the formatting is unit-testable without a DOM.
  *
- * The community ice/surface vocabulary (D23) is coded as `snake_case` enums in `@skating/core`;
+ * The community ice/surface vocabulary (D23) is coded as `snake_case` enums in `./types`;
  * `humanizeEnum` renders them ("black_ice" → "Black ice") so a vocab change never desyncs a label
  * map. Only the visibility labels get an explicit map (their wording isn't a mechanical de-casing).
  */
@@ -16,14 +16,14 @@ import type {
   SkyCondition,
   ThicknessMethod,
   Visibility,
-} from '@skating/core'
+} from './types'
 import {
   cmToInches,
   formatTemperatureF,
   formatThicknessInches,
   formatWindMph,
   roundTo,
-} from '@skating/core'
+} from './units'
 
 /** `snake_case` enum token → sentence-case label ("orange_peel" → "Orange peel"). */
 export function humanizeEnum(token: string): string {

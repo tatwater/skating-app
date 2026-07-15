@@ -20,11 +20,15 @@ import type { StyleSpecification } from 'maplibre-gl'
 export const OSM_ATTRIBUTION = '© OpenStreetMap contributors'
 
 /**
- * Protomaps' hosted demo `.pmtiles` (whole-planet, for prototyping) + its static font/sprite
- * assets. Phase 1 renders against these to confirm the data; PR#5 swaps `DEMO_PMTILES_URL` for
- * a self-built Vermont extract (set `VITE_PMTILES_URL`). The asset URLs stay hosted.
+ * A Protomaps hosted **build** `.pmtiles` (whole-planet, for prototyping) + its static font/sprite
+ * assets. Phase 1 renders against these to confirm the data; PR#5 swaps `DEMO_PMTILES_URL` for a
+ * self-built Vermont extract (set `VITE_PMTILES_URL`). The asset URLs stay hosted.
+ *
+ * NB: Protomaps prunes dated builds, so this URL rotates and will eventually 404 (the old
+ * `demo-bucket.protomaps.com/v4.pmtiles` went 404). Bump the date if it does — the live builds are
+ * listed at maps.protomaps.com/builds. Production uses `VITE_PMTILES_URL`, not this default.
  */
-export const DEMO_PMTILES_URL = 'https://demo-bucket.protomaps.com/v4.pmtiles'
+export const DEMO_PMTILES_URL = 'https://build.protomaps.com/20251215.pmtiles'
 const GLYPHS_URL = 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf'
 const SPRITE_BASE = 'https://protomaps.github.io/basemaps-assets/sprites/v4'
 
