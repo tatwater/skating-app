@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   boundsToViewport,
   buildMapStyle,
+  featureIdForBody,
+  frameForCoord,
+  GEOLOCATION_FRAME_ZOOM,
   type MappableBody,
   OSM_ATTRIBUTION,
+  VERMONT_MAX_BOUNDS,
   waterBodiesToFeatureCollection,
+  zoomForViewport,
 } from './waterMap'
 
 describe('buildMapStyle', () => {
@@ -29,6 +34,14 @@ describe('buildMapStyle', () => {
     expect(style.glyphs).toContain('{fontstack}')
     expect(style.sprite).toBeTruthy()
   })
+
+  it('defaults to the wintery white flavor and its light sprite (D6/D34)', () => {
+    expect(style.sprite).toContain('/light')
+  })
+
+  it('uses the dark sprite for the dark flavor', () => {
+    expect(buildMapStyle('https://example.com/vt.pmtiles', 'dark').sprite).toContain('/dark')
+  })
 })
 
 describe('waterBodiesToFeatureCollection', () => {
@@ -52,17 +65,69 @@ describe('waterBodiesToFeatureCollection', () => {
     },
   ]
 
-  it('wraps each body as a Feature keeping geometry and metadata as properties', () => {
+  it('wraps each body as a Feature with a numeric id and metadata as properties', () => {
     const fc = waterBodiesToFeatureCollection(bodies)
     expect(fc.type).toBe('FeatureCollection')
     expect(fc.features).toHaveLength(1)
     const feature = fc.features[0]
+    expect(feature?.id).toBe(0)
     expect(feature?.geometry).toEqual(bodies[0]?.polygon)
-    expect(feature?.properties).toEqual({ id: 'body_1', name: 'Lake Champlain', type: 'lake' })
+    expect(feature?.properties).toEqual({ _id: 'body_1', name: 'Lake Champlain', type: 'lake' })
   })
 
   it('produces an empty collection for no bodies', () => {
     expect(waterBodiesToFeatureCollection([]).features).toHaveLength(0)
+  })
+})
+
+describe('featureIdForBody', () => {
+  const fc = waterBodiesToFeatureCollection([
+    { _id: 'a', name: 'A', type: 'lake', polygon: { type: 'Point', coordinates: [0, 0] } },
+    { _id: 'b', name: 'B', type: 'pond', polygon: { type: 'Point', coordinates: [1, 1] } },
+  ])
+
+  it('maps a water-body _id back to its numeric feature id', () => {
+    expect(featureIdForBody(fc, 'a')).toBe(0)
+    expect(featureIdForBody(fc, 'b')).toBe(1)
+  })
+
+  it('returns undefined for a body not in the collection', () => {
+    expect(featureIdForBody(fc, 'missing')).toBeUndefined()
+  })
+})
+
+describe('zoomForViewport', () => {
+  it('floors the fractional map zoom to the integer bucket', () => {
+    expect(zoomForViewport(8.9)).toBe(8)
+    expect(zoomForViewport(12)).toBe(12)
+  })
+})
+
+describe('frameForCoord', () => {
+  it('frames on a fix inside the pilot region', () => {
+    const inVermont = { lat: 44.46, lng: -73.15 }
+    expect(frameForCoord(inVermont)).toEqual({
+      center: [-73.15, 44.46],
+      zoom: GEOLOCATION_FRAME_ZOOM,
+    })
+  })
+
+  it('returns null for a fix outside the region so the default framing stands', () => {
+    expect(frameForCoord({ lat: 34.05, lng: -118.24 })).toBeNull() // Los Angeles
+  })
+
+  it('honors custom bounds and zoom', () => {
+    const bounds: [[number, number], [number, number]] = [
+      [0, 0],
+      [10, 10],
+    ]
+    expect(frameForCoord({ lat: 5, lng: 5 }, bounds, 9)).toEqual({ center: [5, 5], zoom: 9 })
+    expect(frameForCoord({ lat: 5, lng: 5 }, bounds, 9)?.zoom).toBe(9)
+  })
+
+  it('treats the region edge as inside', () => {
+    const [[minLng, minLat]] = VERMONT_MAX_BOUNDS
+    expect(frameForCoord({ lat: minLat, lng: minLng })).not.toBeNull()
   })
 })
 

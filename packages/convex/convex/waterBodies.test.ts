@@ -743,3 +743,176 @@ describe('waterBodies.listPendingReview', () => {
     expect(queue[0]?._id).toEqual(pendingId)
   })
 })
+
+describe('waterBodies.get (detail + merged redirect, D36/D47)', () => {
+  test('returns a listed body', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    const id = await onlyBodyId(t)
+    const result = await t.query(api.waterBodies.get, { waterBodyId: id })
+    if (!result?.available) throw new Error('expected an available body')
+    expect(result.body._id).toEqual(id)
+  })
+
+  test('follows mergedIntoId to the surviving body', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        { ...CANONICAL_ITEM, externalId: 'osm/loser', name: 'Loser' },
+        { ...CANONICAL_ITEM, externalId: 'osm/survivor', name: 'Survivor' },
+      ],
+    })
+    const all = await t.run((ctx) => ctx.db.query('waterBodies').collect())
+    const loser = all.find((b) => b.name === 'Loser')
+    const survivor = all.find((b) => b.name === 'Survivor')
+    if (!loser || !survivor) throw new Error('seed failed')
+    await t.run((ctx) =>
+      ctx.db.patch(loser._id, { dedupStatus: 'merged', mergedIntoId: survivor._id }),
+    )
+    const result = await t.query(api.waterBodies.get, { waterBodyId: loser._id })
+    if (!result?.available) throw new Error('expected the survivor')
+    expect(result.body._id).toEqual(survivor._id)
+  })
+
+  test('signals unavailable (not null) for a removed body', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    const id = await onlyBodyId(t)
+    await t.run((ctx) => ctx.db.patch(id, { removedAt: Date.now() }))
+    expect(await t.query(api.waterBodies.get, { waterBodyId: id })).toEqual({ available: false })
+  })
+
+  test('returns null for a non-existent body', async () => {
+    const t = convexTestWithGeo()
+    const dangling = await t.run(async (ctx) => {
+      const cid = await ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        source: 'osm',
+        externalId: 'osm/gone',
+        dedupStatus: 'clean',
+        createdAt: Date.now(),
+      })
+      await ctx.db.delete(cid)
+      return cid
+    })
+    expect(await t.query(api.waterBodies.get, { waterBodyId: dangling })).toBeNull()
+  })
+})
+
+describe('waterBodies.setCuratedBoost (D49, admin)', () => {
+  test('a member cannot set the boost', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    const id = await onlyBodyId(t)
+    const asMember = await seedUser(t, 'clerk_member')
+    await expect(
+      asMember.mutation(api.waterBodies.setCuratedBoost, { waterBodyId: id, curatedBoost: 0.5 }),
+    ).rejects.toThrow(/admin/i)
+  })
+
+  test('an admin sets the boost — raises prominence + writes one audit row', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    const id = await onlyBodyId(t)
+    const before = await t.run((ctx) => ctx.db.get(id))
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin')
+
+    await asAdmin.mutation(api.waterBodies.setCuratedBoost, { waterBodyId: id, curatedBoost: 1 })
+    const after = await t.run((ctx) => ctx.db.get(id))
+    expect(after?.curatedBoost).toBe(1)
+    // A higher score ⇒ an equal-or-lower minVisibleZoom (drawn at a wider zoom).
+    expect(after?.minVisibleZoom ?? 99).toBeLessThanOrEqual(before?.minVisibleZoom ?? 99)
+
+    const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect())
+    expect(actions).toHaveLength(1)
+    expect(actions[0]?.action).toBe('set_curated_boost')
+    expect(actions[0]?.metadata?.curatedBoost).toBe(1)
+  })
+
+  test('throws for a missing body', async () => {
+    const t = convexTestWithGeo()
+    const asAdmin = await seedUser(t, 'clerk_admin', 'admin')
+    const dangling = await t.run(async (ctx) => {
+      const cid = await ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        source: 'osm',
+        externalId: 'osm/gone',
+        dedupStatus: 'clean',
+        createdAt: Date.now(),
+      })
+      await ctx.db.delete(cid)
+      return cid
+    })
+    await expect(
+      asAdmin.mutation(api.waterBodies.setCuratedBoost, { waterBodyId: dangling, curatedBoost: 1 }),
+    ).rejects.toThrow(/not found/i)
+  })
+})
+
+describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
+  test('a wide zoom returns only prominent bodies; a deep zoom returns all', async () => {
+    const t = convexTestWithGeo()
+    // Both small-bbox (tier-1) and both inside VIEWPORT_CONTAINING, but very different areas:
+    // a huge lake (minVisibleZoom ~6) vs. a tiny pond (~14).
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/prominent',
+          name: 'Prominent',
+          surfaceAreaSqM: 1_000_000_000,
+          bbox: { minLat: 0.4, minLng: 0.4, maxLat: 0.42, maxLng: 0.42 },
+          centroid: { lat: 0.41, lng: 0.41 },
+        },
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/tiny',
+          name: 'Tiny',
+          surfaceAreaSqM: 200,
+          bbox: { minLat: 0.5, minLng: 0.5, maxLat: 0.52, maxLng: 0.52 },
+          centroid: { lat: 0.51, lng: 0.51 },
+        },
+      ],
+    })
+    const wide = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      zoom: 6,
+    })
+    expect(wide.map((b) => b.name)).toEqual(['Prominent'])
+
+    const deep = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
+    })
+    expect(deep.map((b) => b.name).sort()).toEqual(['Prominent', 'Tiny'])
+  })
+
+  test('the zoom cutoff also drops a low-prominence LARGE body (tier-2 refine)', async () => {
+    const t = convexTestWithGeo()
+    // A large-bbox (isLarge → tier-2) but tiny-area body: minVisibleZoom ~14. At a wide zoom the
+    // tier-2 JS refine must drop it (the geospatial sortKey filter only guards tier 1).
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/bigfaint',
+          name: 'Big Faint',
+          surfaceAreaSqM: 200, // tiny area ⇒ high minVisibleZoom
+          bbox: { minLat: 0, minLng: 0, maxLat: 0.5, maxLng: 0.5 }, // wide ⇒ isLarge (tier-2)
+          centroid: { lat: 0.25, lng: 0.25 },
+        },
+      ],
+    })
+    expect((await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0]?.isLarge).toBe(true)
+    const wide = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      zoom: 6,
+    })
+    expect(wide).toHaveLength(0) // present spatially, but dropped by the zoom cutoff
+    const deep = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
+    })
+    expect(deep.map((b) => b.name)).toEqual(['Big Faint'])
+  })
+})

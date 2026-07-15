@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  CONDITION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
+  PRECIP_TYPES,
   SKATE_QUALITIES,
+  SKY_CONDITIONS,
   SURFACE_TAGS,
+  THICKNESS_METHODS,
   USER_ROLES,
   USER_STATUSES,
   VISIBILITY_LEVELS,
@@ -33,12 +37,23 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
     ])
   })
 
+  it('thickness methods match the confirmed list', () => {
+    expect([...THICKNESS_METHODS]).toEqual(['measured', 'estimated'])
+  })
+
+  it('conditions vocab matches the confirmed lists (D19)', () => {
+    expect([...SKY_CONDITIONS]).toEqual(['clear', 'partly_cloudy', 'overcast', 'precip'])
+    expect([...PRECIP_TYPES]).toEqual(['none', 'rain', 'snow', 'sleet'])
+    expect([...CONDITION_SOURCES]).toEqual(['user', 'openmeteo'])
+  })
+
   it('surface tags match the confirmed list', () => {
     expect([...SURFACE_TAGS]).toEqual([
       'glass',
       'smooth',
       'rough',
       'bumpy',
+      'orange_peel',
       'rubble',
       'cracked_surface',
       'snow_covered',

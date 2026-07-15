@@ -101,9 +101,17 @@ test plan.
 
 ## Workstreams (web PR — in dependency order)
 
-### A. `@skating/core` additions (pure, tested first)
+### A. `@skating/core` additions (pure, tested first) — ✅ DONE (2026-07-13)
 The logic both Convex and the apps need, kept framework-free and property-tested (D40). All land
 before anything consumes them.
+
+> **Shipped:** `display.ts` (`displayScore` + integer-bucket `minVisibleZoom`), `report.ts`
+> (`validateReportInput` + normalization, incl. the D41 visibility-ceiling check), and
+> `maxVisibilityForProfile` in `visibility.ts`. Also **relocated the shared report vocab** into
+> `@skating/core` `types.ts` so the form + validator draw from one source: `THICKNESS_METHODS`,
+> `SKY_CONDITIONS`, `PRECIP_TYPES`, `CONDITION_SOURCES` (were Convex-only in `lib/enums.ts`; the
+> schema now imports them from core), plus the `orange_peel` surface tag. Core: 138 tests, 100%
+> coverage; all packages typecheck.
 
 - **`display.ts` (D49):**
   - `displayScore({ surfaceAreaSqM, curatedBoost? }): number` — `normalize(log(area)) +
@@ -139,30 +147,42 @@ before anything consumes them.
     (property test); a minimal "notes-only" report validates; **a locked/minor profile can't set
     `public`** (clamp/reject).
 
-### B. Convex schema + geospatial
+### B. Convex schema + geospatial — ✅ DONE (2026-07-13)
 Minimal — the report/photo/comment tables already exist in full (Phase 0 schema). Only additive,
 migration-free optional fields.
+
+> **Shipped:** `displayScore`/`curatedBoost`/`minVisibleZoom` on `waterBodies`; `minVisibleZoom`
+> wired as the geospatial **`sortKey`** across every insert (import/create/approve/remove/restore/
+> backfill/setCuratedBoost). Confirmed the sortKey range filter works in `convex-test`.
 - **`waterBodies`:** add `displayScore?: number`, `curatedBoost?: number`, and the derived integer
   `minVisibleZoom?: number` (D49). Optional ⇒ no migration; computed on `importCanonical` /
   `create` / `setCuratedBoost`. Backfilled onto the existing Vermont corpus by re-running the
   chunked ETL loader (same path Phase 1 used for `isLarge`).
-- **`lib/geospatial.ts` (changed — the D49 fix, decided 2026-07-13):** the geospatial index gains a
-  **numeric `minVisibleZoom` filter dimension** alongside `listed`, so `listInViewport` filters
-  `minVisibleZoom <= zoom` *inside* the query. This is what makes wide zooms return the *few
-  prominent* bodies (Lake Morey guaranteed via `curatedBoost`) rather than an arbitrary read-capped
-  slice — a post-fetch JS refine could not, because the read cap fills before the prominent body is
-  reached. **Spike first:** confirm `@convex-dev/geospatial` supports a numeric **range** filter
-  key; if it only does equality, fall back to (a) an equality set over discrete integer zoom buckets
-  `minVisibleZoom in {…≤ zoom}`, or (b) a numeric **sort** by `displayScore` taking top-N. Reindex
-  cost: writing `minVisibleZoom` is one geospatial re-insert per body (the ETL loader batches under
-  the read cap; a full-corpus backfill paginates).
+- **`lib/geospatial.ts` (changed — the D49 fix; spike confirmed 2026-07-13):** store the integer
+  **`minVisibleZoom` as the geospatial entry's `sortKey`** (the 5th `insert` arg — Phase 1 parks
+  `createdAt` there, which nothing reads). `listInViewport` filters `q.lt('sortKey', zoom + 1)`
+  (i.e. `minVisibleZoom <= zoom`) *inside* the query, so wide zooms return only the *few prominent*
+  bodies (Lake Morey guaranteed via `curatedBoost`) rather than an arbitrary read-capped slice — a
+  post-fetch JS refine could not, because the read cap fills before the prominent body is reached.
+  **Confirmed:** `@convex-dev/geospatial@0.2.1` exposes `sortKey` with `.gte`/`.lt` range filters,
+  and results order by `sortKey` — so a capped query keeps the *most prominent* bodies, not an
+  arbitrary slice. `listed` stays a boolean `filterKey` (still refined in JS per the Phase 1
+  read-cap note, not passed to the query). Reindex cost: writing `minVisibleZoom` is one geospatial
+  re-insert per body (the ETL loader batches under the read cap; a full-corpus backfill paginates).
 - **`reports`:** no schema change for web. *(An optional `idempotencyKey?` for the offline queue
   lands with the **mobile** PR, D30 — additive then.)* `reports.point` is already required in the
   schema; `create` fills it from the optional put-in pin, else the body centroid (Workstream C).
 - **No `reports.point` geospatial index this phase** — report feeds query the existing
   `by_water_body_skate_time` DB index; near-me/cross-body geospatial is Phase 5/6.
 
-### C. Convex functions + `convex-test`
+### C. Convex functions + `convex-test` — ✅ DONE (2026-07-13)
+
+> **Shipped:** `waterBodies` `get` (merged→survivor redirect + unavailable signal) + `setCuratedBoost`
+> + `importCanonical`/`listInViewport` D49 wiring; `reports.ts` (`create`/`listByWaterBody`/`get`/
+> `update`) with the server-side visibility clamp + put-in-pin/centroid + merged-target resolution +
+> photo-ownership check; `photos.ts` (`generateUploadUrl`/`create` with the D42 coord gate/`getUrls`
+> with null-URL guard). `convex-test`: all convex source at 100% coverage.
+
 - **`waterBodies.ts` additions:**
   - `get` (query) — single body detail (name, type, area, polygon, centroid); **follows
     `mergedIntoId` to the survivor** (a link to a merged duplicate resolves to the canonical body,
@@ -205,8 +225,28 @@ migration-free optional fields.
   high-`minVisibleZoom` (low-prominence) body is absent at wide zoom while a boosted body appears;
   `setCuratedBoost` gates on `admin`, recomputes `minVisibleZoom`, + writes the audit row.
 
-### D. Web UI — read + map (the loop, read side)
-- **`WaterMap.tsx`:** add a click/tap handler → set MapLibre **feature-state** highlight on the
+### D. Web UI — read + map (the loop, read side) — ✅ DONE (2026-07-13)
+
+> **Shipped:** interactive `MapView` (tap→`/water/$id`, feature-state highlight, zoom passed into
+> `listInViewport` for the D49 filter, browser-geolocation framing, drawer-driven fly-to + report
+> photo pins), kept mounted across a pathless `_map` layout with `/`, `/water/$id`, `/report/$id`
+> children so pan/zoom survive opening a drawer. Selection is **URL-backed + deep-linkable**;
+> water-body detail (merged→survivor silent redirect, not-found vs. removed states, imperial area,
+> report feed) and report detail (all fields imperial via a pure `reportDisplay`, photos, author,
+> back-link, `placeOnMap` pins) render in a shadcn **Sheet** drawer. Read-side needed a small
+> additive `profiles.publicByIds` query for author attribution (+ test). Pure helpers
+> (`reportDisplay`, `mapSelection`, `waterMap` additions) unit-tested at 100%; a `ReportView`
+> component test covers imperial rendering; MapLibre shell excluded from coverage.
+>
+> **shadcn/ui (Base UI) adopted (2026-07-13).** Initialized shadcn on the **Base UI** variant
+> (`@base-ui/react`, `base-nova` style) — `components.json`, a `@`→`src` alias (tsconfig + Vite +
+> Vitest), and parity-safe token aliases in `app.css` mapping shadcn roles onto the `@skating/design`
+> tokens (var-references, so the hex-parity guard is unaffected). Added `sheet`/`card`/`badge`/
+> `skeleton`/`separator`/`checkbox`; **full pass** migrated hand-rolled UI to shadcn primitives
+> (`Panel`/`AuthCard`/settings/crash-fallback → `Card`, `RiskAckConsent` → `Checkbox`, `Button`
+> regenerated). `pnpm build` green.
+
+- **`MapView.tsx` (was `WaterMap.tsx`):** add a click/tap handler → set MapLibre **feature-state** highlight on the
   tapped body → open its detail; pass `zoom` into `listInViewport`; render by the D49 zoom filter.
   Home/water framing on open via the **browser geolocation API** (D12/D20: on-water ⇒ fit to that
   body; else center on location; else fall back to the Vermont region), setting only the *initial*
@@ -224,7 +264,26 @@ migration-free optional fields.
   Testing Library) for detail rendering + imperial formatting; the imperative MapLibre shell stays
   excluded from coverage (Phase 1 precedent).
 
-### E. Web UI — write (report creation)
+### E. Web UI — write (report creation) — ✅ DONE (2026-07-13)
+
+> **Shipped:** `ReportForm` (a shadcn **Dialog** opened from the water-body drawer, D47) —
+> split into a presentational, Convex-free `ReportFormFields` (fully testable) + a container that
+> wires the profile-derived/clamped visibility (D41), the photo pipeline, and the map put-in pin.
+> All ice/surface/quality/sky/precip/method/visibility pickers ride the shadcn (Base UI)
+> `ToggleGroup` (multi + single-element patterns; no `Select`); multi-reading thickness add/remove
+> with a value⇄range toggle; imperial input → metric storage (D25) via a pure `lib/reportForm.ts`
+> (`buildReportInput`, `visibilityOptions`, datetime-local round-trip) validated by
+> `validateReportInput` before submit. **Photo pipeline** (`components/photoPipeline.ts`, browser-only
+> glue): HEIC→JPEG decode (`heic2any`), EXIF GPS/timestamp read (`exifr`) *before* a downscale +
+> EXIF-strip re-encode (`browser-image-compression`) → Convex storage upload → `photos.create`, with
+> `coord` sent only on the per-photo `placeOnMap` opt-in (`lib/photo.ts` `photoUploadCoord`, D42).
+> **Put-in pin:** the drawer went **non-modal** (`Sheet showOverlay={false}` + `modal={false}`) so the
+> map stays tappable; "Set access point" arms `pinDropMode` in `MapSelectionContext`, the next map tap
+> sets `putInPin` (green marker), and the Dialog stays mounted (state preserved) while hidden during
+> the drop. New deps: `exifr`, `browser-image-compression`, `heic2any`. Pure libs 100%; a
+> `ReportFormFields` component test covers the visibility clamp, thickness add/remove/XOR, put-in
+> pin, and the photo geotag opt-in. `pnpm build` green.
+
 - **Report create form** (in-place on Map/detail, D47): ice types (`ICE_TYPES` multi-select),
   surface tags (`SURFACE_TAGS`), coarse `skateQuality`, **multi-reading thickness** (add/remove;
   value XOR range; measured/estimated), snow cover, optional **manual** conditions, **photos**,
@@ -352,9 +411,10 @@ PR; commits map to §A–§E):
   **→ Phase 4:** per-body `curatedBoost` must be **editable from the admin water-body surface**
   (set/adjust the boost on any body through the UI), not only via a seed script — same "don't bury
   it in code" principle as the score constants above.
-- **Geospatial numeric-filter spike** — before wiring Workstream B, confirm `@convex-dev/geospatial`
-  supports a numeric **range** filter key for `minVisibleZoom <= zoom`; pick the fallback (integer
-  bucket equality-set, or `displayScore` sort) if not.
+- **Geospatial numeric-filter spike — DONE (2026-07-13):** `@convex-dev/geospatial@0.2.1` supports a
+  numeric `sortKey` range (`.gte`/`.lt`). Approach locked: `minVisibleZoom` = `sortKey`;
+  `listInViewport` filters `q.lt('sortKey', zoom + 1)`. Validate the result counts against the
+  9,967-body corpus during implementation (the filter should shrink wide-zoom reads, not grow them).
 
 ## Risks / watch-outs
 - **Report-form surface area is large** — the ice/surface/thickness/conditions vocab is real

@@ -9,7 +9,7 @@
  * which `listInViewport` enforces when refining viewport results (see its read-cap note).
  */
 
-import { bboxIntersects, WATER_BODY_TYPES } from '@skating/core'
+import { bboxIntersects, displayScore, minVisibleZoom, WATER_BODY_TYPES } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
@@ -91,6 +91,25 @@ function isLargeBody(b: { minLat: number; minLng: number; maxLat: number; maxLng
 }
 
 /**
+ * Derived display-prominence fields (D49) from a body's area + admin boost. `minVisibleZoom` is
+ * stored on the row AND used as the geospatial `sortKey` (see `listInViewport` / `./lib/geospatial`),
+ * so a wide-zoom query returns the most-prominent bodies first and filters the rest out in-query.
+ */
+function scoreFields(input: { surfaceAreaSqM?: number; curatedBoost?: number }) {
+  const score = displayScore(input)
+  return { displayScore: score, minVisibleZoom: minVisibleZoom(score) }
+}
+
+/**
+ * The geospatial `sortKey` for a stored body — its `minVisibleZoom` (D49), recomputed from area +
+ * boost. Used when a mutation re-inserts the geospatial entry without changing score inputs
+ * (`approve`/`remove`/`restore`), so the key stays correct even for a legacy row missing the field.
+ */
+function zoomSortKey(body: { surfaceAreaSqM?: number; curatedBoost?: number }): number {
+  return scoreFields(body).minVisibleZoom
+}
+
+/**
  * Internal, never client-callable: idempotently upsert a batch of canonical bodies (D14/D48).
  * Load via `pnpm exec convex run` from the ETL (chunk batches for the mutation size limit).
  * Keyed on `by_external_id` (`(source, externalId)`), so OSM and NHD stay distinct even when a
@@ -115,7 +134,12 @@ export const importCanonical = internalMutation({
         .unique()
 
       if (existing) {
-        // Patch geometry/name/area only; removed*/reviewStatus/dedupStatus are preserved.
+        // Patch geometry/name/area + re-derived scores; removed*/reviewStatus/dedupStatus/
+        // curatedBoost are preserved. Score uses the new area + the *preserved* admin boost (D49).
+        const scores = scoreFields({
+          surfaceAreaSqM: item.surfaceAreaSqM,
+          curatedBoost: existing.curatedBoost,
+        })
         await ctx.db.patch(existing._id, {
           name: item.name,
           type: item.type,
@@ -124,18 +148,21 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
+          ...scores,
         })
-        // Re-derive listing from the preserved fields (removed stays removed, D48).
+        // Re-derive listing from the preserved fields (removed stays removed, D48); sortKey =
+        // minVisibleZoom (D49) so the zoom filter works.
         await waterBodiesGeo.insert(
           ctx,
           existing._id,
           { latitude: item.centroid.lat, longitude: item.centroid.lng },
           { listed: isListed(existing) },
-          existing.createdAt,
+          scores.minVisibleZoom,
         )
         updated++
       } else {
         const now = Date.now()
+        const scores = scoreFields({ surfaceAreaSqM: item.surfaceAreaSqM }) // no boost on import
         const id = await ctx.db.insert('waterBodies', {
           name: item.name,
           type: item.type,
@@ -146,6 +173,7 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
+          ...scores,
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
         })
@@ -154,7 +182,7 @@ export const importCanonical = internalMutation({
           id,
           { latitude: item.centroid.lat, longitude: item.centroid.lng },
           { listed: true },
-          now,
+          scores.minVisibleZoom,
         )
         inserted++
       }
@@ -185,13 +213,22 @@ export const backfillListed = internalMutation({
     const bodies = await ctx.db.query('waterBodies').collect()
     for (const body of bodies) {
       const isLarge = isLargeBody(body.bbox)
-      if (body.isLarge !== isLarge) await ctx.db.patch(body._id, { isLarge })
+      const scores = scoreFields({
+        surfaceAreaSqM: body.surfaceAreaSqM,
+        curatedBoost: body.curatedBoost,
+      })
+      const patch: Partial<Doc<'waterBodies'>> = {}
+      if (body.isLarge !== isLarge) patch.isLarge = isLarge
+      if (body.displayScore !== scores.displayScore) patch.displayScore = scores.displayScore
+      if (body.minVisibleZoom !== scores.minVisibleZoom)
+        patch.minVisibleZoom = scores.minVisibleZoom
+      if (Object.keys(patch).length > 0) await ctx.db.patch(body._id, patch)
       await waterBodiesGeo.insert(
         ctx,
         body._id,
         { latitude: body.centroid.lat, longitude: body.centroid.lng },
         { listed: isListed(body) },
-        body.createdAt,
+        scores.minVisibleZoom,
       )
     }
     return { reindexed: bodies.length }
@@ -213,6 +250,7 @@ export const create = mutation({
     // TODO(D36): match-on-create dedup (bbox prefilter → Turf IoU / name similarity)
     // to steer onto an existing body before inserting. Stubbed for the v1 scaffold.
     const now = Date.now()
+    const scores = scoreFields({ surfaceAreaSqM: args.surfaceAreaSqM }) // no boost on a new body
     const id = await ctx.db.insert('waterBodies', {
       name: args.name,
       type: args.type,
@@ -222,6 +260,7 @@ export const create = mutation({
       centroid: args.centroid,
       isLarge: isLargeBody(args.bbox),
       surfaceAreaSqM: args.surfaceAreaSqM,
+      ...scores,
       createdByUserId: profile._id,
       reviewStatus: 'pending', // auto-visible, review-after (D37)
       dedupStatus: 'clean', // default (D36)
@@ -229,12 +268,13 @@ export const create = mutation({
     })
     // Index the centroid for viewport lookups (D5); a pending user body is auto-visible
     // (D37/D48), so it lists immediately — `listed` is the filter key public queries use.
+    // sortKey = minVisibleZoom (D49).
     await waterBodiesGeo.insert(
       ctx,
       id,
       { latitude: args.centroid.lat, longitude: args.centroid.lng },
       { listed: isListed({ reviewStatus: 'pending', dedupStatus: 'clean' }) },
-      now,
+      scores.minVisibleZoom,
     )
     return id
   },
@@ -265,7 +305,7 @@ export const approve = mutation({
       args.waterBodyId,
       { latitude: body.centroid.lat, longitude: body.centroid.lng },
       { listed: isListed({ ...body, reviewStatus: 'approved' }) },
-      body.createdAt,
+      zoomSortKey(body),
     )
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
@@ -304,7 +344,7 @@ export const remove = mutation({
       args.waterBodyId,
       { latitude: body.centroid.lat, longitude: body.centroid.lng },
       { listed: isListed({ ...body, removedAt: now }) },
-      body.createdAt,
+      zoomSortKey(body),
     )
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
@@ -338,7 +378,7 @@ export const restore = mutation({
       args.waterBodyId,
       { latitude: body.centroid.lat, longitude: body.centroid.lng },
       { listed: isListed({ ...body, removedAt: undefined }) },
-      body.createdAt,
+      zoomSortKey(body),
     )
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
@@ -353,6 +393,63 @@ export const restore = mutation({
 })
 
 /**
+ * Public: a single water body for its detail view (D47). **Follows `mergedIntoId` to the survivor**
+ * (D36) so a deep link to a merged duplicate lands on the canonical body. Returns a discriminated
+ * result so the UI can tell apart the three cases:
+ *  - `null` — no such body (or a merge chain into a deleted survivor);
+ *  - `{ available: false }` — it exists but is unlisted (removed/rejected), so a friendly
+ *    "not available" state shows instead of a blank (vs. the `null` not-found);
+ *  - `{ available: true, body }` — a listed body to render.
+ */
+export const get = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    let body = await ctx.db.get(waterBodyId)
+    // Resolve the merge chain to the survivor; bounded hops guard a pathological cycle (D36).
+    for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
+      body = await ctx.db.get(body.mergedIntoId)
+    }
+    if (!body) return null
+    if (!isListed(body)) return { available: false as const }
+    return { available: true as const, body }
+  },
+})
+
+/**
+ * Admin: set a body's `curatedBoost` (D49), recompute `displayScore` + `minVisibleZoom`, re-insert
+ * the geospatial key so the new zoom prominence takes effect, and write a `moderationActions` row.
+ */
+export const setCuratedBoost = mutation({
+  args: { waterBodyId: v.id('waterBodies'), curatedBoost: v.number() },
+  handler: async (ctx, { waterBodyId, curatedBoost }) => {
+    const actor = await requireRole(ctx, 'admin')
+    const body = await ctx.db.get(waterBodyId)
+    if (!body) throw new ConvexError('Water body not found')
+
+    const scores = scoreFields({ surfaceAreaSqM: body.surfaceAreaSqM, curatedBoost })
+    await ctx.db.patch(waterBodyId, { curatedBoost, ...scores })
+    // Re-index with the new sortKey (minVisibleZoom) so listInViewport's zoom filter sees it.
+    await waterBodiesGeo.insert(
+      ctx,
+      waterBodyId,
+      { latitude: body.centroid.lat, longitude: body.centroid.lng },
+      { listed: isListed(body) },
+      scores.minVisibleZoom,
+    )
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_curated_boost',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason: `Set curatedBoost to ${curatedBoost}`,
+      metadata: { curatedBoost, minVisibleZoom: scores.minVisibleZoom },
+      createdAt: Date.now(),
+    })
+    return waterBodyId
+  },
+})
+
+/**
  * Public: water bodies whose **bbox intersects** the viewport (D5/D48). Two-tier — see the
  * `VIEWPORT_MARGIN_DEG` / `LARGE_BODY_EXTENT_DEG` note above for why:
  *  - **Tier 1:** a centroid prefilter over the viewport + a small margin (`listed == true`),
@@ -361,10 +458,17 @@ export const restore = mutation({
  * Both tiers are refined by `bboxIntersects` + `isListed`, then merged (a large body can appear
  * in both). `listed` filters to canonical + auto-visible/approved user bodies (not rejected,
  * merged, or removed).
+ *
+ * **Zoom-scored prominence (D49).** When the client passes its current `zoom`, tier 1 additionally
+ * filters `sortKey <= zoom` (sortKey = `minVisibleZoom`) *inside* the geospatial query, and tier 2
+ * applies the same cutoff in JS. So a wide zoom returns only the prominent bodies (Lake Champlain,
+ * a boosted Lake Morey) instead of an arbitrary read-capped slice — and because the component orders
+ * by `sortKey`, a capped query keeps the *most prominent* bodies. Omitting `zoom` disables the
+ * filter (returns all listed bodies in view), preserving the pre-D49 behavior.
  */
 export const listInViewport = query({
-  args: { viewport: bbox, limit: v.optional(v.number()) },
-  handler: async (ctx, { viewport, limit }) => {
+  args: { viewport: bbox, limit: v.optional(v.number()), zoom: v.optional(v.number()) },
+  handler: async (ctx, { viewport, limit, zoom }) => {
     const effectiveLimit = sanitizeLimit(limit)
 
     // Tier 1 — centroid prefilter over the viewport expanded by the (small) margin. The
@@ -395,7 +499,14 @@ export const listInViewport = query({
     do {
       const page = await waterBodiesGeo.query(
         ctx,
-        { shape: { type: 'rectangle', rectangle }, limit: effectiveLimit },
+        {
+          shape: { type: 'rectangle', rectangle },
+          limit: effectiveLimit,
+          // D49: keep only bodies visible at this zoom. sortKey = minVisibleZoom, and `.lt` is
+          // exclusive, so `< zoom + 1` means `minVisibleZoom <= zoom`. Ranges over the sort
+          // dimension (unlike the `listed` filter-key intersection) don't lower the read cap.
+          ...(zoom !== undefined ? { filter: (q) => q.lt('sortKey', zoom + 1) } : {}),
+        },
         cursor,
       )
       for (const { key } of page.results) keys.push(key)
@@ -427,7 +538,13 @@ export const listInViewport = query({
     // bbox-intersection + current listing (tier 2 isn't `listed`-filtered by the index).
     const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>()
     for (const body of [...tier1, ...tier2]) {
-      if (body && bboxIntersects(body.bbox, viewport) && isListed(body)) byId.set(body._id, body)
+      if (!body || !bboxIntersects(body.bbox, viewport) || !isListed(body)) continue
+      // D49 zoom cutoff — also applied to tier-2 (its short-list scan isn't sortKey-filtered). A
+      // legacy body missing `minVisibleZoom` is treated as visible (never silently hidden).
+      if (zoom !== undefined && body.minVisibleZoom !== undefined && body.minVisibleZoom > zoom) {
+        continue
+      }
+      byId.set(body._id, body)
     }
     return [...byId.values()]
   },

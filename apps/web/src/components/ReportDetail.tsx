@@ -1,0 +1,248 @@
+import { api } from '@skating/convex/api'
+import type { Id } from '@skating/convex/dataModel'
+import type { SkateQuality, Visibility } from '@skating/core'
+import { Link } from '@tanstack/react-router'
+import { useQuery } from 'convex/react'
+import { useEffect } from 'react'
+import {
+  formatConditions,
+  formatSkateTime,
+  formatSnowCoverInches,
+  formatThicknessReading,
+  humanizeEnum,
+  type ReportConditions,
+  SKATE_QUALITY_LABELS,
+  type ThicknessReading,
+  VISIBILITY_LABELS,
+} from '../lib/reportDisplay'
+import { DetailSkeleton, UnavailableState } from './DrawerStates'
+import { useMapSelection } from './MapSelectionContext'
+import { Badge } from './ui/badge'
+import { Separator } from './ui/separator'
+import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet'
+
+/** The plain data a report renders from — decoupled from Convex so `ReportView` is testable. */
+export interface ReportViewData {
+  waterBodyId: string
+  bodyName?: string
+  authorName?: string
+  skateTime: number
+  visibility: Visibility
+  skateQuality?: SkateQuality
+  iceTypes: string[]
+  surfaceTags: string[]
+  iceThickness?: { readings: ThicknessReading[] }
+  snowCoverCm?: number
+  conditions?: ReportConditions
+  notes?: string
+  photos: { photoId: string; url: string | null; thumbUrl: string | null; caption?: string }[]
+}
+
+/**
+ * Presentational report renderer (§D) — every stored value shown **imperial** (D25) via the pure
+ * `reportDisplay` helpers, so the formatting is unit-testable without Convex or a map. The container
+ * `ReportDetail` below feeds it live data; a test can feed it a fixture.
+ */
+export function ReportView({ data }: { data: ReportViewData }) {
+  const conditions = data.conditions ? formatConditions(data.conditions) : []
+  const readings = data.iceThickness?.readings ?? []
+
+  return (
+    <>
+      <SheetHeader>
+        <SheetTitle>{data.bodyName ?? 'Report'}</SheetTitle>
+        <SheetDescription>
+          {formatSkateTime(data.skateTime)}
+          {data.authorName ? ` · by ${data.authorName}` : ''}
+        </SheetDescription>
+      </SheetHeader>
+      <div className="flex flex-col gap-4 px-4 pb-4">
+        <div className="flex flex-wrap items-center gap-1">
+          {data.skateQuality ? (
+            <Badge variant="secondary">{SKATE_QUALITY_LABELS[data.skateQuality]}</Badge>
+          ) : null}
+          <Badge variant="outline">{VISIBILITY_LABELS[data.visibility]}</Badge>
+        </div>
+
+        {data.iceTypes.length > 0 ? (
+          <Section label="Ice types">
+            <Chips values={data.iceTypes} />
+          </Section>
+        ) : null}
+
+        {data.surfaceTags.length > 0 ? (
+          <Section label="Surface">
+            <Chips values={data.surfaceTags} />
+          </Section>
+        ) : null}
+
+        {readings.length > 0 ? (
+          <Section label="Thickness">
+            <ul className="flex flex-col gap-0.5 text-foreground text-sm">
+              {readings.map((reading, i) => {
+                const formatted = formatThicknessReading(reading)
+                return formatted ? (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: readings are an ordered, stable list.
+                  <li key={i}>{formatted}</li>
+                ) : null
+              })}
+            </ul>
+          </Section>
+        ) : null}
+
+        {data.snowCoverCm !== undefined ? (
+          <Section label="Snow cover">
+            <span className="text-foreground text-sm">
+              {formatSnowCoverInches(data.snowCoverCm)}
+            </span>
+          </Section>
+        ) : null}
+
+        {conditions.length > 0 ? (
+          <Section label="Conditions">
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+              {conditions.map((row) => (
+                <div key={row.label} className="contents">
+                  <dt className="text-foreground-muted">{row.label}</dt>
+                  <dd className="text-foreground">{row.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </Section>
+        ) : null}
+
+        {data.notes ? (
+          <Section label="Notes">
+            <p className="whitespace-pre-wrap text-foreground text-sm">{data.notes}</p>
+          </Section>
+        ) : null}
+
+        {data.photos.length > 0 ? (
+          <Section label="Photos">
+            <div className="flex flex-wrap gap-2">
+              {data.photos.map((photo) =>
+                photo.thumbUrl ? (
+                  <a
+                    key={photo.photoId}
+                    href={photo.url ?? photo.thumbUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <img
+                      src={photo.thumbUrl}
+                      alt={photo.caption ?? 'Report photo'}
+                      className="h-24 w-24 rounded-md object-cover"
+                    />
+                  </a>
+                ) : null,
+              )}
+            </div>
+          </Section>
+        ) : null}
+
+        <Separator />
+        <Link
+          to="/water/$id"
+          params={{ id: data.waterBodyId }}
+          className="text-primary text-sm underline-offset-4 hover:underline"
+        >
+          View the lake
+        </Link>
+      </div>
+    </>
+  )
+}
+
+function Section({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1">
+      <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">{label}</h3>
+      {children}
+    </div>
+  )
+}
+
+function Chips({ values }: { values: string[] }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {values.map((value) => (
+        <Badge key={value} variant="outline">
+          {humanizeEnum(value)}
+        </Badge>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Container for `/report/$id`: reads the report (visibility-checked server-side), its author + lake
+ * name + serving photo URLs, and pushes the lake highlight, a fly-to on the put-in point, and any
+ * `placeOnMap` photo pins (D42) up to the persistent map via `useMapSelection`.
+ */
+export function ReportDetail({ reportId }: { reportId: string }) {
+  const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> })
+  const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip')
+  const authors = useQuery(
+    api.profiles.publicByIds,
+    report ? { profileIds: [report.authorId] } : 'skip',
+  )
+  const photos = useQuery(
+    api.photos.getUrls,
+    report && report.photoIds.length > 0 ? { reportId: report._id } : 'skip',
+  )
+  const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection()
+
+  // Fly to the report's put-in point as soon as the report loads.
+  useEffect(() => {
+    if (report) setFocus({ lat: report.point.lat, lng: report.point.lng, zoom: 13 })
+  }, [report, setFocus])
+
+  // Highlight the lake by its *resolved survivor* id (what the map's features carry), so a report on
+  // a since-merged body still highlights the right polygon — not the stale stored `waterBodyId`.
+  useEffect(() => {
+    if (body?.available) setHighlightWaterBodyId(body.body._id)
+  }, [body, setHighlightWaterBodyId])
+
+  useEffect(() => {
+    setPhotoPins(
+      (photos ?? [])
+        .filter((photo) => photo.coord)
+        .map((photo) => ({
+          photoId: photo.photoId,
+          // biome-ignore lint/style/noNonNullAssertion: filtered to photos with a coord above.
+          coord: photo.coord!,
+          thumbUrl: photo.thumbUrl,
+        })),
+    )
+  }, [photos, setPhotoPins])
+
+  if (report === undefined) return <DetailSkeleton />
+  if (report === null) {
+    return (
+      <UnavailableState
+        title="Report not available"
+        message="This report may have been removed or isn't visible to you."
+      />
+    )
+  }
+
+  return (
+    <ReportView
+      data={{
+        waterBodyId: report.waterBodyId,
+        bodyName: body?.available ? body.body.name : undefined,
+        authorName: authors?.[report.authorId]?.displayName,
+        skateTime: report.skateTime,
+        visibility: report.visibility,
+        skateQuality: report.skateQuality,
+        iceTypes: report.iceTypes,
+        surfaceTags: report.surfaceTags,
+        iceThickness: report.iceThickness,
+        snowCoverCm: report.snowCoverCm,
+        conditions: report.conditions,
+        notes: report.notes,
+        photos: photos ?? [],
+      }}
+    />
+  )
+}

@@ -123,6 +123,13 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 > whole data model online before the native-build + offline-capture (D30) lift. No store/dev-account
 > dependency blocks it (web ships on Vercel; mobile needs only an EAS dev build + — for physical
 > iPhones — Apple Developer enrollment, which should start now in parallel).
+>
+> **Status (web MVP): ✅ shipped (2026-07-13)** — §A–§E complete: `@skating/core` scoring/validation,
+> Convex `reports`/`photos` + D49 geospatial zoom filter + `waterBodies.get`/`setCuratedBoost`, the
+> interactive map (tap→detail, geolocation framing, deep-linkable `/water/$id` · `/report/$id`
+> drawers), and report create (multi-reading thickness, manual conditions, put-in pin, photos with
+> HEIC decode + EXIF strip + geotag opt-in). Built on shadcn/ui (Base UI). **Mobile (§F) is the
+> follow-on PR** (native MapLibre + the offline draft queue, D30).
 
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
 - **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived

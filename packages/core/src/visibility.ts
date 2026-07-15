@@ -81,3 +81,17 @@ export interface DefaultVisibilityInput {
 export function deriveDefaultVisibility(input: DefaultVisibilityInput): Visibility {
   return input.profilePublic ? 'public' : 'followers'
 }
+
+/**
+ * The **widest** visibility a profile is allowed to post at (D41) — the ceiling both the report
+ * form (offered options) and `reports.create` (server re-enforce, D37) clamp/reject against. This
+ * is distinct from `deriveDefaultVisibility`'s *pre-selected default*: it's the hard cap.
+ *
+ * A locked/private profile can never reach `public`; a public profile can. Minors are always locked
+ * (seeded at signup, D41) and stay locked past 18 until they choose to unlock, so this keeps a minor
+ * off `public` by construction without a live age check. Narrower levels (`friends`/`just_me`) are
+ * always allowed — this only caps the top.
+ */
+export function maxVisibilityForProfile(input: { profilePublic: boolean }): Visibility {
+  return input.profilePublic ? 'public' : 'followers'
+}

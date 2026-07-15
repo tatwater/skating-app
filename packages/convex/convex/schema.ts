@@ -13,10 +13,14 @@
  */
 
 import {
+  CONDITION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
+  PRECIP_TYPES,
   SKATE_QUALITIES,
+  SKY_CONDITIONS,
   SURFACE_TAGS,
+  THICKNESS_METHODS,
   USER_ROLES,
   USER_STATUSES,
   VISIBILITY_LEVELS,
@@ -29,7 +33,6 @@ import {
   ACTIVITY_PROVIDERS,
   BOUNTY_STATUSES,
   COMMENT_SOURCES,
-  CONDITION_SOURCES,
   DEDUP_STATUSES,
   FLAG_REASONS,
   FLAG_STATUSES,
@@ -44,15 +47,12 @@ import {
   NOTIFICATION_PREF_KEYS,
   NOTIFICATION_TYPES,
   POINT_EVENT_REASONS,
-  PRECIP_TYPES,
   RATING_VERDICTS,
   REMOVAL_REASONS,
   REPORT_SOURCES,
   REVIEW_STATUSES,
-  SKY_CONDITIONS,
   SUPPORT_CATEGORIES,
   SUPPORT_STATUSES,
-  THICKNESS_METHODS,
   WATER_BODY_SOURCES,
 } from './lib/enums'
 import { bbox, boolFlags, geoJson, latLng, literals } from './lib/validators'
@@ -132,6 +132,14 @@ export default defineSchema({
     // bbox extent at import/create; see `waterBodies.listInViewport`.
     isLarge: v.optional(v.boolean()),
     surfaceAreaSqM: v.optional(v.number()),
+    // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
+    // `minVisibleZoom` is its integer bucket, ALSO written as the geospatial `sortKey` so
+    // `listInViewport` filters `minVisibleZoom <= zoom` in-query. All optional ⇒ migration-free;
+    // computed on import/create/setCuratedBoost. `curatedBoost` is admin-set (D49), preserved on
+    // re-import like the other curation fields.
+    displayScore: v.optional(v.number()),
+    curatedBoost: v.optional(v.number()),
+    minVisibleZoom: v.optional(v.number()),
     createdByUserId: v.optional(v.id('profiles')), // when source == user
     reviewStatus: v.optional(literals(REVIEW_STATUSES)), // source==user only (D37)
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)

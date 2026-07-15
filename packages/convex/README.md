@@ -23,25 +23,40 @@ and a Clerk JWT template named `convex`).
 - **`convex/lib/`** — `auth.ts` (identity + role/status gating), `validators.ts`
   (`literals`, `boolFlags`, `latLng`, `bbox`, `geoJson`), `enums.ts`, `geospatial.ts`
   (typed `@convex-dev/geospatial` index of water-body centroids, filtered by the derived
-  `listed` boolean, D5/D48), `listing.ts` (the `isListed` derivation).
+  `listed` boolean, D5/D48; the entry **`sortKey` holds the derived integer `minVisibleZoom`**
+  for the D49 in-query zoom filter), `listing.ts` (the `isListed` derivation).
 - **`convex/convex.config.ts`** — the app definition; `app.use(geospatial)` installs the
   geospatial component (its `components.geospatial` handle powers `lib/geospatial.ts`).
 - **`convex/profiles.ts`** — `current` + `upsertFromClerk` (idempotent Clerk→profile
-  bridge; enforces the 16+ gate and username uniqueness).
+  bridge; enforces the 16+ gate and username uniqueness) + `publicByIds` (minimal public
+  attribution — `username`/`displayName` keyed by id — for report feeds/detail, Phase 2).
 - **`convex/waterBodies.ts`** — internal `importCanonical` (idempotent OSM/NHD upsert keyed
-  on `by_external_id`, preserves removed state across re-import, D14/D48) + `backfillListed`
-  (small-scale key/field migration); user `create` (queued for after-the-fact review, D37),
-  moderator `approve`, admin `remove`/`restore` (reversible soft-delist + audit row, D48),
-  `listInViewport` (**two-tier bbox-intersection** viewport query, D5 — see below),
-  `listPendingReview`.
+  on `by_external_id`, preserves removed state across re-import, D14/D48; now also computes the
+  D49 `displayScore`/`minVisibleZoom`) + `backfillListed` (small-scale key/field migration);
+  user `create` (queued for after-the-fact review, D37), moderator `approve`, admin
+  `remove`/`restore` (reversible soft-delist + audit row, D48); public **`get`** (single-body
+  detail; follows `mergedIntoId` to the survivor, flags removed/unlisted vs not-found, D36/D47),
+  admin **`setCuratedBoost`** (recompute score + re-index + audit, D49), `listInViewport`
+  (**two-tier bbox-intersection** viewport query with the optional D49 `zoom` prominence filter —
+  see below), `listPendingReview`.
+- **`convex/reports.ts`** — the read/write loop (D3/D22–D25/D41): `create` (`requireProfile`,
+  re-enforces `@skating/core` `validateReportInput` + the visibility ceiling, resolves the merged
+  survivor, defaults `point` to the body centroid, server-stamps `reportTime`), `listByWaterBody`
+  (feed by **skate time** desc, visibility-filtered per viewer via `canViewReport`), `get`
+  (visibility-checked), `update` (author-only last-write-wins).
+- **`convex/photos.ts`** — `generateUploadUrl` (auth'd storage upload URL), `create` (records a
+  `photos` row; **drops `coord` unless `placeOnMap === true`, D42** — enforced server-side),
+  `getUrls` (resolve full/thumb serving URLs, null-guarded).
 - **`convex/basemap.ts`** — internal `generateUploadUrl` / `getServingUrl`: the ops path for
   hosting the self-built Vermont `.pmtiles` basemap in Convex file storage (Phase 1, PR#5, D6 —
   its serving URL honors HTTP `Range` + CORS, which `pmtiles://` requires). Invoked by
   [`scripts/basemap`](../../scripts/basemap/README.md), never client-callable.
 - **`convex/*.test.ts`** — `convex-test` suites: auth/role/suspension gating, upsert
-  idempotency + age/username invariants, approve/remove/restore → audit-log paths, and the
+  idempotency + age/username invariants, approve/remove/restore → audit-log paths, the
   two-tier `listInViewport` (small-body prefilter, off-screen-centroid large body, refine,
-  cap-truncation log).
+  cap-truncation log) **+ the D49 zoom cutoff / `setCuratedBoost` recompute + audit**, `get`'s
+  merged-redirect/unavailable signal, report `create`/`listByWaterBody` visibility + centroid
+  default + locked-author clamp, and photo `create` dropping `coord` without `placeOnMap`.
 
 ## Deviations & deferrals (flagged for review)
 
@@ -56,8 +71,11 @@ and a Clerk JWT template named `convex`).
   short list (bbox extent > the margin) directly — the handful of big lakes. Both refined by
   `@skating/core`'s `bboxIntersects` + `isListed`. A naïve single blanket expansion returned
   **0** at the 9,967-body Vermont scale (read-cap truncation) — see the `listInViewport`
-  doc-comment + `plans/phase-1-water-bodies.md`. Still deferred: indexing `reports.point`, and
-  the D49 zoom-scored display score that replaces the wide-zoom cap (Phase 2).
+  doc-comment + `plans/phase-1-water-bodies.md`. **D49 (Phase 2) shipped:** the derived integer
+  `minVisibleZoom` rides the geospatial entry's `sortKey`, and `listInViewport(zoom?)` filters
+  `sortKey <= zoom` *inside* the query, so wide zooms return the few prominent bodies (a boosted
+  Lake Morey guaranteed) instead of an arbitrary read-capped slice. Still deferred: a geospatial
+  index on `reports.point` (near-me / cross-body queries, Phase 5/6).
 - **`geoJson` is now a structured GeoJSON-geometry validator** (`lib/validators.ts`),
   not `v.any()` — a discriminated union over Point/MultiPoint/Line/MultiLine/Polygon/
   MultiPolygon that rejects unknown `type`s and wrong nesting at the mutation boundary.
