@@ -29,10 +29,8 @@ import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { getCurrentProfile, requireProfile } from './lib/auth'
 import { isListed } from './lib/listing'
+import { getViewableReport, NO_RELATIONSHIP } from './lib/reportVisibility'
 import { latLng, literals } from './lib/validators'
-
-/** Viewer relationship until the follow graph exists (Phase 3): no follows, no blocks. */
-const NO_RELATIONSHIP = { viewerFollowsAuthor: false, authorFollowsViewer: false, blocked: false }
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
 const reportContent = {
@@ -210,15 +208,7 @@ export const listByWaterBody = query({
 /** A single report for its detail view — visibility-checked, hidden/removed excluded. */
 export const get = query({
   args: { reportId: v.id('reports') },
-  handler: async (ctx, { reportId }) => {
-    const report = await ctx.db.get(reportId)
-    if (report?.moderationStatus !== 'visible') return null
-    const viewer = await getCurrentProfile(ctx)
-    if (!canViewReport(viewer?._id ?? '', report.authorId, report.visibility, NO_RELATIONSHIP)) {
-      return null
-    }
-    return report
-  },
+  handler: (ctx, { reportId }) => getViewableReport(ctx, reportId),
 })
 
 /**

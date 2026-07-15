@@ -188,7 +188,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   )
   const photos = useQuery(
     api.photos.getUrls,
-    report && report.photoIds.length > 0 ? { photoIds: report.photoIds } : 'skip',
+    report && report.photoIds.length > 0 ? { reportId: report._id } : 'skip',
   )
   const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection()
 
