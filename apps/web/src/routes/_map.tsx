@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, useRouterState } from '@tanstack/react-router'
 import { lazy, Suspense, useEffect, useState } from 'react'
+import { LakeSearch } from '../components/LakeSearch'
 import { MapSelectionProvider, useMapSelection } from '../components/MapSelectionContext'
 import { parseMapSelection } from '../lib/mapSelection'
 
@@ -49,6 +50,7 @@ function MapLayoutInner() {
 
   return (
     <div className="flex flex-col gap-2">
+      <LakeSearch />
       {mounted ? (
         <Suspense fallback={<MapSkeleton />}>
           <MapView geolocateOnMount={geolocateOnMount} />

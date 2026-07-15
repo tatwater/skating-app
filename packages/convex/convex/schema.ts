@@ -123,6 +123,11 @@ export default defineSchema({
     type: literals(WATER_BODY_TYPES),
     source: literals(WATER_BODY_SOURCES),
     externalId: v.optional(v.string()), // OSM/NHD id when source != user
+    // Admin regions (2-letter US state codes) the body falls in, unioned from the per-state ETL
+    // extracts at import — a border-spanning body (Lake Champlain) appears in multiple state
+    // extracts and accumulates e.g. ["NY","VT"]. Powers the search-result location label +
+    // curatedBoost disambiguation (Phase 2.5). Optional ⇒ migration-free.
+    states: v.optional(v.array(v.string())),
     polygon: geoJson, // Polygon / MultiPolygon (rivers: the reach/segment)
     bbox, // prefilter index
     centroid: latLng, // geospatial point index (D5)
@@ -153,7 +158,8 @@ export default defineSchema({
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
     .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
     .index('by_external_id', ['source', 'externalId']) // idempotent canonical upsert (D14/D48)
-    .index('by_is_large', ['isLarge']), // large-body short list for listInViewport tier 2 (D5)
+    .index('by_is_large', ['isLarge']) // large-body short list for listInViewport tier 2 (D5)
+    .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
 
   reports: defineTable({
     authorId: v.id('profiles'),

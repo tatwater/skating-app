@@ -75,4 +75,9 @@ describe('frameForCoord', () => {
   it('returns null for a fix outside the region (keep the default framing)', () => {
     expect(frameForCoord({ lat: 37.77, lng: -122.42 })).toBeNull()
   })
+
+  it('includes the wider Northeast region (Phase 2.5) that the old VT-only bounds excluded', () => {
+    expect(frameForCoord({ lat: 43.66, lng: -70.25 })).not.toBeNull() // Portland, ME
+    expect(frameForCoord({ lat: 42.89, lng: -78.88 })).not.toBeNull() // Buffalo, NY
+  })
 })

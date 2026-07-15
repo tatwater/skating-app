@@ -88,8 +88,10 @@ mkdir -p .scratch && cd .scratch
 ### 1. Fetch
 
 ```bash
-curl -O https://download.geofabrik.de/north-america/us/vermont-latest.osm.pbf
-curl -O https://download.geofabrik.de/north-america/us/vermont-latest.osm.pbf.md5
+# NOTE: the `-latest` URLs now 302-redirect to a dated build, so `curl -L` (follow redirects) is
+# required — a plain `curl -O` saves the redirect HTML, not the extract.
+curl -L -o vermont-latest.osm.pbf     https://download.geofabrik.de/north-america/us/vermont-latest.osm.pbf
+curl -L -o vermont-latest.osm.pbf.md5 https://download.geofabrik.de/north-america/us/vermont-latest.osm.pbf.md5
 md5sum -c vermont-latest.osm.pbf.md5   # macOS: `md5 vermont-latest.osm.pbf` and eyeball
 ```
 
@@ -182,3 +184,48 @@ the transform → load path without downloading the full extract:
 ```bash
 pnpm --filter @skating/etl transform fixtures/vermont-sample.geojsonseq .scratch/sample.ndjson
 ```
+
+---
+
+## Regional expansion (Phase 2.5)
+
+To widen the corpus beyond Vermont, run the same pipeline **once per state** — no code change; the
+transform/load already handle multiple states. Full runbook + rationale:
+[`plans/phase-2.5-regional-expansion.md`](../../plans/phase-2.5-regional-expansion.md).
+
+- **States (per-state Geofabrik extracts, not `us/northeast`):** `new-york`, `vermont`,
+  `new-hampshire`, `maine`, `massachusetts`.
+- **NY only — clip the NYC/Long Island metro** *before* the tags-filter, so downstate never imports:
+  ```bash
+  osmium extract --bbox=-79.9,41.3,-71.8,45.1 new-york-latest.osm.pbf \
+    -o new-york-upstate.osm.pbf --overwrite --strategy=complete_ways
+  ```
+  Then run the normal filter → export → transform → load on `new-york-upstate.osm.pbf`. The 41.3°N
+  cut was chosen to sit well south of every skated NY lake (Lake George ~43.4, Saranac/Placid ~44.3).
+- **Tag each load with its state:** pass `--state=XX` (2-letter code) to the loader so each body
+  records the region(s) it's in — `importCanonical` **unions** it into the body's `states`:
+  ```bash
+  pnpm --filter @skating/etl load .scratch/new-york/bodies.ndjson --state=NY
+  ```
+  This powers the map search-result location label + `curatedBoost` disambiguation (Phase 2.5).
+- **Border-spanning bodies dedupe automatically** *and* accumulate states. `importCanonical` upserts
+  on `source+externalId`, so a lake in two extracts (Lake Champlain in VT *and* NY; Connecticut River
+  bays in VT *and* NH) lands as one row and its `states` unions to e.g. `["NY","VT"]` — run order
+  doesn't matter. VT can be skipped if already loaded (but re-run it with `--state=VT` to backfill
+  the state tag).
+- **Record each extract's md5 (per state).** Same discipline as the Phase 1 run above — Geofabrik
+  rebuilds the `-latest` extracts daily, so the download date alone doesn't pin the source. For each
+  state, `curl -L` its `.osm.pbf.md5` companion, verify the download against it, and record the md5 +
+  Geofabrik replication timestamp in the run table below. This is what makes a corpus reproducible
+  and catches a truncated download (e.g. the `-latest` redirect trap) before ~30k bad bodies load.
+- **Executed 2026-07-15 (dev):** NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885 inserted (+ VT ~9,970)
+  ≈ 116k bodies, zero read-cap errors. Extract builds dated 2026-07-14. **md5s not captured this run**
+  — record them per state on the next re-run (dated build no longer retrievable to hash retroactively):
+
+  | State | Extract | md5 | Geofabrik replication |
+  | ----- | ------- | --- | --------------------- |
+  | NY (clipped) | `new-york-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
+  | VT | `vermont-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
+  | NH | `new-hampshire-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
+  | ME | `maine-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
+  | MA | `massachusetts-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |

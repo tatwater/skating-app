@@ -15,6 +15,8 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import process from 'node:process'
 
+import { isKnownStateCode, KNOWN_STATE_CODES } from '@skating/core'
+
 /**
  * Batches are bounded by two Convex/OS limits:
  *
@@ -52,8 +54,11 @@ function chunk(lines: string[]): string[][] {
   return batches
 }
 
-function runImport(bodies: unknown[]): { inserted: number; updated: number } {
-  const args = JSON.stringify({ bodies })
+function runImport(
+  bodies: unknown[],
+  state: string | undefined,
+): { inserted: number; updated: number } {
+  const args = JSON.stringify(state ? { bodies, state } : { bodies })
   const stdout = execFileSync(
     'pnpm',
     ['--filter', '@skating/convex', 'exec', 'convex', 'run', 'waterBodies:importCanonical', args],
@@ -104,9 +109,28 @@ function resolveDeployment(): { label: string; isDev: boolean } {
 function main(): void {
   const args = process.argv.slice(2)
   const allowNonDev = args.includes('--prod')
+  // `--state=XX` (2-letter code) tags the batch's bodies with their source region; unioned into each
+  // body's `states` so a border-spanning body imported from several state extracts accumulates them
+  // all (Phase 2.5). Equals-form so it doesn't look like the positional input path.
+  const state = args
+    .find((arg) => arg.startsWith('--state='))
+    ?.slice('--state='.length)
+    .toUpperCase()
   const inputPath = args.find((arg) => !arg.startsWith('--'))
   if (!inputPath) {
-    process.stderr.write('usage: pnpm --filter @skating/etl load <bodies.ndjson> [--prod]\n')
+    process.stderr.write(
+      'usage: pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]\n',
+    )
+    process.exit(1)
+  }
+
+  // Guard the region tag: a typo (`--state=VE`, `--state=VERMONT`) would silently union a bad code
+  // into every body's `states`, corrupting the state label + boost-seed disambiguation for the run.
+  // Fail before any write rather than let it reach importCanonical (Phase 2.5 review).
+  if (state !== undefined && !isKnownStateCode(state)) {
+    process.stderr.write(
+      `[etl] refusing: unknown --state=${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.\n`,
+    )
     process.exit(1)
   }
 
@@ -126,14 +150,20 @@ function main(): void {
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
   const batches = chunk(lines)
-  process.stderr.write(`[etl] loading ${lines.length} bodies in ${batches.length} batch(es)…\n`)
+  process.stderr.write(
+    `[etl] loading ${lines.length} bodies in ${batches.length} batch(es)` +
+      `${state ? ` (state: ${state})` : ''}…\n`,
+  )
 
   let inserted = 0
   let updated = 0
   let applied = 0
   try {
     for (const [index, batch] of batches.entries()) {
-      const result = runImport(batch.map((line) => JSON.parse(line)))
+      const result = runImport(
+        batch.map((line) => JSON.parse(line)),
+        state,
+      )
       inserted += result.inserted
       updated += result.updated
       applied++

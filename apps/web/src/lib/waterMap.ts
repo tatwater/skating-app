@@ -4,8 +4,9 @@
  * so the data transforms, feature-state lookup, basemap style, and framing math are unit-testable
  * without a DOM/WebGL context.
  *
- * Basemap is Protomaps (D6) over hosted demo `.pmtiles` first, swapped to a self-built Vermont
- * extract later — the tile URL is injected so that swap is a config change.
+ * Basemap is Protomaps (D6) over hosted demo `.pmtiles` first, swapped to a self-built regional
+ * extract later (Vermont in Phase 1, the Northeast in Phase 2.5) — the tile URL is injected so that
+ * swap is a config change.
  */
 
 import { layers, namedFlavor } from '@protomaps/basemaps'
@@ -22,7 +23,8 @@ export const OSM_ATTRIBUTION = '© OpenStreetMap contributors'
 /**
  * A Protomaps hosted **build** `.pmtiles` (whole-planet, for prototyping) + its static font/sprite
  * assets. Phase 1 renders against these to confirm the data; PR#5 swaps `DEMO_PMTILES_URL` for a
- * self-built Vermont extract (set `VITE_PMTILES_URL`). The asset URLs stay hosted.
+ * self-built extract (set `VITE_PMTILES_URL`) — Vermont in Phase 1, the Northeast region in Phase
+ * 2.5. The asset URLs stay hosted.
  *
  * NB: Protomaps prunes dated builds, so this URL rotates and will eventually 404 (the old
  * `demo-bucket.protomaps.com/v4.pmtiles` went 404). Bump the date if it does — the live builds are
@@ -49,13 +51,19 @@ export const WATER_PALETTE = {
   dark: { fill: '#3a6ea5', outline: '#9ecae1' },
 } as const
 
-/** Initial framing — Vermont's Champlain shoreline (Burlington), the pilot's headline water. */
+/** Initial framing — Burlington sits near the center of the region; the fallback when no device
+ *  fix is available (device geolocation reframes on open when in-region, D12/D20). */
 export const INITIAL_CENTER: [number, number] = [-73.15, 44.46]
-export const INITIAL_ZOOM = 8.5
-/** Bounds MapLibre won't let the user pan out of — roughly Vermont + a margin (the only data). */
-export const VERMONT_MAX_BOUNDS: [[number, number], [number, number]] = [
-  [-74.5, 42.0],
-  [-70.5, 45.9],
+export const INITIAL_ZOOM = 6.5
+/**
+ * Bounds MapLibre won't let the user pan out of — the Phase 2.5 Northeast skating region (NY north
+ * of the NYC/Long Island metro + VT/NH/ME/MA). Kept in sync with the basemap `--bbox` and the NY
+ * ETL downstate clip (see `plans/phase-2.5-regional-expansion.md`). A rectangle inevitably spans
+ * some CT/RI/NJ/PA background land, which simply carries no water data.
+ */
+export const NORTHEAST_MAX_BOUNDS: [[number, number], [number, number]] = [
+  [-79.9, 41.2],
+  [-66.8, 47.5],
 ]
 
 /**
@@ -160,12 +168,12 @@ export const GEOLOCATION_FRAME_ZOOM = 11
 /**
  * Initial framing for a device geolocation fix (D12/D20). Returns `{ center, zoom }` when the fix
  * falls inside the pilot region (the only data we have), else `null` so the caller keeps the
- * default Vermont framing — a skater in California shouldn't be dropped onto empty ocean. Pure so
+ * default regional framing — a skater in California shouldn't be dropped onto empty ocean. Pure so
  * the "in region?" decision is tested without the browser Geolocation API (that stays in the shell).
  */
 export function frameForCoord(
   coord: { lat: number; lng: number },
-  maxBounds: [[number, number], [number, number]] = VERMONT_MAX_BOUNDS,
+  maxBounds: [[number, number], [number, number]] = NORTHEAST_MAX_BOUNDS,
   zoom: number = GEOLOCATION_FRAME_ZOOM,
 ): { center: [number, number]; zoom: number } | null {
   const [[minLng, minLat], [maxLng, maxLat]] = maxBounds

@@ -594,6 +594,18 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     })
     expect((await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0]?.isLarge).toBe(true)
   })
+
+  test('rejects an unknown state code before any write (Phase 2.5 guard)', async () => {
+    const t = convexTestWithGeo()
+    await expect(
+      t.mutation(internal.waterBodies.importCanonical, {
+        bodies: [CANONICAL_ITEM],
+        state: 'VE', // typo for VT
+      }),
+    ).rejects.toThrow(/unknown state code/i)
+    // The whole batch is rejected — nothing is persisted with the bad tag.
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(0)
+  })
 })
 
 describe('waterBodies.backfillListed (listed key-switch migration, D48)', () => {
@@ -914,5 +926,124 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
       zoom: 14,
     })
     expect(deep.map((b) => b.name)).toEqual(['Big Faint'])
+  })
+})
+
+describe('waterBodies.searchByName (map search box)', () => {
+  async function seedNamed(
+    t: ReturnType<typeof convexTest>,
+    name: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name,
+        type: 'lake' as const,
+        source: 'osm' as const,
+        externalId: `osm/way/${name}`,
+        polygon: SAMPLE_BODY.polygon,
+        bbox: SAMPLE_BODY.bbox,
+        centroid: SAMPLE_BODY.centroid,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+        ...extra,
+      }),
+    )
+  }
+
+  test('finds a listed body by name and returns light fly-to fields incl. states', async () => {
+    const t = convexTestWithGeo()
+    await seedNamed(t, 'Lake George', { states: ['NY'] })
+    await seedNamed(t, 'George Pond') // matches 'george' too, but carries no states tag
+    const results = await t.query(api.waterBodies.searchByName, { query: 'george' })
+    const george = results.find((r) => r.name === 'Lake George')
+    expect(george).toMatchObject({ type: 'lake', centroid: { lat: 0.5, lng: 0.5 }, states: ['NY'] })
+    expect(george?._id).toBeDefined()
+    // A body with no states tag comes back with an empty array (not undefined).
+    expect(results.find((r) => r.name === 'George Pond')?.states).toEqual([])
+  })
+
+  test('excludes unlisted bodies (removed / merged / rejected)', async () => {
+    const t = convexTestWithGeo()
+    await seedNamed(t, 'Hidden Pond', { removedAt: Date.now() })
+    await seedNamed(t, 'Merged Pond', { dedupStatus: 'merged' })
+    await seedNamed(t, 'Rejected Pond', { source: 'user', reviewStatus: 'rejected' })
+    await seedNamed(t, 'Visible Pond')
+    const names = (await t.query(api.waterBodies.searchByName, { query: 'pond' })).map(
+      (r) => r.name,
+    )
+    expect(names).toContain('Visible Pond')
+    expect(names).not.toContain('Hidden Pond')
+    expect(names).not.toContain('Merged Pond')
+    expect(names).not.toContain('Rejected Pond')
+  })
+
+  test('a <2-char or blank query returns nothing (no index scan)', async () => {
+    const t = convexTestWithGeo()
+    await seedNamed(t, 'Lake Champlain')
+    expect(await t.query(api.waterBodies.searchByName, { query: 'L' })).toEqual([])
+    expect(await t.query(api.waterBodies.searchByName, { query: '  ' })).toEqual([])
+  })
+
+  test('respects the result limit', async () => {
+    const t = convexTestWithGeo()
+    for (let i = 0; i < 5; i++) await seedNamed(t, `Mill Pond ${i}`)
+    const results = await t.query(api.waterBodies.searchByName, { query: 'mill pond', limit: 2 })
+    expect(results.length).toBeLessThanOrEqual(2)
+  })
+})
+
+describe('waterBodies.applyCuratedBoostSeed (Phase 2.5 re-seed)', () => {
+  const canonical = (externalId: string, name: string, surfaceAreaSqM: number) => ({
+    source: 'osm' as const,
+    externalId,
+    name,
+    type: 'pond' as const,
+    polygon: SAMPLE_BODY.polygon,
+    bbox: SAMPLE_BODY.bbox,
+    centroid: SAMPLE_BODY.centroid,
+    surfaceAreaSqM,
+  })
+
+  test('boosts a matched body (widens its minVisibleZoom) and reports a miss', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [canonical('osm/way/bp', 'Beloved Pond', 50_000)],
+    })
+    const id = await onlyBodyId(t)
+    const before = await t.run((ctx) => ctx.db.get(id))
+
+    const res = await t.mutation(internal.waterBodies.applyCuratedBoostSeed, {
+      seed: [
+        { name: 'Beloved Pond', boost: 0.5 },
+        { name: 'Nonexistent Lake', boost: 0.5 },
+      ],
+    })
+    const after = await t.run((ctx) => ctx.db.get(id))
+
+    expect(after?.curatedBoost).toBe(0.5)
+    // Higher score ⇒ lower (wider) minVisibleZoom bucket — the whole point of the boost.
+    expect(after?.minVisibleZoom).toBeLessThan(before?.minVisibleZoom ?? Number.POSITIVE_INFINITY)
+    expect(res.applied.map((a) => a.name)).toEqual(['Beloved Pond'])
+    expect(res.notFound).toEqual(['Nonexistent Lake'])
+  })
+
+  test('disambiguates a repeated name by the state hint (over largest-area default)', async () => {
+    const t = convexTestWithGeo()
+    // Two "Twin Lake"s: the VT one is larger, so it would win the largest-area default…
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [canonical('osm/way/twin-vt', 'Twin Lake', 999_999)],
+      state: 'VT',
+    })
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [canonical('osm/way/twin-ny', 'Twin Lake', 10_000)],
+      state: 'NY',
+    })
+    // …but the NY hint targets the smaller NY body instead.
+    const res = await t.mutation(internal.waterBodies.applyCuratedBoostSeed, {
+      seed: [{ name: 'Twin Lake', boost: 0.3, state: 'NY' }],
+    })
+    expect(res.applied).toHaveLength(1)
+    expect(res.applied[0]?.states).toEqual(['NY'])
   })
 })

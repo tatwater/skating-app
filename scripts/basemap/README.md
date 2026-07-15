@@ -1,10 +1,14 @@
-# basemap — self-built Vermont `.pmtiles` (Phase 1, PR#5)
+# basemap — self-built regional `.pmtiles` (Phase 1 Vermont → Phase 2.5 Northeast)
 
 The read-only web map (`apps/web`) renders our OSM water bodies over a **Protomaps** vector
 basemap (D6). Phase 1 shipped against Protomaps' **hosted demo** tiles (a whole-planet
 `.pmtiles`) to confirm the data renders; Protomaps asks that the demo bucket **not** be used in
-production. This directory is the manual, run-on-demand pipeline that **builds a Vermont-only
-`.pmtiles` and self-hosts it**, so we stop depending on the demo bucket.
+production. This directory is the manual, run-on-demand pipeline that **builds a regional
+`.pmtiles` and self-hosts it**, so we stop depending on the demo bucket. Phase 1 built a
+Vermont-only extract on Convex storage (the §1 walkthrough below uses it as the worked example);
+Phase 2.5 widened it to the 5-state Northeast on Cloudflare R2 (§2b + the current "Last build"
+row). The build steps are identical bar the bbox — swap `VERMONT_MAX_BOUNDS` for
+`NORTHEAST_MAX_BOUNDS`.
 
 Like [`scripts/etl`](../etl/README.md), this is **not** built or deployed with the apps — you
 run it by hand when (re)building the basemap. There is no logic to test here: the build is one
@@ -80,6 +84,81 @@ the end, the `VITE_PMTILES_URL` value to wire in step 3.
 > (zero egress, the standard pmtiles host) is the documented scale-out target — a
 > `VITE_PMTILES_URL` swap, nothing in the app. See `plans/phase-1-water-bodies.md` open items.
 
+## 2b. Host on Cloudflare R2 (Phase 2.5+ — the scale-out host)
+
+Convex file storage (§2) is fine for the ~280 MB Vermont file, but the multi-state **Phase 2.5**
+extract (~1.3–2 GB) overflows the Convex free tier, so the regional basemap hosts on **Cloudflare
+R2** (zero egress; the standard pmtiles host). R2 is the primary host going forward; `upload.sh`
+(Convex storage) stays for the Vermont-only/legacy path. Full context: the
+[Phase 2.5 runbook](../../plans/phase-2.5-regional-expansion.md).
+
+### One-time setup
+
+1. **Bucket** — create an R2 bucket named `skating-basemap`.
+2. **API token** — R2 → *Manage API Tokens* → **Object Read & Write**, scoped to that bucket. Note the
+   Access Key ID, Secret, and your **account ID** (the hex in the S3 endpoint).
+3. **rclone** — `brew install rclone`, then create a remote named `r2`:
+   ```bash
+   rclone config create r2 s3 provider=Cloudflare \
+     access_key_id=… secret_access_key=… \
+     endpoint=https://<ACCOUNT_ID>.r2.cloudflarestorage.com region=auto acl=private
+   ```
+   Verify with **`rclone ls r2:skating-basemap`** (empty output = OK). Note: `rclone lsd r2:` returns
+   **403 by design** — `ListBuckets` is account-level and the token is bucket-scoped; that's the
+   secure, expected result, not an error to fix. Credentials live in `~/.config/rclone/rclone.conf`,
+   **never** in the repo.
+4. **Script config** — `cp scripts/basemap/.env.example scripts/basemap/.env.local` and set
+   `R2_PUBLIC_BASE_URL` (from public access, below). `.env.local` is gitignored and holds no secrets.
+
+### Upload
+
+```bash
+scripts/basemap/upload-r2.sh .scratch/northeast-basemap.pmtiles dev/northeast-YYYYMMDD.pmtiles
+```
+One bucket serves both environments via a `dev/` or `prod/` **key prefix**; dating the key makes a
+rebuild a new object + a one-line env swap, with the previous object as instant rollback. The script
+prints the serving URL to wire in §3.
+
+### Public access — start on r2.dev
+
+For the alpha, enable the bucket's zero-config public URL: bucket → **Settings → Public access →
+r2.dev subdomain → Allow**. The base URL is `https://pub-<hash>.r2.dev` → put it in
+`R2_PUBLIC_BASE_URL`. Good enough for a friends alpha (tile reads are KBs/view); r2.dev is
+rate-limited and only lightly cached, so it is **not** for real traffic.
+
+### Custom domain + caching (prod hardening — do before real traffic)
+
+A custom domain fronts R2 with Cloudflare's CDN: no r2.dev rate limit and — the real win — **edge
+caching of the `pmtiles://` Range reads** (many users hit the same tiles; served from the edge instead
+of re-reading R2, cutting latency + R2 Class-B ops). This is Protomaps' recommended R2 setup.
+
+1. **Add a domain/zone to this Cloudflare account** — register one in Cloudflare, or add an existing
+   domain and point its nameservers at Cloudflare. *(This account has no zone yet — this is the
+   gating step; everything below is a few minutes once it's here.)*
+2. **Attach it to the bucket** — bucket → **Settings → Custom Domains → Connect Domain** →
+   e.g. `tiles.<yourdomain>`. Cloudflare auto-creates the DNS record + TLS cert. Disable the r2.dev
+   URL once the custom domain resolves.
+3. **Cache the tiles** — Rules → **Cache Rules** → new rule matching the `tiles.<yourdomain>` host →
+   *Eligible for cache*, with a long **Edge TTL** (tiles are immutable per dated key, so a month+ is
+   safe — a rebuild uses a new key). Cloudflare caches Range/partial responses, which is what pmtiles
+   needs.
+4. **Repoint** `R2_PUBLIC_BASE_URL=https://tiles.<yourdomain>` in `.env.local` and re-run the §3 env
+   swap. **No app code change** — same env var.
+
+### CORS (web only)
+
+The browser `pmtiles://` protocol needs CORS + `Range` on the tile host (mobile native does not — it
+reads over its own HTTP stack). Add a CORS policy on the bucket (R2 → bucket → **Settings → CORS
+Policy**), listing your dev + prod web origins:
+```json
+[{ "AllowedOrigins": ["http://localhost:3000", "https://<your-web-origin>"],
+   "AllowedMethods": ["GET", "HEAD"],
+   "AllowedHeaders": ["Range"],
+   "ExposeHeaders": ["Content-Range", "Content-Length", "ETag", "Accept-Ranges"],
+   "MaxAgeSeconds": 86400 }]
+```
+R2 serves `Range` natively; this only authorizes the browser to read it cross-origin.
+
 ## 3. Wire — set `VITE_PMTILES_URL`
 
 The serving URL is **deployment-specific** (dev vs prod differ) — so it's an env var, not code:
@@ -97,10 +176,22 @@ water source + the always-on `AttributionControl`, independent of the tile host.
 
 ## Last build (record yours here)
 
+**Northeast 5-state (Phase 2.5) — current:**
+
+| Field | Value |
+| ----- | ----- |
+| Built | 2026-07-15 |
+| Source | `https://build.protomaps.com/20251215.pmtiles` (Protomaps whole-planet, live dated build) |
+| bbox / maxzoom | `-79.9,41.2,-66.8,47.5` / `14` (matches `NORTHEAST_MAX_BOUNDS`) |
+| Size | ≈ 948 MB (993,960,944 bytes), 275,750 tiles, z0–14 |
+| Hosted | Cloudflare **R2** `skating-basemap/dev/northeast-20260715.pmtiles` (dev) — prod pending |
+
+**Vermont-only (Phase 1) — superseded by the above:**
+
 | Field | Value |
 | ----- | ----- |
 | Built | 2026-07-13 |
 | Source | `https://demo-bucket.protomaps.com/v4.pmtiles` (Protomaps whole-planet v4) |
 | bbox / maxzoom | `-74.5,42.0,-70.5,45.9` / `14` |
 | Size | ≈ 280 MB (293,673,672 bytes), z0–14 |
-| Hosted | Convex **dev** storage (`agile-bee-397`) — prod pending |
+| Hosted | Convex **dev** storage (`agile-bee-397`) |

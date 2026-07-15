@@ -9,7 +9,14 @@
  * which `listInViewport` enforces when refining viewport results (see its read-cap note).
  */
 
-import { bboxIntersects, displayScore, minVisibleZoom, WATER_BODY_TYPES } from '@skating/core'
+import {
+  bboxIntersects,
+  displayScore,
+  isKnownStateCode,
+  KNOWN_STATE_CODES,
+  minVisibleZoom,
+  WATER_BODY_TYPES,
+} from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
@@ -68,6 +75,15 @@ function sanitizeLimit(limit: number | undefined): number {
   return Math.min(limit, MAX_VIEWPORT_LIMIT)
 }
 
+/** Union a state code into a body's `states` (sorted + deduped); unchanged when no state is given. */
+function unionState(
+  existing: string[] | undefined,
+  state: string | undefined,
+): string[] | undefined {
+  if (!state) return existing
+  return [...new Set([...(existing ?? []), state])].sort()
+}
+
 /** A canonical (OSM/NHD) body as prepared by the ETL, keyed by its `(source, externalId)`. */
 const canonicalBody = v.object({
   source: literals(CANONICAL_SOURCES), // osm | nhd — never user (D14)
@@ -121,8 +137,17 @@ function zoomSortKey(body: { surfaceAreaSqM?: number; curatedBoost?: number }): 
  * Re-running on unchanged data is a no-op on the final state (one row, same listing).
  */
 export const importCanonical = internalMutation({
-  args: { bodies: v.array(canonicalBody) },
-  handler: async (ctx, { bodies }) => {
+  // `state` (2-letter code) is the extract's source region; it's unioned into each body's `states`
+  // so a border-spanning body imported from multiple state extracts accumulates them all (D5/2.5).
+  args: { bodies: v.array(canonicalBody), state: v.optional(v.string()) },
+  handler: async (ctx, { bodies, state }) => {
+    // Defense-in-depth against the ETL's `--state` guard: reject an unknown region code before any
+    // write so a bad tag can never be unioned into a body's `states` (Phase 2.5 review).
+    if (state !== undefined && !isKnownStateCode(state)) {
+      throw new ConvexError(
+        `Unknown state code: ${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.`,
+      )
+    }
     let inserted = 0
     let updated = 0
     for (const item of bodies) {
@@ -148,6 +173,7 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
+          states: unionState(existing.states, state),
           ...scores,
         })
         // Re-derive listing from the preserved fields (removed stays removed, D48); sortKey =
@@ -173,6 +199,7 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
+          states: unionState(undefined, state),
           ...scores,
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
@@ -450,6 +477,63 @@ export const setCuratedBoost = mutation({
 })
 
 /**
+ * Internal seed (run via `pnpm exec convex run`, no auth) — the Phase 2.5 re-seed of the community
+ * favorites list. For each `{ name, boost, state? }`: find *listed* bodies whose name matches
+ * (search index, then exact case-insensitive), disambiguate a repeated name by the optional `state`
+ * hint else the **largest-area** body (the one people mean — Lake George NY over the MA reservoir),
+ * set `curatedBoost` + recompute `displayScore`/`minVisibleZoom` + re-index. Mirrors
+ * `setCuratedBoost`'s core minus the admin auth + audit row — Phase 4 lifts per-body boost editing
+ * into the admin UI with proper auditing. Returns what was boosted + names that matched nothing.
+ */
+export const applyCuratedBoostSeed = internalMutation({
+  args: {
+    seed: v.array(v.object({ name: v.string(), boost: v.number(), state: v.optional(v.string()) })),
+  },
+  handler: async (ctx, { seed }) => {
+    const applied: Array<{
+      name: string
+      id: Id<'waterBodies'>
+      states: string[]
+      areaSqM: number
+      minVisibleZoom: number
+    }> = []
+    const notFound: string[] = []
+    for (const { name, boost, state } of seed) {
+      const candidates = (
+        await ctx.db
+          .query('waterBodies')
+          .withSearchIndex('search_name', (s) => s.search('name', name))
+          .take(50)
+      ).filter((b) => b.name.toLowerCase() === name.toLowerCase() && isListed(b))
+      const target =
+        (state ? candidates.find((b) => b.states?.includes(state)) : undefined) ??
+        candidates.sort((a, b) => (b.surfaceAreaSqM ?? 0) - (a.surfaceAreaSqM ?? 0))[0]
+      if (!target) {
+        notFound.push(name)
+        continue
+      }
+      const scores = scoreFields({ surfaceAreaSqM: target.surfaceAreaSqM, curatedBoost: boost })
+      await ctx.db.patch(target._id, { curatedBoost: boost, ...scores })
+      await waterBodiesGeo.insert(
+        ctx,
+        target._id,
+        { latitude: target.centroid.lat, longitude: target.centroid.lng },
+        { listed: isListed(target) },
+        scores.minVisibleZoom,
+      )
+      applied.push({
+        name,
+        id: target._id,
+        states: target.states ?? [],
+        areaSqM: target.surfaceAreaSqM ?? 0,
+        minVisibleZoom: scores.minVisibleZoom,
+      })
+    }
+    return { applied, notFound }
+  },
+})
+
+/**
  * Public: water bodies whose **bbox intersects** the viewport (D5/D48). Two-tier — see the
  * `VIEWPORT_MARGIN_DEG` / `LARGE_BODY_EXTENT_DEG` note above for why:
  *  - **Tier 1:** a centroid prefilter over the viewport + a small margin (`listed == true`),
@@ -547,6 +631,50 @@ export const listInViewport = query({
       byId.set(body._id, body)
     }
     return [...byId.values()]
+  },
+})
+
+/**
+ * Public: full-text search listed water bodies by name for the map's search box. Uses the
+ * `search_name` search index (typo-tolerant, prefix match on the last term) and refines out
+ * unlisted bodies (removed / rejected / merged) in JS — `listed` is a *derived* predicate, not a
+ * stored field, so it can't be a search `filterField` (same reason `listInViewport` refines in JS).
+ * Overfetches (`max * 4`) so the post-refine count stays stable — this assumes <75% of a term's
+ * top index hits are unlisted. That holds while unlisted bodies (merged/removed/rejected) are a
+ * small fraction of the corpus; revisit the multiplier (or page the index) if a large dedup/removal
+ * sweep ever pushes that fraction up. Returns the light fields a result row needs; selecting a
+ * result navigates to `/water/:id`, which handles the map fly-to + detail.
+ * A <2-char query returns nothing (skip a pointless index scan).
+ */
+export const searchByName = query({
+  args: { query: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, { query, limit }) => {
+    const term = query.trim()
+    if (term.length < 2) return []
+    const max = Math.min(Math.max(limit ?? 8, 1), 20)
+    const raw = await ctx.db
+      .query('waterBodies')
+      .withSearchIndex('search_name', (s) => s.search('name', term))
+      .take(max * 4)
+    const results: Array<{
+      _id: Id<'waterBodies'>
+      name: string
+      type: Doc<'waterBodies'>['type']
+      centroid: Doc<'waterBodies'>['centroid']
+      states: string[]
+    }> = []
+    for (const body of raw) {
+      if (!isListed(body)) continue
+      results.push({
+        _id: body._id,
+        name: body.name,
+        type: body.type,
+        centroid: body.centroid,
+        states: body.states ?? [],
+      })
+      if (results.length >= max) break
+    }
+    return results
   },
 })
 

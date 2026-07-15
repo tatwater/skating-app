@@ -1,6 +1,7 @@
 import { Slot, usePathname } from 'expo-router'
 import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
+import { LakeSearch } from '../../../src/components/LakeSearch'
 import { DRAWER_NORMAL, DRAWER_PEEK, MapDrawer } from '../../../src/components/MapDrawer'
 import { MapSelectionProvider, useMapSelection } from '../../../src/components/MapSelectionContext'
 import MapView from '../../../src/components/MapView'
@@ -51,6 +52,7 @@ function MapLayoutInner() {
   return (
     <View style={{ flex: 1 }}>
       <MapView geolocateOnMount={geolocateOnMount} />
+      <LakeSearch />
       <MapDrawer snapIndex={snapIndex} onCoveredFractionChange={setDrawerCoveredFraction}>
         <Slot />
       </MapDrawer>

@@ -128,8 +128,13 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 > Convex `reports`/`photos` + D49 geospatial zoom filter + `waterBodies.get`/`setCuratedBoost`, the
 > interactive map (tap→detail, geolocation framing, deep-linkable `/water/$id` · `/report/$id`
 > drawers), and report create (multi-reading thickness, manual conditions, put-in pin, photos with
-> HEIC decode + EXIF strip + geotag opt-in). Built on shadcn/ui (Base UI). **Mobile (§F) is the
-> follow-on PR** (native MapLibre + the offline draft queue, D30).
+> HEIC decode + EXIF strip + geotag opt-in). Built on shadcn/ui (Base UI).
+>
+> **Status (mobile §F1): ✅ shipped (2026-07-14, PR #13)** — native `@maplibre/maplibre-react-native`
+> map with the D49 zoom filter, `expo-location` framing, `@gorhom/bottom-sheet` drawers +
+> deep-linkable `/water/[id]` · `/report/[id]`, and the read + **online** report-create loop
+> (native `expo-image-picker`/`expo-image-manipulator` photo pipeline). Shared helpers lifted into
+> `@skating/core`. **§F2 (offline draft queue, D30) is the remaining mobile follow-on PR.**
 
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
 - **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived
@@ -151,10 +156,18 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - Needs: MapLibre + tiles (Protomaps), Convex file storage.
 
 ## Phase 2.5 — Regional expansion (Northeast skating states)
-> **Detailed plan:** [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md) → *Workstream H*.
-> Slotted **after the mobile MVP (Phase 2 §F: F1 + F2) and before Phase 3** (decided 2026-07-14).
-> It's data + infra, not features, so it doesn't gate the social graph — but the corpus should be
-> region-complete before feeds / drive-time (Phase 5/6) reason over it.
+> **Detailed plan + runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md)
+> (was §H of the Phase 2 plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
+> (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the social
+> graph — but the corpus should be region-complete before feeds / drive-time (Phase 5/6) reason over it.
+>
+> **Status: ✅ mostly shipped on dev (2026-07-15)** — ~116k bodies across NY/VT/NH/ME/MA imported
+> (NY clipped downstate), a 948 MB multi-state basemap on Cloudflare R2, map bounds widened to the
+> region, a **lake name-search box** (added when the big corpus made it near-essential) in both apps,
+> and the **`curatedBoost` re-seed** (mechanism `applyCuratedBoostSeed` shipped + VT seed applied at
+> flat +0.3 — 21 bodies boosted). **Remaining:** clean per-body curation (a few bay mis-matches; add
+> the Champlain/Lake George bays OSM lacks) via the **Phase 4 admin UI**, and the prod cutover
+> (Convex prod uninitialized).
 
 Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **lake-skating** states.
 - **Region scope (decided 2026-07-14):** **NY (upstate/northern only — exclude NYC + Long Island),
@@ -217,7 +230,15 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
 ## Phase 5 — Drive-time filtering
 - Isochrone from home (**hosted ORS**), cached per user (D18/D35); radius fallback.
 - Filter map + feeds to the user's range.
-- **Done:** map/feed show only in-range water bodies/reports.
+- **Favorite / follow water bodies (user idea, 2026-07-15).** Let a user mark specific bodies as
+  **favorites** / subscribe to them — a manual, per-body opt-in that complements drive-time as a
+  *second axis* for scoping the **Newsfeed** (Phase 6) and **notifications** (D-notification prefs,
+  Phase 3): a favorited lake's reports/events surface **even when it's outside drive-time range**,
+  and notification prefs can target "my favorites." Gives users direct control over what they follow
+  rather than proximity alone. Likely a small `waterBodyFollows` join (userId × waterBodyId); ties
+  into the Phase 3 notification prefs and the Phase 6 feed. *(Could ship earlier if wanted — no ORS
+  dependency; parked here as the natural home alongside the other feed-scoping controls.)*
+- **Done:** map/feed show only in-range water bodies/reports (plus any favorited bodies).
 - Needs: OpenRouteService key.
 
 ## Phase 6 — Newsfeed page
