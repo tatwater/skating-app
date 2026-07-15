@@ -44,10 +44,13 @@ test plan.
   creation surfaced **in place** (D47), not a separate top-level route.
 - **Reports (create + read, online)** — full ice description (ice types, surface tags, coarse
   quality, structured multi-reading thickness, snow cover), optional **manual** conditions,
-  photos (client-optimized + EXIF-stripped, opt-in geotag), **derived-default visibility (clamped
-  so a locked/minor author can't post `public`, D41)**, notes, skate time, and an optional
+  photos (client-optimized + EXIF-stripped, opt-in geotag), notes, skate time, and an optional
   **put-in pin** (`reports.point`; defaults to the body centroid) marking the access point the
   skater used. Metric storage / imperial display (D25).
+  > **⚠️ Historical:** as shipped, Phase 2 included a 2-level report **visibility** selector +
+  > `deriveDefaultVisibility`/`maxVisibilityForProfile` clamp. **The D13 revision removed report
+  > visibility entirely — reports are always public** — so ignore every visibility mechanic in the
+  > workstreams below (they were deleted). Minors are now read-only (D41).
 - **Photos** — Convex file storage upload with **client-side optimize + EXIF strip** (D31/D42),
   including a **HEIC→JPEG decode step** so iPhone uploads work on desktop web; opt-in `placeOnMap`
   geotag pinning (coord retained *only* on opt-in).
@@ -76,10 +79,9 @@ test plan.
 - **Popularity term in `displayScore`** → Phase 3+ (needs report/skate signal that doesn't exist
   until this phase lands).
 - **Comments** → Phase 3. Report detail renders the report + photos only.
-- **Comments + blocks** → Phase 3. Report visibility itself is **final in Phase 2**: the social
-  graph was removed (D13, 2026-07-15), so `just_me` / `public` are the *only* levels — there is no
-  `friends`/`followers` resolution to wait on. `public` → anyone; `just_me` → author. The block
-  filter (which subtracts blocked users) lands with the Phase 3 safety tools.
+- **Comments + blocks** → Phase 3. Reports carry **no visibility** at all now — the D13 revision made
+  every report public, so reads are just *moderation-visible + not-blocked*. The block filter (which
+  subtracts blocked users) lands with the Phase 3 safety tools.
 - **Stored `homeCoord` / drive-time filtering** → Phase 4. Map framing uses **device geolocation**
   (D12), not a stored home.
 - **Cross-water-body / near-me report queries + a `reports.point` geospatial index** → Phase 4/5
@@ -564,9 +566,9 @@ doc once web is proven:
 - **EXIF must be stripped by construction (D42)** — the *only* metadata that may survive is
   timestamp + GPS, and GPS *only* on `placeOnMap`. Enforce on **both** client (strip) and server
   (`photos.create` drops `coord`) so a client bug can't leak location.
-- **Visibility is final at two levels (D13)** — `just_me` / `public` only; no social graph.
-  Keep the filter behind `@skating/core` `canViewReport` so the Phase 3 **block** filter drops in
-  with no report re-write, and **no feature silently widens exposure** (D41).
+- **Reports have no visibility field (D13)** — every report is public; reads gate on moderation +
+  blocks only. Keep the read behind `@skating/core` `canViewReport` (now block-only) so the Phase 3
+  **block** filter drops in with no report re-write.
 - **`listInViewport` read-cap** — the D49 **in-query** `minVisibleZoom` filter is the real fix (wide
   zooms return few prominent bodies, so the cap isn't hit in normal use), but keep the Phase 1
   read-cap safety (limit, `isListed` JS refine, truncation `log`) as a backstop. Watch the filter

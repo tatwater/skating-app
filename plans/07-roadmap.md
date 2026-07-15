@@ -147,9 +147,9 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
   **client-side image optimization + EXIF stripping** on upload (D31/D42).
 - **Photo geotag opt-in** (D42): default off; if on, photos pin at their coord within
   the water body.
-- Report `visibility` is **`just_me` / `public`** — the full, final set (D13; the social
-  graph was removed, so there are no `friends`/`followers` levels to wait on). Default is the
-  **age-derived** one (D41): adult→`public`, minor→`just_me`.
+- **Reports are always public** (D13) — no per-report visibility field at all. Minors are
+  **read-only** (can't post; D41). *(The Phase 2 web/mobile MVP shipped with a 2-level visibility
+  selector; it was removed in the D13 revision — reports carry no visibility now.)*
 - *(User-created water bodies + dedup **moved to Phase 8**, decided 2026-07-13 — the good version is
   GPS-path-backed, and the Vermont OSM corpus already covers the alpha. See Phase 8.)*
 - **Done:** friends can post and read reports on real lakes. *This is the usable MVP.*
@@ -195,17 +195,18 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
 *(Was "Social graph + comments" — the **social graph was removed 2026-07-15 (D13)**. No
 follows/friends. What remains is the community-interaction + safety layer, kept ahead of
 the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
-- Threaded **comments** on reports (D21/D25); comment visibility inherits the parent report.
-- **Searchable profiles (D13):** a profile page that coalesces a user's **public** reports,
-  **searchable by name**. `profileVisibility` respected — private profiles (all minors; adults
-  who opt in) are neither searchable nor browsable. No follow/friend graph, no friend discovery.
+- Threaded **comments** on reports (D21/D25). All reports are public (D13), so comments are too —
+  gated only by moderation + blocks.
+- **Profiles (D13):** public profiles are **searchable by name** and show name, photo, town/state,
+  **bio**, #reports/#comments, trust score (D50), and full public report history; **private profiles
+  are name + photo only** and not searchable (all minors; adults who opt in). No follow/friend graph.
 - **User-facing safety tools (D32):** **block/mute** users; **flag/report** reports/comments/
   photos/users for abuse (incl. `unsafe_false_report`). Public UGC without block/flag is
   unacceptable, so these ship here. With no follow graph, a block is pure "hide this person."
 - A minimal moderator **hide/remove** path (founder) so flagged content can be taken
   down immediately, even before the full operator surface (Phase 7).
-- Report visibility resolution is trivial now (`public` → anyone minus blocks; `just_me` →
-  author) — no multi-level graph resolution to build.
+- Report reads are trivial now — **moderation-visible + not-blocked**; there is no per-report
+  visibility to resolve (D13).
 - **Done:** comment threads work; profiles are viewable/searchable (privacy respected);
   users can block/mute and flag; content can be quickly taken down.
 
@@ -334,8 +335,8 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   safety-sensitive math; `convex-test` for functions; coverage ratchets up (D40).
 - Notifications with per-type toggles — every type toggleable (D16).
 - Safety-first, non-authoritative framing in all copy (D3); assumption-of-risk ack (D45).
-- Privacy by default: derived report-visibility defaults (D41); EXIF stripped, geotag
-  opt-in (D42).
+- Privacy by default: reports always public but the person controls **profile** privacy (D13),
+  minors read-only (D41); EXIF stripped, geotag opt-in (D42).
 - Metric internal / imperial display (D25).
 - **Accessibility + dark mode** honored as UI is built (D34).
 - **Sentry** crash/error hygiene; **PostHog** analytics/flags added once there's

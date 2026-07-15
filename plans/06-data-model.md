@@ -10,8 +10,8 @@ Guiding constraints from `01-decisions.md`:
 - **Reports attach to whole water bodies + optional in-polygon hazard geometry (D4).**
 - **Canonical (OSM/NHD) and user-created locations live in one table (D14).**
 - **Hazards are their own entity with a lifecycle (D15).**
-- **2-level report visibility (Just me / Public) + public/private profiles, no social
-  graph (D13); real drive-time via cached isochrone (D18).**
+- **Reports are always public (no visibility field); public/private profiles are the only
+  privacy switch, no social graph (D13); real drive-time via cached isochrone (D18).**
 
 > ✅ **VOCABULARY CONFIRMED.** The ice-type / surface / hazard enums below use the
 > community's official terms from the **Nordic Skater** reference sites
@@ -30,12 +30,14 @@ displayName: string
 username: string            // unique, for search (searchable by name, D13)
 homeCoord: { lat, lng }     // PRIVATE — filter input only (D11)
 homeTownLabel?: string      // optional PUBLIC label on profile (D11)
+bio?: string                 // optional PUBLIC blurb, shown only on a public profile (D13)
 driveTimePrefMinutes: number // e.g. 30 / 60 / 90 (D18)
 cachedIsochrone?: geojson   // polygon; recomputed on home/pref change (D18)
 cachedIsochroneAt?: timestamp
-profileVisibility: enum(public, private)  // public = searchable + browsable profile page;
-                             // private = neither. Minors forced private; adults default public (D13/D41).
-                             // Independent of per-report visibility. (Replaces requireFollowApproval.)
+profileVisibility: enum(public, private)  // THE ONLY privacy switch (reports are always public, D13).
+                             // public = searchable + browsable (name, photo, town, bio, counts, trust
+                             // score, report history); private = name + photo only, not searchable.
+                             // Minors forced private; adults default public (D13/D41).
 notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16)
   activityDetected,          // ice-skate detected on ANY linked provider (D24)
   bountyRequest,
@@ -67,9 +69,9 @@ createdAt: timestamp
 > (`current`, `upsertFromClerk`). The rest of this doc still reads `ref(profiles)` for
 > clarity even though the pseudocode predates the rename.
 > **Deletion (D33):** on delete, set `status: deleted` and scrub PII (displayName →
-> "deleted user", drop `homeCoord`/`homeTownLabel`, clear `dateOfBirth`). Authored **public**
-> reports & comments are **anonymized, not erased** (preserve the ice record);
-> `just_me` content is removed. Users can also **export** their data.
+> "deleted user", drop `homeCoord`/`homeTownLabel`/`bio`, clear `dateOfBirth`). All reports &
+> comments are public (D13), so **all** are **anonymized, not erased** (preserve the ice record) —
+> there's no private content to selectively remove. Users can also **export** their data.
 > **Ban/suspend (D37):** Convex is the source of truth — every function gates on
 > `status`; **also lock the account in Clerk** so no new session issues. A ban
 > preserves the account (appeal/reversal) — distinct from deletion, which scrubs PII.
@@ -198,8 +200,7 @@ conditions?: {
 
 photoIds: ref(photos)[]
 notes?: string               // free text
-visibility: enum(just_me, public)  // D13 (2 levels; no social graph); DEFAULT derived per D41
-                                   // (adult→public; minor→just_me, and minors can't select public)
+// No `visibility` field — every report is PUBLIC (D13). Minors can't create reports at all (D41).
 moderationStatus: enum(visible, hidden, removed)  // default visible (D32)
 hazardIdsCreated: ref(hazards)[]  // hazards drawn as part of this report
 createdAt, updatedAt: timestamp
@@ -217,8 +218,8 @@ moderationStatus: enum(visible, hidden, removed)  // default visible (D32)
 editedAt?: timestamp
 createdAt: timestamp
 ```
-> **Visibility inherits the parent report** — a comment never reaches a wider
-> audience than the report it's on. Nested via `parentCommentId` (cap depth in UI).
+> **All reports are public (D13), so comments are too** — gated only by moderation + blocks.
+> Nested via `parentCommentId` (cap depth in UI).
 > **Ingestion nuance (Q8):** email replies must be classified as *comment vs. new
 > report* (people reply to a report with their own report). Proposed: an AI
 > classifier reads each threaded email and routes it. That AI runs on
@@ -258,10 +259,9 @@ via: enum(app_open_nearby, report_flow, strava_path)  // trigger (D12)
 createdAt: timestamp
 ```
 
-> **No `follows` table (D13, revised 2026-07-15).** The social graph was removed, so there
-> is no follow/friend edge. **Visibility resolution** for viewer V on report R by author A is
-> now trivial: `public` → anyone (minus blocks); `just_me` → only A. A **block** between V and
-> A hides content both ways (below).
+> **No `follows` table (D13).** The social graph was removed, so there is no follow/friend edge.
+> And reports have **no visibility field** — every report is public — so read access is just
+> *moderation-visible + not blocked*. A **block** between two users hides content both ways (below).
 
 ### `blocks`  (mute/block a user, D32)
 ```
@@ -271,8 +271,8 @@ blockedId: ref(profiles)
 createdAt: timestamp
 ```
 > A block hides each user's content/profile from the other. With no follow graph (D13) there
-> is no follow state to also unwind — it's pure "hide this person." Applied on top of the
-> `public`/`just_me` resolution above.
+> is no follow state to also unwind — it's pure "hide this person," applied on top of the
+> moderation check (reports are otherwise all public).
 
 ### `contentFlags`  (abuse / safety reports, D32)
 ```
@@ -504,8 +504,8 @@ profiles 1─* pointEvents
 - **Weather-since-report strip:** computed from Open-Meteo over [skateTime → now]
   (D19; spec in `04-integrations.md`); cache per (waterBody, window).
 - **Hazard freshness state:** derived from `lastConfirmedAt` at read time (D15).
-- **Newsfeed:** reports within the viewer's isochrone, visibility-filtered
-  (`public`, minus blocks — D13), sorted by `skateTime` desc (not `reportTime`).
+- **Newsfeed:** reports within the viewer's isochrone (all public, D13), minus moderation-hidden
+  and blocked authors, sorted by `skateTime` desc (not `reportTime`).
 - **Trust score (D50):** `profiles.reputationPoints` aggregated from `pointEvents`
   (helpful marks + window-bounded corroboration). Corroboration is derived from `reports`
   on the same `waterBodyId` within a tunable window whose ice descriptors agree — no stored
@@ -579,10 +579,10 @@ profiles 1─* pointEvents
   (D44) so skates are findable by lake identity, not by geospatial area.
 - **Photo EXIF / geotag** → strip all EXIF on upload; preserve timestamp + coord only
   on opt-in; `placeOnMap` gates spatial pinning and coord retention (D42).
-- **Age gate & default visibility** → 16+ minimum (DOB stored, age/minor status derived, D41);
-  report visibility is 2-level `just_me`/`public` with no social graph (D13); the default is
-  derived from **minor status** (adult→`public`, minor→`just_me`, D41); profiles are
-  `public`/`private` (`profileVisibility`).
+- **Age gate & report/profile privacy** → 16+ minimum (DOB stored, age/minor status derived, D41);
+  **reports are always public** — no visibility field (D13); the only privacy switch is
+  `profileVisibility` (`public`/`private`); minors are forced-private and **read-only** (can't post
+  reports until 18, D41).
 - **Notification prefs ↔ types** → `notificationPrefs` keys mirror `notifications.type`
   1:1 (every type toggleable, D16); `reportRated` added.
 

@@ -70,8 +70,9 @@ big lake isn't one label. Relevant when modeling Champlain-scale bodies + seedin
 
 - **Q1 → D12** — No live GPS; opportunistic location on app-open + post-hoc Strava path.
 - **Q2 → D13** — *Revised 2026-07-15:* social graph **removed** — no follows/friends. Reports are
-  **Just me / Public** (2 levels); profiles are public (searchable) or private; the "whose reports do
-  I trust" need is met by an asymmetric **trust score** (D50), not a follow graph.
+  **always public** (no per-report privacy level); the only privacy switch is **profile**
+  public/private; minors are read-only until 18 (D41). The "whose reports do I trust" need is met
+  by an asymmetric **trust score** (D50), not a follow graph.
 - **Q3 → D14** — User-created locations allowed (dedup deferred → Q12).
 - **Q4 → D15** — Waze-style hazard lifecycle (time-decay + confirmation).
 - **Q5 → D16** — Per-type notification toggles.

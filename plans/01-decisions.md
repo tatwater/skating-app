@@ -73,8 +73,8 @@ Never reward the act of skating/going onto ice.
 ## D11 — Home address is private; town optionally public
 **Decided.** Home address is used only to compute drive-time filtering; stored as
 a coordinate, visible to no one else. Users may optionally show their **town** on
-their profile. Every report has one of **two** visibility levels:
-Just me / Public (see D13).
+their (public) profile. **Reports are always public** (D13) — there is no per-report
+privacy level; the profile-privacy switch controls personal discoverability, not reports.
 **Why:** Address is sensitive PII (where you live + when you're away).
 
 ## D12 — Location model: opportunistic + post-hoc, never live GPS
@@ -88,39 +88,41 @@ other apps/devices. Instead:
 **Why:** Preserves battery (cold + wind drains phones fast) and avoids creepy
 always-on tracking, while still enabling hazard confirmation.
 
-## D13 — Report & profile visibility (no social graph)
-**Decided (revised 2026-07-15 — the social graph was removed; see "Superseded" below).**
-- **No follow/friend graph.** There is no follow, no mutual-follow "friends," no
-  follower-approval. Reports are a public good: it does not matter *who* made a report —
-  a report is a report — so we flatten the social layer rather than build one.
-- **Per-report visibility (2 levels):** *Just me* → *Public*.
-  - **Public** = contributes to the shared map/newsfeed everyone in range sees. This is
-    the whole value of the app.
-  - **Just me** = private to the author (a personal log / draft). Not on anyone else's
-    map or feed. This is the only "private" report level.
-- **Profile visibility (`public` / `private`), orthogonal to per-report visibility.**
-  - **Public profile** = searchable by name and has a browsable page that coalesces the
-    user's public reports/activity.
-  - **Private profile** = not searchable, no public profile page. A private-profile adult
-    may **still post public reports** (they appear on the shared map, attributed by name,
-    like any report — D3) — "private profile" governs *discoverability of the person*, not
-    whether their observations reach the community.
-  - **Minors (<18) are forced private** and cannot post public reports (see D41).
-- **Blocks still exist** (D32): a block hides two users' content/profiles from each other.
-  With no follow graph, block/mute is pure "stop showing me this person" — no friendship
-  state to unwind.
-**Why:** A friend/follow layer would let people keep ice reports secret from the community
-(a walled garden fragmenting a public-good safety commons); anyone wanting private coordination
-can use SMS off-platform. The one real benefit of a social layer — trusting *whose* reports are
-reliable — is better served by an **asymmetric, public reputation/trust score** (D17, built in
-Phase 6), not by symmetric friending. Flattening keeps the shared map maximally populated and the
-mental model simple (one switch: is this report public or just mine).
-**Superseded — the original D13 (social graph).** v1 planned a follow primitive (mutual =
-"friends"), 4 report levels (*Just me / Friends / Followers / Public*), and a follower-approval
-toggle, with a "followers" tier as a spot-secrecy valve. Removed 2026-07-15: the secrecy valve
-was judged a net negative for a community safety resource, and "a report is a report regardless
-of who made it" makes the graph low-value. The `friends`/`followers` levels, the `follows` table,
-and `requireFollowApproval` are dropped from the spec (see `06-data-model.md`, `07-roadmap.md`).
+## D13 — Reports are always public; profiles are public or private (no social graph)
+**Decided (2026-07-15, revised twice — see "Evolution" below).**
+- **No follow/friend graph.** No follow, no mutual "friends," no follower-approval. A report is a
+  report regardless of who made it, so there is no social layer to build.
+- **Reports are ALWAYS public.** There is no per-report privacy level — no `just_me`, no
+  `friends`/`followers`. Every report contributes to the shared map/newsfeed everyone in range
+  sees; that *is* the app. If you don't want to share an observation with the community, don't
+  post it (keep a private log in Strava/notes instead — a solo private log here would just recreate
+  the anti-commons dynamic we rejected with the follow graph, for negligible benefit).
+  - Reads are gated only by **moderation** (`moderationStatus`, D32) and **blocks** (below) — not
+    by any visibility level.
+- **Profile visibility (`public` / `private`).** This is the *only* privacy switch, and it governs
+  **personal discoverability**, not reports:
+  - **Public profile:** searchable by name; a browsable page showing name, photo, **town/state**,
+    **bio**, **#reports / #comments**, **reputation score/class** (D50), and the user's full public
+    report history.
+  - **Private profile:** **name + photo only** — no bio/stats/history, and **not searchable**.
+  - **A private profile's reports are still public and name-attributed** (D3): "private profile"
+    means *you're not a browsable/searchable personage*, not that your activity is hidden. It is
+    deliberately **not** a spot-secrecy valve.
+  - **Minors (<18) are forced private** (see D41).
+- **Blocks still exist** (D32): a block hides two users' content/profiles from each other — pure
+  "stop showing me this person," no follow state to unwind.
+**Why:** The app is a planning/reporting **commons**, not a social network. Flattening to
+"public-or-don't-post" keeps the shared map maximally populated and the model dead simple. The one
+real benefit of a social layer — knowing *whose* reports to trust — is served by an asymmetric,
+public **trust score** (D50), not by friending or private tiers.
+**Evolution.**
+- *v1 (superseded):* a follow primitive (mutual = "friends"), 4 report levels
+  (*Just me / Friends / Followers / Public*), follower-approval — with a "followers" tier as a
+  spot-secrecy valve. Removed 2026-07-15: the secrecy valve is a net negative for a safety commons.
+- *interim (superseded same day):* dropped to 2 report levels (`just_me` / `public`). Then removed
+  `just_me` too — a private-only report is a thin use case that still withholds from the commons;
+  "public or don't post" is cleaner. Reports now carry **no visibility field**; the `follows` table,
+  `requireFollowApproval`, and the report `visibility` enum are all gone (see `06-data-model.md`).
 
 ## D14 — User-created (unmapped) locations allowed
 **Decided.** Users can drop a pin / draw a water body not present in OSM/NHD.
@@ -340,9 +342,9 @@ to also tear down. Block/mute ship in **Phase 3** alongside comments + flagging.
 **Decided.** Users can **delete their account** and **export their data**. On
 deletion we **anonymize** their past reports/comments (author replaced with a
 "deleted user" tombstone) rather than hard-deleting the content, preserving the
-community's historical ice record — unless a report is set to `just_me`, which is
-removed. Full policy wording waits on legal (Q10), but the product behavior is
-decided now.
+community's historical ice record. Since **all reports are public** (D13), there's no
+private content to selectively remove — every report is anonymized-not-erased uniformly.
+Full policy wording waits on legal (Q10), but the product behavior is decided now.
 **Why:** Privacy/PII obligations (D11) and user trust; but community value lives in
 the report history, so anonymize-don't-erase is the default.
 **Export format:** a **JSON bundle** of the user's own data (profile, reports,
@@ -516,39 +518,33 @@ runs the three checks on Node 22.
 spatial + visibility + safety logic is exactly what property tests and `convex-test`
 are good at. Vitest keeps one runner/config idiom across the stack (matches D7).
 
-## D41 — Minimum age 16; default report visibility & profile privacy derived from age
-**Decided (visibility mechanics revised 2026-07-15 with the D13 social-graph removal —
-now a 2-level, age-derived model).**
+## D41 — Minimum age 16; minors get private profiles and are read-only (interim)
+**Decided (mechanics revised 2026-07-15 alongside the D13 "reports are always public" simplification).**
 - **Minimum age is 16.** Under-16 accounts are not permitted. **We collect the user's
   date of birth at signup** and *derive* the age gate (≥16) and minor status (<18) from
   it (age math in `@skating/core`; stored as `profiles.dateOfBirth`). 16 lets the
   occasional independent teen skater participate without pulling us into full
   child-directed-service obligations; the realistic user base is overwhelmingly adults.
-- **Default report visibility derives from minor status (D13 has just 2 levels now):**
-  - **Adult (18+):** new reports default **`public`** — the community good, and it fights
-    cold-start. Any individual report can still be set **`just_me`** (a personal log).
-  - **Minor (<18):** new reports default **`just_me`**, and **`public` is not selectable** —
-    we never publicly broadcast that a *named minor* was at a place/time (D3). This is a
-    protective floor derived from the stored DOB (recomputed at read time, like the age
-    gate). At 18 the `public` option simply becomes *available* — future reports only;
-    nothing already posted is silently widened.
-- **Profile privacy also derives a floor from age (D13):** minors' profiles are **forced
-  private** (not searchable, no public profile page); adults **default public** but may
-  switch to private. Profile privacy is **independent** of per-report visibility — a
-  private-profile adult can still post `public` reports (attributed by name, D3).
-- **Mental model:** "an adult's reports are public by default and help everyone; a minor
-  keeps a protective private default until 18; whether your *profile* is searchable is a
-  separate switch." **New features must honor existing per-user settings** — a later
-  feature never silently widens exposure.
-**Why:** Public-by-default fights cold-start *without* overriding user choice, and minors
-get a protective default regardless. Keeps the privacy-by-default principle (00-vision)
-and the cold-start need honestly reconciled.
-**Note (supersedes the old mechanics):** the original D41 derived the default from a
-persisted `requireFollowApproval` "locked profile" flag (to avoid a live age check while
-the follow graph existed). With the graph removed (D13), `requireFollowApproval` is retired;
-the derivation is simply **age-based**, deterministic from the stored DOB and consistent with
-how the age gate is computed everywhere. `deriveDefaultVisibility` / `maxVisibilityForProfile`
-now take minor status and return `public` (adult) or `just_me` (minor).
+- **Minors (<18) cannot post public reports — and since all reports are public (D13), minors are
+  effectively read-only** (they can read reports and plan; they can't create reports). Enforced at
+  the trust boundary: `reports.create` rejects a minor author (server derives minor status from the
+  stored DOB), and the client hides the create surface for minors. At 18 posting simply becomes
+  available. **This is an interim guardrail (like the age gate + risk ack), not a settled policy —
+  it is explicitly revisitable at the Q10 legal review (L2).**
+- **Minors' profiles are forced private** (name + photo only, not searchable — D13). Adults default
+  public and may switch to private; a former-minor's private profile is **never auto-widened** at 18.
+- **Mental model:** "everyone's reports are public and help the community; under-18 users read and
+  plan but don't broadcast their location until 18; whether your *profile* is searchable is a
+  separate adult choice." **New features must honor existing settings** — never silently widen exposure.
+**Why:** The *product* risk of a minor's past-tense report is low (no live GPS — D12; no follow/DM —
+D13). But this is a **location** app that *knows* who is a minor, and publicly broadcasting a known
+minor's whereabouts is exactly what child-safety regimes (UK AADC, state privacy laws — L2/Q10) scrutinize.
+Read-only-until-18 costs almost nothing (tiny population; core value is *reading*) and removes that risk
+category by construction. It's a **one-line flip** if the Q10 lawyer greenlights minor posting.
+**Note (supersedes the old mechanics):** earlier iterations derived a *default report visibility* from a
+persisted "locked profile" flag, then from age. With reports now always public (D13), there is **no report
+visibility to derive** — the age check simply gates *whether a minor may post at all*. `requireFollowApproval`,
+`deriveDefaultVisibility`, and `maxVisibilityForProfile` are all retired.
 **Updated (2026-07-10):** originally this stored *no* birthdate — a bare self-attested
 16+ flag plus an `isMinor` boolean — to minimize PII (D11). Changed to store DOB because
 the boolean model made the **minor→adult transition undetectable**: `isMinor` could only
