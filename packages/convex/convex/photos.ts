@@ -5,10 +5,11 @@
  * `placeOnMap`, so a client bug can never leak a location.
  */
 
-import { v } from 'convex/values'
+import { ConvexError, v } from 'convex/values'
 import type { Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { requireProfile } from './lib/auth'
+import { getViewableReport } from './lib/reportVisibility'
 import { latLng } from './lib/validators'
 
 /** Mint a one-time Convex storage upload URL for the optimized full image / thumb (auth'd). */
@@ -52,13 +53,43 @@ export const create = mutation({
 })
 
 /**
- * Resolve serving URLs (full + thumb) for a set of photo ids — what the report/detail UI renders.
+ * Delete an uploaded photo the caller owns, plus its stored blobs — the cleanup path for a report
+ * that never got created (the form uploads photos before `reports.create`; if that fails or the
+ * user abandons the form, this reclaims the orphaned row + storage). Owner-gated; a missing row is
+ * a no-op so a double-cleanup or a since-deleted photo can't throw. Not a moderation delete —
+ * only the uploader may call it, and the client only calls it for still-unattached uploads.
+ */
+export const remove = mutation({
+  args: { photoId: v.id('photos') },
+  handler: async (ctx, { photoId }) => {
+    const profile = await requireProfile(ctx)
+    const photo = await ctx.db.get(photoId)
+    if (!photo) return // already gone — idempotent
+    if (photo.uploaderId !== profile._id) throw new ConvexError('Not your photo')
+    await Promise.all([
+      ctx.storage.delete(photo.storageId as Id<'_storage'>),
+      ctx.storage.delete(photo.thumbStorageId as Id<'_storage'>),
+    ])
+    await ctx.db.delete(photoId)
+  },
+})
+
+/**
+ * Resolve serving URLs (full + thumb) for a report's photos — what the report detail UI renders.
+ *
+ * **Visibility (D13/D42):** URL/coord resolution is gated on the *same* decision as the report
+ * query — we serve only the photos referenced by a report the current viewer may see. A caller who
+ * once held a photo id therefore can't keep reading media (or its GPS coord) after losing report
+ * access; an unviewable or missing report yields `[]`.
+ *
  * A URL is `null` if its stored file is missing (deleted/never-finalized), so callers must guard it
  * (never assume a serving URL). Missing photo rows are skipped.
  */
 export const getUrls = query({
-  args: { photoIds: v.array(v.id('photos')) },
-  handler: async (ctx, { photoIds }) => {
+  args: { reportId: v.id('reports') },
+  handler: async (ctx, { reportId }) => {
+    const report = await getViewableReport(ctx, reportId)
+    if (!report) return []
     const results: {
       photoId: Id<'photos'>
       url: string | null
@@ -67,7 +98,7 @@ export const getUrls = query({
       coord?: { lat: number; lng: number }
       placeOnMap: boolean
     }[] = []
-    for (const photoId of photoIds) {
+    for (const photoId of report.photoIds) {
       const photo = await ctx.db.get(photoId)
       if (!photo) continue
       // Stored as v.string() per the data model; they're storage ids, so cast for `getUrl`.

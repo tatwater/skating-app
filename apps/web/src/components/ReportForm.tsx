@@ -482,6 +482,7 @@ export function ReportForm({
   const profile = useQuery(api.profiles.current, {})
   const generateUploadUrl = useMutation(api.photos.generateUploadUrl)
   const createPhoto = useMutation(api.photos.create)
+  const deletePhoto = useMutation(api.photos.remove)
   const createReport = useMutation(api.reports.create)
   const { putInPin, setPutInPin, setPinDropMode, pinDropMode } = useMapSelection()
 
@@ -502,14 +503,24 @@ export function ReportForm({
 
   // Revoke every preview object URL on unmount — via a ref so we don't revoke still-displayed
   // previews on each add/remove (a `[photos]` dep would run cleanup on every list change).
-  // Individual removals revoke their own URL in `removePhoto`.
+  // Individual removals revoke their own URL in `removePhoto`. Also reclaim any photos that were
+  // uploaded for a report that never got created — a failed `reports.create` or an abandoned form
+  // would otherwise strand a storage blob + photo row (`submittedRef` skips a successful submit,
+  // whose photos are now attached to the report). `useMutation` is a stable ref, so `[deletePhoto]`
+  // never re-runs this — it stays an unmount-only cleanup.
   const photosRef = useRef<PhotoDraft[]>([])
   photosRef.current = photos
+  const submittedRef = useRef(false)
   useEffect(() => {
     return () => {
-      for (const p of photosRef.current) URL.revokeObjectURL(p.previewUrl)
+      for (const p of photosRef.current) {
+        URL.revokeObjectURL(p.previewUrl)
+        if (!submittedRef.current && p.uploadedId) {
+          void deletePhoto({ photoId: p.uploadedId }).catch(() => {})
+        }
+      }
     }
-  }, [])
+  }, [deletePhoto])
 
   // Clear the map put-in-pin state when the form goes away — including an unmount from navigating
   // away mid-pin-drop, which would otherwise strand the map in crosshair/banner mode.
@@ -526,13 +537,21 @@ export function ReportForm({
     onOpenChange(false)
   }, [onOpenChange, setPutInPin, setPinDropMode])
 
-  const removePhoto = useCallback((id: string) => {
-    setPhotos((prev) => {
-      const removed = prev.find((p) => p.id === id)
-      if (removed) URL.revokeObjectURL(removed.previewUrl)
-      return prev.filter((p) => p.id !== id)
-    })
-  }, [])
+  const removePhoto = useCallback(
+    (id: string) => {
+      setPhotos((prev) => {
+        const removed = prev.find((p) => p.id === id)
+        if (removed) {
+          URL.revokeObjectURL(removed.previewUrl)
+          // If it had already been uploaded (on a prior failed submit), reclaim its blob + row now —
+          // dropping it from state alone would strand it (it's no longer in the unmount sweep).
+          if (removed.uploadedId) void deletePhoto({ photoId: removed.uploadedId }).catch(() => {})
+        }
+        return prev.filter((p) => p.id !== id)
+      })
+    },
+    [deletePhoto],
+  )
 
   const onAddFiles = useCallback(async (files: FileList) => {
     setError(null)
@@ -589,6 +608,7 @@ export function ReportForm({
         }),
       )
       const reportId = await createReport({ ...input, waterBodyId, photoIds })
+      submittedRef.current = true // photos are attached now — keep the unmount sweep off them
       setPutInPin(null)
       onOpenChange(false)
       navigate({ to: '/report/$id', params: { id: reportId } })
