@@ -463,6 +463,63 @@ export const setCuratedBoost = mutation({
 })
 
 /**
+ * Internal seed (run via `pnpm exec convex run`, no auth) — the Phase 2.5 re-seed of the community
+ * favorites list. For each `{ name, boost, state? }`: find *listed* bodies whose name matches
+ * (search index, then exact case-insensitive), disambiguate a repeated name by the optional `state`
+ * hint else the **largest-area** body (the one people mean — Lake George NY over the MA reservoir),
+ * set `curatedBoost` + recompute `displayScore`/`minVisibleZoom` + re-index. Mirrors
+ * `setCuratedBoost`'s core minus the admin auth + audit row — Phase 4 lifts per-body boost editing
+ * into the admin UI with proper auditing. Returns what was boosted + names that matched nothing.
+ */
+export const applyCuratedBoostSeed = internalMutation({
+  args: {
+    seed: v.array(v.object({ name: v.string(), boost: v.number(), state: v.optional(v.string()) })),
+  },
+  handler: async (ctx, { seed }) => {
+    const applied: Array<{
+      name: string
+      id: Id<'waterBodies'>
+      states: string[]
+      areaSqM: number
+      minVisibleZoom: number
+    }> = []
+    const notFound: string[] = []
+    for (const { name, boost, state } of seed) {
+      const candidates = (
+        await ctx.db
+          .query('waterBodies')
+          .withSearchIndex('search_name', (s) => s.search('name', name))
+          .take(50)
+      ).filter((b) => b.name.toLowerCase() === name.toLowerCase() && isListed(b))
+      const target =
+        (state ? candidates.find((b) => b.states?.includes(state)) : undefined) ??
+        candidates.sort((a, b) => (b.surfaceAreaSqM ?? 0) - (a.surfaceAreaSqM ?? 0))[0]
+      if (!target) {
+        notFound.push(name)
+        continue
+      }
+      const scores = scoreFields({ surfaceAreaSqM: target.surfaceAreaSqM, curatedBoost: boost })
+      await ctx.db.patch(target._id, { curatedBoost: boost, ...scores })
+      await waterBodiesGeo.insert(
+        ctx,
+        target._id,
+        { latitude: target.centroid.lat, longitude: target.centroid.lng },
+        { listed: isListed(target) },
+        scores.minVisibleZoom,
+      )
+      applied.push({
+        name,
+        id: target._id,
+        states: target.states ?? [],
+        areaSqM: target.surfaceAreaSqM ?? 0,
+        minVisibleZoom: scores.minVisibleZoom,
+      })
+    }
+    return { applied, notFound }
+  },
+})
+
+/**
  * Public: water bodies whose **bbox intersects** the viewport (D5/D48). Two-tier — see the
  * `VIEWPORT_MARGIN_DEG` / `LARGE_BODY_EXTENT_DEG` note above for why:
  *  - **Tier 1:** a centroid prefilter over the viewport + a small margin (`listed == true`),

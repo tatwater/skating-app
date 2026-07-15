@@ -37,11 +37,19 @@ code changes, and the tuning knobs.
 - **§6 Bounds — ✅ DONE.** `VERMONT_MAX_BOUNDS` → `NORTHEAST_MAX_BOUNDS` (`[-79.9,41.2]..[-66.8,47.5]`)
   + `INITIAL_ZOOM` 8.5→6.5 in both apps' `waterMap.ts`, kept in sync with the tile bbox; `waterMap.test.ts`
   updated in both (web 16, mobile 9 green).
-- **§5 `curatedBoost` re-seed — ⬜ DEFERRED.** The seed CSV is names-only and same-named bodies
-  repeat across states (search returns 3 "Lake George"s: NY lake, MA reservoir, ME pond), so a bulk
-  name-match risks boosting the wrong body. Area-based D49 already handles big-lake prominence; the
-  boost is a tuning nicety for small-but-beloved lakes. Recommend a **careful id-by-id pass or the
-  Phase 4 admin UI** (its intended home) over a hasty midnight bulk apply. Not a correctness gate.
+- **§5 `curatedBoost` re-seed — ✅ mechanism DONE + seed applied (2026-07-15).** Added an internal
+  `waterBodies.applyCuratedBoostSeed` (auth-free; match by name via the search index → disambiguate a
+  repeat by optional state hint else largest area → set boost + rescore + re-index). Ran the VT seed
+  CSV at a flat **+0.3**: **21 bodies boosted**, 12 not-found. The wins are correct — **Lake Morey
+  VT → minVisibleZoom 9→7** (now draws at regional zoom, the marquee criterion), Lake Champlain,
+  Lake George **(NY, correctly picked over the MA/ME namesakes)**, Placid, Willoughby, Moore
+  Reservoir (NH,VT), etc. **Known imperfection (expected):** several seed rows are Champlain/Lake
+  George *bays* that aren't distinct OSM bodies (Malletts/Northwest/Burlington/Shelburne/Outer Bay,
+  Dillenbeck, Saranac Lake → not-found), and a few (South Bay, Button Bay, Half Moon Cove, Foster
+  Pond → matched Maine namesakes; Mill Pond → a NY namesake) **mis-matched a same-named body
+  elsewhere** — the seed has no coordinates, so the name→body map isn't clean. This is exactly the
+  curation the **Phase 4 admin water-body UI** owns (set/adjust/remove per-body boost with the map in
+  front of you). Mechanism proven; data curation is Phase 4.
 - **Prod — ⬜ DEFERRED** (Convex prod uninitialized, as planned).
 
 ## Status / prerequisites

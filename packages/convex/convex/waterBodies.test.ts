@@ -980,3 +980,58 @@ describe('waterBodies.searchByName (map search box)', () => {
     expect(results.length).toBeLessThanOrEqual(2)
   })
 })
+
+describe('waterBodies.applyCuratedBoostSeed (Phase 2.5 re-seed)', () => {
+  const canonical = (externalId: string, name: string, surfaceAreaSqM: number) => ({
+    source: 'osm' as const,
+    externalId,
+    name,
+    type: 'pond' as const,
+    polygon: SAMPLE_BODY.polygon,
+    bbox: SAMPLE_BODY.bbox,
+    centroid: SAMPLE_BODY.centroid,
+    surfaceAreaSqM,
+  })
+
+  test('boosts a matched body (widens its minVisibleZoom) and reports a miss', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [canonical('osm/way/bp', 'Beloved Pond', 50_000)],
+    })
+    const id = await onlyBodyId(t)
+    const before = await t.run((ctx) => ctx.db.get(id))
+
+    const res = await t.mutation(internal.waterBodies.applyCuratedBoostSeed, {
+      seed: [
+        { name: 'Beloved Pond', boost: 0.5 },
+        { name: 'Nonexistent Lake', boost: 0.5 },
+      ],
+    })
+    const after = await t.run((ctx) => ctx.db.get(id))
+
+    expect(after?.curatedBoost).toBe(0.5)
+    // Higher score ⇒ lower (wider) minVisibleZoom bucket — the whole point of the boost.
+    expect(after?.minVisibleZoom).toBeLessThan(before?.minVisibleZoom ?? Number.POSITIVE_INFINITY)
+    expect(res.applied.map((a) => a.name)).toEqual(['Beloved Pond'])
+    expect(res.notFound).toEqual(['Nonexistent Lake'])
+  })
+
+  test('disambiguates a repeated name by the state hint (over largest-area default)', async () => {
+    const t = convexTestWithGeo()
+    // Two "Twin Lake"s: the VT one is larger, so it would win the largest-area default…
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [canonical('osm/way/twin-vt', 'Twin Lake', 999_999)],
+      state: 'VT',
+    })
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [canonical('osm/way/twin-ny', 'Twin Lake', 10_000)],
+      state: 'NY',
+    })
+    // …but the NY hint targets the smaller NY body instead.
+    const res = await t.mutation(internal.waterBodies.applyCuratedBoostSeed, {
+      seed: [{ name: 'Twin Lake', boost: 0.3, state: 'NY' }],
+    })
+    expect(res.applied).toHaveLength(1)
+    expect(res.applied[0]?.states).toEqual(['NY'])
+  })
+})

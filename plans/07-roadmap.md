@@ -228,7 +228,15 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
 ## Phase 5 — Drive-time filtering
 - Isochrone from home (**hosted ORS**), cached per user (D18/D35); radius fallback.
 - Filter map + feeds to the user's range.
-- **Done:** map/feed show only in-range water bodies/reports.
+- **Favorite / follow water bodies (user idea, 2026-07-15).** Let a user mark specific bodies as
+  **favorites** / subscribe to them — a manual, per-body opt-in that complements drive-time as a
+  *second axis* for scoping the **Newsfeed** (Phase 6) and **notifications** (D-notification prefs,
+  Phase 3): a favorited lake's reports/events surface **even when it's outside drive-time range**,
+  and notification prefs can target "my favorites." Gives users direct control over what they follow
+  rather than proximity alone. Likely a small `waterBodyFollows` join (userId × waterBodyId); ties
+  into the Phase 3 notification prefs and the Phase 6 feed. *(Could ship earlier if wanted — no ORS
+  dependency; parked here as the natural home alongside the other feed-scoping controls.)*
+- **Done:** map/feed show only in-range water bodies/reports (plus any favorited bodies).
 - Needs: OpenRouteService key.
 
 ## Phase 6 — Newsfeed page
