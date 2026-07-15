@@ -223,6 +223,7 @@ export function ReportForm({
   const generateUploadUrl = useMutation(api.photos.generateUploadUrl)
   const createPhoto = useMutation(api.photos.create)
   const deletePhoto = useMutation(api.photos.remove)
+  const removeBlob = useMutation(api.photos.removeBlob)
   const createReport = useMutation(api.reports.create)
   const { putInPin, setPutInPin, setPinDropMode } = useMapSelection()
 
@@ -242,23 +243,34 @@ export function ReportForm({
     }
   }, [profile, form, profilePublic])
 
-  // Reclaim any photos uploaded for a report that never got created — a failed `reports.create` or
-  // an abandoned form would otherwise strand a storage blob + photo row (`submittedRef` skips a
-  // successful submit, whose photos are now attached to the report). Read via a ref so this stays an
-  // unmount-only sweep; `useMutation` is a stable ref, so `[deletePhoto]` never re-runs it. Mirrors
-  // web's `ReportForm` cleanup (minus its object-URL revocation — native uses file URIs).
+  // Reclaim whatever a draft has already uploaded so nothing is stranded server-side: a created row
+  // (deletes the row + both blobs) or, for a partial/interrupted upload, the bare blobs that never
+  // got a row (each recorded the instant it landed — see `handleSubmit`). Best-effort; failures are
+  // swallowed. Mirrors web's `ReportForm` cleanup (minus its object-URL revocation — native uses URIs).
+  const reclaim = useCallback(
+    (p: PhotoDraft) => {
+      if (p.uploadedId) {
+        void deletePhoto({ photoId: p.uploadedId }).catch(() => {})
+        return
+      }
+      if (p.fullStorageId) void removeBlob({ storageId: p.fullStorageId }).catch(() => {})
+      if (p.thumbStorageId) void removeBlob({ storageId: p.thumbStorageId }).catch(() => {})
+    },
+    [deletePhoto, removeBlob],
+  )
+
+  // Reclaim any photos uploaded for a report that never got created — a failed `reports.create` or an
+  // abandoned form would otherwise strand blobs (+ a row). `submittedRef` skips a successful submit,
+  // whose photos are now attached. Read via a ref so this stays an unmount-only sweep.
   const photosRef = useRef<PhotoDraft[]>([])
   photosRef.current = photos
   const submittedRef = useRef(false)
   useEffect(() => {
     return () => {
-      for (const p of photosRef.current) {
-        if (!submittedRef.current && p.uploadedId) {
-          void deletePhoto({ photoId: p.uploadedId }).catch(() => {})
-        }
-      }
+      if (submittedRef.current) return
+      for (const p of photosRef.current) reclaim(p)
     }
-  }, [deletePhoto])
+  }, [reclaim])
 
   // Clear the map put-in-pin state when the form goes away — including an unmount mid-pin-drop, which
   // would otherwise strand the map in peek mode.
@@ -269,17 +281,17 @@ export function ReportForm({
     }
   }, [setPutInPin, setPinDropMode])
 
-  // Reclaim an already-uploaded photo's blob + row when the user removes it (a prior failed submit
+  // Reclaim an already-uploaded photo's blobs (+ row) when the user removes it (a prior failed submit
   // may have uploaded it); dropping it from state alone would strand it — it's no longer swept.
   const removePhoto = useCallback(
     (id: string) => {
       setPhotos((prev) => {
         const removed = prev.find((p) => p.id === id)
-        if (removed?.uploadedId) void deletePhoto({ photoId: removed.uploadedId }).catch(() => {})
+        if (removed) reclaim(removed)
         return prev.filter((p) => p.id !== id)
       })
     },
-    [deletePhoto],
+    [reclaim],
   )
 
   const onAddPhotos = useCallback(async () => {
@@ -331,29 +343,32 @@ export function ReportForm({
       const photoIds = await Promise.all(
         photos.map(async (photo) => {
           if (photo.uploadedId) return photo.uploadedId
-          // Reuse any object a prior (failed) attempt already uploaded; only upload what's missing.
+          // Upload the full + thumb independently, each recording its storage id the instant it lands
+          // (not after both settle). So a partial failure keeps the object that DID upload — a retry
+          // reuses it instead of orphaning a duplicate, and the cleanup sweep can reclaim it.
+          const ensure = (
+            existing: Id<'_storage'> | undefined,
+            uri: string,
+            key: 'fullStorageId' | 'thumbStorageId',
+          ): Promise<Id<'_storage'>> =>
+            existing !== undefined
+              ? Promise.resolve(existing)
+              : generateUploadUrl()
+                  .then((url) => uploadToStorage(url, uri))
+                  .then((sid) => {
+                    const id = sid as Id<'_storage'>
+                    setPhotos((prev) =>
+                      prev.map((p) => (p.id === photo.id ? { ...p, [key]: id } : p)),
+                    )
+                    return id
+                  })
           const [storageId, thumbStorageId] = await Promise.all([
-            photo.fullStorageId ??
-              generateUploadUrl().then((url) => uploadToStorage(url, photo.fullUri)),
-            photo.thumbStorageId ??
-              generateUploadUrl().then((url) => uploadToStorage(url, photo.thumbUri)),
+            ensure(photo.fullStorageId, photo.fullUri, 'fullStorageId'),
+            ensure(photo.thumbStorageId, photo.thumbUri, 'thumbStorageId'),
           ])
-          // Record the storage IDs before creating the row, so a createPhoto failure doesn't strand
-          // the objects behind a retry that would re-upload them.
-          setPhotos((prev) =>
-            prev.map((p) =>
-              p.id === photo.id
-                ? {
-                    ...p,
-                    fullStorageId: storageId as Id<'_storage'>,
-                    thumbStorageId: thumbStorageId as Id<'_storage'>,
-                  }
-                : p,
-            ),
-          )
           const id = await createPhoto({
-            storageId: storageId as Id<'_storage'>,
-            thumbStorageId: thumbStorageId as Id<'_storage'>,
+            storageId,
+            thumbStorageId,
             placeOnMap: photo.placeOnMap,
             coord: photoUploadCoord(photo.placeOnMap, photo.coord),
           })

@@ -15,7 +15,7 @@ import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { NativeSyntheticEvent } from 'react-native'
-import { StyleSheet, useColorScheme, useWindowDimensions } from 'react-native'
+import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native'
 import { env } from '../lib/env'
 import {
   boundsToViewport,
@@ -81,21 +81,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   } = useMapSelection()
   const { height: windowHeight } = useWindowDimensions()
 
-  const pmtilesUrl = env.pmtilesUrl || DEMO_PMTILES_URL
-  const mapStyle = useMemo(() => buildMapStyle(pmtilesUrl, flavor), [pmtilesUrl, flavor])
-
-  // The demo archive is dated and Protomaps prunes old builds (it will 404), so it's DEV-ONLY. A
-  // release build that omits EXPO_PUBLIC_PMTILES_URL is a misconfiguration that would silently ship
-  // a basemap destined to go blank — surface it loudly (flows to Sentry via the console integration)
-  // instead. Fires once on mount; env is build-time constant.
-  useEffect(() => {
-    if (!__DEV__ && !env.pmtilesUrl) {
-      console.error(
-        'EXPO_PUBLIC_PMTILES_URL is unset in a release build — falling back to the dev-only ' +
-          'Protomaps demo tiles, which will eventually 404. Set it to the self-hosted extract URL.',
-      )
-    }
-  }, [])
+  // Basemap tiles: the demo archive is dated and Protomaps prunes old builds (it will 404), so it's
+  // DEV-ONLY. A release build that omits EXPO_PUBLIC_PMTILES_URL must NOT silently fall back to it —
+  // that ships a map destined to go blank. Instead we refuse to build a style (→ the blocking config
+  // screen below), turning the misconfiguration into an immediate, obvious failure.
+  const pmtilesUrl = env.pmtilesUrl || (__DEV__ ? DEMO_PMTILES_URL : '')
+  const mapStyle = useMemo(
+    () => (pmtilesUrl ? buildMapStyle(pmtilesUrl, flavor) : null),
+    [pmtilesUrl, flavor],
+  )
 
   // Viewport bbox + zoom are the query key; seeded to the region so data shows before the first
   // region event, then `onRegionDidChange` refines it.
@@ -214,6 +208,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     })
   }
 
+  // Release build with no basemap URL configured — block loudly rather than render a doomed map.
+  if (!mapStyle) {
+    return (
+      <View style={styles.configError}>
+        <Text style={styles.configErrorText}>
+          Map unavailable — this build is missing its basemap configuration
+          (EXPO_PUBLIC_PMTILES_URL).
+        </Text>
+      </View>
+    )
+  }
+
   return (
     <MapGL
       style={StyleSheet.absoluteFill}
@@ -288,3 +294,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     </MapGL>
   )
 }
+
+const styles = StyleSheet.create({
+  configError: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    backgroundColor: '#1c1c1e',
+  },
+  configErrorText: { color: '#ffffff', textAlign: 'center', fontSize: 15, lineHeight: 22 },
+})

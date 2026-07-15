@@ -75,6 +75,25 @@ export const remove = mutation({
 })
 
 /**
+ * Delete a storage blob the client uploaded but never attached to a `photos` row — the cleanup path
+ * for a partial upload (one of the full/thumb pair lands, its sibling or `create` fails) or a form
+ * abandoned between `generateUploadUrl` and `create`. Auth-gated; a bare blob carries no owner row so
+ * we can't owner-check it, but a storage id is only ever handed back to the uploader (from an upload
+ * URL POST) and isn't enumerable. Idempotent — an already-gone / never-finalized id is a no-op.
+ */
+export const removeBlob = mutation({
+  args: { storageId: v.id('_storage') },
+  handler: async (ctx, { storageId }) => {
+    await requireProfile(ctx)
+    try {
+      await ctx.storage.delete(storageId)
+    } catch {
+      // Already deleted, or an upload URL that was never finalized — nothing to reclaim.
+    }
+  },
+})
+
+/**
  * Resolve serving URLs (full + thumb) for a report's photos — what the report detail UI renders.
  *
  * **Visibility (D13/D42):** URL/coord resolution is gated on the *same* decision as the report

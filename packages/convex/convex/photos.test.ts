@@ -310,3 +310,31 @@ describe('photos.remove (orphan cleanup)', () => {
     await expect(t.mutation(api.photos.remove, { photoId })).rejects.toThrow(/not authenticated/i)
   })
 })
+
+describe('photos.removeBlob (storage-only cleanup)', () => {
+  test('deletes an uploaded-but-unattached blob', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await storeBlob(t)
+    await asUser.mutation(api.photos.removeBlob, { storageId })
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toBeNull()
+  })
+
+  test('is idempotent — removing a since-deleted blob is a no-op', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await storeBlob(t)
+    await t.run((ctx) => ctx.storage.delete(storageId))
+    await asUser.mutation(api.photos.removeBlob, { storageId }) // must not throw
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toBeNull()
+  })
+
+  test('requires authentication', async () => {
+    const t = convexTest(schema, modules)
+    const storageId = await storeBlob(t)
+    await expect(t.mutation(api.photos.removeBlob, { storageId })).rejects.toThrow(
+      /not authenticated/i,
+    )
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).not.toBeNull() // untouched
+  })
+})
