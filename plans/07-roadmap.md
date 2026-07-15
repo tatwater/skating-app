@@ -128,8 +128,13 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 > Convex `reports`/`photos` + D49 geospatial zoom filter + `waterBodies.get`/`setCuratedBoost`, the
 > interactive map (tap→detail, geolocation framing, deep-linkable `/water/$id` · `/report/$id`
 > drawers), and report create (multi-reading thickness, manual conditions, put-in pin, photos with
-> HEIC decode + EXIF strip + geotag opt-in). Built on shadcn/ui (Base UI). **Mobile (§F) is the
-> follow-on PR** (native MapLibre + the offline draft queue, D30).
+> HEIC decode + EXIF strip + geotag opt-in). Built on shadcn/ui (Base UI).
+>
+> **Status (mobile §F1): ✅ shipped (2026-07-14, PR #13)** — native `@maplibre/maplibre-react-native`
+> map with the D49 zoom filter, `expo-location` framing, `@gorhom/bottom-sheet` drawers +
+> deep-linkable `/water/[id]` · `/report/[id]`, and the read + **online** report-create loop
+> (native `expo-image-picker`/`expo-image-manipulator` photo pipeline). Shared helpers lifted into
+> `@skating/core`. **§F2 (offline draft queue, D30) is the remaining mobile follow-on PR.**
 
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
 - **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived
@@ -151,10 +156,16 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - Needs: MapLibre + tiles (Protomaps), Convex file storage.
 
 ## Phase 2.5 — Regional expansion (Northeast skating states)
-> **Detailed plan:** [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md) → *Workstream H*.
-> Slotted **after the mobile MVP (Phase 2 §F: F1 + F2) and before Phase 3** (decided 2026-07-14).
-> It's data + infra, not features, so it doesn't gate the social graph — but the corpus should be
-> region-complete before feeds / drive-time (Phase 5/6) reason over it.
+> **Detailed plan + runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md)
+> (was §H of the Phase 2 plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
+> (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the social
+> graph — but the corpus should be region-complete before feeds / drive-time (Phase 5/6) reason over it.
+>
+> **Status: ✅ mostly shipped on dev (2026-07-15)** — ~116k bodies across NY/VT/NH/ME/MA imported
+> (NY clipped downstate), a 948 MB multi-state basemap on Cloudflare R2, map bounds widened to the
+> region, and a **lake name-search box** (added when the big corpus made it near-essential) in both
+> apps. **Remaining:** the `curatedBoost` re-seed (deferred to a careful pass / Phase 4 admin UI) and
+> the prod cutover (Convex prod uninitialized).
 
 Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **lake-skating** states.
 - **Region scope (decided 2026-07-14):** **NY (upstate/northern only — exclude NYC + Long Island),

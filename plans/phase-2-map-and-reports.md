@@ -317,7 +317,29 @@ piece) lands on its own so its review is scoped (Greptile reviews are metered).
 web-only glue stays in web: the datetime-**local** `<input>` round-trip and the browser photo pipeline
 (`heic2any`/`exifr`/`browser-image-compression`) — neither applies on native.
 
-#### F1 — native map + read + **online** report write
+#### F1 — native map + read + **online** report write — ✅ DONE (2026-07-14, PR #13)
+
+> **Shipped:** the three pure helpers lifted into `@skating/core` (`reportView` [plan-named
+> `reportDisplay`], `reportForm`, `photo`) with web refactored onto them; native
+> `@maplibre/maplibre-react-native` map (`MapView.tsx`) consuming `listInViewport` with the D49
+> `zoom` filter + tap→`/water/[id]`; `expo-location` framing via the pure `frameForCoord`; one
+> persistent map under a pathless `(map)` layout with `@gorhom/bottom-sheet` drawers
+> (`MapDrawer.tsx`), a ported `MapSelectionContext` (highlight/focus/photoPins/put-in
+> pin/pin-drop), and deep-linkable `/water/[id]` · `/report/[id]` (expo-router, `skating://`
+> scheme); water-body detail (merged→survivor redirect, not-found vs. unavailable, imperial
+> area, feed by skate time, author attribution) + report detail (imperial fields, photos,
+> `placeOnMap` pins) + the online create form (ice/surface/quality/multi-reading thickness/
+> conditions/visibility-clamped/notes/skate-time/put-in pin) validated by `validateReportInput`;
+> native photo pipeline (`expo-image-picker` `exif:true` + `expo-image-manipulator` resize +
+> EXIF-strip, coord gated on `placeOnMap`). Tamagui for drawer content throughout.
+>
+> **Known gap (test thinness, not scope):** pure logic is covered (`waterMap.test.ts`,
+> `photo.test.ts` + shared core tests) but there are **no mobile component tests** — the native
+> `ReportForm`/detail clamp/thickness/put-in/geotag logic isn't exercised the way web's
+> `ReportFormFields` test covers it (`@testing-library/react-native` installed, unused). The
+> imperative `MapView`/`photoPipeline` shells stay excluded from coverage (Phase 1 precedent).
+> Worth a fast-follow native component test for parity.
+
 - **Map lib = `@maplibre/maplibre-react-native`** (decided 2026-07-13; **not** `@rnmapbox/maps`).
   Rationale: parity with web — it consumes the same MapLibre **style spec**, the same `pmtiles://`
   protocol, and the same `@protomaps/basemaps` flavors, so `waterMap.ts`'s `buildMapStyle`/palette
@@ -367,7 +389,13 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
   ODbL attribution visible.
 
 ### H. Regional expansion (post-MVP — Phase 2.5, its own PR) — decided 2026-07-14
-Runs **after the mobile MVP (F1 + F2)** and before Phase 3 (see roadmap "Phase 2.5"). Pure data +
+
+> **Execution runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md) — the
+> step-by-step ops (per-state ETL + NY clip, multi-state `.pmtiles` → R2, bounds widening) and the
+> small code changes. **Reordered 2026-07-14: H runs before F2** (F2 is the mobile-only offline
+> queue, orthogonal to H's data/infra — nothing in H depends on it).
+
+Runs **after the mobile online loop (F1)** and before Phase 3 (see roadmap "Phase 2.5"). Pure data +
 infra — no app features — so it's a separate PR. Widens the pilot's **single-state Vermont** corpus +
 basemap to the Northeast lake-skating states. **Nothing here changes until the mobile online loop
 ships**; and the map-bounds widening is the *last* step (after the data lands), never before.
