@@ -24,7 +24,6 @@ import {
   THICKNESS_METHODS,
   USER_ROLES,
   USER_STATUSES,
-  VISIBILITY_LEVELS,
   WATER_BODY_TYPES,
 } from '@skating/core'
 import { defineSchema, defineTable } from 'convex/server'
@@ -201,7 +200,7 @@ export default defineSchema({
     ),
     photoIds: v.array(v.id('photos')),
     notes: v.optional(v.string()),
-    visibility: literals(VISIBILITY_LEVELS), // just_me/public (D13, no social graph); DEFAULT derived per D41
+    // No visibility field — every report is public (D13). Minors can't create reports (D41).
     moderationStatus: literals(MODERATION_STATUSES), // default visible (D32)
     hazardIdsCreated: v.array(v.id('hazards')),
     createdAt: v.number(),

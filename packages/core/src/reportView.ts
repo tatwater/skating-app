@@ -6,7 +6,7 @@
  *
  * The community ice/surface vocabulary (D23) is coded as `snake_case` enums in `./types`;
  * `humanizeEnum` renders them ("black_ice" → "Black ice") so a vocab change never desyncs a label
- * map. Only the visibility labels get an explicit map (their wording isn't a mechanical de-casing).
+ * map.
  */
 
 import type {
@@ -15,7 +15,6 @@ import type {
   SkateQuality,
   SkyCondition,
   ThicknessMethod,
-  Visibility,
 } from './types'
 import {
   cmToInches,
@@ -29,12 +28,6 @@ import {
 export function humanizeEnum(token: string): string {
   const spaced = token.replace(/_/g, ' ')
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
-}
-
-/** Per-report visibility, worded for the reader (not a mechanical de-casing of the enum). */
-export const VISIBILITY_LABELS: Record<Visibility, string> = {
-  just_me: 'Only me',
-  public: 'Public',
 }
 
 /** Thickness reading measurement trust (D22) — `estimated` is lower-trust than `measured`. */

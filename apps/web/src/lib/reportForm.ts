@@ -1,7 +1,7 @@
 /**
  * Web-only adapters between the shared `ReportFormState` (from `@skating/core`, which carries
  * `skateTime` as epoch ms) and the browser's `<input type="datetime-local">` value (a local-time
- * string). The pure form ⇆ domain logic (`buildReportInput`, `visibilityOptions`, `emptyReportForm`,
+ * string). The pure form ⇆ domain logic (`buildReportInput`, `emptyReportForm`,
  * …) lives in `@skating/core` so mobile shares it; only this input-boundary glue is web-specific.
  */
 

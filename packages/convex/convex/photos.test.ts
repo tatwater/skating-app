@@ -49,17 +49,15 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
   return body._id
 }
 
-/** Attach `photoIds` to a fresh report by `asAuthor` at the given visibility. */
+/** Attach `photoIds` to a fresh (public, D13) report by `asAuthor`. */
 async function seedReport(
   asAuthor: ReturnType<ReturnType<typeof convexTest>['withIdentity']>,
   waterBodyId: Id<'waterBodies'>,
   photoIds: Id<'photos'>[],
-  visibility: 'public' | 'just_me' = 'public',
 ) {
   return asAuthor.mutation(api.reports.create, {
     waterBodyId,
     skateTime: SKATE,
-    visibility,
     photoIds,
   })
 }
@@ -178,7 +176,7 @@ describe('photos.getUrls (report-gated, D13/D42)', () => {
     expect(row?.coord).toEqual(COORD)
   })
 
-  test('a non-author cannot resolve URLs for a just_me report (no visibility bypass)', async () => {
+  test('any viewer can resolve URLs for a public report (all reports public, D13)', async () => {
     const t = convexTestWithGeo()
     const bodyId = await seedBody(t)
     const asAuthor = await seedUser(t, 'clerk_author')
@@ -189,14 +187,13 @@ describe('photos.getUrls (report-gated, D13/D42)', () => {
       coord: COORD,
       placeOnMap: true,
     })
-    const reportId = await seedReport(asAuthor, bodyId, [photoId], 'just_me')
+    const reportId = await seedReport(asAuthor, bodyId, [photoId])
 
-    // The author still sees the media…
+    // The author, another signed-in user, and an anon caller all resolve the media — reports are public.
     expect((await asAuthor.query(api.photos.getUrls, { reportId })).length).toBe(1)
-    // …but another signed-in user (and an anon caller) get nothing — no URL, no coord leak.
     const asOther = await seedUser(t, 'clerk_other')
-    expect(await asOther.query(api.photos.getUrls, { reportId })).toEqual([])
-    expect(await t.query(api.photos.getUrls, { reportId })).toEqual([])
+    expect((await asOther.query(api.photos.getUrls, { reportId })).length).toBe(1)
+    expect((await t.query(api.photos.getUrls, { reportId })).length).toBe(1)
   })
 
   test('returns [] for a hidden (moderated) report', async () => {

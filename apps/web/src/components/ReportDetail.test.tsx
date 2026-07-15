@@ -48,7 +48,6 @@ const FIXTURE: ReportViewData = {
   bodyName: 'Lake Morey',
   authorName: 'Ada',
   skateTime: Date.UTC(2026, 0, 5, 19, 30),
-  visibility: 'public',
   skateQuality: 'great',
   iceTypes: ['black_ice'],
   surfaceTags: ['orange_peel'],
@@ -74,12 +73,11 @@ describe('ReportView', () => {
     expect(screen.getByText(/Jan 5, 2026/)).toBeInTheDocument()
   })
 
-  it('shows ice description with humanized community vocabulary and quality/visibility', async () => {
+  it('shows ice description with humanized community vocabulary and quality', async () => {
     renderInDrawer(<ReportView data={FIXTURE} />)
     expect(await screen.findByText('Black ice')).toBeInTheDocument()
     expect(screen.getByText('Orange peel')).toBeInTheDocument()
     expect(screen.getByText('Great')).toBeInTheDocument()
-    expect(screen.getByText('Public')).toBeInTheDocument()
   })
 
   it('renders measurements in imperial (D25)', async () => {
@@ -105,7 +103,6 @@ describe('ReportView', () => {
         data={{
           waterBodyId: 'wb2',
           skateTime: Date.UTC(2026, 0, 5, 19, 30),
-          visibility: 'just_me',
           iceTypes: [],
           surfaceTags: [],
           notes: 'Did not skate — too much slush.',
@@ -116,6 +113,5 @@ describe('ReportView', () => {
     expect(await screen.findByText('Did not skate — too much slush.')).toBeInTheDocument()
     expect(screen.queryByText('Ice types')).not.toBeInTheDocument()
     expect(screen.queryByText('Thickness')).not.toBeInTheDocument()
-    expect(screen.getByText('Only me')).toBeInTheDocument()
   })
 })

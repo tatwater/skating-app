@@ -3,14 +3,12 @@ import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
   buildReportInput,
-  deriveDefaultVisibility,
   emptyReportForm,
   emptyThicknessReading,
   formatSkateTime,
   humanizeEnum,
   ICE_TYPES,
   isMinor,
-  maxVisibilityForProfile,
   PRECIP_LABELS,
   PRECIP_TYPES,
   photoUploadCoord,
@@ -23,9 +21,7 @@ import {
   THICKNESS_METHOD_LABELS,
   THICKNESS_METHODS,
   type ThicknessFormReading,
-  VISIBILITY_LABELS,
   validateReportInput,
-  visibilityOptions,
 } from '@skating/core'
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
@@ -204,9 +200,9 @@ function SkateTimeField({ value, onChange }: { value: number; onChange: (ms: num
 /**
  * Report create form (§F/§E, D22–D25/D41) — the mobile mirror of web's `ReportForm`, rendered in
  * place inside the water-body drawer (D47). Imperial input → metric storage (D25) via the shared
- * `@skating/core` `buildReportInput`, validated by `validateReportInput` before submit; visibility
- * is derived from the profile and clamped to the D41 ceiling (a locked/minor author is never offered
- * `public`). The native photo pipeline (`photoPipeline.ts`) strips EXIF and only sends a coord on the
+ * `@skating/core` `buildReportInput`, validated by `validateReportInput` before submit. All reports
+ * are public (D13); minors are read-only (D41), so the form is replaced by a notice for them. The
+ * native photo pipeline (`photoPipeline.ts`) strips EXIF and only sends a coord on the
  * `placeOnMap` opt-in. The put-in pin is placed by tapping the live map — the drawer peeks aside for
  * the tap while this form stays mounted (see the `(map)` layout).
  */
@@ -234,14 +230,13 @@ export function ReportForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Report default/ceiling derive from the author's age, not profile privacy (D13/D41).
+  // Minors are read-only — all reports are public (D13), so under-18 users can't post (D41).
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false
-  const maxVisibility = maxVisibilityForProfile({ isMinor: minor })
 
-  // Initialize the form once the profile (and thus the default visibility, D41) is known.
+  // Initialize the form once the profile is known (and the author is allowed to post).
   useEffect(() => {
-    if (profile !== undefined && form === null) {
-      setForm(emptyReportForm(Date.now(), deriveDefaultVisibility({ isMinor: minor })))
+    if (profile !== undefined && !minor && form === null) {
+      setForm(emptyReportForm(Date.now()))
     }
   }, [profile, form, minor])
 
@@ -326,6 +321,14 @@ export function ReportForm({
   const patch = (partial: Partial<ReportFormState>) =>
     setForm((prev) => (prev ? { ...prev, ...partial } : prev))
 
+  // Under-18 accounts are read-only — all reports are public, so minors can't post (D41).
+  if (minor)
+    return (
+      <Text color="$foregroundMuted" fontSize={14}>
+        Reports are shared publicly with the community, so posting opens when you turn 18. You can
+        keep reading reports in the meantime.
+      </Text>
+    )
   if (form === null) return <Spinner color="$primary" />
 
   const updateReading = (index: number, partial: Partial<ThicknessFormReading>) =>
@@ -338,7 +341,7 @@ export function ReportForm({
     if (!form) return
     setError(null)
     const input = buildReportInput(form, waterBodyId, putInPin ?? undefined)
-    const result = validateReportInput(input, { now: Date.now(), maxVisibility })
+    const result = validateReportInput(input, { now: Date.now() })
     if (!result.ok) {
       setError(result.errors.map((e) => `${e.field}: ${e.message}`).join('; '))
       return
@@ -624,16 +627,6 @@ export function ReportForm({
             Set access point on the map
           </Button>
         )}
-      </Field>
-
-      <Field label="Visibility">
-        <SingleToggle
-          value={form.visibility}
-          options={visibilityOptions(maxVisibility)}
-          label={(v) => VISIBILITY_LABELS[v]}
-          onChange={(visibility) => visibility !== '' && patch({ visibility })}
-          allowEmpty={false}
-        />
       </Field>
 
       <Field label="Notes">

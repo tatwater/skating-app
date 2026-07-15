@@ -7,7 +7,6 @@ import {
   formatThicknessReading,
   type ReportConditions,
   SKATE_QUALITY_LABELS,
-  VISIBILITY_LABELS,
 } from '@skating/core'
 import { useQuery } from 'convex/react'
 import { useRouter } from 'expo-router'
@@ -91,12 +90,11 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         </Text>
       </YStack>
 
-      <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
-        {report.skateQuality ? (
+      {report.skateQuality ? (
+        <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
           <Badge tone="solid">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
-        ) : null}
-        <Badge>{VISIBILITY_LABELS[report.visibility]}</Badge>
-      </XStack>
+        </XStack>
+      ) : null}
 
       {report.iceTypes && report.iceTypes.length > 0 ? (
         <Section label="Ice types">

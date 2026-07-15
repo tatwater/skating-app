@@ -7,12 +7,7 @@ import { type PhotoDraftView, ReportFormFields } from './ReportForm'
 const FIXED_NOW = Date.UTC(2026, 0, 5, 12, 0)
 
 function renderFields(
-  opts: {
-    maxVisibility?: 'just_me' | 'public'
-    defaultVisibility?: 'just_me' | 'public'
-    putInPin?: { lat: number; lng: number } | null
-    photos?: PhotoDraftView[]
-  } = {},
+  opts: { putInPin?: { lat: number; lng: number } | null; photos?: PhotoDraftView[] } = {},
 ) {
   const spies = {
     onSubmit: vi.fn(),
@@ -25,15 +20,12 @@ function renderFields(
   }
   let latest: ReportFormState | undefined
   function Wrapper() {
-    const [form, setForm] = useState(() =>
-      emptyReportForm(FIXED_NOW, opts.defaultVisibility ?? 'public'),
-    )
+    const [form, setForm] = useState(() => emptyReportForm(FIXED_NOW))
     latest = form
     return (
       <ReportFormFields
         form={form}
         onFormChange={setForm}
-        maxVisibility={opts.maxVisibility ?? 'public'}
         putInPin={opts.putInPin ?? null}
         photos={opts.photos ?? []}
         submitting={false}
@@ -47,15 +39,10 @@ function renderFields(
 }
 
 describe('ReportFormFields', () => {
-  it('never offers Public to a minor author (D41)', () => {
-    renderFields({ maxVisibility: 'just_me' })
-    expect(screen.getByRole('button', { name: 'Only me' })).toBeInTheDocument()
+  it('has no visibility control — all reports are public (D13)', () => {
+    renderFields()
     expect(screen.queryByRole('button', { name: 'Public' })).not.toBeInTheDocument()
-  })
-
-  it('offers Public to a public author', () => {
-    renderFields({ maxVisibility: 'public' })
-    expect(screen.getByRole('button', { name: 'Public' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Only me' })).not.toBeInTheDocument()
   })
 
   it('adds and removes thickness readings, toggling value ↔ range inputs (XOR)', () => {

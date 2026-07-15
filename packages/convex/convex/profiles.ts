@@ -124,8 +124,8 @@ export const upsertFromClerk = mutation({
     if (existing) {
       // Force a minor's profile private; never silently *widen* an adult's existing choice. So on
       // the 18th birthday (minor → false) an already-private profile stays private until the user
-      // opts to make it public — nothing is auto-widened (D13/D41). Report defaults derive from age
-      // separately (deriveDefaultVisibility), so at 18 the `public` option becomes available there.
+      // opts to make it public — nothing is auto-widened (D13/D41). Posting also unlocks at 18
+      // separately (reports.create gates on age), since all reports are public (D13).
       // Keep the *original* acceptance time when the version is unchanged (a routine
       // app-launch re-sync); only stamp a new time when the user accepts a bumped version.
       const reAccepted = existing.riskAckVersion !== args.riskAckVersion

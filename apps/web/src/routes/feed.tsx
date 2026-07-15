@@ -10,7 +10,7 @@ function FeedPage() {
     <div className="flex flex-col gap-4">
       <Placeholder
         title="Newsfeed"
-        subtitle="The cross-water-body feed — newest skate time first (D28) — lands in Phase 6, visibility-filtered once the social graph exists (Phase 3)."
+        subtitle="The cross-water-body feed — newest skate time first (D28) — lands in Phase 5. Reports are all public (D13); the block filter arrives with Phase 3."
       />
       <Panel title="Create a report">
         Report creation is surfaced here too, as well as on the map (D47).

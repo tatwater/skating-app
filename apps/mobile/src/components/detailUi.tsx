@@ -38,7 +38,7 @@ export function Section({ label, children }: { label: string; children: ReactNod
   )
 }
 
-/** An outline pill (chip). `tone="solid"` renders the filled variant used for quality/visibility. */
+/** An outline pill (chip). `tone="solid"` renders the filled variant used for skate quality. */
 export function Badge({
   children,
   tone = 'outline',

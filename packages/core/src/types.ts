@@ -4,9 +4,8 @@
  * array (for validation / UI lists) and the literal-union type are available.
  */
 
-/** Per-report visibility levels (D13; no social graph). Ordered narrowest → widest. */
-export const VISIBILITY_LEVELS = ['just_me', 'public'] as const
-export type Visibility = (typeof VISIBILITY_LEVELS)[number]
+// Reports have no visibility field — every report is public (D13). The only privacy switch is the
+// profile's discoverability, below.
 
 /** Profile discoverability (D13): `public` = searchable + browsable; `private` = neither. */
 export const PROFILE_VISIBILITIES = ['public', 'private'] as const
