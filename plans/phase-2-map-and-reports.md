@@ -476,12 +476,15 @@ doc once web is proven:
   Both surfaces now reclaim best-effort: each upload records its `storageId` the instant it lands, so
   a retry reuses it; on form-close / photo-remove / unmount-without-submit the client deletes any
   created row (`photos.remove` → row + blobs) **and** any bare uploaded-but-unrowed blob
-  (`photos.removeBlob`, auth-gated + idempotent). **Known residual:** if the component unmounts while
-  an upload is still *in flight* (its id not yet recorded), that blob can't be swept from the client.
-  Closing this fully needs a **server-side GC cron** (sweep `photos` rows unreferenced by any report,
-  and storage blobs with no `photos` row, older than a grace window) — **deferred to a future
-  cleanup/polish phase**; tracked in `07-roadmap.md` → "Later / deferred". Low urgency at alpha scale
-  (a few stranded blobs), but it should land before storage cost/quotas matter.
+  (`photos.removeBlob`, auth-gated + idempotent). Uploads (or row-creates) still *in flight* when the
+  form unmounts also self-reclaim: a `disposedRef` flips at teardown, so a result arriving after the
+  sweep deletes itself instead of writing to dead state (`photos.remove` tolerates an already-deleted
+  blob, so the overlapping reclaim paths compose without stranding a row). **Residual (hard-failure
+  only):** if the app is killed mid-flight, or a reclaim call itself fails (network), a blob/row can
+  still be stranded. A **server-side GC cron** (sweep `photos` rows unreferenced by any report, and
+  storage blobs with no `photos` row, older than a grace window) is the durable backstop —
+  **deferred to a future cleanup/polish phase**; tracked in `07-roadmap.md` → "Later / deferred".
+  Low urgency at alpha scale, but it should land before storage cost/quotas matter.
 
 - **Regional expansion = Phase 2.5, Northeast skating states only (decided 2026-07-14).** After the
   mobile MVP (F1+F2), before Phase 3, expand the VT-only corpus + basemap to **NY (excl. NYC/Long

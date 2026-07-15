@@ -277,9 +277,10 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
 - AI report summarization beyond weather facts (Q9); full ToS/legal review (Q10).
 - In-app guides; group-skate organizing; Fitbit as a GPS provider.
 - **Photo-orphan GC cron (cleanup/polish).** The Phase 2 photo pipeline uploads before
-  `reports.create`, so failed/abandoned/partial submits can strand storage; the client reclaims
-  best-effort (`photos.remove`/`removeBlob`) but can't catch an upload in flight at unmount. Add a
-  scheduled sweep of unreferenced `photos` rows + orphaned storage blobs past a grace window. See
+  `reports.create`, so failed/abandoned/partial submits can strand storage. The client reclaims
+  best-effort (`photos.remove`/`removeBlob`, incl. uploads that resolve after the form unmounts), but
+  a killed app or a failed reclaim call can still leave orphans. Add a scheduled sweep of unreferenced
+  `photos` rows + orphaned storage blobs past a grace window as the durable backstop. See
   `phase-2-map-and-reports.md` → "Settled during review" (2026-07-15). Low urgency until storage
   quotas bite.
 

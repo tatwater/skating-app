@@ -66,9 +66,11 @@ export const remove = mutation({
     const photo = await ctx.db.get(photoId)
     if (!photo) return // already gone — idempotent
     if (photo.uploaderId !== profile._id) throw new ConvexError('Not your photo')
+    // Tolerate an already-gone blob (e.g. a concurrent `removeBlob` during form teardown) so row
+    // cleanup still completes — a throw here would otherwise strand the row.
     await Promise.all([
-      ctx.storage.delete(photo.storageId as Id<'_storage'>),
-      ctx.storage.delete(photo.thumbStorageId as Id<'_storage'>),
+      ctx.storage.delete(photo.storageId as Id<'_storage'>).catch(() => {}),
+      ctx.storage.delete(photo.thumbStorageId as Id<'_storage'>).catch(() => {}),
     ])
     await ctx.db.delete(photoId)
   },

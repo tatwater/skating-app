@@ -265,8 +265,12 @@ export function ReportForm({
   const photosRef = useRef<PhotoDraft[]>([])
   photosRef.current = photos
   const submittedRef = useRef(false)
+  // Flipped at teardown so an upload / row-create that resolves *after* the sweep (see `handleSubmit`)
+  // reclaims itself — the sweep only sees what's already recorded, not what's still in flight.
+  const disposedRef = useRef(false)
   useEffect(() => {
     return () => {
+      disposedRef.current = true
       if (submittedRef.current) return
       for (const p of photosRef.current) reclaim(p)
     }
@@ -357,9 +361,15 @@ export function ReportForm({
                   .then((url) => uploadToStorage(url, uri))
                   .then((sid) => {
                     const id = sid as Id<'_storage'>
-                    setPhotos((prev) =>
-                      prev.map((p) => (p.id === photo.id ? { ...p, [key]: id } : p)),
-                    )
+                    // If the form was torn down while this was in flight (and we're not mid-successful-
+                    // submit), no draft remains to record or sweep it — reclaim the blob here instead.
+                    if (disposedRef.current && !submittedRef.current) {
+                      void removeBlob({ storageId: id }).catch(() => {})
+                    } else {
+                      setPhotos((prev) =>
+                        prev.map((p) => (p.id === photo.id ? { ...p, [key]: id } : p)),
+                      )
+                    }
                     return id
                   })
           const [storageId, thumbStorageId] = await Promise.all([
@@ -372,7 +382,13 @@ export function ReportForm({
             placeOnMap: photo.placeOnMap,
             coord: photoUploadCoord(photo.placeOnMap, photo.coord),
           })
-          setPhotos((prev) => prev.map((p) => (p.id === photo.id ? { ...p, uploadedId: id } : p)))
+          // Same teardown race one level up: the row was created after the form unmounted, so nothing
+          // will attach it to a report — reclaim the row (+ its blobs) rather than strand it.
+          if (disposedRef.current && !submittedRef.current) {
+            void deletePhoto({ photoId: id }).catch(() => {})
+          } else {
+            setPhotos((prev) => prev.map((p) => (p.id === photo.id ? { ...p, uploadedId: id } : p)))
+          }
           return id
         }),
       )

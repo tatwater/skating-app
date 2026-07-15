@@ -283,6 +283,23 @@ describe('photos.remove (orphan cleanup)', () => {
     expect(await t.run((ctx) => ctx.db.get(photoId))).not.toBeNull() // untouched
   })
 
+  test('still deletes the row when a blob is already gone (concurrent teardown reclaim)', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await storeBlob(t)
+    const thumbStorageId = await storeBlob(t)
+    const photoId = await asUser.mutation(api.photos.create, {
+      storageId,
+      thumbStorageId,
+      placeOnMap: false,
+    })
+    // Simulate a racing `removeBlob` having already reclaimed one blob.
+    await t.run((ctx) => ctx.storage.delete(storageId))
+    await asUser.mutation(api.photos.remove, { photoId }) // must not throw on the missing blob
+    expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull() // row still cleaned up
+    expect(await t.run((ctx) => ctx.storage.getUrl(thumbStorageId))).toBeNull()
+  })
+
   test('is idempotent — removing a since-deleted photo is a no-op', async () => {
     const t = convexTest(schema, modules)
     const asUser = await seedUser(t, 'clerk_a')
