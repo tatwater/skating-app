@@ -916,3 +916,65 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
     expect(deep.map((b) => b.name)).toEqual(['Big Faint'])
   })
 })
+
+describe('waterBodies.searchByName (map search box)', () => {
+  async function seedNamed(
+    t: ReturnType<typeof convexTest>,
+    name: string,
+    extra: Record<string, unknown> = {},
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name,
+        type: 'lake' as const,
+        source: 'osm' as const,
+        externalId: `osm/way/${name}`,
+        polygon: SAMPLE_BODY.polygon,
+        bbox: SAMPLE_BODY.bbox,
+        centroid: SAMPLE_BODY.centroid,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+        ...extra,
+      }),
+    )
+  }
+
+  test('finds a listed body by name and returns light fly-to fields', async () => {
+    const t = convexTestWithGeo()
+    await seedNamed(t, 'Lake George')
+    await seedNamed(t, 'Lake Morey')
+    const results = await t.query(api.waterBodies.searchByName, { query: 'george' })
+    const george = results.find((r) => r.name === 'Lake George')
+    expect(george).toMatchObject({ type: 'lake', centroid: { lat: 0.5, lng: 0.5 } })
+    expect(george?._id).toBeDefined()
+  })
+
+  test('excludes unlisted bodies (removed / merged / rejected)', async () => {
+    const t = convexTestWithGeo()
+    await seedNamed(t, 'Hidden Pond', { removedAt: Date.now() })
+    await seedNamed(t, 'Merged Pond', { dedupStatus: 'merged' })
+    await seedNamed(t, 'Rejected Pond', { source: 'user', reviewStatus: 'rejected' })
+    await seedNamed(t, 'Visible Pond')
+    const names = (await t.query(api.waterBodies.searchByName, { query: 'pond' })).map(
+      (r) => r.name,
+    )
+    expect(names).toContain('Visible Pond')
+    expect(names).not.toContain('Hidden Pond')
+    expect(names).not.toContain('Merged Pond')
+    expect(names).not.toContain('Rejected Pond')
+  })
+
+  test('a <2-char or blank query returns nothing (no index scan)', async () => {
+    const t = convexTestWithGeo()
+    await seedNamed(t, 'Lake Champlain')
+    expect(await t.query(api.waterBodies.searchByName, { query: 'L' })).toEqual([])
+    expect(await t.query(api.waterBodies.searchByName, { query: '  ' })).toEqual([])
+  })
+
+  test('respects the result limit', async () => {
+    const t = convexTestWithGeo()
+    for (let i = 0; i < 5; i++) await seedNamed(t, `Mill Pond ${i}`)
+    const results = await t.query(api.waterBodies.searchByName, { query: 'mill pond', limit: 2 })
+    expect(results.length).toBeLessThanOrEqual(2)
+  })
+})

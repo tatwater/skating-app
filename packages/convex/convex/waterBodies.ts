@@ -550,6 +550,40 @@ export const listInViewport = query({
   },
 })
 
+/**
+ * Public: full-text search listed water bodies by name for the map's search box. Uses the
+ * `search_name` search index (typo-tolerant, prefix match on the last term) and refines out
+ * unlisted bodies (removed / rejected / merged) in JS — `listed` is a *derived* predicate, not a
+ * stored field, so it can't be a search `filterField` (same reason `listInViewport` refines in JS).
+ * Overfetches so the post-refine count stays stable, then returns the light fields a result row
+ * needs; selecting a result navigates to `/water/:id`, which handles the map fly-to + detail.
+ * A <2-char query returns nothing (skip a pointless index scan).
+ */
+export const searchByName = query({
+  args: { query: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, { query, limit }) => {
+    const term = query.trim()
+    if (term.length < 2) return []
+    const max = Math.min(Math.max(limit ?? 8, 1), 20)
+    const raw = await ctx.db
+      .query('waterBodies')
+      .withSearchIndex('search_name', (s) => s.search('name', term))
+      .take(max * 4)
+    const results: Array<{
+      _id: Id<'waterBodies'>
+      name: string
+      type: Doc<'waterBodies'>['type']
+      centroid: Doc<'waterBodies'>['centroid']
+    }> = []
+    for (const body of raw) {
+      if (!isListed(body)) continue
+      results.push({ _id: body._id, name: body.name, type: body.type, centroid: body.centroid })
+      if (results.length >= max) break
+    }
+    return results
+  },
+})
+
 /** Moderator/admin: the after-the-fact review queue of pending user bodies (D37). */
 export const listPendingReview = query({
   args: {},

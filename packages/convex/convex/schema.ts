@@ -153,7 +153,8 @@ export default defineSchema({
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
     .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
     .index('by_external_id', ['source', 'externalId']) // idempotent canonical upsert (D14/D48)
-    .index('by_is_large', ['isLarge']), // large-body short list for listInViewport tier 2 (D5)
+    .index('by_is_large', ['isLarge']) // large-body short list for listInViewport tier 2 (D5)
+    .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
 
   reports: defineTable({
     authorId: v.id('profiles'),
