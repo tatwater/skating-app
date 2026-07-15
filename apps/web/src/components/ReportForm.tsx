@@ -48,7 +48,13 @@ interface PhotoDraft {
   thumb: File
   coord?: { lat: number; lng: number }
   placeOnMap: boolean
-  /** Set once uploaded, so a submit retry after a mid-flight failure doesn't re-upload it. */
+  /**
+   * Storage IDs recorded as each blob lands, so a submit retry after a partial-upload failure
+   * reuses the already-uploaded object instead of orphaning it and uploading a fresh copy.
+   */
+  fullStorageId?: Id<'_storage'>
+  thumbStorageId?: Id<'_storage'>
+  /** Set once the photo row exists, so a retry doesn't re-create it (and re-attach it twice). */
   uploadedId?: Id<'photos'>
 }
 
@@ -593,10 +599,26 @@ export function ReportForm({
       const photoIds = await Promise.all(
         photos.map(async (photo) => {
           if (photo.uploadedId) return photo.uploadedId
+          // Reuse any blob a prior (failed) attempt already uploaded; only upload what's missing.
           const [storageId, thumbStorageId] = await Promise.all([
-            generateUploadUrl().then((url) => uploadToStorage(url, photo.full)),
-            generateUploadUrl().then((url) => uploadToStorage(url, photo.thumb)),
+            photo.fullStorageId ??
+              generateUploadUrl().then((url) => uploadToStorage(url, photo.full)),
+            photo.thumbStorageId ??
+              generateUploadUrl().then((url) => uploadToStorage(url, photo.thumb)),
           ])
+          // Record the storage IDs before creating the row, so a createPhoto failure doesn't strand
+          // the objects behind a retry that would re-upload them.
+          setPhotos((prev) =>
+            prev.map((p) =>
+              p.id === photo.id
+                ? {
+                    ...p,
+                    fullStorageId: storageId as Id<'_storage'>,
+                    thumbStorageId: thumbStorageId as Id<'_storage'>,
+                  }
+                : p,
+            ),
+          )
           const id = await createPhoto({
             storageId: storageId as Id<'_storage'>,
             thumbStorageId: thumbStorageId as Id<'_storage'>,
