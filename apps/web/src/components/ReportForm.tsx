@@ -661,12 +661,16 @@ export function ReportForm({
           return id
         }),
       )
+      // Flip the guard BEFORE createReport, not after: an unmount *during* the mutation would
+      // otherwise sweep (submittedRef still false) and delete the very photo rows the committing
+      // report is about to reference — leaving it with permanently missing images.
+      submittedRef.current = true
       const reportId = await createReport({ ...input, waterBodyId, photoIds })
-      submittedRef.current = true // photos are attached now — keep the unmount sweep off them
       setPutInPin(null)
       onOpenChange(false)
       navigate({ to: '/report/$id', params: { id: reportId } })
     } catch (err) {
+      submittedRef.current = false // creation didn't complete — these uploads are reclaimable again
       setError(
         err instanceof ConvexError
           ? String(err.data)
