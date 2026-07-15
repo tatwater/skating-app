@@ -23,7 +23,7 @@ code changes, and the tuning knobs.
   name-search near-essential. Backend: a `search_name` search index + `waterBodies.searchByName`
   query (typo-tolerant; JS-refines out unlisted; 4 convex-tests) — deployed to dev, verified live
   (George/Winnipesaukee/Sebago/Champlain). Web: shadcn/Base-UI `Combobox` primitive + `LakeSearch`
-  (container + testable `LakeSearchBox`), 6 tests, build green. Mobile: Tamagui `LakeSearch` overlay
+  (container + testable `LakeSearchBox`), 4 tests, build green. Mobile: Tamagui `LakeSearch` overlay
   (RN-render tests deferred — same infra gap F1 flagged). Shared gate `searchQueryArg` lives in
   `@skating/core`. Select → `/water/:id` (reuses the existing fly-to).
 - **§2/§3 Basemap → R2 — ✅ DONE (dev).** `pmtiles extract` from `build.protomaps.com/20251215.pmtiles`

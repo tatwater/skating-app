@@ -2,7 +2,7 @@
  * Pure helpers for the native water-body map (Phase 2 §F) — the mobile mirror of web's
  * `apps/web/src/lib/waterMap.ts`. Kept out of the imperative `<MapView>` component so the basemap
  * style, feature transform, viewport math, and geolocation framing are unit-testable without a
- * native map context. Reuses the same Protomaps basemap + icy palette + Vermont framing as web so
+ * native map context. Reuses the same Protomaps basemap + icy palette + regional framing as web so
  * the two surfaces render the same map (the constants/flavors are intentionally identical; if they
  * ever need to change, change both).
  *
@@ -21,7 +21,7 @@ export const OSM_ATTRIBUTION = '© OpenStreetMap contributors'
 /**
  * A Protomaps hosted **build** `.pmtiles` (whole-planet) + static font/sprite assets, for dev only
  * (same as web). Protomaps prunes dated builds, so this URL rotates and will eventually 404 — the
- * real basemap is the self-built Vermont extract set via `EXPO_PUBLIC_PMTILES_URL` (see `env.ts`);
+ * real basemap is the self-built regional extract set via `EXPO_PUBLIC_PMTILES_URL` (see `env.ts`);
  * this default just gives the dev map a basemap. Bump the date if it 404s: see maps.protomaps.com/builds.
  */
 export const DEMO_PMTILES_URL = 'https://build.protomaps.com/20251215.pmtiles'
@@ -130,7 +130,7 @@ export const GEOLOCATION_FRAME_ZOOM = 11
 /**
  * Initial framing for a device geolocation fix (D12/D20). Returns `{ center, zoom }` when the fix
  * falls inside the pilot region (the only data we have), else `null` so the caller keeps the default
- * Vermont framing — a skater in California shouldn't be dropped onto empty ocean. Pure so the
+ * regional framing — a skater in California shouldn't be dropped onto empty ocean. Pure so the
  * "in region?" decision is tested without the device Geolocation API.
  */
 export function frameForCoord(

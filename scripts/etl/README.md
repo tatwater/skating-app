@@ -213,5 +213,19 @@ transform/load already handle multiple states. Full runbook + rationale:
   bays in VT *and* NH) lands as one row and its `states` unions to e.g. `["NY","VT"]` — run order
   doesn't matter. VT can be skipped if already loaded (but re-run it with `--state=VT` to backfill
   the state tag).
+- **Record each extract's md5 (per state).** Same discipline as the Phase 1 run above — Geofabrik
+  rebuilds the `-latest` extracts daily, so the download date alone doesn't pin the source. For each
+  state, `curl -L` its `.osm.pbf.md5` companion, verify the download against it, and record the md5 +
+  Geofabrik replication timestamp in the run table below. This is what makes a corpus reproducible
+  and catches a truncated download (e.g. the `-latest` redirect trap) before ~30k bad bodies load.
 - **Executed 2026-07-15 (dev):** NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885 inserted (+ VT ~9,970)
-  ≈ 116k bodies, zero read-cap errors. Extract builds dated 2026-07-14.
+  ≈ 116k bodies, zero read-cap errors. Extract builds dated 2026-07-14. **md5s not captured this run**
+  — record them per state on the next re-run (dated build no longer retrievable to hash retroactively):
+
+  | State | Extract | md5 | Geofabrik replication |
+  | ----- | ------- | --- | --------------------- |
+  | NY (clipped) | `new-york-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
+  | VT | `vermont-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
+  | NH | `new-hampshire-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
+  | ME | `maine-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
+  | MA | `massachusetts-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |

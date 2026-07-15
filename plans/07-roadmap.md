@@ -163,9 +163,11 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 >
 > **Status: ✅ mostly shipped on dev (2026-07-15)** — ~116k bodies across NY/VT/NH/ME/MA imported
 > (NY clipped downstate), a 948 MB multi-state basemap on Cloudflare R2, map bounds widened to the
-> region, and a **lake name-search box** (added when the big corpus made it near-essential) in both
-> apps. **Remaining:** the `curatedBoost` re-seed (deferred to a careful pass / Phase 4 admin UI) and
-> the prod cutover (Convex prod uninitialized).
+> region, a **lake name-search box** (added when the big corpus made it near-essential) in both apps,
+> and the **`curatedBoost` re-seed** (mechanism `applyCuratedBoostSeed` shipped + VT seed applied at
+> flat +0.3 — 21 bodies boosted). **Remaining:** clean per-body curation (a few bay mis-matches; add
+> the Champlain/Lake George bays OSM lacks) via the **Phase 4 admin UI**, and the prod cutover
+> (Convex prod uninitialized).
 
 Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **lake-skating** states.
 - **Region scope (decided 2026-07-14):** **NY (upstate/northern only — exclude NYC + Long Island),

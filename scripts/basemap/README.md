@@ -1,10 +1,14 @@
-# basemap — self-built Vermont `.pmtiles` (Phase 1, PR#5)
+# basemap — self-built regional `.pmtiles` (Phase 1 Vermont → Phase 2.5 Northeast)
 
 The read-only web map (`apps/web`) renders our OSM water bodies over a **Protomaps** vector
 basemap (D6). Phase 1 shipped against Protomaps' **hosted demo** tiles (a whole-planet
 `.pmtiles`) to confirm the data renders; Protomaps asks that the demo bucket **not** be used in
-production. This directory is the manual, run-on-demand pipeline that **builds a Vermont-only
-`.pmtiles` and self-hosts it**, so we stop depending on the demo bucket.
+production. This directory is the manual, run-on-demand pipeline that **builds a regional
+`.pmtiles` and self-hosts it**, so we stop depending on the demo bucket. Phase 1 built a
+Vermont-only extract on Convex storage (the §1 walkthrough below uses it as the worked example);
+Phase 2.5 widened it to the 5-state Northeast on Cloudflare R2 (§2b + the current "Last build"
+row). The build steps are identical bar the bbox — swap `VERMONT_MAX_BOUNDS` for
+`NORTHEAST_MAX_BOUNDS`.
 
 Like [`scripts/etl`](../etl/README.md), this is **not** built or deployed with the apps — you
 run it by hand when (re)building the basemap. There is no logic to test here: the build is one
