@@ -247,8 +247,8 @@ export default defineSchema({
     createdAt: v.number(),
   }).index('by_hazard', ['hazardId']),
 
-  // No `follows` table (D13, revised 2026-07-15): the social graph was removed. Reports are
-  // just_me/public; the only relationship that narrows access is a block (below).
+  // No `follows` table (D13): the social graph was removed. Reports are all public — the only
+  // relationship that narrows access is a block (below).
 
   blocks: defineTable({
     blockerId: v.id('profiles'),

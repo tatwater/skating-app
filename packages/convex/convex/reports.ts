@@ -175,8 +175,8 @@ export const create = mutation({
 })
 
 /**
- * A water body's report feed — newest **skate time** first (D28), visibility-filtered per viewer
- * (D13) and excluding non-visible (hidden/removed) reports (D32).
+ * A water body's report feed — newest **skate time** first (D28). All reports are public (D13), so
+ * the filter is moderation (excludes hidden/removed, D32) + blocks; the block seam is `canViewReport`.
  */
 export const listByWaterBody = query({
   args: { waterBodyId: v.id('waterBodies') },
@@ -190,12 +190,16 @@ export const listByWaterBody = query({
       .collect()
     return reports.filter(
       (r) =>
-        r.moderationStatus === 'visible' && canViewReport(viewerId, r.authorId, NO_RELATIONSHIP),
+        r.moderationStatus === 'visible' &&
+        // TODO(Phase 3): replace NO_RELATIONSHIP with the viewer↔author block state. This is the
+        // list-feed twin of the seam in `getViewableReport` (which covers `get` + `photos.getUrls`);
+        // both sites must gain real block lookups together.
+        canViewReport(viewerId, r.authorId, NO_RELATIONSHIP),
     )
   },
 })
 
-/** A single report for its detail view — visibility-checked, hidden/removed excluded. */
+/** A single report for its detail view — moderation-checked (hidden/removed excluded, D32). */
 export const get = query({
   args: { reportId: v.id('reports') },
   handler: (ctx, { reportId }) => getViewableReport(ctx, reportId),
