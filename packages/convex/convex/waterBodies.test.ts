@@ -594,6 +594,18 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     })
     expect((await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0]?.isLarge).toBe(true)
   })
+
+  test('rejects an unknown state code before any write (Phase 2.5 guard)', async () => {
+    const t = convexTestWithGeo()
+    await expect(
+      t.mutation(internal.waterBodies.importCanonical, {
+        bodies: [CANONICAL_ITEM],
+        state: 'VE', // typo for VT
+      }),
+    ).rejects.toThrow(/unknown state code/i)
+    // The whole batch is rejected — nothing is persisted with the bad tag.
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(0)
+  })
 })
 
 describe('waterBodies.backfillListed (listed key-switch migration, D48)', () => {

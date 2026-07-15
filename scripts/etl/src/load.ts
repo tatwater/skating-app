@@ -15,6 +15,8 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import process from 'node:process'
 
+import { isKnownStateCode, KNOWN_STATE_CODES } from '@skating/core'
+
 /**
  * Batches are bounded by two Convex/OS limits:
  *
@@ -118,6 +120,16 @@ function main(): void {
   if (!inputPath) {
     process.stderr.write(
       'usage: pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]\n',
+    )
+    process.exit(1)
+  }
+
+  // Guard the region tag: a typo (`--state=VE`, `--state=VERMONT`) would silently union a bad code
+  // into every body's `states`, corrupting the state label + boost-seed disambiguation for the run.
+  // Fail before any write rather than let it reach importCanonical (Phase 2.5 review).
+  if (state !== undefined && !isKnownStateCode(state)) {
+    process.stderr.write(
+      `[etl] refusing: unknown --state=${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.\n`,
     )
     process.exit(1)
   }

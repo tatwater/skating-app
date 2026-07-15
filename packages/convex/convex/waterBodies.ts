@@ -9,7 +9,14 @@
  * which `listInViewport` enforces when refining viewport results (see its read-cap note).
  */
 
-import { bboxIntersects, displayScore, minVisibleZoom, WATER_BODY_TYPES } from '@skating/core'
+import {
+  bboxIntersects,
+  displayScore,
+  isKnownStateCode,
+  KNOWN_STATE_CODES,
+  minVisibleZoom,
+  WATER_BODY_TYPES,
+} from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
@@ -134,6 +141,13 @@ export const importCanonical = internalMutation({
   // so a border-spanning body imported from multiple state extracts accumulates them all (D5/2.5).
   args: { bodies: v.array(canonicalBody), state: v.optional(v.string()) },
   handler: async (ctx, { bodies, state }) => {
+    // Defense-in-depth against the ETL's `--state` guard: reject an unknown region code before any
+    // write so a bad tag can never be unioned into a body's `states` (Phase 2.5 review).
+    if (state !== undefined && !isKnownStateCode(state)) {
+      throw new ConvexError(
+        `Unknown state code: ${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.`,
+      )
+    }
     let inserted = 0
     let updated = 0
     for (const item of bodies) {
@@ -625,8 +639,11 @@ export const listInViewport = query({
  * `search_name` search index (typo-tolerant, prefix match on the last term) and refines out
  * unlisted bodies (removed / rejected / merged) in JS — `listed` is a *derived* predicate, not a
  * stored field, so it can't be a search `filterField` (same reason `listInViewport` refines in JS).
- * Overfetches so the post-refine count stays stable, then returns the light fields a result row
- * needs; selecting a result navigates to `/water/:id`, which handles the map fly-to + detail.
+ * Overfetches (`max * 4`) so the post-refine count stays stable — this assumes <75% of a term's
+ * top index hits are unlisted. That holds while unlisted bodies (merged/removed/rejected) are a
+ * small fraction of the corpus; revisit the multiplier (or page the index) if a large dedup/removal
+ * sweep ever pushes that fraction up. Returns the light fields a result row needs; selecting a
+ * result navigates to `/water/:id`, which handles the map fly-to + detail.
  * A <2-char query returns nothing (skip a pointless index scan).
  */
 export const searchByName = query({
