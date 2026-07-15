@@ -939,14 +939,16 @@ describe('waterBodies.searchByName (map search box)', () => {
     )
   }
 
-  test('finds a listed body by name and returns light fly-to fields', async () => {
+  test('finds a listed body by name and returns light fly-to fields incl. states', async () => {
     const t = convexTestWithGeo()
-    await seedNamed(t, 'Lake George')
-    await seedNamed(t, 'Lake Morey')
+    await seedNamed(t, 'Lake George', { states: ['NY'] })
+    await seedNamed(t, 'George Pond') // matches 'george' too, but carries no states tag
     const results = await t.query(api.waterBodies.searchByName, { query: 'george' })
     const george = results.find((r) => r.name === 'Lake George')
-    expect(george).toMatchObject({ type: 'lake', centroid: { lat: 0.5, lng: 0.5 } })
+    expect(george).toMatchObject({ type: 'lake', centroid: { lat: 0.5, lng: 0.5 }, states: ['NY'] })
     expect(george?._id).toBeDefined()
+    // A body with no states tag comes back with an empty array (not undefined).
+    expect(results.find((r) => r.name === 'George Pond')?.states).toEqual([])
   })
 
   test('excludes unlisted bodies (removed / merged / rejected)', async () => {

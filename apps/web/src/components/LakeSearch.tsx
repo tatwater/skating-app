@@ -12,6 +12,13 @@ export type LakeHit = {
   name: string
   type: string
   centroid: { lat: number; lng: number }
+  states: string[]
+}
+
+/** "Lake · NY" — or "Lake · NY, VT" for a border-spanning body; just the type if unknown. */
+function hitMeta(hit: LakeHit): string {
+  const type = humanizeEnum(hit.type)
+  return hit.states.length ? `${type} · ${hit.states.join(', ')}` : type
 }
 
 /**
@@ -60,7 +67,7 @@ export function LakeSearchBox({
           {(hit: LakeHit) => (
             <ComboboxItem key={hit._id} value={hit}>
               <span className="flex-1 truncate">{hit.name || 'Unnamed water'}</span>
-              <span className="text-xs text-muted-foreground">{humanizeEnum(hit.type)}</span>
+              <span className="text-xs text-muted-foreground">{hitMeta(hit)}</span>
             </ComboboxItem>
           )}
         </ComboboxList>

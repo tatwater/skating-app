@@ -202,8 +202,16 @@ transform/load already handle multiple states. Full runbook + rationale:
   ```
   Then run the normal filter → export → transform → load on `new-york-upstate.osm.pbf`. The 41.3°N
   cut was chosen to sit well south of every skated NY lake (Lake George ~43.4, Saranac/Placid ~44.3).
-- **Border-spanning bodies dedupe automatically.** `importCanonical` upserts on `source+externalId`,
-  so a lake in two extracts (Lake Champlain in VT *and* NY; Connecticut River bays in VT *and* NH)
-  lands as one row — run order doesn't matter. VT can be skipped if already loaded.
+- **Tag each load with its state:** pass `--state=XX` (2-letter code) to the loader so each body
+  records the region(s) it's in — `importCanonical` **unions** it into the body's `states`:
+  ```bash
+  pnpm --filter @skating/etl load .scratch/new-york/bodies.ndjson --state=NY
+  ```
+  This powers the map search-result location label + `curatedBoost` disambiguation (Phase 2.5).
+- **Border-spanning bodies dedupe automatically** *and* accumulate states. `importCanonical` upserts
+  on `source+externalId`, so a lake in two extracts (Lake Champlain in VT *and* NY; Connecticut River
+  bays in VT *and* NH) lands as one row and its `states` unions to e.g. `["NY","VT"]` — run order
+  doesn't matter. VT can be skipped if already loaded (but re-run it with `--state=VT` to backfill
+  the state tag).
 - **Executed 2026-07-15 (dev):** NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885 inserted (+ VT ~9,970)
   ≈ 116k bodies, zero read-cap errors. Extract builds dated 2026-07-14.

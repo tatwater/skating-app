@@ -123,6 +123,11 @@ export default defineSchema({
     type: literals(WATER_BODY_TYPES),
     source: literals(WATER_BODY_SOURCES),
     externalId: v.optional(v.string()), // OSM/NHD id when source != user
+    // Admin regions (2-letter US state codes) the body falls in, unioned from the per-state ETL
+    // extracts at import — a border-spanning body (Lake Champlain) appears in multiple state
+    // extracts and accumulates e.g. ["NY","VT"]. Powers the search-result location label +
+    // curatedBoost disambiguation (Phase 2.5). Optional ⇒ migration-free.
+    states: v.optional(v.array(v.string())),
     polygon: geoJson, // Polygon / MultiPolygon (rivers: the reach/segment)
     bbox, // prefilter index
     centroid: latLng, // geospatial point index (D5)

@@ -68,6 +68,15 @@ function sanitizeLimit(limit: number | undefined): number {
   return Math.min(limit, MAX_VIEWPORT_LIMIT)
 }
 
+/** Union a state code into a body's `states` (sorted + deduped); unchanged when no state is given. */
+function unionState(
+  existing: string[] | undefined,
+  state: string | undefined,
+): string[] | undefined {
+  if (!state) return existing
+  return [...new Set([...(existing ?? []), state])].sort()
+}
+
 /** A canonical (OSM/NHD) body as prepared by the ETL, keyed by its `(source, externalId)`. */
 const canonicalBody = v.object({
   source: literals(CANONICAL_SOURCES), // osm | nhd — never user (D14)
@@ -121,8 +130,10 @@ function zoomSortKey(body: { surfaceAreaSqM?: number; curatedBoost?: number }): 
  * Re-running on unchanged data is a no-op on the final state (one row, same listing).
  */
 export const importCanonical = internalMutation({
-  args: { bodies: v.array(canonicalBody) },
-  handler: async (ctx, { bodies }) => {
+  // `state` (2-letter code) is the extract's source region; it's unioned into each body's `states`
+  // so a border-spanning body imported from multiple state extracts accumulates them all (D5/2.5).
+  args: { bodies: v.array(canonicalBody), state: v.optional(v.string()) },
+  handler: async (ctx, { bodies, state }) => {
     let inserted = 0
     let updated = 0
     for (const item of bodies) {
@@ -148,6 +159,7 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
+          states: unionState(existing.states, state),
           ...scores,
         })
         // Re-derive listing from the preserved fields (removed stays removed, D48); sortKey =
@@ -173,6 +185,7 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
+          states: unionState(undefined, state),
           ...scores,
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
@@ -574,10 +587,17 @@ export const searchByName = query({
       name: string
       type: Doc<'waterBodies'>['type']
       centroid: Doc<'waterBodies'>['centroid']
+      states: string[]
     }> = []
     for (const body of raw) {
       if (!isListed(body)) continue
-      results.push({ _id: body._id, name: body.name, type: body.type, centroid: body.centroid })
+      results.push({
+        _id: body._id,
+        name: body.name,
+        type: body.type,
+        centroid: body.centroid,
+        states: body.states ?? [],
+      })
       if (results.length >= max) break
     }
     return results

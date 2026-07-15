@@ -13,6 +13,13 @@ export type LakeHit = {
   name: string
   type: string
   centroid: { lat: number; lng: number }
+  states: string[]
+}
+
+/** "Lake · NY" — or "Lake · NY, VT" for a border-spanning body; just the type if unknown. */
+function hitMeta(hit: LakeHit): string {
+  const type = humanizeEnum(hit.type)
+  return hit.states.length ? `${type} · ${hit.states.join(', ')}` : type
 }
 
 /**
@@ -69,7 +76,7 @@ export function LakeSearchBox({
             >
               <Text color="$foreground">{hit.name || 'Unnamed water'}</Text>
               <Text color="$foregroundMuted" fontSize="$1">
-                {humanizeEnum(hit.type)}
+                {hitMeta(hit)}
               </Text>
             </YStack>
           ))}
