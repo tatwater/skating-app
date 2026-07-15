@@ -25,7 +25,7 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
 - [Phase 2 — Map + reports (the MVP)](./phase-2-map-and-reports.md) — interactive map,
   tap-to-detail, report create/read, photos, D49 display scoring. **Web MVP (§A–§E) + mobile online
   loop (§F1) shipped;** the offline draft queue (§F2) is the remaining mobile follow-on.
-  *(User-created bodies + dedup moved to Phase 7 — GPS-backed.)*
+  *(User-created bodies + dedup moved to Phase 8 — GPS-backed.)*
 - [Phase 2.5 — Regional expansion](./phase-2.5-regional-expansion.md) — the ops runbook for
   Workstream H: per-state ETL (NY/VT/NH/ME/MA, NY clipped downstate), a multi-state `.pmtiles` on
   Cloudflare R2, and the (last) map-bounds widening. Pure data + infra, no app features.

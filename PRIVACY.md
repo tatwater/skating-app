@@ -1,6 +1,6 @@
 # Privacy notice (interim — friends alpha)
 
-**Last updated: 2026-07-10**
+**Last updated: 2026-07-15**
 
 > **Status: interim.** This is a plain-language privacy notice for the small,
 > friends-only alpha of this app. It is written to be honest and cover the alpha
@@ -16,15 +16,21 @@ we collect, why, who can see it, and your choices.
 The app is operated by its founder. Questions or requests: **teagan@newmoneycompany.com**.
 
 ## Age requirement
-You must be **at least 16 years old** to use the app. Accounts are self-attested at
-signup; we do **not** collect a birthdate. Users under 18 get a **private-by-default**
-posture (reports default to followers-only, never public — see "Who can see your
-reports"). The app is not directed at children under 16.
+You must be **at least 16 years old** to use the app. We collect your **date of birth**
+at signup to enforce the 16+ minimum and to apply protections for under-18 users; it is
+treated as **sensitive personal information** (used only for age/eligibility, and scrubbed
+when you delete your account). Users under 18 get a **private-by-default**
+posture: their reports default to **"Just me" and can never be made public**, and their
+**profile is always private** (see "Who can see your reports"). The app is not directed at
+children under 16.
 
 ## What we collect
 
 - **Account info** — handled by our auth provider (Clerk): your email and any social
   login you choose, display name, and username.
+- **Date of birth** — collected at signup to verify you meet the 16+ minimum and to apply
+  under-18 protections. Treated as sensitive data: used only for age/eligibility and removed
+  when you delete your account. We do not display it or share it.
 - **Your home location** — a single coordinate you set, used **only** to compute your
   drive-time filter. It is **private**: it is never shown to other users and is not part
   of any report. You may optionally show a **town label** (not an address) on your
@@ -48,7 +54,7 @@ reports"). The app is not directed at children under 16.
 
 ## How we use it
 - To show peer ice reports on a map and feed, filtered to your drive-time range.
-- To let you and others you've chosen share reports, comments, hazards, and follows.
+- To let you share reports, comments, and hazards with the community.
 - To detect ice-skate activities from connected providers and prompt reports.
 - To keep the app working (crash/error diagnostics) and safe (moderation of flagged
   content).
@@ -57,17 +63,19 @@ We do **not** sell your data, and we do **not** use it to train AI models. We do
 predict or assert ice safety — reports are peers' observations only.
 
 ## Who can see your reports
-You set a visibility level on each report:
-- **Just me** — only you.
-- **Friends** — people you mutually follow.
-- **Followers** — people who follow you.
-- **Public** — contributes to the shared map/feed that nearby users see.
+You set a visibility level on each report. There are **two** levels — the app has **no
+follow or friend feature**, so a report is either private to you or public to the community:
+- **Just me** — only you (a private log).
+- **Public** — contributes to the shared map/feed that nearby users in range see.
 
-Defaults: if your profile is public (the default for adults), new reports default to
-**public**; if you lock your profile, or if you're under 18, new reports default to
-**followers**. You can change the visibility of any individual report. A public report
-reveals that you (by name) were at that location around that time — choose the level
-you're comfortable with.
+Defaults: **adults' reports default to public**; **under-18 users' reports default to "Just
+me" and cannot be made public**. You can change the visibility of any individual report
+(within those limits). A public report reveals that you (by name) were at that location
+around that time — choose the level you're comfortable with.
+
+Separately, your **profile** is either **public** (searchable by name, showing your public
+reports) or **private** (not searchable, no public profile page). Adults may choose; **under-18
+profiles are always private**. Profile privacy is independent of individual report visibility.
 
 ## Sharing with third parties (processors)
 We use these services to run the app; they process data on our behalf:
@@ -80,10 +88,11 @@ provider's own terms and privacy policy.
 ## Retention, deletion, and export
 - You can **export your data** (a JSON bundle of your own content plus your uploaded
   photos) and **delete your account** at any time.
-- On deletion, we **scrub your personal information** (name, home location, town) and
-  **anonymize** your past public/followers/friends reports and comments (attributed to a
-  "deleted user") so the community's historical ice record is preserved. Reports set to
-  **"just me" are removed**. Connected-provider tokens are deleted.
+- On deletion, we **scrub your personal information** (name, home location, town, date of
+  birth) and
+  **anonymize** your past **public** reports and comments (attributed to a "deleted user")
+  so the community's historical ice record is preserved. Reports set to **"just me" are
+  removed**. Connected-provider tokens are deleted.
 
 ## Security
 Provider secrets and access tokens are held **server-side** and are never shipped in the

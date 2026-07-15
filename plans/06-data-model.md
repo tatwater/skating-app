@@ -10,7 +10,8 @@ Guiding constraints from `01-decisions.md`:
 - **Reports attach to whole water bodies + optional in-polygon hazard geometry (D4).**
 - **Canonical (OSM/NHD) and user-created locations live in one table (D14).**
 - **Hazards are their own entity with a lifecycle (D15).**
-- **4-level visibility (D13); real drive-time via cached isochrone (D18).**
+- **2-level report visibility (Just me / Public) + public/private profiles, no social
+  graph (D13); real drive-time via cached isochrone (D18).**
 
 > ✅ **VOCABULARY CONFIRMED.** The ice-type / surface / hazard enums below use the
 > community's official terms from the **Nordic Skater** reference sites
@@ -26,17 +27,19 @@ Guiding constraints from `01-decisions.md`:
 _id
 clerkUserId: string         // ties this profile to its Clerk auth user (= identity.subject)
 displayName: string
-username: string            // unique, for search/follow
+username: string            // unique, for search (searchable by name, D13)
 homeCoord: { lat, lng }     // PRIVATE — filter input only (D11)
 homeTownLabel?: string      // optional PUBLIC label on profile (D11)
 driveTimePrefMinutes: number // e.g. 30 / 60 / 90 (D18)
 cachedIsochrone?: geojson   // polygon; recomputed on home/pref change (D18)
 cachedIsochroneAt?: timestamp
-requireFollowApproval: boolean // account-level (D13)
+profileVisibility: enum(public, private)  // public = searchable + browsable profile page;
+                             // private = neither. Minors forced private; adults default public (D13/D41).
+                             // Independent of per-report visibility. (Replaces requireFollowApproval.)
 notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16)
   activityDetected,          // ice-skate detected on ANY linked provider (D24)
-  bountyRequest, followedPostedNearby,
-  hazardConfirmation, bountyFulfilled, newFollower,
+  bountyRequest,
+  hazardConfirmation, bountyFulfilled,
   reportRated,               // someone rated your report helpful/unhelpful (D17)
   contentFlagResolved: boolean
 }                            // keys mirror notifications.type 1:1 (D16 invariant)
@@ -64,7 +67,7 @@ createdAt: timestamp
 > (`current`, `upsertFromClerk`). The rest of this doc still reads `ref(profiles)` for
 > clarity even though the pseudocode predates the rename.
 > **Deletion (D33):** on delete, set `status: deleted` and scrub PII (displayName →
-> "deleted user", drop `homeCoord`/`homeTownLabel`, clear `dateOfBirth`). Authored public/followers/friends
+> "deleted user", drop `homeCoord`/`homeTownLabel`, clear `dateOfBirth`). Authored **public**
 > reports & comments are **anonymized, not erased** (preserve the ice record);
 > `just_me` content is removed. Users can also **export** their data.
 > **Ban/suspend (D37):** Convex is the source of truth — every function gates on
@@ -195,8 +198,8 @@ conditions?: {
 
 photoIds: ref(photos)[]
 notes?: string               // free text
-visibility: enum(just_me, friends, followers, public)  // D13; DEFAULT derived per D41
-                                                       // (public profile→public; locked/minor→followers)
+visibility: enum(just_me, public)  // D13 (2 levels; no social graph); DEFAULT derived per D41
+                                   // (adult→public; minor→just_me, and minors can't select public)
 moderationStatus: enum(visible, hidden, removed)  // default visible (D32)
 hazardIdsCreated: ref(hazards)[]  // hazards drawn as part of this report
 createdAt, updatedAt: timestamp
@@ -255,18 +258,10 @@ via: enum(app_open_nearby, report_flow, strava_path)  // trigger (D12)
 createdAt: timestamp
 ```
 
-### `follows`  (follow is the primitive; mutual == friends, D13)
-```
-_id
-followerId: ref(profiles)
-followeeId: ref(profiles)
-status: enum(pending, accepted)  // pending only when followee requires approval
-createdAt: timestamp
-```
-> **friends(A,B)** := accepted follow A→B AND accepted follow B→A.
-> **Visibility resolution** for viewer V on report R by author A:
-> `public` → anyone · `followers` → V follows A (accepted) · `friends` → mutual ·
-> `just_me` → only A. A **block** between V and A hides content both ways (below).
+> **No `follows` table (D13, revised 2026-07-15).** The social graph was removed, so there
+> is no follow/friend edge. **Visibility resolution** for viewer V on report R by author A is
+> now trivial: `public` → anyone (minus blocks); `just_me` → only A. A **block** between V and
+> A hides content both ways (below).
 
 ### `blocks`  (mute/block a user, D32)
 ```
@@ -275,8 +270,9 @@ blockerId: ref(profiles)
 blockedId: ref(profiles)
 createdAt: timestamp
 ```
-> A block hides each user's content/profile from the other and prevents follows.
-> Applied on top of visibility resolution above.
+> A block hides each user's content/profile from the other. With no follow graph (D13) there
+> is no follow state to also unwind — it's pure "hide this person." Applied on top of the
+> `public`/`just_me` resolution above.
 
 ### `contentFlags`  (abuse / safety reports, D32)
 ```
@@ -349,15 +345,19 @@ createdAt, expiresAt: timestamp
 > now that `gpsActivities` carries a resolved `waterBodyId` (D44) — no per-bounty
 > geometry scan. Fulfillment + reward gated by requester's helpful/unhelpful rating (below).
 
-### `reportRatings`  (helpful thumbs → reward allocation, D17)
+### `reportRatings`  (helpful thumbs → trust score, D17/D50)
 ```
 _id
 reportId: ref(reports)
-raterId: ref(profiles)          // typically the bounty requester
-bountyId?: ref(bounties)
+raterId: ref(profiles)          // any viewer (D50) — often, but not only, the bounty requester
+bountyId?: ref(bounties)        // set when the rating fulfills a bounty
 verdict: enum(helpful, unhelpful)
 createdAt: timestamp
 ```
+> **Trust score (D50):** a `helpful` mark raises the author's reputation/trust score (boost-only);
+> `unhelpful` informs moderation/quality signals but is **not** a public penalty. This is the
+> reputational, asymmetric stand-in for the removed social graph (D13) — never a safety weight (D3).
+> One rating per (rater, report); a rater cannot rate their own report.
 
 ### `photos`
 ```
@@ -379,8 +379,8 @@ createdAt: timestamp
 ```
 _id
 userId: ref(profiles)           // recipient
-type: enum(activity_detected, bounty_request, followed_posted_nearby,
-           hazard_confirmation, bounty_fulfilled, new_follower, report_rated,
+type: enum(activity_detected, bounty_request,
+           hazard_confirmation, bounty_fulfilled, report_rated,
            content_flag_resolved)
 payload: { ...refs... }      // e.g. reportId / hazardId / bountyId / actorUserId
 readAt?: timestamp
@@ -388,16 +388,20 @@ createdAt: timestamp
 ```
 > Only sent if the recipient's `notificationPrefs[type]` is on (D16).
 
-### `pointEvents`  (optional reputation ledger, for transparency)
+### `pointEvents`  (optional reputation/trust ledger, for transparency — D17/D50)
 ```
 _id
 userId: ref(profiles)
-delta: number
+delta: number                // boost-only in practice (D50); no public penalties
 reason: enum(report_submitted, photo_evidence, helpful_thumb,
+             report_corroborated,   // independent same-body report agreed within the window (D50)
              hazard_confirmed, bounty_fulfilled)
 refId?: string
 createdAt: timestamp
 ```
+> The user's **trust score** (`profiles.reputationPoints`) is the aggregate of these events.
+> `report_corroborated` is the D50 corroboration signal; it is **boost-only** and window-bounded,
+> so a later report of *changed* conditions never penalizes an earlier honest one (D3).
 
 ---
 
@@ -478,8 +482,7 @@ reports 1─* comments (self-nesting via parentCommentId)
 reports 1─* photos
 reports 1─* hazards (created)      hazards *─1 waterBodies
 hazards 1─* hazardConfirmations *─1 profiles
-profiles *─* profiles  (follows; mutual = friends)
-profiles *─* profiles  (blocks)
+profiles *─* profiles  (blocks — no follow graph, D13)
 profiles 1─* contentFlags ─1 (report | comment | photo | user)
 profiles(mod/admin) 1─* moderationActions ─1 (any moderated target)   (D37 audit log)
 profiles 0/1─* supportTickets                                          (D37 support inbox)
@@ -501,8 +504,12 @@ profiles 1─* pointEvents
 - **Weather-since-report strip:** computed from Open-Meteo over [skateTime → now]
   (D19; spec in `04-integrations.md`); cache per (waterBody, window).
 - **Hazard freshness state:** derived from `lastConfirmedAt` at read time (D15).
-- **Newsfeed:** reports within the viewer's isochrone, visibility-filtered, sorted
-  by `skateTime` desc (not `reportTime`).
+- **Newsfeed:** reports within the viewer's isochrone, visibility-filtered
+  (`public`, minus blocks — D13), sorted by `skateTime` desc (not `reportTime`).
+- **Trust score (D50):** `profiles.reputationPoints` aggregated from `pointEvents`
+  (helpful marks + window-bounded corroboration). Corroboration is derived from `reports`
+  on the same `waterBodyId` within a tunable window whose ice descriptors agree — no stored
+  social edges. Boost-only; reputational/cosmetic (D17), never a safety weight (D3).
 
 ---
 
@@ -537,12 +544,13 @@ profiles 1─* pointEvents
   into a Convex query. *(The centroid/bbox prefilter exists; the Convex-side refine does
   not yet.)*
 - **Suggested indexes:** `reports` by `waterBodyId + skateTime`, by `authorId`;
-  `hazards` by `waterBodyId + status`; `follows` by `followerId` and by `followeeId`;
+  `hazards` by `waterBodyId + status`;
   `gpsActivities` by `provider + providerActivityId` (unique, dedup) and by
   `waterBodyId` (per-lake skate history + bounty eligibility, D44); `comments`
   by `reportId`; `activityConnections` by `userId`; `bounties` by
   `waterBodyId + status`; `blocks` by `blockerId` and by `blockedId`;
-  `contentFlags` by `status` and by `targetType + targetId`; `waterBodies` by
+  `contentFlags` by `status` and by `targetType + targetId`; `reportRatings` by
+  `reportId` and a unique `raterId + reportId` (one rating per rater/report, D50); `waterBodies` by
   `dedupStatus` (review queue), by `reviewStatus` (user-body approval queue, D37), and by
   `externalId` (idempotent canonical OSM/NHD upsert, D14/D48 — `by_external_id`);
   `moderationActions` by `targetType + targetId` (target history) and by `actorId`;
@@ -571,8 +579,10 @@ profiles 1─* pointEvents
   (D44) so skates are findable by lake identity, not by geospatial area.
 - **Photo EXIF / geotag** → strip all EXIF on upload; preserve timestamp + coord only
   on opt-in; `placeOnMap` gates spatial pinning and coord retention (D42).
-- **Age gate & default visibility** → 16+ minimum; visibility default derived from
-  profile privacy + minor status (D41); `minAge16Attested` / `isMinor` on `users`.
+- **Age gate & default visibility** → 16+ minimum (DOB stored, age/minor status derived, D41);
+  report visibility is 2-level `just_me`/`public` with no social graph (D13); the default is
+  derived from **minor status** (adult→`public`, minor→`just_me`, D41); profiles are
+  `public`/`private` (`profileVisibility`).
 - **Notification prefs ↔ types** → `notificationPrefs` keys mirror `notifications.type`
   1:1 (every type toggleable, D16); `reportRated` added.
 

@@ -105,7 +105,7 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
   `bboxIntersects` refine), now tunable against the real polygon corpus.
 - **Admin remove/restore (D48):** minimal `remove`/`restore` mutations (soft-delist +
   `removalReason` + `moderationActions` audit row) so the fresh import can be curated and a
-  landowner takedown honored. Request-intake UX defers to Phase 4.
+  landowner takedown honored. Request-intake UX defers to Phase 7.
 - **Read-only map layer (web):** a MapLibre map (**Protomaps `.pmtiles`** basemap, D6 —
   start on hosted demo tiles, swap to a self-built Vermont extract) rendering the imported
   polygons, to *confirm* the data. Full interactive map + report creation stays Phase 2.
@@ -147,26 +147,27 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
   **client-side image optimization + EXIF stripping** on upload (D31/D42).
 - **Photo geotag opt-in** (D42): default off; if on, photos pin at their coord within
   the water body.
-- Report `visibility` is stored now with the **derived default** (D41), but only
-  **just_me / public** are meaningful until the follow graph lands (Phase 3) — fine
-  for the earliest builds.
-- *(User-created water bodies + dedup **moved to Phase 7**, decided 2026-07-13 — the good version is
-  GPS-path-backed, and the Vermont OSM corpus already covers the alpha. See Phase 7.)*
+- Report `visibility` is **`just_me` / `public`** — the full, final set (D13; the social
+  graph was removed, so there are no `friends`/`followers` levels to wait on). Default is the
+  **age-derived** one (D41): adult→`public`, minor→`just_me`.
+- *(User-created water bodies + dedup **moved to Phase 8**, decided 2026-07-13 — the good version is
+  GPS-path-backed, and the Vermont OSM corpus already covers the alpha. See Phase 8.)*
 - **Done:** friends can post and read reports on real lakes. *This is the usable MVP.*
 - Needs: MapLibre + tiles (Protomaps), Convex file storage.
 
 ## Phase 2.5 — Regional expansion (Northeast skating states)
 > **Detailed plan + runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md)
 > (was §H of the Phase 2 plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
-> (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the social
-> graph — but the corpus should be region-complete before feeds / drive-time (Phase 5/6) reason over it.
+> (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the
+> community layer (Phase 3) — but the corpus should be region-complete before drive-time / feeds
+> (Phase 4/5) reason over it.
 >
 > **Status: ✅ mostly shipped on dev (2026-07-15)** — ~116k bodies across NY/VT/NH/ME/MA imported
 > (NY clipped downstate), a 948 MB multi-state basemap on Cloudflare R2, map bounds widened to the
 > region, a **lake name-search box** (added when the big corpus made it near-essential) in both apps,
 > and the **`curatedBoost` re-seed** (mechanism `applyCuratedBoostSeed` shipped + VT seed applied at
 > flat +0.3 — 21 bodies boosted). **Remaining:** clean per-body curation (a few bay mis-matches; add
-> the Champlain/Lake George bays OSM lacks) via the **Phase 4 admin UI**, and the prod cutover
+> the Champlain/Lake George bays OSM lacks) via the **Phase 7 admin UI**, and the prod cutover
 > (Convex prod uninitialized).
 
 Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **lake-skating** states.
@@ -190,21 +191,70 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
 - **Done:** a skater anywhere in NY (north of the metro) / VT / NH / ME / MA opens the app and sees
   their lakes with a real basemap, served from R2.
 
-## Phase 3 — Social graph + comments (+ user-facing safety tools)
-*(Split from the old combined phase, and moved ahead of Drive-time/Newsfeed so
-`friends`/`followers` visibility is real before feeds filter on it.)*
-- Follows (mutual = friends), optional follower approval, full **visibility
-  resolution** for all four levels (D13), honoring the derived defaults (D41).
-- Friend search/discovery. Threaded **comments** on reports (D21/D25).
-- **User-facing safety tools (D32):** block/mute users; flag reports/comments/photos/
-  users for abuse (incl. `unsafe_false_report`). These must ship *with* the social
-  graph — public UGC + follows without block/report is unacceptable.
+## Phase 3 — Comments + profiles + user-facing safety tools
+*(Was "Social graph + comments" — the **social graph was removed 2026-07-15 (D13)**. No
+follows/friends. What remains is the community-interaction + safety layer, kept ahead of
+the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
+- Threaded **comments** on reports (D21/D25); comment visibility inherits the parent report.
+- **Searchable profiles (D13):** a profile page that coalesces a user's **public** reports,
+  **searchable by name**. `profileVisibility` respected — private profiles (all minors; adults
+  who opt in) are neither searchable nor browsable. No follow/friend graph, no friend discovery.
+- **User-facing safety tools (D32):** **block/mute** users; **flag/report** reports/comments/
+  photos/users for abuse (incl. `unsafe_false_report`). Public UGC without block/flag is
+  unacceptable, so these ship here. With no follow graph, a block is pure "hide this person."
 - A minimal moderator **hide/remove** path (founder) so flagged content can be taken
-  down immediately, even before the full operator surface (Phase 4).
-- **Done:** follow friends; comment threads work; visibility + blocks enforced
-  everywhere; content can be flagged and quickly taken down.
+  down immediately, even before the full operator surface (Phase 7).
+- Report visibility resolution is trivial now (`public` → anyone minus blocks; `just_me` →
+  author) — no multi-level graph resolution to build.
+- **Done:** comment threads work; profiles are viewable/searchable (privacy respected);
+  users can block/mute and flag; content can be quickly taken down.
 
-## Phase 4 — Operator surface (admin, moderation, dedup review)
+## Phase 4 — Drive-time filtering
+- Isochrone from home (**hosted ORS**), cached per user (D18/D35); radius fallback.
+- Filter map + feeds to the user's range.
+- **Favorite water bodies (subscribe to *places*, not people).** Let a user mark specific bodies
+  as **favorites** — a manual, per-body opt-in that complements drive-time as a *second axis* for
+  scoping the **Newsfeed** (Phase 5) and **notifications** (D16): a favorited lake's reports/events
+  surface **even when it's outside drive-time range**, and notification prefs can target "my
+  favorites." This is the **place-based** curation axis — the deliberate analog to the removed
+  people-follow graph (D13): you subscribe to *lakes you care about*, not to *individuals*. Likely
+  a small `waterBodyFavorites` join (userId × waterBodyId); ties into the notification prefs (D16)
+  and the Phase 5 feed. *(Could ship earlier if wanted — no ORS dependency; parked here as the
+  natural home alongside the other feed-scoping controls.)*
+- **Done:** map/feed show only in-range water bodies/reports (plus any favorited bodies).
+- Needs: OpenRouteService key.
+
+## Phase 5 — Newsfeed page
+- Cross-water-body feed within range, newest **skate time** first (D28), showing
+  **`public`** reports minus **blocks** (D13) — the block filter lands in Phase 3, so the
+  feed is correct once that ships.
+- **Temporarily expand radius** (session-only) to browse wider.
+- **Done:** browse recent community activity without going lake-by-lake.
+
+## Phase 6 — Bounties + trust score
+- **Bounties:** request a report for a water body; notify eligible recent skaters (report
+  *or* resolved GPS skate on that body, D44); fulfill; helpful/unhelpful thumbs →
+  cosmetic points/badges (D10/D17).
+  - *(Ordering note: this phase now precedes **GPS providers (Phase 8)**, so the "resolved GPS
+    skate" half of eligibility (D44) lights up only once Phase 8 lands. Native **reports** are the
+    eligibility signal at Phase 6 — enough for a working bounty loop; GPS widens it later.)*
+- **Trust score (D50) — the asymmetric reputation signal that stands in for the removed
+  social graph (D13).** A reporter's public trust score rises from two signals:
+  - **(a) Corroboration within a similar timeframe.** An independent report on the **same
+    water body within a tunable window** that **agrees** (similar `skateQuality`/`iceTypes`/
+    hazards) boosts both reporters. **Boost-only + window-bounded:** a later report of
+    *different* conditions is not counter-evidence (ice changed), so **nobody is penalized for
+    conditions changing** — this protects honest "don't do it"/negative reports (D3). Derived
+    from `reports` on the same body + `pointEvents` (`report_corroborated`); no social edges.
+  - **(b) Helpful marks.** Any viewer can mark a report **useful/helpful** (`reportRatings`,
+    D17); `helpful` raises the author's score. `unhelpful` feeds moderation/quality, not a
+    public penalty.
+  - **Constraints (D17/D3):** reputational/**cosmetic only** — never weights safety, never
+    gates visibility/ranking of safety content, never makes the app assert ice is safe.
+- **Done:** end-to-end bounty loop; reporters accrue a public, boost-only trust score from
+  corroboration + helpful marks.
+
+## Phase 7 — Operator surface (admin, moderation, dedup review)
 *(The founder-facing back office — the second half of the old combined phase.)*
 - **Admin/moderator surface (D37):** a role-gated **`/admin` route tree in the web app**
   (not a separate app), organized as **work queues** — flag queue (with
@@ -216,7 +266,7 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
   plus **approve/reject** of user-drawn bodies (`reviewStatus`, D37).
 - **Display-tuning controls (D49):** admin UI to edit the `displayScore` curve constants
   (log-area bounds + score→zoom map) and to set/adjust per-body **`curatedBoost`** from the
-  water-body surface. Phase 2 ships these as tuned constants + a seed; Phase 4 lifts them
+  water-body surface. Phase 2 ships these as tuned constants + a seed; Phase 7 lifts them
   behind admin controls so they're **never buried in code** a non-engineer can't reach.
 - Every admin mutation gates on `role` server-side and writes a **`moderationActions`**
   audit row.
@@ -227,27 +277,7 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
   alerted by email.
 - Needs: Resend (domain verified).
 
-## Phase 5 — Drive-time filtering
-- Isochrone from home (**hosted ORS**), cached per user (D18/D35); radius fallback.
-- Filter map + feeds to the user's range.
-- **Favorite / follow water bodies (user idea, 2026-07-15).** Let a user mark specific bodies as
-  **favorites** / subscribe to them — a manual, per-body opt-in that complements drive-time as a
-  *second axis* for scoping the **Newsfeed** (Phase 6) and **notifications** (D-notification prefs,
-  Phase 3): a favorited lake's reports/events surface **even when it's outside drive-time range**,
-  and notification prefs can target "my favorites." Gives users direct control over what they follow
-  rather than proximity alone. Likely a small `waterBodyFollows` join (userId × waterBodyId); ties
-  into the Phase 3 notification prefs and the Phase 6 feed. *(Could ship earlier if wanted — no ORS
-  dependency; parked here as the natural home alongside the other feed-scoping controls.)*
-- **Done:** map/feed show only in-range water bodies/reports (plus any favorited bodies).
-- Needs: OpenRouteService key.
-
-## Phase 6 — Newsfeed page
-- Cross-water-body feed within range, newest **skate time** first (D28) — now
-  correctly **visibility-filtered** (depends on Phase 3).
-- **Temporarily expand radius** (session-only) to browse wider.
-- **Done:** browse recent community activity without going lake-by-lake.
-
-## Phase 7 — GPS providers (fast-follow order — D24)
+## Phase 8 — GPS providers (fast-follow order — D24)
 - **Strava + Apple HealthKit first** (covers most of the US alpha; Strava carries
   write-ups/photos, HealthKit covers Apple Watch).
 - **Garmin next** (watch GPS + fallback for cross-user map display if Strava's terms
@@ -268,7 +298,7 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
     thresholds) → **steer the user onto a nearby existing body** ("attach here?") via a
     `findMatchCandidates` query; require an explicit `confirmedNew` to insert when strong matches
     exist. Stamp `dedupStatus` / `duplicateCandidateIds`; auto-visible then review-after (D37).
-  - The **moderator dedup review queue + merge** is already Phase 4; this feeds it.
+  - The **moderator dedup review queue + merge** is already Phase 7; this feeds it.
   - Deferred sub-decision: whether to also offer a **manual draw** path (e.g. Terra Draw) for users
     without a GPS provider connected, or to gate creation on a path entirely. Decide at build.
 - **Done:** logging an ice skate on a supported device prompts a report with the
@@ -276,17 +306,11 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
   water can create/attach a body from the trusted path (dedup-steered).
 - Needs: provider approvals/keys (all applied for in Phase 0).
 
-## Phase 8 — Hazards
+## Phase 9 — Hazards
 - Draw hazards (point/line/area) within a water body; typed vocabulary.
 - Lifecycle (fresh/aging/stale) + "still there / gone" confirmations, triggered
   opportunistically (app-open nearby, report flow, post-hoc GPS path) (D12/D15).
 - **Done:** hazards appear, age, and can be confirmed/cleared.
-
-## Phase 9 — Bounties + reputation
-- Request a report for a water body; notify eligible recent skaters (report *or*
-  resolved GPS skate on that body, D44); fulfill; helpful/unhelpful thumbs →
-  cosmetic points/badges (D10/D17).
-- **Done:** end-to-end bounty loop with reputation.
 
 ## Phase 10 — Weather-since strips
 - Open-Meteo "what the weather has done since this report" factual strip (D19).
