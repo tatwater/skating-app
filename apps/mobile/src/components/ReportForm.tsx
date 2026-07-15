@@ -29,7 +29,7 @@ import {
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
 import { useRouter } from 'expo-router'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Platform } from 'react-native'
 import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui'
 import { useMapSelection } from './MapSelectionContext'
@@ -222,6 +222,7 @@ export function ReportForm({
   const profile = useQuery(api.profiles.current, {})
   const generateUploadUrl = useMutation(api.photos.generateUploadUrl)
   const createPhoto = useMutation(api.photos.create)
+  const deletePhoto = useMutation(api.photos.remove)
   const createReport = useMutation(api.reports.create)
   const { putInPin, setPutInPin, setPinDropMode } = useMapSelection()
 
@@ -241,6 +242,24 @@ export function ReportForm({
     }
   }, [profile, form, profilePublic])
 
+  // Reclaim any photos uploaded for a report that never got created — a failed `reports.create` or
+  // an abandoned form would otherwise strand a storage blob + photo row (`submittedRef` skips a
+  // successful submit, whose photos are now attached to the report). Read via a ref so this stays an
+  // unmount-only sweep; `useMutation` is a stable ref, so `[deletePhoto]` never re-runs it. Mirrors
+  // web's `ReportForm` cleanup (minus its object-URL revocation — native uses file URIs).
+  const photosRef = useRef<PhotoDraft[]>([])
+  photosRef.current = photos
+  const submittedRef = useRef(false)
+  useEffect(() => {
+    return () => {
+      for (const p of photosRef.current) {
+        if (!submittedRef.current && p.uploadedId) {
+          void deletePhoto({ photoId: p.uploadedId }).catch(() => {})
+        }
+      }
+    }
+  }, [deletePhoto])
+
   // Clear the map put-in-pin state when the form goes away — including an unmount mid-pin-drop, which
   // would otherwise strand the map in peek mode.
   useEffect(() => {
@@ -249,6 +268,19 @@ export function ReportForm({
       setPinDropMode(false)
     }
   }, [setPutInPin, setPinDropMode])
+
+  // Reclaim an already-uploaded photo's blob + row when the user removes it (a prior failed submit
+  // may have uploaded it); dropping it from state alone would strand it — it's no longer swept.
+  const removePhoto = useCallback(
+    (id: string) => {
+      setPhotos((prev) => {
+        const removed = prev.find((p) => p.id === id)
+        if (removed?.uploadedId) void deletePhoto({ photoId: removed.uploadedId }).catch(() => {})
+        return prev.filter((p) => p.id !== id)
+      })
+    },
+    [deletePhoto],
+  )
 
   const onAddPhotos = useCallback(async () => {
     setError(null)
@@ -330,6 +362,7 @@ export function ReportForm({
         }),
       )
       const reportId = await createReport({ ...input, waterBodyId, photoIds })
+      submittedRef.current = true // photos are attached now — keep the unmount sweep off them
       setPutInPin(null)
       setPinDropMode(false)
       onClose()
@@ -531,11 +564,7 @@ export function ReportForm({
                   }
                 />
               ) : null}
-              <Button
-                size="$2"
-                chromeless
-                onPress={() => setPhotos((prev) => prev.filter((p) => p.id !== photo.id))}
-              >
+              <Button size="$2" chromeless onPress={() => removePhoto(photo.id)}>
                 Remove
               </Button>
             </XStack>
