@@ -34,8 +34,6 @@ export function humanizeEnum(token: string): string {
 /** Per-report visibility, worded for the reader (not a mechanical de-casing of the enum). */
 export const VISIBILITY_LABELS: Record<Visibility, string> = {
   just_me: 'Only me',
-  friends: 'Friends',
-  followers: 'Followers',
   public: 'Public',
 }
 

@@ -8,8 +8,8 @@ const FIXED_NOW = Date.UTC(2026, 0, 5, 12, 0)
 
 function renderFields(
   opts: {
-    maxVisibility?: 'just_me' | 'friends' | 'followers' | 'public'
-    defaultVisibility?: 'just_me' | 'friends' | 'followers' | 'public'
+    maxVisibility?: 'just_me' | 'public'
+    defaultVisibility?: 'just_me' | 'public'
     putInPin?: { lat: number; lng: number } | null
     photos?: PhotoDraftView[]
   } = {},
@@ -47,9 +47,9 @@ function renderFields(
 }
 
 describe('ReportFormFields', () => {
-  it('never offers Public to a locked/minor author (D41)', () => {
-    renderFields({ maxVisibility: 'followers' })
-    expect(screen.getByRole('button', { name: 'Followers' })).toBeInTheDocument()
+  it('never offers Public to a minor author (D41)', () => {
+    renderFields({ maxVisibility: 'just_me' })
+    expect(screen.getByRole('button', { name: 'Only me' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Public' })).not.toBeInTheDocument()
   })
 

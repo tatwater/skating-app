@@ -6,7 +6,7 @@
  * Observation-friendly (D3): nothing about ice *quality* is required — a "don't skate here" report
  * carrying only `notes` is valid. What's required is just the anchor: a water body, when it was
  * skated, and who can see it. Visibility is additionally capped at the author's
- * `maxVisibilityForProfile` ceiling (D41) so a locked/minor author can never post `public`.
+ * `maxVisibilityForProfile` ceiling (D41) so a minor author can never post `public`.
  */
 
 import type { LatLng } from './geometry'

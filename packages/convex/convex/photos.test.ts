@@ -67,10 +67,8 @@ async function seedReport(
 const NOTIF_PREFS = {
   activityDetected: true,
   bountyRequest: true,
-  followedPostedNearby: true,
   hazardConfirmation: true,
   bountyFulfilled: true,
-  newFollower: true,
   reportRated: true,
   contentFlagResolved: true,
 }
@@ -82,7 +80,7 @@ async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {
       displayName: subject,
       username: subject,
       driveTimePrefMinutes: 60,
-      requireFollowApproval: false,
+      profileVisibility: 'public' as const,
       notificationPrefs: NOTIF_PREFS,
       dateOfBirth: Date.UTC(1990, 0, 1),
       reputationPoints: 0,

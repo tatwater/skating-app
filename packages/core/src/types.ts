@@ -4,9 +4,13 @@
  * array (for validation / UI lists) and the literal-union type are available.
  */
 
-/** Per-report visibility levels (D13). Ordered narrowest → widest. */
-export const VISIBILITY_LEVELS = ['just_me', 'friends', 'followers', 'public'] as const
+/** Per-report visibility levels (D13; no social graph). Ordered narrowest → widest. */
+export const VISIBILITY_LEVELS = ['just_me', 'public'] as const
 export type Visibility = (typeof VISIBILITY_LEVELS)[number]
+
+/** Profile discoverability (D13): `public` = searchable + browsable; `private` = neither. */
+export const PROFILE_VISIBILITIES = ['public', 'private'] as const
+export type ProfileVisibility = (typeof PROFILE_VISIBILITIES)[number]
 
 /** Account roles; admin ⊇ moderator (D37). */
 export const USER_ROLES = ['member', 'moderator', 'admin'] as const

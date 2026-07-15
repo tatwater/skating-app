@@ -10,7 +10,7 @@ import type { Visibility } from './types'
 
 const NOW = 1_700_000_000_000
 const PUBLIC_CTX = { now: NOW, maxVisibility: 'public' as Visibility }
-const LOCKED_CTX = { now: NOW, maxVisibility: 'followers' as Visibility }
+const MINOR_CTX = { now: NOW, maxVisibility: 'just_me' as Visibility }
 
 /** A minimal valid report; override fields per test. */
 function base(overrides: Partial<ReportInput> = {}): ReportInput {
@@ -116,9 +116,9 @@ describe('validateReportInput — valid reports', () => {
     expect(result.normalized.notes).toBeUndefined()
   })
 
-  it('lets a locked/minor account post at or below its ceiling', () => {
-    for (const visibility of ['followers', 'friends', 'just_me'] as Visibility[]) {
-      expect(validateReportInput(base({ visibility }), LOCKED_CTX).ok).toBe(true)
+  it('lets a minor account post at or below its ceiling', () => {
+    for (const visibility of ['just_me'] as Visibility[]) {
+      expect(validateReportInput(base({ visibility }), MINOR_CTX).ok).toBe(true)
     }
   })
 })
@@ -149,13 +149,13 @@ describe('validateReportInput — required fields', () => {
 })
 
 describe('validateReportInput — visibility ceiling (D41)', () => {
-  it('rejects public from a locked/minor account', () => {
-    const result = validateReportInput(base({ visibility: 'public' }), LOCKED_CTX)
+  it('rejects public from a minor account', () => {
+    const result = validateReportInput(base({ visibility: 'public' }), MINOR_CTX)
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.errors[0]).toEqual({
       field: 'visibility',
-      message: 'cannot exceed followers for this account',
+      message: 'cannot exceed just_me for this account',
     })
   })
 })

@@ -75,7 +75,7 @@ export function emptyReportForm(now: number, defaultVisibility: Visibility): Rep
 }
 
 /**
- * The visibility levels this author may pick, clamped to their ceiling (D41) — a locked/minor author
+ * The visibility levels this author may pick, clamped to their ceiling (D41) — a minor author
  * (`maxVisibility` below `public`) is never offered `public`. Ordered narrowest → widest.
  */
 export function visibilityOptions(maxVisibility: Visibility): Visibility[] {

@@ -15,29 +15,24 @@ function convexTestWithGeo() {
 const NOTIF_PREFS = {
   activityDetected: true,
   bountyRequest: true,
-  followedPostedNearby: true,
   hazardConfirmation: true,
   bountyFulfilled: true,
-  newFollower: true,
   reportRated: true,
   contentFlagResolved: true,
 }
 
-/** Seed a provisioned profile; `requireFollowApproval` true = a locked/private (minor-like) account. */
-async function seedUser(
-  t: ReturnType<typeof convexTest>,
-  subject: string,
-  requireFollowApproval = false,
-) {
+/** Seed a provisioned profile; `minor` true = an under-18 account (capped at `just_me`, D41). */
+async function seedUser(t: ReturnType<typeof convexTest>, subject: string, minor = false) {
   await t.run((ctx) =>
     ctx.db.insert('profiles', {
       clerkUserId: subject,
       displayName: subject,
       username: subject,
       driveTimePrefMinutes: 60,
-      requireFollowApproval,
+      profileVisibility: minor ? ('private' as const) : ('public' as const),
       notificationPrefs: NOTIF_PREFS,
-      dateOfBirth: Date.UTC(1990, 0, 1),
+      // Adult by default; a minor gets a DOB ~16 years ago so `isMinor` is true at test time.
+      dateOfBirth: minor ? Date.UTC(new Date().getUTCFullYear() - 16, 0, 1) : Date.UTC(1990, 0, 1),
       reputationPoints: 0,
       role: 'member' as const,
       status: 'active' as const,
@@ -152,24 +147,24 @@ describe('reports.create', () => {
     expect((await t.run((ctx) => ctx.db.get(reportId)))?.point).toEqual(point)
   })
 
-  test('clamps a locked/minor account away from public (D41)', async () => {
+  test('clamps a minor account away from public (D41)', async () => {
     const t = convexTestWithGeo()
     const { id } = await seedBody(t)
-    const asLocked = await seedUser(t, 'clerk_minor', true)
-    // Default visibility for a locked profile is followers — and public is refused outright.
+    const asMinor = await seedUser(t, 'clerk_minor', true)
+    // A minor's default visibility is just_me — and public is refused outright.
     await expect(
-      asLocked.mutation(api.reports.create, {
+      asMinor.mutation(api.reports.create, {
         waterBodyId: id,
         skateTime: SKATE_TIME,
         visibility: 'public',
       }),
     ).rejects.toThrow(/invalid_report/i)
 
-    const okId = await asLocked.mutation(api.reports.create, {
+    const okId = await asMinor.mutation(api.reports.create, {
       waterBodyId: id,
       skateTime: SKATE_TIME,
     })
-    expect((await t.run((ctx) => ctx.db.get(okId)))?.visibility).toBe('followers')
+    expect((await t.run((ctx) => ctx.db.get(okId)))?.visibility).toBe('just_me')
   })
 
   test('rejects an invalid report at the server boundary (D37)', async () => {

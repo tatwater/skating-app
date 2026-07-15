@@ -7,6 +7,7 @@ import {
   emptyThicknessReading,
   humanizeEnum,
   ICE_TYPES,
+  isMinor,
   maxVisibilityForProfile,
   PRECIP_LABELS,
   PRECIP_TYPES,
@@ -498,15 +499,16 @@ export function ReportForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const profilePublic = profile ? !profile.requireFollowApproval : true
-  const maxVisibility = maxVisibilityForProfile({ profilePublic })
+  // Report default/ceiling derive from the author's age, not profile privacy (D13/D41).
+  const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false
+  const maxVisibility = maxVisibilityForProfile({ isMinor: minor })
 
   // Initialize the form once the profile (and thus the default visibility, D41) is known.
   useEffect(() => {
     if (profile !== undefined && form === null) {
-      setForm(emptyReportForm(Date.now(), deriveDefaultVisibility({ profilePublic })))
+      setForm(emptyReportForm(Date.now(), deriveDefaultVisibility({ isMinor: minor })))
     }
-  }, [profile, form, profilePublic])
+  }, [profile, form, minor])
 
   // Reclaim whatever a draft has already uploaded so nothing is stranded server-side: a created row
   // (deletes the row + both blobs) or, for a partial/interrupted upload, the bare blobs that never

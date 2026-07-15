@@ -17,6 +17,7 @@ import {
   HAZARD_TYPES,
   ICE_TYPES,
   PRECIP_TYPES,
+  PROFILE_VISIBILITIES,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
@@ -37,7 +38,6 @@ import {
   FLAG_REASONS,
   FLAG_STATUSES,
   FLAG_TARGET_TYPES,
-  FOLLOW_STATUSES,
   HAZARD_CONFIRM_VERDICTS,
   HAZARD_CONFIRM_VIA,
   HAZARD_STATUSES,
@@ -64,13 +64,13 @@ export default defineSchema({
   profiles: defineTable({
     clerkUserId: v.string(), // ties this profile to its Clerk auth user (identity.subject)
     displayName: v.string(),
-    username: v.string(), // unique, for search/follow
+    username: v.string(), // unique, for search (searchable by name, D13)
     homeCoord: v.optional(latLng), // PRIVATE — filter input only (D11); set at onboarding
     homeTownLabel: v.optional(v.string()), // optional PUBLIC label (D11)
     driveTimePrefMinutes: v.number(), // e.g. 30/60/90 (D18)
     cachedIsochrone: v.optional(geoJson), // recomputed on home/pref change (D18)
     cachedIsochroneAt: v.optional(v.number()),
-    requireFollowApproval: v.boolean(), // account-level (D13)
+    profileVisibility: literals(PROFILE_VISIBILITIES), // public=searchable/browsable; minors forced private (D13/D41)
     notificationPrefs, // every type toggleable (D16)
     dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
@@ -201,7 +201,7 @@ export default defineSchema({
     ),
     photoIds: v.array(v.id('photos')),
     notes: v.optional(v.string()),
-    visibility: literals(VISIBILITY_LEVELS), // D13; DEFAULT derived per D41
+    visibility: literals(VISIBILITY_LEVELS), // just_me/public (D13, no social graph); DEFAULT derived per D41
     moderationStatus: literals(MODERATION_STATUSES), // default visible (D32)
     hazardIdsCreated: v.array(v.id('hazards')),
     createdAt: v.number(),
@@ -248,14 +248,8 @@ export default defineSchema({
     createdAt: v.number(),
   }).index('by_hazard', ['hazardId']),
 
-  follows: defineTable({
-    followerId: v.id('profiles'),
-    followeeId: v.id('profiles'),
-    status: literals(FOLLOW_STATUSES), // pending only when followee requires approval
-    createdAt: v.number(),
-  })
-    .index('by_follower', ['followerId'])
-    .index('by_followee', ['followeeId']),
+  // No `follows` table (D13, revised 2026-07-15): the social graph was removed. Reports are
+  // just_me/public; the only relationship that narrows access is a block (below).
 
   blocks: defineTable({
     blockerId: v.id('profiles'),
@@ -323,13 +317,15 @@ export default defineSchema({
 
   reportRatings: defineTable({
     reportId: v.id('reports'),
-    raterId: v.id('profiles'), // typically the bounty requester
+    raterId: v.id('profiles'), // any viewer (D50) — often, but not only, the bounty requester
     bountyId: v.optional(v.id('bounties')),
     verdict: literals(RATING_VERDICTS),
     createdAt: v.number(),
   })
     .index('by_report', ['reportId'])
-    .index('by_rater', ['raterId']),
+    .index('by_rater', ['raterId'])
+    // Enforce one rating per (rater, report) via a point lookup on this compound index (D50).
+    .index('by_rater_report', ['raterId', 'reportId']),
 
   photos: defineTable({
     storageId: v.string(), // Convex file storage ref (optimized full image, D31)

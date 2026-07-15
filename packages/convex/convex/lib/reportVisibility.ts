@@ -4,8 +4,9 @@
  * resolves report-derived data makes the *same* decision — in particular a photo's serving URL
  * must never outlive the viewer's access to the report that references it (D42).
  *
- * The viewer relationship is self/none until the follow graph lands (Phase 3), so `friends` /
- * `followers` resolve to author-only today and flip on for free once follows exist.
+ * With no social graph (D13), report reads are simply `public` → anyone, `just_me` → author. The
+ * only relationship that narrows access is a block (D32), which lands in Phase 3 — until then the
+ * viewer relationship is `{ blocked: false }`.
  */
 
 import { canViewReport } from '@skating/core'
@@ -13,12 +14,8 @@ import type { Doc, Id } from '../_generated/dataModel'
 import type { QueryCtx } from '../_generated/server'
 import { getCurrentProfile } from './auth'
 
-/** Viewer relationship until the follow graph exists (Phase 3): no follows, no blocks. */
-export const NO_RELATIONSHIP = {
-  viewerFollowsAuthor: false,
-  authorFollowsViewer: false,
-  blocked: false,
-}
+/** Viewer relationship until blocks exist (Phase 3): no block in effect. */
+export const NO_RELATIONSHIP = { blocked: false }
 
 /** Load a report only if it's moderation-visible and the current viewer may see it; else `null`. */
 export async function getViewableReport(

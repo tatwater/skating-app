@@ -3,10 +3,10 @@
  *
  * The validation + normalization contract lives in `@skating/core` `validateReportInput` and is
  * **re-enforced here** at the trust boundary (D37) — the client runs the same check before submit,
- * but the server never trusts it. Visibility is derived (D41) and clamped to the author's ceiling
- * so a locked/minor account can't post `public`. Reads are visibility-filtered per viewer via
- * `canViewReport`; the viewer relationship is self/none until the follow graph lands (Phase 3),
- * so `friends`/`followers` resolve to author-only today and flip on for free later.
+ * but the server never trusts it. Visibility is derived from age (D41) and clamped to the author's
+ * ceiling so a minor account can't post `public`. Reads are visibility-filtered per viewer via
+ * `canViewReport` (D13, no social graph — just_me/public); the viewer relationship carries only a
+ * block flag, which is self/none until blocks land (Phase 3).
  */
 
 import {
@@ -14,6 +14,7 @@ import {
   canViewReport,
   deriveDefaultVisibility,
   ICE_TYPES,
+  isMinor,
   maxVisibilityForProfile,
   PRECIP_TYPES,
   type ReportInput,
@@ -128,7 +129,8 @@ function toReportInput(
 
 /**
  * Create a report (D3/D41). `requireProfile`; derive the default visibility from the caller's
- * privacy setting when unset and clamp it to their ceiling; re-validate via `@skating/core`; resolve
+ * age (adult→public, minor→just_me) when unset and clamp it to their ceiling; re-validate via
+ * `@skating/core`; resolve
  * a merged target body to its survivor; set `point` from the put-in pin else the body centroid;
  * server-stamp `reportTime`; insert as a `native`, `visible` report.
  */
@@ -136,14 +138,14 @@ export const create = mutation({
   args: { waterBodyId: v.id('waterBodies'), ...reportContent },
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx)
-    const profilePublic = !profile.requireFollowApproval // locked accounts are private (D41)
-    const maxVisibility = maxVisibilityForProfile({ profilePublic })
-    const visibility = args.visibility ?? deriveDefaultVisibility({ profilePublic })
+    const now = Date.now()
+    const minor = isMinor(profile.dateOfBirth, now) // report default/ceiling derive from age (D41)
+    const maxVisibility = maxVisibilityForProfile({ isMinor: minor })
+    const visibility = args.visibility ?? deriveDefaultVisibility({ isMinor: minor })
 
     const body = await resolveSurvivor(ctx, args.waterBodyId)
     if (!body || !isListed(body)) throw new ConvexError('Water body not found')
 
-    const now = Date.now()
     const result = validateReportInput(toReportInput(args, args.waterBodyId, visibility), {
       now,
       maxVisibility,
@@ -225,11 +227,10 @@ export const update = mutation({
     if (existing.authorId !== profile._id)
       throw new ConvexError('Only the author can edit a report')
 
-    const profilePublic = !profile.requireFollowApproval
-    const maxVisibility = maxVisibilityForProfile({ profilePublic })
+    const now = Date.now()
+    const maxVisibility = maxVisibilityForProfile({ isMinor: isMinor(profile.dateOfBirth, now) })
     const visibility = args.visibility ?? existing.visibility
 
-    const now = Date.now()
     const result = validateReportInput(toReportInput(args, existing.waterBodyId, visibility), {
       now,
       maxVisibility,

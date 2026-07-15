@@ -21,21 +21,21 @@ describe('emptyThicknessReading', () => {
 })
 
 describe('visibilityOptions', () => {
-  it('offers every level up to a public author’s ceiling', () => {
-    expect(visibilityOptions('public')).toEqual(['just_me', 'friends', 'followers', 'public'])
+  it('offers every level up to an adult author’s ceiling', () => {
+    expect(visibilityOptions('public')).toEqual(['just_me', 'public'])
   })
 
-  it('never offers public to a locked/minor author (D41)', () => {
-    expect(visibilityOptions('followers')).toEqual(['just_me', 'friends', 'followers'])
-    expect(visibilityOptions('followers')).not.toContain('public')
+  it('never offers public to a minor author (D41)', () => {
+    expect(visibilityOptions('just_me')).toEqual(['just_me'])
+    expect(visibilityOptions('just_me')).not.toContain('public')
   })
 })
 
 describe('emptyReportForm', () => {
   it('defaults skate time to now (ms) and visibility to the passed default (D41)', () => {
     const now = Date.UTC(2026, 0, 5, 19, 30)
-    const form = emptyReportForm(now, 'friends')
-    expect(form.visibility).toBe('friends')
+    const form = emptyReportForm(now, 'just_me')
+    expect(form.visibility).toBe('just_me')
     expect(form.skateTime).toBe(now)
     expect(form.iceTypes).toEqual([])
     expect(form.thickness).toEqual([])
