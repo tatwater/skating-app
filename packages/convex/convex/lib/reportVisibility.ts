@@ -18,15 +18,27 @@ import type { QueryCtx } from '../_generated/server'
 /**
  * The set of author profile ids blocked from `viewerId`, unioned across **both** directions — I
  * blocked them OR they blocked me (D32). Feeds comment filtering, profile access, and the report
- * author-line "Blocked" chip. Gets its real implementation in Workstream B (query `blocks` by
- * `by_blocker` + `by_blocked`); a stub set until then.
+ * author-line "Blocked" chip. An unauthenticated viewer (`''`) has no block set.
  */
 export async function loadBlockedAuthorIds(
-  _ctx: QueryCtx,
-  _viewerId: Id<'profiles'> | '',
+  ctx: QueryCtx,
+  viewerId: Id<'profiles'> | '',
 ): Promise<Set<string>> {
-  // TODO(Workstream B): union `blocks` by_blocker + by_blocked for the viewer.
-  return new Set<string>()
+  if (viewerId === '') return new Set<string>()
+  const blocked = new Set<string>()
+  // Users I blocked.
+  const asBlocker = await ctx.db
+    .query('blocks')
+    .withIndex('by_blocker', (q) => q.eq('blockerId', viewerId))
+    .collect()
+  for (const b of asBlocker) blocked.add(b.blockedId)
+  // Users who blocked me (bidirectional — a block hides both ways, D32).
+  const asBlocked = await ctx.db
+    .query('blocks')
+    .withIndex('by_blocked', (q) => q.eq('blockedId', viewerId))
+    .collect()
+  for (const b of asBlocked) blocked.add(b.blockerId)
+  return blocked
 }
 
 /**
