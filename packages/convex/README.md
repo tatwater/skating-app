@@ -38,12 +38,15 @@ and a Clerk JWT template named `convex`).
   detail; follows `mergedIntoId` to the survivor, flags removed/unlisted vs not-found, D36/D47),
   admin **`setCuratedBoost`** (recompute score + re-index + audit, D49), `listInViewport`
   (**two-tier bbox-intersection** viewport query with the optional D49 `zoom` prominence filter —
-  see below), `listPendingReview`.
+  see below), `searchByName` (map search box), public **`resolveBodyForCoord`** (GPS→lake for the
+  F2 offline-draft flush: the same two-tier lookup + the shared buffered `nearestBodyForPoint`,
+  ~300 m parking buffer), `listPendingReview`.
 - **`convex/reports.ts`** — the read/write loop (D3/D22–D25/D41): `create` (`requireProfile`,
-  re-enforces `@skating/core` `validateReportInput` + the visibility ceiling, resolves the merged
-  survivor, defaults `point` to the body centroid, server-stamps `reportTime`), `listByWaterBody`
-  (feed by **skate time** desc, visibility-filtered per viewer via `canViewReport`), `get`
-  (visibility-checked), `update` (author-only last-write-wins).
+  re-enforces `@skating/core` `validateReportInput`, rejects minors, resolves the merged
+  survivor, defaults `point` to the body centroid, server-stamps `reportTime`; **idempotent on an
+  optional `idempotencyKey`** so a mobile offline-flush retry can't duplicate — F2/D30),
+  `listByWaterBody` (feed by **skate time** desc, moderation + block filtered via `canViewReport`),
+  `get` (moderation-checked), `update` (author-only last-write-wins).
 - **`convex/photos.ts`** — `generateUploadUrl` (auth'd storage upload URL), `create` (records a
   `photos` row; **drops `coord` unless `placeOnMap === true`, D42** — enforced server-side),
   `getUrls` (resolve full/thumb serving URLs, null-guarded).

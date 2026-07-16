@@ -368,7 +368,18 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 - **Verify on the Android emulator** (`Pixel_6_Android_15`) as the primary target (user's first device
   is a Pixel); iOS Simulator secondary.
 
-#### F2 — offline draft queue (D9/D30) — the hard part (separate follow-on PR, + §G docs)
+#### F2 — offline draft queue (D9/D30) — ✅ SHIPPED (2026-07-16, dev; + §G docs)
+
+> **Shipped:** the pure heart in `@skating/core` — `geometry.ts` buffered `pointInPolygon` /
+> `distanceToPolygonMeters` / `nearestBodyForPoint`, and `draftQueue.ts` (draft record + status
+> machine + checkpointed idempotent `flushDraft` + transient/permanent classification), both
+> property/unit-tested. Convex: additive `reports.idempotencyKey?` + `by_idempotency_key` +
+> idempotent `create`, and `waterBodies.resolveBodyForCoord` (coord→lake, reuses the geospatial
+> lookup + the shared ranker), with `convex-test`s. Mobile (native glue, typechecked; emulator pass
+> pending): `bodyCache` (Layer-2 LRU + GPS auto-select), `draftStore`/`draftPhotos`/`flushService`,
+> `OfflineDraftsContext` (NetInfo/foreground/manual flush), `ReportForm` draft mode (save/hydrate/
+> current-location put-in), and the drafts-list tab + `draft/new`·`draft/[id]` routes. **Layer 3
+> (offline basemap tiles) deferred to Phase 9** (see `07-roadmap.md`).
 
 > **Design settled 2026-07-15 (this build).** F2 + §G share **one PR off `main`, dev-only** (prod
 > still uninitialized). The offline story splits into three layers with very different cost/risk;
@@ -636,15 +647,3 @@ doc once web is proven:
   the spike so it doesn't reintroduce the wide-zoom crash it's meant to prevent.
 - **Hazard seam (Phase 9)** — don't paint the report data path into a corner that makes in-polygon
   hazard geometry hard to add later; `hazardIdsCreated` already exists in the schema, leave it be.
-
-
-
-
-
-
-
-It's time to finish Phase 2! Please review all the planning docs, specifically [@phase-2-map-and-reports.md](file:///Users/teagan/Code/skating/plans/phase-2-map-and-reports.md) – the only parts I think we have left is §F2 and §G, but once you've done those let's perform a full code review of all of the documentation and code files related to all of Phase 2 (and 2.5) just to be sure.
-
-Looking at the plan for §F2, do you have everything you need to get started? What questions do you have for me? Anything feel like it hasn't been fully/properly thought through yet? I'm here to help, please use me as a resource!
-
-For bonus points, can you please write a human-targeted markdown file guide in [@docs](file:///Users/teagan/Code/skating/docs/) that outlines the full end-to-end process of adding a new region to the map? Essentially what we did in 2.5 together (largely you ran all the commands). This way future contributors to the project will have an easier time expanding our coverage to new places.

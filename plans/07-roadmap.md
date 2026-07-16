@@ -134,7 +134,18 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 > map with the D49 zoom filter, `expo-location` framing, `@gorhom/bottom-sheet` drawers +
 > deep-linkable `/water/[id]` · `/report/[id]`, and the read + **online** report-create loop
 > (native `expo-image-picker`/`expo-image-manipulator` photo pipeline). Shared helpers lifted into
-> `@skating/core`. **§F2 (offline draft queue, D30) is the remaining mobile follow-on PR.**
+> `@skating/core`.
+>
+> **Status (mobile §F2 — offline draft queue, D30): ✅ shipped (2026-07-16, dev)** — capture a
+> report with no signal and it flushes on reconnect. `@skating/core` carries the pure heart: a
+> buffered `pointInPolygon` GPS→lake resolver and a checkpointed, idempotent flush state machine
+> (transient-retry vs. permanent-park). On-device an `expo-sqlite` LRU caches recently-viewed body
+> polygons (Layer 2 — GPS auto-select offline, reused by Phase 9), plus an `expo-sqlite` +
+> `expo-file-system` draft queue with NetInfo/foreground/manual flush; `reports.create` is idempotent
+> on an additive `idempotencyKey`, and `waterBodies.resolveBodyForCoord` resolves a coord-only draft
+> at flush. Offline editing + a drafts list ship too. **Offline basemap *tiles* (F2 "Layer 3") were
+> deferred to Phase 9** (hazard pins need them; report capture doesn't). Native UI pending an emulator
+> verification pass (pure + Convex layers are tested).
 
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
 - **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived

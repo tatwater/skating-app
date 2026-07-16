@@ -3,8 +3,8 @@
 The **Expo / React Native** app — the primary surface for field ice-reporting (D1/D8).
 Auth-gated tab navigation, themed via shared design tokens, wired to Clerk + Convex + Sentry.
 **Phase 2 F1** built the online map + report loop (native MapLibre map, tap→detail→feed, report
-create with photos); the offline draft queue is F2. Newsfeed / Bounties / You stay placeholders
-for their later phases.
+create with photos); **Phase 2 F2** added the offline draft queue (capture with no signal → flush on
+reconnect). Newsfeed / Bounties / You stay placeholders for their later phases.
 
 ## Stack
 
@@ -107,11 +107,31 @@ pnpm --filter @skating/mobile check-types   # tsc --noEmit
 npx expo-doctor                             # project health
 ```
 
+## Offline draft queue (Phase 2 F2, D30)
+
+Capture a report with no signal; it flushes on reconnect. The pure heart lives in `@skating/core`
+(a buffered `pointInPolygon` GPS→lake resolver + a checkpointed, idempotent flush state machine),
+so this app is the native adapter:
+
+- **`lib/bodyCache.ts` (Layer 2):** an `expo-sqlite` LRU of recently-viewed body polygons (cached on
+  every `waterBodies.get`), so a device GPS fix resolves *which* lake you're on offline via the
+  shared buffered ranker (a ~300 m parking/approach buffer). Reused by Phase 9 hazard capture.
+- **`lib/draftStore.ts` + `lib/draftPhotos.ts`:** the draft list (`expo-sqlite`) + captured photos
+  copied into the document dir (`expo-file-system`, safe from cache eviction).
+- **`lib/flushService.ts` + `OfflineDraftsContext`:** wires the core flush to Convex (idempotent
+  `reports.create` on `reports.idempotencyKey`; `waterBodies.resolveBodyForCoord` for a coord-only
+  draft) + storage upload; flushes on `@react-native-community/netinfo` reconnect + app-foreground +
+  a manual "Sync now" (D12).
+- **Capture/edit UI:** the ＋ Report tab is the offline capture entry + drafts list; `draft/new`
+  (GPS auto-select) and `draft/[id]` (edit) modal routes; the put-in degrades to "use my current
+  location" off-map.
+
+**Offline basemap tiles ("Layer 3") are deferred to Phase 9** — report capture needs only *which
+lake* + GPS, not a visible basemap; accurate hazard pins will need it. The body cache is designed to
+gain a tile-pack column then.
+
 ## Deferred (later phases, intentionally not here)
 
-- Offline draft queue (Phase 2 **F2**, D30): `expo-sqlite` draft list + `expo-file-system` captured
-  photos + `@react-native-community/netinfo` reconnect flush + additive `reports.idempotencyKey?`.
-  Phase 2 **F1** ships the map + online report loop first.
 - PostHog analytics/session replay (D29, "later").
 - Component-level `@testing-library/react-native` rendering under Vitest — needs extra
   RN transform config; added as real screens arrive.
