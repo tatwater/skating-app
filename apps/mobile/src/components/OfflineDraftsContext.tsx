@@ -22,7 +22,7 @@ import {
 import { AppState } from 'react-native'
 import { deleteDraftPhotoFiles, draftPhotoUris } from '../lib/draftPhotos'
 import { deleteDraft, getDraft, listDrafts } from '../lib/draftStore'
-import { flushDrafts } from '../lib/flushService'
+import { flushDrafts, isDraftFlushing } from '../lib/flushService'
 
 interface OfflineDraftsValue {
   drafts: ReportDraft[]
@@ -30,7 +30,8 @@ interface OfflineDraftsValue {
   pendingCount: number
   refresh: () => void
   flushNow: () => Promise<void>
-  removeDraft: (id: string) => void
+  /** Delete a draft + its photo files. No-ops and returns `false` if the draft is mid-flush. */
+  removeDraft: (id: string) => boolean
 }
 
 const OfflineDraftsContext = createContext<OfflineDraftsValue | null>(null)
@@ -49,10 +50,16 @@ export function OfflineDraftsProvider({ children }: { children: ReactNode }) {
 
   const removeDraft = useCallback(
     (id: string) => {
+      // Refuse to delete an in-flight draft — a concurrent flush may still be reading its photo
+      // files to upload. Deleting the files mid-upload makes the upload fail transiently, which
+      // re-inserts the draft as `pending` (a stub that retries forever, files now gone) and orphans
+      // any already-uploaded blobs. Same guard the edit form uses (see `flushService` `flushingIds`).
+      if (isDraftFlushing(id)) return false
       const draft = getDraft(id)
       if (draft) deleteDraftPhotoFiles(draftPhotoUris(draft))
       deleteDraft(id)
       refresh()
+      return true
     },
     [refresh],
   )
