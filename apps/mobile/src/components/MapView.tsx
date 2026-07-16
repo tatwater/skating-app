@@ -52,7 +52,7 @@ const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', feature
 
 // The initial query covers the whole pilot region at the state zoom, so the map shows the prominent
 // bodies (Champlain, boosted Morey) immediately — before the first `onRegionDidChange` — then each
-// pan/zoom refines it. Mirrors web framing on Champlain at z8.5.
+// pan/zoom refines it. Mirrors web's regional framing (Burlington, z6.5, Phase 2.5).
 const INITIAL_QUERY: { viewport: BBox; zoom: number } = {
   viewport: {
     minLng: NORTHEAST_MAX_BOUNDS[0][0],

@@ -31,6 +31,11 @@ run it by hand when (re)building the basemap. There is no logic to test here: th
 
 ## 1. Build — extract Vermont from a Protomaps planet build
 
+> **⚠️ The `demo-bucket.protomaps.com/v4.pmtiles` source below is DEAD** (Protomaps prunes dated
+> builds). This §1 walkthrough is kept as the original worked example; for any real build use a live
+> `https://build.protomaps.com/<YYYYMMDD>.pmtiles` dated build as the source (see §2b + the current
+> "Last build" row, and `plans/phase-2.5-regional-expansion.md`).
+
 `pmtiles extract` reads **only the tiles inside the bbox** from a remote source over HTTP range
 requests (no full download, no API key), writing a small regional `.pmtiles` in the **same
 Protomaps v4 schema** the web style (`@protomaps/basemaps`) already targets — so the tiles are

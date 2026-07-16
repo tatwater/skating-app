@@ -92,8 +92,9 @@ push highlight / fly-to / photo pins up to the map via `MapSelectionContext`.
 
 **Report create (§E).** "Add a report" opens a form (`Dialog`) — ice types / surface tags / quality /
 sky / precip on toggle groups, multi-reading thickness (value ⇄ range, measured/estimated), manual
-conditions, notes, skate time, visibility (**clamped to the author's ceiling**, D41), and an optional
-**put-in pin** the skater drops on the map (arms a pin-drop mode; sets `reports.point`). Imperial
+conditions, notes, skate time, and an optional **put-in pin** the skater drops on the map (arms a
+pin-drop mode; sets `reports.point`). Reports are **always public** (D13 — no visibility control);
+under-18 accounts are **read-only** (D41), shown a notice instead of the form. Imperial
 input → metric storage (D25) via the pure `src/lib/reportForm.ts`, validated by `@skating/core`'s
 `validateReportInput` before submit. **Photos** run a browser-only pipeline (`components/photoPipeline.ts`):
 HEIC→JPEG decode (`heic2any`) → EXIF GPS read (`exifr`) **before** a downscale + EXIF-strip re-encode
@@ -101,12 +102,13 @@ HEIC→JPEG decode (`heic2any`) → EXIF GPS read (`exifr`) **before** a downsca
 **only** on the per-photo `placeOnMap` opt-in (D31/D42; the server re-drops it regardless). The web
 form is ephemeral (no drafts — that's the mobile offline queue, D30).
 
-**Basemap.** `VITE_PMTILES_URL` picks the Protomaps `.pmtiles` vector source; blank falls back to
-the **hosted demo** (whole-planet — fine for local dev, but Protomaps asks it not ship to prod).
-PR#5 built a **self-hosted Vermont extract** (z0–14, ~280 MB) served from **Convex file storage**
-and set that var to the serving URL — a config swap, no code change. Build/host/wire steps live in
-[`scripts/basemap`](../../scripts/basemap/README.md); the URL is deployment-specific (dev vs prod),
-so set it per environment (local `.env` + Vercel). Font/sprite assets stay on Protomaps' hosted CDN.
+**Basemap.** `VITE_PMTILES_URL` picks the Protomaps `.pmtiles` vector source; blank falls back to a
+live `build.protomaps.com/<date>` dated build (fine for local dev, but must be set for prod — the old
+demo bucket is dead). PR#5 first self-hosted a **Vermont** extract (z0–14, ~280 MB) on Convex file
+storage; **Phase 2.5** widened it to the **5-state Northeast** (~948 MB) on **Cloudflare R2** (zero
+egress; overflows the Convex free tier) — a `VITE_PMTILES_URL` swap, no code change. Build/host/wire
+steps live in [`scripts/basemap`](../../scripts/basemap/README.md); the URL is deployment-specific
+(dev vs prod), so set it per environment (local `.env` + Vercel). Font/sprite assets stay on Protomaps' hosted CDN.
 **Attribution** ("© OpenStreetMap contributors", ODbL) is always visible via a non-compact
 `AttributionControl` — a launch gate (`04-integrations.md`) — and is independent of the tile host.
 
@@ -123,7 +125,7 @@ cp .env.example .env     # then fill in real keys (see below)
 | `CLERK_PUBLISHABLE_KEY` | Clerk client key (`pk_…`) — read server-side by the SDK | Clerk dashboard → API keys |
 | `CLERK_SECRET_KEY` | Clerk secret (`sk_…`) — **server-only** | Clerk dashboard → API keys |
 | `VITE_CONVEX_URL` | Convex deployment URL (public, client) | `pnpm convex-dev` / Convex dashboard |
-| `VITE_PMTILES_URL` | Basemap `.pmtiles` URL (public; blank ⇒ Protomaps hosted demo) | The self-hosted Vermont extract's Convex serving URL — see [`scripts/basemap`](../../scripts/basemap/README.md). Blank falls back to the demo (dev only) |
+| `VITE_PMTILES_URL` | Basemap `.pmtiles` URL (public; blank ⇒ a live Protomaps dated build, dev only) | The self-hosted Northeast extract's Cloudflare R2 URL (Phase 2.5) — see [`scripts/basemap`](../../scripts/basemap/README.md) |
 | `VITE_SENTRY_DSN` | Sentry DSN — drives client **and** server (optional) | A **separate** `skating-web` Sentry project (same org as mobile) → project settings |
 | `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload target (build-time; set on Vercel) | Sentry org slug + the `skating-web` project slug |
 | `SENTRY_AUTH_TOKEN` | Enables source-map upload (build-time; set on Vercel) | Sentry → auth tokens. Absent ⇒ upload skipped, build still succeeds |
@@ -165,11 +167,12 @@ pnpm --filter @skating/web build         # production build (regenerates routeTr
 
 - Low-detail outlines + lazy-load full geometry on tap (a query-payload lever, Phase 2+).
 - Report **comments** (Phase 3); **bounties** on the map (D47, later); real **Newsfeed** (Phase 6).
-- **Follow graph** — `friends`/`followers` visibility resolve to author-only until Phase 3 (the
-  filter already runs through `@skating/core`'s `canViewReport`, so it flips on with no re-write).
-- **Offline draft queue** + native map — the mobile follow-on PR (§F, D9/D30). The web form is
-  ephemeral by design.
-- Signed-out viewing of `public` bodies/reports (deep links are auth-gated for the alpha).
+- **Block filter** — reports are always public (D13, no follow graph), so reads gate on moderation
+  only for now; the viewer↔author **block** subtraction lands in Phase 3 through `@skating/core`'s
+  `canViewReport` (already the read seam), so it flips on with no report re-write.
+- **Offline draft queue** + native map — the mobile follow-on (§F, D9/D30; F2 shipped on mobile).
+  The web form is ephemeral by design.
+- Signed-out viewing of public bodies/reports (deep links are auth-gated for the alpha).
 - PostHog analytics/session replay (D29, "later").
 - Clerk component theming to match the FUI palette; a richer auth-flow polish pass.
 - Deeper component test coverage as real screens land.

@@ -1,5 +1,9 @@
 # Phase 2.5 build plan — Regional expansion (Northeast skating states)
 
+> **✅ COMPLETE on dev (2026-07-15, PR #14); prod deferred** (Convex prod uninitialized by decision).
+> All workstreams executed — see "Progress" below. The prod pass (re-run the loader + tiles + env
+> against a prod deployment) waits until prod exists.
+
 The execution runbook for **Workstream H** of [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md)
 (§H) and **Phase 2.5** of [`07-roadmap.md`](./07-roadmap.md). Design rationale lives in those docs
 and the decisions log (D5/D6/D48/D49); this doc is the *how* — the ordered ops runbook, the small
@@ -258,5 +262,3 @@ that no wanted lake falls outside the box or south of the clip.
   data. Keep them in sync (called out in each file).
 - **ODbL attribution** unchanged — driven by the water source + always-on attribution control,
   independent of the tile host.
-</content>
-</invoke>

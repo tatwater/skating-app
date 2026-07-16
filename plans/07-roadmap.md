@@ -117,7 +117,7 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - Needs: OSM extract tooling (osmium/GDAL + a JS simplify pass), Convex, a Protomaps
   basemap (self-built or hosted demo).
 
-## Phase 2 — Map + reports (the MVP)
+## Phase 2 — Map + reports (the MVP) ✅ Complete (2026-07-16)
 > **Detailed build plan:** [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md).
 > **Web first, then mobile (two PRs)** — web front-loads the shared Convex backend and proves the
 > whole data model online before the native-build + offline-capture (D30) lift. No store/dev-account
@@ -134,7 +134,18 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 > map with the D49 zoom filter, `expo-location` framing, `@gorhom/bottom-sheet` drawers +
 > deep-linkable `/water/[id]` · `/report/[id]`, and the read + **online** report-create loop
 > (native `expo-image-picker`/`expo-image-manipulator` photo pipeline). Shared helpers lifted into
-> `@skating/core`. **§F2 (offline draft queue, D30) is the remaining mobile follow-on PR.**
+> `@skating/core`.
+>
+> **Status (mobile §F2 — offline draft queue, D30): ✅ shipped (2026-07-16, dev)** — capture a
+> report with no signal and it flushes on reconnect. `@skating/core` carries the pure heart: a
+> buffered `pointInPolygon` GPS→lake resolver and a checkpointed, idempotent flush state machine
+> (transient-retry vs. permanent-park). On-device an `expo-sqlite` LRU caches recently-viewed body
+> polygons (Layer 2 — GPS auto-select offline, reused by Phase 9), plus an `expo-sqlite` +
+> `expo-file-system` draft queue with NetInfo/foreground/manual flush; `reports.create` is idempotent
+> on an additive `idempotencyKey`, and `waterBodies.resolveBodyForCoord` resolves a coord-only draft
+> at flush. Offline editing + a drafts list ship too. **Offline basemap *tiles* (F2 "Layer 3") were
+> deferred to Phase 9** (hazard pins need them; report capture doesn't). Native UI pending an emulator
+> verification pass (pure + Convex layers are tested).
 
 - MapLibre map (D6) with wintery style; home/water framing on open (D20).
 - **Zoom-scored display prominence (D49):** which bodies draw at a given zoom is a derived
@@ -143,8 +154,9 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
   clutter drops. Phase 1 only stores `surfaceAreaSqM`; the score/threshold lands here.
 - Tap a water body → detail view (name, area, report feed by **skate time**).
 - Create + read a **report** (ice types, surface tags, coarse quality, structured
-  thickness, photos, conditions, visibility) — **offline-capable** (D9/D30), with
-  **client-side image optimization + EXIF stripping** on upload (D31/D42).
+  thickness, photos, conditions) — always public (D13, no visibility field) and
+  **offline-capable** (D9/D30), with **client-side image optimization + EXIF stripping**
+  on upload (D31/D42).
 - **Photo geotag opt-in** (D42): default off; if on, photos pin at their coord within
   the water body.
 - **Reports are always public** (D13) — no per-report visibility field at all. Minors are
@@ -155,7 +167,7 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - **Done:** friends can post and read reports on real lakes. *This is the usable MVP.*
 - Needs: MapLibre + tiles (Protomaps), Convex file storage.
 
-## Phase 2.5 — Regional expansion (Northeast skating states)
+## Phase 2.5 — Regional expansion (Northeast skating states) ✅ Complete (dev; prod deferred) (2026-07-15)
 > **Detailed plan + runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md)
 > (was §H of the Phase 2 plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
 > (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the
@@ -312,6 +324,24 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - Lifecycle (fresh/aging/stale) + "still there / gone" confirmations, triggered
   opportunistically (app-open nearby, report flow, post-hoc GPS path) (D12/D15).
 - **Done:** hazards appear, age, and can be confirmed/cleared.
+- **Offline hazard capture — inherited from Phase 2 F2 (decided 2026-07-15).** Hazards are drawn
+  **on the ice, often offline**, so Phase 9 reuses the Phase 2 F2 offline substrate:
+  - **The offline body-reference cache** (F2 "Layer 2" — `@skating/core` buffered
+    `pointInPolygon` auto-select + an on-device LRU cache of recently-viewed body polygons)
+    is built in F2 as a **standalone, reusable module** *specifically so hazard capture reuses
+    it* — GPS + cached polygon tells the offline app which lake the skater is on without a
+    network round-trip.
+  - **Offline basemap tiles (F2 "Layer 3") were deferred here from Phase 2 F2 (decided
+    2026-07-15).** F2's report capture needs only *which lake* (the body cache) + GPS, so it
+    ships with **no offline basemap** and degrades the put-in pin to "drop at my current GPS
+    location." **Hazards are different:** dropping an *accurate* hazard pin wants a **legible
+    offline basemap + the lake polygon as visual reference**, so the offline tile-pack work
+    (store per-region tiles on device — a real native spike: does `@maplibre/maplibre-react-native`'s
+    offline-pack API work over our `pmtiles://` range source, or do we ship an on-device
+    mini-`.pmtiles`?) lands **here**, not in F2. The F2 body-cache module is designed to accept
+    a tile-pack field so this slots in without a rearchitecture.
+  - The buffered auto-select (a tunable ~parking/approach radius so opening from the car still
+    resolves the lake) is the same primitive hazard capture uses to bind a hazard to its body.
 
 ## Phase 10 — Weather-since strips
 - Open-Meteo "what the weather has done since this report" factual strip (D19).

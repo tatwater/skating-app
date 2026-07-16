@@ -102,6 +102,34 @@ describe('waterBodies.create', () => {
     )
   })
 
+  test('rejects a minor — read-only (D41)', async () => {
+    const t = convexTestWithGeo()
+    await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'clerk_minor',
+        displayName: 'minor',
+        username: 'minor',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'private' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyFulfilled: true,
+          reportRated: true,
+          contentFlagResolved: true,
+        },
+        dateOfBirth: Date.UTC(new Date().getUTCFullYear() - 16, 0, 1),
+        reputationPoints: 0,
+        role: 'member' as const,
+        status: 'active' as const,
+        createdAt: Date.now(),
+      }),
+    )
+    const asMinor = t.withIdentity({ subject: 'clerk_minor' })
+    await expect(asMinor.mutation(api.waterBodies.create, SAMPLE_BODY)).rejects.toThrow(/under 18/i)
+  })
+
   test('rejects a banned account (status gate, D37)', async () => {
     const t = convexTestWithGeo()
     const asBanned = await seedUser(t, 'clerk_banned', 'member', 'banned')
@@ -1043,5 +1071,61 @@ describe('waterBodies.applyCuratedBoostSeed (Phase 2.5 re-seed)', () => {
     })
     expect(res.applied).toHaveLength(1)
     expect(res.applied[0]?.states).toEqual(['NY'])
+  })
+})
+
+describe('waterBodies.resolveBodyForCoord (F2 offline flush / coord→lake)', () => {
+  async function seedCanonical(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodies'>> {
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    return onlyBodyId(t)
+  }
+
+  test('resolves a coord inside a body to that body', async () => {
+    const t = convexTestWithGeo()
+    const id = await seedCanonical(t)
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 0.5, lng: 0.5 },
+    })
+    expect(res?.waterBodyId).toBe(id)
+    expect(res?.name).toBe('Lake Champlain')
+  })
+
+  test('resolves a coord in the parking/approach buffer (just off the shore)', async () => {
+    const t = convexTestWithGeo()
+    const id = await seedCanonical(t)
+    // ~222 m east of the east edge (0.002°) — outside the polygon but inside the 300 m buffer.
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 0.5, lng: 1.002 },
+    })
+    expect(res?.waterBodyId).toBe(id)
+  })
+
+  test('returns null when the coord is beyond the buffer', async () => {
+    const t = convexTestWithGeo()
+    await seedCanonical(t)
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 0.5, lng: 1.002 },
+      bufferMeters: 10,
+    })
+    expect(res).toBeNull()
+  })
+
+  test('returns null far from any body', async () => {
+    const t = convexTestWithGeo()
+    await seedCanonical(t)
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 40, lng: -79 },
+    })
+    expect(res).toBeNull()
+  })
+
+  test('excludes an unlisted (removed) body even when the coord is inside it', async () => {
+    const t = convexTestWithGeo()
+    const id = await seedCanonical(t)
+    await t.run((ctx) => ctx.db.patch(id, { removedAt: Date.now() }))
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 0.5, lng: 0.5 },
+    })
+    expect(res).toBeNull()
   })
 })

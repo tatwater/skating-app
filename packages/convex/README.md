@@ -16,10 +16,10 @@ and a Clerk JWT template named `convex`).
 
 ## Layout
 
-- **`convex/schema.ts`** — all 18 entities from `plans/06-data-model.md`, with the
-  suggested indexes. Shared vocabulary (ice types, hazards, visibility, roles, …) is
-  imported from `@skating/core` via the `literals()` helper so it's single-sourced;
-  backend-only enums live in `convex/lib/enums.ts`.
+- **`convex/schema.ts`** — all 17 entities from `plans/06-data-model.md` (the `follows`
+  table was dropped with the social graph, D13), with the suggested indexes. Shared vocabulary
+  (ice types, hazards, roles, …) is imported from `@skating/core` via the `literals()` helper
+  so it's single-sourced; backend-only enums live in `convex/lib/enums.ts`.
 - **`convex/lib/`** — `auth.ts` (identity + role/status gating), `validators.ts`
   (`literals`, `boolFlags`, `latLng`, `bbox`, `geoJson`), `enums.ts`, `geospatial.ts`
   (typed `@convex-dev/geospatial` index of water-body centroids, filtered by the derived
@@ -38,12 +38,15 @@ and a Clerk JWT template named `convex`).
   detail; follows `mergedIntoId` to the survivor, flags removed/unlisted vs not-found, D36/D47),
   admin **`setCuratedBoost`** (recompute score + re-index + audit, D49), `listInViewport`
   (**two-tier bbox-intersection** viewport query with the optional D49 `zoom` prominence filter —
-  see below), `listPendingReview`.
+  see below), `searchByName` (map search box), public **`resolveBodyForCoord`** (GPS→lake for the
+  F2 offline-draft flush: the same two-tier lookup + the shared buffered `nearestBodyForPoint`,
+  ~300 m parking buffer), `listPendingReview`.
 - **`convex/reports.ts`** — the read/write loop (D3/D22–D25/D41): `create` (`requireProfile`,
-  re-enforces `@skating/core` `validateReportInput` + the visibility ceiling, resolves the merged
-  survivor, defaults `point` to the body centroid, server-stamps `reportTime`), `listByWaterBody`
-  (feed by **skate time** desc, visibility-filtered per viewer via `canViewReport`), `get`
-  (visibility-checked), `update` (author-only last-write-wins).
+  re-enforces `@skating/core` `validateReportInput`, rejects minors, resolves the merged
+  survivor, defaults `point` to the body centroid, server-stamps `reportTime`; **idempotent on an
+  optional `idempotencyKey`** so a mobile offline-flush retry can't duplicate — F2/D30),
+  `listByWaterBody` (feed by **skate time** desc, moderation + block filtered via `canViewReport`),
+  `get` (moderation-checked), `update` (author-only last-write-wins).
 - **`convex/photos.ts`** — `generateUploadUrl` (auth'd storage upload URL), `create` (records a
   `photos` row; **drops `coord` unless `placeOnMap === true`, D42** — enforced server-side),
   `getUrls` (resolve full/thumb serving URLs, null-guarded).
@@ -55,8 +58,9 @@ and a Clerk JWT template named `convex`).
   idempotency + age/username invariants, approve/remove/restore → audit-log paths, the
   two-tier `listInViewport` (small-body prefilter, off-screen-centroid large body, refine,
   cap-truncation log) **+ the D49 zoom cutoff / `setCuratedBoost` recompute + audit**, `get`'s
-  merged-redirect/unavailable signal, report `create`/`listByWaterBody` visibility + centroid
-  default + locked-author clamp, and photo `create` dropping `coord` without `placeOnMap`.
+  merged-redirect/unavailable signal, report `create` (centroid default, minor rejection,
+  idempotency-key dedup) / `listByWaterBody` (moderation + block filter), and photo `create`
+  dropping `coord` without `placeOnMap`.
 
 ## Deviations & deferrals (flagged for review)
 

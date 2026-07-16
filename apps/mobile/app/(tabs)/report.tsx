@@ -1,37 +1,128 @@
-import { useRouter } from 'expo-router'
+import { formatSkateTime, isFlushable, type ReportDraft } from '@skating/core'
+import { useFocusEffect, useRouter } from 'expo-router'
+import { useCallback } from 'react'
+import { ScrollView } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, Paragraph, YStack } from 'tamagui'
+import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui'
+import { Badge } from '../../src/components/detailUi'
+import { useOfflineDrafts } from '../../src/components/OfflineDraftsContext'
 
 /**
- * The center "＋ Report" tab (D28). In Phase 2 reports are created **in place** from a lake's detail
- * drawer (D47) — you pick the lake you skated, then post — so this tab guides you to the map rather
- * than opening a lake-less form. (The offline draft queue that makes this tab a first-class capture
- * entry point is Phase 2 F2.)
+ * The center "＋ Report" tab (D28). Online, reports are created in place from a lake's detail drawer
+ * (D47) — this tab points you there. Offline (F2), it's the **first-class capture entry point**:
+ * "Capture a report" uses your GPS to bind to the nearest cached lake (or resolves it at sync), and
+ * this screen lists your queued drafts (pending / errored) with sync + edit + delete. Drafts flush
+ * automatically on reconnect (D12); "Sync now" forces it.
  */
 export default function ReportScreen() {
   const router = useRouter()
+  const { drafts, pendingCount, refresh, flushNow, removeDraft } = useOfflineDrafts()
+
+  // Refresh from sqlite whenever the tab regains focus (e.g. after saving a draft in the modal).
+  useFocusEffect(
+    useCallback(() => {
+      refresh()
+    }, [refresh]),
+  )
+
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-      <YStack
-        flex={1}
-        alignItems="center"
-        justifyContent="center"
-        gap="$4"
-        padding="$4"
-        backgroundColor="$background"
-      >
-        <Paragraph color="$foregroundMuted" textAlign="center">
-          To add a report, open the map and tap the lake you skated — then post your ice report
-          right there.
-        </Paragraph>
-        <Button
-          backgroundColor="$primary"
-          color="$primaryForeground"
-          onPress={() => router.navigate('/')}
-        >
-          Go to the map
-        </Button>
-      </YStack>
+      <ScrollView contentContainerStyle={{ padding: 16 }}>
+        <YStack gap="$4">
+          <YStack gap="$2">
+            <H4 color="$foreground">Add a report</H4>
+            <Paragraph color="$foregroundMuted">
+              Online, open the map and tap the lake you skated. Off the grid, capture it here — it
+              posts automatically when you're back online.
+            </Paragraph>
+          </YStack>
+
+          <YStack gap="$2">
+            <Button
+              backgroundColor="$primary"
+              color="$primaryForeground"
+              onPress={() => router.navigate('/draft/new')}
+            >
+              Capture a report (offline-ready)
+            </Button>
+            <Button chromeless onPress={() => router.navigate('/')}>
+              Go to the map
+            </Button>
+          </YStack>
+
+          {drafts.length > 0 ? (
+            <YStack gap="$2">
+              <XStack justifyContent="space-between" alignItems="center">
+                <Text color="$foreground" fontWeight="600">
+                  Drafts{pendingCount > 0 ? ` · ${pendingCount} to send` : ''}
+                </Text>
+                {pendingCount > 0 ? (
+                  <Button size="$2" onPress={() => void flushNow()}>
+                    Sync now
+                  </Button>
+                ) : null}
+              </XStack>
+              {drafts.map((draft) => (
+                <DraftRow
+                  key={draft.id}
+                  draft={draft}
+                  onEdit={() =>
+                    router.navigate({ pathname: '/draft/[id]', params: { id: draft.id } })
+                  }
+                  onDelete={() => removeDraft(draft.id)}
+                />
+              ))}
+            </YStack>
+          ) : null}
+        </YStack>
+      </ScrollView>
     </SafeAreaView>
+  )
+}
+
+function DraftRow({
+  draft,
+  onEdit,
+  onDelete,
+}: {
+  draft: ReportDraft
+  onEdit: () => void
+  onDelete: () => void
+}) {
+  const pending = isFlushable(draft)
+  return (
+    <YStack
+      gap="$2"
+      padding="$3"
+      borderWidth={1}
+      borderColor="$border"
+      borderRadius="$4"
+      backgroundColor="$surfaceMuted"
+    >
+      <XStack justifyContent="space-between" alignItems="center" gap="$2">
+        <Text color="$foreground" flex={1}>
+          {draft.bodyName ?? 'Unknown lake'}
+        </Text>
+        <Badge tone={draft.status === 'error' ? 'solid' : undefined}>
+          {draft.status === 'error' ? 'Needs attention' : pending ? 'Pending' : 'Sent'}
+        </Badge>
+      </XStack>
+      <Text color="$foregroundMuted" fontSize={12}>
+        Skated {formatSkateTime(draft.form.skateTime)}
+      </Text>
+      {draft.status === 'error' && draft.errorMessage ? (
+        <Text color="$danger" fontSize={12}>
+          {draft.errorMessage}
+        </Text>
+      ) : null}
+      <XStack gap="$2" justifyContent="flex-end">
+        <Button size="$2" chromeless onPress={onDelete}>
+          Delete
+        </Button>
+        <Button size="$2" onPress={onEdit}>
+          Edit
+        </Button>
+      </XStack>
+    </YStack>
   )
 }

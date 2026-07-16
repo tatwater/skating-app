@@ -3,8 +3,10 @@ import type { Id } from '@skating/convex/dataModel'
 import { formatAreaAcres, formatSkateTime, humanizeEnum, SKATE_QUALITY_LABELS } from '@skating/core'
 import { useQuery } from 'convex/react'
 import { useRouter } from 'expo-router'
+import type { MultiPolygon, Polygon } from 'geojson'
 import { useEffect, useState } from 'react'
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui'
+import { cacheBody } from '../lib/bodyCache'
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi'
 import { useMapSelection } from './MapSelectionContext'
 import { ReportForm } from './ReportForm'
@@ -34,6 +36,16 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
       // the centroid for anything without bounds).
       setFocus({ lat: body.centroid.lat, lng: body.centroid.lng, bounds: body.bbox })
       setHighlightWaterBodyId(body._id)
+      // Cache this viewed lake's reference data on-device (F2 Layer 2) so it can be GPS-resolved
+      // offline for a no-signal report. Best-effort; the sqlite write never blocks viewing.
+      cacheBody({
+        waterBodyId: body._id,
+        name: body.name,
+        states: body.states,
+        polygon: body.polygon as unknown as Polygon | MultiPolygon,
+        centroid: body.centroid,
+        surfaceAreaSqM: body.surfaceAreaSqM,
+      })
     }
   }, [body, setFocus, setHighlightWaterBodyId])
 

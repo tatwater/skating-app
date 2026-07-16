@@ -350,3 +350,76 @@ describe('reports.update (author-only LWW, D25)', () => {
     expect(after?.updatedAt ?? 0).toBeGreaterThanOrEqual(before?.updatedAt ?? 0)
   })
 })
+
+describe('reports.create idempotency (F2 offline flush, D30)', () => {
+  test('reusing a key returns the same report — no duplicate (lost-ack retry)', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asUser = await seedUser(t, 'clerk_a')
+    const args = { waterBodyId: id, skateTime: SKATE_TIME, idempotencyKey: 'draft-abc' }
+    const first = await asUser.mutation(api.reports.create, args)
+    const second = await asUser.mutation(api.reports.create, args)
+    expect(second).toBe(first)
+    const all = await t.run((ctx) => ctx.db.query('reports').collect())
+    expect(all).toHaveLength(1)
+    expect(all[0]?.idempotencyKey).toBe('draft-abc')
+  })
+
+  test('a different author reusing a key is rejected (never hands back another user report)', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asA = await seedUser(t, 'clerk_a')
+    const asB = await seedUser(t, 'clerk_b')
+    await asA.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateTime: SKATE_TIME,
+      idempotencyKey: 'shared-key',
+    })
+    await expect(
+      asB.mutation(api.reports.create, {
+        waterBodyId: id,
+        skateTime: SKATE_TIME,
+        idempotencyKey: 'shared-key',
+      }),
+    ).rejects.toThrow(/idempotency key conflict/i)
+  })
+
+  test('no key → each call is a distinct report (online path unaffected)', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asUser = await seedUser(t, 'clerk_a')
+    const a = await asUser.mutation(api.reports.create, { waterBodyId: id, skateTime: SKATE_TIME })
+    const b = await asUser.mutation(api.reports.create, { waterBodyId: id, skateTime: SKATE_TIME })
+    expect(a).not.toBe(b)
+  })
+})
+
+describe('reports.update / photos.create guards (review fixes)', () => {
+  test('a moderated (hidden) report can no longer be edited', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asUser = await seedUser(t, 'clerk_a')
+    const reportId = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateTime: SKATE_TIME,
+    })
+    await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }))
+    await expect(
+      asUser.mutation(api.reports.update, { reportId, skateTime: SKATE_TIME, notes: 'edit' }),
+    ).rejects.toThrow(/moderated/i)
+  })
+
+  test('photos.create rejects an out-of-range coord (range guard, D42)', async () => {
+    const t = convexTestWithGeo()
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])))
+    await expect(
+      asUser.mutation(api.photos.create, {
+        storageId,
+        thumbStorageId: storageId,
+        placeOnMap: true,
+        coord: { lat: 200, lng: 0 },
+      }),
+    ).rejects.toThrow(/out of range/i)
+  })
+})

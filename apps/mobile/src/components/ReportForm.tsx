@@ -3,6 +3,8 @@ import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
   buildReportInput,
+  createDraft,
+  type DraftPhoto,
   emptyReportForm,
   emptyThicknessReading,
   formatSkateTime,
@@ -12,6 +14,7 @@ import {
   PRECIP_LABELS,
   PRECIP_TYPES,
   photoUploadCoord,
+  type ReportDraft,
   type ReportFormState,
   SKATE_QUALITIES,
   SKATE_QUALITY_LABELS,
@@ -25,11 +28,16 @@ import {
 } from '@skating/core'
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
+import { randomUUID } from 'expo-crypto'
+import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Platform } from 'react-native'
 import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui'
-import { useMapSelection } from './MapSelectionContext'
+import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos'
+import { saveDraft } from '../lib/draftStore'
+import { isDraftFlushing } from '../lib/flushService'
+import { useMapSelectionOptional } from './MapSelectionContext'
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline'
 
 /** A processed photo awaiting upload — file URIs + EXIF coord + the per-photo `placeOnMap` opt-in. */
@@ -48,10 +56,6 @@ interface PhotoDraft {
   /** Set once the photo row exists, so a retry doesn't re-create it (and re-attach it twice). */
   uploadedId?: Id<'photos'>
 }
-
-// Monotonic per-session counter for draft keys — unique even when the same library asset is picked
-// twice (deriving the id from asset/file identifiers would collide and corrupt retry state).
-let draftSeq = 0
 
 // --- Selectable pill toggles (the native analog of web's ToggleGroup) ---
 
@@ -209,11 +213,21 @@ function SkateTimeField({ value, onChange }: { value: number; onChange: (ms: num
 export function ReportForm({
   waterBodyId,
   bodyName,
+  coord,
+  draft,
   onClose,
+  onSaved,
 }: {
-  waterBodyId: Id<'waterBodies'>
-  bodyName: string
+  /** Absent for a coord-only offline capture — the lake is resolved from `coord` at flush. */
+  waterBodyId?: Id<'waterBodies'>
+  bodyName?: string
+  /** Device GPS at capture — carried on a coord-only draft so the flush can resolve the lake. */
+  coord?: { lat: number; lng: number }
+  /** An existing draft to hydrate + update (offline edit); absent = a fresh report/draft. */
+  draft?: ReportDraft
   onClose: () => void
+  /** Called after saving a draft (defaults to `onClose`). */
+  onSaved?: () => void
 }) {
   const router = useRouter()
   const profile = useQuery(api.profiles.current, {})
@@ -222,18 +236,50 @@ export function ReportForm({
   const deletePhoto = useMutation(api.photos.remove)
   const removeBlob = useMutation(api.photos.removeBlob)
   const createReport = useMutation(api.reports.create)
-  const { putInPin, setPutInPin, setPinDropMode } = useMapSelection()
+  // On the map (online, from a lake's detail drawer) the put-in is dropped by tapping the live map;
+  // off the map (the offline capture/edit routes, outside the `(map)` layout) there's no map, so the
+  // put-in falls back to local state + a "use my current location" button.
+  const mapSelection = useMapSelectionOptional()
+  const [localPutIn, setLocalPutIn] = useState<{ lat: number; lng: number } | null>(
+    draft?.putInPin ?? null,
+  )
+  // Off-map, there's no pin-drop mode — but the no-op MUST be stable (a fresh `() => {}` each render
+  // would change the clear-effect's deps every render, re-running its cleanup and wiping the pin).
+  const noopPinDrop = useCallback(() => {}, [])
+  const putInPin = mapSelection ? mapSelection.putInPin : localPutIn
+  const setPutInPin = mapSelection ? mapSelection.setPutInPin : setLocalPutIn
+  const setPinDropMode = mapSelection ? mapSelection.setPinDropMode : noopPinDrop
+  const hasMap = mapSelection !== null
 
-  const [form, setForm] = useState<ReportFormState | null>(null)
-  const [photos, setPhotos] = useState<PhotoDraft[]>([])
+  // Hydrate from a draft when editing; else start empty once the profile loads (below).
+  const [form, setForm] = useState<ReportFormState | null>(draft ? draft.form : null)
+  const [photos, setPhotos] = useState<PhotoDraft[]>(
+    draft
+      ? draft.photos.map((p) => ({
+          id: p.id,
+          fullUri: p.fullUri,
+          thumbUri: p.thumbUri,
+          coord: p.coord,
+          placeOnMap: p.placeOnMap,
+          // Carry any flush checkpoints (a prior partial flush uploaded blobs / created the row) so a
+          // re-save preserves them — otherwise the next flush re-uploads and duplicates the photo row
+          // + orphans the original blobs. (`DraftPhoto.photoId` is `PhotoDraft.uploadedId`; core stores
+          // ids as plain strings, so re-brand them as Convex `Id`s here.)
+          fullStorageId: p.fullStorageId as Id<'_storage'> | undefined,
+          thumbStorageId: p.thumbStorageId as Id<'_storage'> | undefined,
+          uploadedId: p.photoId as Id<'photos'> | undefined,
+        }))
+      : [],
+  )
   const [showConditions, setShowConditions] = useState(false)
   const [submitting, setSubmitting] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Minors are read-only — all reports are public (D13), so under-18 users can't post (D41).
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false
 
-  // Initialize the form once the profile is known (and the author is allowed to post).
+  // Initialize a fresh form once the profile is known (a hydrated draft already set it above).
   useEffect(() => {
     if (profile !== undefined && !minor && form === null) {
       setForm(emptyReportForm(Date.now()))
@@ -288,7 +334,14 @@ export function ReportForm({
     (id: string) => {
       setPhotos((prev) => {
         const removed = prev.find((p) => p.id === id)
-        if (removed) reclaim(removed)
+        if (removed) {
+          reclaim(removed)
+          // If this photo was already persisted to disk for a saved draft, delete its files too —
+          // otherwise removing it while editing a draft would orphan them (they're no longer in the
+          // draft, so a later draft-delete cleanup wouldn't catch them either).
+          const files = [removed.fullUri, removed.thumbUri].filter(isPersistedUri)
+          if (files.length > 0) deleteDraftPhotoFiles(files)
+        }
         return prev.filter((p) => p.id !== id)
       })
     },
@@ -304,7 +357,7 @@ export function ReportForm({
         assets.map(async (asset) => {
           const processed = await processPhoto(asset)
           return {
-            id: `draft-${draftSeq++}`,
+            id: randomUUID(),
             fullUri: processed.fullUri,
             thumbUri: processed.thumbUri,
             coord: processed.coord,
@@ -338,7 +391,9 @@ export function ReportForm({
   const addReading = () => patch({ thickness: [...form.thickness, emptyThicknessReading()] })
 
   async function handleSubmit() {
-    if (!form) return
+    // Online post requires a resolved lake — the button is disabled without one (a coord-only
+    // capture can only be saved as a draft, whose lake resolves at flush).
+    if (!form || waterBodyId === undefined) return
     setError(null)
     const input = buildReportInput(form, waterBodyId, putInPin ?? undefined)
     const result = validateReportInput(input, { now: Date.now() })
@@ -419,11 +474,99 @@ export function ReportForm({
     }
   }
 
+  // Save the form + photos as an offline draft (F2): copy each captured photo out of the evictable
+  // picker cache into the persistent drafts dir, then upsert the draft (it flushes on reconnect).
+  // Editing an existing draft reuses its id + idempotencyKey so a later retry stays deduped.
+  async function handleSaveDraft() {
+    if (!form) return
+    // Refuse to save over a draft that's mid-flush — the flush's checkpoint writes + delete would
+    // clobber this edit and idempotency would re-serve the pre-edit report, losing the change
+    // silently. Checked synchronously right before the sync `saveDraft` so a flush can't claim the
+    // id in between (see `flushService` `flushingIds`).
+    if (isDraftFlushing(draft?.id)) {
+      setError('This draft is syncing right now — try saving again in a moment.')
+      return
+    }
+    setError(null)
+    setSavingDraft(true)
+    try {
+      const id = draft?.id ?? randomUUID()
+      const idempotencyKey = draft?.idempotencyKey ?? randomUUID()
+      const draftPhotos: DraftPhoto[] = await Promise.all(
+        photos.map(async (p) => ({
+          id: p.id,
+          fullUri: isPersistedUri(p.fullUri)
+            ? p.fullUri
+            : await persistDraftPhoto(p.fullUri, `${id}-${p.id}-full.jpg`),
+          thumbUri: isPersistedUri(p.thumbUri)
+            ? p.thumbUri
+            : await persistDraftPhoto(p.thumbUri, `${id}-${p.id}-thumb.jpg`),
+          coord: p.coord,
+          placeOnMap: p.placeOnMap,
+          // Preserve flush checkpoints across an edit/re-save so the next flush resumes instead of
+          // re-uploading (which would duplicate the photo row + orphan blobs).
+          fullStorageId: p.fullStorageId,
+          thumbStorageId: p.thumbStorageId,
+          photoId: p.uploadedId,
+        })),
+      )
+      // Re-check right before the synchronous write: a flush could have claimed this id during the
+      // photo-persist await above. No `await` between here and `saveDraft`, so a flush can't slip in
+      // between the check and the write.
+      if (isDraftFlushing(draft?.id)) {
+        setError('This draft is syncing right now — try saving again in a moment.')
+        setSavingDraft(false)
+        return
+      }
+      saveDraft(
+        createDraft({
+          id,
+          idempotencyKey,
+          now: Date.now(),
+          form,
+          waterBodyId,
+          bodyName,
+          coord,
+          putInPin: putInPin ?? undefined,
+          photos: draftPhotos,
+        }),
+      )
+      // These photos now belong to the saved draft — skip the unmount reclaim sweep. (They carry no
+      // server objects yet anyway; the flush uploads them.)
+      submittedRef.current = true
+      ;(onSaved ?? onClose)()
+    } catch {
+      setError("Couldn't save this draft. Please try again.")
+      setSavingDraft(false)
+    }
+  }
+
+  // Offline there's no live map to tap, so set the put-in to the device's current location (D42/S1).
+  async function useCurrentLocationAsPutIn() {
+    setError(null)
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync()
+      if (status !== 'granted') {
+        setError('Location permission is needed to set the access point.')
+        return
+      }
+      const pos = await Location.getCurrentPositionAsync({})
+      setPutInPin({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+    } catch {
+      setError("Couldn't get your current location.")
+    }
+  }
+
   return (
     <YStack gap="$4">
       <Text color="$foreground" fontWeight="700" fontSize={16}>
-        Report on {bodyName}
+        {bodyName ? `Report on ${bodyName}` : 'New report'}
       </Text>
+      {waterBodyId === undefined ? (
+        <Text color="$foregroundMuted" fontSize={12}>
+          We'll match this to the closest lake when you're back online.
+        </Text>
+      ) : null}
 
       <SkateTimeField value={form.skateTime} onChange={(skateTime) => patch({ skateTime })} />
 
@@ -623,9 +766,16 @@ export function ReportForm({
             </Button>
           </XStack>
         ) : (
-          <Button size="$2" alignSelf="flex-start" onPress={() => setPinDropMode(true)}>
-            Set access point on the map
-          </Button>
+          <XStack gap="$2" flexWrap="wrap">
+            {hasMap ? (
+              <Button size="$2" onPress={() => setPinDropMode(true)}>
+                Set on the map
+              </Button>
+            ) : null}
+            <Button size="$2" onPress={useCurrentLocationAsPutIn}>
+              Use my current location
+            </Button>
+          </XStack>
         )}
       </Field>
 
@@ -639,15 +789,18 @@ export function ReportForm({
 
       {error ? <Text color="$danger">{error}</Text> : null}
 
-      <XStack gap="$2" justifyContent="flex-end">
-        <Button chromeless onPress={onClose} disabled={submitting}>
+      <XStack gap="$2" justifyContent="flex-end" flexWrap="wrap">
+        <Button chromeless onPress={onClose} disabled={submitting || savingDraft}>
           Cancel
+        </Button>
+        <Button onPress={handleSaveDraft} disabled={submitting || savingDraft}>
+          {savingDraft ? 'Saving…' : 'Save draft'}
         </Button>
         <Button
           backgroundColor="$primary"
           color="$primaryForeground"
           onPress={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || savingDraft || waterBodyId === undefined}
         >
           {submitting ? 'Posting…' : 'Post report'}
         </Button>

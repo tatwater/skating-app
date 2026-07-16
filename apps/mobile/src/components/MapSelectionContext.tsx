@@ -86,3 +86,13 @@ export function useMapSelection(): MapSelectionValue {
   if (!value) throw new Error('useMapSelection must be used within a MapSelectionProvider')
   return value
 }
+
+/**
+ * Like `useMapSelection` but returns `null` outside a provider instead of throwing — for the report
+ * form when it's rendered **off the map** (the F2 offline draft capture/edit routes, which live
+ * outside the `(map)` layout). There the map-tap put-in isn't available; the form falls back to
+ * "use my current location" (§F2/D42).
+ */
+export function useMapSelectionOptional(): MapSelectionValue | null {
+  return useContext(MapSelectionContext)
+}
