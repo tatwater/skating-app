@@ -356,12 +356,7 @@ describe('reports.create idempotency (F2 offline flush, D30)', () => {
     const t = convexTestWithGeo()
     const { id } = await seedBody(t)
     const asUser = await seedUser(t, 'clerk_a')
-    const args = {
-      waterBodyId: id,
-      skateTime: SKATE_TIME,
-      iceTypes: ['black_ice'] as const,
-      idempotencyKey: 'draft-abc',
-    }
+    const args = { waterBodyId: id, skateTime: SKATE_TIME, idempotencyKey: 'draft-abc' }
     const first = await asUser.mutation(api.reports.create, args)
     const second = await asUser.mutation(api.reports.create, args)
     expect(second).toBe(first)
