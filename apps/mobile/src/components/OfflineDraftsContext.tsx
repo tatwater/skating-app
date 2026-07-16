@@ -8,8 +8,8 @@
  * `pendingCount`. Untested native glue; the queue logic it drives is tested in `@skating/core`.
  */
 
-import { isFlushable, type ReportDraft } from '@skating/core'
 import NetInfo from '@react-native-community/netinfo'
+import { isFlushable, type ReportDraft } from '@skating/core'
 import {
   createContext,
   type ReactNode,

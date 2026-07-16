@@ -3,8 +3,8 @@ import type { LineString, MultiPolygon, Polygon } from 'geojson'
 import { describe, expect, it } from 'vitest'
 import {
   type BBox,
-  bboxIntersects,
   type BodyCandidate,
+  bboxIntersects,
   bufferedLineOverlap,
   distanceToPolygonMeters,
   type LatLng,

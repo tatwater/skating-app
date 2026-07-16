@@ -122,10 +122,12 @@ export function distanceToPolygonMeters(point: LatLng, polygon: Polygon | MultiP
   for (const ring of rings) {
     const local = (ring as [number, number][]).map((c) => toLocalMetres(c, point))
     for (let i = 0; i + 1 < local.length; i++) {
-      const d = segmentDistanceMetres(0, 0, local[i] as [number, number], local[i + 1] as [
-        number,
-        number,
-      ])
+      const d = segmentDistanceMetres(
+        0,
+        0,
+        local[i] as [number, number],
+        local[i + 1] as [number, number],
+      )
       if (d < min) min = d
     }
   }

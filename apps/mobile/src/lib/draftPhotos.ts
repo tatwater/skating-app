@@ -5,7 +5,7 @@
  * store that persistent uri in the draft. Untested native glue (like `photoPipeline`).
  */
 
-import type { DraftPhoto, ReportDraft } from '@skating/core'
+import type { ReportDraft } from '@skating/core'
 import { Directory, File, Paths } from 'expo-file-system'
 
 const DRAFTS_DIRNAME = 'report-drafts'
@@ -45,7 +45,8 @@ export function deleteDraftPhotoFiles(uris: readonly string[]): void {
   }
 }
 
-/** True once a draft photo's stripped files live in the persistent drafts dir (not the picker cache). */
-export function isPersisted(photo: DraftPhoto): boolean {
-  return photo.fullUri.includes(DRAFTS_DIRNAME)
+/** True once a uri points into the persistent drafts dir (not the evictable picker cache) — so a
+ *  re-save of an already-persisted draft photo skips the copy. */
+export function isPersistedUri(uri: string): boolean {
+  return uri.includes(DRAFTS_DIRNAME)
 }

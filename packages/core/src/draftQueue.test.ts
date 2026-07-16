@@ -4,8 +4,8 @@ import {
   createDraft,
   type DraftFlushEffects,
   type DraftPhoto,
-  flushDraft,
   flushableDrafts,
+  flushDraft,
   isFlushable,
   type ReportDraft,
 } from './draftQueue'
@@ -31,9 +31,7 @@ function draftWith(overrides: Partial<ReportDraft> = {}, form?: ReportFormState)
 }
 
 /** A recording fake for the injected effects, with optional per-call failure injection. */
-function makeEffects(
-  overrides: Partial<DraftFlushEffects> = {},
-): {
+function makeEffects(overrides: Partial<DraftFlushEffects> = {}): {
   effects: DraftFlushEffects
   calls: {
     uploads: string[]
@@ -232,11 +230,7 @@ describe('flushDraft — checkpointing (no orphaned uploads on retry)', () => {
 
     // Second attempt (reconnected): must NOT re-upload the full — only the thumb.
     const second = makeEffects()
-    const res2 = await flushDraft(
-      res1.ok ? draft : res1.draft,
-      second.effects,
-      NOW,
-    )
+    const res2 = await flushDraft(res1.ok ? draft : res1.draft, second.effects, NOW)
     expect(res2.ok).toBe(true)
     expect(second.calls.uploads).toEqual(['p1-thumb']) // full reused from the checkpoint
     expect(second.calls.reports).toHaveLength(1)
@@ -244,9 +238,7 @@ describe('flushDraft — checkpointing (no orphaned uploads on retry)', () => {
 
   it('reuses a fully-uploaded photo (photoId present) without re-uploading or re-rowing', async () => {
     const draft = draftWith({
-      photos: [
-        photo('p1', { fullStorageId: 's', thumbStorageId: 't', photoId: 'existing-photo' }),
-      ],
+      photos: [photo('p1', { fullStorageId: 's', thumbStorageId: 't', photoId: 'existing-photo' })],
     })
     const { effects, calls } = makeEffects()
     const res = await flushDraft(draft, effects, NOW)

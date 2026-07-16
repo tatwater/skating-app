@@ -43,6 +43,15 @@ function RootNavigator() {
           name="about"
           options={{ presentation: 'modal', headerShown: true, title: 'About' }}
         />
+        {/* Offline report capture + draft editing (F2) — full-screen modals, off the map. */}
+        <Stack.Screen
+          name="draft/new"
+          options={{ presentation: 'modal', headerShown: true, title: 'New report' }}
+        />
+        <Stack.Screen
+          name="draft/[id]"
+          options={{ presentation: 'modal', headerShown: true, title: 'Edit draft' }}
+        />
       </Stack.Protected>
       <Stack.Protected guard={route === 'onboarding'}>
         <Stack.Screen name="onboarding" />

@@ -8,9 +8,9 @@
  * (Phase 9 offline basemap) without a reshape.
  */
 
-import { type LatLng } from '@skating/core'
-import type { MultiPolygon, Polygon } from 'geojson'
+import type { LatLng } from '@skating/core'
 import * as SQLite from 'expo-sqlite'
+import type { MultiPolygon, Polygon } from 'geojson'
 import { type CachedBody, nearestCachedBody } from './offlineBody'
 
 /** Keep the 50 most-recently-viewed bodies — polygons are tiny, and it covers a day's browsing. */
