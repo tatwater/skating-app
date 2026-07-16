@@ -258,5 +258,3 @@ that no wanted lake falls outside the box or south of the clip.
   data. Keep them in sync (called out in each file).
 - **ODbL attribution** unchanged — driven by the water source + always-on attribution control,
   independent of the tile host.
-</content>
-</invoke>

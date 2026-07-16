@@ -34,7 +34,7 @@ import { useRouter } from 'expo-router'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Platform } from 'react-native'
 import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui'
-import { isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos'
+import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos'
 import { saveDraft } from '../lib/draftStore'
 import { useMapSelectionOptional } from './MapSelectionContext'
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline'
@@ -242,9 +242,12 @@ export function ReportForm({
   const [localPutIn, setLocalPutIn] = useState<{ lat: number; lng: number } | null>(
     draft?.putInPin ?? null,
   )
+  // Off-map, there's no pin-drop mode — but the no-op MUST be stable (a fresh `() => {}` each render
+  // would change the clear-effect's deps every render, re-running its cleanup and wiping the pin).
+  const noopPinDrop = useCallback(() => {}, [])
   const putInPin = mapSelection ? mapSelection.putInPin : localPutIn
   const setPutInPin = mapSelection ? mapSelection.setPutInPin : setLocalPutIn
-  const setPinDropMode = mapSelection ? mapSelection.setPinDropMode : () => {}
+  const setPinDropMode = mapSelection ? mapSelection.setPinDropMode : noopPinDrop
   const hasMap = mapSelection !== null
 
   // Hydrate from a draft when editing; else start empty once the profile loads (below).
@@ -323,7 +326,14 @@ export function ReportForm({
     (id: string) => {
       setPhotos((prev) => {
         const removed = prev.find((p) => p.id === id)
-        if (removed) reclaim(removed)
+        if (removed) {
+          reclaim(removed)
+          // If this photo was already persisted to disk for a saved draft, delete its files too —
+          // otherwise removing it while editing a draft would orphan them (they're no longer in the
+          // draft, so a later draft-delete cleanup wouldn't catch them either).
+          const files = [removed.fullUri, removed.thumbUri].filter(isPersistedUri)
+          if (files.length > 0) deleteDraftPhotoFiles(files)
+        }
         return prev.filter((p) => p.id !== id)
       })
     },

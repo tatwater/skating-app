@@ -16,10 +16,10 @@ and a Clerk JWT template named `convex`).
 
 ## Layout
 
-- **`convex/schema.ts`** — all 18 entities from `plans/06-data-model.md`, with the
-  suggested indexes. Shared vocabulary (ice types, hazards, visibility, roles, …) is
-  imported from `@skating/core` via the `literals()` helper so it's single-sourced;
-  backend-only enums live in `convex/lib/enums.ts`.
+- **`convex/schema.ts`** — all 17 entities from `plans/06-data-model.md` (the `follows`
+  table was dropped with the social graph, D13), with the suggested indexes. Shared vocabulary
+  (ice types, hazards, roles, …) is imported from `@skating/core` via the `literals()` helper
+  so it's single-sourced; backend-only enums live in `convex/lib/enums.ts`.
 - **`convex/lib/`** — `auth.ts` (identity + role/status gating), `validators.ts`
   (`literals`, `boolFlags`, `latLng`, `bbox`, `geoJson`), `enums.ts`, `geospatial.ts`
   (typed `@convex-dev/geospatial` index of water-body centroids, filtered by the derived
@@ -58,8 +58,9 @@ and a Clerk JWT template named `convex`).
   idempotency + age/username invariants, approve/remove/restore → audit-log paths, the
   two-tier `listInViewport` (small-body prefilter, off-screen-centroid large body, refine,
   cap-truncation log) **+ the D49 zoom cutoff / `setCuratedBoost` recompute + audit**, `get`'s
-  merged-redirect/unavailable signal, report `create`/`listByWaterBody` visibility + centroid
-  default + locked-author clamp, and photo `create` dropping `coord` without `placeOnMap`.
+  merged-redirect/unavailable signal, report `create` (centroid default, minor rejection,
+  idempotency-key dedup) / `listByWaterBody` (moderation + block filter), and photo `create`
+  dropping `coord` without `placeOnMap`.
 
 ## Deviations & deferrals (flagged for review)
 

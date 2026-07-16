@@ -484,7 +484,7 @@ export const setCuratedBoost = mutation({
  * (search index, then exact case-insensitive), disambiguate a repeated name by the optional `state`
  * hint else the **largest-area** body (the one people mean — Lake George NY over the MA reservoir),
  * set `curatedBoost` + recompute `displayScore`/`minVisibleZoom` + re-index. Mirrors
- * `setCuratedBoost`'s core minus the admin auth + audit row — Phase 4 lifts per-body boost editing
+ * `setCuratedBoost`'s core minus the admin auth + audit row — Phase 7 lifts per-body boost editing
  * into the admin UI with proper auditing. Returns what was boosted + names that matched nothing.
  */
 export const applyCuratedBoostSeed = internalMutation({

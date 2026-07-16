@@ -120,7 +120,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const map = new maplibregl.Map({
       container,
       style: buildMapStyle(pmtilesUrl, flavor),
-      // Restore pan/zoom across a theme-driven re-create; else the initial Champlain framing.
+      // Restore pan/zoom across a theme-driven re-create; else the initial regional framing.
       center: lastViewRef.current?.center ?? INITIAL_CENTER,
       zoom: lastViewRef.current?.zoom ?? INITIAL_ZOOM,
       maxBounds: NORTHEAST_MAX_BOUNDS,
@@ -285,7 +285,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   }, [pinDropMode, loaded])
 
   // Home/water framing on open via the browser Geolocation API (D12/D20): a fix inside the pilot
-  // region recenters there; otherwise the default Vermont framing stands. Skipped on a deep-linked
+  // region recenters there; otherwise the default Northeast framing stands. Skipped on a deep-linked
   // drawer, which frames on its own target instead (see `geolocateOnMount`).
   useEffect(() => {
     if (!geolocateOnMount || typeof navigator === 'undefined' || !navigator.geolocation) return

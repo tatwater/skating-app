@@ -154,8 +154,9 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
   clutter drops. Phase 1 only stores `surfaceAreaSqM`; the score/threshold lands here.
 - Tap a water body → detail view (name, area, report feed by **skate time**).
 - Create + read a **report** (ice types, surface tags, coarse quality, structured
-  thickness, photos, conditions, visibility) — **offline-capable** (D9/D30), with
-  **client-side image optimization + EXIF stripping** on upload (D31/D42).
+  thickness, photos, conditions) — always public (D13, no visibility field) and
+  **offline-capable** (D9/D30), with **client-side image optimization + EXIF stripping**
+  on upload (D31/D42).
 - **Photo geotag opt-in** (D42): default off; if on, photos pin at their coord within
   the water body.
 - **Reports are always public** (D13) — no per-report visibility field at all. Minors are
