@@ -201,13 +201,18 @@ export default defineSchema({
     photoIds: v.array(v.id('photos')),
     notes: v.optional(v.string()),
     // No visibility field — every report is public (D13). Minors can't create reports (D41).
+    // Client-generated dedup key for the mobile offline draft queue (F2/D30): a draft carries one
+    // key from capture, so a reconnect flush whose ack was lost can retry `reports.create` and get
+    // the same report back instead of a duplicate. Optional ⇒ migration-free (web/online omits it).
+    idempotencyKey: v.optional(v.string()),
     moderationStatus: literals(MODERATION_STATUSES), // default visible (D32)
     hazardIdsCreated: v.array(v.id('hazards')),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_water_body_skate_time', ['waterBodyId', 'skateTime'])
-    .index('by_author', ['authorId']),
+    .index('by_author', ['authorId'])
+    .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (F2/D30)
 
   comments: defineTable({
     reportId: v.id('reports'),

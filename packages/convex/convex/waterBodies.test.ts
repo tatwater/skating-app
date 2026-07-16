@@ -1045,3 +1045,59 @@ describe('waterBodies.applyCuratedBoostSeed (Phase 2.5 re-seed)', () => {
     expect(res.applied[0]?.states).toEqual(['NY'])
   })
 })
+
+describe('waterBodies.resolveBodyForCoord (F2 offline flush / coord→lake)', () => {
+  async function seedCanonical(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodies'>> {
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] })
+    return onlyBodyId(t)
+  }
+
+  test('resolves a coord inside a body to that body', async () => {
+    const t = convexTestWithGeo()
+    const id = await seedCanonical(t)
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 0.5, lng: 0.5 },
+    })
+    expect(res?.waterBodyId).toBe(id)
+    expect(res?.name).toBe('Lake Champlain')
+  })
+
+  test('resolves a coord in the parking/approach buffer (just off the shore)', async () => {
+    const t = convexTestWithGeo()
+    const id = await seedCanonical(t)
+    // ~222 m east of the east edge (0.002°) — outside the polygon but inside the 300 m buffer.
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 0.5, lng: 1.002 },
+    })
+    expect(res?.waterBodyId).toBe(id)
+  })
+
+  test('returns null when the coord is beyond the buffer', async () => {
+    const t = convexTestWithGeo()
+    await seedCanonical(t)
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 0.5, lng: 1.002 },
+      bufferMeters: 10,
+    })
+    expect(res).toBeNull()
+  })
+
+  test('returns null far from any body', async () => {
+    const t = convexTestWithGeo()
+    await seedCanonical(t)
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 40, lng: -79 },
+    })
+    expect(res).toBeNull()
+  })
+
+  test('excludes an unlisted (removed) body even when the coord is inside it', async () => {
+    const t = convexTestWithGeo()
+    const id = await seedCanonical(t)
+    await t.run((ctx) => ctx.db.patch(id, { removedAt: Date.now() }))
+    const res = await t.query(api.waterBodies.resolveBodyForCoord, {
+      coord: { lat: 0.5, lng: 0.5 },
+    })
+    expect(res).toBeNull()
+  })
+})

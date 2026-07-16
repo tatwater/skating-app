@@ -15,9 +15,11 @@ import {
   isKnownStateCode,
   KNOWN_STATE_CODES,
   minVisibleZoom,
+  nearestBodyForPoint,
   WATER_BODY_TYPES,
 } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
+import type { MultiPolygon, Polygon } from 'geojson'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { requireProfile, requireRole } from './lib/auth'
@@ -631,6 +633,63 @@ export const listInViewport = query({
       byId.set(body._id, body)
     }
     return [...byId.values()]
+  },
+})
+
+/** Default parking/approach buffer for coord→lake resolution (F2 offline flush + map-open framing).
+ *  ~300 m covers a lakeside lot / approach so opening from the car still resolves the lake (S1).
+ *  Tunable — Phase 7 lifts it behind admin controls, same "don't bury constants" principle as the
+ *  displayScore curve (D37). */
+const AUTOSELECT_BUFFER_M = 300
+
+/**
+ * Public: resolve a GPS coord to the listed water body it's on / nearest to within a parking-approach
+ * buffer. The server side of the **F2 offline flush** for a *coord-only* draft — a report captured
+ * off a lake the device hadn't cached, so the client couldn't auto-select it locally (see the mobile
+ * body cache). Reuses `listInViewport`'s two-tier centroid + large-body lookup (read-cap-safe: the
+ * per-point rectangle is small), then ranks candidates with the shared `nearestBodyForPoint`
+ * (buffered `pointInPolygon`, smaller-area tie-break). Returns the (already survivor-listed) body id
+ * + name, or null when nothing is within the buffer. Also usable online for a "you're at Lake X" hint.
+ */
+export const resolveBodyForCoord = query({
+  args: { coord: latLng, bufferMeters: v.optional(v.number()) },
+  handler: async (ctx, { coord, bufferMeters }) => {
+    const buffer = bufferMeters ?? AUTOSELECT_BUFFER_M
+    const rectangle = {
+      west: coord.lng - VIEWPORT_MARGIN_DEG,
+      east: coord.lng + VIEWPORT_MARGIN_DEG,
+      south: coord.lat - VIEWPORT_MARGIN_DEG,
+      north: coord.lat + VIEWPORT_MARGIN_DEG,
+    }
+    // Tier 1 — centroid prefilter near the coord (no `listed` filter, refined below — same read-cap
+    // reasoning as listInViewport). A single small (~5 km) rectangle around one point holds far
+    // fewer than the limit, so no pagination is needed.
+    const page = await waterBodiesGeo.query(ctx, {
+      shape: { type: 'rectangle', rectangle },
+      limit: DEFAULT_VIEWPORT_LIMIT,
+    })
+    const tier1 = await Promise.all(page.results.map(({ key }) => ctx.db.get(key)))
+    // Tier 2 — large bodies whose centroid can sit outside the rectangle though the coord is on them.
+    const tier2 = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_is_large', (q) => q.eq('isLarge', true))
+      .collect()
+
+    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>()
+    for (const body of [...tier1, ...tier2]) {
+      if (body && isListed(body)) byId.set(body._id, body)
+    }
+    const matchId = nearestBodyForPoint(
+      coord,
+      [...byId.values()].map((b) => ({
+        ref: b._id,
+        polygon: b.polygon as unknown as Polygon | MultiPolygon,
+        surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
+      })),
+      buffer,
+    )
+    const body = matchId ? byId.get(matchId) : undefined
+    return body ? { waterBodyId: body._id, name: body.name } : null
   },
 })
 
