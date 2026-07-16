@@ -23,12 +23,13 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
 - [Phase 1 — Water-body data](./phase-1-water-bodies.md) — OSM ETL, import, `listed`
   refactor, read-only map (Vermont pilot).
 - [Phase 2 — Map + reports (the MVP)](./phase-2-map-and-reports.md) — interactive map,
-  tap-to-detail, report create/read, photos, D49 display scoring. **Web MVP (§A–§E) + mobile online
-  loop (§F1) shipped;** the offline draft queue (§F2) is the remaining mobile follow-on.
+  tap-to-detail, report create/read, photos, D49 display scoring. **✅ Complete (2026-07-16):** web
+  MVP (§A–§E) + mobile online loop (§F1) + offline draft queue (§F2) + docs (§G).
   *(User-created bodies + dedup moved to Phase 8 — GPS-backed.)*
 - [Phase 2.5 — Regional expansion](./phase-2.5-regional-expansion.md) — the ops runbook for
   Workstream H: per-state ETL (NY/VT/NH/ME/MA, NY clipped downstate), a multi-state `.pmtiles` on
   Cloudflare R2, and the (last) map-bounds widening. Pure data + infra, no app features.
+  **✅ Complete on dev (2026-07-15); prod deferred.**
 
 ## How these fit together
 

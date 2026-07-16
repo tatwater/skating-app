@@ -117,7 +117,7 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - Needs: OSM extract tooling (osmium/GDAL + a JS simplify pass), Convex, a Protomaps
   basemap (self-built or hosted demo).
 
-## Phase 2 — Map + reports (the MVP)
+## Phase 2 — Map + reports (the MVP) ✅ Complete (2026-07-16)
 > **Detailed build plan:** [`phase-2-map-and-reports.md`](./phase-2-map-and-reports.md).
 > **Web first, then mobile (two PRs)** — web front-loads the shared Convex backend and proves the
 > whole data model online before the native-build + offline-capture (D30) lift. No store/dev-account
@@ -167,7 +167,7 @@ alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 - **Done:** friends can post and read reports on real lakes. *This is the usable MVP.*
 - Needs: MapLibre + tiles (Protomaps), Convex file storage.
 
-## Phase 2.5 — Regional expansion (Northeast skating states)
+## Phase 2.5 — Regional expansion (Northeast skating states) ✅ Complete (dev; prod deferred) (2026-07-15)
 > **Detailed plan + runbook:** [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md)
 > (was §H of the Phase 2 plan). Slotted **after the mobile online loop (F1); reordered ahead of F2**
 > (2026-07-14 — F2 is the orthogonal offline queue). It's data + infra, so it doesn't gate the

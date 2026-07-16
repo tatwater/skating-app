@@ -1,5 +1,11 @@
 # Phase 2 build plan — Map + reports (the MVP)
 
+> **✅ Phase 2 COMPLETE (2026-07-16).** All workstreams shipped: web MVP §A–§E (2026-07-13),
+> mobile online loop §F1 (2026-07-14, PR #13), regional expansion §H → Phase 2.5 (2026-07-15, PR #14),
+> mobile offline draft queue §F2 + docs §G (2026-07-16). Convex **prod remains uninitialized** by
+> decision, so everything runs on the **dev** deployment; the prod cutover is a later pass. Native
+> mobile UI carries a pending emulator-verification pass (pure + Convex layers are tested).
+
 The concrete implementation plan for **Phase 2** of [`07-roadmap.md`](./07-roadmap.md). Design
 rationale lives in the decisions log (D3, D4, D6, D9, D13, D14, D20, D22–D25, D30, D31, D36,
 D41, D42, **D49**); this doc is the *how* — ordered workstreams, file-level changes, and the
@@ -454,7 +460,7 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
   auto-select; (4) mobile — draft queue (sqlite/fs persistence, photo checkpointing, flush triggers,
   offline put-in); (5) mobile — drafts list + edit; (6) §G docs + hygiene.
 
-### G. Docs + hygiene
+### G. Docs + hygiene — ✅ DONE (2026-07-16)
 - README updates: `packages/convex` (reports/photos functions, displayScore/minVisibleZoom),
   `apps/web` (report flow, photo pipeline). Update `plans/README.md` index + the roadmap's Phase 2
   status when it lands.
