@@ -26,7 +26,7 @@ import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { getCurrentProfile, requireProfile } from './lib/auth'
 import { isListed } from './lib/listing'
-import { getViewableReport, NO_RELATIONSHIP } from './lib/reportVisibility'
+import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
 import { latLng, literals } from './lib/validators'
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
@@ -208,6 +208,10 @@ export const listByWaterBody = query({
   handler: async (ctx, { waterBodyId }) => {
     const viewer = await getCurrentProfile(ctx)
     const viewerId = viewer?._id ?? ''
+    // Block source shared with `getViewableReport` (`get` + `photos.getUrls`) — Phase 3 fills it in
+    // once, and all three report-read paths gain the block filter together (D32). Loaded once here,
+    // then the sync filter checks membership per row.
+    const blocked = await loadBlockedAuthorIds(ctx, viewerId)
     const reports = await ctx.db
       .query('reports')
       .withIndex('by_water_body_skate_time', (q) => q.eq('waterBodyId', waterBodyId))
@@ -216,10 +220,7 @@ export const listByWaterBody = query({
     return reports.filter(
       (r) =>
         r.moderationStatus === 'visible' &&
-        // TODO(Phase 3): replace NO_RELATIONSHIP with the viewer↔author block state. This is the
-        // list-feed twin of the seam in `getViewableReport` (which covers `get` + `photos.getUrls`);
-        // both sites must gain real block lookups together.
-        canViewReport(viewerId, r.authorId, NO_RELATIONSHIP),
+        canViewReport(viewerId, r.authorId, { blocked: blocked.has(r.authorId) }),
     )
   },
 })
@@ -243,6 +244,10 @@ export const update = mutation({
     if (!existing) throw new ConvexError('Report not found')
     if (existing.authorId !== profile._id)
       throw new ConvexError('Only the author can edit a report')
+    // Don't let an author keep editing content a moderator has taken down (hidden/removed, D32) —
+    // the edit path doesn't touch `moderationStatus`, so re-appearing it would require re-moderation.
+    if (existing.moderationStatus !== 'visible')
+      throw new ConvexError('This report has been moderated and can no longer be edited')
 
     const now = Date.now()
     const result = validateReportInput(toReportInput(args, existing.waterBodyId), { now })

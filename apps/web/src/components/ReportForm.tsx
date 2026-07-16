@@ -564,18 +564,19 @@ export function ReportForm({
     setError(null)
     try {
       // Process the picked files concurrently (each is a heavy HEIC-decode + two compressions).
-      const drafts = await Promise.all(
-        Array.from(files).map(async (file) => {
-          const processed = await processPhoto(file)
-          return {
+      // Create the object URLs only AFTER all succeed — doing it inside the tasks would leak the
+      // URLs of the files that resolved when a sibling rejects (they never reach state to be revoked).
+      const processed = await Promise.all(Array.from(files).map((file) => processPhoto(file)))
+      const drafts = processed.map(
+        (p) =>
+          ({
             id: crypto.randomUUID(),
-            previewUrl: URL.createObjectURL(processed.thumb),
-            full: processed.full,
-            thumb: processed.thumb,
-            coord: processed.coord,
+            previewUrl: URL.createObjectURL(p.thumb),
+            full: p.full,
+            thumb: p.thumb,
+            coord: p.coord,
             placeOnMap: false,
-          } satisfies PhotoDraft
-        }),
+          }) satisfies PhotoDraft,
       )
       setPhotos((prev) => [...prev, ...drafts])
     } catch {

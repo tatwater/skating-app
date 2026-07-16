@@ -13,6 +13,7 @@ import {
   bboxIntersects,
   displayScore,
   isKnownStateCode,
+  isMinor,
   KNOWN_STATE_CODES,
   minVisibleZoom,
   nearestBodyForPoint,
@@ -276,9 +277,13 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx)
-    // TODO(D36): match-on-create dedup (bbox prefilter → Turf IoU / name similarity)
-    // to steer onto an existing body before inserting. Stubbed for the v1 scaffold.
     const now = Date.now()
+    // Minors are read-only (D41) — mirror `reports.create`, so a minor can't push a public map
+    // contribution attributed to them. (This stays a v1 scaffold; GPS-backed create + dedup is
+    // Phase 8, D36 — TODO: match-on-create dedup / bbox prefilter → Turf IoU / name similarity.)
+    if (isMinor(profile.dateOfBirth, now)) {
+      throw new ConvexError('Users under 18 cannot create water bodies')
+    }
     const scores = scoreFields({ surfaceAreaSqM: args.surfaceAreaSqM }) // no boost on a new body
     const id = await ctx.db.insert('waterBodies', {
       name: args.name,
@@ -507,8 +512,11 @@ export const applyCuratedBoostSeed = internalMutation({
           .withSearchIndex('search_name', (s) => s.search('name', name))
           .take(50)
       ).filter((b) => b.name.toLowerCase() === name.toLowerCase() && isListed(b))
+      // A malformed `state` hint (typo, non-code) is ignored rather than silently matching nothing,
+      // so it falls back to largest-area disambiguation instead of quietly picking the wrong body.
+      const stateHint = state && isKnownStateCode(state) ? state : undefined
       const target =
-        (state ? candidates.find((b) => b.states?.includes(state)) : undefined) ??
+        (stateHint ? candidates.find((b) => b.states?.includes(stateHint)) : undefined) ??
         candidates.sort((a, b) => (b.surfaceAreaSqM ?? 0) - (a.surfaceAreaSqM ?? 0))[0]
       if (!target) {
         notFound.push(name)
@@ -556,6 +564,10 @@ export const listInViewport = query({
   args: { viewport: bbox, limit: v.optional(v.number()), zoom: v.optional(v.number()) },
   handler: async (ctx, { viewport, limit, zoom }) => {
     const effectiveLimit = sanitizeLimit(limit)
+    // Floor the client zoom to the integer bucket `minVisibleZoom` uses, so the tier-1 range filter
+    // (`sortKey < z + 1`) and the tier-2 JS cutoff (`minVisibleZoom > z`) agree at a fractional zoom.
+    // (Clients already floor via `zoomForViewport`; this is defense-in-depth against a raw value.)
+    const z = zoom === undefined ? undefined : Math.floor(zoom)
 
     // Tier 1 — centroid prefilter over the viewport expanded by the (small) margin. The
     // geospatial `query` returns a *partial* page plus a continuation cursor, so we page through
@@ -589,9 +601,9 @@ export const listInViewport = query({
           shape: { type: 'rectangle', rectangle },
           limit: effectiveLimit,
           // D49: keep only bodies visible at this zoom. sortKey = minVisibleZoom, and `.lt` is
-          // exclusive, so `< zoom + 1` means `minVisibleZoom <= zoom`. Ranges over the sort
+          // exclusive, so `< z + 1` means `minVisibleZoom <= z`. Ranges over the sort
           // dimension (unlike the `listed` filter-key intersection) don't lower the read cap.
-          ...(zoom !== undefined ? { filter: (q) => q.lt('sortKey', zoom + 1) } : {}),
+          ...(z !== undefined ? { filter: (q) => q.lt('sortKey', z + 1) } : {}),
         },
         cursor,
       )
@@ -627,7 +639,7 @@ export const listInViewport = query({
       if (!body || !bboxIntersects(body.bbox, viewport) || !isListed(body)) continue
       // D49 zoom cutoff — also applied to tier-2 (its short-list scan isn't sortKey-filtered). A
       // legacy body missing `minVisibleZoom` is treated as visible (never silently hidden).
-      if (zoom !== undefined && body.minVisibleZoom !== undefined && body.minVisibleZoom > zoom) {
+      if (z !== undefined && body.minVisibleZoom !== undefined && body.minVisibleZoom > z) {
         continue
       }
       byId.set(body._id, body)

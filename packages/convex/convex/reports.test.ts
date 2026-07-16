@@ -393,3 +393,33 @@ describe('reports.create idempotency (F2 offline flush, D30)', () => {
     expect(a).not.toBe(b)
   })
 })
+
+describe('reports.update / photos.create guards (review fixes)', () => {
+  test('a moderated (hidden) report can no longer be edited', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asUser = await seedUser(t, 'clerk_a')
+    const reportId = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateTime: SKATE_TIME,
+    })
+    await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }))
+    await expect(
+      asUser.mutation(api.reports.update, { reportId, skateTime: SKATE_TIME, notes: 'edit' }),
+    ).rejects.toThrow(/moderated/i)
+  })
+
+  test('photos.create rejects an out-of-range coord (range guard, D42)', async () => {
+    const t = convexTestWithGeo()
+    const asUser = await seedUser(t, 'clerk_a')
+    const storageId = await t.run((ctx) => ctx.storage.store(new Blob(['x'])))
+    await expect(
+      asUser.mutation(api.photos.create, {
+        storageId,
+        thumbStorageId: storageId,
+        placeOnMap: true,
+        coord: { lat: 200, lng: 0 },
+      }),
+    ).rejects.toThrow(/out of range/i)
+  })
+})

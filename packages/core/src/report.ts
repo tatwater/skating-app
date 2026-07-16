@@ -114,7 +114,8 @@ function isMember<T extends string>(arr: readonly T[], value: unknown): value is
   return (arr as readonly string[]).includes(value as string)
 }
 
-function isValidCoord(coord: LatLng): boolean {
+/** True when a coord's lat/lng are finite and within valid geographic ranges (D42 storage guard). */
+export function isValidCoord(coord: LatLng): boolean {
   return (
     Number.isFinite(coord.lat) &&
     Number.isFinite(coord.lng) &&

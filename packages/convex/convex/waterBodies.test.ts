@@ -102,6 +102,34 @@ describe('waterBodies.create', () => {
     )
   })
 
+  test('rejects a minor — read-only (D41)', async () => {
+    const t = convexTestWithGeo()
+    await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'clerk_minor',
+        displayName: 'minor',
+        username: 'minor',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'private' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyFulfilled: true,
+          reportRated: true,
+          contentFlagResolved: true,
+        },
+        dateOfBirth: Date.UTC(new Date().getUTCFullYear() - 16, 0, 1),
+        reputationPoints: 0,
+        role: 'member' as const,
+        status: 'active' as const,
+        createdAt: Date.now(),
+      }),
+    )
+    const asMinor = t.withIdentity({ subject: 'clerk_minor' })
+    await expect(asMinor.mutation(api.waterBodies.create, SAMPLE_BODY)).rejects.toThrow(/under 18/i)
+  })
+
   test('rejects a banned account (status gate, D37)', async () => {
     const t = convexTestWithGeo()
     const asBanned = await seedUser(t, 'clerk_banned', 'member', 'banned')
