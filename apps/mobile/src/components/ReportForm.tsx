@@ -260,6 +260,13 @@ export function ReportForm({
           thumbUri: p.thumbUri,
           coord: p.coord,
           placeOnMap: p.placeOnMap,
+          // Carry any flush checkpoints (a prior partial flush uploaded blobs / created the row) so a
+          // re-save preserves them — otherwise the next flush re-uploads and duplicates the photo row
+          // + orphans the original blobs. (`DraftPhoto.photoId` is `PhotoDraft.uploadedId`; core stores
+          // ids as plain strings, so re-brand them as Convex `Id`s here.)
+          fullStorageId: p.fullStorageId as Id<'_storage'> | undefined,
+          thumbStorageId: p.thumbStorageId as Id<'_storage'> | undefined,
+          uploadedId: p.photoId as Id<'photos'> | undefined,
         }))
       : [],
   )
@@ -487,6 +494,11 @@ export function ReportForm({
             : await persistDraftPhoto(p.thumbUri, `${id}-${p.id}-thumb.jpg`),
           coord: p.coord,
           placeOnMap: p.placeOnMap,
+          // Preserve flush checkpoints across an edit/re-save so the next flush resumes instead of
+          // re-uploading (which would duplicate the photo row + orphan blobs).
+          fullStorageId: p.fullStorageId,
+          thumbStorageId: p.thumbStorageId,
+          photoId: p.uploadedId,
         })),
       )
       saveDraft(
