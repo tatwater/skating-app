@@ -73,6 +73,113 @@ export function pointInPolygon(point: LatLng, polygon: Polygon | MultiPolygon): 
   return booleanPointInPolygon([point.lng, point.lat], polygon)
 }
 
+/** Mean Earth radius in metres (matches Turf's WGS84 mean radius). */
+const EARTH_RADIUS_M = 6_371_008.8
+const DEG = Math.PI / 180
+
+/**
+ * Project a GeoJSON `[lng, lat]` position into local metres relative to `origin`
+ * (equirectangular / flat-earth around the origin). Exact enough at lake / parking-lot
+ * scale — sub-1% distance error out to several km, far tighter than the ~300 m buffer this
+ * feeds — and dependency-free, so `distanceToPolygonMeters` doesn't pull a new Turf module.
+ */
+function toLocalMetres([lng, lat]: readonly [number, number], origin: LatLng): [number, number] {
+  return [
+    (lng - origin.lng) * DEG * EARTH_RADIUS_M * Math.cos(origin.lat * DEG),
+    (lat - origin.lat) * DEG * EARTH_RADIUS_M,
+  ]
+}
+
+/** Distance from `(px,py)` to segment `a–b`, all in local metres. Handles a zero-length edge. */
+function segmentDistanceMetres(
+  px: number,
+  py: number,
+  [ax, ay]: [number, number],
+  [bx, by]: [number, number],
+): number {
+  const dx = bx - ax
+  const dy = by - ay
+  const len2 = dx * dx + dy * dy
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2))
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+}
+
+/**
+ * Distance in metres from `point` to the nearest edge of `polygon` — **`0` when the point is
+ * inside** (boundary counts as inside, per `pointInPolygon`). The proximity primitive behind
+ * offline body auto-select (F2), the map-open "you're at this lake" framing, and Phase 9 hazard
+ * binding: a skater standing in the parking lot is *near* the lake though not *on* it, so a plain
+ * `pointInPolygon` would miss them.
+ *
+ * Uses a local equirectangular projection around the query point (see `toLocalMetres`), so it's
+ * pure/dependency-free and accurate far beyond the buffer distances that consume it.
+ */
+export function distanceToPolygonMeters(point: LatLng, polygon: Polygon | MultiPolygon): number {
+  if (pointInPolygon(point, polygon)) return 0
+  const rings: Position[][] =
+    polygon.type === 'Polygon' ? polygon.coordinates : polygon.coordinates.flat(1)
+  let min = Number.POSITIVE_INFINITY
+  for (const ring of rings) {
+    const local = (ring as [number, number][]).map((c) => toLocalMetres(c, point))
+    for (let i = 0; i + 1 < local.length; i++) {
+      const d = segmentDistanceMetres(0, 0, local[i] as [number, number], local[i + 1] as [
+        number,
+        number,
+      ])
+      if (d < min) min = d
+    }
+  }
+  return min
+}
+
+/**
+ * Is `point` inside `polygon` **or within `bufferMeters` of it** — a tunable parking/approach
+ * radius so opening the app offline from the car still resolves the lake (S1: access/put-ins are a
+ * dominant concern). Convenience over `distanceToPolygonMeters`; rank multiple hits by that distance.
+ */
+export function pointNearPolygon(
+  point: LatLng,
+  polygon: Polygon | MultiPolygon,
+  bufferMeters: number,
+): boolean {
+  return distanceToPolygonMeters(point, polygon) <= bufferMeters
+}
+
+/** A body considered for point→lake resolution: an opaque `ref` + the geometry to test against. */
+export interface BodyCandidate<T> {
+  ref: T
+  polygon: Polygon | MultiPolygon
+  surfaceAreaSqM: number
+}
+
+/**
+ * Resolve a GPS point to the lake it's on / nearest to, within `bufferMeters` — the shared ranker
+ * behind offline auto-select (mobile, over the on-device body cache) and the flush-time coord→body
+ * resolver (Convex, over geospatially-nearby bodies). Ranks by distance ascending (a point *inside*
+ * a polygon is distance 0), tie-breaking on **smaller area** so a nested inlet / small lake wins
+ * over the big body it sits within (most specific). Returns `null` when nothing is within the
+ * buffer. Kept pure so both callers share one contract and it's unit-testable.
+ */
+export function nearestBodyForPoint<T>(
+  point: LatLng,
+  candidates: readonly BodyCandidate<T>[],
+  bufferMeters: number,
+): T | null {
+  let best: { ref: T; distance: number; area: number } | null = null
+  for (const c of candidates) {
+    const distance = distanceToPolygonMeters(point, c.polygon)
+    if (distance > bufferMeters) continue
+    if (
+      best === null ||
+      distance < best.distance ||
+      (distance === best.distance && c.surfaceAreaSqM < best.area)
+    ) {
+      best = { ref: c.ref, distance, area: c.surfaceAreaSqM }
+    }
+  }
+  return best?.ref ?? null
+}
+
 /**
  * A representative point *guaranteed to lie on the water body's surface* (Turf
  * `pointOnFeature`) — the **on-water** point stored as `waterBodies.centroid` (D48).

@@ -4,9 +4,13 @@ import { describe, expect, it } from 'vitest'
 import {
   type BBox,
   bboxIntersects,
+  type BodyCandidate,
   bufferedLineOverlap,
+  distanceToPolygonMeters,
   type LatLng,
+  nearestBodyForPoint,
   pointInPolygon,
+  pointNearPolygon,
   polygonBBox,
   polygonIoU,
   representativePoint,
@@ -297,4 +301,91 @@ describe('bufferedLineOverlap (rivers, D36)', () => {
       { numRuns: 40 },
     )
   }, 20_000)
+})
+
+describe('distanceToPolygonMeters (offline auto-select / Phase 9 proximity)', () => {
+  // ~111 m square centred on the equator, so a degree of lat or lng ≈ the same metres and the
+  // local equirectangular projection is easy to reason about analytically.
+  const M_PER_DEG = 6_371_008.8 * (Math.PI / 180) // ≈ 111,194.9 m per degree at the equator
+  const box = rect({ minLat: -0.0005, minLng: -0.0005, maxLat: 0.0005, maxLng: 0.0005 })
+
+  it('is 0 for a point inside the polygon', () => {
+    expect(distanceToPolygonMeters({ lat: 0, lng: 0 }, box)).toBe(0)
+  })
+
+  it('measures the perpendicular distance to the nearest edge', () => {
+    // 0.0005° east of the east edge (which sits at lng 0.0005).
+    const d = distanceToPolygonMeters({ lat: 0, lng: 0.001 }, box)
+    expect(d).toBeCloseTo(0.0005 * M_PER_DEG, -1) // ≈ 55.6 m, within a metre
+  })
+
+  it('measures the distance to the nearest corner for a diagonally-outside point', () => {
+    const d = distanceToPolygonMeters({ lat: 0.001, lng: 0.001 }, box)
+    expect(d).toBeCloseTo(Math.SQRT2 * 0.0005 * M_PER_DEG, -1) // ≈ 78.6 m to the NE corner
+  })
+
+  it('handles a MultiPolygon (nearest across all parts)', () => {
+    const mp: MultiPolygon = {
+      type: 'MultiPolygon',
+      coordinates: [
+        box.coordinates,
+        rect({ minLat: 10, minLng: 10, maxLat: 10.001, maxLng: 10.001 }).coordinates,
+      ],
+    }
+    // Just east of the near part — the far part must not win.
+    expect(distanceToPolygonMeters({ lat: 0, lng: 0.001 }, mp)).toBeCloseTo(0.0005 * M_PER_DEG, -1)
+  })
+
+  it('is non-negative, 0 iff inside, and consistent with pointNearPolygon (property)', () => {
+    fc.assert(
+      fc.property(
+        arbBox,
+        fc.double({ min: -4, max: 4, noNaN: true }),
+        fc.double({ min: -4, max: 4, noNaN: true }),
+        fc.double({ min: 1, max: 5000, noNaN: true }),
+        (b, lat, lng, buffer) => {
+          const poly = rect(b)
+          const point: LatLng = { lat, lng }
+          const d = distanceToPolygonMeters(point, poly)
+          expect(d).toBeGreaterThanOrEqual(0)
+          if (pointInPolygon(point, poly)) expect(d).toBe(0)
+          expect(pointNearPolygon(point, poly, buffer)).toBe(d <= buffer)
+        },
+      ),
+    )
+  })
+})
+
+describe('nearestBodyForPoint (shared point→lake resolver)', () => {
+  const near = rect({ minLat: -0.0005, minLng: -0.0005, maxLat: 0.0005, maxLng: 0.0005 })
+  const far = rect({ minLat: 10, minLng: 10, maxLat: 10.001, maxLng: 10.001 })
+  const candidates: BodyCandidate<string>[] = [
+    { ref: 'near', polygon: near, surfaceAreaSqM: surfaceAreaSqM(near) },
+    { ref: 'far', polygon: far, surfaceAreaSqM: surfaceAreaSqM(far) },
+  ]
+
+  it('returns the body the point sits inside', () => {
+    expect(nearestBodyForPoint({ lat: 0, lng: 0 }, candidates, 300)).toBe('near')
+  })
+
+  it('resolves a point in the approach/parking buffer to the nearby lake', () => {
+    // ~55 m east of `near`, far outside it but well within a 300 m parking buffer.
+    expect(nearestBodyForPoint({ lat: 0, lng: 0.001 }, candidates, 300)).toBe('near')
+  })
+
+  it('returns null when nothing is within the buffer', () => {
+    // Same ~55 m point, but a 10 m buffer excludes it.
+    expect(nearestBodyForPoint({ lat: 0, lng: 0.001 }, candidates, 10)).toBeNull()
+  })
+
+  it('tie-breaks overlapping matches by smaller area (the most-specific lake wins)', () => {
+    const big = rect({ minLat: -0.001, minLng: -0.001, maxLat: 0.001, maxLng: 0.001 })
+    const small = rect({ minLat: -0.0003, minLng: -0.0003, maxLat: 0.0003, maxLng: 0.0003 })
+    const nested: BodyCandidate<string>[] = [
+      { ref: 'big', polygon: big, surfaceAreaSqM: surfaceAreaSqM(big) },
+      { ref: 'small', polygon: small, surfaceAreaSqM: surfaceAreaSqM(small) },
+    ]
+    // (0,0) is inside both (distance 0 each) → the smaller-area body wins.
+    expect(nearestBodyForPoint({ lat: 0, lng: 0 }, nested, 300)).toBe('small')
+  })
 })
