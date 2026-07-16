@@ -36,6 +36,7 @@ import { Platform } from 'react-native'
 import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui'
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos'
 import { saveDraft } from '../lib/draftStore'
+import { isDraftFlushing } from '../lib/flushService'
 import { useMapSelectionOptional } from './MapSelectionContext'
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline'
 
@@ -478,6 +479,14 @@ export function ReportForm({
   // Editing an existing draft reuses its id + idempotencyKey so a later retry stays deduped.
   async function handleSaveDraft() {
     if (!form) return
+    // Refuse to save over a draft that's mid-flush — the flush's checkpoint writes + delete would
+    // clobber this edit and idempotency would re-serve the pre-edit report, losing the change
+    // silently. Checked synchronously right before the sync `saveDraft` so a flush can't claim the
+    // id in between (see `flushService` `flushingIds`).
+    if (isDraftFlushing(draft?.id)) {
+      setError('This draft is syncing right now — try saving again in a moment.')
+      return
+    }
     setError(null)
     setSavingDraft(true)
     try {
@@ -501,6 +510,14 @@ export function ReportForm({
           photoId: p.uploadedId,
         })),
       )
+      // Re-check right before the synchronous write: a flush could have claimed this id during the
+      // photo-persist await above. No `await` between here and `saveDraft`, so a flush can't slip in
+      // between the check and the write.
+      if (isDraftFlushing(draft?.id)) {
+        setError('This draft is syncing right now — try saving again in a moment.')
+        setSavingDraft(false)
+        return
+      }
       saveDraft(
         createDraft({
           id,
