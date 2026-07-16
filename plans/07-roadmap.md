@@ -312,6 +312,24 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - Lifecycle (fresh/aging/stale) + "still there / gone" confirmations, triggered
   opportunistically (app-open nearby, report flow, post-hoc GPS path) (D12/D15).
 - **Done:** hazards appear, age, and can be confirmed/cleared.
+- **Offline hazard capture — inherited from Phase 2 F2 (decided 2026-07-15).** Hazards are drawn
+  **on the ice, often offline**, so Phase 9 reuses the Phase 2 F2 offline substrate:
+  - **The offline body-reference cache** (F2 "Layer 2" — `@skating/core` buffered
+    `pointInPolygon` auto-select + an on-device LRU cache of recently-viewed body polygons)
+    is built in F2 as a **standalone, reusable module** *specifically so hazard capture reuses
+    it* — GPS + cached polygon tells the offline app which lake the skater is on without a
+    network round-trip.
+  - **Offline basemap tiles (F2 "Layer 3") were deferred here from Phase 2 F2 (decided
+    2026-07-15).** F2's report capture needs only *which lake* (the body cache) + GPS, so it
+    ships with **no offline basemap** and degrades the put-in pin to "drop at my current GPS
+    location." **Hazards are different:** dropping an *accurate* hazard pin wants a **legible
+    offline basemap + the lake polygon as visual reference**, so the offline tile-pack work
+    (store per-region tiles on device — a real native spike: does `@maplibre/maplibre-react-native`'s
+    offline-pack API work over our `pmtiles://` range source, or do we ship an on-device
+    mini-`.pmtiles`?) lands **here**, not in F2. The F2 body-cache module is designed to accept
+    a tile-pack field so this slots in without a rearchitecture.
+  - The buffered auto-select (a tunable ~parking/approach radius so opening from the car still
+    resolves the lake) is the same primitive hazard capture uses to bind a hazard to its body.
 
 ## Phase 10 — Weather-since strips
 - Open-Meteo "what the weather has done since this report" factual strip (D19).

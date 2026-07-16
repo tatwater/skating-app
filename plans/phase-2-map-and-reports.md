@@ -368,21 +368,80 @@ web-only glue stays in web: the datetime-**local** `<input>` round-trip and the 
 - **Verify on the Android emulator** (`Pixel_6_Android_15`) as the primary target (user's first device
   is a Pixel); iOS Simulator secondary.
 
-#### F2 — offline draft queue (D9/D30) — the hard part (separate follow-on PR)
-- **Storage (decided 2026-07-13): `expo-sqlite`** for the draft records (relational — a **list** of
-  independent drafts, each its own `idempotencyKey` + captured-photo file paths + report fields —
-  models cleanly and survives restarts) + **`expo-file-system`** for the captured photo files +
-  **`@react-native-community/netinfo`** for reconnect detection. (MMKV/`expo-network` considered;
-  sqlite chosen for the relational draft-list shape.)
-- Reconnect flush (upload photos → `create` mutation); each draft carries an `idempotencyKey` — this
-  is when the optional `reports.idempotencyKey?` schema field lands (additive, D30) and `reports.create`
-  becomes idempotent on it.
-- **Multiple concurrent drafts are a real case (not one-at-a-time):** a skater can hop **several
-  lakes in a day with no signal**, capturing a report per lake, and they all sit in the queue until
-  reconnect. So the queue is a **list** of independent drafts (each its own `idempotencyKey` +
-  photo set), not a single slot — unlike web's ephemeral single form (§E). Reconnect flushes them
-  all; a partial-failure flush must retry only the unsent ones (idempotency key prevents dupes).
-- Prompt to submit pending drafts on reconnect (D12). Maestro E2E for the capture→sync flow later.
+#### F2 — offline draft queue (D9/D30) — the hard part (separate follow-on PR, + §G docs)
+
+> **Design settled 2026-07-15 (this build).** F2 + §G share **one PR off `main`, dev-only** (prod
+> still uninitialized). The offline story splits into three layers with very different cost/risk;
+> **F2 ships Layers 1–2; Layer 3 (offline basemap tiles) is deferred to Phase 9** (documented in
+> `07-roadmap.md`). Key reframe: report capture needs only *which lake* + GPS, **not** a visible
+> basemap — so the map dependency drops out of F2 entirely.
+
+- **Layer 1 — the draft queue.**
+  - **Storage (decided 2026-07-13): `expo-sqlite`** for the draft records (relational — a **list**
+    of independent drafts, each its own `idempotencyKey` + captured-photo file paths + serialized
+    report fields — models cleanly and survives restarts) + **`expo-file-system`** for the captured
+    photo files + **`@react-native-community/netinfo`** for reconnect detection.
+  - **Drafts are fully-serialized, reopenable records** (not write-only blobs), so **offline
+    editing** (decided 2026-07-15) is a modest increment: a drafts list (edit/delete) + hydrating
+    the existing F1 `ReportForm` from a draft. The fiddly part editing forces — the **persisted-photo
+    lifecycle** (a photo added offline lives in `expo-file-system` across restarts; remove/edit must
+    not orphan files) — is largely paid for by the queue itself.
+  - **Photos are processed at capture time** (`expo-image-manipulator` resize + EXIF-strip, coord
+    read *before* the strip) and the **output copied to `expo-file-system` persistent storage** —
+    the `expo-image-picker` cache URIs can be OS-evicted over the days a draft may sit.
+  - **Idempotency must reach *through* the photo pipeline, not just guard `reports.create`
+    (2026-07-15 — the real subtlety).** A retry after a lost-ack would otherwise re-upload blobs +
+    re-create photo rows and orphan them, because `create` returns the existing report and drops the
+    new `photoIds`. Fix: **persist each photo's upload checkpoint (`storageId` → `photoId`) into the
+    sqlite draft as it lands** (the durable version of F1 `ReportForm`'s in-memory
+    `fullStorageId`/`uploadedId`), so a retry *resumes* and sends the *same* `photoIds`. This is
+    when the optional `reports.idempotencyKey?` schema field + a `by_idempotency_key` index land
+    (additive, D30); `create` reads the index before inserting, so Convex OCC serializes a
+    concurrent double-flush correctly.
+  - **Per-draft state machine** (`pending → uploading → creating → done | error`) distinguishes a
+    **transient** failure (network → auto-retry) from a **permanent** one (a `ConvexError` from
+    `validateReportInput`, or the body was removed → park in `error`, surface to the user, don't
+    loop). "Retry only the unsent" alone doesn't cover a draft the server *rejects*.
+  - **Multiple concurrent drafts are a real case:** a skater hops **several lakes in a day with no
+    signal**, one report per lake, all queued until reconnect. The queue is a **list**, not a single
+    slot (unlike web's ephemeral form, §E).
+  - **Flush triggers:** NetInfo reconnect **+ app-foreground + a manual "Sync now"**, all funneling
+    through one idempotent flush routine (NetInfo transitions can be missed). Prompt to submit
+    pending drafts on reconnect (D12). Drafts are **device-local** (lost on sign-out / app-data
+    clear) — acceptable for the alpha.
+
+- **Layer 2 — offline body auto-select (built as a reusable module; Phase 9 reuses it).**
+  - **On every `waterBodies.get`, cache the body's reference data** (polygon, centroid, name,
+    `states`, bbox) in an **LRU sqlite cache (~50 bodies)** — polygons are tiny (avg ~600 bytes;
+    Champlain worst-case ~tens of KB), so this is KBs, not MB.
+  - **Offline capture resolves the lake by GPS** (`expo-location`) against the cache via a new pure
+    `@skating/core` **buffered `pointInPolygon`** — a tunable ~parking/approach radius (start
+    ~300 m; tunable per the "don't bury constants" principle, D37/Phase 7) so **opening from the car
+    still selects the lake** (S1: access/put-ins are a dominant concern). Same primitive improves
+    the online map-open "you're at Lake X" framing and is the substrate Phase 9 hazard capture binds
+    against.
+  - **Gap-1 fallback (option A):** a draft stores `waterBodyId` when Layer 2 resolves it locally;
+    otherwise it stores the raw **GPS coord**, and a coord-only draft resolves **server-side at
+    flush** using the **existing `waterBodies` geospatial index** (tiny bbox around the coord →
+    buffered point-in-polygon) — **no new Phase-4 `reports.point` index required**.
+  - **Offline put-in pin** degrades to **"drop at my current GPS location"** (better UX standing at
+    the put-in anyway) — so F2 needs no offline basemap.
+
+- **Layer 3 — offline basemap tiles: DEFERRED to Phase 9** (decided 2026-07-15). Report capture
+  doesn't need it; accurate *hazard* pins do. A real native spike (maplibre-native offline packs vs.
+  an on-device mini-`.pmtiles` over `pmtiles://`). The Layer-2 cache is designed to accept a
+  tile-pack field so it slots in later. See `07-roadmap.md` → Phase 9.
+
+- **Testing seam.** Push the queue state machine + flush orchestration + idempotency-key gen +
+  buffered auto-select into **pure, unit-tested modules** (`@skating/core` for the geometry + queue
+  logic; `convex-test` for idempotent `create` + the coord→body resolver), leaving only the
+  sqlite/file-system/netinfo/native glue untested (F1 precedent). Maestro E2E for capture→sync later.
+
+- **Commit breakdown (one PR):** (1) convex — `idempotencyKey?` schema + index + idempotent
+  `create` + coord→body resolver (+ `convex-test`); (2) core — draft state machine, flush
+  orchestration, buffered `pointInPolygon` (+ tests); (3) mobile — Layer-2 body cache + GPS
+  auto-select; (4) mobile — draft queue (sqlite/fs persistence, photo checkpointing, flush triggers,
+  offline put-in); (5) mobile — drafts list + edit; (6) §G docs + hygiene.
 
 ### G. Docs + hygiene
 - README updates: `packages/convex` (reports/photos functions, displayScore/minVisibleZoom),
@@ -577,3 +636,15 @@ doc once web is proven:
   the spike so it doesn't reintroduce the wide-zoom crash it's meant to prevent.
 - **Hazard seam (Phase 9)** — don't paint the report data path into a corner that makes in-polygon
   hazard geometry hard to add later; `hazardIdsCreated` already exists in the schema, leave it be.
+
+
+
+
+
+
+
+It's time to finish Phase 2! Please review all the planning docs, specifically [@phase-2-map-and-reports.md](file:///Users/teagan/Code/skating/plans/phase-2-map-and-reports.md) – the only parts I think we have left is §F2 and §G, but once you've done those let's perform a full code review of all of the documentation and code files related to all of Phase 2 (and 2.5) just to be sure.
+
+Looking at the plan for §F2, do you have everything you need to get started? What questions do you have for me? Anything feel like it hasn't been fully/properly thought through yet? I'm here to help, please use me as a resource!
+
+For bonus points, can you please write a human-targeted markdown file guide in [@docs](file:///Users/teagan/Code/skating/docs/) that outlines the full end-to-end process of adding a new region to the map? Essentially what we did in 2.5 together (largely you ran all the commands). This way future contributors to the project will have an easier time expanding our coverage to new places.
