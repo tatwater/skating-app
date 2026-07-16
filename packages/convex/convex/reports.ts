@@ -4,8 +4,9 @@
  * The validation + normalization contract lives in `@skating/core` `validateReportInput` and is
  * **re-enforced here** at the trust boundary (D37) — the client runs the same check before submit,
  * but the server never trusts it. **All reports are public (D13)** — there is no visibility field;
- * minors can't post at all (D41). Reads gate on moderation + blocks via `canViewReport`; the viewer
- * relationship carries only a block flag, self/none until blocks land (Phase 3).
+ * minors can't post at all (D41). Reads gate on **moderation only** — a block never hides a report
+ * (D3, safety-first); the block set instead annotates a blocked author's line (a Phase-3 "Blocked"
+ * chip, Workstream B/C) and hides comments/profiles, never a report.
  */
 
 import {
@@ -24,9 +25,9 @@ import {
 import { ConvexError, v } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
-import { getCurrentProfile, requireProfile } from './lib/auth'
+import { requireProfile } from './lib/auth'
 import { isListed } from './lib/listing'
-import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
+import { getViewableReport } from './lib/reportVisibility'
 import { latLng, literals } from './lib/validators'
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
@@ -200,28 +201,19 @@ export const create = mutation({
 })
 
 /**
- * A water body's report feed — newest **skate time** first (D28). All reports are public (D13), so
- * the filter is moderation (excludes hidden/removed, D32) + blocks; the block seam is `canViewReport`.
+ * A water body's report feed — newest **skate time** first (D28). All reports are public (D13) and a
+ * block never hides a report (D3), so the filter is moderation-only (excludes hidden/removed, D32).
+ * The blocked-author "Blocked"-chip annotation is layered on in Workstream B.
  */
 export const listByWaterBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    const viewer = await getCurrentProfile(ctx)
-    const viewerId = viewer?._id ?? ''
-    // Block source shared with `getViewableReport` (`get` + `photos.getUrls`) — Phase 3 fills it in
-    // once, and all three report-read paths gain the block filter together (D32). Loaded once here,
-    // then the sync filter checks membership per row.
-    const blocked = await loadBlockedAuthorIds(ctx, viewerId)
     const reports = await ctx.db
       .query('reports')
       .withIndex('by_water_body_skate_time', (q) => q.eq('waterBodyId', waterBodyId))
       .order('desc')
       .collect()
-    return reports.filter(
-      (r) =>
-        r.moderationStatus === 'visible' &&
-        canViewReport(viewerId, r.authorId, { blocked: blocked.has(r.authorId) }),
-    )
+    return reports.filter((r) => canViewReport(r.moderationStatus))
   },
 })
 

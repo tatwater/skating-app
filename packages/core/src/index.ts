@@ -1,5 +1,7 @@
 export * from './age'
 export * from './authRoute'
+export * from './block'
+export * from './comment'
 export * from './display'
 export * from './dob'
 export * from './draftQueue'
