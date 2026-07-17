@@ -198,10 +198,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
     api.photos.getUrls,
     report && report.photoIds.length > 0 ? { reportId: report._id } : 'skip',
   )
-  // The viewer's own blocks, to de-emphasize a blocked author's report line (D3). Skipped when
-  // signed out (the query requires a profile). A block never hides the report itself.
+  // The viewer's block set (both directions, D32), to de-emphasize a blocked author's report line
+  // (D3). Skipped when signed out (the query requires a profile). A block never hides the report.
   const me = useQuery(api.profiles.current, {})
-  const myBlocks = useQuery(api.blocks.myBlocks, me ? {} : 'skip')
+  const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip')
   const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection()
 
   // Fly to the report's put-in point as soon as the report loads.
@@ -238,7 +238,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
     )
   }
 
-  const authorBlocked = (myBlocks ?? []).some((b) => b.userId === report.authorId)
+  const authorBlocked = (blockedIds ?? []).includes(report.authorId)
   const isOwn = me?._id === report.authorId
 
   return (

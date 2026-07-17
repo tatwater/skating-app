@@ -222,6 +222,9 @@ export default defineSchema({
   })
     .index('by_water_body_skate_time', ['waterBodyId', 'skateTime'])
     .index('by_author', ['authorId'])
+    // Newest-first author history for the profile page, bounded by a `.take()` on skate time so a
+    // prolific reporter's page never `.collect()`s an unbounded set (D13).
+    .index('by_author_skate_time', ['authorId', 'skateTime'])
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (F2/D30)
 
   comments: defineTable({

@@ -98,3 +98,19 @@ describe('blocks.myBlocks', () => {
     expect(list[0]).toMatchObject({ username: 'c', displayName: 'c' })
   })
 })
+
+describe('blocks.blockedUserIds', () => {
+  test('unions both directions — outgoing AND incoming blocks (D32)', async () => {
+    const t = convexTest(schema, modules)
+    const me = await seedUser(t, 'me')
+    const iBlocked = await seedUser(t, 'iBlocked')
+    const blockedMe = await seedUser(t, 'blockedMe')
+    const unrelated = await seedUser(t, 'unrelated')
+    await me.as.mutation(api.blocks.block, { targetUserId: iBlocked.id }) // outgoing
+    await blockedMe.as.mutation(api.blocks.block, { targetUserId: me.id }) // incoming
+
+    const ids = await me.as.query(api.blocks.blockedUserIds, {})
+    expect([...ids].sort()).toEqual([iBlocked.id, blockedMe.id].sort())
+    expect(ids).not.toContain(unrelated.id)
+  })
+})

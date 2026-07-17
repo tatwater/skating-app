@@ -124,6 +124,8 @@ export function BlockButton({
 }) {
   const block = useMutation(api.blocks.block)
   const [confirming, setConfirming] = useState(false)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   if (!confirming) {
     return (
@@ -131,6 +133,21 @@ export function BlockButton({
         Block
       </Button>
     )
+  }
+
+  // Await the mutation and surface a failure inline (mirrors web): on success the parent profile
+  // query re-runs and this control unmounts; on error we stay in the confirm state with a message
+  // rather than firing-and-forgetting, so blocking a harasser can't fail silently.
+  const confirm = async () => {
+    setError(null)
+    setPending(true)
+    try {
+      await block({ targetUserId: targetUserId as Id<'profiles'> })
+    } catch {
+      setError('Could not block. Please try again.')
+    } finally {
+      setPending(false)
+    }
   }
 
   return (
@@ -146,12 +163,14 @@ export function BlockButton({
         Block {displayName}? You won’t see each other’s profiles or comments. Their ice reports stay
         on the map.
       </Text>
+      {error ? <Text color="$danger">{error}</Text> : null}
       <XStack gap="$2">
         <Button
           size="$2"
           backgroundColor="$danger"
           color="$dangerForeground"
-          onPress={() => block({ targetUserId: targetUserId as Id<'profiles'> })}
+          disabled={pending}
+          onPress={confirm}
         >
           Block
         </Button>

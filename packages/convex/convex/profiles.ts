@@ -246,6 +246,12 @@ export const updateProfile = mutation({
   },
 })
 
+/**
+ * How many recent reports a public profile shows — and the window `reportCount`/`commentCount` are
+ * counted over. Bounds the profile read so a prolific reporter's page never scans an unbounded set.
+ */
+const PROFILE_HISTORY_LIMIT = 50
+
 /** One entry in a public profile's report history — the report plus its lake name for the card. */
 interface ProfileReport {
   report: Doc<'reports'>
@@ -314,25 +320,30 @@ export const getPublicProfile = query({
       return { ...base, private: true }
     }
 
-    // Visible report history (moderation-visible only), newest skate time first.
+    // Visible report history, newest skate time first — **bounded** (D13). We `.take()` a small
+    // window off the skate-time index rather than `.collect()`ing every report, so a prolific
+    // reporter's page can't trigger an arbitrarily large read. `reportCount`/`commentCount` are
+    // therefore this recent window's counts (`PROFILE_HISTORY_LIMIT+` when the cap is hit), not a
+    // full lifetime tally — the definitive contribution metric is the Phase-6 trust score.
     const authored = await ctx.db
       .query('reports')
-      .withIndex('by_author', (q) => q.eq('authorId', target._id))
-      .collect()
-    const visibleReports = authored
-      .filter((r) => r.moderationStatus === 'visible')
-      .sort((a, b) => b.skateTime - a.skateTime)
-    const reports: ProfileReport[] = []
-    for (const report of visibleReports.slice(0, 50)) {
-      const body = await ctx.db.get(report.waterBodyId)
-      reports.push({ report, waterBodyName: body?.name ?? 'Unknown water body' })
-    }
+      .withIndex('by_author_skate_time', (q) => q.eq('authorId', target._id))
+      .order('desc')
+      .take(PROFILE_HISTORY_LIMIT + 1)
+    const visibleReports = authored.filter((r) => r.moderationStatus === 'visible')
+    const reports: ProfileReport[] = await Promise.all(
+      visibleReports.slice(0, PROFILE_HISTORY_LIMIT).map(async (report) => {
+        const body = await ctx.db.get(report.waterBodyId)
+        return { report, waterBodyName: body?.name ?? 'Unknown water body' }
+      }),
+    )
 
-    // Visible comment count (by_author).
+    // Visible comment count over the same bounded window (by_author, newest first).
     const authoredComments = await ctx.db
       .query('comments')
       .withIndex('by_author', (q) => q.eq('authorId', target._id))
-      .collect()
+      .order('desc')
+      .take(PROFILE_HISTORY_LIMIT + 1)
     const commentCount = authoredComments.filter((c) => c.moderationStatus === 'visible').length
 
     return {

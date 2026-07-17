@@ -42,7 +42,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   // The viewer's own blocks, to de-emphasize a blocked author's report line (D3). A block never
   // hides the report itself. Skipped when signed out (the query requires a profile).
   const me = useQuery(api.profiles.current, {})
-  const myBlocks = useQuery(api.blocks.myBlocks, me ? {} : 'skip')
+  const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip')
   const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection()
 
   // Fly to the report's put-in point as soon as the report loads.
@@ -79,7 +79,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
   const bodyName = body?.available ? body.body.name : undefined
   const authorName = authors?.[report.authorId]?.displayName
-  const authorBlocked = (myBlocks ?? []).some((b) => b.userId === report.authorId)
+  const authorBlocked = (blockedIds ?? []).includes(report.authorId)
   const isOwn = me?._id === report.authorId
   const readings = report.iceThickness?.readings ?? []
   const conditions = report.conditions

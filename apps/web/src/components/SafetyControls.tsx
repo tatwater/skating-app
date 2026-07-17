@@ -154,10 +154,29 @@ export function BlockButton({
   displayName: string
 }) {
   const block = useMutation(api.blocks.block)
+  const [open, setOpen] = useState(false)
+  const [pending, setPending] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Controlled dialog: only close on success. Wrapping the confirm in `DialogClose` closed the
+  // dialog synchronously — before the mutation resolved — so a failure's `setError` painted a
+  // hidden/unmounted dialog and the user saw the block silently "succeed". Now a throw keeps the
+  // dialog open with the error, and blocking a harasser can't fail invisibly.
+  const confirm = async () => {
+    setError(null)
+    setPending(true)
+    try {
+      await block({ targetUserId: targetUserId as Id<'profiles'> })
+      setOpen(false)
+    } catch {
+      setError('Could not block. Please try again.')
+    } finally {
+      setPending(false)
+    }
+  }
+
   return (
-    <Dialog>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger render={<Button variant="outline" size="sm" />}>Block</DialogTrigger>
       <DialogContent>
         <DialogHeader>
@@ -170,23 +189,9 @@ export function BlockButton({
         {error ? <p className="text-destructive text-sm">{error}</p> : null}
         <DialogFooter>
           <DialogClose render={<Button variant="outline" />}>Cancel</DialogClose>
-          <DialogClose
-            render={
-              <Button
-                variant="destructive"
-                onClick={async () => {
-                  setError(null)
-                  try {
-                    await block({ targetUserId: targetUserId as Id<'profiles'> })
-                  } catch {
-                    setError('Could not block. Please try again.')
-                  }
-                }}
-              />
-            }
-          >
+          <Button variant="destructive" onClick={confirm} disabled={pending}>
             Block
-          </DialogClose>
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

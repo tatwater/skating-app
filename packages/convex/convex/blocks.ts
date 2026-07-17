@@ -12,6 +12,7 @@ import { canBlock } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import { mutation, query } from './_generated/server'
 import { requireProfile } from './lib/auth'
+import { loadBlockedAuthorIds } from './lib/reportVisibility'
 
 /**
  * Block a user (D32). `requireProfile`; reject self-block; idempotent — a re-block returns the
@@ -92,5 +93,20 @@ export const myBlocks = query({
       })
     }
     return result
+  },
+})
+
+/**
+ * The viewer's full block set as an id array — unioned across **both** directions (I blocked them OR
+ * they blocked me, D32), the very set `loadBlockedAuthorIds` builds for comment/profile hiding. The
+ * report author-line "Blocked" chip reads this so it fires on an *incoming* block too, not just the
+ * outgoing edges `myBlocks` (the Settings list) exposes — otherwise a viewer whose author blocked
+ * *them* would see the author's comments hidden but no chip explaining why (a presentation gap).
+ */
+export const blockedUserIds = query({
+  args: {},
+  handler: async (ctx) => {
+    const profile = await requireProfile(ctx)
+    return [...(await loadBlockedAuthorIds(ctx, profile._id))]
   },
 })
