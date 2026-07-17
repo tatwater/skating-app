@@ -14,8 +14,11 @@ import {
 import { Link } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
 import { useEffect } from 'react'
+import { Comments } from './CommentThread'
 import { DetailSkeleton, UnavailableState } from './DrawerStates'
 import { useMapSelection } from './MapSelectionContext'
+import { ModeratorActions } from './ModeratorActions'
+import { BlockedChip, FlagDialog } from './SafetyControls'
 import { Badge } from './ui/badge'
 import { Separator } from './ui/separator'
 import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet'
@@ -25,6 +28,8 @@ export interface ReportViewData {
   waterBodyId: string
   bodyName?: string
   authorName?: string
+  /** The author is in the viewer's block set — de-emphasize the line + show a "Blocked" chip (D3). */
+  authorBlocked?: boolean
   skateTime: number
   skateQuality?: SkateQuality
   iceTypes: string[]
@@ -51,7 +56,13 @@ export function ReportView({ data }: { data: ReportViewData }) {
         <SheetTitle>{data.bodyName ?? 'Report'}</SheetTitle>
         <SheetDescription>
           {formatSkateTime(data.skateTime)}
-          {data.authorName ? ` · by ${data.authorName}` : ''}
+          {data.authorName && !data.authorBlocked ? ` · by ${data.authorName}` : null}
+          {data.authorName && data.authorBlocked ? (
+            <>
+              {' · by '}
+              <span className="text-foreground-muted">{data.authorName}</span> <BlockedChip />
+            </>
+          ) : null}
         </SheetDescription>
       </SheetHeader>
       <div className="flex flex-col gap-4 px-4 pb-4">
@@ -187,6 +198,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
     api.photos.getUrls,
     report && report.photoIds.length > 0 ? { reportId: report._id } : 'skip',
   )
+  // The viewer's own blocks, to de-emphasize a blocked author's report line (D3). Skipped when
+  // signed out (the query requires a profile). A block never hides the report itself.
+  const me = useQuery(api.profiles.current, {})
+  const myBlocks = useQuery(api.blocks.myBlocks, me ? {} : 'skip')
   const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection()
 
   // Fly to the report's put-in point as soon as the report loads.
@@ -223,22 +238,36 @@ export function ReportDetail({ reportId }: { reportId: string }) {
     )
   }
 
+  const authorBlocked = (myBlocks ?? []).some((b) => b.userId === report.authorId)
+  const isOwn = me?._id === report.authorId
+
   return (
-    <ReportView
-      data={{
-        waterBodyId: report.waterBodyId,
-        bodyName: body?.available ? body.body.name : undefined,
-        authorName: authors?.[report.authorId]?.displayName,
-        skateTime: report.skateTime,
-        skateQuality: report.skateQuality,
-        iceTypes: report.iceTypes,
-        surfaceTags: report.surfaceTags,
-        iceThickness: report.iceThickness,
-        snowCoverCm: report.snowCoverCm,
-        conditions: report.conditions,
-        notes: report.notes,
-        photos: photos ?? [],
-      }}
-    />
+    <>
+      <ReportView
+        data={{
+          waterBodyId: report.waterBodyId,
+          bodyName: body?.available ? body.body.name : undefined,
+          authorName: authors?.[report.authorId]?.displayName,
+          authorBlocked,
+          skateTime: report.skateTime,
+          skateQuality: report.skateQuality,
+          iceTypes: report.iceTypes,
+          surfaceTags: report.surfaceTags,
+          iceThickness: report.iceThickness,
+          snowCoverCm: report.snowCoverCm,
+          conditions: report.conditions,
+          notes: report.notes,
+          photos: photos ?? [],
+        }}
+      />
+      {/* Safety tools on the report (D32): flag for anyone but the author; moderator takedown. */}
+      {me && !isOwn ? (
+        <div className="flex flex-wrap gap-1 px-4 pb-2">
+          <FlagDialog targetType="report" targetId={report._id} label="Flag report" />
+          <ModeratorActions targetType="report" targetId={report._id} />
+        </div>
+      ) : null}
+      <Comments reportId={report._id} />
+    </>
   )
 }
