@@ -204,6 +204,8 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
   their lakes with a real basemap, served from R2.
 
 ## Phase 3 — Comments + profiles + user-facing safety tools
+> **Detailed build plan:** [`phase-3-community-and-safety.md`](./phase-3-community-and-safety.md)
+> (design settled 2026-07-16 — the four "don't code into a corner" calls are recorded there).
 *(Was "Social graph + comments" — the **social graph was removed 2026-07-15 (D13)**. No
 follows/friends. What remains is the community-interaction + safety layer, kept ahead of
 the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
@@ -212,13 +214,16 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - **Profiles (D13):** public profiles are **searchable by name** and show name, photo, town/state,
   **bio**, #reports/#comments, trust score (D50), and full public report history; **private profiles
   are name + photo only** and not searchable (all minors; adults who opt in). No follow/friend graph.
-- **User-facing safety tools (D32):** **block/mute** users; **flag/report** reports/comments/
-  photos/users for abuse (incl. `unsafe_false_report`). Public UGC without block/flag is
-  unacceptable, so these ship here. With no follow graph, a block is pure "hide this person."
+- **User-facing safety tools (D32):** **block** users (block == "mute" — one feature); **flag/report**
+  reports/comments/photos/users for abuse (incl. `unsafe_false_report`). Public UGC without block/flag
+  is unacceptable, so these ship here.
+- **A block hides the person's profile + comments + interaction, but NOT their reports (2026-07-16,
+  safety-first D3):** an interpersonal block must never pull safety observations off the map/feed. A
+  blocked author's report stays visible with a de-emphasized author line + a "Blocked" chip. (This
+  refines the earlier "moderation-visible + not-blocked" note: report reads are **moderation-visible
+  only**; the block set gates comments/profiles + drives author de-emphasis.)
 - A minimal moderator **hide/remove** path (founder) so flagged content can be taken
   down immediately, even before the full operator surface (Phase 7).
-- Report reads are trivial now — **moderation-visible + not-blocked**; there is no per-report
-  visibility to resolve (D13).
 - **Done:** comment threads work; profiles are viewable/searchable (privacy respected);
   users can block/mute and flag; content can be quickly taken down.
 

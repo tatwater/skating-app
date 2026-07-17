@@ -14,8 +14,11 @@ import * as WebBrowser from 'expo-web-browser'
 import { useEffect } from 'react'
 import { Image, Pressable } from 'react-native'
 import { H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui'
+import { Comments } from './CommentThread'
 import { Badge, Chips, DetailLoading, Section, Unavailable } from './detailUi'
 import { useMapSelection } from './MapSelectionContext'
+import { ModeratorActions } from './ModeratorActions'
+import { BlockedChip, FlagControl } from './SafetyControls'
 
 /**
  * Report detail drawer (§F, D42/D47) for `/report/[id]`, the mobile mirror of web's `ReportDetail`.
@@ -36,6 +39,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
     api.photos.getUrls,
     report && report.photoIds.length > 0 ? { reportId: report._id } : 'skip',
   )
+  // The viewer's own blocks, to de-emphasize a blocked author's report line (D3). A block never
+  // hides the report itself. Skipped when signed out (the query requires a profile).
+  const me = useQuery(api.profiles.current, {})
+  const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip')
   const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection()
 
   // Fly to the report's put-in point as soon as the report loads.
@@ -72,6 +79,8 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
   const bodyName = body?.available ? body.body.name : undefined
   const authorName = authors?.[report.authorId]?.displayName
+  const authorBlocked = (blockedIds ?? []).includes(report.authorId)
+  const isOwn = me?._id === report.authorId
   const readings = report.iceThickness?.readings ?? []
   const conditions = report.conditions
     ? formatConditions({
@@ -84,10 +93,13 @@ export function ReportDetail({ reportId }: { reportId: string }) {
     <YStack gap="$3">
       <YStack gap="$1">
         <H4 color="$foreground">{bodyName ?? 'Report'}</H4>
-        <Text color="$foregroundMuted">
-          {formatSkateTime(report.skateTime)}
-          {authorName ? ` · by ${authorName}` : ''}
-        </Text>
+        <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
+          <Text color="$foregroundMuted">
+            {formatSkateTime(report.skateTime)}
+            {authorName ? ` · by ${authorName}` : ''}
+          </Text>
+          {authorBlocked ? <BlockedChip /> : null}
+        </XStack>
       </YStack>
 
       {report.skateQuality ? (
@@ -182,6 +194,16 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       >
         View the lake
       </Text>
+
+      {/* Safety tools on the report (D32): flag for anyone but the author; moderator takedown. */}
+      {me && !isOwn ? (
+        <XStack gap="$2" flexWrap="wrap" alignItems="flex-start">
+          <FlagControl targetType="report" targetId={report._id} label="Flag report" />
+          <ModeratorActions targetType="report" targetId={report._id} />
+        </XStack>
+      ) : null}
+
+      <Comments reportId={report._id} />
     </YStack>
   )
 }

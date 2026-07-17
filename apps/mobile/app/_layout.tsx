@@ -39,6 +39,11 @@ function RootNavigator() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Protected guard={route === 'app'}>
         <Stack.Screen name="(tabs)" />
+        {/* Viewable profile (D13) — pushed from an author line, report, or profile search. */}
+        <Stack.Screen
+          name="u/[username]"
+          options={{ presentation: 'modal', headerShown: true, title: 'Profile' }}
+        />
         <Stack.Screen
           name="about"
           options={{ presentation: 'modal', headerShown: true, title: 'About' }}

@@ -43,6 +43,7 @@ notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D
   bountyRequest,
   hazardConfirmation, bountyFulfilled,
   reportRated,               // someone rated your report helpful/unhelpful (D17)
+  reportCommented,           // someone commented on your report (D21; Phase 3)
   contentFlagResolved: boolean
 }                            // keys mirror notifications.type 1:1 (D16 invariant)
 dateOfBirth: timestamp       // collected at signup (D41); age gate (≥16) + minor status
@@ -381,6 +382,7 @@ _id
 userId: ref(profiles)           // recipient
 type: enum(activity_detected, bounty_request,
            hazard_confirmation, bounty_fulfilled, report_rated,
+           report_commented,          // someone commented on your report (D21; Phase 3)
            content_flag_resolved)
 payload: { ...refs... }      // e.g. reportId / hazardId / bountyId / actorUserId
 readAt?: timestamp

@@ -121,6 +121,7 @@ export const NOTIFICATION_TYPES = [
   'hazard_confirmation',
   'bounty_fulfilled',
   'report_rated',
+  'report_commented', // someone commented on your report (D21; Phase 3) — delivery deferred
   'content_flag_resolved',
 ] as const
 export const NOTIFICATION_PREF_KEYS = [
@@ -129,6 +130,7 @@ export const NOTIFICATION_PREF_KEYS = [
   'hazardConfirmation',
   'bountyFulfilled',
   'reportRated',
+  'reportCommented', // mirrors `report_commented` (D21; Phase 3) — toggle exists, delivery deferred
   'contentFlagResolved',
 ] as const
 

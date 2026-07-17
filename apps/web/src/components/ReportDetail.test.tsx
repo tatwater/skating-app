@@ -114,4 +114,19 @@ describe('ReportView', () => {
     expect(screen.queryByText('Ice types')).not.toBeInTheDocument()
     expect(screen.queryByText('Thickness')).not.toBeInTheDocument()
   })
+
+  it('shows a "Blocked" chip on a blocked author’s report — content still renders (D3)', async () => {
+    renderInDrawer(<ReportView data={{ ...FIXTURE, authorBlocked: true }} />)
+    // The report content is unaffected by the block…
+    expect(await screen.findByText('Lake Morey')).toBeInTheDocument()
+    expect(screen.getByText('Best ice of the year.')).toBeInTheDocument()
+    // …but the author line carries the chip so the viewer sees the block is working.
+    expect(screen.getByText('Blocked')).toBeInTheDocument()
+  })
+
+  it('shows no "Blocked" chip for a normal author', async () => {
+    renderInDrawer(<ReportView data={FIXTURE} />)
+    await screen.findByText('Lake Morey')
+    expect(screen.queryByText('Blocked')).not.toBeInTheDocument()
+  })
 })

@@ -18,6 +18,7 @@ const NOTIF_PREFS = {
   hazardConfirmation: true,
   bountyFulfilled: true,
   reportRated: true,
+  reportCommented: true,
   contentFlagResolved: true,
 }
 

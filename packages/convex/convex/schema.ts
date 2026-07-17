@@ -66,6 +66,10 @@ export default defineSchema({
     username: v.string(), // unique, for search (searchable by name, D13)
     homeCoord: v.optional(latLng), // PRIVATE — filter input only (D11); set at onboarding
     homeTownLabel: v.optional(v.string()), // optional PUBLIC label (D11)
+    bio: v.optional(v.string()), // optional PUBLIC blurb, shown only on a public profile (D13)
+    // Avatar mirrored from Clerk's `imageUrl` at `upsertFromClerk` (Phase 3 decision #2) — no upload
+    // pipeline; users manage it via Clerk's own UI. Optional ⇒ migration-free; scrubbed on deletion.
+    profileImageUrl: v.optional(v.string()),
     driveTimePrefMinutes: v.number(), // e.g. 30/60/90 (D18)
     cachedIsochrone: v.optional(geoJson), // recomputed on home/pref change (D18)
     cachedIsochroneAt: v.optional(v.number()),
@@ -86,7 +90,13 @@ export default defineSchema({
   })
     .index('by_clerk_user_id', ['clerkUserId'])
     .index('by_username', ['username'])
-    .index('by_status', ['status']),
+    .index('by_status', ['status'])
+    // Name search for public profiles (D13). The filter field lets the query exclude private
+    // profiles in-index (they're not searchable); exact `@handle` lookups keep using `by_username`.
+    .searchIndex('search_profile', {
+      searchField: 'displayName',
+      filterFields: ['profileVisibility'],
+    }),
 
   activityConnections: defineTable({
     userId: v.id('profiles'),
@@ -212,6 +222,9 @@ export default defineSchema({
   })
     .index('by_water_body_skate_time', ['waterBodyId', 'skateTime'])
     .index('by_author', ['authorId'])
+    // Newest-first author history for the profile page, bounded by a `.take()` on skate time so a
+    // prolific reporter's page never `.collect()`s an unbounded set (D13).
+    .index('by_author_skate_time', ['authorId', 'skateTime'])
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (F2/D30)
 
   comments: defineTable({
@@ -223,7 +236,9 @@ export default defineSchema({
     moderationStatus: literals(MODERATION_STATUSES),
     editedAt: v.optional(v.number()),
     createdAt: v.number(),
-  }).index('by_report', ['reportId']),
+  })
+    .index('by_report', ['reportId'])
+    .index('by_author', ['authorId']), // profile #comments count + enumerate a user's comments (D13)
 
   hazards: defineTable({
     waterBodyId: v.id('waterBodies'),

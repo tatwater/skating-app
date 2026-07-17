@@ -1,7 +1,7 @@
 import { isMinor, RISK_ACK_VERSION } from '@skating/core'
 import { convexTest } from 'convex-test'
 import { describe, expect, test } from 'vitest'
-import { api } from './_generated/api'
+import { api, internal } from './_generated/api'
 import schema from './schema'
 
 // Vite-glob of every function module, handed to convex-test (required in a monorepo
@@ -450,5 +450,220 @@ describe('profiles.publicByIds', () => {
     expect(result[bob]).toEqual({ username: 'bob', displayName: 'Bob' })
     expect(result[ghost]).toBeUndefined()
     expect(Object.keys(result)).toHaveLength(2)
+  })
+})
+
+/** Provision an adult profile via the real mutation path and return its id + identity handle. */
+async function provision(
+  t: ReturnType<typeof convexTest>,
+  subject: string,
+  username: string,
+  dob = ADULT_DOB,
+) {
+  const as = t.withIdentity({ subject })
+  const id = await as.mutation(
+    api.profiles.upsertFromClerk,
+    withAck({ displayName: username, username, dateOfBirth: dob }),
+  )
+  return { id, as }
+}
+
+describe('profiles.updateProfile (D13/D41)', () => {
+  test('an adult can edit bio + town and toggle visibility', async () => {
+    const t = convexTest(schema, modules)
+    const { id, as } = await provision(t, 'clerk_a', 'ada')
+    await as.mutation(api.profiles.updateProfile, {
+      bio: '  loves black ice  ',
+      homeTownLabel: '  Norwich,   VT ',
+      profileVisibility: 'private',
+    })
+    const p = await t.run((ctx) => ctx.db.get(id))
+    expect(p?.bio).toBe('loves black ice') // normalized
+    expect(p?.homeTownLabel).toBe('Norwich, VT')
+    expect(p?.profileVisibility).toBe('private')
+  })
+
+  test('clearing bio/town removes the field', async () => {
+    const t = convexTest(schema, modules)
+    const { id, as } = await provision(t, 'clerk_a', 'ada')
+    await as.mutation(api.profiles.updateProfile, { bio: 'hi', homeTownLabel: 'Stowe' })
+    await as.mutation(api.profiles.updateProfile, { bio: '', homeTownLabel: '   ' })
+    const p = await t.run((ctx) => ctx.db.get(id))
+    expect(p?.bio).toBeUndefined()
+    expect(p?.homeTownLabel).toBeUndefined()
+  })
+
+  test('a minor cannot set their profile public (D41)', async () => {
+    const t = convexTest(schema, modules)
+    // Minors provision as private; upsert forces it. updateProfile must refuse public.
+    const { as } = await provision(t, 'clerk_teen', 'teen', MINOR_DOB)
+    await expect(
+      as.mutation(api.profiles.updateProfile, { profileVisibility: 'public' }),
+    ).rejects.toThrow(/private profile/i)
+  })
+
+  test('rejects an over-long bio', async () => {
+    const t = convexTest(schema, modules)
+    const { as } = await provision(t, 'clerk_a', 'ada')
+    await expect(as.mutation(api.profiles.updateProfile, { bio: 'a'.repeat(501) })).rejects.toThrow(
+      /too long/i,
+    )
+  })
+})
+
+describe('profiles.getPublicProfile (D13)', () => {
+  test('returns the full public payload with no PII, incl. visible report history', async () => {
+    const t = convexTest(schema, modules)
+    const { id, as } = await provision(t, 'clerk_a', 'ada')
+    await as.mutation(api.profiles.updateProfile, {
+      bio: 'ADK skater',
+      homeTownLabel: 'Norwich, VT',
+    })
+
+    // Seed a visible + a hidden report so counts/history reflect moderation.
+    const waterBodyId = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Morey',
+        type: 'lake' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [1, 0],
+              [0, 0],
+            ],
+          ],
+        },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.5, lng: 0.5 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )
+    const mkReport = (moderationStatus: 'visible' | 'hidden') => {
+      const now = Date.now()
+      return t.run((ctx) =>
+        ctx.db.insert('reports', {
+          authorId: id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateTime: now,
+          reportTime: now,
+          source: 'native' as const,
+          iceTypes: ['black_ice' as const],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus,
+          hazardIdsCreated: [],
+          createdAt: now,
+          updatedAt: now,
+        }),
+      )
+    }
+    await mkReport('visible')
+    await mkReport('hidden')
+
+    const profile = await t.query(api.profiles.getPublicProfile, { username: 'ada' })
+    expect(profile).not.toBeNull()
+    if (!profile || profile.private) throw new Error('expected public profile')
+    expect(profile.bio).toBe('ADK skater')
+    expect(profile.homeTownLabel).toBe('Norwich, VT')
+    expect(profile.reputationPoints).toBe(0) // trust score renders 0 until Phase 6
+    expect(profile.reportCount).toBe(1) // only the visible report
+    expect(profile.reports).toHaveLength(1)
+    expect(profile.reports[0]?.waterBodyName).toBe('Lake Morey')
+    // No PII leaks in the payload.
+    expect(JSON.stringify(profile)).not.toContain('dateOfBirth')
+    expect(JSON.stringify(profile)).not.toContain('homeCoord')
+  })
+
+  test('a private profile returns name + avatar only to others', async () => {
+    const t = convexTest(schema, modules)
+    const { as } = await provision(t, 'clerk_a', 'ada')
+    await as.mutation(api.profiles.updateProfile, { bio: 'secret', profileVisibility: 'private' })
+    await provision(t, 'clerk_v', 'viewer')
+
+    const seen = await t
+      .withIdentity({ subject: 'clerk_v' })
+      .query(api.profiles.getPublicProfile, { username: 'ada' })
+    expect(seen).toMatchObject({ private: true, username: 'ada', displayName: 'ada' })
+    expect(JSON.stringify(seen)).not.toContain('secret') // bio not exposed
+  })
+
+  test('owner sees their own private profile in full', async () => {
+    const t = convexTest(schema, modules)
+    const { as } = await provision(t, 'clerk_a', 'ada')
+    await as.mutation(api.profiles.updateProfile, { bio: 'mine', profileVisibility: 'private' })
+    const own = await as.query(api.profiles.getPublicProfile, { username: 'ada' })
+    if (!own || own.private) throw new Error('owner should see full profile')
+    expect(own.bio).toBe('mine')
+    expect(own.isSelf).toBe(true)
+  })
+
+  test('a bidirectional block hides the profile both ways (D32)', async () => {
+    const t = convexTest(schema, modules)
+    const a = await provision(t, 'clerk_a', 'ada')
+    const b = await provision(t, 'clerk_b', 'bob')
+    await a.as.mutation(api.blocks.block, { targetUserId: b.id })
+    // a can't see b…
+    expect(await a.as.query(api.profiles.getPublicProfile, { username: 'bob' })).toBeNull()
+    // …and b can't see a (block hides both directions).
+    expect(await b.as.query(api.profiles.getPublicProfile, { username: 'ada' })).toBeNull()
+  })
+
+  test('a deleted account is not found', async () => {
+    const t = convexTest(schema, modules)
+    const { id } = await provision(t, 'clerk_a', 'ada')
+    await t.run((ctx) => ctx.db.patch(id, { status: 'deleted' }))
+    expect(await t.query(api.profiles.getPublicProfile, { username: 'ada' })).toBeNull()
+  })
+})
+
+describe('profiles.searchProfiles (D13)', () => {
+  test('finds public profiles by name and excludes private ones', async () => {
+    const t = convexTest(schema, modules)
+    await provision(t, 'clerk_a', 'ada') // displayName 'ada', public
+    const b = await provision(t, 'clerk_b', 'bob')
+    await b.as.mutation(api.profiles.updateProfile, { profileVisibility: 'private' })
+
+    const forAda = await t.query(api.profiles.searchProfiles, { query: 'ada' })
+    expect(forAda.map((r) => r.username)).toContain('ada')
+    const forBob = await t.query(api.profiles.searchProfiles, { query: 'bob' })
+    expect(forBob).toHaveLength(0) // private → not searchable
+  })
+
+  test('empty query returns nothing', async () => {
+    const t = convexTest(schema, modules)
+    await provision(t, 'clerk_a', 'ada')
+    expect(await t.query(api.profiles.searchProfiles, { query: '   ' })).toHaveLength(0)
+  })
+
+  test('excludes profiles the viewer has blocked', async () => {
+    const t = convexTest(schema, modules)
+    const a = await provision(t, 'clerk_a', 'ada')
+    const b = await provision(t, 'clerk_b', 'bob')
+    await a.as.mutation(api.blocks.block, { targetUserId: b.id })
+    const results = await a.as.query(api.profiles.searchProfiles, { query: 'bob' })
+    expect(results).toHaveLength(0)
+  })
+})
+
+describe('profiles.backfillNotificationPrefs', () => {
+  // The positive branch (patching a row that lacks `reportCommented`) can't be exercised under
+  // convex-test: schema validation forbids writing a row missing a required pref key, so every
+  // seeded profile already has it. We assert the run is a safe no-op — profiles provisioned through
+  // the mutation path already carry `reportCommented: true` via `DEFAULT_NOTIFICATION_PREFS`.
+  test('is a no-op when every profile already has the key', async () => {
+    const t = convexTest(schema, modules)
+    await provision(t, 'clerk_a', 'ada')
+    await provision(t, 'clerk_b', 'bob')
+    const res = await t.mutation(internal.profiles.backfillNotificationPrefs, {})
+    expect(res).toEqual({ patched: 0, total: 2 })
+    const p = await t.withIdentity({ subject: 'clerk_a' }).query(api.profiles.current, {})
+    expect(p?.notificationPrefs.reportCommented).toBe(true) // default-on (D16)
   })
 })
