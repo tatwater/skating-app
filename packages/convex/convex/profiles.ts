@@ -382,27 +382,90 @@ export const searchProfiles = query({
   },
 })
 
+/** The `profiles` fields the current schema allows — anything else on a stored row is retired drift. */
+const PROFILE_FIELDS = [
+  'clerkUserId',
+  'displayName',
+  'username',
+  'homeCoord',
+  'homeTownLabel',
+  'bio',
+  'profileImageUrl',
+  'driveTimePrefMinutes',
+  'cachedIsochrone',
+  'cachedIsochroneAt',
+  'profileVisibility',
+  'notificationPrefs',
+  'dateOfBirth',
+  'riskAckVersion',
+  'riskAckAt',
+  'reputationPoints',
+  'badges',
+  'role',
+  'status',
+  'statusReason',
+  'suspendedUntil',
+  'moderatedByUserId',
+  'deletedAt',
+  'createdAt',
+] as const
+
 /**
- * One-time backfill (Phase 3): add the new `reportCommented` notification pref (default-on, D16) to
- * every existing profile. Required because `notificationPrefs` is `boolFlags(NOTIFICATION_PREF_KEYS)`
- * (every key required), so a profile row missing the new key would fail schema validation on its
- * next write. New profiles get it automatically via `DEFAULT_NOTIFICATION_PREFS`. Run once after
- * deploy (`convex run profiles:backfillNotificationPrefs`); cheap — prod is uninitialized and dev has
- * a handful of users.
+ * One-time migration (Phase 3): **canonicalize** every `profiles` row to the current schema. A row
+ * accumulated across earlier phases can fail strict validation several ways: a **missing** required
+ * field (the new `profileVisibility` for very old rows, or `notificationPrefs.reportCommented`, D16),
+ * or a **retired** field left behind by a removed feature (`requireFollowApproval`,
+ * `notificationPrefs.newFollower` / `followedPostedNearby` from the pre-D13 social graph). This
+ * rebuilds each row via `replace` from the allowed fields only — dropping retired top-level fields,
+ * canonicalizing `notificationPrefs` to exactly `NOTIFICATION_PREF_KEYS` (preserving booleans,
+ * defaulting missing keys on per D16), and defaulting a missing `profileVisibility` from age (minors
+ * private, D41). New profiles are already canonical (`upsertFromClerk` + `DEFAULT_NOTIFICATION_PREFS`),
+ * and prod is uninitialized, so this is a no-op there. Idempotent. Run once after deploy:
+ * `convex run profiles:backfillNotificationPrefs`.
  */
 export const backfillNotificationPrefs = internalMutation({
   args: {},
   handler: async (ctx) => {
+    const now = Date.now()
+    const allowed = new Set<string>(PROFILE_FIELDS)
     const profiles = await ctx.db.query('profiles').collect()
     let patched = 0
     for (const p of profiles) {
-      const prefs = p.notificationPrefs as Record<string, boolean>
-      if (prefs.reportCommented === undefined) {
-        await ctx.db.patch(p._id, {
-          notificationPrefs: { ...p.notificationPrefs, reportCommented: true },
-        })
-        patched++
+      const raw = p as unknown as Record<string, unknown>
+      const prefs = (p.notificationPrefs ?? {}) as Record<string, boolean>
+
+      const notificationPrefs = Object.fromEntries(
+        NOTIFICATION_PREF_KEYS.map((key) => [
+          key,
+          typeof prefs[key] === 'boolean' ? prefs[key] : true,
+        ]),
+      ) as Record<(typeof NOTIFICATION_PREF_KEYS)[number], boolean>
+
+      const profileVisibility =
+        (raw.profileVisibility as (typeof PROFILE_VISIBILITIES)[number] | undefined) ??
+        (isMinor(p.dateOfBirth, now) ? 'private' : 'public')
+
+      // Detect drift: a retired top-level field, a missing `profileVisibility`, or non-canonical prefs.
+      const hasRetiredField = Object.keys(raw).some(
+        (key) => key !== '_id' && key !== '_creationTime' && !allowed.has(key),
+      )
+      const missingVisibility = raw.profileVisibility === undefined
+      const prefsChanged =
+        Object.keys(prefs).length !== NOTIFICATION_PREF_KEYS.length ||
+        NOTIFICATION_PREF_KEYS.some((key) => prefs[key] !== notificationPrefs[key])
+      if (!hasRetiredField && !missingVisibility && !prefsChanged) continue
+
+      // Rebuild from allowed fields only (drops retired ones); replace so unknown keys don't linger.
+      const clean: Record<string, unknown> = { notificationPrefs, profileVisibility }
+      for (const key of PROFILE_FIELDS) {
+        if (key === 'notificationPrefs' || key === 'profileVisibility') continue
+        if (raw[key] !== undefined) clean[key] = raw[key]
       }
+      await ctx.db.replace(
+        p._id,
+        clean as unknown as Omit<Doc<'profiles'>, '_id' | '_creationTime'>,
+      )
+      patched++
     }
     return { patched, total: profiles.length }
   },
