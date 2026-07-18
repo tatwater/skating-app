@@ -274,7 +274,7 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - **Needs:** OpenRouteService key. Notification fan-out uses a per-user polygon scan (fine at alpha
   scale; reverse spatial index is a documented future seam).
 
-## Phase 5 — Newsfeed page  *(brought forward ahead of Phase 4 — see doc)*
+## Phase 5 — Newsfeed page ✅ Complete (dev; prod deferred) (2026-07-17)  *(brought forward ahead of Phase 4 — see doc)*
 > **Detailed build plan:** [`phase-5-newsfeed.md`](./phase-5-newsfeed.md) (decisions settled 2026-07-16).
 > **Reordered ahead of Phase 4 (2026-07-16):** the feed ships **global** (all lakes, all regions); the
 > two drive-time bullets below — *"within range"* and *"temporarily expand radius"* — are definitionally

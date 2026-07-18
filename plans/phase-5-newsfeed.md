@@ -7,7 +7,9 @@
 > alongside the map. Browse recent community activity without going lake-by-lake. It reuses the whole
 > Phase 3 read stack (moderation gate, block set, `ReportDetail`, batch author/photo queries).
 >
-> **Status:** ✅ **built on 2026-07-17 (code complete; not yet pushed to dev).** All four workstreams
+> **Status:** ✅ **Complete (dev; prod deferred) — 2026-07-17.** Merged as PR #18, deployed to the
+> `dev:agile-bee-…` deployment, `adminAreas` OSM import loaded, and the skate-time migration accounted
+> for (verified 2026-07-17 — see the Operational note below). All four workstreams
 > landed with tests green + lint clean across the repo: **A** `@skating/core` (`skateTime`→`skateEndTime`
 > rename + `skateStartTime` + `resolveSkateWindow`/`formatSkateWindow` + new `feed.ts` —
 > `formatPlaceLabel`/`formatRelativeTime`/`buildFeedCardView`, 100% coverage); **B** Convex (schema
@@ -18,10 +20,14 @@
 > `?report=` overlay, report-form relabel + optional start/duration); **D** Mobile (feed tab FlatList +
 > pull-to-refresh + `@gorhom/bottom-sheet` detail, `FeedCard` mirror + horizontal carousel, form
 > relabel).
-> **⏳ Operational (not done — needs a live dev deploy + OSM tooling, see the migration + import notes
-> below):** (1) push to dev via the strict-schema-off dance because of the rename; (2) run the
-> `scripts/admin-areas` OSM import per state; (3) run `reports:renameSkateTimeToSkateEndTime`; (4)
-> app-run verification. Prod stays uninitialized.
+> **Operational (verified 2026-07-17 against `dev:agile-bee-…`):** (1) ✅ pushed to dev — the full
+> Phase 5 backend is live (`reports:listFeed`, `reports:renameSkateTimeToSkateEndTime`,
+> `adminAreas:importCanonical`, `adminAreas:resolvePlace`); (2) ✅ `scripts/admin-areas` OSM import
+> loaded — `adminAreas` populated and `resolvePlace` returns correct town/county/state at known points
+> across all five states (VT/NY/NH/ME/MA); (3) ✅ migration accounted for — the `reports` table on dev
+> is **empty** (zero docs), so `renameSkateTimeToSkateEndTime` is a no-op with no legacy `skateTime`
+> left; new reports write `skateEndTime` via the deployed schema; (4) ⏳ app-run verification — owned by
+> the founder. Prod stays uninitialized.
 >
 > **⚠️ Brought forward, ahead of Phase 4 (drive-time), by decision (2026-07-16).** The feed ships
 > **global** — *all* reports from *all* lakes across the whole imported region, newest skate-end time
