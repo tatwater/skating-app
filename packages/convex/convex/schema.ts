@@ -107,6 +107,13 @@ export default defineSchema({
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
     riskAckAt: v.optional(v.number()),
     reputationPoints: v.number(), // cosmetic/reputational only (D17)
+    // Denormalized lifetime contribution counts — the true #reports/#comments a public profile shows
+    // (D13). Maintained incrementally on the create / author-remove / moderation paths so the profile
+    // read never `.collect()`s an author's full history just to count it (the earlier windowed count
+    // capped at PROFILE_HISTORY_LIMIT). Count only currently-**visible** content. Optional ⇒
+    // migration-free; new profiles start at 0 and `backfillContributionCounts` seeds existing rows.
+    reportCount: v.optional(v.number()),
+    commentCount: v.optional(v.number()),
     badges: v.optional(v.array(v.string())),
     role: literals(USER_ROLES), // mod=content; admin ⊇ mod (D37)
     status: literals(USER_STATUSES), // suspend/ban (D37); deleted (D33)

@@ -117,6 +117,40 @@ describe('moderation.setModerationStatus', () => {
     ).rejects.toThrow(/reason is required/i)
   })
 
+  test('adjusts the author’s reportCount on hide → restore, and no-ops an unchanged status', async () => {
+    const t = convexTest(schema, modules)
+    const author = await seedUser(t, 'a')
+    const mod = await seedUser(t, 'mod', 'moderator')
+    const reportId = await seedReport(t, author.id)
+    // Seed the counter as if the (directly-seeded) report had been created through the API.
+    await t.run((ctx) => ctx.db.patch(author.id, { reportCount: 1 }))
+    const countOf = async () => (await t.run((ctx) => ctx.db.get(author.id)))?.reportCount
+
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: reportId,
+      status: 'hidden',
+      reason: 'spam',
+    })
+    expect(await countOf()).toBe(0) // visible → hidden decrements
+
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: reportId,
+      status: 'visible',
+      reason: 'appeal upheld',
+    })
+    expect(await countOf()).toBe(1) // restore increments
+
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'report',
+      targetId: reportId,
+      status: 'visible',
+      reason: 'reaffirm',
+    })
+    expect(await countOf()).toBe(1) // visible → visible is a no-op for the counter
+  })
+
   test('hides a report and writes exactly one hide audit row; restore writes one restore row', async () => {
     const t = convexTest(schema, modules)
     const author = await seedUser(t, 'a')

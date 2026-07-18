@@ -566,6 +566,9 @@ describe('profiles.getPublicProfile (D13)', () => {
     }
     await mkReport('visible')
     await mkReport('hidden')
+    // The displayed #reports/#comments are the maintained counters, NOT this bounded history window —
+    // patch counters that exceed the seeded rows to prove the payload reads the counter, not the list.
+    await t.run((ctx) => ctx.db.patch(id, { reportCount: 7, commentCount: 3 }))
 
     const profile = await t.query(api.profiles.getPublicProfile, { username: 'ada' })
     expect(profile).not.toBeNull()
@@ -573,8 +576,9 @@ describe('profiles.getPublicProfile (D13)', () => {
     expect(profile.bio).toBe('ADK skater')
     expect(profile.homeTownLabel).toBe('Norwich, VT')
     expect(profile.reputationPoints).toBe(0) // trust score renders 0 until Phase 6
-    expect(profile.reportCount).toBe(1) // only the visible report
-    expect(profile.reports).toHaveLength(1)
+    expect(profile.reportCount).toBe(7) // the maintained counter, not the window length
+    expect(profile.commentCount).toBe(3)
+    expect(profile.reports).toHaveLength(1) // history still the visible window (1 visible report)
     expect(profile.reports[0]?.waterBodyName).toBe('Lake Morey')
     // No PII leaks in the payload.
     expect(JSON.stringify(profile)).not.toContain('dateOfBirth')
@@ -783,5 +787,78 @@ describe('profiles.setNotificationPrefs', () => {
     await expect(
       asUser.mutation(api.profiles.setNotificationPrefs, { allRadiusMinutes: 45 }),
     ).rejects.toThrow(/30, 60, or 90/i)
+  })
+})
+
+describe('profiles.backfillContributionCounts', () => {
+  test('seeds counters from an author’s visible reports + comments, idempotently', async () => {
+    const t = convexTest(schema, modules)
+    const { id } = await provision(t, 'clerk_a', 'ada')
+
+    const waterBodyId = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Morey',
+        type: 'lake' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [1, 0],
+              [0, 0],
+            ],
+          ],
+        },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.5, lng: 0.5 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )
+    const mkReport = (moderationStatus: 'visible' | 'hidden') => {
+      const now = Date.now()
+      return t.run((ctx) =>
+        ctx.db.insert('reports', {
+          authorId: id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: now,
+          reportTime: now,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus,
+          hazardIdsCreated: [],
+          createdAt: now,
+          updatedAt: now,
+        }),
+      )
+    }
+    const visibleReport = await mkReport('visible')
+    await mkReport('visible')
+    await mkReport('hidden') // excluded from the count
+    await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId: visibleReport,
+        authorId: id,
+        body: 'nice',
+        source: 'native' as const,
+        moderationStatus: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    )
+
+    const res = await t.mutation(internal.profiles.backfillContributionCounts, {})
+    expect(res.patched).toBe(1)
+    const p = await t.run((ctx) => ctx.db.get(id))
+    expect(p?.reportCount).toBe(2) // two visible, hidden excluded
+    expect(p?.commentCount).toBe(1)
+
+    // Idempotent — a second run rewrites the same totals and patches nothing.
+    expect((await t.mutation(internal.profiles.backfillContributionCounts, {})).patched).toBe(0)
   })
 })

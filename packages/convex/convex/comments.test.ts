@@ -126,6 +126,27 @@ describe('comments.create', () => {
     ).rejects.toThrow(/report not found/i)
   })
 
+  test('create bumps the author’s commentCount; author-remove decrements it once (idempotent)', async () => {
+    const t = convexTest(schema, modules)
+    const author = await seedUser(t, 'a')
+    const body = await seedBody(t)
+    const reportId = await seedReport(t, author.id, body)
+    const commenter = await seedUser(t, 'c')
+    const countOf = async () => (await t.run((ctx) => ctx.db.get(commenter.id)))?.commentCount
+
+    const commentId = await commenter.as.mutation(api.comments.create, {
+      reportId,
+      body: 'nice ice',
+    })
+    expect(await countOf()).toBe(1)
+
+    await commenter.as.mutation(api.comments.remove, { commentId })
+    expect(await countOf()).toBe(0)
+    // A second remove is a no-op and must not drive the counter negative.
+    await commenter.as.mutation(api.comments.remove, { commentId })
+    expect(await countOf()).toBe(0)
+  })
+
   test('enforces the 2-level cap — a reply’s parent must be top-level (D25)', async () => {
     const t = convexTest(schema, modules)
     const author = await seedUser(t, 'a')
@@ -236,5 +257,79 @@ describe('comments.update / remove', () => {
     await expect(
       author.as.mutation(api.comments.update, { commentId, body: 'sneaky' }),
     ).rejects.toThrow(/moderated/i)
+  })
+})
+
+describe('comments — coverage completeness', () => {
+  test('rejects a reply whose parent does not exist', async () => {
+    const t = convexTest(schema, modules)
+    const author = await seedUser(t, 'a')
+    const body = await seedBody(t)
+    const reportId = await seedReport(t, author.id, body)
+    const missingParent = await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId, // valid report, but we delete the parent below to make it dangling
+        authorId: author.id,
+        body: 'gone',
+        source: 'native' as const,
+        moderationStatus: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    )
+    await t.run((ctx) => ctx.db.delete(missingParent))
+    await expect(
+      author.as.mutation(api.comments.create, {
+        reportId,
+        parentCommentId: missingParent,
+        body: 'reply',
+      }),
+    ).rejects.toThrow(/parent comment not found/i)
+  })
+
+  test('update rejects an invalid (empty) body', async () => {
+    const t = convexTest(schema, modules)
+    const author = await seedUser(t, 'a')
+    const body = await seedBody(t)
+    const reportId = await seedReport(t, author.id, body)
+    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'orig' })
+    await expect(
+      author.as.mutation(api.comments.update, { commentId, body: '   ' }),
+    ).rejects.toThrow(/between 1 and 2000/i)
+  })
+
+  test('a non-author cannot remove a comment', async () => {
+    const t = convexTest(schema, modules)
+    const author = await seedUser(t, 'a')
+    const other = await seedUser(t, 'b')
+    const body = await seedBody(t)
+    const reportId = await seedReport(t, author.id, body)
+    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'mine' })
+    await expect(other.as.mutation(api.comments.remove, { commentId })).rejects.toThrow(
+      /only the author/i,
+    )
+  })
+
+  test('includes the author avatar when the profile has one', async () => {
+    const t = convexTest(schema, modules)
+    const author = await seedUser(t, 'a')
+    await t.run((ctx) => ctx.db.patch(author.id, { profileImageUrl: 'https://img/a.png' }))
+    const body = await seedBody(t)
+    const reportId = await seedReport(t, author.id, body)
+    await author.as.mutation(api.comments.create, { reportId, body: 'hi' })
+    const thread = await author.as.query(api.comments.listByReport, { reportId })
+    expect(thread[0]?.comment?.author?.profileImageUrl).toBe('https://img/a.png')
+  })
+
+  test('renders a null author when the commenter’s profile is gone', async () => {
+    const t = convexTest(schema, modules)
+    const author = await seedUser(t, 'a')
+    const body = await seedBody(t)
+    const reportId = await seedReport(t, author.id, body)
+    await author.as.mutation(api.comments.create, { reportId, body: 'hi' })
+    // Drop the author profile: the thread still renders the comment, with author attribution null.
+    await t.run((ctx) => ctx.db.delete(author.id))
+    const thread = await t.query(api.comments.listByReport, { reportId })
+    expect(thread).toHaveLength(1)
+    expect(thread[0]?.comment?.author).toBeNull()
   })
 })

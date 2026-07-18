@@ -175,6 +175,8 @@ export const upsertFromClerk = mutation({
       profileVisibility: minor ? 'private' : 'public', // minors forced private (D13/D41)
       notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
       reputationPoints: 0,
+      reportCount: 0,
+      commentCount: 0,
       role: 'member',
       status: 'active',
       createdAt: now,
@@ -341,8 +343,10 @@ export const setNotificationPrefs = mutation({
 })
 
 /**
- * How many recent reports a public profile shows — and the window `reportCount`/`commentCount` are
- * counted over. Bounds the profile read so a prolific reporter's page never scans an unbounded set.
+ * How many recent reports a public profile **lists** (the card history). The displayed
+ * `reportCount`/`commentCount` are the true lifetime totals from the denormalized profile counters,
+ * NOT this window — so a prolific reporter shows "212 reports" while the page still renders only the
+ * newest 50 cards, and the read stays bounded either way.
  */
 const PROFILE_HISTORY_LIMIT = 50
 
@@ -414,31 +418,28 @@ export const getPublicProfile = query({
       return { ...base, private: true }
     }
 
-    // Visible report history, newest skate-end time first — **bounded** (D13). We `.take()` a small
-    // window off the skate-end-time index rather than `.collect()`ing every report, so a prolific
-    // reporter's page can't trigger an arbitrarily large read. `reportCount`/`commentCount` are
-    // therefore this recent window's counts (`PROFILE_HISTORY_LIMIT+` when the cap is hit), not a
-    // full lifetime tally — the definitive contribution metric is the Phase-6 trust score.
+    // Visible report **history cards**, newest skate-end time first — **bounded** (D13). We `.take()`
+    // a small window off the skate-end-time index rather than `.collect()`ing every report, so a
+    // prolific reporter's page can't trigger an arbitrarily large read. The displayed totals come from
+    // the denormalized counters below, not this window.
     const authored = await ctx.db
       .query('reports')
       .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', target._id))
       .order('desc')
-      .take(PROFILE_HISTORY_LIMIT + 1)
+      .take(PROFILE_HISTORY_LIMIT)
     const visibleReports = authored.filter((r) => r.moderationStatus === 'visible')
     const reports: ProfileReport[] = await Promise.all(
-      visibleReports.slice(0, PROFILE_HISTORY_LIMIT).map(async (report) => {
+      visibleReports.map(async (report) => {
         const body = await ctx.db.get(report.waterBodyId)
         return { report, waterBodyName: body?.name ?? 'Unknown water body' }
       }),
     )
 
-    // Visible comment count over the same bounded window (by_author, newest first).
-    const authoredComments = await ctx.db
-      .query('comments')
-      .withIndex('by_author', (q) => q.eq('authorId', target._id))
-      .order('desc')
-      .take(PROFILE_HISTORY_LIMIT + 1)
-    const commentCount = authoredComments.filter((c) => c.moderationStatus === 'visible').length
+    // True lifetime totals from the denormalized counters (maintained on the create/moderation/remove
+    // paths, seeded by `backfillContributionCounts`). A legacy row that predates the counter falls back
+    // to the visible window length so it never shows a spuriously low 0 before the backfill runs.
+    const reportCount = target.reportCount ?? visibleReports.length
+    const commentCount = target.commentCount ?? 0
 
     return {
       ...base,
@@ -446,7 +447,7 @@ export const getPublicProfile = query({
       ...(target.homeTownLabel !== undefined ? { homeTownLabel: target.homeTownLabel } : {}),
       ...(target.bio !== undefined ? { bio: target.bio } : {}),
       reputationPoints: target.reputationPoints,
-      reportCount: visibleReports.length,
+      reportCount,
       commentCount,
       reports,
     }
@@ -509,6 +510,8 @@ const PROFILE_FIELDS = [
   'riskAckVersion',
   'riskAckAt',
   'reputationPoints',
+  'reportCount',
+  'commentCount',
   'badges',
   'role',
   'status',
@@ -580,6 +583,39 @@ export const backfillNotificationPrefs = internalMutation({
         clean as unknown as Omit<Doc<'profiles'>, '_id' | '_creationTime'>,
       )
       patched++
+    }
+    return { patched, total: profiles.length }
+  },
+})
+
+/**
+ * One-time migration (Phase 4 follow-up): seed the denormalized `reportCount` / `commentCount` on every
+ * profile from a one-time scan of that author's currently-**visible** reports + comments. Run once after
+ * the counters ship; from then on the create / moderation / author-remove paths keep them exact, so the
+ * profile read never re-scans a history to count it. Idempotent — re-running just rewrites the same
+ * totals. `collect()` per author suits dev's handful of rows + prod's uninitialized state; a large
+ * corpus would page. Run: `convex run profiles:backfillContributionCounts`.
+ */
+export const backfillContributionCounts = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const profiles = await ctx.db.query('profiles').collect()
+    let patched = 0
+    for (const p of profiles) {
+      const reports = await ctx.db
+        .query('reports')
+        .withIndex('by_author', (q) => q.eq('authorId', p._id))
+        .collect()
+      const comments = await ctx.db
+        .query('comments')
+        .withIndex('by_author', (q) => q.eq('authorId', p._id))
+        .collect()
+      const reportCount = reports.filter((r) => r.moderationStatus === 'visible').length
+      const commentCount = comments.filter((c) => c.moderationStatus === 'visible').length
+      if (p.reportCount !== reportCount || p.commentCount !== commentCount) {
+        await ctx.db.patch(p._id, { reportCount, commentCount })
+        patched++
+      }
     }
     return { patched, total: profiles.length }
   },

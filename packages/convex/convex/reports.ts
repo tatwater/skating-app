@@ -34,6 +34,7 @@ import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server'
 import { resolvePlaceForCoord } from './adminAreas'
 import { getCurrentProfile, requireProfile } from './lib/auth'
+import { bumpContributionCount } from './lib/contributionCounts'
 import { isListed } from './lib/listing'
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
 import { latLng, literals } from './lib/validators'
@@ -224,6 +225,10 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     })
+
+    // Bump the author's denormalized report counter (born visible) so the profile shows a true total
+    // without scanning their history (D13). Moderation transitions adjust it symmetrically.
+    await bumpContributionCount(ctx, profile._id, 'reportCount', 1)
 
     // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
     // coalescing queue — the cron flushes them (decision #4). Read-back keeps `enqueue` off the raw args.
