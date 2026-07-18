@@ -21,6 +21,9 @@ const NOTIF_PREFS = {
   reportRated: true,
   reportCommented: true,
   contentFlagResolved: true,
+  favoriteReport: true,
+  nearbyReportDigest: false,
+  greatReportNearby: false,
 }
 
 /** Seed a provisioned profile; `minor` true = an under-18 account (read-only — can't post, D41). */

@@ -117,6 +117,10 @@ export const RATING_VERDICTS = ['helpful', 'unhelpful'] as const
 /**
  * Notification types (snake_case) and the matching `notificationPrefs` keys
  * (camelCase). D16 invariant: these two lists mirror each other 1:1.
+ *
+ * The last three are Phase 4's drive-time/favorites set (decision #4): a favorited-body report
+ * (default on, any distance), an opt-in "all reports within X₁" daily digest, and an opt-in
+ * "great reports within X₂" alert. See `NOTIFICATION_PREF_DEFAULTS` for the per-key defaults.
  */
 export const NOTIFICATION_TYPES = [
   'activity_detected',
@@ -126,6 +130,9 @@ export const NOTIFICATION_TYPES = [
   'report_rated',
   'report_commented', // someone commented on your report (D21; Phase 3) — delivery deferred
   'content_flag_resolved',
+  'favorite_report', // a report on a body you favorited (Phase 4, decision #4)
+  'nearby_report_digest', // daily 8pm-ET digest of all reports within X₁ (Phase 4)
+  'great_report_nearby', // a `great` report within X₂ (Phase 4)
 ] as const
 export const NOTIFICATION_PREF_KEYS = [
   'activityDetected',
@@ -135,7 +142,43 @@ export const NOTIFICATION_PREF_KEYS = [
   'reportRated',
   'reportCommented', // mirrors `report_commented` (D21; Phase 3) — toggle exists, delivery deferred
   'contentFlagResolved',
+  'favoriteReport', // mirrors `favorite_report` (Phase 4)
+  'nearbyReportDigest', // mirrors `nearby_report_digest` (Phase 4)
+  'greatReportNearby', // mirrors `great_report_nearby` (Phase 4)
 ] as const
+
+/**
+ * Per-key default for a fresh profile (D16). Everything defaults ON *except* the two opt-in Phase-4
+ * drive-time buckets (decision #4): favorites notify by default, but "all reports nearby" and "great
+ * reports nearby" are conservative (push) surfaces the user must opt into. Single-sourced so
+ * `upsertFromClerk`'s defaults and `backfillNotificationPrefs`'s missing-key fill agree.
+ */
+export const NOTIFICATION_PREF_DEFAULTS: Record<(typeof NOTIFICATION_PREF_KEYS)[number], boolean> =
+  {
+    activityDetected: true,
+    bountyRequest: true,
+    hazardConfirmation: true,
+    bountyFulfilled: true,
+    reportRated: true,
+    reportCommented: true,
+    contentFlagResolved: true,
+    favoriteReport: true,
+    nearbyReportDigest: false,
+    greatReportNearby: false,
+  }
+
+/** Put-in marker provenance (Phase 4, decision #7): clustered from reports vs. admin-set. */
+export const PUTIN_SOURCES = ['derived', 'official'] as const
+
+/** Put-in marker visibility — a moderator `hide` suppresses a coord regardless of re-clustering. */
+export const PUTIN_STATUSES = ['visible', 'hidden'] as const
+
+/**
+ * Coalescing-queue bucket (Phase 4, decision #4). `digest` = the once-daily 8pm-ET "all within X₁"
+ * roll-up; `favorite` / `great` fire after a short per-`(user, body)` debounce. The bucket picks the
+ * `flushAfter` when a row is enqueued; one cron drains everything whose `flushAfter` has passed.
+ */
+export const NOTIFICATION_QUEUE_KINDS = ['digest', 'favorite', 'great'] as const
 
 /** Reputation/trust ledger reasons (D17/D50). Boost-only in practice; no public penalties. */
 export const POINT_EVENT_REASONS = [

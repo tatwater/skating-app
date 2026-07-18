@@ -71,6 +71,9 @@ const NOTIF_PREFS = {
   reportRated: true,
   reportCommented: true,
   contentFlagResolved: true,
+  favoriteReport: true,
+  nearbyReportDigest: false,
+  greatReportNearby: false,
 }
 
 async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {

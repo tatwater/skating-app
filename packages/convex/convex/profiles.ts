@@ -26,14 +26,16 @@ import { ConvexError, v } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { getCurrentProfile, requireProfile } from './lib/auth'
-import { NOTIFICATION_PREF_KEYS } from './lib/enums'
+import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums'
 import { loadBlockedAuthorIds } from './lib/reportVisibility'
 import { literals } from './lib/validators'
 
-/** All notification types default on (D16); keys single-sourced with the schema. */
-const DEFAULT_NOTIFICATION_PREFS = Object.fromEntries(
-  NOTIFICATION_PREF_KEYS.map((key) => [key, true]),
-) as Record<(typeof NOTIFICATION_PREF_KEYS)[number], boolean>
+/**
+ * Notification defaults for a fresh profile — per-key (D16): most types on, but the two opt-in
+ * Phase-4 drive-time buckets (`nearbyReportDigest` / `greatReportNearby`) default off (decision #4).
+ * Single-sourced in `NOTIFICATION_PREF_DEFAULTS`; copied so a mutation can't mutate the shared map.
+ */
+const DEFAULT_NOTIFICATION_PREFS = { ...NOTIFICATION_PREF_DEFAULTS }
 
 /** The signed-in user's own profile, or `null` if not signed in / not yet provisioned. */
 export const current = query({
@@ -403,8 +405,12 @@ const PROFILE_FIELDS = [
   'bio',
   'profileImageUrl',
   'driveTimePrefMinutes',
-  'cachedIsochrone',
-  'cachedIsochroneAt',
+  'cachedIsochrones',
+  'outerRadiusMeters',
+  'cachedIsochronesAt',
+  'feedFilterPrefs',
+  'allRadiusMinutes',
+  'greatRadiusMinutes',
   'profileVisibility',
   'notificationPrefs',
   'dateOfBirth',
@@ -433,6 +439,11 @@ const PROFILE_FIELDS = [
  * private, D41). New profiles are already canonical (`upsertFromClerk` + `DEFAULT_NOTIFICATION_PREFS`),
  * and prod is uninitialized, so this is a no-op there. Idempotent. Run once after deploy:
  * `convex run profiles:backfillNotificationPrefs`.
+ *
+ * **Phase 4 reuse:** this same migration canonicalizes the Phase-4 profile changes — it backfills the
+ * three new `notificationPrefs` keys (`favoriteReport`/`nearbyReportDigest`/`greatReportNearby`, per
+ * `NOTIFICATION_PREF_DEFAULTS`) and drops the retired `cachedIsochrone`/`cachedIsochroneAt` fields
+ * (replaced by `cachedIsochrones`/`outerRadiusMeters`). Run it as part of the Phase-4 deploy.
  */
 export const backfillNotificationPrefs = internalMutation({
   args: {},
@@ -448,7 +459,7 @@ export const backfillNotificationPrefs = internalMutation({
       const notificationPrefs = Object.fromEntries(
         NOTIFICATION_PREF_KEYS.map((key) => [
           key,
-          typeof prefs[key] === 'boolean' ? prefs[key] : true,
+          typeof prefs[key] === 'boolean' ? prefs[key] : NOTIFICATION_PREF_DEFAULTS[key],
         ]),
       ) as Record<(typeof NOTIFICATION_PREF_KEYS)[number], boolean>
 
