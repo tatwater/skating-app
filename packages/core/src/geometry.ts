@@ -78,6 +78,21 @@ const EARTH_RADIUS_M = 6_371_008.8
 const DEG = Math.PI / 180
 
 /**
+ * Great-circle (crow-flies) distance between two points in metres — the shared radius primitive
+ * behind the Phase-4 90-min drive band (a uniform crow-flies fallback, since hosted ORS caps
+ * isochrones at 60 min) and put-in clustering. Uses the haversine formula on the WGS84 mean radius,
+ * which is exact enough at drive-time / lake scale and dependency-free.
+ */
+export function haversineMeters(a: LatLng, b: LatLng): number {
+  const dLat = (b.lat - a.lat) * DEG
+  const dLng = (b.lng - a.lng) * DEG
+  const lat1 = a.lat * DEG
+  const lat2 = b.lat * DEG
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)))
+}
+
+/**
  * Project a GeoJSON `[lng, lat]` position into local metres relative to `origin`
  * (equirectangular / flat-earth around the origin). Exact enough at lake / parking-lot
  * scale — sub-1% distance error out to several km, far tighter than the ~300 m buffer this

@@ -238,9 +238,24 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - **Done ✅:** comment threads work; profiles are viewable/searchable (privacy respected);
   users can block/mute and flag; content can be quickly taken down.
 
-## Phase 4 — Drive-time + dynamic filtering
+## Phase 4 — Drive-time + dynamic filtering ✅ Complete (dev; prod deferred) (2026-07-18)
 > **Detailed build plan:** [`phase-4-drive-time-and-filtering.md`](./phase-4-drive-time-and-filtering.md)
 > (decisions settled 2026-07-17).
+>
+> **Status: ✅ shipped on dev (2026-07-18), PR #19** — all six workstreams landed: **favorites**
+> (`waterBodyFavorites` — notify-by-default, feed boost exempt from distance, map highlight at *every*
+> zoom); **three drive-time bands** as read-time isochrone polygons on `profiles` (30/60 from hosted ORS,
+> 90 = crow-flies radius fallback; `homeCoord` stays private); the **persisted feed filter row**
+> (include-unknown by default, local-first + `feedFilterPrefs` LWW sync); the **notification coalescing
+> queue** (favorites / all-within-X₁ digest / great-within-X₂, X₂ ≥ X₁ enforced) drained by a
+> DST-correct **8pm-ET digest** that rolls up per user into one notification grouped by body; **put-ins +
+> directions** (derived from report points, drawer-only deep-link to a put-in coord); and the **mobile
+> offline read-cache** (recently-read feed + opened lakes + favorites' recent reports). **Review
+> follow-ups (2026-07-18):** consolidated per-user digest, denormalized profile `reportCount`/
+> `commentCount` (true totals, not a windowed cap), paginated per-body report lists, recency scroll
+> headers, minor photo-upload gate, and coverage/cleanup. **Push delivery is deferred** (flush lands an
+> in-app `notifications` row); self-hosted ORS (true 90-min band) and the "Recommended" filter-breaking
+> feed posts are deferred (roadmap Later / Phase 6). Prod cutover still deferred (Convex prod uninitialized).
 > **Reframed 2026-07-17:** drive-time is now a **soft, quality-weighted signal that behaves differently
 > per context** (browse vs. notify), not a hard global gate. Browse (feed) defaults *permissive* — show
 > all, filters narrow, favorites boosted; notifications default *conservative* — favorites on, distance/

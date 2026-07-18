@@ -31,6 +31,18 @@ export function boolFlags<const T extends readonly [string, ...string[]]>(keys: 
   )
 }
 
+/**
+ * Like `boolFlags`, but every key is **optional** — a partial toggle patch (e.g. flipping a single
+ * notification pref) that the handler merges onto the stored full object. Keeps the exact keys typed.
+ */
+export function partialBoolFlags<const T extends readonly [string, ...string[]]>(keys: T) {
+  return v.object(
+    Object.fromEntries(keys.map((key) => [key, v.optional(v.boolean())])) as {
+      [K in T[number]]: ReturnType<typeof v.optional<ReturnType<typeof v.boolean>>>
+    },
+  )
+}
+
 /** A geographic point. Used for report points, centroids, and tested coords. */
 export const latLng = v.object({ lat: v.number(), lng: v.number() })
 

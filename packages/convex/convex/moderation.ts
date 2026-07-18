@@ -13,6 +13,7 @@ import { ConvexError, v } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 import { mutation } from './_generated/server'
 import { requireRole } from './lib/auth'
+import { bumpContributionCount, visibleDelta } from './lib/contributionCounts'
 import { MODERATION_STATUSES } from './lib/enums'
 import { literals } from './lib/validators'
 
@@ -45,8 +46,18 @@ export const setModerationStatus = mutation({
     const target = await ctx.db.get(targetId)
     if (!target) throw new ConvexError('Target not found')
 
-    const priorStatus = (target as Doc<'reports'> | Doc<'comments'>).moderationStatus
+    const typedTarget = target as Doc<'reports'> | Doc<'comments'>
+    const priorStatus = typedTarget.moderationStatus
     await ctx.db.patch(targetId, { moderationStatus: args.status })
+
+    // Keep the author's denormalized contribution counter exact: a hide/remove of a visible item
+    // decrements, a restore back to visible increments, a no-op transition moves it by 0.
+    await bumpContributionCount(
+      ctx,
+      typedTarget.authorId,
+      args.targetType === 'report' ? 'reportCount' : 'commentCount',
+      visibleDelta(priorStatus, args.status),
+    )
 
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,

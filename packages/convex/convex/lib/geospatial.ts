@@ -44,7 +44,9 @@ export const waterBodiesGeo = new GeospatialIndex<Id<'waterBodies'>, { listed: b
  * (town/county), refining candidates with `bboxIntersects` + `pointInPolygon` — the same
  * centroid-prefilter → Turf-refine machinery as `waterBodies`. States (a handful of rows) are
  * scanned by the `by_level` index instead, since a state centroid can be degrees from an interior
- * point. Shares the one geospatial component; keys can't collide with `waterBodies` (distinct ids).
+ * point. This is a **separate** named geospatial component instance (`adminAreasGeo`, installed
+ * alongside `geospatial` in `convex.config.ts`), so its keys live in their own index and never share
+ * space with `waterBodies`.
  */
 export const adminAreasGeo = new GeospatialIndex<Id<'adminAreas'>, { level: string }>(
   components.adminAreasGeo as unknown as ConstructorParameters<typeof GeospatialIndex>[0],

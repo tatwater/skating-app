@@ -7,6 +7,7 @@ import {
   bboxIntersects,
   bufferedLineOverlap,
   distanceToPolygonMeters,
+  haversineMeters,
   type LatLng,
   nearestBodyForPoint,
   pointInPolygon,
@@ -387,5 +388,30 @@ describe('nearestBodyForPoint (shared point→lake resolver)', () => {
     ]
     // (0,0) is inside both (distance 0 each) → the smaller-area body wins.
     expect(nearestBodyForPoint({ lat: 0, lng: 0 }, nested, 300)).toBe('small')
+  })
+})
+
+describe('haversineMeters', () => {
+  it('is zero for identical points', () => {
+    expect(haversineMeters({ lat: 44, lng: -72 }, { lat: 44, lng: -72 })).toBe(0)
+  })
+
+  it('measures ~111 km for one degree of latitude', () => {
+    const d = haversineMeters({ lat: 0, lng: 0 }, { lat: 1, lng: 0 })
+    expect(d).toBeGreaterThan(111_000)
+    expect(d).toBeLessThan(111_400)
+  })
+
+  it('shrinks a degree of longitude by cos(latitude)', () => {
+    // At 60°N a degree of longitude spans ~half the ground distance it does at the equator.
+    const equator = haversineMeters({ lat: 0, lng: 0 }, { lat: 0, lng: 1 })
+    const high = haversineMeters({ lat: 60, lng: 0 }, { lat: 60, lng: 1 })
+    expect(high / equator).toBeCloseTo(0.5, 2)
+  })
+
+  it('is symmetric', () => {
+    const a = { lat: 42.1, lng: -71.2 }
+    const b = { lat: 43.9, lng: -73.4 }
+    expect(haversineMeters(a, b)).toBeCloseTo(haversineMeters(b, a), 6)
   })
 })

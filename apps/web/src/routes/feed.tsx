@@ -1,8 +1,11 @@
 import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
+import { type FeedFilters, groupFeedSections } from '@skating/core'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { usePaginatedQuery } from 'convex/react'
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
+import { useEffect, useRef, useState } from 'react'
 import { FeedCard } from '../components/FeedCard'
+import { FeedFilterBar } from '../components/FeedFilterBar'
 import { MapSelectionProvider } from '../components/MapSelectionContext'
 import { Panel } from '../components/Panel'
 import { ProfileSearch } from '../components/ProfileSearch'
@@ -10,6 +13,7 @@ import { ReportDetail } from '../components/ReportDetail'
 import { Button } from '../components/ui/button'
 import { Sheet, SheetContent } from '../components/ui/sheet'
 import { Skeleton } from '../components/ui/skeleton'
+import { readStoredFilters, reconcileFilters, writeStoredFilters } from '../lib/feedFilters'
 
 /** How many feed cards to fetch per page (`usePaginatedQuery` load). */
 const PAGE_SIZE = 20
@@ -31,9 +35,10 @@ export const Route = createFileRoute('/feed')({
 function FeedPage() {
   const { report } = Route.useSearch()
   const navigate = useNavigate()
+  const filters = useFeedFilters()
   const { results, status, loadMore } = usePaginatedQuery(
     api.reports.listFeed,
-    {},
+    { filters: filters.value },
     { initialNumItems: PAGE_SIZE },
   )
   // One clock per render for the relative-time labels (feed re-renders reactively as reports stream).
@@ -48,6 +53,8 @@ function FeedPage() {
       <Panel title="Find a skater">
         <ProfileSearch />
       </Panel>
+
+      <FeedFilterBar filters={filters.value} onChange={filters.set} />
 
       {status === 'LoadingFirstPage' ? (
         <div className="flex flex-col gap-3">
@@ -64,13 +71,21 @@ function FeedPage() {
         </Panel>
       ) : (
         <div className="flex flex-col gap-3">
-          {results.map((data) => (
-            <FeedCard
-              key={data.reportId}
-              data={data}
-              now={now}
-              onOpen={() => openReport(data.reportId)}
-            />
+          {/* Recency scroll-divider headers (Phase 4, decision #5): "Today / Yesterday / …". */}
+          {groupFeedSections(results, (d) => d.skateEndTime, now).map((section) => (
+            <div key={section.key} className="flex flex-col gap-3">
+              <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
+                {section.label}
+              </h2>
+              {section.items.map((data) => (
+                <FeedCard
+                  key={data.reportId}
+                  data={data}
+                  now={now}
+                  onOpen={() => openReport(data.reportId)}
+                />
+              ))}
+            </div>
           ))}
           {status === 'CanLoadMore' ? (
             <Button variant="outline" onClick={() => loadMore(PAGE_SIZE)} className="self-center">
@@ -95,4 +110,42 @@ function FeedPage() {
       </Sheet>
     </div>
   )
+}
+
+/**
+ * Feed-filter state (Phase 4, decision #6): local storage is the working copy (instant, offline-safe),
+ * `profiles.feedFilterPrefs` is the durable server-sync copy. On mount we read local; once the profile
+ * loads we reconcile (LWW — a non-empty local copy wins, else adopt the server copy) exactly once.
+ * Every change writes local immediately and syncs the server copy. SSR-safe: `localStorage` is only
+ * touched inside effects/handlers.
+ */
+function useFeedFilters(): { value: FeedFilters; set: (next: FeedFilters) => void } {
+  const [value, setValue] = useState<FeedFilters>({})
+  const profile = useQuery(api.profiles.current, {})
+  const setServer = useMutation(api.profiles.setFeedFilterPrefs)
+  const reconciled = useRef(false)
+
+  // Load the local working copy on mount (client-only).
+  useEffect(() => {
+    setValue(readStoredFilters(window.localStorage))
+  }, [])
+
+  // Reconcile against the server copy once the profile arrives (LWW), a single time.
+  useEffect(() => {
+    if (reconciled.current || profile === undefined) return
+    reconciled.current = true
+    const local = readStoredFilters(window.localStorage)
+    const merged = reconcileFilters(local, profile?.feedFilterPrefs)
+    setValue(merged)
+    writeStoredFilters(window.localStorage, merged)
+  }, [profile])
+
+  const set = (next: FeedFilters) => {
+    setValue(next)
+    writeStoredFilters(window.localStorage, next)
+    // Best-effort server sync; the local copy already drives this session.
+    if (profile) void setServer({ filters: next })
+  }
+
+  return { value, set }
 }

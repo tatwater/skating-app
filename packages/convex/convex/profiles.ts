@@ -10,8 +10,10 @@
 import {
   canSetProfilePublic,
   isCurrentRiskAckVersion,
+  isDriveTimeBand,
   isMinor,
   isValidBio,
+  isValidCoord,
   isValidDisplayName,
   isValidTownLabel,
   isValidUsername,
@@ -21,19 +23,23 @@ import {
   normalizeTownLabel,
   normalizeUsername,
   PROFILE_VISIBILITIES,
+  sanitizeFeedFilters,
 } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
+import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { getCurrentProfile, requireProfile } from './lib/auth'
-import { NOTIFICATION_PREF_KEYS } from './lib/enums'
+import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums'
 import { loadBlockedAuthorIds } from './lib/reportVisibility'
-import { literals } from './lib/validators'
+import { latLng, literals, partialBoolFlags } from './lib/validators'
 
-/** All notification types default on (D16); keys single-sourced with the schema. */
-const DEFAULT_NOTIFICATION_PREFS = Object.fromEntries(
-  NOTIFICATION_PREF_KEYS.map((key) => [key, true]),
-) as Record<(typeof NOTIFICATION_PREF_KEYS)[number], boolean>
+/**
+ * Notification defaults for a fresh profile — per-key (D16): most types on, but the two opt-in
+ * Phase-4 drive-time buckets (`nearbyReportDigest` / `greatReportNearby`) default off (decision #4).
+ * Single-sourced in `NOTIFICATION_PREF_DEFAULTS`; copied so a mutation can't mutate the shared map.
+ */
+const DEFAULT_NOTIFICATION_PREFS = { ...NOTIFICATION_PREF_DEFAULTS }
 
 /** The signed-in user's own profile, or `null` if not signed in / not yet provisioned. */
 export const current = query({
@@ -169,6 +175,8 @@ export const upsertFromClerk = mutation({
       profileVisibility: minor ? 'private' : 'public', // minors forced private (D13/D41)
       notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
       reputationPoints: 0,
+      reportCount: 0,
+      commentCount: 0,
       role: 'member',
       status: 'active',
       createdAt: now,
@@ -247,8 +255,98 @@ export const updateProfile = mutation({
 })
 
 /**
- * How many recent reports a public profile shows — and the window `reportCount`/`commentCount` are
- * counted over. Bounds the profile read so a prolific reporter's page never scans an unbounded set.
+ * Set (or clear) the caller's PRIVATE home coordinate (D11/D18) and recompute their drive-time bands.
+ * `homeCoord` never leaves the server — only the derived `cachedIsochrones` polygons + `outerRadiusMeters`
+ * are stored (decision #2). The isochrone recompute is an ORS-calling action, so it's scheduled (not
+ * awaited); `storeBands` lands the result shortly after. Passing no coord clears the home and, on
+ * recompute, the cached bands. Only ever run on an actual change (rate-limit, D18).
+ */
+export const setHome = mutation({
+  args: { homeCoord: v.optional(latLng) },
+  handler: async (ctx, { homeCoord }) => {
+    const profile = await requireProfile(ctx)
+    if (homeCoord !== undefined && !isValidCoord(homeCoord)) {
+      throw new ConvexError('Home coordinate is not valid')
+    }
+    await ctx.db.patch(profile._id, { homeCoord })
+    await ctx.scheduler.runAfter(0, internal.isochrones.recompute, { userId: profile._id })
+    return profile._id
+  },
+})
+
+/**
+ * Persist the server-sync copy of the feed filter row (decision #3/#6). Local storage is the working
+ * copy; this is the durable/LWW copy reconciled on connect. The blob is untrusted (D37), so it's run
+ * through `@skating/core` `sanitizeFeedFilters` — invalid/out-of-domain fields are dropped — before it's
+ * stored. An empty result clears the stored prefs (show-everything).
+ */
+export const setFeedFilterPrefs = mutation({
+  args: { filters: v.any() },
+  handler: async (ctx, { filters }) => {
+    const profile = await requireProfile(ctx)
+    const clean = sanitizeFeedFilters(filters)
+    await ctx.db.patch(profile._id, {
+      feedFilterPrefs: Object.keys(clean).length > 0 ? clean : undefined,
+    })
+    return profile._id
+  },
+})
+
+/**
+ * Update notification toggles + the two drive-time radii (decision #4). `prefs` is a partial patch
+ * merged onto the stored full toggle set; `allRadiusMinutes` (X₁) / `greatRadiusMinutes` (X₂) are the
+ * digest / great-report radii. Enforces **X₂ ≥ X₁** ("I'll drive farther for better ice") and that
+ * each radius is a canonical band (30/60/90), comparing against whichever value ends up stored.
+ */
+export const setNotificationPrefs = mutation({
+  args: {
+    prefs: v.optional(partialBoolFlags(NOTIFICATION_PREF_KEYS)),
+    allRadiusMinutes: v.optional(v.number()),
+    greatRadiusMinutes: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const profile = await requireProfile(ctx)
+
+    for (const [label, value] of [
+      ['allRadiusMinutes', args.allRadiusMinutes],
+      ['greatRadiusMinutes', args.greatRadiusMinutes],
+    ] as const) {
+      if (value !== undefined && !isDriveTimeBand(value)) {
+        throw new ConvexError(`${label} must be 30, 60, or 90`)
+      }
+    }
+
+    // Resolve the effective radii (provided value wins, else the stored one) and enforce X₂ ≥ X₁.
+    const allRadius = args.allRadiusMinutes ?? profile.allRadiusMinutes
+    const greatRadius = args.greatRadiusMinutes ?? profile.greatRadiusMinutes
+    if (allRadius !== undefined && greatRadius !== undefined && greatRadius < allRadius) {
+      throw new ConvexError('Great-report radius must be at least the all-reports radius')
+    }
+
+    const notificationPrefs = { ...profile.notificationPrefs }
+    if (args.prefs) {
+      for (const key of NOTIFICATION_PREF_KEYS) {
+        const value = args.prefs[key]
+        if (value !== undefined) notificationPrefs[key] = value
+      }
+    }
+
+    await ctx.db.patch(profile._id, {
+      notificationPrefs,
+      ...(args.allRadiusMinutes !== undefined ? { allRadiusMinutes: args.allRadiusMinutes } : {}),
+      ...(args.greatRadiusMinutes !== undefined
+        ? { greatRadiusMinutes: args.greatRadiusMinutes }
+        : {}),
+    })
+    return profile._id
+  },
+})
+
+/**
+ * How many recent reports a public profile **lists** (the card history). The displayed
+ * `reportCount`/`commentCount` are the true lifetime totals from the denormalized profile counters,
+ * NOT this window — so a prolific reporter shows "212 reports" while the page still renders only the
+ * newest 50 cards, and the read stays bounded either way.
  */
 const PROFILE_HISTORY_LIMIT = 50
 
@@ -320,31 +418,28 @@ export const getPublicProfile = query({
       return { ...base, private: true }
     }
 
-    // Visible report history, newest skate-end time first — **bounded** (D13). We `.take()` a small
-    // window off the skate-end-time index rather than `.collect()`ing every report, so a prolific
-    // reporter's page can't trigger an arbitrarily large read. `reportCount`/`commentCount` are
-    // therefore this recent window's counts (`PROFILE_HISTORY_LIMIT+` when the cap is hit), not a
-    // full lifetime tally — the definitive contribution metric is the Phase-6 trust score.
+    // Visible report **history cards**, newest skate-end time first — **bounded** (D13). We `.take()`
+    // a small window off the skate-end-time index rather than `.collect()`ing every report, so a
+    // prolific reporter's page can't trigger an arbitrarily large read. The displayed totals come from
+    // the denormalized counters below, not this window.
     const authored = await ctx.db
       .query('reports')
       .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', target._id))
       .order('desc')
-      .take(PROFILE_HISTORY_LIMIT + 1)
+      .take(PROFILE_HISTORY_LIMIT)
     const visibleReports = authored.filter((r) => r.moderationStatus === 'visible')
     const reports: ProfileReport[] = await Promise.all(
-      visibleReports.slice(0, PROFILE_HISTORY_LIMIT).map(async (report) => {
+      visibleReports.map(async (report) => {
         const body = await ctx.db.get(report.waterBodyId)
         return { report, waterBodyName: body?.name ?? 'Unknown water body' }
       }),
     )
 
-    // Visible comment count over the same bounded window (by_author, newest first).
-    const authoredComments = await ctx.db
-      .query('comments')
-      .withIndex('by_author', (q) => q.eq('authorId', target._id))
-      .order('desc')
-      .take(PROFILE_HISTORY_LIMIT + 1)
-    const commentCount = authoredComments.filter((c) => c.moderationStatus === 'visible').length
+    // True lifetime totals from the denormalized counters (maintained on the create/moderation/remove
+    // paths, seeded by `backfillContributionCounts`). A legacy row that predates the counter falls back
+    // to the visible window length so it never shows a spuriously low 0 before the backfill runs.
+    const reportCount = target.reportCount ?? visibleReports.length
+    const commentCount = target.commentCount ?? 0
 
     return {
       ...base,
@@ -352,7 +447,7 @@ export const getPublicProfile = query({
       ...(target.homeTownLabel !== undefined ? { homeTownLabel: target.homeTownLabel } : {}),
       ...(target.bio !== undefined ? { bio: target.bio } : {}),
       reputationPoints: target.reputationPoints,
-      reportCount: visibleReports.length,
+      reportCount,
       commentCount,
       reports,
     }
@@ -403,14 +498,20 @@ const PROFILE_FIELDS = [
   'bio',
   'profileImageUrl',
   'driveTimePrefMinutes',
-  'cachedIsochrone',
-  'cachedIsochroneAt',
+  'cachedIsochrones',
+  'outerRadiusMeters',
+  'cachedIsochronesAt',
+  'feedFilterPrefs',
+  'allRadiusMinutes',
+  'greatRadiusMinutes',
   'profileVisibility',
   'notificationPrefs',
   'dateOfBirth',
   'riskAckVersion',
   'riskAckAt',
   'reputationPoints',
+  'reportCount',
+  'commentCount',
   'badges',
   'role',
   'status',
@@ -433,6 +534,11 @@ const PROFILE_FIELDS = [
  * private, D41). New profiles are already canonical (`upsertFromClerk` + `DEFAULT_NOTIFICATION_PREFS`),
  * and prod is uninitialized, so this is a no-op there. Idempotent. Run once after deploy:
  * `convex run profiles:backfillNotificationPrefs`.
+ *
+ * **Phase 4 reuse:** this same migration canonicalizes the Phase-4 profile changes — it backfills the
+ * three new `notificationPrefs` keys (`favoriteReport`/`nearbyReportDigest`/`greatReportNearby`, per
+ * `NOTIFICATION_PREF_DEFAULTS`) and drops the retired `cachedIsochrone`/`cachedIsochroneAt` fields
+ * (replaced by `cachedIsochrones`/`outerRadiusMeters`). Run it as part of the Phase-4 deploy.
  */
 export const backfillNotificationPrefs = internalMutation({
   args: {},
@@ -448,7 +554,7 @@ export const backfillNotificationPrefs = internalMutation({
       const notificationPrefs = Object.fromEntries(
         NOTIFICATION_PREF_KEYS.map((key) => [
           key,
-          typeof prefs[key] === 'boolean' ? prefs[key] : true,
+          typeof prefs[key] === 'boolean' ? prefs[key] : NOTIFICATION_PREF_DEFAULTS[key],
         ]),
       ) as Record<(typeof NOTIFICATION_PREF_KEYS)[number], boolean>
 
@@ -477,6 +583,39 @@ export const backfillNotificationPrefs = internalMutation({
         clean as unknown as Omit<Doc<'profiles'>, '_id' | '_creationTime'>,
       )
       patched++
+    }
+    return { patched, total: profiles.length }
+  },
+})
+
+/**
+ * One-time migration (Phase 4 follow-up): seed the denormalized `reportCount` / `commentCount` on every
+ * profile from a one-time scan of that author's currently-**visible** reports + comments. Run once after
+ * the counters ship; from then on the create / moderation / author-remove paths keep them exact, so the
+ * profile read never re-scans a history to count it. Idempotent — re-running just rewrites the same
+ * totals. `collect()` per author suits dev's handful of rows + prod's uninitialized state; a large
+ * corpus would page. Run: `convex run profiles:backfillContributionCounts`.
+ */
+export const backfillContributionCounts = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const profiles = await ctx.db.query('profiles').collect()
+    let patched = 0
+    for (const p of profiles) {
+      const reports = await ctx.db
+        .query('reports')
+        .withIndex('by_author', (q) => q.eq('authorId', p._id))
+        .collect()
+      const comments = await ctx.db
+        .query('comments')
+        .withIndex('by_author', (q) => q.eq('authorId', p._id))
+        .collect()
+      const reportCount = reports.filter((r) => r.moderationStatus === 'visible').length
+      const commentCount = comments.filter((c) => c.moderationStatus === 'visible').length
+      if (p.reportCount !== reportCount || p.commentCount !== commentCount) {
+        await ctx.db.patch(p._id, { reportCount, commentCount })
+        patched++
+      }
     }
     return { patched, total: profiles.length }
   },

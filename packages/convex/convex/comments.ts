@@ -22,6 +22,7 @@ import { ConvexError, v } from 'convex/values'
 import type { Doc } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { getCurrentProfile, requireProfile } from './lib/auth'
+import { bumpContributionCount, visibleDelta } from './lib/contributionCounts'
 import { loadBlockedAuthorIds } from './lib/reportVisibility'
 
 /**
@@ -68,7 +69,7 @@ export const create = mutation({
       }
     }
 
-    return ctx.db.insert('comments', {
+    const commentId = await ctx.db.insert('comments', {
       reportId: args.reportId,
       ...(args.parentCommentId !== undefined ? { parentCommentId: args.parentCommentId } : {}),
       authorId: profile._id,
@@ -77,6 +78,9 @@ export const create = mutation({
       moderationStatus: 'visible',
       createdAt: now,
     })
+    // Bump the author's denormalized comment counter (born visible) — see contributionCounts.ts.
+    await bumpContributionCount(ctx, profile._id, 'commentCount', 1)
+    return commentId
   },
 })
 
@@ -225,6 +229,13 @@ export const remove = mutation({
     }
     if (existing.moderationStatus !== 'removed') {
       await ctx.db.patch(commentId, { moderationStatus: 'removed' })
+      // Drop the author's visible-comment counter if this was still counting (visible → removed).
+      await bumpContributionCount(
+        ctx,
+        existing.authorId,
+        'commentCount',
+        visibleDelta(existing.moderationStatus, 'removed'),
+      )
     }
     return commentId
   },

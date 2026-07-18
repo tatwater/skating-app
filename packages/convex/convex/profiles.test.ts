@@ -566,6 +566,9 @@ describe('profiles.getPublicProfile (D13)', () => {
     }
     await mkReport('visible')
     await mkReport('hidden')
+    // The displayed #reports/#comments are the maintained counters, NOT this bounded history window —
+    // patch counters that exceed the seeded rows to prove the payload reads the counter, not the list.
+    await t.run((ctx) => ctx.db.patch(id, { reportCount: 7, commentCount: 3 }))
 
     const profile = await t.query(api.profiles.getPublicProfile, { username: 'ada' })
     expect(profile).not.toBeNull()
@@ -573,8 +576,9 @@ describe('profiles.getPublicProfile (D13)', () => {
     expect(profile.bio).toBe('ADK skater')
     expect(profile.homeTownLabel).toBe('Norwich, VT')
     expect(profile.reputationPoints).toBe(0) // trust score renders 0 until Phase 6
-    expect(profile.reportCount).toBe(1) // only the visible report
-    expect(profile.reports).toHaveLength(1)
+    expect(profile.reportCount).toBe(7) // the maintained counter, not the window length
+    expect(profile.commentCount).toBe(3)
+    expect(profile.reports).toHaveLength(1) // history still the visible window (1 visible report)
     expect(profile.reports[0]?.waterBodyName).toBe('Lake Morey')
     // No PII leaks in the payload.
     expect(JSON.stringify(profile)).not.toContain('dateOfBirth')
@@ -665,5 +669,196 @@ describe('profiles.backfillNotificationPrefs', () => {
     expect(res).toEqual({ patched: 0, total: 2 })
     const p = await t.withIdentity({ subject: 'clerk_a' }).query(api.profiles.current, {})
     expect(p?.notificationPrefs.reportCommented).toBe(true) // default-on (D16)
+  })
+})
+
+// --- Phase 4: drive-time home, feed-filter prefs, notification prefs ---
+
+/** Provision an adult profile and return an identity-bound test client. */
+async function provisionAdult(t: ReturnType<typeof convexTest>, subject = 'clerk_p4') {
+  const asUser = t.withIdentity({ subject })
+  await asUser.mutation(
+    api.profiles.upsertFromClerk,
+    withAck({ displayName: 'P4', username: subject, dateOfBirth: ADULT_DOB }),
+  )
+  return asUser
+}
+
+describe('profiles.setHome', () => {
+  test('stores the private home coord and schedules an isochrone recompute', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setHome, { homeCoord: { lat: 44, lng: -72 } })
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.homeCoord).toEqual({ lat: 44, lng: -72 })
+    // A recompute is scheduled (the action itself — ORS + storeBands — is covered in isochrones.test).
+    const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+    expect(scheduled.some((f) => f.name.includes('isochrones'))).toBe(true)
+  })
+
+  test('clears the home when passed no coord', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setHome, { homeCoord: { lat: 44, lng: -72 } })
+    await asUser.mutation(api.profiles.setHome, {})
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.homeCoord).toBeUndefined()
+  })
+
+  test('rejects an invalid coordinate', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await expect(
+      asUser.mutation(api.profiles.setHome, { homeCoord: { lat: 200, lng: 0 } }),
+    ).rejects.toThrow(/not valid/i)
+  })
+})
+
+describe('profiles.setFeedFilterPrefs', () => {
+  test('sanitizes and stores the filter blob', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setFeedFilterPrefs, {
+      filters: {
+        radiusMinutes: 60,
+        qualityFloor: 'good',
+        iceTypes: ['black_ice', 'junk'],
+        bogus: 1,
+      },
+    })
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.feedFilterPrefs).toEqual({
+      radiusMinutes: 60,
+      qualityFloor: 'good',
+      iceTypes: ['black_ice'],
+    })
+  })
+
+  test('clears the stored prefs when the sanitized blob is empty', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setFeedFilterPrefs, { filters: { radiusMinutes: 60 } })
+    await asUser.mutation(api.profiles.setFeedFilterPrefs, { filters: { nonsense: true } })
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.feedFilterPrefs).toBeUndefined()
+  })
+})
+
+describe('profiles.setNotificationPrefs', () => {
+  test('merges a partial toggle patch and sets the two radii', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setNotificationPrefs, {
+      prefs: { nearbyReportDigest: true, greatReportNearby: true },
+      allRadiusMinutes: 30,
+      greatRadiusMinutes: 60,
+    })
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.notificationPrefs.nearbyReportDigest).toBe(true)
+    expect(p?.notificationPrefs.favoriteReport).toBe(true) // untouched key preserved
+    expect(p?.allRadiusMinutes).toBe(30)
+    expect(p?.greatRadiusMinutes).toBe(60)
+  })
+
+  test('enforces the great radius ≥ the all radius (X₂ ≥ X₁)', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await expect(
+      asUser.mutation(api.profiles.setNotificationPrefs, {
+        allRadiusMinutes: 90,
+        greatRadiusMinutes: 30,
+      }),
+    ).rejects.toThrow(/at least the all-reports radius/i)
+  })
+
+  test('enforces X₂ ≥ X₁ against the already-stored radius too', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setNotificationPrefs, { allRadiusMinutes: 90 })
+    // Now lowering only the great radius below the stored all radius must fail.
+    await expect(
+      asUser.mutation(api.profiles.setNotificationPrefs, { greatRadiusMinutes: 60 }),
+    ).rejects.toThrow(/at least the all-reports radius/i)
+  })
+
+  test('rejects a non-band radius value', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await expect(
+      asUser.mutation(api.profiles.setNotificationPrefs, { allRadiusMinutes: 45 }),
+    ).rejects.toThrow(/30, 60, or 90/i)
+  })
+})
+
+describe('profiles.backfillContributionCounts', () => {
+  test('seeds counters from an author’s visible reports + comments, idempotently', async () => {
+    const t = convexTest(schema, modules)
+    const { id } = await provision(t, 'clerk_a', 'ada')
+
+    const waterBodyId = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Morey',
+        type: 'lake' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [0, 0],
+              [0, 1],
+              [1, 1],
+              [1, 0],
+              [0, 0],
+            ],
+          ],
+        },
+        bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+        centroid: { lat: 0.5, lng: 0.5 },
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    )
+    const mkReport = (moderationStatus: 'visible' | 'hidden') => {
+      const now = Date.now()
+      return t.run((ctx) =>
+        ctx.db.insert('reports', {
+          authorId: id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: now,
+          reportTime: now,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus,
+          hazardIdsCreated: [],
+          createdAt: now,
+          updatedAt: now,
+        }),
+      )
+    }
+    const visibleReport = await mkReport('visible')
+    await mkReport('visible')
+    await mkReport('hidden') // excluded from the count
+    await t.run((ctx) =>
+      ctx.db.insert('comments', {
+        reportId: visibleReport,
+        authorId: id,
+        body: 'nice',
+        source: 'native' as const,
+        moderationStatus: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    )
+
+    const res = await t.mutation(internal.profiles.backfillContributionCounts, {})
+    expect(res.patched).toBe(1)
+    const p = await t.run((ctx) => ctx.db.get(id))
+    expect(p?.reportCount).toBe(2) // two visible, hidden excluded
+    expect(p?.commentCount).toBe(1)
+
+    // Idempotent — a second run rewrites the same totals and patches nothing.
+    expect((await t.mutation(internal.profiles.backfillContributionCounts, {})).patched).toBe(0)
   })
 })

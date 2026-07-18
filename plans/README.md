@@ -30,6 +30,16 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   Workstream H: per-state ETL (NY/VT/NH/ME/MA, NY clipped downstate), a multi-state `.pmtiles` on
   Cloudflare R2, and the (last) map-bounds widening. Pure data + infra, no app features.
   **✅ Complete on dev (2026-07-15); prod deferred.**
+- [Phase 3 — Community + safety](./phase-3-community-and-safety.md) — threaded comments,
+  public/private profiles + search, block/mute, flag/report, minimal moderator hide/remove.
+  **✅ Complete on dev (2026-07-16, PR #17); prod deferred.**
+- [Phase 5 — Newsfeed](./phase-5-newsfeed.md) — global cross-body feed by skate-end time,
+  point-derived place labels (`adminAreas`), tap-to-drawer, photo carousel.
+  *(Brought forward ahead of Phase 4.)* **✅ Complete on dev (2026-07-17, PR #18); prod deferred.**
+- [Phase 4 — Drive-time + dynamic filtering](./phase-4-drive-time-and-filtering.md) — favorites,
+  read-time isochrone bands, persisted feed filter row, notification coalescing queue + 8pm digest,
+  put-ins + directions, mobile offline read-cache. **✅ Complete on dev (2026-07-18, PR #19); prod
+  deferred.**
 
 ## How these fit together
 

@@ -5,7 +5,7 @@
  * `placeOnMap`, so a client bug can never leak a location.
  */
 
-import { isValidCoord } from '@skating/core'
+import { isMinor, isValidCoord } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import type { Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
@@ -17,7 +17,11 @@ import { latLng } from './lib/validators'
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireProfile(ctx)
+    const profile = await requireProfile(ctx)
+    // Minors are read-only (D41): don't even hand a minor an upload URL (they can't create the row).
+    if (isMinor(profile.dateOfBirth, Date.now())) {
+      throw new ConvexError('Minors cannot post')
+    }
     return ctx.storage.generateUploadUrl()
   },
 })
@@ -38,6 +42,11 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx)
+    // Minors are read-only (D41): photos only exist to back a report a minor can't post, so gate
+    // the upload surface too — a minor never mints photo rows or storage blobs.
+    if (isMinor(profile.dateOfBirth, Date.now())) {
+      throw new ConvexError('Minors cannot post')
+    }
     // D42: retain a coord ONLY on placeOnMap opt-in — server-side, so a client bug can't leak it.
     const coord = args.placeOnMap ? args.coord : undefined
     // Range-check before storing (the `latLng` validator checks types, not geographic bounds).

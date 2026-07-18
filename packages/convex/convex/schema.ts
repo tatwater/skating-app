@@ -45,8 +45,11 @@ import {
   MODERATION_STATUSES,
   MODERATION_TARGET_TYPES,
   NOTIFICATION_PREF_KEYS,
+  NOTIFICATION_QUEUE_KINDS,
   NOTIFICATION_TYPES,
   POINT_EVENT_REASONS,
+  PUTIN_SOURCES,
+  PUTIN_STATUSES,
   RATING_VERDICTS,
   REMOVAL_REASONS,
   REPORT_SOURCES,
@@ -71,15 +74,46 @@ export default defineSchema({
     // Avatar mirrored from Clerk's `imageUrl` at `upsertFromClerk` (Phase 3 decision #2) — no upload
     // pipeline; users manage it via Clerk's own UI. Optional ⇒ migration-free; scrubbed on deletion.
     profileImageUrl: v.optional(v.string()),
-    driveTimePrefMinutes: v.number(), // e.g. 30/60/90 (D18)
-    cachedIsochrone: v.optional(geoJson), // recomputed on home/pref change (D18)
-    cachedIsochroneAt: v.optional(v.number()),
+    driveTimePrefMinutes: v.number(), // legacy single pref (D18); superseded by the bands + notif radii below
+    // Drive-time bands derived from the PRIVATE `homeCoord` (Phase 4, decision #2). 30/60 are hosted-ORS
+    // isochrone polygons (the API caps at 60 min); the 90 band is the crow-flies `outerRadiusMeters`
+    // fallback. Recomputed on home/pref change (D18), stamping `cachedIsochronesAt`. All optional ⇒
+    // migration-free; a viewer with no home has none and every lake reads band `null`.
+    cachedIsochrones: v.optional(
+      v.object({ band30: v.optional(geoJson), band60: v.optional(geoJson) }),
+    ),
+    outerRadiusMeters: v.optional(v.number()),
+    cachedIsochronesAt: v.optional(v.number()),
+    // Server-sync copy of the newsfeed filter row (Phase 4, decision #3/#6); local storage is the
+    // working copy, this is the durable/LWW copy. All fields optional (all-absent = show everything).
+    feedFilterPrefs: v.optional(
+      v.object({
+        radiusMinutes: v.optional(v.number()),
+        qualityFloor: v.optional(literals(SKATE_QUALITIES)),
+        thicknessFloorCm: v.optional(v.number()),
+        noSnow: v.optional(v.boolean()),
+        iceTypes: v.optional(v.array(literals(ICE_TYPES))),
+        surfaceTags: v.optional(v.array(literals(SURFACE_TAGS))),
+        recencyHours: v.optional(v.number()),
+      }),
+    ),
+    // Two independent notification radii (Phase 4, decision #4): X₁ for the "all nearby" digest, X₂
+    // for "great nearby" (X₂ ≥ X₁, enforced in `setNotificationPrefs`). Optional ⇒ migration-free.
+    allRadiusMinutes: v.optional(v.number()),
+    greatRadiusMinutes: v.optional(v.number()),
     profileVisibility: literals(PROFILE_VISIBILITIES), // public=searchable/browsable; minors forced private (D13/D41)
     notificationPrefs, // every type toggleable (D16)
     dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
     riskAckAt: v.optional(v.number()),
     reputationPoints: v.number(), // cosmetic/reputational only (D17)
+    // Denormalized lifetime contribution counts — the true #reports/#comments a public profile shows
+    // (D13). Maintained incrementally on the create / author-remove / moderation paths so the profile
+    // read never `.collect()`s an author's full history just to count it (the earlier windowed count
+    // capped at PROFILE_HISTORY_LIMIT). Count only currently-**visible** content. Optional ⇒
+    // migration-free; new profiles start at 0 and `backfillContributionCounts` seeds existing rows.
+    reportCount: v.optional(v.number()),
+    commentCount: v.optional(v.number()),
     badges: v.optional(v.array(v.string())),
     role: literals(USER_ROLES), // mod=content; admin ⊇ mod (D37)
     status: literals(USER_STATUSES), // suspend/ban (D37); deleted (D33)
@@ -249,6 +283,10 @@ export default defineSchema({
     ),
     photoIds: v.array(v.id('photos')),
     notes: v.optional(v.string()),
+    // Per-report private-property opt-out (Phase 4, decision #7): when false, the map suppresses the
+    // precise put-in pin derived from this report's `point` but keeps the coarse `place` label — we
+    // hide a marker, we never scrub location. Default true; optional ⇒ migration-free.
+    showPutIn: v.optional(v.boolean()),
     // No visibility field — every report is public (D13). Minors can't create reports (D41).
     // Client-generated dedup key for the mobile offline draft queue (F2/D30): a draft carries one
     // key from capture, so a reconnect flush whose ack was lost can retry `reports.create` and get
@@ -260,6 +298,14 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
+    // Per-body feed, paginated (infinite scroll). `moderationStatus` leads so the gate is applied
+    // *in* the index (only `visible`, D32) rather than after `paginate` — the same reasoning as the
+    // global feed index: a page of all-hidden reports mustn't come back empty with `isDone: false`.
+    .index('by_water_body_moderation_and_skate_end_time', [
+      'waterBodyId',
+      'moderationStatus',
+      'skateEndTime',
+    ])
     .index('by_author', ['authorId'])
     // Newest-first author history for the profile page, bounded by a `.take()` on skate-end time so a
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
@@ -416,4 +462,52 @@ export default defineSchema({
     refId: v.optional(v.string()),
     createdAt: v.number(),
   }).index('by_user', ['userId']),
+
+  // Place-based curation (Phase 4, decision #1) — the D13 stand-in for the removed people-follow
+  // graph. A user favorites specific water bodies: those reports notify by default, boost + badge in
+  // the feed, and highlight on the map. Indexed both directions — `by_user` for the viewer's set,
+  // `by_water_body` for the notification fan-out ("who favorited this lake?").
+  waterBodyFavorites: defineTable({
+    userId: v.id('profiles'),
+    waterBodyId: v.id('waterBodies'),
+    createdAt: v.number(),
+  })
+    .index('by_user', ['userId'])
+    .index('by_water_body', ['waterBodyId'])
+    // Point lookup + uniqueness for `toggle`/`isFavorite` (one row per user×body).
+    .index('by_user_water_body', ['userId', 'waterBodyId']),
+
+  // Routable put-in markers (Phase 4, decision #7). `derived` markers are materialized by clustering
+  // visible report points (approximate — a report `point` can be mid-lake); `official` markers are
+  // admin-set (accurate, priority styling — the operator UI is Phase 7, the data + mutations land
+  // here). A moderator `hide` writes a `hidden` row at the coord so the suppression outlives
+  // re-clustering (decision #7). Indexed by body for the per-lake marker list + directions target.
+  putIns: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    coord: latLng,
+    source: literals(PUTIN_SOURCES),
+    originReportId: v.optional(v.id('reports')), // the report a derived marker came from
+    status: literals(PUTIN_STATUSES), // hidden = moderator-suppressed coord
+    createdByUserId: v.optional(v.id('profiles')), // the admin/mod who set official / hid it
+    createdAt: v.number(),
+  }).index('by_water_body', ['waterBodyId']),
+
+  // Outbound-notification coalescing queue (Phase 4, decision #4). `reports.create` enqueues one row
+  // per candidate recipient×bucket; a row coalesces per `(user, body, kind)` (bumping `count` +
+  // `latestReportId` instead of stacking). The `flushNotificationQueue` cron drains rows whose
+  // `flushAfter` has passed — the 8pm-ET digest is just a `flushAfter` set to the next 8pm; favorites/
+  // great use a short debounce. `coalesceKey` seeds the eventual APNs collapse-id / Android tag.
+  notificationQueue: defineTable({
+    userId: v.id('profiles'),
+    waterBodyId: v.id('waterBodies'),
+    kind: literals(NOTIFICATION_QUEUE_KINDS),
+    type: literals(NOTIFICATION_TYPES), // the `notifications.type` this flushes to
+    coalesceKey: v.string(), // `${userId}:${waterBodyId}:${kind}` — collapse-id / tag seed
+    latestReportId: v.id('reports'),
+    count: v.number(), // how many reports coalesced into this pending push
+    flushAfter: v.number(), // earliest delivery time (next 8pm for digest; debounce for fav/great)
+    createdAt: v.number(),
+  })
+    .index('by_flush', ['flushAfter'])
+    .index('by_coalesce', ['coalesceKey']),
 })

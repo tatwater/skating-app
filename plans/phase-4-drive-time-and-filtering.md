@@ -11,7 +11,14 @@
 > reports. It layers on top of the global Phase 5 feed as an **additive filter** — the feed page and
 > card don't change; the result set narrows and re-orders.
 >
-> **Status:** planning (decisions settled 2026-07-17). Not started — **build after Phase 5.**
+> **Status:** ✅ **Complete on dev (2026-07-18), PR #19** (prod deferred — Convex prod uninitialized).
+> All six workstreams shipped (favorites, drive-time bands, feed filter row, notification queue + 8pm
+> digest, put-ins + directions, offline read-cache). Review follow-ups (2026-07-18): the digest now
+> consolidates per user into one notification grouped by body; profiles carry denormalized
+> `reportCount`/`commentCount` for true totals; per-body report lists paginate; the feed shows recency
+> scroll headers; minors are gated out of photo upload. **Push delivery is deferred** — the flush lands
+> an in-app `notifications` row (the `coalesceKey` seeds the eventual APNs collapse-id / Android tag).
+> Self-hosted ORS (true 90-min band) + "Recommended" filter-breaking posts remain deferred (see below).
 >
 > **Build order:** web first, then mobile (mirrors Phase 2/3/5). Backend + `@skating/core` geometry
 > front-load; both clients consume the same `listFeed` filter args + isochrone helpers.

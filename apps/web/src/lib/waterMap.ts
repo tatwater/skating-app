@@ -138,6 +138,49 @@ export function featureIdForBody(
   return typeof feature?.id === 'number' ? feature.id : undefined
 }
 
+/**
+ * The numeric feature ids of every body in the current collection that the viewer has favorited
+ * (Phase 4, decision #1) — used to paint the `favorite` feature-state so favorited lakes read with a
+ * distinct outline on the map. Bodies not currently in view (not in `fc`) are simply skipped.
+ */
+export function favoriteFeatureIds(
+  fc: GeoJSON.FeatureCollection,
+  favoriteIds: ReadonlySet<string>,
+): number[] {
+  const ids: number[] = []
+  for (const f of fc.features) {
+    const bodyId = f.properties?._id
+    if (typeof f.id === 'number' && typeof bodyId === 'string' && favoriteIds.has(bodyId)) {
+      ids.push(f.id)
+    }
+  }
+  return ids
+}
+
+/** A put-in marker as `putIns.listForBody` returns it — a routable coord + its provenance. */
+export interface MappablePutIn {
+  coord: { lat: number; lng: number }
+  source: 'derived' | 'official'
+}
+
+/**
+ * Put-in markers → a GeoJSON `FeatureCollection` for the map's `put-in-markers` source (Phase 4,
+ * decision #7). Each point carries its `source` so the layer can style `official` (accurate) markers
+ * distinctly from `derived` (approximate) clusters.
+ */
+export function putInsToFeatureCollection(
+  markers: readonly MappablePutIn[],
+): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: markers.map((m) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [m.coord.lng, m.coord.lat] },
+      properties: { source: m.source },
+    })),
+  }
+}
+
 /** MapLibre `LngLatBounds` (structural) → our `{ minLat, … }` bbox, the `listInViewport` arg. */
 export function boundsToViewport(bounds: {
   getWest(): number

@@ -23,7 +23,7 @@ import { ConvexError, v } from 'convex/values'
 import type { MultiPolygon, Polygon } from 'geojson'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
-import { requireProfile, requireRole } from './lib/auth'
+import { getCurrentProfile, requireProfile, requireRole } from './lib/auth'
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums'
 import { waterBodiesGeo } from './lib/geospatial'
 import { isListed } from './lib/listing'
@@ -643,6 +643,26 @@ export const listInViewport = query({
         continue
       }
       byId.set(body._id, body)
+    }
+
+    // Favorites are pinned visible at **every zoom** (Phase 4 map highlight): a viewer's favorited body
+    // that intersects the viewport is included even when its `minVisibleZoom` is above the current zoom,
+    // so a small-but-beloved lake never drops out from under its highlight when you zoom out. Bounded by
+    // a user's handful of favorites; follows merges to the survivor and honors the same `listed` gate.
+    const viewer = await getCurrentProfile(ctx)
+    if (viewer) {
+      const favorites = await ctx.db
+        .query('waterBodyFavorites')
+        .withIndex('by_user', (q) => q.eq('userId', viewer._id))
+        .collect()
+      for (const fav of favorites) {
+        let body = await ctx.db.get(fav.waterBodyId)
+        for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
+          body = await ctx.db.get(body.mergedIntoId)
+        }
+        if (!body || byId.has(body._id)) continue
+        if (isListed(body) && bboxIntersects(body.bbox, viewport)) byId.set(body._id, body)
+      }
     }
     return [...byId.values()]
   },

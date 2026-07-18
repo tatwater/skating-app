@@ -55,4 +55,11 @@ describe('FeedCard', () => {
     fireEvent.click(screen.getByRole('button'))
     expect(onOpen).toHaveBeenCalledOnce()
   })
+
+  it('shows a favorite badge when the body is favorited (Phase 4)', () => {
+    const { rerender } = render(<FeedCard data={DATA} now={NOW} onOpen={() => {}} />)
+    expect(screen.queryByLabelText('Favorited')).not.toBeInTheDocument()
+    rerender(<FeedCard data={{ ...DATA, isFavorite: true }} now={NOW} onOpen={() => {}} />)
+    expect(screen.getByLabelText('Favorited')).toBeInTheDocument()
+  })
 })
