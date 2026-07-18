@@ -707,6 +707,135 @@ describe('reports.listFeed (global newsfeed, Phase 5)', () => {
   })
 })
 
+describe('reports.listFeed filters + favorite boost (Phase 4)', () => {
+  const ALL = { paginationOpts: { numItems: 50, cursor: null } }
+
+  test('quality floor narrows the feed but keeps reports missing a quality (include-unknown)', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asUser = await seedUser(t, 'clerk_a')
+    const great = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME + 2,
+      skateQuality: 'great',
+    })
+    const poor = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME + 1,
+      skateQuality: 'poor',
+    })
+    const unrated = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    })
+
+    const res = await asUser.query(api.reports.listFeed, {
+      ...ALL,
+      filters: { qualityFloor: 'good' },
+    })
+    const ids = res.page.map((c) => c.reportId)
+    expect(ids).toContain(great)
+    expect(ids).toContain(unrated) // missing quality ⇒ included
+    expect(ids).not.toContain(poor)
+  })
+
+  test('distance filter drops out-of-band lakes but exempts favorites', async () => {
+    const t = convexTestWithGeo()
+    // Two bodies: one near the home (in the 30 band), one far (out of all bands).
+    const near = await seedBody(t, 'osm/near')
+    const far = await seedBody(t, 'osm/far')
+    // Move the far body's centroid far away so it's beyond the outer radius.
+    await t.run((ctx) => ctx.db.patch(far.id, { centroid: { lat: 40, lng: -100 } }))
+    const asUser = await seedUser(t, 'clerk_a')
+    const nearReport = await asUser.mutation(api.reports.create, {
+      waterBodyId: near.id,
+      skateEndTime: SKATE_TIME + 1,
+    })
+    const farReport = await asUser.mutation(api.reports.create, {
+      waterBodyId: far.id,
+      skateEndTime: SKATE_TIME,
+    })
+
+    // Give the viewer a 30-band polygon covering the near body (centroid 0.5,0.5) + a small outer radius.
+    await t.run(async (ctx) => {
+      const p = (await ctx.db.query('profiles').collect())[0]
+      if (!p) throw new Error('no profile')
+      await ctx.db.patch(p._id, {
+        homeCoord: { lat: 0.5, lng: 0.5 },
+        cachedIsochrones: {
+          band30: {
+            type: 'Polygon',
+            coordinates: [
+              [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+                [0, 0],
+              ],
+            ],
+          },
+        },
+        outerRadiusMeters: 50_000,
+      })
+    })
+
+    // Radius filter at 30 keeps only the near body.
+    const filtered = await asUser.query(api.reports.listFeed, {
+      ...ALL,
+      filters: { radiusMinutes: 30 },
+    })
+    expect(filtered.page.map((c) => c.reportId)).toEqual([nearReport])
+
+    // Favorite the far body → it's exempt from the distance filter and comes back (boosted).
+    await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: far.id })
+    const withFav = await asUser.query(api.reports.listFeed, {
+      ...ALL,
+      filters: { radiusMinutes: 30 },
+    })
+    const ids = withFav.page.map((c) => c.reportId)
+    expect(ids).toContain(nearReport)
+    expect(ids).toContain(farReport)
+    // The favorite is boosted to the top of the page and flagged.
+    expect(withFav.page[0]?.reportId).toBe(farReport)
+    expect(withFav.page[0]?.isFavorite).toBe(true)
+  })
+
+  test('favorites boost to the top of the page without changing the unfiltered set', async () => {
+    const t = convexTestWithGeo()
+    const a = await seedBody(t, 'osm/a')
+    const b = await seedBody(t, 'osm/b')
+    const asUser = await seedUser(t, 'clerk_a')
+    const newest = await asUser.mutation(api.reports.create, {
+      waterBodyId: a.id,
+      skateEndTime: SKATE_TIME + 10,
+    })
+    const oldestFav = await asUser.mutation(api.reports.create, {
+      waterBodyId: b.id,
+      skateEndTime: SKATE_TIME,
+    })
+    await asUser.mutation(api.waterBodyFavorites.toggle, { waterBodyId: b.id })
+
+    const res = await asUser.query(api.reports.listFeed, ALL)
+    // Both present; the favorited (older) report is boosted above the newer non-favorite.
+    expect(res.page.map((c) => c.reportId)).toEqual([oldestFav, newest])
+    expect(res.page[0]?.isFavorite).toBe(true)
+  })
+
+  test('unfiltered feed for a viewer with no home/favorites is exactly Phase 5', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asUser = await seedUser(t, 'clerk_a')
+    const r = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    })
+    const res = await asUser.query(api.reports.listFeed, ALL)
+    expect(res.page.map((c) => c.reportId)).toEqual([r])
+    expect(res.page[0]?.isFavorite).toBe(false)
+  })
+})
+
 /** Like `convexTestWithGeo`, but with schema validation OFF — mirrors the Phase-3/5 migration dance
  *  (temporarily `schemaValidation: false` on a deployment with drift), so a legacy `skateTime`-shaped
  *  report can be seeded to exercise the rename migration. */

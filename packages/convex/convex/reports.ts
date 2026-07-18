@@ -10,16 +10,21 @@
  */
 
 import {
+  bandForCoord,
   CONDITION_SOURCES,
   canViewReport,
+  type DriveTimeBands,
   type FeedCardData,
   ICE_TYPES,
   isMinor,
+  type LatLng,
+  matchesFilters,
   PRECIP_TYPES,
   type ReportInput,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
+  sanitizeFeedFilters,
   THICKNESS_METHODS,
   validateReportInput,
 } from '@skating/core'
@@ -32,6 +37,7 @@ import { getCurrentProfile, requireProfile } from './lib/auth'
 import { isListed } from './lib/listing'
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
 import { latLng, literals } from './lib/validators'
+import { loadFavoriteBodyIds } from './waterBodyFavorites'
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
 const reportContent = {
@@ -239,21 +245,31 @@ export const get = query({
   handler: (ctx, { reportId }) => getViewableReport(ctx, reportId),
 })
 
-/** Resolve a report's surviving water-body name, following `mergedIntoId` (D36); cached per query. */
-async function bodyNameFor(
+/** A resolved survivor body's feed-relevant fields: display name + on-water centroid (for band calc). */
+interface BodyInfo {
+  name: string
+  centroid: LatLng
+}
+
+/** Resolve a report's surviving water-body name + centroid, following `mergedIntoId` (D36); cached. */
+async function bodyInfoFor(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
-  cache: Map<string, string>,
-): Promise<string> {
+  cache: Map<string, BodyInfo>,
+): Promise<BodyInfo> {
   const cached = cache.get(waterBodyId)
   if (cached !== undefined) return cached
   let body = await ctx.db.get(waterBodyId)
   for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
     body = await ctx.db.get(body.mergedIntoId)
   }
-  const name = body?.name ?? 'Unknown water body'
-  cache.set(waterBodyId, name)
-  return name
+  const info: BodyInfo = {
+    name: body?.name ?? 'Unknown water body',
+    // A resolvable body always has a centroid; the fallback keeps the type total for a dangling ref.
+    centroid: body?.centroid ?? { lat: 0, lng: 0 },
+  }
+  cache.set(waterBodyId, info)
+  return info
 }
 
 /** Resolve a report author's public `{ displayName, username }` (D13); cached per query. */
@@ -297,31 +313,72 @@ async function thumbUrlsFor(
  * item is enriched into a `FeedCardData` (survivor body name + point-derived place, author, photo
  * thumbnails) — bounded by page size. The feed ships global; Phase 4 layers an additive drive-time /
  * favorites narrow onto this same query.
+ *
+ * **Phase 4 (additive).** An optional `filters` blob narrows the page via the shared
+ * `@skating/core` `matchesFilters` (include-unknown for optional attributes; distance is hard and
+ * favorites are exempt), using the viewer's cached isochrone bands + favorite set. Favorites are
+ * **boosted to the top of the page** (a stable per-page reorder) and carry `isFavorite: true` for the
+ * badge. With no filters + no favorites the result is exactly the Phase 5 feed. Note: narrowing runs
+ * *after* `paginate`, so a heavily filtered page can come back short (even empty) with `isDone: false`
+ * — `usePaginatedQuery` keeps loading; the client requests the next page. (The moderation gate stays
+ * in-index precisely because *it* could empty every page; user filters can't strand the same way since
+ * the cursor still advances through visible reports.)
  */
 export const listFeed = query({
-  args: { paginationOpts: paginationOptsValidator },
-  handler: async (ctx, { paginationOpts }) => {
+  args: { paginationOpts: paginationOptsValidator, filters: v.optional(v.any()) },
+  handler: async (ctx, { paginationOpts, filters: rawFilters }) => {
     const viewer = await getCurrentProfile(ctx)
-    const blocked = await loadBlockedAuthorIds(ctx, viewer?._id ?? '')
+    const viewerId = viewer?._id ?? ''
+    const [blocked, favorites] = await Promise.all([
+      loadBlockedAuthorIds(ctx, viewerId),
+      loadFavoriteBodyIds(ctx, viewerId),
+    ])
+    const filters = sanitizeFeedFilters(rawFilters)
+    // Stored bands validate as the broad GeoJSON union, but ORS only ever writes Polygon/MultiPolygon;
+    // cast to the band shape `bandForCoord` consumes (same pattern as `adminAreas` polygon reads).
+    const bands = {
+      band30: viewer?.cachedIsochrones?.band30,
+      band60: viewer?.cachedIsochrones?.band60,
+      outerRadiusMeters: viewer?.outerRadiusMeters,
+    } as DriveTimeBands
+    const home = viewer?.homeCoord
+    const now = Date.now()
 
     // Moderation-only gate (D32), applied *in* the index (`moderationStatus: 'visible'`) rather than
-    // after `paginate` — filtering post-pagination would let a page of all-hidden reports return
-    // empty with `isDone: false`, stranding the client on its "No reports yet" state with more pages
-    // behind it. A blocked author's report still comes through (D3), de-emphasized via `blocked` below.
+    // after `paginate`. A blocked author's report still comes through (D3), de-emphasized via `blocked`.
     const result = await ctx.db
       .query('reports')
       .withIndex('by_moderation_and_skate_end_time', (q) => q.eq('moderationStatus', 'visible'))
       .order('desc')
       .paginate(paginationOpts)
 
-    const bodyNames = new Map<string, string>()
+    const bodyInfo = new Map<string, BodyInfo>()
     const authors = new Map<string, { displayName: string; username: string }>()
     const page: FeedCardData[] = []
     for (const r of result.page) {
+      const body = await bodyInfoFor(ctx, r.waterBodyId, bodyInfo)
+      const isFavorite = favorites.has(r.waterBodyId)
+      const band = bandForCoord(body.centroid, bands, home)
+      // The additive narrow — an empty `filters` matches everything (Phase 5 behavior preserved).
+      if (
+        !matchesFilters(
+          {
+            skateEndTime: r.skateEndTime,
+            ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
+            iceTypes: r.iceTypes,
+            surfaceTags: r.surfaceTags,
+            ...(r.iceThickness !== undefined ? { iceThickness: r.iceThickness } : {}),
+          },
+          filters,
+          { band, isFavorite, now },
+        )
+      ) {
+        continue
+      }
       page.push({
         reportId: r._id,
         waterBodyId: r.waterBodyId,
-        bodyName: await bodyNameFor(ctx, r.waterBodyId, bodyNames),
+        bodyName: body.name,
         ...(r.place !== undefined ? { place: r.place } : {}),
         skateEndTime: r.skateEndTime,
         ...(r.skateStartTime !== undefined ? { skateStartTime: r.skateStartTime } : {}),
@@ -331,8 +388,11 @@ export const listFeed = query({
         photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
         author: await authorFor(ctx, r.authorId, authors),
         blocked: blocked.has(r.authorId),
+        isFavorite,
       })
     }
+    // Boost favorites to the top of THIS page (stable sort keeps skate-end order within each group).
+    page.sort((a, b) => Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false))
     return { ...result, page }
   },
 })

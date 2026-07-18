@@ -74,6 +74,8 @@ export interface FeedCardData {
   photoThumbUrls: string[]
   author: { displayName: string; username: string }
   blocked: boolean
+  /** Viewer has favorited this body (Phase 4) — drives the feed badge + the per-page boost. */
+  isFavorite?: boolean
 }
 
 /** Render-ready feed card. `relativeTime` depends on `now`, so it's computed per render, not stored. */
@@ -91,6 +93,8 @@ export interface FeedCardView {
   photoThumbUrls: string[]
   author: { displayName: string; username: string }
   blocked: boolean
+  /** Viewer has favorited this body (Phase 4) — the card shows a heart/badge and boosts it. */
+  isFavorite: boolean
 }
 
 /**
@@ -112,5 +116,6 @@ export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView
     photoThumbUrls: data.photoThumbUrls,
     author: data.author,
     blocked: data.blocked,
+    isFavorite: data.isFavorite ?? false,
   }
 }

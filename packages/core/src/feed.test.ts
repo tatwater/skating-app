@@ -84,6 +84,11 @@ describe('buildFeedCardView', () => {
     expect(view.photoThumbUrls).toEqual(['https://x/thumb1.jpg'])
     expect(view.author).toEqual({ displayName: 'Ada Skater', username: 'ada' })
     expect(view.blocked).toBe(false)
+    expect(view.isFavorite).toBe(false) // defaults false when the server omits it
+  })
+
+  it('carries the favorite flag through to the view (Phase 4)', () => {
+    expect(buildFeedCardView({ ...CARD, isFavorite: true }, now).isFavorite).toBe(true)
   })
 
   it('handles an end-only report with no place, quality, or photos', () => {
