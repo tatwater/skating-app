@@ -162,7 +162,13 @@ export async function enqueueReportNotifications(
  * Drain every queue row whose `flushAfter` has passed into an in-app `notifications` row and delete it
  * (decision #4). Run by the `crons.ts` interval; also directly callable in tests. The payload carries
  * the coalesced `count` + `coalesceKey` (the collapse-id / tag seed) so a later push layer can replace
- * rather than stack. Each already-coalesced row is one delivery (one per user×body×kind).
+ * rather than stack.
+ *
+ * **Favorite / great** rows deliver **one notification per row** (already coalesced per user×body×kind).
+ * **Digest** rows are different (decision #4, refined): the "all nearby" digest is inherently per-user —
+ * scoped to *that* user's drive-time bands — so all of a user's due digest rows roll up into **one**
+ * `nearby_report_digest` notification whose payload enumerates the bodies ("3 lakes near you have new
+ * reports"), instead of one row per lake. Grouping happens *inside* the single digest, not across N of them.
  */
 export const flushNotificationQueue = internalMutation({
   args: {},
@@ -172,7 +178,17 @@ export const flushNotificationQueue = internalMutation({
       .query('notificationQueue')
       .withIndex('by_flush', (q) => q.lte('flushAfter', now))
       .collect()
+
+    // Digest rows accumulate per user into a single consolidated notification; fav/great deliver 1:1.
+    const digestByUser = new Map<Id<'profiles'>, Doc<'notificationQueue'>[]>()
+    let delivered = 0
     for (const row of due) {
+      if (row.kind === 'digest') {
+        const rows = digestByUser.get(row.userId)
+        if (rows) rows.push(row)
+        else digestByUser.set(row.userId, [row])
+        continue
+      }
       await ctx.db.insert('notifications', {
         userId: row.userId,
         type: row.type,
@@ -185,7 +201,27 @@ export const flushNotificationQueue = internalMutation({
         createdAt: now,
       })
       await ctx.db.delete(row._id)
+      delivered++
     }
-    return { delivered: due.length }
+
+    // One consolidated digest per user: enumerate the bodies (each with its own coalesced count),
+    // carry the grand `totalCount`, and key the collapse-id per user so a later push replaces cleanly.
+    for (const [userId, rows] of digestByUser) {
+      const bodies = rows.map((r) => ({
+        waterBodyId: r.waterBodyId,
+        reportId: r.latestReportId,
+        count: r.count,
+      }))
+      const totalCount = bodies.reduce((sum, b) => sum + b.count, 0)
+      await ctx.db.insert('notifications', {
+        userId,
+        type: 'nearby_report_digest',
+        payload: { bodies, totalCount, coalesceKey: `${userId}:digest` },
+        createdAt: now,
+      })
+      for (const r of rows) await ctx.db.delete(r._id)
+      delivered++
+    }
+    return { delivered }
   },
 })

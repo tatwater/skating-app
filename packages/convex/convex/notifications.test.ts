@@ -199,6 +199,41 @@ describe('notifications — nearby digest (X₁)', () => {
     expect(await t.run((ctx) => ctx.db.query('notifications').collect())).toEqual([])
   })
 
+  test('rolls all of a user’s due digest rows into ONE consolidated notification, grouped by body', async () => {
+    const t = convexTestWithGeo()
+    const bodyA = await seedBody(t, 'osm/1')
+    const bodyB = await seedBody(t, 'osm/2')
+    const author = await seedProfile(t, 'author')
+    const nearby = await seedProfile(t, 'nearby', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+      inBand: true,
+    })
+
+    // Two reports on body A (coalesce into one queue row) + one on body B → two digest queue rows.
+    await author.as.mutation(api.reports.create, { waterBodyId: bodyA, skateEndTime: SKATE_TIME })
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: bodyA,
+      skateEndTime: SKATE_TIME + 1,
+    })
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: bodyB,
+      skateEndTime: SKATE_TIME + 2,
+    })
+
+    const delivered = await flushAllDue(t)
+    // ONE digest for the user, enumerating both bodies — not one notification per lake.
+    expect(delivered).toHaveLength(1)
+    const digest = delivered[0]
+    expect(digest?.type).toBe('nearby_report_digest')
+    expect(digest?.userId).toBe(nearby.id)
+    expect(digest?.payload.bodies).toHaveLength(2)
+    expect(digest?.payload.totalCount).toBe(3) // 2 on A + 1 on B
+    expect(digest?.payload.coalesceKey).toBe(`${nearby.id}:digest`)
+    // Queue fully drained.
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([])
+  })
+
   test("a body out of the viewer's band produces no digest", async () => {
     const t = convexTestWithGeo()
     const id = await seedBody(t)
