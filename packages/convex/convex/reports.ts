@@ -12,7 +12,6 @@
 import {
   bandForCoord,
   CONDITION_SOURCES,
-  canViewReport,
   type DriveTimeBands,
   type FeedCardData,
   ICE_TYPES,
@@ -240,19 +239,22 @@ export const create = mutation({
 })
 
 /**
- * A water body's report feed — newest **skate time** first (D28). All reports are public (D13) and a
- * block never hides a report (D3), so the filter is moderation-only (excludes hidden/removed, D32).
- * The blocked-author "Blocked"-chip annotation is layered on in Workstream B.
+ * A water body's report feed — newest **skate-end time** first (D28), **paginated** for infinite
+ * scroll so a popular lake's history never `.collect()`s an unbounded set. All reports are public
+ * (D13) and a block never hides a report (D3), so the filter is moderation-only (excludes
+ * hidden/removed, D32) — applied *in* the index (`moderationStatus: 'visible'`) so a page is never
+ * emptied by the gate. The blocked-author "Blocked"-chip annotation is layered on in the client.
  */
 export const listByWaterBody = query({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
-    const reports = await ctx.db
+  args: { waterBodyId: v.id('waterBodies'), paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { waterBodyId, paginationOpts }) => {
+    return ctx.db
       .query('reports')
-      .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
+      .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+        q.eq('waterBodyId', waterBodyId).eq('moderationStatus', 'visible'),
+      )
       .order('desc')
-      .collect()
-    return reports.filter((r) => canViewReport(r.moderationStatus))
+      .paginate(paginationOpts)
   },
 })
 
@@ -303,6 +305,42 @@ async function authorFor(
     : { displayName: 'Unknown', username: '' }
   cache.set(authorId, author)
   return author
+}
+
+/** Per-query enrichment caches shared across a page of feed cards (body info + author attribution). */
+interface FeedCardCaches {
+  bodyInfo: Map<string, BodyInfo>
+  authors: Map<string, { displayName: string; username: string }>
+}
+
+/**
+ * Shape one visible report into a `FeedCardData` — the single source of truth for the feed-card
+ * payload, shared by the global `listFeed` and the offline-cache `recentCardsForBodies` so the two
+ * can never drift. `blocked` de-emphasizes a blocked author but never hides the report (D3); a block
+ * is not moderation.
+ */
+async function toFeedCard(
+  ctx: QueryCtx,
+  r: Doc<'reports'>,
+  caches: FeedCardCaches,
+  sets: { blocked: Set<string>; favorites: Set<string> },
+): Promise<FeedCardData> {
+  const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo)
+  return {
+    reportId: r._id,
+    waterBodyId: r.waterBodyId,
+    bodyName: body.name,
+    ...(r.place !== undefined ? { place: r.place } : {}),
+    skateEndTime: r.skateEndTime,
+    ...(r.skateStartTime !== undefined ? { skateStartTime: r.skateStartTime } : {}),
+    iceTypes: r.iceTypes,
+    surfaceTags: r.surfaceTags,
+    ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
+    photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
+    author: await authorFor(ctx, r.authorId, caches.authors),
+    blocked: sets.blocked.has(r.authorId),
+    isFavorite: sets.favorites.has(r.waterBodyId),
+  }
 }
 
 /** Resolve a report's photo **thumbnail** serving URLs for the feed carousel; missing files skipped. */
@@ -369,11 +407,10 @@ export const listFeed = query({
       .order('desc')
       .paginate(paginationOpts)
 
-    const bodyInfo = new Map<string, BodyInfo>()
-    const authors = new Map<string, { displayName: string; username: string }>()
+    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() }
     const page: FeedCardData[] = []
     for (const r of result.page) {
-      const body = await bodyInfoFor(ctx, r.waterBodyId, bodyInfo)
+      const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo)
       const isFavorite = favorites.has(r.waterBodyId)
       const band = bandForCoord(body.centroid, bands, home)
       // The additive narrow — an empty `filters` matches everything (Phase 5 behavior preserved).
@@ -392,25 +429,52 @@ export const listFeed = query({
       ) {
         continue
       }
-      page.push({
-        reportId: r._id,
-        waterBodyId: r.waterBodyId,
-        bodyName: body.name,
-        ...(r.place !== undefined ? { place: r.place } : {}),
-        skateEndTime: r.skateEndTime,
-        ...(r.skateStartTime !== undefined ? { skateStartTime: r.skateStartTime } : {}),
-        iceTypes: r.iceTypes,
-        surfaceTags: r.surfaceTags,
-        ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
-        photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
-        author: await authorFor(ctx, r.authorId, authors),
-        blocked: blocked.has(r.authorId),
-        isFavorite,
-      })
+      page.push(await toFeedCard(ctx, r, caches, { blocked, favorites }))
     }
     // Boost favorites to the top of THIS page (stable sort keeps skate-end order within each group).
     page.sort((a, b) => Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false))
     return { ...result, page }
+  },
+})
+
+/** Offline read-cache bounds (decision #8): the freshest few reports per body, within a recent window. */
+const OFFLINE_CACHE_MAX_PER_BODY = 5
+const OFFLINE_CACHE_WINDOW_MS = 72 * 60 * 60 * 1000 // 72h
+
+/**
+ * Recent reports for a set of bodies as ready-to-cache `FeedCardData` (Phase 4, decision #8) — the
+ * data the mobile offline read-cache stores so an **opened lake** and the viewer's **favorites** read
+ * back on the ice with no signal. Per body: the freshest ≤5 visible reports within the last 72h
+ * (whichever bound is smaller), enriched identically to the feed via `toFeedCard`. Empty ids → empty.
+ */
+export const recentCardsForBodies = query({
+  args: { waterBodyIds: v.array(v.id('waterBodies')) },
+  handler: async (ctx, { waterBodyIds }) => {
+    const viewer = await getCurrentProfile(ctx)
+    const viewerId = viewer?._id ?? ''
+    const [blocked, favorites] = await Promise.all([
+      loadBlockedAuthorIds(ctx, viewerId),
+      loadFavoriteBodyIds(ctx, viewerId),
+    ])
+    const cutoff = Date.now() - OFFLINE_CACHE_WINDOW_MS
+    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() }
+    const cards: FeedCardData[] = []
+    for (const waterBodyId of [...new Set(waterBodyIds)]) {
+      const recent = await ctx.db
+        .query('reports')
+        .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+          q
+            .eq('waterBodyId', waterBodyId)
+            .eq('moderationStatus', 'visible')
+            .gte('skateEndTime', cutoff),
+        )
+        .order('desc')
+        .take(OFFLINE_CACHE_MAX_PER_BODY)
+      for (const r of recent) {
+        cards.push(await toFeedCard(ctx, r, caches, { blocked, favorites }))
+      }
+    }
+    return cards
   },
 })
 

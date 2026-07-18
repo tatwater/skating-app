@@ -1,6 +1,6 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { api } from '@skating/convex/api'
-import type { FeedCardData, FeedFilters } from '@skating/core'
+import { type FeedCardData, type FeedFilters, groupFeedSections } from '@skating/core'
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FlatList, RefreshControl } from 'react-native'
@@ -17,6 +17,11 @@ import { cacheReports, loadCachedReports } from '../../src/lib/reportCache'
 
 /** Feed page size per `usePaginatedQuery` load. */
 const PAGE_SIZE = 20
+
+/** A row in the interleaved feed list: a recency section header, or a report card (decision #5). */
+type FeedListItem =
+  | { kind: 'header'; key: string; label: string }
+  | { kind: 'card'; data: FeedCardData }
 
 /**
  * Newsfeed tab (Phase 5) — the mobile mirror of web's `/feed`. Reads `reports.listFeed` (global,
@@ -41,9 +46,32 @@ export default function NewsfeedScreen() {
   useEffect(() => {
     if (results.length > 0) cacheReports(results)
   }, [results])
+
+  // Pre-cache the viewer's favorites' recent reports (decision #8) so a followed lake reads back
+  // offline even if it never scrolled past in the feed. Refreshes whenever the favorite set changes.
+  const favorites = useQuery(api.waterBodyFavorites.listForUser, {})
+  const favoriteCards = useQuery(
+    api.reports.recentCardsForBodies,
+    favorites && favorites.length > 0
+      ? { waterBodyIds: favorites.map((f) => f.waterBodyId) }
+      : 'skip',
+  )
+  useEffect(() => {
+    if (favoriteCards && favoriteCards.length > 0) cacheReports(favoriteCards)
+  }, [favoriteCards])
   const isOfflineFallback =
     results.length === 0 && status === 'LoadingFirstPage' && cached.length > 0
   const feedData = isOfflineFallback ? cached : results
+
+  // Interleave recency scroll-divider headers (Phase 4, decision #5) into the flat list — one header
+  // row per section ("Today / Yesterday / …"), then that section's cards, so infinite scroll +
+  // pull-to-refresh keep working over a single `FlatList`.
+  const listItems: FeedListItem[] = groupFeedSections(feedData, (d) => d.skateEndTime, now).flatMap(
+    (section) => [
+      { kind: 'header' as const, key: `header:${section.key}`, label: section.label },
+      ...section.items.map((data) => ({ kind: 'card' as const, data })),
+    ],
+  )
 
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
   const sheetRef = useRef<BottomSheet>(null)
@@ -62,9 +90,9 @@ export default function NewsfeedScreen() {
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
-      <FlatList<FeedCardData>
-        data={feedData}
-        keyExtractor={(item) => item.reportId}
+      <FlatList<FeedListItem>
+        data={listItems}
+        keyExtractor={(item) => (item.kind === 'header' ? item.key : item.data.reportId)}
         contentContainerStyle={{ padding: 16, gap: 12 }}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -94,9 +122,24 @@ export default function NewsfeedScreen() {
             <FeedFilterBar filters={filters.value} onChange={filters.set} />
           </YStack>
         }
-        renderItem={({ item }) => (
-          <FeedCard data={item} now={now} onOpen={() => setSelectedReportId(item.reportId)} />
-        )}
+        renderItem={({ item }) =>
+          item.kind === 'header' ? (
+            <Text
+              color="$foregroundMuted"
+              fontSize={11}
+              letterSpacing={1.5}
+              textTransform="uppercase"
+            >
+              {item.label}
+            </Text>
+          ) : (
+            <FeedCard
+              data={item.data}
+              now={now}
+              onOpen={() => setSelectedReportId(item.data.reportId)}
+            />
+          )
+        }
         ListEmptyComponent={
           status === 'LoadingFirstPage' ? (
             <YStack padding="$4" alignItems="center">

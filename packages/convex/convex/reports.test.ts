@@ -243,15 +243,42 @@ describe('reports.listByWaterBody (all public, D13)', () => {
     // author, another member, and an unauthenticated caller alike (all reports are public, D13).
     const expected = [newer, older]
     const asViewer = await seedUser(t, 'clerk_viewer')
-    expect(
-      (await asViewer.query(api.reports.listByWaterBody, { waterBodyId: id })).map((r) => r._id),
-    ).toEqual(expected)
-    expect(
-      (await asAuthor.query(api.reports.listByWaterBody, { waterBodyId: id })).map((r) => r._id),
-    ).toEqual(expected)
-    expect(
-      (await t.query(api.reports.listByWaterBody, { waterBodyId: id })).map((r) => r._id),
-    ).toEqual(expected)
+    const page = { numItems: 50, cursor: null }
+    const listFor = async (caller: { query: typeof t.query }) =>
+      (await caller.query(api.reports.listByWaterBody, { waterBodyId: id, paginationOpts: page }))
+        .page
+
+    // Author, another member, and an unauthenticated caller alike see the same public feed (D13).
+    expect((await listFor(asViewer)).map((r) => r._id)).toEqual(expected)
+    expect((await listFor(asAuthor)).map((r) => r._id)).toEqual(expected)
+    expect((await listFor(t)).map((r) => r._id)).toEqual(expected)
+  })
+
+  test('paginates a body feed across pages, newest skate-end first', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asAuthor = await seedUser(t, 'clerk_author')
+    // Five reports with ascending skate-end times; the feed returns them newest-first.
+    const ids: string[] = []
+    for (let i = 0; i < 5; i++) {
+      ids.push(
+        await asAuthor.mutation(api.reports.create, {
+          waterBodyId: id,
+          skateEndTime: SKATE_TIME + i,
+        }),
+      )
+    }
+    const first = await t.query(api.reports.listByWaterBody, {
+      waterBodyId: id,
+      paginationOpts: { numItems: 2, cursor: null },
+    })
+    expect(first.page.map((r) => r._id)).toEqual([ids[4], ids[3]])
+    expect(first.isDone).toBe(false)
+    const second = await t.query(api.reports.listByWaterBody, {
+      waterBodyId: id,
+      paginationOpts: { numItems: 2, cursor: first.continueCursor },
+    })
+    expect(second.page.map((r) => r._id)).toEqual([ids[2], ids[1]])
   })
 })
 
@@ -916,5 +943,50 @@ describe('reports.renameSkateTimeToSkateEndTime (Phase 5 migration)', () => {
     const cleaned = await t.run((ctx) => ctx.db.get(reportId))
     expect(cleaned?.skateEndTime).toBe(SKATE_TIME)
     expect((cleaned as { skateTime?: number }).skateTime).toBeUndefined()
+  })
+})
+
+describe('reports counters + offline read-cache', () => {
+  test('create increments the author’s reportCount (the profile total)', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asAuthor = await seedUser(t, 'clerk_author')
+    await asAuthor.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME })
+    await asAuthor.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME + 1 })
+    const author = await t.run((ctx) =>
+      ctx.db
+        .query('profiles')
+        .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', 'clerk_author'))
+        .unique(),
+    )
+    expect(author?.reportCount).toBe(2)
+  })
+
+  test('recentCardsForBodies returns the freshest ≤5 cards per body within 72h, newest first', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asAuthor = await seedUser(t, 'clerk_author')
+    const now = Date.now()
+    // Six recent reports + one older than the 72h window.
+    for (let i = 0; i < 6; i++) {
+      await asAuthor.mutation(api.reports.create, { waterBodyId: id, skateEndTime: now - i * 1000 })
+    }
+    await asAuthor.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: now - 100 * 60 * 60 * 1000, // ~100h ago — outside the window
+    })
+
+    const cards = await t.query(api.reports.recentCardsForBodies, { waterBodyIds: [id] })
+    expect(cards).toHaveLength(5) // capped at 5, the stale one excluded
+    expect(cards.every((c) => c.waterBodyId === id)).toBe(true)
+    // Newest-first within the window.
+    for (let i = 1; i < cards.length; i++) {
+      expect(cards[i - 1]?.skateEndTime).toBeGreaterThan(cards[i]?.skateEndTime ?? 0)
+    }
+  })
+
+  test('recentCardsForBodies is empty for no ids', async () => {
+    const t = convexTestWithGeo()
+    expect(await t.query(api.reports.recentCardsForBodies, { waterBodyIds: [] })).toEqual([])
   })
 })

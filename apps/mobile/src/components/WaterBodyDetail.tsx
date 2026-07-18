@@ -1,12 +1,13 @@
 import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import { formatAreaAcres, formatSkateTime, humanizeEnum, SKATE_QUALITY_LABELS } from '@skating/core'
-import { useQuery } from 'convex/react'
+import { usePaginatedQuery, useQuery } from 'convex/react'
 import { useRouter } from 'expo-router'
 import type { MultiPolygon, Polygon } from 'geojson'
 import { useEffect, useState } from 'react'
-import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui'
+import { Button, H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui'
 import { cacheBody } from '../lib/bodyCache'
+import { cacheReports } from '../lib/reportCache'
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi'
 import { DirectionsButton, FavoriteButton } from './FavoriteButton'
 import { useMapSelection } from './MapSelectionContext'
@@ -28,6 +29,16 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   const body = result?.available ? result.body : null
   const { setFocus, setHighlightWaterBodyId } = useMapSelection()
   const [formOpen, setFormOpen] = useState(false)
+
+  // Offline read-cache (decision #8): stash this opened lake's freshest reports as feed cards so they
+  // read back on the ice with no signal. Skips until the (merge-resolved) body id is known.
+  const openedLakeCards = useQuery(
+    api.reports.recentCardsForBodies,
+    body ? { waterBodyIds: [body._id] } : 'skip',
+  )
+  useEffect(() => {
+    if (openedLakeCards && openedLakeCards.length > 0) cacheReports(openedLakeCards)
+  }, [openedLakeCards])
 
   // Once the (possibly merge-resolved) lake loads, fly the map to it and highlight it by the
   // *resolved* `_id` — the survivor a merged deep link redirects to, which is what the map carries.
@@ -109,17 +120,24 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   )
 }
 
+/** How many per-body reports to fetch per infinite-scroll page. */
+const REPORTS_PAGE_SIZE = 20
+
 function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
   const router = useRouter()
-  const reports = useQuery(api.reports.listByWaterBody, { waterBodyId })
-  const authorIds = reports ? [...new Set(reports.map((r) => r.authorId))] : []
+  const { results, status, loadMore } = usePaginatedQuery(
+    api.reports.listByWaterBody,
+    { waterBodyId },
+    { initialNumItems: REPORTS_PAGE_SIZE },
+  )
+  const authorIds = [...new Set(results.map((r) => r.authorId))]
   const authors = useQuery(
     api.profiles.publicByIds,
-    reports && reports.length > 0 ? { profileIds: authorIds } : 'skip',
+    results.length > 0 ? { profileIds: authorIds } : 'skip',
   )
 
-  if (reports === undefined) return <DetailLoading />
-  if (reports.length === 0) {
+  if (status === 'LoadingFirstPage') return <DetailLoading />
+  if (results.length === 0) {
     return (
       <Paragraph color="$foregroundMuted">
         No reports yet — be the first to say how it skates.
@@ -131,7 +149,7 @@ function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
     <YStack gap="$2">
       <Section label="Reports">
         <YStack gap="$2">
-          {reports.map((report) => (
+          {results.map((report) => (
             <YStack
               key={report._id}
               gap="$2"
@@ -163,6 +181,16 @@ function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
               </Text>
             </YStack>
           ))}
+          {status === 'CanLoadMore' ? (
+            <Button size="$3" variant="outlined" onPress={() => loadMore(REPORTS_PAGE_SIZE)}>
+              Load more
+            </Button>
+          ) : null}
+          {status === 'LoadingMore' ? (
+            <YStack padding="$2" alignItems="center">
+              <Spinner color="$primary" />
+            </YStack>
+          ) : null}
         </YStack>
       </Section>
     </YStack>

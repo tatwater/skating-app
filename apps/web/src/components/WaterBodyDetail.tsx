@@ -2,7 +2,7 @@ import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import { formatAreaAcres, formatSkateTime, humanizeEnum, SKATE_QUALITY_LABELS } from '@skating/core'
 import { Link } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
+import { usePaginatedQuery, useQuery } from 'convex/react'
 import { useEffect, useState } from 'react'
 import { DirectionsButton } from './DirectionsButton'
 import { DetailSkeleton, UnavailableState } from './DrawerStates'
@@ -93,16 +93,23 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   )
 }
 
+/** How many per-body reports to fetch per infinite-scroll page. */
+const REPORTS_PAGE_SIZE = 20
+
 function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const reports = useQuery(api.reports.listByWaterBody, { waterBodyId })
-  const authorIds = reports ? [...new Set(reports.map((r) => r.authorId))] : []
+  const { results, status, loadMore } = usePaginatedQuery(
+    api.reports.listByWaterBody,
+    { waterBodyId },
+    { initialNumItems: REPORTS_PAGE_SIZE },
+  )
+  const authorIds = [...new Set(results.map((r) => r.authorId))]
   const authors = useQuery(
     api.profiles.publicByIds,
-    reports && reports.length > 0 ? { profileIds: authorIds } : 'skip',
+    results.length > 0 ? { profileIds: authorIds } : 'skip',
   )
 
-  if (reports === undefined) return <Skeleton className="h-24 w-full" />
-  if (reports.length === 0) {
+  if (status === 'LoadingFirstPage') return <Skeleton className="h-24 w-full" />
+  if (results.length === 0) {
     return (
       <p className="text-foreground-muted text-sm">
         No reports yet — be the first to say how it skates.
@@ -113,7 +120,7 @@ function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
   return (
     <div className="flex flex-col gap-2">
       <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">Reports</h3>
-      {reports.map((report) => (
+      {results.map((report) => (
         <Link key={report._id} to="/report/$id" params={{ id: report._id }} className="block">
           <Card size="sm" className="transition-colors hover:bg-surface-muted">
             <CardContent className="flex flex-col gap-2">
@@ -141,6 +148,17 @@ function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
           </Card>
         </Link>
       ))}
+      {status === 'CanLoadMore' ? (
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => loadMore(REPORTS_PAGE_SIZE)}
+          className="self-center"
+        >
+          Load more
+        </Button>
+      ) : null}
+      {status === 'LoadingMore' ? <Skeleton className="h-16 w-full" /> : null}
     </div>
   )
 }

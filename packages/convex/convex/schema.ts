@@ -298,6 +298,14 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
+    // Per-body feed, paginated (infinite scroll). `moderationStatus` leads so the gate is applied
+    // *in* the index (only `visible`, D32) rather than after `paginate` — the same reasoning as the
+    // global feed index: a page of all-hidden reports mustn't come back empty with `isDone: false`.
+    .index('by_water_body_moderation_and_skate_end_time', [
+      'waterBodyId',
+      'moderationStatus',
+      'skateEndTime',
+    ])
     .index('by_author', ['authorId'])
     // Newest-first author history for the profile page, bounded by a `.take()` on skate-end time so a
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
