@@ -69,6 +69,55 @@ export function isWithinRadius(center: LatLng, point: LatLng, radiusMeters: numb
   return haversineMeters(center, point) <= radiusMeters
 }
 
+/** The ORS isochrone ranges we request (seconds): the 30- and 60-min bands. 60 is the hosted cap. */
+export const ORS_BAND_RANGES_SEC = { band30: 1800, band60: 3600 } as const
+
+/**
+ * Conservative effective driving speed for the crow-flies 90-min band (decision #2). Rural NE
+ * effective speed ≪ highway, and a crow-flies ring already *over*-approximates reach (ignores roads /
+ * mountains / water crossings), so we start low. Tunable.
+ */
+export const OUTER_BAND_SPEED_MPH = 45
+const METERS_PER_MILE = 1609.344
+
+/** Crow-flies radius (metres) for the outer band: `speed × minutes`. The 90-min fallback ring. */
+export function outerBandRadiusMeters(
+  minutes: number,
+  speedMph: number = OUTER_BAND_SPEED_MPH,
+): number {
+  return speedMph * (minutes / 60) * METERS_PER_MILE
+}
+
+/** The subset of an ORS isochrone `FeatureCollection` we read: features tagged with their range (s). */
+export interface OrsIsochroneResponse {
+  features?: {
+    properties?: { value?: number }
+    geometry?: Polygon | MultiPolygon
+  }[]
+}
+
+/**
+ * Pull the 30/60-min band polygons out of an OpenRouteService isochrone response (`driving-car`,
+ * `range_type: time`, ranges 1800/3600 s). Matches each feature by its `properties.value` (the range
+ * in seconds) rather than array order, so a reordered response still classifies correctly. A missing
+ * band (ORS omitted it, or the geometry was absent) is simply left off — `bandForCoord` treats an
+ * absent polygon as "not in that band." Pure so it's tested without a live ORS call.
+ */
+export function parseOrsIsochrones(response: OrsIsochroneResponse): {
+  band30?: Polygon | MultiPolygon
+  band60?: Polygon | MultiPolygon
+} {
+  const out: { band30?: Polygon | MultiPolygon; band60?: Polygon | MultiPolygon } = {}
+  for (const feature of response.features ?? []) {
+    const value = feature.properties?.value
+    const geometry = feature.geometry
+    if (!geometry) continue
+    if (value === ORS_BAND_RANGES_SEC.band30) out.band30 = geometry
+    else if (value === ORS_BAND_RANGES_SEC.band60) out.band60 = geometry
+  }
+  return out
+}
+
 /**
  * Does a lake's band satisfy a `radiusMinutes` filter — i.e. is it *within* the selected radius?
  * A `null` band (beyond the outer ring, or no home set) never satisfies a radius filter. Bands nest,

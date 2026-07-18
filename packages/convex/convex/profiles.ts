@@ -10,8 +10,10 @@
 import {
   canSetProfilePublic,
   isCurrentRiskAckVersion,
+  isDriveTimeBand,
   isMinor,
   isValidBio,
+  isValidCoord,
   isValidDisplayName,
   isValidTownLabel,
   isValidUsername,
@@ -21,14 +23,16 @@ import {
   normalizeTownLabel,
   normalizeUsername,
   PROFILE_VISIBILITIES,
+  sanitizeFeedFilters,
 } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
+import { internal } from './_generated/api'
 import type { Doc } from './_generated/dataModel'
 import { internalMutation, mutation, query } from './_generated/server'
 import { getCurrentProfile, requireProfile } from './lib/auth'
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums'
 import { loadBlockedAuthorIds } from './lib/reportVisibility'
-import { literals } from './lib/validators'
+import { latLng, literals, partialBoolFlags } from './lib/validators'
 
 /**
  * Notification defaults for a fresh profile — per-key (D16): most types on, but the two opt-in
@@ -244,6 +248,94 @@ export const updateProfile = mutation({
     }
 
     await ctx.db.patch(profile._id, patch)
+    return profile._id
+  },
+})
+
+/**
+ * Set (or clear) the caller's PRIVATE home coordinate (D11/D18) and recompute their drive-time bands.
+ * `homeCoord` never leaves the server — only the derived `cachedIsochrones` polygons + `outerRadiusMeters`
+ * are stored (decision #2). The isochrone recompute is an ORS-calling action, so it's scheduled (not
+ * awaited); `storeBands` lands the result shortly after. Passing no coord clears the home and, on
+ * recompute, the cached bands. Only ever run on an actual change (rate-limit, D18).
+ */
+export const setHome = mutation({
+  args: { homeCoord: v.optional(latLng) },
+  handler: async (ctx, { homeCoord }) => {
+    const profile = await requireProfile(ctx)
+    if (homeCoord !== undefined && !isValidCoord(homeCoord)) {
+      throw new ConvexError('Home coordinate is not valid')
+    }
+    await ctx.db.patch(profile._id, { homeCoord })
+    await ctx.scheduler.runAfter(0, internal.isochrones.recompute, { userId: profile._id })
+    return profile._id
+  },
+})
+
+/**
+ * Persist the server-sync copy of the feed filter row (decision #3/#6). Local storage is the working
+ * copy; this is the durable/LWW copy reconciled on connect. The blob is untrusted (D37), so it's run
+ * through `@skating/core` `sanitizeFeedFilters` — invalid/out-of-domain fields are dropped — before it's
+ * stored. An empty result clears the stored prefs (show-everything).
+ */
+export const setFeedFilterPrefs = mutation({
+  args: { filters: v.any() },
+  handler: async (ctx, { filters }) => {
+    const profile = await requireProfile(ctx)
+    const clean = sanitizeFeedFilters(filters)
+    await ctx.db.patch(profile._id, {
+      feedFilterPrefs: Object.keys(clean).length > 0 ? clean : undefined,
+    })
+    return profile._id
+  },
+})
+
+/**
+ * Update notification toggles + the two drive-time radii (decision #4). `prefs` is a partial patch
+ * merged onto the stored full toggle set; `allRadiusMinutes` (X₁) / `greatRadiusMinutes` (X₂) are the
+ * digest / great-report radii. Enforces **X₂ ≥ X₁** ("I'll drive farther for better ice") and that
+ * each radius is a canonical band (30/60/90), comparing against whichever value ends up stored.
+ */
+export const setNotificationPrefs = mutation({
+  args: {
+    prefs: v.optional(partialBoolFlags(NOTIFICATION_PREF_KEYS)),
+    allRadiusMinutes: v.optional(v.number()),
+    greatRadiusMinutes: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const profile = await requireProfile(ctx)
+
+    for (const [label, value] of [
+      ['allRadiusMinutes', args.allRadiusMinutes],
+      ['greatRadiusMinutes', args.greatRadiusMinutes],
+    ] as const) {
+      if (value !== undefined && !isDriveTimeBand(value)) {
+        throw new ConvexError(`${label} must be 30, 60, or 90`)
+      }
+    }
+
+    // Resolve the effective radii (provided value wins, else the stored one) and enforce X₂ ≥ X₁.
+    const allRadius = args.allRadiusMinutes ?? profile.allRadiusMinutes
+    const greatRadius = args.greatRadiusMinutes ?? profile.greatRadiusMinutes
+    if (allRadius !== undefined && greatRadius !== undefined && greatRadius < allRadius) {
+      throw new ConvexError('Great-report radius must be at least the all-reports radius')
+    }
+
+    const notificationPrefs = { ...profile.notificationPrefs }
+    if (args.prefs) {
+      for (const key of NOTIFICATION_PREF_KEYS) {
+        const value = args.prefs[key]
+        if (value !== undefined) notificationPrefs[key] = value
+      }
+    }
+
+    await ctx.db.patch(profile._id, {
+      notificationPrefs,
+      ...(args.allRadiusMinutes !== undefined ? { allRadiusMinutes: args.allRadiusMinutes } : {}),
+      ...(args.greatRadiusMinutes !== undefined
+        ? { greatRadiusMinutes: args.greatRadiusMinutes }
+        : {}),
+    })
     return profile._id
   },
 })

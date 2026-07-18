@@ -667,3 +667,121 @@ describe('profiles.backfillNotificationPrefs', () => {
     expect(p?.notificationPrefs.reportCommented).toBe(true) // default-on (D16)
   })
 })
+
+// --- Phase 4: drive-time home, feed-filter prefs, notification prefs ---
+
+/** Provision an adult profile and return an identity-bound test client. */
+async function provisionAdult(t: ReturnType<typeof convexTest>, subject = 'clerk_p4') {
+  const asUser = t.withIdentity({ subject })
+  await asUser.mutation(
+    api.profiles.upsertFromClerk,
+    withAck({ displayName: 'P4', username: subject, dateOfBirth: ADULT_DOB }),
+  )
+  return asUser
+}
+
+describe('profiles.setHome', () => {
+  test('stores the private home coord and schedules an isochrone recompute', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setHome, { homeCoord: { lat: 44, lng: -72 } })
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.homeCoord).toEqual({ lat: 44, lng: -72 })
+    // A recompute is scheduled (the action itself — ORS + storeBands — is covered in isochrones.test).
+    const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())
+    expect(scheduled.some((f) => f.name.includes('isochrones'))).toBe(true)
+  })
+
+  test('clears the home when passed no coord', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setHome, { homeCoord: { lat: 44, lng: -72 } })
+    await asUser.mutation(api.profiles.setHome, {})
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.homeCoord).toBeUndefined()
+  })
+
+  test('rejects an invalid coordinate', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await expect(
+      asUser.mutation(api.profiles.setHome, { homeCoord: { lat: 200, lng: 0 } }),
+    ).rejects.toThrow(/not valid/i)
+  })
+})
+
+describe('profiles.setFeedFilterPrefs', () => {
+  test('sanitizes and stores the filter blob', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setFeedFilterPrefs, {
+      filters: {
+        radiusMinutes: 60,
+        qualityFloor: 'good',
+        iceTypes: ['black_ice', 'junk'],
+        bogus: 1,
+      },
+    })
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.feedFilterPrefs).toEqual({
+      radiusMinutes: 60,
+      qualityFloor: 'good',
+      iceTypes: ['black_ice'],
+    })
+  })
+
+  test('clears the stored prefs when the sanitized blob is empty', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setFeedFilterPrefs, { filters: { radiusMinutes: 60 } })
+    await asUser.mutation(api.profiles.setFeedFilterPrefs, { filters: { nonsense: true } })
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.feedFilterPrefs).toBeUndefined()
+  })
+})
+
+describe('profiles.setNotificationPrefs', () => {
+  test('merges a partial toggle patch and sets the two radii', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setNotificationPrefs, {
+      prefs: { nearbyReportDigest: true, greatReportNearby: true },
+      allRadiusMinutes: 30,
+      greatRadiusMinutes: 60,
+    })
+    const p = await asUser.query(api.profiles.current, {})
+    expect(p?.notificationPrefs.nearbyReportDigest).toBe(true)
+    expect(p?.notificationPrefs.favoriteReport).toBe(true) // untouched key preserved
+    expect(p?.allRadiusMinutes).toBe(30)
+    expect(p?.greatRadiusMinutes).toBe(60)
+  })
+
+  test('enforces the great radius ≥ the all radius (X₂ ≥ X₁)', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await expect(
+      asUser.mutation(api.profiles.setNotificationPrefs, {
+        allRadiusMinutes: 90,
+        greatRadiusMinutes: 30,
+      }),
+    ).rejects.toThrow(/at least the all-reports radius/i)
+  })
+
+  test('enforces X₂ ≥ X₁ against the already-stored radius too', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await asUser.mutation(api.profiles.setNotificationPrefs, { allRadiusMinutes: 90 })
+    // Now lowering only the great radius below the stored all radius must fail.
+    await expect(
+      asUser.mutation(api.profiles.setNotificationPrefs, { greatRadiusMinutes: 60 }),
+    ).rejects.toThrow(/at least the all-reports radius/i)
+  })
+
+  test('rejects a non-band radius value', async () => {
+    const t = convexTest(schema, modules)
+    const asUser = await provisionAdult(t)
+    await expect(
+      asUser.mutation(api.profiles.setNotificationPrefs, { allRadiusMinutes: 45 }),
+    ).rejects.toThrow(/30, 60, or 90/i)
+  })
+})

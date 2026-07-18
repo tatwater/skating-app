@@ -7,6 +7,9 @@ import {
   type DriveTimeBands,
   isDriveTimeBand,
   isWithinRadius,
+  ORS_BAND_RANGES_SEC,
+  outerBandRadiusMeters,
+  parseOrsIsochrones,
 } from './driveTime'
 import type { LatLng } from './geometry'
 
@@ -93,6 +96,50 @@ describe('bandForCoord', () => {
 
   it('falls through band30 to band60 when only band60 is cached', () => {
     expect(bandForCoord({ lat: 0.1, lng: 0.1 }, { band60: square(1) }, HOME)).toBe(60)
+  })
+})
+
+describe('outerBandRadiusMeters', () => {
+  it('is speed × time (45 mph for 90 min ≈ 108.6 km)', () => {
+    expect(outerBandRadiusMeters(90)).toBeCloseTo(45 * 1.5 * 1609.344, 0)
+  })
+
+  it('accepts a custom speed', () => {
+    expect(outerBandRadiusMeters(60, 30)).toBeCloseTo(30 * 1609.344, 0)
+  })
+})
+
+describe('parseOrsIsochrones', () => {
+  const poly30 = square(0.5)
+  const poly60 = square(1)
+
+  it('maps features to bands by their range value, not order', () => {
+    const parsed = parseOrsIsochrones({
+      features: [
+        { properties: { value: ORS_BAND_RANGES_SEC.band60 }, geometry: poly60 },
+        { properties: { value: ORS_BAND_RANGES_SEC.band30 }, geometry: poly30 },
+      ],
+    })
+    expect(parsed.band30).toBe(poly30)
+    expect(parsed.band60).toBe(poly60)
+  })
+
+  it('omits a band whose feature is missing or geometry-less', () => {
+    const parsed = parseOrsIsochrones({
+      features: [
+        { properties: { value: ORS_BAND_RANGES_SEC.band30 }, geometry: poly30 },
+        { properties: { value: ORS_BAND_RANGES_SEC.band60 } },
+      ],
+    })
+    expect(parsed.band30).toBe(poly30)
+    expect(parsed.band60).toBeUndefined()
+  })
+
+  it('ignores unexpected range values and empty responses', () => {
+    expect(
+      parseOrsIsochrones({ features: [{ properties: { value: 999 }, geometry: poly30 }] }),
+    ).toEqual({})
+    expect(parseOrsIsochrones({})).toEqual({})
   })
 })
 
