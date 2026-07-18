@@ -76,6 +76,9 @@ const reportContent = {
   notes: v.optional(v.string()),
   point: v.optional(latLng), // optional put-in pin; falls back to the body centroid
   photoIds: v.optional(v.array(v.id('photos'))),
+  // Private-property opt-out (Phase 4, decision #7): false suppresses this report's derived put-in
+  // marker (keeps the coarse `place` label). Default (undefined) shows it.
+  showPutIn: v.optional(v.boolean()),
 }
 
 /** Follow `mergedIntoId` to the surviving body (D36); bounded hops guard a pathological cycle. */
@@ -212,6 +215,7 @@ export const create = mutation({
       ...(n.snowCoverCm !== undefined ? { snowCoverCm: n.snowCoverCm } : {}),
       ...(n.conditions !== undefined ? { conditions: n.conditions } : {}),
       ...(n.notes !== undefined ? { notes: n.notes } : {}),
+      ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
       ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
       moderationStatus: 'visible',
       photoIds,
@@ -445,6 +449,7 @@ export const update = mutation({
       snowCoverCm: n.snowCoverCm,
       conditions: n.conditions,
       notes: n.notes,
+      ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
       photoIds,
       updatedAt: now,
     })
