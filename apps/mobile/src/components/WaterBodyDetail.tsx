@@ -139,7 +139,7 @@ function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
               }
             >
               <XStack justifyContent="space-between" alignItems="center" gap="$2">
-                <Text color="$foreground">{formatSkateTime(report.skateTime)}</Text>
+                <Text color="$foreground">{formatSkateTime(report.skateEndTime)}</Text>
                 {report.skateQuality ? (
                   <Badge tone="solid">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
                 ) : null}

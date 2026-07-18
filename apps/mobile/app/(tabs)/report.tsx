@@ -108,7 +108,7 @@ function DraftRow({
         </Badge>
       </XStack>
       <Text color="$foregroundMuted" fontSize={12}>
-        Skated {formatSkateTime(draft.form.skateTime)}
+        Skated {formatSkateTime(draft.form.skateEndTime)}
       </Text>
       {draft.status === 'error' && draft.errorMessage ? (
         <Text color="$danger" fontSize={12}>

@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel'
 import {
   formatConditions,
   formatSkateTime,
+  formatSkateWindow,
   formatSnowCoverInches,
   formatThicknessReading,
   type ReportConditions,
@@ -95,7 +96,11 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         <H4 color="$foreground">{bodyName ?? 'Report'}</H4>
         <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
           <Text color="$foregroundMuted">
-            {formatSkateTime(report.skateTime)}
+            Off the ice {formatSkateTime(report.skateEndTime)}
+            {(() => {
+              const duration = formatSkateWindow(report.skateEndTime, report.skateStartTime)
+              return duration ? ` · skated ${duration}` : ''
+            })()}
             {authorName ? ` · by ${authorName}` : ''}
           </Text>
           {authorBlocked ? <BlockedChip /> : null}

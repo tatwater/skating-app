@@ -16,6 +16,7 @@ import {
   photoUploadCoord,
   type ReportDraft,
   type ReportFormState,
+  resolveSkateWindow,
   SKATE_QUALITIES,
   SKATE_QUALITY_LABELS,
   SKY_CONDITIONS,
@@ -171,7 +172,7 @@ function SkateTimeField({ value, onChange }: { value: number; onChange: (ms: num
   const [mode, setMode] = useState<'date' | 'time' | null>(null)
   const open = () => setMode(Platform.OS === 'ios' ? 'date' : 'date')
   return (
-    <Field label="When did you skate?">
+    <Field label="When did you get off the ice?">
       <XStack gap="$2" alignItems="center">
         <Text color="$foreground" flex={1}>
           {formatSkateTime(value)}
@@ -196,6 +197,112 @@ function SkateTimeField({ value, onChange }: { value: number; onChange: (ms: num
             setMode(mode === 'date' ? 'time' : null)
           }}
         />
+      ) : null}
+    </Field>
+  )
+}
+
+type StartMode = 'none' | 'start' | 'duration'
+
+/**
+ * Optional "when did you get on the ice?" input (Phase 5), the mobile mirror of web's
+ * `StartWindowField`. The skater enters a start time *or* a duration; `resolveSkateWindow`
+ * back-computes the start from a duration at this input boundary, and only the resolved
+ * `skateStartTime` (epoch ms) is lifted to the form — duration is never stored. Re-derives on any
+ * change; surfaces an inline error for an inverted/invalid window without corrupting the form.
+ */
+function StartWindowField({
+  end,
+  skateStartTime,
+  onResolve,
+}: {
+  end: number
+  skateStartTime?: number
+  onResolve: (skateStartTime: number | undefined) => void
+}) {
+  const [mode, setMode] = useState<StartMode>('none')
+  const [startMs, setStartMs] = useState<number | null>(null)
+  const [durationStr, setDurationStr] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState<'date' | 'time' | null>(null)
+
+  const onResolveRef = useRef(onResolve)
+  onResolveRef.current = onResolve
+
+  useEffect(() => {
+    if (mode === 'none') {
+      setError(null)
+      onResolveRef.current(undefined)
+      return
+    }
+    if ((mode === 'start' && startMs === null) || (mode === 'duration' && durationStr === '')) {
+      setError(null)
+      onResolveRef.current(undefined)
+      return
+    }
+    const input =
+      mode === 'start'
+        ? { end, start: startMs ?? undefined }
+        : { end, durationMinutes: Number(durationStr) }
+    const result = resolveSkateWindow(input)
+    if (result.ok) {
+      setError(null)
+      onResolveRef.current(result.skateStartTime)
+    } else {
+      setError(result.error)
+      onResolveRef.current(undefined)
+    }
+  }, [end, mode, startMs, durationStr])
+
+  const duration =
+    skateStartTime !== undefined ? Math.round((end - skateStartTime) / 60_000) : undefined
+
+  return (
+    <Field label="When did you get on? (optional)">
+      <SingleToggle
+        value={mode === 'none' ? '' : mode}
+        options={['start', 'duration'] as const}
+        label={(m) => (m === 'start' ? 'Start time' : 'Duration')}
+        onChange={(m) => setMode(m === '' ? 'none' : m)}
+      />
+      {mode === 'start' ? (
+        <XStack gap="$2" alignItems="center">
+          <Text color="$foreground" flex={1}>
+            {startMs !== null ? formatSkateTime(startMs) : 'Not set'}
+          </Text>
+          <Button size="$2" onPress={() => setPickerOpen('date')}>
+            {startMs !== null ? 'Change' : 'Set start'}
+          </Button>
+          {pickerOpen ? (
+            <DateTimePicker
+              value={new Date(startMs ?? end)}
+              mode={Platform.OS === 'ios' ? 'datetime' : pickerOpen}
+              maximumDate={new Date(end)}
+              onChange={(event, date) => {
+                if (event.type === 'dismissed' || !date) {
+                  setPickerOpen(null)
+                  return
+                }
+                setStartMs(date.getTime())
+                if (Platform.OS === 'ios') return
+                setPickerOpen(pickerOpen === 'date' ? 'time' : null)
+              }}
+            />
+          ) : null}
+        </XStack>
+      ) : null}
+      {mode === 'duration' ? (
+        <Input
+          keyboardType="number-pad"
+          inputMode="numeric"
+          placeholder="minutes, e.g. 90"
+          value={durationStr}
+          onChangeText={setDurationStr}
+        />
+      ) : null}
+      {error ? <Text color="$danger">{error}</Text> : null}
+      {!error && duration !== undefined && duration > 0 ? (
+        <Text color="$foregroundMuted">Skated about {duration} min.</Text>
       ) : null}
     </Field>
   )
@@ -568,7 +675,16 @@ export function ReportForm({
         </Text>
       ) : null}
 
-      <SkateTimeField value={form.skateTime} onChange={(skateTime) => patch({ skateTime })} />
+      <SkateTimeField
+        value={form.skateEndTime}
+        onChange={(skateEndTime) => patch({ skateEndTime })}
+      />
+
+      <StartWindowField
+        end={form.skateEndTime}
+        skateStartTime={form.skateStartTime}
+        onResolve={(skateStartTime) => patch({ skateStartTime })}
+      />
 
       <Field label="Ice types">
         <MultiToggle
