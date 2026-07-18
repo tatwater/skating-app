@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   formatConditions,
+  formatDurationLabel,
   formatSkateTime,
+  formatSkateWindow,
   formatSnowCoverInches,
   formatThicknessReading,
   humanizeEnum,
@@ -104,5 +106,36 @@ describe('formatSkateTime', () => {
     const ms = Date.UTC(2026, 0, 5, 19, 30)
     // Exact wording is locale/zone-dependent; assert it produced a non-empty string.
     expect(formatSkateTime(ms)).toMatch(/2026/)
+  })
+})
+
+describe('formatDurationLabel', () => {
+  it('formats minutes-only, hours-only, and mixed spans', () => {
+    expect(formatDurationLabel(45)).toBe('45m')
+    expect(formatDurationLabel(60)).toBe('1h')
+    expect(formatDurationLabel(90)).toBe('1h 30m')
+    expect(formatDurationLabel(150)).toBe('2h 30m')
+  })
+
+  it('rounds to the nearest minute and floors at zero', () => {
+    expect(formatDurationLabel(29.6)).toBe('30m')
+    expect(formatDurationLabel(-5)).toBe('0m')
+  })
+})
+
+describe('formatSkateWindow', () => {
+  it('returns the derived duration when a start is present', () => {
+    const end = Date.UTC(2026, 0, 5, 16, 0)
+    expect(formatSkateWindow(end, end - 90 * 60_000)).toBe('1h 30m')
+  })
+
+  it('returns null with no start (end-only report)', () => {
+    expect(formatSkateWindow(Date.UTC(2026, 0, 5, 16, 0))).toBeNull()
+  })
+
+  it('returns null for a zero or inverted span', () => {
+    const end = Date.UTC(2026, 0, 5, 16, 0)
+    expect(formatSkateWindow(end, end)).toBeNull()
+    expect(formatSkateWindow(end, end + 60_000)).toBeNull()
   })
 })

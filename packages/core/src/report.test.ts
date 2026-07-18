@@ -12,7 +12,7 @@ const CTX = { now: NOW }
 
 /** A minimal valid report; override fields per test. */
 function base(overrides: Partial<ReportInput> = {}): ReportInput {
-  return { waterBodyId: 'wb1', skateTime: NOW - 1000, ...overrides }
+  return { waterBodyId: 'wb1', skateEndTime: NOW - 1000, ...overrides }
 }
 
 /** Assert failure and return the set of error fields. */
@@ -36,6 +36,21 @@ describe('validateReportInput — valid reports', () => {
     expect(result.normalized.conditions).toBeUndefined()
     expect(result.normalized.point).toBeUndefined()
     expect(result.normalized.snowCoverCm).toBeUndefined()
+    expect(result.normalized.skateStartTime).toBeUndefined()
+  })
+
+  it('accepts and preserves an optional start time before the end (Phase 5)', () => {
+    const result = validateReportInput(base({ skateStartTime: NOW - 60 * 60 * 1000 }), CTX)
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.normalized.skateStartTime).toBe(NOW - 60 * 60 * 1000)
+    expect(result.normalized.skateEndTime).toBe(NOW - 1000)
+  })
+
+  it('accepts a start equal to the end (zero-length window)', () => {
+    const end = NOW - 1000
+    const result = validateReportInput(base({ skateEndTime: end, skateStartTime: end }), CTX)
+    expect(result.ok).toBe(true)
   })
 
   it('normalizes a full report (readings, conditions, point, trimming)', () => {
@@ -96,7 +111,7 @@ describe('validateReportInput — valid reports', () => {
   })
 
   it('allows a skate time within the clock-skew tolerance', () => {
-    const soon = base({ skateTime: NOW + SKATE_TIME_FUTURE_TOLERANCE_MS - 1 })
+    const soon = base({ skateEndTime: NOW + SKATE_TIME_FUTURE_TOLERANCE_MS - 1 })
     expect(validateReportInput(soon, CTX).ok).toBe(true)
   })
 
@@ -121,18 +136,30 @@ describe('validateReportInput — required fields', () => {
     expect(fieldsOf(base({ waterBodyId: '   ' }))).toContain('waterBodyId')
   })
 
-  it('rejects a missing / non-positive skate time', () => {
-    expect(fieldsOf(base({ skateTime: Number.NaN }))).toContain('skateTime')
-    expect(fieldsOf(base({ skateTime: 0 }))).toContain('skateTime')
-    expect(fieldsOf(base({ skateTime: -5 }))).toContain('skateTime')
+  it('rejects a missing / non-positive skate-end time', () => {
+    expect(fieldsOf(base({ skateEndTime: Number.NaN }))).toContain('skateEndTime')
+    expect(fieldsOf(base({ skateEndTime: 0 }))).toContain('skateEndTime')
+    expect(fieldsOf(base({ skateEndTime: -5 }))).toContain('skateEndTime')
   })
 
-  it('rejects an implausibly-future skate time', () => {
-    const future = base({ skateTime: NOW + SKATE_TIME_FUTURE_TOLERANCE_MS + 60_000 })
+  it('rejects an implausibly-future skate-end time', () => {
+    const future = base({ skateEndTime: NOW + SKATE_TIME_FUTURE_TOLERANCE_MS + 60_000 })
     const result = validateReportInput(future, CTX)
     expect(result.ok).toBe(false)
     if (result.ok) return
-    expect(result.errors).toContainEqual({ field: 'skateTime', message: 'cannot be in the future' })
+    expect(result.errors).toContainEqual({
+      field: 'skateEndTime',
+      message: 'cannot be in the future',
+    })
+  })
+
+  it('rejects a start after the end, and a non-positive start (Phase 5)', () => {
+    const end = NOW - 1000
+    expect(fieldsOf(base({ skateEndTime: end, skateStartTime: end + 1000 }))).toContain(
+      'skateStartTime',
+    )
+    expect(fieldsOf(base({ skateStartTime: 0 }))).toContain('skateStartTime')
+    expect(fieldsOf(base({ skateStartTime: Number.NaN }))).toContain('skateStartTime')
   })
 })
 

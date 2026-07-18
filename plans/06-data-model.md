@@ -31,9 +31,23 @@ username: string            // unique, for search (searchable by name, D13)
 homeCoord: { lat, lng }     // PRIVATE — filter input only (D11)
 homeTownLabel?: string      // optional PUBLIC label on profile (D11)
 bio?: string                 // optional PUBLIC blurb, shown only on a public profile (D13)
-driveTimePrefMinutes: number // e.g. 30 / 60 / 90 (D18)
-cachedIsochrone?: geojson   // polygon; recomputed on home/pref change (D18)
-cachedIsochroneAt?: timestamp
+cachedIsochrones?: {         // Phase 4: nested drive-time bands, derived from homeCoord (D18).
+  band30?: geojson           // ORS driving-car isochrone, 1800s
+  band60?: geojson           // ORS driving-car isochrone, 3600s (hosted ORS max range)
+}                            // band membership derived at read time (Turf pointInPolygon) — NOT a
+outerRadiusMeters?: number   // materialized userId×waterBodyId table (balloons + goes stale). The 90-min
+                             // band is a uniform crow-flies radius (hosted ORS caps at 60; self-host later).
+cachedIsochronesAt?: timestamp  // recomputed on home/pref change (D18)
+feedFilterPrefs?: {          // Phase 4: server-sync copy of the newsfeed filter row (local-first + LWW).
+  radiusMinutes?: 30 | 60 | 90     // drive-radius filter (null/absent = off = show all)
+  qualityFloor?: enum(good, great) // skateQuality floor; INCLUDE-UNKNOWN (never drops reports w/o quality)
+  thicknessFloorCm?: number        // thickness floor; INCLUDE-UNKNOWN (only ~16% of reports carry it)
+  noSnow?: boolean                 // keys off surfaceTags (snow_covered/drifted), NOT snowCoverCm
+  iceTypes?: string[]              // "ideal ice" checkboxes (e.g. black_ice)
+  surfaceTags?: string[]           // "ideal surface" checkboxes (e.g. glass/smooth)
+  recencyHours?: number            // hard recency floor (e.g. 24/48/168); null = off
+}                            // NOTE: driveTimePrefMinutes (old single D18 pref) folds into the notification
+                             // radii + this filter; kept/dropped at the Phase-4 migration.
 profileVisibility: enum(public, private)  // THE ONLY privacy switch (reports are always public, D13).
                              // public = searchable + browsable (name, photo, town, bio, counts, trust
                              // score, report history); private = name + photo only, not searchable.
@@ -44,8 +58,14 @@ notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D
   hazardConfirmation, bountyFulfilled,
   reportRated,               // someone rated your report helpful/unhelpful (D17)
   reportCommented,           // someone commented on your report (D21; Phase 3)
+  favoriteReport,            // Phase 4: report on a favorited body (DEFAULT ON), any distance
+  nearbyReportDigest,        // Phase 4: "all reports within X₁" — delivered as the 8pm-ET daily digest
+  greatReportNearby,         // Phase 4: "great reports within X₂" — fires ~individually (coalesced)
   contentFlagResolved: boolean
 }                            // keys mirror notifications.type 1:1 (D16 invariant)
+allRadiusMinutes?: 30 | 60 | 90     // Phase 4: X₁ for nearbyReportDigest
+greatRadiusMinutes?: 30 | 60 | 90   // Phase 4: X₂ for greatReportNearby — enforce X₂ ≥ X₁ (drive
+                                    // farther for better ice)
 dateOfBirth: timestamp       // collected at signup (D41); age gate (≥16) + minor status
                              // (<18, protective defaults) are DERIVED from it, recomputed
                              // at read time so the 18th-birthday transition is automatic
@@ -102,7 +122,11 @@ userId: ref(profiles)
 provider: enum(strava, garmin, coros, polar, apple_health, google_health_connect, other)
 providerActivityId: string   // unique per provider — dedup webhook re-deliveries
 sportType: string            // provider's ice-skate type (e.g. Strava "IceSkate")
-startTime: timestamp         // becomes report.skateTime if converted
+startTime: timestamp         // GPS start → report.skateStartTime on convert
+endTime?: timestamp          // Phase 5 prep (wired Phase 8): GPS end → report.skateEndTime
+elapsedSeconds?: number      // Phase 5 prep: provider moving/elapsed time — NON-redundant with
+                             // (end − start) because it excludes pauses/stops. Phase 8: trim a
+                             // watch-left-recording tail to the on-water path before deriving end.
 path?: geojson               // TRUSTED GPS track = skated extent (+ hazard proximity, Q11)
 waterBodyId?: ref(waterBodies)   // resolved at ingest from path (D44) — the lake this skate was on
 waterBodyIds?: ref(waterBodies)[] // when a skate spans connected bodies; waterBodyId = primary
@@ -158,6 +182,26 @@ createdAt: timestamp
 > (`merged` + `mergedIntoId`) — never hard-deleted, so bad merges reverse. Rivers
 > compared by buffered-line overlap, not IoU.
 
+### `adminAreas`  (administrative boundaries for point→place labels — Phase 5)
+```
+_id
+name: string                 // "Burlington", "Chittenden County"
+level: enum(state, county, town)   // admin granularity
+state: string                // 2-letter code (denormalized onto the label)
+polygon: geojson             // boundary
+bbox: { minLat, minLng, maxLat, maxLng }  // prefilter index
+centroid: { lat, lng }       // geospatial point index
+createdAt: timestamp
+```
+> **Purpose (Phase 5, decided 2026-07-16):** resolve a report's `point` (put-in pin / GPS start) →
+> `{ town?, county?, state? }` so the newsfeed/lake cards show *which town/side* a skater put in from —
+> correct even for a body spanning multiple towns or states (Lake Champlain = NY|VT). Imported from the
+> **same per-state OSM extracts** the water ETL uses (`boundary=administrative`, `admin_level` 4/6/7–8;
+> same ODbL attribution, **no new dataset**). New England (VT/NH/ME/MA) is fully tiled by towns; county
+> is the fallback for any gap. `resolvePlaceForCoord` (bbox prefilter → Turf `pointInPolygon`, the
+> D5/D36 machinery) returns the most-specific match; stamped onto `reports.place` at create (no
+> per-read geocode). Reused by GPS ingest (Phase 8) + hazards (Phase 9).
+
 ### `reports`  (the core)
 ```
 _id
@@ -165,6 +209,18 @@ authorId: ref(profiles)
 waterBodyId: ref(waterBodies)
 point: { lat, lng }          // where the reporter was / representative point (geo index)
 skateTime: timestamp         // WHEN THEY SKATED — primary sort key everywhere
+                             // ⚠️ Phase 5 (decided 2026-07-16): RENAMED → `skateEndTime`, redefined
+                             // as "when the skater left the ice" (the freshest read wins the sort).
+                             // Manual form asks "When did you get off the ice?"; GPS (Phase 8) maps
+                             // the path's END time.
+skateStartTime?: timestamp   // Phase 5: optional — when they got ON the ice. Duration is DERIVED
+                             // (end − start), never stored. Manual form accepts start OR a duration
+                             // (back-computes start); GPS supplies both.
+place?: {                    // Phase 5: point-derived location label, stamped at create from `point`
+  town?: string              // (the put-in pin / GPS start) via the `adminAreas` resolver — so a
+  county?: string            // multi-town/-state body shows WHICH side the skater put in from.
+  state?: string             // Card reads "{body} · {town or county}, {state}". No per-read geocode.
+}
 reportTime: timestamp        // when submitted (may be later, offline sync)
 source: enum(native, activity, imported)  // activity = from a GPS tracker (Strava/Garmin/…)
 activityId?: ref(gpsActivities)           // set when source == activity; carries trusted path
@@ -201,11 +257,45 @@ conditions?: {
 
 photoIds: ref(photos)[]
 notes?: string               // free text
+showPutIn?: boolean          // Phase 4: default true. The private-property opt-out — false hides this
+                             // report's derived put-in PIN on the map but KEEPS the coarse `place`
+                             // label (we suppress a marker, we don't scrub location).
 // No `visibility` field — every report is PUBLIC (D13). Minors can't create reports at all (D41).
 moderationStatus: enum(visible, hidden, removed)  // default visible (D32)
 hazardIdsCreated: ref(hazards)[]  // hazards drawn as part of this report
 createdAt, updatedAt: timestamp
 ```
+
+### `waterBodyFavorites`  (place-based curation — Phase 4, the D13 follow-graph stand-in)
+```
+_id
+userId: ref(profiles)
+waterBodyId: ref(waterBodies)
+createdAt: timestamp
+```
+> **Purpose (Phase 4):** you subscribe to *lakes you care about*, not to people (D13). A favorite
+> **notifies by default** (`favoriteReport`), gets a **feed prominence boost** (exempt from the distance
+> filter, but still obeys quality/snow/recency filters), and is **highlighted on the map**. Indexed
+> `by_user` (my favorites) **and** `by_water_body` (the notification fan-out: who favorited this body?).
+
+### `putIns`  (access-point markers on a water body's shore — Phase 4)
+```
+_id
+waterBodyId: ref(waterBodies)
+coord: { lat, lng }          // snapped to the nearest shore/road edge
+source: enum(derived, official)   // derived = clustered from report points; official = admin-set (accurate)
+originReportId?: ref(reports)     // for a derived marker, a representative source report
+status: enum(visible, hidden)     // hidden = moderator-suppressed (per-coord, outlives re-clustering)
+createdByUserId?: ref(profiles)   // the admin, when source == official
+createdAt: timestamp
+```
+> **Derived vs. official (Phase 4).** `derived` markers are materialized by **clustering visible report
+> `point`s** (respecting each report's `showPutIn` opt-out) and **snapping to shore/road** — a report
+> point can be mid-lake/on-ice, so derived markers are *approximate*. `official` markers are **admin-set**
+> from the Phase-7 operator surface (accurate; priority styling). A **moderator hide is per-coord**
+> (a `hidden` row / suppression entry) so one action kills the marker regardless of how many reports feed
+> it, plus a `moderationActions` audit row. **Directions** deep-link (Apple/Google) from the lake detail
+> **drawer button** target a put-in `coord`, **never** the on-water `waterBodies.centroid`.
 
 ### `comments`  (threaded discussion on a report — v1, nestable)
 ```
@@ -383,8 +473,12 @@ userId: ref(profiles)           // recipient
 type: enum(activity_detected, bounty_request,
            hazard_confirmation, bounty_fulfilled, report_rated,
            report_commented,          // someone commented on your report (D21; Phase 3)
+           favorite_report,           // Phase 4: report on a favorited body (fires ~individually)
+           nearby_report_digest,      // Phase 4: the 8pm-ET daily "all within X₁" digest, grouped by body
+           great_report_nearby,       // Phase 4: great report within X₂ (fires ~individually)
            content_flag_resolved)
-payload: { ...refs... }      // e.g. reportId / hazardId / bountyId / actorUserId
+payload: { ...refs... }      // e.g. reportId / waterBodyId / hazardId / bountyId / actorUserId;
+                             // + a count for coalesced/digest notifications (Phase 4)
 readAt?: timestamp
 createdAt: timestamp
 ```
@@ -485,6 +579,8 @@ reports 1─* photos
 reports 1─* hazards (created)      hazards *─1 waterBodies
 hazards 1─* hazardConfirmations *─1 profiles
 profiles *─* profiles  (blocks — no follow graph, D13)
+profiles *─* waterBodies  (waterBodyFavorites — place-based curation, D13; Phase 4)
+waterBodies 1─* putIns  (derived from reports.point + admin-set; Phase 4)
 profiles 1─* contentFlags ─1 (report | comment | photo | user)
 profiles(mod/admin) 1─* moderationActions ─1 (any moderated target)   (D37 audit log)
 profiles 0/1─* supportTickets                                          (D37 support inbox)
@@ -501,13 +597,20 @@ profiles 1─* pointEvents
   signup gate and the under-18 protective defaults (`@skating/core` age math). Computed
   at read time, so the minor→adult transition needs no birthdate re-attestation or
   scheduled job; protections persist past 18 until the user widens them.
-- **Drive-time filter:** cached isochrone polygon on `profiles` (D18) → point-in-polygon
-  test against `waterBodies.centroid` / `reports.point`.
+- **Drive-time band (Phase 4):** `profiles.cachedIsochrones.band30/band60` (ORS) + `outerRadiusMeters`
+  (90-min crow-flies fallback) → point-in-polygon / radius test against `waterBodies.centroid` /
+  `reports.point`, yielding `30 | 60 | 90 | null` **at read time** (D18). Deliberately not materialized
+  per-user (staleness + scale). **Notification fan-out is the reverse lookup** — a per-user polygon scan
+  at alpha scale; a reverse spatial index is a documented future seam.
+- **Derived put-in markers (Phase 4):** cluster `reports.point` (visible + `showPutIn != false`) per body,
+  snap to shore, merge with `putIns` (`official`) minus `hidden`/suppressed.
 - **Weather-since-report strip:** computed from Open-Meteo over [skateTime → now]
   (D19; spec in `04-integrations.md`); cache per (waterBody, window).
 - **Hazard freshness state:** derived from `lastConfirmedAt` at read time (D15).
-- **Newsfeed:** reports within the viewer's isochrone (all public, D13), minus moderation-hidden
-  and blocked authors, sorted by `skateTime` desc (not `reportTime`).
+- **Newsfeed:** global by default (Phase 5), sorted by `skateEndTime` desc, minus moderation-hidden
+  (a block never hides a report, D3 — it de-emphasizes). **Phase 4** layers the `feedFilterPrefs` as an
+  *additive* narrow (drive band + quality/thickness/no-snow/type/recency, **include-unknown** for optional
+  fields) and **boosts favorites** (favorites exempt from the distance narrow, not the rest).
 - **Trust score (D50):** `profiles.reputationPoints` aggregated from `pointEvents`
   (helpful marks + window-bounded corroboration). Corroboration is derived from `reports`
   on the same `waterBodyId` within a tunable window whose ice descriptors agree — no stored
@@ -551,6 +654,8 @@ profiles 1─* pointEvents
   `waterBodyId` (per-lake skate history + bounty eligibility, D44); `comments`
   by `reportId`; `activityConnections` by `userId`; `bounties` by
   `waterBodyId + status`; `blocks` by `blockerId` and by `blockedId`;
+  `waterBodyFavorites` by `userId` (my favorites) and by `waterBodyId` (notification fan-out — Phase 4);
+  `putIns` by `waterBodyId` (Phase 4);
   `contentFlags` by `status` and by `targetType + targetId`; `reportRatings` by
   `reportId` and a unique `raterId + reportId` (one rating per rater/report, D50); `waterBodies` by
   `dedupStatus` (review queue), by `reviewStatus` (user-body approval queue, D37), and by

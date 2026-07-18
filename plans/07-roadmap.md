@@ -203,9 +203,20 @@ Widen the pilot's **single-state Vermont** corpus + basemap to the Northeast **l
 - **Done:** a skater anywhere in NY (north of the metro) / VT / NH / ME / MA opens the app and sees
   their lakes with a real basemap, served from R2.
 
-## Phase 3 — Comments + profiles + user-facing safety tools
+## Phase 3 — Comments + profiles + user-facing safety tools ✅ Complete (2026-07-16)
 > **Detailed build plan:** [`phase-3-community-and-safety.md`](./phase-3-community-and-safety.md)
 > (design settled 2026-07-16 — the four "don't code into a corner" calls are recorded there).
+>
+> **Status: ✅ shipped on dev (2026-07-16, PR #17)** — all four workstreams landed: **A** `@skating/core`
+> `comment`/`block` modules + revised `visibility` (report gate → moderation-only; `isAuthorBlocked` +
+> the "a block never hides a report" invariant test); **B** Convex `blocks`/`comments`/`contentFlags`/
+> `moderation` + extended `profiles` (search index, `getPublicProfile`, `searchProfiles`, `updateProfile`,
+> `loadBlockedAuthorIds` union, `backfillNotificationPrefs`); **C** web UI (profile page + edit, 2-level
+> comment threads with `[hidden]` placeholders, block/flag controls + "Blocked" chip, role-gated inline
+> moderator actions, profile search, blocked-users list); **D** the mobile mirror. Review fixes followed:
+> block-failure surfacing, a bidirectional "Blocked" chip, bounded profile reads, and a broadened
+> profiles migration to canonicalize legacy `notificationPrefs` drift. Trust score renders `0` everywhere
+> (D50 computation is Phase 6). Prod cutover still deferred (Convex prod uninitialized).
 *(Was "Social graph + comments" — the **social graph was removed 2026-07-15 (D13)**. No
 follows/friends. What remains is the community-interaction + safety layer, kept ahead of
 the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
@@ -224,29 +235,63 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   only**; the block set gates comments/profiles + drives author de-emphasis.)
 - A minimal moderator **hide/remove** path (founder) so flagged content can be taken
   down immediately, even before the full operator surface (Phase 7).
-- **Done:** comment threads work; profiles are viewable/searchable (privacy respected);
+- **Done ✅:** comment threads work; profiles are viewable/searchable (privacy respected);
   users can block/mute and flag; content can be quickly taken down.
 
-## Phase 4 — Drive-time filtering
-- Isochrone from home (**hosted ORS**), cached per user (D18/D35); radius fallback.
-- Filter map + feeds to the user's range.
-- **Favorite water bodies (subscribe to *places*, not people).** Let a user mark specific bodies
-  as **favorites** — a manual, per-body opt-in that complements drive-time as a *second axis* for
-  scoping the **Newsfeed** (Phase 5) and **notifications** (D16): a favorited lake's reports/events
-  surface **even when it's outside drive-time range**, and notification prefs can target "my
-  favorites." This is the **place-based** curation axis — the deliberate analog to the removed
-  people-follow graph (D13): you subscribe to *lakes you care about*, not to *individuals*. Likely
-  a small `waterBodyFavorites` join (userId × waterBodyId); ties into the notification prefs (D16)
-  and the Phase 5 feed. *(Could ship earlier if wanted — no ORS dependency; parked here as the
-  natural home alongside the other feed-scoping controls.)*
-- **Done:** map/feed show only in-range water bodies/reports (plus any favorited bodies).
-- Needs: OpenRouteService key.
+## Phase 4 — Drive-time + dynamic filtering
+> **Detailed build plan:** [`phase-4-drive-time-and-filtering.md`](./phase-4-drive-time-and-filtering.md)
+> (decisions settled 2026-07-17).
+> **Reframed 2026-07-17:** drive-time is now a **soft, quality-weighted signal that behaves differently
+> per context** (browse vs. notify), not a hard global gate. Browse (feed) defaults *permissive* — show
+> all, filters narrow, favorites boosted; notifications default *conservative* — favorites on, distance/
+> quality opt-in.
+- **Favorites (`waterBodyFavorites`) — the strongest signal + the D13 place-based curation stand-in.**
+  Mark specific bodies as favorites: **notify by default**, **feed prominence boost** (exempt from the
+  distance filter, but still subject to quality/snow/recency filters), and **map highlight**. You
+  subscribe to *lakes*, not people.
+- **Three drive-time bands (30/60/90) as isochrone *polygons* on `profiles`** (derive band at read time;
+  **not** a per-user membership table — it balloons + goes stale). Hosted ORS caps at **60 min**, so 30/60
+  come from ORS and the **90 band is a uniform crow-flies radius fallback** (self-hosted ORS deferred —
+  see Later/deferred). `homeCoord` stays private (D11).
+- **Newsfeed dynamic filter row (persisted, offline-first):** drive radius, quality floor, thickness
+  floor, no-snow (off `surfaceTags`), ideal ice/surface types, **recency floor** + "older than N days"
+  scroll headers. **Optional-field filters include-unknown by default** (a thickness floor must not hide
+  the ~84% of reports without a reading). Filter memory = **local-first + `profiles.feedFilterPrefs`
+  server-sync** (LWW). Additive on the Phase 5 `listFeed`.
+- **Notifications = a coalescing queue, three opt-in types:** favorites (default on) · all within **X₁** ·
+  great within **X₂** (**two independent radii, X₂ ≥ X₁** — "drive farther for better ice"). "All" →
+  **once-daily 8pm-ET digest** grouped by body (corpus: ~87% of reports land before 8pm; misses are the
+  lowest-priority slice); favorites/great fire ~individually, coalesced per `(user, waterBody)` via APNs
+  `collapse-id` / Android `tag` (replace, never un-send).
+- **Map put-ins + directions:** put-in markers **derived from report points** (+ admin-set official ones,
+  Phase 7 UI), snapped to shore; per-report `showPutIn` opt-out (private property) + moderator hide.
+  **Directions deep-link from the lake detail drawer button** (never a map tap), targeting a **put-in
+  coord, not the on-water centroid**.
+- **Mobile offline read-cache** (reuse expo-sqlite): recently-read + opened-lake + favorites' reports
+  (thumbnails only) for on-ice-without-service recall (D9).
+- **Done:** feed/map/notifications scope by favorites + quality-weighted drive-time; put-ins + directions
+  on the map; filters persist; recent reports readable offline.
+- **Needs:** OpenRouteService key. Notification fan-out uses a per-user polygon scan (fine at alpha
+  scale; reverse spatial index is a documented future seam).
 
-## Phase 5 — Newsfeed page
-- Cross-water-body feed within range, newest **skate time** first (D28), showing
-  **`public`** reports minus **blocks** (D13) — the block filter lands in Phase 3, so the
-  feed is correct once that ships.
-- **Temporarily expand radius** (session-only) to browse wider.
+## Phase 5 — Newsfeed page  *(brought forward ahead of Phase 4 — see doc)*
+> **Detailed build plan:** [`phase-5-newsfeed.md`](./phase-5-newsfeed.md) (decisions settled 2026-07-16).
+> **Reordered ahead of Phase 4 (2026-07-16):** the feed ships **global** (all lakes, all regions); the
+> two drive-time bullets below — *"within range"* and *"temporarily expand radius"* — are definitionally
+> Phase 4 and move there as an **additive filter** on the same `listFeed` query (near-zero rework).
+- Cross-water-body feed, newest **skate-*end* time** first (D28) — **sort key redefined 2026-07-16:**
+  `reports.skateTime` → **`skateEndTime`** ("when the skater left the ice" = the freshest read), a
+  project-wide rename affecting every surface that sorts reports (per-body feed + profile history too).
+  Also **store `skateStartTime`** (optional; duration derived, never stored) — manual form takes
+  start-or-duration; `gpsActivities` gets `endTime`/`elapsedSeconds` prep (wired Phase 8). Shows
+  **`public`** reports minus **blocks** (D13) — the block filter landed in Phase 3.
+- Feed card carries the water body **name + a point-derived town/county + state label** (from the report's
+  put-in pin / GPS start — shows which town/side, correct for multi-town/-state lakes; disambiguates
+  same-name lakes). Backed by a new **`adminAreas`** boundary table (OSM, same ODbL) resolved at report
+  create — no per-read geocode, no 116k-body backfill. Reused by GPS (Phase 8) + hazards (Phase 9).
+- Tap a card → **report drawer/sheet** (no full navigation — preserves scroll); **photo carousel** in
+  cards + drawer; empty state; pull-to-refresh (mobile).
+- ~~**Temporarily expand radius** (session-only) to browse wider.~~ → **Phase 4** (needs drive-time).
 - **Done:** browse recent community activity without going lake-by-lake.
 
 ## Phase 6 — Bounties + trust score
@@ -269,8 +314,17 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
     public penalty.
   - **Constraints (D17/D3):** reputational/**cosmetic only** — never weights safety, never
     gates visibility/ranking of safety content, never makes the app assert ice is safe.
+- **"Recommended" filter-breaking feed posts (moved here from Phase 4, 2026-07-17).** Occasionally
+  inject into a user's feed an *exceptional* report that breaks their own **distance / quality / thickness**
+  filters — so someone who never touches the filters still gets a shot at seeing a lake in rare condition.
+  **Deliberately gated on this phase:** the "exceptional" bar must be **corroboration/trust (D50)**, not a
+  lone `skateQuality == great`, or we'd build a machine for wasted trips (and implicitly amplify one
+  unverified claim — a D3 concern). Mechanics: a relaxed complement query, ranked, **frequency-capped**
+  (≤1–2 per session/day), **per-lake de-duped**, visually distinct ("Recommended — exceptional ice outside
+  your usual range"); breaks distance/quality/thickness but **never recency, blocks, or moderation**.
 - **Done:** end-to-end bounty loop; reporters accrue a public, boost-only trust score from
-  corroboration + helpful marks.
+  corroboration + helpful marks; the feed can occasionally recommend corroborated exceptional ice
+  outside a user's filters.
 
 ## Phase 7 — Operator surface (admin, moderation, dedup review)
 *(The founder-facing back office — the second half of the old combined phase.)*
@@ -353,10 +407,22 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - **Done:** aging reports show peak temp / hours above freezing / sun / precip / wind.
 
 ## Later / deferred (see 02-open-questions)
+- **Self-hosted OpenRouteService (true 90-min+ isochrone band).** Phase 4 ships drive-time on the
+  **hosted ORS**, whose isochrone API is hardcoded to a **60-min max range** for `driving-car` — so the
+  90-min band is a uniform crow-flies radius fallback there. Self-hosting ORS (a memory-hungry JVM/Docker
+  service loading an OSM routing graph — **cannot** run on Convex or Vercel; needs a persistent container
+  with ~4–8 GB RAM on a small VM: Hetzner/Fly.io/Railway/Render, ~$15–50/mo; Cloudflare **not** required)
+  lets us (a) raise the isochrone range for a **real 90-min (and beyond) band**, (b) drop the hosted
+  free-tier daily quota + rate limits, and (c) tune the routing profile. Our actual load is trivial
+  (isochrones computed only on home-address change, cached per user), so it's a single small **warm**
+  instance, not a fleet — the graph build takes minutes, so it stays warm rather than cold-starting per
+  request. **Do this when** the 90-min band's accuracy matters or hosted quota bites; until then the
+  radius fallback is fine for the outer, aspirational ring. *(Context: Phase 4 discussion 2026-07-17.)*
 - Forum/Facebook ingestion + AI comment-vs-report classification (Q8).
-- Strava-path hazard *deduction* (Q11); auto-merge dedup + community confirmations (D36).
+- GPS-path hazard *deduction* (Q11); auto-merge dedup + community confirmations (D36).
 - AI report summarization beyond weather facts (Q9); full ToS/legal review (Q10).
 - In-app guides; group-skate organizing; Fitbit as a GPS provider.
+- Satellite imagery layer toggleable in lake detail view. **NOTE: This plan still needs to be explored**
 - **Photo-orphan GC cron (cleanup/polish).** The Phase 2 photo pipeline uploads before
   `reports.create`, so failed/abandoned/partial submits can strand storage. The client reclaims
   best-effort (`photos.remove`/`removeBlob`, incl. uploads that resolve after the form unmounts), but

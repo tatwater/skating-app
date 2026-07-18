@@ -127,9 +127,9 @@ export function formatConditions(conditions: ReportConditions): { label: string;
 }
 
 /**
- * Skate time (the primary sort key everywhere, D28) as a readable local timestamp, e.g.
- * `Jan 5, 2026, 2:30 PM`. `timeZone` is injectable so the format is testable deterministically;
- * the UI omits it to render in the viewer's local zone.
+ * Skate-end time (the primary sort key everywhere, D28; Phase 5 rename) as a readable local
+ * timestamp, e.g. `Jan 5, 2026, 2:30 PM`. `timeZone` is injectable so the format is testable
+ * deterministically; the UI omits it to render in the viewer's local zone.
  */
 export function formatSkateTime(ms: number, timeZone?: string): string {
   return new Intl.DateTimeFormat('en-US', {
@@ -140,4 +140,26 @@ export function formatSkateTime(ms: number, timeZone?: string): string {
     minute: '2-digit',
     ...(timeZone !== undefined ? { timeZone } : {}),
   }).format(new Date(ms))
+}
+
+/** A duration in minutes as a compact label: `45m` · `1h` · `1h 30m`. Rounds to the nearest minute. */
+export function formatDurationLabel(minutes: number): string {
+  const total = Math.max(0, Math.round(minutes))
+  const h = Math.floor(total / 60)
+  const m = total % 60
+  if (h === 0) return `${m}m`
+  if (m === 0) return `${h}h`
+  return `${h}h ${m}m`
+}
+
+/**
+ * Format the skate window's *duration* for display (Phase 5) — the derived `end − start`, never a
+ * stored field. Returns `null` when there's no start (an end-only report), so the UI can omit the
+ * duration chip. A zero/negative span (should not occur post-validation) also yields `null`.
+ */
+export function formatSkateWindow(end: number, start?: number): string | null {
+  if (start === undefined) return null
+  const minutes = (end - start) / 60_000
+  if (!Number.isFinite(minutes) || minutes <= 0) return null
+  return formatDurationLabel(minutes)
 }
