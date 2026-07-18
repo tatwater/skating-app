@@ -355,3 +355,41 @@ describe('photos.removeBlob (storage-only cleanup)', () => {
     expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).not.toBeNull() // untouched
   })
 })
+
+/** Seed an under-18 (read-only, D41) profile and return its identity. */
+async function seedMinor(t: ReturnType<typeof convexTest>, subject: string) {
+  await t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: subject,
+      displayName: subject,
+      username: subject,
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'private' as const,
+      notificationPrefs: NOTIF_PREFS,
+      dateOfBirth: Date.UTC(new Date().getUTCFullYear() - 16, 0, 1),
+      reputationPoints: 0,
+      role: 'member' as const,
+      status: 'active' as const,
+      createdAt: Date.now(),
+    }),
+  )
+  return t.withIdentity({ subject })
+}
+
+describe('photos — minor gate (D41)', () => {
+  test('a minor can neither mint an upload URL nor create a photo row', async () => {
+    const t = convexTest(schema, modules)
+    const asMinor = await seedMinor(t, 'clerk_minor')
+    await expect(asMinor.mutation(api.photos.generateUploadUrl, {})).rejects.toThrow(/minor/i)
+    const storageId = await storeBlob(t)
+    await expect(
+      asMinor.mutation(api.photos.create, {
+        storageId,
+        thumbStorageId: storageId,
+        placeOnMap: false,
+      }),
+    ).rejects.toThrow(/minor/i)
+    // Nothing minted: the blob is still there but no photo row exists.
+    expect(await t.run((ctx) => ctx.db.query('photos').collect())).toEqual([])
+  })
+})
