@@ -10,6 +10,7 @@ import { FeedCard } from '../../src/components/FeedCard'
 import { MapSelectionProvider } from '../../src/components/MapSelectionContext'
 import { ProfileSearch } from '../../src/components/ProfileSearch'
 import { ReportDetail } from '../../src/components/ReportDetail'
+import { cacheReports, loadCachedReports } from '../../src/lib/reportCache'
 
 /** Feed page size per `usePaginatedQuery` load. */
 const PAGE_SIZE = 20
@@ -30,6 +31,16 @@ export default function NewsfeedScreen() {
   )
   const now = Date.now()
 
+  // Offline read-cache (decision #8): cache the feed cards we render, and fall back to the cache when
+  // the live query has nothing yet (on the ice with no signal). Cached cards load once on mount.
+  const [cached] = useState(() => loadCachedReports())
+  useEffect(() => {
+    if (results.length > 0) cacheReports(results)
+  }, [results])
+  const isOfflineFallback =
+    results.length === 0 && status === 'LoadingFirstPage' && cached.length > 0
+  const feedData = isOfflineFallback ? cached : results
+
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null)
   const sheetRef = useRef<BottomSheet>(null)
   useEffect(() => {
@@ -48,7 +59,7 @@ export default function NewsfeedScreen() {
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <FlatList<FeedCardData>
-        data={results}
+        data={feedData}
         keyExtractor={(item) => item.reportId}
         contentContainerStyle={{ padding: 16, gap: 12 }}
         keyboardShouldPersistTaps="handled"
@@ -60,6 +71,11 @@ export default function NewsfeedScreen() {
         ListHeaderComponent={
           <YStack gap="$4" paddingBottom="$2">
             <H1 color="$foreground">Newsfeed</H1>
+            {isOfflineFallback ? (
+              <Text color="$foregroundMuted" fontSize={13}>
+                Offline — showing recently saved reports.
+              </Text>
+            ) : null}
             <YStack gap="$2">
               <Text
                 color="$foregroundMuted"

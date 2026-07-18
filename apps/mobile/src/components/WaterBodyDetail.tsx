@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui'
 import { cacheBody } from '../lib/bodyCache'
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi'
+import { DirectionsButton, FavoriteButton } from './FavoriteButton'
 import { useMapSelection } from './MapSelectionContext'
 import { ReportForm } from './ReportForm'
 
@@ -70,13 +71,19 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   return (
     <YStack gap="$3">
       <YStack gap="$1">
-        <H4 color="$foreground">{result.body.name}</H4>
+        <XStack justifyContent="space-between" alignItems="center" gap="$2">
+          <H4 color="$foreground" flex={1}>
+            {result.body.name}
+          </H4>
+          <FavoriteButton waterBodyId={result.body._id} />
+        </XStack>
         <Text color="$foregroundMuted">
           {humanizeEnum(result.body.type)}
           {result.body.surfaceAreaSqM !== undefined
             ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
             : ''}
         </Text>
+        <DirectionsButton waterBodyId={result.body._id} />
       </YStack>
 
       {formOpen ? (

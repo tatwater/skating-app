@@ -41,6 +41,7 @@ export function FeedCard({
       <XStack justifyContent="space-between" gap="$3" alignItems="flex-start">
         <YStack flex={1}>
           <Text color="$foreground" fontWeight="600" numberOfLines={1}>
+            {card.isFavorite ? <Text color="$primary">★ </Text> : null}
             {card.bodyName}
           </Text>
           {card.placeLabel ? (
