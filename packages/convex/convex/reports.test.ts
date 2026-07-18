@@ -566,6 +566,37 @@ describe('reports.listFeed (global newsfeed, Phase 5)', () => {
     expect(res.page.map((c) => c.reportId)).toEqual([newer, older])
   })
 
+  test('hidden reports never consume page slots — a small page stays full of visible ones', async () => {
+    const t = convexTestWithGeo()
+    const { id } = await seedBody(t)
+    const asUser = await seedUser(t, 'clerk_a')
+    // Interleave hidden and visible so a naive filter-after-paginate would yield a short/empty page.
+    const created: { reportId: string; hidden: boolean }[] = []
+    for (let i = 0; i < 6; i++) {
+      const reportId = await asUser.mutation(api.reports.create, {
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME + i,
+      })
+      const hidden = i % 2 === 0
+      if (hidden) await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }))
+      created.push({ reportId, hidden })
+    }
+    const visibleIds = new Set(created.filter((c) => !c.hidden).map((c) => c.reportId))
+
+    // A page of 2 must come back full — hidden rows are gated in-index, not after paginate.
+    const first = await t.query(api.reports.listFeed, {
+      paginationOpts: { numItems: 2, cursor: null },
+    })
+    expect(first.page).toHaveLength(2)
+    expect(first.page.every((c) => visibleIds.has(c.reportId))).toBe(true)
+
+    const second = await t.query(api.reports.listFeed, {
+      paginationOpts: { numItems: 2, cursor: first.continueCursor },
+    })
+    expect(second.page).toHaveLength(1)
+    expect(second.isDone).toBe(true)
+  })
+
   test("a blocked author's report is STILL returned, carrying blocked: true (D3)", async () => {
     const t = convexTestWithGeo()
     const { id } = await seedBody(t)
@@ -731,5 +762,27 @@ describe('reports.renameSkateTimeToSkateEndTime (Phase 5 migration)', () => {
     await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME })
     const result = await t.mutation(internal.reports.renameSkateTimeToSkateEndTime, {})
     expect(result).toEqual({ total: 1, renamed: 0, placed: 0 })
+  })
+
+  test('a cleanup-only patch (dangling skateTime, skateEndTime already set) is not counted as a rename', async () => {
+    const t = convexTestNoValidation()
+    const { id } = await seedBody(t)
+    await seedAdminAreas(t)
+    const asUser = await seedUser(t, 'clerk_a')
+    // A report already migrated (has skateEndTime + place) but still carrying a dangling legacy
+    // `skateTime` — a half-applied earlier run. The migration should drop the stray field without
+    // reporting a rename that didn't happen.
+    const reportId = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    })
+    await t.run((ctx) => ctx.db.patch(reportId, { skateTime: SKATE_TIME - 1 } as never))
+
+    const result = await t.mutation(internal.reports.renameSkateTimeToSkateEndTime, {})
+    expect(result.renamed).toBe(0)
+
+    const cleaned = await t.run((ctx) => ctx.db.get(reportId))
+    expect(cleaned?.skateEndTime).toBe(SKATE_TIME)
+    expect((cleaned as { skateTime?: number }).skateTime).toBeUndefined()
   })
 })

@@ -12,7 +12,7 @@
 import { bboxIntersects, pointInPolygon } from '@skating/core'
 import { v } from 'convex/values'
 import type { MultiPolygon, Polygon } from 'geojson'
-import type { Doc } from './_generated/dataModel'
+import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, type QueryCtx, query } from './_generated/server'
 import { ADMIN_AREA_LEVELS } from './lib/enums'
 import { adminAreasGeo } from './lib/geospatial'
@@ -45,6 +45,7 @@ export const importCanonical = internalMutation({
         .withIndex('by_external_id', (q) => q.eq('externalId', item.externalId))
         .unique()
 
+      let id: Id<'adminAreas'>
       if (existing) {
         await ctx.db.patch(existing._id, {
           name: item.name,
@@ -54,15 +55,10 @@ export const importCanonical = internalMutation({
           bbox: item.bbox,
           centroid: item.centroid,
         })
-        await adminAreasGeo.insert(
-          ctx,
-          existing._id,
-          { latitude: item.centroid.lat, longitude: item.centroid.lng },
-          { level: item.level },
-        )
+        id = existing._id
         updated++
       } else {
-        const id = await ctx.db.insert('adminAreas', {
+        id = await ctx.db.insert('adminAreas', {
           externalId: item.externalId,
           name: item.name,
           level: item.level,
@@ -72,14 +68,19 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           createdAt: Date.now(),
         })
-        await adminAreasGeo.insert(
-          ctx,
-          id,
-          { latitude: item.centroid.lat, longitude: item.centroid.lng },
-          { level: item.level },
-        )
         inserted++
       }
+      // Re-index the centroid in one place for both paths. `GeospatialIndex.insert` is
+      // upsert-by-key: the component removes any existing point for this doc id before inserting
+      // (see @convex-dev/geospatial `document.insert` → `removePointByKey`), so re-running the
+      // import overwrites a boundary's centroid rather than stacking duplicates — which would eat
+      // into `findContainingTown`'s read cap (the same pressure that forced the 0.2° margin).
+      await adminAreasGeo.insert(
+        ctx,
+        id,
+        { latitude: item.centroid.lat, longitude: item.centroid.lng },
+        { level: item.level },
+      )
     }
     return { inserted, updated }
   },

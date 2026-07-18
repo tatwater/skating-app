@@ -265,7 +265,10 @@ export default defineSchema({
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
     .index('by_author_skate_end_time', ['authorId', 'skateEndTime'])
     // The global cross-body newsfeed sort/paginate index — newest skate-end time first (Phase 5, D28).
-    .index('by_skate_end_time', ['skateEndTime'])
+    // `moderationStatus` leads so `listFeed` filters the moderation gate *in* the index (only
+    // `visible`, D32) rather than after `paginate`, which would let a page of all-hidden reports
+    // return empty with `isDone: false` and strand the feed on its empty state.
+    .index('by_moderation_and_skate_end_time', ['moderationStatus', 'skateEndTime'])
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (F2/D30)
 
   comments: defineTable({

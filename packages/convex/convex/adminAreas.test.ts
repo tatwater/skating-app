@@ -78,6 +78,21 @@ describe('adminAreas.importCanonical', () => {
     const rows = await t.run((ctx) => ctx.db.query('adminAreas').collect())
     expect(rows).toHaveLength(1)
     expect(rows[0]?.name).toBe('Burlington City')
+
+    // The re-import must also *replace* the geospatial centroid, not append a second stale point —
+    // a duplicate would silently eat into `findContainingTown`'s read cap. Query the town level over
+    // the box and assert exactly one entry survives, keyed to the surviving row. `adminAreasGeo` is
+    // imported inside `t.run` so its backend-only constructor runs in the convex-test context.
+    const geoHits = await t.run(async (ctx) => {
+      const { adminAreasGeo } = await import('./lib/geospatial')
+      return adminAreasGeo.query(ctx, {
+        shape: { type: 'rectangle', rectangle: { west: 0, east: 1, south: 0, north: 1 } },
+        limit: 128,
+        filter: (q) => q.eq('level', 'town'),
+      })
+    })
+    expect(geoHits.results).toHaveLength(1)
+    expect(geoHits.results[0]?.key).toBe(rows[0]?._id)
   })
 })
 

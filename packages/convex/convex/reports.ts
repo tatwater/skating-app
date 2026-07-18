@@ -277,14 +277,16 @@ async function thumbUrlsFor(
   ctx: QueryCtx,
   photoIds: Doc<'reports'>['photoIds'],
 ): Promise<string[]> {
-  const urls: string[] = []
-  for (const photoId of photoIds) {
-    const photo = await ctx.db.get(photoId)
-    if (!photo) continue
-    const url = await ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>)
-    if (url) urls.push(url)
-  }
-  return urls
+  // Resolve every photo concurrently — a page of reports each carrying a few photos would otherwise
+  // serialize into dozens of round-trips per `listFeed` call. Missing files resolve to null, dropped.
+  const urls = await Promise.all(
+    photoIds.map(async (photoId) => {
+      const photo = await ctx.db.get(photoId)
+      if (!photo) return null
+      return ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>)
+    }),
+  )
+  return urls.filter((url): url is string => url !== null)
 }
 
 /**
@@ -302,9 +304,13 @@ export const listFeed = query({
     const viewer = await getCurrentProfile(ctx)
     const blocked = await loadBlockedAuthorIds(ctx, viewer?._id ?? '')
 
+    // Moderation-only gate (D32), applied *in* the index (`moderationStatus: 'visible'`) rather than
+    // after `paginate` — filtering post-pagination would let a page of all-hidden reports return
+    // empty with `isDone: false`, stranding the client on its "No reports yet" state with more pages
+    // behind it. A blocked author's report still comes through (D3), de-emphasized via `blocked` below.
     const result = await ctx.db
       .query('reports')
-      .withIndex('by_skate_end_time')
+      .withIndex('by_moderation_and_skate_end_time', (q) => q.eq('moderationStatus', 'visible'))
       .order('desc')
       .paginate(paginationOpts)
 
@@ -312,8 +318,6 @@ export const listFeed = query({
     const authors = new Map<string, { displayName: string; username: string }>()
     const page: FeedCardData[] = []
     for (const r of result.page) {
-      // Moderation-only gate (D32) — a hidden/removed report drops out; a blocked author's does NOT.
-      if (!canViewReport(r.moderationStatus)) continue
       page.push({
         reportId: r._id,
         waterBodyId: r.waterBodyId,
@@ -422,7 +426,9 @@ export const renameSkateTimeToSkateEndTime = internalMutation({
       }
       if (Object.keys(patch).length > 0) {
         await ctx.db.patch(r._id, patch as Partial<Doc<'reports'>>)
-        if ('skateEndTime' in patch || 'skateTime' in patch) renamed++
+        // Count only an actual copy — a cleanup-only patch (report already had `skateEndTime`, we
+        // just drop a dangling legacy `skateTime`) isn't a rename and mustn't inflate the count.
+        if ('skateEndTime' in patch) renamed++
       }
     }
     return { total: reports.length, renamed, placed }
