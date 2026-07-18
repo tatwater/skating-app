@@ -174,6 +174,7 @@ describe('putIns.setOfficial / hide (auth + audit)', () => {
     const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect())
     expect(actions).toHaveLength(1)
     expect(actions[0]?.targetType).toBe('waterbody')
+    expect(actions[0]?.action).toBe('set_put_in') // a dedicated verb, not the misleading 'restore'
   })
 
   test('hide requires a non-empty reason', async () => {

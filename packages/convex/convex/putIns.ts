@@ -122,7 +122,7 @@ export const setOfficial = mutation({
     })
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
-      action: 'restore', // no dedicated put-in verb; 'restore' = "made a marker visible" in this audit
+      action: 'set_put_in', // a dedicated verb — placing an official marker, not un-hiding one
       targetType: 'waterbody',
       targetId: waterBodyId,
       reason: reason ?? 'Set official put-in',

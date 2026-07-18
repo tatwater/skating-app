@@ -119,7 +119,12 @@ function HomeLocation() {
             store only the derived travel-time zones, never the coordinate.
           </p>
           <div className="flex flex-wrap items-center gap-2">
-            <Button variant="outline" size="sm" onClick={useCurrentLocation}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={useCurrentLocation}
+              disabled={status === 'locating'}
+            >
               {hasHome ? 'Update home from current location' : 'Set home from current location'}
             </Button>
             {hasHome ? (

@@ -117,7 +117,7 @@ function HomeLocation() {
         store only the derived travel-time zones, never the coordinate.
       </Paragraph>
       <XStack gap="$2" flexWrap="wrap">
-        <Button size="$3" onPress={useCurrentLocation}>
+        <Button size="$3" onPress={useCurrentLocation} disabled={status === 'locating'}>
           {hasHome ? 'Update home' : 'Set home from location'}
         </Button>
         {hasHome ? (

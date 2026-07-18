@@ -231,7 +231,10 @@ function ChipToggle({
   return (
     <div className="flex flex-col gap-1">
       <span className="text-foreground-muted text-xs">{label}</span>
+      {/* Base UI (not Radix): `onValueChange` always yields an array; `multiple` is what actually
+          lets several ideal-ice chips be selected at once (it defaults to false = single-select). */}
       <ToggleGroup
+        multiple
         value={selected}
         onValueChange={(v) => onValueChange(v as string[])}
         className="flex-wrap justify-start"

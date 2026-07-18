@@ -90,6 +90,7 @@ export const MODERATION_ACTIONS = [
   'approve_waterbody',
   'reject_waterbody',
   'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 2)
+  'set_put_in', // admin placed an official put-in marker (Phase 4, decision #7)
   'resolve_flag',
   'dismiss_flag',
   'grant_role',
