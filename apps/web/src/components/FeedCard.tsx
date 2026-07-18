@@ -32,7 +32,14 @@ export function FeedCard({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h3 className="truncate font-medium text-foreground">{card.bodyName}</h3>
+          <h3 className="flex items-center gap-1.5 truncate font-medium text-foreground">
+            {card.isFavorite ? (
+              <span role="img" aria-label="Favorited" title="Favorited" className="text-primary">
+                ★
+              </span>
+            ) : null}
+            <span className="truncate">{card.bodyName}</span>
+          </h3>
           {card.placeLabel ? (
             <p className="truncate text-foreground-muted text-sm">{card.placeLabel}</p>
           ) : null}

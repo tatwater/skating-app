@@ -4,7 +4,9 @@ import { formatAreaAcres, formatSkateTime, humanizeEnum, SKATE_QUALITY_LABELS } 
 import { Link } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
 import { useEffect, useState } from 'react'
+import { DirectionsButton } from './DirectionsButton'
 import { DetailSkeleton, UnavailableState } from './DrawerStates'
+import { FavoriteButton } from './FavoriteButton'
 import { useMapSelection } from './MapSelectionContext'
 import { ReportForm } from './ReportForm'
 import { Badge } from './ui/badge'
@@ -60,7 +62,10 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   return (
     <>
       <SheetHeader>
-        <SheetTitle>{result.body.name}</SheetTitle>
+        <div className="flex items-start justify-between gap-2">
+          <SheetTitle>{result.body.name}</SheetTitle>
+          <FavoriteButton waterBodyId={result.body._id} />
+        </div>
         <SheetDescription>
           {humanizeEnum(result.body.type)}
           {result.body.surfaceAreaSqM !== undefined
@@ -69,8 +74,11 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         </SheetDescription>
       </SheetHeader>
       <div className="flex flex-col gap-4 px-4 pb-4">
-        {/* Report creation surfaced in place (D47). */}
-        <Button onClick={() => setFormOpen(true)}>Add a report</Button>
+        {/* Report creation + directions to a put-in (never the on-water centroid, D#7). */}
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={() => setFormOpen(true)}>Add a report</Button>
+          <DirectionsButton waterBodyId={result.body._id} />
+        </div>
         <ReportFeed waterBodyId={result.body._id} />
       </div>
       {formOpen ? (
