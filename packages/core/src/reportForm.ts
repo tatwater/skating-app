@@ -5,9 +5,12 @@
  * metric, enter/display imperial). Kept pure so the conversions and the thickness value-XOR-range
  * assembly are unit-tested without a DOM. (Reports have no visibility — all public, D13.)
  *
- * `skateTime` is carried as **epoch ms** (canonical, platform-neutral). Each surface adapts at its
- * own input boundary: web's `<input type="datetime-local">` round-trip lives in `apps/web`, mobile's
- * date picker yields ms directly.
+ * `skateEndTime` ("when the skater left the ice", Phase 5) is carried as **epoch ms** (canonical,
+ * platform-neutral). Each surface adapts at its own input boundary: web's
+ * `<input type="datetime-local">` round-trip lives in `apps/web`, mobile's date picker yields ms
+ * directly. An optional `skateStartTime` captures when they got on; the UI may collect it as a start
+ * time *or* a duration (`resolveSkateWindow` back-computes the start), but only the two timestamps
+ * are ever stored — duration is derived (`end − start`).
  */
 
 import type { ReportInput } from './report'
@@ -31,7 +34,8 @@ export interface ThicknessFormReading {
 }
 
 export interface ReportFormState {
-  skateTime: number // epoch ms (each surface adapts its own picker at the input boundary)
+  skateEndTime: number // epoch ms — when they left the ice (each surface adapts its own picker)
+  skateStartTime?: number // epoch ms — optional; resolved from a start time OR a duration at the UI
   iceTypes: IceType[]
   surfaceTags: SurfaceTag[]
   skateQuality: SkateQuality | ''
@@ -59,7 +63,7 @@ export function emptyThicknessReading(): ThicknessFormReading {
  */
 export function emptyReportForm(now: number): ReportFormState {
   return {
-    skateTime: now,
+    skateEndTime: now,
     iceTypes: [],
     surfaceTags: [],
     skateQuality: '',
@@ -122,7 +126,8 @@ export function buildReportInput(
 
   return {
     waterBodyId,
-    skateTime: form.skateTime,
+    skateEndTime: form.skateEndTime,
+    ...(form.skateStartTime !== undefined ? { skateStartTime: form.skateStartTime } : {}),
     ...(form.iceTypes.length > 0 ? { iceTypes: form.iceTypes } : {}),
     ...(form.surfaceTags.length > 0 ? { surfaceTags: form.surfaceTags } : {}),
     ...(form.skateQuality !== '' ? { skateQuality: form.skateQuality } : {}),
@@ -132,4 +137,53 @@ export function buildReportInput(
     ...(notes !== '' ? { notes } : {}),
     ...(point ? { point } : {}),
   }
+}
+
+/** What the skate-window helper is given at the form boundary: a required end, plus *optionally* an
+ *  explicit start OR a duration (mutually exclusive in the UI; if both arrive, the explicit start
+ *  wins). Times are epoch ms; duration is in minutes. */
+export interface SkateWindowInput {
+  end: number
+  start?: number
+  durationMinutes?: number
+}
+
+/** The resolved window — only the two timestamps are ever persisted (duration is derived). */
+export type SkateWindowResult =
+  | { ok: true; skateEndTime: number; skateStartTime?: number }
+  | { ok: false; error: string }
+
+/**
+ * Resolve the optional start/duration entry into the two stored timestamps (Phase 5). This is the
+ * **input-boundary** helper: a duration back-computes `start = end − duration` here so the rest of
+ * the system only ever sees `{ skateStartTime?, skateEndTime }` — duration is never a stored field.
+ * Validates that the end is a real instant and that any resolved start falls at/​before it (an
+ * inverted window is nonsensical). An explicit `start` takes precedence over `durationMinutes` if
+ * both are somehow supplied. With neither, the window is just the end (no start).
+ */
+export function resolveSkateWindow(input: SkateWindowInput): SkateWindowResult {
+  const { end, start, durationMinutes } = input
+  if (!Number.isFinite(end) || end <= 0) {
+    return { ok: false, error: 'Enter a valid end time.' }
+  }
+
+  let skateStartTime: number | undefined
+  if (start !== undefined) {
+    if (!Number.isFinite(start) || start <= 0)
+      return { ok: false, error: 'Enter a valid start time.' }
+    skateStartTime = start
+  } else if (durationMinutes !== undefined) {
+    if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+      return { ok: false, error: 'Enter a duration greater than zero.' }
+    }
+    skateStartTime = end - durationMinutes * 60_000
+    if (skateStartTime <= 0) return { ok: false, error: 'That duration is longer than possible.' }
+  }
+
+  if (skateStartTime !== undefined && skateStartTime > end) {
+    return { ok: false, error: 'The start must be before the end.' }
+  }
+  return skateStartTime !== undefined
+    ? { ok: true, skateEndTime: end, skateStartTime }
+    : { ok: true, skateEndTime: end }
 }

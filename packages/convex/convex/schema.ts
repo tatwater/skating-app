@@ -31,6 +31,7 @@ import { v } from 'convex/values'
 import {
   ACTIVITY_PROMPT_STATES,
   ACTIVITY_PROVIDERS,
+  ADMIN_AREA_LEVELS,
   BOUNTY_STATUSES,
   COMMENT_SOURCES,
   DEDUP_STATUSES,
@@ -114,7 +115,12 @@ export default defineSchema({
     provider: literals(ACTIVITY_PROVIDERS),
     providerActivityId: v.string(), // unique per provider — dedup webhook re-deliveries
     sportType: v.string(),
-    startTime: v.number(), // becomes report.skateTime if converted
+    startTime: v.number(), // GPS start → report.skateStartTime on convert (D44)
+    // Phase 5 prep (wired Phase 8): GPS end → report.skateEndTime. `elapsedSeconds` is the
+    // provider's moving/elapsed time — NON-redundant with (end − start) because it excludes
+    // pauses/stops. Both optional ⇒ migration-free; no behavior now (GPS ingest is Phase 8).
+    endTime: v.optional(v.number()),
+    elapsedSeconds: v.optional(v.number()),
     path: v.optional(geoJson), // TRUSTED GPS track = skated extent
     waterBodyId: v.optional(v.id('waterBodies')), // resolved at ingest (D44)
     waterBodyIds: v.optional(v.array(v.id('waterBodies'))), // when a skate spans bodies
@@ -170,11 +176,44 @@ export default defineSchema({
     .index('by_is_large', ['isLarge']) // large-body short list for listInViewport tier 2 (D5)
     .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
 
+  // Administrative-boundary polygons for point→place labels (Phase 5). A report's `point` (put-in
+  // pin / GPS start) resolves against these to `{ town?, county?, state? }`, stamped onto
+  // `reports.place` at create. Imported from the same per-state OSM extracts as the water ETL
+  // (`boundary=administrative`, admin_level 4/6/7–8; same ODbL). Reused by GPS (Phase 8) + hazards
+  // (Phase 9). Small (5 states of towns/counties ≈ single-digit thousands of rows).
+  adminAreas: defineTable({
+    name: v.string(), // this row's own name — "Burlington" (town) / "Chittenden County" (county)
+    level: literals(ADMIN_AREA_LEVELS), // admin granularity
+    state: v.string(), // 2-letter code, denormalized onto the label
+    externalId: v.string(), // OSM relation id (way/123 · relation/456) — idempotent upsert key
+    polygon: geoJson, // boundary
+    bbox, // cheap point-containment prefilter before the Turf pointInPolygon test
+    centroid: latLng, // geospatial point index (like waterBodies.centroid)
+    createdAt: v.number(),
+  })
+    .index('by_level', ['level'])
+    // Idempotent re-import upsert key (OSM re-runs), mirroring waterBodies.by_external_id (D14).
+    .index('by_external_id', ['externalId']),
+
   reports: defineTable({
     authorId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
     point: latLng, // representative point (geo index)
-    skateTime: v.number(), // WHEN THEY SKATED — primary sort key everywhere
+    // When the skater **left the ice** — the primary sort key everywhere (D28; Phase 5 rename of
+    // `skateTime`). The freshest read of the ice is the one from whoever got off latest.
+    skateEndTime: v.number(),
+    // Optional — when they got *on* the ice. Duration is DERIVED (end − start), never stored (Phase 5).
+    skateStartTime: v.optional(v.number()),
+    // Point-derived location label, stamped at create from `point` (put-in pin / GPS start) via the
+    // `adminAreas` resolver — so a multi-town/-state body shows WHICH side the skater put in from
+    // (Phase 5). Card reads "{body} · {town or county}, {state}". Optional ⇒ migration-free.
+    place: v.optional(
+      v.object({
+        town: v.optional(v.string()),
+        county: v.optional(v.string()),
+        state: v.optional(v.string()),
+      }),
+    ),
     reportTime: v.number(), // when submitted (may be later, offline sync)
     source: literals(REPORT_SOURCES),
     activityId: v.optional(v.id('gpsActivities')), // set when source == activity
@@ -220,11 +259,16 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index('by_water_body_skate_time', ['waterBodyId', 'skateTime'])
+    .index('by_water_body_skate_end_time', ['waterBodyId', 'skateEndTime'])
     .index('by_author', ['authorId'])
-    // Newest-first author history for the profile page, bounded by a `.take()` on skate time so a
+    // Newest-first author history for the profile page, bounded by a `.take()` on skate-end time so a
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
-    .index('by_author_skate_time', ['authorId', 'skateTime'])
+    .index('by_author_skate_end_time', ['authorId', 'skateEndTime'])
+    // The global cross-body newsfeed sort/paginate index — newest skate-end time first (Phase 5, D28).
+    // `moderationStatus` leads so `listFeed` filters the moderation gate *in* the index (only
+    // `visible`, D32) rather than after `paginate`, which would let a page of all-hidden reports
+    // return empty with `isDone: false` and strand the feed on its empty state.
+    .index('by_moderation_and_skate_end_time', ['moderationStatus', 'skateEndTime'])
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (F2/D30)
 
   comments: defineTable({

@@ -4,9 +4,11 @@
  * `reports.create` re-runs it at the trust boundary, so the rules live in exactly one place.
  *
  * Observation-friendly (D3): nothing about ice *quality* is required — a "don't skate here" report
- * carrying only `notes` is valid. What's required is just the anchor: a water body, when it was
- * skated. All reports are public (D13) — there is no visibility field. (Minors can't create
- * reports at all; that gate lives in `reports.create`, not here — D41.)
+ * carrying only `notes` is valid. What's required is just the anchor: a water body, when the skater
+ * **left the ice** (`skateEndTime` — the freshest read; Phase 5). An optional `skateStartTime`
+ * captures when they got on; duration is *derived* (`end − start`), never stored. All reports are
+ * public (D13) — there is no visibility field. (Minors can't create reports at all; that gate lives
+ * in `reports.create`, not here — D41.)
  */
 
 import type { LatLng } from './geometry'
@@ -27,7 +29,7 @@ import {
   type ThicknessMethod,
 } from './types'
 
-/** A skate time more than this far past `now` is treated as implausibly future and rejected. */
+/** A skate-end time more than this far past `now` is treated as implausibly future and rejected. */
 export const SKATE_TIME_FUTURE_TOLERANCE_MS = 60 * 60 * 1000
 
 export interface ThicknessReadingInput {
@@ -50,7 +52,10 @@ export interface ReportConditionsInput {
 
 export interface ReportInput {
   waterBodyId: string
-  skateTime: number
+  /** When the skater **left the ice** — the primary sort key everywhere (D28; Phase 5 rename). */
+  skateEndTime: number
+  /** Optional — when they got *on* the ice. Duration is derived (`end − start`), never stored. */
+  skateStartTime?: number
   iceTypes?: IceType[]
   surfaceTags?: SurfaceTag[]
   skateQuality?: SkateQuality
@@ -84,7 +89,8 @@ export interface NormalizedConditions {
 /** The clean, defaulted report ready for `reports.create` to server-stamp + insert. */
 export interface NormalizedReport {
   waterBodyId: string
-  skateTime: number
+  skateEndTime: number
+  skateStartTime?: number
   iceTypes: IceType[]
   surfaceTags: SurfaceTag[]
   skateQuality?: SkateQuality
@@ -232,10 +238,20 @@ export function validateReportInput(
     errors.push({ field: 'waterBodyId', message: 'is required' })
   }
 
-  if (!Number.isFinite(input.skateTime) || input.skateTime <= 0) {
-    errors.push({ field: 'skateTime', message: 'is required' })
-  } else if (input.skateTime > ctx.now + SKATE_TIME_FUTURE_TOLERANCE_MS) {
-    errors.push({ field: 'skateTime', message: 'cannot be in the future' })
+  if (!Number.isFinite(input.skateEndTime) || input.skateEndTime <= 0) {
+    errors.push({ field: 'skateEndTime', message: 'is required' })
+  } else if (input.skateEndTime > ctx.now + SKATE_TIME_FUTURE_TOLERANCE_MS) {
+    errors.push({ field: 'skateEndTime', message: 'cannot be in the future' })
+  }
+
+  // Optional start (when they got on the ice). Must be a valid instant and not after the end —
+  // duration is `end − start`, so an inverted window is nonsensical (Phase 5).
+  if (input.skateStartTime !== undefined) {
+    if (!Number.isFinite(input.skateStartTime) || input.skateStartTime <= 0) {
+      errors.push({ field: 'skateStartTime', message: 'must be a valid time' })
+    } else if (Number.isFinite(input.skateEndTime) && input.skateStartTime > input.skateEndTime) {
+      errors.push({ field: 'skateStartTime', message: 'must be before the end time' })
+    }
   }
 
   const iceTypes = input.iceTypes ?? []
@@ -285,10 +301,11 @@ export function validateReportInput(
 
   const normalized: NormalizedReport = {
     waterBodyId: input.waterBodyId,
-    skateTime: input.skateTime,
+    skateEndTime: input.skateEndTime,
     iceTypes,
     surfaceTags,
   }
+  if (input.skateStartTime !== undefined) normalized.skateStartTime = input.skateStartTime
   if (input.skateQuality !== undefined) normalized.skateQuality = input.skateQuality
   // Drop an empty thickness section — an `iceThickness: { readings: [] }` carries no information.
   if (normalizedReadings.length > 0) normalized.iceThickness = { readings: normalizedReadings }

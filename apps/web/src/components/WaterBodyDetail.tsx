@@ -110,7 +110,9 @@ function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
           <Card size="sm" className="transition-colors hover:bg-surface-muted">
             <CardContent className="flex flex-col gap-2">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-foreground text-sm">{formatSkateTime(report.skateTime)}</span>
+                <span className="text-foreground text-sm">
+                  {formatSkateTime(report.skateEndTime)}
+                </span>
                 {report.skateQuality ? (
                   <Badge variant="secondary">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
                 ) : null}

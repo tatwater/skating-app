@@ -67,7 +67,7 @@ export default function ProfileRoute() {
                   <YStack>
                     <Text color="$foreground">{waterBodyName}</Text>
                     <Text color="$foregroundMuted" fontSize="$1">
-                      {formatSkateTime(report.skateTime)}
+                      {formatSkateTime(report.skateEndTime)}
                     </Text>
                   </YStack>
                   {report.skateQuality ? (

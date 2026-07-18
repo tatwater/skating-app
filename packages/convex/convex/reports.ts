@@ -12,6 +12,7 @@
 import {
   CONDITION_SOURCES,
   canViewReport,
+  type FeedCardData,
   ICE_TYPES,
   isMinor,
   PRECIP_TYPES,
@@ -22,17 +23,22 @@ import {
   THICKNESS_METHODS,
   validateReportInput,
 } from '@skating/core'
+import { paginationOptsValidator } from 'convex/server'
 import { ConvexError, v } from 'convex/values'
-import type { Doc } from './_generated/dataModel'
-import { mutation, query } from './_generated/server'
-import { requireProfile } from './lib/auth'
+import type { Doc, Id } from './_generated/dataModel'
+import { internalMutation, mutation, type QueryCtx, query } from './_generated/server'
+import { resolvePlaceForCoord } from './adminAreas'
+import { getCurrentProfile, requireProfile } from './lib/auth'
 import { isListed } from './lib/listing'
-import { getViewableReport } from './lib/reportVisibility'
+import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
 import { latLng, literals } from './lib/validators'
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
 const reportContent = {
-  skateTime: v.number(),
+  // When the skater left the ice — the primary sort key everywhere (D28; Phase 5 rename).
+  skateEndTime: v.number(),
+  // Optional — when they got on the ice. Duration is derived (end − start), never stored (Phase 5).
+  skateStartTime: v.optional(v.number()),
   iceTypes: v.optional(v.array(literals(ICE_TYPES))),
   surfaceTags: v.optional(v.array(literals(SURFACE_TAGS))),
   skateQuality: v.optional(literals(SKATE_QUALITIES)),
@@ -95,7 +101,8 @@ async function assertOwnedPhotos(
 /** Build the `@skating/core` validation input from mutation args (all reports are public, D13). */
 function toReportInput(
   args: {
-    skateTime: number
+    skateEndTime: number
+    skateStartTime?: number
     iceTypes?: string[]
     surfaceTags?: string[]
     skateQuality?: string
@@ -109,7 +116,8 @@ function toReportInput(
 ): ReportInput {
   return {
     waterBodyId,
-    skateTime: args.skateTime,
+    skateEndTime: args.skateEndTime,
+    skateStartTime: args.skateStartTime,
     iceTypes: args.iceTypes as ReportInput['iceTypes'],
     surfaceTags: args.surfaceTags as ReportInput['surfaceTags'],
     skateQuality: args.skateQuality as ReportInput['skateQuality'],
@@ -176,11 +184,19 @@ export const create = mutation({
     const photoIds = args.photoIds ?? []
     await assertOwnedPhotos(ctx, photoIds, profile._id)
 
+    // Stamp the point-derived location label (Phase 5) from the resolved put-in point (else the
+    // body centroid) against the `adminAreas` boundaries — so the feed reads `{town/county, state}`
+    // directly with no per-read geocode. Absent when the point is outside the imported region.
+    const point = n.point ?? body.centroid
+    const place = await resolvePlaceForCoord(ctx, point)
+
     return ctx.db.insert('reports', {
       authorId: profile._id,
       waterBodyId: body._id, // the resolved survivor, not the (possibly merged) requested id
-      point: n.point ?? body.centroid,
-      skateTime: n.skateTime,
+      point,
+      skateEndTime: n.skateEndTime,
+      ...(n.skateStartTime !== undefined ? { skateStartTime: n.skateStartTime } : {}),
+      ...(place !== undefined ? { place } : {}),
       reportTime: now,
       source: 'native',
       iceTypes: n.iceTypes,
@@ -210,7 +226,7 @@ export const listByWaterBody = query({
   handler: async (ctx, { waterBodyId }) => {
     const reports = await ctx.db
       .query('reports')
-      .withIndex('by_water_body_skate_time', (q) => q.eq('waterBodyId', waterBodyId))
+      .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
       .order('desc')
       .collect()
     return reports.filter((r) => canViewReport(r.moderationStatus))
@@ -221,6 +237,104 @@ export const listByWaterBody = query({
 export const get = query({
   args: { reportId: v.id('reports') },
   handler: (ctx, { reportId }) => getViewableReport(ctx, reportId),
+})
+
+/** Resolve a report's surviving water-body name, following `mergedIntoId` (D36); cached per query. */
+async function bodyNameFor(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  cache: Map<string, string>,
+): Promise<string> {
+  const cached = cache.get(waterBodyId)
+  if (cached !== undefined) return cached
+  let body = await ctx.db.get(waterBodyId)
+  for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
+    body = await ctx.db.get(body.mergedIntoId)
+  }
+  const name = body?.name ?? 'Unknown water body'
+  cache.set(waterBodyId, name)
+  return name
+}
+
+/** Resolve a report author's public `{ displayName, username }` (D13); cached per query. */
+async function authorFor(
+  ctx: QueryCtx,
+  authorId: Id<'profiles'>,
+  cache: Map<string, { displayName: string; username: string }>,
+): Promise<{ displayName: string; username: string }> {
+  const cached = cache.get(authorId)
+  if (cached !== undefined) return cached
+  const profile = await ctx.db.get(authorId)
+  const author = profile
+    ? { displayName: profile.displayName, username: profile.username }
+    : { displayName: 'Unknown', username: '' }
+  cache.set(authorId, author)
+  return author
+}
+
+/** Resolve a report's photo **thumbnail** serving URLs for the feed carousel; missing files skipped. */
+async function thumbUrlsFor(
+  ctx: QueryCtx,
+  photoIds: Doc<'reports'>['photoIds'],
+): Promise<string[]> {
+  // Resolve every photo concurrently — a page of reports each carrying a few photos would otherwise
+  // serialize into dozens of round-trips per `listFeed` call. Missing files resolve to null, dropped.
+  const urls = await Promise.all(
+    photoIds.map(async (photoId) => {
+      const photo = await ctx.db.get(photoId)
+      if (!photo) return null
+      return ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>)
+    }),
+  )
+  return urls.filter((url): url is string => url !== null)
+}
+
+/**
+ * The global cross-body **newsfeed** (Phase 5, D28) — every visible report, newest **skate-end
+ * time** first, paginated (`usePaginatedQuery`). All reports are public (D13) and a **block never
+ * hides a report** (D3, safety-first), so the filter is moderation-only; a blocked author's report
+ * is still returned, carrying `blocked: true` for author de-emphasis + the "Blocked" chip. Each page
+ * item is enriched into a `FeedCardData` (survivor body name + point-derived place, author, photo
+ * thumbnails) — bounded by page size. The feed ships global; Phase 4 layers an additive drive-time /
+ * favorites narrow onto this same query.
+ */
+export const listFeed = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { paginationOpts }) => {
+    const viewer = await getCurrentProfile(ctx)
+    const blocked = await loadBlockedAuthorIds(ctx, viewer?._id ?? '')
+
+    // Moderation-only gate (D32), applied *in* the index (`moderationStatus: 'visible'`) rather than
+    // after `paginate` — filtering post-pagination would let a page of all-hidden reports return
+    // empty with `isDone: false`, stranding the client on its "No reports yet" state with more pages
+    // behind it. A blocked author's report still comes through (D3), de-emphasized via `blocked` below.
+    const result = await ctx.db
+      .query('reports')
+      .withIndex('by_moderation_and_skate_end_time', (q) => q.eq('moderationStatus', 'visible'))
+      .order('desc')
+      .paginate(paginationOpts)
+
+    const bodyNames = new Map<string, string>()
+    const authors = new Map<string, { displayName: string; username: string }>()
+    const page: FeedCardData[] = []
+    for (const r of result.page) {
+      page.push({
+        reportId: r._id,
+        waterBodyId: r.waterBodyId,
+        bodyName: await bodyNameFor(ctx, r.waterBodyId, bodyNames),
+        ...(r.place !== undefined ? { place: r.place } : {}),
+        skateEndTime: r.skateEndTime,
+        ...(r.skateStartTime !== undefined ? { skateStartTime: r.skateStartTime } : {}),
+        iceTypes: r.iceTypes,
+        surfaceTags: r.surfaceTags,
+        ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
+        photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
+        author: await authorFor(ctx, r.authorId, authors),
+        blocked: blocked.has(r.authorId),
+      })
+    }
+    return { ...result, page }
+  },
 })
 
 /**
@@ -254,9 +368,16 @@ export const update = mutation({
     const photoIds = args.photoIds ?? existing.photoIds
     await assertOwnedPhotos(ctx, photoIds, profile._id)
 
+    // Re-resolve the point-derived place (Phase 5) from the final point — an edited put-in pin moves
+    // the location label with it. `place` is cleared to undefined when the new point resolves nowhere.
+    const point = n.point ?? existing.point
+    const place = await resolvePlaceForCoord(ctx, point)
+
     await ctx.db.patch(args.reportId, {
-      point: n.point ?? existing.point,
-      skateTime: n.skateTime,
+      point,
+      skateEndTime: n.skateEndTime,
+      skateStartTime: n.skateStartTime,
+      place,
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       skateQuality: n.skateQuality,
@@ -268,5 +389,48 @@ export const update = mutation({
       updatedAt: now,
     })
     return args.reportId
+  },
+})
+
+/**
+ * One-time migration (Phase 5): copy each report's legacy `skateTime` → `skateEndTime`, drop the old
+ * field, and stamp the point-derived `place` (against the imported `adminAreas`). A field **rename**
+ * isn't migration-free, so run this via the Phase-3 strict-schema dance on a deployment with data:
+ * temporarily `schemaValidation: false` → push → `pnpm exec convex run reports:renameSkateTimeToSkateEndTime`
+ * → revert → redeploy strict. Run it **after** the `adminAreas` import so `place` resolves. Idempotent:
+ * a report already carrying `skateEndTime` keeps it, and re-running only backfills a still-missing
+ * `place`. Dev has a handful of test reports; prod is uninitialized. `collect()` suits that scale — a
+ * large corpus would need pagination.
+ */
+export const renameSkateTimeToSkateEndTime = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const reports = await ctx.db.query('reports').collect()
+    let renamed = 0
+    let placed = 0
+    for (const r of reports) {
+      // The legacy field is off the typed schema now, so read it through a narrow cast.
+      const legacy = (r as { skateTime?: number }).skateTime
+      const patch: Record<string, unknown> = {}
+      if (r.skateEndTime === undefined && typeof legacy === 'number') {
+        patch.skateEndTime = legacy
+      }
+      // Drop the dangling old field so strict validation passes once re-enabled.
+      if (legacy !== undefined) patch.skateTime = undefined
+      if (r.place === undefined) {
+        const place = await resolvePlaceForCoord(ctx, r.point)
+        if (place !== undefined) {
+          patch.place = place
+          placed++
+        }
+      }
+      if (Object.keys(patch).length > 0) {
+        await ctx.db.patch(r._id, patch as Partial<Doc<'reports'>>)
+        // Count only an actual copy — a cleanup-only patch (report already had `skateEndTime`, we
+        // just drop a dangling legacy `skateTime`) isn't a rename and mustn't inflate the count.
+        if ('skateEndTime' in patch) renamed++
+      }
+    }
+    return { total: reports.length, renamed, placed }
   },
 })

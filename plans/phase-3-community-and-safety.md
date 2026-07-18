@@ -9,7 +9,11 @@
 > searchable **profiles** (privacy respected), user-facing **block + flag** tools, and a minimal
 > founder **takedown** path.
 >
-> **Status:** planning (design settled 2026-07-16). Not started.
+> **Status: ✅ Complete on dev (2026-07-16, PR #17).** All four workstreams (A `@skating/core`,
+> B Convex backend, C web UI, D mobile mirror) shipped, plus review fixes (block-failure surfacing,
+> bidirectional "Blocked" chip, bounded profile reads, broadened `notificationPrefs` migration).
+> Trust score renders `0` everywhere until Phase 6 (D50). Prod cutover deferred (Convex prod
+> uninitialized). The build plan below is preserved as the as-built record.
 >
 > **Build order:** **web first, then mobile** (mirrors Phase 2) — web front-loads the shared Convex
 > backend (comments/blocks/flags/moderation/profile reads) and the profile + comment surfaces are

@@ -69,7 +69,7 @@ async function seedReport(t: ReturnType<typeof convexTest>, authorId: Id<'profil
       authorId,
       waterBodyId,
       point: { lat: 0.5, lng: 0.5 },
-      skateTime: now,
+      skateEndTime: now,
       reportTime: now,
       source: 'native' as const,
       iceTypes: ['black_ice' as const],

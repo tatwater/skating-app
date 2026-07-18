@@ -24,7 +24,8 @@ function toCreateArgs(input: ReportInput & { idempotencyKey: string; photoIds: s
   return {
     waterBodyId: input.waterBodyId as Id<'waterBodies'>,
     idempotencyKey: input.idempotencyKey,
-    skateTime: input.skateTime,
+    skateEndTime: input.skateEndTime,
+    skateStartTime: input.skateStartTime,
     iceTypes: input.iceTypes,
     surfaceTags: input.surfaceTags,
     skateQuality: input.skateQuality,

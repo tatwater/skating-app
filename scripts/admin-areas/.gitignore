@@ -1,0 +1,7 @@
+# Scratch working dir for raw extracts + intermediate GeoJSON/NDJSON.
+# The Geofabrik .pbf is large and rebuilt daily — never commit it (see README).
+.scratch/
+
+# Intermediate artifacts if run outside .scratch/
+*.osm.pbf
+*.osm.pbf.md5

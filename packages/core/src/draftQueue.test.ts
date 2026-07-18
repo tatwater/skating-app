@@ -174,8 +174,8 @@ describe('flushDraft — coord-only resolution (Layer-2 fallback)', () => {
 
 describe('flushDraft — failures', () => {
   it('a permanently-invalid draft fails before any upload', async () => {
-    // A far-future skate time is rejected by validateReportInput — a permanent failure.
-    const badForm = { ...emptyReportForm(NOW), skateTime: NOW + 30 * 24 * 60 * 60 * 1000 }
+    // A far-future skate-end time is rejected by validateReportInput — a permanent failure.
+    const badForm = { ...emptyReportForm(NOW), skateEndTime: NOW + 30 * 24 * 60 * 60 * 1000 }
     const draft = draftWith({ photos: [photo('p1')] }, badForm)
     const { effects, calls } = makeEffects()
     const res = await flushDraft(draft, effects, NOW)

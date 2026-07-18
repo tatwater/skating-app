@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel'
 import {
   formatConditions,
   formatSkateTime,
+  formatSkateWindow,
   formatSnowCoverInches,
   formatThicknessReading,
   humanizeEnum,
@@ -30,7 +31,10 @@ export interface ReportViewData {
   authorName?: string
   /** The author is in the viewer's block set — de-emphasize the line + show a "Blocked" chip (D3). */
   authorBlocked?: boolean
-  skateTime: number
+  /** When the skater left the ice — the primary timestamp shown (D28; Phase 5). */
+  skateEndTime: number
+  /** Optional — when they got on; renders the derived duration alongside the end (Phase 5). */
+  skateStartTime?: number
   skateQuality?: SkateQuality
   iceTypes: string[]
   surfaceTags: string[]
@@ -49,13 +53,15 @@ export interface ReportViewData {
 export function ReportView({ data }: { data: ReportViewData }) {
   const conditions = data.conditions ? formatConditions(data.conditions) : []
   const readings = data.iceThickness?.readings ?? []
+  const duration = formatSkateWindow(data.skateEndTime, data.skateStartTime)
 
   return (
     <>
       <SheetHeader>
         <SheetTitle>{data.bodyName ?? 'Report'}</SheetTitle>
         <SheetDescription>
-          {formatSkateTime(data.skateTime)}
+          Off the ice {formatSkateTime(data.skateEndTime)}
+          {duration ? ` · skated ${duration}` : null}
           {data.authorName && !data.authorBlocked ? ` · by ${data.authorName}` : null}
           {data.authorName && data.authorBlocked ? (
             <>
@@ -249,7 +255,8 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           bodyName: body?.available ? body.body.name : undefined,
           authorName: authors?.[report.authorId]?.displayName,
           authorBlocked,
-          skateTime: report.skateTime,
+          skateEndTime: report.skateEndTime,
+          skateStartTime: report.skateStartTime,
           skateQuality: report.skateQuality,
           iceTypes: report.iceTypes,
           surfaceTags: report.surfaceTags,
