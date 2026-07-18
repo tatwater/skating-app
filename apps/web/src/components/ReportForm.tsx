@@ -11,6 +11,7 @@ import {
   PRECIP_TYPES,
   photoUploadCoord,
   type ReportFormState,
+  resolveSkateWindow,
   SKATE_QUALITIES,
   SKATE_QUALITY_LABELS,
   SKY_CONDITIONS,
@@ -135,6 +136,105 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
+type StartMode = 'none' | 'start' | 'duration'
+
+/**
+ * Optional "when did you get on the ice?" input (Phase 5). The skater enters *either* a start time
+ * *or* a duration; `resolveSkateWindow` back-computes the start from a duration at this input
+ * boundary, and only the resolved `skateStartTime` (epoch ms) is ever lifted to the form — duration
+ * is never stored. Re-derives when the end time or the entry changes; surfaces an inline error for an
+ * inverted/invalid window without corrupting the form (it lifts `undefined` while the entry is bad).
+ */
+function StartWindowField({
+  end,
+  skateStartTime,
+  onResolve,
+}: {
+  end: number
+  skateStartTime?: number
+  onResolve: (skateStartTime: number | undefined) => void
+}) {
+  const [mode, setMode] = useState<StartMode>('none')
+  const [startValue, setStartValue] = useState('')
+  const [durationValue, setDurationValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+
+  // Keep the latest onResolve in a ref so the derive effect doesn't depend on its (unstable) identity.
+  const onResolveRef = useRef(onResolve)
+  onResolveRef.current = onResolve
+
+  // Derive whenever the end, mode, or entry changes — a duration window shifts with the end.
+  useEffect(() => {
+    if (mode === 'none') {
+      setError(null)
+      onResolveRef.current(undefined)
+      return
+    }
+    const input =
+      mode === 'start'
+        ? { end, start: datetimeLocalToMs(startValue) }
+        : { end, durationMinutes: Number(durationValue) }
+    // An empty entry is "not set yet", not an error — clear the start until they type.
+    if ((mode === 'start' && startValue === '') || (mode === 'duration' && durationValue === '')) {
+      setError(null)
+      onResolveRef.current(undefined)
+      return
+    }
+    const result = resolveSkateWindow(input)
+    if (result.ok) {
+      setError(null)
+      onResolveRef.current(result.skateStartTime)
+    } else {
+      setError(result.error)
+      onResolveRef.current(undefined)
+    }
+  }, [end, mode, startValue, durationValue])
+
+  const duration =
+    skateStartTime !== undefined ? Math.round((end - skateStartTime) / 60_000) : undefined
+
+  return (
+    <details className="rounded-md border border-border p-2">
+      <summary className="cursor-pointer text-foreground text-sm">
+        When did you get on? (optional)
+      </summary>
+      <div className="mt-3 flex flex-col gap-3">
+        <SingleToggle
+          value={mode === 'none' ? '' : mode}
+          options={['start', 'duration'] as const}
+          label={(m) => (m === 'start' ? 'Start time' : 'Duration')}
+          onChange={(m) => setMode(m === '' ? 'none' : m)}
+        />
+        {mode === 'start' ? (
+          <Field label="Start time">
+            <Input
+              type="datetime-local"
+              value={startValue}
+              onChange={(e) => setStartValue(e.target.value)}
+            />
+          </Field>
+        ) : null}
+        {mode === 'duration' ? (
+          <Field label="How long did you skate? (minutes)">
+            <Input
+              type="number"
+              min="1"
+              inputMode="numeric"
+              placeholder="e.g. 90"
+              value={durationValue}
+              onChange={(e) => setDurationValue(e.target.value)}
+            />
+          </Field>
+        ) : null}
+        {error ? <p className="text-danger text-sm">{error}</p> : null}
+        {!error && duration !== undefined && duration > 0 ? (
+          <p className="text-foreground-muted text-sm">Skated about {duration} min.</p>
+        ) : null}
+      </div>
+    </details>
+  )
+}
+
 // --- Presentational form body (no Convex / map / router deps → testable in isolation) ---
 
 export interface ReportFormFieldsProps {
@@ -185,13 +285,19 @@ export function ReportFormFields({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-      <Field label="When did you skate?">
+      <Field label="When did you get off the ice?">
         <Input
           type="datetime-local"
-          value={toDatetimeLocal(form.skateTime)}
-          onChange={(e) => patch({ skateTime: datetimeLocalToMs(e.target.value) })}
+          value={toDatetimeLocal(form.skateEndTime)}
+          onChange={(e) => patch({ skateEndTime: datetimeLocalToMs(e.target.value) })}
         />
       </Field>
+
+      <StartWindowField
+        end={form.skateEndTime}
+        skateStartTime={form.skateStartTime}
+        onResolve={(skateStartTime) => patch({ skateStartTime })}
+      />
 
       <Field label="Ice types">
         <MultiToggle

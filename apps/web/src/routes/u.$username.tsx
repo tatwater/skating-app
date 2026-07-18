@@ -67,7 +67,7 @@ function ProfilePage() {
                       <div className="flex flex-col">
                         <span className="text-foreground text-sm">{waterBodyName}</span>
                         <span className="text-foreground-muted text-xs">
-                          {formatSkateTime(report.skateTime)}
+                          {formatSkateTime(report.skateEndTime)}
                         </span>
                       </div>
                       {report.skateQuality ? (

@@ -47,7 +47,7 @@ const FIXTURE: ReportViewData = {
   waterBodyId: 'wb1',
   bodyName: 'Lake Morey',
   authorName: 'Ada',
-  skateTime: Date.UTC(2026, 0, 5, 19, 30),
+  skateEndTime: Date.UTC(2026, 0, 5, 19, 30),
   skateQuality: 'great',
   iceTypes: ['black_ice'],
   surfaceTags: ['orange_peel'],
@@ -102,7 +102,7 @@ describe('ReportView', () => {
       <ReportView
         data={{
           waterBodyId: 'wb2',
-          skateTime: Date.UTC(2026, 0, 5, 19, 30),
+          skateEndTime: Date.UTC(2026, 0, 5, 19, 30),
           iceTypes: [],
           surfaceTags: [],
           notes: 'Did not skate — too much slush.',
