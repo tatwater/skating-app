@@ -37,6 +37,7 @@ import { getCurrentProfile, requireProfile } from './lib/auth'
 import { isListed } from './lib/listing'
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
 import { latLng, literals } from './lib/validators'
+import { enqueueReportNotifications } from './notifications'
 import { loadFavoriteBodyIds } from './waterBodyFavorites'
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
@@ -199,7 +200,7 @@ export const create = mutation({
     const point = n.point ?? body.centroid
     const place = await resolvePlaceForCoord(ctx, point)
 
-    return ctx.db.insert('reports', {
+    const reportId = await ctx.db.insert('reports', {
       authorId: profile._id,
       waterBodyId: body._id, // the resolved survivor, not the (possibly merged) requested id
       point,
@@ -223,6 +224,13 @@ export const create = mutation({
       createdAt: now,
       updatedAt: now,
     })
+
+    // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
+    // coalescing queue — the cron flushes them (decision #4). Read-back keeps `enqueue` off the raw args.
+    const inserted = await ctx.db.get(reportId)
+    if (inserted) await enqueueReportNotifications(ctx, inserted)
+
+    return reportId
   },
 })
 
