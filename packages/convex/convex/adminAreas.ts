@@ -97,14 +97,17 @@ function pointInArea(point: { lat: number; lng: number }, area: Doc<'adminAreas'
 }
 
 /**
- * Half-width (degrees) of the centroid rectangle used to find the containing **town**. A New England
- * town spans well under this, so its centroid is always inside the rectangle around any interior
- * point — while the rectangle stays small enough to keep the geospatial read cost low. Counties and
- * states are far larger (a centroid can sit degrees from an interior point), so those levels are
- * scanned by the `by_level` index instead (a handful of rows), not queried geospatially.
+ * Half-width (degrees) of the centroid rectangle used to find the containing **town**. Sized to
+ * comfortably contain a town's centroid from any interior point (a town's centroid sits within ~half
+ * its diameter of any point it contains, and our towns run well under 0.4° across) while keeping the
+ * rectangle's S2 covering small — a wider box blows the geospatial component's ~1024-row read cap in
+ * the dense NY/MA town belt (measured: a 1° box read 1045 rows and capped, missing the target town).
+ * A town larger than this margin can allow degrades to a county+state label (a fine fallback), never
+ * a wrong town. Counties/states are far larger (a centroid can sit degrees from an interior point),
+ * so those levels are scanned by the `by_level` index (a handful of rows), not queried geospatially.
  */
-const TOWN_QUERY_MARGIN_DEG = 0.5
-/** Cap on town centroids pulled from the prefilter — a small rectangle holds far fewer in practice. */
+const TOWN_QUERY_MARGIN_DEG = 0.2
+/** Cap on town centroids pulled from the prefilter — the small rectangle holds far fewer in practice. */
 const TOWN_QUERY_LIMIT = 128
 
 /** Find the town containing `point` via the geospatial centroid prefilter + a `pointInPolygon` refine. */
