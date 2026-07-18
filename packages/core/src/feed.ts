@@ -98,6 +98,55 @@ export interface FeedCardView {
 }
 
 /**
+ * Recency section a report falls in, keyed off its skate-*end* time relative to `now` (Phase 4,
+ * decision #5). Drives the feed's "Older than …" scroll-divider headers: a stable `key` for React
+ * lists + a human `label`. Buckets widen with age (day → week → month) so a scrolling feed reads
+ * "Today / Yesterday / Earlier this week / …". A future instant (clock skew) buckets as `today`.
+ */
+export interface FeedSectionMeta {
+  key: 'today' | 'yesterday' | 'this-week' | 'this-month' | 'older'
+  label: string
+}
+
+/** The recency bucket for a single skate-end time relative to `now`. Pure (see `formatRelativeTime`). */
+export function feedSectionForTime(skateEndTime: number, now: number): FeedSectionMeta {
+  const diff = now - skateEndTime
+  if (diff < DAY) return { key: 'today', label: 'Today' }
+  if (diff < 2 * DAY) return { key: 'yesterday', label: 'Yesterday' }
+  if (diff < 7 * DAY) return { key: 'this-week', label: 'Earlier this week' }
+  if (diff < 30 * DAY) return { key: 'this-month', label: 'Earlier this month' }
+  return { key: 'older', label: 'Older than a month' }
+}
+
+/** One recency section: its header meta + the cards that fall in it, order preserved. */
+export interface FeedSection<T> {
+  key: FeedSectionMeta['key']
+  label: string
+  items: T[]
+}
+
+/**
+ * Partition an already newest-first feed list into contiguous recency sections (Phase 4, decision #5).
+ * Each item keeps its position; a new section starts whenever the bucket changes, so an out-of-order
+ * list can't produce a duplicate header for the same key. `getTime` extracts the skate-end time so this
+ * works over raw `FeedCardData` or a built `FeedCardView` alike. Empty in → empty out.
+ */
+export function groupFeedSections<T>(
+  items: readonly T[],
+  getTime: (item: T) => number,
+  now: number,
+): FeedSection<T>[] {
+  const sections: FeedSection<T>[] = []
+  for (const item of items) {
+    const meta = feedSectionForTime(getTime(item), now)
+    const last = sections[sections.length - 1]
+    if (last && last.key === meta.key) last.items.push(item)
+    else sections.push({ key: meta.key, label: meta.label, items: [item] })
+  }
+  return sections
+}
+
+/**
  * Compose the render-ready feed card from a server item + the current time. Pure: no I/O, no
  * date-now — `now` is injected so the relative label is deterministic and stays live on the client.
  */

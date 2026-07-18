@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
-import type { FeedFilters } from '@skating/core'
+import { type FeedFilters, groupFeedSections } from '@skating/core'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
 import { useEffect, useRef, useState } from 'react'
@@ -71,13 +71,21 @@ function FeedPage() {
         </Panel>
       ) : (
         <div className="flex flex-col gap-3">
-          {results.map((data) => (
-            <FeedCard
-              key={data.reportId}
-              data={data}
-              now={now}
-              onOpen={() => openReport(data.reportId)}
-            />
+          {/* Recency scroll-divider headers (Phase 4, decision #5): "Today / Yesterday / …". */}
+          {groupFeedSections(results, (d) => d.skateEndTime, now).map((section) => (
+            <div key={section.key} className="flex flex-col gap-3">
+              <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
+                {section.label}
+              </h2>
+              {section.items.map((data) => (
+                <FeedCard
+                  key={data.reportId}
+                  data={data}
+                  now={now}
+                  onOpen={() => openReport(data.reportId)}
+                />
+              ))}
+            </div>
           ))}
           {status === 'CanLoadMore' ? (
             <Button variant="outline" onClick={() => loadMore(PAGE_SIZE)} className="self-center">

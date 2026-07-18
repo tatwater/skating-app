@@ -1,6 +1,62 @@
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
-import { buildFeedCardView, type FeedCardData, formatPlaceLabel, formatRelativeTime } from './feed'
+import {
+  buildFeedCardView,
+  type FeedCardData,
+  feedSectionForTime,
+  formatPlaceLabel,
+  formatRelativeTime,
+  groupFeedSections,
+} from './feed'
+
+const DAY = 24 * 60 * 60 * 1000
+
+describe('feedSectionForTime', () => {
+  const now = Date.UTC(2026, 0, 20, 12)
+  it('buckets by age relative to now', () => {
+    expect(feedSectionForTime(now - 1000, now).key).toBe('today')
+    expect(feedSectionForTime(now - 1.5 * DAY, now).key).toBe('yesterday')
+    expect(feedSectionForTime(now - 4 * DAY, now).key).toBe('this-week')
+    expect(feedSectionForTime(now - 15 * DAY, now).key).toBe('this-month')
+    expect(feedSectionForTime(now - 90 * DAY, now).key).toBe('older')
+  })
+
+  it('treats a future instant (clock skew) as today, never a negative bucket', () => {
+    expect(feedSectionForTime(now + DAY, now).key).toBe('today')
+  })
+
+  it('carries a human label for the header', () => {
+    expect(feedSectionForTime(now - 1000, now).label).toBe('Today')
+    expect(feedSectionForTime(now - 90 * DAY, now).label).toBe('Older than a month')
+  })
+})
+
+describe('groupFeedSections', () => {
+  const now = Date.UTC(2026, 0, 20, 12)
+  it('partitions a newest-first list into contiguous recency sections, order preserved', () => {
+    const items = [
+      { id: 'a', t: now - 1000 },
+      { id: 'b', t: now - 2000 },
+      { id: 'c', t: now - 1.5 * DAY },
+      { id: 'd', t: now - 40 * DAY },
+    ]
+    const sections = groupFeedSections(items, (i) => i.t, now)
+    expect(sections.map((s) => s.key)).toEqual(['today', 'yesterday', 'older'])
+    expect(sections[0]?.items.map((i) => i.id)).toEqual(['a', 'b'])
+    expect(sections[1]?.items.map((i) => i.id)).toEqual(['c'])
+  })
+
+  it('is empty for an empty list', () => {
+    expect(groupFeedSections([], () => 0, now)).toEqual([])
+  })
+
+  it('starts a fresh section whenever the bucket changes, even out of order', () => {
+    // A non-monotonic list must not merge two "today" runs separated by a "yesterday" into one header.
+    const items = [now - 1000, now - 1.5 * DAY, now - 2000]
+    const sections = groupFeedSections(items, (t) => t, now)
+    expect(sections.map((s) => s.key)).toEqual(['today', 'yesterday', 'today'])
+  })
+})
 
 describe('formatPlaceLabel', () => {
   it('prefers the town, joined to the state', () => {
