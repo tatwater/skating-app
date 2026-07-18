@@ -9,6 +9,7 @@ import {
   type ViewStateChangeEvent,
 } from '@maplibre/maplibre-react-native'
 import { api } from '@skating/convex/api'
+import type { Id } from '@skating/convex/dataModel'
 import type { BBox } from '@skating/core'
 import { useQuery } from 'convex/react'
 import * as Location from 'expo-location'
@@ -21,13 +22,17 @@ import {
   boundsToViewport,
   buildMapStyle,
   DEMO_PMTILES_URL,
+  FAVORITE_OUTLINE_COLOR,
   frameForCoord,
   INITIAL_CENTER,
   INITIAL_ZOOM,
   MAP_FLAVORS,
   NORTHEAST_MAX_BOUNDS,
   PHOTO_PIN_COLOR,
+  PUT_IN_MARKER_DERIVED_COLOR,
+  PUT_IN_MARKER_OFFICIAL_COLOR,
   PUT_IN_PIN_COLOR,
+  putInsToFeatureCollection,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
   zoomForViewport,
@@ -130,6 +135,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     }),
     [putInPin],
   )
+
+  // The viewer's favorited bodies (Phase 4, decision #1) — the highlight is a data-driven `in` filter
+  // on a dedicated outline layer (RN has no feature-state). Empty when signed out.
+  const favorites = useQuery(api.waterBodyFavorites.listForUser, {})
+  const favoriteIds = useMemo(() => (favorites ?? []).map((f) => f.waterBodyId), [favorites])
+
+  // Put-in markers for the currently-focused lake (decision #7) — bounded to the open lake. `skip`
+  // when nothing is selected.
+  const putIns = useQuery(
+    api.putIns.listForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  )
+  const putInsFC = useMemo(() => putInsToFeatureCollection(putIns ?? []), [putIns])
 
   // Frame a drawer's focus (a lake / report put-in) into the area the drawer does NOT cover, re-fitting
   // whenever the drawer settles at a new snap point. A lake with a `bounds` gets zoom-to-fit
@@ -264,6 +282,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           filter={['==', ['get', '_id'], highlightWaterBodyId ?? '']}
           paint={{ 'line-color': water.outline, 'line-width': 2.5 }}
         />
+        {/* Favorited bodies read gold (Phase 4, decision #1) — a data-driven `in` filter over the
+            viewer's favorite id set (matches nothing when empty / signed out). */}
+        <Layer
+          id="water-outline-favorite"
+          type="line"
+          filter={['in', ['get', '_id'], ['literal', favoriteIds]]}
+          paint={{ 'line-color': FAVORITE_OUTLINE_COLOR, 'line-width': 2.5 }}
+        />
       </GeoJSONSource>
 
       <GeoJSONSource id="photo-pins" data={photoPinsFC}>
@@ -286,6 +312,26 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           paint={{
             'circle-radius': 7,
             'circle-color': PUT_IN_PIN_COLOR,
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 2,
+          }}
+        />
+      </GeoJSONSource>
+
+      {/* Put-in markers for the focused lake (Phase 4, decision #7): official = accurate cyan,
+          derived = approximate muted blue. Distinct from the amber report-photo pins. */}
+      <GeoJSONSource id="put-in-markers" data={putInsFC}>
+        <Layer
+          id="put-in-markers"
+          type="circle"
+          paint={{
+            'circle-radius': 6,
+            'circle-color': [
+              'case',
+              ['==', ['get', 'source'], 'official'],
+              PUT_IN_MARKER_OFFICIAL_COLOR,
+              PUT_IN_MARKER_DERIVED_COLOR,
+            ],
             'circle-stroke-color': '#ffffff',
             'circle-stroke-width': 2,
           }}

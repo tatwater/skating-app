@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   boundsToViewport,
   buildMapStyle,
+  favoriteFeatureIds,
   featureIdForBody,
   frameForCoord,
   GEOLOCATION_FRAME_ZOOM,
   type MappableBody,
   NORTHEAST_MAX_BOUNDS,
   OSM_ATTRIBUTION,
+  putInsToFeatureCollection,
   waterBodiesToFeatureCollection,
   zoomForViewport,
 } from './waterMap'
@@ -93,6 +95,43 @@ describe('featureIdForBody', () => {
 
   it('returns undefined for a body not in the collection', () => {
     expect(featureIdForBody(fc, 'missing')).toBeUndefined()
+  })
+})
+
+describe('favoriteFeatureIds', () => {
+  const fc = waterBodiesToFeatureCollection([
+    { _id: 'a', name: 'A', type: 'lake', polygon: { type: 'Point', coordinates: [0, 0] } },
+    { _id: 'b', name: 'B', type: 'pond', polygon: { type: 'Point', coordinates: [1, 1] } },
+    { _id: 'c', name: 'C', type: 'lake', polygon: { type: 'Point', coordinates: [2, 2] } },
+  ])
+
+  it('returns the numeric feature ids of in-view favorited bodies', () => {
+    expect(favoriteFeatureIds(fc, new Set(['a', 'c']))).toEqual([0, 2])
+  })
+
+  it('ignores favorites not in the current collection', () => {
+    expect(favoriteFeatureIds(fc, new Set(['z']))).toEqual([])
+  })
+
+  it('is empty for no favorites', () => {
+    expect(favoriteFeatureIds(fc, new Set())).toEqual([])
+  })
+})
+
+describe('putInsToFeatureCollection', () => {
+  it('maps markers to points carrying their source', () => {
+    const fc = putInsToFeatureCollection([
+      { coord: { lat: 44, lng: -72 }, source: 'official' },
+      { coord: { lat: 45, lng: -73 }, source: 'derived' },
+    ])
+    expect(fc.features).toHaveLength(2)
+    expect(fc.features[0]?.geometry).toEqual({ type: 'Point', coordinates: [-72, 44] })
+    expect(fc.features[0]?.properties?.source).toBe('official')
+    expect(fc.features[1]?.properties?.source).toBe('derived')
+  })
+
+  it('is empty for no markers', () => {
+    expect(putInsToFeatureCollection([]).features).toHaveLength(0)
   })
 })
 

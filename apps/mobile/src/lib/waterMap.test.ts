@@ -6,9 +6,26 @@ import {
   frameForCoord,
   MAP_FLAVORS,
   OSM_ATTRIBUTION,
+  putInsToFeatureCollection,
   waterBodiesToFeatureCollection,
   zoomForViewport,
 } from './waterMap'
+
+describe('putInsToFeatureCollection', () => {
+  it('maps markers to points carrying their source', () => {
+    const fc = putInsToFeatureCollection([
+      { coord: { lat: 44, lng: -72 }, source: 'official' },
+      { coord: { lat: 45, lng: -73 }, source: 'derived' },
+    ])
+    expect(fc.features).toHaveLength(2)
+    expect(fc.features[0]?.geometry).toEqual({ type: 'Point', coordinates: [-72, 44] })
+    expect(fc.features[0]?.properties?.source).toBe('official')
+  })
+
+  it('is empty for no markers', () => {
+    expect(putInsToFeatureCollection([]).features).toHaveLength(0)
+  })
+})
 
 describe('buildMapStyle', () => {
   it('wires the Protomaps pmtiles source with the ODbL attribution and themed layers', () => {

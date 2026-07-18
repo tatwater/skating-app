@@ -1,15 +1,18 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet'
 import { api } from '@skating/convex/api'
-import type { FeedCardData } from '@skating/core'
-import { usePaginatedQuery } from 'convex/react'
+import type { FeedCardData, FeedFilters } from '@skating/core'
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FlatList, RefreshControl } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { H1, Paragraph, Spinner, Text, useTheme, YStack } from 'tamagui'
 import { FeedCard } from '../../src/components/FeedCard'
+import { FeedFilterBar } from '../../src/components/FeedFilterBar'
 import { MapSelectionProvider } from '../../src/components/MapSelectionContext'
 import { ProfileSearch } from '../../src/components/ProfileSearch'
 import { ReportDetail } from '../../src/components/ReportDetail'
+import { reconcileFilters } from '../../src/lib/feedFilters'
+import { loadStoredFilters, saveStoredFilters } from '../../src/lib/feedFiltersStore'
 import { cacheReports, loadCachedReports } from '../../src/lib/reportCache'
 
 /** Feed page size per `usePaginatedQuery` load. */
@@ -24,9 +27,10 @@ const PAGE_SIZE = 20
  */
 export default function NewsfeedScreen() {
   const theme = useTheme()
+  const filters = useFeedFilters()
   const { results, status, loadMore } = usePaginatedQuery(
     api.reports.listFeed,
-    {},
+    { filters: filters.value },
     { initialNumItems: PAGE_SIZE },
   )
   const now = Date.now()
@@ -87,6 +91,7 @@ export default function NewsfeedScreen() {
               </Text>
               <ProfileSearch />
             </YStack>
+            <FeedFilterBar filters={filters.value} onChange={filters.set} />
           </YStack>
         }
         renderItem={({ item }) => (
@@ -134,4 +139,33 @@ export default function NewsfeedScreen() {
       </BottomSheet>
     </SafeAreaView>
   )
+}
+
+/**
+ * Feed-filter state (Phase 4, decision #6): device sqlite is the working copy (instant, offline-safe),
+ * `profiles.feedFilterPrefs` is the durable server-sync copy. Load local on mount; once the profile
+ * arrives, reconcile once (LWW — non-empty local wins, else adopt server). Each change writes local
+ * immediately and syncs the server copy.
+ */
+function useFeedFilters(): { value: FeedFilters; set: (next: FeedFilters) => void } {
+  const [value, setValue] = useState<FeedFilters>(() => loadStoredFilters())
+  const profile = useQuery(api.profiles.current, {})
+  const setServer = useMutation(api.profiles.setFeedFilterPrefs)
+  const reconciled = useRef(false)
+
+  useEffect(() => {
+    if (reconciled.current || profile === undefined) return
+    reconciled.current = true
+    const merged = reconcileFilters(loadStoredFilters(), profile?.feedFilterPrefs)
+    setValue(merged)
+    saveStoredFilters(merged)
+  }, [profile])
+
+  const set = (next: FeedFilters) => {
+    setValue(next)
+    saveStoredFilters(next)
+    if (profile) void setServer({ filters: next })
+  }
+
+  return { value, set }
 }

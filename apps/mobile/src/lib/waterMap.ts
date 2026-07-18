@@ -42,6 +42,12 @@ export const WATER_PALETTE = {
 export const PUT_IN_PIN_COLOR = '#137138'
 export const PHOTO_PIN_COLOR = '#f59e0b'
 
+/** Favorited-body outline gold (Phase 4, decision #1) — matches web's amber-500 favorite signal. */
+export const FAVORITE_OUTLINE_COLOR = '#eab308'
+/** Put-in marker colors (Phase 4, decision #7): accurate admin `official` vs. approximate `derived`. */
+export const PUT_IN_MARKER_OFFICIAL_COLOR = '#0e7490'
+export const PUT_IN_MARKER_DERIVED_COLOR = '#5b8fb0'
+
 /** Initial framing — Burlington sits near the center of the region; the fallback when no device
  *  fix is available (device geolocation reframes on open when in-region, D12/D20). */
 export const INITIAL_CENTER: [number, number] = [-73.15, 44.46]
@@ -105,6 +111,30 @@ export function waterBodiesToFeatureCollection(
       type: 'Feature',
       geometry: body.polygon,
       properties: { _id: body._id, name: body.name, type: body.type },
+    })),
+  }
+}
+
+/** A put-in marker as `putIns.listForBody` returns it — a routable coord + its provenance. */
+export interface MappablePutIn {
+  coord: { lat: number; lng: number }
+  source: 'derived' | 'official'
+}
+
+/**
+ * Put-in markers → a GeoJSON `FeatureCollection` for the map's `put-in-markers` source (Phase 4,
+ * decision #7). Each point carries its `source` so the layer styles `official` (accurate) markers
+ * distinctly from `derived` (approximate) clusters. Mirrors web's helper.
+ */
+export function putInsToFeatureCollection(
+  markers: readonly MappablePutIn[],
+): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: markers.map((m) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [m.coord.lng, m.coord.lat] },
+      properties: { source: m.source },
     })),
   }
 }
