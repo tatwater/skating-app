@@ -11,6 +11,7 @@ const modules = import.meta.glob('./**/*.*s')
 function convexTestWithGeo() {
   const t = convexTest(schema, modules)
   geospatial.register(t)
+  geospatial.register(t, 'adminAreasGeo')
   return t
 }
 

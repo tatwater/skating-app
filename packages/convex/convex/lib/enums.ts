@@ -30,6 +30,9 @@ export const CANONICAL_SOURCES = ['osm', 'nhd'] as const
 /** Moderation review lifecycle for user-created water bodies (D37). */
 export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const
 
+/** Administrative-boundary granularity for point→place labels (Phase 5). */
+export const ADMIN_AREA_LEVELS = ['state', 'county', 'town'] as const
+
 /** Dedup state for user-created water bodies (D36). */
 export const DEDUP_STATUSES = ['clean', 'suspected_duplicate', 'merged'] as const
 

@@ -10,6 +10,7 @@ const modules = import.meta.glob('./**/*.*s')
 function convexTestWithGeo() {
   const t = convexTest(schema, modules)
   geospatial.register(t)
+  geospatial.register(t, 'adminAreasGeo')
   return t
 }
 
@@ -57,7 +58,7 @@ async function seedReport(
 ) {
   return asAuthor.mutation(api.reports.create, {
     waterBodyId,
-    skateTime: SKATE,
+    skateEndTime: SKATE,
     photoIds,
   })
 }

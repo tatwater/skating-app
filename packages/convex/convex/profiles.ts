@@ -320,14 +320,14 @@ export const getPublicProfile = query({
       return { ...base, private: true }
     }
 
-    // Visible report history, newest skate time first — **bounded** (D13). We `.take()` a small
-    // window off the skate-time index rather than `.collect()`ing every report, so a prolific
+    // Visible report history, newest skate-end time first — **bounded** (D13). We `.take()` a small
+    // window off the skate-end-time index rather than `.collect()`ing every report, so a prolific
     // reporter's page can't trigger an arbitrarily large read. `reportCount`/`commentCount` are
     // therefore this recent window's counts (`PROFILE_HISTORY_LIMIT+` when the cap is hit), not a
     // full lifetime tally — the definitive contribution metric is the Phase-6 trust score.
     const authored = await ctx.db
       .query('reports')
-      .withIndex('by_author_skate_time', (q) => q.eq('authorId', target._id))
+      .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', target._id))
       .order('desc')
       .take(PROFILE_HISTORY_LIMIT + 1)
     const visibleReports = authored.filter((r) => r.moderationStatus === 'visible')
