@@ -962,6 +962,84 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
     })
     expect(deep.map((b) => b.name)).toEqual(['Big Faint'])
   })
+
+  test('a viewer’s favorite is pinned visible at every zoom, but only when it’s in view', async () => {
+    const t = convexTestWithGeo()
+    // A tiny pond (high minVisibleZoom) that a wide zoom would otherwise drop.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/belovedtiny',
+          name: 'Beloved Pond',
+          surfaceAreaSqM: 200,
+          bbox: { minLat: 0.5, minLng: 0.5, maxLat: 0.52, maxLng: 0.52 },
+          centroid: { lat: 0.51, lng: 0.51 },
+        },
+      ],
+    })
+    const bodyId = await onlyBodyId(t)
+    // Signed-out, wide zoom: the pond drops below its prominence cutoff.
+    expect(
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING, zoom: 6 }),
+    ).toHaveLength(0)
+
+    // A favoriter sees it at the same wide zoom (highlight never disappears under the map).
+    const asFan = await seedUser(t, 'clerk_fan')
+    await asFan.mutation(api.waterBodyFavorites.toggle, { waterBodyId: bodyId })
+    const favView = await asFan.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      zoom: 6,
+    })
+    expect(favView.map((b) => b.name)).toEqual(['Beloved Pond'])
+
+    // But a favorite outside the viewport is NOT force-included (zoom-exempt, not pan-exempt).
+    const elsewhere = await asFan.query(api.waterBodies.listInViewport, {
+      viewport: { minLat: 40, minLng: 40, maxLat: 41, maxLng: 41 },
+      zoom: 6,
+    })
+    expect(elsewhere).toHaveLength(0)
+  })
+
+  test('follows a merged favorite to its surviving body for the zoom-exempt highlight (D36)', async () => {
+    const t = convexTestWithGeo()
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/loser',
+          name: 'Loser Pond',
+          surfaceAreaSqM: 200,
+          bbox: { minLat: 0.5, minLng: 0.5, maxLat: 0.52, maxLng: 0.52 },
+          centroid: { lat: 0.51, lng: 0.51 },
+        },
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/survivor',
+          name: 'Survivor Pond',
+          surfaceAreaSqM: 200,
+          bbox: { minLat: 0.53, minLng: 0.53, maxLat: 0.55, maxLng: 0.55 },
+          centroid: { lat: 0.54, lng: 0.54 },
+        },
+      ],
+    })
+    const bodies = await t.run((ctx) => ctx.db.query('waterBodies').collect())
+    const loser = bodies.find((b) => b.name === 'Loser Pond')?._id
+    const survivor = bodies.find((b) => b.name === 'Survivor Pond')?._id
+    if (!loser || !survivor) throw new Error('seed failed')
+
+    const asFan = await seedUser(t, 'clerk_fan')
+    await asFan.mutation(api.waterBodyFavorites.toggle, { waterBodyId: loser })
+    // Merge the favorited body into the survivor after favoriting it.
+    await t.run((ctx) => ctx.db.patch(loser, { dedupStatus: 'merged', mergedIntoId: survivor }))
+
+    const view = await asFan.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      zoom: 6,
+    })
+    // The survivor rides in on the merged favorite; the merged loser itself is unlisted and absent.
+    expect(view.map((b) => b.name)).toEqual(['Survivor Pond'])
+  })
 })
 
 describe('waterBodies.searchByName (map search box)', () => {
