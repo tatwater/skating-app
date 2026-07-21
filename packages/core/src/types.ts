@@ -85,19 +85,79 @@ export type PrecipType = (typeof PRECIP_TYPES)[number]
 export const CONDITION_SOURCES = ['user', 'openmeteo'] as const
 export type ConditionSource = (typeof CONDITION_SOURCES)[number]
 
-/** Localized hazards that drive the lifecycle (D15). */
+/**
+ * Localized hazards that drive the lifecycle (D15/D52). **Exactly one per hazard** — per-type decay,
+ * geometry-per-type (D51) and the `ridge_crossing` verdict relabeling all need an unambiguous type.
+ *
+ * Canonicalized 2026-07-21 (Phase 9 kickoff): the slash-pairs that used to be *separate* keys collapse
+ * to one key each, with the alias living in the display label (`HAZARD_TYPE_LABELS`) rather than in the
+ * data — `open_water` absorbs `lead`, `ice_heave` absorbs `buckling`, and `spring_current` replaces
+ * both `inlet_outlet_current` and `spring`. Two keys for one hazard could disagree about their own
+ * decay tier, and `Record<HazardType, HazardDecay>` could not typecheck against the research table.
+ *
+ * Ordered by decay tier (A → D) so the table below reads top-to-bottom as volatile → permanent.
+ * Evidence for every entry: `plans/phase-9-hazard-research.md`.
+ */
 export const HAZARD_TYPES = [
+  // Tier A — volatile: refreeze/re-open within a day.
   'open_water',
-  'lead',
   'thin_ice',
-  'pressure_ridge',
-  'wet_crack',
   'overflow_slush',
-  'ice_heave',
-  'buckling',
+  'drain_hole',
+  'wind_hole',
+  'slush_hole',
+  // Tier A* — very volatile: same-day information only.
+  'thawed_rotten',
+  'ridge_crossing',
+  // Tier B — semi-persistent: re-skins, but the weak spot lingers days.
+  'wet_crack',
   'drilled_hole',
-  'inlet_outlet_current',
-  'spring',
   'shell_area',
+  // Tier C — structural: don't heal within a season; often grow.
+  'pressure_ridge',
+  'ice_heave',
+  // Tier D — effectively permanent: `bodyFeatures` candidates (D53).
+  'spring_current',
+  'gas_hole',
+  'reef_hole',
 ] as const
 export type HazardType = (typeof HAZARD_TYPES)[number]
+
+/**
+ * Display labels. The slash-pairs the enum collapsed keep both words here, so a skater still sees the
+ * vocabulary they use ("Open water / lead") even though the stored key is singular.
+ */
+export const HAZARD_TYPE_LABELS: Record<HazardType, string> = {
+  open_water: 'Open water / lead',
+  thin_ice: 'Thin ice',
+  overflow_slush: 'Overflow / slush',
+  drain_hole: 'Drain hole',
+  wind_hole: 'Wind hole',
+  slush_hole: 'Slush / mush hole',
+  thawed_rotten: 'Thawed / rotten ice',
+  ridge_crossing: 'Ridge crossing',
+  wet_crack: 'Wet / working crack',
+  drilled_hole: 'Drilled hole',
+  shell_area: 'Shell ice',
+  pressure_ridge: 'Pressure ridge',
+  ice_heave: 'Ice heave / buckling',
+  spring_current: 'Spring / inlet-outlet current',
+  gas_hole: 'Gas hole',
+  reef_hole: 'Reef hole',
+}
+
+/**
+ * The three types that account for ~80% of real hazard mentions in the regional corpus (research §6) —
+ * surfaced as one-tap presets, with everything else behind "more".
+ */
+export const HAZARD_TYPE_PRESETS = ['open_water', 'pressure_ridge', 'thin_ice'] as const
+
+/**
+ * `ridge_crossing` is a **passage marker, not a danger** (D51 research §4): it marks where a pressure
+ * ridge was crossable. It reuses the hazard machinery (geometry, decay, confirm loop) but must never
+ * render as a danger halo or fire a "hazard ahead" alert — see `hazardCopy.ts` for its relabeled
+ * verdicts and `hazardProximity.ts` for its exclusion from warnings.
+ */
+export function isPassageMarker(type: HazardType): boolean {
+  return type === 'ridge_crossing'
+}
