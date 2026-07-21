@@ -25,8 +25,9 @@ import {
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
-import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { datetimeLocalToMs, toDatetimeLocal } from '../lib/reportForm'
+import { HazardBundlePrompt } from './HazardBundlePrompt'
 import { useMapSelection } from './MapSelectionContext'
 import { processPhoto, uploadToStorage } from './photoPipeline'
 import { Button } from './ui/button'
@@ -251,11 +252,17 @@ export interface ReportFormFieldsProps {
   onCancel: () => void
   submitting: boolean
   error: string | null
+  /**
+   * The D55 bundle offer, injected by the container so this stays a pure presentational component
+   * (the prompt needs a Convex query; these fields must not).
+   */
+  bundlePrompt?: ReactNode
 }
 
 export function ReportFormFields({
   form,
   onFormChange,
+  bundlePrompt,
   putInPin,
   onRequestPin,
   onClearPin,
@@ -547,6 +554,8 @@ export function ReportFormFields({
         />
       </Field>
 
+      {bundlePrompt}
+
       {error ? <p className="text-danger text-sm">{error}</p> : null}
 
       <div className="flex justify-end gap-2">
@@ -587,6 +596,12 @@ export function ReportForm({
   const [photos, setPhotos] = useState<PhotoDraft[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // D55: the author's own on-ice hazards for this lake, pre-checked to bundle into this report.
+  // Held as an explicit opt-out set rather than an opt-in one — the offer is pre-checked, but the
+  // skater can always drop any of them, and nothing attaches without the list being visible.
+  const [unbundledHazardIds, setUnbundledHazardIds] = useState<string[]>([])
+  const [bundleCandidateIds, setBundleCandidateIds] = useState<string[]>([])
+  const bundleHazardIds = bundleCandidateIds.filter((id) => !unbundledHazardIds.includes(id))
 
   // Minors are read-only — all reports are public (D13), so under-18 users can't post (D41).
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false
@@ -756,7 +771,14 @@ export function ReportForm({
       // otherwise sweep (submittedRef still false) and delete the very photo rows the committing
       // report is about to reference — leaving it with permanently missing images.
       submittedRef.current = true
-      const reportId = await createReport({ ...input, waterBodyId, photoIds })
+      const reportId = await createReport({
+        ...input,
+        waterBodyId,
+        photoIds,
+        ...(bundleHazardIds.length > 0
+          ? { attachHazardIds: bundleHazardIds as Id<'hazards'>[] }
+          : {}),
+      })
       setPutInPin(null)
       onOpenChange(false)
       navigate({ to: '/report/$id', params: { id: reportId } })
@@ -808,6 +830,20 @@ export function ReportForm({
             onCancel={closeForm}
             submitting={submitting}
             error={error}
+            bundlePrompt={
+              <HazardBundlePrompt
+                waterBodyId={waterBodyId}
+                skateEndTime={form.skateEndTime}
+                skateStartTime={form.skateStartTime ?? undefined}
+                selectedIds={bundleCandidateIds.filter((id) => !unbundledHazardIds.includes(id))}
+                onToggle={(hazardId, checked) =>
+                  setUnbundledHazardIds((prev) =>
+                    checked ? prev.filter((id) => id !== hazardId) : [...prev, hazardId],
+                  )
+                }
+                onCandidates={setBundleCandidateIds}
+              />
+            }
           />
         ) : (
           <div className="flex flex-col gap-3">

@@ -35,6 +35,18 @@ interface MapSelectionValue {
   /** True while the report form has armed map-tap pin placement; the next map tap sets the pin. */
   pinDropMode: boolean
   setPinDropMode: (on: boolean) => void
+  /**
+   * The hazard footprint being authored (Phase 9, D51) — a centre plus its radius in metres, so the
+   * map can render the real buffered circle while the skater sizes it rather than a fixed-pixel dot
+   * that lies about how big the hazard is.
+   */
+  hazardDraft: { coord: { lat: number; lng: number }; radiusMeters: number } | null
+  setHazardDraft: (
+    draft: { coord: { lat: number; lng: number }; radiusMeters: number } | null,
+  ) => void
+  /** True while the hazard form has armed map-tap placement; the next map tap sets the centre. */
+  hazardDropMode: boolean
+  setHazardDropMode: (on: boolean) => void
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null)
@@ -45,6 +57,11 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [photoPins, setPhotoPins] = useState<PhotoPin[]>([])
   const [putInPin, setPutInPin] = useState<{ lat: number; lng: number } | null>(null)
   const [pinDropMode, setPinDropMode] = useState(false)
+  const [hazardDraft, setHazardDraft] = useState<{
+    coord: { lat: number; lng: number }
+    radiusMeters: number
+  } | null>(null)
+  const [hazardDropMode, setHazardDropMode] = useState(false)
 
   const value = useMemo(
     () => ({
@@ -58,8 +75,12 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setPutInPin,
       pinDropMode,
       setPinDropMode,
+      hazardDraft,
+      setHazardDraft,
+      hazardDropMode,
+      setHazardDropMode,
     }),
-    [highlightWaterBodyId, focus, photoPins, putInPin, pinDropMode],
+    [highlightWaterBodyId, focus, photoPins, putInPin, pinDropMode, hazardDraft, hazardDropMode],
   )
 
   return <MapSelectionContext.Provider value={value}>{children}</MapSelectionContext.Provider>

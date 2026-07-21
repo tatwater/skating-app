@@ -7,6 +7,8 @@ import { useEffect, useState } from 'react'
 import { DirectionsButton } from './DirectionsButton'
 import { DetailSkeleton, UnavailableState } from './DrawerStates'
 import { FavoriteButton } from './FavoriteButton'
+import { HazardForm } from './HazardForm'
+import { HazardList } from './HazardList'
 import { useMapSelection } from './MapSelectionContext'
 import { ReportForm } from './ReportForm'
 import { Badge } from './ui/badge'
@@ -29,6 +31,7 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   const body = result?.available ? result.body : null
   const { setFocus, setHighlightWaterBodyId } = useMapSelection()
   const [formOpen, setFormOpen] = useState(false)
+  const [hazardFormOpen, setHazardFormOpen] = useState(false)
 
   // Once the (possibly merge-resolved) lake loads, fly the map to it and highlight it. We use the
   // resolved `body._id` — the survivor a merged deep link redirects to — which is what the map's
@@ -77,8 +80,12 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         {/* Report creation + directions to a put-in (never the on-water centroid, D#7). */}
         <div className="flex flex-wrap gap-2">
           <Button onClick={() => setFormOpen(true)}>Add a report</Button>
+          <Button variant="outline" onClick={() => setHazardFormOpen(true)}>
+            Report a hazard
+          </Button>
           <DirectionsButton waterBodyId={result.body._id} />
         </div>
+        <HazardList waterBodyId={result.body._id} />
         <ReportFeed waterBodyId={result.body._id} />
       </div>
       {formOpen ? (
@@ -87,6 +94,13 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
           bodyName={result.body.name}
           open={formOpen}
           onOpenChange={setFormOpen}
+        />
+      ) : null}
+      {hazardFormOpen ? (
+        <HazardForm
+          waterBodyId={result.body._id}
+          open={hazardFormOpen}
+          onClose={() => setHazardFormOpen(false)}
         />
       ) : null}
     </>

@@ -10,6 +10,14 @@ import { Protocol } from 'pmtiles'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { env } from '../lib/env'
 import {
+  bodyFeaturesToFeatureCollection,
+  DEFAULT_DRAFT_RADIUS_M,
+  HAZARD_PALETTE,
+  hazardColorExpression,
+  hazardFillOpacityExpression,
+  hazardsToFeatureCollection,
+} from '../lib/hazardMap'
+import {
   boundsToViewport,
   buildMapStyle,
   DEMO_PMTILES_URL,
@@ -60,6 +68,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     pinDropMode,
     setPutInPin,
     setPinDropMode,
+    hazardDraft,
+    setHazardDraft,
+    hazardDropMode,
+    setHazardDropMode,
   } = useMapSelection()
 
   const [loaded, setLoaded] = useState(false)
@@ -70,6 +82,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const { resolvedTheme } = useTheme()
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light
   const water = WATER_PALETTE[flavor]
+  const hazardPalette = HAZARD_PALETTE[flavor]
   const lastViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null)
 
   // The map click handler is registered once (in the create effect) but must read the *current*
@@ -80,6 +93,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   setPutInPinRef.current = setPutInPin
   const setPinDropModeRef = useRef(setPinDropMode)
   setPinDropModeRef.current = setPinDropMode
+  const hazardDropModeRef = useRef(hazardDropMode)
+  hazardDropModeRef.current = hazardDropMode
+  const setHazardDropModeRef = useRef(setHazardDropMode)
+  setHazardDropModeRef.current = setHazardDropMode
+  // Placing a hazard keeps whatever radius the draft already has (or the caller's default), so
+  // re-placing the centre never silently resets a size the skater has already adjusted.
+  const setHazardCentreRef = useRef((coord: { lat: number; lng: number }) => {
+    setHazardDraft({ coord, radiusMeters: hazardDraft?.radiusMeters ?? DEFAULT_DRAFT_RADIUS_M })
+  })
+  setHazardCentreRef.current = (coord) => {
+    setHazardDraft({ coord, radiusMeters: hazardDraft?.radiusMeters ?? DEFAULT_DRAFT_RADIUS_M })
+  }
 
   const pmtilesUrl = env.pmtilesUrl || DEMO_PMTILES_URL
 
@@ -107,6 +132,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // rather than every body in view. `skip` when no lake is selected.
   const putIns = useQuery(
     api.putIns.listForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  )
+
+  // Hazards + known features for the focused lake (Phase 9). Deliberately scoped to the open body,
+  // not the viewport: hazards are only ever queried per body, which is what keeps this off the
+  // read-cap-fragile path `listInViewport` had to be fixed for twice (PRs #10/#11).
+  const hazards = useQuery(
+    api.hazards.listForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  )
+  const bodyFeatures = useQuery(
+    api.bodyFeatures.listForBody,
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   )
 
@@ -256,6 +293,70 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'circle-stroke-width': 2,
         },
       })
+      // ── Hazards (Phase 9). Drawn as buffered *footprint* polygons, not markers, so the shape on
+      // screen is literally the shape the proximity evaluator measures against. Soft fill + a dashed
+      // outline: a hazard is "reported around here", never a surveyed boundary (D3/D51).
+      map.addSource('hazards', { type: 'geojson', data: EMPTY_FEATURES })
+      map.addLayer({
+        id: 'hazard-fill',
+        type: 'fill',
+        source: 'hazards',
+        paint: {
+          'fill-color': hazardColorExpression(hazardPalette) as maplibregl.ExpressionSpecification,
+          'fill-opacity': hazardFillOpacityExpression() as maplibregl.ExpressionSpecification,
+        },
+      })
+      map.addLayer({
+        id: 'hazard-outline',
+        type: 'line',
+        source: 'hazards',
+        paint: {
+          'line-color': hazardColorExpression(hazardPalette) as maplibregl.ExpressionSpecification,
+          'line-width': 1.5,
+          // Dashed for provisional (one unverified report), solid once independently confirmed —
+          // the same soft/hard distinction the on-ice alert makes (D54).
+          'line-dasharray': [
+            'case',
+            ['get', 'provisional'],
+            ['literal', [2, 2]],
+            ['literal', [1, 0]],
+          ],
+        },
+      })
+      // ── Known seasonal body features (D53). No freshness, no decay — they're permanent, so they
+      // render in a steady neutral rather than the danger ramp, and they are always visible.
+      map.addSource('body-features', { type: 'geojson', data: EMPTY_FEATURES })
+      map.addLayer({
+        id: 'body-feature-fill',
+        type: 'fill',
+        source: 'body-features',
+        paint: { 'fill-color': hazardPalette.feature, 'fill-opacity': 0.22 },
+      })
+      map.addLayer({
+        id: 'body-feature-outline',
+        type: 'line',
+        source: 'body-features',
+        paint: {
+          'line-color': hazardPalette.feature,
+          'line-width': 1.5,
+          'line-dasharray': [4, 2],
+        },
+      })
+      // The hazard footprint being authored — rendered as the real metric circle so the skater sizes
+      // it against the lake, not against a fixed-pixel dot.
+      map.addSource('hazard-draft', { type: 'geojson', data: EMPTY_FEATURES })
+      map.addLayer({
+        id: 'hazard-draft-fill',
+        type: 'fill',
+        source: 'hazard-draft',
+        paint: { 'fill-color': hazardPalette.danger, 'fill-opacity': 0.35 },
+      })
+      map.addLayer({
+        id: 'hazard-draft-outline',
+        type: 'line',
+        source: 'hazard-draft',
+        paint: { 'line-color': hazardPalette.danger, 'line-width': 2 },
+      })
       setLoaded(true)
       syncViewport() // first query, framed on the initial view
     })
@@ -267,6 +368,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       if (pinDropModeRef.current) {
         setPutInPinRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng })
         setPinDropModeRef.current(false)
+        return
+      }
+      if (hazardDropModeRef.current) {
+        setHazardCentreRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng })
+        setHazardDropModeRef.current(false)
+        return
+      }
+      // Hazards sit above water bodies in hit-testing: a hazard footprint always lies *inside* a
+      // lake, so if a click hits both, the more specific (and more safety-relevant) target wins.
+      const hazardId = map.queryRenderedFeatures(e.point, { layers: ['hazard-fill'] })[0]
+        ?.properties?.hazardId
+      if (typeof hazardId === 'string') {
+        navigate({ to: '/hazard/$id', params: { id: hazardId } })
         return
       }
       const id = map.queryRenderedFeatures(e.point, { layers: ['water-fill'] })[0]?.properties?._id
@@ -286,7 +400,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       maplibregl.removeProtocol('pmtiles')
     }
     // `flavor`/`water` re-create the map on a theme change (viewport preserved via lastViewRef).
-  }, [pmtilesUrl, navigate, flavor, water])
+  }, [pmtilesUrl, navigate, flavor, water, hazardPalette])
 
   // Push query results into the source once the style has loaded; re-apply the highlight after
   // (setData resets feature-state).
@@ -322,6 +436,46 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const source = map.getSource('put-in-markers') as maplibregl.GeoJSONSource | undefined
     source?.setData(putInsToFeatureCollection(putIns ?? []))
   }, [putIns, loaded])
+
+  // Hazard footprints for the focused lake (Phase 9) — cleared when no lake is selected.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loaded) return
+    const source = map.getSource('hazards') as maplibregl.GeoJSONSource | undefined
+    source?.setData(hazardsToFeatureCollection(hazards ?? []))
+  }, [hazards, loaded])
+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loaded) return
+    const source = map.getSource('body-features') as maplibregl.GeoJSONSource | undefined
+    source?.setData(bodyFeaturesToFeatureCollection(bodyFeatures ?? []))
+  }, [bodyFeatures, loaded])
+
+  // The hazard footprint being authored — a real metric circle, updated live as the radius changes.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loaded) return
+    const source = map.getSource('hazard-draft') as maplibregl.GeoJSONSource | undefined
+    source?.setData(
+      hazardDraft
+        ? hazardsToFeatureCollection([
+            {
+              _id: 'draft',
+              type: 'open_water',
+              geometryKind: 'point_radius',
+              geometry: {
+                type: 'Point',
+                coordinates: [hazardDraft.coord.lng, hazardDraft.coord.lat],
+              },
+              radiusMeters: hazardDraft.radiusMeters,
+              freshness: 'fresh',
+              provisional: false,
+            },
+          ])
+        : EMPTY_FEATURES,
+    )
+  }, [hazardDraft, loaded])
 
   // Fly to a drawer's focus (a lake centroid / report put-in) when it changes.
   useEffect(() => {
@@ -367,8 +521,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     const map = mapRef.current
     if (!map || !loaded) return
-    map.getCanvas().style.cursor = pinDropMode ? 'crosshair' : ''
-  }, [pinDropMode, loaded])
+    map.getCanvas().style.cursor = pinDropMode || hazardDropMode ? 'crosshair' : ''
+  }, [pinDropMode, hazardDropMode, loaded])
 
   // Home/water framing on open via the browser Geolocation API (D12/D20): a fix inside the pilot
   // region recenters there; otherwise the default Northeast framing stands. Skipped on a deep-linked
@@ -396,6 +550,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         ref={containerRef}
         className="h-[75vh] w-full overflow-hidden rounded-lg border border-border"
       />
+      {hazardDropMode ? (
+        <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-3 rounded-t-lg bg-destructive px-4 py-2 text-destructive-foreground text-sm shadow">
+          <span>Click the map where the hazard is.</span>
+          <button
+            type="button"
+            className="rounded-md bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30"
+            onClick={() => setHazardDropMode(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : null}
       {pinDropMode ? (
         <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-3 rounded-t-lg bg-primary px-4 py-2 text-primary-foreground text-sm shadow">
           <span>Tap the map to set the access point.</span>
