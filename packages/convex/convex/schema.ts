@@ -407,8 +407,12 @@ export default defineSchema({
   bodyFeatures: defineTable({
     waterBodyId: v.id('waterBodies'),
     type: literals(BODY_FEATURE_TYPES),
-    geometry: geoJson, // same primitives as hazards (D51)
-    radiusMeters: v.optional(v.number()),
+    geometryKind: literals(HAZARD_GEOMETRY_KINDS), // same authoring primitives as hazards (D51)
+    geometry: geoJson, // Point | LineString | Polygon
+    radiusMeters: v.optional(v.number()), // point_radius
+    // line/polygon uncertainty half-width — a promoted `recurring_pressure_ridge` is a LineString and
+    // must keep the ridge's real width, exactly like the hazard it came from (else it renders hairline).
+    bufferMeters: v.optional(v.number()),
     bbox,
     note: v.optional(v.string()),
     addedByUserId: v.id('profiles'), // admin/moderator — promotion is an admin action (D37/D53)

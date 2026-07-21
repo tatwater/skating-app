@@ -206,11 +206,29 @@ describe('flushHazardItem — confirmations', () => {
       now: NOW,
       hazardId: 'h1',
       verdict: 'still_there',
+      via: 'proximity_alert',
     })
     const result = await flushHazardItem(item, eff, NOW)
     expect(result.ok).toBe(true)
+    // `via` is carried through from the queue item — a drawer confirmation that queued offline must
+    // not flush as a stronger `proximity_alert`, and vice versa.
     expect(eff.confirmHazard).toHaveBeenCalledWith(
-      expect.objectContaining({ hazardId: 'h1', verdict: 'still_there' }),
+      expect.objectContaining({ hazardId: 'h1', verdict: 'still_there', via: 'proximity_alert' }),
+    )
+  })
+
+  it('flushes the real trigger, not a hardcoded one', async () => {
+    const { eff } = effects()
+    const item = createQueuedConfirmation({
+      id: 'c2',
+      now: NOW,
+      hazardId: 'h1',
+      verdict: 'still_there',
+      via: 'app_open_nearby',
+    })
+    await flushHazardItem(item, eff, NOW)
+    expect(eff.confirmHazard).toHaveBeenCalledWith(
+      expect.objectContaining({ via: 'app_open_nearby' }),
     )
   })
 
@@ -225,6 +243,7 @@ describe('flushHazardItem — confirmations', () => {
       now: NOW,
       hazardId: 'h1',
       verdict: 'still_there',
+      via: 'proximity_alert',
       observedAt,
     })
     await flushHazardItem(item, eff, NOW + 9_000_000)
@@ -238,6 +257,7 @@ describe('flushHazardItem — confirmations', () => {
       now: NOW,
       hazardId: 'h1',
       verdict: 'fully_healed',
+      via: 'proximity_alert',
       atCoord: AT,
     })
     await flushHazardItem(item, eff, NOW)
@@ -255,6 +275,7 @@ describe('flushHazardItem — confirmations', () => {
       now: NOW,
       hazardId: 'h1',
       verdict: 'healing_unsafe',
+      via: 'proximity_alert',
     })
     const result = await flushHazardItem(item, eff, NOW)
     expect(result).toMatchObject({ ok: false, kind: 'transient' })
@@ -268,6 +289,7 @@ describe('flushHazardItem — confirmations', () => {
       now: NOW,
       hazardId: 'h1',
       verdict: 'still_there',
+      via: 'proximity_alert',
     })
     await flushHazardItem(item, eff, NOW)
     expect(eff.createHazard).not.toHaveBeenCalled()

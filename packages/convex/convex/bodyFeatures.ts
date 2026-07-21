@@ -19,6 +19,7 @@ import { type MutationCtx, mutation, query } from './_generated/server'
 import { requireRole } from './lib/auth'
 import { resolveSurvivor } from './lib/bodies'
 import { BODY_FEATURE_TYPES } from './lib/enums'
+import { HAZARD_GEOMETRY_KINDS } from './lib/hazardValidators'
 import { geoJson, literals } from './lib/validators'
 
 /** Active known features for a body — rendered alongside hazards with distinct styling. */
@@ -39,8 +40,12 @@ export const create = mutation({
   args: {
     waterBodyId: v.id('waterBodies'),
     type: literals(BODY_FEATURE_TYPES),
+    // Optional for back-compat: a plain point feature can omit it (inferred from `radiusMeters`); a
+    // line/polygon feature supplies it explicitly along with `bufferMeters`.
+    geometryKind: v.optional(literals(HAZARD_GEOMETRY_KINDS)),
     geometry: geoJson,
     radiusMeters: v.optional(v.number()),
+    bufferMeters: v.optional(v.number()),
     note: v.optional(v.string()),
     reason: v.string(),
   },
@@ -50,11 +55,15 @@ export const create = mutation({
     const body = await resolveSurvivor(ctx, args.waterBodyId)
     if (!body) throw new ConvexError('Water body not found')
 
+    const geometryKind =
+      args.geometryKind ?? (args.radiusMeters !== undefined ? 'point_radius' : 'polygon')
     const id = await insertFeature(ctx, {
       waterBodyId: body._id,
       type: args.type,
+      geometryKind,
       geometry: args.geometry,
       ...(args.radiusMeters !== undefined ? { radiusMeters: args.radiusMeters } : {}),
+      ...(args.bufferMeters !== undefined ? { bufferMeters: args.bufferMeters } : {}),
       ...(args.note !== undefined ? { note: args.note } : {}),
       addedByUserId: actor._id,
     })
@@ -89,8 +98,12 @@ export const promote = mutation({
     const id = await insertFeature(ctx, {
       waterBodyId: hazard.waterBodyId,
       type,
+      // Carry the hazard's own primitive across — a promoted line stays a line with its buffer, so the
+      // feature's footprint matches the hazard it came from rather than collapsing to a hairline.
+      geometryKind: hazard.geometryKind,
       geometry: hazard.geometry,
       ...(hazard.radiusMeters !== undefined ? { radiusMeters: hazard.radiusMeters } : {}),
+      ...(hazard.bufferMeters !== undefined ? { bufferMeters: hazard.bufferMeters } : {}),
       ...(note !== undefined ? { note } : {}),
       addedByUserId: actor._id,
       promotedFromHazardId: hazardId,
@@ -136,15 +149,22 @@ async function insertFeature(
   args: Omit<Doc<'bodyFeatures'>, '_id' | '_creationTime' | 'bbox' | 'active' | 'createdAt'>,
 ): Promise<Id<'bodyFeatures'>> {
   // Reuse the hazard footprint math so a feature's bbox is computed identically to a hazard's — a
-  // promoted ridge must not shift or resize just because it changed tables.
+  // promoted ridge must not shift or resize just because it changed tables. The shape is built from
+  // the feature's own `geometryKind`, NOT re-inferred from whether `radiusMeters` is set — a line
+  // feature (a promoted `recurring_pressure_ridge`) has a `bufferMeters`, no `radiusMeters`, and must
+  // stay a line, not get mis-classified as a polygon and rejected by the shape gate.
   const shape: HazardShape =
-    args.radiusMeters !== undefined
+    args.geometryKind === 'point_radius'
       ? {
           geometryKind: 'point_radius',
           geometry: args.geometry as HazardShape['geometry'],
-          radiusMeters: args.radiusMeters,
+          radiusMeters: args.radiusMeters ?? 0,
         }
-      : { geometryKind: 'polygon', geometry: args.geometry as HazardShape['geometry'] }
+      : {
+          geometryKind: args.geometryKind,
+          geometry: args.geometry as HazardShape['geometry'],
+          ...(args.bufferMeters !== undefined ? { bufferMeters: args.bufferMeters } : {}),
+        }
 
   // Same single gate hazards use. `create` takes raw GeoJSON from an admin, and a malformed ring or a
   // MultiLineString would otherwise reach `turf/buffer` and throw mid-mutation or store a junk bbox.

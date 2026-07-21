@@ -8,7 +8,7 @@ import {
 } from '@skating/core'
 import { useMutation, useQuery } from 'convex/react'
 import { useRouter } from 'expo-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui'
 import {
   type AlertSession,
@@ -49,15 +49,16 @@ export function HazardBanner() {
 
   // No GPS watcher of its own — the layout owns the single watcher and publishes each fix as
   // `onIceCoord`, so proximity is evaluated here off that shared coord. One subscription for the whole
-  // on-ice experience; `advanceAlertSession` keeps a showing banner from being swapped out from under
-  // a moving skater (unit-tested in `onIce.ts`). The hazard set is read through a ref so a reactive
-  // hazard update doesn't re-fire the alert against a stale coord — evaluation is driven by GPS fixes.
-  const hazardsRef = useRef(proximityHazards)
-  hazardsRef.current = proximityHazards
+  // on-ice experience; `advanceAlertSession` keeps a showing banner from being swapped out from under a
+  // moving skater and dedups per session (unit-tested in `onIce.ts`), so it's safe to run on either
+  // trigger. Re-evaluate on BOTH a new fix AND a change to the cached hazard set: a stationary skater
+  // (no new fixes) whose lake finishes syncing, or near whom a hazard is freshly posted, must still get
+  // the banner — evaluated against their latest known coord (the effect closes over the current
+  // `onIceCoord` on every run).
   useEffect(() => {
     if (!onIceCoord) return
-    setSession((prev) => advanceAlertSession(prev, onIceCoord, hazardsRef.current))
-  }, [onIceCoord])
+    setSession((prev) => advanceAlertSession(prev, onIceCoord, proximityHazards))
+  }, [onIceCoord, proximityHazards])
 
   const banner = session.banner
   if (!banner) return null

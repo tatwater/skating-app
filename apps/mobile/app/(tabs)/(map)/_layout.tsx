@@ -2,7 +2,7 @@ import { api } from '@skating/convex/api'
 import { useQuery } from 'convex/react'
 import * as Location from 'expo-location'
 import { Slot, usePathname, useRouter } from 'expo-router'
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { AppState, View } from 'react-native'
 import { HazardBanner } from '../../../src/components/HazardBanner'
 import { HazardCapture } from '../../../src/components/HazardCapture'
@@ -22,6 +22,13 @@ import { resolveOnIceBody, shouldAutoSelectOnIce } from '../../../src/lib/onIce'
  * layout owns the highlight-clear on navigation. The map stays behind the (non-modal, backdrop-less)
  * sheet, so it's tappable while a drawer is open — the put-in-pin flow (§E) depends on it.
  */
+/**
+ * Grid cell (degrees) the on-ice coord is snapped to before it keys the lake-resolve query. ~0.003° ≈
+ * 330 m — coarser than the 300 m auto-select buffer, so snapping never changes which lake resolves but
+ * collapses the every-20 m fixes into one stable query key while the skater stays on the same water.
+ */
+const RESOLVE_GRID_DEG = 0.003
+
 export default function MapLayout() {
   return (
     <MapSelectionProvider>
@@ -81,29 +88,41 @@ function MapLayoutInner() {
   useEffect(() => {
     let cancelled = false
     let subscription: Location.LocationSubscription | null = null
+    // Synchronous re-entrancy guard. `subscription` is only assigned *after* two awaits, so a bare
+    // `if (subscription) return` doesn't stop a second `start()` (mount + an AppState 'active') from
+    // sailing past it and creating a *second* watcher whose handle is then lost — the exact two-GPS
+    // battery leak this single-watcher design exists to prevent. This flag is checked and set in the
+    // same synchronous tick, so only one `start()` is ever in flight.
+    let starting = false
 
     const publish = (pos: Location.LocationObject) => {
       if (!cancelled) setOnIceCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude })
     }
 
     const start = async () => {
-      if (subscription) return
-      const granted = await ensureForegroundPermission()
-      if (!granted || cancelled) return
+      if (subscription || starting) return
+      starting = true
       try {
+        const granted = await ensureForegroundPermission()
+        if (!granted || cancelled) return
         const last = await Location.getLastKnownPositionAsync()
         if (last) publish(last)
-        subscription = await Location.watchPositionAsync(
+        const sub = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
           publish,
         )
         if (cancelled) {
-          subscription.remove()
-          subscription = null
+          sub.remove()
+          return
         }
+        subscription = sub
       } catch {
         // No fix ⇒ not on-ice as far as we know. Never an error state: the app is fully usable
         // without it, and "we can't tell" must not read as "you're not near a lake".
+      } finally {
+        // Cleared so a later foreground (e.g. permission granted in Settings, or the first attempt
+        // bailed before creating a watcher) can retry — but only ever one attempt at a time.
+        starting = false
       }
     }
 
@@ -123,9 +142,21 @@ function MapLayoutInner() {
   // one the skater has never opened, which the offline body cache can't (that only holds
   // drawer-viewed bodies). It's read-cap-safe (a small rectangle around one point). Offline (or before
   // it answers) we fall back to the on-device cache so no-signal capture still resolves.
+  //
+  // The query key is the fix **snapped to a ~330 m grid**, not the raw coord: the watcher republishes
+  // every 20 m of travel, but which lake you're on doesn't change fix-to-fix, so re-running the server
+  // query every 20 m (a skater doing laps → forever) is waste. Snapping to a cell coarser than the
+  // 300 m auto-select buffer means it only re-resolves when you actually cross into a new area.
+  const resolveCoord = useMemo(() => {
+    if (!onIceCoord) return null
+    return {
+      lat: Math.round(onIceCoord.lat / RESOLVE_GRID_DEG) * RESOLVE_GRID_DEG,
+      lng: Math.round(onIceCoord.lng / RESOLVE_GRID_DEG) * RESOLVE_GRID_DEG,
+    }
+  }, [onIceCoord])
   const onlineBody = useQuery(
     api.waterBodies.resolveBodyForCoord,
-    onIceCoord ? { coord: onIceCoord } : 'skip',
+    resolveCoord ? { coord: resolveCoord } : 'skip',
   )
 
   // Part 3: publish the resolved lake and, once per app-open, **auto-select** it — navigate to its

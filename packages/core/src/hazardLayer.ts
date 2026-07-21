@@ -45,8 +45,11 @@ export interface MappableHazard {
 export interface MappableBodyFeature {
   _id: string
   type: string
+  /** Present on rows written after the line/polygon fix; inferred from `radiusMeters` when absent. */
+  geometryKind?: HazardShape['geometryKind']
   geometry: GeoJSON.Geometry
   radiusMeters?: number
+  bufferMeters?: number
 }
 
 /** The four colours a hazard layer needs. Supplied per app from its own design tokens. */
@@ -101,9 +104,13 @@ export function bodyFeaturesToFeatureCollection(
     type: 'FeatureCollection',
     features: features.flatMap((f) => {
       const footprint = safeFootprint({
-        geometryKind: f.radiusMeters !== undefined ? 'point_radius' : 'polygon',
+        // Use the feature's stored primitive so a promoted line (a `recurring_pressure_ridge`) renders
+        // as its buffered band, not a hairline. Fall back to the old radius-based inference only for
+        // legacy rows that predate the `geometryKind` column.
+        geometryKind: f.geometryKind ?? (f.radiusMeters !== undefined ? 'point_radius' : 'polygon'),
         geometry: f.geometry,
         radiusMeters: f.radiusMeters,
+        bufferMeters: f.bufferMeters,
       })
       if (!footprint) return []
       return [

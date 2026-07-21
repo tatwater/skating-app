@@ -588,7 +588,12 @@ export function HazardCapture() {
           </XStack>
 
           {error ? (
-            <Text color="$danger" fontSize={13}>
+            <Text
+              color="$danger"
+              fontSize={13}
+              accessibilityRole="alert"
+              accessibilityLiveRegion="assertive"
+            >
               {error}
             </Text>
           ) : null}

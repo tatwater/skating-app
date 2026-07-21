@@ -28,6 +28,14 @@ import type { HazardType } from './types'
 /** The three-tier verdict, as the confirm mutation takes it (D52). */
 export type QueuedVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed'
 
+/**
+ * How a queued confirmation was triggered — mirrors the backend `HAZARD_CONFIRM_VIA` enum. Carried on
+ * the queue item so the origin survives an offline round-trip: a confirmation cast from the proximity
+ * banner (`proximity_alert`, standing within alert range — strong evidence) must not be indistinguishable
+ * from one tapped in the hazard drawer (`app_open_nearby`) after the queue drains. D50 will weigh these.
+ */
+export type QueuedConfirmVia = 'app_open_nearby' | 'proximity_alert' | 'report_flow' | 'strava_path'
+
 /** A hazard captured on the ice, waiting for signal. */
 export interface QueuedHazard {
   kind: 'hazard'
@@ -64,6 +72,8 @@ export interface QueuedHazardConfirmation {
   errorMessage?: string
   hazardId: string
   verdict: QueuedVerdict
+  /** The trigger that produced this vote, preserved across the offline round-trip (D50 evidence). */
+  via: QueuedConfirmVia
   atCoord?: LatLng
   /** When the skater actually observed it — see the module note on why this isn't the send time. */
   observedAt: number
@@ -117,6 +127,7 @@ export function createQueuedConfirmation(args: {
   now: number
   hazardId: string
   verdict: QueuedVerdict
+  via: QueuedConfirmVia
   atCoord?: LatLng
   observedAt?: number
 }): QueuedHazardConfirmation {
@@ -126,6 +137,7 @@ export function createQueuedConfirmation(args: {
     status: 'pending',
     hazardId: args.hazardId,
     verdict: args.verdict,
+    via: args.via,
     atCoord: args.atCoord,
     observedAt: args.observedAt ?? args.now,
     createdAt: args.now,
@@ -154,6 +166,7 @@ export interface HazardFlushEffects {
   confirmHazard(input: {
     hazardId: string
     verdict: QueuedVerdict
+    via: QueuedConfirmVia
     atCoord?: LatLng
     observedAt: number
   }): Promise<void>
@@ -194,6 +207,7 @@ export async function flushHazardItem(
       await effects.confirmHazard({
         hazardId: c.hazardId,
         verdict: c.verdict,
+        via: c.via,
         ...(c.atCoord ? { atCoord: c.atCoord } : {}),
         observedAt: c.observedAt,
       })

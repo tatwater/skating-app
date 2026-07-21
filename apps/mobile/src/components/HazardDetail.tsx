@@ -156,6 +156,8 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
           now: Date.now(),
           hazardId,
           verdict,
+          // Same trigger as the online path above — a drawer confirmation, not a proximity alert.
+          via: 'app_open_nearby',
           observedAt,
           ...(atCoord ? { atCoord } : {}),
         }),
@@ -294,7 +296,12 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
       )}
 
       {error ? (
-        <Text color="$danger" fontSize={13}>
+        <Text
+          color="$danger"
+          fontSize={13}
+          accessibilityRole="alert"
+          accessibilityLiveRegion="assertive"
+        >
           {error}
         </Text>
       ) : null}

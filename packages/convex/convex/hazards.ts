@@ -261,12 +261,26 @@ export const listForBody = query({
   },
 })
 
-/** A single hazard for its detail drawer. `null` when missing or moderator-hidden. */
+/**
+ * A hazard is visible to ordinary users when a moderator hasn't hidden it AND it hasn't been promoted
+ * into a persistent body feature (which now carries the warning). The two are separate axes but both
+ * take a hazard off every user-facing surface — a deep link to a promoted or hidden pin resolves to
+ * nothing, and it can't be confirmed. `null`/missing rows are also not visible.
+ */
+function isUserVisibleHazard(hazard: Doc<'hazards'> | null): hazard is Doc<'hazards'> {
+  return (
+    hazard !== null &&
+    hazard.moderationStatus === 'visible' &&
+    hazard.promotedToFeatureId === undefined
+  )
+}
+
+/** A single hazard for its detail drawer. `null` when missing, moderator-hidden, or promoted. */
 export const get = query({
   args: { hazardId: v.id('hazards') },
   handler: async (ctx, { hazardId }) => {
     const hazard = await ctx.db.get(hazardId)
-    if (hazard?.moderationStatus !== 'visible') return null
+    if (!isUserVisibleHazard(hazard)) return null
     return toView(hazard, Date.now())
   },
 })
@@ -332,9 +346,9 @@ export async function attachHazardsToReport(
     if (hazard.createdByUserId !== authorId) continue
     if (hazard.waterBodyId !== waterBodyId) continue
     if (hazard.originReportId !== undefined) continue
-    // A moderator-hidden pin must not be launderable back into visibility by bundling it into a
-    // report (D3) — skip anything not currently visible.
-    if (hazard.moderationStatus !== 'visible') continue
+    // A moderator-hidden or already-promoted pin must not be launderable back into visibility by
+    // bundling it into a report (D3) — skip anything not currently user-visible.
+    if (!isUserVisibleHazard(hazard)) continue
     await ctx.db.patch(hazardId, { originReportId: reportId })
     attached.push(hazardId)
   }
@@ -348,12 +362,11 @@ export async function attachHazardsToReport(
  * `status`, keeping a moderator hide distinct from a community all-clear (D3).
  */
 
-/** Internal read used by the confirmation flow; keeps the moderation gate in one place. */
+/** Internal read used by the confirmation flow; keeps the visibility gate in one place. */
 export async function loadVisibleHazard(
   ctx: QueryCtx,
   hazardId: Id<'hazards'>,
 ): Promise<Doc<'hazards'> | null> {
   const hazard = await ctx.db.get(hazardId)
-  if (hazard?.moderationStatus !== 'visible') return null
-  return hazard
+  return isUserVisibleHazard(hazard) ? hazard : null
 }

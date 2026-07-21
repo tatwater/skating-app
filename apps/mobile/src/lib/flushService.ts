@@ -105,9 +105,9 @@ function hazardEffects(): HazardFlushEffects {
       await convex.mutation(api.hazardConfirmations.confirm, {
         hazardId: input.hazardId as Id<'hazards'>,
         verdict: input.verdict,
-        // Queued confirmations were cast on the ice, so the trigger that produced them was a
-        // proximity alert or the drawer reached from one — either way the skater was standing there.
-        via: 'proximity_alert',
+        // Carry the real trigger through — a drawer confirmation must not masquerade as a stronger
+        // proximity_alert just because it queued offline (the origin is preserved on the queue item).
+        via: input.via,
         ...(input.atCoord ? { atCoord: input.atCoord } : {}),
         observedAt: input.observedAt,
       })

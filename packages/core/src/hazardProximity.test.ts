@@ -191,6 +191,26 @@ describe('evaluateOnIceAlert — degenerate inputs', () => {
     evaluateOnIceAlert(CENTRE, [hazard('h2', CENTRE)], alerted)
     expect([...alerted]).toEqual(['h1'])
   })
+
+  // The safety-defensive path: a single malformed cached row (one whose distance can't be computed)
+  // must be skipped, never take out the alerts for every *other* hazard on the lake. Losing one pin is
+  // bad; going silent on a whole lake because one row is bad is a safety failure.
+  it('skips a row whose distance throws and still alerts on the rest', () => {
+    // A line shape with a degenerate (single-point) geometry makes the footprint math throw.
+    const malformed: ProximityHazard = {
+      id: 'bad',
+      type: 'pressure_ridge',
+      shape: {
+        geometryKind: 'line',
+        geometry: { type: 'LineString', coordinates: [[CENTRE.lng, CENTRE.lat]] },
+        bufferMeters: 10,
+      },
+      confirmCount: 1,
+    }
+    const good = hazard('good', CENTRE, { confirmCount: 1 })
+    const alerts = evaluateOnIceAlert(CENTRE, [malformed, good], NONE)
+    expect(alerts.map((a) => a.hazardId)).toEqual(['good'])
+  })
 })
 
 describe('isInsideHazard', () => {

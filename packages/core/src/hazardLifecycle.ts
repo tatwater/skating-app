@@ -68,10 +68,11 @@ export interface ApplyConfirmationOptions {
  *
  * ⚠ **This is the incremental single-vote model, and it is NOT how the counts are maintained in
  * storage.** Counts persisted on a hazard are *derived* from the whole vote set by
- * `deriveHazardLifecycle` — see the note there for why. This function survives as the property-tested
- * statement of what a single verdict *means*, and as the primitive `deriveHazardLifecycle` folds over,
- * but a server must never call it directly to bump a stored counter: incrementing per vote row can't
- * see that two rows came from the same account, which is exactly the D3 hole derivation closes.
+ * `deriveHazardLifecycle` — see the note there for why. This function survives only as the
+ * property-tested statement of what a single verdict *means* (and its monotonic-clock rule); it is
+ * **not** what `deriveHazardLifecycle` calls — that computes the counts with its own distinct-user
+ * loop. A server must never call this to bump a stored counter: incrementing per vote row can't see
+ * that two rows came from the same account, which is exactly the D3 hole derivation closes.
  */
 export function applyConfirmation(
   state: HazardLifecycleState,

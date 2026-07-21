@@ -12,8 +12,9 @@
  * the clock but counts toward neither threshold, so one person can't both plant a pin and promote it
  * into a warning for everyone else on that ice (D54).
  *
- * All the actual state math lives in `@skating/core`'s `applyConfirmation`, property-tested there —
- * this module is the persistence and gating shell around it.
+ * All the actual state math lives in `@skating/core`'s `deriveHazardLifecycle`, property-tested there —
+ * this module upserts the skater's one vote row and asks core to recompute the hazard from the full
+ * vote set. It is the persistence and gating shell around that.
  */
 
 import { deriveHazardLifecycle, type HazardVoteRecord, isMinor } from '@skating/core'
@@ -112,16 +113,24 @@ export const confirm = mutation({
   },
 })
 
-/** This user's single vote on a hazard, if any. One row per user per hazard is an invariant. */
+/**
+ * This user's current vote on a hazard, if any. `confirm` keeps one row per (user, hazard), so there is
+ * normally at most one — but we `collect()` and take the latest rather than `.unique()` on purpose:
+ * `.unique()` *throws* if a stray duplicate ever exists (a pre-invariant row, a backfill), which would
+ * brick `confirm` for that hazard entirely. Tolerating duplicates keeps the mutation robust; the count
+ * derivation already collapses multiple rows per user to their latest, so the counts stay correct.
+ */
 async function findUserVote(
   ctx: MutationCtx,
   hazardId: Id<'hazards'>,
   userId: Id<'profiles'>,
 ): Promise<Doc<'hazardConfirmations'> | null> {
-  return ctx.db
+  const rows = await ctx.db
     .query('hazardConfirmations')
     .withIndex('by_hazard_and_user', (q) => q.eq('hazardId', hazardId).eq('userId', userId))
-    .unique()
+    .collect()
+  if (rows.length === 0) return null
+  return rows.reduce((latest, row) => (row.createdAt >= latest.createdAt ? row : latest))
 }
 
 /** Re-derive the hazard's lifecycle from every vote and patch the stored counts/status. */

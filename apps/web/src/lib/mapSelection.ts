@@ -8,9 +8,9 @@
  * anything else (the `/` map, or a non-map route) is `none` — no drawer, no selection highlight.
  *
  * `/hazard/$id` (Phase 9) is deep-linkable for the same reason the others are, plus one specific to
- * safety content: it is the target of the `skating://hazard/<id>?action=confirm` deep link that a
- * future on-ice notification tap lands on (D54 Layer 2), so the route grammar exists before the
- * notification that uses it.
+ * safety content: it is the target a future on-ice notification tap will land on (D54 Layer 2), so the
+ * route grammar exists before the notification that uses it. The eventual `?action=confirm` query param
+ * (focus the confirm control) is **not parsed yet** — only the route + `skating://` scheme are wired.
  */
 
 export type MapSelection =

@@ -78,6 +78,14 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
 
 const POINT = { type: 'Point' as const, coordinates: [0.5, 0.5] }
 
+const LINE = {
+  type: 'LineString' as const,
+  coordinates: [
+    [0.4, 0.4],
+    [0.6, 0.6],
+  ],
+}
+
 /** A member-authored hazard, the realistic input to a promotion (admins promote others' pins). */
 async function seedHazard(t: ReturnType<typeof convexTest>, waterBodyId: Id<'waterBodies'>) {
   const author = await seedUser(t, 'hazard-author')
@@ -87,6 +95,18 @@ async function seedHazard(t: ReturnType<typeof convexTest>, waterBodyId: Id<'wat
     geometryKind: 'point_radius' as const,
     geometry: POINT,
     radiusMeters: 25,
+  })
+}
+
+/** A polyline-traced ridge — the true shape of a `pressure_ridge`, and the case promote regressed on. */
+async function seedLineHazard(t: ReturnType<typeof convexTest>, waterBodyId: Id<'waterBodies'>) {
+  const author = await seedUser(t, 'ridge-author')
+  return author.as.mutation(api.hazards.create, {
+    waterBodyId,
+    type: 'pressure_ridge' as const,
+    geometryKind: 'line' as const,
+    geometry: LINE,
+    bufferMeters: 15,
   })
 }
 
@@ -230,6 +250,54 @@ describe('bodyFeatures.promote', () => {
     expect(listed).toHaveLength(0)
   })
 
+  // The regression this whole schema change fixed: a polyline-traced recurring ridge — the flagship
+  // D53 promotion target — must promote, carrying its line geometry and buffer, not throw.
+  test('promotes a line-geometry ridge, preserving its primitive and buffer', async () => {
+    const t = harness()
+    const admin = await seedUser(t, 'admin', 'admin')
+    const waterBodyId = await seedBody(t)
+    const hazardId = await seedLineHazard(t, waterBodyId)
+
+    const featureId = await admin.as.mutation(api.bodyFeatures.promote, {
+      hazardId,
+      type: 'recurring_pressure_ridge',
+      reason: 'reforms here annually',
+    })
+
+    const feature = await t.run((ctx) => ctx.db.get(featureId))
+    expect(feature?.geometryKind).toBe('line')
+    expect(feature?.bufferMeters).toBe(15)
+    expect(feature?.geometry).toMatchObject({ type: 'LineString' })
+    // Its footprint bbox matches the source hazard's (same shape + buffer, just a different table).
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId))
+    expect(feature?.bbox).toEqual(hazard?.bbox)
+  })
+
+  // A promoted hazard must be off *every* user surface, not just the map list — a deep link to it
+  // resolves to nothing and it can't be confirmed (the feature carries the warning now).
+  test('a promoted hazard is not gettable or confirmable', async () => {
+    const t = harness()
+    const admin = await seedUser(t, 'admin', 'admin')
+    const skater = await seedUser(t, 'skater')
+    const waterBodyId = await seedBody(t)
+    const hazardId = await seedHazard(t, waterBodyId)
+
+    await admin.as.mutation(api.bodyFeatures.promote, {
+      hazardId,
+      type: 'recurring_pressure_ridge',
+      reason: 'recurs annually',
+    })
+
+    expect(await skater.as.query(api.hazards.get, { hazardId })).toBeNull()
+    await expect(
+      skater.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId,
+        verdict: 'still_there',
+        via: 'app_open_nearby',
+      }),
+    ).rejects.toThrow(/not found/i)
+  })
+
   test('demoting the feature un-supersedes the source hazard so it returns intact', async () => {
     const t = harness()
     const admin = await seedUser(t, 'admin', 'admin')
@@ -251,6 +319,8 @@ describe('bodyFeatures.promote', () => {
     expect(hazard?.status).toBe('active')
     const listed = await admin.as.query(api.hazards.listForBody, { waterBodyId })
     expect(listed).toHaveLength(1)
+    // ...and it's gettable again.
+    expect(await admin.as.query(api.hazards.get, { hazardId })).not.toBeNull()
   })
 
   test('carries the hazard geometry across unchanged', async () => {
