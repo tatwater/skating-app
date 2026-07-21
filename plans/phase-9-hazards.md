@@ -133,6 +133,14 @@ The safety-sensitive math lives here, property-tested, before any UI:
   excluded.
 - **`hazardGeometry.ts`** — `pointRadiusToPolygon` (buffer a point, for bbox + render), `hazardBbox`,
   and `distanceToHazard(coord, hazard)` reusing `geometry.ts` (`pointInPolygon`, buffered distance).
+- **`hazardDraft.ts`** — the *authoring* state machine, shared by both platforms: the `HazardDraft`
+  union (a circle awaiting a centre / a polyline collecting vertices), `draftForType` +
+  `retypeDraft` (primitive and default size follow the hazard's real-world shape),
+  `applyDraftMapClick` / `undoDraftPlacement` / `resizeDraft` / `switchDraftKind`, and
+  `draftToShape` — the **single** gate deciding a draft is storable, delegating to
+  `isValidHazardShape`. A half-drawn line and an unplaced circle are deliberately representable and
+  deliberately not submittable: a polyline is captured one tap at a time, so "half a line" is a
+  normal intermediate the UI must hold and render, not a crash.
 - **`hazardProximity.ts`** (Layer 1, client-consumed) — `evaluateOnIceAlert(coord, hazards, alerted)` →
   the set of hazards within alert buffer, split provisional (→ "confirm?") vs confirmed (→ "ahead"),
   minus already-alerted-this-session. Pure so it's testable and identical on web/mobile.
@@ -285,8 +293,15 @@ Per the founder's call (2026-07-18): **all in one PR**, online-first commits fir
    `geometryKind`, `healingState`), enum plumbing, migrations, then hazards / confirmations /
    bodyFeatures functions + `convex-test`.
 3. **Web — point+radius** — map layer + authoring + three-tier detail (online).
-4. **Web + mobile — polyline** — tap-to-add-vertex authoring for `pressure_ridge` / `wet_crack`
-   (call 5; explicitly *not* cut, just sequenced after the pipeline is green).
+4. **Polyline** — tap-to-add-vertex authoring for `pressure_ridge` / `ice_heave` / `wet_crack`
+   (call 5; explicitly *not* cut, just sequenced after the pipeline is green). The whole authoring
+   state machine lands in **`@skating/core/hazardDraft.ts`** (draft union, map-click/undo/resize/
+   switch-primitive transitions, `draftToShape` as the single "done enough" gate), with web wiring it
+   to MapLibre. **The mobile half moves into commit 5**, where the hazard capture UI is actually
+   built — there was nothing in `apps/mobile` for a polyline to attach to at this point, and the
+   shared reducer is the part that had to exist first. Mobile inherits the transitions rather than
+   reimplementing them, which is what keeps "what counts as a valid hazard" from drifting per platform.
+   Either primitive is offered for any type (you may only know the one spot on a ridge you crossed).
 5. **Mobile online** — on-ice FAB + flag flow + hazard drawer + Layer-0 sync + Layer-1 foreground
    proximity banners + the `skating://hazard/<id>` deep link.
 6. **Auto-bundle (D55)** — report form offers the author's unattached on-ice hazards.

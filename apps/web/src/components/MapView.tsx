@@ -1,6 +1,12 @@
 import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
-import type { BBox } from '@skating/core'
+import {
+  applyDraftMapClick,
+  type BBox,
+  draftPlacementCount,
+  isDraftSubmittable,
+  undoDraftPlacement,
+} from '@skating/core'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from 'convex/react'
 import maplibregl from 'maplibre-gl'
@@ -11,9 +17,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { env } from '../lib/env'
 import {
   bodyFeaturesToFeatureCollection,
-  DEFAULT_DRAFT_RADIUS_M,
   HAZARD_PALETTE,
   hazardColorExpression,
+  hazardDraftToFeatureCollection,
   hazardFillOpacityExpression,
   hazardsToFeatureCollection,
 } from '../lib/hazardMap'
@@ -70,6 +76,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setPinDropMode,
     hazardDraft,
     setHazardDraft,
+    hazardDraftType,
     hazardDropMode,
     setHazardDropMode,
   } = useMapSelection()
@@ -95,15 +102,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   setPinDropModeRef.current = setPinDropMode
   const hazardDropModeRef = useRef(hazardDropMode)
   hazardDropModeRef.current = hazardDropMode
-  const setHazardDropModeRef = useRef(setHazardDropMode)
-  setHazardDropModeRef.current = setHazardDropMode
-  // Placing a hazard keeps whatever radius the draft already has (or the caller's default), so
-  // re-placing the centre never silently resets a size the skater has already adjusted.
-  const setHazardCentreRef = useRef((coord: { lat: number; lng: number }) => {
-    setHazardDraft({ coord, radiusMeters: hazardDraft?.radiusMeters ?? DEFAULT_DRAFT_RADIUS_M })
-  })
-  setHazardCentreRef.current = (coord) => {
-    setHazardDraft({ coord, radiusMeters: hazardDraft?.radiusMeters ?? DEFAULT_DRAFT_RADIUS_M })
+  // A map click in hazard-drop mode. The two primitives differ only in what happens *after*: a
+  // circle is placed by one click and disarms, a polyline takes one vertex per click and stays armed
+  // until Done — so the map keeps the click and the form isn't in the way for the whole draw.
+  // All the state math is `@skating/core`'s, shared with mobile; this only wires it to the canvas.
+  const handleHazardClickRef = useRef((_coord: { lat: number; lng: number }) => {})
+  handleHazardClickRef.current = (coord) => {
+    if (!hazardDraft) return
+    setHazardDraft(applyDraftMapClick(hazardDraft, coord))
+    if (hazardDraft.geometryKind === 'point_radius') setHazardDropMode(false)
   }
 
   const pmtilesUrl = env.pmtilesUrl || DEMO_PMTILES_URL
@@ -342,20 +349,43 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'line-dasharray': [4, 2],
         },
       })
-      // The hazard footprint being authored — rendered as the real metric circle so the skater sizes
-      // it against the lake, not against a fixed-pixel dot.
+      // The hazard being authored — rendered as the real metric footprint (circle or buffered band)
+      // so the skater sizes it against the lake, not against a fixed-pixel dot. Colour runs through
+      // the same expression as saved hazards, so a `ridge_crossing` previews green rather than red.
       map.addSource('hazard-draft', { type: 'geojson', data: EMPTY_FEATURES })
       map.addLayer({
         id: 'hazard-draft-fill',
         type: 'fill',
         source: 'hazard-draft',
-        paint: { 'fill-color': hazardPalette.danger, 'fill-opacity': 0.35 },
+        paint: {
+          'fill-color': hazardColorExpression(hazardPalette) as maplibregl.ExpressionSpecification,
+          'fill-opacity': 0.35,
+        },
       })
       map.addLayer({
         id: 'hazard-draft-outline',
         type: 'line',
         source: 'hazard-draft',
-        paint: { 'line-color': hazardPalette.danger, 'line-width': 2 },
+        paint: {
+          'line-color': hazardColorExpression(hazardPalette) as maplibregl.ExpressionSpecification,
+          'line-width': 2,
+        },
+      })
+      // The clicked vertices themselves. A polyline's first click produces no band yet (one point
+      // isn't a line), so without these dots the draw would begin with no feedback at all.
+      map.addLayer({
+        id: 'hazard-draft-vertices',
+        type: 'circle',
+        source: 'hazard-draft',
+        filter: ['==', ['get', 'role'], 'vertex'],
+        paint: {
+          'circle-radius': 5,
+          'circle-color': hazardColorExpression(
+            hazardPalette,
+          ) as maplibregl.ExpressionSpecification,
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
       })
       setLoaded(true)
       syncViewport() // first query, framed on the initial view
@@ -371,8 +401,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         return
       }
       if (hazardDropModeRef.current) {
-        setHazardCentreRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng })
-        setHazardDropModeRef.current(false)
+        handleHazardClickRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng })
         return
       }
       // Hazards sit above water bodies in hit-testing: a hazard footprint always lies *inside* a
@@ -452,30 +481,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     source?.setData(bodyFeaturesToFeatureCollection(bodyFeatures ?? []))
   }, [bodyFeatures, loaded])
 
-  // The hazard footprint being authored — a real metric circle, updated live as the radius changes.
+  // The hazard being authored — a real metric footprint, updated live as vertices land and the size
+  // changes, so what you see while drawing is what gets stored.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !loaded) return
     const source = map.getSource('hazard-draft') as maplibregl.GeoJSONSource | undefined
-    source?.setData(
-      hazardDraft
-        ? hazardsToFeatureCollection([
-            {
-              _id: 'draft',
-              type: 'open_water',
-              geometryKind: 'point_radius',
-              geometry: {
-                type: 'Point',
-                coordinates: [hazardDraft.coord.lng, hazardDraft.coord.lat],
-              },
-              radiusMeters: hazardDraft.radiusMeters,
-              freshness: 'fresh',
-              provisional: false,
-            },
-          ])
-        : EMPTY_FEATURES,
-    )
-  }, [hazardDraft, loaded])
+    source?.setData(hazardDraftToFeatureCollection(hazardDraft, hazardDraftType))
+  }, [hazardDraft, hazardDraftType, loaded])
 
   // Fly to a drawer's focus (a lake centroid / report put-in) when it changes.
   useEffect(() => {
@@ -550,16 +563,49 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         ref={containerRef}
         className="h-[75vh] w-full overflow-hidden rounded-lg border border-border"
       />
+      {/* The drawing bar. A circle needs one click and no controls, so it just says so; a polyline
+          is a multi-click session and gets its own Undo/Done, kept on the map rather than in the
+          form because the form is hidden for the whole draw. */}
       {hazardDropMode ? (
-        <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-3 rounded-t-lg bg-destructive px-4 py-2 text-destructive-foreground text-sm shadow">
-          <span>Click the map where the hazard is.</span>
-          <button
-            type="button"
-            className="rounded-md bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30"
-            onClick={() => setHazardDropMode(false)}
-          >
-            Cancel
-          </button>
+        <div className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center justify-center gap-3 rounded-t-lg bg-destructive px-4 py-2 text-destructive-foreground text-sm shadow">
+          {hazardDraft?.geometryKind === 'line' ? (
+            <>
+              <span>
+                Click along the hazard to trace it. {draftPlacementCount(hazardDraft)}{' '}
+                {draftPlacementCount(hazardDraft) === 1 ? 'point' : 'points'} —{' '}
+                {isDraftSubmittable(hazardDraft)
+                  ? 'looking good'
+                  : 'at least two are needed for a line'}
+                .
+              </span>
+              <button
+                type="button"
+                className="rounded-md bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30 disabled:opacity-50"
+                disabled={draftPlacementCount(hazardDraft) === 0}
+                onClick={() => setHazardDraft(undoDraftPlacement(hazardDraft))}
+              >
+                Undo point
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30"
+                onClick={() => setHazardDropMode(false)}
+              >
+                Done
+              </button>
+            </>
+          ) : (
+            <>
+              <span>Click the map where the hazard is.</span>
+              <button
+                type="button"
+                className="rounded-md bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30"
+                onClick={() => setHazardDropMode(false)}
+              >
+                Cancel
+              </button>
+            </>
+          )}
         </div>
       ) : null}
       {pinDropMode ? (

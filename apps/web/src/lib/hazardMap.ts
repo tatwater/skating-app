@@ -13,6 +13,9 @@
  */
 
 import {
+  draftToShape,
+  draftVertices,
+  type HazardDraft,
   type HazardFreshness,
   type HazardShape,
   type HazardType,
@@ -167,11 +170,48 @@ export const FRESHNESS_FILL_OPACITY: Record<HazardFreshness, number> = {
 export const PROVISIONAL_OPACITY_SCALE = 0.6
 
 /**
- * The radius a fresh draft starts at before a type is chosen, in metres. Once the skater picks a
- * type the form swaps in that type's own default (`HAZARD_DEFAULT_RADIUS_M`); this only covers the
- * moment between placing a pin and choosing what it is.
+ * The hazard being authored → the draft source.
+ *
+ * Two kinds of feature come out, because a polyline is drawn one click at a time and the half-drawn
+ * states have to be visible:
+ *
+ * - a **footprint** polygon, but only once `draftToShape` says the draft is storable — so the preview
+ *   is the buffered band that would actually be saved, at the same width, computed by the same math.
+ *   A one-vertex line has no honest footprint, so it doesn't get a fake one.
+ * - a **vertex** point per click, always. Without these, the first click on a line would land with no
+ *   feedback at all and the second would appear to come from nowhere.
+ *
+ * `passage` rides along so a `ridge_crossing` draft previews in its own positive-but-cautious green
+ * rather than danger red — you should not watch yourself draw a warning while marking a way across.
  */
-export const DEFAULT_DRAFT_RADIUS_M = 40
+export function hazardDraftToFeatureCollection(
+  draft: HazardDraft | null,
+  type: HazardType | null,
+): GeoJSON.FeatureCollection {
+  if (!draft) return { type: 'FeatureCollection', features: [] }
+  const passage = type !== null && isPassageMarker(type)
+  const shape = draftToShape(draft)
+  const footprint = shape
+    ? [
+        {
+          type: 'Feature' as const,
+          geometry: hazardFootprint(shape),
+          properties: { role: 'footprint', passage, healing: false },
+        },
+      ]
+    : []
+  return {
+    type: 'FeatureCollection',
+    features: [
+      ...footprint,
+      ...draftVertices(draft).map((v) => ({
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [v.lng, v.lat] },
+        properties: { role: 'vertex', passage, healing: false },
+      })),
+    ],
+  }
+}
 
 /** The MapLibre data-driven expression for hazard fill opacity. */
 export function hazardFillOpacityExpression(): unknown[] {

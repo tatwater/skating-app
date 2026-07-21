@@ -1,11 +1,18 @@
+import { applyDraftMapClick, draftForType, resizeDraft } from '@skating/core'
 import { describe, expect, it } from 'vitest'
 import {
   bodyFeaturesToFeatureCollection,
   FRESHNESS_FILL_OPACITY,
+  HAZARD_PALETTE,
+  hazardColorExpression,
+  hazardDraftToFeatureCollection,
   hazardFillOpacityExpression,
   hazardsToFeatureCollection,
   type MappableHazard,
 } from './hazardMap'
+
+const A = { lat: 44.4759, lng: -73.2121 }
+const B = { lat: 44.481, lng: -73.204 }
 
 function hazard(overrides: Partial<MappableHazard> = {}): MappableHazard {
   return {
@@ -130,5 +137,93 @@ describe('freshness styling', () => {
     expect(JSON.stringify(expr)).toContain('fresh')
     expect(JSON.stringify(expr)).toContain('aging')
     expect(expr[0]).toBe('*')
+  })
+})
+
+describe('hazardDraftToFeatureCollection', () => {
+  it('renders nothing when nothing is being authored', () => {
+    expect(hazardDraftToFeatureCollection(null, null).features).toEqual([])
+  })
+
+  it('shows a vertex the moment it is clicked, before any shape exists', () => {
+    const draft = applyDraftMapClick(draftForType('pressure_ridge'), A)
+    const fc = hazardDraftToFeatureCollection(draft, 'pressure_ridge')
+    // One vertex is not yet a line, so there is no footprint — but the click must still be visible,
+    // or a polyline would begin with no feedback at all.
+    expect(fc.features.map((f) => f.properties?.role)).toEqual(['vertex'])
+    expect(fc.features[0]?.geometry.type).toBe('Point')
+  })
+
+  it('adds the buffered band once the line is storable, keeping the vertices', () => {
+    const draft = applyDraftMapClick(applyDraftMapClick(draftForType('pressure_ridge'), A), B)
+    const fc = hazardDraftToFeatureCollection(draft, 'pressure_ridge')
+    expect(fc.features.map((f) => f.properties?.role)).toEqual(['footprint', 'vertex', 'vertex'])
+    const footprint = fc.features[0]?.geometry
+    expect(footprint?.type === 'Polygon' || footprint?.type === 'MultiPolygon').toBe(true)
+  })
+
+  // The preview must be the shape that would be *saved*, at the width that would be saved — this is
+  // the whole reason the draft goes through the same `hazardFootprint` the server and the proximity
+  // evaluator use.
+  it('grows the previewed band when the width stepper is pressed', () => {
+    let draft = applyDraftMapClick(applyDraftMapClick(draftForType('wet_crack'), A), B)
+    const narrow = hazardDraftToFeatureCollection(draft, 'wet_crack')
+    draft = resizeDraft(draft, 1)
+    const wide = hazardDraftToFeatureCollection(draft, 'wet_crack')
+    expect(area(wide)).toBeGreaterThan(area(narrow))
+  })
+
+  it('renders a placed circle as its metric footprint', () => {
+    const draft = applyDraftMapClick(draftForType('open_water'), A)
+    const fc = hazardDraftToFeatureCollection(draft, 'open_water')
+    expect(fc.features.map((f) => f.properties?.role)).toEqual(['footprint', 'vertex'])
+  })
+
+  // Watching yourself draw a warning while marking a way *across* a ridge would be actively wrong,
+  // so the draft carries `passage` into the same colour expression saved hazards use (research §4).
+  it('flags a ridge_crossing draft as a passage marker, not a danger', () => {
+    const draft = applyDraftMapClick(draftForType('ridge_crossing'), A)
+    for (const f of hazardDraftToFeatureCollection(draft, 'ridge_crossing').features) {
+      expect(f.properties).toMatchObject({ passage: true, healing: false })
+    }
+    const danger = applyDraftMapClick(draftForType('open_water'), A)
+    for (const f of hazardDraftToFeatureCollection(danger, 'open_water').features) {
+      expect(f.properties).toMatchObject({ passage: false })
+    }
+  })
+})
+
+/** Crude bbox area of a feature collection — enough to compare a narrow band against a wide one. */
+function area(fc: GeoJSON.FeatureCollection): number {
+  const coords = fc.features.flatMap((f) =>
+    f.geometry.type === 'Polygon' ? f.geometry.coordinates.flat() : [],
+  )
+  const lngs = coords.map(([lng]) => lng ?? 0)
+  const lats = coords.map(([, lat]) => lat ?? 0)
+  return (Math.max(...lngs) - Math.min(...lngs)) * (Math.max(...lats) - Math.min(...lats))
+}
+
+describe('hazardColorExpression', () => {
+  // Order matters: a passage marker is checked first, so `ridge_crossing` can never fall through to
+  // the danger colour — "⚠" on a way *across* a ridge would be actively wrong (research §4).
+  it('resolves passage before healing before danger', () => {
+    const expr = hazardColorExpression(HAZARD_PALETTE.white)
+    expect(expr).toEqual([
+      'case',
+      ['get', 'passage'],
+      HAZARD_PALETTE.white.passage,
+      ['get', 'healing'],
+      HAZARD_PALETTE.white.healing,
+      HAZARD_PALETTE.white.danger,
+    ])
+  })
+
+  // Danger / healing / passage mean three different things to someone standing on ice, so they must
+  // never resolve to the same colour in either theme (D34).
+  it('keeps danger, healing and passage visually distinct in both themes', () => {
+    for (const palette of [HAZARD_PALETTE.white, HAZARD_PALETTE.dark]) {
+      const { danger, healing, passage } = palette
+      expect(new Set([danger, healing, passage]).size).toBe(3)
+    }
   })
 })
