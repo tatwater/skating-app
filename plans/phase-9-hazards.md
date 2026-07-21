@@ -370,7 +370,14 @@ evidence rather than re-deriving it:
   GPS, sizing and Done work, and the whole flow queues offline. What's lost without tiles is *tapping
   the map* — Move and Trace — so a no-basemap capture is a GPS-anchored circle. That is the documented
   degrade, and it is the common case working.
-8. Then open the PR (Greptile metered — review once, whole phase).
+8. **Hazard photos** — the camera step on both platforms, closing the gap logged during commit 5.
+   Web extracts `usePhotoDrafts` (the checkpointed upload + reclaim-on-abandon sweep) out of
+   `ReportForm` so both forms share one copy of that delicate lifecycle; mobile persists picked
+   photos to disk *at pick time*, so the same records feed the online upload and the offline queue.
+   Neither platform offers `placeOnMap` on a hazard photo: the hazard already has a location, and a
+   photo's EXIF coord contradicting the footprint the alert measures against would be worse than
+   useless — so the coord is dropped, not carried.
+9. Then open the PR (Greptile metered — review once, whole phase).
 
 ---
 
@@ -393,14 +400,22 @@ evidence rather than re-deriving it:
 - **Admin tuning surface** (per-type decay durations, confirm/removal thresholds, bodyFeatures
   promotion/demotion, `hazard` flag queue) — Phase 7 (D49-style); Phase 9 ships tuned constants + the
   admin *mutations*, Phase 7 adds the UI.
-- **Silent background sync to a closed app** (content-available push to refresh the cache) — nice-to-have
-  in the offline commits, not a v1 blocker.
-- **On-ice hazard photos — NOT BUILT** (gap, 2026-07-21). The plan calls photos "encouraged, plural,
-  and skippable" on the mobile flag flow (research §6: ~40% of corpus posts carry photos, and folded
-  ridges are notoriously hard to describe), but the mobile capture flow ships without a camera step.
-  The plumbing is all in place — `hazards.photoIds[]`, web's authoring, the multi-photo pipeline, and
-  `QueuedHazard.photos` with a tested checkpointed upload path — so this is a UI addition, not a
-  reshape. Web hazard photos are likewise wired server-side but not surfaced in the authoring form.
+- **Silent background sync to a closed app** (content-available push to refresh the cache) — **still
+  deferred, and it is much larger than its one-line entry suggests** (assessed 2026-07-21). It is not
+  a Phase 9 loose end; it's the first user of a push stack this project has deliberately deferred
+  twice. Concretely, the repo has **no push infrastructure at all**: `expo-notifications` isn't
+  installed (build-kickoff call 4 explicitly kept new native deps out of v1), there are no device
+  push tokens, no APNs/FCM credentials, and `notifications.ts` says outright that "push delivery
+  itself is deferred" — Phase 3 and Phase 4 both land **in-app rows only**, and Phase 4's
+  `coalesceKey` is described as seeding a collapse-id for "a later push layer". Delivering a
+  content-available push would mean building that whole layer: the dep + native config, token
+  registration and storage, credentials on both stores, a server-side sender, and a background
+  handler — plus iOS throttles silent pushes at its own discretion, so the resulting refresh is
+  best-effort by design and can't be relied on for safety content. **Recommendation: build it with
+  the push layer (D54 Layer 2, which needs `expo-notifications` anyway), not as an offline tweak.**
+  Nothing in Phase 9 depends on it: hazards for a lake sync reactively whenever the app is open, and
+  the offline queue covers the capture direction.
+- ~~On-ice hazard photos~~ — ✅ **BUILT 2026-07-21** (see the commit below); no longer deferred.
 - **Layer-3 offline basemap tile-pack** — dropped from Phase 9 with findings recorded above; revisit
   alongside the device-build pass.
 

@@ -19,8 +19,20 @@ const B = { lat: 44.481, lng: -73.204 }
  * form drives. `place` stands in for the map clicks the fields themselves never handle (MapView owns
  * the canvas) — the fields only ever *request* placement.
  */
-function renderFields(initial: { type?: HazardType | null; draft?: HazardDraft | null } = {}) {
-  const spies = { onRequestPlace: vi.fn(), onSubmit: vi.fn(), onCancel: vi.fn() }
+function renderFields(
+  initial: {
+    type?: HazardType | null
+    draft?: HazardDraft | null
+    photos?: { id: string; previewUrl: string; placeOnMap: boolean }[]
+  } = {},
+) {
+  const spies = {
+    onRequestPlace: vi.fn(),
+    onSubmit: vi.fn(),
+    onCancel: vi.fn(),
+    onAddFiles: vi.fn(),
+    onRemovePhoto: vi.fn(),
+  }
   let latest: { type: HazardType | null; draft: HazardDraft | null }
   function Wrapper() {
     const [type, setType] = useState<HazardType | null>(initial.type ?? null)
@@ -33,6 +45,7 @@ function renderFields(initial: { type?: HazardType | null; draft?: HazardDraft |
         description=""
         error={null}
         submitting={false}
+        photos={initial.photos ?? []}
         onChooseType={(next) => {
           setType(next)
           setDraft(draftForType(next))
@@ -161,5 +174,46 @@ describe('point+radius authoring', () => {
     expect(draft && 'radiusMeters' in draft ? draft.radiusMeters : 0).toBeGreaterThan(
       HAZARD_DEFAULT_RADIUS_M.open_water,
     )
+  })
+})
+
+describe('photos', () => {
+  // Ice hazards are intensely visual and notoriously hard to describe — "folded ridges are hard to
+  // see" is a recurring cause of death (research §2/§6) — so the photo affordance has to be present
+  // and obviously optional, not buried.
+  it('offers photos, and says why they help', () => {
+    renderFields({ type: 'open_water', draft: draftForType('open_water') })
+    expect(screen.getByLabelText('Photos (optional)')).toBeInTheDocument()
+    expect(screen.getByText(/helps the next skater recognise it/)).toBeInTheDocument()
+  })
+
+  it('never blocks posting on a photo', () => {
+    renderFields({
+      type: 'open_water',
+      draft: applyDraftMapClick(draftForType('open_water'), A),
+    })
+    expect(screen.getByRole('button', { name: 'Post hazard' })).toBeEnabled()
+  })
+
+  it('previews attached photos and lets each be removed', () => {
+    const { spies } = renderFields({
+      type: 'open_water',
+      draft: applyDraftMapClick(draftForType('open_water'), A),
+      photos: [{ id: 'p1', previewUrl: 'blob:one', placeOnMap: false }],
+    })
+    expect(screen.getByAltText('Upload preview')).toHaveAttribute('src', 'blob:one')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(spies.onRemovePhoto).toHaveBeenCalledWith('p1')
+  })
+
+  // A hazard already *has* a location. Offering a second, EXIF-derived one would invite a photo's
+  // coord to contradict the footprint the proximity alert measures against.
+  it('has no place-on-map control — the hazard already has a location', () => {
+    renderFields({
+      type: 'open_water',
+      draft: applyDraftMapClick(draftForType('open_water'), A),
+      photos: [{ id: 'p1', previewUrl: 'blob:one', placeOnMap: false }],
+    })
+    expect(screen.queryByText(/Place this photo/)).not.toBeInTheDocument()
   })
 })

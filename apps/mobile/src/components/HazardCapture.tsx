@@ -4,6 +4,7 @@ import {
   applyDraftMapClick,
   classifyFlushError,
   createQueuedHazard,
+  type DraftPhoto,
   draftPlacementCount,
   draftToShape,
   HAZARD_TYPE_LABELS,
@@ -20,10 +21,12 @@ import { useMutation } from 'convex/react'
 import { randomUUID } from 'expo-crypto'
 import * as Location from 'expo-location'
 import { useState } from 'react'
-import { Modal } from 'react-native'
+import { Image, Modal } from 'react-native'
 import { Button, H4, Paragraph, ScrollView, Text, XStack, YStack } from 'tamagui'
+import { deleteDraftPhotoFiles, persistDraftPhoto } from '../lib/draftPhotos'
 import { saveHazardItem } from '../lib/draftStore'
 import { useMapSelection } from './MapSelectionContext'
+import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline'
 
 /**
  * On-ice hazard capture (Phase 9, D51 §Mobile) — the FAB, the type sheet, and the adjust bar.
@@ -49,6 +52,8 @@ import { useMapSelection } from './MapSelectionContext'
 /** Steppers, not a slider. Sliders are miserable with gloves on. */
 export function HazardCapture() {
   const createHazard = useMutation(api.hazards.create)
+  const generateUploadUrl = useMutation(api.photos.generateUploadUrl)
+  const createPhoto = useMutation(api.photos.create)
   const {
     onIceWaterBodyId,
     highlightWaterBodyId,
@@ -63,14 +68,25 @@ export function HazardCapture() {
   const [picking, setPicking] = useState(false)
   const [showAllTypes, setShowAllTypes] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [addingPhotos, setAddingPhotos] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  /**
+   * Photos, held as offline draft photos from the moment they're picked.
+   *
+   * They're copied straight into persistent storage rather than staged in memory or left in the
+   * picker cache, because on the ice the offline path is the *likely* one — and a hazard that queues
+   * for hours must not have its images evicted by the OS before it sends. It also means one shape
+   * feeds both paths: upload these uris now, or hand the same records to the queue.
+   */
+  const [photos, setPhotos] = useState<DraftPhoto[]>([])
 
   // Flag against the lake the skater is standing on; fall back to whichever lake they have open, so
   // the affordance still works when browsing from the couch.
   const targetBodyId = onIceWaterBodyId ?? highlightWaterBodyId
 
   function reset() {
+    setPhotos([])
     setHazardDraft(null)
     setHazardDraftType(null)
     setHazardDropMode(false)
@@ -109,6 +125,59 @@ export function HazardCapture() {
    * The key is minted here, at capture, and travels with the queued item: that's what makes a
    * lost-ack retry return the original pin instead of dropping a second one beside it.
    */
+  async function addPhotos() {
+    setAddingPhotos(true)
+    setError(null)
+    try {
+      const assets = await pickPhotos()
+      const added = await Promise.all(
+        assets.map(async (asset) => {
+          const processed = await processPhoto(asset)
+          const id = randomUUID()
+          // Copy the stripped output out of the evictable picker cache immediately.
+          const [fullUri, thumbUri] = await Promise.all([
+            persistDraftPhoto(processed.fullUri, `hazard-${id}-full.jpg`),
+            persistDraftPhoto(processed.thumbUri, `hazard-${id}-thumb.jpg`),
+          ])
+          // No `placeOnMap` opt-in here, unlike report photos: the hazard already *has* a location,
+          // and a photo's EXIF coord contradicting the footprint the alert measures against would be
+          // worse than useless. The coord is dropped rather than carried (D42).
+          return { id, fullUri, thumbUri, placeOnMap: false } satisfies DraftPhoto
+        }),
+      )
+      setPhotos((prev) => [...prev, ...added])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Couldn’t add that photo.')
+    } finally {
+      setAddingPhotos(false)
+    }
+  }
+
+  function removePhoto(id: string) {
+    setPhotos((prev) => {
+      const gone = prev.find((p) => p.id === id)
+      if (gone) deleteDraftPhotoFiles([gone.fullUri, gone.thumbUri])
+      return prev.filter((p) => p.id !== id)
+    })
+  }
+
+  /** Upload the persisted photos and return their ids. Throws like any other network call. */
+  async function uploadPhotos(): Promise<Id<'photos'>[]> {
+    return Promise.all(
+      photos.map(async (photo) => {
+        const [storageId, thumbStorageId] = await Promise.all([
+          generateUploadUrl().then((url) => uploadToStorage(url, photo.fullUri)),
+          generateUploadUrl().then((url) => uploadToStorage(url, photo.thumbUri)),
+        ])
+        return createPhoto({
+          storageId: storageId as Id<'_storage'>,
+          thumbStorageId: thumbStorageId as Id<'_storage'>,
+          placeOnMap: false,
+        })
+      }),
+    )
+  }
+
   async function post() {
     const shape = hazardDraft ? draftToShape(hazardDraft) : null
     if (!hazardDraftType || !shape || !targetBodyId) return
@@ -116,15 +185,19 @@ export function HazardCapture() {
     setError(null)
     const idempotencyKey = randomUUID()
     try {
+      const photoIds = await uploadPhotos()
       await createHazard({
         waterBodyId: targetBodyId as Id<'waterBodies'>,
         idempotencyKey,
+        ...(photoIds.length > 0 ? { photoIds } : {}),
         type: hazardDraftType,
         geometryKind: shape.geometryKind,
         geometry: shape.geometry,
         ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
         ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
       })
+      // The upload succeeded, so the persisted copies are now dead weight.
+      deleteDraftPhotoFiles(photos.flatMap((p) => [p.fullUri, p.thumbUri]))
       reset()
       // A brief toast, never a blocking modal — the skater may be moving.
       setToast('Hazard posted. Thanks.')
@@ -144,6 +217,8 @@ export function HazardCapture() {
           type: hazardDraftType,
           shape,
           waterBodyId: targetBodyId,
+          // The queue re-uploads these from disk on flush, checkpointing each id as it lands.
+          photos,
         }),
       )
       reset()
@@ -314,9 +389,32 @@ export function HazardCapture() {
             </Button>
           </XStack>
 
+          {/* Photos. Ice hazards are intensely visual and notoriously hard to describe — "folded
+              ridges are hard to see" is a recurring cause of death (research §2/§6) — so a picture is
+              the highest-value thing one skater leaves the next. Encouraged, plural, and entirely
+              skippable: the pin is already valid without one. */}
+          {photos.length > 0 ? (
+            <XStack gap="$2" flexWrap="wrap">
+              {photos.map((photo) => (
+                <YStack key={photo.id} gap="$1" alignItems="center">
+                  <Image
+                    source={{ uri: photo.thumbUri }}
+                    style={{ width: 56, height: 56, borderRadius: 6 }}
+                  />
+                  <Button size="$1" chromeless onPress={() => removePhoto(photo.id)}>
+                    Remove
+                  </Button>
+                </YStack>
+              ))}
+            </XStack>
+          ) : null}
+
           <XStack gap="$2" flexWrap="wrap">
             <Button size="$4" onPress={() => setHazardDropMode(true)}>
               {isLine ? 'Trace' : 'Move'}
+            </Button>
+            <Button size="$4" disabled={addingPhotos} onPress={addPhotos}>
+              {addingPhotos ? 'Adding…' : photos.length > 0 ? '📷 Add another' : '📷 Photo'}
             </Button>
             {isLine && placements > 0 ? (
               <Button size="$4" onPress={() => setHazardDraft(undoDraftPlacement(hazardDraft))}>

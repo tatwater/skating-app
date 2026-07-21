@@ -2,7 +2,8 @@ import { emptyReportForm, type ReportFormState } from '@skating/core'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { type PhotoDraftView, ReportFormFields } from './ReportForm'
+import { ReportFormFields } from './ReportForm'
+import type { PhotoDraftView } from './usePhotoDrafts'
 
 const FIXED_NOW = Date.UTC(2026, 0, 5, 12, 0)
 

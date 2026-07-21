@@ -22,6 +22,7 @@ import { Button } from './ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
 import { Label } from './ui/label'
 import { Textarea } from './ui/textarea'
+import { type PhotoDraftView, usePhotoDrafts } from './usePhotoDrafts'
 
 /**
  * Hazard authoring — the web half of D51.
@@ -51,10 +52,13 @@ export function HazardFormFields({
   description,
   error,
   submitting,
+  photos,
   onChooseType,
   onDraftChange,
   onRequestPlace,
   onDescriptionChange,
+  onAddFiles,
+  onRemovePhoto,
   onSubmit,
   onCancel,
 }: {
@@ -63,10 +67,13 @@ export function HazardFormFields({
   description: string
   error: string | null
   submitting: boolean
+  photos: PhotoDraftView[]
   onChooseType: (type: HazardType) => void
   onDraftChange: (draft: HazardDraft) => void
   onRequestPlace: () => void
   onDescriptionChange: (description: string) => void
+  onAddFiles: (files: FileList) => void
+  onRemovePhoto: (id: string) => void
   onSubmit: () => void
   onCancel: () => void
 }) {
@@ -211,6 +218,51 @@ export function HazardFormFields({
         </div>
       ) : null}
 
+      {/* Photos. Ice hazards are intensely visual and notoriously hard to describe — "folded ridges
+          are hard to see" is a recurring cause of death (research §2/§6) — so a picture is the
+          highest-value thing one skater can leave the next. Plural, because a ridge or lead usually
+          needs two angles, and entirely optional.
+          There is no `placeOnMap` control here, unlike report photos: a hazard already *has* a
+          location, and offering a second, differently-derived one would invite a photo's EXIF coord
+          to contradict the footprint the alert measures against. The EXIF coord is never sent. */}
+      <div className="space-y-2">
+        <Label htmlFor="hazard-photos">Photos (optional)</Label>
+        <p className="text-foreground-muted text-xs">
+          Hard to describe, easy to show — a photo helps the next skater recognise it.
+        </p>
+        <input
+          id="hazard-photos"
+          type="file"
+          accept="image/*"
+          multiple
+          className="block w-full text-sm"
+          onChange={(e) => {
+            if (e.target.files) onAddFiles(e.target.files)
+            e.target.value = '' // allow re-selecting the same file
+          }}
+        />
+        <div className="flex flex-col gap-2">
+          {photos.map((photo) => (
+            <div key={photo.id} className="flex items-center gap-3">
+              <img
+                src={photo.previewUrl}
+                alt="Upload preview"
+                className="h-16 w-16 rounded-md object-cover"
+              />
+              <span className="flex-1" />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onRemovePhoto(photo.id)}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+
       <div className="space-y-2">
         <Label htmlFor="hazard-description">Anything worth adding? (optional)</Label>
         <Textarea
@@ -257,6 +309,9 @@ export function HazardForm({
   const [description, setDescription] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  // Same pipeline as report photos, so the same hook — it owns the checkpointed upload and the
+  // reclaim-on-abandon sweep, which a hazard form abandoned mid-upload needs just as much.
+  const photoDrafts = usePhotoDrafts()
 
   // Leaving the form must never strand the map in crosshair mode or leave a phantom footprint
   // sitting on the lake — the same teardown discipline the report form's put-in pin uses.
@@ -296,6 +351,10 @@ export function HazardForm({
     setSubmitting(true)
     setError(null)
     try {
+      const photoIds = await photoDrafts.uploadAll()
+      // Before the mutation, not after: an unmount *during* it would otherwise sweep and delete the
+      // very photo rows the committing hazard is about to reference.
+      photoDrafts.setCommitted(true)
       await createHazard({
         waterBodyId: waterBodyId as Id<'waterBodies'>,
         type,
@@ -304,12 +363,14 @@ export function HazardForm({
         ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
         ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
         ...(description.trim() ? { description: description.trim() } : {}),
+        ...(photoIds.length > 0 ? { photoIds } : {}),
       })
       setType(null)
       setDescription('')
       setHazardDraft(null)
       onClose()
     } catch (e) {
+      photoDrafts.setCommitted(false) // creation didn't complete — uploads are reclaimable again
       setError(e instanceof Error ? e.message : 'Could not save that hazard.')
     } finally {
       setSubmitting(false)
@@ -328,7 +389,10 @@ export function HazardForm({
           type={type}
           draft={hazardDraft}
           description={description}
-          error={error}
+          error={error ?? photoDrafts.error}
+          photos={photoDrafts.photos}
+          onAddFiles={photoDrafts.addFiles}
+          onRemovePhoto={photoDrafts.removePhoto}
           submitting={submitting}
           onChooseType={chooseType}
           onDraftChange={setHazardDraft}

@@ -17,6 +17,7 @@ import { useMutation, useQuery } from 'convex/react'
 import { randomUUID } from 'expo-crypto'
 import * as Location from 'expo-location'
 import { useEffect, useState } from 'react'
+import { Image } from 'react-native'
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui'
 import { saveHazardItem } from '../lib/draftStore'
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi'
@@ -51,6 +52,7 @@ function formatWhen(at: number): string {
 
 export function HazardDetail({ hazardId }: { hazardId: string }) {
   const hazard = useQuery(api.hazards.get, { hazardId: hazardId as Id<'hazards'> })
+  const photos = useQuery(api.photos.getHazardUrls, { hazardId: hazardId as Id<'hazards'> })
   const confirm = useMutation(api.hazardConfirmations.confirm)
   const { setHighlightWaterBodyId, setFocus } = useMapSelection()
 
@@ -175,6 +177,25 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
         <Paragraph color="$foregroundMuted" fontSize={13}>
           {healingNote(hazard.type)}
         </Paragraph>
+      ) : null}
+
+      {/* The photo is often the thing that makes a hazard recognisable from a distance — which is
+          the whole point of the pin. Shown before the notes for that reason. */}
+      {photos && photos.length > 0 ? (
+        <Section label="Photos">
+          <XStack gap="$2" flexWrap="wrap">
+            {photos.map((photo) =>
+              photo.thumbUrl ? (
+                <Image
+                  key={photo.photoId}
+                  source={{ uri: photo.thumbUrl }}
+                  accessibilityLabel={`${hazardTypeLabel(hazard.type)} photo`}
+                  style={{ width: 96, height: 96, borderRadius: 8 }}
+                />
+              ) : null,
+            )}
+          </XStack>
+        </Section>
       ) : null}
 
       {hazard.description ? (
