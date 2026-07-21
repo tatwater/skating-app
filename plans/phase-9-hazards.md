@@ -321,7 +321,12 @@ Per the founder's call (2026-07-18): **all in one PR**, online-first commits fir
    - The alert **session** logic (which alert becomes a banner, when it may be replaced, per-session
      dedup) is pure in `apps/mobile/src/lib/onIce.ts` and unit-tested; a showing banner is never
      swapped out from under a moving skater.
-6. **Auto-bundle (D55)** — report form offers the author's unattached on-ice hazards.
+6. **Auto-bundle (D55)** — report form offers the author's unattached on-ice hazards. Web's half
+   shipped early (with commit 3); this adds the mobile half and lifts the shared selection rule into
+   **`@skating/core/hazardBundle.ts`**. The rule is stored as the author's **opt-outs**, not their
+   selections: the candidate list is a live query, so an opt-in set would silently drop a hazard that
+   finished syncing after the form opened. Online-only — a coord-only offline capture has no resolved
+   lake to query candidates for, so bundling a *drafted* report belongs with the offline commit.
 7. **Offline** — hazard draft/flush reuse (`draftStore` `kind` discriminator); **Layer-3 offline basemap
    tile-pack** native spike (`@maplibre/maplibre-react-native` offline-pack over `pmtiles://` **or** an
    on-device mini-`.pmtiles` — resolve here); the F2 `bodyCache` tile-pack column slots in without a

@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
   buildReportInput,
+  bundledHazardIds,
   emptyReportForm,
   emptyThicknessReading,
   humanizeEnum,
@@ -20,6 +21,7 @@ import {
   THICKNESS_METHOD_LABELS,
   THICKNESS_METHODS,
   type ThicknessFormReading,
+  toggleBundleOptOut,
   validateReportInput,
 } from '@skating/core'
 import { useNavigate } from '@tanstack/react-router'
@@ -601,7 +603,7 @@ export function ReportForm({
   // skater can always drop any of them, and nothing attaches without the list being visible.
   const [unbundledHazardIds, setUnbundledHazardIds] = useState<string[]>([])
   const [bundleCandidateIds, setBundleCandidateIds] = useState<string[]>([])
-  const bundleHazardIds = bundleCandidateIds.filter((id) => !unbundledHazardIds.includes(id))
+  const bundleHazardIds = bundledHazardIds(bundleCandidateIds, unbundledHazardIds)
 
   // Minors are read-only — all reports are public (D13), so under-18 users can't post (D41).
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false
@@ -835,11 +837,9 @@ export function ReportForm({
                 waterBodyId={waterBodyId}
                 skateEndTime={form.skateEndTime}
                 skateStartTime={form.skateStartTime ?? undefined}
-                selectedIds={bundleCandidateIds.filter((id) => !unbundledHazardIds.includes(id))}
+                selectedIds={bundleHazardIds}
                 onToggle={(hazardId, checked) =>
-                  setUnbundledHazardIds((prev) =>
-                    checked ? prev.filter((id) => id !== hazardId) : [...prev, hazardId],
-                  )
+                  setUnbundledHazardIds((prev) => toggleBundleOptOut(prev, hazardId, checked))
                 }
                 onCandidates={setBundleCandidateIds}
               />
