@@ -97,11 +97,7 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         />
       ) : null}
       {hazardFormOpen ? (
-        <HazardForm
-          waterBodyId={result.body._id}
-          open={hazardFormOpen}
-          onClose={() => setHazardFormOpen(false)}
-        />
+        <HazardForm waterBodyId={result.body._id} onClose={() => setHazardFormOpen(false)} />
       ) : null}
     </>
   )

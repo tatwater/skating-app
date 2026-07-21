@@ -82,8 +82,18 @@ export function evaluateOnIceAlert(
     // actively counterproductive, so it never alerts. It still renders on the map.
     if (isPassageMarker(hazard.type)) continue
 
-    const distanceMeters = distanceToHazard(coord, hazard.shape)
-    if (distanceMeters > alertBufferMeters) continue
+    // One malformed cached row must never silence the alerts for every *other* hazard on the lake.
+    // `isValidHazardShape` should keep such rows out of storage, but this loop runs in the on-ice
+    // watcher against whatever the cache holds, so it defends itself: a hazard whose distance can't be
+    // computed is skipped, not thrown. Failing safe here means failing *loud* — the other pins still
+    // warn — which is the correct direction for safety content.
+    let distanceMeters: number
+    try {
+      distanceMeters = distanceToHazard(coord, hazard.shape)
+    } catch {
+      continue
+    }
+    if (!Number.isFinite(distanceMeters) || distanceMeters > alertBufferMeters) continue
 
     alerts.push({
       hazardId: hazard.id,

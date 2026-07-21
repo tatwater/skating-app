@@ -604,6 +604,7 @@ export function ReportForm({
   async function handleSubmit() {
     if (!form) return
     setError(null)
+    photoDrafts.clearError() // the bad photo has usually been removed by now; don't keep blaming it
     const input = buildReportInput(form, waterBodyId, putInPin ?? undefined)
     const result = validateReportInput(input, { now: Date.now() })
     if (!result.ok) {

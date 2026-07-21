@@ -565,9 +565,16 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       />
       {/* The drawing bar. A circle needs one click and no controls, so it just says so; a polyline
           is a multi-click session and gets its own Undo/Done, kept on the map rather than in the
-          form because the form is hidden for the whole draw. */}
+          form because the form is hidden for the whole draw.
+          It's a live region because arming placement mode is otherwise *entirely* silent: the dialog
+          vanishes and the only feedback is a colour bar. The polyline running point count announces
+          through the same region, which is the only progress signal a non-visual trace has. */}
       {hazardDropMode ? (
-        <div className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center justify-center gap-3 rounded-t-lg bg-destructive px-4 py-2 text-destructive-foreground text-sm shadow">
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center justify-center gap-3 rounded-t-lg bg-destructive px-4 py-2 text-destructive-foreground text-sm shadow"
+        >
           {hazardDraft?.geometryKind === 'line' ? (
             <>
               <span>
@@ -609,7 +616,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         </div>
       ) : null}
       {pinDropMode ? (
-        <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-3 rounded-t-lg bg-primary px-4 py-2 text-primary-foreground text-sm shadow">
+        // Same reasoning as the hazard bar above: arming pin-drop hides the form, so this bar is the
+        // only announcement that anything happened.
+        <div
+          role="status"
+          aria-live="polite"
+          className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-3 rounded-t-lg bg-primary px-4 py-2 text-primary-foreground text-sm shadow"
+        >
           <span>Tap the map to set the access point.</span>
           <button
             type="button"

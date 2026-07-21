@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { NativeSyntheticEvent } from 'react-native'
 import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native'
+import { cacheBody } from '../lib/bodyCache'
 import { env } from '../lib/env'
 import {
   bodyFeaturesToFeatureCollection,
@@ -26,6 +27,7 @@ import {
   hazardFillOpacityExpression,
   hazardsToFeatureCollection,
 } from '../lib/hazardMap'
+import { ensureForegroundPermission } from '../lib/location'
 import {
   boundsToViewport,
   buildMapStyle,
@@ -79,6 +81,13 @@ const INITIAL_QUERY: { viewport: BBox; zoom: number } = {
   zoom: Math.floor(INITIAL_ZOOM),
 }
 
+/**
+ * Only seed the offline body cache once zoomed in to a browse level. Below this the viewport spans a
+ * whole region and would cache dozens of bodies no one is looking at; at/above it the on-screen set is
+ * small and is plausibly "lakes near where I am". A floor, not a guarantee — it just bounds the writes.
+ */
+const CACHE_SEED_MIN_ZOOM = 11
+
 export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolean }) {
   const scheme = useColorScheme()
   const flavor = scheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light
@@ -126,6 +135,29 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies))
   }, [bodies])
+
+  // Seed the offline body cache from what's on screen when zoomed in (Phase 9 §Mobile). Until now the
+  // cache filled only when a lake's *drawer* was opened, so on-ice detection missed a lake you were
+  // standing on but had never tapped. Seeding here means simply looking at your lake caches it for
+  // later no-signal capture. Online, the server resolver covers this already; this is the offline
+  // safety net. Bounded: only past a browse-level zoom (so we don't cache a whole region at once) and
+  // deduped per session so a stationary pan doesn't rewrite the same rows.
+  const seededRef = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    if (bodies === undefined || queryArgs.zoom < CACHE_SEED_MIN_ZOOM) return
+    for (const body of bodies) {
+      if (seededRef.current.has(body._id)) continue
+      seededRef.current.add(body._id)
+      cacheBody({
+        waterBodyId: body._id,
+        name: body.name,
+        states: body.states,
+        polygon: body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon,
+        centroid: body.centroid,
+        surfaceAreaSqM: body.surfaceAreaSqM,
+      })
+    }
+  }, [bodies, queryArgs.zoom])
 
   const photoPinsFC = useMemo<GeoJSON.FeatureCollection>(
     () => ({
@@ -228,8 +260,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     let cancelled = false
     ;(async () => {
       try {
-        const { status } = await Location.requestForegroundPermissionsAsync()
-        if (status !== 'granted') return // denied ⇒ keep the default framing
+        const granted = await ensureForegroundPermission()
+        if (!granted) return // denied ⇒ keep the default framing
         const pos = await Location.getCurrentPositionAsync({})
         const frame = frameForCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude })
         if (!cancelled && frame) {

@@ -100,3 +100,42 @@ export function advanceAlertSession(
 export function dismissBanner(session: AlertSession): AlertSession {
   return { alerted: session.alerted, banner: null }
 }
+
+/**
+ * Resolve which lake the skater is on from the two available sources (Phase 9 §Mobile "on-ice state").
+ *
+ * The **server** answer is authoritative and covers any listed lake, including one never opened on this
+ * device. It arrives as `undefined` while loading and forever when offline, so until it answers we
+ * fall back to the **offline cache** (drawer-viewed bodies only) — that's what keeps no-signal capture
+ * resolving. Pure so the precedence is unit-tested rather than tangled into an effect.
+ */
+export function resolveOnIceBody(
+  onlineBodyId: string | null | undefined,
+  cachedBodyId: string | null,
+): string | null {
+  return onlineBodyId !== undefined ? onlineBodyId : cachedBodyId
+}
+
+/** Inputs to the once-per-open auto-select decision. */
+export interface AutoSelectInput {
+  resolvedBodyId: string | null
+  alreadyAutoSelected: boolean
+  /** True only when the app opened on the bare map (not a deep link into a drawer). */
+  openedOnBareMap: boolean
+  /** The live route — auto-select must not fire once the skater has navigated somewhere themselves. */
+  onBareMapNow: boolean
+}
+
+/**
+ * Whether to auto-select (navigate to) the on-ice lake. Fires at most once per app-open, only when the
+ * app opened on the bare map and the skater hasn't since navigated away — so it frames the lake you're
+ * standing on without ever yanking you out of something you deliberately opened.
+ */
+export function shouldAutoSelectOnIce(input: AutoSelectInput): boolean {
+  return (
+    input.resolvedBodyId !== null &&
+    !input.alreadyAutoSelected &&
+    input.openedOnBareMap &&
+    input.onBareMapNow
+  )
+}

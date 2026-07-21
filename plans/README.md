@@ -41,10 +41,12 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   put-ins + directions, mobile offline read-cache. **✅ Complete on dev (2026-07-18, PR #19); prod
   deferred.**
 - [Phase 9 — Hazards](./phase-9-hazards.md) — geometry-per-type hazard authoring (point+radius /
-  line / opt-in polygon), per-type decay + three-tier "healing" confirmation, persistent known
+  line / render-only polygon), per-type decay + three-tier "healing" confirmation, persistent known
   seasonal `bodyFeatures`, client-side on-ice proximity alerts (offline-capable). *(Pulled ahead of
-  Phase 6 — safety content before reputation, 2026-07-18.)* **🔨 In build (2026-07-21); decisions
-  D51–D55 locked** (D51/D54 amended + D55 added at build kickoff).
+  Phase 6 — safety content before reputation, 2026-07-18.)* **✅ Code complete + reviewed
+  (2026-07-21); tests green. Not yet deployed to the dev Convex deployment; PR not yet merged.**
+  Decisions **D51–D55** locked (D51/D54 amended + D55 added at build kickoff). The Layer-3 offline
+  basemap tile-pack was **dropped** (native spike; findings in the phase doc).
   - [Phase 9 — Hazard research](./phase-9-hazard-research.md) — calibrated `HAZARD_DECAY` table +
     per-type behavior evidence (corpus + lakeice.info), expanded taxonomy, corrected Phase-10 weather
     signs. **✅ Research done 2026-07-21.**

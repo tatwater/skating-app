@@ -4,9 +4,12 @@
  * (accountability for appeals/reversals). This is the inline hide/remove/restore + flag-resolution
  * surface; the full `/admin` work queues + email alerts are Phase 7 (D37/D38).
  *
- * Moderation applies to the UGC that carries a `moderationStatus` — **reports and comments**. Hiding
- * a report also hides its comments at read time (a comment on a hidden report is unreachable — see
- * `comments.listByReport`), so no cascade write is needed.
+ * Moderation applies to the UGC that carries a `moderationStatus` — **reports, comments and hazards**.
+ * Hiding a report also hides its comments at read time (a comment on a hidden report is unreachable —
+ * see `comments.listByReport`), so no cascade write is needed. Hazards are moderated through the same
+ * mutation so the Phase 7 queue has a single takedown entry point, but they carry no contribution
+ * counter and their hide is a *moderation* axis kept strictly separate from the community-archival
+ * lifecycle `status` (D3) — see the hazards schema note.
  */
 
 import { ConvexError, v } from 'convex/values'
@@ -29,9 +32,15 @@ const ACTION_FOR_STATUS = {
  * target and writes one `hide` / `remove` / `restore` audit row with the required reason. A no-op
  * status change (already at `status`) still records the action — the moderator asserted a decision.
  */
+const MODERATION_TABLE = {
+  report: 'reports',
+  comment: 'comments',
+  hazard: 'hazards',
+} as const
+
 export const setModerationStatus = mutation({
   args: {
-    targetType: literals(['report', 'comment']),
+    targetType: literals(['report', 'comment', 'hazard']),
     targetId: v.string(),
     status: literals(MODERATION_STATUSES),
     reason: v.string(),
@@ -40,24 +49,27 @@ export const setModerationStatus = mutation({
     const actor = await requireRole(ctx, 'moderator')
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required')
 
-    const table = args.targetType === 'report' ? 'reports' : 'comments'
-    const targetId = ctx.db.normalizeId(table, args.targetId)
+    const targetId = ctx.db.normalizeId(MODERATION_TABLE[args.targetType], args.targetId)
     if (!targetId) throw new ConvexError('Target not found')
     const target = await ctx.db.get(targetId)
     if (!target) throw new ConvexError('Target not found')
 
-    const typedTarget = target as Doc<'reports'> | Doc<'comments'>
+    const typedTarget = target as Doc<'reports'> | Doc<'comments'> | Doc<'hazards'>
     const priorStatus = typedTarget.moderationStatus
     await ctx.db.patch(targetId, { moderationStatus: args.status })
 
-    // Keep the author's denormalized contribution counter exact: a hide/remove of a visible item
-    // decrements, a restore back to visible increments, a no-op transition moves it by 0.
-    await bumpContributionCount(
-      ctx,
-      typedTarget.authorId,
-      args.targetType === 'report' ? 'reportCount' : 'commentCount',
-      visibleDelta(priorStatus, args.status),
-    )
+    // Reports and comments carry a denormalized contribution counter to keep exact; hazards do not.
+    // Note we touch ONLY `moderationStatus` — the hazard's lifecycle `status` is deliberately left
+    // alone, so a moderator hide is never mistakable for the community archiving a healed hazard (D3).
+    if (args.targetType === 'report' || args.targetType === 'comment') {
+      const authored = target as Doc<'reports'> | Doc<'comments'>
+      await bumpContributionCount(
+        ctx,
+        authored.authorId,
+        args.targetType === 'report' ? 'reportCount' : 'commentCount',
+        visibleDelta(priorStatus, args.status),
+      )
+    }
 
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,

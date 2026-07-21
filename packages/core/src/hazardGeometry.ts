@@ -153,8 +153,15 @@ export function defaultShapeForType(type: HazardType, at: LatLng): HazardShape {
  */
 export function hazardFootprint(shape: HazardShape): Polygon | MultiPolygon {
   const grownBy = footprintBufferMeters(shape)
-  if (grownBy <= 0 && shape.geometry.type !== 'Point') {
-    return shape.geometry as Polygon | MultiPolygon
+  // Only an already-areal geometry may pass through ungrown. A Point or a LineString has no area, so
+  // returning it here would hand a LineString to callers typed to receive a Polygon — and
+  // `distanceToPolygonMeters` throws on one, which in a proximity watcher takes out the alerts for
+  // *every* hazard on the lake, not just the bad row. Buffering unconditionally is the safe direction.
+  if (
+    grownBy <= 0 &&
+    (shape.geometry.type === 'Polygon' || shape.geometry.type === 'MultiPolygon')
+  ) {
+    return shape.geometry
   }
   const grown = buffer(feature(shape.geometry), Math.max(grownBy, MIN_FOOTPRINT_M), {
     units: 'meters',
@@ -219,34 +226,91 @@ export function lineShape(vertices: readonly LatLng[], bufferMeters: number): Ha
 }
 
 /**
+ * Hard ceiling on a hazard's radius / uncertainty half-width, in metres.
+ *
+ * A hazard is a *localized* danger within one water body — the largest default is a 60 m thaw-rotten
+ * zone. 5 km is far past anything real (78 km² of footprint) while still bounding the absurd: without
+ * a ceiling, one authenticated member could store a 500 km `open_water` circle that renders as a
+ * region-sized halo and fires the proximity alert for every skater on every lake inside it, undoable
+ * only by a moderator. The generous gap between "biggest real hazard" and this number is deliberate —
+ * this is a guard against nonsense, not a second opinion about what a skater saw.
+ */
+export const HAZARD_MAX_SIZE_M = 5_000
+
+/**
+ * Vertex ceiling for a traced polyline. Tapping this many times on the ice is not a thing anyone does;
+ * it exists so a scripted client can't store a document that's expensive to buffer on every GPS fix.
+ */
+export const HAZARD_MAX_VERTICES = 500
+
+/** Finite, in-range, and actually a number — cheap guards that keep NaN out of the footprint math. */
+function isSaneSize(value: unknown, { min }: { min: number }): boolean {
+  return (
+    typeof value === 'number' &&
+    Number.isFinite(value) &&
+    value >= min &&
+    value <= HAZARD_MAX_SIZE_M
+  )
+}
+
+function isSaneCoord(position: readonly number[]): boolean {
+  const [lng, lat] = position
+  return (
+    typeof lng === 'number' &&
+    typeof lat === 'number' &&
+    Number.isFinite(lng) &&
+    Number.isFinite(lat) &&
+    lng >= -180 &&
+    lng <= 180 &&
+    lat >= -90 &&
+    lat <= 90
+  )
+}
+
+/**
  * Is this shape structurally valid to store? Guards the degenerate cases Turf throws on, so an
  * on-ice capture can never produce a row the renderer or the alert evaluator will crash reading.
+ *
+ * This is the **single** gate — `hazardDraft`'s `draftToShape` delegates here, and the server calls it
+ * again on every insert, because a client is not a trustworthy validator. Anything that reaches storage
+ * must survive `hazardFootprint`, `hazardBbox` and `distanceToHazard` without throwing.
  */
 export function isValidHazardShape(shape: HazardShape): boolean {
   switch (shape.geometryKind) {
     case 'point_radius':
       return (
         shape.geometry.type === 'Point' &&
-        typeof shape.radiusMeters === 'number' &&
-        shape.radiusMeters > 0
+        isSaneCoord(shape.geometry.coordinates) &&
+        // Strictly positive: a zero-radius point has no area to render or measure against.
+        isSaneSize(shape.radiusMeters, { min: Number.MIN_VALUE })
       )
     case 'line': {
       if (shape.geometry.type !== 'LineString') return false
+      // A polyline is stored as a *band*, so its half-width is required rather than optional: a
+      // zero-width line has no area, and `hazardFootprint` would have to invent a width to render or
+      // measure it. Requiring it here keeps the drawn halo and the measured distance the same shape.
+      if (!isSaneSize(shape.bufferMeters, { min: Number.MIN_VALUE })) return false
       const coords = shape.geometry.coordinates
       const first = coords[0]
-      if (coords.length < 2 || !first) return false
+      if (coords.length < 2 || coords.length > HAZARD_MAX_VERTICES || !first) return false
+      if (!coords.every(isSaneCoord)) return false
       // Two vertices minimum, and they must actually differ — Turf's buffer throws on a zero-length
       // line rather than returning empty.
       return coords.some(([lng, lat]) => lng !== first[0] || lat !== first[1])
     }
     case 'polygon': {
       if (shape.geometry.type !== 'Polygon' && shape.geometry.type !== 'MultiPolygon') return false
+      // Unlike a line, a polygon already encloses area, so its buffer is a genuine optional extra —
+      // but if present it still has to be a sane number.
+      if (shape.bufferMeters !== undefined && !isSaneSize(shape.bufferMeters, { min: 0 }))
+        return false
       const ring =
         shape.geometry.type === 'Polygon'
           ? shape.geometry.coordinates[0]
           : shape.geometry.coordinates[0]?.[0]
       // A closed ring repeats its first position, so a triangle is 4 positions.
-      return (ring?.length ?? 0) >= 4
+      if ((ring?.length ?? 0) < 4 || (ring?.length ?? 0) > HAZARD_MAX_VERTICES) return false
+      return (ring ?? []).every(isSaneCoord)
     }
   }
 }

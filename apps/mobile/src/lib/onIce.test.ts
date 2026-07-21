@@ -5,6 +5,8 @@ import {
   dismissBanner,
   emptyAlertSession,
   type HazardRow,
+  resolveOnIceBody,
+  shouldAutoSelectOnIce,
   toProximityHazards,
 } from './onIce'
 
@@ -112,5 +114,53 @@ describe('dismissBanner', () => {
     const dismissed = dismissBanner(session)
     expect(dismissed.banner).toBeNull()
     expect(dismissed.alerted).toBe(session.alerted)
+  })
+})
+
+describe('resolveOnIceBody', () => {
+  it('prefers the server answer once it arrives', () => {
+    // Server says lake A even though the cache has B — the server covers lakes never opened here.
+    expect(resolveOnIceBody('A', 'B')).toBe('A')
+  })
+
+  it('trusts the server saying "not on any lake"', () => {
+    expect(resolveOnIceBody(null, 'B')).toBeNull()
+  })
+
+  it('falls back to the cache while the server has not answered (loading / offline)', () => {
+    expect(resolveOnIceBody(undefined, 'B')).toBe('B')
+  })
+
+  it('resolves to nothing when neither source has a lake', () => {
+    expect(resolveOnIceBody(undefined, null)).toBeNull()
+  })
+})
+
+describe('shouldAutoSelectOnIce', () => {
+  const base = {
+    resolvedBodyId: 'lake' as string | null,
+    alreadyAutoSelected: false,
+    openedOnBareMap: true,
+    onBareMapNow: true,
+  }
+
+  it('auto-selects the resolved lake on a fresh open of the bare map', () => {
+    expect(shouldAutoSelectOnIce(base)).toBe(true)
+  })
+
+  it('never fires twice in one session', () => {
+    expect(shouldAutoSelectOnIce({ ...base, alreadyAutoSelected: true })).toBe(false)
+  })
+
+  it('does not hijack a deep-linked open', () => {
+    expect(shouldAutoSelectOnIce({ ...base, openedOnBareMap: false })).toBe(false)
+  })
+
+  it('does not yank a skater who has since navigated away', () => {
+    expect(shouldAutoSelectOnIce({ ...base, onBareMapNow: false })).toBe(false)
+  })
+
+  it('does nothing until a lake resolves', () => {
+    expect(shouldAutoSelectOnIce({ ...base, resolvedBodyId: null })).toBe(false)
   })
 })

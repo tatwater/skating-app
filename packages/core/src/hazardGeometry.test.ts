@@ -7,6 +7,8 @@ import {
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_DEFAULT_GEOMETRY_KIND,
   HAZARD_DEFAULT_RADIUS_M,
+  HAZARD_MAX_SIZE_M,
+  HAZARD_MAX_VERTICES,
   hazardBbox,
   hazardFootprint,
   isValidHazardShape,
@@ -315,5 +317,113 @@ describe('isValidHazardShape', () => {
         },
       }),
     ).toBe(true)
+  })
+
+  // A line is stored as a band, so a zero/absent buffer has no area to render or measure — and letting
+  // it through was the bug that returned a LineString-as-Polygon and threw in the proximity watcher,
+  // silencing every alert on the lake.
+  it('requires a positive bufferMeters on a line', () => {
+    const verts = [
+      { lat: 44.47, lng: -73.22 },
+      { lat: 44.48, lng: -73.2 },
+    ]
+    expect(isValidHazardShape(lineShape(verts, 0))).toBe(false)
+    expect(
+      isValidHazardShape({ geometryKind: 'line', geometry: lineShape(verts, 5).geometry }),
+    ).toBe(false)
+    expect(isValidHazardShape(lineShape(verts, 5))).toBe(true)
+  })
+
+  it('rejects sizes past the absolute ceiling and non-finite sizes', () => {
+    expect(isValidHazardShape(pointRadiusShape(CENTRE, HAZARD_MAX_SIZE_M + 1))).toBe(false)
+    expect(isValidHazardShape(pointRadiusShape(CENTRE, HAZARD_MAX_SIZE_M))).toBe(true)
+    expect(isValidHazardShape(pointRadiusShape(CENTRE, Number.POSITIVE_INFINITY))).toBe(false)
+    expect(isValidHazardShape(pointRadiusShape(CENTRE, Number.NaN))).toBe(false)
+  })
+
+  it('rejects out-of-range coordinates', () => {
+    expect(isValidHazardShape(pointRadiusShape({ lat: 91, lng: 0 }, 30))).toBe(false)
+    expect(isValidHazardShape(pointRadiusShape({ lat: 0, lng: 200 }, 30))).toBe(false)
+  })
+
+  it('rejects a polyline with more vertices than the cap', () => {
+    const many = Array.from({ length: HAZARD_MAX_VERTICES + 1 }, (_, i) => ({
+      lat: 44.47 + i * 1e-5,
+      lng: -73.22 + i * 1e-5,
+    }))
+    expect(isValidHazardShape(lineShape(many, 10))).toBe(false)
+  })
+
+  const triangle: [number, number][] = [
+    [-73.22, 44.47],
+    [-73.2, 44.48],
+    [-73.21, 44.46],
+    [-73.22, 44.47],
+  ]
+
+  it('rejects a polygon with an out-of-range buffer but accepts a valid one', () => {
+    const geometry = { type: 'Polygon' as const, coordinates: [triangle] }
+    expect(
+      isValidHazardShape({
+        geometryKind: 'polygon',
+        geometry,
+        bufferMeters: HAZARD_MAX_SIZE_M + 1,
+      }),
+    ).toBe(false)
+    expect(isValidHazardShape({ geometryKind: 'polygon', geometry, bufferMeters: 10 })).toBe(true)
+  })
+
+  it('rejects a polygon with an out-of-range coordinate', () => {
+    expect(
+      isValidHazardShape({
+        geometryKind: 'polygon',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [-73.22, 44.47],
+              [-73.2, 44.48],
+              [-73.21, 999],
+              [-73.22, 44.47],
+            ],
+          ],
+        },
+      }),
+    ).toBe(false)
+  })
+
+  it('rejects a polygon ring past the vertex cap', () => {
+    const ring = Array.from({ length: HAZARD_MAX_VERTICES + 2 }, (_, i) => [
+      -73.22 + i * 1e-5,
+      44.47 + i * 1e-5,
+    ])
+    ring.push(ring[0] as number[])
+    expect(
+      isValidHazardShape({
+        geometryKind: 'polygon',
+        geometry: { type: 'Polygon', coordinates: [ring as [number, number][]] },
+      }),
+    ).toBe(false)
+  })
+})
+
+describe('hazardFootprint never yields a non-areal geometry', () => {
+  // The invariant that keeps a hazard from existing "in the database and nowhere else": whatever the
+  // inputs, the footprint the renderer draws and the proximity evaluator measures is always a Polygon
+  // or MultiPolygon — never a raw Point or LineString that `distanceToPolygonMeters` would throw on.
+  it('always returns a polygonal footprint for every geometry kind', () => {
+    const line = lineShape(
+      [
+        { lat: 44.47, lng: -73.22 },
+        { lat: 44.48, lng: -73.2 },
+      ],
+      12,
+    )
+    for (const shape of [pointRadiusShape(CENTRE, 30), line]) {
+      const footprint = hazardFootprint(shape)
+      expect(['Polygon', 'MultiPolygon']).toContain(footprint.type)
+    }
+    // And a distance query against any of them is finite, not a throw.
+    expect(Number.isFinite(distanceToHazard(CENTRE, line))).toBe(true)
   })
 })

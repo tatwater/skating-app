@@ -203,6 +203,68 @@ describe('fully_healed', () => {
     })
   })
 
+  // The whole reason counts are derived from distinct users, not incremented per vote (D3): a single
+  // account casting `fully_healed` twice — even hours apart, past the re-confirm window — must not be
+  // able to hit the two-verdict removal threshold and archive a real hazard on its own.
+  test('one account cannot archive a hazard by voting fully_healed twice', async () => {
+    const { t, hazardId } = await setup()
+    const troll = await seedUser(t, 'troll')
+    const now = Date.now()
+
+    // First vote: observed 13h ago (outside the 12h re-confirm window), so a naive per-row counter
+    // would treat the second vote as fresh.
+    await troll.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'fully_healed',
+      observedAt: now - 13 * 60 * 60 * 1000,
+      ...VIA,
+    })
+    await troll.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'fully_healed',
+      observedAt: now,
+      ...VIA,
+    })
+
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({
+      goneCount: 1,
+      status: 'active',
+    })
+    // And only one vote row survives — one skater, one current opinion.
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query('hazardConfirmations')
+        .withIndex('by_hazard', (q) => q.eq('hazardId', hazardId))
+        .collect(),
+    )
+    expect(rows).toHaveLength(1)
+  })
+
+  // The offline twin of the abuse above, without any malice: a lost ack after a committed mutation is
+  // classified transient and retried on the next flush. Replaying the same confirmation must be a no-op.
+  test('replaying a queued fully_healed confirmation does not double-count', async () => {
+    const { t, hazardId } = await setup()
+    const skater = await seedUser(t, 'skater')
+    const observedAt = Date.now() - 20 * 60 * 60 * 1000 // old enough to fall outside the window
+
+    for (let i = 0; i < 3; i++) {
+      await skater.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId,
+        verdict: 'fully_healed',
+        observedAt,
+        ...VIA,
+      })
+    }
+
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({
+      goneCount: 1,
+      status: 'active',
+    })
+    // The reputation boost is awarded once, not once per replay.
+    const events = await t.run((ctx) => ctx.db.query('pointEvents').collect())
+    expect(events).toHaveLength(1)
+  })
+
   // Archived, never deleted — the row survives so it can resurface on a re-report (D15).
   test('archives rather than deleting the row', async () => {
     const { t, hazardId } = await setup()
@@ -359,6 +421,12 @@ describe('gating', () => {
   test('honors an offline observedAt from earlier in the day', async () => {
     const { t, hazardId } = await setup()
     const skater = await seedUser(t, 'skater')
+    // The hazard was first reported yesterday; the skater observed it this morning while offline and
+    // is only flushing now. `observedAt` must stamp the morning, not the flush.
+    const firstReportedAt = Date.now() - 24 * 60 * 60 * 1000
+    await t.run((ctx) =>
+      ctx.db.patch(hazardId, { firstReportedAt, lastConfirmedAt: firstReportedAt }),
+    )
     const earlier = Date.now() - 3 * 60 * 60 * 1000
 
     await skater.as.mutation(api.hazardConfirmations.confirm, {
@@ -369,6 +437,31 @@ describe('gating', () => {
     })
 
     expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({ lastConfirmedAt: earlier })
+  })
+
+  test('a late offline confirmation never ages a hazard a newer online vote already refreshed', async () => {
+    const { t, hazardId } = await setup()
+    const online = await seedUser(t, 'online')
+    const offline = await seedUser(t, 'offline')
+    const now = Date.now()
+
+    // Online skater confirms it "still here" at 10:00, refreshing the clock.
+    await online.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      observedAt: now,
+      ...VIA,
+    })
+    // A different skater's 06:00 observation flushes at 10:05. It must not drag the clock backward and
+    // fade a pin that was verified minutes ago.
+    await offline.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      observedAt: now - 4 * 60 * 60 * 1000,
+      ...VIA,
+    })
+
+    expect(await t.run((ctx) => ctx.db.get(hazardId))).toMatchObject({ lastConfirmedAt: now })
   })
 })
 

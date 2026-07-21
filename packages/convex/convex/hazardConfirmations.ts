@@ -16,7 +16,7 @@
  * this module is the persistence and gating shell around it.
  */
 
-import { applyConfirmation, isMinor } from '@skating/core'
+import { deriveHazardLifecycle, type HazardVoteRecord, isMinor } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import { type MutationCtx, mutation, query } from './_generated/server'
@@ -26,15 +26,22 @@ import { HAZARD_CONFIRM_VERDICTS, HAZARD_CONFIRM_VIA } from './lib/enums'
 import { latLng, literals } from './lib/validators'
 
 /**
- * Re-confirming within this window updates the existing vote in place instead of stacking a new one,
- * so a skater doing laps can't inflate a hazard's counts (or archive it single-handedly) by tapping
- * the same button repeatedly. Tunable in Phase 7.
+ * Re-confirming within this window refreshes the skater's existing vote in place rather than logging a
+ * fresh audit row every time — a skater doing laps shouldn't spray rows. Note it is NOT a correctness
+ * gate: counts are derived from *distinct users' latest votes* (`deriveHazardLifecycle`), so a stored
+ * count is right regardless of the window. The window only governs row/audit granularity. Tunable in
+ * Phase 7.
  */
 export const CONFIRM_WINDOW_MS = 12 * 60 * 60 * 1000
 
 /**
- * Cast a confirmation. Appends (or refreshes) the vote, runs the `@skating/core` lifecycle reducer,
- * patches the hazard, and records a `pointEvents` row for the eventual reputation signal (D50).
+ * Cast a confirmation. Upserts this skater's single vote for the hazard, then recomputes the hazard's
+ * lifecycle from the whole vote set via `@skating/core` and patches it.
+ *
+ * **One vote row per user per hazard** is the invariant that makes this safe *and* idempotent: a queued
+ * confirmation that replays on flush updates the same row and re-derives the same counts, so a lost ack
+ * can never double-count toward archival (the offline-path twin of the same-account abuse the
+ * distinct-user derivation prevents).
  */
 export const confirm = mutation({
   args: {
@@ -65,106 +72,75 @@ export const confirm = mutation({
     // is clamped rather than trusted.
     const at = Math.min(observedAt ?? now, now)
 
-    const existing = await findRecentVote(ctx, hazardId, profile._id, now)
+    const existing = await findUserVote(ctx, hazardId, profile._id)
+    let firstContribution: boolean
     if (existing) {
-      // Same window: replace the vote rather than counting it twice. If the verdict is unchanged this
-      // is just a clock refresh; if it changed, unwind the old one before applying the new.
+      // This skater already has a vote on this hazard: refresh it. `createdAt` stays monotonic so a
+      // late-arriving offline replay can't drag their observation time backward.
       await ctx.db.patch(existing._id, {
+        verdict,
+        ...(atCoord ? { atCoord } : {}),
+        via,
+        createdAt: Math.max(existing.createdAt, at),
+      })
+      firstContribution = false
+    } else {
+      await ctx.db.insert('hazardConfirmations', {
+        hazardId,
+        userId: profile._id,
         verdict,
         ...(atCoord ? { atCoord } : {}),
         via,
         createdAt: at,
       })
-      const unwound = unapplyVote(hazard, existing.verdict, isAuthor(hazard, profile._id))
-      await patchLifecycle(ctx, hazardId, unwound, verdict, at, isAuthor(hazard, profile._id))
-      return
+      firstContribution = true
     }
 
-    await ctx.db.insert('hazardConfirmations', {
-      hazardId,
-      userId: profile._id,
-      verdict,
-      ...(atCoord ? { atCoord } : {}),
-      via,
-      createdAt: at,
-    })
-    await patchLifecycle(ctx, hazardId, hazard, verdict, at, isAuthor(hazard, profile._id))
+    await recomputeLifecycle(ctx, hazard)
 
-    // Boost-only reputation signal (D50 prep). Confirming is a genuine contribution; no negative
-    // events exist yet, and none should be inferred from a verdict.
-    await ctx.db.insert('pointEvents', {
-      userId: profile._id,
-      delta: 1,
-      reason: 'hazard_confirmed',
-      refId: hazardId,
-      createdAt: now,
-    })
+    // Boost-only reputation signal (D50 prep). Awarded once per user per hazard — on their first vote,
+    // not on every re-confirm — so laps, verdict changes, and offline replays can't farm points.
+    if (firstContribution) {
+      await ctx.db.insert('pointEvents', {
+        userId: profile._id,
+        delta: 1,
+        reason: 'hazard_confirmed',
+        refId: hazardId,
+        createdAt: now,
+      })
+    }
   },
 })
 
-function isAuthor(hazard: Doc<'hazards'>, userId: Id<'profiles'>): boolean {
-  return hazard.createdByUserId === userId
-}
-
-async function findRecentVote(
+/** This user's single vote on a hazard, if any. One row per user per hazard is an invariant. */
+async function findUserVote(
   ctx: MutationCtx,
   hazardId: Id<'hazards'>,
   userId: Id<'profiles'>,
-  now: number,
 ): Promise<Doc<'hazardConfirmations'> | null> {
-  const votes = await ctx.db
+  return ctx.db
     .query('hazardConfirmations')
     .withIndex('by_hazard_and_user', (q) => q.eq('hazardId', hazardId).eq('userId', userId))
+    .unique()
+}
+
+/** Re-derive the hazard's lifecycle from every vote and patch the stored counts/status. */
+async function recomputeLifecycle(ctx: MutationCtx, hazard: Doc<'hazards'>): Promise<void> {
+  const votes = await ctx.db
+    .query('hazardConfirmations')
+    .withIndex('by_hazard', (q) => q.eq('hazardId', hazard._id))
     .collect()
-  const recent = votes
-    .filter((vote) => now - vote.createdAt < CONFIRM_WINDOW_MS)
-    .sort((a, b) => b.createdAt - a.createdAt)
-  return recent[0] ?? null
-}
-
-/**
- * Reverse a previously-counted vote so a changed verdict doesn't double-count.
- *
- * Note it does **not** un-archive: `status` is left alone. Once a hazard has been archived by
- * consensus, a single person changing their mind shouldn't silently resurrect it — that path is a
- * fresh re-report, which is exactly why archiving keeps the row (D15).
- */
-function unapplyVote(
-  hazard: Doc<'hazards'>,
-  priorVerdict: Doc<'hazardConfirmations'>['verdict'],
-  author: boolean,
-): Doc<'hazards'> {
-  if (author) return hazard
-  if (priorVerdict === 'still_there') {
-    return { ...hazard, confirmCount: Math.max(0, hazard.confirmCount - 1) }
-  }
-  if (priorVerdict === 'fully_healed') {
-    return { ...hazard, goneCount: Math.max(0, hazard.goneCount - 1) }
-  }
-  return hazard
-}
-
-async function patchLifecycle(
-  ctx: MutationCtx,
-  hazardId: Id<'hazards'>,
-  hazard: Doc<'hazards'>,
-  verdict: Doc<'hazardConfirmations'>['verdict'],
-  at: number,
-  author: boolean,
-): Promise<void> {
-  const next = applyConfirmation(
-    {
-      lastConfirmedAt: hazard.lastConfirmedAt,
-      confirmCount: hazard.confirmCount,
-      goneCount: hazard.goneCount,
-      healingState: hazard.healingState ?? 'none',
-      status: hazard.status,
-    },
-    verdict,
-    at,
-    { isAuthor: author },
-  )
-  await ctx.db.patch(hazardId, next)
+  const records: HazardVoteRecord[] = votes.map((v) => ({
+    userId: v.userId,
+    verdict: v.verdict,
+    at: v.createdAt,
+  }))
+  const next = deriveHazardLifecycle(records, {
+    authorId: hazard.createdByUserId,
+    createdAt: hazard.firstReportedAt,
+    priorStatus: hazard.status,
+  })
+  await ctx.db.patch(hazard._id, next)
 }
 
 /** The confirmation history for a hazard's detail drawer — newest first. */

@@ -29,7 +29,7 @@ import {
 import { ConvexError, v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server'
-import { requireProfile, requireRole } from './lib/auth'
+import { requireProfile } from './lib/auth'
 import { resolveSurvivor } from './lib/bodies'
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators'
 import { isListed } from './lib/listing'
@@ -51,6 +51,15 @@ export const inReportHazardArgs = {
   description: v.optional(v.string()),
   photoIds: v.optional(v.array(v.id('photos'))),
 }
+
+/**
+ * Bounds on the free-text and fan-out surface of a hazard. `reports.notes` goes through
+ * `validateReportInput`; a hazard's optional description has no such pass, so it's capped here. The
+ * per-report count caps a single mutation's write fan-out — each hazard is several document writes, so
+ * an unbounded array is a cheap way to make one call expensive.
+ */
+export const HAZARD_MAX_DESCRIPTION_LEN = 1_000
+export const HAZARD_MAX_PER_REPORT = 25
 
 /** The standalone quick-flag args (D51) — the same content, plus the body it attaches to. */
 export const hazardCreateArgs = {
@@ -120,6 +129,10 @@ export async function insertHazard(
   const shape = toShape(args)
   if (!isValidHazardShape(shape)) throw new ConvexError('Invalid hazard geometry')
 
+  if (args.description !== undefined && args.description.length > HAZARD_MAX_DESCRIPTION_LEN) {
+    throw new ConvexError('Hazard description is too long')
+  }
+
   const photoIds = args.photoIds ?? []
   await assertOwnedPhotos(ctx, photoIds, authorId)
 
@@ -162,8 +175,10 @@ export const create = mutation({
     const now = Date.now()
 
     // Idempotency short-circuit: if this key already produced a hazard, return it — the flush is a
-    // retry, not a new sighting. Scoped to the author so a shared key can never hand back someone
-    // else's pin. Runs before the minor gate and the insert, so a lost-ack retry is cheap.
+    // retry, not a new sighting. The index is global (keys are client-minted UUIDs, so cross-user
+    // collision is vanishingly unlikely), but we still verify ownership before handing a pin back, so
+    // a guessed or replayed key can never surface someone else's hazard. Runs before the minor gate
+    // and the insert, so a lost-ack retry is cheap.
     if (args.idempotencyKey !== undefined) {
       const existing = await ctx.db
         .query('hazards')
@@ -220,15 +235,29 @@ export const listForBody = query({
     const body = await resolveSurvivor(ctx, waterBodyId)
     if (!body) return []
     const now = Date.now()
-    const rows = await ctx.db
-      .query('hazards')
-      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
-      .collect()
-    return rows
-      .filter((h) => h.moderationStatus === 'visible')
-      .filter((h) => includeArchived === true || h.status === 'active')
-      .map((h) => toView(h, now))
-      .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
+    // Narrow to active hazards *at the index* in the common case. Archived hazards are retained
+    // forever (D15), so reading them on every map subscription tick — the mistake `listInViewport`
+    // made (#10/#11) — would let this query's read count grow without bound on a well-used lake.
+    // `includeArchived` is a rare, explicit request and takes the wider index.
+    const rows = includeArchived
+      ? await ctx.db
+          .query('hazards')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+          .collect()
+      : await ctx.db
+          .query('hazards')
+          .withIndex('by_water_body_status', (q) =>
+            q.eq('waterBodyId', body._id).eq('status', 'active'),
+          )
+          .collect()
+    return (
+      rows
+        .filter((h) => h.moderationStatus === 'visible')
+        // A hazard promoted to a persistent body feature (D53) is rendered by the feature now, not here.
+        .filter((h) => h.promotedToFeatureId === undefined)
+        .map((h) => toView(h, now))
+        .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
+    )
   },
 })
 
@@ -274,6 +303,7 @@ export const listBundleCandidates = query({
     return rows
       .filter((h) => h.originReportId === undefined)
       .filter((h) => h.moderationStatus === 'visible')
+      .filter((h) => h.promotedToFeatureId === undefined)
       .filter((h) => h.firstReportedAt >= from && h.firstReportedAt <= skateEndTime)
       .map((h) => toView(h, now))
       .sort((a, b) => a.firstReportedAt - b.firstReportedAt)
@@ -302,6 +332,9 @@ export async function attachHazardsToReport(
     if (hazard.createdByUserId !== authorId) continue
     if (hazard.waterBodyId !== waterBodyId) continue
     if (hazard.originReportId !== undefined) continue
+    // A moderator-hidden pin must not be launderable back into visibility by bundling it into a
+    // report (D3) — skip anything not currently visible.
+    if (hazard.moderationStatus !== 'visible') continue
     await ctx.db.patch(hazardId, { originReportId: reportId })
     attached.push(hazardId)
   }
@@ -309,37 +342,11 @@ export async function attachHazardsToReport(
 }
 
 /**
- * Moderator hide/restore for a bad pin (D32/D37).
- *
- * Sets `moderationStatus` and leaves the lifecycle `status` untouched, on purpose: a hidden hazard is
- * not a healed hazard, and if a mod action moved the lifecycle we'd have laundered a moderation
- * decision into a safety claim (D3). Writes the usual audit row.
+ * Moderator hide/restore for a bad hazard pin goes through the shared `moderation.setModerationStatus`
+ * (`targetType: 'hazard'`) — one takedown surface for reports, comments and hazards, so the Phase 7
+ * queue has a single entry point. That mutation touches only `moderationStatus` and never the lifecycle
+ * `status`, keeping a moderator hide distinct from a community all-clear (D3).
  */
-export const setModeration = mutation({
-  args: {
-    hazardId: v.id('hazards'),
-    status: literals(['visible', 'hidden', 'removed'] as const),
-    reason: v.string(),
-  },
-  handler: async (ctx, { hazardId, status, reason }) => {
-    const actor = await requireRole(ctx, 'moderator')
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required')
-    const hazard = await ctx.db.get(hazardId)
-    if (!hazard) throw new ConvexError('Hazard not found')
-
-    const priorStatus = hazard.moderationStatus
-    await ctx.db.patch(hazardId, { moderationStatus: status })
-    await ctx.db.insert('moderationActions', {
-      actorId: actor._id,
-      action: status === 'visible' ? 'restore' : status === 'hidden' ? 'hide' : 'remove',
-      targetType: 'hazard',
-      targetId: hazardId,
-      reason,
-      metadata: { priorStatus, newStatus: status },
-      createdAt: Date.now(),
-    })
-  },
-})
 
 /** Internal read used by the confirmation flow; keeps the moderation gate in one place. */
 export async function loadVisibleHazard(

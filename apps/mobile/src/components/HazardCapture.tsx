@@ -18,9 +18,10 @@ import {
   undoDraftPlacement,
 } from '@skating/core'
 import { useMutation } from 'convex/react'
+import { ConvexError } from 'convex/values'
 import { randomUUID } from 'expo-crypto'
 import * as Location from 'expo-location'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Image, Modal } from 'react-native'
 import { Button, H4, Paragraph, ScrollView, Text, XStack, YStack } from 'tamagui'
 import { deleteDraftPhotoFiles, persistDraftPhoto } from '../lib/draftPhotos'
@@ -54,6 +55,8 @@ export function HazardCapture() {
   const createHazard = useMutation(api.hazards.create)
   const generateUploadUrl = useMutation(api.photos.generateUploadUrl)
   const createPhoto = useMutation(api.photos.create)
+  const deletePhoto = useMutation(api.photos.remove)
+  const removeBlob = useMutation(api.photos.removeBlob)
   const {
     onIceWaterBodyId,
     highlightWaterBodyId,
@@ -68,9 +71,18 @@ export function HazardCapture() {
   const [picking, setPicking] = useState(false)
   const [showAllTypes, setShowAllTypes] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [locating, setLocating] = useState(false)
   const [addingPhotos, setAddingPhotos] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  /**
+   * The lake the pin belongs to, **captured the instant a type is chosen** rather than read live at
+   * Done time. `targetBodyId` below is derived from map state that changes underfoot — navigating back
+   * to `/` clears the highlight and `onIceWaterBodyId` can go null — so reading it at submit let Done
+   * silently bail (no lake ⇒ `post()` returns, having looked like it did nothing). Freezing it here is
+   * what makes "Done always means Done" true: the pin can't lose the lake it was dropped on.
+   */
+  const [capturedBodyId, setCapturedBodyId] = useState<string | null>(null)
   /**
    * Photos, held as offline draft photos from the moment they're picked.
    *
@@ -80,36 +92,99 @@ export function HazardCapture() {
    * feeds both paths: upload these uris now, or hand the same records to the queue.
    */
   const [photos, setPhotos] = useState<DraftPhoto[]>([])
+  /**
+   * The live photo list, mirrored into a ref so `post()`'s failure branches read the *checkpoints*
+   * `uploadPhotos` recorded (storage ids / photo-row ids), not the stale closure. The permanent branch
+   * needs them to reclaim what already uploaded; the transient branch hands them to the queue so the
+   * flush *resumes* the upload instead of re-sending from disk and orphaning the first set.
+   */
+  const photosRef = useRef<DraftPhoto[]>([])
+  photosRef.current = photos
+  // Latest draft, for the async GPS handler below to read without a stale closure — the context's
+  // `setHazardDraft` takes a value, not an updater, so we can't check "is it still unplaced?" inside it.
+  const hazardDraftRef = useRef(hazardDraft)
+  hazardDraftRef.current = hazardDraft
 
   // Flag against the lake the skater is standing on; fall back to whichever lake they have open, so
   // the affordance still works when browsing from the couch.
   const targetBodyId = onIceWaterBodyId ?? highlightWaterBodyId
 
-  function reset() {
+  /** Clear the draft state without touching photo files — the queue path keeps the files it owns. */
+  function resetDraftState() {
     setPhotos([])
+    setCapturedBodyId(null)
     setHazardDraft(null)
     setHazardDraftType(null)
     setHazardDropMode(false)
     setPicking(false)
     setShowAllTypes(false)
+    setLocating(false)
     setError(null)
   }
 
+  /**
+   * Full reset for an *abandoned* capture (Cancel, or the type sheet's `onRequestClose`): free the
+   * persisted photo files too. Without this, photos picked then cancelled leak their full+thumb copies
+   * into app storage forever — `removePhoto` frees a single removal, but bailing out skipped the rest.
+   */
+  function reset() {
+    deleteDraftPhotoFiles(photosRef.current.flatMap((p) => [p.fullUri, p.thumbUri]))
+    resetDraftState()
+  }
+
+  /**
+   * Get a fix fast, or `null`. Prefers the last known fix — it returns *instantly* on a cold receiver,
+   * and a pin you can nudge beats a spinner you can't dismiss — then falls back to a fresh fix under a
+   * hard timeout so the bar never hangs on a receiver that won't lock (tree cover, a true cold start).
+   */
+  async function acquireCoord(): Promise<{ lat: number; lng: number } | null> {
+    try {
+      const last = await Location.getLastKnownPositionAsync({ maxAge: 60_000 })
+      if (last) return { lat: last.coords.latitude, lng: last.coords.longitude }
+    } catch {
+      // fall through to a fresh fix
+    }
+    try {
+      const pos = await Promise.race([
+        Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000)),
+      ])
+      if (pos) return { lat: pos.coords.latitude, lng: pos.coords.longitude }
+    } catch {
+      // no fix
+    }
+    return null
+  }
+
   async function chooseType(type: HazardType) {
+    // Freeze the lake now, while we still have it — see `capturedBodyId`.
+    setCapturedBodyId(targetBodyId)
     setHazardDraftType(type)
     setPicking(false)
+    setError(null)
+    // Show the pin's adjust bar *immediately*, armed for a map tap, so tap 2 is never a dead tap while
+    // a cold GPS receiver spins up: the sheet has closed and without this the screen would show only
+    // the reappeared FAB, reading as "nothing happened" — and a gloved re-tap restarts the whole flow.
     const draft = pointDraftForType(type)
+    setHazardDraft(draft)
+    setHazardDropMode(true)
+    setLocating(true)
     try {
-      // Drop at the current fix. Permission was already requested for map framing; if it's denied or
-      // the fix times out we keep the (unplaced) draft and ask for a tap instead of failing outright.
-      const pos = await Location.getCurrentPositionAsync({})
-      setHazardDraft(
-        applyDraftMapClick(draft, { lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      )
-    } catch {
-      setHazardDraft(draft)
-      setHazardDropMode(true)
-      setError('Couldn’t get your location — tap the map where the hazard is.')
+      const coord = await acquireCoord()
+      if (coord) {
+        // Only place if the draft is still the unplaced one we started — a fix that lands *after* the
+        // skater already tapped the map themselves must not yank the pin off where they put it.
+        const current = hazardDraftRef.current
+        if (current?.geometryKind === 'point_radius' && current.coord === null) {
+          setHazardDraft(applyDraftMapClick(current, coord))
+        }
+        setHazardDropMode(false)
+      } else {
+        // Keep the (unplaced) draft in drop mode and ask for a tap instead of failing outright.
+        setError('Couldn’t get your location — tap the map where the hazard is.')
+      }
+    } finally {
+      setLocating(false)
     }
   }
 
@@ -161,33 +236,82 @@ export function HazardCapture() {
     })
   }
 
-  /** Upload the persisted photos and return their ids. Throws like any other network call. */
+  /**
+   * Upload the persisted photos and return their ids, **checkpointing each step into `photos` state**
+   * (storage id, then row id) exactly as the offline flush does. Throws like any other network call —
+   * but the partial progress it recorded survives in `photosRef`, so the failure branches in `post()`
+   * can either reclaim it (permanent) or hand it to the queue to resume (transient) instead of
+   * re-uploading from disk and stranding the first set. Mirrors web's `usePhotoDrafts.uploadAll`.
+   */
   async function uploadPhotos(): Promise<Id<'photos'>[]> {
-    return Promise.all(
-      photos.map(async (photo) => {
-        const [storageId, thumbStorageId] = await Promise.all([
-          generateUploadUrl().then((url) => uploadToStorage(url, photo.fullUri)),
-          generateUploadUrl().then((url) => uploadToStorage(url, photo.thumbUri)),
-        ])
-        return createPhoto({
-          storageId: storageId as Id<'_storage'>,
-          thumbStorageId: thumbStorageId as Id<'_storage'>,
-          placeOnMap: false,
-        })
-      }),
+    const checkpoint = (id: string, patch: Partial<DraftPhoto>) =>
+      setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)))
+    const ids: Id<'photos'>[] = []
+    for (const photo of photosRef.current) {
+      if (photo.photoId) {
+        ids.push(photo.photoId as Id<'photos'>)
+        continue
+      }
+      let fullStorageId = photo.fullStorageId
+      if (fullStorageId === undefined) {
+        fullStorageId = await generateUploadUrl().then((url) => uploadToStorage(url, photo.fullUri))
+        checkpoint(photo.id, { fullStorageId })
+      }
+      let thumbStorageId = photo.thumbStorageId
+      if (thumbStorageId === undefined) {
+        thumbStorageId = await generateUploadUrl().then((url) =>
+          uploadToStorage(url, photo.thumbUri),
+        )
+        checkpoint(photo.id, { thumbStorageId })
+      }
+      const photoId = await createPhoto({
+        storageId: fullStorageId as Id<'_storage'>,
+        thumbStorageId: thumbStorageId as Id<'_storage'>,
+        placeOnMap: false,
+      })
+      checkpoint(photo.id, { photoId })
+      ids.push(photoId)
+    }
+    return ids
+  }
+
+  /**
+   * Reclaim whatever `uploadPhotos` managed to upload before a *permanent* failure, so nothing is
+   * stranded server-side: a created row (row + both blobs) or, for a partial upload, the bare blobs
+   * that never got a row. Checkpoints are then cleared so a subsequent retry re-uploads fresh rather
+   * than re-attaching the rows we just deleted. Best-effort; mirrors `usePhotoDrafts.reclaim`.
+   */
+  function reclaimUploadedPhotos() {
+    for (const p of photosRef.current) {
+      if (p.photoId) {
+        void deletePhoto({ photoId: p.photoId as Id<'photos'> }).catch(() => {})
+      } else {
+        if (p.fullStorageId)
+          void removeBlob({ storageId: p.fullStorageId as Id<'_storage'> }).catch(() => {})
+        if (p.thumbStorageId)
+          void removeBlob({ storageId: p.thumbStorageId as Id<'_storage'> }).catch(() => {})
+      }
+    }
+    setPhotos((prev) =>
+      prev.map((p) => ({
+        ...p,
+        fullStorageId: undefined,
+        thumbStorageId: undefined,
+        photoId: undefined,
+      })),
     )
   }
 
   async function post() {
     const shape = hazardDraft ? draftToShape(hazardDraft) : null
-    if (!hazardDraftType || !shape || !targetBodyId) return
+    if (!hazardDraftType || !shape || !capturedBodyId) return
     setSaving(true)
     setError(null)
     const idempotencyKey = randomUUID()
     try {
       const photoIds = await uploadPhotos()
       await createHazard({
-        waterBodyId: targetBodyId as Id<'waterBodies'>,
+        waterBodyId: capturedBodyId as Id<'waterBodies'>,
         idempotencyKey,
         ...(photoIds.length > 0 ? { photoIds } : {}),
         type: hazardDraftType,
@@ -196,15 +320,24 @@ export function HazardCapture() {
         ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
         ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
       })
-      // The upload succeeded, so the persisted copies are now dead weight.
-      deleteDraftPhotoFiles(photos.flatMap((p) => [p.fullUri, p.thumbUri]))
+      // The upload succeeded, so the persisted copies are now dead weight. `reset()` frees them.
       reset()
       // A brief toast, never a blocking modal — the skater may be moving.
       setToast('Hazard posted. Thanks.')
       setTimeout(() => setToast(null), 3000)
     } catch (e) {
       if (classifyFlushError(e) === 'permanent') {
-        setError(e instanceof Error ? e.message : 'Couldn’t post that hazard.')
+        // A real rejection (a minor posting, a removed lake) — retrying won't help, so reclaim the
+        // photo rows/blobs this attempt uploaded rather than orphan them, and leave the draft up with
+        // the reason so the skater can read it and Cancel (which frees the files).
+        reclaimUploadedPhotos()
+        setError(
+          e instanceof ConvexError
+            ? String(e.data)
+            : e instanceof Error
+              ? e.message
+              : 'Couldn’t post that hazard.',
+        )
         setSaving(false)
         return
       }
@@ -216,12 +349,14 @@ export function HazardCapture() {
           now,
           type: hazardDraftType,
           shape,
-          waterBodyId: targetBodyId,
-          // The queue re-uploads these from disk on flush, checkpointing each id as it lands.
-          photos,
+          waterBodyId: capturedBodyId,
+          // Hand over the *checkpointed* photos: any blob/row already uploaded above carries its id, so
+          // the flush resumes from there instead of re-uploading from disk and orphaning the first set.
+          photos: photosRef.current,
         }),
       )
-      reset()
+      // The queue owns the files now — reset draft state WITHOUT freeing them.
+      resetDraftState()
       setToast('Saved — it’ll post when you’re back in signal.')
       setTimeout(() => setToast(null), 4000)
     } finally {
@@ -231,7 +366,10 @@ export function HazardCapture() {
 
   const isLine = hazardDraft?.geometryKind === 'line'
   const placements = hazardDraft ? draftPlacementCount(hazardDraft) : 0
-  const postable = hazardDraft !== null && draftToShape(hazardDraft) !== null
+  // `capturedBodyId` is part of this so Done can never be enabled when `post()` would bail on a
+  // missing lake — the button being tappable must guarantee the tap actually files something.
+  const postable =
+    hazardDraft !== null && draftToShape(hazardDraft) !== null && capturedBodyId !== null
   const otherTypes = HAZARD_TYPES.filter(
     (t) => !(HAZARD_TYPE_PRESETS as readonly string[]).includes(t),
   )
@@ -357,7 +495,12 @@ export function HazardCapture() {
           {/* A line that isn't postable yet must always say so, not just while tracing — switching a
               valid pin to a line silently disables Done otherwise, which on the ice reads as the app
               being broken. */}
-          {isLine && !postable ? (
+          {locating ? (
+            <Paragraph color="$foregroundMuted" fontSize={13}>
+              Finding you… you can tap the map to drop the pin yourself if you already know where it
+              is.
+            </Paragraph>
+          ) : isLine && !postable ? (
             <Paragraph color="$foregroundMuted" fontSize={13}>
               {placements} {placements === 1 ? 'point' : 'points'} — tap Trace and add at least one
               more, or go back to Just a spot.
@@ -376,7 +519,11 @@ export function HazardCapture() {
           )}
 
           <XStack gap="$2" alignItems="center" flexWrap="wrap">
-            <Button size="$5" onPress={() => setHazardDraft(resizeDraft(hazardDraft, -1))}>
+            <Button
+              size="$5"
+              accessibilityLabel={isLine ? 'Narrower' : 'Smaller'}
+              onPress={() => setHazardDraft(resizeDraft(hazardDraft, -1))}
+            >
               −
             </Button>
             <Text color="$foreground" fontSize={13} flex={1}>
@@ -384,7 +531,11 @@ export function HazardCapture() {
                 ? `about ${hazardDraft.bufferMeters} m either side`
                 : `about ${hazardDraft.radiusMeters} m across`}
             </Text>
-            <Button size="$5" onPress={() => setHazardDraft(resizeDraft(hazardDraft, 1))}>
+            <Button
+              size="$5"
+              accessibilityLabel={isLine ? 'Wider' : 'Bigger'}
+              onPress={() => setHazardDraft(resizeDraft(hazardDraft, 1))}
+            >
               +
             </Button>
           </XStack>

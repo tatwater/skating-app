@@ -31,6 +31,46 @@ describe('HAZARD_DECAY table', () => {
     }
   })
 
+  // This table IS the deliverable of the research pass (`phase-9-hazard-research.md` §1) — the invariant
+  // tests above would all pass with different numbers (`thin_ice: 24→48` breaks nothing structural), so
+  // they can't protect the actual calibration. This locks every row to the researched value; changing a
+  // duration is then a deliberate edit to a named safety constant, reviewed against the evidence, not a
+  // silent drift. Keep it in lock-step with the research doc's `HAZARD_DECAY` block.
+  it('matches the calibrated research values, row for row (all durations in hours)', () => {
+    expect(HAZARD_DECAY).toEqual({
+      // Tier A — volatile (same-day-ish).
+      open_water: { tier: 'A', freshH: 24, agingH: 72 },
+      thin_ice: { tier: 'A', freshH: 24, agingH: 72 },
+      overflow_slush: { tier: 'A', freshH: 24, agingH: 72 },
+      drain_hole: { tier: 'A', freshH: 24, agingH: 72 },
+      wind_hole: { tier: 'A', freshH: 24, agingH: 72 },
+      slush_hole: { tier: 'A', freshH: 24, agingH: 72 },
+      // Tier A* — very volatile (same-day only): the #1 killer and the passage marker.
+      thawed_rotten: { tier: 'A', freshH: 12, agingH: 36 },
+      ridge_crossing: { tier: 'A', freshH: 12, agingH: 36 },
+      // Tier B — semi-persistent (re-skins, weak spot lingers days).
+      wet_crack: { tier: 'B', freshH: 72, agingH: 168 },
+      drilled_hole: { tier: 'B', freshH: 72, agingH: 168 },
+      shell_area: { tier: 'B', freshH: 72, agingH: 168 },
+      // Tier C — structural (don't heal within a season; often grow).
+      pressure_ridge: { tier: 'C', freshH: 168, agingH: 504 },
+      ice_heave: { tier: 'C', freshH: 168, agingH: 504 },
+      // Tier D — effectively permanent (bodyFeatures candidates).
+      spring_current: { tier: 'D', freshH: 336, agingH: 1080 },
+      gas_hole: { tier: 'D', freshH: 336, agingH: 1080 },
+      reef_hole: { tier: 'D', freshH: 336, agingH: 1080 },
+    })
+  })
+
+  // The A* sub-case is the whole reason `thawed_rotten` and `ridge_crossing` exist as separate rows —
+  // if a tuning ever lets them decay as slowly as an ordinary Tier A hazard, the "same-day information
+  // only" claim (research §4/§5) is silently broken. Pin the exact boundary.
+  it('keeps the A* sub-case at 12h/36h', () => {
+    for (const type of ['thawed_rotten', 'ridge_crossing'] as const) {
+      expect(HAZARD_DECAY[type], type).toMatchObject({ freshH: 12, agingH: 36 })
+    }
+  })
+
   // The tiers encode a behavioral claim from the research: volatile hazards stop being trustworthy
   // faster than structural ones. If someone tunes a Tier A type to outlive a Tier D one, the tier label
   // has become a lie — that's what this guards.

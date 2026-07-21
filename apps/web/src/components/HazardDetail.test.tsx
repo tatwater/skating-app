@@ -155,4 +155,31 @@ describe('HazardView', () => {
     renderWithRouter(<HazardView data={data()} onConfirm={vi.fn()} confirming />)
     expect(await screen.findByRole('button', { name: /Still here/ })).toBeDisabled()
   })
+
+  // A dropped vote (offline, ConvexError) must be surfaced, not swallowed: silence would let the
+  // skater walk away believing they'd warned the next person when they hadn't (D3).
+  it('surfaces a failed confirmation instead of swallowing it', async () => {
+    renderWithRouter(
+      <HazardView
+        data={data()}
+        onConfirm={vi.fn()}
+        confirmError="Could not record that — check your connection and try again."
+      />,
+    )
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/check your connection/)
+  })
+
+  // The reporter name comes from the backend; until `toView` returns one the author line is omitted
+  // entirely rather than rendered as a trailing "by ".
+  it('omits the author line when no reporter name is known', async () => {
+    // confirmCount 0 so the only "by" that could appear would be the author line we're checking for.
+    renderWithRouter(<HazardView data={data({ reporterName: undefined, confirmCount: 0 })} />)
+    expect(await screen.findByText(/nobody else has confirmed/)).not.toHaveTextContent('by')
+  })
+
+  it('names the reporter once the backend provides one', async () => {
+    renderWithRouter(<HazardView data={data({ reporterName: 'Nadia' })} />)
+    expect(await screen.findByText(/by Nadia/)).toBeInTheDocument()
+  })
 })

@@ -32,7 +32,12 @@ import { ConvexError, v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server'
 import { resolvePlaceForCoord } from './adminAreas'
-import { attachHazardsToReport, inReportHazardArgs, insertHazard } from './hazards'
+import {
+  attachHazardsToReport,
+  HAZARD_MAX_PER_REPORT,
+  inReportHazardArgs,
+  insertHazard,
+} from './hazards'
 import { getCurrentProfile, requireProfile } from './lib/auth'
 import { resolveSurvivor } from './lib/bodies'
 import { bumpContributionCount } from './lib/contributionCounts'
@@ -160,6 +165,12 @@ export const create = mutation({
     // Minors are read-only (D41): reports are always public (D13), so we never let a minor broadcast.
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post reports')
+    }
+
+    // Bound the hazard fan-out: each in-report hazard is several document writes, so an unbounded
+    // array makes one create arbitrarily expensive. A real skate produces a handful, not dozens.
+    if ((args.hazards?.length ?? 0) + (args.attachHazardIds?.length ?? 0) > HAZARD_MAX_PER_REPORT) {
+      throw new ConvexError('Too many hazards for one report')
     }
 
     const body = await resolveSurvivor(ctx, args.waterBodyId)

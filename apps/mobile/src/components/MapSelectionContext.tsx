@@ -66,11 +66,20 @@ interface MapSelectionValue {
   setHazardDropMode: (on: boolean) => void
   /**
    * The lake the skater's own GPS resolved to, if any (§Mobile "the on-ice state"). Resolved through
-   * the offline body cache, so it works with no signal. Drives nothing but the flag affordance and
-   * the proximity watcher — deliberately **not** a mode you can be confused about being in.
+   * the offline body cache, so it works with no signal. On app-open it auto-selects that lake (the
+   * layout navigates to its detail); thereafter it drives the flag affordance and the proximity
+   * banner — but **not** the hazard *layer*, which follows the selected lake so closing the sheet and
+   * panning away lets the hazards fall off naturally.
    */
   onIceWaterBodyId: string | null
   setOnIceWaterBodyId: (id: string | null) => void
+  /**
+   * The device's latest GPS fix while on the map, published by the layout's single watcher so the
+   * proximity banner can evaluate it without running a *second* watcher (two GPS subscriptions on a
+   * cold phone is exactly the battery cost this feature can't afford). `null` until the first fix.
+   */
+  onIceCoord: { lat: number; lng: number } | null
+  setOnIceCoord: (coord: { lat: number; lng: number } | null) => void
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null)
@@ -86,6 +95,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null)
   const [hazardDropMode, setHazardDropMode] = useState(false)
   const [onIceWaterBodyId, setOnIceWaterBodyId] = useState<string | null>(null)
+  const [onIceCoord, setOnIceCoord] = useState<{ lat: number; lng: number } | null>(null)
 
   const value = useMemo(
     () => ({
@@ -109,6 +119,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setHazardDropMode,
       onIceWaterBodyId,
       setOnIceWaterBodyId,
+      onIceCoord,
+      setOnIceCoord,
     }),
     [
       highlightWaterBodyId,
@@ -121,6 +133,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       hazardDraftType,
       hazardDropMode,
       onIceWaterBodyId,
+      onIceCoord,
     ],
   )
 

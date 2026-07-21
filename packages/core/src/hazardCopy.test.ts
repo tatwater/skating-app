@@ -146,6 +146,27 @@ describe('ridge_crossing relabeling (research §4)', () => {
       expect(relabeled, type).toBe(type === 'ridge_crossing')
     }
   })
+
+  // The help text has to invert with the label. Its `fully_healed` verdict means "the crossing is
+  // gone", so it must NOT fall through to the danger copy ("only if the ice here is genuinely sound"),
+  // which on a passage marker would tell someone at a closed crossing to leave the stale marker up.
+  it('gives the help text its own passage-marker wording for all three verdicts', () => {
+    const danger = new Set([
+      verdictHelp('still_there', 'open_water'),
+      verdictHelp('healing_unsafe', 'open_water'),
+      verdictHelp('fully_healed', 'open_water'),
+    ])
+    for (const verdict of VERDICTS) {
+      expect(danger.has(verdictHelp(verdict, 'ridge_crossing')), verdict).toBe(false)
+    }
+  })
+
+  it('help text for retiring a crossing describes it closing, not the ice being sound', () => {
+    const help = verdictHelp('fully_healed', 'ridge_crossing')
+    expect(help).toMatch(/closed|no longer a way across/i)
+    expect(help).not.toMatch(/sound/i)
+    expect(help).toMatch(/two|retire/i)
+  })
 })
 
 describe('the destructive verdict names its consequence', () => {

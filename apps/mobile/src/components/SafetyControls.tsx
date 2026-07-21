@@ -6,7 +6,7 @@ import { Button, Text, TextArea, XStack, YStack } from 'tamagui'
 import { Badge } from './detailUi'
 
 /** Flag targets + reasons mirror the backend enums (`FLAG_TARGET_TYPES` / `FLAG_REASONS`). */
-export type FlagTargetType = 'report' | 'comment' | 'photo' | 'user'
+export type FlagTargetType = 'report' | 'comment' | 'photo' | 'user' | 'hazard'
 
 /** `unsafe_false_report` leads — a dangerously false "ice is great" claim is a safety issue (D3). */
 const REASONS: { value: string; label: string }[] = [

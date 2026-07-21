@@ -10,18 +10,21 @@
 > honoring "no live GPS server-side" (D12) and "never assert ice is safe" (D3). It completes what a
 > report/lake *looks like* before Phase 6 layers reputation on top (sequencing call, 2026-07-18).
 >
-> **Status:** 🔨 **In build (started 2026-07-21).** Decisions settled 2026-07-18 (**D51–D54**), calibrated
-> by the 2026-07-21 research pass, and six build-kickoff gaps resolved 2026-07-21 (see *Calls made at
-> build kickoff* below) — which amended **D51** and **D54** and added **D55**. Schema deltas are in
-> [`06-data-model.md`](./06-data-model.md). Prior phases are on dev; prod deferred.
+> **Status:** ✅ **Code complete + reviewed (2026-07-21); tests green.** **Not yet deployed to the dev
+> Convex deployment, and the PR is not yet merged.** Decisions settled 2026-07-18 (**D51–D54**),
+> calibrated by the 2026-07-21 research pass, and six build-kickoff gaps resolved 2026-07-21 (see *Calls
+> made at build kickoff* below) — which amended **D51** and **D54** and added **D55**. Schema deltas are
+> in [`06-data-model.md`](./06-data-model.md). Prior phases are on dev; prod deferred. **The Layer-3
+> offline basemap tile-pack was dropped** during the build (native spike — findings recorded below).
 >
 > **Prerequisites already in place.** The F2 offline substrate hazards depend on is **built**: the
 > "Layer 2" body-reference cache (`apps/mobile/src/lib/offlineBody.ts` pure resolver +
 > `bodyCache.ts` sqlite glue) is factored as a reusable module *explicitly for Phase 9 hazard capture*,
 > and `bodyCache.ts` is already "designed to gain a tile-pack column later." `adminAreas`
-> (place labels, Phase 5) and the `@convex-dev/geospatial` machinery (Phase 1/5) are live. Only the
-> **Layer 3 offline basemap tile-pack** is genuinely unbuilt (a native spike; ships in the offline
-> commits, online-first degrade mirrors F2 report capture).
+> (place labels, Phase 5) and the `@convex-dev/geospatial` machinery (Phase 1/5) are live. The
+> **Layer 3 offline basemap tile-pack** was the one genuinely-unbuilt piece — a native spike — and it
+> was **timeboxed and dropped from this phase** (findings below); the online-first degrade mirrors F2
+> report capture, and on-ice capture never depended on the basemap in the first place.
 
 Decisions referenced as D#; see [`01-decisions.md`](./01-decisions.md).
 
@@ -111,28 +114,59 @@ into the skater's later report**.
 - **No new `notifications.type`** in v1 — Layer-1 alerts are client-local (D54).
 
 Dev's `hazards`/`hazardConfirmations` tables are empty (feature never shipped), so the verdict-enum and
-new-column changes are effectively greenfield; migrations are trivial no-ops but written anyway (D30 idiom).
+new-column changes are effectively greenfield — **no migration was written or needed**, because there are
+no existing rows to migrate. (`packages/convex/convex/` ships zero migration files for Phase 9.) The
+implication carries to the eventual **prod cutover**: prod (`diligent-guanaco-965`) has never been
+deployed at all, so the schema simply lands with the first deploy; a data migration only becomes a
+concern once real hazard rows exist under an older shape, which they never will pre-launch.
 
 ---
 
-## `@skating/core` (pure logic first, 100% coverage — D40)
+## `@skating/core` (pure logic first, near-total coverage — D40)
 
-The safety-sensitive math lives here, property-tested, before any UI:
+The safety-sensitive math lives here, property-tested, before any UI. **Coverage:** the intent is D40's
+100% on the safety math. After the review-remediation pass the package sits at **99.8% statements /
+98.19% branch globally**; every hazard module is at **100% statements/functions** and ≥90% branch
+(`hazardLayer` 100/90, `hazardGeometry` 100/92 — the residual branches are `?? []` defensive guards on
+already-validated input). The `hazardColorExpression` arm order (the D3 "passage never falls through to
+danger" invariant) and the `HAZARD_DECAY` table (a literal 16-row snapshot against the research §1
+values) are now both explicitly locked by tests. The vitest thresholds remain **global (90 stmts/lines,
+90 funcs, 85 branch)**, not per-file.
+
+The modules:
 
 - **`hazardDecay.ts`** — the `HAZARD_DECAY` table (type → `{ tier, freshH, agingH }`, Tiers A–D + the
   A\* very-volatile sub-case; **stored in HOURS**, converted via `hoursToMs` at compare time so the
   Phase-7 admin surface tweaks human-legible integers) + `deriveHazardFreshness(type, lastConfirmedAt,
   now) → 'fresh' | 'aging' | 'stale'`. **Calibrated table + evidence:**
   [`phase-9-hazard-research.md`](./phase-9-hazard-research.md) §1. Property tests: monotonic in elapsed
-  time; tier boundaries; a "still here" reset returns to fresh. **Invariant (D3):** decay = confidence,
-  not safety — a `stale` pin still renders (faded) and its copy never implies "clear."
-- **`hazardLifecycle.ts`** — pure reducers over confirmations: `applyConfirmation(hazard, verdict)` →
-  new `{ lastConfirmedAt?, confirmCount, goneCount, healingState, status }`; `shouldArchive(goneCount,
-  removalThreshold)`; `isProvisional(confirmCount, confirmThreshold)`. Encodes: only `fully_healed`
-  increments `goneCount`; `healing_unsafe` sets `healingState` without archiving; author's own confirm
-  excluded.
-- **`hazardGeometry.ts`** — `pointRadiusToPolygon` (buffer a point, for bbox + render), `hazardBbox`,
-  and `distanceToHazard(coord, hazard)` reusing `geometry.ts` (`pointInPolygon`, buffered distance).
+  time; tier boundaries; a "still here" reset returns to fresh. Also exports **`isHazardVisibleByDefault(
+  freshness)`** (the fresh/aging-vs-stale split that decides what shows without "show older") and
+  **`hazardTypesInTier(tier)`** (the inverse lookup, used by tests and any tier-scoped copy). **Invariant
+  (D3):** decay = confidence, not safety — a `stale` pin still renders (faded) and its copy never implies
+  "clear."
+- **`hazardLifecycle.ts`** — pure reducers over confirmations. The **authoritative** one is
+  `deriveHazardLifecycle(votes, { authorId, createdAt, priorStatus })`, which recomputes a hazard's
+  `{ lastConfirmedAt, confirmCount, goneCount, healingState, status }` from the **entire vote set** by
+  counting **distinct non-author users' latest verdicts**. This is a Phase 9 review fix: the earlier
+  per-vote `applyConfirmation` incremented a stored counter and so couldn't tell two rows came from the
+  *same* account — one person could vote `fully_healed` twice (past the re-confirm window, or via an
+  offline replay) and hit the removal threshold alone, a single-skater false all-clear, the worst D3
+  outcome. Deriving from distinct users makes that impossible by construction *and* makes the confirm
+  mutation idempotent (a replayed offline confirmation recomputes the same state). `lastConfirmedAt` is
+  the **max** over creation + all votes (monotonic — a late offline "still here" can never age a pin a
+  newer vote already refreshed); archival is a **ratchet** (`priorStatus === 'archived'` stays archived).
+  `applyConfirmation` remains as the property-tested single-vote *meaning*, `shouldArchive` /
+  `isProvisional` unchanged. Encodes: only `fully_healed` counts toward `goneCount`; `healing_unsafe` sets
+  `healingState` without archiving; the author's own vote refreshes the clock but moves neither threshold.
+- **`hazardGeometry.ts`** — the footprint math. Shipped as `hazardFootprint(shape)` (grow the raw
+  geometry by its radius/buffer into the one polygon that is the **single source of truth** for the halo
+  drawn, the bbox indexed, and the distance the proximity alert measures — so what a skater *sees* and
+  what the app *warns about* can never drift), `pointRadiusShape` / `lineShape` / `defaultShapeForType`
+  (construct a shape), `hazardBbox`, `isValidHazardShape` (reject a zero-area footprint), and
+  `distanceToHazard(coord, shape)` reusing `geometry.ts` — 0 when inside, and point+radius short-circuits
+  to haversine-minus-radius so the watcher loop doesn't buffer a polygon on every GPS fix. *(Named
+  `hazardFootprint` / `pointRadiusShape`, not the plan's earlier `pointRadiusToPolygon`.)*
 - **`hazardDraft.ts`** — the *authoring* state machine, shared by both platforms: the `HazardDraft`
   union (a circle awaiting a centre / a polyline collecting vertices), `draftForType` +
   `retypeDraft` (primitive and default size follow the hazard's real-world shape),
@@ -140,10 +174,27 @@ The safety-sensitive math lives here, property-tested, before any UI:
   `draftToShape` — the **single** gate deciding a draft is storable, delegating to
   `isValidHazardShape`. A half-drawn line and an unplaced circle are deliberately representable and
   deliberately not submittable: a polyline is captured one tap at a time, so "half a line" is a
-  normal intermediate the UI must hold and render, not a crash.
+  normal intermediate the UI must hold and render, not a crash. Sizing runs off two coarse, non-linear
+  **ladders** — `HAZARD_RADIUS_STEPS_M` (`[5, 10, 25, 50, 100, 200, 400]`) and `HAZARD_BUFFER_STEPS_M`
+  (`[2, 4, 8, 15, 25, 40, 60]`, bottoming and topping lower because a wide band on a polyline covers a
+  *lot* of ice) — stepped by `stepSize` / `resizeDraft`. **This is a real design decision, not an
+  implementation detail:** a short discrete ladder is what makes the size control a pair of **−/+
+  buttons rather than a slider** — sliders are miserable with gloves on — and it matches the honesty of
+  the estimate (an eyeball guess on a lake, not a survey; D3). The rule currently lives only in the code
+  comments, so it's recorded here.
 - **`hazardProximity.ts`** (Layer 1, client-consumed) — `evaluateOnIceAlert(coord, hazards, alerted)` →
   the set of hazards within alert buffer, split provisional (→ "confirm?") vs confirmed (→ "ahead"),
   minus already-alerted-this-session. Pure so it's testable and identical on web/mobile.
+- **`hazardLayer.ts`** — the render transforms, lifted into core rather than mirrored per-app the way
+  the water-body layers are: these are the **safety** layers, and a hazard is drawn as the *same
+  buffered footprint the proximity evaluator measures*, so "what gets drawn" is decided once and can't
+  drift from "what gets warned about." `hazardsToFeatureCollection` / `bodyFeaturesToFeatureCollection` /
+  `hazardDraftToFeatureCollection` emit GeoJSON; `hazardFillOpacityExpression` / `hazardColorExpression`
+  emit the MapLibre data-driven expressions. The opacity constants live here: **`FRESHNESS_FILL_OPACITY`**
+  (`fresh 0.45 / aging 0.3 / stale 0.18` — a stale hazard fades but never drops below a **floor that
+  stays legible on a bright screen outdoors**; the fade says "nobody has checked recently," not "probably
+  gone") and **`PROVISIONAL_OPACITY_SCALE` (0.6)** (unconfirmed hazards render softer — one person's
+  unverified report). Only the palette stays per-app (it comes from each app's design tokens).
 - **Copy helpers** — freshness/verdict labels centralized so the D3 "never implies skateable" rule is
   enforced in one place ("was open — may be thinly skinned", not "clear"). **Per-type relabeling:** the
   `ridge_crossing` marker maps the three verdicts to *still crossable / dicey now / ridge closed*, and
@@ -158,19 +209,70 @@ The safety-sensitive math lives here, property-tested, before any UI:
 ## Convex backend
 
 - **`hazards.ts`** — `create` (standalone **and** in-report; validates `geometryKind`/`radiusMeters`;
-  stamps bbox via `@skating/core`; `TODO(16+)` minor gate mirrors `reports.create`),
-  `listForBody(waterBodyId)` (active + non-stale by default, `includeStale` flag), `getInViewport` (bbox
-  prefilter for the map), `flag` (writes `contentFlags` with `targetType: hazard`), moderator `hide`.
-- **`hazardConfirmations.ts`** — `confirm(hazardId, verdict, atCoord?, via)`: append the vote, run the
-  `@skating/core` lifecycle reducer, patch the hazard (reset clock / bump counts / set healingState /
-  archive at threshold), and write a `pointEvents` `hazard_confirmed` row (D50 prep — boost-only). One
-  confirmation per user per hazard per window (idempotent-ish; re-confirm updates `lastConfirmedAt`).
+  stamps bbox via `@skating/core`; `TODO(16+)` minor gate mirrors `reports.create`) and
+  `listForBody(waterBodyId)` (the map layer's query and the set the mobile client caches for offline
+  proximity; returns **stale hazards too, annotated not filtered**, so "nobody confirmed lately" never
+  reads as "gone" at the API boundary; `includeArchived` flag off by default). Plus what actually
+  shipped beyond the plan:
+  - **`get(hazardId)`** — a single hazard for its detail drawer, `null` when missing or
+    moderator-hidden. *(The plan's map query `getInViewport` was **not built** — there is no
+    bbox/viewport hazard query and neither app calls one. Hazards render strictly **per body** via
+    `listForBody` (call 6), which is why no third geospatial instance was ever added.)*
+  - **`listBundleCandidates`** + exported **`DEFAULT_BUNDLE_LOOKBACK_MS`** (24h) — the D55 auto-bundle
+    query: the author's own hazards on a body that aren't attached to any report yet, windowed to the
+    skate (or `lookbackMs` of its end when no start is given).
+  - **`attachHazardsToReport`** (helper, called from `reports.create`) + `insertHazard` — the two write
+    paths that land in a report's `hazardIdsCreated[]` (freshly-created in-report hazards, and the D55
+    bundled-in standalone pins), both re-checking ownership server-side.
+  - **Moderation is the shared `moderation.setModerationStatus`** (Phase 9 review fix — an earlier
+    hazard-only `hazards.setModeration` was removed). `targetType` now accepts `'report' | 'comment' |
+    'hazard'`, so the Phase 7 takedown queue has **one** entry point that composes with `resolveFlag`
+    rather than a parallel per-entity mutation. It touches only `moderationStatus`, never the
+    `active|archived` lifecycle, so a mod hiding a bad pin never reads as the community clearing it
+    (D3); hazards skip the contribution-counter bump reports/comments carry.
+  - **Flagging is not a `hazards.flag` mutation** (the plan's shape). It goes through the existing
+    **`contentFlags`** path with `targetType: 'hazard'` (one line added to `contentFlags.ts`). This is
+    the better idiom — a hazard flag is the same moderation object as a comment or report flag, sharing
+    one queue and one set of moderator actions, rather than a parallel per-entity flag surface.
+  - **Input bounds** (Phase 9 review fix — reports go through `validateReportInput`; hazards had no
+    equivalent): `insertHazard` rejects a `description` past `HAZARD_MAX_DESCRIPTION_LEN` (1000) and any
+    shape past the `@skating/core` size ceiling; `reports.create` caps `hazards.length +
+    attachHazardIds.length` at `HAZARD_MAX_PER_REPORT` (25) so one create can't fan out unboundedly.
+- **`hazardConfirmations.ts`** — `confirm(hazardId, verdict, atCoord?, via, observedAt?)`: **upsert this
+  skater's single vote** (one row per user per hazard — an invariant), then **recompute** the hazard's
+  lifecycle from the whole vote set via `deriveHazardLifecycle` and patch it. The `pointEvents`
+  `hazard_confirmed` boost (D50 prep) is awarded **once per user per hazard** — on their first vote, not
+  every re-confirm — so laps, verdict changes and offline replays can't farm points. **`CONFIRM_WINDOW_MS`**
+  (exported, 12h) now only governs whether a re-vote refreshes the existing row vs. logs a fresh audit
+  row; it is **no longer a correctness gate**, because counts derive from distinct users regardless of the
+  window (this is what closed the same-account / offline-replay archival holes). **`observedAt` argument:**
+  when the skater actually *stood there*, passed in rather than read from the clock and clamped to
+  "not in the future," so an offline confirmation flushed hours later still stamps the moment they were
+  on the ice (not the moment the queue drained) — the freshness math depends on it. Also exports
+  **`listForHazard(hazardId)`** — the confirmation history for a hazard's detail drawer.
 - **`bodyFeatures.ts`** — `listForBody`, and **admin-gated** `promote(hazardId)` / `demote(id)` /
   `create` (role check + `moderationActions` audit row; the UI is Phase 7, but the mutations land here so
-  hazards can already be promoted by an admin during Phase 9).
-- **Data-sync for Layer 0 (D54):** `listForBody`/`getInViewport` are ordinary reactive queries — a
-  subscribed client gets new hazards live; the mobile cache upserts them alongside the body polygon it
-  already caches. No push infra in v1.
+  hazards can already be promoted by an admin during Phase 9). **Promotion supersedes, it does not
+  archive** (Phase 9 review fix): a promoted hazard gets a new `promotedToFeatureId` — a **third axis**,
+  distinct from both `status` and `moderationStatus` — so it drops off the map (the feature carries the
+  warning now) *without* its lifecycle `status` reading as a community all-clear (D3). `demote` clears
+  the supersession, so the source hazard resurfaces intact and the round-trip is lossless.
+  `create`/`promote` also validate geometry through the same `isValidHazardShape` gate hazards use.
+- **`photos.ts`** — gained **`getHazardUrls`**, the hazard-scoped sibling of `getUrls`: it resolves a
+  hazard's photo serving URLs but gates them on the *hazard's* visibility, so a URL (and any coord on it)
+  never outlives the viewer's access to the thing that references it.
+- **Shared `lib/` extractions (Phase 9 became the second photo-bearing, lake-attached entity, so two
+  helpers were lifted out of `reports.ts`/`photos.ts` rather than duplicated):**
+  - **`lib/photoAccess.ts`** — `assertOwnedPhotos` (no attaching someone else's photo) +
+    `resolvePhotoUrls`. Every photo-bearing entity now shares the *resolver* while keeping its **own**
+    visibility gate — which is what makes "a serving URL must never outlive the viewer's access" easy to
+    get right and to audit.
+  - **`lib/bodies.ts`** — `resolveSurvivor` (follow a D36 dedup-merged body to its surviving row,
+    hop-capped against cyclic merge chains), so a hazard and the report it was drawn in can never land on
+    two different rows for the same lake.
+- **Data-sync for Layer 0 (D54):** `listForBody` is an ordinary reactive query — a subscribed client
+  gets new hazards live; the mobile cache upserts them alongside the body polygon it already caches. No
+  push infra in v1. *(There is no `getInViewport` — see above; the sync is strictly per-body.)*
 - All mutations gate correctly (author/role), write audit rows where moderation-relevant, and are
   `convex-test`ed (auth gating, lifecycle transitions, archive threshold, flag→hide).
 
@@ -179,10 +281,16 @@ The safety-sensitive math lives here, property-tested, before any UI:
 ## Web UI (`apps/web`)
 
 - **Map hazard layer** — render active hazards on the lake map with **fuzzy** styling by freshness
-  (fresh full / aging lighter / stale faded behind a "show older" toggle) and by `geometryKind`
-  (circle for point+radius, line uses `bufferMeters` as its rendered half-width, polygon). `bodyFeatures`
-  render always, distinct "known seasonal hazard" styling. **`ridge_crossing` renders as a distinct
-  positive-but-cautious *passage* marker**, not a danger halo (research §4).
+  (fresh full / aging lighter / stale faded) and by `geometryKind` (circle for point+radius, line uses
+  `bufferMeters` as its rendered half-width, polygon). **Deliberate deviation from the plan:** stale
+  hazards render **unconditionally on the map, at the `FRESHNESS_FILL_OPACITY.stale` floor** — there is
+  no map-level "show older" toggle. The show-older affordance lives **only in the `HazardList`** (the
+  drawer's textual list, where `isHazardVisibleByDefault` splits current from older). This is the better
+  call: hiding a hazard from the *map* because nobody confirmed it lately is exactly the D3 confusion —
+  a faded pin still means "someone saw open water here," not "gone" — so the map never removes it, and
+  the list (where the distinction is legible in text) is where you choose to expand older markers.
+  `bodyFeatures` render always, distinct "known seasonal hazard" styling. **`ridge_crossing` renders as a
+  distinct positive-but-cautious *passage* marker**, not a danger halo (research §4).
 - **Authoring** — a "Report a hazard" control (standalone) + a hazard step inside the report form
   (in-report). **Three big one-tap presets** (open water / pressure ridge / thin ice ≈ 80% of real
   reports — research §6) with the rest behind "more." Type picker → primitive auto-selected per D51:
@@ -192,10 +300,13 @@ The safety-sensitive math lives here, property-tested, before any UI:
   it renders, but authoring it needs vertex dragging + self-intersection handling and is the primitive
   D51 already calls opt-in/advanced. **Optional photos** (`photoIds[]`, plural) — reuse the report photo
   pipeline (D31/D42) directly.
-- **Hazard detail** — type, age/freshness, confirmCount, description, **photos**, author (respecting
-  blocks), and the **three-tier confirm control** (Still here / Healing but unsafe / Fully healed & safe;
-  relabeled for `ridge_crossing`) + flag. The "fully healed" verdict is de-emphasized and confirmed —
-  it's the only destructive one (D3).
+- **Hazard detail** — type, age/freshness, confirmCount, description, **photos**, and the **three-tier
+  confirm control** (Still here / Healing but unsafe / Fully healed & safe; relabeled for
+  `ridge_crossing`) + flag. The "fully healed" verdict is de-emphasized and confirmed — it's the only
+  destructive one (D3). **Not shipped: the reporter/author line.** The component *supports* a
+  `reporterName` prop (rendered "… by \<name\>" when present), but the backend's `hazards.get` `toView`
+  returns **no reporter**, so the container leaves it undefined and the author line is simply omitted —
+  the block-respecting author display is a remaining thread, not a shipped feature.
 - **Auto-bundle prompt (D55)** — when the report form opens for a body where the author has unattached
   hazards from the matching skate window, it offers to include them (pre-checked, itemized, dismissible).
 - Advisory, non-authoritative copy throughout (D3); a11y + dark mode (D34).
@@ -208,12 +319,31 @@ hand, possibly moving, no signal, phone in a pocket.** Two rules fall out and ar
 mitten-fumble that hits Done early must still produce a useful pin.
 
 ### The "on-ice" state
-`geolocateOnMount` is extended: when GPS resolves to a body within the existing 300 m
-`AUTOSELECT_BUFFER_M` (via `resolveCachedBody`, so it works offline), that lake is **auto-selected and
-framed**. The only chrome that changes is a large persistent **⚠ Flag a hazard** FAB in the bottom-right
-thumb zone, floating above the drawer peek; off-ice it doesn't exist and the action lives as an ordinary
-button in the lake drawer. Founder call: keep it at just the FAB — **no auto-opening sheets, no modal
-"you're on the ice!" state**. There should be nothing you can be confused about being *in*.
+The `(map)` layout owns **one** GPS watcher (Phase 9 review fix — three separate bugs left the original
+version essentially never activating: a permission race with the map's framing request, a one-shot check
+that never re-ran, and a body cache only ever populated by opening a lake's drawer). The single watcher
+publishes each fix as `onIceCoord` and resolves it to a lake two ways: the **server** `resolveBodyForCoord`
+query (read-cap-safe, covers *any* listed lake including one never opened on this device), falling back to
+the offline `resolveCachedBody` when the query hasn't answered (offline / first paint). Permission is taken
+through a shared `ensureForegroundPermission()` singleton so the watcher and the map's framing request
+can't race onto two prompts. It seeds from the last known fix, re-arms on `AppState` `active`, and
+`MapView` now also seeds the offline body cache from on-screen bodies when zoomed in — so on-ice detection
+no longer depends on having previously tapped that lake.
+
+**On app-open, the resolved lake is auto-selected** (founder call, 2026-07-21): the layout navigates to
+its detail, which frames it into the space the half-height drawer doesn't cover — you land looking at the
+lake you're standing on, can flick the drawer down for more, and **closing the sheet to pan away lets the
+hazards fall off naturally** (the hazard *layer* follows the *selected* lake, `highlightWaterBodyId`, not
+the on-ice body). Auto-select fires **at most once per open** and only while still on the bare map, so it
+never yanks someone out of somewhere they deliberately navigated. The pure decision (`shouldAutoSelectOnIce`,
+`resolveOnIceBody`) lives in `onIce.ts`, unit-tested. This supersedes the interim "no camera movement"
+call — moving the camera *once, on open, to the lake under your feet* is exactly what you want; the failure
+mode we avoid is re-framing you on every fix or mid-interaction, which the once-per-open guard prevents.
+
+The resolved body drives the **⚠ Flag a hazard** FAB (bottom-right thumb zone, above the drawer peek) and
+the proximity banner. Off-ice the FAB doesn't exist and the flag action lives as an ordinary button in the
+lake drawer. Founder call: **no auto-opening capture sheets, no modal "you're on the ice!" state** — the
+auto-*selection* is just a normal lake drawer, nothing you can be confused about being *in*.
 
 ### Flagging — three taps, offline, no typing
 1. **FAB** → sheet of big tiles: **Open water · Pressure ridge · Thin ice** (≈80% of real reports —
@@ -251,16 +381,21 @@ modals** — blocking the map of someone moving on ice is unacceptable.
 
 ### Confirming
 Two entry points: the banner above, or tapping the pin → a hazard drawer (the same bottom sheet as
-lake/report detail) with type, freshness copy, photos, reporter, and three stacked full-width buttons —
+lake/report detail) with type, freshness copy, photos (no reporter line yet — `hazards.get` returns no
+reporter; see the web detail note above), and three stacked full-width buttons —
 **Still here** / **Healing — still unsafe** / *Fully healed & safe*. The third is deliberately
 de-emphasized and gets a confirmation step: it is the only destructive verdict (2 votes archive the pin),
 and the asymmetry is the point (D3 — a false all-clear is the worst outcome). Relabels to *Still
 crossable / Dicey now / Ridge closed* for `ridge_crossing`. Confirmations queue offline like drafts.
 
 ### Deep link (built in v1, used by Layer 2)
-`skating://hazard/<id>?action=confirm` routes into the hazard drawer with the three-tier control focused.
-There is no notification to tap yet — it's added now precisely so Layer 2's notification tap has
-somewhere to land, at near-zero cost today.
+`skating://hazard/<id>` routes into the hazard drawer (`/hazard/[id]` on mobile, `/_map/hazard/$id` on
+web). Both the route and the URL scheme are built now precisely so Layer 2's notification tap has
+somewhere to land, at near-zero cost today — there is no notification to send one yet. **What is *not*
+built: the `?action=confirm` behaviour.** The plan described the link deep-focusing the three-tier confirm
+control; neither route reads an `action` param today, so the deep link opens the drawer but does not
+pre-focus confirm. Logged as the remaining piece — it's a small addition when Layer 2's notification
+actually carries the intent to confirm.
 
 ### Offline
 Hazards and confirmations queue through the existing F2 draft/flush substrate (`draftStore` gains a
@@ -418,6 +553,24 @@ evidence rather than re-deriving it:
 - ~~On-ice hazard photos~~ — ✅ **BUILT 2026-07-21** (see the commit below); no longer deferred.
 - **Layer-3 offline basemap tile-pack** — dropped from Phase 9 with findings recorded above; revisit
   alongside the device-build pass.
+- **Clip a hazard footprint to the water body boundary (founder idea, 2026-07-21).** A large point+radius
+  centred in a small bay currently renders as a circle that can spill across land onto a peninsula or a
+  neighbouring lake. The ask: intersect the footprint with the body polygon so a hazard can never imply
+  danger on water it isn't on. **Deferred deliberately, not dismissed** — it's a genuine safety-*visual*
+  improvement, but it touches the one invariant the layer is built around ("what's drawn IS what the
+  proximity evaluator measures," `hazardLayer.ts`), so it must clip **both** the render and the alert or
+  neither. The clean design is to **precompute and store the clipped footprint polygon** on the hazard at
+  create time and have render, bbox and `distanceToHazard` all read it — which also makes the watcher
+  cheaper (a stored polygon, no per-fix buffer/intersect) and is the same "decide the shape once" move the
+  layer already makes. It's a schema + core + both-render-paths + cache change on the safety-critical path,
+  so it wants its own focused commit and device verification rather than riding in the review-remediation
+  PR. The `HAZARD_MAX_SIZE_M` ceiling shipped now is the crude backstop against the absurd case until then.
+- **Auto-suggest skate start/end times from the on-ice watcher (founder idea, 2026-07-21).** The single
+  GPS watcher now knows when a device entered and left a lake's footprint; that dwell interval is a strong
+  prior for the report form's skate window, which today is manual entry. Natural fit, but it needs a small
+  amount of session bookkeeping (enter/leave timestamps, debounced against brief GPS excursions) and a
+  form pre-fill, and it overlaps the D24 activity-detection path — so it belongs with the report-form /
+  activity work, not the hazard PR. Logged in the roadmap under Phase 10 / activity.
 
 ---
 

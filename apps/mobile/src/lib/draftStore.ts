@@ -19,28 +19,58 @@ import * as SQLite from 'expo-sqlite'
 const KIND_REPORT = 'report'
 const HAZARD_KINDS = ['hazard', 'hazard_confirmation'] as const
 
+/**
+ * The subset of `expo-sqlite`'s sync API this store uses. Factored out so `ensureSchema` — the one
+ * piece here that touches *existing on-device user data* (the `kind` migration) — can be exercised
+ * against a real SQLite engine in a unit test, which the rest of this native glue can't be.
+ */
+export interface SqliteLike {
+  execSync(source: string): void
+  runSync(source: string, params: (string | number | null)[]): unknown
+  getAllSync<T>(source: string, params: (string | number | null)[]): T[]
+  getFirstSync<T>(source: string, params: (string | number | null)[]): T | null
+}
+
+/**
+ * Create the table if missing and run the `kind` migration.
+ *
+ * Installs from before Phase 9 have the table without `kind`. Adding the column with a default is
+ * what makes the migration a no-op for the drafts already sitting on those devices — they're reports,
+ * and they keep being reports (the `NOT NULL DEFAULT 'report'` backfills every existing row). Guarded
+ * by a column check because `ADD COLUMN` throws on a rerun. Pure w.r.t. the injected db so it's tested.
+ */
+export function ensureSchema(db: SqliteLike): void {
+  db.execSync(
+    `CREATE TABLE IF NOT EXISTS report_drafts (
+      id TEXT PRIMARY KEY,
+      status TEXT NOT NULL,
+      createdAt INTEGER NOT NULL,
+      updatedAt INTEGER NOT NULL,
+      data TEXT NOT NULL
+    )`,
+  )
+  const columns = db.getAllSync<{ name: string }>('PRAGMA table_info(report_drafts)', [])
+  if (!columns.some((c) => c.name === 'kind')) {
+    db.execSync(`ALTER TABLE report_drafts ADD COLUMN kind TEXT NOT NULL DEFAULT '${KIND_REPORT}'`)
+  }
+}
+
+/** All **report** drafts, oldest first — the read half of `listDrafts`, factored out to test alongside
+ *  `ensureSchema` (a migrated pre-Phase-9 row must still come back here). */
+export function readReportDrafts(db: SqliteLike): ReportDraft[] {
+  return db
+    .getAllSync<{ data: string }>(
+      'SELECT data FROM report_drafts WHERE kind = ? ORDER BY createdAt ASC',
+      [KIND_REPORT],
+    )
+    .map((r) => JSON.parse(r.data) as ReportDraft)
+}
+
 let db: SQLite.SQLiteDatabase | null = null
 function getDb(): SQLite.SQLiteDatabase {
   if (db === null) {
     db = SQLite.openDatabaseSync('skating-drafts.db')
-    db.execSync(
-      `CREATE TABLE IF NOT EXISTS report_drafts (
-        id TEXT PRIMARY KEY,
-        status TEXT NOT NULL,
-        createdAt INTEGER NOT NULL,
-        updatedAt INTEGER NOT NULL,
-        data TEXT NOT NULL
-      )`,
-    )
-    // Installs from before Phase 9 have the table without `kind`. Adding it with a default is what
-    // makes the migration a no-op for the drafts already sitting on those devices — they're reports,
-    // and they keep being reports. Guarded by a column check because `ADD COLUMN` throws on a rerun.
-    const columns = db.getAllSync<{ name: string }>('PRAGMA table_info(report_drafts)')
-    if (!columns.some((c) => c.name === 'kind')) {
-      db.execSync(
-        `ALTER TABLE report_drafts ADD COLUMN kind TEXT NOT NULL DEFAULT '${KIND_REPORT}'`,
-      )
-    }
+    ensureSchema(db)
   }
   return db
 }
@@ -71,12 +101,7 @@ export function saveDraft(draft: ReportDraft): void {
  * "drafts", and a hazard silently appearing in either would be a bug rather than a feature.
  */
 export function listDrafts(): ReportDraft[] {
-  return getDb()
-    .getAllSync<{ data: string }>(
-      'SELECT data FROM report_drafts WHERE kind = ? ORDER BY createdAt ASC',
-      [KIND_REPORT],
-    )
-    .map((r) => JSON.parse(r.data) as ReportDraft)
+  return readReportDrafts(getDb())
 }
 
 export function getDraft(id: string): ReportDraft | null {

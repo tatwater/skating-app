@@ -14,6 +14,7 @@ import {
   verdictLabel,
 } from '@skating/core'
 import { useMutation, useQuery } from 'convex/react'
+import { ConvexError } from 'convex/values'
 import { randomUUID } from 'expo-crypto'
 import * as Location from 'expo-location'
 import { useEffect, useState } from 'react'
@@ -22,6 +23,7 @@ import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui'
 import { saveHazardItem } from '../lib/draftStore'
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi'
 import { useMapSelection } from './MapSelectionContext'
+import { FlagControl } from './SafetyControls'
 
 /**
  * The hazard drawer (Phase 9) — reached by tapping a pin, from an on-ice banner, or via the
@@ -67,15 +69,28 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
     if (hazard) setHighlightWaterBodyId(hazard.waterBodyId)
   }, [hazard, setHighlightWaterBodyId])
 
+  // Frame the hazard, but depend on the bbox *numbers*, not the whole `hazard` object. Casting a vote
+  // patches `lastConfirmedAt`, so the reactive query hands back a new object identity every confirm —
+  // depending on `hazard` re-fired this and re-`fitBounds`, throwing a skater who'd zoomed in to
+  // inspect right back out at the very moment they confirmed. The bbox itself doesn't change on a vote.
+  const bboxMinLat = hazard?.bbox?.minLat
+  const bboxMaxLat = hazard?.bbox?.maxLat
+  const bboxMinLng = hazard?.bbox?.minLng
+  const bboxMaxLng = hazard?.bbox?.maxLng
   useEffect(() => {
-    if (hazard?.bbox) {
+    if (
+      bboxMinLat !== undefined &&
+      bboxMaxLat !== undefined &&
+      bboxMinLng !== undefined &&
+      bboxMaxLng !== undefined
+    ) {
       setFocus({
-        lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
-        lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
-        bounds: hazard.bbox,
+        lat: (bboxMinLat + bboxMaxLat) / 2,
+        lng: (bboxMinLng + bboxMaxLng) / 2,
+        bounds: { minLat: bboxMinLat, maxLat: bboxMaxLat, minLng: bboxMinLng, maxLng: bboxMaxLng },
       })
     }
-  }, [hazard, setFocus])
+  }, [bboxMinLat, bboxMaxLat, bboxMinLng, bboxMaxLng, setFocus])
 
   if (hazard === undefined) return <DetailLoading />
   if (hazard === null) {
@@ -121,7 +136,13 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
       setDone(verdict)
     } catch (e) {
       if (classifyFlushError(e) === 'permanent') {
-        setError(e instanceof Error ? e.message : 'Couldn’t record that.')
+        setError(
+          e instanceof ConvexError
+            ? String(e.data)
+            : e instanceof Error
+              ? e.message
+              : 'Couldn’t record that.',
+        )
         setConfirming(false)
         setPendingHealed(false)
         return
@@ -277,6 +298,13 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
           {error}
         </Text>
       ) : null}
+
+      {/* Flagging a hazard (D3/D32) — a dangerously false pin is a safety problem, so the same
+          `unsafe_false_report` reason that leads the report/comment picker is reachable here too.
+          Mirrors web's `HazardView` flag affordance and how mobile flags reports/comments. */}
+      <XStack>
+        <FlagControl targetType="hazard" targetId={hazardId} label="Flag this hazard" />
+      </XStack>
     </YStack>
   )
 }

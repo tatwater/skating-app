@@ -111,13 +111,28 @@ export function verdictLabel(verdict: HazardVerdict, type: HazardType): string {
  * Helper text under each verdict button. The `fully_healed` line names the consequence out loud,
  * because it is the only destructive verdict and the asymmetry is deliberate: believing a hazard is
  * present when it isn't costs a detour, believing it's gone when it isn't can kill someone.
+ *
+ * **A passage marker inverts the meaning of every verdict, so it needs its own copy for all three.** On
+ * a `ridge_crossing`, `fully_healed` means "the crossing is *gone*" (retire a now-useless marker), not
+ * "the ice is sound". Falling through to the danger-hazard text — "only if the ice here is genuinely
+ * sound" — is the D3 failure mode with the sign flipped: it would tell a skater standing at a closed
+ * crossing not to retire it unless the ice is safe, leaving a stale "you can get across here" marker
+ * pointing people at a passage that no longer exists.
  */
 export function verdictHelp(verdict: HazardVerdict, type: HazardType): string {
+  if (isPassageMarker(type)) {
+    switch (verdict) {
+      case 'still_there':
+        return 'You got across here. Ridges change hour to hour — check it yourself before you rely on it.'
+      case 'healing_unsafe':
+        return 'The crossing has gotten worse. The marker stays up, now flagged as dicey.'
+      case 'fully_healed':
+        return 'The ridge has closed here — this is no longer a way across. Two of these retire the marker.'
+    }
+  }
   switch (verdict) {
     case 'still_there':
-      return isPassageMarker(type)
-        ? 'You got across here.'
-        : 'You can see it. Resets the clock on this report.'
+      return 'You can see it. Resets the clock on this report.'
     case 'healing_unsafe':
       return 'It has changed but is still dangerous. The marker stays up so the next skater can read it.'
     case 'fully_healed':

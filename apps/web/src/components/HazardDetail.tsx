@@ -16,6 +16,7 @@ import {
 } from '@skating/core'
 import { Link } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
+import { ConvexError } from 'convex/values'
 import { type ReactNode, useEffect, useState } from 'react'
 import { DetailSkeleton, UnavailableState } from './DrawerStates'
 import { useMapSelection } from './MapSelectionContext'
@@ -36,6 +37,10 @@ export interface HazardViewData {
   healing: boolean
   archived: boolean
   description?: string
+  /**
+   * Rendered as "… by <name>" when present. The container leaves it undefined until `hazards.get`
+   * returns a reporter — until then the author line is simply omitted rather than left half-written.
+   */
   reporterName?: string
   firstReportedAt: number
   lastConfirmedAt: number
@@ -65,11 +70,17 @@ export function HazardView({
   data,
   onConfirm,
   confirming,
+  confirmError,
   flagControl,
 }: {
   data: HazardViewData
   onConfirm?: (verdict: HazardVerdict) => void
   confirming?: boolean
+  /**
+   * Why the last verdict didn't land. A dropped confirmation must say so: silently swallowing it
+   * leaves the skater believing they've warned the next person when they haven't (D3).
+   */
+  confirmError?: string | null
   /**
    * The flag control, injected by the container. It needs a Convex mutation, and this component is
    * deliberately Convex-free so it can be rendered from a fixture in a test.
@@ -204,6 +215,11 @@ export function HazardView({
                   </button>
                 )
               })}
+              {confirmError ? (
+                <p role="alert" className="text-destructive text-sm">
+                  {confirmError}
+                </p>
+              ) : null}
             </div>
           </>
         ) : null}
@@ -226,6 +242,7 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
   const body = useQuery(api.waterBodies.get, hazard ? { waterBodyId: hazard.waterBodyId } : 'skip')
   const confirm = useMutation(api.hazardConfirmations.confirm)
   const [confirming, setConfirming] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
   const { setFocus, setHighlightWaterBodyId } = useMapSelection()
 
   useEffect(() => {
@@ -270,15 +287,28 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
         photos: photos ?? [],
       }}
       confirming={confirming}
+      confirmError={confirmError}
       flagControl={<FlagDialog targetType="hazard" targetId={hazardId} />}
       onConfirm={async (verdict) => {
         setConfirming(true)
+        setConfirmError(null)
         try {
           await confirm({
             hazardId: hazardId as Id<'hazards'>,
             verdict,
             via: 'app_open_nearby',
           })
+        } catch (err) {
+          // A vote that didn't land has to say so. Web has no offline queue (that's the mobile
+          // flush service), so the only honest thing here is to tell the skater it didn't send —
+          // silence would let them walk away believing they'd warned the next person.
+          setConfirmError(
+            err instanceof ConvexError
+              ? String(err.data)
+              : err instanceof Error
+                ? err.message
+                : 'Could not record that — check your connection and try again.',
+          )
         } finally {
           setConfirming(false)
         }

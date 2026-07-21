@@ -403,15 +403,27 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 
 ## Phase 9 — Hazards
 > **Detailed build plan:** [`phase-9-hazards.md`](./phase-9-hazards.md) (decisions settled 2026-07-18;
-> D51–D54). Ship order within the **single PR**: online-first commits (authoring + lifecycle + render +
-> client-side on-ice alerts) → offline commits (Layer-3 tiles + background sync) → PR.
+> **D51–D55** — D55 added at build kickoff: on-ice hazards auto-bundle into the skater's later report).
+> Ship order within the **single PR**: online-first commits (authoring + lifecycle + render +
+> client-side on-ice alerts) → offline commit (hazard/confirmation draft-queue reuse) → PR. The
+> **Layer-3 offline basemap tile-pack** that was originally sequenced into the offline commit was
+> **dropped from this phase** — it's a native spike that needs a device build, and the on-ice flow
+> already degrades correctly without it (see `phase-9-hazards.md` → *Layer-3 offline basemap tile-pack —
+> spike findings*).
 - **Authoring — geometry-per-type, not freeform-by-default (D51).** Most people can't hand-draw an
   accurate blob on a phone from what they see on the ice, so the primitive matches the hazard's shape:
-  **point + adjustable radius** (default — `open_water`/`lead`, `thin_ice`, `overflow_slush`,
-  `drilled_hole`, `shell_area`, `spring`/`current`), **polyline** (`pressure_ridge`, `wet_crack`, linear
-  leads), **polygon** (opt-in "advanced" only). Rendered **fuzzy + advisory** ("reported *around here*"),
+  **point + adjustable radius** (default — `open_water`, `thin_ice`, `overflow_slush`, `drilled_hole`,
+  `shell_area`, `spring_current`, and the holes/zones), **polyline** (`pressure_ridge`, `ice_heave`,
+  `wet_crack`), **polygon** (opt-in "advanced" — **renders + stores but is not authorable in v1**; the
+  vertex-dragging editor was deferred at build kickoff, call 5). The type keys shipped as **16 canonical
+  keys**: build-kickoff call 2 collapsed the slash-pairs (`open_water` absorbs `lead`, `ice_heave`
+  absorbs `buckling`, `spring_current` replaces both `inlet_outlet_current` and `spring`) so
+  `Record<HazardType, HazardDecay>` typechecks against the research table, and the 2026-07-21 research
+  pass **added seven types**: volatile holes `drain_hole` / `wind_hole` / `slush_hole`, the
+  `thawed_rotten` zone (the #1 fatality cause), the persistent natural holes `gas_hole` / `reef_hole`,
+  and the `ridge_crossing` passage marker. Rendered **fuzzy + advisory** ("reported *around here*"),
   never a surveyed boundary (D3). Two paths — **standalone** quick-flag and **in-report**
-  (`hazardIdsCreated[]`) — on **both web and mobile**. Typed vocabulary already in `06-data-model.md`.
+  (`hazardIdsCreated[]`) — on **both web and mobile**. Full 16-key table + labels in `06-data-model.md`.
 - **Lifecycle — per-type decay + three-tier healing confirmation (D52, extends D15).** Decay rate is
   per hazard type (Tier A volatile 24/72h → Tier D permanent 14d/45d; tunable, admin-editable Phase 7).
   Confirmations are **"still here" / "healing but unsafe" / "fully healed & safe"** — only the last
@@ -442,29 +454,48 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
     it* — GPS + cached polygon tells the offline app which lake the skater is on without a
     network round-trip.
   - **Offline basemap tiles (F2 "Layer 3") were deferred here from Phase 2 F2 (decided
-    2026-07-15).** F2's report capture needs only *which lake* (the body cache) + GPS, so it
-    ships with **no offline basemap** and degrades the put-in pin to "drop at my current GPS
-    location." **Hazards are different:** dropping an *accurate* hazard pin wants a **legible
-    offline basemap + the lake polygon as visual reference**, so the offline tile-pack work
-    (store per-region tiles on device — a real native spike: does `@maplibre/maplibre-react-native`'s
-    offline-pack API work over our `pmtiles://` range source, or do we ship an on-device
-    mini-`.pmtiles`?) lands **here**, not in F2. The F2 body-cache module is designed to accept
-    a tile-pack field so this slots in without a rearchitecture.
+    2026-07-15) — then dropped from Phase 9 at build time (2026-07-21).** F2's report capture
+    needs only *which lake* (the body cache) + GPS, so it ships with **no offline basemap** and
+    degrades the put-in pin to "drop at my current GPS location." Hazards want the same offline
+    basemap *ideally* — dropping an accurate pin is easier with the lake polygon as reference — but
+    the tile-pack turned out to be a real native spike (does `@maplibre/maplibre-react-native`'s
+    offline-pack API crawl our `pmtiles://` range source, or must we ship an on-device
+    mini-`.pmtiles`?) that **can't be resolved without a device build**, which the rest of the native
+    Phase 9 UI is also waiting on. It was **timeboxed and not built**; on-ice capture degrades
+    correctly regardless (the pin drops at GPS, sizing/Done/queue all work — only *tapping the map*
+    to Move/Trace needs tiles). Findings + the three candidate routes are recorded in
+    `phase-9-hazards.md` → *Layer-3 offline basemap tile-pack — spike findings*; revisit alongside
+    the device-build pass. The F2 body-cache module was already designed to accept a tile-pack field,
+    so slotting it in later needs no rearchitecture.
   - The buffered auto-select (a tunable ~parking/approach radius so opening from the car still
     resolves the lake) is the same primitive hazard capture uses to bind a hazard to its body.
 
 ## Phase 10 — Weather-since strips
 - Open-Meteo "what the weather has done since this report" factual strip (D19).
-- **Weather-driven dynamic hazard decay (extends D52, planned here 2026-07-18).** Reuse the same
-  Open-Meteo "weather-since" pull to modulate hazard freshness instead of relying on elapsed time alone:
-  `effectiveAge = elapsed × decayMultiplier(type, weatherSince)`. Per-type sensitivity —
-  **refreeze-healed types** (`open_water`/`lead`, `thin_ice`, `drilled_hole`, `overflow_slush`)
-  **accelerate** toward stale with accumulated freezing-degree-hours and **decelerate** under
-  warm/sun/rain (a thaw can even **re-escalate** a fading `thin_ice`/`overflow` hazard — warmth never
-  heals these); **structural types** (`pressure_ridge`, `ice_heave`, `spring`/`current`) are
-  weather-insensitive (multiplier ≈ 1). **Same D3 caveat as D52:** accelerated decay ≠ "safe" — a
+- **Weather-driven dynamic hazard decay (extends D52, planned here 2026-07-18; signs corrected by the
+  2026-07-21 research pass).** Reuse the same Open-Meteo "weather-since" pull to modulate hazard
+  freshness instead of relying on elapsed time alone: `effectiveAge = elapsed × decayMultiplier(type,
+  weatherSince)`. Per-type sensitivity — **refreeze-healed types** (`open_water`, `thin_ice`,
+  `drilled_hole`, `overflow_slush`, the holes) **accelerate** toward stale with accumulated
+  freezing-degree-days (~1″ of new ice per ~15 FDD is the quantitative backbone) and **decelerate**
+  under warm/sun/rain (a thaw can even **re-escalate** a fading `thin_ice`/`overflow_slush` hazard —
+  warmth never heals these). **Corrected finding:** the structural types (`pressure_ridge`,
+  `ice_heave`) are **not** weather-insensitive — a ridge can melt out to open water in a two-day windy
+  warm spell, so they get a **thaw multiplier floored at ≥1** (thaw escalates, never heals), and
+  `spring_current` stays effectively permanent. **The `thawed_rotten` rule (research §5 — do not let it
+  live only in the research doc, it's a corrected safety finding): its decay must NOT accelerate on
+  cold.** A thaw-rotted sheet grows a deceptive skin overnight and collapses midday — the
+  "overnight-ice trap," implicated in the 2013 fatalities where victims went out on morning-hardened
+  ice and stayed as it weakened. So `thawed_rotten` carries a very-short base decay (12h/36h) and a
+  **cold-weather multiplier floored at ≥1 (never <1)**; only a sustained hard freeze of the whole
+  sheet — not one cold night — heals it. **Same D3 caveat as D52:** accelerated decay ≠ "safe" — a
   refrozen lead is thin ice, so the copy must never imply skateability. Pure logic in `@skating/core`
   (property-tested, D40); admin-tunable alongside the D52 decay tiers (Phase 7).
+- **Auto-suggest skate start/end times from the on-ice dwell (founder idea, 2026-07-21; from Phase 9).**
+  Phase 9's single on-ice GPS watcher already knows when a device entered and left a lake footprint; that
+  interval is a strong prior for the report form's currently-manual skate window. Needs enter/leave
+  bookkeeping (debounced against brief GPS excursions) + a form pre-fill, and overlaps the D24
+  activity-detection path — so it lands with the report-form / activity work, not the hazard feature.
 - **Done:** aging reports show peak temp / hours above freezing / sun / precip / wind; hazard decay
   reflects what the weather actually did, not just the clock.
 
@@ -490,6 +521,13 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
     `minVisibleZoom`/`displayScore` (D49) so cards don't fight the existing prominence scoring.
   - **Do this when** there's enough report density that a lake summary is non-empty for most bodies in a
     viewport — before that it's mostly blank cards.
+- **Clip hazard footprints to the water-body boundary (founder idea, 2026-07-21; from Phase 9).** So a
+  large point+radius in a small bay can't render a circle spilling across land onto a peninsula or a
+  neighbouring lake. Deferred from Phase 9 deliberately: it touches the "what's drawn is what the
+  proximity alert measures" invariant, so it must clip render *and* alert together — cleanest as a stored,
+  precomputed clipped footprint the render, bbox and `distanceToHazard` all read. Its own focused commit
+  + device verification; full write-up in [`phase-9-hazards.md`](./phase-9-hazards.md) → Out of scope. The
+  `HAZARD_MAX_SIZE_M` ceiling shipped in Phase 9 is the interim backstop.
 - **Self-hosted OpenRouteService (true 90-min+ isochrone band).** Phase 4 ships drive-time on the
   **hosted ORS**, whose isochrone API is hardcoded to a **60-min max range** for `driving-car` — so the
   90-min band is a uniform crow-flies radius fallback there. Self-hosting ORS (a memory-hungry JVM/Docker

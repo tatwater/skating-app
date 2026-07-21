@@ -4,8 +4,10 @@ import {
   applyConfirmation,
   DEFAULT_CONFIRM_THRESHOLD,
   DEFAULT_REMOVAL_THRESHOLD,
+  deriveHazardLifecycle,
   type HazardLifecycleState,
   type HazardVerdict,
+  type HazardVoteRecord,
   initialLifecycleState,
   isProvisional,
   shouldArchive,
@@ -158,11 +160,22 @@ describe('lifecycle invariants (property)', () => {
     )
   })
 
-  it('every confirmation refreshes the clock, whatever the verdict', () => {
+  // The clock is monotonic: a confirmation moves it to `max(existing, at)`, never backward. A late
+  // offline "still here" observed hours before an online vote already refreshed it must not age a pin
+  // that was verified minutes ago — adding an observation can never make a hazard look *less* observed.
+  it('advances the clock to max(existing, at) and never backward', () => {
     fc.assert(
-      fc.property(arbState, arbVerdict, fc.boolean(), (state, verdict, isAuthor) => {
-        expect(applyConfirmation(state, verdict, T0, { isAuthor }).lastConfirmedAt).toBe(T0)
-      }),
+      fc.property(
+        arbState,
+        arbVerdict,
+        fc.boolean(),
+        fc.integer({ min: T0 - 2000 * HOUR, max: T0 + 2000 * HOUR }),
+        (state, verdict, isAuthor, at) => {
+          const next = applyConfirmation(state, verdict, at, { isAuthor })
+          expect(next.lastConfirmedAt).toBe(Math.max(state.lastConfirmedAt, at))
+          expect(next.lastConfirmedAt).toBeGreaterThanOrEqual(state.lastConfirmedAt)
+        },
+      ),
     )
   })
 
@@ -183,6 +196,100 @@ describe('lifecycle invariants (property)', () => {
     const snapshot = { ...state }
     applyConfirmation(state, 'fully_healed', T0 + HOUR)
     expect(state).toEqual(snapshot)
+  })
+})
+
+describe('deriveHazardLifecycle', () => {
+  const AUTHOR = 'author'
+  const CREATED = T0 - 100 * HOUR
+  const opts = { authorId: AUTHOR, createdAt: CREATED, priorStatus: 'active' as const }
+  const vote = (userId: string, verdict: HazardVerdict, at: number): HazardVoteRecord => ({
+    userId,
+    verdict,
+    at,
+  })
+
+  it('counts distinct non-author users, not vote rows', () => {
+    // Same user, two fully_healed rows (an offline replay, or a re-vote past the window): still ONE
+    // gone verdict, so it must not reach the removal threshold. This is the D3 abuse the whole
+    // derive-from-votes design exists to prevent.
+    const state = deriveHazardLifecycle(
+      [vote('troll', 'fully_healed', T0 - HOUR), vote('troll', 'fully_healed', T0)],
+      opts,
+    )
+    expect(state.goneCount).toBe(1)
+    expect(state.status).toBe('active')
+  })
+
+  it('archives only once two distinct users say fully_healed', () => {
+    const state = deriveHazardLifecycle(
+      [vote('a', 'fully_healed', T0), vote('b', 'fully_healed', T0)],
+      opts,
+    )
+    expect(state.goneCount).toBe(2)
+    expect(state.status).toBe('archived')
+  })
+
+  it("uses each user's latest verdict only", () => {
+    // A user who said fully_healed then changed to still_there counts as a still_there, not both.
+    const state = deriveHazardLifecycle(
+      [vote('a', 'fully_healed', T0 - HOUR), vote('a', 'still_there', T0)],
+      opts,
+    )
+    expect(state.goneCount).toBe(0)
+    expect(state.confirmCount).toBe(1)
+  })
+
+  it("excludes the author's own vote from both thresholds", () => {
+    const state = deriveHazardLifecycle(
+      [vote(AUTHOR, 'still_there', T0), vote(AUTHOR, 'fully_healed', T0 + HOUR)],
+      opts,
+    )
+    expect(state.confirmCount).toBe(0)
+    expect(state.goneCount).toBe(0)
+    // ...but the author's observation still refreshes the clock.
+    expect(state.lastConfirmedAt).toBe(T0 + HOUR)
+  })
+
+  it('takes lastConfirmedAt as the max over all votes and creation, never backward', () => {
+    const state = deriveHazardLifecycle(
+      [vote('a', 'still_there', T0 - 50 * HOUR), vote('b', 'still_there', T0 - 10 * HOUR)],
+      opts,
+    )
+    expect(state.lastConfirmedAt).toBe(T0 - 10 * HOUR)
+    // With no votes at all, it floors at creation time.
+    expect(deriveHazardLifecycle([], opts).lastConfirmedAt).toBe(CREATED)
+  })
+
+  it('reflects the single most recent vote in healingState (author included)', () => {
+    const healing = deriveHazardLifecycle(
+      [vote('a', 'fully_healed', T0 - HOUR), vote('b', 'healing_unsafe', T0)],
+      opts,
+    )
+    expect(healing.healingState).toBe('healing_unsafe')
+    const superseded = deriveHazardLifecycle(
+      [vote('a', 'healing_unsafe', T0 - HOUR), vote('b', 'still_there', T0)],
+      opts,
+    )
+    expect(superseded.healingState).toBe('none')
+  })
+
+  it('never un-archives: an already-archived hazard stays archived even if a verdict changes', () => {
+    // b recanting drops goneCount below threshold, but archival is a ratchet (D15).
+    const state = deriveHazardLifecycle(
+      [vote('a', 'fully_healed', T0), vote('b', 'still_there', T0)],
+      {
+        ...opts,
+        priorStatus: 'archived',
+      },
+    )
+    expect(state.goneCount).toBe(1)
+    expect(state.status).toBe('archived')
+  })
+
+  it('is idempotent — re-deriving the same votes yields the same state', () => {
+    const votes = [vote('a', 'still_there', T0), vote('b', 'fully_healed', T0 - HOUR)]
+    expect(deriveHazardLifecycle(votes, opts)).toEqual(deriveHazardLifecycle([...votes], opts))
   })
 })
 

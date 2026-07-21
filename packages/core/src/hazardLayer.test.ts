@@ -3,6 +3,7 @@ import { applyDraftMapClick, draftForType, resizeDraft } from './hazardDraft'
 import {
   bodyFeaturesToFeatureCollection,
   FRESHNESS_FILL_OPACITY,
+  hazardColorExpression,
   hazardDraftToFeatureCollection,
   hazardFillOpacityExpression,
   hazardsToFeatureCollection,
@@ -135,6 +136,24 @@ describe('freshness styling', () => {
     expect(JSON.stringify(expr)).toContain('fresh')
     expect(JSON.stringify(expr)).toContain('aging')
     expect(expr[0]).toBe('*')
+  })
+})
+
+describe('hazardColorExpression', () => {
+  const palette = { danger: '#d00', healing: '#fa0', passage: '#0a0', feature: '#00f' }
+
+  // The D3-critical ordering: `passage` is checked before everything else, so a `ridge_crossing`
+  // (which is also never a danger) can never fall through to the danger colour. A `case` expression
+  // is first-match-wins, so this asserts the arm order, not just presence.
+  it('checks passage first so a crossing never reads as danger', () => {
+    const expr = hazardColorExpression(palette)
+    expect(expr[0]).toBe('case')
+    expect(expr[1]).toEqual(['get', 'passage'])
+    expect(expr[2]).toBe(palette.passage)
+    // healing is the second condition, danger is the final fallback.
+    expect(expr[3]).toEqual(['get', 'healing'])
+    expect(expr[4]).toBe(palette.healing)
+    expect(expr[expr.length - 1]).toBe(palette.danger)
   })
 })
 

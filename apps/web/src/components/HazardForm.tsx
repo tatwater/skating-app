@@ -16,6 +16,7 @@ import {
   undoDraftPlacement,
 } from '@skating/core'
 import { useMutation } from 'convex/react'
+import { ConvexError } from 'convex/values'
 import { useEffect, useState } from 'react'
 import { useMapSelection } from './MapSelectionContext'
 import { Button } from './ui/button'
@@ -289,11 +290,13 @@ export function HazardFormFields({
 
 export function HazardForm({
   waterBodyId,
-  open,
   onClose,
 }: {
   waterBodyId: string
-  open: boolean
+  /**
+   * Close the form. The caller *unmounts* us rather than keeping us mounted-but-closed — which is
+   * what makes the unmount cleanup below the only teardown path that needs to exist.
+   */
   onClose: () => void
 }) {
   const createHazard = useMutation(api.hazards.create)
@@ -314,14 +317,17 @@ export function HazardForm({
   const photoDrafts = usePhotoDrafts()
 
   // Leaving the form must never strand the map in crosshair mode or leave a phantom footprint
-  // sitting on the lake — the same teardown discipline the report form's put-in pin uses.
+  // sitting on the lake — the same teardown discipline (and idiom) as the report form's put-in pin.
+  // It has to be an unmount cleanup, not an `!open` branch: the draft lives in MapSelectionContext,
+  // which outlives this component, so cancelling or navigating away mid-draw would otherwise leave a
+  // translucent red hazard drawn over a lake nobody reported a hazard on.
   useEffect(() => {
-    if (!open) {
+    return () => {
       setHazardDropMode(false)
       setHazardDraft(null)
       setType(null)
     }
-  }, [open, setHazardDropMode, setHazardDraft, setType])
+  }, [setHazardDropMode, setHazardDraft, setType])
 
   function chooseType(next: HazardType) {
     setType(next)
@@ -350,6 +356,7 @@ export function HazardForm({
     }
     setSubmitting(true)
     setError(null)
+    photoDrafts.clearError() // a photo that was already removed shouldn't keep failing the form
     try {
       const photoIds = await photoDrafts.uploadAll()
       // Before the mutation, not after: an unmount *during* it would otherwise sweep and delete the
@@ -371,7 +378,15 @@ export function HazardForm({
       onClose()
     } catch (e) {
       photoDrafts.setCommitted(false) // creation didn't complete — uploads are reclaimable again
-      setError(e instanceof Error ? e.message : 'Could not save that hazard.')
+      // A ConvexError carries the message the mutation *chose* to show a skater; anything else would
+      // render the raw `[CONVEX M(hazards:create)] Uncaught …` blob at them.
+      setError(
+        e instanceof ConvexError
+          ? String(e.data)
+          : e instanceof Error
+            ? e.message
+            : 'Could not save that hazard.',
+      )
     } finally {
       setSubmitting(false)
     }
@@ -380,7 +395,7 @@ export function HazardForm({
   return (
     // Hidden (not unmounted) while arming a map click, so the in-progress form survives the
     // placement — and, for a polyline, survives the whole multi-click trace.
-    <Dialog open={open && !hazardDropMode} onOpenChange={(next) => !next && onClose()}>
+    <Dialog open={!hazardDropMode} onOpenChange={(next) => !next && !hazardDropMode && onClose()}>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Report a hazard</DialogTitle>

@@ -50,6 +50,12 @@ export interface PhotoDrafts {
   photos: PhotoDraftView[]
   /** Non-null when processing a picked file failed; forms surface it alongside their own errors. */
   error: string | null
+  /**
+   * Drop the processing error. Forms call this wherever they clear their *own* error (i.e. on
+   * submit): the offending photo has usually been removed by then, and a stale "couldn't process one
+   * of those photos" sitting under a submit button reads as if the submit itself failed.
+   */
+  clearError: () => void
   addFiles: (files: FileList) => Promise<void>
   removePhoto: (id: string) => void
   setPlaceOnMap: (id: string, on: boolean) => void
@@ -208,6 +214,8 @@ export function usePhotoDrafts(): PhotoDrafts {
     )
   }, [createPhoto, deletePhoto, generateUploadUrl, removeBlob])
 
+  const clearError = useCallback(() => setError(null), [])
+
   const setCommitted = useCallback((committed: boolean) => {
     committedRef.current = committed
   }, [])
@@ -220,6 +228,7 @@ export function usePhotoDrafts(): PhotoDrafts {
       placeOnMap: p.placeOnMap,
     })),
     error,
+    clearError,
     addFiles,
     removePhoto,
     setPlaceOnMap,

@@ -7,7 +7,6 @@ import {
   warningHeadline,
 } from '@skating/core'
 import { useMutation, useQuery } from 'convex/react'
-import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui'
@@ -38,7 +37,7 @@ import { useMapSelection } from './MapSelectionContext'
  */
 export function HazardBanner() {
   const router = useRouter()
-  const { onIceWaterBodyId } = useMapSelection()
+  const { onIceWaterBodyId, onIceCoord } = useMapSelection()
   const confirm = useMutation(api.hazardConfirmations.confirm)
   const [session, setSession] = useState<AlertSession>(emptyAlertSession)
 
@@ -48,39 +47,17 @@ export function HazardBanner() {
   )
   const proximityHazards = useMemo(() => toProximityHazards(hazards ?? []), [hazards])
 
-  // The watcher reads the latest hazard set without being torn down and restarted on every data
-  // update — restarting a GPS subscription mid-skate would drop fixes exactly when they matter.
+  // No GPS watcher of its own — the layout owns the single watcher and publishes each fix as
+  // `onIceCoord`, so proximity is evaluated here off that shared coord. One subscription for the whole
+  // on-ice experience; `advanceAlertSession` keeps a showing banner from being swapped out from under
+  // a moving skater (unit-tested in `onIce.ts`). The hazard set is read through a ref so a reactive
+  // hazard update doesn't re-fire the alert against a stale coord — evaluation is driven by GPS fixes.
   const hazardsRef = useRef(proximityHazards)
   hazardsRef.current = proximityHazards
-
   useEffect(() => {
-    if (!onIceWaterBodyId) return
-    let subscription: Location.LocationSubscription | null = null
-    let cancelled = false
-    ;(async () => {
-      try {
-        const { status } = await Location.getForegroundPermissionsAsync()
-        if (status !== 'granted' || cancelled) return
-        subscription = await Location.watchPositionAsync(
-          // Balanced accuracy and a 20 m step: enough to catch an approach, cheap enough not to cook
-          // a cold battery, which is the phone state this feature actually runs in.
-          { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
-          (pos) => {
-            const coord = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-            setSession((prev) => advanceAlertSession(prev, coord, hazardsRef.current))
-          },
-        )
-        if (cancelled) subscription.remove()
-      } catch {
-        // No location ⇒ no alerts. The "silence is not an all-clear" copy below is why this is a
-        // survivable failure rather than something to shout about.
-      }
-    })()
-    return () => {
-      cancelled = true
-      subscription?.remove()
-    }
-  }, [onIceWaterBodyId])
+    if (!onIceCoord) return
+    setSession((prev) => advanceAlertSession(prev, onIceCoord, hazardsRef.current))
+  }, [onIceCoord])
 
   const banner = session.banner
   if (!banner) return null
@@ -99,6 +76,10 @@ export function HazardBanner() {
       paddingHorizontal="$3"
       paddingBottom="$3"
       gap="$2"
+      // A proximity warning a screen-reader user is never *told* about is no warning at all. Announce
+      // it the moment it mounts (`assertive` interrupts, which is proportionate for on-ice danger).
+      accessibilityRole="alert"
+      accessibilityLiveRegion="assertive"
     >
       <Text color={warning ? '$dangerForeground' : '$warningForeground'} fontWeight="700">
         {warning

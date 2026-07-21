@@ -12,7 +12,7 @@
  * behind them — an admin can already graduate a recurring hazard during Phase 9.
  */
 
-import { type HazardShape, hazardBbox } from '@skating/core'
+import { type HazardShape, hazardBbox, isValidHazardShape } from '@skating/core'
 import { ConvexError, v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import { type MutationCtx, mutation, query } from './_generated/server'
@@ -66,9 +66,12 @@ export const create = mutation({
 /**
  * Graduate a recurring hazard into a permanent body feature (D53).
  *
- * The source hazard is **archived, not deleted** — its history, photos and confirmations stay
- * readable, and the `promotedFromHazardId` backlink records where the feature came from. Archiving
- * rather than removing also means the promotion is reversible without data loss.
+ * The source hazard is **superseded, not archived** — `promotedToFeatureId` is set so it stops
+ * rendering (the feature carries the warning now), but its lifecycle `status` is left untouched. This
+ * distinction is load-bearing: setting `status: archived` here would make an admin's promotion
+ * indistinguishable from the community voting the hazard healed, laundering a moderation action into a
+ * safety verdict (D3). The `promotedFromHazardId` backlink records where the feature came from, and
+ * `demote` clears the supersession so the hazard resurfaces intact.
  */
 export const promote = mutation({
   args: {
@@ -92,14 +95,19 @@ export const promote = mutation({
       addedByUserId: actor._id,
       promotedFromHazardId: hazardId,
     })
-    // The hazard's job is done — the feature carries the warning now, permanently and without decay.
-    await ctx.db.patch(hazardId, { status: 'archived' })
+    // The feature carries the warning now, permanently and without decay — so hide the source hazard
+    // via the supersession axis, NOT by archiving it (which would read as a community all-clear, D3).
+    await ctx.db.patch(hazardId, { promotedToFeatureId: id })
     await audit(ctx, actor._id, 'promote_body_feature', id, reason, { hazardId })
     return id
   },
 })
 
-/** Reversible demotion — flips `active` off, never hard-deletes (D53). */
+/**
+ * Reversible demotion — flips `active` off, never hard-deletes (D53). If the feature was promoted from
+ * a hazard, the source hazard is un-superseded so it returns to the map in whatever lifecycle state it
+ * was in — the promotion round-trips with no data loss and no laundered safety verdict.
+ */
 export const demote = mutation({
   args: { bodyFeatureId: v.id('bodyFeatures'), reason: v.string() },
   handler: async (ctx, { bodyFeatureId, reason }) => {
@@ -109,6 +117,14 @@ export const demote = mutation({
     if (!feature) throw new ConvexError('Body feature not found')
 
     await ctx.db.patch(bodyFeatureId, { active: false })
+    if (feature.promotedFromHazardId) {
+      const source = await ctx.db.get(feature.promotedFromHazardId)
+      // Only clear supersession if this feature is still the one superseding it — a hazard promoted,
+      // demoted, then re-promoted elsewhere must not be resurfaced by the stale demotion.
+      if (source?.promotedToFeatureId === bodyFeatureId) {
+        await ctx.db.patch(feature.promotedFromHazardId, { promotedToFeatureId: undefined })
+      }
+    }
     await audit(ctx, actor._id, 'demote_body_feature', bodyFeatureId, reason, {
       priorActive: feature.active,
     })
@@ -129,6 +145,10 @@ async function insertFeature(
           radiusMeters: args.radiusMeters,
         }
       : { geometryKind: 'polygon', geometry: args.geometry as HazardShape['geometry'] }
+
+  // Same single gate hazards use. `create` takes raw GeoJSON from an admin, and a malformed ring or a
+  // MultiLineString would otherwise reach `turf/buffer` and throw mid-mutation or store a junk bbox.
+  if (!isValidHazardShape(shape)) throw new ConvexError('Invalid body-feature geometry')
 
   return ctx.db.insert('bodyFeatures', {
     ...args,

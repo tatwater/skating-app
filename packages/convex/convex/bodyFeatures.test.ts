@@ -128,6 +128,22 @@ describe('bodyFeatures.create', () => {
     await expect(mod.as.mutation(api.bodyFeatures.create, args)).rejects.toThrow(/admin/)
   })
 
+  test('rejects a point geometry with no radius', async () => {
+    const t = harness()
+    const admin = await seedUser(t, 'admin', 'admin')
+    const waterBodyId = await seedBody(t)
+    // A point with no radius is an under-specified feature — it would reach turf/buffer as a bogus
+    // zero-area polygon. The shared shape gate must reject it rather than store junk.
+    await expect(
+      admin.as.mutation(api.bodyFeatures.create, {
+        waterBodyId,
+        type: 'constriction',
+        geometry: POINT,
+        reason: 'narrow channel',
+      }),
+    ).rejects.toThrow(/geometry/)
+  })
+
   test('requires a non-blank reason', async () => {
     const t = harness()
     const admin = await seedUser(t, 'admin', 'admin')
@@ -183,7 +199,7 @@ describe('bodyFeatures.listForBody', () => {
 })
 
 describe('bodyFeatures.promote', () => {
-  test('graduates a recurring hazard and archives (never deletes) the source', async () => {
+  test('graduates a recurring hazard and supersedes (never archives) the source', async () => {
     const t = harness()
     const admin = await seedUser(t, 'admin', 'admin')
     const waterBodyId = await seedBody(t)
@@ -201,10 +217,40 @@ describe('bodyFeatures.promote', () => {
     expect(feature?.type).toBe('recurring_pressure_ridge')
     expect(feature?.active).toBe(true)
 
-    // The hazard survives with its history, photos and confirmations intact.
+    // The hazard survives with its history, photos and confirmations intact — and its LIFECYCLE status
+    // is untouched. Promotion supersedes via a separate axis so it can never read as the community
+    // clearing the hazard (D3); it just stops rendering because the feature carries the warning now.
     const hazard = await t.run((ctx) => ctx.db.get(hazardId))
     expect(hazard).not.toBeNull()
-    expect(hazard?.status).toBe('archived')
+    expect(hazard?.status).toBe('active')
+    expect(hazard?.promotedToFeatureId).toBe(featureId)
+
+    // And it drops out of the map read path in favour of the feature.
+    const listed = await admin.as.query(api.hazards.listForBody, { waterBodyId })
+    expect(listed).toHaveLength(0)
+  })
+
+  test('demoting the feature un-supersedes the source hazard so it returns intact', async () => {
+    const t = harness()
+    const admin = await seedUser(t, 'admin', 'admin')
+    const waterBodyId = await seedBody(t)
+    const hazardId = await seedHazard(t, waterBodyId)
+
+    const featureId = await admin.as.mutation(api.bodyFeatures.promote, {
+      hazardId,
+      type: 'recurring_pressure_ridge',
+      reason: 'recurs annually',
+    })
+    await admin.as.mutation(api.bodyFeatures.demote, {
+      bodyFeatureId: featureId,
+      reason: 'not actually recurring',
+    })
+
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId))
+    expect(hazard?.promotedToFeatureId).toBeUndefined()
+    expect(hazard?.status).toBe('active')
+    const listed = await admin.as.query(api.hazards.listForBody, { waterBodyId })
+    expect(listed).toHaveLength(1)
   })
 
   test('carries the hazard geometry across unchanged', async () => {
@@ -292,6 +338,7 @@ describe('bodyFeatures.demote', () => {
       waterBodyId,
       type: 'constriction',
       geometry: POINT,
+      radiusMeters: 15,
       reason: 'narrow channel',
     })
 
@@ -310,6 +357,7 @@ describe('bodyFeatures.demote', () => {
       waterBodyId,
       type: 'constriction',
       geometry: POINT,
+      radiusMeters: 15,
       reason: 'narrow channel',
     })
 

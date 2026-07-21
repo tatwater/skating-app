@@ -300,7 +300,39 @@ describe('hazards.listForBody', () => {
   })
 })
 
-describe('hazards.setModeration', () => {
+// Hazards are moderated through the shared `moderation.setModerationStatus` (targetType: 'hazard'), so
+// the Phase 7 takedown queue has one entry point rather than a hazard-only mutation to also wire up.
+describe('hazard moderation (moderation.setModerationStatus)', () => {
+  // The full flag → hide path a phone now reaches (mobile gained a flag control): a member flags a bad
+  // pin through `contentFlags`, a moderator resolves it and hides the hazard, and it leaves the map.
+  test('a flagged pin can be reviewed and hidden end to end', async () => {
+    const t = harness()
+    const author = await seedUser(t, 'author')
+    const reporter = await seedUser(t, 'reporter')
+    const mod = await seedUser(t, 'mod', { role: 'moderator' })
+    const waterBodyId = await seedBody(t)
+    const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId))
+
+    const flagId = await reporter.as.mutation(api.contentFlags.flag, {
+      targetType: 'hazard',
+      targetId: hazardId,
+      reason: 'unsafe_false_report',
+    })
+    await mod.as.mutation(api.moderation.resolveFlag, {
+      flagId,
+      resolution: 'actioned',
+      reason: 'confirmed fake',
+    })
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'hazard',
+      targetId: hazardId,
+      status: 'hidden',
+      reason: 'confirmed fake',
+    })
+
+    expect(await reporter.as.query(api.hazards.listForBody, { waterBodyId })).toHaveLength(0)
+  })
+
   test('hides a bad pin without touching its lifecycle status', async () => {
     const t = harness()
     const author = await seedUser(t, 'author')
@@ -308,8 +340,9 @@ describe('hazards.setModeration', () => {
     const waterBodyId = await seedBody(t)
     const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId))
 
-    await mod.as.mutation(api.hazards.setModeration, {
-      hazardId,
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'hazard',
+      targetId: hazardId,
       status: 'hidden',
       reason: 'fake pin',
     })
@@ -328,8 +361,9 @@ describe('hazards.setModeration', () => {
     const waterBodyId = await seedBody(t)
     const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId))
 
-    await mod.as.mutation(api.hazards.setModeration, {
-      hazardId,
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'hazard',
+      targetId: hazardId,
       status: 'hidden',
       reason: 'spam',
     })
@@ -341,6 +375,25 @@ describe('hazards.setModeration', () => {
     expect(actions[0]?.reason).toBe('spam')
   })
 
+  test('removing a hazard filters it out of every read path', async () => {
+    const t = harness()
+    const author = await seedUser(t, 'author')
+    const mod = await seedUser(t, 'mod', { role: 'moderator' })
+    const waterBodyId = await seedBody(t)
+    const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId))
+
+    await mod.as.mutation(api.moderation.setModerationStatus, {
+      targetType: 'hazard',
+      targetId: hazardId,
+      status: 'removed',
+      reason: 'abuse',
+    })
+
+    expect(await author.as.query(api.hazards.get, { hazardId })).toBeNull()
+    const listed = await author.as.query(api.hazards.listForBody, { waterBodyId })
+    expect(listed).toHaveLength(0)
+  })
+
   test('requires the moderator role and a non-blank reason', async () => {
     const t = harness()
     const author = await seedUser(t, 'author')
@@ -349,10 +402,20 @@ describe('hazards.setModeration', () => {
     const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId))
 
     await expect(
-      author.as.mutation(api.hazards.setModeration, { hazardId, status: 'hidden', reason: 'x' }),
+      author.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'hazard',
+        targetId: hazardId,
+        status: 'hidden',
+        reason: 'x',
+      }),
     ).rejects.toThrow(/moderator/)
     await expect(
-      mod.as.mutation(api.hazards.setModeration, { hazardId, status: 'hidden', reason: '  ' }),
+      mod.as.mutation(api.moderation.setModerationStatus, {
+        targetType: 'hazard',
+        targetId: hazardId,
+        status: 'hidden',
+        reason: '  ',
+      }),
     ).rejects.toThrow(/reason is required/)
   })
 })
