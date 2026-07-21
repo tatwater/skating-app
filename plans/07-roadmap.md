@@ -355,6 +355,14 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   (log-area bounds + score→zoom map) and to set/adjust per-body **`curatedBoost`** from the
   water-body surface. Phase 2 ships these as tuned constants + a seed; Phase 7 lifts them
   behind admin controls so they're **never buried in code** a non-engineer can't reach.
+- **Hazard-tuning controls (D52/D54, from Phase 9):** same D49 pattern applied to hazards —
+  admin UI to edit the **per-type freshness/decay durations** (the `HAZARD_DECAY` tiers) and the
+  **confirm / removal thresholds** (1 confirm to promote, 2 "fully healed" to archive; no reputation
+  yet). Phase 9 ships these as tuned constants; Phase 7 lifts them behind `/admin`.
+- **Known seasonal body features (D53, from Phase 9):** a moderator surface to **promote** a recurring
+  hazard into a persistent **`bodyFeatures`** attribute (spring/current, constriction, bridge-narrows,
+  recurring pressure ridge) and to **demote** one — so a permanent risk stops needing user re-marking.
+  Includes the **`hazard` flag queue** (`contentFlags.targetType: hazard`) to hide a bad/malicious pin.
 - Every admin mutation gates on `role` server-side and writes a **`moderationActions`**
   audit row.
 - **Operator alerts (D38):** Resend + React Email — email the founder on new
@@ -394,10 +402,38 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - Needs: provider approvals/keys (all applied for in Phase 0).
 
 ## Phase 9 — Hazards
-- Draw hazards (point/line/area) within a water body; typed vocabulary.
-- Lifecycle (fresh/aging/stale) + "still there / gone" confirmations, triggered
-  opportunistically (app-open nearby, report flow, post-hoc GPS path) (D12/D15).
-- **Done:** hazards appear, age, and can be confirmed/cleared.
+> **Detailed build plan:** [`phase-9-hazards.md`](./phase-9-hazards.md) (decisions settled 2026-07-18;
+> D51–D54). Ship order within the **single PR**: online-first commits (authoring + lifecycle + render +
+> client-side on-ice alerts) → offline commits (Layer-3 tiles + background sync) → PR.
+- **Authoring — geometry-per-type, not freeform-by-default (D51).** Most people can't hand-draw an
+  accurate blob on a phone from what they see on the ice, so the primitive matches the hazard's shape:
+  **point + adjustable radius** (default — `open_water`/`lead`, `thin_ice`, `overflow_slush`,
+  `drilled_hole`, `shell_area`, `spring`/`current`), **polyline** (`pressure_ridge`, `wet_crack`, linear
+  leads), **polygon** (opt-in "advanced" only). Rendered **fuzzy + advisory** ("reported *around here*"),
+  never a surveyed boundary (D3). Two paths — **standalone** quick-flag and **in-report**
+  (`hazardIdsCreated[]`) — on **both web and mobile**. Typed vocabulary already in `06-data-model.md`.
+- **Lifecycle — per-type decay + three-tier healing confirmation (D52, extends D15).** Decay rate is
+  per hazard type (Tier A volatile 24/72h → Tier D permanent 14d/45d; tunable, admin-editable Phase 7).
+  Confirmations are **"still here" / "healing but unsafe" / "fully healed & safe"** — only the last
+  counts toward removal (2 independent, tunable); "healing but unsafe" **keeps the pin** so future
+  skaters can read the healing ice. Triggered opportunistically (app-open nearby, report flow, post-hoc
+  GPS path — D12/D15). A decayed open-water hazard never reads as "all clear" (D3).
+- **Known seasonal body features (D53).** Springs/current, constrictions, bridges/narrows, and
+  ridges that reform annually graduate into a persistent **`bodyFeatures`** entity — always-shown, no
+  decay, no re-marking. v1 ships schema + rendering; promotion/demotion is an **admin action** (Phase 7).
+- **On-ice alerts — client-side, D12-clean (D54).** The server only **syncs hazard data** to devices
+  that care about a lake; each phone evaluates its **own** GPS against cached hazards. **Layer 0** silent
+  cache sync + **Layer 1** on-ice proximity alert where the confirm-gate *is* the confirmation mechanism
+  (unconfirmed → soft "can you confirm?"; ≥1 independent confirm → "⚠ hazard ahead") ship in v1. Because
+  hazards are cached on-device, alerts fire **with no cell signal**. **Layer 2** (directional
+  "hazard ahead" 30–60s out via an opt-in live-position "on-ice mode" — a conscious safety exception to
+  D12) and **server-push-to-a-sleeping-phone** are **deferred/designed-for**.
+- **Deferred, designed-for:** non-destructive **consensus rendering** (cluster same-type hazards, keep
+  the rows) + **GPS negative-evidence** (Q11 — tracks through a hazard nudge its *confidence*, never
+  auto-clear it). Both post-density / Phase 8+.
+- **Done:** hazards are drawn (right primitive per type), age per type, can be confirmed via the
+  three-tier vote / cleared; permanent body features persist without re-marking; skaters on that ice get
+  a client-local alert (offline-capable) gated behind one confirmation.
 - **Offline hazard capture — inherited from Phase 2 F2 (decided 2026-07-15).** Hazards are drawn
   **on the ice, often offline**, so Phase 9 reuses the Phase 2 F2 offline substrate:
   - **The offline body-reference cache** (F2 "Layer 2" — `@skating/core` buffered
@@ -419,9 +455,41 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 
 ## Phase 10 — Weather-since strips
 - Open-Meteo "what the weather has done since this report" factual strip (D19).
-- **Done:** aging reports show peak temp / hours above freezing / sun / precip / wind.
+- **Weather-driven dynamic hazard decay (extends D52, planned here 2026-07-18).** Reuse the same
+  Open-Meteo "weather-since" pull to modulate hazard freshness instead of relying on elapsed time alone:
+  `effectiveAge = elapsed × decayMultiplier(type, weatherSince)`. Per-type sensitivity —
+  **refreeze-healed types** (`open_water`/`lead`, `thin_ice`, `drilled_hole`, `overflow_slush`)
+  **accelerate** toward stale with accumulated freezing-degree-hours and **decelerate** under
+  warm/sun/rain (a thaw can even **re-escalate** a fading `thin_ice`/`overflow` hazard — warmth never
+  heals these); **structural types** (`pressure_ridge`, `ice_heave`, `spring`/`current`) are
+  weather-insensitive (multiplier ≈ 1). **Same D3 caveat as D52:** accelerated decay ≠ "safe" — a
+  refrozen lead is thin ice, so the copy must never imply skateability. Pure logic in `@skating/core`
+  (property-tested, D40); admin-tunable alongside the D52 decay tiers (Phase 7).
+- **Done:** aging reports show peak temp / hours above freezing / sun / precip / wind; hazard decay
+  reflects what the weather actually did, not just the clock.
 
 ## Later / deferred (see 02-open-questions)
+- **Per-body summary cards on the map at appropriate zoom (founder ask, 2026-07-21).** Today the map
+  shows water-body polygons and you must open a lake to learn anything about it. The ask: at suitable
+  zoom levels, surface a compact card/label over *unselected* bodies with the at-a-glance basics — lake
+  name, recent report count, a general quality consensus, and the most important active hazard types.
+  **Deliberately not in Phase 9** (decided at kickoff): it is a map-browse feature, not a hazard feature,
+  and doing it properly would roughly double Phase 9's backend surface.
+  - **Why it's its own piece of work:** it needs *cross-viewport* aggregation over both reports and
+    hazards, which is exactly the read-cap-fragile geospatial path Phase 9 avoids by scoping hazards to
+    the selected body (see PR #10/#11 on `listInViewport`). Computing it per read at viewport scale
+    would reproduce that bug class.
+  - **Likely shape:** a denormalized per-body summary maintained **on write** — the Phase 4
+    contribution-counter pattern (`lib/contributionCounts.ts`) generalized. Something like
+    `waterBodies.summary { recentReportCount, consensusQuality, topHazardTypes[], updatedAt }`, bumped by
+    `reports.create` / moderation transitions / hazard create+confirm, and swept by a cron for time
+    decay (the counts are inherently time-windowed, so they go stale without a tick).
+  - **Open sub-questions:** what "recent" window; how to derive a consensus quality that never reads as
+    an authoritative safety claim (D3 — the same trap as hazard decay); whether the card renders as a
+    MapLibre `symbol` layer with data-driven zoom filters or as HTML overlays; and how it interacts with
+    `minVisibleZoom`/`displayScore` (D49) so cards don't fight the existing prominence scoring.
+  - **Do this when** there's enough report density that a lake summary is non-empty for most bodies in a
+    viewport — before that it's mostly blank cards.
 - **Self-hosted OpenRouteService (true 90-min+ isochrone band).** Phase 4 ships drive-time on the
   **hosted ORS**, whose isochrone API is hardcoded to a **60-min max range** for `driving-car` — so the
   90-min band is a uniform crow-flies radius fallback there. Self-hosting ORS (a memory-hungry JVM/Docker
