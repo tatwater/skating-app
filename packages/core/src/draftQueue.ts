@@ -111,9 +111,18 @@ export function flushableDrafts(drafts: readonly ReportDraft[]): ReportDraft[] {
 
 export type FlushErrorKind = 'transient' | 'permanent'
 
-/** Marker for a failure the queue must NOT auto-retry (it won't self-resolve). */
-class PermanentFlushError extends Error {
+/**
+ * Marker for a failure the queue must NOT auto-retry (it won't self-resolve).
+ *
+ * Exported so the hazard queue raises the *same* marker rather than a parallel one — a second class
+ * would be classified `transient` by `classifyFlushError` and retried forever.
+ */
+export class PermanentFlushError extends Error {
   readonly permanent = true
+  constructor(message: string) {
+    super(message)
+    this.name = 'PermanentFlushError'
+  }
 }
 
 /**

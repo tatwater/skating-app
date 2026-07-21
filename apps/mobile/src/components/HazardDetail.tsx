@@ -1,6 +1,8 @@
 import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
+  classifyFlushError,
+  createQueuedConfirmation,
   FOOTPRINT_IS_APPROXIMATE,
   freshnessLabel,
   type HazardVerdict,
@@ -12,9 +14,11 @@ import {
   verdictLabel,
 } from '@skating/core'
 import { useMutation, useQuery } from 'convex/react'
+import { randomUUID } from 'expo-crypto'
 import * as Location from 'expo-location'
 import { useEffect, useState } from 'react'
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui'
+import { saveHazardItem } from '../lib/draftStore'
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi'
 import { useMapSelection } from './MapSelectionContext'
 
@@ -87,28 +91,53 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
   async function cast(verdict: HazardVerdict) {
     setConfirming(true)
     setError(null)
+    // Stamped before anything can await — this is the moment the skater is looking at the hazard.
+    const observedAt = Date.now()
+
+    // Stamp where the skater stood, when we can get it — a confirmation made *at* the hazard is
+    // worth more than one made from the couch, and `via` records which this was. Resolved outside the
+    // send so the queued fallback carries the same coord the online path would have sent.
+    let atCoord: { lat: number; lng: number } | undefined
     try {
-      // Stamp where the skater stood, when we can get it — a confirmation made *at* the hazard is
-      // worth more than one made from the couch, and `via` records which this was.
-      let atCoord: { lat: number; lng: number } | undefined
-      try {
-        const { status } = await Location.getForegroundPermissionsAsync()
-        if (status === 'granted') {
-          const pos = await Location.getCurrentPositionAsync({})
-          atCoord = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-        }
-      } catch {
-        // No fix ⇒ confirm without one. Never block a confirmation on location.
+      const { status } = await Location.getForegroundPermissionsAsync()
+      if (status === 'granted') {
+        const pos = await Location.getCurrentPositionAsync({})
+        atCoord = { lat: pos.coords.latitude, lng: pos.coords.longitude }
       }
+    } catch {
+      // No fix ⇒ confirm without one. Never block a confirmation on location.
+    }
+
+    try {
       await confirm({
         hazardId: hazardId as Id<'hazards'>,
         verdict,
         via: 'app_open_nearby',
         ...(atCoord ? { atCoord } : {}),
+        observedAt,
       })
       setDone(verdict)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Couldn’t record that.')
+      if (classifyFlushError(e) === 'permanent') {
+        setError(e instanceof Error ? e.message : 'Couldn’t record that.')
+        setConfirming(false)
+        setPendingHealed(false)
+        return
+      }
+      // No signal — queue it. `observedAt` is *now*, when they're standing here looking at it, not
+      // whenever the phone reconnects: a verdict that lands hours later must not reset the hazard's
+      // freshness clock to the moment it sent.
+      saveHazardItem(
+        createQueuedConfirmation({
+          id: randomUUID(),
+          now: Date.now(),
+          hazardId,
+          verdict,
+          observedAt,
+          ...(atCoord ? { atCoord } : {}),
+        }),
+      )
+      setDone(verdict)
     } finally {
       setConfirming(false)
       setPendingHealed(false)

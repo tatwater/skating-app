@@ -2,6 +2,8 @@ import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
   applyDraftMapClick,
+  classifyFlushError,
+  createQueuedHazard,
   draftPlacementCount,
   draftToShape,
   HAZARD_TYPE_LABELS,
@@ -15,10 +17,12 @@ import {
   undoDraftPlacement,
 } from '@skating/core'
 import { useMutation } from 'convex/react'
+import { randomUUID } from 'expo-crypto'
 import * as Location from 'expo-location'
 import { useState } from 'react'
 import { Modal } from 'react-native'
 import { Button, H4, Paragraph, ScrollView, Text, XStack, YStack } from 'tamagui'
+import { saveHazardItem } from '../lib/draftStore'
 import { useMapSelection } from './MapSelectionContext'
 
 /**
@@ -93,14 +97,28 @@ export function HazardCapture() {
     }
   }
 
+  /**
+   * Post it, or queue it if there's no signal.
+   *
+   * There is deliberately **no "save for later" button**: on the ice, "am I online?" is not a
+   * question the skater should have to answer, and a hazard that didn't get filed because someone
+   * picked the wrong button is a hazard the next skater doesn't see. So Done always means Done — a
+   * transient failure falls through to the offline queue and flushes on reconnect, and only a real
+   * server rejection (a minor trying to post, a removed lake) surfaces as an error worth reading.
+   *
+   * The key is minted here, at capture, and travels with the queued item: that's what makes a
+   * lost-ack retry return the original pin instead of dropping a second one beside it.
+   */
   async function post() {
     const shape = hazardDraft ? draftToShape(hazardDraft) : null
     if (!hazardDraftType || !shape || !targetBodyId) return
     setSaving(true)
     setError(null)
+    const idempotencyKey = randomUUID()
     try {
       await createHazard({
         waterBodyId: targetBodyId as Id<'waterBodies'>,
+        idempotencyKey,
         type: hazardDraftType,
         geometryKind: shape.geometryKind,
         geometry: shape.geometry,
@@ -112,7 +130,25 @@ export function HazardCapture() {
       setToast('Hazard posted. Thanks.')
       setTimeout(() => setToast(null), 3000)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Couldn’t post that hazard.')
+      if (classifyFlushError(e) === 'permanent') {
+        setError(e instanceof Error ? e.message : 'Couldn’t post that hazard.')
+        setSaving(false)
+        return
+      }
+      const now = Date.now()
+      saveHazardItem(
+        createQueuedHazard({
+          id: randomUUID(),
+          idempotencyKey,
+          now,
+          type: hazardDraftType,
+          shape,
+          waterBodyId: targetBodyId,
+        }),
+      )
+      reset()
+      setToast('Saved — it’ll post when you’re back in signal.')
+      setTimeout(() => setToast(null), 4000)
     } finally {
       setSaving(false)
     }

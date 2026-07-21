@@ -55,6 +55,14 @@ export const inReportHazardArgs = {
 /** The standalone quick-flag args (D51) — the same content, plus the body it attaches to. */
 export const hazardCreateArgs = {
   waterBodyId: v.id('waterBodies'),
+  /**
+   * Offline-flush dedup (Phase 9 offline / F2/D30). A hazard captured on the ice is queued with one
+   * client-generated key and keeps it across every retry, so a create whose ack was lost returns the
+   * same hazard instead of dropping a second pin a few metres from the first. Duplicate pins are
+   * worse here than duplicate reports: two overlapping footprints read as two hazards, and the
+   * confirm loop then has to retire both. Omitted by web/online callers.
+   */
+  idempotencyKey: v.optional(v.string()),
   ...inReportHazardArgs,
 }
 
@@ -100,6 +108,7 @@ export async function insertHazard(
     bufferMeters?: number
     description?: string
     photoIds?: Id<'photos'>[]
+    idempotencyKey?: string
   },
   authorId: Id<'profiles'>,
   now: number,
@@ -124,6 +133,7 @@ export async function insertHazard(
     ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
     bbox: hazardBbox(shape),
     createdByUserId: authorId,
+    ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
     ...(originReportId !== undefined ? { originReportId } : {}),
     ...(args.description !== undefined ? { description: args.description } : {}),
     photoIds,
@@ -150,6 +160,23 @@ export const create = mutation({
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx)
     const now = Date.now()
+
+    // Idempotency short-circuit: if this key already produced a hazard, return it — the flush is a
+    // retry, not a new sighting. Scoped to the author so a shared key can never hand back someone
+    // else's pin. Runs before the minor gate and the insert, so a lost-ack retry is cheap.
+    if (args.idempotencyKey !== undefined) {
+      const existing = await ctx.db
+        .query('hazards')
+        .withIndex('by_idempotency_key', (q) => q.eq('idempotencyKey', args.idempotencyKey))
+        .unique()
+      if (existing) {
+        if (existing.createdByUserId !== profile._id) {
+          throw new ConvexError('Idempotency key conflict')
+        }
+        return existing._id
+      }
+    }
+
     // TODO(16+): fold into the uniform 16+ pass with legal (D41).
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post hazards')

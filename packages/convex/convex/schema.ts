@@ -349,6 +349,10 @@ export default defineSchema({
     bufferMeters: v.optional(v.number()),
     bbox, // of the *footprint* (geometry grown by radius/buffer), for proximity prefiltering
     createdByUserId: v.id('profiles'),
+    // Mobile offline queue (Phase 9 offline / F2/D30): one client-generated key carried across every
+    // flush retry, so a create whose ack was lost returns the same hazard instead of dropping a
+    // second pin on the same spot. Omitted by web/online callers.
+    idempotencyKey: v.optional(v.string()),
     originReportId: v.optional(v.id('reports')), // set when drawn in-report or bundled later (D55)
     description: v.optional(v.string()),
     // Ice hazards are intensely visual and hard to describe ("folded ridges are hard to see" is a
@@ -370,7 +374,8 @@ export default defineSchema({
     .index('by_water_body_status', ['waterBodyId', 'status'])
     .index('by_water_body', ['waterBodyId'])
     // D55 auto-bundle: find an author's own unattached hazards on a body to offer into their report.
-    .index('by_author_and_water_body', ['createdByUserId', 'waterBodyId']),
+    .index('by_author_and_water_body', ['createdByUserId', 'waterBodyId'])
+    .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
   // NOTE: no geospatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
   // proximity evaluator runs against that same cached set. A third @convex-dev/geospatial instance

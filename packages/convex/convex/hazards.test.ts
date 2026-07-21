@@ -190,6 +190,65 @@ describe('hazards.create', () => {
   })
 })
 
+describe('hazards.create idempotency (offline flush)', () => {
+  // A hazard is flagged standing next to it, which is exactly where there's no signal — so the
+  // offline flush is the common path, and a lost ack must not drop a second pin metres from the
+  // first. Duplicate hazards are worse than duplicate reports: two overlapping footprints read as
+  // two dangers, and the confirm loop then has to retire both.
+  test('replays to the same hazard instead of creating a second pin', async () => {
+    const t = harness()
+    const user = await seedUser(t, 'author')
+    const waterBodyId = await seedBody(t)
+    const args = createArgs(waterBodyId, { idempotencyKey: 'key-1' })
+
+    const first = await user.as.mutation(api.hazards.create, args)
+    const second = await user.as.mutation(api.hazards.create, args)
+
+    expect(second).toBe(first)
+    const all = await t.run((ctx) => ctx.db.query('hazards').collect())
+    expect(all).toHaveLength(1)
+  })
+
+  test('a different key is a different sighting', async () => {
+    const t = harness()
+    const user = await seedUser(t, 'author')
+    const waterBodyId = await seedBody(t)
+
+    await user.as.mutation(api.hazards.create, createArgs(waterBodyId, { idempotencyKey: 'a' }))
+    await user.as.mutation(api.hazards.create, createArgs(waterBodyId, { idempotencyKey: 'b' }))
+
+    const all = await t.run((ctx) => ctx.db.query('hazards').collect())
+    expect(all).toHaveLength(2)
+  })
+
+  // Scoped to the author so a (UUID-collision-improbable) shared key can never hand back someone
+  // else's pin.
+  test('rejects a key that belongs to another author', async () => {
+    const t = harness()
+    const author = await seedUser(t, 'author')
+    const other = await seedUser(t, 'other')
+    const waterBodyId = await seedBody(t)
+
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId, { idempotencyKey: 'k' }))
+    await expect(
+      other.as.mutation(api.hazards.create, createArgs(waterBodyId, { idempotencyKey: 'k' })),
+    ).rejects.toThrow(/Idempotency key conflict/)
+  })
+
+  test('online callers omit the key and always create', async () => {
+    const t = harness()
+    const user = await seedUser(t, 'author')
+    const waterBodyId = await seedBody(t)
+
+    await user.as.mutation(api.hazards.create, createArgs(waterBodyId))
+    await user.as.mutation(api.hazards.create, createArgs(waterBodyId))
+
+    const all = await t.run((ctx) => ctx.db.query('hazards').collect())
+    expect(all).toHaveLength(2)
+    expect(all.every((h) => h.idempotencyKey === undefined)).toBe(true)
+  })
+})
+
 describe('hazards.listForBody', () => {
   test('derives freshness and provisional status at read time', async () => {
     const t = harness()

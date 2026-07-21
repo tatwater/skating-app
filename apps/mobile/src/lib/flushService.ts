@@ -10,14 +10,27 @@ import type { Id } from '@skating/convex/dataModel'
 import {
   type DraftFlushEffects,
   flushableDrafts,
+  flushableHazardItems,
   flushDraft,
+  flushHazardItem,
+  type HazardFlushEffects,
   isFlushable,
+  isHazardItemFlushable,
   type ReportInput,
 } from '@skating/core'
 import { uploadToStorage } from '../components/photoPipeline'
 import { convex } from './convex'
 import { deleteDraftPhotoFiles, draftPhotoUris } from './draftPhotos'
-import { deleteDraft, getDraft, listDrafts, saveDraft } from './draftStore'
+import {
+  deleteDraft,
+  deleteHazardItem,
+  getDraft,
+  getHazardItem,
+  listDrafts,
+  listHazardItems,
+  saveDraft,
+  saveHazardItem,
+} from './draftStore'
 
 /** Map the core report input to `reports.create` args (branded Convex ids reapplied). */
 function toCreateArgs(input: ReportInput & { idempotencyKey: string; photoIds: string[] }) {
@@ -62,6 +75,49 @@ function effects(): DraftFlushEffects {
   }
 }
 
+/**
+ * The hazard-queue adapter (Phase 9 offline). Shares the photo/body effects with the report queue —
+ * an uploaded photo is an uploaded photo — and adds the two hazard mutations.
+ */
+function hazardEffects(): HazardFlushEffects {
+  const shared = effects()
+  return {
+    resolveBody: shared.resolveBody,
+    uploadPhoto: shared.uploadPhoto,
+    createPhotoRow: shared.createPhotoRow,
+    createHazard: async (input) =>
+      convex.mutation(api.hazards.create, {
+        waterBodyId: input.waterBodyId as Id<'waterBodies'>,
+        idempotencyKey: input.idempotencyKey,
+        type: input.type,
+        geometryKind: input.shape.geometryKind,
+        geometry: input.shape.geometry,
+        ...(input.shape.radiusMeters !== undefined
+          ? { radiusMeters: input.shape.radiusMeters }
+          : {}),
+        ...(input.shape.bufferMeters !== undefined
+          ? { bufferMeters: input.shape.bufferMeters }
+          : {}),
+        ...(input.description !== undefined ? { description: input.description } : {}),
+        photoIds: input.photoIds as Id<'photos'>[],
+      }),
+    confirmHazard: async (input) => {
+      await convex.mutation(api.hazardConfirmations.confirm, {
+        hazardId: input.hazardId as Id<'hazards'>,
+        verdict: input.verdict,
+        // Queued confirmations were cast on the ice, so the trigger that produced them was a
+        // proximity alert or the drawer reached from one — either way the skater was standing there.
+        via: 'proximity_alert',
+        ...(input.atCoord ? { atCoord: input.atCoord } : {}),
+        observedAt: input.observedAt,
+      })
+    },
+    persist: async (item) => {
+      saveHazardItem(item)
+    },
+  }
+}
+
 // A single in-flight flush at a time: reconnect + app-foreground + manual triggers can all fire, and
 // the guard keeps them from double-sending (the report is idempotent, but this avoids wasted work).
 let flushing = false
@@ -91,6 +147,10 @@ export async function flushDrafts(now: number = Date.now()): Promise<void> {
   if (flushing) return
   flushing = true
   try {
+    // Hazards first, deliberately. They're safety content that another skater may be about to need,
+    // and a queue of report drafts with photos can take a while to drain on a weak connection —
+    // sending the ridge before the trip write-up is the right order to lose a connection in.
+    await flushHazardQueue(now)
     const eff = effects()
     for (const { id } of flushableDrafts(listDrafts())) {
       flushingIds.add(id)
@@ -110,5 +170,28 @@ export async function flushDrafts(now: number = Date.now()): Promise<void> {
     }
   } finally {
     flushing = false
+  }
+}
+
+/**
+ * Drain the hazard queue once, oldest first. A successful item is deleted; a transient failure is
+ * left `pending` for the next flush and a permanent one parks in `error` — both persisted by
+ * `flushHazardItem` itself.
+ *
+ * Unlike report drafts there's no edit-during-flush race to guard: a queued hazard is immutable once
+ * captured (the capture bar is gone by then), so there's nothing for an edit to clobber.
+ */
+async function flushHazardQueue(now: number): Promise<void> {
+  const eff = hazardEffects()
+  for (const { id } of flushableHazardItems(listHazardItems())) {
+    const fresh = getHazardItem(id)
+    if (!fresh || !isHazardItemFlushable(fresh)) continue
+    const result = await flushHazardItem(fresh, eff, now)
+    if (result.ok) {
+      if (result.item.kind === 'hazard') {
+        deleteDraftPhotoFiles(result.item.photos.flatMap((p) => [p.fullUri, p.thumbUri]))
+      }
+      deleteHazardItem(result.item.id)
+    }
   }
 }

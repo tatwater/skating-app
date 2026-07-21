@@ -327,11 +327,49 @@ Per the founder's call (2026-07-18): **all in one PR**, online-first commits fir
    selections: the candidate list is a live query, so an opt-in set would silently drop a hazard that
    finished syncing after the form opened. Online-only — a coord-only offline capture has no resolved
    lake to query candidates for, so bundling a *drafted* report belongs with the offline commit.
-7. **Offline** — hazard draft/flush reuse (`draftStore` `kind` discriminator); **Layer-3 offline basemap
-   tile-pack** native spike (`@maplibre/maplibre-react-native` offline-pack over `pmtiles://` **or** an
-   on-device mini-`.pmtiles` — resolve here); the F2 `bodyCache` tile-pack column slots in without a
-   reshape. **Timeboxed and droppable** — this is the one genuinely unknown piece, and it must not block
-   the rest of the phase from shipping.
+7. **Offline** — ✅ hazard draft/flush reuse (`draftStore` `kind` discriminator);
+   ⛔ **Layer-3 offline basemap tile-pack — dropped for this phase** (see the spike findings below).
+   - Queue logic in **`@skating/core/hazardQueue.ts`**, reusing the F2 contract (same `DraftStatus`
+     machine, same transient-vs-permanent classification, same persist-after-every-advance rule) so
+     one flush loop drains reports, hazards and confirmations. `draftQueue`'s `PermanentFlushError`
+     is now **exported and shared** — a parallel marker class would have been classified `transient`
+     and retried forever.
+   - **`hazards.create` gained `idempotencyKey`** (+ index). Without it a lost ack on flush drops a
+     second pin metres from the first, and duplicate *hazards* are worse than duplicate reports: two
+     overlapping footprints read as two dangers and the confirm loop has to retire both.
+   - **There is no "save for later" button.** On the ice, "am I online?" isn't a question the skater
+     should have to answer, so Done always means Done: a transient failure falls through to the queue
+     and flushes on reconnect, and only a real server rejection surfaces as an error.
+   - **Hazards flush before report drafts** — safety content another skater may be about to need, and
+     a photo-laden report queue can take a while to drain on a weak connection.
+   - `QueuedHazard.photos` exists but is never populated yet: **on-ice photo capture is still
+     unbuilt** (see *Out of scope* below). The field ships now so adding the camera is a UI change
+     rather than an on-device schema migration.
+
+### Layer-3 offline basemap tile-pack — spike findings (2026-07-21), deferred
+
+Timeboxed per the founder's call, and **not built**. What's now known, so the next attempt starts from
+evidence rather than re-deriving it:
+
+- `@maplibre/maplibre-react-native@11.3.6` **does** ship an offline API: `OfflineManager.createPack`,
+  `getPacks`, `deletePack`, `invalidatePack`, `mergeOfflineRegions(path)`.
+- **The blocker is our tile source, not the API.** `createPack` takes `mapStyle: string` — a style
+  *URL* the native downloader resolves and crawls for individual tile resources. Our basemap is (a) a
+  `StyleSpecification` **object built in JS** (`buildMapStyle`), with no hosted URL, and (b) sourced
+  from `pmtiles://…`, a single archive read via HTTP range requests rather than a `{z}/{x}/{y}` tile
+  template the crawler can enumerate. Native pmtiles support covers *rendering*; whether the offline
+  *downloader* can crawl a pmtiles archive is unverified and unknowable from the JS typings.
+- **Three candidate routes, none cheap:** (1) host a style JSON + serve the region as ordinary tile
+  URLs purely so `createPack` can crawl it — abandons pmtiles for the offline path; (2) build a mini
+  regional `.pmtiles` and ship/download it to device storage, pointing the style at a local file URI
+  — needs confirmation that native pmtiles reads `file://`; (3) generate a MapLibre offline sqlite DB
+  in the build pipeline and sideload it via `mergeOfflineRegions` — a build-tooling project.
+- **Resolving this needs a device build**, which is also what the rest of the native Phase 9 UI is
+  waiting on. Sequencing it with that emulator/device pass is the cheap version.
+- **What already degrades correctly:** on-ice capture never depended on the basemap. The pin drops at
+  GPS, sizing and Done work, and the whole flow queues offline. What's lost without tiles is *tapping
+  the map* — Move and Trace — so a no-basemap capture is a GPS-anchored circle. That is the documented
+  degrade, and it is the common case working.
 8. Then open the PR (Greptile metered — review once, whole phase).
 
 ---
@@ -357,6 +395,14 @@ Per the founder's call (2026-07-18): **all in one PR**, online-first commits fir
   admin *mutations*, Phase 7 adds the UI.
 - **Silent background sync to a closed app** (content-available push to refresh the cache) — nice-to-have
   in the offline commits, not a v1 blocker.
+- **On-ice hazard photos — NOT BUILT** (gap, 2026-07-21). The plan calls photos "encouraged, plural,
+  and skippable" on the mobile flag flow (research §6: ~40% of corpus posts carry photos, and folded
+  ridges are notoriously hard to describe), but the mobile capture flow ships without a camera step.
+  The plumbing is all in place — `hazards.photoIds[]`, web's authoring, the multi-photo pipeline, and
+  `QueuedHazard.photos` with a tested checkpointed upload path — so this is a UI addition, not a
+  reshape. Web hazard photos are likewise wired server-side but not surfaced in the authoring form.
+- **Layer-3 offline basemap tile-pack** — dropped from Phase 9 with findings recorded above; revisit
+  alongside the device-build pass.
 
 ---
 
