@@ -32,9 +32,12 @@ import { ConvexError, v } from 'convex/values'
 import type { Doc, Id } from './_generated/dataModel'
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server'
 import { resolvePlaceForCoord } from './adminAreas'
+import { attachHazardsToReport, inReportHazardArgs, insertHazard } from './hazards'
 import { getCurrentProfile, requireProfile } from './lib/auth'
+import { resolveSurvivor } from './lib/bodies'
 import { bumpContributionCount } from './lib/contributionCounts'
 import { isListed } from './lib/listing'
+import { assertOwnedPhotos } from './lib/photoAccess'
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
 import { latLng, literals } from './lib/validators'
 import { enqueueReportNotifications } from './notifications'
@@ -82,32 +85,6 @@ const reportContent = {
   showPutIn: v.optional(v.boolean()),
 }
 
-/** Follow `mergedIntoId` to the surviving body (D36); bounded hops guard a pathological cycle. */
-async function resolveSurvivor(
-  ctx: Parameters<typeof requireProfile>[0],
-  waterBodyId: Doc<'reports'>['waterBodyId'],
-): Promise<Doc<'waterBodies'> | null> {
-  let body = await ctx.db.get(waterBodyId)
-  for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
-    body = await ctx.db.get(body.mergedIntoId)
-  }
-  return body
-}
-
-/** Verify every photo id exists and belongs to the author (no attaching someone else's photo). */
-async function assertOwnedPhotos(
-  ctx: Parameters<typeof requireProfile>[0],
-  photoIds: Doc<'reports'>['photoIds'],
-  authorId: Doc<'profiles'>['_id'],
-): Promise<void> {
-  for (const photoId of photoIds) {
-    const photo = await ctx.db.get(photoId)
-    if (!photo || photo.uploaderId !== authorId) {
-      throw new ConvexError('Photo not found or not owned by the author')
-    }
-  }
-}
-
 /** Build the `@skating/core` validation input from mutation args (all reports are public, D13). */
 function toReportInput(
   args: {
@@ -153,6 +130,12 @@ export const create = mutation({
     // serializes a concurrent double-flush via OCC — the second call's index read conflicts with the
     // first's insert and retries, then finds the row below. Omitted by web/online callers.
     idempotencyKey: v.optional(v.string()),
+    // Hazards drawn as part of this report (D51 in-report path). `waterBodyId` is taken from the
+    // report, so a hazard can never be filed against a different lake than the report it belongs to.
+    hazards: v.optional(v.array(v.object(inReportHazardArgs))),
+    // The author's own standalone hazards to bundle into this report (D55). Ownership, body and
+    // not-already-attached are all re-checked server-side.
+    attachHazardIds: v.optional(v.array(v.id('hazards'))),
     ...reportContent,
   },
   handler: async (ctx, args) => {
@@ -220,10 +203,31 @@ export const create = mutation({
       ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
       moderationStatus: 'visible',
       photoIds,
-      hazardIdsCreated: [], // hazards are Phase 8 (D4 seam); always empty here
+      hazardIdsCreated: [], // filled in below once the hazards know their report id
       createdAt: now,
       updatedAt: now,
     })
+
+    // Hazards (Phase 9). Two sources, both landing in `hazardIdsCreated`:
+    //  - `hazards`: drawn as part of this report (the in-report authoring path, D51).
+    //  - `attachHazardIds`: the author's own standalone on-ice pins, bundled in after the fact (D55).
+    // Created after the report so each hazard carries `originReportId` from birth — one write order,
+    // no back-patching, and the two collections stay consistent inside a single transaction.
+    const createdHazardIds: Id<'hazards'>[] = []
+    for (const hazard of args.hazards ?? []) {
+      createdHazardIds.push(
+        await insertHazard(ctx, { ...hazard, waterBodyId: body._id }, profile._id, now, reportId),
+      )
+    }
+    const bundledHazardIds = await attachHazardsToReport(
+      ctx,
+      args.attachHazardIds ?? [],
+      reportId,
+      profile._id,
+      body._id,
+    )
+    const hazardIdsCreated = [...createdHazardIds, ...bundledHazardIds]
+    if (hazardIdsCreated.length > 0) await ctx.db.patch(reportId, { hazardIdsCreated })
 
     // Bump the author's denormalized report counter (born visible) so the profile shows a true total
     // without scanning their history (D13). Moderation transitions adjust it symmetrically.

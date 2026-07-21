@@ -10,6 +10,7 @@ import { ConvexError, v } from 'convex/values'
 import type { Id } from './_generated/dataModel'
 import { mutation, query } from './_generated/server'
 import { requireProfile } from './lib/auth'
+import { resolvePhotoUrls } from './lib/photoAccess'
 import { getViewableReport } from './lib/reportVisibility'
 import { latLng } from './lib/validators'
 
@@ -125,31 +126,24 @@ export const getUrls = query({
   handler: async (ctx, { reportId }) => {
     const report = await getViewableReport(ctx, reportId)
     if (!report) return []
-    const results: {
-      photoId: Id<'photos'>
-      url: string | null
-      thumbUrl: string | null
-      caption?: string
-      coord?: { lat: number; lng: number }
-      placeOnMap: boolean
-    }[] = []
-    for (const photoId of report.photoIds) {
-      const photo = await ctx.db.get(photoId)
-      if (!photo) continue
-      // Stored as v.string() per the data model; they're storage ids, so cast for `getUrl`.
-      const [url, thumbUrl] = await Promise.all([
-        ctx.storage.getUrl(photo.storageId as Id<'_storage'>),
-        ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>),
-      ])
-      results.push({
-        photoId,
-        url,
-        thumbUrl,
-        ...(photo.caption !== undefined ? { caption: photo.caption } : {}),
-        ...(photo.coord !== undefined ? { coord: photo.coord } : {}),
-        placeOnMap: photo.placeOnMap,
-      })
-    }
-    return results
+    return resolvePhotoUrls(ctx, report.photoIds)
+  },
+})
+
+/**
+ * Serving URLs for a **hazard's** photos (Phase 9).
+ *
+ * A standalone on-ice hazard has no report to inherit a gate from, so it carries its own: the hazard
+ * must exist and be moderation-`visible`. Note it does **not** require `status: 'active'` — an
+ * archived (community-healed) hazard's photos stay readable, because seeing what a spot looked like
+ * when it was open is exactly the kind of evidence the next skater benefits from, and archiving is a
+ * lifecycle verdict rather than a moderation one (D3).
+ */
+export const getHazardUrls = query({
+  args: { hazardId: v.id('hazards') },
+  handler: async (ctx, { hazardId }) => {
+    const hazard = await ctx.db.get(hazardId)
+    if (hazard?.moderationStatus !== 'visible') return []
+    return resolvePhotoUrls(ctx, hazard.photoIds)
   },
 })
