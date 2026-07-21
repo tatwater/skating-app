@@ -77,7 +77,18 @@ export const HAZARD_STATUSES = ['active', 'archived'] as const
  * toward removal; `healing_unsafe` keeps the pin up so the next skater can read the healing ice.
  */
 export const HAZARD_CONFIRM_VERDICTS = ['still_there', 'healing_unsafe', 'fully_healed'] as const
-export const HAZARD_CONFIRM_VIA = ['app_open_nearby', 'report_flow', 'strava_path'] as const
+/**
+ * What triggered a confirmation (D12). Kept distinct because the trigger is evidence about the
+ * confirmation's quality: `proximity_alert` means the skater was standing within alert range of the
+ * hazard when they answered, which is a much stronger observation than confirming from a list — and
+ * conflating the two would throw that signal away before we ever get to weigh it (D50).
+ */
+export const HAZARD_CONFIRM_VIA = [
+  'app_open_nearby',
+  'proximity_alert',
+  'report_flow',
+  'strava_path',
+] as const
 
 /** The authoring primitive a hazard was drawn with (D51). */
 export const HAZARD_GEOMETRY_KINDS = ['point_radius', 'line', 'polygon'] as const

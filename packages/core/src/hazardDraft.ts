@@ -71,7 +71,21 @@ export function stepSize(current: number, steps: readonly number[], direction: 1
 export function draftForType(type: HazardType): HazardDraft {
   return HAZARD_DEFAULT_GEOMETRY_KIND[type] === 'line'
     ? { geometryKind: 'line', vertices: [], bufferMeters: HAZARD_DEFAULT_BUFFER_M[type] }
-    : { geometryKind: 'point_radius', coord: null, radiusMeters: HAZARD_DEFAULT_RADIUS_M[type] }
+    : pointDraftForType(type)
+}
+
+/**
+ * A starting draft that is **always** a circle, whatever the type's natural primitive — the on-ice
+ * capture path (D51/§Mobile).
+ *
+ * On the ice the rule that wins is "the hazard is committable after two taps": a mitten-fumble that
+ * hits Done early must still produce a useful pin. A line can't satisfy that, because one GPS fix is
+ * one vertex and a one-vertex line isn't storable. So a ridge flagged from the ice starts as a circle
+ * at the skater's position and *upgrades* to a polyline via `switchDraftKind` if they choose to trace
+ * it. Web, where there's a mouse and no cold, starts linear types linear.
+ */
+export function pointDraftForType(type: HazardType): HazardDraft {
+  return { geometryKind: 'point_radius', coord: null, radiusMeters: HAZARD_DEFAULT_RADIUS_M[type] }
 }
 
 /**

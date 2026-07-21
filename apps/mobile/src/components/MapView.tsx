@@ -10,7 +10,7 @@ import {
 } from '@maplibre/maplibre-react-native'
 import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
-import type { BBox } from '@skating/core'
+import { applyDraftMapClick, type BBox } from '@skating/core'
 import { useQuery } from 'convex/react'
 import * as Location from 'expo-location'
 import { useRouter } from 'expo-router'
@@ -18,6 +18,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { NativeSyntheticEvent } from 'react-native'
 import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native'
 import { env } from '../lib/env'
+import {
+  bodyFeaturesToFeatureCollection,
+  HAZARD_PALETTE,
+  hazardColorExpression,
+  hazardDraftToFeatureCollection,
+  hazardFillOpacityExpression,
+  hazardsToFeatureCollection,
+} from '../lib/hazardMap'
 import {
   boundsToViewport,
   buildMapStyle,
@@ -55,6 +63,9 @@ import { useMapSelection } from './MapSelectionContext'
  */
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
 
+/** How long a hazard tap suppresses the water-body tap underneath it (one gesture's worth). */
+const HAZARD_PRESS_PRECEDENCE_MS = 300
+
 // The initial query covers the whole pilot region at the state zoom, so the map shows the prominent
 // bodies (Champlain, boosted Morey) immediately — before the first `onRegionDidChange` — then each
 // pan/zoom refines it. Mirrors web's regional framing (Burlington, z6.5, Phase 2.5).
@@ -83,8 +94,16 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setPutInPin,
     setPinDropMode,
     drawerCoveredFraction,
+    hazardDraft,
+    setHazardDraft,
+    hazardDraftType,
+    hazardDropMode,
+    setHazardDropMode,
   } = useMapSelection()
   const { height: windowHeight } = useWindowDimensions()
+  const hazardPalette = HAZARD_PALETTE[flavor]
+  /** When the hazard source last claimed a tap — see `onWaterPress` for why both sides check. */
+  const hazardPressAtRef = useRef(0)
 
   // Basemap tiles: the demo archive is dated and Protomaps prunes old builds (it will 404), so it's
   // DEV-ONLY. A release build that omits EXPO_PUBLIC_PMTILES_URL must NOT silently fall back to it —
@@ -149,6 +168,28 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   )
   const putInsFC = useMemo(() => putInsToFeatureCollection(putIns ?? []), [putIns])
 
+  // Hazards + known features for the focused lake (Phase 9, D54 Layer 0). Scoped to the open body,
+  // not the viewport — hazards are only ever queried per body, which is what keeps this off the
+  // read-cap-fragile path `listInViewport` needed two PRs to fix. A subscribed client gets new
+  // hazards live; that reactive query *is* the sync layer.
+  const hazards = useQuery(
+    api.hazards.listForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  )
+  const bodyFeatures = useQuery(
+    api.bodyFeatures.listForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  )
+  const hazardsFC = useMemo(() => hazardsToFeatureCollection(hazards ?? []), [hazards])
+  const bodyFeaturesFC = useMemo(
+    () => bodyFeaturesToFeatureCollection(bodyFeatures ?? []),
+    [bodyFeatures],
+  )
+  const hazardDraftFC = useMemo(
+    () => hazardDraftToFeatureCollection(hazardDraft, hazardDraftType),
+    [hazardDraft, hazardDraftType],
+  )
+
   // Frame a drawer's focus (a lake / report put-in) into the area the drawer does NOT cover, re-fitting
   // whenever the drawer settles at a new snap point. A lake with a `bounds` gets zoom-to-fit
   // (`fitBounds`); a bare point (report put-in) gets a fly at its zoom. The drawer's covered fraction
@@ -207,16 +248,36 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // (handled by the source's onPress below) opens its drawer. Handlers are recreated each render, so
   // they read the current `pinDropMode` directly (no ref needed, unlike web's once-bound handler).
   function onMapPress(e: NativeSyntheticEvent<PressEvent | PressEventWithFeatures>) {
-    if (!pinDropMode) return
     const [lng, lat] = e.nativeEvent.lngLat
-    setPutInPin({ lat, lng })
-    setPinDropMode(false)
+    if (pinDropMode) {
+      setPutInPin({ lat, lng })
+      setPinDropMode(false)
+      return
+    }
+    // Hazard placement (Phase 9). A circle disarms on the tap that moves it; a polyline stays armed
+    // and takes one vertex per tap, so tracing a ridge doesn't require re-arming between points.
+    if (hazardDropMode && hazardDraft) {
+      setHazardDraft(applyDraftMapClick(hazardDraft, { lat, lng }))
+      if (hazardDraft.geometryKind === 'point_radius') setHazardDropMode(false)
+    }
   }
 
   function onWaterPress(e: NativeSyntheticEvent<PressEventWithFeatures>) {
-    if (pinDropMode) return // a tap while arming a pin is handled by onMapPress
+    if (pinDropMode || hazardDropMode) return // a tap while placing is handled by onMapPress
+    // A hazard footprint always lies *inside* a lake, so a tap on a pin hits both sources. The more
+    // specific — and more safety-relevant — target has to win. Which handler RN fires first isn't
+    // guaranteed, so precedence is enforced from both sides: if the hazard fired first this bails,
+    // and if the water fired first the hazard's own navigate lands last and still wins.
+    if (Date.now() - hazardPressAtRef.current < HAZARD_PRESS_PRECEDENCE_MS) return
     const id = e.nativeEvent.features?.[0]?.properties?._id
     if (typeof id === 'string') router.navigate({ pathname: '/water/[id]', params: { id } })
+  }
+
+  function onHazardPress(e: NativeSyntheticEvent<PressEventWithFeatures>) {
+    if (pinDropMode || hazardDropMode) return
+    hazardPressAtRef.current = Date.now()
+    const id = e.nativeEvent.features?.[0]?.properties?.hazardId
+    if (typeof id === 'string') router.navigate({ pathname: '/hazard/[id]', params: { id } })
   }
 
   function onRegionDidChange(e: NativeSyntheticEvent<ViewStateChangeEvent>) {
@@ -332,6 +393,86 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
               PUT_IN_MARKER_OFFICIAL_COLOR,
               PUT_IN_MARKER_DERIVED_COLOR,
             ],
+            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': 2,
+          }}
+        />
+      </GeoJSONSource>
+
+      {/* ── Known seasonal body features (D53). Permanent, so no freshness ramp: a steady neutral,
+          always visible, beneath the hazard pins that *do* decay. */}
+      <GeoJSONSource id="body-features" data={bodyFeaturesFC}>
+        <Layer
+          id="body-feature-fill"
+          type="fill"
+          paint={{ 'fill-color': hazardPalette.feature, 'fill-opacity': 0.22 }}
+        />
+        <Layer
+          id="body-feature-outline"
+          type="line"
+          paint={{
+            'line-color': hazardPalette.feature,
+            'line-width': 1.5,
+            'line-dasharray': [4, 2],
+          }}
+        />
+      </GeoJSONSource>
+
+      {/* ── Hazards (Phase 9). Drawn as buffered *footprint* polygons, not markers, so the shape on
+          screen is literally the shape the proximity evaluator measures against. Soft fill + a dashed
+          outline while provisional: a hazard is "reported around here", never a surveyed boundary. */}
+      <GeoJSONSource id="hazards" data={hazardsFC} onPress={onHazardPress}>
+        <Layer
+          id="hazard-fill"
+          type="fill"
+          paint={{
+            'fill-color': hazardColorExpression(hazardPalette) as never,
+            'fill-opacity': hazardFillOpacityExpression() as never,
+          }}
+        />
+        <Layer
+          id="hazard-outline"
+          type="line"
+          paint={{
+            'line-color': hazardColorExpression(hazardPalette) as never,
+            'line-width': 1.5,
+            // Dashed while provisional (one unverified report), solid once independently confirmed —
+            // the same soft/hard distinction the on-ice banner makes (D54).
+            'line-dasharray': [
+              'case',
+              ['get', 'provisional'],
+              ['literal', [2, 2]],
+              ['literal', [1, 0]],
+            ] as never,
+          }}
+        />
+      </GeoJSONSource>
+
+      {/* The hazard being captured — the real metric footprint, updated live as vertices land and
+          the size changes, so what you see while placing is what gets stored. */}
+      <GeoJSONSource id="hazard-draft" data={hazardDraftFC}>
+        <Layer
+          id="hazard-draft-fill"
+          type="fill"
+          paint={{
+            'fill-color': hazardColorExpression(hazardPalette) as never,
+            'fill-opacity': 0.35,
+          }}
+        />
+        <Layer
+          id="hazard-draft-outline"
+          type="line"
+          paint={{ 'line-color': hazardColorExpression(hazardPalette) as never, 'line-width': 2 }}
+        />
+        {/* The tapped vertices. A one-vertex line has no honest footprint yet, so without these the
+            first tap of a trace would land with no feedback at all. */}
+        <Layer
+          id="hazard-draft-vertices"
+          type="circle"
+          filter={['==', ['get', 'role'], 'vertex']}
+          paint={{
+            'circle-radius': 6,
+            'circle-color': hazardColorExpression(hazardPalette) as never,
             'circle-stroke-color': '#ffffff',
             'circle-stroke-width': 2,
           }}

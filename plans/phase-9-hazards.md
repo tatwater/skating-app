@@ -303,7 +303,24 @@ Per the founder's call (2026-07-18): **all in one PR**, online-first commits fir
    reimplementing them, which is what keeps "what counts as a valid hazard" from drifting per platform.
    Either primitive is offered for any type (you may only know the one spot on a ridge you crossed).
 5. **Mobile online** — on-ice FAB + flag flow + hazard drawer + Layer-0 sync + Layer-1 foreground
-   proximity banners + the `skating://hazard/<id>` deep link.
+   proximity banners + the `skating://hazard/<id>` deep link, **plus the mobile polyline** deferred
+   from commit 4. Notes from the build:
+   - The hazard **layer transforms** moved into `@skating/core/hazardLayer.ts` rather than being
+     mirrored per-app the way the water-body layers are. These are the safety layers — a hazard is
+     drawn as the same buffered footprint the proximity evaluator measures — so "what gets drawn" is
+     decided once. Only the palette stays per-app (it comes from each app's design tokens).
+   - On-ice capture starts **every** type as a circle (`pointDraftForType`), including the linear
+     ones, because one GPS fix is one vertex and a one-vertex line isn't storable — the two-tap
+     guarantee outranks primitive purity. Tracing is an opt-in upgrade via `switchDraftKind`.
+   - **Tap-to-move, not drag-to-move.** Drop-ahead is still first-class (the copy tells you to put
+     the pin where you *saw* it rather than skating onto it), but it's a Move button that arms a map
+     tap — same outcome, no draggable-native-marker machinery, and easier with gloves.
+   - `HAZARD_CONFIRM_VIA` gains **`proximity_alert`**: a confirmation cast from an on-ice banner
+     means the skater was standing within alert range, which is much stronger evidence than one cast
+     from a list. Folding it into `app_open_nearby` would discard that signal before D50 can weigh it.
+   - The alert **session** logic (which alert becomes a banner, when it may be replaced, per-session
+     dedup) is pure in `apps/mobile/src/lib/onIce.ts` and unit-tested; a showing banner is never
+     swapped out from under a moving skater.
 6. **Auto-bundle (D55)** — report form offers the author's unattached on-ice hazards.
 7. **Offline** — hazard draft/flush reuse (`draftStore` `kind` discriminator); **Layer-3 offline basemap
    tile-pack** native spike (`@maplibre/maplibre-react-native` offline-pack over `pmtiles://` **or** an

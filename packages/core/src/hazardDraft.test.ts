@@ -11,6 +11,7 @@ import {
   HAZARD_RADIUS_STEPS_M,
   type HazardDraft,
   isDraftSubmittable,
+  pointDraftForType,
   resizeDraft,
   retypeDraft,
   stepSize,
@@ -58,6 +59,17 @@ describe('draftForType', () => {
       coord: null,
       radiusMeters: HAZARD_DEFAULT_RADIUS_M.drilled_hole,
     })
+  })
+
+  // On the ice, "committable after two taps" outranks primitive purity: one GPS fix is one vertex,
+  // and a one-vertex line isn't storable, so a ridge flagged from the ice starts as a circle and
+  // upgrades only if the skater chooses to trace it.
+  it('starts every type as a circle on the on-ice path, including the linear ones', () => {
+    for (const type of HAZARD_TYPES) {
+      const draft = pointDraftForType(type)
+      expect(draft.geometryKind, type).toBe('point_radius')
+      expect(isDraftSubmittable(applyDraftMapClick(draft, A)), type).toBe(true)
+    }
   })
 
   // The point of the state machine: a freshly-picked type is a legal value that simply isn't
