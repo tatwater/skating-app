@@ -25,6 +25,8 @@ import { useDrawerScroll } from './DrawerScrollContext';
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
 import { useMapSelection } from './MapSelectionContext';
 import { FlagControl } from './SafetyControls';
+import { ThumbControl } from './ThumbControl';
+import { TrustAvatar } from './TrustDisplay';
 
 /**
  * The hazard drawer (Phase 9) — reached by tapping a pin, from an on-ice banner, or via the
@@ -59,6 +61,12 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
   const hazard = useQuery(api.hazards.get, { hazardId: hazardId as Id<'hazards'> });
   const photos = useQuery(api.photos.getHazardUrls, { hazardId: hazardId as Id<'hazards'> });
   const confirm = useMutation(api.hazardConfirmations.confirm);
+  // The reporter's public attribution (ringed by trust, D50) + the viewer, to gate rating own content.
+  const reporters = useQuery(
+    api.profiles.publicByIds,
+    hazard ? { profileIds: [hazard.createdByUserId] } : 'skip',
+  );
+  const me = useQuery(api.profiles.current, {});
   const { setHighlightWaterBodyId, setFocus } = useMapSelection();
   const { scrollToY } = useDrawerScroll();
 
@@ -116,6 +124,8 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
 
   const passage = isPassageMarker(hazard.type);
   const archived = hazard.status !== 'active';
+  const reporter = reporters?.[hazard.createdByUserId];
+  const isOwn = me?._id === hazard.createdByUserId;
 
   async function cast(verdict: HazardVerdict) {
     setConfirming(true);
@@ -195,9 +205,24 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         {archived ? <Badge>Retired</Badge> : null}
       </XStack>
 
+      {reporter ? (
+        <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
+          <TrustAvatar
+            displayName={reporter.displayName}
+            imageUrl={reporter.profileImageUrl}
+            trustClass={reporter.trustClass}
+            size={20}
+          />
+          <Text color="$foreground" fontSize={13}>
+            by {reporter.displayName}
+          </Text>
+        </XStack>
+      ) : null}
+
       <Paragraph color="$foregroundMuted" fontSize={13}>
+        {/* Attribution (name + TrustAvatar) is the row above — Phase 6's richer treatment supersedes
+            Phase 9.5's plain `hazard.reporterName` here, so this line only carries when + confirms. */}
         Reported {formatWhen(hazard.firstReportedAt)}
-        {hazard.reporterName ? ` by ${hazard.reporterName}` : ''}
         {hazard.confirmCount > 0
           ? ` · confirmed by ${hazard.confirmCount} other skater${hazard.confirmCount === 1 ? '' : 's'}`
           : ' · nobody else has confirmed it yet'}
@@ -329,6 +354,9 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
           {error}
         </Text>
       ) : null}
+
+      {/* Thumbs (D50): counts visible to all; rating enabled for a signed-in non-reporter. */}
+      <ThumbControl targetType="hazard" targetId={hazardId} canRate={!!me && !isOwn} />
 
       {/* Flagging a hazard (D3/D32) — a dangerously false pin is a safety problem, so the same
           `unsafe_false_report` reason that leads the report/comment picker is reachable here too.

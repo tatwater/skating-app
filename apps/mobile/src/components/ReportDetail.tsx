@@ -20,6 +20,8 @@ import { Badge, Chips, DetailLoading, Section, Unavailable } from './detailUi';
 import { useMapSelection } from './MapSelectionContext';
 import { ModeratorActions } from './ModeratorActions';
 import { BlockedChip, FlagControl } from './SafetyControls';
+import { ThumbControl } from './ThumbControl';
+import { TrustAvatar } from './TrustDisplay';
 
 /**
  * Report detail drawer (§F, D42/D47) for `/report/[id]`, the mobile mirror of web's `ReportDetail`.
@@ -79,7 +81,8 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   }
 
   const bodyName = body?.available ? body.body.name : undefined;
-  const authorName = authors?.[report.authorId]?.displayName;
+  const author = authors?.[report.authorId];
+  const authorName = author?.displayName;
   const authorBlocked = (blockedIds ?? []).includes(report.authorId);
   const isOwn = me?._id === report.authorId;
   const readings = report.iceThickness?.readings ?? [];
@@ -94,17 +97,27 @@ export function ReportDetail({ reportId }: { reportId: string }) {
     <YStack gap="$3">
       <YStack gap="$1">
         <H4 color="$foreground">{bodyName ?? 'Report'}</H4>
-        <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
-          <Text color="$foregroundMuted">
-            Off the ice {formatSkateTime(report.skateEndTime)}
-            {(() => {
-              const duration = formatSkateWindow(report.skateEndTime, report.skateStartTime);
-              return duration ? ` · skated ${duration}` : '';
-            })()}
-            {authorName ? ` · by ${authorName}` : ''}
-          </Text>
-          {authorBlocked ? <BlockedChip /> : null}
-        </XStack>
+        <Text color="$foregroundMuted">
+          Off the ice {formatSkateTime(report.skateEndTime)}
+          {(() => {
+            const duration = formatSkateWindow(report.skateEndTime, report.skateStartTime);
+            return duration ? ` · skated ${duration}` : '';
+          })()}
+        </Text>
+        {authorName ? (
+          <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
+            <TrustAvatar
+              displayName={authorName}
+              imageUrl={author?.profileImageUrl}
+              trustClass={author?.trustClass}
+              size={20}
+            />
+            <Text color={authorBlocked ? '$foregroundMuted' : '$foreground'} fontSize={13}>
+              by {authorName}
+            </Text>
+            {authorBlocked ? <BlockedChip /> : null}
+          </XStack>
+        ) : null}
       </YStack>
 
       {report.skateQuality ? (
@@ -199,6 +212,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       >
         View the lake
       </Text>
+
+      {/* Thumbs (D50): counts visible to all; rating enabled for a signed-in non-author. */}
+      <Separator />
+      <ThumbControl targetType="report" targetId={report._id} canRate={!!me && !isOwn} />
 
       {/* Safety tools on the report (D32): flag for anyone but the author; moderator takedown. */}
       {me && !isOwn ? (

@@ -57,6 +57,20 @@ import { useMapSelection } from './MapSelectionContext';
  */
 const EMPTY_FEATURES: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
+/** Open bounties → a point per body centroid, carrying the `bountyId` for the tap → `/bounty/$id`. */
+function bountiesToPins(
+  bounties: { _id: string; centroid: { lat: number; lng: number } }[],
+): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: bounties.map((b) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [b.centroid.lng, b.centroid.lat] },
+      properties: { bountyId: b._id },
+    })),
+  };
+}
+
 interface QueryArgs {
   viewport: BBox;
   zoom: number;
@@ -152,6 +166,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const bodyFeatures = useQuery(
     api.bodyFeatures.listForBody,
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  );
+
+  // Open bounties across the viewport (D10/D17 browse). Unlike hazards, this is safe to query per
+  // viewport: the open-bounty set is small + bounded, so `bounties.listOpen` scans a plain index and
+  // filters to the rect in JS — it never touches the read-cap-fragile geospatial path (see the
+  // roadmap → Later/deferred `listInViewport` note). A pin per bounty; tap opens `/bounty/$id`.
+  const openBounties = useQuery(
+    api.bounties.listOpen,
+    queryArgs ? { viewport: queryArgs.viewport } : 'skip',
   );
 
   // Refs so the highlight effect can read the latest features/selection without re-running setData.
@@ -300,6 +323,20 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'circle-stroke-width': 2,
         },
       });
+      // ── Open bounties (D10/D17 browse). A distinct violet pin per lake with an open bounty; tapping
+      // it opens the bounty detail. Small point layer fed per-viewport by `bounties.listOpen`.
+      map.addSource('bounty-pins', { type: 'geojson', data: EMPTY_FEATURES });
+      map.addLayer({
+        id: 'bounty-pins',
+        type: 'circle',
+        source: 'bounty-pins',
+        paint: {
+          'circle-radius': 7,
+          'circle-color': '#7c3aed', // violet-600 — a bounty "wanted: fresh eyes" pin
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
+      });
       // ── Hazards (Phase 9). Drawn as buffered *footprint* polygons, not markers, so the shape on
       // screen is literally the shape the proximity evaluator measures against. Soft fill + a dashed
       // outline: a hazard is "reported around here", never a surveyed boundary (D3/D51).
@@ -412,6 +449,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         navigate({ to: '/hazard/$id', params: { id: hazardId } });
         return;
       }
+      // A bounty pin sits on a lake centroid — a tap on the pin opens the bounty, not the lake.
+      const bountyId = map.queryRenderedFeatures(e.point, { layers: ['bounty-pins'] })[0]
+        ?.properties?.bountyId;
+      if (typeof bountyId === 'string') {
+        navigate({ to: '/bounty/$id', params: { id: bountyId } });
+        return;
+      }
       const id = map.queryRenderedFeatures(e.point, { layers: ['water-fill'] })[0]?.properties?._id;
       if (typeof id === 'string') navigate({ to: '/water/$id', params: { id } });
     });
@@ -480,6 +524,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const source = map.getSource('body-features') as maplibregl.GeoJSONSource | undefined;
     source?.setData(bodyFeaturesToFeatureCollection(bodyFeatures ?? []));
   }, [bodyFeatures, loaded]);
+
+  // Open-bounty pins across the viewport (D10/D17) — refreshed as the map pans + as bounties change.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    const source = map.getSource('bounty-pins') as maplibregl.GeoJSONSource | undefined;
+    source?.setData(bountiesToPins(openBounties ?? []));
+  }, [openBounties, loaded]);
 
   // The hazard being authored — a real metric footprint, updated live as vertices land and the size
   // changes, so what you see while drawing is what gets stored.

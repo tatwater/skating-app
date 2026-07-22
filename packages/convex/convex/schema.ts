@@ -18,6 +18,7 @@ import {
   ICE_TYPES,
   PRECIP_TYPES,
   PROFILE_VISIBILITIES,
+  RATING_TARGET_TYPES,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
@@ -109,7 +110,11 @@ export default defineSchema({
     dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
     riskAckAt: v.optional(v.number()),
-    reputationPoints: v.number(), // cosmetic/reputational only (D17)
+    reputationPoints: v.number(), // cosmetic/reputational only (D17); aggregated from `pointEvents` (D50, Phase 6)
+    // Separate achievement currency for fulfilling bounties (D17 decision 11) — kept OUT of
+    // `reputationPoints` so trust stays purely about report/hazard accuracy. Optional ⇒ migration-free;
+    // treated as 0 when absent. Bumped by `bounty_fulfilled` point events; the rest bump reputation.
+    bountyPoints: v.optional(v.number()),
     // Denormalized lifetime contribution counts — the true #reports/#comments a public profile shows
     // (D13). Maintained incrementally on the create / author-remove / moderation paths so the profile
     // read never `.collect()`s an author's full history just to count it (the earlier windowed count
@@ -403,7 +408,10 @@ export default defineSchema({
   })
     .index('by_hazard', ['hazardId'])
     // One confirmation per user per hazard per window — re-confirming updates rather than stacking.
-    .index('by_hazard_and_user', ['hazardId', 'userId']),
+    .index('by_hazard_and_user', ['hazardId', 'userId'])
+    // A user's confirmations across all hazards — the `Watchdog` badge counts distinct *others'*
+    // hazards this user has acted on (D50, Phase 6).
+    .index('by_user', ['userId']),
 
   // Known seasonal water-body hazards — persistent, NOT decayed, no confirmation loop (D53).
   // Springs/current, constrictions and bridges/narrows are weaker every season regardless of cold, and
@@ -492,19 +500,31 @@ export default defineSchema({
     fulfillingReportIds: v.array(v.id('reports')),
     createdAt: v.number(),
     expiresAt: v.number(),
-  }).index('by_water_body_status', ['waterBodyId', 'status']),
+  })
+    .index('by_water_body_status', ['waterBodyId', 'status'])
+    // Global expiry sweep (`open → expired` past `expiresAt`, decision 12). The body-keyed index above
+    // can't drive a global sweep without a full scan, so the cron reads `by_status_expires`.
+    .index('by_status_expires', ['status', 'expiresAt'])
+    // The requester's own bounties by status — the rolling daily-open cap counts their open ones
+    // (decision 7) and `myBounties` lists them.
+    .index('by_requester_status', ['requesterId', 'status']),
 
+  // Polymorphic helpful/unhelpful thumb (D50 decision 4). The SAME one-vote-per-user thumbs UI + rule
+  // apply to both reports and hazards, so the target is a `(targetType, targetId)` discriminator rather
+  // than a hard `reportId`. Dev has zero rating rows, so this is a pure schema swap (no legacy backfill).
   reportRatings: defineTable({
-    reportId: v.id('reports'),
+    targetType: literals(RATING_TARGET_TYPES), // 'report' | 'hazard'
+    targetId: v.string(), // a `reports` or `hazards` id (typed by `targetType`)
     raterId: v.id('profiles'), // any viewer (D50) — often, but not only, the bounty requester
     bountyId: v.optional(v.id('bounties')),
     verdict: literals(RATING_VERDICTS),
     createdAt: v.number(),
   })
-    .index('by_report', ['reportId'])
+    // Tally a target's thumbs (helpful/unhelpful counts, auto_low_quality routing).
+    .index('by_target', ['targetType', 'targetId'])
     .index('by_rater', ['raterId'])
-    // Enforce one rating per (rater, report) via a point lookup on this compound index (D50).
-    .index('by_rater_report', ['raterId', 'reportId']),
+    // Enforce one rating per (rater, target) via a point lookup on this compound index (D50).
+    .index('by_rater_target', ['raterId', 'targetType', 'targetId']),
 
   photos: defineTable({
     storageId: v.string(), // Convex file storage ref (optimized full image, D31)
@@ -531,7 +551,11 @@ export default defineSchema({
     reason: literals(POINT_EVENT_REASONS),
     refId: v.optional(v.string()),
     createdAt: v.number(),
-  }).index('by_user', ['userId']),
+  })
+    .index('by_user', ['userId'])
+    // Count a report's corroborators for the recommended feed (Phase 6 Step 5): `report_corroborated`
+    // rows carry `refId = the corroborated report`, so a per-ref lookup tallies them without a scan.
+    .index('by_ref', ['refId']),
 
   // Place-based curation (Phase 4, decision #1) — the D13 stand-in for the removed people-follow
   // graph. A user favorites specific water bodies: those reports notify by default, boost + badge in

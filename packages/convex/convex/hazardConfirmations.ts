@@ -17,13 +17,19 @@
  * vote set. It is the persistence and gating shell around that.
  */
 
-import { deriveHazardLifecycle, type HazardVoteRecord, isMinor } from '@skating/core';
+import {
+  deriveHazardLifecycle,
+  HAZARD_CORROBORATION_MIN_CONFIRMS,
+  type HazardVoteRecord,
+  isMinor,
+} from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
 import { loadVisibleHazard } from './hazards';
 import { requireProfile } from './lib/auth';
 import { HAZARD_CONFIRM_VERDICTS, HAZARD_CONFIRM_VIA } from './lib/enums';
+import { awardPointEvent, checkAndAwardBadges } from './lib/reputation';
 import { latLng, literals } from './lib/validators';
 
 /**
@@ -99,19 +105,52 @@ export const confirm = mutation({
 
     await recomputeLifecycle(ctx, hazard);
 
-    // Boost-only reputation signal (D50 prep). Awarded once per user per hazard — on their first vote,
-    // not on every re-confirm — so laps, verdict changes, and offline replays can't farm points.
+    // Boost-only reputation (D50). Awarded once per user per hazard — on their first vote, not on every
+    // re-confirm — so laps, verdict changes, and offline replays can't farm points. Now routed through
+    // `awardPointEvent` so it finally bumps the confirmer's `reputationPoints` (the Phase-6 retrofit),
+    // then recomputes their badges (a confirmation feeds the `Watchdog` count).
     if (firstContribution) {
-      await ctx.db.insert('pointEvents', {
+      await awardPointEvent(ctx, {
         userId: profile._id,
-        delta: 1,
         reason: 'hazard_confirmed',
         refId: hazardId,
-        createdAt: now,
       });
+      await checkAndAwardBadges(ctx, profile._id);
     }
+
+    // Author-side corroboration (D50, new): once ≥2 **peers** have confirmed (the author's own votes are
+    // excluded from `confirmCount`, D54), the hazard's author earns `hazard_corroborated` — once per
+    // hazard. Independent of who is confirming, so it fires even when the confirmer isn't the author.
+    await maybeAwardHazardCorroboration(ctx, hazardId);
   },
 });
+
+/**
+ * Award the hazard's author `hazard_corroborated` the first time its peer `confirmCount` reaches the
+ * threshold (D50). Idempotent per hazard: a prior `hazard_corroborated` ledger row for this author+hazard
+ * short-circuits, so a 3rd/4th confirm (or an offline replay) never re-awards. Recomputes the author's
+ * badges on award (the confirm count can push `Hazard Spotter` over its line when thumbs are also present).
+ */
+async function maybeAwardHazardCorroboration(
+  ctx: MutationCtx,
+  hazardId: Id<'hazards'>,
+): Promise<void> {
+  const hazard = await ctx.db.get(hazardId);
+  if (!hazard || hazard.confirmCount < HAZARD_CORROBORATION_MIN_CONFIRMS) return;
+  const already = await ctx.db
+    .query('pointEvents')
+    .withIndex('by_user', (q) => q.eq('userId', hazard.createdByUserId))
+    .filter((q) => q.eq(q.field('reason'), 'hazard_corroborated'))
+    .filter((q) => q.eq(q.field('refId'), hazardId))
+    .first();
+  if (already) return;
+  await awardPointEvent(ctx, {
+    userId: hazard.createdByUserId,
+    reason: 'hazard_corroborated',
+    refId: hazardId,
+  });
+  await checkAndAwardBadges(ctx, hazard.createdByUserId);
+}
 
 /**
  * This user's current vote on a hazard, if any. `confirm` keeps one row per (user, hazard), so there is

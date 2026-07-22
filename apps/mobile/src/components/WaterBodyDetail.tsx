@@ -13,6 +13,8 @@ import { useEffect, useState } from 'react';
 import { Button, H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
 import { cacheBody } from '../lib/bodyCache';
 import { cacheReports } from '../lib/reportCache';
+import { BountyForm } from './BountyForm';
+import { BountyList } from './BountyList';
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
 import { DirectionsButton, FavoriteButton } from './FavoriteButton';
 import { useMapSelection } from './MapSelectionContext';
@@ -34,6 +36,7 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   const body = result?.available ? result.body : null;
   const { setFocus, setHighlightWaterBodyId } = useMapSelection();
   const [formOpen, setFormOpen] = useState(false);
+  const [bountyFormOpen, setBountyFormOpen] = useState(false);
 
   // Offline read-cache (decision #8): stash this opened lake's freshest reports as feed cards so they
   // read back on the ice with no signal. Skips until the (merge-resolved) body id is known.
@@ -108,9 +111,15 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
           bodyName={result.body.name}
           onClose={() => setFormOpen(false)}
         />
+      ) : bountyFormOpen ? (
+        <BountyForm
+          waterBodyId={result.body._id}
+          bodyName={result.body.name}
+          onClose={() => setBountyFormOpen(false)}
+        />
       ) : (
         <>
-          {/* Report creation surfaced in place (D47). */}
+          {/* Report creation + bounty posting surfaced in place (D47). */}
           <Button
             backgroundColor="$primary"
             color="$primaryForeground"
@@ -118,6 +127,10 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
           >
             Add a report
           </Button>
+          <Button variant="outlined" onPress={() => setBountyFormOpen(true)}>
+            Post a bounty
+          </Button>
+          <BountyList waterBodyId={result.body._id} />
           <ReportFeed waterBodyId={result.body._id} />
         </>
       )}

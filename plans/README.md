@@ -53,9 +53,13 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   - [Phase 9.5 — On-ice live alerting](./phase-9.5-on-ice-alerting.md) — the deferred **D54 Layer 2**
     fast-follow: `expo-notifications` (local only) + session-scoped background location + course-over-
     ground directional projection, plus `?action=confirm`, hazard author line, clip-footprint-to-body,
-    auto-suggest skate times, and a Layer-3 tile-pack retry. **✅ Complete (2026-07-22) on branch
-    `phase-9.5-on-ice-alerting`; pending PR + dev deploy, prod deferred.** Layer-3 `file://` pmtiles path
-    built flag-off, awaiting one on-device check.
+    auto-suggest skate times, and a Layer-3 tile-pack retry. **✅ Merged to `main` (PR #21, 2026-07-22),
+    dev deploy + prod deferred.** Layer-3 `file://` pmtiles path built flag-off, awaiting one on-device check.
+- [Phase 6 — Bounties + trust score](./phase-6-bounties-and-trust.md) — request-a-report bounties
+  (post/browse/fulfill, separate `bountyPoints` currency); the boost-only **trust score** (D50) rendered
+  as a cosmetic class chip + `TrustAvatar` ring (never a raw number); polymorphic helpful/unhelpful thumbs
+  over reports **and** hazards; badges; and the corroboration-gated **recommended** filter-breaking feed.
+  *(Built after Phase 9 — safety before reputation.)* **✅ Complete on dev (2026-07-22); prod deferred.**
 
 ## How these fit together
 

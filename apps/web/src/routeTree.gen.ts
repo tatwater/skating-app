@@ -22,6 +22,7 @@ import { Route as UUsernameRouteImport } from './routes/u.$username'
 import { Route as MapWaterIdRouteImport } from './routes/_map.water.$id'
 import { Route as MapReportIdRouteImport } from './routes/_map.report.$id'
 import { Route as MapHazardIdRouteImport } from './routes/_map.hazard.$id'
+import { Route as MapBountyIdRouteImport } from './routes/_map.bounty.$id'
 
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
@@ -87,6 +88,11 @@ const MapHazardIdRoute = MapHazardIdRouteImport.update({
   path: '/hazard/$id',
   getParentRoute: () => MapRoute,
 } as any)
+const MapBountyIdRoute = MapBountyIdRouteImport.update({
+  id: '/bounty/$id',
+  path: '/bounty/$id',
+  getParentRoute: () => MapRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof MapIndexRoute
@@ -98,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
   '/u/$username': typeof UUsernameRoute
+  '/bounty/$id': typeof MapBountyIdRoute
   '/hazard/$id': typeof MapHazardIdRoute
   '/report/$id': typeof MapReportIdRoute
   '/water/$id': typeof MapWaterIdRoute
@@ -112,6 +119,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/u/$username': typeof UUsernameRoute
   '/': typeof MapIndexRoute
+  '/bounty/$id': typeof MapBountyIdRoute
   '/hazard/$id': typeof MapHazardIdRoute
   '/report/$id': typeof MapReportIdRoute
   '/water/$id': typeof MapWaterIdRoute
@@ -128,6 +136,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/u/$username': typeof UUsernameRoute
   '/_map/': typeof MapIndexRoute
+  '/_map/bounty/$id': typeof MapBountyIdRoute
   '/_map/hazard/$id': typeof MapHazardIdRoute
   '/_map/report/$id': typeof MapReportIdRoute
   '/_map/water/$id': typeof MapWaterIdRoute
@@ -144,6 +153,7 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/sign-up'
     | '/u/$username'
+    | '/bounty/$id'
     | '/hazard/$id'
     | '/report/$id'
     | '/water/$id'
@@ -158,6 +168,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/u/$username'
     | '/'
+    | '/bounty/$id'
     | '/hazard/$id'
     | '/report/$id'
     | '/water/$id'
@@ -173,6 +184,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/u/$username'
     | '/_map/'
+    | '/_map/bounty/$id'
     | '/_map/hazard/$id'
     | '/_map/report/$id'
     | '/_map/water/$id'
@@ -283,11 +295,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MapHazardIdRouteImport
       parentRoute: typeof MapRoute
     }
+    '/_map/bounty/$id': {
+      id: '/_map/bounty/$id'
+      path: '/bounty/$id'
+      fullPath: '/bounty/$id'
+      preLoaderRoute: typeof MapBountyIdRouteImport
+      parentRoute: typeof MapRoute
+    }
   }
 }
 
 interface MapRouteChildren {
   MapIndexRoute: typeof MapIndexRoute
+  MapBountyIdRoute: typeof MapBountyIdRoute
   MapHazardIdRoute: typeof MapHazardIdRoute
   MapReportIdRoute: typeof MapReportIdRoute
   MapWaterIdRoute: typeof MapWaterIdRoute
@@ -295,6 +315,7 @@ interface MapRouteChildren {
 
 const MapRouteChildren: MapRouteChildren = {
   MapIndexRoute: MapIndexRoute,
+  MapBountyIdRoute: MapBountyIdRoute,
   MapHazardIdRoute: MapHazardIdRoute,
   MapReportIdRoute: MapReportIdRoute,
   MapWaterIdRoute: MapWaterIdRoute,

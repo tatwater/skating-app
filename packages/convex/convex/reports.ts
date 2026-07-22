@@ -12,26 +12,43 @@
 import {
   bandForCoord,
   CONDITION_SOURCES,
+  CORROBORATION_MAX_PER_REPORT,
+  CORROBORATION_WINDOW_MS,
   type DriveTimeBands,
+  type FeedAuthor,
   type FeedCardData,
+  hasMeasuredThickness,
   ICE_TYPES,
   isMinor,
   type LatLng,
   matchesFilters,
   PRECIP_TYPES,
+  RECOMMENDED_MIN_PHOTOS,
+  RECOMMENDED_RECENCY_HOURS,
+  type RecommendableReport,
   type ReportInput,
+  reportsAgree,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
   sanitizeFeedFilters,
+  selectRecommended,
   THICKNESS_METHODS,
+  type TrustClass,
   validateReportInput,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
+import { attachReportToOpenBounties } from './bounties';
 import {
   attachHazardsToReport,
   HAZARD_MAX_PER_REPORT,
@@ -44,6 +61,7 @@ import { bumpContributionCount } from './lib/contributionCounts';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
+import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
 import { loadFavoriteBodyIds } from './waterBodyFavorites';
@@ -244,14 +262,136 @@ export const create = mutation({
     // without scanning their history (D13). Moderation transitions adjust it symmetrically.
     await bumpContributionCount(ctx, profile._id, 'reportCount', 1);
 
-    // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
-    // coalescing queue — the cron flushes them (decision #4). Read-back keeps `enqueue` off the raw args.
+    // Reputation (D50): per-report author awards + retroactive corroboration (both authors, capped),
+    // then a single badge recompute per affected author. Read the inserted doc once (photoIds /
+    // iceThickness / iceTypes / skateQuality drive the awards + the "agrees" test).
     const inserted = await ctx.db.get(reportId);
-    if (inserted) await enqueueReportNotifications(ctx, inserted);
+    if (inserted) {
+      await awardReportCreationPoints(ctx, inserted);
+      const corroboratedAuthorIds = await runCorroboration(ctx, inserted);
+      await checkAndAwardBadges(ctx, inserted.authorId);
+      for (const authorId of corroboratedAuthorIds) await checkAndAwardBadges(ctx, authorId);
+
+      // Auto-attach to any open bounty on this body (Phase 6, decision 10) — the requester's helpful
+      // thumb later flips it to fulfilled.
+      await attachReportToOpenBounties(ctx, inserted);
+
+      // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
+      // coalescing queue — the cron flushes them (decision #4).
+      await enqueueReportNotifications(ctx, inserted);
+    }
 
     return reportId;
   },
 });
+
+/**
+ * Award a new report's author their per-report point events (D50 decision 2), each **once per report**:
+ * `report_submitted` (baseline), `photo_evidence` (≥1 photo — self-verifying), and `measured_thickness`
+ * (≥1 measured, not estimated, reading — rewards rigor). Weights are single-sourced in `@skating/core`.
+ */
+async function awardReportCreationPoints(ctx: MutationCtx, report: Doc<'reports'>): Promise<void> {
+  await awardPointEvent(ctx, {
+    userId: report.authorId,
+    reason: 'report_submitted',
+    refId: report._id,
+  });
+  if (report.photoIds.length > 0) {
+    await awardPointEvent(ctx, {
+      userId: report.authorId,
+      reason: 'photo_evidence',
+      refId: report._id,
+    });
+  }
+  if (hasMeasuredThickness(report)) {
+    await awardPointEvent(ctx, {
+      userId: report.authorId,
+      reason: 'measured_thickness',
+      refId: report._id,
+    });
+  }
+}
+
+/**
+ * Corroboration (D50 decision 3). Scan prior **visible** reports on the same body whose skate-end is
+ * within `CORROBORATION_WINDOW` of the new one, and for each that **agrees** (`reportsAgree` — quality
+ * within one step OR a shared ice type), award `report_corroborated` to **both** the new author and the
+ * prior author (a new agreeing report retroactively corroborates the older one), and drop a
+ * `report_rated`-style notice to the prior author.
+ *
+ * **Self-corroboration is excluded** (same author never corroborates themselves), and the count is
+ * **capped at `CORROBORATION_MAX_PER_REPORT`** so a popular lake can't inflate one reporter (D50).
+ * Purely additive in Phase 6 — the contradiction penalty needs weather-since and lands in Phase 10.
+ *
+ * Returns the distinct prior-author ids awarded, so the caller recomputes their badges once.
+ * Alpha-scale scan (a lake gets a handful of reports per window); Phase 7 can cap/paginate if needed.
+ */
+async function runCorroboration(
+  ctx: MutationCtx,
+  report: Doc<'reports'>,
+): Promise<Set<Id<'profiles'>>> {
+  const lower = report.skateEndTime - CORROBORATION_WINDOW_MS;
+  const upper = report.skateEndTime + CORROBORATION_WINDOW_MS;
+  // Bound BOTH edges of the window in the index (`gte lower` … `lte upper`), not just the near edge.
+  // A late-submitted report has an `upper` in the past, so a `gte`-only scan would drag in every later
+  // report up to `now` only to reject them in JS; the `lte` keeps the scan to the actual ±window.
+  const candidates = await ctx.db
+    .query('reports')
+    .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+      q
+        .eq('waterBodyId', report.waterBodyId)
+        .eq('moderationStatus', 'visible')
+        .gte('skateEndTime', lower)
+        .lte('skateEndTime', upper),
+    )
+    .order('desc') // newest-in-window first — the reports most likely to share the freeze cycle
+    .collect();
+
+  const priorAuthorIds = new Set<Id<'profiles'>>();
+  let counted = 0;
+  for (const prior of candidates) {
+    if (counted >= CORROBORATION_MAX_PER_REPORT) break;
+    if (prior._id === report._id) continue; // the just-inserted report itself (both edges now in-index)
+    if (prior.authorId === report.authorId) continue; // self-corroboration excluded
+    if (!reportsAgree(report, prior)) continue;
+
+    counted++;
+    priorAuthorIds.add(prior.authorId);
+    await awardPointEvent(ctx, {
+      userId: report.authorId,
+      reason: 'report_corroborated',
+      refId: report._id,
+    });
+    await awardPointEvent(ctx, {
+      userId: prior.authorId,
+      reason: 'report_corroborated',
+      refId: prior._id,
+    });
+    await notifyCorroboration(ctx, prior, report);
+  }
+  return priorAuthorIds;
+}
+
+/**
+ * Tell a prior report's author their report was independently corroborated by a fresh one — reuses the
+ * `report_rated` channel (a "report_rated-style" notice, decision 3), gated on `reportRated` prefs +
+ * active status. In-app row; push stays deferred repo-wide.
+ */
+async function notifyCorroboration(
+  ctx: MutationCtx,
+  priorReport: Doc<'reports'>,
+  byReport: Doc<'reports'>,
+): Promise<void> {
+  const author = await ctx.db.get(priorReport.authorId);
+  if (!author) return;
+  if (author.status !== 'active' || !author.notificationPrefs.reportRated) return;
+  await ctx.db.insert('notifications', {
+    userId: priorReport.authorId,
+    type: 'report_rated',
+    payload: { kind: 'corroboration', reportId: priorReport._id, byReportId: byReport._id },
+    createdAt: Date.now(),
+  });
+}
 
 /**
  * A water body's report feed — newest **skate-end time** first (D28), **paginated** for infinite
@@ -306,18 +446,30 @@ async function bodyInfoFor(
   return info;
 }
 
-/** Resolve a report author's public `{ displayName, username }` (D13); cached per query. */
+/**
+ * Resolve a report author's public attribution + cosmetic trust (D13/D50); cached per query. Carries the
+ * `TrustAvatar` ring inputs — `profileImageUrl` + the derived `trustClass` (never the raw score) — so a
+ * feed card can ring its author. `now` is the per-query clock threaded into the class derivation.
+ */
 async function authorFor(
   ctx: QueryCtx,
   authorId: Id<'profiles'>,
-  cache: Map<string, { displayName: string; username: string }>,
-): Promise<{ displayName: string; username: string }> {
+  cache: Map<string, FeedAuthor>,
+  now: number,
+): Promise<FeedAuthor> {
   const cached = cache.get(authorId);
   if (cached !== undefined) return cached;
   const profile = await ctx.db.get(authorId);
-  const author = profile
-    ? { displayName: profile.displayName, username: profile.username }
-    : { displayName: 'Unknown', username: '' };
+  const author: FeedAuthor = profile
+    ? {
+        displayName: profile.displayName,
+        username: profile.username,
+        ...(profile.profileImageUrl !== undefined
+          ? { profileImageUrl: profile.profileImageUrl }
+          : {}),
+        trustClass: trustClassFor(profile, now),
+      }
+    : { displayName: 'Unknown', username: '', trustClass: null };
   cache.set(authorId, author);
   return author;
 }
@@ -325,7 +477,7 @@ async function authorFor(
 /** Per-query enrichment caches shared across a page of feed cards (body info + author attribution). */
 interface FeedCardCaches {
   bodyInfo: Map<string, BodyInfo>;
-  authors: Map<string, { displayName: string; username: string }>;
+  authors: Map<string, FeedAuthor>;
 }
 
 /**
@@ -339,6 +491,7 @@ async function toFeedCard(
   r: Doc<'reports'>,
   caches: FeedCardCaches,
   sets: { blocked: Set<string>; favorites: Set<string> },
+  now: number,
 ): Promise<FeedCardData> {
   const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
   return {
@@ -352,7 +505,7 @@ async function toFeedCard(
     surfaceTags: r.surfaceTags,
     ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
     photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
-    author: await authorFor(ctx, r.authorId, caches.authors),
+    author: await authorFor(ctx, r.authorId, caches.authors, now),
     blocked: sets.blocked.has(r.authorId),
     isFavorite: sets.favorites.has(r.waterBodyId),
   };
@@ -444,7 +597,7 @@ export const listFeed = query({
       ) {
         continue;
       }
-      page.push(await toFeedCard(ctx, r, caches, { blocked, favorites }));
+      page.push(await toFeedCard(ctx, r, caches, { blocked, favorites }, now));
     }
     // Boost favorites to the top of THIS page (stable sort keeps skate-end order within each group).
     page.sort((a, b) => Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false));
@@ -471,7 +624,8 @@ export const recentCardsForBodies = query({
       loadBlockedAuthorIds(ctx, viewerId),
       loadFavoriteBodyIds(ctx, viewerId),
     ]);
-    const cutoff = Date.now() - OFFLINE_CACHE_WINDOW_MS;
+    const now = Date.now();
+    const cutoff = now - OFFLINE_CACHE_WINDOW_MS;
     const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
     const cards: FeedCardData[] = [];
     for (const waterBodyId of [...new Set(waterBodyIds)]) {
@@ -486,10 +640,123 @@ export const recentCardsForBodies = query({
         .order('desc')
         .take(OFFLINE_CACHE_MAX_PER_BODY);
       for (const r of recent) {
-        cards.push(await toFeedCard(ctx, r, caches, { blocked, favorites }));
+        cards.push(await toFeedCard(ctx, r, caches, { blocked, favorites }, now));
       }
     }
     return cards;
+  },
+});
+
+/**
+ * Hard ceiling on the recommended candidate scan. The 48h recency floor already bounds the window in the
+ * index; this caps the pathological busy-window case so the read stays well under Convex's per-query
+ * limits (the `listInViewport` read-cap lesson, PRs #10/#11). Newest-first `.take()`, so a truncation only
+ * ever drops the *oldest* in-window reports — the least likely to be the freshest exceptional ice.
+ */
+const RECOMMENDED_SCAN_CAP = 500;
+
+/**
+ * The **recommended** filter-breaking feed (decisions 13–15) — a *separate* query the client interleaves
+ * near the top of `listFeed`, never spliced into the paginated stream (decision 13). Returns 0–2 visually
+ * distinct cards of *exceptional, corroborated* ice that a viewer's own distance/quality/thickness filters
+ * would hide — gated on trust + corroboration, never a lone great report (D3), so we never amplify one
+ * unverified claim into a wasted trip.
+ *
+ * The pure bar + bundling/cap live in `@skating/core` (`selectRecommended`); this query only assembles the
+ * candidate bag and hydrates the winners. Cheap doc-level gates (recency floor, `great`, black ice, ≥
+ * `RECOMMENDED_MIN_PHOTOS` photos) filter first; only survivors pay for the author-trust lookup and the
+ * corroboration tally (`report_corroborated` rows on the `by_ref` index). Blocks + moderation are honored
+ * (never broken): non-visible reports are excluded in-index and a blocked author's report is dropped here.
+ *
+ * **Caps (decision 15):** stateless for Phase 6 — `selectRecommended` bundles the top reports per body and
+ * caps at `RECOMMENDED_MAX_BODIES_PER_DAY` unique bodies *per fetch*. A qualifying report is vanishingly
+ * rare (all gates at once), so a flood can't occur at alpha volume. The server-tracked cross-fetch/day
+ * dedup + hard per-day cap (a per-user impressions store + an ack mutation) is a logged fast-follow —
+ * built when the feature proves it fires often enough to need pacing.
+ */
+export const recommended = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await getCurrentProfile(ctx);
+    // A personalized filter-breaker — no viewer, no "outside *your* usual range". Signed-out feed is plain.
+    if (!viewer) return [];
+    const now = Date.now();
+    const cutoff = now - RECOMMENDED_RECENCY_HOURS * 60 * 60 * 1000;
+    const blocked = await loadBlockedAuthorIds(ctx, viewer._id);
+
+    // Recent visible reports, **newest first** and hard-capped — the recency floor bounds the window in
+    // the index, but a busy 48h across every lake could still be large, so we `.take()` a ceiling rather
+    // than an unbounded `.collect()` (the same read-cap discipline as `bounties.listOpen`; a qualifying
+    // report is rare, so the freshest slice never omits a real candidate at alpha). Truncation is logged.
+    const recent = await ctx.db
+      .query('reports')
+      .withIndex('by_moderation_and_skate_end_time', (q) =>
+        q.eq('moderationStatus', 'visible').gte('skateEndTime', cutoff),
+      )
+      .order('desc')
+      .take(RECOMMENDED_SCAN_CAP);
+    if (recent.length === RECOMMENDED_SCAN_CAP) {
+      console.warn(
+        `reports.recommended hit the ${RECOMMENDED_SCAN_CAP}-row scan cap; older in-window candidates may be omitted.`,
+      );
+    }
+
+    const recentById = new Map<string, Doc<'reports'>>();
+    const candidates: RecommendableReport[] = [];
+    const authorTrust = new Map<string, TrustClass | null>();
+    for (const r of recent) {
+      recentById.set(r._id, r);
+      // Cheap mandatory gates first (each also re-checked by `isRecommendable`): never break blocks (D3),
+      // then the exact quality / ice / photo bar — so we only pay for trust + corroboration on survivors.
+      if (blocked.has(r.authorId)) continue;
+      if (r.skateQuality !== 'great') continue;
+      if (!r.iceTypes.includes('black_ice')) continue;
+      if (r.photoIds.length < RECOMMENDED_MIN_PHOTOS) continue;
+
+      let trust = authorTrust.get(r.authorId);
+      if (trust === undefined) {
+        const author = await ctx.db.get(r.authorId);
+        trust = author ? trustClassFor(author, now) : null;
+        authorTrust.set(r.authorId, trust);
+      }
+
+      // Corroborators for this report = `report_corroborated` ledger rows keyed to it (by_ref).
+      const refEvents = await ctx.db
+        .query('pointEvents')
+        .withIndex('by_ref', (q) => q.eq('refId', r._id))
+        .collect();
+      const corroborationCount = refEvents.filter((e) => e.reason === 'report_corroborated').length;
+
+      candidates.push({
+        reportId: r._id,
+        waterBodyId: r.waterBodyId,
+        skateEndTime: r.skateEndTime,
+        ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
+        iceTypes: r.iceTypes,
+        photoCount: r.photoIds.length,
+        corroborationCount,
+        authorTrust: trust,
+      });
+    }
+
+    // Pure selection: filter to the exceptional bar, bundle top reports per body, cap unique bodies.
+    const cards = selectRecommended(candidates, { now });
+
+    // Hydrate each winning report into a full `FeedCardData` so the client renders it like a feed card
+    // (author ring, chips, thumbnails) inside the distinct "Recommended" wrapper. Reuses `toFeedCard`.
+    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
+    const noFavorites = new Set<string>(); // recommended breaks filters; favorite boost is irrelevant here
+    const result: { waterBodyId: string; cards: FeedCardData[] }[] = [];
+    for (const card of cards) {
+      const cardData: FeedCardData[] = [];
+      for (const reportId of card.reportIds) {
+        const r = recentById.get(reportId);
+        if (r)
+          cardData.push(await toFeedCard(ctx, r, caches, { blocked, favorites: noFavorites }, now));
+      }
+      if (cardData.length > 0) result.push({ waterBodyId: card.waterBodyId, cards: cardData });
+    }
+    return result;
   },
 });
 

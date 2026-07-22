@@ -5,19 +5,22 @@ import {
   formatSkateTime,
   isMinor,
   isValidCommentBody,
+  type TrustClass,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
 import { Button, Paragraph, Separator, Text, TextArea, XStack, YStack } from 'tamagui';
 import { ModeratorActions, useIsModerator } from './ModeratorActions';
-import { Avatar } from './ProfileView';
 import { FlagControl } from './SafetyControls';
+import { TrustAvatar } from './TrustDisplay';
 
 /** Public author attribution on a comment (mirrors the server payload). */
 export interface CommentAuthor {
   username: string;
   displayName: string;
   profileImageUrl?: string;
+  /** Cosmetic trust class (D50) — rings the comment avatar; `null`/absent ⇒ no ring. */
+  trustClass?: TrustClass | null;
 }
 
 /** A node in the rendered thread — `comment: null` is a `[hidden]` placeholder (no content). */
@@ -118,9 +121,10 @@ function CommentNode({
         </Text>
       ) : (
         <XStack gap="$2">
-          <Avatar
+          <TrustAvatar
             displayName={node.comment.author?.displayName ?? 'Unknown'}
             imageUrl={node.comment.author?.profileImageUrl}
+            trustClass={node.comment.author?.trustClass}
             size={28}
           />
           <YStack flex={1} gap="$1">

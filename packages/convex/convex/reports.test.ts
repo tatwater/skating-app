@@ -678,7 +678,12 @@ describe('reports.listFeed (global newsfeed, Phase 5)', () => {
     const card = res.page[0];
     expect(card?.bodyName).toBe('Lake Morey');
     expect(card?.place).toEqual(BURLINGTON_PLACE);
-    expect(card?.author).toEqual({ displayName: 'clerk_a', username: 'clerk_a' });
+    // A freshly-seeded author (0 points, createdAt = now) derives the cosmetic `new` trust class (D50).
+    expect(card?.author).toEqual({
+      displayName: 'clerk_a',
+      username: 'clerk_a',
+      trustClass: 'new',
+    });
     expect(card?.skateQuality).toBe('great');
     expect(card?.iceTypes).toEqual(['black_ice']);
     expect(card?.photoThumbUrls).toHaveLength(1);
@@ -716,7 +721,11 @@ describe('reports.listFeed (global newsfeed, Phase 5)', () => {
       if (author) await ctx.db.delete(author._id);
     });
     const res = await t.query(api.reports.listFeed, ALL);
-    expect(res.page[0]?.author).toEqual({ displayName: 'Unknown', username: '' });
+    expect(res.page[0]?.author).toEqual({
+      displayName: 'Unknown',
+      username: '',
+      trustClass: null,
+    });
   });
 
   test('resolves a merged body to its survivor name (D36)', async () => {
