@@ -11,7 +11,20 @@
  * retuning `step` never orphans a stored badge.
  */
 
-import { BADGE_THRESHOLDS, BADGE_TYPES, type BadgeType } from './reputationConfig';
+import { BADGE_LABELS, BADGE_THRESHOLDS, BADGE_TYPES, type BadgeType } from './reputationConfig';
+
+/**
+ * Human label for a stored badge slug. Stored `profiles.badges` entries are always known `BadgeType`s,
+ * but this stays defensive: an unknown slug (e.g. a retired family from an older build) falls back to a
+ * title-cased form rather than throwing, so the badge row never crashes on legacy data.
+ */
+export function badgeLabel(badge: string): string {
+  if (badge in BADGE_LABELS) return BADGE_LABELS[badge as BadgeType];
+  return badge
+    .split('_')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
 
 /**
  * The quality-gated counts each badge family reads. Every field is already a *qualifying* count — e.g.

@@ -1,6 +1,13 @@
+import { badgeLabel, type TrustClass } from '@skating/core';
 import type { ReactNode } from 'react';
+import { Avatar } from './Avatar';
+import { TrustAvatar, TrustClassChip } from './TrustDisplay';
+import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
 import { Separator } from './ui/separator';
+
+// Re-exported so existing importers (`CommentThread`) keep working after Avatar moved to its own module.
+export { Avatar };
 
 /** Plain profile data for the presentational view — Convex-free so it's unit-testable (D40). */
 export interface ProfileViewData {
@@ -11,58 +18,15 @@ export interface ProfileViewData {
   isPrivate: boolean;
   homeTownLabel?: string;
   bio?: string;
-  reputationPoints?: number;
+  /** Cosmetic trust class (D50) — the profile chip + avatar ring; `null` ⇒ no chip/ring. */
+  trustClass?: TrustClass | null;
+  /** Raw score — shown ONLY to admins/moderators (D50); the container passes it only then. */
+  adminReputationPoints?: number;
+  /** Earned badge families (D50 decision 6), stable order; humanized for the badge row. */
+  badges?: string[];
+  bountyPoints?: number;
   reportCount?: number;
   commentCount?: number;
-}
-
-/** A round avatar with an initial fallback when the user has no Clerk image. */
-export function Avatar({
-  displayName,
-  imageUrl,
-  size = 64,
-}: {
-  displayName: string;
-  imageUrl?: string;
-  size?: number;
-}) {
-  if (imageUrl) {
-    return (
-      <img
-        src={imageUrl}
-        alt={displayName}
-        width={size}
-        height={size}
-        className="rounded-full object-cover"
-        style={{ width: size, height: size }}
-      />
-    );
-  }
-  return (
-    <div
-      aria-hidden
-      className="flex items-center justify-center rounded-full bg-muted font-semibold text-foreground-muted"
-      style={{ width: size, height: size, fontSize: size / 2.5 }}
-    >
-      {displayName.trim().charAt(0).toUpperCase() || '?'}
-    </div>
-  );
-}
-
-/**
- * The public trust-score widget (D50). Renders the reputation number now (0 for everyone until
- * Phase 6 computes it) so the layout is designed around it — with copy making clear it's a cosmetic
- * reputation signal, never a safety verdict (D3/D17).
- */
-export function TrustScore({ points }: { points: number }) {
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className="font-semibold text-2xl text-foreground tabular-nums">{points}</span>
-      <span className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-        Trust score
-      </span>
-    </div>
-  );
 }
 
 function Stat({ value, label }: { value: number; label: string }) {
@@ -96,12 +60,26 @@ export function ProfileView({
       <Card>
         <CardContent className="flex flex-col gap-4">
           <div className="flex items-start gap-4">
-            <Avatar displayName={data.displayName} imageUrl={data.profileImageUrl} />
+            <TrustAvatar
+              displayName={data.displayName}
+              imageUrl={data.profileImageUrl}
+              trustClass={data.trustClass}
+              size={64}
+            />
             <div className="flex flex-1 flex-col gap-0.5">
-              <h1 className="font-semibold text-foreground text-xl">{data.displayName}</h1>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="font-semibold text-foreground text-xl">{data.displayName}</h1>
+                <TrustClassChip trustClass={data.trustClass ?? null} />
+              </div>
               <p className="text-foreground-muted text-sm">@{data.username}</p>
               {!data.isPrivate && data.homeTownLabel ? (
                 <p className="text-foreground-muted text-sm">{data.homeTownLabel}</p>
+              ) : null}
+              {/* Admin-only raw trust number (D50) — never shown to ordinary viewers. */}
+              {data.adminReputationPoints !== undefined ? (
+                <p className="font-mono text-foreground-muted text-xs">
+                  trust score: {data.adminReputationPoints} (admin)
+                </p>
               ) : null}
             </div>
             {actions ? <div className="flex flex-col gap-2">{actions}</div> : null}
@@ -114,11 +92,22 @@ export function ProfileView({
               {data.bio ? (
                 <p className="whitespace-pre-wrap text-foreground text-sm">{data.bio}</p>
               ) : null}
+              {data.badges && data.badges.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {data.badges.map((badge) => (
+                    <Badge key={badge} variant="secondary">
+                      {badgeLabel(badge)}
+                    </Badge>
+                  ))}
+                </div>
+              ) : null}
               <Separator />
               <div className="flex items-center justify-around">
                 <Stat value={data.reportCount ?? 0} label="Reports" />
                 <Stat value={data.commentCount ?? 0} label="Comments" />
-                <TrustScore points={data.reputationPoints ?? 0} />
+                {data.bountyPoints && data.bountyPoints > 0 ? (
+                  <Stat value={data.bountyPoints} label="Bounty pts" />
+                ) : null}
               </div>
             </>
           )}

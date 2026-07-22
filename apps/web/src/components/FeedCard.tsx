@@ -1,5 +1,6 @@
 import { buildFeedCardView, type FeedCardData } from '@skating/core';
 import { BlockedChip } from './SafetyControls';
+import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
 
 /** Max chips shown on a card before we stop (the drawer shows the full breakdown). */
@@ -47,19 +48,22 @@ export function FeedCard({
         <span className="shrink-0 text-foreground-muted text-xs">{card.relativeTime}</span>
       </div>
 
-      <p className="text-foreground-muted text-sm">
-        by{' '}
-        <span className={card.blocked ? 'text-foreground-muted' : 'text-foreground'}>
-          {card.author.displayName}
+      <div className="flex items-center gap-2 text-foreground-muted text-sm">
+        <TrustAvatar
+          displayName={card.author.displayName}
+          imageUrl={card.author.profileImageUrl}
+          trustClass={card.author.trustClass}
+          size={20}
+        />
+        <span className="min-w-0 truncate">
+          by{' '}
+          <span className={card.blocked ? 'text-foreground-muted' : 'text-foreground'}>
+            {card.author.displayName}
+          </span>
+          {card.durationLabel ? ` · skated ${card.durationLabel}` : null}
         </span>
-        {card.blocked ? (
-          <>
-            {' '}
-            <BlockedChip />
-          </>
-        ) : null}
-        {card.durationLabel ? ` · skated ${card.durationLabel}` : null}
-      </p>
+        {card.blocked ? <BlockedChip /> : null}
+      </div>
 
       {card.qualityLabel || chips.length > 0 ? (
         <div className="flex flex-wrap items-center gap-1">

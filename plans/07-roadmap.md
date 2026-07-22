@@ -521,6 +521,28 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
     `minVisibleZoom`/`displayScore` (D49) so cards don't fight the existing prominence scoring.
   - **Do this when** there's enough report density that a lake summary is non-empty for most bodies in a
     viewport — before that it's mostly blank cards.
+- **Harden `waterBodies.listInViewport` against the read-cap crash — multi-cell / bbox-coverage geospatial
+  indexing (surfaced 2026-07-22, Phase 6).** The current two-tier centroid query (PR #10/#11) is *safe at
+  today's scale* but structurally fragile: the `@convex-dev/geospatial` component reads roughly **∝
+  `maxResults`** (S2 read-ahead over the rectangle's cell covering), **not** ∝ results returned, so a wide,
+  sparse viewport exhausts a large covering and hits Convex's hard **4,096-reads/query cap** — a *crash*,
+  not slow paging. Today's mitigations are workarounds, not fixes: `maxResults` clamped to 256
+  (`MAX_VIEWPORT_LIMIT`, ~20% under the measured ~320 crash edge on the ~10k-body VT corpus), and the
+  `listed` filter is **kept out of the geospatial query** (its filter-stream intersection ~halves the safe
+  ceiling) and re-checked in JS instead — cheap only because Phase 1 has ~no unlisted bodies.
+  - **Why it's its own piece of work:** the real fix is the deferred **fully-general** approach noted in
+    [`phase-1-water-bodies.md`](./phase-1-water-bodies.md) (PR#4 root-cause, ~line 211) and flagged again as
+    a scale risk in [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md) (~line 255):
+    **index each body under every S2 cell its bbox covers** (not just its centroid point), so a wide query
+    reads a bounded set of cells rather than expanding a covering until it blows the cap — and lets the
+    `listed` filter move back into the query. It's a sizable geospatial rework (index shape, reindex/ETL
+    path, `listInViewport` rewrite, the two-tier large-body merge, and a fresh read-cap test surface), so it
+    belongs in its own PR, not bundled into a feature phase.
+  - **Do this when** the corpus grows enough (Phase 2.5+ multi-state expansion) that the 256 clamp visibly
+    drops bodies at normal zoom, or many unlisted/removed bodies make the JS `listed` re-check lossy behind
+    the cap — whichever bites first. Until then the two-tier + D49 zoom-score mitigation holds. *(Context:
+    revisited during Phase 6 Step 4 while scoping bounty browse, which deliberately sidesteps this path by
+    serving off the `bounties.by_status_expires` index instead of a geospatial viewport query.)*
 - **Clip hazard footprints to the water-body boundary (founder idea, 2026-07-21; from Phase 9).** So a
   large point+radius in a small bay can't render a circle spilling across land onto a peninsula or a
   neighbouring lake. Deferred from Phase 9 deliberately: it touches the "what's drawn is what the

@@ -3,6 +3,7 @@ import { formatSkateTime, humanizeEnum } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { UnavailableState } from '../components/DrawerStates';
+import { useIsModerator } from '../components/ModeratorActions';
 import { ProfileView } from '../components/ProfileView';
 import { BlockButton, FlagDialog } from '../components/SafetyControls';
 import { Badge } from '../components/ui/badge';
@@ -15,6 +16,7 @@ export const Route = createFileRoute('/u/$username')({ component: ProfilePage })
 function ProfilePage() {
   const { username } = Route.useParams();
   const profile = useQuery(api.profiles.getPublicProfile, { username });
+  const isModerator = useIsModerator();
 
   if (profile === undefined) {
     return <div className="mx-auto max-w-2xl py-8 text-foreground-muted">Loading…</div>;
@@ -49,9 +51,14 @@ function ProfilePage() {
         profileImageUrl: profile.profileImageUrl,
         isSelf: profile.isSelf,
         isPrivate: profile.private,
+        trustClass: profile.trustClass,
         homeTownLabel: profile.private ? undefined : profile.homeTownLabel,
         bio: profile.private ? undefined : profile.bio,
-        reputationPoints: profile.private ? undefined : profile.reputationPoints,
+        badges: profile.private ? undefined : profile.badges,
+        bountyPoints: profile.private ? undefined : profile.bountyPoints,
+        // The raw number is admin-only (D50) — pass it through solely for a moderator/admin viewer.
+        adminReputationPoints:
+          !profile.private && isModerator ? profile.reputationPoints : undefined,
         reportCount: profile.private ? undefined : profile.reportCount,
         commentCount: profile.private ? undefined : profile.commentCount,
       }}

@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import type { TrustClass } from '@skating/core';
 import {
   formatConditions,
   formatSkateTime,
@@ -20,6 +21,8 @@ import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { ModeratorActions } from './ModeratorActions';
 import { BlockedChip, FlagDialog } from './SafetyControls';
+import { ThumbControl } from './ThumbControl';
+import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
@@ -29,6 +32,9 @@ export interface ReportViewData {
   waterBodyId: string;
   bodyName?: string;
   authorName?: string;
+  authorImageUrl?: string;
+  /** The author's cosmetic trust class (D50) — the `TrustAvatar` ring color; `null`/absent ⇒ no ring. */
+  authorTrustClass?: TrustClass | null;
   /** The author is in the viewer's block set — de-emphasize the line + show a "Blocked" chip (D3). */
   authorBlocked?: boolean;
   /** When the skater left the ice — the primary timestamp shown (D28; Phase 5). */
@@ -62,15 +68,22 @@ export function ReportView({ data }: { data: ReportViewData }) {
         <SheetDescription>
           Off the ice {formatSkateTime(data.skateEndTime)}
           {duration ? ` · skated ${duration}` : null}
-          {data.authorName && !data.authorBlocked ? ` · by ${data.authorName}` : null}
-          {data.authorName && data.authorBlocked ? (
-            <>
-              {' · by '}
-              <span className="text-foreground-muted">{data.authorName}</span> <BlockedChip />
-            </>
-          ) : null}
         </SheetDescription>
       </SheetHeader>
+      {data.authorName ? (
+        <div className="flex items-center gap-2 px-4 pt-1 text-sm">
+          <TrustAvatar
+            displayName={data.authorName}
+            imageUrl={data.authorImageUrl}
+            trustClass={data.authorTrustClass}
+            size={24}
+          />
+          <span className={data.authorBlocked ? 'text-foreground-muted' : 'text-foreground'}>
+            by {data.authorName}
+          </span>
+          {data.authorBlocked ? <BlockedChip /> : null}
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4 px-4 pb-4">
         {data.skateQuality ? (
           <div className="flex flex-wrap items-center gap-1">
@@ -254,6 +267,8 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           waterBodyId: report.waterBodyId,
           bodyName: body?.available ? body.body.name : undefined,
           authorName: authors?.[report.authorId]?.displayName,
+          authorImageUrl: authors?.[report.authorId]?.profileImageUrl,
+          authorTrustClass: authors?.[report.authorId]?.trustClass,
           authorBlocked,
           skateEndTime: report.skateEndTime,
           skateStartTime: report.skateStartTime,
@@ -267,6 +282,10 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           photos: photos ?? [],
         }}
       />
+      {/* Thumbs (D50): counts visible to all; rating enabled for a signed-in non-author. */}
+      <div className="px-4 pb-2">
+        <ThumbControl targetType="report" targetId={report._id} canRate={!!me && !isOwn} />
+      </div>
       {/* Safety tools on the report (D32): flag for anyone but the author; moderator takedown. */}
       {me && !isOwn ? (
         <div className="flex flex-wrap gap-1 px-4 pb-2">

@@ -3,6 +3,7 @@ import { Image, ScrollView } from 'react-native';
 import { Text, XStack, YStack } from 'tamagui';
 import { Badge } from './detailUi';
 import { BlockedChip } from './SafetyControls';
+import { TrustAvatar } from './TrustDisplay';
 
 /** Max chips shown on a card before we stop (the drawer shows the full breakdown). */
 const MAX_CHIPS = 4;
@@ -56,6 +57,12 @@ export function FeedCard({
       </XStack>
 
       <XStack gap="$1.5" alignItems="center" flexWrap="wrap">
+        <TrustAvatar
+          displayName={card.author.displayName}
+          imageUrl={card.author.profileImageUrl}
+          trustClass={card.author.trustClass}
+          size={20}
+        />
         <Text color={card.blocked ? '$foregroundMuted' : '$foreground'} fontSize={13}>
           by {card.author.displayName}
         </Text>

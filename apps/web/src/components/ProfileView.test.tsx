@@ -9,26 +9,39 @@ const PUBLIC: ProfileViewData = {
   isPrivate: false,
   homeTownLabel: 'Norwich, VT',
   bio: 'Loves black ice',
-  reputationPoints: 0,
+  trustClass: 'trusted',
+  badges: ['trusted_reporter'],
   reportCount: 3,
   commentCount: 5,
 };
 
 describe('ProfileView', () => {
-  it('renders the full public payload: bio, town, stats, and the trust widget', () => {
+  it('renders the full public payload: bio, town, stats, trust chip, and badges', () => {
     render(<ProfileView data={PUBLIC} reportHistory={<div>history</div>} />);
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     expect(screen.getByText('Norwich, VT')).toBeInTheDocument();
     expect(screen.getByText('Loves black ice')).toBeInTheDocument();
-    expect(screen.getByText('Trust score')).toBeInTheDocument();
+    // The cosmetic class chip (D50) replaces the raw trust number.
+    expect(screen.getByText('Trusted')).toBeInTheDocument();
+    expect(screen.getByText('Trusted Reporter')).toBeInTheDocument();
     expect(screen.getByText('Reports')).toBeInTheDocument();
     expect(screen.getByText('history')).toBeInTheDocument();
   });
 
-  it('shows the trust score value (0 until Phase 6)', () => {
+  it('never shows the raw trust number to an ordinary viewer (D50)', () => {
     render(<ProfileView data={PUBLIC} />);
-    // Trust score + comment count both render as text; assert the trust label sits by a 0.
-    expect(screen.getByText('Trust score').previousSibling).toHaveTextContent('0');
+    expect(screen.queryByText(/trust score:/)).not.toBeInTheDocument();
+  });
+
+  it('shows the raw trust number only when the admin score is passed', () => {
+    render(<ProfileView data={{ ...PUBLIC, adminReputationPoints: 42 }} />);
+    expect(screen.getByText(/trust score: 42/)).toBeInTheDocument();
+  });
+
+  it('renders no chip when the trust class is null (never "Not trusted")', () => {
+    render(<ProfileView data={{ ...PUBLIC, trustClass: null }} />);
+    expect(screen.queryByText('Trusted')).not.toBeInTheDocument();
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
   });
 
   it('a private profile shows name only — no bio, stats, town, or history', () => {
@@ -39,7 +52,6 @@ describe('ProfileView', () => {
     expect(screen.getByText('This profile is private.')).toBeInTheDocument();
     expect(screen.queryByText('Loves black ice')).not.toBeInTheDocument();
     expect(screen.queryByText('Norwich, VT')).not.toBeInTheDocument();
-    expect(screen.queryByText('Trust score')).not.toBeInTheDocument();
     expect(screen.queryByText('history')).not.toBeInTheDocument();
   });
 

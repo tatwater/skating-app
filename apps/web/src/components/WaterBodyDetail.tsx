@@ -9,6 +9,8 @@ import {
 import { Link } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
+import { BountyForm } from './BountyForm';
+import { BountyList } from './BountyList';
 import { DirectionsButton } from './DirectionsButton';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { FavoriteButton } from './FavoriteButton';
@@ -37,6 +39,7 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   const { setFocus, setHighlightWaterBodyId } = useMapSelection();
   const [formOpen, setFormOpen] = useState(false);
   const [hazardFormOpen, setHazardFormOpen] = useState(false);
+  const [bountyFormOpen, setBountyFormOpen] = useState(false);
 
   // Once the (possibly merge-resolved) lake loads, fly the map to it and highlight it. We use the
   // resolved `body._id` — the survivor a merged deep link redirects to — which is what the map's
@@ -88,8 +91,12 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
           <Button variant="outline" onClick={() => setHazardFormOpen(true)}>
             Report a hazard
           </Button>
+          <Button variant="outline" onClick={() => setBountyFormOpen(true)}>
+            Post a bounty
+          </Button>
           <DirectionsButton waterBodyId={result.body._id} />
         </div>
+        <BountyList waterBodyId={result.body._id} />
         <HazardList waterBodyId={result.body._id} />
         <ReportFeed waterBodyId={result.body._id} />
       </div>
@@ -103,6 +110,14 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
       ) : null}
       {hazardFormOpen ? (
         <HazardForm waterBodyId={result.body._id} onClose={() => setHazardFormOpen(false)} />
+      ) : null}
+      {bountyFormOpen ? (
+        <BountyForm
+          waterBodyId={result.body._id}
+          bodyName={result.body.name}
+          open={bountyFormOpen}
+          onOpenChange={setBountyFormOpen}
+        />
       ) : null}
     </>
   );

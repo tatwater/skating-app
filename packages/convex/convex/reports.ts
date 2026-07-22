@@ -15,6 +15,7 @@ import {
   CORROBORATION_MAX_PER_REPORT,
   CORROBORATION_WINDOW_MS,
   type DriveTimeBands,
+  type FeedAuthor,
   type FeedCardData,
   hasMeasuredThickness,
   ICE_TYPES,
@@ -55,7 +56,7 @@ import { bumpContributionCount } from './lib/contributionCounts';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
-import { awardPointEvent, checkAndAwardBadges } from './lib/reputation';
+import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
 import { loadFavoriteBodyIds } from './waterBodyFavorites';
@@ -437,18 +438,30 @@ async function bodyInfoFor(
   return info;
 }
 
-/** Resolve a report author's public `{ displayName, username }` (D13); cached per query. */
+/**
+ * Resolve a report author's public attribution + cosmetic trust (D13/D50); cached per query. Carries the
+ * `TrustAvatar` ring inputs — `profileImageUrl` + the derived `trustClass` (never the raw score) — so a
+ * feed card can ring its author. `now` is the per-query clock threaded into the class derivation.
+ */
 async function authorFor(
   ctx: QueryCtx,
   authorId: Id<'profiles'>,
-  cache: Map<string, { displayName: string; username: string }>,
-): Promise<{ displayName: string; username: string }> {
+  cache: Map<string, FeedAuthor>,
+  now: number,
+): Promise<FeedAuthor> {
   const cached = cache.get(authorId);
   if (cached !== undefined) return cached;
   const profile = await ctx.db.get(authorId);
-  const author = profile
-    ? { displayName: profile.displayName, username: profile.username }
-    : { displayName: 'Unknown', username: '' };
+  const author: FeedAuthor = profile
+    ? {
+        displayName: profile.displayName,
+        username: profile.username,
+        ...(profile.profileImageUrl !== undefined
+          ? { profileImageUrl: profile.profileImageUrl }
+          : {}),
+        trustClass: trustClassFor(profile, now),
+      }
+    : { displayName: 'Unknown', username: '', trustClass: null };
   cache.set(authorId, author);
   return author;
 }
@@ -456,7 +469,7 @@ async function authorFor(
 /** Per-query enrichment caches shared across a page of feed cards (body info + author attribution). */
 interface FeedCardCaches {
   bodyInfo: Map<string, BodyInfo>;
-  authors: Map<string, { displayName: string; username: string }>;
+  authors: Map<string, FeedAuthor>;
 }
 
 /**
@@ -470,6 +483,7 @@ async function toFeedCard(
   r: Doc<'reports'>,
   caches: FeedCardCaches,
   sets: { blocked: Set<string>; favorites: Set<string> },
+  now: number,
 ): Promise<FeedCardData> {
   const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
   return {
@@ -483,7 +497,7 @@ async function toFeedCard(
     surfaceTags: r.surfaceTags,
     ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
     photoThumbUrls: await thumbUrlsFor(ctx, r.photoIds),
-    author: await authorFor(ctx, r.authorId, caches.authors),
+    author: await authorFor(ctx, r.authorId, caches.authors, now),
     blocked: sets.blocked.has(r.authorId),
     isFavorite: sets.favorites.has(r.waterBodyId),
   };
@@ -575,7 +589,7 @@ export const listFeed = query({
       ) {
         continue;
       }
-      page.push(await toFeedCard(ctx, r, caches, { blocked, favorites }));
+      page.push(await toFeedCard(ctx, r, caches, { blocked, favorites }, now));
     }
     // Boost favorites to the top of THIS page (stable sort keeps skate-end order within each group).
     page.sort((a, b) => Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false));
@@ -602,7 +616,8 @@ export const recentCardsForBodies = query({
       loadBlockedAuthorIds(ctx, viewerId),
       loadFavoriteBodyIds(ctx, viewerId),
     ]);
-    const cutoff = Date.now() - OFFLINE_CACHE_WINDOW_MS;
+    const now = Date.now();
+    const cutoff = now - OFFLINE_CACHE_WINDOW_MS;
     const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
     const cards: FeedCardData[] = [];
     for (const waterBodyId of [...new Set(waterBodyIds)]) {
@@ -617,7 +632,7 @@ export const recentCardsForBodies = query({
         .order('desc')
         .take(OFFLINE_CACHE_MAX_PER_BODY);
       for (const r of recent) {
-        cards.push(await toFeedCard(ctx, r, caches, { blocked, favorites }));
+        cards.push(await toFeedCard(ctx, r, caches, { blocked, favorites }, now));
       }
     }
     return cards;

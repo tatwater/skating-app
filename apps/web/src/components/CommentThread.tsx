@@ -5,12 +5,13 @@ import {
   formatSkateTime,
   isMinor,
   isValidCommentBody,
+  type TrustClass,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
 import { ModeratorActions, useIsModerator } from './ModeratorActions';
-import { Avatar } from './ProfileView';
 import { FlagDialog } from './SafetyControls';
+import { TrustAvatar } from './TrustDisplay';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { Textarea } from './ui/textarea';
@@ -20,6 +21,8 @@ export interface CommentAuthor {
   username: string;
   displayName: string;
   profileImageUrl?: string;
+  /** Cosmetic trust class (D50) — the `TrustAvatar` ring; `null`/absent ⇒ no ring. */
+  trustClass?: TrustClass | null;
 }
 
 /** A node in the rendered thread — `comment: null` is a `[hidden]` placeholder (no content). */
@@ -115,9 +118,10 @@ function CommentNode({
         <p className="text-foreground-muted text-sm italic">[comment hidden]</p>
       ) : (
         <div className="flex gap-2">
-          <Avatar
+          <TrustAvatar
             displayName={node.comment.author?.displayName ?? 'Unknown'}
             imageUrl={node.comment.author?.profileImageUrl}
+            trustClass={node.comment.author?.trustClass}
             size={28}
           />
           <div className="flex flex-1 flex-col gap-1">

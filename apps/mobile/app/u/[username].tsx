@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScrollView } from 'react-native';
 import { Text, XStack, YStack } from 'tamagui';
 import { Badge, DetailLoading, Unavailable } from '../../src/components/detailUi';
+import { useIsModerator } from '../../src/components/ModeratorActions';
 import { ProfileView } from '../../src/components/ProfileView';
 import { BlockButton, FlagControl } from '../../src/components/SafetyControls';
 
@@ -13,6 +14,7 @@ export default function ProfileRoute() {
   const { username } = useLocalSearchParams<{ username: string }>();
   const router = useRouter();
   const profile = useQuery(api.profiles.getPublicProfile, { username });
+  const isModerator = useIsModerator();
 
   if (profile === undefined) return <DetailLoading />;
   if (profile === null) {
@@ -40,9 +42,14 @@ export default function ProfileRoute() {
           profileImageUrl: profile.profileImageUrl,
           isSelf: profile.isSelf,
           isPrivate: profile.private,
+          trustClass: profile.trustClass,
+          // The raw number is admin-only (D50) — pass it through solely for a moderator/admin viewer.
+          adminReputationPoints:
+            !profile.private && isModerator ? profile.reputationPoints : undefined,
           homeTownLabel: profile.private ? undefined : profile.homeTownLabel,
           bio: profile.private ? undefined : profile.bio,
-          reputationPoints: profile.private ? undefined : profile.reputationPoints,
+          badges: profile.private ? undefined : profile.badges,
+          bountyPoints: profile.private ? undefined : profile.bountyPoints,
           reportCount: profile.private ? undefined : profile.reportCount,
           commentCount: profile.private ? undefined : profile.commentCount,
         }}

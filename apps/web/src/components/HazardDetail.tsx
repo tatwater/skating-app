@@ -11,6 +11,7 @@ import {
   healingNote,
   isPassageMarker,
   stalenessCaveat,
+  type TrustClass,
   verdictHelp,
   verdictLabel,
 } from '@skating/core';
@@ -21,6 +22,8 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { FlagDialog } from './SafetyControls';
+import { ThumbControl } from './ThumbControl';
+import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
@@ -38,10 +41,13 @@ export interface HazardViewData {
   archived: boolean;
   description?: string;
   /**
-   * Rendered as "… by <name>" when present. The container leaves it undefined until `hazards.get`
-   * returns a reporter — until then the author line is simply omitted rather than left half-written.
+   * Rendered as "… by <name>" (with a `TrustAvatar` ring) when present. The container resolves it from
+   * the hazard's author via `profiles.publicByIds`; until then the author line is simply omitted.
    */
   reporterName?: string;
+  reporterImageUrl?: string;
+  /** The reporter's cosmetic trust class (D50) — the `TrustAvatar` ring color; `null`/absent ⇒ no ring. */
+  reporterTrustClass?: TrustClass | null;
   firstReportedAt: number;
   lastConfirmedAt: number;
   confirmCount: number;
@@ -72,6 +78,7 @@ export function HazardView({
   confirming,
   confirmError,
   flagControl,
+  thumbControl,
 }: {
   data: HazardViewData;
   onConfirm?: (verdict: HazardVerdict) => void;
@@ -86,6 +93,8 @@ export function HazardView({
    * deliberately Convex-free so it can be rendered from a fixture in a test.
    */
   flagControl?: ReactNode;
+  /** The helpful/unhelpful thumbs control, injected by the container (Convex-free view, D40). */
+  thumbControl?: ReactNode;
 }) {
   // The destructive verdict gets a confirm step. It's the only one that retires a pin for everyone,
   // and a mis-tap that clears a real hazard is the worst outcome this UI can produce (D3).
@@ -120,14 +129,24 @@ export function HazardView({
           {data.archived ? <Badge variant="outline">Retired</Badge> : null}
         </div>
 
-        <p className="text-foreground-muted text-sm">
-          Reported {formatWhen(data.firstReportedAt)}
-          {data.reporterName ? ` by ${data.reporterName}` : ''}
-          {data.confirmCount > 0
-            ? ` · confirmed by ${data.confirmCount} other skater${data.confirmCount === 1 ? '' : 's'}`
-            : ' · nobody else has confirmed it yet'}
-          .
-        </p>
+        <div className="flex items-center gap-2 text-foreground-muted text-sm">
+          {data.reporterName ? (
+            <TrustAvatar
+              displayName={data.reporterName}
+              imageUrl={data.reporterImageUrl}
+              trustClass={data.reporterTrustClass}
+              size={20}
+            />
+          ) : null}
+          <span>
+            Reported {formatWhen(data.firstReportedAt)}
+            {data.reporterName ? ` by ${data.reporterName}` : ''}
+            {data.confirmCount > 0
+              ? ` · confirmed by ${data.confirmCount} other skater${data.confirmCount === 1 ? '' : 's'}`
+              : ' · nobody else has confirmed it yet'}
+            .
+          </span>
+        </div>
 
         {/* The sentence that has to do the work of not sounding like an all-clear. */}
         {data.freshness !== 'fresh' ? (
@@ -224,6 +243,13 @@ export function HazardView({
           </>
         ) : null}
 
+        {thumbControl ? (
+          <>
+            <Separator />
+            {thumbControl}
+          </>
+        ) : null}
+
         {flagControl ? (
           <>
             <Separator />
@@ -240,6 +266,11 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
   const hazard = useQuery(api.hazards.get, { hazardId: hazardId as Id<'hazards'> });
   const photos = useQuery(api.photos.getHazardUrls, { hazardId: hazardId as Id<'hazards'> });
   const body = useQuery(api.waterBodies.get, hazard ? { waterBodyId: hazard.waterBodyId } : 'skip');
+  const reporters = useQuery(
+    api.profiles.publicByIds,
+    hazard ? { profileIds: [hazard.createdByUserId] } : 'skip',
+  );
+  const me = useQuery(api.profiles.current, {});
   const confirm = useMutation(api.hazardConfirmations.confirm);
   const [confirming, setConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -268,6 +299,8 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
   }
 
   const bodyName = body?.available ? body.body.name : undefined;
+  const reporter = reporters?.[hazard.createdByUserId];
+  const isOwn = me?._id === hazard.createdByUserId;
 
   return (
     <HazardView
@@ -281,6 +314,9 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
         healing: hazard.healingState === 'healing_unsafe',
         archived: hazard.status === 'archived',
         description: hazard.description,
+        reporterName: reporter?.displayName,
+        reporterImageUrl: reporter?.profileImageUrl,
+        reporterTrustClass: reporter?.trustClass,
         firstReportedAt: hazard.firstReportedAt,
         lastConfirmedAt: hazard.lastConfirmedAt,
         confirmCount: hazard.confirmCount,
@@ -289,6 +325,9 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
       confirming={confirming}
       confirmError={confirmError}
       flagControl={<FlagDialog targetType="hazard" targetId={hazardId} />}
+      thumbControl={
+        <ThumbControl targetType="hazard" targetId={hazardId} canRate={!!me && !isOwn} />
+      }
       onConfirm={async (verdict) => {
         setConfirming(true);
         setConfirmError(null);

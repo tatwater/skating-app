@@ -209,6 +209,144 @@ describe('bounties fulfillment', () => {
   });
 });
 
+describe('bounties.listOpen (global / near-me / viewport browse)', () => {
+  test('returns open bounties newest-first; excludes cancelled + expired', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const body0 = await seedBody(t);
+    const body1 = await seedBody(t);
+    const b0 = await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
+    const b1 = await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    // Make b1 unambiguously newer than b0 so the sort is deterministic.
+    await t.run((ctx) => ctx.db.patch(b0, { createdAt: Date.now() - HOUR }));
+
+    let open = await t.query(api.bounties.listOpen, {});
+    expect(open.map((b) => b._id)).toEqual([b1, b0]);
+    expect(open[0]?.requester.trustClass).toBe('new'); // fresh account, 0 points
+    expect(open[0]?.waterBodyName).toBeDefined();
+
+    // Cancel one and expire the other → both drop out of the browse.
+    await requester.as.mutation(api.bounties.cancel, { bountyId: b1 });
+    await t.run((ctx) => ctx.db.patch(b0, { expiresAt: Date.now() - HOUR }));
+    open = await t.query(api.bounties.listOpen, {});
+    expect(open).toHaveLength(0);
+  });
+
+  test('viewport filters to bounties whose body intersects the rectangle', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const body0 = await seedBody(t); // bbox lng [n, n+1]
+    const body1 = await seedBody(t); // bbox lng [n+1, n+2]
+    const b0 = await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
+    await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    const body0Doc = await t.run((ctx) => ctx.db.get(body0));
+    // A rectangle covering only body0's bbox.
+    const viewport = {
+      minLat: 0,
+      maxLat: 1,
+      // biome-ignore lint/style/noNonNullAssertion: seeded body always exists.
+      minLng: body0Doc!.bbox.minLng - 0.1,
+      // biome-ignore lint/style/noNonNullAssertion: seeded body always exists.
+      maxLng: body0Doc!.bbox.minLng + 0.1,
+    };
+    const open = await t.query(api.bounties.listOpen, { viewport });
+    expect(open.map((b) => b._id)).toEqual([b0]);
+  });
+
+  test('sortByHome sorts by the viewer private home coord without returning distances', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const body0 = await seedBody(t);
+    const body1 = await seedBody(t);
+    await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
+    const b1 = await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    const body1Doc = await t.run((ctx) => ctx.db.get(body1));
+    // A viewer whose home sits on body1's centroid → body1's bounty sorts first, but no distance leaks.
+    const viewer = await seedUser(t, 'viewer');
+    // biome-ignore lint/style/noNonNullAssertion: seeded body always exists.
+    await t.run((ctx) => ctx.db.patch(viewer.id, { homeCoord: body1Doc!.centroid }));
+
+    const open = await viewer.as.query(api.bounties.listOpen, { sortByHome: true });
+    expect(open[0]?._id).toBe(b1); // nearest-to-home first
+    expect(open[0]?.distanceMeters).toBeUndefined(); // never returned in home-sort mode (D11)
+  });
+
+  test('near sorts by distance and attaches distanceMeters', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const body0 = await seedBody(t);
+    const body1 = await seedBody(t);
+    await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
+    const b1 = await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    const body1Doc = await t.run((ctx) => ctx.db.get(body1));
+    // biome-ignore lint/style/noNonNullAssertion: seeded body always exists.
+    const near = body1Doc!.centroid;
+    const open = await t.query(api.bounties.listOpen, { near });
+    expect(open[0]?._id).toBe(b1); // nearest first
+    expect(open[0]?.distanceMeters).toBeDefined();
+    expect(open[0]?.distanceMeters ?? 1).toBeLessThan(open[1]?.distanceMeters ?? 0);
+  });
+});
+
+describe('bounties.getDetail', () => {
+  test('enriches the bounty with requester, body, and candidate reports with isOwn', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const reportId = await seedReport(author, waterBodyId); // auto-attaches
+
+    const asRequester = await requester.as.query(api.bounties.getDetail, { bountyId });
+    expect(asRequester?.isRequester).toBe(true);
+    expect(asRequester?.requester.trustClass).toBe('new');
+    expect(asRequester?.waterBody?.name).toBeDefined();
+    expect(asRequester?.fulfillingReports).toHaveLength(1);
+    expect(asRequester?.fulfillingReports[0]?._id).toBe(reportId);
+    expect(asRequester?.fulfillingReports[0]?.isOwn).toBe(false); // the report is the author's
+
+    const asAuthor = await author.as.query(api.bounties.getDetail, { bountyId });
+    expect(asAuthor?.isRequester).toBe(false);
+    expect(asAuthor?.fulfillingReports[0]?.isOwn).toBe(true); // author viewing their own report
+  });
+});
+
+describe('trust class in profile reads (D50)', () => {
+  test('getPublicProfile derives the class from points + age and exposes badges/bountyPoints', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'ada');
+
+    // Fresh account (0 points) → the `new` welcome class; badges empty; bountyPoints 0.
+    let profile = await t.query(api.profiles.getPublicProfile, { username: 'ada' });
+    expect(profile?.trustClass).toBe('new');
+    expect(profile && !profile.private ? profile.badges : null).toEqual([]);
+    expect(profile && !profile.private ? profile.bountyPoints : null).toBe(0);
+
+    // Crossing the `trusted` threshold (≥15) promotes the class; points always beat age.
+    await t.run((ctx) =>
+      ctx.db.patch(user.id, {
+        reputationPoints: 20,
+        badges: ['trusted_reporter'],
+        bountyPoints: 10,
+      }),
+    );
+    profile = await t.query(api.profiles.getPublicProfile, { username: 'ada' });
+    expect(profile?.trustClass).toBe('trusted');
+    expect(profile && !profile.private ? profile.badges : null).toEqual(['trusted_reporter']);
+    expect(profile && !profile.private ? profile.bountyPoints : null).toBe(10);
+  });
+
+  test('publicByIds returns each author trust class (never the raw score)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'nadia');
+    await t.run((ctx) => ctx.db.patch(user.id, { reputationPoints: 70 })); // expert threshold
+
+    const map = await t.query(api.profiles.publicByIds, { profileIds: [user.id] });
+    expect(map[user.id]?.trustClass).toBe('expert');
+    expect(map[user.id]).not.toHaveProperty('reputationPoints');
+  });
+});
+
 describe('bounties.expireBounties', () => {
   test('flips open bounties past their expiry to expired', async () => {
     const t = harness();

@@ -9,7 +9,20 @@
  */
 
 import { formatSkateWindow, humanizeEnum, SKATE_QUALITY_LABELS } from './reportView';
+import type { TrustClass } from './reputationConfig';
 import type { IceType, SkateQuality, SurfaceTag } from './types';
+
+/**
+ * A feed/report author's public attribution + cosmetic trust (D50). `trustClass` drives the `TrustAvatar`
+ * ring color (never a raw number); `profileImageUrl` is the Clerk avatar (initials fallback when absent).
+ * Both are optional so a legacy card / offline-cached row without them still renders (no ring, no image).
+ */
+export interface FeedAuthor {
+  displayName: string;
+  username: string;
+  profileImageUrl?: string;
+  trustClass?: TrustClass | null;
+}
 
 /** The point-derived admin place (from `reports.place`), stamped at create via `adminAreas` (Phase 5). */
 export interface PlaceLabelParts {
@@ -72,7 +85,7 @@ export interface FeedCardData {
   surfaceTags: SurfaceTag[];
   skateQuality?: SkateQuality;
   photoThumbUrls: string[];
-  author: { displayName: string; username: string };
+  author: FeedAuthor;
   blocked: boolean;
   /** Viewer has favorited this body (Phase 4) — drives the feed badge + the per-page boost. */
   isFavorite?: boolean;
@@ -91,7 +104,7 @@ export interface FeedCardView {
   /** Humanized ice + surface vocabulary, ready as chip text (UI truncates if it wants). */
   chips: string[];
   photoThumbUrls: string[];
-  author: { displayName: string; username: string };
+  author: FeedAuthor;
   blocked: boolean;
   /** Viewer has favorited this body (Phase 4) — the card shows a heart/badge and boosts it. */
   isFavorite: boolean;

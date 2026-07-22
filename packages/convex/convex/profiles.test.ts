@@ -446,8 +446,13 @@ describe('profiles.publicByIds', () => {
     await t.run((ctx) => ctx.db.delete(ghost));
 
     const result = await t.query(api.profiles.publicByIds, { profileIds: [ada, bob, ada, ghost] });
-    expect(result[ada]).toEqual({ username: 'ada', displayName: 'Ada Lovelace' });
-    expect(result[bob]).toEqual({ username: 'bob', displayName: 'Bob' });
+    // Fresh accounts (0 points, just created) carry the cosmetic `new` trust class (D50).
+    expect(result[ada]).toEqual({
+      username: 'ada',
+      displayName: 'Ada Lovelace',
+      trustClass: 'new',
+    });
+    expect(result[bob]).toEqual({ username: 'bob', displayName: 'Bob', trustClass: 'new' });
     expect(result[ghost]).toBeUndefined();
     expect(Object.keys(result)).toHaveLength(2);
   });

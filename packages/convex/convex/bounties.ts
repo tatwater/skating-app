@@ -16,9 +16,11 @@
 import {
   BOUNTY_DAILY_WINDOW_MS,
   BOUNTY_ELIGIBILITY_WINDOW_HOURS,
+  bboxIntersects,
   DEFAULT_BOUNTY_LIFETIME_MS,
   DEFAULT_BOUNTY_REWARD_POINTS,
   FRESH_REPORT_HOURS,
+  haversineMeters,
   isBodyFreshForBounty,
   isMinor,
   MAX_OPEN_BOUNTIES_PER_DAY,
@@ -36,9 +38,20 @@ import {
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
-import { awardPointEvent, checkAndAwardBadges } from './lib/reputation';
+import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
+import { bbox, latLng } from './lib/validators';
 
 const HOUR_MS = 60 * 60 * 1000;
+
+/**
+ * Hard ceiling on the `listOpen` index scan (decision 13 browse surface). The open-bounty set is small
+ * and bounded by design (≤3 open per requester in a rolling 24h × a ~30-day lifetime), so a plain
+ * `by_status_expires` scan is read-cap-safe — unlike the water-body geospatial viewport path, whose
+ * reads scale with search *area* (see roadmap → Later/deferred: `listInViewport` hardening). If the
+ * live open set ever approaches this cap we log the truncation (never silent, D5) and would then add a
+ * dedicated bounties geospatial instance; at alpha scale it never bites.
+ */
+const OPEN_BOUNTY_SCAN_CAP = 200;
 
 /** Visible reports on a body with a skate-end at or after `cutoff` — the input to both create gates. */
 async function recentReports(
@@ -257,10 +270,63 @@ export const get = query({
   handler: (ctx, { bountyId }) => ctx.db.get(bountyId),
 });
 
+/**
+ * The enriched `/bounty/$id` detail payload (D47) in one round-trip: the requester (ringed by trust), the
+ * survivor water body, and the **visible** candidate reports that have auto-attached — each with its author
+ * and an `isOwn` flag so the client knows whether the requester may thumb it (self-rating can't fulfill).
+ * `isRequester` gates the cancel + fulfillment affordances. Returns `null` if the bounty is gone.
+ */
+export const getDetail = query({
+  args: { bountyId: v.id('bounties') },
+  handler: async (ctx, { bountyId }) => {
+    const bounty = await ctx.db.get(bountyId);
+    if (!bounty) return null;
+    const now = Date.now();
+    const viewer = await getCurrentProfile(ctx);
+    const requester = await ctx.db.get(bounty.requesterId);
+    const body = await resolveSurvivor(ctx, bounty.waterBodyId);
+
+    const fulfillingReports = [];
+    for (const reportId of bounty.fulfillingReportIds) {
+      const report = await ctx.db.get(reportId);
+      if (report?.moderationStatus !== 'visible') continue;
+      const author = await ctx.db.get(report.authorId);
+      fulfillingReports.push({
+        _id: report._id,
+        skateEndTime: report.skateEndTime,
+        ...(report.skateQuality !== undefined ? { skateQuality: report.skateQuality } : {}),
+        authorName: author?.displayName ?? 'Unknown',
+        authorTrustClass: author ? trustClassFor(author, now) : null,
+        isOwn: viewer?._id === report.authorId,
+      });
+    }
+
+    return {
+      _id: bounty._id,
+      status: bounty.status,
+      rewardPoints: bounty.rewardPoints,
+      createdAt: bounty.createdAt,
+      expiresAt: bounty.expiresAt,
+      waterBody: body && isListed(body) ? { _id: body._id, name: body.name } : null,
+      requester: requester
+        ? {
+            userId: requester._id,
+            displayName: requester.displayName,
+            username: requester.username,
+            trustClass: trustClassFor(requester, now),
+          }
+        : { userId: bounty.requesterId, displayName: 'Unknown', username: '', trustClass: null },
+      isRequester: !!viewer && viewer._id === bounty.requesterId,
+      fulfillingReports,
+    };
+  },
+});
+
 /** The open bounties on a body (for the map/detail surfaces), newest first, with the requester's name. */
 export const listForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
+    const now = Date.now();
     const open = await ctx.db
       .query('bounties')
       .withIndex('by_water_body_status', (q) =>
@@ -274,8 +340,12 @@ export const listForBody = query({
         return {
           _id: b._id,
           requester: requester
-            ? { displayName: requester.displayName, username: requester.username }
-            : { displayName: 'Unknown', username: '' },
+            ? {
+                displayName: requester.displayName,
+                username: requester.username,
+                trustClass: trustClassFor(requester, now),
+              }
+            : { displayName: 'Unknown', username: '', trustClass: null },
           rewardPoints: b.rewardPoints,
           fulfillingCount: b.fulfillingReportIds.length,
           createdAt: b.createdAt,
@@ -283,6 +353,86 @@ export const listForBody = query({
         };
       }),
     );
+  },
+});
+
+/**
+ * The **global / near-me / in-viewport open-bounty browse** (decision 3 clarification, 2026-07-22). This
+ * deliberately sidesteps the read-cap-fragile water-body geospatial viewport path: the open-bounty set is
+ * small and bounded, so we scan the dedicated `by_status_expires` index (open, not-yet-expired), hydrate
+ * each body + requester, then filter/sort **in JS** — no S2 read-ahead, no 4,096-reads crash surface.
+ *
+ * - `viewport` (web map markers / in-view list): keep only bounties whose body's bbox intersects the rect.
+ * - `near` (client-supplied coord, e.g. live GPS): attach `distanceMeters` and sort ascending — safe to
+ *   return the distance because the caller already knows its own location.
+ * - `sortByHome` (mobile "bounties near me" tab): sort by distance to the **viewer's private home coord**,
+ *   read server-side. The home coord never leaves the server (D11), and we deliberately **do not** return
+ *   `distanceMeters` in this mode — exact distances to several public lakes could trilaterate the home.
+ *   Falls back to newest-first when the viewer has no home set.
+ * - none of the above: newest-first (`createdAt` desc).
+ *
+ * Bounties are not gated by trust or blocks (see `get`), so no viewer-scoped hiding. Bodies since removed
+ * (unlisted) are dropped. `limit` caps the returned rows; the scan itself is capped at `OPEN_BOUNTY_SCAN_CAP`.
+ */
+export const listOpen = query({
+  args: {
+    viewport: v.optional(bbox),
+    near: v.optional(latLng),
+    sortByHome: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { viewport, near, sortByHome, limit }) => {
+    const now = Date.now();
+    // The coord we sort by: an explicit client coord wins; otherwise the viewer's private home (D11) when
+    // they asked to sort near home. Distances are only *returned* for a client-supplied `near` (above).
+    const viewer = sortByHome && !near ? await getCurrentProfile(ctx) : null;
+    const sortCoord = near ?? viewer?.homeCoord;
+    // Still-valid open bounties, soonest-expiring first, bounded read. `.gt('expiresAt', now)` drops any
+    // past `expiresAt` the sweep hasn't flipped yet — a browse should never surface a dead bounty.
+    const open = await ctx.db
+      .query('bounties')
+      .withIndex('by_status_expires', (q) => q.eq('status', 'open').gt('expiresAt', now))
+      .take(OPEN_BOUNTY_SCAN_CAP);
+    if (open.length === OPEN_BOUNTY_SCAN_CAP) {
+      console.warn(
+        `bounties.listOpen hit the ${OPEN_BOUNTY_SCAN_CAP}-row scan cap; some open bounties may be omitted.`,
+      );
+    }
+
+    const rows = [];
+    for (const b of open) {
+      const body = await resolveSurvivor(ctx, b.waterBodyId);
+      if (!body || !isListed(body)) continue; // bounty on a since-removed body — skip
+      if (viewport && !bboxIntersects(body.bbox, viewport)) continue;
+      const requester = await ctx.db.get(b.requesterId);
+      rows.push({
+        _id: b._id,
+        waterBodyId: body._id,
+        waterBodyName: body.name,
+        centroid: body.centroid,
+        requester: requester
+          ? {
+              displayName: requester.displayName,
+              username: requester.username,
+              trustClass: trustClassFor(requester, now),
+            }
+          : { displayName: 'Unknown', username: '', trustClass: null },
+        rewardPoints: b.rewardPoints,
+        fulfillingCount: b.fulfillingReportIds.length,
+        createdAt: b.createdAt,
+        expiresAt: b.expiresAt,
+        ...(near ? { distanceMeters: haversineMeters(near, body.centroid) } : {}),
+      });
+    }
+
+    rows.sort((a, b) =>
+      sortCoord
+        ? haversineMeters(sortCoord, a.centroid) - haversineMeters(sortCoord, b.centroid)
+        : b.createdAt - a.createdAt,
+    );
+    const cap =
+      limit !== undefined && limit > 0 ? Math.min(limit, OPEN_BOUNTY_SCAN_CAP) : rows.length;
+    return rows.slice(0, cap);
   },
 });
 

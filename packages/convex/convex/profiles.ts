@@ -24,6 +24,7 @@ import {
   normalizeUsername,
   PROFILE_VISIBILITIES,
   sanitizeFeedFilters,
+  type TrustClass,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
@@ -32,6 +33,7 @@ import { internalMutation, mutation, query } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
+import { trustClassFor } from './lib/reputation';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
 
 /**
@@ -48,20 +50,36 @@ export const current = query({
 });
 
 /**
- * Public attribution for a set of profile ids — the *only* fields a report feed/detail needs to
- * name its authors (`username` + `displayName`), never the private profile (home coord, DOB, etc.).
- * Returned as a `_id → { username, displayName }` map keyed by id so the UI can look each author up
- * without ordering assumptions; missing/deleted ids are simply absent. Full public profiles (D47)
- * are a later phase; this is the minimal read the Phase 2 report loop consumes.
+ * Public attribution for a set of profile ids — the fields a report feed/detail/comment thread needs to
+ * name and *ring* its authors: `username` + `displayName` + the Clerk `profileImageUrl` + the cosmetic
+ * `trustClass` (D50 — the `TrustAvatar` ring color; the raw score is never returned here). Never the
+ * private profile (home coord, DOB, etc.). Returned as a `_id → { … }` map keyed by id so the UI can look
+ * each author up without ordering assumptions; missing/deleted ids are simply absent.
  */
 export const publicByIds = query({
   args: { profileIds: v.array(v.id('profiles')) },
   handler: async (ctx, { profileIds }) => {
-    const result: Record<string, { username: string; displayName: string }> = {};
+    const now = Date.now();
+    const result: Record<
+      string,
+      {
+        username: string;
+        displayName: string;
+        profileImageUrl?: string;
+        trustClass: TrustClass | null;
+      }
+    > = {};
     for (const profileId of [...new Set(profileIds)]) {
       const profile = await ctx.db.get(profileId);
       if (profile) {
-        result[profileId] = { username: profile.username, displayName: profile.displayName };
+        result[profileId] = {
+          username: profile.username,
+          displayName: profile.displayName,
+          ...(profile.profileImageUrl !== undefined
+            ? { profileImageUrl: profile.profileImageUrl }
+            : {}),
+          trustClass: trustClassFor(profile, now),
+        };
       }
     }
     return result;
@@ -356,7 +374,12 @@ interface ProfileReport {
   waterBodyName: string;
 }
 
-/** The full public payload; `private: true` collapses it to name + avatar only (D13). */
+/**
+ * The full public payload; `private: true` collapses it to name + avatar only (D13). `trustClass` (the
+ * cosmetic ring/chip class, D50) is on **both** variants — the avatar ring renders even on a private
+ * profile, since trust is global + cosmetic and leaks no private state. The raw `reputationPoints` (for
+ * the admin-only number) and `badges` / `bountyPoints` (the badge row) are on the public variant only.
+ */
 type PublicProfile =
   | {
       userId: string;
@@ -364,6 +387,7 @@ type PublicProfile =
       displayName: string;
       profileImageUrl?: string;
       isSelf: boolean;
+      trustClass: TrustClass | null;
       private: true;
     }
   | {
@@ -372,10 +396,13 @@ type PublicProfile =
       displayName: string;
       profileImageUrl?: string;
       isSelf: boolean;
+      trustClass: TrustClass | null;
       private: false;
       homeTownLabel?: string;
       bio?: string;
-      reputationPoints: number; // trust score (D50) — renders as 0 until Phase 6 computes it
+      reputationPoints: number; // trust score (D50) — the admin-visible raw number; UI shows the chip
+      bountyPoints: number; // separate bounty currency (decision 11); absent ⇒ 0
+      badges: string[]; // earned BadgeType families in stable order (decision 6)
       reportCount: number;
       commentCount: number;
       reports: ProfileReport[];
@@ -411,6 +438,7 @@ export const getPublicProfile = query({
       displayName: target.displayName,
       ...(target.profileImageUrl !== undefined ? { profileImageUrl: target.profileImageUrl } : {}),
       isSelf,
+      trustClass: trustClassFor(target, Date.now()),
     };
 
     // Private profiles are name + avatar only, and not browsable — unless it's your own profile.
@@ -447,6 +475,8 @@ export const getPublicProfile = query({
       ...(target.homeTownLabel !== undefined ? { homeTownLabel: target.homeTownLabel } : {}),
       ...(target.bio !== undefined ? { bio: target.bio } : {}),
       reputationPoints: target.reputationPoints,
+      bountyPoints: target.bountyPoints ?? 0,
+      badges: target.badges ?? [],
       reportCount,
       commentCount,
       reports,

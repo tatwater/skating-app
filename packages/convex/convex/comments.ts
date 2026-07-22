@@ -17,6 +17,7 @@ import {
   normalizeCommentBody,
   type ThreadComment,
   type ThreadNode,
+  type TrustClass,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
@@ -24,6 +25,7 @@ import { mutation, query } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
+import { trustClassFor } from './lib/reputation';
 
 /**
  * Add a comment to a report (D21). `requireProfile`; **reject minors** (read-only, D41); the target
@@ -89,6 +91,8 @@ interface CommentAuthor {
   username: string;
   displayName: string;
   profileImageUrl?: string;
+  /** Cosmetic trust class (D50) — the `TrustAvatar` ring color; never the raw score. */
+  trustClass: TrustClass | null;
 }
 
 /** A comment as the thread returns it. `comment` is `null` for a `[hidden]` placeholder (D25). */
@@ -141,6 +145,7 @@ export const listByReport = query({
     const tree = buildCommentThread(threadInput);
 
     // Resolve author attribution once for every author that survives to a visible node.
+    const now = Date.now();
     const authorCache = new Map<string, CommentAuthor | null>();
     const loadAuthor = async (authorId: string): Promise<CommentAuthor | null> => {
       const cached = authorCache.get(authorId);
@@ -153,6 +158,7 @@ export const listByReport = query({
             ...(author.profileImageUrl !== undefined
               ? { profileImageUrl: author.profileImageUrl }
               : {}),
+            trustClass: trustClassFor(author, now),
           }
         : null;
       authorCache.set(authorId, view);

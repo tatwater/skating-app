@@ -13,11 +13,30 @@
  * migration (D40). The point weights live in `@skating/core` (the single Phase-7 tuning surface).
  */
 
-import { type BadgeStats, deriveEarnedBadges, POINT_WEIGHTS } from '@skating/core';
+import {
+  type BadgeStats,
+  deriveEarnedBadges,
+  deriveTrustClass,
+  POINT_WEIGHTS,
+  type TrustClass,
+} from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 
 type PointReason = Doc<'pointEvents'>['reason'];
+
+/**
+ * The cosmetic trust class for a profile, derived server-side for the **multi-author read surfaces**
+ * (feed cards, comments, report/hazard/bounty authors). We return the derived class *string* — never the
+ * raw number — from those queries so the "no raw score in the UI, except to admins" rule (D50 decision 5)
+ * holds without every author payload shipping `reputationPoints` + a creation time. The single-author
+ * profile read still returns raw points alongside this (the admin-visible number). `now` is threaded so
+ * one query stamps every author against a single clock. `null` ⇒ no ring (below `trusted`, past the New
+ * window). Boost-only ⇒ points never negative in Phase 6.
+ */
+export function trustClassFor(profile: Doc<'profiles'>, now: number): TrustClass | null {
+  return deriveTrustClass(profile.reputationPoints, now - profile.createdAt);
+}
 
 /** True for the reasons whose delta is single-sourced in `POINT_WEIGHTS` (all bump `reputationPoints`). */
 function isTrustReason(reason: PointReason): reason is keyof typeof POINT_WEIGHTS {

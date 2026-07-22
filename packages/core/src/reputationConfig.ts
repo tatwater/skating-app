@@ -138,6 +138,18 @@ export const BADGE_TYPES = [
 ] as const;
 export type BadgeType = (typeof BADGE_TYPES)[number];
 
+/** Human labels for the badge row (title-cased; the raw slug is never shown). */
+export const BADGE_LABELS: Record<BadgeType, string> = {
+  trusted_reporter: 'Trusted Reporter',
+  bounty_hunter: 'Bounty Hunter',
+  appreciated: 'Appreciated',
+  hazard_spotter: 'Hazard Spotter',
+  watchdog: 'Watchdog',
+  corroborator: 'Corroborator',
+  straight_shooter: 'Straight-Shooter',
+  measured: 'Measured',
+};
+
 /**
  * Count thresholds a stat must reach to earn each tiered badge. A "first, then every N" family is
  * expressed as `{ first, step }`: earned at `first`, then again at `first + step`, `first + 2·step`, …
