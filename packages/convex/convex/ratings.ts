@@ -21,6 +21,7 @@ import { AUTO_LOW_QUALITY_NET_UNHELPFUL, POINT_WEIGHTS, RATING_TARGET_TYPES } fr
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
+import { fulfillBountyOnHelpful } from './bounties';
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs } from './lib/reputation';
 import { literals } from './lib/validators';
@@ -197,6 +198,13 @@ export const rate = mutation({
         refId: targetId,
       });
       await notifyHelpful(ctx, target.authorId, targetType, targetId, rater._id);
+      // A requester thumbing a fulfilling report helpful fulfills the bounty (Phase 6, decisions 10–11).
+      if (bountyId !== undefined && targetType === 'report') {
+        const reportId = ctx.db.normalizeId('reports', targetId);
+        if (reportId) {
+          await fulfillBountyOnHelpful(ctx, { bountyId, reportId, raterId: rater._id });
+        }
+      }
     } else {
       await maybeAutoFlag(ctx, targetType, targetId, rater._id);
     }

@@ -17,4 +17,8 @@ crons.interval(
   {},
 );
 
+// Expire bounties past their lifetime (Phase 6, decision 12): flip `open → expired`. Every 6h is ample
+// for a ~30-day default lifetime — expiry is not time-critical, and the sweep reads a dedicated index.
+crons.interval('expire bounties', { hours: 6 }, internal.bounties.expireBounties, {});
+
 export default crons;

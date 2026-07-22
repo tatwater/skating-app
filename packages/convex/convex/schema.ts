@@ -498,7 +498,10 @@ export default defineSchema({
     .index('by_water_body_status', ['waterBodyId', 'status'])
     // Global expiry sweep (`open → expired` past `expiresAt`, decision 12). The body-keyed index above
     // can't drive a global sweep without a full scan, so the cron reads `by_status_expires`.
-    .index('by_status_expires', ['status', 'expiresAt']),
+    .index('by_status_expires', ['status', 'expiresAt'])
+    // The requester's own bounties by status — the rolling daily-open cap counts their open ones
+    // (decision 7) and `myBounties` lists them.
+    .index('by_requester_status', ['requesterId', 'status']),
 
   // Polymorphic helpful/unhelpful thumb (D50 decision 4). The SAME one-vote-per-user thumbs UI + rule
   // apply to both reports and hazards, so the target is a `(targetType, targetId)` discriminator rather

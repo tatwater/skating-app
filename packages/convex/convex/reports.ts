@@ -42,6 +42,7 @@ import {
   query,
 } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
+import { attachReportToOpenBounties } from './bounties';
 import {
   attachHazardsToReport,
   HAZARD_MAX_PER_REPORT,
@@ -264,6 +265,10 @@ export const create = mutation({
       const corroboratedAuthorIds = await runCorroboration(ctx, inserted);
       await checkAndAwardBadges(ctx, inserted.authorId);
       for (const authorId of corroboratedAuthorIds) await checkAndAwardBadges(ctx, authorId);
+
+      // Auto-attach to any open bounty on this body (Phase 6, decision 10) — the requester's helpful
+      // thumb later flips it to fulfilled.
+      await attachReportToOpenBounties(ctx, inserted);
 
       // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
       // coalescing queue — the cron flushes them (decision #4).
