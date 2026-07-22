@@ -16,24 +16,28 @@
  */
 
 import {
+  clipFootprintToBody,
   deriveHazardFreshness,
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_DEFAULT_RADIUS_M,
   type HazardShape,
   hazardBbox,
+  hazardFootprint,
   initialLifecycleState,
   isMinor,
   isProvisional,
   isValidHazardShape,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
+import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { requireProfile } from './lib/auth';
+import { getCurrentProfile, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
+import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { geoJson, literals } from './lib/validators';
 
 /**
@@ -146,6 +150,13 @@ export async function insertHazard(
   const photoIds = args.photoIds ?? [];
   await assertOwnedPhotos(ctx, photoIds, authorId);
 
+  // Clip the footprint to the body once, at create (Phase 9.5). `clipFootprintToBody` returns null when
+  // the footprint is already inside the body or the clip can't be done safely, so the common case stores
+  // nothing and reads fall back to the live footprint. The bbox is derived from the *same* polygon that
+  // gets stored, so the prefilter box, the drawn halo and the measured distance are one shape.
+  const footprint = hazardFootprint(shape);
+  const clippedFootprint = clipFootprintToBody(footprint, body.polygon as Polygon | MultiPolygon);
+
   const lifecycle = initialLifecycleState(now);
   return ctx.db.insert('hazards', {
     waterBodyId: body._id, // the resolved survivor, not the (possibly merged) requested id
@@ -154,7 +165,8 @@ export async function insertHazard(
     geometry: shape.geometry as Doc<'hazards'>['geometry'],
     ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
     ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
-    bbox: hazardBbox(shape),
+    bbox: hazardBbox(shape, clippedFootprint),
+    ...(clippedFootprint ? { clippedFootprint } : {}),
     createdByUserId: authorId,
     ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
     ...(originReportId !== undefined ? { originReportId } : {}),
@@ -217,6 +229,14 @@ export const create = mutation({
 export interface HazardView extends Doc<'hazards'> {
   freshness: ReturnType<typeof deriveHazardFreshness>;
   provisional: boolean;
+  /**
+   * The reporter's display name, for the drawer's "reported by <name>" line. Only the single-hazard
+   * `get` resolves it (an extra profile read per hazard — not worth paying on the map's `listForBody`,
+   * which never shows a name), so it's absent on the list path and **withheld when the author is
+   * blocked** (a blocked author's name is suppressed the same way comments suppress it, D32). A block
+   * never hides the hazard itself, though — a safety observation stays on the map regardless (D3).
+   */
+  reporterName?: string;
 }
 
 function toView(hazard: Doc<'hazards'>, now: number): HazardView {
@@ -291,10 +311,21 @@ function isUserVisibleHazard(hazard: Doc<'hazards'> | null): hazard is Doc<'haza
 /** A single hazard for its detail drawer. `null` when missing, moderator-hidden, or promoted. */
 export const get = query({
   args: { hazardId: v.id('hazards') },
-  handler: async (ctx, { hazardId }) => {
+  handler: async (ctx, { hazardId }): Promise<HazardView | null> => {
     const hazard = await ctx.db.get(hazardId);
     if (!isUserVisibleHazard(hazard)) return null;
-    return toView(hazard, Date.now());
+    const view = toView(hazard, Date.now());
+
+    // Resolve "reported by <name>", withheld when the viewer and the author have blocked each other
+    // (D32) — the drawer just omits the line then, exactly as a blocked comment's author is withheld.
+    // The hazard stays fully visible either way; a block never pulls a safety observation off the map.
+    const viewer = await getCurrentProfile(ctx);
+    const blocked = await loadBlockedAuthorIds(ctx, viewer?._id ?? '');
+    if (!blocked.has(hazard.createdByUserId)) {
+      const author = await ctx.db.get(hazard.createdByUserId);
+      if (author) view.reporterName = author.displayName;
+    }
+    return view;
   },
 });
 

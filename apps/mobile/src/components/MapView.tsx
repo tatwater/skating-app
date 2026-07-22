@@ -28,6 +28,7 @@ import {
   hazardsToFeatureCollection,
 } from '../lib/hazardMap';
 import { ensureForegroundPermission } from '../lib/location';
+import { ensureOfflineBasemap, resolveBasemapSource } from '../lib/offlineBasemap';
 import {
   boundsToViewport,
   buildMapStyle,
@@ -119,9 +120,34 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // that ships a map destined to go blank. Instead we refuse to build a style (→ the blocking config
   // screen below), turning the misconfiguration into an immediate, obvious failure.
   const pmtilesUrl = env.pmtilesUrl || (__DEV__ ? DEMO_PMTILES_URL : '');
+
+  // Layer-3 offline-basemap spike, route (1) (Phase 9.5) — flag-gated, off by default. When on, download
+  // the regional archive once and render from the local `file://` copy so the map survives no signal.
+  // Falls back to the remote URL on any failure, so this can never blank the map.
+  const [localBasemapUri, setLocalBasemapUri] = useState<string | null>(null);
+  useEffect(() => {
+    if (!env.offlineBasemap || !pmtilesUrl) return;
+    let active = true;
+    void ensureOfflineBasemap(pmtilesUrl).then((uri) => {
+      if (active) setLocalBasemapUri(uri);
+    });
+    return () => {
+      active = false;
+    };
+  }, [pmtilesUrl]);
+
+  const basemapSource = useMemo(
+    () =>
+      resolveBasemapSource({
+        remoteUrl: pmtilesUrl,
+        localUri: localBasemapUri,
+        localReady: localBasemapUri !== null,
+      }),
+    [pmtilesUrl, localBasemapUri],
+  );
   const mapStyle = useMemo(
-    () => (pmtilesUrl ? buildMapStyle(pmtilesUrl, flavor) : null),
-    [pmtilesUrl, flavor],
+    () => (basemapSource ? buildMapStyle(basemapSource, flavor) : null),
+    [basemapSource, flavor],
   );
 
   // Viewport bbox + zoom are the query key; seeded to the region so data shows before the first

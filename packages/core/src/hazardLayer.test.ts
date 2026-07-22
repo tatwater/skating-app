@@ -53,6 +53,34 @@ describe('hazardsToFeatureCollection', () => {
     expect(fc.features[0]?.properties?.passage).toBe(true);
   });
 
+  // The body-clip drives the same shape into render that the distance math measures — otherwise the
+  // drawn halo and the warned-about footprint would drift (Phase 9.5).
+  it('draws the stored clipped footprint instead of re-buffering the raw shape', () => {
+    const clipped = {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [-73.21, 44.47],
+          [-73.205, 44.47],
+          [-73.205, 44.475],
+          [-73.21, 44.475],
+          [-73.21, 44.47],
+        ],
+      ],
+    };
+    const fc = hazardsToFeatureCollection([hazard({ clippedFootprint: clipped })]);
+    expect(fc.features[0]?.geometry).toEqual(clipped);
+  });
+
+  it('falls back to the buffered footprint when a stored clip is non-areal (defensive)', () => {
+    const fc = hazardsToFeatureCollection([
+      // Only Polygon/MultiPolygon are ever stored; a stray type must not reach the renderer.
+      hazard({ clippedFootprint: { type: 'Point', coordinates: [-73.21, 44.47] } }),
+    ]);
+    const geometry = fc.features[0]?.geometry;
+    expect(geometry?.type === 'Polygon' || geometry?.type === 'MultiPolygon').toBe(true);
+  });
+
   it('buffers a line hazard by its uncertainty half-width', () => {
     const fc = hazardsToFeatureCollection([
       hazard({

@@ -93,6 +93,27 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
 }
 
 /**
+ * The point `distanceMeters` away from `origin` along `bearingDeg` (degrees clockwise from north) —
+ * the **inverse** of the equirectangular projection `toLocalMetres` uses, so a point projected out and
+ * measured back with `haversineMeters` round-trips to sub-1% at the sub-km scale this serves. Feeds the
+ * Phase 9.5 on-ice directional projection (walk the skater's course forward, test each step against a
+ * hazard footprint); dependency-free, matching the rest of this file's flat-earth-around-the-point math.
+ */
+export function destinationPoint(
+  origin: LatLng,
+  bearingDeg: number,
+  distanceMeters: number,
+): LatLng {
+  const bearing = bearingDeg * DEG;
+  const east = distanceMeters * Math.sin(bearing);
+  const north = distanceMeters * Math.cos(bearing);
+  return {
+    lat: origin.lat + north / (EARTH_RADIUS_M * DEG),
+    lng: origin.lng + east / (EARTH_RADIUS_M * Math.cos(origin.lat * DEG) * DEG),
+  };
+}
+
+/**
  * Project a GeoJSON `[lng, lat]` position into local metres relative to `origin`
  * (equirectangular / flat-earth around the origin). Exact enough at lake / parking-lot
  * scale — sub-1% distance error out to several km, far tighter than the ~300 m buffer this

@@ -17,17 +17,20 @@ import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { randomUUID } from 'expo-crypto';
 import * as Location from 'expo-location';
-import { useEffect, useState } from 'react';
-import { Image } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Image, View } from 'react-native';
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { saveHazardItem } from '../lib/draftStore';
+import { useDrawerScroll } from './DrawerScrollContext';
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
 import { useMapSelection } from './MapSelectionContext';
 import { FlagControl } from './SafetyControls';
 
 /**
  * The hazard drawer (Phase 9) — reached by tapping a pin, from an on-ice banner, or via the
- * `skating://hazard/<id>` deep link.
+ * `skating://hazard/<id>` deep link. `action=confirm` (the on-ice notification tap, D54 Layer 2)
+ * scrolls the confirm control into view so the drawer opens pre-focused on it — but never expands the
+ * destructive "fully healed" step, which stays gated behind its own second tap even then (D3).
  *
  * Its job is the **three-tier confirmation**, and the asymmetry between the three is the whole
  * design. "Still here" and "Healing — still unsafe" both keep the pin up; only "Fully healed & safe"
@@ -52,11 +55,20 @@ function formatWhen(at: number): string {
   return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
-export function HazardDetail({ hazardId }: { hazardId: string }) {
+export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 'confirm' }) {
   const hazard = useQuery(api.hazards.get, { hazardId: hazardId as Id<'hazards'> });
   const photos = useQuery(api.photos.getHazardUrls, { hazardId: hazardId as Id<'hazards'> });
   const confirm = useMutation(api.hazardConfirmations.confirm);
   const { setHighlightWaterBodyId, setFocus } = useMapSelection();
+  const { scrollToY } = useDrawerScroll();
+
+  // For the `?action=confirm` deep link: scroll the confirm control into view once it lays out. The
+  // section sits below the fold in the drawer's scroll view; `onLayout` gives us its offset and the
+  // drawer does the scroll. The ref holds the hazard id we last scrolled for (not a bare boolean): a
+  // vote patches the hazard and re-lays-out the drawer, and we must not yank a reading skater back down
+  // each time — but a *different* hazard deep-linked into the already-open drawer (a second on-ice
+  // notification; `router.navigate` reuses the route without remounting) must scroll afresh.
+  const confirmScrolledForRef = useRef<string | null>(null);
 
   const [pendingHealed, setPendingHealed] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -185,6 +197,7 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
 
       <Paragraph color="$foregroundMuted" fontSize={13}>
         Reported {formatWhen(hazard.firstReportedAt)}
+        {hazard.reporterName ? ` by ${hazard.reporterName}` : ''}
         {hazard.confirmCount > 0
           ? ` · confirmed by ${hazard.confirmCount} other skater${hazard.confirmCount === 1 ? '' : 's'}`
           : ' · nobody else has confirmed it yet'}
@@ -236,63 +249,74 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
           Thanks — recorded as “{verdictLabel(done, hazard.type)}”.
         </Paragraph>
       ) : archived ? null : (
-        <Section label={passage ? 'Is it still crossable?' : 'Is it still there?'}>
-          <YStack gap="$2">
-            {VERDICTS.map((verdict) => {
-              const destructive = verdict === 'fully_healed';
-              // The destructive verdict is the only one that retires the pin for everyone, so it
-              // asks twice. The asymmetry is the point.
-              if (destructive && pendingHealed) {
+        <View
+          onLayout={(e) => {
+            if (action === 'confirm' && confirmScrolledForRef.current !== hazardId) {
+              confirmScrolledForRef.current = hazardId;
+              // `layout.y` is relative to the root stack, itself ~16 px (container padding) into the
+              // scroll content — so scrolling to `y` lands the section just below the top edge.
+              scrollToY(Math.max(0, e.nativeEvent.layout.y));
+            }
+          }}
+        >
+          <Section label={passage ? 'Is it still crossable?' : 'Is it still there?'}>
+            <YStack gap="$2">
+              {VERDICTS.map((verdict) => {
+                const destructive = verdict === 'fully_healed';
+                // The destructive verdict is the only one that retires the pin for everyone, so it
+                // asks twice. The asymmetry is the point.
+                if (destructive && pendingHealed) {
+                  return (
+                    <YStack
+                      key={verdict}
+                      gap="$2"
+                      borderWidth={1}
+                      borderColor="$border"
+                      borderRadius="$4"
+                      padding="$3"
+                    >
+                      <Text color="$foreground">
+                        This retires the pin for everyone once another skater agrees. Only if you
+                        can actually see it’s gone.
+                      </Text>
+                      <XStack gap="$2">
+                        <Button
+                          size="$4"
+                          flex={1}
+                          disabled={confirming}
+                          onPress={() => cast(verdict)}
+                        >
+                          {confirming ? 'Saving…' : 'Yes, I can see it’s gone'}
+                        </Button>
+                        <Button size="$4" chromeless onPress={() => setPendingHealed(false)}>
+                          Cancel
+                        </Button>
+                      </XStack>
+                    </YStack>
+                  );
+                }
                 return (
-                  <YStack
+                  <Button
                     key={verdict}
-                    gap="$2"
-                    borderWidth={1}
-                    borderColor="$border"
-                    borderRadius="$4"
-                    padding="$3"
+                    size="$5"
+                    chromeless={destructive}
+                    disabled={confirming}
+                    onPress={() => (destructive ? setPendingHealed(true) : cast(verdict))}
                   >
-                    <Text color="$foreground">
-                      This retires the pin for everyone once another skater agrees. Only if you can
-                      actually see it’s gone.
-                    </Text>
-                    <XStack gap="$2">
-                      <Button
-                        size="$4"
-                        flex={1}
-                        disabled={confirming}
-                        onPress={() => cast(verdict)}
-                      >
-                        {confirming ? 'Saving…' : 'Yes, I can see it’s gone'}
-                      </Button>
-                      <Button size="$4" chromeless onPress={() => setPendingHealed(false)}>
-                        Cancel
-                      </Button>
-                    </XStack>
-                  </YStack>
+                    <YStack>
+                      <Text color="$foreground" fontWeight={destructive ? '400' : '700'}>
+                        {verdictLabel(verdict, hazard.type)}
+                      </Text>
+                      <Text color="$foregroundMuted" fontSize={12}>
+                        {verdictHelp(verdict, hazard.type)}
+                      </Text>
+                    </YStack>
+                  </Button>
                 );
-              }
-              return (
-                <Button
-                  key={verdict}
-                  size="$5"
-                  chromeless={destructive}
-                  disabled={confirming}
-                  onPress={() => (destructive ? setPendingHealed(true) : cast(verdict))}
-                >
-                  <YStack>
-                    <Text color="$foreground" fontWeight={destructive ? '400' : '700'}>
-                      {verdictLabel(verdict, hazard.type)}
-                    </Text>
-                    <Text color="$foregroundMuted" fontSize={12}>
-                      {verdictHelp(verdict, hazard.type)}
-                    </Text>
-                  </YStack>
-                </Button>
-              );
-            })}
-          </YStack>
-        </Section>
+              })}
+            </YStack>
+          </Section>
+        </View>
       )}
 
       {error ? (

@@ -1,18 +1,25 @@
 import { api } from '@skating/convex/api';
 import { useQuery } from 'convex/react';
 import * as Location from 'expo-location';
+import * as Notifications from 'expo-notifications';
 import { Slot, usePathname, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef } from 'react';
 import { AppState, View } from 'react-native';
+import { BackToLakeButton } from '../../../src/components/BackToLakeButton';
 import { HazardBanner } from '../../../src/components/HazardBanner';
 import { HazardCapture } from '../../../src/components/HazardCapture';
 import { LakeSearch } from '../../../src/components/LakeSearch';
 import { DRAWER_NORMAL, DRAWER_PEEK, MapDrawer } from '../../../src/components/MapDrawer';
 import { MapSelectionProvider, useMapSelection } from '../../../src/components/MapSelectionContext';
 import MapView from '../../../src/components/MapView';
+import { OnIceModeControl } from '../../../src/components/OnIceModeControl';
 import { resolveCachedBody } from '../../../src/lib/bodyCache';
+import { noteDwell } from '../../../src/lib/dwellTracker';
 import { ensureForegroundPermission } from '../../../src/lib/location';
 import { resolveOnIceBody, shouldAutoSelectOnIce } from '../../../src/lib/onIce';
+// Imported for its side effects: registers the on-ice fix handler, the background-location TaskManager
+// task (D54 Layer 2), and the notification handler — all of which must run at module load.
+import { type HazardNotificationData, ingestOnIceFix } from '../../../src/lib/onIceMode';
 
 /**
  * Persistent-map layout (§F, D47) — the mobile mirror of web's `_map` layout. Keeps ONE `<MapView>`
@@ -96,7 +103,16 @@ function MapLayoutInner() {
     let starting = false;
 
     const publish = (pos: Location.LocationObject) => {
-      if (!cancelled) setOnIceCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      if (cancelled) return;
+      setOnIceCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      // Feed the shared on-ice session (D54). Proximity always; the directional "hazard ahead"
+      // projection only when on-ice mode is armed. Heading/speed are `-1` when the OS can't fill them
+      // (stationary / cold receiver), which the projection reads as "no honest forward path".
+      ingestOnIceFix({
+        coord: { lat: pos.coords.latitude, lng: pos.coords.longitude },
+        headingDeg: pos.coords.heading ?? -1,
+        speedMps: pos.coords.speed ?? -1,
+      });
     };
 
     const start = async () => {
@@ -175,6 +191,13 @@ function MapLayoutInner() {
       resolveCachedBody(onIceCoord)?.waterBodyId ?? null,
     );
     setOnIceWaterBodyId(resolved);
+    // Record the dwell (Phase 9.5) so the report form can later prefill the skate window from when the
+    // device was actually on this lake. On-device only (D12); best-effort while unarmed (foreground-only).
+    // INVARIANT: `resolved` is the *survivor* body id — `resolveBodyForCoord` returns only listed bodies
+    // and the offline cache stores the resolved `_id` — which is the exact id `WaterBodyDetail` hands the
+    // report form as the dwell lookup key (`getSuggestedSkateWindow`). Keep both keyed on the survivor id
+    // or the prefill silently no-ops.
+    noteDwell(resolved);
     if (
       shouldAutoSelectOnIce({
         resolvedBodyId: resolved,
@@ -188,6 +211,21 @@ function MapLayoutInner() {
     }
   }, [onIceCoord, onlineBody, setOnIceWaterBodyId, router, geolocateOnMount]);
 
+  // Tapping an on-ice notification (D54 Layer 2) lands on the hazard, pre-focused on the confirm
+  // control — the whole reason the deep-link route + scheme were built in v1. The notification the
+  // background task fired carries the hazard id and `action: 'confirm'`.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Partial<HazardNotificationData>;
+      if (!data?.hazardId) return;
+      router.navigate({
+        pathname: '/hazard/[id]',
+        params: { id: data.hazardId, action: data.action ?? 'confirm' },
+      });
+    });
+    return () => sub.remove();
+  }, [router]);
+
   return (
     <View style={{ flex: 1 }}>
       <MapView geolocateOnMount={geolocateOnMount} />
@@ -195,9 +233,11 @@ function MapLayoutInner() {
       <MapDrawer snapIndex={snapIndex} onCoveredFractionChange={setDrawerCoveredFraction}>
         <Slot />
       </MapDrawer>
-      {/* Both sit above the drawer: a warning you can't see because a sheet is over it isn't a
-          warning, and the flag button has to stay reachable while a drawer is open. */}
+      {/* All three sit above the drawer: a warning you can't see because a sheet is over it isn't a
+          warning, and the flag button + on-ice control have to stay reachable while a drawer is open. */}
       <HazardCapture />
+      <OnIceModeControl />
+      <BackToLakeButton />
       <HazardBanner />
     </View>
   );

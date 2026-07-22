@@ -36,6 +36,14 @@ export interface MappableHazard {
   geometry: GeoJSON.Geometry;
   radiusMeters?: number;
   bufferMeters?: number;
+  /**
+   * The footprint clipped to the water body, when create stored one (Phase 9.5). Drawn directly when
+   * present so the halo can't spill over land or a neighbouring lake — and it's the *same* polygon the
+   * proximity/directional distance measures against, so what's drawn and what's warned about stay one
+   * shape. Broad `GeoJSON.Geometry` like `geometry`: a row carrying an unexpected type is dropped in
+   * render, not a compile-time impossibility we cast away and crash on.
+   */
+  clippedFootprint?: GeoJSON.Geometry;
   freshness: HazardFreshness;
   provisional: boolean;
   healingState?: 'none' | 'healing_unsafe';
@@ -76,7 +84,9 @@ export function hazardsToFeatureCollection(
   return {
     type: 'FeatureCollection',
     features: hazards.flatMap((h) => {
-      const footprint = safeFootprint(h);
+      // A stored body-clip is drawn as-is (it's already a footprint polygon); otherwise buffer the raw
+      // shape. Either way the map draws exactly what the distance math measures against.
+      const footprint = clippedPolygon(h.clippedFootprint) ?? safeFootprint(h);
       if (!footprint) return [];
       return [
         {
@@ -187,6 +197,18 @@ function safeFootprint(shape: {
   } catch {
     return null;
   }
+}
+
+/**
+ * Narrow a stored clipped footprint to the areal geometry the layer can draw. Only Polygon/MultiPolygon
+ * are ever stored, but the field is broad, so a row carrying anything else is dropped to the unclipped
+ * path rather than fed to the renderer as a non-fillable geometry.
+ */
+function clippedPolygon(
+  clipped: GeoJSON.Geometry | undefined,
+): GeoJSON.Polygon | GeoJSON.MultiPolygon | null {
+  if (clipped && (clipped.type === 'Polygon' || clipped.type === 'MultiPolygon')) return clipped;
+  return null;
 }
 
 /**

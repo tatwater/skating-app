@@ -10,12 +10,21 @@
 > honoring "no live GPS server-side" (D12) and "never assert ice is safe" (D3). It completes what a
 > report/lake *looks like* before Phase 6 layers reputation on top (sequencing call, 2026-07-18).
 >
-> **Status:** ✅ **Code complete + reviewed (2026-07-21); tests green.** **Not yet deployed to the dev
-> Convex deployment, and the PR is not yet merged.** Decisions settled 2026-07-18 (**D51–D54**),
-> calibrated by the 2026-07-21 research pass, and six build-kickoff gaps resolved 2026-07-21 (see *Calls
-> made at build kickoff* below) — which amended **D51** and **D54** and added **D55**. Schema deltas are
-> in [`06-data-model.md`](./06-data-model.md). Prior phases are on dev; prod deferred. **The Layer-3
-> offline basemap tile-pack was dropped** during the build (native spike — findings recorded below).
+> **Status:** ✅ **Merged to `main` (PR #20, 2026-07-21), deployed to the dev Convex deployment, and
+> smoke-tested on the Android emulator.** Tests green. Live-skating features (the on-ice watcher, Layer-1
+> banners) are not yet exercised on a real device — that waits for a deeper QA pass after more phases
+> land. Decisions settled 2026-07-18 (**D51–D54**), calibrated by the 2026-07-21 research pass, and six
+> build-kickoff gaps resolved 2026-07-21 (see *Calls made at build kickoff* below) — which amended
+> **D51** and **D54** and added **D55**. Schema deltas are in [`06-data-model.md`](./06-data-model.md).
+> Prior phases are on dev; prod deferred. **The Layer-3 offline basemap tile-pack was dropped** during
+> the build (native spike — findings recorded below); it was **retried in Phase 9.5** via a `file://`
+> pmtiles path, built flag-off and awaiting one on-device confirmation.
+>
+> **Fast-follow — ✅ done.** The deferred **D54 Layer 2** on-ice live-alerting bundle (plus the smaller
+> deferred threads: `?action=confirm`, the reporter/author line, clip-footprint-to-body, and auto-suggest
+> skate times) shipped as its own build plan — **[`phase-9.5-on-ice-alerting.md`](./phase-9.5-on-ice-alerting.md)**,
+> ✅ **complete 2026-07-22** (branch `phase-9.5-on-ice-alerting`; pending PR + dev deploy). The deferred
+> items below are annotated inline with what 9.5 delivered; **silent-push stays deferred** even so.
 >
 > **Prerequisites already in place.** The F2 offline substrate hazards depend on is **built**: the
 > "Layer 2" body-reference cache (`apps/mobile/src/lib/offlineBody.ts` pure resolver +
@@ -388,14 +397,13 @@ de-emphasized and gets a confirmation step: it is the only destructive verdict (
 and the asymmetry is the point (D3 — a false all-clear is the worst outcome). Relabels to *Still
 crossable / Dicey now / Ridge closed* for `ridge_crossing`. Confirmations queue offline like drafts.
 
-### Deep link (built in v1, used by Layer 2)
+### Deep link (built in v1, used by Layer 2 — ✅ `?action=confirm` shipped in Phase 9.5)
 `skating://hazard/<id>` routes into the hazard drawer (`/hazard/[id]` on mobile, `/_map/hazard/$id` on
-web). Both the route and the URL scheme are built now precisely so Layer 2's notification tap has
-somewhere to land, at near-zero cost today — there is no notification to send one yet. **What is *not*
-built: the `?action=confirm` behaviour.** The plan described the link deep-focusing the three-tier confirm
-control; neither route reads an `action` param today, so the deep link opens the drawer but does not
-pre-focus confirm. Logged as the remaining piece — it's a small addition when Layer 2's notification
-actually carries the intent to confirm.
+web). Both the route and the URL scheme were built in v1 precisely so Layer 2's notification tap had
+somewhere to land, at near-zero cost then. The one v1 gap — the **`?action=confirm` behaviour** (deep-
+focusing the three-tier confirm control) — **shipped in Phase 9.5 (2026-07-22)**: both routes now read the
+`action` param and scroll/pre-focus the confirm control, while the destructive "fully healed" step stays
+gated behind its own second tap even when deep-linked (D3).
 
 ### Offline
 Hazards and confirmations queue through the existing F2 draft/flush substrate (`draftStore` gains a
@@ -518,13 +526,17 @@ evidence rather than re-deriving it:
 
 ## Out of scope / deferred (logged so it isn't lost)
 
-- **Layer 2 — the full on-ice alerting bundle. Near-term commitment, not open-ended** (founder:
-  *"I'm okay deferring so long as Layer 2 comes soon"*). Adds `expo-notifications` + local
-  notifications, opt-in session-scoped background location + keep-awake, and the directional
-  "hazard ahead" projection (30–60s out, per-approach dedup). Full spec in the **D54 amendment**.
-  v1 deliberately builds everything it needs from the client side (pure evaluator, `alerted` set,
-  cached hazards, deep link) so this is additive. **Server-push-to-a-sleeping phone** stays separate
-  and later — the only variant needing live location *uploaded*, hence the biggest privacy call.
+- ✅ **SHIPPED in Phase 9.5 (2026-07-22). Layer 2 — the full on-ice alerting bundle. Near-term
+  commitment, not open-ended** (founder: *"I'm okay deferring so long as Layer 2 comes soon"*). Adds
+  `expo-notifications` + local notifications, opt-in session-scoped background location, and the
+  directional "hazard ahead" projection (30–60s out). Full spec in the **D54 amendment**. v1 deliberately
+  built everything it needs from the client side (pure evaluator, `alerted` set, cached hazards, deep
+  link) so this was additive. **Shipped deltas from this sketch:** **NO keep-awake** (founder call
+  2026-07-21 — screen sleeps; rely on background location + local notifications), heading is
+  **course-over-ground not magnetometer**, and re-alert cadence became a **user setting** (once-per-
+  session default vs every-approach, the latter gated on an enter-then-leave `approached` model, not plain
+  distance-hysteresis). **Server-push-to-a-sleeping phone** stays separate and later — the only variant
+  needing live location *uploaded*, hence the biggest privacy call.
 - **Freeform polygon authoring** (call 5) — schema + render ship in v1; the vertex-dragging editor does
   not. Revisit if real usage shows people wanting shapes neither a circle nor a polyline can express.
 - **Per-body summary cards on the map at zoom** — deferred to the roadmap's "Later / deferred" with a
@@ -536,7 +548,10 @@ evidence rather than re-deriving it:
   promotion/demotion, `hazard` flag queue) — Phase 7 (D49-style); Phase 9 ships tuned constants + the
   admin *mutations*, Phase 7 adds the UI.
 - **Silent background sync to a closed app** (content-available push to refresh the cache) — **still
-  deferred, and it is much larger than its one-line entry suggests** (assessed 2026-07-21). It is not
+  deferred even after Phase 9.5.** Phase 9.5 shipped D54 Layer 2 with **local** notifications only (no
+  push token, no server); silent push remains its own future decision (the biggest privacy departure from
+  D12, and iOS throttles it — a shaky base for safety content), so the recommendation below stands. It is
+  not
   a Phase 9 loose end; it's the first user of a push stack this project has deliberately deferred
   twice. Concretely, the repo has **no push infrastructure at all**: `expo-notifications` isn't
   installed (build-kickoff call 4 explicitly kept new native deps out of v1), there are no device
@@ -551,9 +566,10 @@ evidence rather than re-deriving it:
   Nothing in Phase 9 depends on it: hazards for a lake sync reactively whenever the app is open, and
   the offline queue covers the capture direction.
 - ~~On-ice hazard photos~~ — ✅ **BUILT 2026-07-21** (see the commit below); no longer deferred.
-- **Layer-3 offline basemap tile-pack** — dropped from Phase 9 with findings recorded above; revisit
-  alongside the device-build pass.
-- **Clip a hazard footprint to the water body boundary (founder idea, 2026-07-21).** A large point+radius
+- **Layer-3 offline basemap tile-pack** — dropped from Phase 9 with findings recorded above; **retried in
+  Phase 9.5 (2026-07-22)** via route (1) (`file://` pmtiles, no crawlable server), built flag-off
+  (`EXPO_PUBLIC_OFFLINE_BASEMAP`) and awaiting its one on-device confirmation.
+- ✅ **SHIPPED in Phase 9.5 (2026-07-22). Clip a hazard footprint to the water body boundary (founder idea, 2026-07-21).** A large point+radius
   centred in a small bay currently renders as a circle that can spill across land onto a peninsula or a
   neighbouring lake. The ask: intersect the footprint with the body polygon so a hazard can never imply
   danger on water it isn't on. **Deferred deliberately, not dismissed** — it's a genuine safety-*visual*
@@ -565,7 +581,7 @@ evidence rather than re-deriving it:
   layer already makes. It's a schema + core + both-render-paths + cache change on the safety-critical path,
   so it wants its own focused commit and device verification rather than riding in the review-remediation
   PR. The `HAZARD_MAX_SIZE_M` ceiling shipped now is the crude backstop against the absurd case until then.
-- **Auto-suggest skate start/end times from the on-ice watcher (founder idea, 2026-07-21).** The single
+- ✅ **SHIPPED in Phase 9.5 (2026-07-22). Auto-suggest skate start/end times from the on-ice watcher (founder idea, 2026-07-21).** The single
   GPS watcher now knows when a device entered and left a lake's footprint; that dwell interval is a strong
   prior for the report form's skate window, which today is manual entry. Natural fit, but it needs a small
   amount of session bookkeeping (enter/leave timestamps, debounced against brief GPS excursions) and a

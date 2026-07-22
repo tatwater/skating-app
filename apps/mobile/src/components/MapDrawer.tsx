@@ -1,7 +1,8 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { useRouter } from 'expo-router';
-import { type ReactNode, useEffect, useMemo, useRef } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTheme } from 'tamagui';
+import { DrawerScrollContext } from './DrawerScrollContext';
 
 /** Snap points: a low peek (map tappable above it, for put-in-pin drop), normal, and expanded. */
 export const DRAWER_SNAP_POINTS = ['16%', '58%', '94%'] as const;
@@ -37,6 +38,7 @@ export function MapDrawer({
   children: ReactNode;
 }) {
   const ref = useRef<BottomSheet>(null);
+  const scrollRef = useRef<React.ComponentRef<typeof BottomSheetScrollView>>(null);
   const router = useRouter();
   const theme = useTheme();
   const snapPoints = useMemo(() => [...DRAWER_SNAP_POINTS], []);
@@ -45,6 +47,13 @@ export function MapDrawer({
     if (snapIndex < 0) ref.current?.close();
     else ref.current?.snapToIndex(snapIndex);
   }, [snapIndex]);
+
+  // Exposed to drawer content (e.g. a deep-linked `?action=confirm` hazard) so it can pull a
+  // below-the-fold control into view. Stable identity so consumers can depend on it in an effect.
+  const scrollToY = useCallback((y: number) => {
+    scrollRef.current?.scrollTo({ y, animated: true });
+  }, []);
+  const scrollApi = useMemo(() => ({ scrollToY }), [scrollToY]);
 
   return (
     <BottomSheet
@@ -60,8 +69,8 @@ export function MapDrawer({
       backgroundStyle={{ backgroundColor: theme.surface?.val }}
       handleIndicatorStyle={{ backgroundColor: theme.foregroundMuted?.val }}
     >
-      <BottomSheetScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
-        {children}
+      <BottomSheetScrollView ref={scrollRef} contentContainerStyle={{ padding: 16, gap: 12 }}>
+        <DrawerScrollContext.Provider value={scrollApi}>{children}</DrawerScrollContext.Provider>
       </BottomSheetScrollView>
     </BottomSheet>
   );

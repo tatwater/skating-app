@@ -39,6 +39,7 @@ import { Platform } from 'react-native';
 import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos';
 import { saveDraft } from '../lib/draftStore';
+import { getSuggestedSkateWindow } from '../lib/dwellTracker';
 import { isDraftFlushing } from '../lib/flushService';
 import { HazardBundlePrompt } from './HazardBundlePrompt';
 import { useMapSelectionOptional } from './MapSelectionContext';
@@ -217,14 +218,20 @@ type StartMode = 'none' | 'start' | 'duration';
 function StartWindowField({
   end,
   skateStartTime,
+  suggestedStart,
   onResolve,
 }: {
   end: number;
   skateStartTime?: number;
+  /**
+   * A dwell-derived start (Phase 9.5) to prefill from — when present, the field opens in "start time"
+   * mode already showing it, so the skater confirms or edits rather than entering it from scratch.
+   */
+  suggestedStart?: number;
   onResolve: (skateStartTime: number | undefined) => void;
 }) {
-  const [mode, setMode] = useState<StartMode>('none');
-  const [startMs, setStartMs] = useState<number | null>(null);
+  const [mode, setMode] = useState<StartMode>(suggestedStart !== undefined ? 'start' : 'none');
+  const [startMs, setStartMs] = useState<number | null>(suggestedStart ?? null);
   const [durationStr, setDurationStr] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState<'date' | 'time' | null>(null);
@@ -392,16 +399,36 @@ export function ReportForm({
   const [submitting, setSubmitting] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Phase 9.5: the dwell-derived start prefilled into the start-window field, and whether *any* skate
+  // time was suggested (drives the "from your time on the ice" caption). Only set for a fresh online form.
+  const [suggestedStart, setSuggestedStart] = useState<number | undefined>(undefined);
+  const [prefilledFromDwell, setPrefilledFromDwell] = useState(false);
 
   // Minors are read-only — all reports are public (D13), so under-18 users can't post (D41).
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false;
 
-  // Initialize a fresh form once the profile is known (a hydrated draft already set it above).
+  // Initialize a fresh form once the profile is known (a hydrated draft already set it above). For an
+  // online report on a resolved lake, prefill the skate window from today's dwell on that lake (Phase
+  // 9.5) — earliest-in as the start, latest-out as the end. Editable, never authoritative.
   useEffect(() => {
     if (profile !== undefined && !minor && form === null) {
-      setForm(emptyReportForm(Date.now()));
+      const base = emptyReportForm(Date.now());
+      // `waterBodyId` here is `WaterBodyDetail`'s resolved survivor `_id` — the same id the on-ice watcher
+      // keys dwells on (`noteDwell`), so the lookup matches. If a caller ever passes an unresolved/merged
+      // id, the suggestion just falls back to `{}` (no prefill) rather than misbehaving.
+      const suggestion = waterBodyId ? getSuggestedSkateWindow(waterBodyId) : {};
+      if (suggestion.end !== undefined) base.skateEndTime = suggestion.end;
+      // Offer a start only when the dwell is a real span (strictly before the end) — a single-fix dwell
+      // has no honest duration to suggest.
+      const hasStart =
+        suggestion.start !== undefined &&
+        suggestion.end !== undefined &&
+        suggestion.start < suggestion.end;
+      if (hasStart) setSuggestedStart(suggestion.start);
+      if (suggestion.end !== undefined) setPrefilledFromDwell(true);
+      setForm(base);
     }
-  }, [profile, form, minor]);
+  }, [profile, form, minor, waterBodyId]);
 
   // Reclaim whatever a draft has already uploaded so nothing is stranded server-side: a created row
   // (deletes the row + both blobs) or, for a partial/interrupted upload, the bare blobs that never
@@ -699,9 +726,18 @@ export function ReportForm({
         onChange={(skateEndTime) => patch({ skateEndTime })}
       />
 
+      {prefilledFromDwell ? (
+        <Text color="$foregroundMuted" fontSize={12}>
+          {suggestedStart !== undefined
+            ? "Filled in from your time on the ice here today — edit if it's off."
+            : "End time filled from your time on the ice here today — edit if it's off."}
+        </Text>
+      ) : null}
+
       <StartWindowField
         end={form.skateEndTime}
         skateStartTime={form.skateStartTime}
+        suggestedStart={suggestedStart}
         onResolve={(skateStartTime) => patch({ skateStartTime })}
       />
 
