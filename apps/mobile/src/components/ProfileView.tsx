@@ -5,7 +5,8 @@ import { Avatar } from './Avatar';
 import { Badge } from './detailUi';
 import { TrustAvatar, TrustClassChip } from './TrustDisplay';
 
-// Re-exported so existing importers (`CommentThread`) keep working after Avatar moved to its own module.
+// Re-exported so the existing importer (`app/(tabs)/you.tsx`) keeps working after Avatar moved to its
+// own module.
 export { Avatar };
 
 /** Plain profile data for the presentational view (mirrors web's `ProfileViewData`). */
@@ -46,8 +47,9 @@ function Stat({ value, label }: { value: number; label: string }) {
  * Presentational profile view (D13), the mobile mirror of web's `ProfileView`. Private (to others) =
  * name + avatar only; public (or your own) = full card with bio, town, badges (D50), #reports/#comments
  * and, when earned, bounty points, plus a trust-class chip beside the name + a ring on the avatar. The
- * raw trust *number* is admin-only on web; mobile has no moderator/admin surface here, so it's omitted
- * (see the route note). `actions` + `reportHistory` are slots so the container owns the live wiring.
+ * raw trust *number* is admin-only (D50): the route passes `adminReputationPoints` solely for a
+ * moderator/admin viewer, and it renders below the handle only then — never for an ordinary viewer.
+ * `actions` + `reportHistory` are slots so the container owns the live wiring.
  */
 export function ProfileView({
   data,

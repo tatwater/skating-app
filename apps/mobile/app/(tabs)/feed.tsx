@@ -82,13 +82,22 @@ export default function NewsfeedScreen() {
           })),
         ]
       : [];
+  // Subtract the recommended reports from the main feed — a permissive-filter viewer must not see the
+  // same report both in the "Recommended" strip and in a recency section below.
+  const recommendedIds = new Set(
+    recommended?.flatMap((rec) => rec.cards.map((c) => c.reportId)) ?? [],
+  );
 
   // Interleave recency scroll-divider headers (Phase 4, decision #5) into the flat list — one header
   // row per section ("Today / Yesterday / …"), then that section's cards, so infinite scroll +
   // pull-to-refresh keep working over a single `FlatList`. The recommended bundles lead the list.
   const listItems: FeedListItem[] = [
     ...recommendedItems,
-    ...groupFeedSections(feedData, (d) => d.skateEndTime, now).flatMap((section) => [
+    ...groupFeedSections(
+      feedData.filter((d) => !recommendedIds.has(d.reportId)),
+      (d) => d.skateEndTime,
+      now,
+    ).flatMap((section) => [
       { kind: 'header' as const, key: `header:${section.key}`, label: section.label },
       ...section.items.map((data) => ({ kind: 'card' as const, data })),
     ]),

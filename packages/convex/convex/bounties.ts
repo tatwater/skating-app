@@ -214,6 +214,14 @@ export async function attachReportToOpenBounties(
  * fulfills once: no-op unless still `open`, the rater is the requester, and the report is in its
  * fulfilling set. (The rater can't be the report author — self-rating is already blocked upstream — so
  * nobody rewards themselves.)
+ *
+ * **Fulfillment is terminal — a later retracted thumb does NOT un-fulfill (deliberate).** If the requester
+ * later flips their vote to `unhelpful`, the `helpful_thumb` *reputation* boost reverses honestly (a
+ * compensating ledger row), but the bounty stays `fulfilled` and the author keeps their `bountyPoints`: a
+ * report that satisfied the request WAS provided, and clawing back an earned achievement currency on a
+ * requester's later whim is worse than a cosmetic status/vote mismatch (which is split across two surfaces
+ * anyway — the bounty hides its thumbs once fulfilled). Reversal would also need to record *which* report
+ * fulfilled the bounty; if we ever want it, add `fulfilledByReportId` and reverse only on that report.
  */
 export async function fulfillBountyOnHelpful(
   ctx: MutationCtx,
@@ -425,11 +433,14 @@ export const listOpen = query({
       });
     }
 
-    rows.sort((a, b) =>
-      sortCoord
-        ? haversineMeters(sortCoord, a.centroid) - haversineMeters(sortCoord, b.centroid)
-        : b.createdAt - a.createdAt,
-    );
+    if (sortCoord) {
+      // Precompute each row's distance once (n calls), not per comparison (≈ n·log n calls), then sort on
+      // the cached numbers — the comparator stays a pure subtraction.
+      const distance = new Map(rows.map((r) => [r._id, haversineMeters(sortCoord, r.centroid)]));
+      rows.sort((a, b) => (distance.get(a._id) ?? 0) - (distance.get(b._id) ?? 0));
+    } else {
+      rows.sort((a, b) => b.createdAt - a.createdAt);
+    }
     const cap =
       limit !== undefined && limit > 0 ? Math.min(limit, OPEN_BOUNTY_SCAN_CAP) : rows.length;
     return rows.slice(0, cap);

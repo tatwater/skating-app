@@ -580,7 +580,9 @@ describe('profiles.getPublicProfile (D13)', () => {
     if (!profile || profile.private) throw new Error('expected public profile');
     expect(profile.bio).toBe('ADK skater');
     expect(profile.homeTownLabel).toBe('Norwich, VT');
-    expect(profile.reputationPoints).toBe(0); // trust score renders 0 until Phase 6
+    // The raw trust number is admin-only (D50) — omitted from the payload for an ordinary/anonymous
+    // viewer so it never leaves the deployment; the class chip is the only public signal.
+    expect(profile.reputationPoints).toBeUndefined();
     expect(profile.reportCount).toBe(7); // the maintained counter, not the window length
     expect(profile.commentCount).toBe(3);
     expect(profile.reports).toHaveLength(1); // history still the visible window (1 visible report)
@@ -588,6 +590,20 @@ describe('profiles.getPublicProfile (D13)', () => {
     // No PII leaks in the payload.
     expect(JSON.stringify(profile)).not.toContain('dateOfBirth');
     expect(JSON.stringify(profile)).not.toContain('homeCoord');
+
+    // A moderator/admin viewer DOES receive the raw number (the admin-only surface, D50).
+    const modId = await t
+      .withIdentity({ subject: 'clerk_mod' })
+      .mutation(
+        api.profiles.upsertFromClerk,
+        withAck({ displayName: 'Mod', username: 'mod', dateOfBirth: ADULT_DOB }),
+      );
+    await t.run((ctx) => ctx.db.patch(modId, { role: 'moderator' }));
+    const modView = await t
+      .withIdentity({ subject: 'clerk_mod' })
+      .query(api.profiles.getPublicProfile, { username: 'ada' });
+    if (!modView || modView.private) throw new Error('expected public profile');
+    expect(modView.reputationPoints).toBe(0);
   });
 
   test('a private profile returns name + avatar only to others', async () => {

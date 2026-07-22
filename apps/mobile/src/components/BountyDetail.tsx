@@ -77,14 +77,18 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
           trustClass={detail.requester.trustClass}
           size={28}
         />
+        {/* A missing/deleted requester has no username — plain text, no navigation to a dead `/u/` route. */}
         <Text
           flex={1}
-          color="$primary"
-          onPress={() =>
-            router.navigate({
-              pathname: '/u/[username]',
-              params: { username: detail.requester.username },
-            })
+          color={detail.requester.username ? '$primary' : '$foreground'}
+          onPress={
+            detail.requester.username
+              ? () =>
+                  router.navigate({
+                    pathname: '/u/[username]',
+                    params: { username: detail.requester.username },
+                  })
+              : undefined
           }
         >
           {detail.requester.displayName}

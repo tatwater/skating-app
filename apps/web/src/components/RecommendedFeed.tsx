@@ -1,6 +1,11 @@
-import { api } from '@skating/convex/api';
-import { useQuery } from 'convex/react';
+import type { FeedCardData } from '@skating/core';
 import { FeedCard } from './FeedCard';
+
+/** One recommended bundle: a body plus its ≤2 exceptional reports (the `reports.recommended` shape). */
+export interface RecommendedBundle {
+  waterBodyId: string;
+  cards: FeedCardData[];
+}
 
 /**
  * The **recommended** filter-breaking strip (decisions 13–15) — 0–2 visually distinct cards of
@@ -8,16 +13,18 @@ import { FeedCard } from './FeedCard';
  * interleaved *near the top* of the feed. A separate `reports.recommended` query (not spliced into the
  * paginated `listFeed`, decision 13); renders nothing when there's nothing exceptional to surface, which
  * is the common case. Each card reuses `FeedCard` inside a highlighted wrapper so it reads as a feed item
- * but is clearly set apart.
+ * but is clearly set apart. The container owns the query so it can also subtract these reports from the
+ * main feed (dedup — a permissive-filter viewer must not see the same report twice).
  */
 export function RecommendedFeed({
+  recommended,
   now,
   onOpen,
 }: {
+  recommended: RecommendedBundle[] | undefined;
   now: number;
   onOpen: (reportId: string) => void;
 }) {
-  const recommended = useQuery(api.reports.recommended, {});
   if (!recommended || recommended.length === 0) return null;
 
   return (

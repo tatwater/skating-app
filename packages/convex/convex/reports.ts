@@ -332,13 +332,17 @@ async function runCorroboration(
 ): Promise<Set<Id<'profiles'>>> {
   const lower = report.skateEndTime - CORROBORATION_WINDOW_MS;
   const upper = report.skateEndTime + CORROBORATION_WINDOW_MS;
+  // Bound BOTH edges of the window in the index (`gte lower` … `lte upper`), not just the near edge.
+  // A late-submitted report has an `upper` in the past, so a `gte`-only scan would drag in every later
+  // report up to `now` only to reject them in JS; the `lte` keeps the scan to the actual ±window.
   const candidates = await ctx.db
     .query('reports')
     .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
       q
         .eq('waterBodyId', report.waterBodyId)
         .eq('moderationStatus', 'visible')
-        .gte('skateEndTime', lower),
+        .gte('skateEndTime', lower)
+        .lte('skateEndTime', upper),
     )
     .order('desc') // newest-in-window first — the reports most likely to share the freeze cycle
     .collect();
@@ -347,8 +351,7 @@ async function runCorroboration(
   let counted = 0;
   for (const prior of candidates) {
     if (counted >= CORROBORATION_MAX_PER_REPORT) break;
-    if (prior._id === report._id) continue; // the just-inserted report itself
-    if (prior.skateEndTime > upper) continue; // outside the far edge of the window
+    if (prior._id === report._id) continue; // the just-inserted report itself (both edges now in-index)
     if (prior.authorId === report.authorId) continue; // self-corroboration excluded
     if (!reportsAgree(report, prior)) continue;
 
@@ -645,6 +648,14 @@ export const recentCardsForBodies = query({
 });
 
 /**
+ * Hard ceiling on the recommended candidate scan. The 48h recency floor already bounds the window in the
+ * index; this caps the pathological busy-window case so the read stays well under Convex's per-query
+ * limits (the `listInViewport` read-cap lesson, PRs #10/#11). Newest-first `.take()`, so a truncation only
+ * ever drops the *oldest* in-window reports — the least likely to be the freshest exceptional ice.
+ */
+const RECOMMENDED_SCAN_CAP = 500;
+
+/**
  * The **recommended** filter-breaking feed (decisions 13–15) — a *separate* query the client interleaves
  * near the top of `listFeed`, never spliced into the paginated stream (decision 13). Returns 0–2 visually
  * distinct cards of *exceptional, corroborated* ice that a viewer's own distance/quality/thickness filters
@@ -673,13 +684,22 @@ export const recommended = query({
     const cutoff = now - RECOMMENDED_RECENCY_HOURS * 60 * 60 * 1000;
     const blocked = await loadBlockedAuthorIds(ctx, viewer._id);
 
-    // Recent visible reports, bounded by the recency floor in-index (the read never scans older history).
+    // Recent visible reports, **newest first** and hard-capped — the recency floor bounds the window in
+    // the index, but a busy 48h across every lake could still be large, so we `.take()` a ceiling rather
+    // than an unbounded `.collect()` (the same read-cap discipline as `bounties.listOpen`; a qualifying
+    // report is rare, so the freshest slice never omits a real candidate at alpha). Truncation is logged.
     const recent = await ctx.db
       .query('reports')
       .withIndex('by_moderation_and_skate_end_time', (q) =>
         q.eq('moderationStatus', 'visible').gte('skateEndTime', cutoff),
       )
-      .collect();
+      .order('desc')
+      .take(RECOMMENDED_SCAN_CAP);
+    if (recent.length === RECOMMENDED_SCAN_CAP) {
+      console.warn(
+        `reports.recommended hit the ${RECOMMENDED_SCAN_CAP}-row scan cap; older in-window candidates may be omitted.`,
+      );
+    }
 
     const recentById = new Map<string, Doc<'reports'>>();
     const candidates: RecommendableReport[] = [];

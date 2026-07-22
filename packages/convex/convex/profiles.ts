@@ -400,7 +400,10 @@ type PublicProfile =
       private: false;
       homeTownLabel?: string;
       bio?: string;
-      reputationPoints: number; // trust score (D50) — the admin-visible raw number; UI shows the chip
+      // Trust score (D50) — the raw number. Present ONLY when the *viewer* is a moderator/admin; omitted
+      // from the wire for everyone else, so an ordinary viewer can't read it off the network response
+      // (the class chip is the public signal). Ordinary viewers get `undefined`.
+      reputationPoints?: number;
       bountyPoints: number; // separate bounty currency (decision 11); absent ⇒ 0
       badges: string[]; // earned BadgeType families in stable order (decision 6)
       reportCount: number;
@@ -412,7 +415,8 @@ type PublicProfile =
  * A viewable profile by username (D13). Resolves `by_username`; **bidirectional block hide** (viewer
  * blocked target OR target blocked viewer → treated as not-found); a `deleted` account is not shown.
  * A **public** profile (or the caller's own) returns the full payload — name, avatar, town, bio,
- * #reports/#comments, `reputationPoints` (0 until Phase 6), and visible report history. A **private**
+ * #reports/#comments, cosmetic `trustClass` + `badges`/`bountyPoints`, and visible report history. The
+ * raw `reputationPoints` number is included ONLY for a moderator/admin viewer (D50). A **private**
  * profile returns name + avatar only. Never leaks the home coordinate, DOB, or tokens.
  */
 export const getPublicProfile = query({
@@ -427,6 +431,10 @@ export const getPublicProfile = query({
     const viewer = await getCurrentProfile(ctx);
     const viewerId = viewer?._id ?? '';
     const isSelf = viewerId !== '' && viewerId === target._id;
+    // The raw trust number is admin-only (D50). Gate it server-side on the *viewer's* role so it never
+    // leaves the deployment for an ordinary viewer — the client-side chrome that hides it is only
+    // defense-in-depth. Own profile does not unlock it; a member never sees their own raw score.
+    const viewerIsMod = viewer?.role === 'moderator' || viewer?.role === 'admin';
     if (!isSelf && viewerId !== '') {
       const blocked = await loadBlockedAuthorIds(ctx, viewerId);
       if (blocked.has(target._id)) return null; // bidirectional hide → not found
@@ -474,7 +482,8 @@ export const getPublicProfile = query({
       private: false,
       ...(target.homeTownLabel !== undefined ? { homeTownLabel: target.homeTownLabel } : {}),
       ...(target.bio !== undefined ? { bio: target.bio } : {}),
-      reputationPoints: target.reputationPoints,
+      // Admin-only raw score (D50) — included solely for a moderator/admin viewer (see `viewerIsMod`).
+      ...(viewerIsMod ? { reputationPoints: target.reputationPoints } : {}),
       bountyPoints: target.bountyPoints ?? 0,
       badges: target.badges ?? [],
       reportCount,

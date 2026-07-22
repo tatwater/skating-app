@@ -42,6 +42,12 @@ function FeedPage() {
     { filters: filters.value },
     { initialNumItems: PAGE_SIZE },
   );
+  // Recommended filter-breakers (D50) — the container owns the query so it can both render the strip and
+  // subtract those reports from the main feed below (a permissive-filter viewer must not see one twice).
+  const recommended = useQuery(api.reports.recommended, {});
+  const recommendedIds = new Set(
+    recommended?.flatMap((rec) => rec.cards.map((c) => c.reportId)) ?? [],
+  );
   // One clock per render for the relative-time labels (feed re-renders reactively as reports stream).
   const now = Date.now();
 
@@ -72,7 +78,7 @@ function FeedPage() {
 
       {/* Recommended strip (D50) — breaks the viewer's filters, so it sits above the filtered feed
           and shows even when the main list is empty. Renders nothing when nothing qualifies. */}
-      <RecommendedFeed now={now} onOpen={openReport} />
+      <RecommendedFeed recommended={recommended} now={now} onOpen={openReport} />
 
       {status === 'LoadingFirstPage' ? (
         <div className="flex flex-col gap-3">
@@ -94,7 +100,11 @@ function FeedPage() {
       ) : (
         <div className="flex flex-col gap-3">
           {/* Recency scroll-divider headers (Phase 4, decision #5): "Today / Yesterday / …". */}
-          {groupFeedSections(results, (d) => d.skateEndTime, now).map((section) => (
+          {groupFeedSections(
+            results.filter((d) => !recommendedIds.has(d.reportId)),
+            (d) => d.skateEndTime,
+            now,
+          ).map((section) => (
             <div key={section.key} className="flex flex-col gap-3">
               <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
                 {section.label}

@@ -80,13 +80,18 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
             size={28}
           />
           <div className="flex-1 text-sm">
-            <Link
-              to="/u/$username"
-              params={{ username: detail.requester.username }}
-              className="text-foreground underline-offset-4 hover:underline"
-            >
-              {detail.requester.displayName}
-            </Link>
+            {/* A missing/deleted requester has no username — render plain text, not a dead `/u/` link. */}
+            {detail.requester.username ? (
+              <Link
+                to="/u/$username"
+                params={{ username: detail.requester.username }}
+                className="text-foreground underline-offset-4 hover:underline"
+              >
+                {detail.requester.displayName}
+              </Link>
+            ) : (
+              <span className="text-foreground">{detail.requester.displayName}</span>
+            )}
             <span className="text-foreground-muted"> wants fresh eyes here</span>
           </div>
           <Badge variant="secondary">{detail.rewardPoints} pts</Badge>

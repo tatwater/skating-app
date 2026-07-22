@@ -141,10 +141,16 @@ export async function computeBadgeStats(
   let measuredReports = 0;
   let bountiesFulfilled = 0;
   for (const e of events) {
-    if (e.reason === 'helpful_thumb') helpfulThumbsReceived++;
-    else if (e.reason === 'report_corroborated') reportsCorroborated++;
-    else if (e.reason === 'measured_thickness') measuredReports++;
-    else if (e.reason === 'bounty_fulfilled') bountiesFulfilled++;
+    // Count **net** events, not rows. A retracted helpful writes a *compensating* negative-delta
+    // `helpful_thumb` ledger row (see `ratings.rate`), so a given-then-retracted thumb must net to zero
+    // — counting rows would tally it as two and inflate the `Appreciated` badge (and the backfill,
+    // which shares this fn). The other reasons never carry a negative delta today, so `unit` is a no-op
+    // for them, but it keeps every family correct if reversals are added later.
+    const unit = e.delta < 0 ? -1 : 1;
+    if (e.reason === 'helpful_thumb') helpfulThumbsReceived += unit;
+    else if (e.reason === 'report_corroborated') reportsCorroborated += unit;
+    else if (e.reason === 'measured_thickness') measuredReports += unit;
+    else if (e.reason === 'bounty_fulfilled') bountiesFulfilled += unit;
   }
 
   // Author's reports: `trusted_reporter` (≥2 helpful thumbs) and `straight_shooter` (a helpful

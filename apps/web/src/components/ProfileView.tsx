@@ -6,7 +6,8 @@ import { Badge } from './ui/badge';
 import { Card, CardContent } from './ui/card';
 import { Separator } from './ui/separator';
 
-// Re-exported so existing importers (`CommentThread`) keep working after Avatar moved to its own module.
+// Re-exported so existing importers (`ProfileSearch`, `settings`) keep working after Avatar moved to
+// its own module.
 export { Avatar };
 
 /** Plain profile data for the presentational view — Convex-free so it's unit-testable (D40). */

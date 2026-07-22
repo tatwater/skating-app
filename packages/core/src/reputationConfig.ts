@@ -100,7 +100,13 @@ export const DEFAULT_BOUNTY_REWARD_POINTS = 10;
 /** Agreeing reports over a freeze cycle reinforce trust, so the agreement window is generous. */
 export const CORROBORATION_WINDOW_MS = 7 * DAY_MS;
 
-/** Cap on corroborators counted per report, so a popular lake can't inflate one reporter. */
+/**
+ * Cap on how many prior reports a **single** `create` may corroborate — bounding one submission's
+ * one-shot `report_corroborated` gain (≤ 3 × the weight) so a burst of reports on a lake can't hand a new
+ * reporter a windfall. This bounds the *submitter's* per-create fan-out only: a prior report still accrues
+ * one corroboration per later agreeing report over time (unbounded by design — that accumulation IS the
+ * corroboration signal the recommended feed reads via `pointEvents.by_ref`).
+ */
 export const CORROBORATION_MAX_PER_REPORT = 3;
 
 /** A hazard's `confirmCount` (peers, author excluded) must reach this for the author's `hazard_corroborated` boost. */

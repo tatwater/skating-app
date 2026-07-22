@@ -6,9 +6,12 @@
  * honest "don't skate" report the community found helpful, so "great ice!" isn't the only path to a
  * badge (D3).
  *
- * Thresholds live in `reputationConfig.ts`. The badge stored in `profiles.badges` is just the family
- * name (earned once, at the first tier); the *tier count* is derived from live stats for display, so
- * retuning `step` never orphans a stored badge.
+ * Thresholds live in `reputationConfig.ts`. The stored `profiles.badges` is just the family name and is
+ * always recomputed to exactly the currently-qualifying set: a family appears once its stat crosses the
+ * first tier, and is **removed** if that stat later falls back below it — e.g. a moderator hides a report
+ * or a helpful thumb is retracted (that's intended: a badge reflects *current* accurate/appreciated/safe
+ * standing, not a permanent trophy). The *tier count* is derived from live stats for display, so retuning
+ * `step` never orphans a stored badge.
  */
 
 import { BADGE_LABELS, BADGE_THRESHOLDS, BADGE_TYPES, type BadgeType } from './reputationConfig';
