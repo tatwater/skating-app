@@ -10,6 +10,7 @@ import { FeedCard } from '../../src/components/FeedCard';
 import { FeedFilterBar } from '../../src/components/FeedFilterBar';
 import { MapSelectionProvider } from '../../src/components/MapSelectionContext';
 import { ProfileSearch } from '../../src/components/ProfileSearch';
+import { RecommendedCard } from '../../src/components/RecommendedCard';
 import { ReportDetail } from '../../src/components/ReportDetail';
 import { reconcileFilters } from '../../src/lib/feedFilters';
 import { loadStoredFilters, saveStoredFilters } from '../../src/lib/feedFiltersStore';
@@ -18,10 +19,14 @@ import { cacheReports, loadCachedReports } from '../../src/lib/reportCache';
 /** Feed page size per `usePaginatedQuery` load. */
 const PAGE_SIZE = 20;
 
-/** A row in the interleaved feed list: a recency section header, or a report card (decision #5). */
+/**
+ * A row in the interleaved feed list: a recency section header, a report card (decision #5), or a
+ * `recommended` filter-breaking bundle interleaved near the top (D50 decisions 13–15).
+ */
 type FeedListItem =
   | { kind: 'header'; key: string; label: string }
-  | { kind: 'card'; data: FeedCardData };
+  | { kind: 'card'; data: FeedCardData }
+  | { kind: 'recommended'; key: string; cards: FeedCardData[] };
 
 /**
  * Newsfeed tab (Phase 5) — the mobile mirror of web's `/feed`. Reads `reports.listFeed` (global,
@@ -63,15 +68,31 @@ export default function NewsfeedScreen() {
     results.length === 0 && status === 'LoadingFirstPage' && cached.length > 0;
   const feedData = isOfflineFallback ? cached : results;
 
+  // Recommended filter-breaking bundles (D50) — a separate query interleaved near the top, never spliced
+  // into the paginated feed. Renders nothing (the common case) when nothing exceptional qualifies.
+  const recommended = useQuery(api.reports.recommended, {});
+  const recommendedItems: FeedListItem[] =
+    recommended && recommended.length > 0
+      ? [
+          { kind: 'header', key: 'header:recommended', label: 'Recommended' },
+          ...recommended.map((rec) => ({
+            kind: 'recommended' as const,
+            key: `rec:${rec.waterBodyId}`,
+            cards: rec.cards,
+          })),
+        ]
+      : [];
+
   // Interleave recency scroll-divider headers (Phase 4, decision #5) into the flat list — one header
   // row per section ("Today / Yesterday / …"), then that section's cards, so infinite scroll +
-  // pull-to-refresh keep working over a single `FlatList`.
-  const listItems: FeedListItem[] = groupFeedSections(feedData, (d) => d.skateEndTime, now).flatMap(
-    (section) => [
+  // pull-to-refresh keep working over a single `FlatList`. The recommended bundles lead the list.
+  const listItems: FeedListItem[] = [
+    ...recommendedItems,
+    ...groupFeedSections(feedData, (d) => d.skateEndTime, now).flatMap((section) => [
       { kind: 'header' as const, key: `header:${section.key}`, label: section.label },
       ...section.items.map((data) => ({ kind: 'card' as const, data })),
-    ],
-  );
+    ]),
+  ];
 
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const sheetRef = useRef<BottomSheet>(null);
@@ -92,7 +113,7 @@ export default function NewsfeedScreen() {
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
       <FlatList<FeedListItem>
         data={listItems}
-        keyExtractor={(item) => (item.kind === 'header' ? item.key : item.data.reportId)}
+        keyExtractor={(item) => (item.kind === 'card' ? item.data.reportId : item.key)}
         contentContainerStyle={{ padding: 16, gap: 12 }}
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -122,24 +143,30 @@ export default function NewsfeedScreen() {
             <FeedFilterBar filters={filters.value} onChange={filters.set} />
           </YStack>
         }
-        renderItem={({ item }) =>
-          item.kind === 'header' ? (
-            <Text
-              color="$foregroundMuted"
-              fontSize={11}
-              letterSpacing={1.5}
-              textTransform="uppercase"
-            >
-              {item.label}
-            </Text>
-          ) : (
+        renderItem={({ item }) => {
+          if (item.kind === 'header') {
+            return (
+              <Text
+                color="$foregroundMuted"
+                fontSize={11}
+                letterSpacing={1.5}
+                textTransform="uppercase"
+              >
+                {item.label}
+              </Text>
+            );
+          }
+          if (item.kind === 'recommended') {
+            return <RecommendedCard cards={item.cards} now={now} onOpen={setSelectedReportId} />;
+          }
+          return (
             <FeedCard
               data={item.data}
               now={now}
               onOpen={() => setSelectedReportId(item.data.reportId)}
             />
-          )
-        }
+          );
+        }}
         ListEmptyComponent={
           status === 'LoadingFirstPage' ? (
             <YStack padding="$4" alignItems="center">

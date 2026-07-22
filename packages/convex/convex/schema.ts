@@ -545,7 +545,11 @@ export default defineSchema({
     reason: literals(POINT_EVENT_REASONS),
     refId: v.optional(v.string()),
     createdAt: v.number(),
-  }).index('by_user', ['userId']),
+  })
+    .index('by_user', ['userId'])
+    // Count a report's corroborators for the recommended feed (Phase 6 Step 5): `report_corroborated`
+    // rows carry `refId = the corroborated report`, so a per-ref lookup tallies them without a scan.
+    .index('by_ref', ['refId']),
 
   // Place-based curation (Phase 4, decision #1) — the D13 stand-in for the removed people-follow
   // graph. A user favorites specific water bodies: those reports notify by default, boost + badge in

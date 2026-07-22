@@ -23,13 +23,18 @@ import {
   type LatLng,
   matchesFilters,
   PRECIP_TYPES,
+  RECOMMENDED_MIN_PHOTOS,
+  RECOMMENDED_RECENCY_HOURS,
+  type RecommendableReport,
   type ReportInput,
   reportsAgree,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
   sanitizeFeedFilters,
+  selectRecommended,
   THICKNESS_METHODS,
+  type TrustClass,
   validateReportInput,
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
@@ -636,6 +641,102 @@ export const recentCardsForBodies = query({
       }
     }
     return cards;
+  },
+});
+
+/**
+ * The **recommended** filter-breaking feed (decisions 13–15) — a *separate* query the client interleaves
+ * near the top of `listFeed`, never spliced into the paginated stream (decision 13). Returns 0–2 visually
+ * distinct cards of *exceptional, corroborated* ice that a viewer's own distance/quality/thickness filters
+ * would hide — gated on trust + corroboration, never a lone great report (D3), so we never amplify one
+ * unverified claim into a wasted trip.
+ *
+ * The pure bar + bundling/cap live in `@skating/core` (`selectRecommended`); this query only assembles the
+ * candidate bag and hydrates the winners. Cheap doc-level gates (recency floor, `great`, black ice, ≥
+ * `RECOMMENDED_MIN_PHOTOS` photos) filter first; only survivors pay for the author-trust lookup and the
+ * corroboration tally (`report_corroborated` rows on the `by_ref` index). Blocks + moderation are honored
+ * (never broken): non-visible reports are excluded in-index and a blocked author's report is dropped here.
+ *
+ * **Caps (decision 15):** stateless for Phase 6 — `selectRecommended` bundles the top reports per body and
+ * caps at `RECOMMENDED_MAX_BODIES_PER_DAY` unique bodies *per fetch*. A qualifying report is vanishingly
+ * rare (all gates at once), so a flood can't occur at alpha volume. The server-tracked cross-fetch/day
+ * dedup + hard per-day cap (a per-user impressions store + an ack mutation) is a logged fast-follow —
+ * built when the feature proves it fires often enough to need pacing.
+ */
+export const recommended = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await getCurrentProfile(ctx);
+    // A personalized filter-breaker — no viewer, no "outside *your* usual range". Signed-out feed is plain.
+    if (!viewer) return [];
+    const now = Date.now();
+    const cutoff = now - RECOMMENDED_RECENCY_HOURS * 60 * 60 * 1000;
+    const blocked = await loadBlockedAuthorIds(ctx, viewer._id);
+
+    // Recent visible reports, bounded by the recency floor in-index (the read never scans older history).
+    const recent = await ctx.db
+      .query('reports')
+      .withIndex('by_moderation_and_skate_end_time', (q) =>
+        q.eq('moderationStatus', 'visible').gte('skateEndTime', cutoff),
+      )
+      .collect();
+
+    const recentById = new Map<string, Doc<'reports'>>();
+    const candidates: RecommendableReport[] = [];
+    const authorTrust = new Map<string, TrustClass | null>();
+    for (const r of recent) {
+      recentById.set(r._id, r);
+      // Cheap mandatory gates first (each also re-checked by `isRecommendable`): never break blocks (D3),
+      // then the exact quality / ice / photo bar — so we only pay for trust + corroboration on survivors.
+      if (blocked.has(r.authorId)) continue;
+      if (r.skateQuality !== 'great') continue;
+      if (!r.iceTypes.includes('black_ice')) continue;
+      if (r.photoIds.length < RECOMMENDED_MIN_PHOTOS) continue;
+
+      let trust = authorTrust.get(r.authorId);
+      if (trust === undefined) {
+        const author = await ctx.db.get(r.authorId);
+        trust = author ? trustClassFor(author, now) : null;
+        authorTrust.set(r.authorId, trust);
+      }
+
+      // Corroborators for this report = `report_corroborated` ledger rows keyed to it (by_ref).
+      const refEvents = await ctx.db
+        .query('pointEvents')
+        .withIndex('by_ref', (q) => q.eq('refId', r._id))
+        .collect();
+      const corroborationCount = refEvents.filter((e) => e.reason === 'report_corroborated').length;
+
+      candidates.push({
+        reportId: r._id,
+        waterBodyId: r.waterBodyId,
+        skateEndTime: r.skateEndTime,
+        ...(r.skateQuality !== undefined ? { skateQuality: r.skateQuality } : {}),
+        iceTypes: r.iceTypes,
+        photoCount: r.photoIds.length,
+        corroborationCount,
+        authorTrust: trust,
+      });
+    }
+
+    // Pure selection: filter to the exceptional bar, bundle top reports per body, cap unique bodies.
+    const cards = selectRecommended(candidates, { now });
+
+    // Hydrate each winning report into a full `FeedCardData` so the client renders it like a feed card
+    // (author ring, chips, thumbnails) inside the distinct "Recommended" wrapper. Reuses `toFeedCard`.
+    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
+    const noFavorites = new Set<string>(); // recommended breaks filters; favorite boost is irrelevant here
+    const result: { waterBodyId: string; cards: FeedCardData[] }[] = [];
+    for (const card of cards) {
+      const cardData: FeedCardData[] = [];
+      for (const reportId of card.reportIds) {
+        const r = recentById.get(reportId);
+        if (r)
+          cardData.push(await toFeedCard(ctx, r, caches, { blocked, favorites: noFavorites }, now));
+      }
+      if (cardData.length > 0) result.push({ waterBodyId: card.waterBodyId, cards: cardData });
+    }
+    return result;
   },
 });
 

@@ -9,6 +9,7 @@ import { FeedFilterBar } from '../components/FeedFilterBar';
 import { MapSelectionProvider } from '../components/MapSelectionContext';
 import { Panel } from '../components/Panel';
 import { ProfileSearch } from '../components/ProfileSearch';
+import { RecommendedFeed } from '../components/RecommendedFeed';
 import { ReportDetail } from '../components/ReportDetail';
 import { Button } from '../components/ui/button';
 import { Sheet, SheetContent } from '../components/ui/sheet';
@@ -68,6 +69,10 @@ function FeedPage() {
       </Panel>
 
       <FeedFilterBar filters={filters.value} onChange={filters.set} />
+
+      {/* Recommended strip (D50) — breaks the viewer's filters, so it sits above the filtered feed
+          and shows even when the main list is empty. Renders nothing when nothing qualifies. */}
+      <RecommendedFeed now={now} onOpen={openReport} />
 
       {status === 'LoadingFirstPage' ? (
         <div className="flex flex-col gap-3">
