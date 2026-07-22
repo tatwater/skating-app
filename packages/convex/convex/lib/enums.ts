@@ -120,6 +120,9 @@ export const FLAG_REASONS = [
   'spam',
   'harassment',
   'inappropriate',
+  // Auto-routed to the mod queue when a target crosses the net-unhelpful threshold (D50, Phase 6).
+  // Written by `ratings.ts`; NEVER hides the target (visibility of safety content isn't score-gated, D3).
+  'auto_low_quality',
   'other',
 ] as const;
 export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed'] as const;
@@ -235,8 +238,10 @@ export const NOTIFICATION_QUEUE_KINDS = ['digest', 'favorite', 'great'] as const
 export const POINT_EVENT_REASONS = [
   'report_submitted',
   'photo_evidence',
+  'measured_thickness', // report carries ≥1 measured (not estimated) reading; once per report (D50)
   'helpful_thumb',
   'report_corroborated', // independent same-body report agreed within the window (D50)
   'hazard_confirmed',
+  'hazard_corroborated', // your hazard confirmed by ≥2 peers — author-side boost (D50, Phase 6)
   'bounty_fulfilled',
 ] as const;
