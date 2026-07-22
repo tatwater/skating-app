@@ -10,12 +10,17 @@
 > honoring "no live GPS server-side" (D12) and "never assert ice is safe" (D3). It completes what a
 > report/lake *looks like* before Phase 6 layers reputation on top (sequencing call, 2026-07-18).
 >
-> **Status:** ✅ **Code complete + reviewed (2026-07-21); tests green.** **Not yet deployed to the dev
-> Convex deployment, and the PR is not yet merged.** Decisions settled 2026-07-18 (**D51–D54**),
-> calibrated by the 2026-07-21 research pass, and six build-kickoff gaps resolved 2026-07-21 (see *Calls
-> made at build kickoff* below) — which amended **D51** and **D54** and added **D55**. Schema deltas are
-> in [`06-data-model.md`](./06-data-model.md). Prior phases are on dev; prod deferred. **The Layer-3
-> offline basemap tile-pack was dropped** during the build (native spike — findings recorded below).
+> **Status:** ✅ **Merged to `main` (PR #20, 2026-07-21), deployed to the dev Convex deployment, and
+> smoke-tested on the Android emulator.** Tests green. Live-skating features (the on-ice watcher, Layer-1
+> banners) are not yet exercised on a real device — that waits for a deeper QA pass after more phases
+> land. Decisions settled 2026-07-18 (**D51–D54**), calibrated by the 2026-07-21 research pass, and six
+> build-kickoff gaps resolved 2026-07-21 (see *Calls made at build kickoff* below) — which amended
+> **D51** and **D54** and added **D55**. Schema deltas are in [`06-data-model.md`](./06-data-model.md).
+> Prior phases are on dev; prod deferred. **The Layer-3 offline basemap tile-pack was dropped** during
+> the build (native spike — findings recorded below).
+>
+> **Fast-follow:** the deferred **D54 Layer 2** on-ice live-alerting bundle (plus several smaller
+> deferred threads) is scoped as its own build plan — **[`phase-9.5-on-ice-alerting.md`](./phase-9.5-on-ice-alerting.md)**.
 >
 > **Prerequisites already in place.** The F2 offline substrate hazards depend on is **built**: the
 > "Layer 2" body-reference cache (`apps/mobile/src/lib/offlineBody.ts` pure resolver +
