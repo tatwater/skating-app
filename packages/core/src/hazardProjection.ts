@@ -158,8 +158,9 @@ function firstContactMeters(
     try {
       // One malformed cached row must never take out the projection for every *other* hazard on the
       // lake — the same fail-loud defense `evaluateOnIceAlert` makes. A row whose distance can't be
-      // computed is skipped, not thrown.
-      d = distanceToHazard(at, hazard.shape);
+      // computed is skipped, not thrown. The body-clip (when stored) is what the path is tested against,
+      // in lockstep with Layer 1 and the render, so "ahead" never drifts from "drawn".
+      d = distanceToHazard(at, hazard.shape, hazard.clippedFootprint);
     } catch {
       return null;
     }

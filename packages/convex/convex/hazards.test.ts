@@ -190,6 +190,41 @@ describe('hazards.create', () => {
   });
 });
 
+describe('hazards clip-to-body (Phase 9.5)', () => {
+  // A hazard well inside the lake needs no clip — the footprint is already all water, so nothing is
+  // stored and reads fall back to the live footprint.
+  test('stores no clipped footprint for a hazard well inside the body', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+
+    const hazardId = await user.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(hazard?.clippedFootprint).toBeUndefined();
+  });
+
+  // A hazard dropped on the shoreline buffers into a circle that spills off the lake; the stored clip
+  // confines it, and the stored bbox is pulled back to the shore rather than bulging past it.
+  test('clips a shoreline hazard to the body and tightens its bbox', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t); // unit square, lng/lat 0..1
+
+    const hazardId = await user.as.mutation(
+      api.hazards.create,
+      // Right on the western edge (lng 0): the 40 m circle's western half falls outside the body.
+      createArgs(waterBodyId, { geometry: { type: 'Point', coordinates: [0, 0.5] } }),
+    );
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+
+    expect(hazard?.clippedFootprint).toBeDefined();
+    expect(['Polygon', 'MultiPolygon']).toContain(hazard?.clippedFootprint?.type);
+    // The clip drives the bbox: its western edge is the shoreline (lng 0), not the circle's raw bulge
+    // into the land west of it.
+    expect(hazard?.bbox.minLng).toBeGreaterThanOrEqual(-1e-6);
+  });
+});
+
 describe('hazards.create idempotency (offline flush)', () => {
   // A hazard is flagged standing next to it, which is exactly where there's no signal — so the
   // offline flush is the common path, and a lost ack must not drop a second pin metres from the

@@ -16,17 +16,20 @@
  */
 
 import {
+  clipFootprintToBody,
   deriveHazardFreshness,
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_DEFAULT_RADIUS_M,
   type HazardShape,
   hazardBbox,
+  hazardFootprint,
   initialLifecycleState,
   isMinor,
   isProvisional,
   isValidHazardShape,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
+import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
@@ -147,6 +150,13 @@ export async function insertHazard(
   const photoIds = args.photoIds ?? [];
   await assertOwnedPhotos(ctx, photoIds, authorId);
 
+  // Clip the footprint to the body once, at create (Phase 9.5). `clipFootprintToBody` returns null when
+  // the footprint is already inside the body or the clip can't be done safely, so the common case stores
+  // nothing and reads fall back to the live footprint. The bbox is derived from the *same* polygon that
+  // gets stored, so the prefilter box, the drawn halo and the measured distance are one shape.
+  const footprint = hazardFootprint(shape);
+  const clippedFootprint = clipFootprintToBody(footprint, body.polygon as Polygon | MultiPolygon);
+
   const lifecycle = initialLifecycleState(now);
   return ctx.db.insert('hazards', {
     waterBodyId: body._id, // the resolved survivor, not the (possibly merged) requested id
@@ -155,7 +165,8 @@ export async function insertHazard(
     geometry: shape.geometry as Doc<'hazards'>['geometry'],
     ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
     ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
-    bbox: hazardBbox(shape),
+    bbox: hazardBbox(shape, clippedFootprint),
+    ...(clippedFootprint ? { clippedFootprint } : {}),
     createdByUserId: authorId,
     ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
     ...(originReportId !== undefined ? { originReportId } : {}),

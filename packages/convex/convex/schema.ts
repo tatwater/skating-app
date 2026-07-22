@@ -348,6 +348,12 @@ export default defineSchema({
     // the proximity alert buffer. Type-aware default in @skating/core, user-adjustable.
     bufferMeters: v.optional(v.number()),
     bbox, // of the *footprint* (geometry grown by radius/buffer), for proximity prefiltering
+    // The footprint intersected with the water-body polygon, stored at create (Phase 9.5) so a big
+    // circle near shore can't imply danger across land / a neighbouring lake. Present ONLY when clipping
+    // actually removed area; render, the stored bbox, AND the proximity/directional distance all read it
+    // when set and fall back to the live footprint when absent — so it's migration-safe (existing rows
+    // keep working, and are lazily recomputable) and the drawn halo can never drift from the measured one.
+    clippedFootprint: v.optional(geoJson),
     createdByUserId: v.id('profiles'),
     // Mobile offline queue (Phase 9 offline / F2/D30): one client-generated key carried across every
     // flush retry, so a create whose ack was lost returns the same hazard instead of dropping a

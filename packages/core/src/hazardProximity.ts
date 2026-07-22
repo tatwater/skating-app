@@ -18,6 +18,7 @@
  * surface built on this module must say so — see `hazardCopy.ts`.
  */
 
+import type { MultiPolygon, Polygon } from 'geojson';
 import type { LatLng } from './geometry';
 import { distanceToHazard, type HazardShape } from './hazardGeometry';
 import { isProvisional } from './hazardLifecycle';
@@ -28,6 +29,12 @@ export interface ProximityHazard {
   id: string;
   type: HazardType;
   shape: HazardShape;
+  /**
+   * The footprint clipped to the water body, when create stored one (Phase 9.5). Measured against
+   * directly when present, so the distance the alert uses matches the halo the map draws — a big circle
+   * near shore can't warn about danger over land. Absent ⇒ fall back to the shape's live footprint.
+   */
+  clippedFootprint?: Polygon | MultiPolygon;
   confirmCount: number;
 }
 
@@ -89,7 +96,7 @@ export function evaluateOnIceAlert(
     // warn — which is the correct direction for safety content.
     let distanceMeters: number;
     try {
-      distanceMeters = distanceToHazard(coord, hazard.shape);
+      distanceMeters = distanceToHazard(coord, hazard.shape, hazard.clippedFootprint);
     } catch {
       continue;
     }
@@ -110,6 +117,10 @@ export function evaluateOnIceAlert(
  * Whether a skater is inside a hazard's footprint right now — the strongest possible signal, worth
  * distinguishing from "approaching" so the UI can escalate its tone.
  */
-export function isInsideHazard(coord: LatLng, shape: HazardShape): boolean {
-  return distanceToHazard(coord, shape) === 0;
+export function isInsideHazard(
+  coord: LatLng,
+  shape: HazardShape,
+  clippedFootprint?: Polygon | MultiPolygon,
+): boolean {
+  return distanceToHazard(coord, shape, clippedFootprint) === 0;
 }

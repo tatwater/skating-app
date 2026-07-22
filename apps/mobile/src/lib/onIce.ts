@@ -31,22 +31,42 @@ export interface HazardRow {
   geometry: unknown;
   radiusMeters?: number;
   bufferMeters?: number;
+  /** The body-clipped footprint (Phase 9.5), when the server stored one. Broad, narrowed on use. */
+  clippedFootprint?: unknown;
   confirmCount: number;
+}
+
+/** Narrow a stored clipped footprint to the areal geometry the distance math measures against. */
+function arealFootprint(value: unknown): ProximityHazard['clippedFootprint'] {
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    'type' in value &&
+    ((value as { type: unknown }).type === 'Polygon' ||
+      (value as { type: unknown }).type === 'MultiPolygon')
+  ) {
+    return value as ProximityHazard['clippedFootprint'];
+  }
+  return undefined;
 }
 
 /** Narrow the server rows to what the pure evaluator needs. */
 export function toProximityHazards(rows: readonly HazardRow[]): ProximityHazard[] {
-  return rows.map((r) => ({
-    id: r._id,
-    type: r.type,
-    confirmCount: r.confirmCount,
-    shape: {
-      geometryKind: r.geometryKind,
-      geometry: r.geometry as HazardShape['geometry'],
-      ...(r.radiusMeters !== undefined ? { radiusMeters: r.radiusMeters } : {}),
-      ...(r.bufferMeters !== undefined ? { bufferMeters: r.bufferMeters } : {}),
-    },
-  }));
+  return rows.map((r) => {
+    const clippedFootprint = arealFootprint(r.clippedFootprint);
+    return {
+      id: r._id,
+      type: r.type,
+      confirmCount: r.confirmCount,
+      shape: {
+        geometryKind: r.geometryKind,
+        geometry: r.geometry as HazardShape['geometry'],
+        ...(r.radiusMeters !== undefined ? { radiusMeters: r.radiusMeters } : {}),
+        ...(r.bufferMeters !== undefined ? { bufferMeters: r.bufferMeters } : {}),
+      },
+      ...(clippedFootprint ? { clippedFootprint } : {}),
+    };
+  });
 }
 
 /** Re-alert cadence (founder call, 2026-07-21) — how often the same hazard may alert you. */
@@ -155,7 +175,7 @@ export function advanceOnIceSession(
       if (!released.has(hazard.id)) continue;
       let distance: number;
       try {
-        distance = distanceToHazard(fix.coord, hazard.shape);
+        distance = distanceToHazard(fix.coord, hazard.shape, hazard.clippedFootprint);
       } catch {
         continue;
       }

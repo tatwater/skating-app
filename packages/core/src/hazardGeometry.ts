@@ -13,8 +13,11 @@
  * drawing a zero-width line that implies survey precision we don't have.
  */
 
+import area from '@turf/area';
 import buffer from '@turf/buffer';
-import { feature, point } from '@turf/helpers';
+import { feature, featureCollection, point } from '@turf/helpers';
+import intersect from '@turf/intersect';
+import truncate from '@turf/truncate';
 import type { Feature, LineString, MultiPolygon, Point, Polygon } from 'geojson';
 import {
   type BBox,
@@ -180,18 +183,76 @@ function footprintBufferMeters(shape: HazardShape): number {
   return shape.bufferMeters ?? 0;
 }
 
-/** The bbox of a hazard's *footprint* (not its raw geometry) — what gets stored for prefiltering. */
-export function hazardBbox(shape: HazardShape): BBox {
-  return polygonBBox(hazardFootprint(shape));
+/**
+ * The footprint of a hazard clipped to the water-body polygon it sits on — or `null` when clipping
+ * either does nothing (the footprint is already wholly inside the body) or can't be done safely.
+ *
+ * Why clip (Phase 9.5): a point+radius hazard dropped near shore buffers into a circle that spills
+ * across land or into a neighbouring lake, drawing a danger halo where there is no water to be in
+ * danger on. Intersecting the footprint with the body confines the halo to the ice.
+ *
+ * **Never clips to empty.** A hazard is GPS-anchored on its body, so a truly-empty intersection means
+ * bad *body* data (a coarse OSM outline that doesn't reach a real near-shore hazard), not a hazard off
+ * the ice — and making a real hazard vanish is the one direction we never fail (D3). A disjoint or
+ * failed clip returns `null`, and the caller keeps the honest unclipped footprint.
+ *
+ * Returns `null` too when nothing meaningful was removed, so the common "hazard well inside the lake"
+ * case stores no polygon and keeps `hazardFootprint` as its single source — the clip is stored only
+ * when it actually changes the shape.
+ */
+export function clipFootprintToBody(
+  footprint: Polygon | MultiPolygon,
+  body: Polygon | MultiPolygon,
+): Polygon | MultiPolygon | null {
+  try {
+    // Truncate first for the same reason `polygonIoU` does: sub-epsilon float noise makes the polygon
+    // clipper choke on near-coincident shoreline edges — exactly the near-shore case this exists for.
+    const fp = truncate(feature(footprint), { precision: 9 });
+    const clipped = intersect(featureCollection([fp, truncate(feature(body), { precision: 9 })]));
+    if (!clipped) return null;
+    const clippedArea = area(clipped);
+    if (clippedArea <= 0) return null;
+    // Well inside the body: the intersection is (essentially) the footprint itself. Storing a re-noded
+    // copy would only bloat the row and risk drift, so treat it as "no clip needed".
+    if (clippedArea >= area(fp) * (1 - CLIP_SIGNIFICANCE)) return null;
+    return clipped.geometry;
+  } catch {
+    // A clipper failure must fail *open* — keep the full footprint rather than risk hiding a hazard.
+    return null;
+  }
+}
+
+/** Fractional area a clip must remove to be worth storing (0.5%) — below this the footprint is "inside". */
+const CLIP_SIGNIFICANCE = 0.005;
+
+/**
+ * The bbox of a hazard's *footprint* (not its raw geometry) — what gets stored for prefiltering. When a
+ * body-clipped footprint is supplied it wins, so the stored bbox matches the halo that's actually drawn.
+ */
+export function hazardBbox(
+  shape: HazardShape,
+  clippedFootprint?: Polygon | MultiPolygon | null,
+): BBox {
+  return polygonBBox(clippedFootprint ?? hazardFootprint(shape));
 }
 
 /**
  * Distance in metres from a coordinate to the hazard's footprint edge; **0 when inside it**.
  *
- * Point+radius short-circuits to plain haversine minus the radius — exact, and it avoids buffering a
- * polygon on every GPS fix, which matters when this runs in a watcher loop on a cold phone.
+ * When a `clippedFootprint` is supplied (the body-clipped polygon stored at create) it is measured
+ * against directly — it *must* be, in lockstep with render and bbox, or "warned about" would drift from
+ * "drawn". A clip changes the shape, so the point+radius haversine shortcut no longer describes it and
+ * is skipped for clipped hazards.
+ *
+ * Unclipped, point+radius short-circuits to plain haversine minus the radius — exact, and it avoids
+ * buffering a polygon on every GPS fix, which matters when this runs in a watcher loop on a cold phone.
  */
-export function distanceToHazard(coord: LatLng, shape: HazardShape): number {
+export function distanceToHazard(
+  coord: LatLng,
+  shape: HazardShape,
+  clippedFootprint?: Polygon | MultiPolygon | null,
+): number {
+  if (clippedFootprint) return distanceToPolygonMeters(coord, clippedFootprint);
   if (shape.geometryKind === 'point_radius' && shape.geometry.type === 'Point') {
     const [lng = 0, lat = 0] = shape.geometry.coordinates;
     const centre = haversineMeters(coord, { lat, lng });
