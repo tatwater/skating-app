@@ -164,7 +164,20 @@ export const rate = mutation({
     }
 
     const existing = await findExistingRating(ctx, rater._id, targetType, targetId);
-    if (existing?.verdict === verdict) return existing._id; // no-op re-vote
+    if (existing?.verdict === verdict) {
+      // A no-op re-vote normally short-circuits. But the requester may have already thumbed this report
+      // helpful from the *feed* (where `ThumbControl` renders with no `bountyId`), then opened the bounty
+      // page and clicked the already-active helpful button (this time *with* `bountyId`) to fulfill. The
+      // verdict is unchanged — so we skip the points/badge/notify churn — but we must STILL run the
+      // fulfillment check, or the bounty is left permanently un-fulfillable through that report. Safe to
+      // call unconditionally: `fulfillBountyOnHelpful` is fully guarded (open + requester + attached) and
+      // idempotent, so a plain re-click on an already-fulfilled bounty is a no-op.
+      if (verdict === 'helpful' && bountyId !== undefined && targetType === 'report') {
+        const reportId = ctx.db.normalizeId('reports', targetId);
+        if (reportId) await fulfillBountyOnHelpful(ctx, { bountyId, reportId, raterId: rater._id });
+      }
+      return existing._id; // no-op re-vote (bounty fulfillment aside)
+    }
 
     const now = Date.now();
     let ratingId: Id<'reportRatings'>;

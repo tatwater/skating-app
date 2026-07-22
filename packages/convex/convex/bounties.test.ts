@@ -189,6 +189,47 @@ describe('bounties fulfillment', () => {
     expect(notes.some((n) => n.type === 'bounty_fulfilled')).toBe(true);
   });
 
+  test('a pre-existing helpful vote from the feed still fulfills when confirmed on the bounty page', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const reportId = await seedReport(author, waterBodyId);
+
+    // First: the requester thumbs the report helpful from the FEED — no `bountyId`, so it doesn't fulfill.
+    await requester.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+    });
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.status).toBe('open');
+
+    // Then: the requester opens the bounty page and clicks the already-active helpful button (WITH
+    // `bountyId`). The verdict is unchanged, but the bounty must still fulfill — not silently no-op.
+    await requester.as.mutation(api.ratings.rate, {
+      targetType: 'report',
+      targetId: reportId,
+      verdict: 'helpful',
+      bountyId,
+    });
+
+    const bounty = await t.run((ctx) => ctx.db.get(bountyId));
+    expect(bounty?.status).toBe('fulfilled');
+    expect((await t.run((ctx) => ctx.db.get(author.id)))?.bountyPoints).toBe(bounty?.rewardPoints);
+    // The helpful thumb was cast once (the re-vote is a no-op for points), so the author's boost isn't
+    // double-counted.
+    const helpfulEvents = await t.run((ctx) =>
+      ctx.db
+        .query('pointEvents')
+        .filter((q) =>
+          q.and(q.eq(q.field('userId'), author.id), q.eq(q.field('reason'), 'helpful_thumb')),
+        )
+        .collect(),
+    );
+    expect(helpfulEvents).toHaveLength(1);
+  });
+
   test('an unhelpful thumb from the requester leaves the bounty open', async () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');
