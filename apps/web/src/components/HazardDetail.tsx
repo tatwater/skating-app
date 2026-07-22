@@ -308,6 +308,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         healing: hazard.healingState === 'healing_unsafe',
         archived: hazard.status === 'archived',
         description: hazard.description,
+        reporterName: hazard.reporterName,
         firstReportedAt: hazard.firstReportedAt,
         lastConfirmedAt: hazard.lastConfirmedAt,
         confirmCount: hazard.confirmCount,

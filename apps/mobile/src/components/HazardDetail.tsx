@@ -195,6 +195,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
 
       <Paragraph color="$foregroundMuted" fontSize={13}>
         Reported {formatWhen(hazard.firstReportedAt)}
+        {hazard.reporterName ? ` by ${hazard.reporterName}` : ''}
         {hazard.confirmCount > 0
           ? ` · confirmed by ${hazard.confirmCount} other skater${hazard.confirmCount === 1 ? '' : 's'}`
           : ' · nobody else has confirmed it yet'}

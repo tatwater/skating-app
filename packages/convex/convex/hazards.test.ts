@@ -420,6 +420,51 @@ describe('hazard moderation (moderation.setModerationStatus)', () => {
   });
 });
 
+describe('hazards.get reporter line (Phase 9.5)', () => {
+  test("resolves the reporter's display name for the drawer's author line", async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const viewer = await seedUser(t, 'viewer');
+    const waterBodyId = await seedBody(t);
+    const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const view = await viewer.as.query(api.hazards.get, { hazardId });
+    expect(view?.reporterName).toBe('author');
+  });
+
+  test('withholds the reporter name when viewer and author have blocked each other, but keeps the hazard visible (D3/D32)', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const viewer = await seedUser(t, 'viewer');
+    const waterBodyId = await seedBody(t);
+    const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await t.run((ctx) =>
+      ctx.db.insert('blocks', {
+        blockerId: viewer.id,
+        blockedId: author.id,
+        createdAt: Date.now(),
+      }),
+    );
+
+    const view = await viewer.as.query(api.hazards.get, { hazardId });
+    // The name is suppressed the way a blocked comment's author is — but the safety observation itself
+    // is untouched: a block never pulls a hazard off the map.
+    expect(view).not.toBeNull();
+    expect(view?.reporterName).toBeUndefined();
+  });
+
+  test('does not attach a reporter name on the map list path', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const rows = await author.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.reporterName).toBeUndefined();
+  });
+});
+
 describe('hazards.listBundleCandidates (D55)', () => {
   test("offers the author's own unattached hazards inside the skate window", async () => {
     const t = harness();
