@@ -1,3 +1,4 @@
+import type { HazardDraft, HazardType } from '@skating/core'
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react'
 
 /**
@@ -35,6 +36,26 @@ interface MapSelectionValue {
   /** True while the report form has armed map-tap pin placement; the next map tap sets the pin. */
   pinDropMode: boolean
   setPinDropMode: (on: boolean) => void
+  /**
+   * The hazard being authored (Phase 9, D51) — a circle awaiting a centre, or a polyline collecting
+   * vertices. Held as the shared `@skating/core` draft rather than web-local state so the map can
+   * preview the *real* buffered footprint (the same math the server stores and the proximity
+   * evaluator measures), and so mobile's capture flow inherits the identical transitions.
+   */
+  hazardDraft: HazardDraft | null
+  setHazardDraft: (draft: HazardDraft | null) => void
+  /**
+   * What's being drawn. The map needs it to colour the preview honestly — a `ridge_crossing` draft
+   * must not render as a danger halo while you're marking a way *across*.
+   */
+  hazardDraftType: HazardType | null
+  setHazardDraftType: (type: HazardType | null) => void
+  /**
+   * True while the hazard form has armed map-click placement. A circle disarms on the click that
+   * sets its centre; a polyline **stays armed**, taking one vertex per click until Done.
+   */
+  hazardDropMode: boolean
+  setHazardDropMode: (on: boolean) => void
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null)
@@ -45,6 +66,9 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [photoPins, setPhotoPins] = useState<PhotoPin[]>([])
   const [putInPin, setPutInPin] = useState<{ lat: number; lng: number } | null>(null)
   const [pinDropMode, setPinDropMode] = useState(false)
+  const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null)
+  const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null)
+  const [hazardDropMode, setHazardDropMode] = useState(false)
 
   const value = useMemo(
     () => ({
@@ -58,8 +82,23 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setPutInPin,
       pinDropMode,
       setPinDropMode,
+      hazardDraft,
+      setHazardDraft,
+      hazardDraftType,
+      setHazardDraftType,
+      hazardDropMode,
+      setHazardDropMode,
     }),
-    [highlightWaterBodyId, focus, photoPins, putInPin, pinDropMode],
+    [
+      highlightWaterBodyId,
+      focus,
+      photoPins,
+      putInPin,
+      pinDropMode,
+      hazardDraft,
+      hazardDraftType,
+      hazardDropMode,
+    ],
   )
 
   return <MapSelectionContext.Provider value={value}>{children}</MapSelectionContext.Provider>

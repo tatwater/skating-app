@@ -48,6 +48,19 @@ function FeedPage() {
     navigate({ to: '/feed', search: { report: id }, resetScroll: false })
   const closeReport = () => navigate({ to: '/feed', search: {}, resetScroll: false })
 
+  // Load-more affordance, shared by both the populated and empty-results arms. When a filter is
+  // active, the first page(s) can be entirely filtered out while `status` is still `CanLoadMore`;
+  // without a button in the empty arm the user would be stranded on "no items" (`usePaginatedQuery`
+  // never advances on its own — it needs an explicit `loadMore()`).
+  const loadMoreFooter =
+    status === 'CanLoadMore' ? (
+      <Button variant="outline" onClick={() => loadMore(PAGE_SIZE)} className="self-center">
+        Load more
+      </Button>
+    ) : status === 'LoadingMore' ? (
+      <Skeleton className="h-28 w-full" />
+    ) : null
+
   return (
     <div className="flex flex-col gap-4">
       <Panel title="Find a skater">
@@ -63,12 +76,16 @@ function FeedPage() {
           <Skeleton className="h-28 w-full" />
         </div>
       ) : results.length === 0 ? (
-        <Panel title="Newsfeed">
-          <p>
-            No reports yet. When skaters post from the map, the freshest reads across every lake
-            show up here — newest first.
-          </p>
-        </Panel>
+        <div className="flex flex-col gap-3">
+          <Panel title="Newsfeed">
+            <p>
+              {loadMoreFooter !== null
+                ? 'No matching reports on this page. Load more to keep looking further back.'
+                : 'No reports yet. When skaters post from the map, the freshest reads across every lake show up here — newest first.'}
+            </p>
+          </Panel>
+          {loadMoreFooter}
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
           {/* Recency scroll-divider headers (Phase 4, decision #5): "Today / Yesterday / …". */}
@@ -87,12 +104,7 @@ function FeedPage() {
               ))}
             </div>
           ))}
-          {status === 'CanLoadMore' ? (
-            <Button variant="outline" onClick={() => loadMore(PAGE_SIZE)} className="self-center">
-              Load more
-            </Button>
-          ) : null}
-          {status === 'LoadingMore' ? <Skeleton className="h-28 w-full" /> : null}
+          {loadMoreFooter}
         </div>
       )}
 

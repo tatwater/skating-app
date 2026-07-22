@@ -60,15 +60,61 @@ export const MODERATION_STATUSES = ['visible', 'hidden', 'removed'] as const
 /** Where a comment came from (native app vs. forum/email ingestion, Q8). */
 export const COMMENT_SOURCES = ['native', 'imported'] as const
 
-/** Hazard entity lifecycle status (archived, never hard-deleted, D15). */
+/**
+ * Hazard **lifecycle** status (archived, never hard-deleted, D15).
+ *
+ * Deliberately a different axis from `MODERATION_STATUSES`, which hazards *also* carry (Phase 9).
+ * Archiving means the community voted a hazard healed; hiding means a moderator judged the pin bad.
+ * Collapsing them would make abuse indistinguishable from a safety verdict (D3).
+ */
 export const HAZARD_STATUSES = ['active', 'archived'] as const
 
-/** Waze-style hazard confirmation vote + its trigger (D12/D15). */
-export const HAZARD_CONFIRM_VERDICTS = ['still_there', 'gone'] as const
-export const HAZARD_CONFIRM_VIA = ['app_open_nearby', 'report_flow', 'strava_path'] as const
+/**
+ * The three-tier hazard confirmation vote (D52) + its trigger (D12/D15).
+ *
+ * Replaces the old binary `still_there | gone` (Phase 9): "gone" conflated *healed* with *safe*, but a
+ * refrozen lead is thin ice and a healed ridge is a line of refrozen blocks. Only `fully_healed` counts
+ * toward removal; `healing_unsafe` keeps the pin up so the next skater can read the healing ice.
+ */
+export const HAZARD_CONFIRM_VERDICTS = ['still_there', 'healing_unsafe', 'fully_healed'] as const
+/**
+ * What triggered a confirmation (D12). Kept distinct because the trigger is evidence about the
+ * confirmation's quality: `proximity_alert` means the skater was standing within alert range of the
+ * hazard when they answered, which is a much stronger observation than confirming from a list — and
+ * conflating the two would throw that signal away before we ever get to weigh it (D50).
+ */
+export const HAZARD_CONFIRM_VIA = [
+  'app_open_nearby',
+  'proximity_alert',
+  'report_flow',
+  'strava_path',
+] as const
 
-/** Abuse/safety flag targets, reasons, and lifecycle (D32/D37). */
-export const FLAG_TARGET_TYPES = ['report', 'comment', 'photo', 'user'] as const
+/** The authoring primitive a hazard was drawn with (D51). */
+export const HAZARD_GEOMETRY_KINDS = ['point_radius', 'line', 'polygon'] as const
+
+/** Latest "healing but unsafe" annotation on a hazard (D52). */
+export const HAZARD_HEALING_STATES = ['none', 'healing_unsafe'] as const
+
+/**
+ * Persistent, non-decaying known features of a water body (D53) — always shown, never re-marked,
+ * no confirmation loop. Moving water at springs/constrictions/bridges is weaker *every* season
+ * regardless of cold, and some ridges reform in the same place annually.
+ */
+export const BODY_FEATURE_TYPES = [
+  'spring_current',
+  'constriction',
+  'bridge_narrows',
+  'recurring_pressure_ridge',
+  'gas_hole',
+  'reef_hole',
+  'delta',
+  'shallow_bay_early_thaw',
+  'other',
+] as const
+
+/** Abuse/safety flag targets, reasons, and lifecycle (D32/D37). `hazard` added Phase 9 (D51). */
+export const FLAG_TARGET_TYPES = ['report', 'comment', 'photo', 'user', 'hazard'] as const
 export const FLAG_REASONS = [
   'unsafe_false_report',
   'spam',
@@ -95,6 +141,8 @@ export const MODERATION_ACTIONS = [
   'dismiss_flag',
   'grant_role',
   'revoke_role',
+  'promote_body_feature', // a recurring hazard graduated to a persistent body feature (D53, Phase 9)
+  'demote_body_feature', // reversible: flips `active` off, never hard-deletes (D53)
 ] as const
 export const MODERATION_TARGET_TYPES = [
   'report',
@@ -103,6 +151,8 @@ export const MODERATION_TARGET_TYPES = [
   'user',
   'waterbody',
   'contentFlag',
+  'hazard', // Phase 9 (D51): mods can hide a bad pin; admins promote/demote body features
+  'bodyFeature',
 ] as const
 
 /** In-app support inbox (D37). */

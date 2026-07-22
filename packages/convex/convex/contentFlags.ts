@@ -19,6 +19,7 @@ const TARGET_TABLE: Record<(typeof FLAG_TARGET_TYPES)[number], TableNames> = {
   comment: 'comments',
   photo: 'photos',
   user: 'profiles',
+  hazard: 'hazards', // Phase 9 (D51) — mods can hide a bad pin
 }
 
 /**

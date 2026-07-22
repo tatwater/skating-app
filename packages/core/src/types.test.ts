@@ -65,20 +65,27 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
     ])
   })
 
+  // Canonicalized 2026-07-21 (Phase 9): slash-pairs collapsed to one key each (`lead` → `open_water`,
+  // `buckling` → `ice_heave`, `inlet_outlet_current`/`spring` → `spring_current`) and the research
+  // taxonomy added. Ordered by decay tier. See plans/06-data-model.md + phase-9-hazard-research.md.
   it('hazard types match the confirmed list', () => {
     expect([...HAZARD_TYPES]).toEqual([
       'open_water',
-      'lead',
       'thin_ice',
-      'pressure_ridge',
-      'wet_crack',
       'overflow_slush',
-      'ice_heave',
-      'buckling',
+      'drain_hole',
+      'wind_hole',
+      'slush_hole',
+      'thawed_rotten',
+      'ridge_crossing',
+      'wet_crack',
       'drilled_hole',
-      'inlet_outlet_current',
-      'spring',
       'shell_area',
+      'pressure_ridge',
+      'ice_heave',
+      'spring_current',
+      'gas_hole',
+      'reef_hole',
     ])
   })
 

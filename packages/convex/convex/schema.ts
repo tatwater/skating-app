@@ -32,6 +32,7 @@ import {
   ACTIVITY_PROMPT_STATES,
   ACTIVITY_PROVIDERS,
   ADMIN_AREA_LEVELS,
+  BODY_FEATURE_TYPES,
   BOUNTY_STATUSES,
   COMMENT_SOURCES,
   DEDUP_STATUSES,
@@ -40,6 +41,8 @@ import {
   FLAG_TARGET_TYPES,
   HAZARD_CONFIRM_VERDICTS,
   HAZARD_CONFIRM_VIA,
+  HAZARD_GEOMETRY_KINDS,
+  HAZARD_HEALING_STATES,
   HAZARD_STATUSES,
   MODERATION_ACTIONS,
   MODERATION_STATUSES,
@@ -332,30 +335,91 @@ export default defineSchema({
 
   hazards: defineTable({
     waterBodyId: v.id('waterBodies'),
-    type: v.array(literals(HAZARD_TYPES)),
+    // EXACTLY ONE type (changed from an array in Phase 9): per-type decay (D52), geometry-per-type
+    // (D51) and the ridge_crossing verdict relabeling all need an unambiguous type. With an array,
+    // "what decay tier is this?" has no answer — ambiguity exactly where the safety math must be
+    // exact. Nuance goes in `description`, or in a second hazard.
+    type: literals(HAZARD_TYPES),
+    geometryKind: literals(HAZARD_GEOMETRY_KINDS), // the authoring primitive (D51)
     geometry: geoJson, // Point | LineString | Polygon (in-polygon draw, D4)
-    bbox, // for proximity queries
+    radiusMeters: v.optional(v.number()), // set when geometryKind == point_radius (D51)
+    // Set for line/polygon — the uncertainty half-width. A folded ridge (loose plates 1–15ft each
+    // side) buffers far wider than a hairline crack; drives the honest fuzzy render (D3) and sizes
+    // the proximity alert buffer. Type-aware default in @skating/core, user-adjustable.
+    bufferMeters: v.optional(v.number()),
+    bbox, // of the *footprint* (geometry grown by radius/buffer), for proximity prefiltering
     createdByUserId: v.id('profiles'),
-    originReportId: v.optional(v.id('reports')),
+    // Mobile offline queue (Phase 9 offline / F2/D30): one client-generated key carried across every
+    // flush retry, so a create whose ack was lost returns the same hazard instead of dropping a
+    // second pin on the same spot. Omitted by web/online callers.
+    idempotencyKey: v.optional(v.string()),
+    originReportId: v.optional(v.id('reports')), // set when drawn in-report or bundled later (D55)
     description: v.optional(v.string()),
-    status: literals(HAZARD_STATUSES), // archived (not deleted) so it can resurface
+    // Ice hazards are intensely visual and hard to describe ("folded ridges are hard to see" is a
+    // recurring cause of death), so photos are the highest-value aid for the next skater. Plural
+    // because a ridge or lead often needs two angles; reuses the report photo pipeline (D31/D42).
+    photoIds: v.array(v.id('photos')),
+    status: literals(HAZARD_STATUSES), // LIFECYCLE: archived (not deleted) so it can resurface
+    // MODERATION — a separate axis from `status` on purpose (Phase 9). Archiving means the community
+    // voted it healed; hiding means a moderator judged the pin bad. If a mod-hide looked like an
+    // archive, abuse would be indistinguishable from a safety verdict (D3).
+    moderationStatus: literals(MODERATION_STATUSES),
+    healingState: v.optional(literals(HAZARD_HEALING_STATES)), // latest "healing but unsafe" (D52)
+    // SUPERSESSION — a third axis, distinct from both `status` and `moderationStatus` (D53). Set when
+    // an admin promotes this hazard into a persistent `bodyFeatures` row: the feature now carries the
+    // warning, so the hazard stops rendering, but this must NOT be done by setting `status: archived`,
+    // which reads as "the community cleared it" (D3). Cleared on demote, so the hazard resurfaces.
+    promotedToFeatureId: v.optional(v.id('bodyFeatures')),
     firstReportedAt: v.number(),
-    lastConfirmedAt: v.number(), // drives the freshness decay (D15)
-    confirmCount: v.number(),
-    goneCount: v.number(),
+    lastConfirmedAt: v.number(), // drives the per-type freshness decay (D15/D52)
+    confirmCount: v.number(), // "still here" confirms; excludes the author's own (D54 confirm-gate)
+    goneCount: v.number(), // "fully healed & safe" verdicts ONLY — never "healing but unsafe" (D52)
     createdAt: v.number(),
   })
     .index('by_water_body_status', ['waterBodyId', 'status'])
-    .index('by_water_body', ['waterBodyId']),
+    .index('by_water_body', ['waterBodyId'])
+    // D55 auto-bundle: find an author's own unattached hazards on a body to offer into their report.
+    .index('by_author_and_water_body', ['createdByUserId', 'waterBodyId'])
+    .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
+  // NOTE: no geospatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
+  // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
+  // proximity evaluator runs against that same cached set. A third @convex-dev/geospatial instance
+  // would re-enter the read-cap fragility that took PRs #10/#11 to fix on `listInViewport`, for no v1
+  // benefit. Cross-viewport aggregation belongs to the deferred per-body summary cards.
 
   hazardConfirmations: defineTable({
     hazardId: v.id('hazards'),
     userId: v.id('profiles'),
-    verdict: literals(HAZARD_CONFIRM_VERDICTS),
+    verdict: literals(HAZARD_CONFIRM_VERDICTS), // three-tier (D52) — only fully_healed removes
     atCoord: v.optional(latLng),
     via: literals(HAZARD_CONFIRM_VIA), // trigger (D12)
     createdAt: v.number(),
-  }).index('by_hazard', ['hazardId']),
+  })
+    .index('by_hazard', ['hazardId'])
+    // One confirmation per user per hazard per window — re-confirming updates rather than stacking.
+    .index('by_hazard_and_user', ['hazardId', 'userId']),
+
+  // Known seasonal water-body hazards — persistent, NOT decayed, no confirmation loop (D53).
+  // Springs/current, constrictions and bridges/narrows are weaker every season regardless of cold, and
+  // some pressure ridges reform in the same place annually. Making users re-mark them is busywork and
+  // a false-negative risk: an un-re-marked spring looks "gone". Promotion/demotion are admin actions
+  // (Phase 7 surface); v1 ships schema + rendering + the mutations.
+  bodyFeatures: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    type: literals(BODY_FEATURE_TYPES),
+    geometryKind: literals(HAZARD_GEOMETRY_KINDS), // same authoring primitives as hazards (D51)
+    geometry: geoJson, // Point | LineString | Polygon
+    radiusMeters: v.optional(v.number()), // point_radius
+    // line/polygon uncertainty half-width — a promoted `recurring_pressure_ridge` is a LineString and
+    // must keep the ridge's real width, exactly like the hazard it came from (else it renders hairline).
+    bufferMeters: v.optional(v.number()),
+    bbox,
+    note: v.optional(v.string()),
+    addedByUserId: v.id('profiles'), // admin/moderator — promotion is an admin action (D37/D53)
+    promotedFromHazardId: v.optional(v.id('hazards')),
+    active: v.boolean(), // demotion flips this off (reversible, never hard-deleted)
+    createdAt: v.number(),
+  }).index('by_water_body_active', ['waterBodyId', 'active']),
 
   // No `follows` table (D13): the social graph was removed. Reports are all public — the only
   // relationship that narrows access is a block (below).

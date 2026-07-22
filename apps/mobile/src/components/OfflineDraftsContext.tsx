@@ -9,7 +9,12 @@
  */
 
 import NetInfo from '@react-native-community/netinfo'
-import { isFlushable, type ReportDraft } from '@skating/core'
+import {
+  type HazardQueueItem,
+  isFlushable,
+  isHazardItemFlushable,
+  type ReportDraft,
+} from '@skating/core'
 import {
   createContext,
   type ReactNode,
@@ -21,26 +26,43 @@ import {
 } from 'react'
 import { AppState } from 'react-native'
 import { deleteDraftPhotoFiles, draftPhotoUris } from '../lib/draftPhotos'
-import { deleteDraft, getDraft, listDrafts } from '../lib/draftStore'
+import {
+  deleteDraft,
+  deleteHazardItem,
+  getDraft,
+  getHazardItem,
+  listDrafts,
+  listHazardItems,
+} from '../lib/draftStore'
 import { flushDrafts, isDraftFlushing } from '../lib/flushService'
 
 interface OfflineDraftsValue {
   drafts: ReportDraft[]
+  /**
+   * Queued on-ice hazards + confirmations (Phase 9). Surfaced alongside report drafts so one that
+   * hits a permanent rejection on flush is *visible and dismissible* rather than parked in `error`
+   * forever, invisible, after the skater was told "it'll post when you're back in signal".
+   */
+  hazardItems: HazardQueueItem[]
   /** Count still awaiting send (excludes done + permanent-error) — the tab badge / D12 prompt. */
   pendingCount: number
   refresh: () => void
   flushNow: () => Promise<void>
   /** Delete a draft + its photo files. No-ops and returns `false` if the draft is mid-flush. */
   removeDraft: (id: string) => boolean
+  /** Delete a queued hazard/confirmation + any of its photo files. */
+  removeHazardItem: (id: string) => void
 }
 
 const OfflineDraftsContext = createContext<OfflineDraftsValue | null>(null)
 
 export function OfflineDraftsProvider({ children }: { children: ReactNode }) {
   const [drafts, setDrafts] = useState<ReportDraft[]>([])
+  const [hazardItems, setHazardItems] = useState<HazardQueueItem[]>([])
 
   const refresh = useCallback(() => {
     setDrafts(listDrafts())
+    setHazardItems(listHazardItems())
   }, [])
 
   const flushNow = useCallback(async () => {
@@ -64,6 +86,22 @@ export function OfflineDraftsProvider({ children }: { children: ReactNode }) {
     [refresh],
   )
 
+  const removeHazardItem = useCallback(
+    (id: string) => {
+      // Free the persisted full+thumb files a queued hazard holds before dropping the row — a
+      // confirmation carries none. There's no in-flight guard as report drafts have: a queued hazard
+      // is immutable once captured, and the flush re-reads each item fresh, so a manual dismiss here
+      // just makes the next flush skip it.
+      const item = getHazardItem(id)
+      if (item?.kind === 'hazard') {
+        deleteDraftPhotoFiles(item.photos.flatMap((p) => [p.fullUri, p.thumbUri]))
+      }
+      deleteHazardItem(id)
+      refresh()
+    },
+    [refresh],
+  )
+
   // Load once, then flush on reconnect + foreground. `isInternetReachable` is `null` while unknown —
   // treat non-false as reachable so we don't stall on the initial null.
   useEffect(() => {
@@ -83,12 +121,15 @@ export function OfflineDraftsProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       drafts,
-      pendingCount: drafts.filter(isFlushable).length,
+      hazardItems,
+      pendingCount:
+        drafts.filter(isFlushable).length + hazardItems.filter(isHazardItemFlushable).length,
       refresh,
       flushNow,
       removeDraft,
+      removeHazardItem,
     }),
-    [drafts, refresh, flushNow, removeDraft],
+    [drafts, hazardItems, refresh, flushNow, removeDraft, removeHazardItem],
   )
 
   return <OfflineDraftsContext.Provider value={value}>{children}</OfflineDraftsContext.Provider>

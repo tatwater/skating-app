@@ -795,3 +795,234 @@ garden downsides (D13) — it's public, earned, and one-directional. It also com
 existing model: `reportRatings` (D17) already exists, and corroboration is derivable from `reports`
 on the same body within a window (no new social edges). See **Phase 6** (`07-roadmap.md`) and the
 `reportRatings` / `pointEvents` notes in `06-data-model.md`.
+
+## D51 — Hazard authoring: geometry-per-type, dual paths, both platforms
+**Decided (2026-07-18; built in Phase 9).** The hazard-drawing UX is designed around the fact that
+most people **cannot** hand-draw an accurately shaped/sized blob on a phone map from what they see on
+the ice. So we never make freeform polygons the default — we **match the drawing primitive to each
+hazard's real-world shape**, which happens to also be what a human can produce accurately:
+- **Point + adjustable radius** (tap once, drag a circle) — the default for *blob* hazards:
+  `open_water`/`lead`, `thin_ice`, `overflow_slush`, `drilled_hole`, `shell_area`,
+  `inlet_outlet_current`/`spring`. One tap + one drag; no shape skill.
+- **Polyline** (tap a few points along it) — for *linear* hazards: `pressure_ridge`, `wet_crack`, and
+  linear leads. Ridges/cracks *are* linear, so the easy input is also the correct shape.
+- **Freeform polygon** — an **opt-in, de-emphasized "advanced"** affordance, not offered by default.
+  Self-selects to the confident without gating anyone out of the easy primitives.
+**Build staging (2026-07-21, founder call at Phase 9 kickoff).** All three `geometryKind` values ship in
+the schema and all three **render** in v1, but *authoring* lands in two steps inside the same PR:
+1. **Point + radius** first, so the whole pipeline (create → decay → confirm → alert → offline queue) is
+   provably green end-to-end against the simplest primitive.
+2. **Polyline** immediately after, as its own commit. It is *not* cut: `pressure_ridge` is the
+   **second-most-reported hazard type** in the corpus (116 occurrences) and is genuinely linear, so
+   representing it as a blob would undercut this decision's entire thesis. Tap-to-add-vertex + undo +
+   Done + a `bufferMeters` stepper — no vertex dragging, which is what makes it cheap.
+3. **Freeform polygon authoring is deferred** past Phase 9 (schema + render only). It is the expensive
+   one precisely because it needs vertex dragging and self-intersection handling, and it is the
+   primitive this decision already calls opt-in/advanced.
+**Photos are plural (2026-07-21).** Hazards carry `photoIds: ref(photos)[]`, not a single `photoId` —
+the research found photos load-bearing (~40% of corpus posts carry them; "folded ridges are hard to see"
+is a recurring cause of death), and a ridge or a lead often needs two angles to read. This reuses the
+existing multi-photo report pipeline (upload → EXIF strip → partial-failure resume) rather than building
+a parallel single-photo path.
+**Honest rendering (D3).** Hazards always render with a soft buffer/halo + advisory copy ("open water
+reported *around here*"), never a crisp surveyed boundary — imprecision becomes the honest message, not
+a bug. A `confidence` notion (below, D54) drives how strongly it draws.
+**Two authoring paths, both platforms:** (a) **standalone** — a fast "flag a hazard" flow with no full
+report, and (b) **in-report** — drawn as part of a report submission (`reports.hazardIdsCreated[]`).
+Both **web and mobile** can author (some skaters report from home off photos/memory), though mobile is
+GPS-anchored and optimized for on-ice capture.
+**Who:** minors treated the same as everywhere for now — folded into the eventual uniform 16+ pass with
+legal (D41); a `TODO(16+)` marker on the create gate is the single place that pass will touch.
+**Deferred, designed-for (post-density / Phase 8+):** non-destructive **consensus rendering** (cluster
+same-type hazards in the same place into one footprint while keeping the underlying rows so each ages
+and confirms independently — never average-and-overwrite, which would break lifecycle and let a wrong
+report drag a correct one off-target), and **GPS negative-evidence** (Q11): recent tracks crossing
+*through* a reported hazard nudge its *confidence/lifecycle* down (human still confirms removal) — it
+must **never** auto-move, shrink, or clear a safety hazard, because a false "all clear" is the worst
+outcome (D3).
+**Why:** For a safety feature you want to *keep* low-confidence reports (a roughly-placed open-water
+warning beats none), so the goal is making imprecise input safe and useful, not filtering to only
+precise inputters. Primitive-per-type dissolves most of the accuracy risk by construction.
+
+## D52 — Per-type hazard decay + three-tier "healing" confirmation
+**Decided (2026-07-18; built in Phase 9).** Extends **D15** (which set one global 24/72h decay as a
+tweakable default). Different hazards stop being trustworthy at very different rates, governed by
+whether the hazard **heals** (refreezes/fills) or is **structural** (persists, often grows). Decay is
+therefore **per hazard type**, grouped into tiers (all **tunable defaults**, admin-editable in Phase 7
+per D49):
+**Constants are stored in HOURS** (admin-tunable integers, Phase 7), converted to ms only at the
+comparison boundary (`hoursToMs` helper) — so tuning is human-legible and the math stays trivial. Full
+calibrated table + evidence in [`phase-9-hazard-research.md`](../plans/phase-9-hazard-research.md).
+- **Tier A — Volatile** (`open_water`/`lead`, `thin_ice`, `overflow_slush`, and the new volatile holes
+  `drain_hole` / `wind_hole` / `slush_hole`): **fresh <24h / aging 24–72h / stale >72h** (the D15
+  default). A cold snap can flip these in a day; refreeze is often overnight.
+  - **Very-volatile sub-case (fresh <12h / aging <36h):** `thawed_rotten` and the `ridge_crossing`
+    passage marker — same-day information only.
+- **Tier B — Semi-persistent** (`wet_crack`, `drilled_hole`, `shell_area`): **<3d / 3–7d / >7d**.
+  Re-skins/consolidates but the weak spot lingers.
+- **Tier C — Structural** (`pressure_ridge`, `ice_heave`/`buckling`): **<7d / 7–21d / >21d**. Don't
+  heal within a season; often grow. **A ridge rarely reaches "fully healed & safe"** — it heals to
+  *ice sharks* (a line of refrozen blocks = trip/sail hazard), which is a `healing_unsafe` outcome,
+  not removal.
+- **Tier D — Effectively permanent** (`inlet_outlet_current`/`spring`, and the new persistent natural
+  holes `gas_hole` / `reef_hole`): **<14d / 14–45d / >45d** — and strong candidates to graduate into
+  **known seasonal body attributes** (D53) so they don't need re-marking at all.
+
+**Decay = confidence, not safety (invariant, D3).** Decay fades a pin toward "*unverified — may have
+changed*," **never** toward "clear/safe." A refrozen lead *is* thin ice; a thawed sheet with a cold
+overnight skin *is* still rotten. `hazardDecay.ts` and the copy helpers enforce this in one place —
+a stale `open_water` pin reads "*was open, may now be thinly skinned*," and a stale pin still renders
+(faded, behind the "show older" toggle), it does not disappear.
+**Three-tier confirmation (replaces the binary still-there/gone in D15).** When a skater views a hazard
+along their route, "gone" is split so a healing-but-still-dangerous spot doesn't get cleared:
+- **"Still here"** → resets `lastConfirmedAt` to fresh (a confirmation).
+- **"Healing but unsafe"** → the hazard **stays on the map** (it helps future skaters read the healing
+  ice) but is annotated as healing; does **not** count toward removal. A refrozen lead *is* thin ice —
+  "healed" never means "safe."
+- **"Fully healed & safe"** → the only verdict that accelerates decay / counts toward removal. At the
+  removal threshold (**2 independent, tunable, no reputation yet — D54**) the hazard `archive`s (not
+  deleted — can resurface on re-report, D15).
+**Copy rule (D3):** a decaying/aging open-water hazard must never read as "all clear" — the honest
+interpretation is "was open, may now be thinly skinned."
+**Future — weather-driven dynamic decay (Phase 10, documented now; corrected 2026-07-21 by the
+hazard-research pass).** Phase 10's Open-Meteo "weather-since" data feeds a per-type decay multiplier:
+`effectiveAge = elapsed × decayMultiplier(type, weatherSince)`, quantified against lakeice's growth
+model (~1" ice per **15 freezing-degree-days**, Ashton 1989) and the fact that **thawing runs ~30%
+faster than growth**. Refreeze-healed types (open_water/thin_ice/drilled_hole/overflow/drain_hole/
+wind_hole) **accelerate** toward stale with freezing-degree-hours and **decelerate** under warm/sun/rain
+(a thaw can even re-escalate a fading thin-ice hazard). **Three counter-intuitive sign-flips the naïve
+"colder → safer" multiplier gets dangerously wrong (all found in the research pass):**
+1. **Thawed/rotten ice must NOT heal on cold.** A thawed sheet grows a deceptive hard skin overnight and
+   collapses when it warms midday (the "overnight-ice trap" — implicated in the 2013 fatalities). So
+   `thawed_rotten`'s cold-weather multiplier is **≥1 (never <1)**; only sustained hard freeze *of the
+   whole column* clears it, which the model can't assert — a human must.
+2. **Ridges escalate in thaws, they don't just persist.** Contrary to the old "structural =
+   weather-insensitive (×1)" line, a pressure ridge can **melt into open water in a 2-day windy warm
+   spell** (lakeice). So `pressure_ridge`/`ice_heave` get a **thaw multiplier ≥1** (warmth makes them
+   *worse*, not stale-in-place). Springs/current/gas_hole remain ≈×1 (genuinely weather-insensitive).
+3. **Snow lowers confidence, never heals.** Snow insulates (slows refreeze), hides folded ridges/gas
+   holes, and enables under-ice erosion. Snowfall-since-report **reduces** confidence and flags
+   "possibly snow-hidden now"; it must never accelerate healing.
+Also feeds Phase 10: a **season/solar term** (late-season sun weakens ice even when cold — ~600 W/m²
+early March vs ~70 late November) and a body-level **shallow/pond** signal (shallow water melts from the
+bottom first). Same D3 caveat throughout — accelerated decay ≠ "safe."
+**Why:** A single global rate faded persistent ridges too fast and kept volatile open water too long;
+per-type decay + a healing tier matches how the ice actually behaves. The 2026-07-21 research pass
+(corpus + lakeice.info) confirmed the tier shape, expanded the type taxonomy (holes, thawed/rotten,
+ridge-crossing passage marker), and corrected the weather signs above.
+
+## D53 — Known seasonal body attributes (persistent, not user-re-marked)
+**Decided (2026-07-18; schema in Phase 9, admin surface in Phase 7).** Some "hazards" are really
+**permanent features of a water body**, present every season regardless of cold, and it's wrong to make
+users re-mark them or let them decay: **springs / inlet-outlet current, constrictions and bridges/
+narrows between larger areas** (moving water under a constriction is *always* weaker), and **pressure
+ridges that reform in the same place annually**. The 2026-07-21 hazard research adds three more
+persistent natural sources from lakeice.info: **`gas_hole`** (marsh-gas deltas/river mouths — deroof
+every season), **`reef_hole`** (thin ice over the same shallow/reef yearly), and **`delta` /
+`shallow_bay_early_thaw`** zones (shallow water melts from the bottom first, goes out well before deep
+ice). These graduate into a first-class **`bodyFeatures`**
+entity attached to the water body — always-shown with distinct "known seasonal hazard" styling, no
+time-decay, no confirmation loop. **Promotion** (a recurring hazard → a body feature) and **demotion**
+are **admin actions** (Phase 7 surface, D37/D49). v1 ships the schema + rendering; population is
+admin/seed-driven.
+**Why:** Re-marking a spring every visit is busywork and a false-negative risk (an un-re-marked spring
+looks "gone"); modeling permanent risk as a durable body attribute is both truer and safer (D3).
+
+## D54 — On-ice hazard alerting: client-side proximity evaluation
+**Decided (2026-07-18; Layers 0–1 in Phase 9, Layer 2 deferred).** New hazards must reach skaters
+**already on that ice** without holding everyone's live location server-side (D12: no live GPS). The
+architecture inverts the naïve "server pushes to nearby phones": **the server only syncs hazard *data*
+to devices that care about that lake; each phone decides for itself** whether its own on-device GPS
+warrants an alert. This is D12-clean (positions never leave the device), needs no server fan-out, keeps
+the griefing blast radius naturally local, and — because hazards are already cached on-device — **works
+with no cell signal** (the alert is computed and fired locally). Layers:
+- **Layer 0 — silent data sync (Phase 9 v1).** A device with a lake cached / subscribed gets new
+  hazards automatically (Convex reactivity while open; on next foreground otherwise). No notification.
+  True background sync to a *closed* app (silent push) is a nice-to-have deferred to the offline commits.
+- **Layer 1 — on-ice proximity alert + confirm-gate (Phase 9 v1).** A co-located skater's client
+  evaluates its own recent GPS against each cached hazard's buffer. The **gate and the confirmation
+  mechanism are one and the same**: an **unconfirmed** hazard (confirmCount = 0) surfaces as the *soft*
+  prompt "Reported hazard nearby — can you confirm?" (which *collects* the confirmation the lifecycle
+  needs); once it crosses the **confirm threshold (1 independent, tunable, reporter's own excluded)** it
+  **promotes** to the full "⚠ hazard ahead" alert for subsequent co-located skaters. So a troll's fake
+  pin reaches only people physically on that same ice, and only as a soft "can you confirm?" — never a
+  mass push. Layer 1 alerts are **client-local**, not server `notifications` rows (no new
+  `notifications.type` needed in v1; existing `hazard_confirmation` covers the confirm-ask surface).
+- **Layer 2 — directional "hazard ahead," 30–60s out, once per approach (deferred; opt-in "on-ice live
+  mode" — a conscious, safety-justified exception to D12).** Needs continuous live position + heading
+  during an active skate. All client-side (project path forward from heading+speed, test intersection
+  with cached hazard buffers, fire at time-to-encounter ∈ [30s,60s]; per-session lap-dedup so laps don't
+  re-alert), so it stays private and offline-capable. **Server-push-to-a-sleeping-phone** (reaching a
+  skater whose app is fully closed) lives here too — the only variant that needs live location uploaded,
+  hence the latest/biggest privacy call. Decide mechanics at build.
+**Admin-tunable (Phase 7).** Confirm threshold (1 now) and removal threshold (2 "fully healed" now) are
+count/score constants with **no reputation yet**; both must be easily adjustable in `/admin` (D49-style
+tuning surface), and reputation-weighting integrates later (D50).
+**Why:** Honors D12 and privacy, removes the scary server fan-out, and the on-device cache turns the
+"they'll have no signal" problem into a non-issue for already-cached hazards.
+
+### Amendment (2026-07-21, Phase 9 kickoff) — Layer 1 ships **foreground-only**; the watcher moves to Layer 2
+
+**The gap found at kickoff.** Layer 1 as written above assumes a phone that can evaluate its own GPS
+while you skate. The mobile app cannot do that today, and the distance is larger than the plan implied:
+- **`expo-notifications` is not installed anywhere in the repo.** There are *zero* local or push
+  notifications on device — Phase 4's notification work is server-side coalescing into in-app
+  `notifications` rows only (`packages/convex/convex/notifications.ts` says push delivery is deferred).
+- **`expo-location` is configured when-in-use only** (`apps/mobile/app.config.ts`) — no background
+  modes, no `UIBackgroundModes`, no `locationAlwaysAndWhenInUse`, no `expo-task-manager`.
+- **There is no GPS *watcher* anywhere** — all four call sites are one-shot `getCurrentPositionAsync`.
+- The app uses **CNG/prebuild** (no committed `ios/`/`android/`), so adding any native module requires
+  cutting a fresh dev-client build.
+
+**Decided.** Phase 9 v1 ships **Layer 1 foreground-only, with no new native dependencies**: while the map
+is foregrounded and GPS resolves to a body, a `watchPositionAsync` watcher feeds the pure
+`hazardProximity.evaluateOnIceAlert`, and hits surface as **in-app top banners** — not OS notifications.
+This needs no notification permission, no background permission, and no new dev-client build, and it
+makes the whole alerting path unit-testable today.
+
+**Consequence, stated honestly:** a foreground-only banner fires when you pull the phone out of your
+pocket, not while you are skating. That is a real limitation, not a hidden one — which is exactly why
+Layer 2 is a near-term commitment rather than an open-ended "someday" (founder call: *"I'm okay
+deferring so long as Layer 2 comes soon."*).
+
+**Layer 2 spec — captured now so nothing is re-derived.** An opt-in **"on-ice mode"** the skater arms
+when they start (not an always-on background permission), which adds, in one bundle:
+- `expo-notifications` + a local-notification path (no server push, no token registration — the alert is
+  computed and fired entirely on-device, so D12 still holds).
+- Background/foreground-service location for the duration of the session only, plus keep-awake, with an
+  obvious persistent "on-ice mode is on" affordance and a one-tap off.
+- **Directional projection** — path forward from heading + speed, intersect cached hazard buffers, fire
+  at time-to-encounter ∈ [30s, 60s], per-session lap-dedup (the original Layer 2 content above).
+- **Server-push-to-a-sleeping-phone** stays separate and later — it is the only variant needing live
+  location *uploaded*, and remains the biggest privacy call in the product.
+Everything Layer 2 needs from the client is already built by v1: the pure proximity evaluator, the
+per-session `alerted` set, the cached hazards, and the `skating://hazard/<id>?action=confirm` deep link
+(added in v1 specifically so the notification tap has somewhere to land).
+
+**Invariant that ships with the feature — silence is not an all-clear.** A proximity system that has
+only ever been quiet is the most dangerous signal we could emit, and it gets *more* dangerous with
+foreground-only coverage. So the copy layer states it outright wherever alerting is surfaced or
+configured: **no alert does not mean the ice is clear** (D3). This is not optional polish; it is the
+reason foreground-only is acceptable to ship at all.
+
+## D55 — On-ice hazards auto-bundle into the skater's later report
+**Decided (2026-07-21, founder call at Phase 9 kickoff).** A hazard flagged from the ice is a standalone
+row (`originReportId: undefined`). When that same skater later writes a report for that same body, the
+report form **offers to bundle their own unattached hazards into it** — pre-checked, itemized, one tap to
+drop any:
+> *You flagged 3 hazards on Shelburne Pond today. Include them in this report?* ☑ Open water ☑ Pressure
+> ridge ☑ Thin ice
+
+On submit, the accepted hazards get `originReportId` patched and land in `reports.hazardIdsCreated[]`.
+**Candidate window:** the author's own hazards, on that body, not already attached, created inside the
+report's skate window (`skateStartTime`→`skateEndTime`) or — when no start time was given — within ~24h
+before `skateEndTime`. Tunable alongside the other Phase 7 constants.
+**Rules.** Always **visible and dismissible**, never silent: attaching changes how the hazard is
+attributed and how it presents in the feed, so it is a shown choice, not a background merge. Gated on
+ownership + same body + not-already-attached, and idempotent. Must not double-count toward D50 points
+once reputation lands. Works offline — the draft holds local hazard ids and resolves them at flush.
+**Why:** On the ice you want the fastest possible capture (two taps, no typing, no report); at home you
+want a coherent story. Bundling gets both without asking the skater to re-enter anything, and it turns
+the standalone quick-flag path (D51) from a parallel silo into the front half of the report flow.
+**Not this:** auto-attaching *other people's* hazards, or attaching silently — both would misattribute
+observations, and mis-sourced safety content is a D3 problem.

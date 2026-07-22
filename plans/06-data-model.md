@@ -317,38 +317,95 @@ createdAt: timestamp
 > **forum/email content** (not Strava data), so it's outside Strava's AI terms —
 > but the ingestion itself is still legal-gated (Q8).
 
-### `hazards`  (typed, geometried, lifecycled per D15)
+### `hazards`  (typed, geometried, lifecycled per D15/D52; authored per D51)
 ```
 _id
 waterBodyId: ref(waterBodies)
-type: enum[]                 // see hazard vocab below
+type: enum                   // EXACTLY ONE — see hazard vocab below. Changed from `enum[]` 2026-07-21:
+                             //   per-type decay (D52), geometry-per-type (D51), the ridge_crossing
+                             //   verdict relabeling and the one-tap presets all need an unambiguous
+                             //   type. With an array, "what decay tier is this?" has no answer —
+                             //   ambiguity exactly where the safety math must be exact. Nuance that
+                             //   used to need a second type goes in `description` or a second hazard.
+geometryKind: enum(point_radius, line, polygon)  // the authoring primitive (D51)
 geometry: geojson            // Point | LineString | Polygon (in-polygon draw, D4)
-bbox: {...}                  // for proximity queries
+radiusMeters?: number        // set when geometryKind == point_radius (the draggable circle, D51)
+bufferMeters?: number        // set for line/polygon — the uncertainty half-width (D51/D52 research):
+                             //   a folded ridge (loose plates 1–15ft each side) buffers far wider than
+                             //   a hairline tectonic crack; drives honest render (D3) + the alert buffer.
+                             //   Type-aware default (ridge » wet_crack); user-adjustable.
+bbox: {...}                  // for proximity queries (built from geometry + radius/buffer)
 createdByUserId: ref(profiles)
-originReportId?: ref(reports)
+originReportId?: ref(reports)     // set when drawn in-report; null for the standalone flow (D51)
 description?: string
-status: enum(active, archived)      // archived (not deleted) so it can resurface
+photoIds: ref(photos)[]      // optional hazard photos (D51 research): ice hazards are intensely visual
+                             //   and hard to describe (folded ridges "hard to see" is a recurring cause
+                             //   of death) — photos are the highest-value aid for the next skater.
+                             //   PLURAL as of 2026-07-21: a ridge or lead often needs two angles, and
+                             //   the multi-photo report pipeline (D31/D42) is reused as-is.
+status: enum(active, archived)      // LIFECYCLE axis: archived (not deleted) so it can resurface
+moderationStatus: enum(visible, hidden, removed)  // MODERATION axis — deliberately separate from
+                             //   `status` (added 2026-07-21). Hiding a troll pin by archiving it would
+                             //   make abuse indistinguishable from "the community voted this healed",
+                             //   which is a D3 violation: a moderator action must never read as a
+                             //   safety verdict. Mirrors reports/comments.
+healingState?: enum(none, healing_unsafe)  // latest "healing but unsafe" verdict (D52); annotates render
 firstReportedAt: timestamp
-lastConfirmedAt: timestamp    // drives the freshness decay (D15)
-confirmCount: number
-goneCount: number
+lastConfirmedAt: timestamp    // drives the freshness decay (D15/D52)
+confirmCount: number          // "still here" confirms; excludes the author's own (D54 confirm-gate)
+goneCount: number             // "fully healed & safe" verdicts only (D52) — NOT "healing but unsafe"
 createdAt: timestamp
 ```
-> **Lifecycle (D15), derived from `lastConfirmedAt`:**
-> `< 24h` = fresh (full strength) · `24–72h` = aging (lighter) · `> 72h` = stale
-> (faded, hidden by default). A "still there" confirmation resets `lastConfirmedAt`.
-> `goneCount` past a small threshold (later reputation-weighted) → `status: archived`.
+> **Confidence (D51/D54):** a hazard is **provisional** until `confirmCount ≥ confirmThreshold`
+> (1, tunable) and **confirmed** after — derived, not stored. Provisional hazards render softer and,
+> on-ice, surface as the "can you confirm?" prompt rather than a hard alert (D54 Layer 1).
+> **Lifecycle — per-type decay (D52, extends D15), derived from `type` + `lastConfirmedAt`** via a
+> tunable `HAZARD_DECAY` table in `@skating/core` (Tier A volatile 24/72h … Tier D permanent 14d/45d;
+> admin-editable Phase 7 / D49). Freshness tiers: fresh (full strength) · aging (lighter) · stale
+> (faded, hidden by default). A **"still here"** confirmation resets `lastConfirmedAt`. `goneCount`
+> (fully-healed verdicts only) past the removal threshold (**2**, tunable, no reputation yet — D54) →
+> `status: archived`. A **"healing but unsafe"** verdict sets `healingState` and does **not** archive —
+> the pin stays so future skaters can read the healing ice (D52). Copy never implies a decayed
+> open-water hazard is skateable (D3).
 
-### `hazardConfirmations`  (the Waze-style votes)
+### `hazardConfirmations`  (the Waze-style votes — three-tier, D52)
 ```
 _id
 hazardId: ref(hazards)
 userId: ref(profiles)
-verdict: enum(still_there, gone)
+verdict: enum(still_there, healing_unsafe, fully_healed)  // D52 — only fully_healed counts toward removal
 atCoord?: { lat, lng }       // where the user was when confirming
 via: enum(app_open_nearby, report_flow, strava_path)  // trigger (D12)
 createdAt: timestamp
 ```
+> **Three-tier verdicts (D52):** `still_there` resets the decay clock; `healing_unsafe` keeps the
+> hazard on the map (annotates `hazards.healingState`) but does not count toward removal; `fully_healed`
+> is the only verdict that increments `goneCount` toward the (2, tunable) archive threshold.
+
+### `bodyFeatures`  (known seasonal water-body hazards — persistent, not decayed; D53)
+```
+_id
+waterBodyId: ref(waterBodies)
+type: enum(spring_current, constriction, bridge_narrows, recurring_pressure_ridge,
+           gas_hole, reef_hole, delta, shallow_bay_early_thaw, other)  // last four added 2026-07-21
+                                                                       // (Phase 9 research): persistent
+                                                                       // natural sources that recur every
+                                                                       // season regardless of cold
+geometry: geojson            // Point | LineString | Polygon (same primitives as hazards, D51)
+radiusMeters?: number
+bbox: {...}
+note?: string
+addedByUserId: ref(profiles) // admin/moderator (promotion is an admin action, D37/D53)
+promotedFromHazardId?: ref(hazards)  // when promoted from a recurring hazard (D53)
+active: boolean              // demotion flips this off (reversible, never hard-deleted)
+createdAt: timestamp
+```
+> **Always-shown, no time-decay, no confirmation loop (D53).** Moving water at springs/constrictions/
+> bridges is weaker *every season regardless of cold*, and some pressure ridges reform in the same
+> place annually — modeling them as durable body attributes avoids busywork re-marking and the
+> false-negative of an un-re-marked spring looking "gone." Rendered with distinct "known seasonal
+> hazard" styling. **Promotion/demotion are admin actions** (Phase 7 surface, D49-style tuning). v1
+> ships schema + rendering; population is admin/seed-driven.
 
 > **No `follows` table (D13).** The social graph was removed, so there is no follow/friend edge.
 > And reports have **no visibility field** — every report is public — so read access is just
@@ -369,7 +426,7 @@ createdAt: timestamp
 ```
 _id
 flaggerId: ref(profiles)
-targetType: enum(report, comment, photo, user)
+targetType: enum(report, comment, photo, user, hazard)  // hazard added Phase 9 (D51) — mods can hide a bad pin
 targetId: string             // ref into the matching table
 reason: enum(unsafe_false_report, spam, harassment, inappropriate, other)
 note?: string
@@ -483,6 +540,10 @@ readAt?: timestamp
 createdAt: timestamp
 ```
 > Only sent if the recipient's `notificationPrefs[type]` is on (D16).
+> **On-ice hazard alerts are NOT rows here (D54).** The Phase 9 Layer-1 "reported hazard nearby —
+> confirm?" / "⚠ hazard ahead" alerts are **client-local** (each phone evaluates its own GPS against
+> cached hazards, D12), not server pushes — so they need no new `type`. `hazard_confirmation` already
+> covers the confirm-ask surface. A server push to a *sleeping* on-ice phone is deferred (D54 Layer 2).
 
 ### `pointEvents`  (optional reputation/trust ledger, for transparency — D17/D50)
 ```
@@ -521,16 +582,56 @@ createdAt: timestamp
 - `snow_covered` · `drifted` · `slushy` · `wet` / `overflow`
 - `frozen_chop` (froze while wavy) · `windswept`
 
-**`hazards.type`** (localized dangers — drive the lifecycle):
-- `open_water` / `lead`
-- `thin_ice`
-- `pressure_ridge`
-- `wet_crack` (vs dry cracks which are normal — only wet/working cracks are hazards)
-- `overflow_slush`
-- `ice_heave` / `buckling`
-- `drilled_hole` (ice-fishing holes)
-- `inlet_outlet_current` / `spring` (moving water = weak)
-- `shell_area` (air pocket zone)
+**`hazards.type`** (localized dangers — drive the lifecycle; per-type decay in `HAZARD_DECAY`,
+[`phase-9-hazard-research.md`](./phase-9-hazard-research.md)). **Exactly one per hazard.**
+
+> **Canonicalized 2026-07-21 (Phase 9 kickoff).** The pre-Phase-9 enum stored slash-pairs as *separate*
+> keys (`open_water` **and** `lead`; `ice_heave` **and** `buckling`; `inlet_outlet_current` **and**
+> `spring`), which meant `Record<HazardType, HazardDecay>` could not typecheck against the research
+> table and two keys could disagree about their own decay tier. Each pair collapses to **one canonical
+> key with a two-part display label**; the alias survives in the UI, not in the data. Both the `hazards`
+> and `hazardConfirmations` tables were empty on dev, so this cost nothing to fix — and would have been
+> expensive later. **16 canonical keys:**
+
+| Key | Label | Tier |
+|---|---|---|
+| `open_water` | Open water / lead | A |
+| `thin_ice` | Thin ice | A |
+| `overflow_slush` | Overflow / slush | A |
+| `drain_hole` | Drain hole | A |
+| `wind_hole` | Wind hole | A |
+| `slush_hole` | Slush / mush hole | A |
+| `thawed_rotten` | Thawed / rotten ice | A\* |
+| `ridge_crossing` | Ridge crossing *(passage marker)* | A\* |
+| `wet_crack` | Wet / working crack | B |
+| `drilled_hole` | Drilled hole *(man-made)* | B |
+| `shell_area` | Shell ice | B |
+| `pressure_ridge` | Pressure ridge | C |
+| `ice_heave` | Ice heave / buckling | C |
+| `spring_current` | Spring / inlet-outlet current | D |
+| `gas_hole` | Gas hole | D |
+| `reef_hole` | Reef hole | D |
+
+Notes on the individual terms:
+- `wet_crack` — vs dry cracks which are normal; only wet/working cracks are hazards.
+- `drilled_hole` — **man-made only** (ice-fishing / auger holes; re-skin overnight, weak spot lingers days).
+- `spring_current` — moving water = weak. Replaces the former `inlet_outlet_current` + `spring` pair.
+- `shell_area` — air-pocket zone.
+- **Added 2026-07-21 (Phase 9 hazard research — lakeice.info + corpus):**
+- `thawed_rotten` — a thawed/rotten/candled *zone* (the #1 fatality cause per lakeice: "~half of ice
+  fatalities involve thaw"). ⚠ **Cold weather must NOT auto-heal this** — a thawed sheet grows a
+  deceptive cold skin overnight and collapses midday (the "overnight-ice trap"). Very short decay.
+- `drain_hole` — water draining through the sheet after a wet thaw (volatile).
+- `wind_hole` — opens in warm/windy conditions at exposed points; refreezes to black ice (volatile).
+- `slush_hole` / `mush_hole` — slush over open water; treacherous (volatile).
+- `gas_hole` — persistent marsh-gas source (deltas/river mouths); deroofs into open holes; **recurs
+  seasonally → strong `bodyFeatures` candidate** (D53).
+- `reef_hole` — thin ice over a shallow/reef spot; **recurs annually → `bodyFeatures` candidate** (D53).
+- `ridge_crossing` — **a "passage" marker, not a danger** (D51 research): a spot where a `pressure_ridge`
+  was crossable. Reuses the hazard machinery (geometry, decay, confirm loop) but renders as a
+  positive-but-cautious passage marker and the three verdicts are relabeled by the copy helpers
+  (*still crossable / dicey now / ridge closed*). **Most volatile of all** — "a ridge reasonable to
+  cross in the morning may be a mess a couple hours later" (lakeice); copy never asserts safety (D3).
 
 ### Corpus validation (2026-07-13)
 Validated against **1,197 real posts** (Jul 2025–Jun 2026) from the community's VT/NH/ADK/ME

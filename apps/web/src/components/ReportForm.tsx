@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
   buildReportInput,
+  bundledHazardIds,
   emptyReportForm,
   emptyThicknessReading,
   humanizeEnum,
@@ -9,7 +10,6 @@ import {
   isMinor,
   PRECIP_LABELS,
   PRECIP_TYPES,
-  photoUploadCoord,
   type ReportFormState,
   resolveSkateWindow,
   SKATE_QUALITIES,
@@ -20,15 +20,16 @@ import {
   THICKNESS_METHOD_LABELS,
   THICKNESS_METHODS,
   type ThicknessFormReading,
+  toggleBundleOptOut,
   validateReportInput,
 } from '@skating/core'
 import { useNavigate } from '@tanstack/react-router'
 import { useMutation, useQuery } from 'convex/react'
 import { ConvexError } from 'convex/values'
-import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react'
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { datetimeLocalToMs, toDatetimeLocal } from '../lib/reportForm'
+import { HazardBundlePrompt } from './HazardBundlePrompt'
 import { useMapSelection } from './MapSelectionContext'
-import { processPhoto, uploadToStorage } from './photoPipeline'
 import { Button } from './ui/button'
 import { Checkbox } from './ui/checkbox'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
@@ -36,32 +37,7 @@ import { Input } from './ui/input'
 import { Skeleton } from './ui/skeleton'
 import { Textarea } from './ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
-
-/** A processed photo awaiting upload — blobs + EXIF coord + the per-photo `placeOnMap` opt-in (D42). */
-interface PhotoDraft {
-  id: string
-  previewUrl: string
-  full: File
-  thumb: File
-  coord?: { lat: number; lng: number }
-  placeOnMap: boolean
-  /**
-   * Storage IDs recorded as each blob lands, so a submit retry after a partial-upload failure
-   * reuses the already-uploaded object instead of orphaning it and uploading a fresh copy.
-   */
-  fullStorageId?: Id<'_storage'>
-  thumbStorageId?: Id<'_storage'>
-  /** Set once the photo row exists, so a retry doesn't re-create it (and re-attach it twice). */
-  uploadedId?: Id<'photos'>
-}
-
-/** The subset of a photo draft `ReportFormFields` renders (no blobs). */
-export interface PhotoDraftView {
-  id: string
-  previewUrl: string
-  coord?: { lat: number; lng: number }
-  placeOnMap: boolean
-}
+import { type PhotoDraftView, usePhotoDrafts } from './usePhotoDrafts'
 
 // --- Small enum pickers on the shadcn (Base UI) ToggleGroup ---
 
@@ -251,11 +227,17 @@ export interface ReportFormFieldsProps {
   onCancel: () => void
   submitting: boolean
   error: string | null
+  /**
+   * The D55 bundle offer, injected by the container so this stays a pure presentational component
+   * (the prompt needs a Convex query; these fields must not).
+   */
+  bundlePrompt?: ReactNode
 }
 
 export function ReportFormFields({
   form,
   onFormChange,
+  bundlePrompt,
   putInPin,
   onRequestPin,
   onClearPin,
@@ -547,6 +529,8 @@ export function ReportFormFields({
         />
       </Field>
 
+      {bundlePrompt}
+
       {error ? <p className="text-danger text-sm">{error}</p> : null}
 
       <div className="flex justify-end gap-2">
@@ -576,17 +560,21 @@ export function ReportForm({
 }) {
   const navigate = useNavigate()
   const profile = useQuery(api.profiles.current, {})
-  const generateUploadUrl = useMutation(api.photos.generateUploadUrl)
-  const createPhoto = useMutation(api.photos.create)
-  const deletePhoto = useMutation(api.photos.remove)
-  const removeBlob = useMutation(api.photos.removeBlob)
   const createReport = useMutation(api.reports.create)
   const { putInPin, setPutInPin, setPinDropMode, pinDropMode } = useMapSelection()
 
   const [form, setForm] = useState<ReportFormState | null>(null)
-  const [photos, setPhotos] = useState<PhotoDraft[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Report photos + hazard photos are the same pipeline, so they share one hook — it owns the
+  // checkpointed upload and the reclaim-on-abandon sweep (see `usePhotoDrafts`).
+  const photoDrafts = usePhotoDrafts()
+  // D55: the author's own on-ice hazards for this lake, pre-checked to bundle into this report.
+  // Held as an explicit opt-out set rather than an opt-in one — the offer is pre-checked, but the
+  // skater can always drop any of them, and nothing attaches without the list being visible.
+  const [unbundledHazardIds, setUnbundledHazardIds] = useState<string[]>([])
+  const [bundleCandidateIds, setBundleCandidateIds] = useState<string[]>([])
+  const bundleHazardIds = bundledHazardIds(bundleCandidateIds, unbundledHazardIds)
 
   // Minors are read-only — all reports are public (D13), so under-18 users can't post (D41).
   const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false
@@ -597,43 +585,6 @@ export function ReportForm({
       setForm(emptyReportForm(Date.now()))
     }
   }, [profile, form, minor])
-
-  // Reclaim whatever a draft has already uploaded so nothing is stranded server-side: a created row
-  // (deletes the row + both blobs) or, for a partial/interrupted upload, the bare blobs that never
-  // got a row (each recorded the instant it landed — see `handleSubmit`). Best-effort; failures are
-  // swallowed.
-  const reclaim = useCallback(
-    (p: PhotoDraft) => {
-      if (p.uploadedId) {
-        void deletePhoto({ photoId: p.uploadedId }).catch(() => {})
-        return
-      }
-      if (p.fullStorageId) void removeBlob({ storageId: p.fullStorageId }).catch(() => {})
-      if (p.thumbStorageId) void removeBlob({ storageId: p.thumbStorageId }).catch(() => {})
-    },
-    [deletePhoto, removeBlob],
-  )
-
-  // Revoke every preview object URL on unmount — via a ref so we don't revoke still-displayed
-  // previews on each add/remove (a `[photos]` dep would run cleanup on every list change).
-  // Individual removals revoke their own URL in `removePhoto`. Also reclaim any photos uploaded for a
-  // report that never got created — a failed `reports.create` or an abandoned form would otherwise
-  // strand blobs (+ a row); `submittedRef` skips a successful submit, whose photos are now attached.
-  const photosRef = useRef<PhotoDraft[]>([])
-  photosRef.current = photos
-  const submittedRef = useRef(false)
-  // Flipped at teardown so an upload / row-create that resolves *after* the sweep (see `handleSubmit`)
-  // reclaims itself — the sweep only sees what's already recorded, not what's still in flight.
-  const disposedRef = useRef(false)
-  useEffect(() => {
-    return () => {
-      disposedRef.current = true
-      for (const p of photosRef.current) {
-        URL.revokeObjectURL(p.previewUrl)
-        if (!submittedRef.current) reclaim(p)
-      }
-    }
-  }, [reclaim])
 
   // Clear the map put-in-pin state when the form goes away — including an unmount from navigating
   // away mid-pin-drop, which would otherwise strand the map in crosshair/banner mode.
@@ -650,49 +601,10 @@ export function ReportForm({
     onOpenChange(false)
   }, [onOpenChange, setPutInPin, setPinDropMode])
 
-  const removePhoto = useCallback(
-    (id: string) => {
-      setPhotos((prev) => {
-        const removed = prev.find((p) => p.id === id)
-        if (removed) {
-          URL.revokeObjectURL(removed.previewUrl)
-          // Reclaim anything a prior failed submit uploaded (row and/or bare blobs) — dropping it
-          // from state alone would strand it (it's no longer in the unmount sweep).
-          reclaim(removed)
-        }
-        return prev.filter((p) => p.id !== id)
-      })
-    },
-    [reclaim],
-  )
-
-  const onAddFiles = useCallback(async (files: FileList) => {
-    setError(null)
-    try {
-      // Process the picked files concurrently (each is a heavy HEIC-decode + two compressions).
-      // Create the object URLs only AFTER all succeed — doing it inside the tasks would leak the
-      // URLs of the files that resolved when a sibling rejects (they never reach state to be revoked).
-      const processed = await Promise.all(Array.from(files).map((file) => processPhoto(file)))
-      const drafts = processed.map(
-        (p) =>
-          ({
-            id: crypto.randomUUID(),
-            previewUrl: URL.createObjectURL(p.thumb),
-            full: p.full,
-            thumb: p.thumb,
-            coord: p.coord,
-            placeOnMap: false,
-          }) satisfies PhotoDraft,
-      )
-      setPhotos((prev) => [...prev, ...drafts])
-    } catch {
-      setError("Couldn't process one of those photos — try a different image.")
-    }
-  }, [])
-
   async function handleSubmit() {
     if (!form) return
     setError(null)
+    photoDrafts.clearError() // the bad photo has usually been removed by now; don't keep blaming it
     const input = buildReportInput(form, waterBodyId, putInPin ?? undefined)
     const result = validateReportInput(input, { now: Date.now() })
     if (!result.ok) {
@@ -702,66 +614,26 @@ export function ReportForm({
 
     setSubmitting(true)
     try {
-      // Upload photos concurrently; within each, the full + thumb go up in parallel. A photo that
-      // already uploaded on a prior (failed) submit keeps its id, so a retry doesn't orphan dupes.
-      const photoIds = await Promise.all(
-        photos.map(async (photo) => {
-          if (photo.uploadedId) return photo.uploadedId
-          // Upload the full + thumb independently, each recording its storage id the instant it lands
-          // (not after both settle). So a partial failure keeps the blob that DID upload — a retry
-          // reuses it instead of orphaning a duplicate, and the cleanup sweep can reclaim it.
-          const ensure = (
-            existing: Id<'_storage'> | undefined,
-            file: File,
-            key: 'fullStorageId' | 'thumbStorageId',
-          ): Promise<Id<'_storage'>> =>
-            existing !== undefined
-              ? Promise.resolve(existing)
-              : generateUploadUrl()
-                  .then((url) => uploadToStorage(url, file))
-                  .then((sid) => {
-                    const id = sid as Id<'_storage'>
-                    // If the form was torn down while this was in flight (and we're not mid-successful-
-                    // submit), no draft remains to record or sweep it — reclaim the blob here instead.
-                    if (disposedRef.current && !submittedRef.current) {
-                      void removeBlob({ storageId: id }).catch(() => {})
-                    } else {
-                      setPhotos((prev) =>
-                        prev.map((p) => (p.id === photo.id ? { ...p, [key]: id } : p)),
-                      )
-                    }
-                    return id
-                  })
-          const [storageId, thumbStorageId] = await Promise.all([
-            ensure(photo.fullStorageId, photo.full, 'fullStorageId'),
-            ensure(photo.thumbStorageId, photo.thumb, 'thumbStorageId'),
-          ])
-          const id = await createPhoto({
-            storageId,
-            thumbStorageId,
-            placeOnMap: photo.placeOnMap,
-            coord: photoUploadCoord(photo.placeOnMap, photo.coord),
-          })
-          // Same teardown race one level up: the row was created after the form unmounted, so nothing
-          // will attach it to a report — reclaim the row (+ its blobs) rather than strand it.
-          if (disposedRef.current && !submittedRef.current) {
-            void deletePhoto({ photoId: id }).catch(() => {})
-          } else {
-            setPhotos((prev) => prev.map((p) => (p.id === photo.id ? { ...p, uploadedId: id } : p)))
-          }
-          return id
-        }),
-      )
+      // A photo that already uploaded on a prior (failed) submit keeps its id, so a retry
+      // doesn't orphan duplicates.
+      const photoIds = await photoDrafts.uploadAll()
       // Flip the guard BEFORE createReport, not after: an unmount *during* the mutation would
       // otherwise sweep (submittedRef still false) and delete the very photo rows the committing
       // report is about to reference — leaving it with permanently missing images.
-      submittedRef.current = true
-      const reportId = await createReport({ ...input, waterBodyId, photoIds })
+      photoDrafts.setCommitted(true)
+      const reportId = await createReport({
+        ...input,
+        waterBodyId,
+        photoIds,
+        ...(bundleHazardIds.length > 0
+          ? { attachHazardIds: bundleHazardIds as Id<'hazards'>[] }
+          : {}),
+      })
       setPutInPin(null)
       onOpenChange(false)
       navigate({ to: '/report/$id', params: { id: reportId } })
     } catch (err) {
-      submittedRef.current = false // creation didn't complete — these uploads are reclaimable again
+      photoDrafts.setCommitted(false) // creation didn't complete — uploads are reclaimable again
       setError(
         err instanceof ConvexError
           ? String(err.data)
@@ -798,16 +670,26 @@ export function ReportForm({
             putInPin={putInPin}
             onRequestPin={() => setPinDropMode(true)}
             onClearPin={() => setPutInPin(null)}
-            photos={photos}
-            onAddFiles={onAddFiles}
-            onRemovePhoto={removePhoto}
-            onTogglePlaceOnMap={(id, on) =>
-              setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, placeOnMap: on } : p)))
-            }
+            photos={photoDrafts.photos}
+            onAddFiles={photoDrafts.addFiles}
+            onRemovePhoto={photoDrafts.removePhoto}
+            onTogglePlaceOnMap={photoDrafts.setPlaceOnMap}
             onSubmit={handleSubmit}
             onCancel={closeForm}
             submitting={submitting}
-            error={error}
+            error={error ?? photoDrafts.error}
+            bundlePrompt={
+              <HazardBundlePrompt
+                waterBodyId={waterBodyId}
+                skateEndTime={form.skateEndTime}
+                skateStartTime={form.skateStartTime ?? undefined}
+                selectedIds={bundleHazardIds}
+                onToggle={(hazardId, checked) =>
+                  setUnbundledHazardIds((prev) => toggleBundleOptOut(prev, hazardId, checked))
+                }
+                onCandidates={setBundleCandidateIds}
+              />
+            }
           />
         ) : (
           <div className="flex flex-col gap-3">

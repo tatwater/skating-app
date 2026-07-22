@@ -1,4 +1,4 @@
-import type { BBox } from '@skating/core'
+import type { BBox, HazardDraft, HazardType } from '@skating/core'
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react'
 
 /**
@@ -48,6 +48,38 @@ interface MapSelectionValue {
    */
   drawerCoveredFraction: number
   setDrawerCoveredFraction: (fraction: number) => void
+  /**
+   * The hazard being captured (Phase 9, D51) — the shared `@skating/core` draft, so the map previews
+   * the *real* buffered footprint (the same shape the proximity evaluator measures) and mobile
+   * inherits web's authoring transitions rather than reimplementing them.
+   */
+  hazardDraft: HazardDraft | null
+  setHazardDraft: (draft: HazardDraft | null) => void
+  /** What's being captured — the map needs it so a `ridge_crossing` previews as a passage, not a danger. */
+  hazardDraftType: HazardType | null
+  setHazardDraftType: (type: HazardType | null) => void
+  /**
+   * True while capture has armed map-tap placement. A circle disarms on the tap that moves it; a
+   * polyline **stays armed**, taking one vertex per tap until Done.
+   */
+  hazardDropMode: boolean
+  setHazardDropMode: (on: boolean) => void
+  /**
+   * The lake the skater's own GPS resolved to, if any (§Mobile "the on-ice state"). Resolved through
+   * the offline body cache, so it works with no signal. On app-open it auto-selects that lake (the
+   * layout navigates to its detail); thereafter it drives the flag affordance and the proximity
+   * banner — but **not** the hazard *layer*, which follows the selected lake so closing the sheet and
+   * panning away lets the hazards fall off naturally.
+   */
+  onIceWaterBodyId: string | null
+  setOnIceWaterBodyId: (id: string | null) => void
+  /**
+   * The device's latest GPS fix while on the map, published by the layout's single watcher so the
+   * proximity banner can evaluate it without running a *second* watcher (two GPS subscriptions on a
+   * cold phone is exactly the battery cost this feature can't afford). `null` until the first fix.
+   */
+  onIceCoord: { lat: number; lng: number } | null
+  setOnIceCoord: (coord: { lat: number; lng: number } | null) => void
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null)
@@ -59,6 +91,11 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [putInPin, setPutInPin] = useState<{ lat: number; lng: number } | null>(null)
   const [pinDropMode, setPinDropMode] = useState(false)
   const [drawerCoveredFraction, setDrawerCoveredFraction] = useState(0)
+  const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null)
+  const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null)
+  const [hazardDropMode, setHazardDropMode] = useState(false)
+  const [onIceWaterBodyId, setOnIceWaterBodyId] = useState<string | null>(null)
+  const [onIceCoord, setOnIceCoord] = useState<{ lat: number; lng: number } | null>(null)
 
   const value = useMemo(
     () => ({
@@ -74,8 +111,30 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setPinDropMode,
       drawerCoveredFraction,
       setDrawerCoveredFraction,
+      hazardDraft,
+      setHazardDraft,
+      hazardDraftType,
+      setHazardDraftType,
+      hazardDropMode,
+      setHazardDropMode,
+      onIceWaterBodyId,
+      setOnIceWaterBodyId,
+      onIceCoord,
+      setOnIceCoord,
     }),
-    [highlightWaterBodyId, focus, photoPins, putInPin, pinDropMode, drawerCoveredFraction],
+    [
+      highlightWaterBodyId,
+      focus,
+      photoPins,
+      putInPin,
+      pinDropMode,
+      drawerCoveredFraction,
+      hazardDraft,
+      hazardDraftType,
+      hazardDropMode,
+      onIceWaterBodyId,
+      onIceCoord,
+    ],
   )
 
   return <MapSelectionContext.Provider value={value}>{children}</MapSelectionContext.Provider>

@@ -3,6 +3,7 @@ import { api } from '@skating/convex/api'
 import type { Id } from '@skating/convex/dataModel'
 import {
   buildReportInput,
+  bundledHazardIds,
   createDraft,
   type DraftPhoto,
   emptyReportForm,
@@ -25,6 +26,7 @@ import {
   THICKNESS_METHOD_LABELS,
   THICKNESS_METHODS,
   type ThicknessFormReading,
+  toggleBundleOptOut,
   validateReportInput,
 } from '@skating/core'
 import { useMutation, useQuery } from 'convex/react'
@@ -38,6 +40,7 @@ import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui'
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos'
 import { saveDraft } from '../lib/draftStore'
 import { isDraftFlushing } from '../lib/flushService'
+import { HazardBundlePrompt } from './HazardBundlePrompt'
 import { useMapSelectionOptional } from './MapSelectionContext'
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline'
 
@@ -352,6 +355,13 @@ export function ReportForm({
   )
   // Off-map, there's no pin-drop mode — but the no-op MUST be stable (a fresh `() => {}` each render
   // would change the clear-effect's deps every render, re-running its cleanup and wiping the pin).
+  // D55: the author's own on-ice hazards for this lake and skate window, pre-checked to bundle into
+  // this report. Stored as the *opt-outs* so a hazard that syncs in after the form opened is still
+  // included by default — see `bundledHazardIds`.
+  const [bundleCandidateIds, setBundleCandidateIds] = useState<string[]>([])
+  const [unbundledHazardIds, setUnbundledHazardIds] = useState<string[]>([])
+  const bundleHazardIds = bundledHazardIds(bundleCandidateIds, unbundledHazardIds)
+
   const noopPinDrop = useCallback(() => {}, [])
   const putInPin = mapSelection ? mapSelection.putInPin : localPutIn
   const setPutInPin = mapSelection ? mapSelection.setPutInPin : setLocalPutIn
@@ -563,7 +573,14 @@ export function ReportForm({
       // otherwise sweep (submittedRef still false) and delete the very photo rows the committing
       // report is about to reference — leaving it with permanently missing images.
       submittedRef.current = true
-      const reportId = await createReport({ ...input, waterBodyId, photoIds })
+      const reportId = await createReport({
+        ...input,
+        waterBodyId,
+        photoIds,
+        ...(bundleHazardIds.length > 0
+          ? { attachHazardIds: bundleHazardIds as Id<'hazards'>[] }
+          : {}),
+      })
       setPutInPin(null)
       setPinDropMode(false)
       onClose()
@@ -902,6 +919,21 @@ export function ReportForm({
           placeholder="Anything else — access, hazards you saw, how it skated…"
         />
       </Field>
+
+      {/* D55: only for an online post against a resolved lake. A coord-only offline capture has no
+          body to query candidates for, and its lake isn't known until flush. */}
+      {waterBodyId !== undefined ? (
+        <HazardBundlePrompt
+          waterBodyId={waterBodyId}
+          skateEndTime={form.skateEndTime}
+          skateStartTime={form.skateStartTime}
+          selectedIds={bundleHazardIds}
+          onToggle={(hazardId, checked) =>
+            setUnbundledHazardIds((prev) => toggleBundleOptOut(prev, hazardId, checked))
+          }
+          onCandidates={setBundleCandidateIds}
+        />
+      ) : null}
 
       {error ? <Text color="$danger">{error}</Text> : null}
 

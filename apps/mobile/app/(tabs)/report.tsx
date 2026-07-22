@@ -1,4 +1,11 @@
-import { formatSkateTime, isFlushable, type ReportDraft } from '@skating/core'
+import {
+  formatSkateTime,
+  type HazardQueueItem,
+  hazardTypeLabel,
+  isFlushable,
+  isHazardItemFlushable,
+  type ReportDraft,
+} from '@skating/core'
 import { useFocusEffect, useRouter } from 'expo-router'
 import { useCallback } from 'react'
 import { ScrollView } from 'react-native'
@@ -16,7 +23,8 @@ import { useOfflineDrafts } from '../../src/components/OfflineDraftsContext'
  */
 export default function ReportScreen() {
   const router = useRouter()
-  const { drafts, pendingCount, refresh, flushNow, removeDraft } = useOfflineDrafts()
+  const { drafts, hazardItems, pendingCount, refresh, flushNow, removeDraft, removeHazardItem } =
+    useOfflineDrafts()
 
   // Refresh from sqlite whenever the tab regains focus (e.g. after saving a draft in the modal).
   useFocusEffect(
@@ -50,11 +58,11 @@ export default function ReportScreen() {
             </Button>
           </YStack>
 
-          {drafts.length > 0 ? (
+          {drafts.length > 0 || hazardItems.length > 0 ? (
             <YStack gap="$2">
               <XStack justifyContent="space-between" alignItems="center">
                 <Text color="$foreground" fontWeight="600">
-                  Drafts{pendingCount > 0 ? ` · ${pendingCount} to send` : ''}
+                  Queued{pendingCount > 0 ? ` · ${pendingCount} to send` : ''}
                 </Text>
                 {pendingCount > 0 ? (
                   <Button size="$2" onPress={() => void flushNow()}>
@@ -62,6 +70,16 @@ export default function ReportScreen() {
                   </Button>
                 ) : null}
               </XStack>
+              {/* Hazards first — they're safety content and flush first (see `flushDrafts`). A queued
+                  hazard that hit a permanent rejection lives here until dismissed, so it can't silently
+                  vanish after "it'll post when you're back in signal". */}
+              {hazardItems.map((item) => (
+                <HazardItemRow
+                  key={item.id}
+                  item={item}
+                  onDelete={() => removeHazardItem(item.id)}
+                />
+              ))}
               {drafts.map((draft) => (
                 <DraftRow
                   key={draft.id}
@@ -121,6 +139,46 @@ function DraftRow({
         </Button>
         <Button size="$2" onPress={onEdit}>
           Edit
+        </Button>
+      </XStack>
+    </YStack>
+  )
+}
+
+/**
+ * A queued on-ice hazard or confirmation (Phase 9). No edit affordance — a hazard is immutable once
+ * captured — but it must be *visible and deletable*, so a permanent rejection on flush (a removed
+ * lake, a minor, an unresolvable location) is something the skater can see and clear rather than a
+ * silent, unrecoverable row that also never frees its photo files.
+ */
+function HazardItemRow({ item, onDelete }: { item: HazardQueueItem; onDelete: () => void }) {
+  const pending = isHazardItemFlushable(item)
+  const title = item.kind === 'hazard' ? hazardTypeLabel(item.type) : 'Hazard confirmation'
+  return (
+    <YStack
+      gap="$2"
+      padding="$3"
+      borderWidth={1}
+      borderColor="$border"
+      borderRadius="$4"
+      backgroundColor="$surfaceMuted"
+    >
+      <XStack justifyContent="space-between" alignItems="center" gap="$2">
+        <Text color="$foreground" flex={1}>
+          {title}
+        </Text>
+        <Badge tone={item.status === 'error' ? 'solid' : undefined}>
+          {item.status === 'error' ? 'Needs attention' : pending ? 'Pending' : 'Sent'}
+        </Badge>
+      </XStack>
+      {item.status === 'error' && item.errorMessage ? (
+        <Text color="$danger" fontSize={12}>
+          {item.errorMessage}
+        </Text>
+      ) : null}
+      <XStack gap="$2" justifyContent="flex-end">
+        <Button size="$2" chromeless onPress={onDelete}>
+          Delete
         </Button>
       </XStack>
     </YStack>
