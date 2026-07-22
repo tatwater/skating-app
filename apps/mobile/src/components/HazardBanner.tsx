@@ -8,38 +8,35 @@ import {
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
-import {
-  type AlertSession,
-  advanceAlertSession,
-  dismissBanner,
-  emptyAlertSession,
-  toProximityHazards,
-} from '../lib/onIce';
+import { toProximityHazards } from '../lib/onIce';
+import { dismissOnIceBanner, setOnIceHazards, useOnIceMode } from '../lib/onIceMode';
 import { useMapSelection } from './MapSelectionContext';
 
 /**
- * On-ice proximity alerts (D54 Layer 1) — **foreground-only in v1** (build-kickoff call 4).
+ * On-ice alert banner (D54 Layers 1 + 2) — the *foreground* face of on-ice alerting.
  *
- * The server never learns where anyone is (D12). It syncs hazard *data* for the lake you're on; this
- * component watches the device's own GPS and evaluates it locally against those cached hazards. So
- * positions never leave the phone, a troll's blast radius is limited to people physically on that
- * same ice, and — once the hazards are cached — the alert fires with no signal.
+ * The server never learns where anyone is (D12). It syncs hazard *data* for the lake you're on; the
+ * `onIceMode` store watches the device's own GPS (published by the layout's single watcher) and
+ * evaluates it locally against those cached hazards — proximity always, plus the directional "hazard
+ * ahead" projection while on-ice mode is armed. So positions never leave the phone, a troll's blast
+ * radius is limited to people physically on that same ice, and — once hazards are cached — alerts fire
+ * with no signal. This component just *renders* the store's current banner; the pocketed-phone case
+ * fires a local notification instead (same shared dedup set, so neither double-fires).
  *
- * Alerts surface as **top banners, never modals**. Blocking the map of someone moving on ice is
- * unacceptable, so there is no dialog anywhere in this path.
+ * Alerts surface as **top banners, never modals** — blocking the map of someone moving on ice is
+ * unacceptable.
  *
  * ⚠ **Silence is not an all-clear.** This banner appearing means something was *reported* nearby; it
- * never appearing means nothing was reported — not that the ice is fine. In v1 the watcher only runs
- * while the app is foregrounded, which makes that even weaker, so the disclaimer ships *with* the
+ * never appearing means nothing was reported — not that the ice is fine. The disclaimer ships *with* the
  * feature rather than buried in settings.
  */
 export function HazardBanner() {
   const router = useRouter();
-  const { onIceWaterBodyId, onIceCoord } = useMapSelection();
+  const { onIceWaterBodyId } = useMapSelection();
   const confirm = useMutation(api.hazardConfirmations.confirm);
-  const [session, setSession] = useState<AlertSession>(emptyAlertSession);
+  const { banner } = useOnIceMode();
 
   const hazards = useQuery(
     api.hazards.listForBody,
@@ -47,23 +44,23 @@ export function HazardBanner() {
   );
   const proximityHazards = useMemo(() => toProximityHazards(hazards ?? []), [hazards]);
 
-  // No GPS watcher of its own — the layout owns the single watcher and publishes each fix as
-  // `onIceCoord`, so proximity is evaluated here off that shared coord. One subscription for the whole
-  // on-ice experience; `advanceAlertSession` keeps a showing banner from being swapped out from under a
-  // moving skater and dedups per session (unit-tested in `onIce.ts`), so it's safe to run on either
-  // trigger. Re-evaluate on BOTH a new fix AND a change to the cached hazard set: a stationary skater
-  // (no new fixes) whose lake finishes syncing, or near whom a hazard is freshly posted, must still get
-  // the banner — evaluated against their latest known coord (the effect closes over the current
-  // `onIceCoord` on every run).
+  // Push the lake's hazards into the shared store, which re-evaluates them against the last fix — so a
+  // stationary skater whose lake finishes syncing, or near whom a hazard is freshly posted, still gets
+  // the banner without waiting for a new GPS fix. Clearing to `[]` when there's no on-ice lake stops a
+  // stale set from alerting after the skater leaves.
   useEffect(() => {
-    if (!onIceCoord) return;
-    setSession((prev) => advanceAlertSession(prev, onIceCoord, proximityHazards));
-  }, [onIceCoord, proximityHazards]);
+    setOnIceHazards(proximityHazards);
+  }, [proximityHazards]);
 
-  const banner = session.banner;
   if (!banner) return null;
 
   const warning = banner.kind === 'warning';
+  const ahead = banner.secondsToEncounter !== undefined;
+  const headline = warning
+    ? ahead
+      ? `⚠ ${hazardTypeLabel(banner.type)} ~${Math.round(banner.secondsToEncounter ?? 0)} s ahead`
+      : warningHeadline(banner.type, banner.distanceMeters)
+    : confirmRequestPrompt(banner.type);
 
   return (
     <YStack
@@ -83,9 +80,7 @@ export function HazardBanner() {
       accessibilityLiveRegion="assertive"
     >
       <Text color={warning ? '$dangerForeground' : '$warningForeground'} fontWeight="700">
-        {warning
-          ? warningHeadline(banner.type, banner.distanceMeters)
-          : confirmRequestPrompt(banner.type)}
+        {headline}
       </Text>
 
       {warning ? (
@@ -94,13 +89,13 @@ export function HazardBanner() {
             size="$3"
             flex={1}
             onPress={() => {
-              setSession(dismissBanner);
+              dismissOnIceBanner();
               router.navigate({ pathname: '/hazard/[id]', params: { id: banner.hazardId } });
             }}
           >
             Show me
           </Button>
-          <Button size="$3" chromeless onPress={() => setSession(dismissBanner)}>
+          <Button size="$3" chromeless onPress={dismissOnIceBanner}>
             Dismiss
           </Button>
         </XStack>
@@ -112,7 +107,7 @@ export function HazardBanner() {
             size="$3"
             flex={1}
             onPress={async () => {
-              setSession(dismissBanner);
+              dismissOnIceBanner();
               try {
                 await confirm({
                   hazardId: banner.hazardId as Id<'hazards'>,
@@ -133,7 +128,7 @@ export function HazardBanner() {
             size="$3"
             flex={1}
             onPress={() => {
-              setSession(dismissBanner);
+              dismissOnIceBanner();
               router.navigate({ pathname: '/hazard/[id]', params: { id: banner.hazardId } });
             }}
           >
