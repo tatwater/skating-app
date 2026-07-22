@@ -195,8 +195,11 @@ added (course-over-ground decision).
   debounced interval, or on explicit off.
 - **Delivery.** While armed, each fix (foreground **or** background) folds into the shared `AlertSession`:
   - Foreground → the existing top **banner** (Layer 1, unchanged).
-  - Background / screen-off → a **local notification** ("⚠ Open water ~45 s ahead — tap to confirm"),
-    tapping which fires `skating://hazard/<id>?action=confirm`.
+  - Background / screen-off → a **local notification** ("⚠ Open water ahead · About 45 s ahead. Tap to
+    view — is it still there?"), tapping which fires `skating://hazard/<id>?action=confirm`. The CTA
+    names *reporting the hazard's presence*, never a bare "acknowledge the alert" — because the tap
+    lands pre-focused on the "is it still there?" confirm control, not a dismiss. (A confirmed hazard
+    asks *is it still there?*; an unconfirmed one asks *can you see it?*)
   - Same `alerted` set → no double-fire when a projected hazard later becomes a proximity hit.
 - **Copy — silence is not an all-clear (D3).** The arm control and the notification settings both state
   that no alert never means the ice is clear, and that coverage depends on GPS + the hazard already being

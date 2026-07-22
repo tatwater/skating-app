@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-router';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { HazardView, type HazardViewData } from './HazardDetail';
 import { Sheet, SheetContent } from './ui/sheet';
 
@@ -181,5 +181,44 @@ describe('HazardView', () => {
   it('names the reporter once the backend provides one', async () => {
     renderWithRouter(<HazardView data={data({ reporterName: 'Nadia' })} />);
     expect(await screen.findByText(/by Nadia/)).toBeInTheDocument();
+  });
+
+  // The `?action=confirm` deep link (D54 Layer 2) lands from an on-ice notification tap. jsdom has no
+  // layout, so `scrollIntoView` is stubbed and we assert the intent: the confirm control is scrolled
+  // to and focused, but the destructive "fully healed" step stays collapsed.
+  describe('?action=confirm deep link', () => {
+    beforeEach(() => {
+      HTMLElement.prototype.scrollIntoView = vi.fn();
+    });
+
+    it('scrolls the confirm control into view and focuses it', async () => {
+      renderWithRouter(<HazardView data={data()} onConfirm={vi.fn()} action="confirm" />);
+      // Wait for the confirm section to render before asserting the effect ran.
+      await screen.findByRole('button', { name: /Still here/ });
+      expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
+      // Focus lands on the confirm section wrapper, not on any single verdict button.
+      expect(document.activeElement?.textContent).toContain('Seen this recently?');
+    });
+
+    it('does not expand the destructive "fully healed" step when deep-linked (D3)', async () => {
+      renderWithRouter(<HazardView data={data()} onConfirm={vi.fn()} action="confirm" />);
+      await screen.findByRole('button', { name: /Fully healed & safe/ });
+      // The second-tap confirmation copy only appears once the skater taps "Fully healed" themselves.
+      expect(screen.queryByText(/retires the marker for everyone/)).not.toBeInTheDocument();
+    });
+
+    it('does not scroll a retired hazard (no confirm control to focus)', async () => {
+      renderWithRouter(
+        <HazardView data={data({ archived: true })} onConfirm={vi.fn()} action="confirm" />,
+      );
+      await screen.findByText('Retired');
+      expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
+
+    it('leaves the confirm control unscrolled without the deep-link action', async () => {
+      renderWithRouter(<HazardView data={data()} onConfirm={vi.fn()} />);
+      await screen.findByRole('button', { name: /Still here/ });
+      expect(HTMLElement.prototype.scrollIntoView).not.toHaveBeenCalled();
+    });
   });
 });

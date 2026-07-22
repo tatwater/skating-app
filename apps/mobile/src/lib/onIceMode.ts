@@ -190,7 +190,13 @@ async function fireHazardNotification(alert: SessionAlert): Promise<void> {
           : `⚠ ${label} nearby`
         : `${label} reported near you`;
     const lead = ahead ? `About ${Math.round(alert.secondsToEncounter ?? 0)} s ahead. ` : '';
-    const ask = alert.kind === 'warning' ? 'Tap to see it.' : 'Tap to check — can you see it?';
+    // The tap lands pre-focused on the "is it still there?" confirm control (`action: 'confirm'`), so
+    // the CTA names *reporting the hazard's presence* — never a bare "got it" acknowledgement. A
+    // confirmed hazard asks whether it's still there; an unconfirmed one asks whether it's there at all.
+    const ask =
+      alert.kind === 'warning'
+        ? 'Tap to view — is it still there?'
+        : 'Tap to check — can you see it?';
     await Notifications.scheduleNotificationAsync({
       content: {
         title,

@@ -17,7 +17,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { FlagDialog } from './SafetyControls';
@@ -72,6 +72,7 @@ export function HazardView({
   confirming,
   confirmError,
   flagControl,
+  action,
 }: {
   data: HazardViewData;
   onConfirm?: (verdict: HazardVerdict) => void;
@@ -86,11 +87,31 @@ export function HazardView({
    * deliberately Convex-free so it can be rendered from a fixture in a test.
    */
   flagControl?: ReactNode;
+  /**
+   * Deep-link intent (D54 Layer 2). `confirm` lands from an on-ice notification tap and scrolls the
+   * three-tier confirm control into view. It never *expands* the destructive "fully healed" step —
+   * that stays gated behind its own second tap even when deep-linked, because a false all-clear is
+   * the worst outcome this screen can produce (D3).
+   */
+  action?: 'confirm';
 }) {
   // The destructive verdict gets a confirm step. It's the only one that retires a pin for everyone,
   // and a mis-tap that clears a real hazard is the worst outcome this UI can produce (D3).
   const [pendingHealed, setPendingHealed] = useState(false);
   const passage = isPassageMarker(data.type);
+
+  // When deep-linked with `?action=confirm`, bring the confirm control into view. Guarded on the
+  // section actually rendering (`onConfirm && !archived`) so we never scroll to nothing on a retired
+  // hazard. Focus (not just scroll) so a keyboard/screen-reader user also lands on the control.
+  const confirmSectionRef = useRef<HTMLDivElement>(null);
+  const confirmVisible = Boolean(onConfirm) && !data.archived;
+  useEffect(() => {
+    if (action !== 'confirm' || !confirmVisible) return;
+    const node = confirmSectionRef.current;
+    if (!node) return;
+    node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    node.focus({ preventScroll: true });
+  }, [action, confirmVisible]);
 
   return (
     <>
@@ -159,7 +180,13 @@ export function HazardView({
         {onConfirm && !data.archived ? (
           <>
             <Separator />
-            <div className="space-y-2">
+            {/* tabIndex -1 makes this focusable for the `?action=confirm` deep link without adding it
+                to the tab order. `scroll-mt-4` leaves a little breathing room above when scrolled to. */}
+            <div
+              ref={confirmSectionRef}
+              tabIndex={-1}
+              className="scroll-mt-4 space-y-2 outline-none"
+            >
               <h3 className="font-medium text-sm">
                 {passage ? 'Been through here?' : 'Seen this recently?'}
               </h3>
@@ -236,7 +263,7 @@ export function HazardView({
 }
 
 /** Container: resolves the hazard + its photos, pushes map focus, and wires the confirm mutation. */
-export function HazardDetail({ hazardId }: { hazardId: string }) {
+export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 'confirm' }) {
   const hazard = useQuery(api.hazards.get, { hazardId: hazardId as Id<'hazards'> });
   const photos = useQuery(api.photos.getHazardUrls, { hazardId: hazardId as Id<'hazards'> });
   const body = useQuery(api.waterBodies.get, hazard ? { waterBodyId: hazard.waterBodyId } : 'skip');
@@ -288,6 +315,7 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
       }}
       confirming={confirming}
       confirmError={confirmError}
+      action={action}
       flagControl={<FlagDialog targetType="hazard" targetId={hazardId} />}
       onConfirm={async (verdict) => {
         setConfirming(true);
