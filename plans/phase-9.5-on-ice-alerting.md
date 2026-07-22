@@ -8,7 +8,13 @@
 > **Naming.** `9.5` mirrors `2.5` (the Phase 2 offline fast-follow): a same-phase follow-on, not a new
 > roadmap phase.
 >
-> **Status:** 🔜 **Planned (2026-07-21).** Awaiting founder review of this doc before build.
+> **Status:** ✅ **Complete (2026-07-22)** on branch `phase-9.5-on-ice-alerting` — all nine build items
+> landed, full test suite green (core / mobile / backend), code-reviewed. Pending PR + Greptile review,
+> then dev deploy; prod deferred (never deployed). One code-review fix folded in: the every-approach
+> directional re-alert used a distance-only hysteresis that machine-gunned notifications while a skater
+> approached a far "ahead" hazard — now gated on an `approached` set (a hazard can only be *left*, and
+> re-armed, once its vicinity has been *entered*). The `file://` pmtiles offline-basemap path is built
+> flag-off and still awaits its one on-device confirmation (route (1) in the smaller-threads section).
 >
 > **Prerequisites — all in place.** Phase 9 is **merged (PR #20), on dev, Android-emulator smoke-tested**.
 > The pure proximity evaluator (`hazardProximity.evaluateOnIceAlert`), the per-session `alerted` set

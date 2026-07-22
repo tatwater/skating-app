@@ -193,6 +193,10 @@ function MapLayoutInner() {
     setOnIceWaterBodyId(resolved);
     // Record the dwell (Phase 9.5) so the report form can later prefill the skate window from when the
     // device was actually on this lake. On-device only (D12); best-effort while unarmed (foreground-only).
+    // INVARIANT: `resolved` is the *survivor* body id — `resolveBodyForCoord` returns only listed bodies
+    // and the offline cache stores the resolved `_id` — which is the exact id `WaterBodyDetail` hands the
+    // report form as the dwell lookup key (`getSuggestedSkateWindow`). Keep both keyed on the survivor id
+    // or the prefill silently no-ops.
     noteDwell(resolved);
     if (
       shouldAutoSelectOnIce({

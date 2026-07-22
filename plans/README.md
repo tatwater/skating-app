@@ -53,7 +53,9 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   - [Phase 9.5 — On-ice live alerting](./phase-9.5-on-ice-alerting.md) — the deferred **D54 Layer 2**
     fast-follow: `expo-notifications` (local only) + session-scoped background location + course-over-
     ground directional projection, plus `?action=confirm`, hazard author line, clip-footprint-to-body,
-    auto-suggest skate times, and a Layer-3 tile-pack retry. **🔜 Planned (2026-07-21).**
+    auto-suggest skate times, and a Layer-3 tile-pack retry. **✅ Complete (2026-07-22) on branch
+    `phase-9.5-on-ice-alerting`; pending PR + dev deploy, prod deferred.** Layer-3 `file://` pmtiles path
+    built flag-off, awaiting one on-device check.
 
 ## How these fit together
 

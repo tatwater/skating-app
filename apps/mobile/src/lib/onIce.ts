@@ -102,10 +102,18 @@ export interface SessionAlert extends HazardAlert {
 export interface AlertSession {
   alerted: ReadonlySet<string>;
   banner: SessionAlert | null;
+  /**
+   * The subset of `alerted` the skater has actually been *within proximity of* (inside the alert buffer)
+   * since it fired — the "has entered its vicinity" flag that gates every-approach re-arming. Only a
+   * hazard that's been approached can later be *left*, which is what stops a **directional** alert — one
+   * that fires 30–60 s ahead, i.e. far — from being released (distance > hysteresis is trivially true out
+   * there) and re-firing on every fix while the skater is merely still approaching it.
+   */
+  approached: ReadonlySet<string>;
 }
 
 export function emptyAlertSession(): AlertSession {
-  return { alerted: new Set(), banner: null };
+  return { alerted: new Set(), banner: null, approached: new Set() };
 }
 
 export interface AdvanceOnIceOptions {
@@ -164,27 +172,44 @@ export function advanceOnIceSession(
     hysteresisMeters = alertBufferMeters * DEFAULT_HYSTERESIS_MULTIPLIER,
   } = options;
 
-  // Every-approach: release any suppressed hazard the skater has clearly skated away from, so a real
-  // re-approach can alert again. Distance is to the footprint edge (0 inside) — the same measure the
-  // alert uses. Once-per-session never releases: you're expected to remember where the danger was.
+  // Every-approach: re-arm a suppressed hazard for a genuine re-approach, but only once the skater has
+  // *left* it — which means they first *entered* it. Distance is to the footprint edge (0 inside), the
+  // same measure the alert uses. Two transitions per fix:
+  //   1. enter → mark `approached` once the skater is within the alert buffer (its vicinity);
+  //   2. leave → release (drop from both sets) once an *approached* hazard is past the hysteresis band.
+  // The enter-gate is what fixes the directional double-fire: an "ahead" alert fires ~45 s out, far
+  // beyond hysteresis, so without step 1 it would be "released" and re-fired on the very next fix while
+  // the skater is still closing in. Requiring an entry first means it stays suppressed through the whole
+  // approach and only re-arms after the skater has actually passed through and moved on.
+  // Once-per-session never releases: you're expected to remember where the danger was.
   let alerted = session.alerted;
+  let approached = session.approached;
   if (cadence === 'every_approach' && alerted.size > 0) {
-    const released = new Set(alerted);
+    const nextAlerted = new Set(alerted);
+    const nextApproached = new Set(approached);
     let changed = false;
     for (const hazard of hazards) {
-      if (!released.has(hazard.id)) continue;
+      if (!nextAlerted.has(hazard.id)) continue;
       let distance: number;
       try {
         distance = distanceToHazard(fix.coord, hazard.shape, hazard.clippedFootprint);
       } catch {
         continue;
       }
-      if (Number.isFinite(distance) && distance > hysteresisMeters) {
-        released.delete(hazard.id);
+      if (!Number.isFinite(distance)) continue;
+      if (distance <= alertBufferMeters && !nextApproached.has(hazard.id)) {
+        nextApproached.add(hazard.id); // entered its vicinity — now it can be "left"
+        changed = true;
+      } else if (nextApproached.has(hazard.id) && distance > hysteresisMeters) {
+        nextAlerted.delete(hazard.id); // left after entering — re-arm for the next approach
+        nextApproached.delete(hazard.id);
         changed = true;
       }
     }
-    if (changed) alerted = released;
+    if (changed) {
+      alerted = nextAlerted;
+      approached = nextApproached;
+    }
   }
 
   const proximity = evaluateOnIceAlert(fix.coord, hazards, alerted, {
@@ -203,11 +228,22 @@ export function advanceOnIceSession(
   // Nearest current edge wins: a proximity hit (distance = how far you are *now*) sorts ahead of a
   // directional one (distance = where the path meets the footprint), so "you're on it" beats "it's
   // ahead" when both apply to the same fix.
-  const top = [...proximity, ...ahead].sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
+  const merged: SessionAlert[] = [...proximity, ...ahead];
+  const top = merged.sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
 
-  if (!top) return { alerted, banner: session.banner, fired: null };
-  if (session.banner) return { alerted, banner: session.banner, fired: null };
-  return { alerted: new Set([...alerted, top.hazardId]), banner: top, fired: top };
+  if (!top) return { alerted, approached, banner: session.banner, fired: null };
+  if (session.banner) return { alerted, approached, banner: session.banner, fired: null };
+  // A proximity hit fires *because* the skater is within the buffer, so it's "approached" from the moment
+  // it fires (leaving past hysteresis then re-arms it — the original every-approach behaviour). A
+  // directional hit fires far ahead and is *not* yet approached; it becomes so once the skater closes in.
+  const nextApproached =
+    top.secondsToEncounter === undefined ? new Set([...approached, top.hazardId]) : approached;
+  return {
+    alerted: new Set([...alerted, top.hazardId]),
+    approached: nextApproached,
+    banner: top,
+    fired: top,
+  };
 }
 
 /**
@@ -218,7 +254,7 @@ export function advanceOnIceSession(
  * and never the hazard's lifecycle.
  */
 export function dismissBanner(session: AlertSession): AlertSession {
-  return { alerted: session.alerted, banner: null };
+  return { alerted: session.alerted, banner: null, approached: session.approached };
 }
 
 /**

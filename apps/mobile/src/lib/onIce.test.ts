@@ -1,10 +1,12 @@
 import type { DirectionalFix, LatLng } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import {
+  type AlertSession,
   advanceOnIceSession,
   dismissBanner,
   emptyAlertSession,
   type HazardRow,
+  type RealertCadence,
   resolveOnIceBody,
   shouldAutoSelectOnIce,
   toProximityHazards,
@@ -184,6 +186,73 @@ describe('advanceOnIceSession — re-alert cadence', () => {
     const left = advanceOnIceSession(dismissBanner(raised), still(AWAY), hazards(row()));
     const back = advanceOnIceSession(left, still(HERE), hazards(row()));
     expect(back.fired).toBeNull(); // still suppressed
+  });
+});
+
+// A directional alert fires ~45 s *ahead* — far beyond the hysteresis band — so a naive "distance >
+// hysteresis" release re-arms it on the very next fix and re-fires it on every fix through the whole
+// approach (9+ notifications for one hazard in the background path). The `approached` gate fixes this:
+// a hazard can only be *left* (and re-armed) once the skater has actually *entered* its vicinity.
+describe('advanceOnIceSession — directional re-alert does not machine-gun (regression)', () => {
+  const M_PER_DEG = 111_320;
+  const aheadRow = row({
+    _id: 'ahead',
+    geometry: { type: 'Point', coordinates: [HERE.lng, HERE.lat + 600 / M_PER_DEG] },
+    radiusMeters: 20,
+  });
+
+  /**
+   * Fold a straight northbound (heading 0) or southbound (heading 180) leg at 8 m/s, one fix per
+   * `stepM`, through the **background** path (banner cleared each fix, as `ingestOnIceFix` does) —
+   * counting how many alerts fire. Chains from a prior session so a pass-and-return can be expressed.
+   */
+  function skateLeg(
+    session: AlertSession,
+    cadence: RealertCadence,
+    fromM: number,
+    toM: number,
+    stepM: number,
+  ): { fires: number; session: AlertSession } {
+    const haz = hazards(aheadRow);
+    const dir = toM >= fromM ? 1 : -1;
+    let s = session;
+    let fires = 0;
+    for (let d = fromM; dir > 0 ? d <= toM : d >= toM; d += dir * stepM) {
+      const fix: DirectionalFix = {
+        coord: { lat: HERE.lat + d / M_PER_DEG, lng: HERE.lng },
+        headingDeg: dir > 0 ? 0 : 180,
+        speedMps: 8,
+      };
+      const base: AlertSession = { alerted: s.alerted, approached: s.approached, banner: null };
+      const r = advanceOnIceSession(base, fix, haz, { cadence, directional: true });
+      s = { alerted: r.alerted, approached: r.approached, banner: null };
+      if (r.fired) fires++;
+    }
+    return { fires, session: s };
+  }
+
+  it('every-approach: one straight approach fires exactly once, not once per fix', () => {
+    expect(skateLeg(emptyAlertSession(), 'every_approach', 0, 620, 20).fires).toBe(1);
+  });
+
+  it('once-per-session: one straight approach fires exactly once', () => {
+    expect(skateLeg(emptyAlertSession(), 'once_per_session', 0, 620, 20).fires).toBe(1);
+  });
+
+  it('every-approach: a genuine re-approach (pass through, turn around, come back) fires again', () => {
+    // North through the hazard (~600 m) and well past it, so the skater both enters and leaves it.
+    const north = skateLeg(emptyAlertSession(), 'every_approach', 0, 960, 20);
+    expect(north.fires).toBe(1);
+    // Turn around and skate back at it — a real re-approach, so it re-arms and fires a second time.
+    const back = skateLeg(north.session, 'every_approach', 940, 0, 20);
+    expect(back.fires).toBe(1);
+  });
+
+  it('once-per-session: after passing through and returning, it never re-fires', () => {
+    const north = skateLeg(emptyAlertSession(), 'once_per_session', 0, 960, 20);
+    expect(north.fires).toBe(1);
+    const back = skateLeg(north.session, 'once_per_session', 940, 0, 20);
+    expect(back.fires).toBe(0); // suppressed for the whole session
   });
 });
 

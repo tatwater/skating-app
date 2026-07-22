@@ -413,6 +413,9 @@ export function ReportForm({
   useEffect(() => {
     if (profile !== undefined && !minor && form === null) {
       const base = emptyReportForm(Date.now());
+      // `waterBodyId` here is `WaterBodyDetail`'s resolved survivor `_id` — the same id the on-ice watcher
+      // keys dwells on (`noteDwell`), so the lookup matches. If a caller ever passes an unresolved/merged
+      // id, the suggestion just falls back to `{}` (no prefill) rather than misbehaving.
       const suggestion = waterBodyId ? getSuggestedSkateWindow(waterBodyId) : {};
       if (suggestion.end !== undefined) base.skateEndTime = suggestion.end;
       // Offer a start only when the dwell is a real span (strictly before the end) — a single-fix dwell

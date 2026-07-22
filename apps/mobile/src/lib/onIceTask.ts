@@ -15,6 +15,7 @@
 import type { DirectionalFix } from '@skating/core';
 import * as Location from 'expo-location';
 import * as TaskManager from 'expo-task-manager';
+import { AppState } from 'react-native';
 
 export const ONICE_LOCATION_TASK = 'skating-on-ice-location';
 
@@ -36,6 +37,11 @@ function toDirectionalFix(loc: Location.LocationObject): DirectionalFix {
 
 TaskManager.defineTask(ONICE_LOCATION_TASK, async ({ data, error }) => {
   if (error || !data) return;
+  // Background updates are delivered in the foreground too, but there the layout's own `watchPositionAsync`
+  // is already feeding every fix into the same session — so forwarding here as well would evaluate each
+  // fix twice (and drain a cold phone's battery for nothing). This task exists for the *background* case;
+  // when the app is active, defer to the foreground watcher and do nothing.
+  if (AppState.currentState === 'active') return;
   const { locations } = data as { locations: Location.LocationObject[] };
   const latest = locations.at(-1);
   if (latest && handler) handler(toDirectionalFix(latest));

@@ -136,11 +136,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     };
   }, [pmtilesUrl]);
 
-  const basemapSource = resolveBasemapSource({
-    remoteUrl: pmtilesUrl,
-    localUri: localBasemapUri,
-    localReady: localBasemapUri !== null,
-  });
+  const basemapSource = useMemo(
+    () =>
+      resolveBasemapSource({
+        remoteUrl: pmtilesUrl,
+        localUri: localBasemapUri,
+        localReady: localBasemapUri !== null,
+      }),
+    [pmtilesUrl, localBasemapUri],
+  );
   const mapStyle = useMemo(
     () => (basemapSource ? buildMapStyle(basemapSource, flavor) : null),
     [basemapSource, flavor],

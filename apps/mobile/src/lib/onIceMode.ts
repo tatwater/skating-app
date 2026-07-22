@@ -102,13 +102,16 @@ export function ingestOnIceFix(fix: DirectionalFix): void {
   lastFix = fix;
   const active = AppState.currentState === 'active';
   // Backgrounded, there is no banner to protect — clear it so a fresh alert can fire as a notification.
-  const base: AlertSession = active ? session : { alerted: session.alerted, banner: null };
+  // The dedup sets (`alerted` + `approached`) carry across regardless, so neither path re-fires the other.
+  const base: AlertSession = active
+    ? session
+    : { alerted: session.alerted, approached: session.approached, banner: null };
   const result = advanceOnIceSession(base, fix, hazards, { cadence, directional: armed });
 
   if (active) {
-    session = { alerted: result.alerted, banner: result.banner };
+    session = { alerted: result.alerted, approached: result.approached, banner: result.banner };
   } else {
-    session = { alerted: result.alerted, banner: null };
+    session = { alerted: result.alerted, approached: result.approached, banner: null };
     if (result.fired) void fireHazardNotification(result.fired);
   }
   emit();
