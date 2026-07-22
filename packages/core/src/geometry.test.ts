@@ -6,6 +6,7 @@ import {
   type BodyCandidate,
   bboxIntersects,
   bufferedLineOverlap,
+  destinationPoint,
   distanceToPolygonMeters,
   haversineMeters,
   type LatLng,
@@ -413,5 +414,40 @@ describe('haversineMeters', () => {
     const a = { lat: 42.1, lng: -71.2 };
     const b = { lat: 43.9, lng: -73.4 };
     expect(haversineMeters(a, b)).toBeCloseTo(haversineMeters(b, a), 6);
+  });
+});
+
+describe('destinationPoint (Phase 9.5 directional projection)', () => {
+  const origin: LatLng = { lat: 44.4759, lng: -73.2121 };
+
+  it('heads due north for bearing 0 (latitude up, longitude unchanged)', () => {
+    const p = destinationPoint(origin, 0, 1000);
+    expect(p.lat).toBeGreaterThan(origin.lat);
+    expect(p.lng).toBeCloseTo(origin.lng, 9);
+  });
+
+  it('heads due east for bearing 90 (longitude up, latitude unchanged)', () => {
+    const p = destinationPoint(origin, 90, 1000);
+    expect(p.lng).toBeGreaterThan(origin.lng);
+    expect(p.lat).toBeCloseTo(origin.lat, 9);
+  });
+
+  it('round-trips against haversine to sub-1% at the sub-km scale it serves (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 359 }),
+        fc.integer({ min: 10, max: 1500 }),
+        (bearing, metres) => {
+          const measured = haversineMeters(origin, destinationPoint(origin, bearing, metres));
+          expect(Math.abs(measured - metres) / metres).toBeLessThan(0.01);
+        },
+      ),
+    );
+  });
+
+  it('is the inverse of the projection: opposite bearings return to the origin', () => {
+    const out = destinationPoint(origin, 42, 800);
+    const back = destinationPoint(out, 42 + 180, 800);
+    expect(haversineMeters(origin, back)).toBeLessThan(5);
   });
 });
