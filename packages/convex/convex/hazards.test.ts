@@ -190,6 +190,41 @@ describe('hazards.create', () => {
   });
 });
 
+describe('hazards clip-to-body (Phase 9.5)', () => {
+  // A hazard well inside the lake needs no clip — the footprint is already all water, so nothing is
+  // stored and reads fall back to the live footprint.
+  test('stores no clipped footprint for a hazard well inside the body', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+
+    const hazardId = await user.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(hazard?.clippedFootprint).toBeUndefined();
+  });
+
+  // A hazard dropped on the shoreline buffers into a circle that spills off the lake; the stored clip
+  // confines it, and the stored bbox is pulled back to the shore rather than bulging past it.
+  test('clips a shoreline hazard to the body and tightens its bbox', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t); // unit square, lng/lat 0..1
+
+    const hazardId = await user.as.mutation(
+      api.hazards.create,
+      // Right on the western edge (lng 0): the 40 m circle's western half falls outside the body.
+      createArgs(waterBodyId, { geometry: { type: 'Point', coordinates: [0, 0.5] } }),
+    );
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+
+    expect(hazard?.clippedFootprint).toBeDefined();
+    expect(['Polygon', 'MultiPolygon']).toContain(hazard?.clippedFootprint?.type);
+    // The clip drives the bbox: its western edge is the shoreline (lng 0), not the circle's raw bulge
+    // into the land west of it.
+    expect(hazard?.bbox.minLng).toBeGreaterThanOrEqual(-1e-6);
+  });
+});
+
 describe('hazards.create idempotency (offline flush)', () => {
   // A hazard is flagged standing next to it, which is exactly where there's no signal — so the
   // offline flush is the common path, and a lost ack must not drop a second pin metres from the
@@ -417,6 +452,51 @@ describe('hazard moderation (moderation.setModerationStatus)', () => {
         reason: '  ',
       }),
     ).rejects.toThrow(/reason is required/);
+  });
+});
+
+describe('hazards.get reporter line (Phase 9.5)', () => {
+  test("resolves the reporter's display name for the drawer's author line", async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const viewer = await seedUser(t, 'viewer');
+    const waterBodyId = await seedBody(t);
+    const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const view = await viewer.as.query(api.hazards.get, { hazardId });
+    expect(view?.reporterName).toBe('author');
+  });
+
+  test('withholds the reporter name when viewer and author have blocked each other, but keeps the hazard visible (D3/D32)', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const viewer = await seedUser(t, 'viewer');
+    const waterBodyId = await seedBody(t);
+    const hazardId = await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await t.run((ctx) =>
+      ctx.db.insert('blocks', {
+        blockerId: viewer.id,
+        blockedId: author.id,
+        createdAt: Date.now(),
+      }),
+    );
+
+    const view = await viewer.as.query(api.hazards.get, { hazardId });
+    // The name is suppressed the way a blocked comment's author is — but the safety observation itself
+    // is untouched: a block never pulls a hazard off the map.
+    expect(view).not.toBeNull();
+    expect(view?.reporterName).toBeUndefined();
+  });
+
+  test('does not attach a reporter name on the map list path', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const rows = await author.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.reporterName).toBeUndefined();
   });
 });
 

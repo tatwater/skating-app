@@ -1,7 +1,9 @@
 import fc from 'fast-check';
+import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { bboxIntersects, type LatLng } from './geometry';
+import { bboxIntersects, type LatLng, surfaceAreaSqM } from './geometry';
 import {
+  clipFootprintToBody,
   defaultShapeForType,
   distanceToHazard,
   HAZARD_DEFAULT_BUFFER_M,
@@ -427,5 +429,86 @@ describe('hazardFootprint never yields a non-areal geometry', () => {
     }
     // And a distance query against any of them is finite, not a throw.
     expect(Number.isFinite(distanceToHazard(CENTRE, line))).toBe(true);
+  });
+});
+
+describe('clipFootprintToBody (Phase 9.5)', () => {
+  // A body occupying the western half-plane: water is west of the shoreline at lng 0, land is east.
+  const WEST_BODY: Polygon = {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [-0.01, -0.01],
+        [0, -0.01],
+        [0, 0.01],
+        [-0.01, 0.01],
+        [-0.01, -0.01],
+      ],
+    ],
+  };
+  const SHORELINE = { lat: 0, lng: 0 }; // hazard dropped right on the shoreline
+  const shorelineFootprint = hazardFootprint(pointRadiusShape(SHORELINE, 50));
+
+  it('returns null when the footprint is wholly inside the body (nothing to clip)', () => {
+    const bigBody: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-1, -1],
+          [1, -1],
+          [1, 1],
+          [-1, 1],
+          [-1, -1],
+        ],
+      ],
+    };
+    const footprint = hazardFootprint(pointRadiusShape({ lat: 0, lng: 0 }, 50));
+    expect(clipFootprintToBody(footprint, bigBody)).toBeNull();
+  });
+
+  it('clips a shoreline circle down to the water side only', () => {
+    const clipped = clipFootprintToBody(shorelineFootprint, WEST_BODY);
+    expect(clipped).not.toBeNull();
+    // A circle centred on a straight shoreline loses ~half its area to land.
+    expect(surfaceAreaSqM(clipped as Polygon | MultiPolygon)).toBeLessThan(
+      surfaceAreaSqM(shorelineFootprint) * 0.7,
+    );
+  });
+
+  it('never clips to empty — a disjoint body leaves the footprint whole (D3: never vanish a hazard)', () => {
+    const farBody: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [1, 1],
+          [2, 1],
+          [2, 2],
+          [1, 2],
+          [1, 1],
+        ],
+      ],
+    };
+    expect(clipFootprintToBody(shorelineFootprint, farBody)).toBeNull();
+  });
+
+  it('the clip is what keeps a coord on land from reading as "inside" the hazard', () => {
+    const clipped = clipFootprintToBody(shorelineFootprint, WEST_BODY);
+    const shape = pointRadiusShape(SHORELINE, 50);
+    const onLand = { lat: 0, lng: 0.0002 }; // ~22 m east of the shoreline — dry land, inside the raw circle
+    // Unclipped, the raw circle swallows the land point: distance 0 = "you're in it".
+    expect(distanceToHazard(onLand, shape)).toBe(0);
+    // Clipped to the water, that same land point is outside the danger, so it reads as a real distance.
+    expect(distanceToHazard(onLand, shape, clipped)).toBeGreaterThan(0);
+    // A point on the water side stays inside under both.
+    const onWater = { lat: 0, lng: -0.0002 };
+    expect(distanceToHazard(onWater, shape, clipped)).toBe(0);
+  });
+
+  it('derives a tighter bbox from the clipped footprint', () => {
+    const clipped = clipFootprintToBody(shorelineFootprint, WEST_BODY);
+    const shape = pointRadiusShape(SHORELINE, 50);
+    // The land (eastern) edge of the bbox is pulled back to the shoreline instead of bulging past it.
+    expect(hazardBbox(shape, clipped).maxLng).toBeLessThanOrEqual(hazardBbox(shape).maxLng);
+    expect(hazardBbox(shape, clipped).maxLng).toBeCloseTo(0, 4);
   });
 });

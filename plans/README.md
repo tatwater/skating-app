@@ -43,13 +43,18 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
 - [Phase 9 — Hazards](./phase-9-hazards.md) — geometry-per-type hazard authoring (point+radius /
   line / render-only polygon), per-type decay + three-tier "healing" confirmation, persistent known
   seasonal `bodyFeatures`, client-side on-ice proximity alerts (offline-capable). *(Pulled ahead of
-  Phase 6 — safety content before reputation, 2026-07-18.)* **✅ Code complete + reviewed
-  (2026-07-21); tests green. Not yet deployed to the dev Convex deployment; PR not yet merged.**
-  Decisions **D51–D55** locked (D51/D54 amended + D55 added at build kickoff). The Layer-3 offline
-  basemap tile-pack was **dropped** (native spike; findings in the phase doc).
+  Phase 6 — safety content before reputation, 2026-07-18.)* **✅ Merged to `main` (PR #20, 2026-07-21),
+  deployed to dev, Android-emulator smoke-tested; prod deferred.** Decisions **D51–D55** locked
+  (D51/D54 amended + D55 added at build kickoff). The Layer-3 offline basemap tile-pack was **dropped**
+  (native spike; findings in the phase doc).
   - [Phase 9 — Hazard research](./phase-9-hazard-research.md) — calibrated `HAZARD_DECAY` table +
     per-type behavior evidence (corpus + lakeice.info), expanded taxonomy, corrected Phase-10 weather
     signs. **✅ Research done 2026-07-21.**
+  - [Phase 9.5 — On-ice live alerting](./phase-9.5-on-ice-alerting.md) — the deferred **D54 Layer 2**
+    fast-follow: `expo-notifications` (local only) + session-scoped background location + course-over-
+    ground directional projection, plus `?action=confirm`, hazard author line, clip-footprint-to-body,
+    auto-suggest skate times, and a Layer-3 tile-pack retry. **✅ Merged to `main` (PR #21, 2026-07-22),
+    dev deploy + prod deferred.** Layer-3 `file://` pmtiles path built flag-off, awaiting one on-device check.
 - [Phase 6 — Bounties + trust score](./phase-6-bounties-and-trust.md) — request-a-report bounties
   (post/browse/fulfill, separate `bountyPoints` currency); the boost-only **trust score** (D50) rendered
   as a cosmetic class chip + `TrustAvatar` ring (never a raw number); polymorphic helpful/unhelpful thumbs

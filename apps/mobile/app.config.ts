@@ -34,14 +34,29 @@ const config: ExpoConfig = {
     // SDK bundled by v11.3.x reads Protomaps `.pmtiles` directly (no JS protocol), so the map shares
     // the web basemap. Can't run in Expo Go — needs the EAS/dev build (already our workflow, D8).
     '@maplibre/maplibre-react-native',
-    // Device geolocation for home/water framing (D12/D20) — declares the location permission + copy.
+    // Device geolocation (D12/D20). Foreground use frames the map on nearby lakes and marks where you
+    // skated; the Phase 9.5 opt-in "on-ice mode" (D54 Layer 2) additionally runs a *background*
+    // location session while you actively skate, so the directional "hazard ahead" alert fires with the
+    // phone pocketed and the screen asleep. Background updates go through a foreground service on Android
+    // (a persistent notification — which doubles as the "on-ice mode is on" affordance and one-tap off)
+    // and `UIBackgroundModes: location` on iOS. Positions never leave the device (D12): the alert is
+    // evaluated and fired entirely on-device. No keep-awake — the screen sleeps at the normal pace.
     [
       'expo-location',
       {
         locationWhenInUsePermission:
           'Skating uses your location to frame the map on nearby lakes and mark where you skated.',
+        locationAlwaysAndWhenInUsePermission:
+          'Skating uses your location in the background only while "on-ice mode" is on, to warn you about reported ice hazards ahead while you skate. It stays on your device and you can turn it off in one tap.',
+        isAndroidBackgroundLocationEnabled: true,
+        isAndroidForegroundServiceEnabled: true,
+        isIosBackgroundLocationEnabled: true,
       },
     ],
+    // Local (on-device) notifications for the on-ice directional alert (D54 Layer 2). No push token,
+    // no server, no credentials — the notification is computed and scheduled entirely on-device, so
+    // D12 holds. Permission is requested lazily when the skater arms on-ice mode, never on cold launch.
+    'expo-notifications',
     // Report photos (D31/D42): the picker returns EXIF (incl. GPS) so the pipeline can offer the
     // opt-in `placeOnMap` geotag; expo-image-manipulator (no plugin) does the resize + EXIF strip.
     [
