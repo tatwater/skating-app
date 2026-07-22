@@ -264,6 +264,19 @@ added (course-over-ground decision).
   prebuilt sqlite DB; (3) host a crawlable style + tile URLs purely for `createPack`. Timebox again; if it
   resists, it stays dropped and on-ice capture keeps degrading correctly (pin drops at GPS; only map-tap
   Move/Trace needs tiles).
+  - **Progress (2026-07-22) — route (1) scaffolded, one device check remaining.** The `createPack`
+    downloader (route 3) crawls a style's `{z}/{x}/{y}` tile URLs, which a single pmtiles archive can't
+    provide — so route (1) is the clear bet: **it never touches the offline-region API at all.** Download
+    the regional `.pmtiles` once (`expo-file-system`'s `File.downloadFileAsync` → document dir) and point
+    the *same* style at `pmtiles://file://…`; MapLibre Native already reads pmtiles for the online render.
+    Evidence it should work: the bundled SDKs (**Android `13.2.0`, iOS `6.26.0`**) both ship built-in
+    PMTiles support. Built as `apps/mobile/src/lib/offlineBasemap.ts` (`resolveBasemapSource` pure +
+    unit-tested; `ensureOfflineBasemap` a failure-swallowing download), wired into `MapView` behind
+    `EXPO_PUBLIC_OFFLINE_BASEMAP` (**off by default** — with the flag unset, nothing downloads and the map
+    uses the remote URL exactly as before; a failed download always falls back to remote, never blanks).
+    **The one thing only a device build can confirm:** does native pmtiles render a local `file://`
+    archive? If yes, offline basemap is done (a URL swap, no crawlable server, no sqlite pipeline). If no,
+    flip to route (3) or leave dropped — the flag-off default means shipping either way is safe.
 
 ---
 

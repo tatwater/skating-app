@@ -16,6 +16,10 @@ export const env = {
   // Self-built Vermont `.pmtiles` extract later; empty ⇒ the map falls back to the Protomaps demo
   // tiles (§F, mirrors web's VITE_PMTILES_URL). Read natively by MapLibre via the pmtiles:// scheme.
   pmtilesUrl: process.env.EXPO_PUBLIC_PMTILES_URL ?? '',
+  // Layer-3 offline-basemap spike, route (1) (Phase 9.5): when '1', download the regional `.pmtiles`
+  // to device storage and render the map from that local `file://` archive. Off by default — it's an
+  // unverified device experiment (does native pmtiles read `file://`?), see `offlineBasemap.ts`.
+  offlineBasemap: process.env.EXPO_PUBLIC_OFFLINE_BASEMAP === '1',
 } as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */
