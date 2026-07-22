@@ -50,6 +50,11 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   - [Phase 9 — Hazard research](./phase-9-hazard-research.md) — calibrated `HAZARD_DECAY` table +
     per-type behavior evidence (corpus + lakeice.info), expanded taxonomy, corrected Phase-10 weather
     signs. **✅ Research done 2026-07-21.**
+- [Phase 6 — Bounties + trust score](./phase-6-bounties-and-trust.md) — request-a-report bounties
+  (post/browse/fulfill, separate `bountyPoints` currency); the boost-only **trust score** (D50) rendered
+  as a cosmetic class chip + `TrustAvatar` ring (never a raw number); polymorphic helpful/unhelpful thumbs
+  over reports **and** hazards; badges; and the corroboration-gated **recommended** filter-breaking feed.
+  *(Built after Phase 9 — safety before reputation.)* **✅ Complete on dev (2026-07-22); prod deferred.**
 
 ## How these fit together
 

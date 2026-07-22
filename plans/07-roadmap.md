@@ -309,7 +309,12 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - ~~**Temporarily expand radius** (session-only) to browse wider.~~ → **Phase 4** (needs drive-time).
 - **Done:** browse recent community activity without going lake-by-lake.
 
-## Phase 6 — Bounties + trust score
+## Phase 6 — Bounties + trust score ✅ Complete (dev; prod deferred) (2026-07-22)
+> **Detailed build plan:** [`phase-6-bounties-and-trust.md`](./phase-6-bounties-and-trust.md) (decisions
+> settled 2026-07-21). All six workstreams shipped on **web + mobile**, green (core/convex/web/mobile
+> suites). Trust class is derived server-side + rendered as a cosmetic chip/ring (never a raw number, D50);
+> bounty browse rides the bounded `by_status_expires` index (no viewport geospatial); recommended-feed
+> caps are stateless (impression-tracking = logged fast-follow). Prod cutover outstanding.
 - **Bounties:** request a report for a water body; notify eligible recent skaters (report
   *or* resolved GPS skate on that body, D44); fulfill; helpful/unhelpful thumbs →
   cosmetic points/badges (D10/D17).

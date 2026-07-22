@@ -15,12 +15,28 @@
 >    report that breaks a user's own distance/quality/thickness filters, gated on trust (not a lone
 >    `skateQuality == great`), so we never build a machine for wasted trips.
 >
-> **Status:** 📝 **PLANNED — 2026-07-21.** Greenfield wiring onto pre-provisioned schema: the
-> `bounties` / `reportRatings` / `pointEvents` tables and the bounty/rating enums + notification types
-> already exist (scaffolded in earlier phases) but nothing writes them yet. `reputationPoints` is
-> written `0` at signup and never aggregated; the only existing `pointEvents` write is the
-> hazard-confirmation credit. Dev-only; **prod deferred** (same posture as phases 3–5). In-app
-> notification rows only — **push delivery stays deferred** repo-wide.
+> **Status:** ✅ **COMPLETE on dev — 2026-07-22.** All six workstreams landed and are green (core 543 ·
+> convex 348 · web 137 · mobile 54 tests, all typecheck + biome clean). Bounties, the boost-only trust
+> score, polymorphic thumbs, badges, the class chip / `TrustAvatar` ring, and the recommended
+> filter-breaking feed all ship on **web + mobile**. Dev-only; **prod deferred** (same posture as phases
+> 3–5). In-app notification rows only — **push delivery stays deferred** repo-wide.
+>
+> **Shipped-vs-plan deltas (logged so they aren't lost):**
+> - **Trust class is derived server-side** for the many-author read surfaces (feed cards, comments,
+>   report/hazard/bounty authors) and returned as a cosmetic `trustClass` string — never the raw number
+>   (D50). The profile page still gets raw points, admin-only.
+> - **Bounty browse is not on a viewport geospatial index.** `bounties.listOpen` scans the bounded
+>   `by_status_expires` index and filters/sorts in JS (viewport / client-GPS `near` / privacy-safe
+>   server-side `sortByHome`), deliberately sidestepping the read-cap-fragile `listInViewport` path
+>   (that hardening is logged in the roadmap → Later/deferred).
+> - **Recommended-feed caps are stateless** for Phase 6 (`selectRecommended` caps ≤2 bodies per fetch); a
+>   qualifying report is vanishingly rare at alpha volume, so the server-tracked cross-fetch/day dedup +
+>   hard per-day cap (a per-user impressions store + ack mutation) is a **logged fast-follow**.
+> - **Corroboration count per report** is tallied from `report_corroborated` ledger rows via a new
+>   `pointEvents.by_ref` index (no denormalized counter).
+> - Wiring the hazard reporter's `TrustAvatar` also **fixed the previously-dead `reporterName`** on the
+>   hazard detail (both platforms).
+> - **prod cutover** outstanding (with the rest of phases 3–5).
 >
 > **Build order (per-workstream, web-first on shared surfaces):** **A** `@skating/core` pure logic →
 > **B** Convex trust primitives → **C** Convex bounties → **D** Web + Mobile UI → **E** recommended
@@ -341,5 +357,15 @@ their consumers:
 - **"This never existed" hazard confirmation verdict** — deferred (would touch `deriveHazardLifecycle`);
   polymorphic thumbs cover the thumbs-down need for now.
 - **Per-hour-of-browsing recommended pacing** — start per-day; add session pacing only if too sparse.
+- **Server-tracked recommended caps/dedup (decision 15 stateful half)** — Phase 6 ships `feed.recommended`
+  **stateless** (`selectRecommended` caps ≤2 bodies per fetch). The per-user impressions store +
+  `acknowledgeRecommended` mutation (for the hard per-day cap + cross-fetch/day "don't repeat this lake"
+  dedup) is a **fast-follow**: qualifying reports are vanishingly rare at alpha volume, so a flood can't
+  occur yet — build it when the feature proves it fires often enough to need pacing. A query can't write,
+  so it needs the read-query + ack-mutation split, not a change to the query alone.
+- **Bounty map/browse at scale** — `bounties.listOpen` scans the bounded `by_status_expires` index and
+  filters in JS (fine at alpha). A dedicated bounties **geospatial** instance is only needed if the live
+  open-bounty set ever grows past the `OPEN_BOUNTY_SCAN_CAP` (200) — and unlike `listInViewport` it would
+  degrade gracefully (logged truncation) long before crashing.
 - **Push delivery** — deferred repo-wide; Phase 6 bounty/rating notices are in-app rows.
 - **Prod cutover** — deferred with the rest of phases 3–5.
