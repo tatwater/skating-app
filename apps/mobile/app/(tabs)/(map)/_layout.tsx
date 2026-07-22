@@ -14,6 +14,7 @@ import { MapSelectionProvider, useMapSelection } from '../../../src/components/M
 import MapView from '../../../src/components/MapView';
 import { OnIceModeControl } from '../../../src/components/OnIceModeControl';
 import { resolveCachedBody } from '../../../src/lib/bodyCache';
+import { noteDwell } from '../../../src/lib/dwellTracker';
 import { ensureForegroundPermission } from '../../../src/lib/location';
 import { resolveOnIceBody, shouldAutoSelectOnIce } from '../../../src/lib/onIce';
 // Imported for its side effects: registers the on-ice fix handler, the background-location TaskManager
@@ -190,6 +191,9 @@ function MapLayoutInner() {
       resolveCachedBody(onIceCoord)?.waterBodyId ?? null,
     );
     setOnIceWaterBodyId(resolved);
+    // Record the dwell (Phase 9.5) so the report form can later prefill the skate window from when the
+    // device was actually on this lake. On-device only (D12); best-effort while unarmed (foreground-only).
+    noteDwell(resolved);
     if (
       shouldAutoSelectOnIce({
         resolvedBodyId: resolved,
