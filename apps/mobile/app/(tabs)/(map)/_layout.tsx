@@ -1,18 +1,18 @@
-import { api } from '@skating/convex/api'
-import { useQuery } from 'convex/react'
-import * as Location from 'expo-location'
-import { Slot, usePathname, useRouter } from 'expo-router'
-import { useEffect, useMemo, useRef } from 'react'
-import { AppState, View } from 'react-native'
-import { HazardBanner } from '../../../src/components/HazardBanner'
-import { HazardCapture } from '../../../src/components/HazardCapture'
-import { LakeSearch } from '../../../src/components/LakeSearch'
-import { DRAWER_NORMAL, DRAWER_PEEK, MapDrawer } from '../../../src/components/MapDrawer'
-import { MapSelectionProvider, useMapSelection } from '../../../src/components/MapSelectionContext'
-import MapView from '../../../src/components/MapView'
-import { resolveCachedBody } from '../../../src/lib/bodyCache'
-import { ensureForegroundPermission } from '../../../src/lib/location'
-import { resolveOnIceBody, shouldAutoSelectOnIce } from '../../../src/lib/onIce'
+import { api } from '@skating/convex/api';
+import { useQuery } from 'convex/react';
+import * as Location from 'expo-location';
+import { Slot, usePathname, useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef } from 'react';
+import { AppState, View } from 'react-native';
+import { HazardBanner } from '../../../src/components/HazardBanner';
+import { HazardCapture } from '../../../src/components/HazardCapture';
+import { LakeSearch } from '../../../src/components/LakeSearch';
+import { DRAWER_NORMAL, DRAWER_PEEK, MapDrawer } from '../../../src/components/MapDrawer';
+import { MapSelectionProvider, useMapSelection } from '../../../src/components/MapSelectionContext';
+import MapView from '../../../src/components/MapView';
+import { resolveCachedBody } from '../../../src/lib/bodyCache';
+import { ensureForegroundPermission } from '../../../src/lib/location';
+import { resolveOnIceBody, shouldAutoSelectOnIce } from '../../../src/lib/onIce';
 
 /**
  * Persistent-map layout (§F, D47) — the mobile mirror of web's `_map` layout. Keeps ONE `<MapView>`
@@ -27,19 +27,19 @@ import { resolveOnIceBody, shouldAutoSelectOnIce } from '../../../src/lib/onIce'
  * 330 m — coarser than the 300 m auto-select buffer, so snapping never changes which lake resolves but
  * collapses the every-20 m fixes into one stable query key while the skater stays on the same water.
  */
-const RESOLVE_GRID_DEG = 0.003
+const RESOLVE_GRID_DEG = 0.003;
 
 export default function MapLayout() {
   return (
     <MapSelectionProvider>
       <MapLayoutInner />
     </MapSelectionProvider>
-  )
+  );
 }
 
 function MapLayoutInner() {
-  const pathname = usePathname()
-  const router = useRouter()
+  const pathname = usePathname();
+  const router = useRouter();
   const {
     setHighlightWaterBodyId,
     setPhotoPins,
@@ -50,22 +50,22 @@ function MapLayoutInner() {
     onIceCoord,
     setOnIceWaterBodyId,
     setOnIceCoord,
-  } = useMapSelection()
+  } = useMapSelection();
 
   // The live pathname, read from inside the long-lived GPS watcher callback without re-subscribing it
   // on every navigation — so auto-select can tell "still on the bare map" from "already browsing".
-  const pathnameRef = useRef(pathname)
-  pathnameRef.current = pathname
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   // A detail route (`/water/…`, `/report/…`) opens the drawer; the bare map (`/`) closes it. While a
   // put-in pin is being placed the drawer drops to a peek so the map above is tappable (the report
   // form stays mounted behind it, D47/§E).
-  const isDetail = pathname !== '/'
-  const snapIndex = !isDetail ? -1 : pinDropMode || hazardDropMode ? DRAWER_PEEK : DRAWER_NORMAL
+  const isDetail = pathname !== '/';
+  const snapIndex = !isDetail ? -1 : pinDropMode || hazardDropMode ? DRAWER_PEEK : DRAWER_NORMAL;
 
   // Geolocation framing only when the app opened on the bare map — a deep-linked drawer frames on
   // its own target instead (captured once, from the entry pathname).
-  const geolocateOnMount = useRef(pathname === '/').current
+  const geolocateOnMount = useRef(pathname === '/').current;
 
   // On any navigation, clear the highlight, photo pins, and focus. The drawers re-set the highlight
   // from their *resolved* body id (merge-correct — `waterBodies.get` follows `mergedIntoId` to the
@@ -74,10 +74,10 @@ function MapLayoutInner() {
   // loads.
   // biome-ignore lint/correctness/useExhaustiveDependencies: `pathname` is the intended re-run trigger.
   useEffect(() => {
-    setHighlightWaterBodyId(null)
-    setPhotoPins([])
-    setFocus(null)
-  }, [pathname, setHighlightWaterBodyId, setPhotoPins, setFocus])
+    setHighlightWaterBodyId(null);
+    setPhotoPins([]);
+    setFocus(null);
+  }, [pathname, setHighlightWaterBodyId, setPhotoPins, setFocus]);
 
   // The "on-ice" state (Phase 9 §Mobile), part 1: ONE GPS watcher, owned here, publishes each fix as
   // `onIceCoord`. The proximity banner reads that shared coord instead of running a second watcher
@@ -86,57 +86,57 @@ function MapLayoutInner() {
   // foreground (iOS suspends the subscription while backgrounded), and takes its permission through
   // the shared prompt so it can't race `MapView`'s framing request.
   useEffect(() => {
-    let cancelled = false
-    let subscription: Location.LocationSubscription | null = null
+    let cancelled = false;
+    let subscription: Location.LocationSubscription | null = null;
     // Synchronous re-entrancy guard. `subscription` is only assigned *after* two awaits, so a bare
     // `if (subscription) return` doesn't stop a second `start()` (mount + an AppState 'active') from
     // sailing past it and creating a *second* watcher whose handle is then lost — the exact two-GPS
     // battery leak this single-watcher design exists to prevent. This flag is checked and set in the
     // same synchronous tick, so only one `start()` is ever in flight.
-    let starting = false
+    let starting = false;
 
     const publish = (pos: Location.LocationObject) => {
-      if (!cancelled) setOnIceCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude })
-    }
+      if (!cancelled) setOnIceCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    };
 
     const start = async () => {
-      if (subscription || starting) return
-      starting = true
+      if (subscription || starting) return;
+      starting = true;
       try {
-        const granted = await ensureForegroundPermission()
-        if (!granted || cancelled) return
-        const last = await Location.getLastKnownPositionAsync()
-        if (last) publish(last)
+        const granted = await ensureForegroundPermission();
+        if (!granted || cancelled) return;
+        const last = await Location.getLastKnownPositionAsync();
+        if (last) publish(last);
         const sub = await Location.watchPositionAsync(
           { accuracy: Location.Accuracy.Balanced, distanceInterval: 20 },
           publish,
-        )
+        );
         if (cancelled) {
-          sub.remove()
-          return
+          sub.remove();
+          return;
         }
-        subscription = sub
+        subscription = sub;
       } catch {
         // No fix ⇒ not on-ice as far as we know. Never an error state: the app is fully usable
         // without it, and "we can't tell" must not read as "you're not near a lake".
       } finally {
         // Cleared so a later foreground (e.g. permission granted in Settings, or the first attempt
         // bailed before creating a watcher) can retry — but only ever one attempt at a time.
-        starting = false
+        starting = false;
       }
-    }
+    };
 
-    void start()
+    void start();
     const appStateSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void start()
-    })
+      if (state === 'active') void start();
+    });
 
     return () => {
-      cancelled = true
-      subscription?.remove()
-      appStateSub.remove()
-    }
-  }, [setOnIceCoord])
+      cancelled = true;
+      subscription?.remove();
+      appStateSub.remove();
+    };
+  }, [setOnIceCoord]);
 
   // Part 2: resolve the coord to a lake. The **server** resolver handles any listed lake — including
   // one the skater has never opened, which the offline body cache can't (that only holds
@@ -148,33 +148,33 @@ function MapLayoutInner() {
   // query every 20 m (a skater doing laps → forever) is waste. Snapping to a cell coarser than the
   // 300 m auto-select buffer means it only re-resolves when you actually cross into a new area.
   const resolveCoord = useMemo(() => {
-    if (!onIceCoord) return null
+    if (!onIceCoord) return null;
     return {
       lat: Math.round(onIceCoord.lat / RESOLVE_GRID_DEG) * RESOLVE_GRID_DEG,
       lng: Math.round(onIceCoord.lng / RESOLVE_GRID_DEG) * RESOLVE_GRID_DEG,
-    }
-  }, [onIceCoord])
+    };
+  }, [onIceCoord]);
   const onlineBody = useQuery(
     api.waterBodies.resolveBodyForCoord,
     resolveCoord ? { coord: resolveCoord } : 'skip',
-  )
+  );
 
   // Part 3: publish the resolved lake and, once per app-open, **auto-select** it — navigate to its
   // detail, which frames it into the space the drawer doesn't cover. Founder call (2026-07-21):
   // selecting is the right default; you still see the lake, can flick the drawer down for more, and
   // closing the sheet to pan away lets the hazards fall off naturally. Guarded so it only fires while
   // the skater is still on the bare map, never yanking them out of somewhere they navigated to.
-  const autoSelectedRef = useRef(false)
+  const autoSelectedRef = useRef(false);
   useEffect(() => {
     if (!onIceCoord) {
-      setOnIceWaterBodyId(null)
-      return
+      setOnIceWaterBodyId(null);
+      return;
     }
     const resolved = resolveOnIceBody(
       onlineBody !== undefined ? (onlineBody?.waterBodyId ?? null) : undefined,
       resolveCachedBody(onIceCoord)?.waterBodyId ?? null,
-    )
-    setOnIceWaterBodyId(resolved)
+    );
+    setOnIceWaterBodyId(resolved);
     if (
       shouldAutoSelectOnIce({
         resolvedBodyId: resolved,
@@ -183,10 +183,10 @@ function MapLayoutInner() {
         onBareMapNow: pathnameRef.current === '/',
       })
     ) {
-      autoSelectedRef.current = true
-      router.navigate({ pathname: '/water/[id]', params: { id: resolved as string } })
+      autoSelectedRef.current = true;
+      router.navigate({ pathname: '/water/[id]', params: { id: resolved as string } });
     }
-  }, [onIceCoord, onlineBody, setOnIceWaterBodyId, router, geolocateOnMount])
+  }, [onIceCoord, onlineBody, setOnIceWaterBodyId, router, geolocateOnMount]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -200,5 +200,5 @@ function MapLayoutInner() {
       <HazardCapture />
       <HazardBanner />
     </View>
-  )
+  );
 }

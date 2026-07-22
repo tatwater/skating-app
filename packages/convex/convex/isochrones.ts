@@ -16,24 +16,24 @@ import {
   type OrsIsochroneResponse,
   outerBandRadiusMeters,
   parseOrsIsochrones,
-} from '@skating/core'
-import { v } from 'convex/values'
-import { internal } from './_generated/api'
-import { internalAction, internalMutation, internalQuery } from './_generated/server'
-import { geoJson } from './lib/validators'
+} from '@skating/core';
+import { v } from 'convex/values';
+import { internal } from './_generated/api';
+import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { geoJson } from './lib/validators';
 
-const ORS_ISOCHRONE_URL = 'https://api.openrouteservice.org/v2/isochrones/driving-car'
+const ORS_ISOCHRONE_URL = 'https://api.openrouteservice.org/v2/isochrones/driving-car';
 /** The 90-min band has no ORS polygon (60-min cap), so it's a uniform crow-flies radius (decision #2). */
-const OUTER_BAND_MINUTES = 90
+const OUTER_BAND_MINUTES = 90;
 
 /** Read a profile's private home coord for the isochrone action (internal — never client-exposed). */
 export const getHomeForIsochrones = internalQuery({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }) => {
-    const profile = await ctx.db.get(userId)
-    return profile?.homeCoord ?? null
+    const profile = await ctx.db.get(userId);
+    return profile?.homeCoord ?? null;
   },
-})
+});
 
 /**
  * Store the freshly computed bands on the profile (internal). Clearing (`homeCoord` removed) passes
@@ -48,32 +48,32 @@ export const storeBands = internalMutation({
     computedAt: v.number(),
   },
   handler: async (ctx, args) => {
-    const profile = await ctx.db.get(args.userId)
-    if (!profile) return
+    const profile = await ctx.db.get(args.userId);
+    if (!profile) return;
     const cachedIsochrones =
       args.band30 !== undefined || args.band60 !== undefined
         ? {
             ...(args.band30 !== undefined ? { band30: args.band30 } : {}),
             ...(args.band60 !== undefined ? { band60: args.band60 } : {}),
           }
-        : undefined
+        : undefined;
     await ctx.db.patch(args.userId, {
       cachedIsochrones,
       outerRadiusMeters: args.outerRadiusMeters,
       cachedIsochronesAt: args.computedAt,
-    })
+    });
   },
-})
+});
 
 /** Call ORS for the 30/60-min isochrones around `home`; returns the parsed bands, or `{}` on failure. */
 async function fetchOrsBands(home: {
-  lat: number
-  lng: number
+  lat: number;
+  lng: number;
 }): Promise<{ band30?: unknown; band60?: unknown }> {
-  const apiKey = process.env.ORS_API_KEY
+  const apiKey = process.env.ORS_API_KEY;
   if (!apiKey) {
-    console.warn('ORS_API_KEY not set — skipping isochrone polygons (90-min radius still applies)')
-    return {}
+    console.warn('ORS_API_KEY not set — skipping isochrone polygons (90-min radius still applies)');
+    return {};
   }
   try {
     const res = await fetch(ORS_ISOCHRONE_URL, {
@@ -84,15 +84,15 @@ async function fetchOrsBands(home: {
         range: [ORS_BAND_RANGES_SEC.band30, ORS_BAND_RANGES_SEC.band60],
         range_type: 'time',
       }),
-    })
+    });
     if (!res.ok) {
-      console.warn(`ORS isochrone request failed: ${res.status}`)
-      return {}
+      console.warn(`ORS isochrone request failed: ${res.status}`);
+      return {};
     }
-    return parseOrsIsochrones((await res.json()) as OrsIsochroneResponse)
+    return parseOrsIsochrones((await res.json()) as OrsIsochroneResponse);
   } catch (err) {
-    console.warn('ORS isochrone request threw', err)
-    return {}
+    console.warn('ORS isochrone request threw', err);
+    return {};
   }
 }
 
@@ -104,19 +104,19 @@ async function fetchOrsBands(home: {
 export const recompute = internalAction({
   args: { userId: v.id('profiles') },
   handler: async (ctx, { userId }) => {
-    const home = await ctx.runQuery(internal.isochrones.getHomeForIsochrones, { userId })
-    const computedAt = Date.now()
+    const home = await ctx.runQuery(internal.isochrones.getHomeForIsochrones, { userId });
+    const computedAt = Date.now();
     if (!home) {
-      await ctx.runMutation(internal.isochrones.storeBands, { userId, computedAt })
-      return
+      await ctx.runMutation(internal.isochrones.storeBands, { userId, computedAt });
+      return;
     }
-    const bands = await fetchOrsBands(home)
+    const bands = await fetchOrsBands(home);
     await ctx.runMutation(internal.isochrones.storeBands, {
       userId,
       ...(bands.band30 !== undefined ? { band30: bands.band30 as never } : {}),
       ...(bands.band60 !== undefined ? { band60: bands.band60 as never } : {}),
       outerRadiusMeters: outerBandRadiusMeters(OUTER_BAND_MINUTES),
       computedAt,
-    })
+    });
   },
-})
+});

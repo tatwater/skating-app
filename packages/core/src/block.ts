@@ -7,5 +7,5 @@
 
 /** A user can't block themselves (D32). Re-enforced in `blocks.block`. */
 export function canBlock(blockerId: string, targetId: string): boolean {
-  return blockerId !== targetId
+  return blockerId !== targetId;
 }

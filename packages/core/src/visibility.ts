@@ -13,11 +13,11 @@
  */
 
 /** Moderation state of a report/comment (mirrors the backend `MODERATION_STATUSES`; D32). */
-export type ModerationStatus = 'visible' | 'hidden' | 'removed'
+export type ModerationStatus = 'visible' | 'hidden' | 'removed';
 
 /** Content is publicly readable by moderation status alone — the *only* gate on a report (D3/D32). */
 export function isModerationVisible(status: ModerationStatus): boolean {
-  return status === 'visible'
+  return status === 'visible';
 }
 
 /**
@@ -25,9 +25,9 @@ export function isModerationVisible(status: ModerationStatus): boolean {
  * directions (I blocked them OR they blocked me), resolved by the caller (`loadBlockedAuthorIds`).
  */
 export interface ViewerRelationship {
-  viewerId: string
-  authorId: string
-  blockedAuthorIds: ReadonlySet<string>
+  viewerId: string;
+  authorId: string;
+  blockedAuthorIds: ReadonlySet<string>;
 }
 
 /**
@@ -40,8 +40,8 @@ export function isAuthorBlocked(
   authorId: string,
   blockedAuthorIds: ReadonlySet<string>,
 ): boolean {
-  if (viewerId === authorId) return false
-  return blockedAuthorIds.has(authorId)
+  if (viewerId === authorId) return false;
+  return blockedAuthorIds.has(authorId);
 }
 
 /**
@@ -55,7 +55,7 @@ export function canViewReport(
   moderationStatus: ModerationStatus,
   _rel?: ViewerRelationship,
 ): boolean {
-  return isModerationVisible(moderationStatus)
+  return isModerationVisible(moderationStatus);
 }
 
 /**
@@ -72,5 +72,5 @@ export function canViewComment(
 ): boolean {
   return (
     isModerationVisible(moderationStatus) && !isAuthorBlocked(viewerId, authorId, blockedAuthorIds)
-  )
+  );
 }

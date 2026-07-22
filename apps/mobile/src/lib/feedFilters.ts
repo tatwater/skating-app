@@ -8,18 +8,18 @@
  * `reportCacheModel` ↔ `reportCache`.
  */
 
-import { type FeedFilters, sanitizeFeedFilters } from '@skating/core'
+import { type FeedFilters, sanitizeFeedFilters } from '@skating/core';
 
 /** Versioned key so a future filter-shape change can't collide with an old cached blob. */
-export const FEED_FILTERS_KEY = 'feedFilters.v1'
+export const FEED_FILTERS_KEY = 'feedFilters.v1';
 
 /** Parse + sanitize a stored JSON blob into clean filters. Returns `{}` on absence or corruption. */
 export function parseFilters(raw: string | null | undefined): FeedFilters {
-  if (!raw) return {}
+  if (!raw) return {};
   try {
-    return sanitizeFeedFilters(JSON.parse(raw))
+    return sanitizeFeedFilters(JSON.parse(raw));
   } catch {
-    return {}
+    return {};
   }
 }
 
@@ -29,18 +29,18 @@ export function parseFilters(raw: string | null | undefined): FeedFilters {
  * the cross-device sync path on a fresh device.
  */
 export function reconcileFilters(local: FeedFilters, server: unknown): FeedFilters {
-  return Object.keys(local).length > 0 ? local : sanitizeFeedFilters(server)
+  return Object.keys(local).length > 0 ? local : sanitizeFeedFilters(server);
 }
 
 /** How many filters are active — drives the "Filters (2)" affordance + clear button visibility. */
 export function activeFilterCount(filters: FeedFilters): number {
-  let count = 0
-  if (filters.radiusMinutes !== undefined) count++
-  if (filters.qualityFloor !== undefined) count++
-  if (filters.thicknessFloorCm !== undefined) count++
-  if (filters.noSnow) count++
-  if (filters.iceTypes && filters.iceTypes.length > 0) count++
-  if (filters.surfaceTags && filters.surfaceTags.length > 0) count++
-  if (filters.recencyHours !== undefined) count++
-  return count
+  let count = 0;
+  if (filters.radiusMinutes !== undefined) count++;
+  if (filters.qualityFloor !== undefined) count++;
+  if (filters.thicknessFloorCm !== undefined) count++;
+  if (filters.noSnow) count++;
+  if (filters.iceTypes && filters.iceTypes.length > 0) count++;
+  if (filters.surfaceTags && filters.surfaceTags.length > 0) count++;
+  if (filters.recencyHours !== undefined) count++;
+  return count;
 }

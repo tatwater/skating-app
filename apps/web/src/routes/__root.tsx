@@ -1,8 +1,8 @@
-import { createRootRoute, HeadContent, Scripts } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
-import { AppProviders } from '../components/AppProviders'
-import { AuthGate } from '../components/AuthGate'
-import appCss from '../styles/app.css?url'
+import { createRootRoute, HeadContent, Scripts } from '@tanstack/react-router';
+import type { ReactNode } from 'react';
+import { AppProviders } from '../components/AppProviders';
+import { AuthGate } from '../components/AuthGate';
+import appCss from '../styles/app.css?url';
 
 /**
  * Root document + providers. `shellComponent` owns the full HTML shell; the providers and
@@ -19,7 +19,7 @@ export const Route = createRootRoute({
     links: [{ rel: 'stylesheet', href: appCss }],
   }),
   shellComponent: RootDocument,
-})
+});
 
 function RootDocument({ children }: { children: ReactNode }) {
   return (
@@ -34,5 +34,5 @@ function RootDocument({ children }: { children: ReactNode }) {
         <Scripts />
       </body>
     </html>
-  )
+  );
 }

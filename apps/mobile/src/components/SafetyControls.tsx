@@ -1,12 +1,12 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { useMutation } from 'convex/react'
-import { useState } from 'react'
-import { Button, Text, TextArea, XStack, YStack } from 'tamagui'
-import { Badge } from './detailUi'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { useMutation } from 'convex/react';
+import { useState } from 'react';
+import { Button, Text, TextArea, XStack, YStack } from 'tamagui';
+import { Badge } from './detailUi';
 
 /** Flag targets + reasons mirror the backend enums (`FLAG_TARGET_TYPES` / `FLAG_REASONS`). */
-export type FlagTargetType = 'report' | 'comment' | 'photo' | 'user' | 'hazard'
+export type FlagTargetType = 'report' | 'comment' | 'photo' | 'user' | 'hazard';
 
 /** `unsafe_false_report` leads — a dangerously false "ice is great" claim is a safety issue (D3). */
 const REASONS: { value: string; label: string }[] = [
@@ -15,11 +15,11 @@ const REASONS: { value: string; label: string }[] = [
   { value: 'harassment', label: 'Harassment' },
   { value: 'inappropriate', label: 'Inappropriate' },
   { value: 'other', label: 'Other' },
-]
+];
 
 /** A blocked author's report stays visible (safety, D3); the line carries this muted chip. */
 export function BlockedChip() {
-  return <Badge>Blocked</Badge>
+  return <Badge>Blocked</Badge>;
 }
 
 /**
@@ -32,18 +32,18 @@ export function FlagControl({
   targetId,
   label = 'Flag',
 }: {
-  targetType: FlagTargetType
-  targetId: string
-  label?: string
+  targetType: FlagTargetType;
+  targetId: string;
+  label?: string;
 }) {
-  const flag = useMutation(api.contentFlags.flag)
-  const [open, setOpen] = useState(false)
-  const [reason, setReason] = useState<string | null>(null)
-  const [note, setNote] = useState('')
-  const [submitted, setSubmitted] = useState(false)
+  const flag = useMutation(api.contentFlags.flag);
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const [submitted, setSubmitted] = useState(false);
 
   if (submitted) {
-    return <Text color="$foregroundMuted">Flag submitted — a moderator will review it.</Text>
+    return <Text color="$foregroundMuted">Flag submitted — a moderator will review it.</Text>;
   }
 
   if (!open) {
@@ -51,7 +51,7 @@ export function FlagControl({
       <Button size="$2" chromeless onPress={() => setOpen(true)}>
         {label}
       </Button>
-    )
+    );
   }
 
   return (
@@ -90,14 +90,14 @@ export function FlagControl({
           color="$primaryForeground"
           disabled={!reason}
           onPress={async () => {
-            if (!reason) return
+            if (!reason) return;
             await flag({
               targetType,
               targetId,
               reason: reason as 'unsafe_false_report',
               ...(note.trim() ? { note: note.trim() } : {}),
-            })
-            setSubmitted(true)
+            });
+            setSubmitted(true);
           }}
         >
           Submit
@@ -107,7 +107,7 @@ export function FlagControl({
         </Button>
       </XStack>
     </YStack>
-  )
+  );
 }
 
 /**
@@ -119,36 +119,36 @@ export function BlockButton({
   targetUserId,
   displayName,
 }: {
-  targetUserId: string
-  displayName: string
+  targetUserId: string;
+  displayName: string;
 }) {
-  const block = useMutation(api.blocks.block)
-  const [confirming, setConfirming] = useState(false)
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const block = useMutation(api.blocks.block);
+  const [confirming, setConfirming] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!confirming) {
     return (
       <Button size="$2" onPress={() => setConfirming(true)}>
         Block
       </Button>
-    )
+    );
   }
 
   // Await the mutation and surface a failure inline (mirrors web): on success the parent profile
   // query re-runs and this control unmounts; on error we stay in the confirm state with a message
   // rather than firing-and-forgetting, so blocking a harasser can't fail silently.
   const confirm = async () => {
-    setError(null)
-    setPending(true)
+    setError(null);
+    setPending(true);
     try {
-      await block({ targetUserId: targetUserId as Id<'profiles'> })
+      await block({ targetUserId: targetUserId as Id<'profiles'> });
     } catch {
-      setError('Could not block. Please try again.')
+      setError('Could not block. Please try again.');
     } finally {
-      setPending(false)
+      setPending(false);
     }
-  }
+  };
 
   return (
     <YStack
@@ -179,5 +179,5 @@ export function BlockButton({
         </Button>
       </XStack>
     </YStack>
-  )
+  );
 }

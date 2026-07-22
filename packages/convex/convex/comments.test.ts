@@ -1,10 +1,10 @@
-import { convexTest } from 'convex-test'
-import { describe, expect, test } from 'vitest'
-import { api } from './_generated/api'
-import type { Id } from './_generated/dataModel'
-import schema from './schema'
+import { convexTest } from 'convex-test';
+import { describe, expect, test } from 'vitest';
+import { api } from './_generated/api';
+import type { Id } from './_generated/dataModel';
+import schema from './schema';
 
-const modules = import.meta.glob('./**/*.*s')
+const modules = import.meta.glob('./**/*.*s');
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -17,7 +17,7 @@ const NOTIF_PREFS = {
   favoriteReport: true,
   nearbyReportDigest: false,
   greatReportNearby: false,
-}
+};
 
 async function seedUser(t: ReturnType<typeof convexTest>, subject: string, minor = false) {
   const id = await t.run((ctx) =>
@@ -34,8 +34,8 @@ async function seedUser(t: ReturnType<typeof convexTest>, subject: string, minor
       status: 'active' as const,
       createdAt: Date.now(),
     }),
-  )
-  return { id, as: t.withIdentity({ subject }) }
+  );
+  return { id, as: t.withIdentity({ subject }) };
 }
 
 async function seedBody(t: ReturnType<typeof convexTest>) {
@@ -61,7 +61,7 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
       dedupStatus: 'clean' as const,
       createdAt: Date.now(),
     }),
-  )
+  );
 }
 
 async function seedReport(
@@ -70,7 +70,7 @@ async function seedReport(
   waterBodyId: Id<'waterBodies'>,
   moderationStatus: 'visible' | 'hidden' | 'removed' = 'visible',
 ) {
-  const now = Date.now()
+  const now = Date.now();
   return t.run((ctx) =>
     ctx.db.insert('reports', {
       authorId,
@@ -87,185 +87,193 @@ async function seedReport(
       createdAt: now,
       updatedAt: now,
     }),
-  )
+  );
 }
 
 describe('comments.create', () => {
   test('requires authentication', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
     await expect(t.mutation(api.comments.create, { reportId, body: 'hi' })).rejects.toThrow(
       /not authenticated/i,
-    )
-  })
+    );
+  });
 
   test('rejects a minor author (read-only, D41)', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const minor = await seedUser(t, 'm', true)
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const minor = await seedUser(t, 'm', true);
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
     await expect(minor.as.mutation(api.comments.create, { reportId, body: 'hi' })).rejects.toThrow(
       /under 18/i,
-    )
-  })
+    );
+  });
 
   test('rejects an empty body and a comment on a hidden report', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const visible = await seedReport(t, author.id, body)
-    const hidden = await seedReport(t, author.id, body, 'hidden')
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const visible = await seedReport(t, author.id, body);
+    const hidden = await seedReport(t, author.id, body, 'hidden');
     await expect(
       author.as.mutation(api.comments.create, { reportId: visible, body: '  ' }),
-    ).rejects.toThrow(/between 1 and 2000/i)
+    ).rejects.toThrow(/between 1 and 2000/i);
     await expect(
       author.as.mutation(api.comments.create, { reportId: hidden, body: 'hi' }),
-    ).rejects.toThrow(/report not found/i)
-  })
+    ).rejects.toThrow(/report not found/i);
+  });
 
   test('create bumps the author’s commentCount; author-remove decrements it once (idempotent)', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    const commenter = await seedUser(t, 'c')
-    const countOf = async () => (await t.run((ctx) => ctx.db.get(commenter.id)))?.commentCount
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const commenter = await seedUser(t, 'c');
+    const countOf = async () => (await t.run((ctx) => ctx.db.get(commenter.id)))?.commentCount;
 
     const commentId = await commenter.as.mutation(api.comments.create, {
       reportId,
       body: 'nice ice',
-    })
-    expect(await countOf()).toBe(1)
+    });
+    expect(await countOf()).toBe(1);
 
-    await commenter.as.mutation(api.comments.remove, { commentId })
-    expect(await countOf()).toBe(0)
+    await commenter.as.mutation(api.comments.remove, { commentId });
+    expect(await countOf()).toBe(0);
     // A second remove is a no-op and must not drive the counter negative.
-    await commenter.as.mutation(api.comments.remove, { commentId })
-    expect(await countOf()).toBe(0)
-  })
+    await commenter.as.mutation(api.comments.remove, { commentId });
+    expect(await countOf()).toBe(0);
+  });
 
   test('enforces the 2-level cap — a reply’s parent must be top-level (D25)', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    const top = await author.as.mutation(api.comments.create, { reportId, body: 'top' })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const top = await author.as.mutation(api.comments.create, { reportId, body: 'top' });
     const reply = await author.as.mutation(api.comments.create, {
       reportId,
       parentCommentId: top,
       body: 'reply',
-    })
+    });
     // Replying to a reply is rejected (client should flatten via resolveReplyParentId).
     await expect(
       author.as.mutation(api.comments.create, { reportId, parentCommentId: reply, body: 'deep' }),
-    ).rejects.toThrow(/one level deep/i)
-  })
-})
+    ).rejects.toThrow(/one level deep/i);
+  });
+});
 
 describe('comments.listByReport', () => {
   test('returns a 2-level thread with author attribution', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    const top = await author.as.mutation(api.comments.create, { reportId, body: 'top' })
-    await author.as.mutation(api.comments.create, { reportId, parentCommentId: top, body: 'reply' })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const top = await author.as.mutation(api.comments.create, { reportId, body: 'top' });
+    await author.as.mutation(api.comments.create, {
+      reportId,
+      parentCommentId: top,
+      body: 'reply',
+    });
 
-    const thread = await author.as.query(api.comments.listByReport, { reportId })
-    expect(thread).toHaveLength(1)
-    expect(thread[0]?.comment?.body).toBe('top')
-    expect(thread[0]?.comment?.author?.username).toBe('a')
-    expect(thread[0]?.comment?.isOwn).toBe(true)
-    expect(thread[0]?.replies[0]?.comment?.body).toBe('reply')
-  })
+    const thread = await author.as.query(api.comments.listByReport, { reportId });
+    expect(thread).toHaveLength(1);
+    expect(thread[0]?.comment?.body).toBe('top');
+    expect(thread[0]?.comment?.author?.username).toBe('a');
+    expect(thread[0]?.comment?.isOwn).toBe(true);
+    expect(thread[0]?.replies[0]?.comment?.body).toBe('reply');
+  });
 
   test('hides a blocked author’s comment but keeps the report visible (D3)', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const other = await seedUser(t, 'b')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    await other.as.mutation(api.comments.create, { reportId, body: 'from b' })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const other = await seedUser(t, 'b');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    await other.as.mutation(api.comments.create, { reportId, body: 'from b' });
 
     // `a` blocks `b`. b's comment disappears for a…
-    await author.as.mutation(api.blocks.block, { targetUserId: other.id })
-    const thread = await author.as.query(api.comments.listByReport, { reportId })
-    expect(thread).toHaveLength(0)
+    await author.as.mutation(api.blocks.block, { targetUserId: other.id });
+    const thread = await author.as.query(api.comments.listByReport, { reportId });
+    expect(thread).toHaveLength(0);
     // …but the report itself is untouched by the block (still returned by reports.get).
-    const report = await author.as.query(api.reports.get, { reportId })
-    expect(report).not.toBeNull()
-  })
+    const report = await author.as.query(api.reports.get, { reportId });
+    expect(report).not.toBeNull();
+  });
 
   test('renders a moderation-hidden parent with a visible reply as a [hidden] placeholder', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    const top = await author.as.mutation(api.comments.create, { reportId, body: 'top' })
-    await author.as.mutation(api.comments.create, { reportId, parentCommentId: top, body: 'reply' })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const top = await author.as.mutation(api.comments.create, { reportId, body: 'top' });
+    await author.as.mutation(api.comments.create, {
+      reportId,
+      parentCommentId: top,
+      body: 'reply',
+    });
     // Author soft-removes the top-level comment.
-    await author.as.mutation(api.comments.remove, { commentId: top })
+    await author.as.mutation(api.comments.remove, { commentId: top });
 
-    const thread = await author.as.query(api.comments.listByReport, { reportId })
-    expect(thread).toHaveLength(1)
-    expect(thread[0]?.hidden).toBe(true)
-    expect(thread[0]?.comment).toBeNull() // no content leaked
-    expect(thread[0]?.replies[0]?.comment?.body).toBe('reply')
-  })
-})
+    const thread = await author.as.query(api.comments.listByReport, { reportId });
+    expect(thread).toHaveLength(1);
+    expect(thread[0]?.hidden).toBe(true);
+    expect(thread[0]?.comment).toBeNull(); // no content leaked
+    expect(thread[0]?.replies[0]?.comment?.body).toBe('reply');
+  });
+});
 
 describe('comments.update / remove', () => {
   test('author-only edit stamps editedAt; a non-author is rejected', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const other = await seedUser(t, 'b')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'orig' })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const other = await seedUser(t, 'b');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'orig' });
 
-    await author.as.mutation(api.comments.update, { commentId, body: 'edited' })
-    const edited = await t.run((ctx) => ctx.db.get(commentId))
-    expect(edited?.body).toBe('edited')
-    expect(edited?.editedAt).toBeGreaterThan(0)
+    await author.as.mutation(api.comments.update, { commentId, body: 'edited' });
+    const edited = await t.run((ctx) => ctx.db.get(commentId));
+    expect(edited?.body).toBe('edited');
+    expect(edited?.editedAt).toBeGreaterThan(0);
 
     await expect(
       other.as.mutation(api.comments.update, { commentId, body: 'hijack' }),
-    ).rejects.toThrow(/only the author/i)
-  })
+    ).rejects.toThrow(/only the author/i);
+  });
 
   test('author soft-remove sets moderationStatus removed', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'bye' })
-    await author.as.mutation(api.comments.remove, { commentId })
-    const removed = await t.run((ctx) => ctx.db.get(commentId))
-    expect(removed?.moderationStatus).toBe('removed')
-  })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'bye' });
+    await author.as.mutation(api.comments.remove, { commentId });
+    const removed = await t.run((ctx) => ctx.db.get(commentId));
+    expect(removed?.moderationStatus).toBe('removed');
+  });
 
   test('a moderated (removed) comment can no longer be edited', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'orig' })
-    await author.as.mutation(api.comments.remove, { commentId })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'orig' });
+    await author.as.mutation(api.comments.remove, { commentId });
     await expect(
       author.as.mutation(api.comments.update, { commentId, body: 'sneaky' }),
-    ).rejects.toThrow(/moderated/i)
-  })
-})
+    ).rejects.toThrow(/moderated/i);
+  });
+});
 
 describe('comments — coverage completeness', () => {
   test('rejects a reply whose parent does not exist', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
     const missingParent = await t.run((ctx) =>
       ctx.db.insert('comments', {
         reportId, // valid report, but we delete the parent below to make it dangling
@@ -275,61 +283,61 @@ describe('comments — coverage completeness', () => {
         moderationStatus: 'visible' as const,
         createdAt: Date.now(),
       }),
-    )
-    await t.run((ctx) => ctx.db.delete(missingParent))
+    );
+    await t.run((ctx) => ctx.db.delete(missingParent));
     await expect(
       author.as.mutation(api.comments.create, {
         reportId,
         parentCommentId: missingParent,
         body: 'reply',
       }),
-    ).rejects.toThrow(/parent comment not found/i)
-  })
+    ).rejects.toThrow(/parent comment not found/i);
+  });
 
   test('update rejects an invalid (empty) body', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'orig' })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'orig' });
     await expect(
       author.as.mutation(api.comments.update, { commentId, body: '   ' }),
-    ).rejects.toThrow(/between 1 and 2000/i)
-  })
+    ).rejects.toThrow(/between 1 and 2000/i);
+  });
 
   test('a non-author cannot remove a comment', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const other = await seedUser(t, 'b')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'mine' })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const other = await seedUser(t, 'b');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    const commentId = await author.as.mutation(api.comments.create, { reportId, body: 'mine' });
     await expect(other.as.mutation(api.comments.remove, { commentId })).rejects.toThrow(
       /only the author/i,
-    )
-  })
+    );
+  });
 
   test('includes the author avatar when the profile has one', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    await t.run((ctx) => ctx.db.patch(author.id, { profileImageUrl: 'https://img/a.png' }))
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    await author.as.mutation(api.comments.create, { reportId, body: 'hi' })
-    const thread = await author.as.query(api.comments.listByReport, { reportId })
-    expect(thread[0]?.comment?.author?.profileImageUrl).toBe('https://img/a.png')
-  })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    await t.run((ctx) => ctx.db.patch(author.id, { profileImageUrl: 'https://img/a.png' }));
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    await author.as.mutation(api.comments.create, { reportId, body: 'hi' });
+    const thread = await author.as.query(api.comments.listByReport, { reportId });
+    expect(thread[0]?.comment?.author?.profileImageUrl).toBe('https://img/a.png');
+  });
 
   test('renders a null author when the commenter’s profile is gone', async () => {
-    const t = convexTest(schema, modules)
-    const author = await seedUser(t, 'a')
-    const body = await seedBody(t)
-    const reportId = await seedReport(t, author.id, body)
-    await author.as.mutation(api.comments.create, { reportId, body: 'hi' })
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const body = await seedBody(t);
+    const reportId = await seedReport(t, author.id, body);
+    await author.as.mutation(api.comments.create, { reportId, body: 'hi' });
     // Drop the author profile: the thread still renders the comment, with author attribution null.
-    await t.run((ctx) => ctx.db.delete(author.id))
-    const thread = await t.query(api.comments.listByReport, { reportId })
-    expect(thread).toHaveLength(1)
-    expect(thread[0]?.comment?.author).toBeNull()
-  })
-})
+    await t.run((ctx) => ctx.db.delete(author.id));
+    const thread = await t.query(api.comments.listByReport, { reportId });
+    expect(thread).toHaveLength(1);
+    expect(thread[0]?.comment?.author).toBeNull();
+  });
+});

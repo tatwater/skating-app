@@ -5,17 +5,17 @@
  * (like `bodyCache`): a storage failure never blocks the feed.
  */
 
-import type { FeedFilters } from '@skating/core'
-import * as SQLite from 'expo-sqlite'
-import { FEED_FILTERS_KEY, parseFilters } from './feedFilters'
+import type { FeedFilters } from '@skating/core';
+import * as SQLite from 'expo-sqlite';
+import { FEED_FILTERS_KEY, parseFilters } from './feedFilters';
 
-let db: SQLite.SQLiteDatabase | null = null
+let db: SQLite.SQLiteDatabase | null = null;
 function getDb(): SQLite.SQLiteDatabase {
   if (db === null) {
-    db = SQLite.openDatabaseSync('skating-prefs.db')
-    db.execSync('CREATE TABLE IF NOT EXISTS prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL)')
+    db = SQLite.openDatabaseSync('skating-prefs.db');
+    db.execSync('CREATE TABLE IF NOT EXISTS prefs (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
   }
-  return db
+  return db;
 }
 
 /** Read the device-local working copy (sanitized). Empty on any sqlite error. */
@@ -23,10 +23,10 @@ export function loadStoredFilters(): FeedFilters {
   try {
     const row = getDb().getFirstSync<{ value: string }>('SELECT value FROM prefs WHERE key = ?', [
       FEED_FILTERS_KEY,
-    ])
-    return parseFilters(row?.value)
+    ]);
+    return parseFilters(row?.value);
   } catch {
-    return {}
+    return {};
   }
 }
 
@@ -37,7 +37,7 @@ export function saveStoredFilters(filters: FeedFilters): void {
       `INSERT INTO prefs (key, value) VALUES (?, ?)
        ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
       [FEED_FILTERS_KEY, JSON.stringify(filters)],
-    )
+    );
   } catch {
     // Best-effort — the in-memory copy still drives this session.
   }

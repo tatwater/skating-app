@@ -1,10 +1,10 @@
-import { useAuth } from '@clerk/tanstack-react-start'
-import { api } from '@skating/convex/api'
-import { Link } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import type { ReactNode } from 'react'
-import { ThemeToggle } from './theme-toggle'
-import { Button } from './ui/button'
+import { useAuth } from '@clerk/tanstack-react-start';
+import { api } from '@skating/convex/api';
+import { Link } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
+import type { ReactNode } from 'react';
+import { ThemeToggle } from './theme-toggle';
+import { Button } from './ui/button';
 
 /**
  * Chrome for the signed-in app: the two co-primary top-level pages (Map · Newsfeed, D28)
@@ -13,12 +13,12 @@ import { Button } from './ui/button'
  * zone (see `AuthGate`).
  */
 const navLinkClass =
-  'rounded-md px-3 py-1.5 text-foreground-muted hover:bg-surface-muted hover:text-foreground'
-const navActiveClass = 'rounded-md px-3 py-1.5 bg-surface-muted text-foreground'
+  'rounded-md px-3 py-1.5 text-foreground-muted hover:bg-surface-muted hover:text-foreground';
+const navActiveClass = 'rounded-md px-3 py-1.5 bg-surface-muted text-foreground';
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { signOut } = useAuth()
-  const profile = useQuery(api.profiles.current, {})
+  const { signOut } = useAuth();
+  const profile = useQuery(api.profiles.current, {});
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -63,5 +63,5 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
       <main className="mx-auto w-full max-w-6xl flex-1 p-4">{children}</main>
     </div>
-  )
+  );
 }

@@ -11,9 +11,9 @@
  */
 
 /** Hard minimum signup age — under-16 accounts are not permitted (D41). */
-export const MINIMUM_SIGNUP_AGE = 16
+export const MINIMUM_SIGNUP_AGE = 16;
 /** Age of majority — below this, protective defaults apply (D41). */
-export const ADULT_AGE = 18
+export const ADULT_AGE = 18;
 
 /**
  * Widest real-world timezone offset east of UTC (UTC+14, e.g. Kiribati). The signup gate
@@ -24,19 +24,19 @@ export const ADULT_AGE = 18
  * direction: the 16 gate is about service obligations, not physical safety, and a sub-day
  * boundary on a self-attested date is immaterial.
  */
-const MAX_UTC_OFFSET_AHEAD_MS = 14 * 60 * 60 * 1000
+const MAX_UTC_OFFSET_AHEAD_MS = 14 * 60 * 60 * 1000;
 
 /** Whole years between a date of birth and `now` (both epoch ms, interpreted in UTC). */
 export function ageInYears(dateOfBirthMs: number, nowMs: number): number {
-  const dob = new Date(dateOfBirthMs)
-  const now = new Date(nowMs)
-  let age = now.getUTCFullYear() - dob.getUTCFullYear()
-  const monthDelta = now.getUTCMonth() - dob.getUTCMonth()
+  const dob = new Date(dateOfBirthMs);
+  const now = new Date(nowMs);
+  let age = now.getUTCFullYear() - dob.getUTCFullYear();
+  const monthDelta = now.getUTCMonth() - dob.getUTCMonth();
   // Not yet reached this year's birthday → subtract one.
   if (monthDelta < 0 || (monthDelta === 0 && now.getUTCDate() < dob.getUTCDate())) {
-    age -= 1
+    age -= 1;
   }
-  return age
+  return age;
 }
 
 /**
@@ -48,7 +48,7 @@ export function ageInYears(dateOfBirthMs: number, nowMs: number): number {
  * is immaterial.
  */
 export function isMinor(dateOfBirthMs: number, nowMs: number): boolean {
-  return ageInYears(dateOfBirthMs, nowMs) < ADULT_AGE
+  return ageInYears(dateOfBirthMs, nowMs) < ADULT_AGE;
 }
 
 /**
@@ -58,5 +58,5 @@ export function isMinor(dateOfBirthMs: number, nowMs: number): boolean {
  * calendar (in a timezone ahead of UTC) isn't wrongly rejected while UTC lags a day behind.
  */
 export function meetsMinimumAge(dateOfBirthMs: number, nowMs: number): boolean {
-  return ageInYears(dateOfBirthMs, nowMs + MAX_UTC_OFFSET_AHEAD_MS) >= MINIMUM_SIGNUP_AGE
+  return ageInYears(dateOfBirthMs, nowMs + MAX_UTC_OFFSET_AHEAD_MS) >= MINIMUM_SIGNUP_AGE;
 }

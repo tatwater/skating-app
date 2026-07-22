@@ -15,34 +15,34 @@ import type {
   SkateQuality,
   SkyCondition,
   ThicknessMethod,
-} from './types'
+} from './types';
 import {
   cmToInches,
   formatTemperatureF,
   formatThicknessInches,
   formatWindMph,
   roundTo,
-} from './units'
+} from './units';
 
 /** `snake_case` enum token → sentence-case label ("orange_peel" → "Orange peel"). */
 export function humanizeEnum(token: string): string {
-  const spaced = token.replace(/_/g, ' ')
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+  const spaced = token.replace(/_/g, ' ');
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
 /** Thickness reading measurement trust (D22) — `estimated` is lower-trust than `measured`. */
 export const THICKNESS_METHOD_LABELS: Record<ThicknessMethod, string> = {
   measured: 'measured',
   estimated: 'estimated',
-}
+};
 
 /** One thickness reading as stored: a single value XOR a min/max range (validated in core). */
 export interface ThicknessReading {
-  valueCm?: number
-  minCm?: number
-  maxCm?: number
-  method: ThicknessMethod
-  note?: string
+  valueCm?: number;
+  minCm?: number;
+  maxCm?: number;
+  method: ThicknessMethod;
+  note?: string;
 }
 
 /**
@@ -51,23 +51,23 @@ export interface ThicknessReading {
  * (the core validator forbids that, but the display layer never assumes clean input).
  */
 export function formatThicknessReading(reading: ThicknessReading, decimals = 1): string | null {
-  const method = ` (${THICKNESS_METHOD_LABELS[reading.method]})`
+  const method = ` (${THICKNESS_METHOD_LABELS[reading.method]})`;
   if (reading.valueCm !== undefined) {
-    return `${formatThicknessInches(reading.valueCm, decimals)}${method}`
+    return `${formatThicknessInches(reading.valueCm, decimals)}${method}`;
   }
   if (reading.minCm !== undefined && reading.maxCm !== undefined) {
     // A range shares one ″ glyph ("2–4″"), so it formats the endpoints inline rather than via
     // formatThicknessInches (which would double the glyph).
-    const min = roundTo(cmToInches(reading.minCm), decimals)
-    const max = roundTo(cmToInches(reading.maxCm), decimals)
-    return `${min}–${max}″${method}`
+    const min = roundTo(cmToInches(reading.minCm), decimals);
+    const max = roundTo(cmToInches(reading.maxCm), decimals);
+    return `${min}–${max}″${method}`;
   }
-  return null
+  return null;
 }
 
 /** Snow cover depth in inches, e.g. `1.5″` — same imperial format as an ice-thickness value. */
 export function formatSnowCoverInches(cm: number, decimals = 1): string {
-  return formatThicknessInches(cm, decimals)
+  return formatThicknessInches(cm, decimals);
 }
 
 /** Coarse skating quality (D23) — never a safety verdict (D3). */
@@ -76,30 +76,30 @@ export const SKATE_QUALITY_LABELS: Record<SkateQuality, string> = {
   good: 'Good',
   fair: 'Fair',
   poor: 'Poor',
-}
+};
 
 export const SKY_LABELS: Record<SkyCondition, string> = {
   clear: 'Clear',
   partly_cloudy: 'Partly cloudy',
   overcast: 'Overcast',
   precip: 'Precipitation',
-}
+};
 
 export const PRECIP_LABELS: Record<PrecipType, string> = {
   none: 'None',
   rain: 'Rain',
   snow: 'Snow',
   sleet: 'Sleet',
-}
+};
 
 /** Manual conditions AT skate time (D19); Open-Meteo auto-fill is Phase 10. */
 export interface ReportConditions {
-  airTempC?: number
-  windSpeedKph?: number
-  windDir?: string
-  sky?: SkyCondition
-  precip?: PrecipType
-  source: ConditionSource
+  airTempC?: number;
+  windSpeedKph?: number;
+  windDir?: string;
+  sky?: SkyCondition;
+  precip?: PrecipType;
+  source: ConditionSource;
 }
 
 /**
@@ -108,22 +108,22 @@ export interface ReportConditions {
  * rides alongside the speed when present.
  */
 export function formatConditions(conditions: ReportConditions): { label: string; value: string }[] {
-  const rows: { label: string; value: string }[] = []
+  const rows: { label: string; value: string }[] = [];
   if (conditions.airTempC !== undefined) {
-    rows.push({ label: 'Air temp', value: formatTemperatureF(conditions.airTempC) })
+    rows.push({ label: 'Air temp', value: formatTemperatureF(conditions.airTempC) });
   }
   if (conditions.windSpeedKph !== undefined) {
-    const speed = formatWindMph(conditions.windSpeedKph)
+    const speed = formatWindMph(conditions.windSpeedKph);
     rows.push({
       label: 'Wind',
       value: conditions.windDir ? `${speed} ${conditions.windDir}` : speed,
-    })
+    });
   }
-  if (conditions.sky !== undefined) rows.push({ label: 'Sky', value: SKY_LABELS[conditions.sky] })
+  if (conditions.sky !== undefined) rows.push({ label: 'Sky', value: SKY_LABELS[conditions.sky] });
   if (conditions.precip !== undefined) {
-    rows.push({ label: 'Precip', value: PRECIP_LABELS[conditions.precip] })
+    rows.push({ label: 'Precip', value: PRECIP_LABELS[conditions.precip] });
   }
-  return rows
+  return rows;
 }
 
 /**
@@ -139,17 +139,17 @@ export function formatSkateTime(ms: number, timeZone?: string): string {
     hour: 'numeric',
     minute: '2-digit',
     ...(timeZone !== undefined ? { timeZone } : {}),
-  }).format(new Date(ms))
+  }).format(new Date(ms));
 }
 
 /** A duration in minutes as a compact label: `45m` · `1h` · `1h 30m`. Rounds to the nearest minute. */
 export function formatDurationLabel(minutes: number): string {
-  const total = Math.max(0, Math.round(minutes))
-  const h = Math.floor(total / 60)
-  const m = total % 60
-  if (h === 0) return `${m}m`
-  if (m === 0) return `${h}h`
-  return `${h}h ${m}m`
+  const total = Math.max(0, Math.round(minutes));
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 /**
@@ -158,8 +158,8 @@ export function formatDurationLabel(minutes: number): string {
  * duration chip. A zero/negative span (should not occur post-validation) also yields `null`.
  */
 export function formatSkateWindow(end: number, start?: number): string | null {
-  if (start === undefined) return null
-  const minutes = (end - start) / 60_000
-  if (!Number.isFinite(minutes) || minutes <= 0) return null
-  return formatDurationLabel(minutes)
+  if (start === undefined) return null;
+  const minutes = (end - start) / 60_000;
+  if (!Number.isFinite(minutes) || minutes <= 0) return null;
+  return formatDurationLabel(minutes);
 }

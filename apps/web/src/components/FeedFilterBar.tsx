@@ -7,14 +7,14 @@ import {
   roundTo,
   type SkateQuality,
   type SurfaceTag,
-} from '@skating/core'
-import { activeFilterCount } from '../lib/feedFilters'
-import { Button } from './ui/button'
-import { Checkbox } from './ui/checkbox'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
+} from '@skating/core';
+import { activeFilterCount } from '../lib/feedFilters';
+import { Button } from './ui/button';
+import { Checkbox } from './ui/checkbox';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group';
 
 /**
  * The persisted newsfeed filter row (Phase 4, decision #3) — an **additive** narrow over the global
@@ -24,44 +24,44 @@ import { ToggleGroup, ToggleGroupItem } from './ui/toggle-group'
  * still passes (enforced server-side in `matchesFilters`).
  */
 
-const OFF = 'off'
-const ANY = 'any'
+const OFF = 'off';
+const ANY = 'any';
 
 /** Curated ideal ice / surface types (decision #3 examples) — the common ones, not the full vocab. */
-const IDEAL_ICE_TYPES: IceType[] = ['black_ice']
-const IDEAL_SURFACE_TAGS: SurfaceTag[] = ['glass', 'smooth']
+const IDEAL_ICE_TYPES: IceType[] = ['black_ice'];
+const IDEAL_SURFACE_TAGS: SurfaceTag[] = ['glass', 'smooth'];
 const ICE_LABELS: Record<string, string> = {
   black_ice: 'Black ice',
   glass: 'Glass',
   smooth: 'Smooth',
-}
+};
 
 /** Recency floor options in hours (last 24h / 48h / 7d), plus off. */
 const RECENCY_OPTIONS: { value: number; label: string }[] = [
   { value: 24, label: 'Last 24h' },
   { value: 48, label: 'Last 48h' },
   { value: 168, label: 'Last 7d' },
-]
+];
 
 export function FeedFilterBar({
   filters,
   onChange,
 }: {
-  filters: FeedFilters
-  onChange: (next: FeedFilters) => void
+  filters: FeedFilters;
+  onChange: (next: FeedFilters) => void;
 }) {
-  const count = activeFilterCount(filters)
+  const count = activeFilterCount(filters);
 
   /** Immutably set (or, when `value` is undefined, delete) one filter key. */
   function patch<K extends keyof FeedFilters>(key: K, value: FeedFilters[K] | undefined) {
-    const next = { ...filters }
-    if (value === undefined) delete next[key]
-    else next[key] = value
-    onChange(next)
+    const next = { ...filters };
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+    onChange(next);
   }
 
   const thicknessInches =
-    filters.thicknessFloorCm !== undefined ? roundTo(cmToInches(filters.thicknessFloorCm), 1) : ''
+    filters.thicknessFloorCm !== undefined ? roundTo(cmToInches(filters.thicknessFloorCm), 1) : '';
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3">
@@ -150,14 +150,14 @@ export function FeedFilterBar({
             className="h-9 w-24"
             value={thicknessInches}
             onChange={(e) => {
-              const raw = e.target.value.trim()
-              const inches = Number(raw)
+              const raw = e.target.value.trim();
+              const inches = Number(raw);
               patch(
                 'thicknessFloorCm',
                 raw !== '' && Number.isFinite(inches) && inches >= 0
                   ? roundTo(inchesToCm(inches), 2)
                   : undefined,
-              )
+              );
             }}
           />
         </FilterField>
@@ -180,20 +180,20 @@ export function FeedFilterBar({
           options={[...IDEAL_ICE_TYPES, ...IDEAL_SURFACE_TAGS]}
           selected={[...(filters.iceTypes ?? []), ...(filters.surfaceTags ?? [])]}
           onValueChange={(next) => {
-            const ice = next.filter((v) => (IDEAL_ICE_TYPES as string[]).includes(v)) as IceType[]
+            const ice = next.filter((v) => (IDEAL_ICE_TYPES as string[]).includes(v)) as IceType[];
             const surface = next.filter((v) =>
               (IDEAL_SURFACE_TAGS as string[]).includes(v),
-            ) as SurfaceTag[]
+            ) as SurfaceTag[];
             onChange({
               ...filters,
               ...(ice.length > 0 ? { iceTypes: ice } : { iceTypes: undefined }),
               ...(surface.length > 0 ? { surfaceTags: surface } : { surfaceTags: undefined }),
-            })
+            });
           }}
         />
       </div>
     </div>
-  )
+  );
 }
 
 /** A labelled filter control cell. */
@@ -202,9 +202,9 @@ function FilterField({
   htmlFor,
   children,
 }: {
-  label: string
-  htmlFor: string
-  children: React.ReactNode
+  label: string;
+  htmlFor: string;
+  children: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col gap-1">
@@ -213,7 +213,7 @@ function FilterField({
       </Label>
       {children}
     </div>
-  )
+  );
 }
 
 /** A row of on/off chips for the ideal ice/surface types (multi-select). */
@@ -223,10 +223,10 @@ function ChipToggle({
   selected,
   onValueChange,
 }: {
-  label: string
-  options: string[]
-  selected: string[]
-  onValueChange: (next: string[]) => void
+  label: string;
+  options: string[];
+  selected: string[];
+  onValueChange: (next: string[]) => void;
 }) {
   return (
     <div className="flex flex-col gap-1">
@@ -248,5 +248,5 @@ function ChipToggle({
         ))}
       </ToggleGroup>
     </div>
-  )
+  );
 }

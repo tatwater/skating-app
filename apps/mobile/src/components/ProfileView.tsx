@@ -1,19 +1,19 @@
-import type { ReactNode } from 'react'
-import { Image } from 'react-native'
-import { H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui'
+import type { ReactNode } from 'react';
+import { Image } from 'react-native';
+import { H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
 
 /** Plain profile data for the presentational view (mirrors web's `ProfileViewData`). */
 export interface ProfileViewData {
-  username: string
-  displayName: string
-  profileImageUrl?: string
-  isSelf: boolean
-  isPrivate: boolean
-  homeTownLabel?: string
-  bio?: string
-  reputationPoints?: number
-  reportCount?: number
-  commentCount?: number
+  username: string;
+  displayName: string;
+  profileImageUrl?: string;
+  isSelf: boolean;
+  isPrivate: boolean;
+  homeTownLabel?: string;
+  bio?: string;
+  reputationPoints?: number;
+  reportCount?: number;
+  commentCount?: number;
 }
 
 /** Round avatar with an initial fallback when the user has no Clerk image. */
@@ -22,9 +22,9 @@ export function Avatar({
   imageUrl,
   size = 64,
 }: {
-  displayName: string
-  imageUrl?: string
-  size?: number
+  displayName: string;
+  imageUrl?: string;
+  size?: number;
 }) {
   if (imageUrl) {
     return (
@@ -33,7 +33,7 @@ export function Avatar({
         style={{ width: size, height: size, borderRadius: size / 2 }}
         accessibilityLabel={displayName}
       />
-    )
+    );
   }
   return (
     <YStack
@@ -48,7 +48,7 @@ export function Avatar({
         {displayName.trim().charAt(0).toUpperCase() || '?'}
       </Text>
     </YStack>
-  )
+  );
 }
 
 /** A labeled stat / trust-score number. */
@@ -62,7 +62,7 @@ function Stat({ value, label }: { value: number; label: string }) {
         {label}
       </Text>
     </YStack>
-  )
+  );
 }
 
 /**
@@ -76,9 +76,9 @@ export function ProfileView({
   actions,
   reportHistory,
 }: {
-  data: ProfileViewData
-  actions?: ReactNode
-  reportHistory?: ReactNode
+  data: ProfileViewData;
+  actions?: ReactNode;
+  reportHistory?: ReactNode;
 }) {
   return (
     <YStack gap="$4" padding="$4" backgroundColor="$background">
@@ -122,5 +122,5 @@ export function ProfileView({
         </YStack>
       ) : null}
     </YStack>
-  )
+  );
 }

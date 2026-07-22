@@ -16,12 +16,12 @@
  * `convex/dist/esm/cli/codegen_templates/*`.
  */
 
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const convexDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'convex')
-const generatedDir = join(convexDir, '_generated')
+const convexDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'convex');
+const generatedDir = join(convexDir, '_generated');
 
 // When a `convex.config.ts` exists, this app installs Convex *components* (D5:
 // `@convex-dev/geospatial`). Component codegen has a fully-typed form that needs
@@ -31,7 +31,7 @@ const generatedDir = join(convexDir, '_generated')
 // loosely-typed `components` *stub* that `convex dev` writes before its first push
 // (`componentApiStubDTS`): `componentsGeneric()` in `api.js`, `AnyComponents` in
 // `api.d.ts`. The app's own `api`/`internal` stay precisely derived, as before.
-const hasComponents = existsSync(join(convexDir, 'convex.config.ts'))
+const hasComponents = existsSync(join(convexDir, 'convex.config.ts'));
 
 const header = (desc) => `/* eslint-disable */
 /**
@@ -42,7 +42,7 @@ const header = (desc) => `/* eslint-disable */
  * To regenerate, run \`pnpm --filter @skating/convex codegen\` (or \`npx convex dev\`).
  * @module
  */
-`
+`;
 
 const SERVER_JS = `${header('Generated utilities for implementing server-side Convex query and mutation functions.')}
 import {
@@ -62,7 +62,7 @@ export const internalMutation = internalMutationGeneric;
 export const action = actionGeneric;
 export const internalAction = internalActionGeneric;
 export const httpAction = httpActionGeneric;
-`
+`;
 
 const SERVER_DTS = `${header('Generated utilities for implementing server-side Convex query and mutation functions.')}
 import {
@@ -91,7 +91,7 @@ export type MutationCtx = GenericMutationCtx<DataModel>;
 export type ActionCtx = GenericActionCtx<DataModel>;
 export type DatabaseReader = GenericDatabaseReader<DataModel>;
 export type DatabaseWriter = GenericDatabaseWriter<DataModel>;
-`
+`;
 
 const DATA_MODEL_DTS = `${header('Generated data model types.')}
 import type {
@@ -107,7 +107,7 @@ export type TableNames = TableNamesInDataModel<DataModel>;
 export type Doc<TableName extends TableNames> = DocumentByName<DataModel, TableName>;
 export type Id<TableName extends TableNames | SystemTableNames> = GenericId<TableName>;
 export type DataModel = DataModelFromSchemaDefinition<typeof schema>;
-`
+`;
 
 const API_JS = hasComponents
   ? `${header('Generated `api` utility.')}
@@ -122,26 +122,26 @@ import { anyApi } from "convex/server";
 
 export const api = anyApi;
 export const internal = anyApi;
-`
+`;
 
 /** Recursively list function-module paths (relative to convex/, no extension). */
 function functionModules(dir = convexDir) {
-  const out = []
+  const out = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = join(dir, entry.name)
+    const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      if (entry.name === '_generated') continue
-      out.push(...functionModules(full))
-      continue
+      if (entry.name === '_generated') continue;
+      out.push(...functionModules(full));
+      continue;
     }
-    if (!entry.name.endsWith('.ts') || entry.name.endsWith('.d.ts')) continue
+    if (!entry.name.endsWith('.ts') || entry.name.endsWith('.d.ts')) continue;
     // Skip tests, the schema, and deployment config (auth.config.ts / *.config.ts) —
     // none are function modules, matching what `convex codegen` excludes from the API.
-    if (entry.name.endsWith('.test.ts') || entry.name === 'schema.ts') continue
-    if (entry.name.endsWith('.config.ts')) continue
-    out.push(relative(convexDir, full).replace(/\.ts$/, ''))
+    if (entry.name.endsWith('.test.ts') || entry.name === 'schema.ts') continue;
+    if (entry.name.endsWith('.config.ts')) continue;
+    out.push(relative(convexDir, full).replace(/\.ts$/, ''));
   }
-  return out
+  return out;
 }
 
 // Reserved words + generated symbols that a module identifier must not collide with,
@@ -197,27 +197,27 @@ const RESERVED = new Set([
   'api',
   'internal',
   'components',
-])
+]);
 
 /** Mirror Convex's `moduleIdentifier`: path → safe, collision-free JS identifier. */
 function moduleIdentifier(path) {
   // Replace every non-identifier char (`/`, `-`, `.`, …) with `_`.
-  let ident = path.replace(/[^a-zA-Z0-9_$]/g, '_')
-  if (RESERVED.has(ident)) ident = `${ident}_`
-  return ident
+  let ident = path.replace(/[^a-zA-Z0-9_$]/g, '_');
+  if (RESERVED.has(ident)) ident = `${ident}_`;
+  return ident;
 }
 
 function apiDts(modules) {
   const imports = modules
     .map((m) => `import type * as ${moduleIdentifier(m)} from "../${m}.js";`)
-    .join('\n')
-  const entries = modules.map((m) => `  "${m}": typeof ${moduleIdentifier(m)};`).join('\n')
+    .join('\n');
+  const entries = modules.map((m) => `  "${m}": typeof ${moduleIdentifier(m)};`).join('\n');
   // Component apps also expose a `components` handle. We keep the derived `api`/`internal`
   // typing and add only the loosely-typed stub (see `hasComponents` note above).
   const componentsImport = hasComponents
     ? 'import type { AnyComponents } from "convex/server";\n'
-    : ''
-  const componentsDecl = hasComponents ? '\nexport declare const components: AnyComponents;\n' : ''
+    : '';
+  const componentsDecl = hasComponents ? '\nexport declare const components: AnyComponents;\n' : '';
   return `${header('Generated `api` utility.')}
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
 ${componentsImport}${imports}
@@ -227,16 +227,16 @@ ${entries}
 }>;
 export declare const api: FilterApi<typeof fullApi, FunctionReference<any, "public">>;
 export declare const internal: FilterApi<typeof fullApi, FunctionReference<any, "internal">>;
-${componentsDecl}`
+${componentsDecl}`;
 }
 
-const modules = functionModules().sort((a, b) => a.localeCompare(b, 'en-US'))
+const modules = functionModules().sort((a, b) => a.localeCompare(b, 'en-US'));
 
-mkdirSync(generatedDir, { recursive: true })
-writeFileSync(join(generatedDir, 'server.js'), SERVER_JS)
-writeFileSync(join(generatedDir, 'server.d.ts'), SERVER_DTS)
-writeFileSync(join(generatedDir, 'dataModel.d.ts'), DATA_MODEL_DTS)
-writeFileSync(join(generatedDir, 'api.js'), API_JS)
-writeFileSync(join(generatedDir, 'api.d.ts'), apiDts(modules))
+mkdirSync(generatedDir, { recursive: true });
+writeFileSync(join(generatedDir, 'server.js'), SERVER_JS);
+writeFileSync(join(generatedDir, 'server.d.ts'), SERVER_DTS);
+writeFileSync(join(generatedDir, 'dataModel.d.ts'), DATA_MODEL_DTS);
+writeFileSync(join(generatedDir, 'api.js'), API_JS);
+writeFileSync(join(generatedDir, 'api.d.ts'), apiDts(modules));
 
-console.log(`convex codegen (offline): wrote _generated for ${modules.length} modules`)
+console.log(`convex codegen (offline): wrote _generated for ${modules.length} modules`);

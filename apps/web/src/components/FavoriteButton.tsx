@@ -1,7 +1,7 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { useMutation, useQuery } from 'convex/react'
-import { Button } from './ui/button'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { useMutation, useQuery } from 'convex/react';
+import { Button } from './ui/button';
 
 /**
  * Favorite toggle (Phase 4, decision #1) — the place-based curation heart. Favoriting a lake makes its
@@ -13,12 +13,12 @@ export function FavoriteButton({
   waterBodyId,
   showLabel = false,
 }: {
-  waterBodyId: Id<'waterBodies'>
-  showLabel?: boolean
+  waterBodyId: Id<'waterBodies'>;
+  showLabel?: boolean;
 }) {
-  const favorited = useQuery(api.waterBodyFavorites.isFavorite, { waterBodyId })
-  const toggle = useMutation(api.waterBodyFavorites.toggle)
-  const isFav = favorited === true
+  const favorited = useQuery(api.waterBodyFavorites.isFavorite, { waterBodyId });
+  const toggle = useMutation(api.waterBodyFavorites.toggle);
+  const isFav = favorited === true;
 
   return (
     <Button
@@ -35,5 +35,5 @@ export function FavoriteButton({
       </span>
       {showLabel ? <span>{isFav ? 'Favorited' : 'Favorite'}</span> : null}
     </Button>
-  )
+  );
 }

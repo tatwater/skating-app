@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
+import type { ReactNode } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 
 /**
  * Centered shell for the signed-out / provisioning pages (sign-in, sign-up, onboarding, re-ack),
@@ -17,5 +17,5 @@ export function AuthCard({ title, children }: { title: string; children: ReactNo
         <CardContent className="flex flex-col gap-5">{children}</CardContent>
       </Card>
     </div>
-  )
+  );
 }

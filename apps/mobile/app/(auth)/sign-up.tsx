@@ -1,9 +1,9 @@
-import { useSignUp } from '@clerk/clerk-expo'
-import { Link } from 'expo-router'
-import { useState } from 'react'
-import { ScrollView } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui'
+import { useSignUp } from '@clerk/clerk-expo';
+import { Link } from 'expo-router';
+import { useState } from 'react';
+import { ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui';
 
 /**
  * Clerk account creation (D26): email + password + email-code verification. The profile
@@ -14,59 +14,59 @@ import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui'
  * manual navigation is needed here.
  */
 export default function SignUpScreen() {
-  const { signUp, setActive, isLoaded } = useSignUp()
+  const { signUp, setActive, isLoaded } = useSignUp();
 
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [pendingCode, setPendingCode] = useState(false)
-  const [code, setCode] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [pendingCode, setPendingCode] = useState(false);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const canSubmit = isLoaded && !busy && !!email && !!password
+  const canSubmit = isLoaded && !busy && !!email && !!password;
 
   async function onSignUp() {
-    if (!isLoaded || !canSubmit) return
-    setBusy(true)
-    setError(null)
+    if (!isLoaded || !canSubmit) return;
+    setBusy(true);
+    setError(null);
     try {
-      await signUp.create({ emailAddress: email, password })
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' })
-      setPendingCode(true)
+      await signUp.create({ emailAddress: email, password });
+      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      setPendingCode(true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sign up failed')
+      setError(e instanceof Error ? e.message : 'Sign up failed');
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
   async function onVerify() {
-    if (!isLoaded || busy) return
-    setBusy(true)
-    setError(null)
+    if (!isLoaded || busy) return;
+    setBusy(true);
+    setError(null);
     try {
-      const attempt = await signUp.attemptEmailAddressVerification({ code })
+      const attempt = await signUp.attemptEmailAddressVerification({ code });
       if (attempt.status === 'complete') {
         // Activating the session flips `isSignedIn`; the root gate then routes to
         // onboarding (no profile yet) — see app/_layout.tsx.
-        await setActive({ session: attempt.createdSessionId })
+        await setActive({ session: attempt.createdSessionId });
       } else {
         // Email verified, but the sign-up can't complete because the Clerk instance
         // still wants fields this screen doesn't collect (e.g. a required phone_number).
         // Surface exactly what's blocking rather than a generic "try again" — retrying
         // the code just fails with "already verified" and hides the real cause.
-        const blocking = [...attempt.missingFields, ...attempt.unverifiedFields]
+        const blocking = [...attempt.missingFields, ...attempt.unverifiedFields];
         setError(
           blocking.length > 0
             ? `Email verified, but this account still needs: ${blocking.join(', ')}. ` +
                 'Check your Clerk instance’s required sign-up fields.'
             : `Sign-up incomplete (status: ${attempt.status}).`,
-        )
+        );
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Verification failed')
+      setError(e instanceof Error ? e.message : 'Verification failed');
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
@@ -99,7 +99,7 @@ export default function SignUpScreen() {
           </Button>
         </YStack>
       </SafeAreaView>
-    )
+    );
   }
 
   return (
@@ -144,5 +144,5 @@ export default function SignUpScreen() {
         </YStack>
       </ScrollView>
     </SafeAreaView>
-  )
+  );
 }

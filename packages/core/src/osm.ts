@@ -10,10 +10,10 @@
  * to `null` so the ETL drops it. We import still water — lakes / ponds / reservoirs — only.
  */
 
-import { WATER_BODY_TYPES, type WaterBodyType } from './types'
+import { WATER_BODY_TYPES, type WaterBodyType } from './types';
 
 /** A raw OSM feature's tag bag (`key=value`), e.g. `{ natural: 'water', water: 'lake' }`. */
-export type OsmTags = Record<string, string | undefined>
+export type OsmTags = Record<string, string | undefined>;
 
 /** `water=*` subtags that are **flowing / linear** — deferred (rivers) or drainage we skip. */
 const FLOWING_WATER = new Set([
@@ -25,14 +25,14 @@ const FLOWING_WATER = new Set([
   'tidal_channel',
   'lock',
   'moat',
-])
+]);
 
 /** Direct `water=*` subtag → our enum, for the still-water types we recognize by name. */
 const WATER_SUBTYPE: Partial<Record<string, WaterBodyType>> = {
   lake: 'lake',
   pond: 'pond',
   reservoir: 'reservoir',
-}
+};
 
 /**
  * Map an OSM feature's tags to our `WaterBodyType`, or `null` to **skip** the feature.
@@ -50,31 +50,31 @@ const WATER_SUBTYPE: Partial<Record<string, WaterBodyType>> = {
  * it — `other` is the safety net, not a skip.
  */
 export function waterBodyTypeFromOsmTags(tags: OsmTags): WaterBodyType | null {
-  const { natural, water, waterway, landuse, wetland } = tags
+  const { natural, water, waterway, landuse, wetland } = tags;
 
   // An explicit `water=*` subtag is the strongest signal and is checked first.
   if (water !== undefined) {
-    if (FLOWING_WATER.has(water)) return null // water=river|stream|canal|… — deferred
-    const mapped = WATER_SUBTYPE[water]
-    if (mapped !== undefined) return mapped // water=lake|pond|reservoir
-    return 'other' // a water area of an unrecognized kind (lagoon, oxbow, basin, …)
+    if (FLOWING_WATER.has(water)) return null; // water=river|stream|canal|… — deferred
+    const mapped = WATER_SUBTYPE[water];
+    if (mapped !== undefined) return mapped; // water=lake|pond|reservoir
+    return 'other'; // a water area of an unrecognized kind (lagoon, oxbow, basin, …)
   }
 
   // Other positive still-water classifications — these beat the `waterway` defer below.
-  if (natural === 'bay') return 'bay'
-  if (landuse === 'reservoir') return 'reservoir'
-  if (wetland === 'marsh') return 'marsh' // only marshes; swamp/bog/fen are skipped
+  if (natural === 'bay') return 'bay';
+  if (landuse === 'reservoir') return 'reservoir';
+  if (wetland === 'marsh') return 'marsh'; // only marshes; swamp/bog/fen are skipped
 
   // Bare flowing/linear water (a `waterway` with no still-water signal above) — deferred.
-  if (waterway !== undefined) return null
+  if (waterway !== undefined) return null;
 
   // A `natural=water` area with no recognized `water=*` subtag — unknown kind, still imported.
-  if (natural === 'water') return 'other'
+  if (natural === 'water') return 'other';
 
-  return null
+  return null;
 }
 
 /** Type guard: is `value` one of our water-body types? (defensive validation in the ETL). */
 export function isWaterBodyType(value: string): value is WaterBodyType {
-  return (WATER_BODY_TYPES as readonly string[]).includes(value)
+  return (WATER_BODY_TYPES as readonly string[]).includes(value);
 }

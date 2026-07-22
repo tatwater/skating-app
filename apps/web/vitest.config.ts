@@ -1,5 +1,5 @@
-import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vitest/config'
+import { fileURLToPath } from 'node:url';
+import { defineConfig } from 'vitest/config';
 
 /**
  * Web tests (D40): jsdom + Testing Library for component/logic, plus a token-parity test
@@ -22,4 +22,4 @@ export default defineConfig({
       exclude: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
     },
   },
-})
+});

@@ -1,11 +1,11 @@
-import type { Id } from '@skating/convex/dataModel'
-import * as Location from 'expo-location'
-import { useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
-import { ScrollView } from 'react-native'
-import { Button, Paragraph, Spinner, YStack } from 'tamagui'
-import { ReportForm } from '../../src/components/ReportForm'
-import { resolveCachedBody } from '../../src/lib/bodyCache'
+import type { Id } from '@skating/convex/dataModel';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { ScrollView } from 'react-native';
+import { Button, Paragraph, Spinner, YStack } from 'tamagui';
+import { ReportForm } from '../../src/components/ReportForm';
+import { resolveCachedBody } from '../../src/lib/bodyCache';
 
 /**
  * Offline report capture (F2). Uses the device GPS to bind the report to the nearest cached lake
@@ -17,40 +17,40 @@ type Located =
   | { phase: 'locating' }
   | { phase: 'denied' }
   | {
-      phase: 'ready'
-      coord: { lat: number; lng: number }
-      waterBodyId?: Id<'waterBodies'>
-      bodyName?: string
-    }
+      phase: 'ready';
+      coord: { lat: number; lng: number };
+      waterBodyId?: Id<'waterBodies'>;
+      bodyName?: string;
+    };
 
 export default function NewDraftScreen() {
-  const router = useRouter()
-  const [state, setState] = useState<Located>({ phase: 'locating' })
+  const router = useRouter();
+  const [state, setState] = useState<Located>({ phase: 'locating' });
 
   useEffect(() => {
-    let cancelled = false
+    let cancelled = false;
     void (async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync()
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        if (!cancelled) setState({ phase: 'denied' })
-        return
+        if (!cancelled) setState({ phase: 'denied' });
+        return;
       }
-      const pos = await Location.getCurrentPositionAsync({})
-      const coord = { lat: pos.coords.latitude, lng: pos.coords.longitude }
-      const match = resolveCachedBody(coord)
+      const pos = await Location.getCurrentPositionAsync({});
+      const coord = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      const match = resolveCachedBody(coord);
       if (!cancelled) {
         setState({
           phase: 'ready',
           coord,
           waterBodyId: match?.waterBodyId as Id<'waterBodies'> | undefined,
           bodyName: match?.name,
-        })
+        });
       }
-    })()
+    })();
     return () => {
-      cancelled = true
-    }
-  }, [])
+      cancelled = true;
+    };
+  }, []);
 
   if (state.phase === 'locating') {
     return (
@@ -64,7 +64,7 @@ export default function NewDraftScreen() {
         <Spinner color="$primary" />
         <Paragraph color="$foregroundMuted">Finding your location…</Paragraph>
       </YStack>
-    )
+    );
   }
 
   if (state.phase === 'denied') {
@@ -82,7 +82,7 @@ export default function NewDraftScreen() {
         </Paragraph>
         <Button onPress={() => router.back()}>Back</Button>
       </YStack>
-    )
+    );
   }
 
   return (
@@ -95,5 +95,5 @@ export default function NewDraftScreen() {
         onSaved={() => router.back()}
       />
     </ScrollView>
-  )
+  );
 }

@@ -1,13 +1,13 @@
-import { useAuth } from '@clerk/clerk-expo'
-import { api } from '@skating/convex/api'
-import { useMutation } from 'convex/react'
-import { ConvexError } from 'convex/values'
-import { useState } from 'react'
-import { ScrollView } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, H1, Paragraph, Text, YStack } from 'tamagui'
-import { RiskAckConsent } from '../src/components/RiskAckConsent'
-import { RISK_ACK_VERSION } from '../src/lib/riskAck'
+import { useAuth } from '@clerk/clerk-expo';
+import { api } from '@skating/convex/api';
+import { useMutation } from 'convex/react';
+import { ConvexError } from 'convex/values';
+import { useState } from 'react';
+import { ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button, H1, Paragraph, Text, YStack } from 'tamagui';
+import { RiskAckConsent } from '../src/components/RiskAckConsent';
+import { RISK_ACK_VERSION } from '../src/lib/riskAck';
 
 /**
  * Re-acceptance gate (D45). Reached when a signed-in user already has a profile but its
@@ -17,19 +17,19 @@ import { RISK_ACK_VERSION } from '../src/lib/riskAck'
  * `profiles.current` query flips and the root gate swaps this screen for the tabs.
  */
 export default function ReAckScreen() {
-  const { signOut } = useAuth()
-  const acceptCurrentRiskAck = useMutation(api.profiles.acceptCurrentRiskAck)
+  const { signOut } = useAuth();
+  const acceptCurrentRiskAck = useMutation(api.profiles.acceptCurrentRiskAck);
 
-  const [ack, setAck] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [ack, setAck] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function onAccept() {
-    if (busy || !ack) return
-    setBusy(true)
-    setError(null)
+    if (busy || !ack) return;
+    setBusy(true);
+    setError(null);
     try {
-      await acceptCurrentRiskAck({ riskAckVersion: RISK_ACK_VERSION })
+      await acceptCurrentRiskAck({ riskAckVersion: RISK_ACK_VERSION });
       // Success: no navigation — the root gate reacts to the refreshed acknowledgment.
     } catch (e) {
       setError(
@@ -38,9 +38,9 @@ export default function ReAckScreen() {
           : e instanceof Error
             ? e.message
             : 'Could not save your acknowledgment',
-      )
+      );
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
@@ -71,5 +71,5 @@ export default function ReAckScreen() {
         </YStack>
       </ScrollView>
     </SafeAreaView>
-  )
+  );
 }

@@ -9,14 +9,14 @@
  * geocoder. Reused by GPS ingest (Phase 8) + hazards (Phase 9).
  */
 
-import { bboxIntersects, pointInPolygon } from '@skating/core'
-import { v } from 'convex/values'
-import type { MultiPolygon, Polygon } from 'geojson'
-import type { Doc, Id } from './_generated/dataModel'
-import { internalMutation, type QueryCtx, query } from './_generated/server'
-import { ADMIN_AREA_LEVELS } from './lib/enums'
-import { adminAreasGeo } from './lib/geospatial'
-import { bbox, geoJson, latLng, literals } from './lib/validators'
+import { bboxIntersects, pointInPolygon } from '@skating/core';
+import { v } from 'convex/values';
+import type { MultiPolygon, Polygon } from 'geojson';
+import type { Doc, Id } from './_generated/dataModel';
+import { internalMutation, type QueryCtx, query } from './_generated/server';
+import { ADMIN_AREA_LEVELS } from './lib/enums';
+import { adminAreasGeo } from './lib/geospatial';
+import { bbox, geoJson, latLng, literals } from './lib/validators';
 
 /** An admin-boundary row as the offline `scripts/admin-areas` pipeline prepares it. */
 const adminArea = v.object({
@@ -27,7 +27,7 @@ const adminArea = v.object({
   polygon: geoJson,
   bbox,
   centroid: latLng,
-})
+});
 
 /**
  * Internal, never client-callable: idempotently upsert a batch of admin boundaries (Phase 5). Load
@@ -37,15 +37,15 @@ const adminArea = v.object({
 export const importCanonical = internalMutation({
   args: { areas: v.array(adminArea) },
   handler: async (ctx, { areas }) => {
-    let inserted = 0
-    let updated = 0
+    let inserted = 0;
+    let updated = 0;
     for (const item of areas) {
       const existing = await ctx.db
         .query('adminAreas')
         .withIndex('by_external_id', (q) => q.eq('externalId', item.externalId))
-        .unique()
+        .unique();
 
-      let id: Id<'adminAreas'>
+      let id: Id<'adminAreas'>;
       if (existing) {
         await ctx.db.patch(existing._id, {
           name: item.name,
@@ -54,9 +54,9 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
-        })
-        id = existing._id
-        updated++
+        });
+        id = existing._id;
+        updated++;
       } else {
         id = await ctx.db.insert('adminAreas', {
           externalId: item.externalId,
@@ -67,8 +67,8 @@ export const importCanonical = internalMutation({
           bbox: item.bbox,
           centroid: item.centroid,
           createdAt: Date.now(),
-        })
-        inserted++
+        });
+        inserted++;
       }
       // Re-index the centroid in one place for both paths. `GeospatialIndex.insert` is
       // upsert-by-key: the component removes any existing point for this doc id before inserting
@@ -80,21 +80,21 @@ export const importCanonical = internalMutation({
         id,
         { latitude: item.centroid.lat, longitude: item.centroid.lng },
         { level: item.level },
-      )
+      );
     }
-    return { inserted, updated }
+    return { inserted, updated };
   },
-})
+});
 
 /** A degenerate (zero-area) bbox at a point — lets `bboxIntersects` do a cheap point-in-bbox test. */
 function pointBBox(point: { lat: number; lng: number }) {
-  return { minLat: point.lat, maxLat: point.lat, minLng: point.lng, maxLng: point.lng }
+  return { minLat: point.lat, maxLat: point.lat, minLng: point.lng, maxLng: point.lng };
 }
 
 /** True when `point` is inside an admin area's boundary (cheap bbox prefilter → Turf refine). */
 function pointInArea(point: { lat: number; lng: number }, area: Doc<'adminAreas'>): boolean {
-  if (!bboxIntersects(area.bbox, pointBBox(point))) return false
-  return pointInPolygon(point, area.polygon as unknown as Polygon | MultiPolygon)
+  if (!bboxIntersects(area.bbox, pointBBox(point))) return false;
+  return pointInPolygon(point, area.polygon as unknown as Polygon | MultiPolygon);
 }
 
 /**
@@ -107,9 +107,9 @@ function pointInArea(point: { lat: number; lng: number }, area: Doc<'adminAreas'
  * a wrong town. Counties/states are far larger (a centroid can sit degrees from an interior point),
  * so those levels are scanned by the `by_level` index (a handful of rows), not queried geospatially.
  */
-const TOWN_QUERY_MARGIN_DEG = 0.2
+const TOWN_QUERY_MARGIN_DEG = 0.2;
 /** Cap on town centroids pulled from the prefilter — the small rectangle holds far fewer in practice. */
-const TOWN_QUERY_LIMIT = 128
+const TOWN_QUERY_LIMIT = 128;
 
 /** Find the town containing `point` via the geospatial centroid prefilter + a `pointInPolygon` refine. */
 async function findContainingTown(
@@ -121,17 +121,17 @@ async function findContainingTown(
     east: point.lng + TOWN_QUERY_MARGIN_DEG,
     south: point.lat - TOWN_QUERY_MARGIN_DEG,
     north: point.lat + TOWN_QUERY_MARGIN_DEG,
-  }
+  };
   const page = await adminAreasGeo.query(ctx, {
     shape: { type: 'rectangle', rectangle },
     limit: TOWN_QUERY_LIMIT,
     filter: (q) => q.eq('level', 'town'),
-  })
+  });
   for (const { key } of page.results) {
-    const area = await ctx.db.get(key)
-    if (area && pointInArea(point, area)) return area
+    const area = await ctx.db.get(key);
+    if (area && pointInArea(point, area)) return area;
   }
-  return null
+  return null;
 }
 
 /** Find the county/state containing `point` by scanning that level's short `by_level` list. */
@@ -143,15 +143,15 @@ async function findContainingByLevel(
   const areas = await ctx.db
     .query('adminAreas')
     .withIndex('by_level', (q) => q.eq('level', level))
-    .collect()
-  return areas.find((area) => pointInArea(point, area)) ?? null
+    .collect();
+  return areas.find((area) => pointInArea(point, area)) ?? null;
 }
 
 /** The point-derived place label parts stamped onto `reports.place` (Phase 5). */
 export interface ResolvedPlace {
-  town?: string
-  county?: string
-  state?: string
+  town?: string;
+  county?: string;
+  state?: string;
 }
 
 /**
@@ -169,13 +169,13 @@ export async function resolvePlaceForCoord(
     findContainingTown(ctx, point),
     findContainingByLevel(ctx, 'county', point),
     findContainingByLevel(ctx, 'state', point),
-  ])
-  const place: ResolvedPlace = {}
-  if (town) place.town = town.name
-  if (county) place.county = county.name
-  const stateCode = town?.state ?? county?.state ?? state?.state
-  if (stateCode) place.state = stateCode
-  return place.town || place.county || place.state ? place : undefined
+  ]);
+  const place: ResolvedPlace = {};
+  if (town) place.town = town.name;
+  if (county) place.county = county.name;
+  const stateCode = town?.state ?? county?.state ?? state?.state;
+  if (stateCode) place.state = stateCode;
+  return place.town || place.county || place.state ? place : undefined;
 }
 
 /**
@@ -186,4 +186,4 @@ export async function resolvePlaceForCoord(
 export const resolvePlace = query({
   args: { point: latLng },
   handler: (ctx, { point }) => resolvePlaceForCoord(ctx, point),
-})
+});

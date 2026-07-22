@@ -1,12 +1,12 @@
-import { ClerkProvider, useAuth } from '@clerk/tanstack-react-start'
-import * as Sentry from '@sentry/tanstackstart-react'
-import { ConvexReactClient } from 'convex/react'
-import { ConvexProviderWithClerk } from 'convex/react-clerk'
-import { type ReactNode, useState } from 'react'
-import { env } from '../lib/env'
-import { ThemeProvider } from './theme-provider'
-import { Button } from './ui/button'
-import { Card, CardContent } from './ui/card'
+import { ClerkProvider, useAuth } from '@clerk/tanstack-react-start';
+import * as Sentry from '@sentry/tanstackstart-react';
+import { ConvexReactClient } from 'convex/react';
+import { ConvexProviderWithClerk } from 'convex/react-clerk';
+import { type ReactNode, useState } from 'react';
+import { env } from '../lib/env';
+import { ThemeProvider } from './theme-provider';
+import { Button } from './ui/button';
+import { Card, CardContent } from './ui/card';
 
 /**
  * App-wide providers (D26/D2/D7/D34), mirroring the mobile provider stack:
@@ -20,7 +20,7 @@ import { Card, CardContent } from './ui/card'
  * instead of a blank page (a passthrough during SSR, where React error boundaries don't run).
  */
 export function AppProviders({ children }: { children: ReactNode }) {
-  const [convex] = useState(() => new ConvexReactClient(env.convexUrl))
+  const [convex] = useState(() => new ConvexReactClient(env.convexUrl));
   return (
     <Sentry.ErrorBoundary fallback={CrashFallback}>
       <ClerkProvider>
@@ -29,7 +29,7 @@ export function AppProviders({ children }: { children: ReactNode }) {
         </ConvexProviderWithClerk>
       </ClerkProvider>
     </Sentry.ErrorBoundary>
-  )
+  );
 }
 
 function CrashFallback({ resetError }: { resetError: () => void }) {
@@ -48,5 +48,5 @@ function CrashFallback({ resetError }: { resetError: () => void }) {
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }

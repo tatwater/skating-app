@@ -15,16 +15,16 @@
  * preserving a removed state, rather than resurrecting a takedown.
  */
 
-import type { DEDUP_STATUSES, REVIEW_STATUSES } from './enums'
+import type { DEDUP_STATUSES, REVIEW_STATUSES } from './enums';
 
-type ReviewStatus = (typeof REVIEW_STATUSES)[number]
-type DedupStatus = (typeof DEDUP_STATUSES)[number]
+type ReviewStatus = (typeof REVIEW_STATUSES)[number];
+type DedupStatus = (typeof DEDUP_STATUSES)[number];
 
 /** The subset of a `waterBodies` doc that listing is derived from. */
 export interface ListableBody {
-  reviewStatus?: ReviewStatus
-  dedupStatus: DedupStatus
-  removedAt?: number
+  reviewStatus?: ReviewStatus;
+  dedupStatus: DedupStatus;
+  removedAt?: number;
 }
 
 /** Whether a water body shows on the public map — the derived geospatial filter key (D48). */
@@ -33,5 +33,5 @@ export function isListed(body: ListableBody): boolean {
     body.reviewStatus !== 'rejected' &&
     body.dedupStatus !== 'merged' &&
     body.removedAt === undefined
-  )
+  );
 }

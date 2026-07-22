@@ -8,9 +8,9 @@
  * arrives first drives the dialog, everyone else awaits its answer.
  */
 
-import * as Location from 'expo-location'
+import * as Location from 'expo-location';
 
-let inflight: Promise<boolean> | null = null
+let inflight: Promise<boolean> | null = null;
 
 /**
  * Ensure foreground location is granted, prompting once if it hasn't been decided yet. Concurrent
@@ -19,22 +19,22 @@ let inflight: Promise<boolean> | null = null
  * hard-depend on location.
  */
 export async function ensureForegroundPermission(): Promise<boolean> {
-  if (inflight) return inflight
+  if (inflight) return inflight;
   inflight = (async () => {
     try {
-      const current = await Location.getForegroundPermissionsAsync()
-      if (current.status === 'granted') return true
+      const current = await Location.getForegroundPermissionsAsync();
+      if (current.status === 'granted') return true;
       // Already denied and the OS won't show the dialog again — don't bother prompting.
-      if (current.status === 'denied' && !current.canAskAgain) return false
-      const requested = await Location.requestForegroundPermissionsAsync()
-      return requested.status === 'granted'
+      if (current.status === 'denied' && !current.canAskAgain) return false;
+      const requested = await Location.requestForegroundPermissionsAsync();
+      return requested.status === 'granted';
     } catch {
-      return false
+      return false;
     } finally {
       // Cleared once settled so the *next* call re-checks the live status rather than caching a stale
       // "no". Concurrent callers already latched onto this same promise before it resolved.
-      inflight = null
+      inflight = null;
     }
-  })()
-  return inflight
+  })();
+  return inflight;
 }

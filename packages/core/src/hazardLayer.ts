@@ -16,10 +16,10 @@
  * boundary, so imprecision is rendered as the honest message rather than hidden behind a crisp pin.
  */
 
-import type { HazardFreshness } from './hazardDecay'
-import { draftToShape, draftVertices, type HazardDraft } from './hazardDraft'
-import { type HazardShape, hazardFootprint } from './hazardGeometry'
-import { type HazardType, isPassageMarker } from './types'
+import type { HazardFreshness } from './hazardDecay';
+import { draftToShape, draftVertices, type HazardDraft } from './hazardDraft';
+import { type HazardShape, hazardFootprint } from './hazardGeometry';
+import { type HazardType, isPassageMarker } from './types';
 
 /**
  * A hazard as a map consumes it.
@@ -30,38 +30,38 @@ import { type HazardType, isPassageMarker } from './types'
  * layer* rather than being a compile-time impossibility we cast away and then crash on at runtime.
  */
 export interface MappableHazard {
-  _id: string
-  type: HazardType
-  geometryKind: HazardShape['geometryKind']
-  geometry: GeoJSON.Geometry
-  radiusMeters?: number
-  bufferMeters?: number
-  freshness: HazardFreshness
-  provisional: boolean
-  healingState?: 'none' | 'healing_unsafe'
+  _id: string;
+  type: HazardType;
+  geometryKind: HazardShape['geometryKind'];
+  geometry: GeoJSON.Geometry;
+  radiusMeters?: number;
+  bufferMeters?: number;
+  freshness: HazardFreshness;
+  provisional: boolean;
+  healingState?: 'none' | 'healing_unsafe';
 }
 
 /** A persistent known feature (D53) — no freshness, because it never decays. */
 export interface MappableBodyFeature {
-  _id: string
-  type: string
+  _id: string;
+  type: string;
   /** Present on rows written after the line/polygon fix; inferred from `radiusMeters` when absent. */
-  geometryKind?: HazardShape['geometryKind']
-  geometry: GeoJSON.Geometry
-  radiusMeters?: number
-  bufferMeters?: number
+  geometryKind?: HazardShape['geometryKind'];
+  geometry: GeoJSON.Geometry;
+  radiusMeters?: number;
+  bufferMeters?: number;
 }
 
 /** The four colours a hazard layer needs. Supplied per app from its own design tokens. */
 export interface HazardPalette {
-  danger: string
-  healing: string
-  passage: string
-  feature: string
+  danger: string;
+  healing: string;
+  passage: string;
+  feature: string;
 }
 
 /** The geometry types the footprint math can actually buffer. */
-const FOOTPRINTABLE = new Set(['Point', 'LineString', 'Polygon', 'MultiPolygon'])
+const FOOTPRINTABLE = new Set(['Point', 'LineString', 'Polygon', 'MultiPolygon']);
 
 /**
  * Hazards → a `FeatureCollection` of footprint polygons for the `hazards` source.
@@ -76,8 +76,8 @@ export function hazardsToFeatureCollection(
   return {
     type: 'FeatureCollection',
     features: hazards.flatMap((h) => {
-      const footprint = safeFootprint(h)
-      if (!footprint) return []
+      const footprint = safeFootprint(h);
+      if (!footprint) return [];
       return [
         {
           type: 'Feature' as const,
@@ -91,9 +91,9 @@ export function hazardsToFeatureCollection(
             healing: h.healingState === 'healing_unsafe',
           },
         },
-      ]
+      ];
     }),
-  }
+  };
 }
 
 /** Known body features → footprints for the always-on `body-features` source (D53). */
@@ -111,17 +111,17 @@ export function bodyFeaturesToFeatureCollection(
         geometry: f.geometry,
         radiusMeters: f.radiusMeters,
         bufferMeters: f.bufferMeters,
-      })
-      if (!footprint) return []
+      });
+      if (!footprint) return [];
       return [
         {
           type: 'Feature' as const,
           geometry: footprint,
           properties: { bodyFeatureId: f._id, featureType: f.type },
         },
-      ]
+      ];
     }),
-  }
+  };
 }
 
 /**
@@ -143,9 +143,9 @@ export function hazardDraftToFeatureCollection(
   draft: HazardDraft | null,
   type: HazardType | null,
 ): GeoJSON.FeatureCollection {
-  if (!draft) return { type: 'FeatureCollection', features: [] }
-  const passage = type !== null && isPassageMarker(type)
-  const shape = draftToShape(draft)
+  if (!draft) return { type: 'FeatureCollection', features: [] };
+  const passage = type !== null && isPassageMarker(type);
+  const shape = draftToShape(draft);
   const footprint = shape
     ? [
         {
@@ -154,7 +154,7 @@ export function hazardDraftToFeatureCollection(
           properties: { role: 'footprint', passage, healing: false },
         },
       ]
-    : []
+    : [];
   return {
     type: 'FeatureCollection',
     features: [
@@ -165,7 +165,7 @@ export function hazardDraftToFeatureCollection(
         properties: { role: 'vertex', passage, healing: false },
       })),
     ],
-  }
+  };
 }
 
 /**
@@ -176,16 +176,16 @@ export function hazardDraftToFeatureCollection(
  * is malformed is a safety failure. So a throw skips that feature and the rest still render.
  */
 function safeFootprint(shape: {
-  geometryKind: HazardShape['geometryKind']
-  geometry: GeoJSON.Geometry
-  radiusMeters?: number
-  bufferMeters?: number
+  geometryKind: HazardShape['geometryKind'];
+  geometry: GeoJSON.Geometry;
+  radiusMeters?: number;
+  bufferMeters?: number;
 }): GeoJSON.Polygon | GeoJSON.MultiPolygon | null {
-  if (!FOOTPRINTABLE.has(shape.geometry.type)) return null
+  if (!FOOTPRINTABLE.has(shape.geometry.type)) return null;
   try {
-    return hazardFootprint(shape as HazardShape)
+    return hazardFootprint(shape as HazardShape);
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -200,10 +200,10 @@ export const FRESHNESS_FILL_OPACITY: Record<HazardFreshness, number> = {
   fresh: 0.45,
   aging: 0.3,
   stale: 0.18,
-}
+};
 
 /** Provisional (unconfirmed) hazards render softer — they're one person's unverified report (D54). */
-export const PROVISIONAL_OPACITY_SCALE = 0.6
+export const PROVISIONAL_OPACITY_SCALE = 0.6;
 
 /** The MapLibre data-driven expression for hazard fill opacity. */
 export function hazardFillOpacityExpression(): unknown[] {
@@ -219,7 +219,7 @@ export function hazardFillOpacityExpression(): unknown[] {
       FRESHNESS_FILL_OPACITY.stale,
     ],
     ['case', ['get', 'provisional'], PROVISIONAL_OPACITY_SCALE, 1],
-  ]
+  ];
 }
 
 /**
@@ -236,5 +236,5 @@ export function hazardColorExpression(palette: HazardPalette): unknown[] {
     ['get', 'healing'],
     palette.healing,
     palette.danger,
-  ]
+  ];
 }

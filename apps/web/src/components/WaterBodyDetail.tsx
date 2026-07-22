@@ -1,21 +1,26 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { formatAreaAcres, formatSkateTime, humanizeEnum, SKATE_QUALITY_LABELS } from '@skating/core'
-import { Link } from '@tanstack/react-router'
-import { usePaginatedQuery, useQuery } from 'convex/react'
-import { useEffect, useState } from 'react'
-import { DirectionsButton } from './DirectionsButton'
-import { DetailSkeleton, UnavailableState } from './DrawerStates'
-import { FavoriteButton } from './FavoriteButton'
-import { HazardForm } from './HazardForm'
-import { HazardList } from './HazardList'
-import { useMapSelection } from './MapSelectionContext'
-import { ReportForm } from './ReportForm'
-import { Badge } from './ui/badge'
-import { Button } from './ui/button'
-import { Card, CardContent } from './ui/card'
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet'
-import { Skeleton } from './ui/skeleton'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import {
+  formatAreaAcres,
+  formatSkateTime,
+  humanizeEnum,
+  SKATE_QUALITY_LABELS,
+} from '@skating/core';
+import { Link } from '@tanstack/react-router';
+import { usePaginatedQuery, useQuery } from 'convex/react';
+import { useEffect, useState } from 'react';
+import { DirectionsButton } from './DirectionsButton';
+import { DetailSkeleton, UnavailableState } from './DrawerStates';
+import { FavoriteButton } from './FavoriteButton';
+import { HazardForm } from './HazardForm';
+import { HazardList } from './HazardList';
+import { useMapSelection } from './MapSelectionContext';
+import { ReportForm } from './ReportForm';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Card, CardContent } from './ui/card';
+import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
+import { Skeleton } from './ui/skeleton';
 
 /**
  * Water-body detail drawer content (§D, D47) for `/water/$id`. Reads `waterBodies.get`, which
@@ -27,23 +32,23 @@ import { Skeleton } from './ui/skeleton'
 export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   const result = useQuery(api.waterBodies.get, {
     waterBodyId: waterBodyId as Id<'waterBodies'>,
-  })
-  const body = result?.available ? result.body : null
-  const { setFocus, setHighlightWaterBodyId } = useMapSelection()
-  const [formOpen, setFormOpen] = useState(false)
-  const [hazardFormOpen, setHazardFormOpen] = useState(false)
+  });
+  const body = result?.available ? result.body : null;
+  const { setFocus, setHighlightWaterBodyId } = useMapSelection();
+  const [formOpen, setFormOpen] = useState(false);
+  const [hazardFormOpen, setHazardFormOpen] = useState(false);
 
   // Once the (possibly merge-resolved) lake loads, fly the map to it and highlight it. We use the
   // resolved `body._id` — the survivor a merged deep link redirects to — which is what the map's
   // features carry, so a `/water/<merged-id>` link still highlights the right polygon.
   useEffect(() => {
     if (body) {
-      setFocus({ lat: body.centroid.lat, lng: body.centroid.lng, zoom: 12 })
-      setHighlightWaterBodyId(body._id)
+      setFocus({ lat: body.centroid.lat, lng: body.centroid.lng, zoom: 12 });
+      setHighlightWaterBodyId(body._id);
     }
-  }, [body, setFocus, setHighlightWaterBodyId])
+  }, [body, setFocus, setHighlightWaterBodyId]);
 
-  if (result === undefined) return <DetailSkeleton />
+  if (result === undefined) return <DetailSkeleton />;
 
   if (result === null) {
     return (
@@ -51,7 +56,7 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         title="Lake not found"
         message="We couldn't find this water body. The link may be broken."
       />
-    )
+    );
   }
   if (!result.available) {
     return (
@@ -59,7 +64,7 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         title="This lake isn't available"
         message="It may have been removed from the map. Try another lake nearby."
       />
-    )
+    );
   }
 
   return (
@@ -100,31 +105,31 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         <HazardForm waterBodyId={result.body._id} onClose={() => setHazardFormOpen(false)} />
       ) : null}
     </>
-  )
+  );
 }
 
 /** How many per-body reports to fetch per infinite-scroll page. */
-const REPORTS_PAGE_SIZE = 20
+const REPORTS_PAGE_SIZE = 20;
 
 function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
   const { results, status, loadMore } = usePaginatedQuery(
     api.reports.listByWaterBody,
     { waterBodyId },
     { initialNumItems: REPORTS_PAGE_SIZE },
-  )
-  const authorIds = [...new Set(results.map((r) => r.authorId))]
+  );
+  const authorIds = [...new Set(results.map((r) => r.authorId))];
   const authors = useQuery(
     api.profiles.publicByIds,
     results.length > 0 ? { profileIds: authorIds } : 'skip',
-  )
+  );
 
-  if (status === 'LoadingFirstPage') return <Skeleton className="h-24 w-full" />
+  if (status === 'LoadingFirstPage') return <Skeleton className="h-24 w-full" />;
   if (results.length === 0) {
     return (
       <p className="text-foreground-muted text-sm">
         No reports yet — be the first to say how it skates.
       </p>
-    )
+    );
   }
 
   return (
@@ -170,5 +175,5 @@ function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
       ) : null}
       {status === 'LoadingMore' ? <Skeleton className="h-16 w-full" /> : null}
     </div>
-  )
+  );
 }

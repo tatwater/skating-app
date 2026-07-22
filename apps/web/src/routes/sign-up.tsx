@@ -1,5 +1,5 @@
-import { SignUp } from '@clerk/tanstack-react-start'
-import { createFileRoute } from '@tanstack/react-router'
+import { SignUp } from '@clerk/tanstack-react-start';
+import { createFileRoute } from '@tanstack/react-router';
 
 /**
  * Sign-up (D26): Clerk's prebuilt `<SignUp>` (see the sign-in note for why prebuilt over a
@@ -9,12 +9,12 @@ import { createFileRoute } from '@tanstack/react-router'
  * to the enforced `upsertFromClerk` mutation. Once the session is active the `AuthGate`
  * routes the (still unprovisioned) user to onboarding.
  */
-export const Route = createFileRoute('/sign-up')({ component: SignUpPage })
+export const Route = createFileRoute('/sign-up')({ component: SignUpPage });
 
 function SignUpPage() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <SignUp routing="hash" signInUrl="/sign-in" fallbackRedirectUrl="/" />
     </div>
-  )
+  );
 }

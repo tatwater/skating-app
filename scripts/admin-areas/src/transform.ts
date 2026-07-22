@@ -12,24 +12,24 @@
  * each per-state extract is one state (unlike water bodies, admin boundaries don't span states).
  */
 
-import { type LatLng, polygonBBox, representativePoint } from '@skating/core'
-import simplify from '@turf/simplify'
-import type { MultiPolygon, Polygon } from 'geojson'
+import { type LatLng, polygonBBox, representativePoint } from '@skating/core';
+import simplify from '@turf/simplify';
+import type { MultiPolygon, Polygon } from 'geojson';
 import type {
   AdminAreaLevel,
   AdminAreaRecord,
   OsmBoundaryFeature,
   OsmBoundaryProperties,
-} from './types'
+} from './types';
 
 /** ~5 m at these latitudes (Douglas–Peucker tolerance in degrees) — the fidelity-first baseline. */
-export const SIMPLIFY_TOLERANCE_DEG = 0.00005
+export const SIMPLIFY_TOLERANCE_DEG = 0.00005;
 /** Convex rejects any array over 8192 elements (applies to every polygon nesting level). */
-export const CONVEX_ARRAY_LIMIT = 8192
+export const CONVEX_ARRAY_LIMIT = 8192;
 /** Coarsening target for a ring's coordinate array — a safety margin under the array limit. */
-export const MAX_RING_VERTICES = 8000
+export const MAX_RING_VERTICES = 8000;
 /** Adaptive-coarsening step (~1 m) — nudge, don't double, so an over-limit body coarsens the least. */
-const SIMPLIFY_STEP_DEG = 0.00001
+const SIMPLIFY_STEP_DEG = 0.00001;
 
 /**
  * Map an OSM `admin_level` to our coarse `level`. US convention: 4 = state, 6 = county, 7/8 =
@@ -39,11 +39,11 @@ const SIMPLIFY_STEP_DEG = 0.00001
 export function levelFromAdminLevel(
   adminLevel: string | number | undefined,
 ): AdminAreaLevel | null {
-  const n = typeof adminLevel === 'string' ? Number.parseInt(adminLevel, 10) : adminLevel
-  if (n === 4) return 'state'
-  if (n === 6) return 'county'
-  if (n === 7 || n === 8) return 'town'
-  return null
+  const n = typeof adminLevel === 'string' ? Number.parseInt(adminLevel, 10) : adminLevel;
+  if (n === 4) return 'state';
+  if (n === 6) return 'county';
+  if (n === 7 || n === 8) return 'town';
+  return null;
 }
 
 /**
@@ -54,29 +54,29 @@ export function levelFromAdminLevel(
 export function externalIdFromProperties(
   props: OsmBoundaryProperties | null | undefined,
 ): string | null {
-  if (!props) return null
-  const type = props['@type']
-  const id = props['@id']
-  if (typeof type !== 'string' || type.length === 0) return null
-  if (typeof id !== 'number' && typeof id !== 'string') return null
-  return `${type}/${id}`
+  if (!props) return null;
+  const type = props['@type'];
+  const id = props['@id'];
+  if (typeof type !== 'string' || type.length === 0) return null;
+  if (typeof id !== 'number' && typeof id !== 'string') return null;
+  return `${type}/${id}`;
 }
 
 /** Largest coordinate count across all rings — the dimension adaptive coarsening can reduce. */
 export function largestRingSize(geom: Polygon | MultiPolygon): number {
-  const rings = geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat()
-  return rings.reduce((max, ring) => Math.max(max, ring.length), 0)
+  const rings = geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat();
+  return rings.reduce((max, ring) => Math.max(max, ring.length), 0);
 }
 
 /** The largest array Convex will see anywhere in this geometry (polygon/ring/position counts). */
 export function maxArrayLength(geom: Polygon | MultiPolygon): number {
-  const polygons = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates
-  let max = polygons.length
+  const polygons = geom.type === 'Polygon' ? [geom.coordinates] : geom.coordinates;
+  let max = polygons.length;
   for (const rings of polygons) {
-    max = Math.max(max, rings.length)
-    for (const ring of rings) max = Math.max(max, ring.length)
+    max = Math.max(max, rings.length);
+    for (const ring of rings) max = Math.max(max, ring.length);
   }
-  return max
+  return max;
 }
 
 /**
@@ -86,13 +86,13 @@ export function maxArrayLength(geom: Polygon | MultiPolygon): number {
  * the dense ones here (a state outline can be tens of thousands of vertices raw).
  */
 function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygon {
-  let tolerance = SIMPLIFY_TOLERANCE_DEG
-  let simplified = simplify(geom, { tolerance, highQuality: false, mutate: false })
+  let tolerance = SIMPLIFY_TOLERANCE_DEG;
+  let simplified = simplify(geom, { tolerance, highQuality: false, mutate: false });
   for (let step = 0; step < 10_000 && largestRingSize(simplified) > MAX_RING_VERTICES; step++) {
-    tolerance += SIMPLIFY_STEP_DEG
-    simplified = simplify(geom, { tolerance, highQuality: false, mutate: false })
+    tolerance += SIMPLIFY_STEP_DEG;
+    simplified = simplify(geom, { tolerance, highQuality: false, mutate: false });
   }
-  return simplified
+  return simplified;
 }
 
 /**
@@ -105,54 +105,54 @@ function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygo
  * never kills the batch.
  */
 export function featureToAdminArea(feature: OsmBoundaryFeature): AdminAreaRecord | null {
-  const props: OsmBoundaryProperties = feature.properties ?? {}
+  const props: OsmBoundaryProperties = feature.properties ?? {};
   // Only administrative boundaries; ignore other boundary=* (postal, protected_area, …).
-  if (props.boundary !== 'administrative') return null
-  const level = levelFromAdminLevel(props.admin_level)
-  if (level === null) return null
+  if (props.boundary !== 'administrative') return null;
+  const level = levelFromAdminLevel(props.admin_level);
+  if (level === null) return null;
 
-  const externalId = externalIdFromProperties(props)
+  const externalId = externalIdFromProperties(props);
   if (externalId === null) {
-    throw new Error('feature is missing @type/@id (export with `osmium export -a type,id`)')
+    throw new Error('feature is missing @type/@id (export with `osmium export -a type,id`)');
   }
-  const name = typeof props.name === 'string' ? props.name.trim() : ''
-  if (name === '') throw new Error('boundary has no name')
+  const name = typeof props.name === 'string' ? props.name.trim() : '';
+  if (name === '') throw new Error('boundary has no name');
 
-  const geom = feature.geometry
+  const geom = feature.geometry;
   if (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon') {
-    throw new Error(`unsupported geometry type "${geom.type}" (expected a polygon area)`)
+    throw new Error(`unsupported geometry type "${geom.type}" (expected a polygon area)`);
   }
 
-  const polygon = simplifyForStorage(geom)
-  const maxArray = maxArrayLength(polygon)
+  const polygon = simplifyForStorage(geom);
+  const maxArray = maxArrayLength(polygon);
   if (maxArray > CONVEX_ARRAY_LIMIT) {
     throw new Error(
       `geometry array too large (${maxArray} > ${CONVEX_ARRAY_LIMIT}) after coarsening`,
-    )
+    );
   }
-  const centroid: LatLng = representativePoint(polygon) // throws on a collapsed / degenerate ring
-  return { externalId, name, level, polygon, bbox: polygonBBox(polygon), centroid }
+  const centroid: LatLng = representativePoint(polygon); // throws on a collapsed / degenerate ring
+  return { externalId, name, level, polygon, bbox: polygonBBox(polygon), centroid };
 }
 
 /** Per-feature outcome tally for the run summary. */
 export interface TransformSummary {
-  total: number
-  imported: number
+  total: number;
+  imported: number;
   /** Skipped by classification — a boundary we don't resolve (wrong admin_level / non-admin). */
-  droppedByType: number
+  droppedByType: number;
   /** Skipped because the feature threw (bad geometry / missing id / no name) — see `errors`. */
-  skipped: number
+  skipped: number;
 }
 
 export interface TransformError {
-  externalId: string
-  message: string
+  externalId: string;
+  message: string;
 }
 
 export interface TransformOutput {
-  areas: AdminAreaRecord[]
-  summary: TransformSummary
-  errors: TransformError[]
+  areas: AdminAreaRecord[];
+  summary: TransformSummary;
+  errors: TransformError[];
 }
 
 /**
@@ -161,26 +161,26 @@ export interface TransformOutput {
  * is features that threw.
  */
 export function transformFeatures(features: Iterable<OsmBoundaryFeature>): TransformOutput {
-  const areas: AdminAreaRecord[] = []
-  const errors: TransformError[] = []
-  let total = 0
-  let droppedByType = 0
+  const areas: AdminAreaRecord[] = [];
+  const errors: TransformError[] = [];
+  let total = 0;
+  let droppedByType = 0;
 
   for (const feature of features) {
-    total++
+    total++;
     try {
-      const area = featureToAdminArea(feature)
+      const area = featureToAdminArea(feature);
       if (area === null) {
-        droppedByType++
-        continue
+        droppedByType++;
+        continue;
       }
-      areas.push(area)
+      areas.push(area);
     } catch (err) {
       errors.push({
         externalId:
           externalIdFromProperties(feature.properties) ?? String(feature.id ?? '(unknown)'),
         message: err instanceof Error ? err.message : String(err),
-      })
+      });
     }
   }
 
@@ -188,5 +188,5 @@ export function transformFeatures(features: Iterable<OsmBoundaryFeature>): Trans
     areas,
     summary: { total, imported: areas.length, droppedByType, skipped: errors.length },
     errors,
-  }
+  };
 }

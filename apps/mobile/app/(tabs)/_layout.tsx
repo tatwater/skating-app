@@ -1,5 +1,5 @@
-import { Tabs } from 'expo-router'
-import { useTheme } from 'tamagui'
+import { Tabs } from 'expo-router';
+import { useTheme } from 'tamagui';
 
 /**
  * The five co-primary tabs from the app structure (00-vision / D28):
@@ -7,7 +7,7 @@ import { useTheme } from 'tamagui'
  * Icons come in the UI deep-dive PR; barebones ships text labels only.
  */
 export default function TabsLayout() {
-  const theme = useTheme()
+  const theme = useTheme();
   return (
     <Tabs
       screenOptions={{
@@ -26,5 +26,5 @@ export default function TabsLayout() {
       <Tabs.Screen name="bounties" options={{ title: 'Bounties' }} />
       <Tabs.Screen name="you" options={{ title: 'You' }} />
     </Tabs>
-  )
+  );
 }

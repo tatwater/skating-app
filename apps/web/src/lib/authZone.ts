@@ -1,4 +1,4 @@
-import type { AuthRoute } from '@skating/core'
+import type { AuthRoute } from '@skating/core';
 
 /**
  * Web-only translation of the shared `resolveAuthRoute` state (D26/D45) into a redirect
@@ -9,27 +9,27 @@ import type { AuthRoute } from '@skating/core'
  */
 
 /** Signed-out users may sit on these paths (plus the public About page). */
-const AUTH_PATHS: ReadonlySet<string> = new Set(['/sign-in', '/sign-up'])
-const PUBLIC_PATHS: ReadonlySet<string> = new Set(['/about'])
+const AUTH_PATHS: ReadonlySet<string> = new Set(['/sign-in', '/sign-up']);
+const PUBLIC_PATHS: ReadonlySet<string> = new Set(['/about']);
 
 export function authZoneTarget(route: AuthRoute, pathname: string): string | null {
   switch (route) {
     case 'auth':
       // Signed out: only the auth pages (and public About) are reachable.
-      return AUTH_PATHS.has(pathname) || PUBLIC_PATHS.has(pathname) ? null : '/sign-in'
+      return AUTH_PATHS.has(pathname) || PUBLIC_PATHS.has(pathname) ? null : '/sign-in';
     case 'onboarding':
       // Signed in, no profile yet: pin to onboarding until it's created.
-      return pathname === '/onboarding' ? null : '/onboarding'
+      return pathname === '/onboarding' ? null : '/onboarding';
     case 'reack':
       // Signed in, stale acknowledgment: pin to re-ack until renewed.
-      return pathname === '/reack' ? null : '/reack'
+      return pathname === '/reack' ? null : '/reack';
     case 'app':
       // Fully provisioned: the auth/onboarding/reack pages no longer apply — send home.
       return AUTH_PATHS.has(pathname) || pathname === '/onboarding' || pathname === '/reack'
         ? '/'
-        : null
+        : null;
     default:
       // `loading` — decide nothing yet.
-      return null
+      return null;
   }
 }

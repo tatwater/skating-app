@@ -5,16 +5,16 @@
  * delivery simple; the bucket picks the timing when the row is enqueued (see `notifications.ts`).
  */
 
-import { cronJobs } from 'convex/server'
-import { internal } from './_generated/api'
+import { cronJobs } from 'convex/server';
+import { internal } from './_generated/api';
 
-const crons = cronJobs()
+const crons = cronJobs();
 
 crons.interval(
   'flush notification queue',
   { minutes: 1 },
   internal.notifications.flushNotificationQueue,
   {},
-)
+);
 
-export default crons
+export default crons;

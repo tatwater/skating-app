@@ -1,7 +1,7 @@
-import { openBrowserAsync } from 'expo-web-browser'
-import { Anchor, Paragraph, Text, XStack, YStack } from 'tamagui'
-import { DOC_URLS } from '../lib/links'
-import { RISK_ACK_COPY } from '../lib/riskAck'
+import { openBrowserAsync } from 'expo-web-browser';
+import { Anchor, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { DOC_URLS } from '../lib/links';
+import { RISK_ACK_COPY } from '../lib/riskAck';
 
 /**
  * The blocking assumption-of-risk acknowledgment control (D45), shared by the onboarding
@@ -48,5 +48,5 @@ export function RiskAckConsent({ checked, onToggle }: { checked: boolean; onTogg
         </Anchor>
       </XStack>
     </YStack>
-  )
+  );
 }

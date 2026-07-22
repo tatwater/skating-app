@@ -8,9 +8,9 @@
  *
  * The presentational copy shown to the user lives with each surface's UI, not here.
  */
-export const RISK_ACK_VERSION = '2026-07-11'
+export const RISK_ACK_VERSION = '2026-07-11';
 
 /** Whether a recorded acknowledgment version is the one we currently require. */
 export function isCurrentRiskAckVersion(version: string | undefined | null): boolean {
-  return version === RISK_ACK_VERSION
+  return version === RISK_ACK_VERSION;
 }

@@ -22,7 +22,7 @@ export const neutral = {
   800: '#232e3a',
   900: '#151d26',
   950: '#0b1016',
-} as const
+} as const;
 
 /** Ice/cyan accent — the primary brand hue. */
 export const ice = {
@@ -37,7 +37,7 @@ export const ice = {
   800: '#155671',
   900: '#164860',
   950: '#082f42',
-} as const
+} as const;
 
 /** Danger — hazards, open water, thin ice, destructive actions. */
 export const danger = {
@@ -52,7 +52,7 @@ export const danger = {
   800: '#8a1620',
   900: '#73171f',
   950: '#3f070c',
-} as const
+} as const;
 
 /** Warning — caution, aging reports, degrading conditions. */
 export const warning = {
@@ -67,7 +67,7 @@ export const warning = {
   800: '#7c400e',
   900: '#6a3510',
   950: '#3d1b04',
-} as const
+} as const;
 
 /** Success — fresh reports, good conditions, confirmations. */
 export const success = {
@@ -82,11 +82,11 @@ export const success = {
   800: '#155a31',
   900: '#144a2b',
   950: '#052e16',
-} as const
+} as const;
 
-export const palette = { neutral, ice, danger, warning, success } as const
+export const palette = { neutral, ice, danger, warning, success } as const;
 
 /** A named primitive ramp (e.g. `'ice'`). */
-export type PaletteName = keyof typeof palette
+export type PaletteName = keyof typeof palette;
 /** A step within a ramp (50–950). */
-export type PaletteStep = keyof typeof neutral
+export type PaletteStep = keyof typeof neutral;

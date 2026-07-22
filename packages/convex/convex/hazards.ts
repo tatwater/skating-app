@@ -25,16 +25,16 @@ import {
   isMinor,
   isProvisional,
   isValidHazardShape,
-} from '@skating/core'
-import { ConvexError, v } from 'convex/values'
-import type { Doc, Id } from './_generated/dataModel'
-import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server'
-import { requireProfile } from './lib/auth'
-import { resolveSurvivor } from './lib/bodies'
-import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators'
-import { isListed } from './lib/listing'
-import { assertOwnedPhotos } from './lib/photoAccess'
-import { geoJson, literals } from './lib/validators'
+} from '@skating/core';
+import { ConvexError, v } from 'convex/values';
+import type { Doc, Id } from './_generated/dataModel';
+import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
+import { requireProfile } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
+import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
+import { isListed } from './lib/listing';
+import { assertOwnedPhotos } from './lib/photoAccess';
+import { geoJson, literals } from './lib/validators';
 
 /**
  * The hazard body of an authoring call, minus the water body.
@@ -50,7 +50,7 @@ export const inReportHazardArgs = {
   bufferMeters: v.optional(v.number()),
   description: v.optional(v.string()),
   photoIds: v.optional(v.array(v.id('photos'))),
-}
+};
 
 /**
  * Bounds on the free-text and fan-out surface of a hazard. `reports.notes` goes through
@@ -58,8 +58,8 @@ export const inReportHazardArgs = {
  * per-report count caps a single mutation's write fan-out — each hazard is several document writes, so
  * an unbounded array is a cheap way to make one call expensive.
  */
-export const HAZARD_MAX_DESCRIPTION_LEN = 1_000
-export const HAZARD_MAX_PER_REPORT = 25
+export const HAZARD_MAX_DESCRIPTION_LEN = 1_000;
+export const HAZARD_MAX_PER_REPORT = 25;
 
 /** The standalone quick-flag args (D51) — the same content, plus the body it attaches to. */
 export const hazardCreateArgs = {
@@ -82,7 +82,7 @@ export const hazardCreateArgs = {
    */
   capturedAt: v.optional(v.number()),
   ...inReportHazardArgs,
-}
+};
 
 /**
  * Build the stored shape from mutation args, filling the type-aware default when the client omitted a
@@ -90,25 +90,25 @@ export const hazardCreateArgs = {
  * client build still lands with a sane footprint rather than a zero-radius point nobody can see.
  */
 function toShape(args: {
-  type: Doc<'hazards'>['type']
-  geometryKind: Doc<'hazards'>['geometryKind']
-  geometry: unknown
-  radiusMeters?: number
-  bufferMeters?: number
+  type: Doc<'hazards'>['type'];
+  geometryKind: Doc<'hazards'>['geometryKind'];
+  geometry: unknown;
+  radiusMeters?: number;
+  bufferMeters?: number;
 }): HazardShape {
-  const geometry = args.geometry as HazardShape['geometry']
+  const geometry = args.geometry as HazardShape['geometry'];
   if (args.geometryKind === 'point_radius') {
     return {
       geometryKind: 'point_radius',
       geometry,
       radiusMeters: args.radiusMeters ?? HAZARD_DEFAULT_RADIUS_M[args.type],
-    }
+    };
   }
   return {
     geometryKind: args.geometryKind,
     geometry,
     bufferMeters: args.bufferMeters ?? HAZARD_DEFAULT_BUFFER_M[args.type],
-  }
+  };
 }
 
 /**
@@ -118,35 +118,35 @@ function toShape(args: {
 export async function insertHazard(
   ctx: MutationCtx,
   args: {
-    waterBodyId: Id<'waterBodies'>
-    type: Doc<'hazards'>['type']
-    geometryKind: Doc<'hazards'>['geometryKind']
-    geometry: unknown
-    radiusMeters?: number
-    bufferMeters?: number
-    description?: string
-    photoIds?: Id<'photos'>[]
-    idempotencyKey?: string
-    capturedAt?: number
+    waterBodyId: Id<'waterBodies'>;
+    type: Doc<'hazards'>['type'];
+    geometryKind: Doc<'hazards'>['geometryKind'];
+    geometry: unknown;
+    radiusMeters?: number;
+    bufferMeters?: number;
+    description?: string;
+    photoIds?: Id<'photos'>[];
+    idempotencyKey?: string;
+    capturedAt?: number;
   },
   authorId: Id<'profiles'>,
   now: number,
   originReportId?: Id<'reports'>,
 ): Promise<Id<'hazards'>> {
-  const body = await resolveSurvivor(ctx, args.waterBodyId)
-  if (!body || !isListed(body)) throw new ConvexError('Water body not found')
+  const body = await resolveSurvivor(ctx, args.waterBodyId);
+  if (!body || !isListed(body)) throw new ConvexError('Water body not found');
 
-  const shape = toShape(args)
-  if (!isValidHazardShape(shape)) throw new ConvexError('Invalid hazard geometry')
+  const shape = toShape(args);
+  if (!isValidHazardShape(shape)) throw new ConvexError('Invalid hazard geometry');
 
   if (args.description !== undefined && args.description.length > HAZARD_MAX_DESCRIPTION_LEN) {
-    throw new ConvexError('Hazard description is too long')
+    throw new ConvexError('Hazard description is too long');
   }
 
-  const photoIds = args.photoIds ?? []
-  await assertOwnedPhotos(ctx, photoIds, authorId)
+  const photoIds = args.photoIds ?? [];
+  await assertOwnedPhotos(ctx, photoIds, authorId);
 
-  const lifecycle = initialLifecycleState(now)
+  const lifecycle = initialLifecycleState(now);
   return ctx.db.insert('hazards', {
     waterBodyId: body._id, // the resolved survivor, not the (possibly merged) requested id
     type: args.type,
@@ -171,7 +171,7 @@ export async function insertHazard(
     confirmCount: lifecycle.confirmCount,
     goneCount: lifecycle.goneCount,
     createdAt: now,
-  })
+  });
 }
 
 /**
@@ -184,8 +184,8 @@ export async function insertHazard(
 export const create = mutation({
   args: hazardCreateArgs,
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx)
-    const now = Date.now()
+    const profile = await requireProfile(ctx);
+    const now = Date.now();
 
     // Idempotency short-circuit: if this key already produced a hazard, return it — the flush is a
     // retry, not a new sighting. The index is global (keys are client-minted UUIDs, so cross-user
@@ -196,27 +196,27 @@ export const create = mutation({
       const existing = await ctx.db
         .query('hazards')
         .withIndex('by_idempotency_key', (q) => q.eq('idempotencyKey', args.idempotencyKey))
-        .unique()
+        .unique();
       if (existing) {
         if (existing.createdByUserId !== profile._id) {
-          throw new ConvexError('Idempotency key conflict')
+          throw new ConvexError('Idempotency key conflict');
         }
-        return existing._id
+        return existing._id;
       }
     }
 
     // TODO(16+): fold into the uniform 16+ pass with legal (D41).
     if (isMinor(profile.dateOfBirth, now)) {
-      throw new ConvexError('Users under 18 cannot post hazards')
+      throw new ConvexError('Users under 18 cannot post hazards');
     }
-    return insertHazard(ctx, args, profile._id, now)
+    return insertHazard(ctx, args, profile._id, now);
   },
-})
+});
 
 /** A hazard as the map and drawers consume it — with freshness/provisional derived server-side. */
 export interface HazardView extends Doc<'hazards'> {
-  freshness: ReturnType<typeof deriveHazardFreshness>
-  provisional: boolean
+  freshness: ReturnType<typeof deriveHazardFreshness>;
+  provisional: boolean;
 }
 
 function toView(hazard: Doc<'hazards'>, now: number): HazardView {
@@ -224,7 +224,7 @@ function toView(hazard: Doc<'hazards'>, now: number): HazardView {
     ...hazard,
     freshness: deriveHazardFreshness(hazard.type, hazard.lastConfirmedAt, now),
     provisional: isProvisional(hazard.confirmCount),
-  }
+  };
 }
 
 /**
@@ -245,9 +245,9 @@ export const listForBody = query({
     includeArchived: v.optional(v.boolean()),
   },
   handler: async (ctx, { waterBodyId, includeArchived }) => {
-    const body = await resolveSurvivor(ctx, waterBodyId)
-    if (!body) return []
-    const now = Date.now()
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return [];
+    const now = Date.now();
     // Narrow to active hazards *at the index* in the common case. Archived hazards are retained
     // forever (D15), so reading them on every map subscription tick — the mistake `listInViewport`
     // made (#10/#11) — would let this query's read count grow without bound on a well-used lake.
@@ -262,7 +262,7 @@ export const listForBody = query({
           .withIndex('by_water_body_status', (q) =>
             q.eq('waterBodyId', body._id).eq('status', 'active'),
           )
-          .collect()
+          .collect();
     return (
       rows
         .filter((h) => h.moderationStatus === 'visible')
@@ -270,9 +270,9 @@ export const listForBody = query({
         .filter((h) => h.promotedToFeatureId === undefined)
         .map((h) => toView(h, now))
         .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
-    )
+    );
   },
-})
+});
 
 /**
  * A hazard is visible to ordinary users when a moderator hasn't hidden it AND it hasn't been promoted
@@ -285,18 +285,18 @@ function isUserVisibleHazard(hazard: Doc<'hazards'> | null): hazard is Doc<'haza
     hazard !== null &&
     hazard.moderationStatus === 'visible' &&
     hazard.promotedToFeatureId === undefined
-  )
+  );
 }
 
 /** A single hazard for its detail drawer. `null` when missing, moderator-hidden, or promoted. */
 export const get = query({
   args: { hazardId: v.id('hazards') },
   handler: async (ctx, { hazardId }) => {
-    const hazard = await ctx.db.get(hazardId)
-    if (!isUserVisibleHazard(hazard)) return null
-    return toView(hazard, Date.now())
+    const hazard = await ctx.db.get(hazardId);
+    if (!isUserVisibleHazard(hazard)) return null;
+    return toView(hazard, Date.now());
   },
-})
+});
 
 /**
  * The author's own hazards on a body that aren't yet attached to any report — the D55 auto-bundle
@@ -314,31 +314,31 @@ export const listBundleCandidates = query({
     lookbackMs: v.optional(v.number()),
   },
   handler: async (ctx, { waterBodyId, skateEndTime, skateStartTime, lookbackMs }) => {
-    const profile = await requireProfile(ctx)
-    const body = await resolveSurvivor(ctx, waterBodyId)
-    if (!body) return []
-    const from = skateStartTime ?? skateEndTime - (lookbackMs ?? DEFAULT_BUNDLE_LOOKBACK_MS)
+    const profile = await requireProfile(ctx);
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return [];
+    const from = skateStartTime ?? skateEndTime - (lookbackMs ?? DEFAULT_BUNDLE_LOOKBACK_MS);
     // A hazard flagged from the ice is stamped when it was *captured*, but an offline draft can flush
     // well after the skate ended — so the window is checked against `firstReportedAt`, not `createdAt`.
-    const now = Date.now()
+    const now = Date.now();
     const rows = await ctx.db
       .query('hazards')
       .withIndex('by_author_and_water_body', (q) =>
         q.eq('createdByUserId', profile._id).eq('waterBodyId', body._id),
       )
-      .collect()
+      .collect();
     return rows
       .filter((h) => h.originReportId === undefined)
       .filter((h) => h.moderationStatus === 'visible')
       .filter((h) => h.promotedToFeatureId === undefined)
       .filter((h) => h.firstReportedAt >= from && h.firstReportedAt <= skateEndTime)
       .map((h) => toView(h, now))
-      .sort((a, b) => a.firstReportedAt - b.firstReportedAt)
+      .sort((a, b) => a.firstReportedAt - b.firstReportedAt);
   },
-})
+});
 
 /** Default auto-bundle lookback when a report gives no start time (D55) — tunable in Phase 7. */
-export const DEFAULT_BUNDLE_LOOKBACK_MS = 24 * 60 * 60 * 1000
+export const DEFAULT_BUNDLE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Attach the author's own unattached hazards to their report (D55). Idempotent and ownership-gated:
@@ -352,20 +352,20 @@ export async function attachHazardsToReport(
   authorId: Id<'profiles'>,
   waterBodyId: Id<'waterBodies'>,
 ): Promise<Id<'hazards'>[]> {
-  const attached: Id<'hazards'>[] = []
+  const attached: Id<'hazards'>[] = [];
   for (const hazardId of hazardIds) {
-    const hazard = await ctx.db.get(hazardId)
-    if (!hazard) continue
-    if (hazard.createdByUserId !== authorId) continue
-    if (hazard.waterBodyId !== waterBodyId) continue
-    if (hazard.originReportId !== undefined) continue
+    const hazard = await ctx.db.get(hazardId);
+    if (!hazard) continue;
+    if (hazard.createdByUserId !== authorId) continue;
+    if (hazard.waterBodyId !== waterBodyId) continue;
+    if (hazard.originReportId !== undefined) continue;
     // A moderator-hidden or already-promoted pin must not be launderable back into visibility by
     // bundling it into a report (D3) — skip anything not currently user-visible.
-    if (!isUserVisibleHazard(hazard)) continue
-    await ctx.db.patch(hazardId, { originReportId: reportId })
-    attached.push(hazardId)
+    if (!isUserVisibleHazard(hazard)) continue;
+    await ctx.db.patch(hazardId, { originReportId: reportId });
+    attached.push(hazardId);
   }
-  return attached
+  return attached;
 }
 
 /**
@@ -380,6 +380,6 @@ export async function loadVisibleHazard(
   ctx: QueryCtx,
   hazardId: Id<'hazards'>,
 ): Promise<Doc<'hazards'> | null> {
-  const hazard = await ctx.db.get(hazardId)
-  return isUserVisibleHazard(hazard) ? hazard : null
+  const hazard = await ctx.db.get(hazardId);
+  return isUserVisibleHazard(hazard) ? hazard : null;
 }

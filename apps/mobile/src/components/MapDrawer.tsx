@@ -1,17 +1,17 @@
-import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet'
-import { useRouter } from 'expo-router'
-import { type ReactNode, useEffect, useMemo, useRef } from 'react'
-import { useTheme } from 'tamagui'
+import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { useRouter } from 'expo-router';
+import { type ReactNode, useEffect, useMemo, useRef } from 'react';
+import { useTheme } from 'tamagui';
 
 /** Snap points: a low peek (map tappable above it, for put-in-pin drop), normal, and expanded. */
-export const DRAWER_SNAP_POINTS = ['16%', '58%', '94%'] as const
-export const DRAWER_PEEK = 0
-export const DRAWER_NORMAL = 1
+export const DRAWER_SNAP_POINTS = ['16%', '58%', '94%'] as const;
+export const DRAWER_PEEK = 0;
+export const DRAWER_NORMAL = 1;
 
 /** Fraction of the screen the drawer covers at a settled snap index (`-1` closed → 0). */
 export function coveredFractionForIndex(index: number): number {
-  if (index < 0) return 0
-  return (Number.parseFloat(DRAWER_SNAP_POINTS[index] ?? '0') || 0) / 100
+  if (index < 0) return 0;
+  return (Number.parseFloat(DRAWER_SNAP_POINTS[index] ?? '0') || 0) / 100;
 }
 
 /**
@@ -31,20 +31,20 @@ export function MapDrawer({
   onCoveredFractionChange,
   children,
 }: {
-  snapIndex: number
+  snapIndex: number;
   /** Called with the covered-screen fraction whenever the sheet settles (drag or programmatic). */
-  onCoveredFractionChange?: (fraction: number) => void
-  children: ReactNode
+  onCoveredFractionChange?: (fraction: number) => void;
+  children: ReactNode;
 }) {
-  const ref = useRef<BottomSheet>(null)
-  const router = useRouter()
-  const theme = useTheme()
-  const snapPoints = useMemo(() => [...DRAWER_SNAP_POINTS], [])
+  const ref = useRef<BottomSheet>(null);
+  const router = useRouter();
+  const theme = useTheme();
+  const snapPoints = useMemo(() => [...DRAWER_SNAP_POINTS], []);
 
   useEffect(() => {
-    if (snapIndex < 0) ref.current?.close()
-    else ref.current?.snapToIndex(snapIndex)
-  }, [snapIndex])
+    if (snapIndex < 0) ref.current?.close();
+    else ref.current?.snapToIndex(snapIndex);
+  }, [snapIndex]);
 
   return (
     <BottomSheet
@@ -64,5 +64,5 @@ export function MapDrawer({
         {children}
       </BottomSheetScrollView>
     </BottomSheet>
-  )
+  );
 }

@@ -7,10 +7,10 @@ import {
   roundTo,
   type SkateQuality,
   type SurfaceTag,
-} from '@skating/core'
-import { useState } from 'react'
-import { Button, Input, Text, XStack, YStack } from 'tamagui'
-import { activeFilterCount } from '../lib/feedFilters'
+} from '@skating/core';
+import { useState } from 'react';
+import { Button, Input, Text, XStack, YStack } from 'tamagui';
+import { activeFilterCount } from '../lib/feedFilters';
 
 /**
  * The persisted newsfeed filter row (Phase 4, decision #3) — the mobile mirror of web's
@@ -20,36 +20,36 @@ import { activeFilterCount } from '../lib/feedFilters'
  * framing gates as "at least" floors (a report that omits the attribute still passes, server-side).
  */
 
-const IDEAL_ICE_TYPES: IceType[] = ['black_ice']
-const IDEAL_SURFACE_TAGS: SurfaceTag[] = ['glass', 'smooth']
+const IDEAL_ICE_TYPES: IceType[] = ['black_ice'];
+const IDEAL_SURFACE_TAGS: SurfaceTag[] = ['glass', 'smooth'];
 const ICE_LABELS: Record<string, string> = {
   black_ice: 'Black ice',
   glass: 'Glass',
   smooth: 'Smooth',
-}
+};
 
 export function FeedFilterBar({
   filters,
   onChange,
 }: {
-  filters: FeedFilters
-  onChange: (next: FeedFilters) => void
+  filters: FeedFilters;
+  onChange: (next: FeedFilters) => void;
 }) {
-  const [expanded, setExpanded] = useState(false)
-  const count = activeFilterCount(filters)
+  const [expanded, setExpanded] = useState(false);
+  const count = activeFilterCount(filters);
 
   /** Immutably set (or, when `value` is undefined, delete) one filter key. */
   function patch<K extends keyof FeedFilters>(key: K, value: FeedFilters[K] | undefined) {
-    const next = { ...filters }
-    if (value === undefined) delete next[key]
-    else next[key] = value
-    onChange(next)
+    const next = { ...filters };
+    if (value === undefined) delete next[key];
+    else next[key] = value;
+    onChange(next);
   }
 
   const thicknessInches =
     filters.thicknessFloorCm !== undefined
       ? String(roundTo(cmToInches(filters.thicknessFloorCm), 1))
-      : ''
+      : '';
 
   return (
     <YStack
@@ -123,13 +123,13 @@ export function FeedFilterBar({
               keyboardType="decimal-pad"
               value={thicknessInches}
               onChangeText={(raw) => {
-                const inches = Number(raw.trim())
+                const inches = Number(raw.trim());
                 patch(
                   'thicknessFloorCm',
                   raw.trim() !== '' && Number.isFinite(inches) && inches >= 0
                     ? roundTo(inchesToCm(inches), 2)
                     : undefined,
-                )
+                );
               }}
             />
           </XStack>
@@ -151,28 +151,30 @@ export function FeedFilterBar({
             </Text>
             <XStack gap="$2" flexWrap="wrap">
               {[...IDEAL_ICE_TYPES, ...IDEAL_SURFACE_TAGS].map((value) => {
-                const isIce = (IDEAL_ICE_TYPES as string[]).includes(value)
-                const key = isIce ? 'iceTypes' : 'surfaceTags'
-                const current = (filters[key] ?? []) as string[]
-                const active = current.includes(value)
+                const isIce = (IDEAL_ICE_TYPES as string[]).includes(value);
+                const key = isIce ? 'iceTypes' : 'surfaceTags';
+                const current = (filters[key] ?? []) as string[];
+                const active = current.includes(value);
                 return (
                   <Chip
                     key={value}
                     label={ICE_LABELS[value] ?? value}
                     active={active}
                     onPress={() => {
-                      const next = active ? current.filter((v) => v !== value) : [...current, value]
-                      patch(key, (next.length > 0 ? next : undefined) as never)
+                      const next = active
+                        ? current.filter((v) => v !== value)
+                        : [...current, value];
+                      patch(key, (next.length > 0 ? next : undefined) as never);
                     }}
                   />
-                )
+                );
               })}
             </XStack>
           </YStack>
         </YStack>
       ) : null}
     </YStack>
-  )
+  );
 }
 
 /** A labelled segmented control: a row of chips where the selected value is filled. */
@@ -182,10 +184,10 @@ function Segmented<T>({
   selected,
   onSelect,
 }: {
-  label: string
-  options: { value: T; label: string }[]
-  selected: T
-  onSelect: (value: T) => void
+  label: string;
+  options: { value: T; label: string }[];
+  selected: T;
+  onSelect: (value: T) => void;
 }) {
   return (
     <YStack gap="$1">
@@ -203,7 +205,7 @@ function Segmented<T>({
         ))}
       </XStack>
     </YStack>
-  )
+  );
 }
 
 /** A single on/off chip button. */
@@ -220,5 +222,5 @@ function Chip({ label, active, onPress }: { label: string; active: boolean; onPr
     >
       {label}
     </Button>
-  )
+  );
 }

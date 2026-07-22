@@ -16,16 +16,16 @@
  * true 90-min isochrone is deferred (see roadmap Later/deferred).
  */
 
-import type { MultiPolygon, Polygon } from 'geojson'
-import { haversineMeters, type LatLng, pointInPolygon } from './geometry'
+import type { MultiPolygon, Polygon } from 'geojson';
+import { haversineMeters, type LatLng, pointInPolygon } from './geometry';
 
 /** The three drive-time bands, in minutes — matches the feed filter's radius options (decision #3). */
-export const DRIVE_TIME_BANDS = [30, 60, 90] as const
-export type DriveTimeBand = (typeof DRIVE_TIME_BANDS)[number]
+export const DRIVE_TIME_BANDS = [30, 60, 90] as const;
+export type DriveTimeBand = (typeof DRIVE_TIME_BANDS)[number];
 
 /** True when `value` is one of the three canonical band minutes (30/60/90). */
 export function isDriveTimeBand(value: unknown): value is DriveTimeBand {
-  return (DRIVE_TIME_BANDS as readonly unknown[]).includes(value)
+  return (DRIVE_TIME_BANDS as readonly unknown[]).includes(value);
 }
 
 /**
@@ -36,9 +36,9 @@ export function isDriveTimeBand(value: unknown): value is DriveTimeBand {
  *  - `outerRadiusMeters`: the crow-flies radius standing in for the 90-min band.
  */
 export interface DriveTimeBands {
-  band30?: Polygon | MultiPolygon
-  band60?: Polygon | MultiPolygon
-  outerRadiusMeters?: number
+  band30?: Polygon | MultiPolygon;
+  band60?: Polygon | MultiPolygon;
+  outerRadiusMeters?: number;
 }
 
 /**
@@ -52,48 +52,48 @@ export function bandForCoord(
   bands: DriveTimeBands,
   home?: LatLng,
 ): DriveTimeBand | null {
-  if (bands.band30 && pointInPolygon(point, bands.band30)) return 30
-  if (bands.band60 && pointInPolygon(point, bands.band60)) return 60
+  if (bands.band30 && pointInPolygon(point, bands.band30)) return 30;
+  if (bands.band60 && pointInPolygon(point, bands.band60)) return 60;
   if (
     bands.outerRadiusMeters !== undefined &&
     home !== undefined &&
     isWithinRadius(home, point, bands.outerRadiusMeters)
   ) {
-    return 90
+    return 90;
   }
-  return null
+  return null;
 }
 
 /** Is `point` within `radiusMeters` (crow-flies) of `center`? The 90-band primitive. */
 export function isWithinRadius(center: LatLng, point: LatLng, radiusMeters: number): boolean {
-  return haversineMeters(center, point) <= radiusMeters
+  return haversineMeters(center, point) <= radiusMeters;
 }
 
 /** The ORS isochrone ranges we request (seconds): the 30- and 60-min bands. 60 is the hosted cap. */
-export const ORS_BAND_RANGES_SEC = { band30: 1800, band60: 3600 } as const
+export const ORS_BAND_RANGES_SEC = { band30: 1800, band60: 3600 } as const;
 
 /**
  * Conservative effective driving speed for the crow-flies 90-min band (decision #2). Rural NE
  * effective speed ≪ highway, and a crow-flies ring already *over*-approximates reach (ignores roads /
  * mountains / water crossings), so we start low. Tunable.
  */
-export const OUTER_BAND_SPEED_MPH = 45
-const METERS_PER_MILE = 1609.344
+export const OUTER_BAND_SPEED_MPH = 45;
+const METERS_PER_MILE = 1609.344;
 
 /** Crow-flies radius (metres) for the outer band: `speed × minutes`. The 90-min fallback ring. */
 export function outerBandRadiusMeters(
   minutes: number,
   speedMph: number = OUTER_BAND_SPEED_MPH,
 ): number {
-  return speedMph * (minutes / 60) * METERS_PER_MILE
+  return speedMph * (minutes / 60) * METERS_PER_MILE;
 }
 
 /** The subset of an ORS isochrone `FeatureCollection` we read: features tagged with their range (s). */
 export interface OrsIsochroneResponse {
   features?: {
-    properties?: { value?: number }
-    geometry?: Polygon | MultiPolygon
-  }[]
+    properties?: { value?: number };
+    geometry?: Polygon | MultiPolygon;
+  }[];
 }
 
 /**
@@ -104,18 +104,18 @@ export interface OrsIsochroneResponse {
  * absent polygon as "not in that band." Pure so it's tested without a live ORS call.
  */
 export function parseOrsIsochrones(response: OrsIsochroneResponse): {
-  band30?: Polygon | MultiPolygon
-  band60?: Polygon | MultiPolygon
+  band30?: Polygon | MultiPolygon;
+  band60?: Polygon | MultiPolygon;
 } {
-  const out: { band30?: Polygon | MultiPolygon; band60?: Polygon | MultiPolygon } = {}
+  const out: { band30?: Polygon | MultiPolygon; band60?: Polygon | MultiPolygon } = {};
   for (const feature of response.features ?? []) {
-    const value = feature.properties?.value
-    const geometry = feature.geometry
-    if (!geometry) continue
-    if (value === ORS_BAND_RANGES_SEC.band30) out.band30 = geometry
-    else if (value === ORS_BAND_RANGES_SEC.band60) out.band60 = geometry
+    const value = feature.properties?.value;
+    const geometry = feature.geometry;
+    if (!geometry) continue;
+    if (value === ORS_BAND_RANGES_SEC.band30) out.band30 = geometry;
+    else if (value === ORS_BAND_RANGES_SEC.band60) out.band60 = geometry;
   }
-  return out
+  return out;
 }
 
 /**
@@ -128,5 +128,5 @@ export function bandWithinRadius(
   band: DriveTimeBand | null,
   radiusMinutes: DriveTimeBand,
 ): boolean {
-  return band !== null && band <= radiusMinutes
+  return band !== null && band <= radiusMinutes;
 }

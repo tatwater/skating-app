@@ -24,7 +24,7 @@ export const space = {
   16: 64,
   20: 80,
   24: 96,
-} as const
+} as const;
 
 /** Corner radii (px). `full` pills buttons/avatars. */
 export const radius = {
@@ -35,13 +35,13 @@ export const radius = {
   xl: 16,
   '2xl': 24,
   full: 9999,
-} as const
+} as const;
 
 /** Font families. Native/system stacks by default; swap when brand fonts land. */
 export const fontFamily = {
   sans: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
   mono: 'ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace',
-} as const
+} as const;
 
 /** Font sizes (px). Named on a t-shirt scale. */
 export const fontSize = {
@@ -53,7 +53,7 @@ export const fontSize = {
   '2xl': 24,
   '3xl': 30,
   '4xl': 36,
-} as const
+} as const;
 
 /** Line heights (unitless multipliers). */
 export const lineHeight = {
@@ -62,7 +62,7 @@ export const lineHeight = {
   snug: 1.35,
   normal: 1.5,
   relaxed: 1.7,
-} as const
+} as const;
 
 /** Font weights. */
 export const fontWeight = {
@@ -70,7 +70,7 @@ export const fontWeight = {
   medium: 500,
   semibold: 600,
   bold: 700,
-} as const
+} as const;
 
 /** Stacking order for overlapping surfaces. */
 export const zIndex = {
@@ -80,7 +80,7 @@ export const zIndex = {
   overlay: 200,
   modal: 300,
   toast: 400,
-} as const
+} as const;
 
 /** Motion durations (ms). Kept short — the map should feel responsive. */
 export const duration = {
@@ -88,4 +88,4 @@ export const duration = {
   fast: 120,
   normal: 200,
   slow: 320,
-} as const
+} as const;

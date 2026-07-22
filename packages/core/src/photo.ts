@@ -14,5 +14,5 @@ export function photoUploadCoord(
   placeOnMap: boolean,
   coord: { lat: number; lng: number } | undefined,
 ): { lat: number; lng: number } | undefined {
-  return placeOnMap ? coord : undefined
+  return placeOnMap ? coord : undefined;
 }

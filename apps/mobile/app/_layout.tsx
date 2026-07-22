@@ -1,15 +1,15 @@
-import { useAuth } from '@clerk/clerk-expo'
-import * as Sentry from '@sentry/react-native'
-import { api } from '@skating/convex/api'
-import { resolveAuthRoute } from '@skating/core'
-import { useQuery } from 'convex/react'
-import { Stack } from 'expo-router'
-import { GestureHandlerRootView } from 'react-native-gesture-handler'
-import { initSentry } from '../src/lib/sentry'
-import { Providers } from '../src/providers/Providers'
+import { useAuth } from '@clerk/clerk-expo';
+import * as Sentry from '@sentry/react-native';
+import { api } from '@skating/convex/api';
+import { resolveAuthRoute } from '@skating/core';
+import { useQuery } from 'convex/react';
+import { Stack } from 'expo-router';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { initSentry } from '../src/lib/sentry';
+import { Providers } from '../src/providers/Providers';
 
 // Crash reporting must init before anything renders (D29).
-initSentry()
+initSentry();
 
 /**
  * Auth- + provisioning-gated root navigator (D26). Two declarative `Stack.Protected`
@@ -28,12 +28,12 @@ initSentry()
  * onboarding before their profile has loaded.
  */
 function RootNavigator() {
-  const { isLoaded, isSignedIn } = useAuth()
+  const { isLoaded, isSignedIn } = useAuth();
   // Skip until Clerk confirms a session — unauthenticated the query would just be null.
-  const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip')
+  const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip');
 
-  const route = resolveAuthRoute({ isLoaded, isSignedIn, profile })
-  if (route === 'loading') return null
+  const route = resolveAuthRoute({ isLoaded, isSignedIn, profile });
+  if (route === 'loading') return null;
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -68,7 +68,7 @@ function RootNavigator() {
         <Stack.Screen name="(auth)" />
       </Stack.Protected>
     </Stack>
-  )
+  );
 }
 
 function RootLayout() {
@@ -78,8 +78,8 @@ function RootLayout() {
         <RootNavigator />
       </Providers>
     </GestureHandlerRootView>
-  )
+  );
 }
 
 // Sentry.wrap enables navigation/perf instrumentation + error boundary (D29).
-export default Sentry.wrap(RootLayout)
+export default Sentry.wrap(RootLayout);

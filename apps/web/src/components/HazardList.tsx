@@ -1,5 +1,5 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
   BODY_FEATURE_CAVEAT,
   freshnessLabel,
@@ -10,22 +10,22 @@ import {
   isHazardVisibleByDefault,
   isPassageMarker,
   NO_ALERT_IS_NOT_ALL_CLEAR,
-} from '@skating/core'
-import { Link } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import { useState } from 'react'
-import { Badge } from './ui/badge'
-import { Button } from './ui/button'
-import { Card, CardContent } from './ui/card'
-import { Skeleton } from './ui/skeleton'
+} from '@skating/core';
+import { Link } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
+import { useState } from 'react';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Card, CardContent } from './ui/card';
+import { Skeleton } from './ui/skeleton';
 
 /** A hazard row as the list renders it. */
 export interface HazardListItem {
-  _id: string
-  type: HazardType
-  freshness: HazardFreshness
-  provisional: boolean
-  healingState?: 'none' | 'healing_unsafe'
+  _id: string;
+  type: HazardType;
+  freshness: HazardFreshness;
+  provisional: boolean;
+  healingState?: 'none' | 'healing_unsafe';
 }
 
 /**
@@ -39,15 +39,15 @@ export function HazardListView({
   hazards,
   knownFeatures,
 }: {
-  hazards: readonly HazardListItem[]
-  knownFeatures: readonly { _id: string; type: string }[]
+  hazards: readonly HazardListItem[];
+  knownFeatures: readonly { _id: string; type: string }[];
 }) {
-  const [showOlder, setShowOlder] = useState(false)
-  const current = hazards.filter((h) => isHazardVisibleByDefault(h.freshness))
-  const older = hazards.filter((h) => !isHazardVisibleByDefault(h.freshness))
-  const visible = showOlder ? [...current, ...older] : current
+  const [showOlder, setShowOlder] = useState(false);
+  const current = hazards.filter((h) => isHazardVisibleByDefault(h.freshness));
+  const older = hazards.filter((h) => !isHazardVisibleByDefault(h.freshness));
+  const visible = showOlder ? [...current, ...older] : current;
 
-  if (hazards.length === 0 && knownFeatures.length === 0) return null
+  if (hazards.length === 0 && knownFeatures.length === 0) return null;
 
   return (
     <div className="flex flex-col gap-2">
@@ -110,15 +110,15 @@ export function HazardListView({
       {/* Stated wherever hazards are surfaced: the absence of a marker is not information (D3). */}
       <p className="text-foreground-muted text-xs">{NO_ALERT_IS_NOT_ALL_CLEAR}</p>
     </div>
-  )
+  );
 }
 
 /** Container: hazards + known seasonal features for one lake. */
 export function HazardList({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const hazards = useQuery(api.hazards.listForBody, { waterBodyId })
-  const knownFeatures = useQuery(api.bodyFeatures.listForBody, { waterBodyId })
+  const hazards = useQuery(api.hazards.listForBody, { waterBodyId });
+  const knownFeatures = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
 
-  if (hazards === undefined) return <Skeleton className="h-12 w-full" />
+  if (hazards === undefined) return <Skeleton className="h-12 w-full" />;
 
-  return <HazardListView hazards={hazards} knownFeatures={knownFeatures ?? []} />
+  return <HazardListView hazards={hazards} knownFeatures={knownFeatures ?? []} />;
 }

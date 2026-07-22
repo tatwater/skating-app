@@ -1,19 +1,19 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { DOC_URLS } from '../lib/links'
+import { createFileRoute } from '@tanstack/react-router';
+import { DOC_URLS } from '../lib/links';
 
 /**
  * About + license disclosure (D43). The app is AGPL-3.0 with a GPLv3 §7 App Store / Play
  * distribution exception; both are referenced here per the Phase 0 license-hygiene
  * requirement. Final legal wording remains Q10.
  */
-export const Route = createFileRoute('/about')({ component: AboutPage })
+export const Route = createFileRoute('/about')({ component: AboutPage });
 
 const links = [
   { href: DOC_URLS.license, label: 'AGPL-3.0 license' },
   { href: DOC_URLS.licenseExceptions, label: 'App Store / Play exception' },
   { href: DOC_URLS.privacy, label: 'Privacy notice' },
   { href: DOC_URLS.terms, label: 'Terms (interim)' },
-]
+];
 
 function AboutPage() {
   return (
@@ -43,5 +43,5 @@ function AboutPage() {
         ))}
       </div>
     </div>
-  )
+  );
 }

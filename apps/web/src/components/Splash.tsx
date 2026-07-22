@@ -6,5 +6,5 @@ export function Splash() {
         Loading…
       </span>
     </div>
-  )
+  );
 }

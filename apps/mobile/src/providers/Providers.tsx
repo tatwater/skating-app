@@ -1,14 +1,14 @@
-import { ClerkProvider, useAuth } from '@clerk/clerk-expo'
-import { tokenCache } from '@clerk/clerk-expo/token-cache'
-import { ConvexProviderWithClerk } from 'convex/react-clerk'
-import type { ReactNode } from 'react'
-import { useColorScheme } from 'react-native'
-import { SafeAreaProvider } from 'react-native-safe-area-context'
-import { TamaguiProvider } from 'tamagui'
-import { config } from '../../tamagui.config'
-import { OfflineDraftsProvider } from '../components/OfflineDraftsContext'
-import { convex } from '../lib/convex'
-import { env } from '../lib/env'
+import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
+import { tokenCache } from '@clerk/clerk-expo/token-cache';
+import { ConvexProviderWithClerk } from 'convex/react-clerk';
+import type { ReactNode } from 'react';
+import { useColorScheme } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { TamaguiProvider } from 'tamagui';
+import { config } from '../../tamagui.config';
+import { OfflineDraftsProvider } from '../components/OfflineDraftsContext';
+import { convex } from '../lib/convex';
+import { env } from '../lib/env';
 
 /**
  * Composes the app-wide providers (D26/D2/D7/D34):
@@ -18,7 +18,7 @@ import { env } from '../lib/env'
  * has an authed client).
  */
 export function Providers({ children }: { children: ReactNode }) {
-  const scheme = useColorScheme()
+  const scheme = useColorScheme();
   return (
     <ClerkProvider publishableKey={env.clerkPublishableKey} tokenCache={tokenCache}>
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
@@ -29,5 +29,5 @@ export function Providers({ children }: { children: ReactNode }) {
         </TamaguiProvider>
       </ConvexProviderWithClerk>
     </ClerkProvider>
-  )
+  );
 }

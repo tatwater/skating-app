@@ -8,9 +8,9 @@
  * makes that easy to get right, and easy to audit.
  */
 
-import { ConvexError } from 'convex/values'
-import type { Doc, Id } from '../_generated/dataModel'
-import type { MutationCtx, QueryCtx } from '../_generated/server'
+import { ConvexError } from 'convex/values';
+import type { Doc, Id } from '../_generated/dataModel';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
 
 /** Verify every photo id exists and belongs to the author (no attaching someone else's photo). */
 export async function assertOwnedPhotos(
@@ -19,20 +19,20 @@ export async function assertOwnedPhotos(
   authorId: Doc<'profiles'>['_id'],
 ): Promise<void> {
   for (const photoId of photoIds) {
-    const photo = await ctx.db.get(photoId)
+    const photo = await ctx.db.get(photoId);
     if (!photo || photo.uploaderId !== authorId) {
-      throw new ConvexError('Photo not found or not owned by the author')
+      throw new ConvexError('Photo not found or not owned by the author');
     }
   }
 }
 
 export interface ResolvedPhoto {
-  photoId: Id<'photos'>
-  url: string | null
-  thumbUrl: string | null
-  caption?: string
-  coord?: { lat: number; lng: number }
-  placeOnMap: boolean
+  photoId: Id<'photos'>;
+  url: string | null;
+  thumbUrl: string | null;
+  caption?: string;
+  coord?: { lat: number; lng: number };
+  placeOnMap: boolean;
 }
 
 /**
@@ -47,15 +47,15 @@ export async function resolvePhotoUrls(
   ctx: QueryCtx,
   photoIds: readonly Id<'photos'>[],
 ): Promise<ResolvedPhoto[]> {
-  const results: ResolvedPhoto[] = []
+  const results: ResolvedPhoto[] = [];
   for (const photoId of photoIds) {
-    const photo = await ctx.db.get(photoId)
-    if (!photo) continue
+    const photo = await ctx.db.get(photoId);
+    if (!photo) continue;
     // Stored as v.string() per the data model; they're storage ids, so cast for `getUrl`.
     const [url, thumbUrl] = await Promise.all([
       ctx.storage.getUrl(photo.storageId as Id<'_storage'>),
       ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>),
-    ])
+    ]);
     results.push({
       photoId,
       url,
@@ -63,7 +63,7 @@ export async function resolvePhotoUrls(
       ...(photo.caption !== undefined ? { caption: photo.caption } : {}),
       ...(photo.coord !== undefined ? { coord: photo.coord } : {}),
       placeOnMap: photo.placeOnMap,
-    })
+    });
   }
-  return results
+  return results;
 }

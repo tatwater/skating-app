@@ -9,16 +9,16 @@
  * swap is a config change.
  */
 
-import { layers, namedFlavor } from '@protomaps/basemaps'
-import type { BBox } from '@skating/core'
-import type { StyleSpecification } from 'maplibre-gl'
+import { layers, namedFlavor } from '@protomaps/basemaps';
+import type { BBox } from '@skating/core';
+import type { StyleSpecification } from 'maplibre-gl';
 
 /**
  * ODbL attribution for both the Protomaps basemap and our OSM-derived water data — a launch
  * gate (`04-integrations.md`), shown by the always-on `AttributionControl`. Treated like
  * "Powered by Strava": non-negotiable wherever the data appears.
  */
-export const OSM_ATTRIBUTION = '© OpenStreetMap contributors'
+export const OSM_ATTRIBUTION = '© OpenStreetMap contributors';
 
 /**
  * A Protomaps hosted **build** `.pmtiles` (whole-planet, for prototyping) + its static font/sprite
@@ -30,17 +30,17 @@ export const OSM_ATTRIBUTION = '© OpenStreetMap contributors'
  * `demo-bucket.protomaps.com/v4.pmtiles` went 404). Bump the date if it does — the live builds are
  * listed at maps.protomaps.com/builds. Production uses `VITE_PMTILES_URL`, not this default.
  */
-export const DEMO_PMTILES_URL = 'https://build.protomaps.com/20251215.pmtiles'
-const GLYPHS_URL = 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf'
-const SPRITE_BASE = 'https://protomaps.github.io/basemaps-assets/sprites/v4'
+export const DEMO_PMTILES_URL = 'https://build.protomaps.com/20251215.pmtiles';
+const GLYPHS_URL = 'https://protomaps.github.io/basemaps-assets/fonts/{fontstack}/{range}.pbf';
+const SPRITE_BASE = 'https://protomaps.github.io/basemaps-assets/sprites/v4';
 
 /**
  * Protomaps basemap flavor per app theme (D6/D34): `white` is the crisp, snowy light basemap — the
  * "wintery-but-functional" look — and `dark` is the evening map. Mapped from `next-themes`'
  * resolved theme in `MapView`. (Other Protomaps flavors: `light`, `grayscale`, `black`.)
  */
-export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const
-export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS]
+export const MAP_FLAVORS = { light: 'white', dark: 'dark' } as const;
+export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS];
 
 /**
  * Icy water fill/outline per theme, layered over the basemap. Pale ice-blue on the white basemap;
@@ -49,12 +49,12 @@ export type MapFlavor = (typeof MAP_FLAVORS)[keyof typeof MAP_FLAVORS]
 export const WATER_PALETTE = {
   white: { fill: '#8fbfe0', outline: '#2f6690' },
   dark: { fill: '#3a6ea5', outline: '#9ecae1' },
-} as const
+} as const;
 
 /** Initial framing — Burlington sits near the center of the region; the fallback when no device
  *  fix is available (device geolocation reframes on open when in-region, D12/D20). */
-export const INITIAL_CENTER: [number, number] = [-73.15, 44.46]
-export const INITIAL_ZOOM = 6.5
+export const INITIAL_CENTER: [number, number] = [-73.15, 44.46];
+export const INITIAL_ZOOM = 6.5;
 /**
  * Bounds MapLibre won't let the user pan out of — the Phase 2.5 Northeast skating region (NY north
  * of the NYC/Long Island metro + VT/NH/ME/MA). Kept in sync with the basemap `--bbox` and the NY
@@ -64,7 +64,7 @@ export const INITIAL_ZOOM = 6.5
 export const NORTHEAST_MAX_BOUNDS: [[number, number], [number, number]] = [
   [-79.9, 41.2],
   [-66.8, 47.5],
-]
+];
 
 /**
  * A MapLibre style: the Protomaps vector basemap (`pmtiles://` protocol, registered in the
@@ -89,7 +89,7 @@ export function buildMapStyle(pmtilesUrl: string, flavor: MapFlavor = 'white'): 
     layers: layers('protomaps', namedFlavor(flavor), {
       lang: 'en',
     }) as StyleSpecification['layers'],
-  }
+  };
 }
 
 /**
@@ -98,10 +98,10 @@ export function buildMapStyle(pmtilesUrl: string, flavor: MapFlavor = 'white'): 
  * validator allows); water bodies are Polygon/MultiPolygon in practice and MapLibre renders any.
  */
 export interface MappableBody {
-  _id: string
-  name: string
-  type: string
-  polygon: GeoJSON.Geometry
+  _id: string;
+  name: string;
+  type: string;
+  polygon: GeoJSON.Geometry;
 }
 
 /**
@@ -122,7 +122,7 @@ export function waterBodiesToFeatureCollection(
       geometry: body.polygon,
       properties: { _id: body._id, name: body.name, type: body.type },
     })),
-  }
+  };
 }
 
 /**
@@ -134,8 +134,8 @@ export function featureIdForBody(
   fc: GeoJSON.FeatureCollection,
   waterBodyId: string,
 ): number | undefined {
-  const feature = fc.features.find((f) => f.properties?._id === waterBodyId)
-  return typeof feature?.id === 'number' ? feature.id : undefined
+  const feature = fc.features.find((f) => f.properties?._id === waterBodyId);
+  return typeof feature?.id === 'number' ? feature.id : undefined;
 }
 
 /**
@@ -147,20 +147,20 @@ export function favoriteFeatureIds(
   fc: GeoJSON.FeatureCollection,
   favoriteIds: ReadonlySet<string>,
 ): number[] {
-  const ids: number[] = []
+  const ids: number[] = [];
   for (const f of fc.features) {
-    const bodyId = f.properties?._id
+    const bodyId = f.properties?._id;
     if (typeof f.id === 'number' && typeof bodyId === 'string' && favoriteIds.has(bodyId)) {
-      ids.push(f.id)
+      ids.push(f.id);
     }
   }
-  return ids
+  return ids;
 }
 
 /** A put-in marker as `putIns.listForBody` returns it — a routable coord + its provenance. */
 export interface MappablePutIn {
-  coord: { lat: number; lng: number }
-  source: 'derived' | 'official'
+  coord: { lat: number; lng: number };
+  source: 'derived' | 'official';
 }
 
 /**
@@ -178,22 +178,22 @@ export function putInsToFeatureCollection(
       geometry: { type: 'Point', coordinates: [m.coord.lng, m.coord.lat] },
       properties: { source: m.source },
     })),
-  }
+  };
 }
 
 /** MapLibre `LngLatBounds` (structural) → our `{ minLat, … }` bbox, the `listInViewport` arg. */
 export function boundsToViewport(bounds: {
-  getWest(): number
-  getSouth(): number
-  getEast(): number
-  getNorth(): number
+  getWest(): number;
+  getSouth(): number;
+  getEast(): number;
+  getNorth(): number;
 }): BBox {
   return {
     minLng: bounds.getWest(),
     minLat: bounds.getSouth(),
     maxLng: bounds.getEast(),
     maxLat: bounds.getNorth(),
-  }
+  };
 }
 
 /**
@@ -202,11 +202,11 @@ export function boundsToViewport(bounds: {
  * map's fractional zoom: a body surfaces the moment the map reaches its bucket, never a level late.
  */
 export function zoomForViewport(mapZoom: number): number {
-  return Math.floor(mapZoom)
+  return Math.floor(mapZoom);
 }
 
 /** Zoom used when framing on the device location (D12/D20) — regional, not street-level. */
-export const GEOLOCATION_FRAME_ZOOM = 11
+export const GEOLOCATION_FRAME_ZOOM = 11;
 
 /**
  * Initial framing for a device geolocation fix (D12/D20). Returns `{ center, zoom }` when the fix
@@ -219,8 +219,8 @@ export function frameForCoord(
   maxBounds: [[number, number], [number, number]] = NORTHEAST_MAX_BOUNDS,
   zoom: number = GEOLOCATION_FRAME_ZOOM,
 ): { center: [number, number]; zoom: number } | null {
-  const [[minLng, minLat], [maxLng, maxLat]] = maxBounds
+  const [[minLng, minLat], [maxLng, maxLat]] = maxBounds;
   const inRegion =
-    coord.lng >= minLng && coord.lng <= maxLng && coord.lat >= minLat && coord.lat <= maxLat
-  return inRegion ? { center: [coord.lng, coord.lat], zoom } : null
+    coord.lng >= minLng && coord.lng <= maxLng && coord.lat >= minLat && coord.lat <= maxLat;
+  return inRegion ? { center: [coord.lng, coord.lat], zoom } : null;
 }

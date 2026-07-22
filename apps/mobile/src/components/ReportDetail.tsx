@@ -1,5 +1,5 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
   formatConditions,
   formatSkateTime,
@@ -8,18 +8,18 @@ import {
   formatThicknessReading,
   type ReportConditions,
   SKATE_QUALITY_LABELS,
-} from '@skating/core'
-import { useQuery } from 'convex/react'
-import { useRouter } from 'expo-router'
-import * as WebBrowser from 'expo-web-browser'
-import { useEffect } from 'react'
-import { Image, Pressable } from 'react-native'
-import { H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui'
-import { Comments } from './CommentThread'
-import { Badge, Chips, DetailLoading, Section, Unavailable } from './detailUi'
-import { useMapSelection } from './MapSelectionContext'
-import { ModeratorActions } from './ModeratorActions'
-import { BlockedChip, FlagControl } from './SafetyControls'
+} from '@skating/core';
+import { useQuery } from 'convex/react';
+import { useRouter } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
+import { useEffect } from 'react';
+import { Image, Pressable } from 'react-native';
+import { H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
+import { Comments } from './CommentThread';
+import { Badge, Chips, DetailLoading, Section, Unavailable } from './detailUi';
+import { useMapSelection } from './MapSelectionContext';
+import { ModeratorActions } from './ModeratorActions';
+import { BlockedChip, FlagControl } from './SafetyControls';
 
 /**
  * Report detail drawer (§F, D42/D47) for `/report/[id]`, the mobile mirror of web's `ReportDetail`.
@@ -29,32 +29,32 @@ import { BlockedChip, FlagControl } from './SafetyControls'
  * shared `@skating/core` formatters.
  */
 export function ReportDetail({ reportId }: { reportId: string }) {
-  const router = useRouter()
-  const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> })
-  const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip')
+  const router = useRouter();
+  const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> });
+  const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip');
   const authors = useQuery(
     api.profiles.publicByIds,
     report ? { profileIds: [report.authorId] } : 'skip',
-  )
+  );
   const photos = useQuery(
     api.photos.getUrls,
     report && report.photoIds.length > 0 ? { reportId: report._id } : 'skip',
-  )
+  );
   // The viewer's own blocks, to de-emphasize a blocked author's report line (D3). A block never
   // hides the report itself. Skipped when signed out (the query requires a profile).
-  const me = useQuery(api.profiles.current, {})
-  const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip')
-  const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection()
+  const me = useQuery(api.profiles.current, {});
+  const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip');
+  const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection();
 
   // Fly to the report's put-in point as soon as the report loads.
   useEffect(() => {
-    if (report) setFocus({ lat: report.point.lat, lng: report.point.lng, zoom: 13 })
-  }, [report, setFocus])
+    if (report) setFocus({ lat: report.point.lat, lng: report.point.lng, zoom: 13 });
+  }, [report, setFocus]);
 
   // Highlight the lake by its *resolved survivor* id (what the map's features carry).
   useEffect(() => {
-    if (body?.available) setHighlightWaterBodyId(body.body._id)
-  }, [body, setHighlightWaterBodyId])
+    if (body?.available) setHighlightWaterBodyId(body.body._id);
+  }, [body, setHighlightWaterBodyId]);
 
   useEffect(() => {
     setPhotoPins(
@@ -65,30 +65,30 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           // biome-ignore lint/style/noNonNullAssertion: filtered to photos with a coord above.
           coord: photo.coord!,
         })),
-    )
-  }, [photos, setPhotoPins])
+    );
+  }, [photos, setPhotoPins]);
 
-  if (report === undefined) return <DetailLoading />
+  if (report === undefined) return <DetailLoading />;
   if (report === null) {
     return (
       <Unavailable
         title="Report not available"
         message="This report may have been removed, or isn't shared with you."
       />
-    )
+    );
   }
 
-  const bodyName = body?.available ? body.body.name : undefined
-  const authorName = authors?.[report.authorId]?.displayName
-  const authorBlocked = (blockedIds ?? []).includes(report.authorId)
-  const isOwn = me?._id === report.authorId
-  const readings = report.iceThickness?.readings ?? []
+  const bodyName = body?.available ? body.body.name : undefined;
+  const authorName = authors?.[report.authorId]?.displayName;
+  const authorBlocked = (blockedIds ?? []).includes(report.authorId);
+  const isOwn = me?._id === report.authorId;
+  const readings = report.iceThickness?.readings ?? [];
   const conditions = report.conditions
     ? formatConditions({
         ...report.conditions,
         source: report.conditions.source ?? 'user',
       } as ReportConditions)
-    : []
+    : [];
 
   return (
     <YStack gap="$3">
@@ -98,8 +98,8 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           <Text color="$foregroundMuted">
             Off the ice {formatSkateTime(report.skateEndTime)}
             {(() => {
-              const duration = formatSkateWindow(report.skateEndTime, report.skateStartTime)
-              return duration ? ` · skated ${duration}` : ''
+              const duration = formatSkateWindow(report.skateEndTime, report.skateStartTime);
+              return duration ? ` · skated ${duration}` : '';
             })()}
             {authorName ? ` · by ${authorName}` : ''}
           </Text>
@@ -129,13 +129,13 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         <Section label="Thickness">
           <YStack gap="$0.5">
             {readings.map((reading, i) => {
-              const formatted = formatThicknessReading(reading)
+              const formatted = formatThicknessReading(reading);
               return formatted ? (
                 // biome-ignore lint/suspicious/noArrayIndexKey: readings are an ordered, stable list.
                 <Text key={i} color="$foreground">
                   {formatted}
                 </Text>
-              ) : null
+              ) : null;
             })}
           </YStack>
         </Section>
@@ -174,8 +174,8 @@ export function ReportDetail({ reportId }: { reportId: string }) {
                 <Pressable
                   key={photo.photoId}
                   onPress={() => {
-                    const full = photo.url ?? photo.thumbUrl
-                    if (full) WebBrowser.openBrowserAsync(full)
+                    const full = photo.url ?? photo.thumbUrl;
+                    if (full) WebBrowser.openBrowserAsync(full);
                   }}
                 >
                   <Image
@@ -210,5 +210,5 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       <Comments reportId={report._id} />
     </YStack>
-  )
+  );
 }

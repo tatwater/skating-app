@@ -20,10 +20,10 @@
  * real hazard rows exist.
  */
 
-import { HAZARD_TYPES, type HazardType } from './types'
+import { HAZARD_TYPES, type HazardType } from './types';
 
 /** Freshness tiers: full strength · lighter · faded-behind-a-toggle. */
-export type HazardFreshness = 'fresh' | 'aging' | 'stale'
+export type HazardFreshness = 'fresh' | 'aging' | 'stale';
 
 /**
  * Decay tier. A/B/C/D are the research's behavioral groupings, kept on the row so the admin surface
@@ -32,21 +32,21 @@ export type HazardFreshness = 'fresh' | 'aging' | 'stale'
  *   B — semi-persistent (re-skins, weak spot lingers) D — effectively permanent (bodyFeature candidates)
  * Tier A also carries a "very volatile" sub-case (A*) expressed purely as shorter hours, not a 5th tier.
  */
-export type HazardDecayTier = 'A' | 'B' | 'C' | 'D'
+export type HazardDecayTier = 'A' | 'B' | 'C' | 'D';
 
 export interface HazardDecay {
-  tier: HazardDecayTier
+  tier: HazardDecayTier;
   /** elapsed < freshH → fresh */
-  freshH: number
+  freshH: number;
   /** freshH ≤ elapsed < agingH → aging; ≥ agingH → stale */
-  agingH: number
+  agingH: number;
 }
 
-const HOUR_MS = 3_600_000
+const HOUR_MS = 3_600_000;
 
 /** Hours → milliseconds. The single conversion boundary (see the module note on units). */
 export function hoursToMs(hours: number): number {
-  return hours * HOUR_MS
+  return hours * HOUR_MS;
 }
 
 /**
@@ -95,7 +95,7 @@ export const HAZARD_DECAY: Record<HazardType, HazardDecay> = {
   spring_current: { tier: 'D', freshH: 336, agingH: 1080 },
   gas_hole: { tier: 'D', freshH: 336, agingH: 1080 },
   reef_hole: { tier: 'D', freshH: 336, agingH: 1080 },
-}
+};
 
 /**
  * Freshness for a hazard, given its type, last confirmation and the current time (both epoch ms).
@@ -109,11 +109,11 @@ export function deriveHazardFreshness(
   lastConfirmedAt: number,
   now: number,
 ): HazardFreshness {
-  const { freshH, agingH } = HAZARD_DECAY[type]
-  const elapsed = now - lastConfirmedAt
-  if (elapsed < hoursToMs(freshH)) return 'fresh'
-  if (elapsed < hoursToMs(agingH)) return 'aging'
-  return 'stale'
+  const { freshH, agingH } = HAZARD_DECAY[type];
+  const elapsed = now - lastConfirmedAt;
+  if (elapsed < hoursToMs(freshH)) return 'fresh';
+  if (elapsed < hoursToMs(agingH)) return 'aging';
+  return 'stale';
 }
 
 /**
@@ -121,10 +121,10 @@ export function deriveHazardFreshness(
  * exists and still renders once the toggle is on; this only governs the default view.
  */
 export function isHazardVisibleByDefault(freshness: HazardFreshness): boolean {
-  return freshness !== 'stale'
+  return freshness !== 'stale';
 }
 
 /** All hazard types in a decay tier — for the Phase 7 admin surface and for grouped UI. */
 export function hazardTypesInTier(tier: HazardDecayTier): HazardType[] {
-  return HAZARD_TYPES.filter((t) => HAZARD_DECAY[t].tier === tier)
+  return HAZARD_TYPES.filter((t) => HAZARD_DECAY[t].tier === tier);
 }

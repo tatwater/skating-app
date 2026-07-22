@@ -11,7 +11,7 @@
  * Checks MIME type first, then the extension (browsers sometimes hand over a blank/generic type).
  */
 export function isHeic(file: { type: string; name: string }): boolean {
-  const type = file.type.toLowerCase()
-  if (type === 'image/heic' || type === 'image/heif') return true
-  return /\.(heic|heif)$/i.test(file.name)
+  const type = file.type.toLowerCase();
+  if (type === 'image/heic' || type === 'image/heif') return true;
+  return /\.(heic|heif)$/i.test(file.name);
 }

@@ -1,4 +1,4 @@
-import { api } from '@skating/convex/api'
+import { api } from '@skating/convex/api';
 import {
   isValidDisplayName,
   isValidUsername,
@@ -7,17 +7,17 @@ import {
   normalizeDisplayName,
   normalizeUsername,
   parseDateOfBirth,
-} from '@skating/core'
-import { createFileRoute } from '@tanstack/react-router'
-import { useMutation } from 'convex/react'
-import { ConvexError } from 'convex/values'
-import { type FormEvent, useState } from 'react'
-import { AuthCard } from '../components/AuthCard'
-import { RiskAckConsent } from '../components/RiskAckConsent'
-import { Button } from '../components/ui/button'
-import { Input } from '../components/ui/input'
-import { Label } from '../components/ui/label'
-import { RISK_ACK_VERSION } from '../lib/riskAck'
+} from '@skating/core';
+import { createFileRoute } from '@tanstack/react-router';
+import { useMutation } from 'convex/react';
+import { ConvexError } from 'convex/values';
+import { type FormEvent, useState } from 'react';
+import { AuthCard } from '../components/AuthCard';
+import { RiskAckConsent } from '../components/RiskAckConsent';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { RISK_ACK_VERSION } from '../lib/riskAck';
 
 /**
  * Profile provisioning (D26). Reached only when the user is Clerk-authenticated but has no
@@ -28,34 +28,34 @@ import { RISK_ACK_VERSION } from '../lib/riskAck'
  * never staged in Clerk `unsafeMetadata`. On success the reactive `profiles.current` query
  * flips and the `AuthGate` routes to the app.
  */
-export const Route = createFileRoute('/onboarding')({ component: OnboardingPage })
+export const Route = createFileRoute('/onboarding')({ component: OnboardingPage });
 
 function OnboardingPage() {
-  const upsertFromClerk = useMutation(api.profiles.upsertFromClerk)
+  const upsertFromClerk = useMutation(api.profiles.upsertFromClerk);
 
-  const [displayName, setDisplayName] = useState('')
-  const [username, setUsername] = useState('')
-  const [dob, setDob] = useState('')
-  const [ack, setAck] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [displayName, setDisplayName] = useState('');
+  const [username, setUsername] = useState('');
+  const [dob, setDob] = useState('');
+  const [ack, setAck] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const dobMs = parseDateOfBirth(dob)
-  const oldEnough = dobMs !== null && meetsMinimumAge(dobMs, Date.now())
-  const dobTouched = dob.trim().length > 0
+  const dobMs = parseDateOfBirth(dob);
+  const oldEnough = dobMs !== null && meetsMinimumAge(dobMs, Date.now());
+  const dobTouched = dob.trim().length > 0;
 
-  const normalizedUsername = normalizeUsername(username)
-  const usernameOk = isValidUsername(normalizedUsername)
-  const usernameTouched = username.trim().length > 0
-  const nameOk = isValidDisplayName(normalizeDisplayName(displayName))
+  const normalizedUsername = normalizeUsername(username);
+  const usernameOk = isValidUsername(normalizedUsername);
+  const usernameTouched = username.trim().length > 0;
+  const nameOk = isValidDisplayName(normalizeDisplayName(displayName));
 
-  const canSubmit = !busy && nameOk && usernameOk && oldEnough && ack
+  const canSubmit = !busy && nameOk && usernameOk && oldEnough && ack;
 
   async function onSubmit(e: FormEvent) {
-    e.preventDefault()
-    if (!canSubmit || dobMs === null) return
-    setBusy(true)
-    setError(null)
+    e.preventDefault();
+    if (!canSubmit || dobMs === null) return;
+    setBusy(true);
+    setError(null);
     try {
       await upsertFromClerk({
         displayName: normalizeDisplayName(displayName),
@@ -63,7 +63,7 @@ function OnboardingPage() {
         dateOfBirth: dobMs,
         riskAckVersion: RISK_ACK_VERSION,
         // The acceptance time is stamped server-side (trust boundary, D37) — not sent.
-      })
+      });
       // Success: no navigation — the AuthGate reacts to the now-provisioned profile.
     } catch (err) {
       // ConvexErrors carry a user-safe message in `.data` (e.g. "Username is already taken");
@@ -74,9 +74,9 @@ function OnboardingPage() {
           : err instanceof Error
             ? err.message
             : 'Could not finish setting up your profile',
-      )
+      );
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
@@ -137,5 +137,5 @@ function OnboardingPage() {
         </Button>
       </form>
     </AuthCard>
-  )
+  );
 }

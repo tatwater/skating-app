@@ -18,16 +18,16 @@ import {
   minVisibleZoom,
   nearestBodyForPoint,
   WATER_BODY_TYPES,
-} from '@skating/core'
-import { ConvexError, v } from 'convex/values'
-import type { MultiPolygon, Polygon } from 'geojson'
-import type { Doc, Id } from './_generated/dataModel'
-import { internalMutation, mutation, query } from './_generated/server'
-import { getCurrentProfile, requireProfile, requireRole } from './lib/auth'
-import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums'
-import { waterBodiesGeo } from './lib/geospatial'
-import { isListed } from './lib/listing'
-import { bbox, geoJson, latLng, literals } from './lib/validators'
+} from '@skating/core';
+import { ConvexError, v } from 'convex/values';
+import type { MultiPolygon, Polygon } from 'geojson';
+import type { Doc, Id } from './_generated/dataModel';
+import { internalMutation, mutation, query } from './_generated/server';
+import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
+import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
+import { waterBodiesGeo } from './lib/geospatial';
+import { isListed } from './lib/listing';
+import { bbox, geoJson, latLng, literals } from './lib/validators';
 
 /**
  * Two-tier viewport tuning (D5). The geospatial component indexes *points* (centroids), but
@@ -53,18 +53,18 @@ import { bbox, geoJson, latLng, literals } from './lib/validators'
  * Phase 1; the zoom-scored display score is D49 (Phase 2). As more regions load, the `isLarge`
  * list grows — revisit the two-tier scan if it stops being a short list (national-scale, logged).
  */
-const VIEWPORT_MARGIN_DEG = 0.05
-const LARGE_BODY_EXTENT_DEG = 0.05
+const VIEWPORT_MARGIN_DEG = 0.05;
+const LARGE_BODY_EXTENT_DEG = 0.05;
 /** Cap on the tier-1 centroid prefilter — a backstop against a wide zoom pulling the whole corpus;
  *  truncation is logged, never silent (D5). Also the **read-cap guard**: the geospatial component
  *  reads ∝ `maxResults`, so this bounds a single query's reads. 256 sits ~20% under the measured
  *  ~320 crash edge for the Vermont corpus (see the `listInViewport` tier-1 note). The real
  *  display fix is the D49 zoom-scored score (Phase 2). */
-const DEFAULT_VIEWPORT_LIMIT = 256
+const DEFAULT_VIEWPORT_LIMIT = 256;
 /** Hard ceiling on the (client-supplied) tier-1 limit. Clamped to the default so no caller can
  *  push `maxResults` past the read-cap-safe zone — a large value crashes the geospatial query
  *  (Convex's 4,096-reads limit), it doesn't just page slowly. See `sanitizeLimit`. */
-const MAX_VIEWPORT_LIMIT = DEFAULT_VIEWPORT_LIMIT
+const MAX_VIEWPORT_LIMIT = DEFAULT_VIEWPORT_LIMIT;
 
 /**
  * `listInViewport.limit` is public, client-supplied input, so guard it (D5/D37 — validate at the
@@ -74,8 +74,8 @@ const MAX_VIEWPORT_LIMIT = DEFAULT_VIEWPORT_LIMIT
  * integer, and clamp to the ceiling.
  */
 function sanitizeLimit(limit: number | undefined): number {
-  if (limit === undefined || !Number.isInteger(limit) || limit <= 0) return DEFAULT_VIEWPORT_LIMIT
-  return Math.min(limit, MAX_VIEWPORT_LIMIT)
+  if (limit === undefined || !Number.isInteger(limit) || limit <= 0) return DEFAULT_VIEWPORT_LIMIT;
+  return Math.min(limit, MAX_VIEWPORT_LIMIT);
 }
 
 /** Union a state code into a body's `states` (sorted + deduped); unchanged when no state is given. */
@@ -83,8 +83,8 @@ function unionState(
   existing: string[] | undefined,
   state: string | undefined,
 ): string[] | undefined {
-  if (!state) return existing
-  return [...new Set([...(existing ?? []), state])].sort()
+  if (!state) return existing;
+  return [...new Set([...(existing ?? []), state])].sort();
 }
 
 /** A canonical (OSM/NHD) body as prepared by the ETL, keyed by its `(source, externalId)`. */
@@ -97,16 +97,16 @@ const canonicalBody = v.object({
   bbox,
   centroid: latLng, // the on-water representative point (D48)
   surfaceAreaSqM: v.optional(v.number()),
-})
+});
 
 /** Largest span of a bbox in either axis, in degrees. */
 function bboxExtentDeg(b: { minLat: number; minLng: number; maxLat: number; maxLng: number }) {
-  return Math.max(b.maxLat - b.minLat, b.maxLng - b.minLng)
+  return Math.max(b.maxLat - b.minLat, b.maxLng - b.minLng);
 }
 
 /** Whether a body is a `listInViewport` tier-2 outlier — bbox wider than the centroid margin (D5). */
 function isLargeBody(b: { minLat: number; minLng: number; maxLat: number; maxLng: number }) {
-  return bboxExtentDeg(b) > LARGE_BODY_EXTENT_DEG
+  return bboxExtentDeg(b) > LARGE_BODY_EXTENT_DEG;
 }
 
 /**
@@ -115,8 +115,8 @@ function isLargeBody(b: { minLat: number; minLng: number; maxLat: number; maxLng
  * so a wide-zoom query returns the most-prominent bodies first and filters the rest out in-query.
  */
 function scoreFields(input: { surfaceAreaSqM?: number; curatedBoost?: number }) {
-  const score = displayScore(input)
-  return { displayScore: score, minVisibleZoom: minVisibleZoom(score) }
+  const score = displayScore(input);
+  return { displayScore: score, minVisibleZoom: minVisibleZoom(score) };
 }
 
 /**
@@ -125,7 +125,7 @@ function scoreFields(input: { surfaceAreaSqM?: number; curatedBoost?: number }) 
  * (`approve`/`remove`/`restore`), so the key stays correct even for a legacy row missing the field.
  */
 function zoomSortKey(body: { surfaceAreaSqM?: number; curatedBoost?: number }): number {
-  return scoreFields(body).minVisibleZoom
+  return scoreFields(body).minVisibleZoom;
 }
 
 /**
@@ -149,17 +149,17 @@ export const importCanonical = internalMutation({
     if (state !== undefined && !isKnownStateCode(state)) {
       throw new ConvexError(
         `Unknown state code: ${state}. Expected one of: ${KNOWN_STATE_CODES.join(', ')}.`,
-      )
+      );
     }
-    let inserted = 0
-    let updated = 0
+    let inserted = 0;
+    let updated = 0;
     for (const item of bodies) {
       const existing = await ctx.db
         .query('waterBodies')
         .withIndex('by_external_id', (q) =>
           q.eq('source', item.source).eq('externalId', item.externalId),
         )
-        .unique()
+        .unique();
 
       if (existing) {
         // Patch geometry/name/area + re-derived scores; removed*/reviewStatus/dedupStatus/
@@ -167,7 +167,7 @@ export const importCanonical = internalMutation({
         const scores = scoreFields({
           surfaceAreaSqM: item.surfaceAreaSqM,
           curatedBoost: existing.curatedBoost,
-        })
+        });
         await ctx.db.patch(existing._id, {
           name: item.name,
           type: item.type,
@@ -178,7 +178,7 @@ export const importCanonical = internalMutation({
           surfaceAreaSqM: item.surfaceAreaSqM,
           states: unionState(existing.states, state),
           ...scores,
-        })
+        });
         // Re-derive listing from the preserved fields (removed stays removed, D48); sortKey =
         // minVisibleZoom (D49) so the zoom filter works.
         await waterBodiesGeo.insert(
@@ -187,11 +187,11 @@ export const importCanonical = internalMutation({
           { latitude: item.centroid.lat, longitude: item.centroid.lng },
           { listed: isListed(existing) },
           scores.minVisibleZoom,
-        )
-        updated++
+        );
+        updated++;
       } else {
-        const now = Date.now()
-        const scores = scoreFields({ surfaceAreaSqM: item.surfaceAreaSqM }) // no boost on import
+        const now = Date.now();
+        const scores = scoreFields({ surfaceAreaSqM: item.surfaceAreaSqM }); // no boost on import
         const id = await ctx.db.insert('waterBodies', {
           name: item.name,
           type: item.type,
@@ -206,20 +206,20 @@ export const importCanonical = internalMutation({
           ...scores,
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
-        })
+        });
         await waterBodiesGeo.insert(
           ctx,
           id,
           { latitude: item.centroid.lat, longitude: item.centroid.lng },
           { listed: true },
           scores.minVisibleZoom,
-        )
-        inserted++
+        );
+        inserted++;
       }
     }
-    return { inserted, updated }
+    return { inserted, updated };
   },
-})
+});
 
 /**
  * Internal, **small-scale** migration (run via `pnpm exec convex run`) that re-derives, in one
@@ -240,30 +240,30 @@ export const importCanonical = internalMutation({
 export const backfillListed = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const bodies = await ctx.db.query('waterBodies').collect()
+    const bodies = await ctx.db.query('waterBodies').collect();
     for (const body of bodies) {
-      const isLarge = isLargeBody(body.bbox)
+      const isLarge = isLargeBody(body.bbox);
       const scores = scoreFields({
         surfaceAreaSqM: body.surfaceAreaSqM,
         curatedBoost: body.curatedBoost,
-      })
-      const patch: Partial<Doc<'waterBodies'>> = {}
-      if (body.isLarge !== isLarge) patch.isLarge = isLarge
-      if (body.displayScore !== scores.displayScore) patch.displayScore = scores.displayScore
+      });
+      const patch: Partial<Doc<'waterBodies'>> = {};
+      if (body.isLarge !== isLarge) patch.isLarge = isLarge;
+      if (body.displayScore !== scores.displayScore) patch.displayScore = scores.displayScore;
       if (body.minVisibleZoom !== scores.minVisibleZoom)
-        patch.minVisibleZoom = scores.minVisibleZoom
-      if (Object.keys(patch).length > 0) await ctx.db.patch(body._id, patch)
+        patch.minVisibleZoom = scores.minVisibleZoom;
+      if (Object.keys(patch).length > 0) await ctx.db.patch(body._id, patch);
       await waterBodiesGeo.insert(
         ctx,
         body._id,
         { latitude: body.centroid.lat, longitude: body.centroid.lng },
         { listed: isListed(body) },
         scores.minVisibleZoom,
-      )
+      );
     }
-    return { reindexed: bodies.length }
+    return { reindexed: bodies.length };
   },
-})
+});
 
 /** Create a user-contributed water body, queued for after-the-fact review (D14/D37). */
 export const create = mutation({
@@ -276,15 +276,15 @@ export const create = mutation({
     surfaceAreaSqM: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx)
-    const now = Date.now()
+    const profile = await requireProfile(ctx);
+    const now = Date.now();
     // Minors are read-only (D41) — mirror `reports.create`, so a minor can't push a public map
     // contribution attributed to them. (This stays a v1 scaffold; GPS-backed create + dedup is
     // Phase 8, D36 — TODO: match-on-create dedup / bbox prefilter → Turf IoU / name similarity.)
     if (isMinor(profile.dateOfBirth, now)) {
-      throw new ConvexError('Users under 18 cannot create water bodies')
+      throw new ConvexError('Users under 18 cannot create water bodies');
     }
-    const scores = scoreFields({ surfaceAreaSqM: args.surfaceAreaSqM }) // no boost on a new body
+    const scores = scoreFields({ surfaceAreaSqM: args.surfaceAreaSqM }); // no boost on a new body
     const id = await ctx.db.insert('waterBodies', {
       name: args.name,
       type: args.type,
@@ -299,7 +299,7 @@ export const create = mutation({
       reviewStatus: 'pending', // auto-visible, review-after (D37)
       dedupStatus: 'clean', // default (D36)
       createdAt: now,
-    })
+    });
     // Index the centroid for viewport lookups (D5); a pending user body is auto-visible
     // (D37/D48), so it lists immediately — `listed` is the filter key public queries use.
     // sortKey = minVisibleZoom (D49).
@@ -309,30 +309,30 @@ export const create = mutation({
       { latitude: args.centroid.lat, longitude: args.centroid.lng },
       { listed: isListed({ reviewStatus: 'pending', dedupStatus: 'clean' }) },
       scores.minVisibleZoom,
-    )
-    return id
+    );
+    return id;
   },
-})
+});
 
 /** Moderator/admin: approve a pending user-created body + write the audit row (D37). */
 export const approve = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'moderator')
-    const body = await ctx.db.get(args.waterBodyId)
-    if (!body) throw new ConvexError('Water body not found')
+    const actor = await requireRole(ctx, 'moderator');
+    const body = await ctx.db.get(args.waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
     // Only user-created bodies enter the review queue; approving canonical (OSM/NHD)
     // bodies is meaningless and would stamp a `reviewStatus` they shouldn't have.
     if (body.source !== 'user') {
-      throw new ConvexError('Only user-created water bodies can be reviewed')
+      throw new ConvexError('Only user-created water bodies can be reviewed');
     }
     // Idempotency + audit integrity: only a pending body can be approved, so we never
     // reverse a rejection or write duplicate audit rows on a re-approve.
     if (body.reviewStatus !== 'pending') {
-      throw new ConvexError('Water body is not pending review')
+      throw new ConvexError('Water body is not pending review');
     }
 
-    await ctx.db.patch(args.waterBodyId, { reviewStatus: 'approved' })
+    await ctx.db.patch(args.waterBodyId, { reviewStatus: 'approved' });
     // Keep the geospatial filter key in sync with the new listing (still listed, D48).
     await waterBodiesGeo.insert(
       ctx,
@@ -340,7 +340,7 @@ export const approve = mutation({
       { latitude: body.centroid.lat, longitude: body.centroid.lng },
       { listed: isListed({ ...body, reviewStatus: 'approved' }) },
       zoomSortKey(body),
-    )
+    );
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'approve_waterbody',
@@ -348,10 +348,10 @@ export const approve = mutation({
       targetId: args.waterBodyId,
       reason: 'Approved user-created water body',
       createdAt: Date.now(),
-    })
-    return args.waterBodyId
+    });
+    return args.waterBodyId;
   },
-})
+});
 
 /**
  * Admin: soft-delist a body from the map — curation or a landowner takedown (D48). Reversible
@@ -361,25 +361,25 @@ export const approve = mutation({
 export const remove = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: literals(REMOVAL_REASONS) },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'admin')
-    const body = await ctx.db.get(args.waterBodyId)
-    if (!body) throw new ConvexError('Water body not found')
+    const actor = await requireRole(ctx, 'admin');
+    const body = await ctx.db.get(args.waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
     // Idempotency + no duplicate audit rows: only an on-map body can be removed.
-    if (body.removedAt !== undefined) throw new ConvexError('Water body is already removed')
+    if (body.removedAt !== undefined) throw new ConvexError('Water body is already removed');
 
-    const now = Date.now()
+    const now = Date.now();
     await ctx.db.patch(args.waterBodyId, {
       removedAt: now,
       removedByUserId: actor._id,
       removalReason: args.reason,
-    })
+    });
     await waterBodiesGeo.insert(
       ctx,
       args.waterBodyId,
       { latitude: body.centroid.lat, longitude: body.centroid.lng },
       { listed: isListed({ ...body, removedAt: now }) },
       zoomSortKey(body),
-    )
+    );
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'remove',
@@ -388,32 +388,32 @@ export const remove = mutation({
       reason: `Removed from map (${args.reason})`,
       metadata: { removalReason: args.reason },
       createdAt: now,
-    })
-    return args.waterBodyId
+    });
+    return args.waterBodyId;
   },
-})
+});
 
 /** Admin: reverse a removal — clear `removed*`, re-derive `listed`, audit the restore (D48). */
 export const restore = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'admin')
-    const body = await ctx.db.get(args.waterBodyId)
-    if (!body) throw new ConvexError('Water body not found')
-    if (body.removedAt === undefined) throw new ConvexError('Water body is not removed')
+    const actor = await requireRole(ctx, 'admin');
+    const body = await ctx.db.get(args.waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+    if (body.removedAt === undefined) throw new ConvexError('Water body is not removed');
 
     await ctx.db.patch(args.waterBodyId, {
       removedAt: undefined,
       removedByUserId: undefined,
       removalReason: undefined,
-    })
+    });
     await waterBodiesGeo.insert(
       ctx,
       args.waterBodyId,
       { latitude: body.centroid.lat, longitude: body.centroid.lng },
       { listed: isListed({ ...body, removedAt: undefined }) },
       zoomSortKey(body),
-    )
+    );
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'restore',
@@ -421,10 +421,10 @@ export const restore = mutation({
       targetId: args.waterBodyId,
       reason: 'Restored to the map',
       createdAt: Date.now(),
-    })
-    return args.waterBodyId
+    });
+    return args.waterBodyId;
   },
-})
+});
 
 /**
  * Public: a single water body for its detail view (D47). **Follows `mergedIntoId` to the survivor**
@@ -438,16 +438,16 @@ export const restore = mutation({
 export const get = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    let body = await ctx.db.get(waterBodyId)
+    let body = await ctx.db.get(waterBodyId);
     // Resolve the merge chain to the survivor; bounded hops guard a pathological cycle (D36).
     for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
-      body = await ctx.db.get(body.mergedIntoId)
+      body = await ctx.db.get(body.mergedIntoId);
     }
-    if (!body) return null
-    if (!isListed(body)) return { available: false as const }
-    return { available: true as const, body }
+    if (!body) return null;
+    if (!isListed(body)) return { available: false as const };
+    return { available: true as const, body };
   },
-})
+});
 
 /**
  * Admin: set a body's `curatedBoost` (D49), recompute `displayScore` + `minVisibleZoom`, re-insert
@@ -456,12 +456,12 @@ export const get = query({
 export const setCuratedBoost = mutation({
   args: { waterBodyId: v.id('waterBodies'), curatedBoost: v.number() },
   handler: async (ctx, { waterBodyId, curatedBoost }) => {
-    const actor = await requireRole(ctx, 'admin')
-    const body = await ctx.db.get(waterBodyId)
-    if (!body) throw new ConvexError('Water body not found')
+    const actor = await requireRole(ctx, 'admin');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
 
-    const scores = scoreFields({ surfaceAreaSqM: body.surfaceAreaSqM, curatedBoost })
-    await ctx.db.patch(waterBodyId, { curatedBoost, ...scores })
+    const scores = scoreFields({ surfaceAreaSqM: body.surfaceAreaSqM, curatedBoost });
+    await ctx.db.patch(waterBodyId, { curatedBoost, ...scores });
     // Re-index with the new sortKey (minVisibleZoom) so listInViewport's zoom filter sees it.
     await waterBodiesGeo.insert(
       ctx,
@@ -469,7 +469,7 @@ export const setCuratedBoost = mutation({
       { latitude: body.centroid.lat, longitude: body.centroid.lng },
       { listed: isListed(body) },
       scores.minVisibleZoom,
-    )
+    );
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'set_curated_boost',
@@ -478,10 +478,10 @@ export const setCuratedBoost = mutation({
       reason: `Set curatedBoost to ${curatedBoost}`,
       metadata: { curatedBoost, minVisibleZoom: scores.minVisibleZoom },
       createdAt: Date.now(),
-    })
-    return waterBodyId
+    });
+    return waterBodyId;
   },
-})
+});
 
 /**
  * Internal seed (run via `pnpm exec convex run`, no auth) — the Phase 2.5 re-seed of the community
@@ -498,50 +498,50 @@ export const applyCuratedBoostSeed = internalMutation({
   },
   handler: async (ctx, { seed }) => {
     const applied: Array<{
-      name: string
-      id: Id<'waterBodies'>
-      states: string[]
-      areaSqM: number
-      minVisibleZoom: number
-    }> = []
-    const notFound: string[] = []
+      name: string;
+      id: Id<'waterBodies'>;
+      states: string[];
+      areaSqM: number;
+      minVisibleZoom: number;
+    }> = [];
+    const notFound: string[] = [];
     for (const { name, boost, state } of seed) {
       const candidates = (
         await ctx.db
           .query('waterBodies')
           .withSearchIndex('search_name', (s) => s.search('name', name))
           .take(50)
-      ).filter((b) => b.name.toLowerCase() === name.toLowerCase() && isListed(b))
+      ).filter((b) => b.name.toLowerCase() === name.toLowerCase() && isListed(b));
       // A malformed `state` hint (typo, non-code) is ignored rather than silently matching nothing,
       // so it falls back to largest-area disambiguation instead of quietly picking the wrong body.
-      const stateHint = state && isKnownStateCode(state) ? state : undefined
+      const stateHint = state && isKnownStateCode(state) ? state : undefined;
       const target =
         (stateHint ? candidates.find((b) => b.states?.includes(stateHint)) : undefined) ??
-        candidates.sort((a, b) => (b.surfaceAreaSqM ?? 0) - (a.surfaceAreaSqM ?? 0))[0]
+        candidates.sort((a, b) => (b.surfaceAreaSqM ?? 0) - (a.surfaceAreaSqM ?? 0))[0];
       if (!target) {
-        notFound.push(name)
-        continue
+        notFound.push(name);
+        continue;
       }
-      const scores = scoreFields({ surfaceAreaSqM: target.surfaceAreaSqM, curatedBoost: boost })
-      await ctx.db.patch(target._id, { curatedBoost: boost, ...scores })
+      const scores = scoreFields({ surfaceAreaSqM: target.surfaceAreaSqM, curatedBoost: boost });
+      await ctx.db.patch(target._id, { curatedBoost: boost, ...scores });
       await waterBodiesGeo.insert(
         ctx,
         target._id,
         { latitude: target.centroid.lat, longitude: target.centroid.lng },
         { listed: isListed(target) },
         scores.minVisibleZoom,
-      )
+      );
       applied.push({
         name,
         id: target._id,
         states: target.states ?? [],
         areaSqM: target.surfaceAreaSqM ?? 0,
         minVisibleZoom: scores.minVisibleZoom,
-      })
+      });
     }
-    return { applied, notFound }
+    return { applied, notFound };
   },
-})
+});
 
 /**
  * Public: water bodies whose **bbox intersects** the viewport (D5/D48). Two-tier — see the
@@ -563,11 +563,11 @@ export const applyCuratedBoostSeed = internalMutation({
 export const listInViewport = query({
   args: { viewport: bbox, limit: v.optional(v.number()), zoom: v.optional(v.number()) },
   handler: async (ctx, { viewport, limit, zoom }) => {
-    const effectiveLimit = sanitizeLimit(limit)
+    const effectiveLimit = sanitizeLimit(limit);
     // Floor the client zoom to the integer bucket `minVisibleZoom` uses, so the tier-1 range filter
     // (`sortKey < z + 1`) and the tier-2 JS cutoff (`minVisibleZoom > z`) agree at a fractional zoom.
     // (Clients already floor via `zoomForViewport`; this is defense-in-depth against a raw value.)
-    const z = zoom === undefined ? undefined : Math.floor(zoom)
+    const z = zoom === undefined ? undefined : Math.floor(zoom);
 
     // Tier 1 — centroid prefilter over the viewport expanded by the (small) margin. The
     // geospatial `query` returns a *partial* page plus a continuation cursor, so we page through
@@ -590,10 +590,10 @@ export const listInViewport = query({
       east: viewport.maxLng + VIEWPORT_MARGIN_DEG,
       south: viewport.minLat - VIEWPORT_MARGIN_DEG,
       north: viewport.maxLat + VIEWPORT_MARGIN_DEG,
-    }
-    const keys: Id<'waterBodies'>[] = []
-    let cursor: string | undefined
-    let truncated = false
+    };
+    const keys: Id<'waterBodies'>[] = [];
+    let cursor: string | undefined;
+    let truncated = false;
     do {
       const page = await waterBodiesGeo.query(
         ctx,
@@ -606,11 +606,11 @@ export const listInViewport = query({
           ...(z !== undefined ? { filter: (q) => q.lt('sortKey', z + 1) } : {}),
         },
         cursor,
-      )
-      for (const { key } of page.results) keys.push(key)
-      cursor = page.nextCursor
-      if (keys.length >= effectiveLimit && cursor !== undefined) truncated = true
-    } while (cursor !== undefined && keys.length < effectiveLimit)
+      );
+      for (const { key } of page.results) keys.push(key);
+      cursor = page.nextCursor;
+      if (keys.length >= effectiveLimit && cursor !== undefined) truncated = true;
+    } while (cursor !== undefined && keys.length < effectiveLimit);
     // Since we don't filter on `listed` in the query (read-cap safety, above), an unlisted body
     // (removed/rejected/merged) in the rectangle occupies a prefilter slot before the `isListed`
     // refine drops it — so at the cap the visible count can undershoot while listed bodies remain
@@ -622,57 +622,57 @@ export const listInViewport = query({
     if (truncated) {
       console.warn(
         `listInViewport hit the ${effectiveLimit}-row prefilter cap; some bodies may be omitted at this zoom (D5/D49).`,
-      )
+      );
     }
-    const tier1 = await Promise.all(keys.slice(0, effectiveLimit).map((key) => ctx.db.get(key)))
+    const tier1 = await Promise.all(keys.slice(0, effectiveLimit).map((key) => ctx.db.get(key)));
 
     // Tier 2 — the handful of large bodies, which tier 1's small margin can't guarantee to catch.
     const tier2 = await ctx.db
       .query('waterBodies')
       .withIndex('by_is_large', (q) => q.eq('isLarge', true))
-      .collect()
+      .collect();
 
     // Merge (dedup by _id — a large body may surface in both tiers), then refine to true
     // bbox-intersection + current listing (tier 2 isn't `listed`-filtered by the index).
-    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>()
+    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
     for (const body of [...tier1, ...tier2]) {
-      if (!body || !bboxIntersects(body.bbox, viewport) || !isListed(body)) continue
+      if (!body || !bboxIntersects(body.bbox, viewport) || !isListed(body)) continue;
       // D49 zoom cutoff — also applied to tier-2 (its short-list scan isn't sortKey-filtered). A
       // legacy body missing `minVisibleZoom` is treated as visible (never silently hidden).
       if (z !== undefined && body.minVisibleZoom !== undefined && body.minVisibleZoom > z) {
-        continue
+        continue;
       }
-      byId.set(body._id, body)
+      byId.set(body._id, body);
     }
 
     // Favorites are pinned visible at **every zoom** (Phase 4 map highlight): a viewer's favorited body
     // that intersects the viewport is included even when its `minVisibleZoom` is above the current zoom,
     // so a small-but-beloved lake never drops out from under its highlight when you zoom out. Bounded by
     // a user's handful of favorites; follows merges to the survivor and honors the same `listed` gate.
-    const viewer = await getCurrentProfile(ctx)
+    const viewer = await getCurrentProfile(ctx);
     if (viewer) {
       const favorites = await ctx.db
         .query('waterBodyFavorites')
         .withIndex('by_user', (q) => q.eq('userId', viewer._id))
-        .collect()
+        .collect();
       for (const fav of favorites) {
-        let body = await ctx.db.get(fav.waterBodyId)
+        let body = await ctx.db.get(fav.waterBodyId);
         for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
-          body = await ctx.db.get(body.mergedIntoId)
+          body = await ctx.db.get(body.mergedIntoId);
         }
-        if (!body || byId.has(body._id)) continue
-        if (isListed(body) && bboxIntersects(body.bbox, viewport)) byId.set(body._id, body)
+        if (!body || byId.has(body._id)) continue;
+        if (isListed(body) && bboxIntersects(body.bbox, viewport)) byId.set(body._id, body);
       }
     }
-    return [...byId.values()]
+    return [...byId.values()];
   },
-})
+});
 
 /** Default parking/approach buffer for coord→lake resolution (F2 offline flush + map-open framing).
  *  ~300 m covers a lakeside lot / approach so opening from the car still resolves the lake (S1).
  *  Tunable — Phase 7 lifts it behind admin controls, same "don't bury constants" principle as the
  *  displayScore curve (D37). */
-const AUTOSELECT_BUFFER_M = 300
+const AUTOSELECT_BUFFER_M = 300;
 
 /**
  * Public: resolve a GPS coord to the listed water body it's on / nearest to within a parking-approach
@@ -686,30 +686,30 @@ const AUTOSELECT_BUFFER_M = 300
 export const resolveBodyForCoord = query({
   args: { coord: latLng, bufferMeters: v.optional(v.number()) },
   handler: async (ctx, { coord, bufferMeters }) => {
-    const buffer = bufferMeters ?? AUTOSELECT_BUFFER_M
+    const buffer = bufferMeters ?? AUTOSELECT_BUFFER_M;
     const rectangle = {
       west: coord.lng - VIEWPORT_MARGIN_DEG,
       east: coord.lng + VIEWPORT_MARGIN_DEG,
       south: coord.lat - VIEWPORT_MARGIN_DEG,
       north: coord.lat + VIEWPORT_MARGIN_DEG,
-    }
+    };
     // Tier 1 — centroid prefilter near the coord (no `listed` filter, refined below — same read-cap
     // reasoning as listInViewport). A single small (~5 km) rectangle around one point holds far
     // fewer than the limit, so no pagination is needed.
     const page = await waterBodiesGeo.query(ctx, {
       shape: { type: 'rectangle', rectangle },
       limit: DEFAULT_VIEWPORT_LIMIT,
-    })
-    const tier1 = await Promise.all(page.results.map(({ key }) => ctx.db.get(key)))
+    });
+    const tier1 = await Promise.all(page.results.map(({ key }) => ctx.db.get(key)));
     // Tier 2 — large bodies whose centroid can sit outside the rectangle though the coord is on them.
     const tier2 = await ctx.db
       .query('waterBodies')
       .withIndex('by_is_large', (q) => q.eq('isLarge', true))
-      .collect()
+      .collect();
 
-    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>()
+    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
     for (const body of [...tier1, ...tier2]) {
-      if (body && isListed(body)) byId.set(body._id, body)
+      if (body && isListed(body)) byId.set(body._id, body);
     }
     const matchId = nearestBodyForPoint(
       coord,
@@ -719,11 +719,11 @@ export const resolveBodyForCoord = query({
         surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
       })),
       buffer,
-    )
-    const body = matchId ? byId.get(matchId) : undefined
-    return body ? { waterBodyId: body._id, name: body.name } : null
+    );
+    const body = matchId ? byId.get(matchId) : undefined;
+    return body ? { waterBodyId: body._id, name: body.name } : null;
   },
-})
+});
 
 /**
  * Public: full-text search listed water bodies by name for the map's search box. Uses the
@@ -740,43 +740,43 @@ export const resolveBodyForCoord = query({
 export const searchByName = query({
   args: { query: v.string(), limit: v.optional(v.number()) },
   handler: async (ctx, { query, limit }) => {
-    const term = query.trim()
-    if (term.length < 2) return []
-    const max = Math.min(Math.max(limit ?? 8, 1), 20)
+    const term = query.trim();
+    if (term.length < 2) return [];
+    const max = Math.min(Math.max(limit ?? 8, 1), 20);
     const raw = await ctx.db
       .query('waterBodies')
       .withSearchIndex('search_name', (s) => s.search('name', term))
-      .take(max * 4)
+      .take(max * 4);
     const results: Array<{
-      _id: Id<'waterBodies'>
-      name: string
-      type: Doc<'waterBodies'>['type']
-      centroid: Doc<'waterBodies'>['centroid']
-      states: string[]
-    }> = []
+      _id: Id<'waterBodies'>;
+      name: string;
+      type: Doc<'waterBodies'>['type'];
+      centroid: Doc<'waterBodies'>['centroid'];
+      states: string[];
+    }> = [];
     for (const body of raw) {
-      if (!isListed(body)) continue
+      if (!isListed(body)) continue;
       results.push({
         _id: body._id,
         name: body.name,
         type: body.type,
         centroid: body.centroid,
         states: body.states ?? [],
-      })
-      if (results.length >= max) break
+      });
+      if (results.length >= max) break;
     }
-    return results
+    return results;
   },
-})
+});
 
 /** Moderator/admin: the after-the-fact review queue of pending user bodies (D37). */
 export const listPendingReview = query({
   args: {},
   handler: async (ctx) => {
-    await requireRole(ctx, 'moderator')
+    await requireRole(ctx, 'moderator');
     return ctx.db
       .query('waterBodies')
       .withIndex('by_review_status', (q) => q.eq('reviewStatus', 'pending'))
-      .collect()
+      .collect();
   },
-})
+});

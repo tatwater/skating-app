@@ -1,13 +1,13 @@
-import { useAuth } from '@clerk/tanstack-react-start'
-import { api } from '@skating/convex/api'
-import { createFileRoute } from '@tanstack/react-router'
-import { useMutation } from 'convex/react'
-import { ConvexError } from 'convex/values'
-import { type FormEvent, useState } from 'react'
-import { AuthCard } from '../components/AuthCard'
-import { RiskAckConsent } from '../components/RiskAckConsent'
-import { Button } from '../components/ui/button'
-import { RISK_ACK_VERSION } from '../lib/riskAck'
+import { useAuth } from '@clerk/tanstack-react-start';
+import { api } from '@skating/convex/api';
+import { createFileRoute } from '@tanstack/react-router';
+import { useMutation } from 'convex/react';
+import { ConvexError } from 'convex/values';
+import { type FormEvent, useState } from 'react';
+import { AuthCard } from '../components/AuthCard';
+import { RiskAckConsent } from '../components/RiskAckConsent';
+import { Button } from '../components/ui/button';
+import { RISK_ACK_VERSION } from '../lib/riskAck';
 
 /**
  * Re-acceptance gate (D45). Reached when a signed-in user already has a profile but its
@@ -16,23 +16,23 @@ import { RISK_ACK_VERSION } from '../lib/riskAck'
  * untouched. On success the reactive `profiles.current` query flips and the `AuthGate`
  * routes to the app.
  */
-export const Route = createFileRoute('/reack')({ component: ReAckPage })
+export const Route = createFileRoute('/reack')({ component: ReAckPage });
 
 function ReAckPage() {
-  const { signOut } = useAuth()
-  const acceptCurrentRiskAck = useMutation(api.profiles.acceptCurrentRiskAck)
+  const { signOut } = useAuth();
+  const acceptCurrentRiskAck = useMutation(api.profiles.acceptCurrentRiskAck);
 
-  const [ack, setAck] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [ack, setAck] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function onAccept(e: FormEvent) {
-    e.preventDefault()
-    if (busy || !ack) return
-    setBusy(true)
-    setError(null)
+    e.preventDefault();
+    if (busy || !ack) return;
+    setBusy(true);
+    setError(null);
     try {
-      await acceptCurrentRiskAck({ riskAckVersion: RISK_ACK_VERSION })
+      await acceptCurrentRiskAck({ riskAckVersion: RISK_ACK_VERSION });
       // Success: no navigation — the AuthGate reacts to the refreshed acknowledgment.
     } catch (err) {
       setError(
@@ -41,9 +41,9 @@ function ReAckPage() {
           : err instanceof Error
             ? err.message
             : 'Could not save your acknowledgment',
-      )
+      );
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
@@ -64,5 +64,5 @@ function ReAckPage() {
         </Button>
       </form>
     </AuthCard>
-  )
+  );
 }

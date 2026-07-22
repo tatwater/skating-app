@@ -17,13 +17,13 @@ import {
   normalizeCommentBody,
   type ThreadComment,
   type ThreadNode,
-} from '@skating/core'
-import { ConvexError, v } from 'convex/values'
-import type { Doc } from './_generated/dataModel'
-import { mutation, query } from './_generated/server'
-import { getCurrentProfile, requireProfile } from './lib/auth'
-import { bumpContributionCount, visibleDelta } from './lib/contributionCounts'
-import { loadBlockedAuthorIds } from './lib/reportVisibility'
+} from '@skating/core';
+import { ConvexError, v } from 'convex/values';
+import type { Doc } from './_generated/dataModel';
+import { mutation, query } from './_generated/server';
+import { getCurrentProfile, requireProfile } from './lib/auth';
+import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
+import { loadBlockedAuthorIds } from './lib/reportVisibility';
 
 /**
  * Add a comment to a report (D21). `requireProfile`; **reject minors** (read-only, D41); the target
@@ -39,33 +39,33 @@ export const create = mutation({
     body: v.string(),
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx)
-    const now = Date.now()
+    const profile = await requireProfile(ctx);
+    const now = Date.now();
 
     // Minors are read-only (D41) — they can't comment, same as they can't post reports.
     if (isMinor(profile.dateOfBirth, now)) {
-      throw new ConvexError('Users under 18 cannot post comments')
+      throw new ConvexError('Users under 18 cannot post comments');
     }
 
-    const report = await ctx.db.get(args.reportId)
+    const report = await ctx.db.get(args.reportId);
     if (report?.moderationStatus !== 'visible') {
-      throw new ConvexError('Report not found')
+      throw new ConvexError('Report not found');
     }
 
-    const body = normalizeCommentBody(args.body)
+    const body = normalizeCommentBody(args.body);
     if (!isValidCommentBody(body)) {
-      throw new ConvexError('Comment must be between 1 and 2000 characters')
+      throw new ConvexError('Comment must be between 1 and 2000 characters');
     }
 
     if (args.parentCommentId !== undefined) {
-      const parent = await ctx.db.get(args.parentCommentId)
+      const parent = await ctx.db.get(args.parentCommentId);
       if (!parent || parent.reportId !== args.reportId) {
-        throw new ConvexError('Parent comment not found')
+        throw new ConvexError('Parent comment not found');
       }
       // 2-level cap (D25): a reply's parent must itself be top-level. A well-behaved client already
       // flattened via `resolveReplyParentId`; reject anything deeper defensively.
       if (parent.parentCommentId !== undefined) {
-        throw new ConvexError('Replies can only be one level deep')
+        throw new ConvexError('Replies can only be one level deep');
       }
     }
 
@@ -77,33 +77,33 @@ export const create = mutation({
       source: 'native',
       moderationStatus: 'visible',
       createdAt: now,
-    })
+    });
     // Bump the author's denormalized comment counter (born visible) — see contributionCounts.ts.
-    await bumpContributionCount(ctx, profile._id, 'commentCount', 1)
-    return commentId
+    await bumpContributionCount(ctx, profile._id, 'commentCount', 1);
+    return commentId;
   },
-})
+});
 
 /** Public author attribution for a comment (never the private profile — no coord/DOB). */
 interface CommentAuthor {
-  username: string
-  displayName: string
-  profileImageUrl?: string
+  username: string;
+  displayName: string;
+  profileImageUrl?: string;
 }
 
 /** A comment as the thread returns it. `comment` is `null` for a `[hidden]` placeholder (D25). */
 interface CommentNodeView {
-  id: string
-  hidden: boolean
+  id: string;
+  hidden: boolean;
   comment: {
-    body: string
-    authorId: string
-    author: CommentAuthor | null
-    isOwn: boolean
-    createdAt: number
-    editedAt?: number
-  } | null
-  replies: CommentNodeView[]
+    body: string;
+    authorId: string;
+    author: CommentAuthor | null;
+    isOwn: boolean;
+    createdAt: number;
+    editedAt?: number;
+  } | null;
+  replies: CommentNodeView[];
 }
 
 /**
@@ -115,20 +115,20 @@ interface CommentNodeView {
 export const listByReport = query({
   args: { reportId: v.id('reports') },
   handler: async (ctx, { reportId }): Promise<CommentNodeView[]> => {
-    const report = await ctx.db.get(reportId)
-    if (report?.moderationStatus !== 'visible') return []
+    const report = await ctx.db.get(reportId);
+    if (report?.moderationStatus !== 'visible') return [];
 
-    const viewer = await getCurrentProfile(ctx)
-    const viewerId = viewer?._id ?? ''
-    const blocked = await loadBlockedAuthorIds(ctx, viewerId)
+    const viewer = await getCurrentProfile(ctx);
+    const viewerId = viewer?._id ?? '';
+    const blocked = await loadBlockedAuthorIds(ctx, viewerId);
 
     const comments = await ctx.db
       .query('comments')
       .withIndex('by_report', (q) => q.eq('reportId', reportId))
-      .collect()
+      .collect();
 
-    const byId = new Map<string, Doc<'comments'>>()
-    for (const c of comments) byId.set(c._id, c)
+    const byId = new Map<string, Doc<'comments'>>();
+    for (const c of comments) byId.set(c._id, c);
 
     // Structure + placeholder decisions come from the pure helper; `visible` is the block+moderation
     // gate computed here.
@@ -137,15 +137,15 @@ export const listByReport = query({
       parentCommentId: c.parentCommentId,
       createdAt: c.createdAt,
       visible: canViewComment(viewerId, c.authorId, c.moderationStatus, blocked),
-    }))
-    const tree = buildCommentThread(threadInput)
+    }));
+    const tree = buildCommentThread(threadInput);
 
     // Resolve author attribution once for every author that survives to a visible node.
-    const authorCache = new Map<string, CommentAuthor | null>()
+    const authorCache = new Map<string, CommentAuthor | null>();
     const loadAuthor = async (authorId: string): Promise<CommentAuthor | null> => {
-      const cached = authorCache.get(authorId)
-      if (cached !== undefined) return cached
-      const author = await ctx.db.get(authorId as Doc<'comments'>['authorId'])
+      const cached = authorCache.get(authorId);
+      if (cached !== undefined) return cached;
+      const author = await ctx.db.get(authorId as Doc<'comments'>['authorId']);
       const view: CommentAuthor | null = author
         ? {
             username: author.username,
@@ -154,19 +154,19 @@ export const listByReport = query({
               ? { profileImageUrl: author.profileImageUrl }
               : {}),
           }
-        : null
-      authorCache.set(authorId, view)
-      return view
-    }
+        : null;
+      authorCache.set(authorId, view);
+      return view;
+    };
 
     const toView = async (node: ThreadNode): Promise<CommentNodeView> => {
-      const replies = await Promise.all(node.replies.map(toView))
+      const replies = await Promise.all(node.replies.map(toView));
       if (node.hidden) {
-        return { id: node.id, hidden: true, comment: null, replies }
+        return { id: node.id, hidden: true, comment: null, replies };
       }
-      const doc = byId.get(node.id)
+      const doc = byId.get(node.id);
       // A non-hidden node always has a backing doc (it came from `comments`); guard for safety.
-      if (!doc) return { id: node.id, hidden: true, comment: null, replies }
+      if (!doc) return { id: node.id, hidden: true, comment: null, replies };
       return {
         id: node.id,
         hidden: false,
@@ -179,12 +179,12 @@ export const listByReport = query({
           ...(doc.editedAt !== undefined ? { editedAt: doc.editedAt } : {}),
         },
         replies,
-      }
-    }
+      };
+    };
 
-    return Promise.all(tree.map(toView))
+    return Promise.all(tree.map(toView));
   },
-})
+});
 
 /**
  * Author-only edit (D25): last-write-wins on the body + a fresh `editedAt`. Re-validates via
@@ -193,25 +193,25 @@ export const listByReport = query({
 export const update = mutation({
   args: { commentId: v.id('comments'), body: v.string() },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx)
-    const existing = await ctx.db.get(args.commentId)
-    if (!existing) throw new ConvexError('Comment not found')
+    const profile = await requireProfile(ctx);
+    const existing = await ctx.db.get(args.commentId);
+    if (!existing) throw new ConvexError('Comment not found');
     if (existing.authorId !== profile._id) {
-      throw new ConvexError('Only the author can edit a comment')
+      throw new ConvexError('Only the author can edit a comment');
     }
     if (existing.moderationStatus !== 'visible') {
-      throw new ConvexError('This comment has been moderated and can no longer be edited')
+      throw new ConvexError('This comment has been moderated and can no longer be edited');
     }
 
-    const body = normalizeCommentBody(args.body)
+    const body = normalizeCommentBody(args.body);
     if (!isValidCommentBody(body)) {
-      throw new ConvexError('Comment must be between 1 and 2000 characters')
+      throw new ConvexError('Comment must be between 1 and 2000 characters');
     }
 
-    await ctx.db.patch(args.commentId, { body, editedAt: Date.now() })
-    return args.commentId
+    await ctx.db.patch(args.commentId, { body, editedAt: Date.now() });
+    return args.commentId;
   },
-})
+});
 
 /**
  * Author soft-removes their **own** comment (sets `moderationStatus: removed`) — distinct from a
@@ -221,22 +221,22 @@ export const update = mutation({
 export const remove = mutation({
   args: { commentId: v.id('comments') },
   handler: async (ctx, { commentId }) => {
-    const profile = await requireProfile(ctx)
-    const existing = await ctx.db.get(commentId)
-    if (!existing) throw new ConvexError('Comment not found')
+    const profile = await requireProfile(ctx);
+    const existing = await ctx.db.get(commentId);
+    if (!existing) throw new ConvexError('Comment not found');
     if (existing.authorId !== profile._id) {
-      throw new ConvexError('Only the author can remove a comment')
+      throw new ConvexError('Only the author can remove a comment');
     }
     if (existing.moderationStatus !== 'removed') {
-      await ctx.db.patch(commentId, { moderationStatus: 'removed' })
+      await ctx.db.patch(commentId, { moderationStatus: 'removed' });
       // Drop the author's visible-comment counter if this was still counting (visible → removed).
       await bumpContributionCount(
         ctx,
         existing.authorId,
         'commentCount',
         visibleDelta(existing.moderationStatus, 'removed'),
-      )
+      );
     }
-    return commentId
+    return commentId;
   },
-})
+});

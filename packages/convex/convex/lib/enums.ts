@@ -16,25 +16,25 @@ export const ACTIVITY_PROVIDERS = [
   'apple_health',
   'google_health_connect',
   'other',
-] as const
+] as const;
 
 /** Lifecycle of a detected GPS skate → report prompt (D24). */
-export const ACTIVITY_PROMPT_STATES = ['pending', 'prompted', 'converted', 'dismissed'] as const
+export const ACTIVITY_PROMPT_STATES = ['pending', 'prompted', 'converted', 'dismissed'] as const;
 
 /** Where a water body came from (D14). */
-export const WATER_BODY_SOURCES = ['osm', 'nhd', 'user'] as const
+export const WATER_BODY_SOURCES = ['osm', 'nhd', 'user'] as const;
 
 /** Canonical (non-user) sources — the external feeds `importCanonical` upserts (D14). */
-export const CANONICAL_SOURCES = ['osm', 'nhd'] as const
+export const CANONICAL_SOURCES = ['osm', 'nhd'] as const;
 
 /** Moderation review lifecycle for user-created water bodies (D37). */
-export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const
+export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const;
 
 /** Administrative-boundary granularity for point→place labels (Phase 5). */
-export const ADMIN_AREA_LEVELS = ['state', 'county', 'town'] as const
+export const ADMIN_AREA_LEVELS = ['state', 'county', 'town'] as const;
 
 /** Dedup state for user-created water bodies (D36). */
-export const DEDUP_STATUSES = ['clean', 'suspected_duplicate', 'merged'] as const
+export const DEDUP_STATUSES = ['clean', 'suspected_duplicate', 'merged'] as const;
 
 /** Why an admin soft-delisted a water body — reversible, never a hard delete (D48). */
 export const REMOVAL_REASONS = [
@@ -43,10 +43,10 @@ export const REMOVAL_REASONS = [
   'junk',
   'duplicate',
   'other',
-] as const
+] as const;
 
 /** How a report entered the system. */
-export const REPORT_SOURCES = ['native', 'activity', 'imported'] as const
+export const REPORT_SOURCES = ['native', 'activity', 'imported'] as const;
 
 // THICKNESS_METHODS moved to `@skating/core` (shared report vocab — the report form + the
 // `validateReportInput` contract both need it), alongside ICE_TYPES / SURFACE_TAGS.
@@ -55,10 +55,10 @@ export const REPORT_SOURCES = ['native', 'activity', 'imported'] as const
 // the report form + `validateReportInput` need them), alongside ICE_TYPES / SURFACE_TAGS.
 
 /** Content moderation state shared by reports/comments (D32). */
-export const MODERATION_STATUSES = ['visible', 'hidden', 'removed'] as const
+export const MODERATION_STATUSES = ['visible', 'hidden', 'removed'] as const;
 
 /** Where a comment came from (native app vs. forum/email ingestion, Q8). */
-export const COMMENT_SOURCES = ['native', 'imported'] as const
+export const COMMENT_SOURCES = ['native', 'imported'] as const;
 
 /**
  * Hazard **lifecycle** status (archived, never hard-deleted, D15).
@@ -67,7 +67,7 @@ export const COMMENT_SOURCES = ['native', 'imported'] as const
  * Archiving means the community voted a hazard healed; hiding means a moderator judged the pin bad.
  * Collapsing them would make abuse indistinguishable from a safety verdict (D3).
  */
-export const HAZARD_STATUSES = ['active', 'archived'] as const
+export const HAZARD_STATUSES = ['active', 'archived'] as const;
 
 /**
  * The three-tier hazard confirmation vote (D52) + its trigger (D12/D15).
@@ -76,7 +76,7 @@ export const HAZARD_STATUSES = ['active', 'archived'] as const
  * refrozen lead is thin ice and a healed ridge is a line of refrozen blocks. Only `fully_healed` counts
  * toward removal; `healing_unsafe` keeps the pin up so the next skater can read the healing ice.
  */
-export const HAZARD_CONFIRM_VERDICTS = ['still_there', 'healing_unsafe', 'fully_healed'] as const
+export const HAZARD_CONFIRM_VERDICTS = ['still_there', 'healing_unsafe', 'fully_healed'] as const;
 /**
  * What triggered a confirmation (D12). Kept distinct because the trigger is evidence about the
  * confirmation's quality: `proximity_alert` means the skater was standing within alert range of the
@@ -88,13 +88,13 @@ export const HAZARD_CONFIRM_VIA = [
   'proximity_alert',
   'report_flow',
   'strava_path',
-] as const
+] as const;
 
 /** The authoring primitive a hazard was drawn with (D51). */
-export const HAZARD_GEOMETRY_KINDS = ['point_radius', 'line', 'polygon'] as const
+export const HAZARD_GEOMETRY_KINDS = ['point_radius', 'line', 'polygon'] as const;
 
 /** Latest "healing but unsafe" annotation on a hazard (D52). */
-export const HAZARD_HEALING_STATES = ['none', 'healing_unsafe'] as const
+export const HAZARD_HEALING_STATES = ['none', 'healing_unsafe'] as const;
 
 /**
  * Persistent, non-decaying known features of a water body (D53) — always shown, never re-marked,
@@ -111,18 +111,18 @@ export const BODY_FEATURE_TYPES = [
   'delta',
   'shallow_bay_early_thaw',
   'other',
-] as const
+] as const;
 
 /** Abuse/safety flag targets, reasons, and lifecycle (D32/D37). `hazard` added Phase 9 (D51). */
-export const FLAG_TARGET_TYPES = ['report', 'comment', 'photo', 'user', 'hazard'] as const
+export const FLAG_TARGET_TYPES = ['report', 'comment', 'photo', 'user', 'hazard'] as const;
 export const FLAG_REASONS = [
   'unsafe_false_report',
   'spam',
   'harassment',
   'inappropriate',
   'other',
-] as const
-export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed'] as const
+] as const;
+export const FLAG_STATUSES = ['open', 'reviewing', 'actioned', 'dismissed'] as const;
 
 /** Moderator/admin audit-log actions and their targets (D37). */
 export const MODERATION_ACTIONS = [
@@ -143,7 +143,7 @@ export const MODERATION_ACTIONS = [
   'revoke_role',
   'promote_body_feature', // a recurring hazard graduated to a persistent body feature (D53, Phase 9)
   'demote_body_feature', // reversible: flips `active` off, never hard-deletes (D53)
-] as const
+] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
   'comment',
@@ -153,17 +153,17 @@ export const MODERATION_TARGET_TYPES = [
   'contentFlag',
   'hazard', // Phase 9 (D51): mods can hide a bad pin; admins promote/demote body features
   'bodyFeature',
-] as const
+] as const;
 
 /** In-app support inbox (D37). */
-export const SUPPORT_CATEGORIES = ['bug', 'account', 'safety', 'other'] as const
-export const SUPPORT_STATUSES = ['open', 'in_progress', 'resolved'] as const
+export const SUPPORT_CATEGORIES = ['bug', 'account', 'safety', 'other'] as const;
+export const SUPPORT_STATUSES = ['open', 'in_progress', 'resolved'] as const;
 
 /** Bounty lifecycle (D17). */
-export const BOUNTY_STATUSES = ['open', 'fulfilled', 'expired', 'cancelled'] as const
+export const BOUNTY_STATUSES = ['open', 'fulfilled', 'expired', 'cancelled'] as const;
 
 /** Helpful/unhelpful thumb on a report (D17). */
-export const RATING_VERDICTS = ['helpful', 'unhelpful'] as const
+export const RATING_VERDICTS = ['helpful', 'unhelpful'] as const;
 
 /**
  * Notification types (snake_case) and the matching `notificationPrefs` keys
@@ -184,7 +184,7 @@ export const NOTIFICATION_TYPES = [
   'favorite_report', // a report on a body you favorited (Phase 4, decision #4)
   'nearby_report_digest', // daily 8pm-ET digest of all reports within X₁ (Phase 4)
   'great_report_nearby', // a `great` report within X₂ (Phase 4)
-] as const
+] as const;
 export const NOTIFICATION_PREF_KEYS = [
   'activityDetected',
   'bountyRequest',
@@ -196,7 +196,7 @@ export const NOTIFICATION_PREF_KEYS = [
   'favoriteReport', // mirrors `favorite_report` (Phase 4)
   'nearbyReportDigest', // mirrors `nearby_report_digest` (Phase 4)
   'greatReportNearby', // mirrors `great_report_nearby` (Phase 4)
-] as const
+] as const;
 
 /**
  * Per-key default for a fresh profile (D16). Everything defaults ON *except* the two opt-in Phase-4
@@ -216,20 +216,20 @@ export const NOTIFICATION_PREF_DEFAULTS: Record<(typeof NOTIFICATION_PREF_KEYS)[
     favoriteReport: true,
     nearbyReportDigest: false,
     greatReportNearby: false,
-  }
+  };
 
 /** Put-in marker provenance (Phase 4, decision #7): clustered from reports vs. admin-set. */
-export const PUTIN_SOURCES = ['derived', 'official'] as const
+export const PUTIN_SOURCES = ['derived', 'official'] as const;
 
 /** Put-in marker visibility — a moderator `hide` suppresses a coord regardless of re-clustering. */
-export const PUTIN_STATUSES = ['visible', 'hidden'] as const
+export const PUTIN_STATUSES = ['visible', 'hidden'] as const;
 
 /**
  * Coalescing-queue bucket (Phase 4, decision #4). `digest` = the once-daily 8pm-ET "all within X₁"
  * roll-up; `favorite` / `great` fire after a short per-`(user, body)` debounce. The bucket picks the
  * `flushAfter` when a row is enqueued; one cron drains everything whose `flushAfter` has passed.
  */
-export const NOTIFICATION_QUEUE_KINDS = ['digest', 'favorite', 'great'] as const
+export const NOTIFICATION_QUEUE_KINDS = ['digest', 'favorite', 'great'] as const;
 
 /** Reputation/trust ledger reasons (D17/D50). Boost-only in practice; no public penalties. */
 export const POINT_EVENT_REASONS = [
@@ -239,4 +239,4 @@ export const POINT_EVENT_REASONS = [
   'report_corroborated', // independent same-body report agreed within the window (D50)
   'hazard_confirmed',
   'bounty_fulfilled',
-] as const
+] as const;

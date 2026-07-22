@@ -13,7 +13,7 @@
  * are ever stored — duration is derived (`end − start`).
  */
 
-import type { ReportInput } from './report'
+import type { ReportInput } from './report';
 import type {
   IceType,
   PrecipType,
@@ -21,39 +21,39 @@ import type {
   SkyCondition,
   SurfaceTag,
   ThicknessMethod,
-} from './types'
-import { fToC, inchesToCm, mphToKph } from './units'
+} from './types';
+import { fToC, inchesToCm, mphToKph } from './units';
 
 /** One thickness reading as the form holds it: imperial strings + a single/range mode toggle. */
 export interface ThicknessFormReading {
-  mode: 'single' | 'range'
-  value: string // inches (mode = single)
-  min: string // inches (mode = range)
-  max: string // inches (mode = range)
-  method: ThicknessMethod
+  mode: 'single' | 'range';
+  value: string; // inches (mode = single)
+  min: string; // inches (mode = range)
+  max: string; // inches (mode = range)
+  method: ThicknessMethod;
 }
 
 export interface ReportFormState {
-  skateEndTime: number // epoch ms — when they left the ice (each surface adapts its own picker)
-  skateStartTime?: number // epoch ms — optional; resolved from a start time OR a duration at the UI
-  iceTypes: IceType[]
-  surfaceTags: SurfaceTag[]
-  skateQuality: SkateQuality | ''
-  thickness: ThicknessFormReading[]
-  snowCover: string // inches
+  skateEndTime: number; // epoch ms — when they left the ice (each surface adapts its own picker)
+  skateStartTime?: number; // epoch ms — optional; resolved from a start time OR a duration at the UI
+  iceTypes: IceType[];
+  surfaceTags: SurfaceTag[];
+  skateQuality: SkateQuality | '';
+  thickness: ThicknessFormReading[];
+  snowCover: string; // inches
   conditions: {
-    airTempF: string
-    windMph: string
-    windDir: string
-    sky: SkyCondition | ''
-    precip: PrecipType | ''
-  }
-  notes: string
+    airTempF: string;
+    windMph: string;
+    windDir: string;
+    sky: SkyCondition | '';
+    precip: PrecipType | '';
+  };
+  notes: string;
 }
 
 /** A fresh, empty reading (single measured) for the "add reading" affordance. */
 export function emptyThicknessReading(): ThicknessFormReading {
-  return { mode: 'single', value: '', min: '', max: '', method: 'measured' }
+  return { mode: 'single', value: '', min: '', max: '', method: 'measured' };
 }
 
 /**
@@ -71,31 +71,31 @@ export function emptyReportForm(now: number): ReportFormState {
     snowCover: '',
     conditions: { airTempF: '', windMph: '', windDir: '', sky: '', precip: '' },
     notes: '',
-  }
+  };
 }
 
 /** Parse a numeric input string; `undefined` when blank or not a finite number. */
 function parseNumber(value: string): number | undefined {
-  if (value.trim() === '') return undefined
-  const n = Number(value)
-  return Number.isFinite(n) ? n : undefined
+  if (value.trim() === '') return undefined;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 /** One form reading → the metric `ThicknessReadingInput`, or `null` if it carries no measurement. */
 function toThicknessReading(reading: ThicknessFormReading) {
   if (reading.mode === 'single') {
-    const value = parseNumber(reading.value)
-    if (value === undefined) return null
-    return { valueCm: inchesToCm(value), method: reading.method }
+    const value = parseNumber(reading.value);
+    if (value === undefined) return null;
+    return { valueCm: inchesToCm(value), method: reading.method };
   }
-  const min = parseNumber(reading.min)
-  const max = parseNumber(reading.max)
-  if (min === undefined && max === undefined) return null
+  const min = parseNumber(reading.min);
+  const max = parseNumber(reading.max);
+  if (min === undefined && max === undefined) return null;
   return {
     ...(min !== undefined ? { minCm: inchesToCm(min) } : {}),
     ...(max !== undefined ? { maxCm: inchesToCm(max) } : {}),
     method: reading.method,
-  }
+  };
 }
 
 /**
@@ -109,20 +109,20 @@ export function buildReportInput(
   waterBodyId: string,
   point?: { lat: number; lng: number },
 ): ReportInput {
-  const readings = form.thickness.map(toThicknessReading).filter((r) => r !== null)
-  const snowCoverInches = parseNumber(form.snowCover)
-  const airTempF = parseNumber(form.conditions.airTempF)
-  const windMph = parseNumber(form.conditions.windMph)
-  const windDir = form.conditions.windDir.trim()
+  const readings = form.thickness.map(toThicknessReading).filter((r) => r !== null);
+  const snowCoverInches = parseNumber(form.snowCover);
+  const airTempF = parseNumber(form.conditions.airTempF);
+  const windMph = parseNumber(form.conditions.windMph);
+  const windDir = form.conditions.windDir.trim();
   const conditions = {
     ...(airTempF !== undefined ? { airTempC: fToC(airTempF) } : {}),
     ...(windMph !== undefined ? { windSpeedKph: mphToKph(windMph) } : {}),
     ...(windDir !== '' ? { windDir } : {}),
     ...(form.conditions.sky !== '' ? { sky: form.conditions.sky } : {}),
     ...(form.conditions.precip !== '' ? { precip: form.conditions.precip } : {}),
-  }
-  const hasConditions = Object.keys(conditions).length > 0
-  const notes = form.notes.trim()
+  };
+  const hasConditions = Object.keys(conditions).length > 0;
+  const notes = form.notes.trim();
 
   return {
     waterBodyId,
@@ -136,22 +136,22 @@ export function buildReportInput(
     ...(hasConditions ? { conditions: { ...conditions, source: 'user' as const } } : {}),
     ...(notes !== '' ? { notes } : {}),
     ...(point ? { point } : {}),
-  }
+  };
 }
 
 /** What the skate-window helper is given at the form boundary: a required end, plus *optionally* an
  *  explicit start OR a duration (mutually exclusive in the UI; if both arrive, the explicit start
  *  wins). Times are epoch ms; duration is in minutes. */
 export interface SkateWindowInput {
-  end: number
-  start?: number
-  durationMinutes?: number
+  end: number;
+  start?: number;
+  durationMinutes?: number;
 }
 
 /** The resolved window — only the two timestamps are ever persisted (duration is derived). */
 export type SkateWindowResult =
   | { ok: true; skateEndTime: number; skateStartTime?: number }
-  | { ok: false; error: string }
+  | { ok: false; error: string };
 
 /**
  * Resolve the optional start/duration entry into the two stored timestamps (Phase 5). This is the
@@ -162,28 +162,28 @@ export type SkateWindowResult =
  * both are somehow supplied. With neither, the window is just the end (no start).
  */
 export function resolveSkateWindow(input: SkateWindowInput): SkateWindowResult {
-  const { end, start, durationMinutes } = input
+  const { end, start, durationMinutes } = input;
   if (!Number.isFinite(end) || end <= 0) {
-    return { ok: false, error: 'Enter a valid end time.' }
+    return { ok: false, error: 'Enter a valid end time.' };
   }
 
-  let skateStartTime: number | undefined
+  let skateStartTime: number | undefined;
   if (start !== undefined) {
     if (!Number.isFinite(start) || start <= 0)
-      return { ok: false, error: 'Enter a valid start time.' }
-    skateStartTime = start
+      return { ok: false, error: 'Enter a valid start time.' };
+    skateStartTime = start;
   } else if (durationMinutes !== undefined) {
     if (!Number.isFinite(durationMinutes) || durationMinutes <= 0) {
-      return { ok: false, error: 'Enter a duration greater than zero.' }
+      return { ok: false, error: 'Enter a duration greater than zero.' };
     }
-    skateStartTime = end - durationMinutes * 60_000
-    if (skateStartTime <= 0) return { ok: false, error: 'That duration is longer than possible.' }
+    skateStartTime = end - durationMinutes * 60_000;
+    if (skateStartTime <= 0) return { ok: false, error: 'That duration is longer than possible.' };
   }
 
   if (skateStartTime !== undefined && skateStartTime > end) {
-    return { ok: false, error: 'The start must be before the end.' }
+    return { ok: false, error: 'The start must be before the end.' };
   }
   return skateStartTime !== undefined
     ? { ok: true, skateEndTime: end, skateStartTime }
-    : { ok: true, skateEndTime: end }
+    : { ok: true, skateEndTime: end };
 }

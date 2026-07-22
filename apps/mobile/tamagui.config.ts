@@ -1,7 +1,7 @@
-import type { Theme as DesignTheme } from '@skating/design'
-import { themes as designThemes, radius, space, zIndex } from '@skating/design'
-import { defaultConfig } from '@tamagui/config/v5'
-import { createTamagui } from 'tamagui'
+import type { Theme as DesignTheme } from '@skating/design';
+import { themes as designThemes, radius, space, zIndex } from '@skating/design';
+import { defaultConfig } from '@tamagui/config/v5';
+import { createTamagui } from 'tamagui';
 
 /**
  * Tamagui config for the mobile app. Per D7 we share design *tokens*, not UI:
@@ -34,7 +34,7 @@ function toTamaguiTheme(t: DesignTheme) {
     borderColorHover: t.borderStrong,
     borderColorFocus: t.ring,
     outlineColor: t.ring,
-  }
+  };
 }
 
 export const config = createTamagui({
@@ -56,12 +56,12 @@ export const config = createTamagui({
     radius: { ...defaultConfig.tokens.radius, ...radius },
     zIndex: { ...defaultConfig.tokens.zIndex, ...zIndex },
   },
-})
+});
 
-export type AppTamaguiConfig = typeof config
+export type AppTamaguiConfig = typeof config;
 
 declare module 'tamagui' {
   interface TamaguiCustomConfig extends AppTamaguiConfig {}
 }
 
-export default config
+export default config;

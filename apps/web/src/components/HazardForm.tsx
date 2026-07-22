@@ -1,5 +1,5 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
   draftForType,
   draftPlacementCount,
@@ -14,16 +14,16 @@ import {
   retypeDraft,
   switchDraftKind,
   undoDraftPlacement,
-} from '@skating/core'
-import { useMutation } from 'convex/react'
-import { ConvexError } from 'convex/values'
-import { useEffect, useState } from 'react'
-import { useMapSelection } from './MapSelectionContext'
-import { Button } from './ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog'
-import { Label } from './ui/label'
-import { Textarea } from './ui/textarea'
-import { type PhotoDraftView, usePhotoDrafts } from './usePhotoDrafts'
+} from '@skating/core';
+import { useMutation } from 'convex/react';
+import { ConvexError } from 'convex/values';
+import { useEffect, useState } from 'react';
+import { useMapSelection } from './MapSelectionContext';
+import { Button } from './ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
+import { type PhotoDraftView, usePhotoDrafts } from './usePhotoDrafts';
 
 /**
  * Hazard authoring — the web half of D51.
@@ -63,30 +63,30 @@ export function HazardFormFields({
   onSubmit,
   onCancel,
 }: {
-  type: HazardType | null
-  draft: HazardDraft | null
-  description: string
-  error: string | null
-  submitting: boolean
-  photos: PhotoDraftView[]
-  onChooseType: (type: HazardType) => void
-  onDraftChange: (draft: HazardDraft) => void
-  onRequestPlace: () => void
-  onDescriptionChange: (description: string) => void
-  onAddFiles: (files: FileList) => void
-  onRemovePhoto: (id: string) => void
-  onSubmit: () => void
-  onCancel: () => void
+  type: HazardType | null;
+  draft: HazardDraft | null;
+  description: string;
+  error: string | null;
+  submitting: boolean;
+  photos: PhotoDraftView[];
+  onChooseType: (type: HazardType) => void;
+  onDraftChange: (draft: HazardDraft) => void;
+  onRequestPlace: () => void;
+  onDescriptionChange: (description: string) => void;
+  onAddFiles: (files: FileList) => void;
+  onRemovePhoto: (id: string) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
 }) {
-  const [showAllTypes, setShowAllTypes] = useState(false)
+  const [showAllTypes, setShowAllTypes] = useState(false);
 
-  const isLine = draft?.geometryKind === 'line'
-  const placements = draft ? draftPlacementCount(draft) : 0
-  const postable = draft !== null && draftToShape(draft) !== null
+  const isLine = draft?.geometryKind === 'line';
+  const placements = draft ? draftPlacementCount(draft) : 0;
+  const postable = draft !== null && draftToShape(draft) !== null;
 
   const otherTypes = HAZARD_TYPES.filter(
     (t) => !(HAZARD_TYPE_PRESETS as readonly string[]).includes(t),
-  )
+  );
 
   return (
     <div className="space-y-4">
@@ -238,8 +238,8 @@ export function HazardFormFields({
           multiple
           className="block w-full text-sm"
           onChange={(e) => {
-            if (e.target.files) onAddFiles(e.target.files)
-            e.target.value = '' // allow re-selecting the same file
+            if (e.target.files) onAddFiles(e.target.files);
+            e.target.value = ''; // allow re-selecting the same file
           }}
         />
         <div className="flex flex-col gap-2">
@@ -285,21 +285,21 @@ export function HazardFormFields({
         </Button>
       </div>
     </div>
-  )
+  );
 }
 
 export function HazardForm({
   waterBodyId,
   onClose,
 }: {
-  waterBodyId: string
+  waterBodyId: string;
   /**
    * Close the form. The caller *unmounts* us rather than keeping us mounted-but-closed — which is
    * what makes the unmount cleanup below the only teardown path that needs to exist.
    */
-  onClose: () => void
+  onClose: () => void;
 }) {
-  const createHazard = useMutation(api.hazards.create)
+  const createHazard = useMutation(api.hazards.create);
   const {
     hazardDraft,
     setHazardDraft,
@@ -307,14 +307,14 @@ export function HazardForm({
     setHazardDraftType: setType,
     hazardDropMode,
     setHazardDropMode,
-  } = useMapSelection()
+  } = useMapSelection();
 
-  const [description, setDescription] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
+  const [description, setDescription] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
   // Same pipeline as report photos, so the same hook — it owns the checkpointed upload and the
   // reclaim-on-abandon sweep, which a hazard form abandoned mid-upload needs just as much.
-  const photoDrafts = usePhotoDrafts()
+  const photoDrafts = usePhotoDrafts();
 
   // Leaving the form must never strand the map in crosshair mode or leave a phantom footprint
   // sitting on the lake — the same teardown discipline (and idiom) as the report form's put-in pin.
@@ -323,45 +323,45 @@ export function HazardForm({
   // translucent red hazard drawn over a lake nobody reported a hazard on.
   useEffect(() => {
     return () => {
-      setHazardDropMode(false)
-      setHazardDraft(null)
-      setType(null)
-    }
-  }, [setHazardDropMode, setHazardDraft, setType])
+      setHazardDropMode(false);
+      setHazardDraft(null);
+      setType(null);
+    };
+  }, [setHazardDropMode, setHazardDraft, setType]);
 
   function chooseType(next: HazardType) {
-    setType(next)
+    setType(next);
     // Re-typing keeps whatever has already been placed but adopts the new type's primitive and
     // default size: a drilled hole and a thaw-rotten zone are two orders of magnitude apart, so
     // starting near the truth matters more than starting consistent.
-    const nextDraft = hazardDraft ? retypeDraft(hazardDraft, next) : draftForType(next)
-    setHazardDraft(nextDraft)
+    const nextDraft = hazardDraft ? retypeDraft(hazardDraft, next) : draftForType(next);
+    setHazardDraft(nextDraft);
     // Nothing placed yet ⇒ go straight to the map. A line stays armed across clicks (MapView).
-    if (draftPlacementCount(nextDraft) === 0) setHazardDropMode(true)
+    if (draftPlacementCount(nextDraft) === 0) setHazardDropMode(true);
   }
 
   async function submit() {
-    const shape = hazardDraft ? draftToShape(hazardDraft) : null
+    const shape = hazardDraft ? draftToShape(hazardDraft) : null;
     if (!type) {
-      setError('Pick what kind of hazard this is.')
-      return
+      setError('Pick what kind of hazard this is.');
+      return;
     }
     if (!shape) {
       setError(
         hazardDraft?.geometryKind === 'line'
           ? 'Trace the hazard on the map — a line needs at least two points.'
           : 'Place the hazard on the map.',
-      )
-      return
+      );
+      return;
     }
-    setSubmitting(true)
-    setError(null)
-    photoDrafts.clearError() // a photo that was already removed shouldn't keep failing the form
+    setSubmitting(true);
+    setError(null);
+    photoDrafts.clearError(); // a photo that was already removed shouldn't keep failing the form
     try {
-      const photoIds = await photoDrafts.uploadAll()
+      const photoIds = await photoDrafts.uploadAll();
       // Before the mutation, not after: an unmount *during* it would otherwise sweep and delete the
       // very photo rows the committing hazard is about to reference.
-      photoDrafts.setCommitted(true)
+      photoDrafts.setCommitted(true);
       await createHazard({
         waterBodyId: waterBodyId as Id<'waterBodies'>,
         type,
@@ -371,13 +371,13 @@ export function HazardForm({
         ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
         ...(description.trim() ? { description: description.trim() } : {}),
         ...(photoIds.length > 0 ? { photoIds } : {}),
-      })
-      setType(null)
-      setDescription('')
-      setHazardDraft(null)
-      onClose()
+      });
+      setType(null);
+      setDescription('');
+      setHazardDraft(null);
+      onClose();
     } catch (e) {
-      photoDrafts.setCommitted(false) // creation didn't complete — uploads are reclaimable again
+      photoDrafts.setCommitted(false); // creation didn't complete — uploads are reclaimable again
       // A ConvexError carries the message the mutation *chose* to show a skater; anything else would
       // render the raw `[CONVEX M(hazards:create)] Uncaught …` blob at them.
       setError(
@@ -386,9 +386,9 @@ export function HazardForm({
           : e instanceof Error
             ? e.message
             : 'Could not save that hazard.',
-      )
+      );
     } finally {
-      setSubmitting(false)
+      setSubmitting(false);
     }
   }
 
@@ -418,5 +418,5 @@ export function HazardForm({
         />
       </DialogContent>
     </Dialog>
-  )
+  );
 }

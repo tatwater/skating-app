@@ -1,6 +1,6 @@
-import DateTimePicker from '@react-native-community/datetimepicker'
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
   buildReportInput,
   bundledHazardIds,
@@ -28,37 +28,37 @@ import {
   type ThicknessFormReading,
   toggleBundleOptOut,
   validateReportInput,
-} from '@skating/core'
-import { useMutation, useQuery } from 'convex/react'
-import { ConvexError } from 'convex/values'
-import { randomUUID } from 'expo-crypto'
-import * as Location from 'expo-location'
-import { useRouter } from 'expo-router'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Platform } from 'react-native'
-import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui'
-import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos'
-import { saveDraft } from '../lib/draftStore'
-import { isDraftFlushing } from '../lib/flushService'
-import { HazardBundlePrompt } from './HazardBundlePrompt'
-import { useMapSelectionOptional } from './MapSelectionContext'
-import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline'
+} from '@skating/core';
+import { useMutation, useQuery } from 'convex/react';
+import { ConvexError } from 'convex/values';
+import { randomUUID } from 'expo-crypto';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Platform } from 'react-native';
+import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui';
+import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos';
+import { saveDraft } from '../lib/draftStore';
+import { isDraftFlushing } from '../lib/flushService';
+import { HazardBundlePrompt } from './HazardBundlePrompt';
+import { useMapSelectionOptional } from './MapSelectionContext';
+import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
 
 /** A processed photo awaiting upload — file URIs + EXIF coord + the per-photo `placeOnMap` opt-in. */
 interface PhotoDraft {
-  id: string
-  fullUri: string
-  thumbUri: string
-  coord?: { lat: number; lng: number }
-  placeOnMap: boolean
+  id: string;
+  fullUri: string;
+  thumbUri: string;
+  coord?: { lat: number; lng: number };
+  placeOnMap: boolean;
   /**
    * Storage IDs recorded as each object lands, so a submit retry after a partial-upload failure
    * reuses the already-uploaded object instead of orphaning it and uploading a fresh copy.
    */
-  fullStorageId?: Id<'_storage'>
-  thumbStorageId?: Id<'_storage'>
+  fullStorageId?: Id<'_storage'>;
+  thumbStorageId?: Id<'_storage'>;
   /** Set once the photo row exists, so a retry doesn't re-create it (and re-attach it twice). */
-  uploadedId?: Id<'photos'>
+  uploadedId?: Id<'photos'>;
 }
 
 // --- Selectable pill toggles (the native analog of web's ToggleGroup) ---
@@ -68,9 +68,9 @@ function ChipToggle({
   label,
   onPress,
 }: {
-  selected: boolean
-  label: string
-  onPress: () => void
+  selected: boolean;
+  label: string;
+  onPress: () => void;
 }) {
   return (
     <XStack
@@ -87,7 +87,7 @@ function ChipToggle({
         {label}
       </Text>
     </XStack>
-  )
+  );
 }
 
 function MultiToggle<T extends string>({
@@ -96,15 +96,15 @@ function MultiToggle<T extends string>({
   label,
   onChange,
 }: {
-  values: T[]
-  options: readonly T[]
-  label: (v: T) => string
-  onChange: (next: T[]) => void
+  values: T[];
+  options: readonly T[];
+  label: (v: T) => string;
+  onChange: (next: T[]) => void;
 }) {
   return (
     <XStack gap="$2" flexWrap="wrap">
       {options.map((option) => {
-        const selected = values.includes(option)
+        const selected = values.includes(option);
         return (
           <ChipToggle
             key={option}
@@ -114,10 +114,10 @@ function MultiToggle<T extends string>({
               onChange(selected ? values.filter((v) => v !== option) : [...values, option])
             }
           />
-        )
+        );
       })}
     </XStack>
-  )
+  );
 }
 
 function SingleToggle<T extends string>({
@@ -127,30 +127,30 @@ function SingleToggle<T extends string>({
   onChange,
   allowEmpty = true,
 }: {
-  value: T | ''
-  options: readonly T[]
-  label: (v: T) => string
-  onChange: (next: T | '') => void
-  allowEmpty?: boolean
+  value: T | '';
+  options: readonly T[];
+  label: (v: T) => string;
+  onChange: (next: T | '') => void;
+  allowEmpty?: boolean;
 }) {
   return (
     <XStack gap="$2" flexWrap="wrap">
       {options.map((option) => {
-        const selected = value === option
+        const selected = value === option;
         return (
           <ChipToggle
             key={option}
             selected={selected}
             label={label(option)}
             onPress={() => {
-              if (selected && !allowEmpty) return // required single-selects never clear
-              onChange(selected ? '' : option)
+              if (selected && !allowEmpty) return; // required single-selects never clear
+              onChange(selected ? '' : option);
             }}
           />
-        )
+        );
       })}
     </XStack>
-  )
+  );
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -161,10 +161,10 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       </Text>
       {children}
     </YStack>
-  )
+  );
 }
 
-const numberInputProps = { keyboardType: 'decimal-pad', inputMode: 'decimal' } as const
+const numberInputProps = { keyboardType: 'decimal-pad', inputMode: 'decimal' } as const;
 
 /**
  * Skate-time picker (D9 — editable to the past for a report you're posting later). iOS shows the
@@ -172,8 +172,8 @@ const numberInputProps = { keyboardType: 'decimal-pad', inputMode: 'decimal' } a
  * combined datetime mode).
  */
 function SkateTimeField({ value, onChange }: { value: number; onChange: (ms: number) => void }) {
-  const [mode, setMode] = useState<'date' | 'time' | null>(null)
-  const open = () => setMode(Platform.OS === 'ios' ? 'date' : 'date')
+  const [mode, setMode] = useState<'date' | 'time' | null>(null);
+  const open = () => setMode(Platform.OS === 'ios' ? 'date' : 'date');
   return (
     <Field label="When did you get off the ice?">
       <XStack gap="$2" alignItems="center">
@@ -192,20 +192,20 @@ function SkateTimeField({ value, onChange }: { value: number; onChange: (ms: num
           onChange={(event, date) => {
             // Android fires once per stage; iOS fires continuously in datetime mode.
             if (event.type === 'dismissed' || !date) {
-              setMode(null)
-              return
+              setMode(null);
+              return;
             }
-            onChange(date.getTime())
-            if (Platform.OS === 'ios') return // stays open until the user taps away
-            setMode(mode === 'date' ? 'time' : null)
+            onChange(date.getTime());
+            if (Platform.OS === 'ios') return; // stays open until the user taps away
+            setMode(mode === 'date' ? 'time' : null);
           }}
         />
       ) : null}
     </Field>
-  )
+  );
 }
 
-type StartMode = 'none' | 'start' | 'duration'
+type StartMode = 'none' | 'start' | 'duration';
 
 /**
  * Optional "when did you get on the ice?" input (Phase 5), the mobile mirror of web's
@@ -219,46 +219,46 @@ function StartWindowField({
   skateStartTime,
   onResolve,
 }: {
-  end: number
-  skateStartTime?: number
-  onResolve: (skateStartTime: number | undefined) => void
+  end: number;
+  skateStartTime?: number;
+  onResolve: (skateStartTime: number | undefined) => void;
 }) {
-  const [mode, setMode] = useState<StartMode>('none')
-  const [startMs, setStartMs] = useState<number | null>(null)
-  const [durationStr, setDurationStr] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [pickerOpen, setPickerOpen] = useState<'date' | 'time' | null>(null)
+  const [mode, setMode] = useState<StartMode>('none');
+  const [startMs, setStartMs] = useState<number | null>(null);
+  const [durationStr, setDurationStr] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [pickerOpen, setPickerOpen] = useState<'date' | 'time' | null>(null);
 
-  const onResolveRef = useRef(onResolve)
-  onResolveRef.current = onResolve
+  const onResolveRef = useRef(onResolve);
+  onResolveRef.current = onResolve;
 
   useEffect(() => {
     if (mode === 'none') {
-      setError(null)
-      onResolveRef.current(undefined)
-      return
+      setError(null);
+      onResolveRef.current(undefined);
+      return;
     }
     if ((mode === 'start' && startMs === null) || (mode === 'duration' && durationStr === '')) {
-      setError(null)
-      onResolveRef.current(undefined)
-      return
+      setError(null);
+      onResolveRef.current(undefined);
+      return;
     }
     const input =
       mode === 'start'
         ? { end, start: startMs ?? undefined }
-        : { end, durationMinutes: Number(durationStr) }
-    const result = resolveSkateWindow(input)
+        : { end, durationMinutes: Number(durationStr) };
+    const result = resolveSkateWindow(input);
     if (result.ok) {
-      setError(null)
-      onResolveRef.current(result.skateStartTime)
+      setError(null);
+      onResolveRef.current(result.skateStartTime);
     } else {
-      setError(result.error)
-      onResolveRef.current(undefined)
+      setError(result.error);
+      onResolveRef.current(undefined);
     }
-  }, [end, mode, startMs, durationStr])
+  }, [end, mode, startMs, durationStr]);
 
   const duration =
-    skateStartTime !== undefined ? Math.round((end - skateStartTime) / 60_000) : undefined
+    skateStartTime !== undefined ? Math.round((end - skateStartTime) / 60_000) : undefined;
 
   return (
     <Field label="When did you get on? (optional)">
@@ -283,12 +283,12 @@ function StartWindowField({
               maximumDate={new Date(end)}
               onChange={(event, date) => {
                 if (event.type === 'dismissed' || !date) {
-                  setPickerOpen(null)
-                  return
+                  setPickerOpen(null);
+                  return;
                 }
-                setStartMs(date.getTime())
-                if (Platform.OS === 'ios') return
-                setPickerOpen(pickerOpen === 'date' ? 'time' : null)
+                setStartMs(date.getTime());
+                if (Platform.OS === 'ios') return;
+                setPickerOpen(pickerOpen === 'date' ? 'time' : null);
               }}
             />
           ) : null}
@@ -308,7 +308,7 @@ function StartWindowField({
         <Text color="$foregroundMuted">Skated about {duration} min.</Text>
       ) : null}
     </Field>
-  )
+  );
 }
 
 /**
@@ -329,47 +329,47 @@ export function ReportForm({
   onSaved,
 }: {
   /** Absent for a coord-only offline capture — the lake is resolved from `coord` at flush. */
-  waterBodyId?: Id<'waterBodies'>
-  bodyName?: string
+  waterBodyId?: Id<'waterBodies'>;
+  bodyName?: string;
   /** Device GPS at capture — carried on a coord-only draft so the flush can resolve the lake. */
-  coord?: { lat: number; lng: number }
+  coord?: { lat: number; lng: number };
   /** An existing draft to hydrate + update (offline edit); absent = a fresh report/draft. */
-  draft?: ReportDraft
-  onClose: () => void
+  draft?: ReportDraft;
+  onClose: () => void;
   /** Called after saving a draft (defaults to `onClose`). */
-  onSaved?: () => void
+  onSaved?: () => void;
 }) {
-  const router = useRouter()
-  const profile = useQuery(api.profiles.current, {})
-  const generateUploadUrl = useMutation(api.photos.generateUploadUrl)
-  const createPhoto = useMutation(api.photos.create)
-  const deletePhoto = useMutation(api.photos.remove)
-  const removeBlob = useMutation(api.photos.removeBlob)
-  const createReport = useMutation(api.reports.create)
+  const router = useRouter();
+  const profile = useQuery(api.profiles.current, {});
+  const generateUploadUrl = useMutation(api.photos.generateUploadUrl);
+  const createPhoto = useMutation(api.photos.create);
+  const deletePhoto = useMutation(api.photos.remove);
+  const removeBlob = useMutation(api.photos.removeBlob);
+  const createReport = useMutation(api.reports.create);
   // On the map (online, from a lake's detail drawer) the put-in is dropped by tapping the live map;
   // off the map (the offline capture/edit routes, outside the `(map)` layout) there's no map, so the
   // put-in falls back to local state + a "use my current location" button.
-  const mapSelection = useMapSelectionOptional()
+  const mapSelection = useMapSelectionOptional();
   const [localPutIn, setLocalPutIn] = useState<{ lat: number; lng: number } | null>(
     draft?.putInPin ?? null,
-  )
+  );
   // Off-map, there's no pin-drop mode — but the no-op MUST be stable (a fresh `() => {}` each render
   // would change the clear-effect's deps every render, re-running its cleanup and wiping the pin).
   // D55: the author's own on-ice hazards for this lake and skate window, pre-checked to bundle into
   // this report. Stored as the *opt-outs* so a hazard that syncs in after the form opened is still
   // included by default — see `bundledHazardIds`.
-  const [bundleCandidateIds, setBundleCandidateIds] = useState<string[]>([])
-  const [unbundledHazardIds, setUnbundledHazardIds] = useState<string[]>([])
-  const bundleHazardIds = bundledHazardIds(bundleCandidateIds, unbundledHazardIds)
+  const [bundleCandidateIds, setBundleCandidateIds] = useState<string[]>([]);
+  const [unbundledHazardIds, setUnbundledHazardIds] = useState<string[]>([]);
+  const bundleHazardIds = bundledHazardIds(bundleCandidateIds, unbundledHazardIds);
 
-  const noopPinDrop = useCallback(() => {}, [])
-  const putInPin = mapSelection ? mapSelection.putInPin : localPutIn
-  const setPutInPin = mapSelection ? mapSelection.setPutInPin : setLocalPutIn
-  const setPinDropMode = mapSelection ? mapSelection.setPinDropMode : noopPinDrop
-  const hasMap = mapSelection !== null
+  const noopPinDrop = useCallback(() => {}, []);
+  const putInPin = mapSelection ? mapSelection.putInPin : localPutIn;
+  const setPutInPin = mapSelection ? mapSelection.setPutInPin : setLocalPutIn;
+  const setPinDropMode = mapSelection ? mapSelection.setPinDropMode : noopPinDrop;
+  const hasMap = mapSelection !== null;
 
   // Hydrate from a draft when editing; else start empty once the profile loads (below).
-  const [form, setForm] = useState<ReportFormState | null>(draft ? draft.form : null)
+  const [form, setForm] = useState<ReportFormState | null>(draft ? draft.form : null);
   const [photos, setPhotos] = useState<PhotoDraft[]>(
     draft
       ? draft.photos.map((p) => ({
@@ -387,21 +387,21 @@ export function ReportForm({
           uploadedId: p.photoId as Id<'photos'> | undefined,
         }))
       : [],
-  )
-  const [showConditions, setShowConditions] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [savingDraft, setSavingDraft] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  );
+  const [showConditions, setShowConditions] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Minors are read-only — all reports are public (D13), so under-18 users can't post (D41).
-  const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false
+  const minor = profile ? isMinor(profile.dateOfBirth, Date.now()) : false;
 
   // Initialize a fresh form once the profile is known (a hydrated draft already set it above).
   useEffect(() => {
     if (profile !== undefined && !minor && form === null) {
-      setForm(emptyReportForm(Date.now()))
+      setForm(emptyReportForm(Date.now()));
     }
-  }, [profile, form, minor])
+  }, [profile, form, minor]);
 
   // Reclaim whatever a draft has already uploaded so nothing is stranded server-side: a created row
   // (deletes the row + both blobs) or, for a partial/interrupted upload, the bare blobs that never
@@ -410,86 +410,86 @@ export function ReportForm({
   const reclaim = useCallback(
     (p: PhotoDraft) => {
       if (p.uploadedId) {
-        void deletePhoto({ photoId: p.uploadedId }).catch(() => {})
-        return
+        void deletePhoto({ photoId: p.uploadedId }).catch(() => {});
+        return;
       }
-      if (p.fullStorageId) void removeBlob({ storageId: p.fullStorageId }).catch(() => {})
-      if (p.thumbStorageId) void removeBlob({ storageId: p.thumbStorageId }).catch(() => {})
+      if (p.fullStorageId) void removeBlob({ storageId: p.fullStorageId }).catch(() => {});
+      if (p.thumbStorageId) void removeBlob({ storageId: p.thumbStorageId }).catch(() => {});
     },
     [deletePhoto, removeBlob],
-  )
+  );
 
   // Reclaim any photos uploaded for a report that never got created — a failed `reports.create` or an
   // abandoned form would otherwise strand blobs (+ a row). `submittedRef` skips a successful submit,
   // whose photos are now attached. Read via a ref so this stays an unmount-only sweep.
-  const photosRef = useRef<PhotoDraft[]>([])
-  photosRef.current = photos
-  const submittedRef = useRef(false)
+  const photosRef = useRef<PhotoDraft[]>([]);
+  photosRef.current = photos;
+  const submittedRef = useRef(false);
   // Flipped at teardown so an upload / row-create that resolves *after* the sweep (see `handleSubmit`)
   // reclaims itself — the sweep only sees what's already recorded, not what's still in flight.
-  const disposedRef = useRef(false)
+  const disposedRef = useRef(false);
   useEffect(() => {
     return () => {
-      disposedRef.current = true
-      if (submittedRef.current) return
-      for (const p of photosRef.current) reclaim(p)
-    }
-  }, [reclaim])
+      disposedRef.current = true;
+      if (submittedRef.current) return;
+      for (const p of photosRef.current) reclaim(p);
+    };
+  }, [reclaim]);
 
   // Clear the map put-in-pin state when the form goes away — including an unmount mid-pin-drop, which
   // would otherwise strand the map in peek mode.
   useEffect(() => {
     return () => {
-      setPutInPin(null)
-      setPinDropMode(false)
-    }
-  }, [setPutInPin, setPinDropMode])
+      setPutInPin(null);
+      setPinDropMode(false);
+    };
+  }, [setPutInPin, setPinDropMode]);
 
   // Reclaim an already-uploaded photo's blobs (+ row) when the user removes it (a prior failed submit
   // may have uploaded it); dropping it from state alone would strand it — it's no longer swept.
   const removePhoto = useCallback(
     (id: string) => {
       setPhotos((prev) => {
-        const removed = prev.find((p) => p.id === id)
+        const removed = prev.find((p) => p.id === id);
         if (removed) {
-          reclaim(removed)
+          reclaim(removed);
           // If this photo was already persisted to disk for a saved draft, delete its files too —
           // otherwise removing it while editing a draft would orphan them (they're no longer in the
           // draft, so a later draft-delete cleanup wouldn't catch them either).
-          const files = [removed.fullUri, removed.thumbUri].filter(isPersistedUri)
-          if (files.length > 0) deleteDraftPhotoFiles(files)
+          const files = [removed.fullUri, removed.thumbUri].filter(isPersistedUri);
+          if (files.length > 0) deleteDraftPhotoFiles(files);
         }
-        return prev.filter((p) => p.id !== id)
-      })
+        return prev.filter((p) => p.id !== id);
+      });
     },
     [reclaim],
-  )
+  );
 
   const onAddPhotos = useCallback(async () => {
-    setError(null)
+    setError(null);
     try {
-      const assets = await pickPhotos()
-      if (assets.length === 0) return
+      const assets = await pickPhotos();
+      if (assets.length === 0) return;
       const drafts = await Promise.all(
         assets.map(async (asset) => {
-          const processed = await processPhoto(asset)
+          const processed = await processPhoto(asset);
           return {
             id: randomUUID(),
             fullUri: processed.fullUri,
             thumbUri: processed.thumbUri,
             coord: processed.coord,
             placeOnMap: false,
-          } satisfies PhotoDraft
+          } satisfies PhotoDraft;
         }),
-      )
-      setPhotos((prev) => [...prev, ...drafts])
+      );
+      setPhotos((prev) => [...prev, ...drafts]);
     } catch {
-      setError("Couldn't add those photos — check photo permission and try again.")
+      setError("Couldn't add those photos — check photo permission and try again.");
     }
-  }, [])
+  }, []);
 
   const patch = (partial: Partial<ReportFormState>) =>
-    setForm((prev) => (prev ? { ...prev, ...partial } : prev))
+    setForm((prev) => (prev ? { ...prev, ...partial } : prev));
 
   // Under-18 accounts are read-only — all reports are public, so minors can't post (D41).
   if (minor)
@@ -498,32 +498,32 @@ export function ReportForm({
         Reports are shared publicly with the community, so posting opens when you turn 18. You can
         keep reading reports in the meantime.
       </Text>
-    )
-  if (form === null) return <Spinner color="$primary" />
+    );
+  if (form === null) return <Spinner color="$primary" />;
 
   const updateReading = (index: number, partial: Partial<ThicknessFormReading>) =>
-    patch({ thickness: form.thickness.map((r, i) => (i === index ? { ...r, ...partial } : r)) })
+    patch({ thickness: form.thickness.map((r, i) => (i === index ? { ...r, ...partial } : r)) });
   const removeReading = (index: number) =>
-    patch({ thickness: form.thickness.filter((_, i) => i !== index) })
-  const addReading = () => patch({ thickness: [...form.thickness, emptyThicknessReading()] })
+    patch({ thickness: form.thickness.filter((_, i) => i !== index) });
+  const addReading = () => patch({ thickness: [...form.thickness, emptyThicknessReading()] });
 
   async function handleSubmit() {
     // Online post requires a resolved lake — the button is disabled without one (a coord-only
     // capture can only be saved as a draft, whose lake resolves at flush).
-    if (!form || waterBodyId === undefined) return
-    setError(null)
-    const input = buildReportInput(form, waterBodyId, putInPin ?? undefined)
-    const result = validateReportInput(input, { now: Date.now() })
+    if (!form || waterBodyId === undefined) return;
+    setError(null);
+    const input = buildReportInput(form, waterBodyId, putInPin ?? undefined);
+    const result = validateReportInput(input, { now: Date.now() });
     if (!result.ok) {
-      setError(result.errors.map((e) => `${e.field}: ${e.message}`).join('; '))
-      return
+      setError(result.errors.map((e) => `${e.field}: ${e.message}`).join('; '));
+      return;
     }
 
-    setSubmitting(true)
+    setSubmitting(true);
     try {
       const photoIds = await Promise.all(
         photos.map(async (photo) => {
-          if (photo.uploadedId) return photo.uploadedId
+          if (photo.uploadedId) return photo.uploadedId;
           // Upload the full + thumb independently, each recording its storage id the instant it lands
           // (not after both settle). So a partial failure keeps the object that DID upload — a retry
           // reuses it instead of orphaning a duplicate, and the cleanup sweep can reclaim it.
@@ -537,42 +537,44 @@ export function ReportForm({
               : generateUploadUrl()
                   .then((url) => uploadToStorage(url, uri))
                   .then((sid) => {
-                    const id = sid as Id<'_storage'>
+                    const id = sid as Id<'_storage'>;
                     // If the form was torn down while this was in flight (and we're not mid-successful-
                     // submit), no draft remains to record or sweep it — reclaim the blob here instead.
                     if (disposedRef.current && !submittedRef.current) {
-                      void removeBlob({ storageId: id }).catch(() => {})
+                      void removeBlob({ storageId: id }).catch(() => {});
                     } else {
                       setPhotos((prev) =>
                         prev.map((p) => (p.id === photo.id ? { ...p, [key]: id } : p)),
-                      )
+                      );
                     }
-                    return id
-                  })
+                    return id;
+                  });
           const [storageId, thumbStorageId] = await Promise.all([
             ensure(photo.fullStorageId, photo.fullUri, 'fullStorageId'),
             ensure(photo.thumbStorageId, photo.thumbUri, 'thumbStorageId'),
-          ])
+          ]);
           const id = await createPhoto({
             storageId,
             thumbStorageId,
             placeOnMap: photo.placeOnMap,
             coord: photoUploadCoord(photo.placeOnMap, photo.coord),
-          })
+          });
           // Same teardown race one level up: the row was created after the form unmounted, so nothing
           // will attach it to a report — reclaim the row (+ its blobs) rather than strand it.
           if (disposedRef.current && !submittedRef.current) {
-            void deletePhoto({ photoId: id }).catch(() => {})
+            void deletePhoto({ photoId: id }).catch(() => {});
           } else {
-            setPhotos((prev) => prev.map((p) => (p.id === photo.id ? { ...p, uploadedId: id } : p)))
+            setPhotos((prev) =>
+              prev.map((p) => (p.id === photo.id ? { ...p, uploadedId: id } : p)),
+            );
           }
-          return id
+          return id;
         }),
-      )
+      );
       // Flip the guard BEFORE createReport, not after: an unmount *during* the mutation would
       // otherwise sweep (submittedRef still false) and delete the very photo rows the committing
       // report is about to reference — leaving it with permanently missing images.
-      submittedRef.current = true
+      submittedRef.current = true;
       const reportId = await createReport({
         ...input,
         waterBodyId,
@@ -580,21 +582,21 @@ export function ReportForm({
         ...(bundleHazardIds.length > 0
           ? { attachHazardIds: bundleHazardIds as Id<'hazards'>[] }
           : {}),
-      })
-      setPutInPin(null)
-      setPinDropMode(false)
-      onClose()
-      router.navigate({ pathname: '/report/[id]', params: { id: reportId } })
+      });
+      setPutInPin(null);
+      setPinDropMode(false);
+      onClose();
+      router.navigate({ pathname: '/report/[id]', params: { id: reportId } });
     } catch (err) {
-      submittedRef.current = false // creation didn't complete — these uploads are reclaimable again
+      submittedRef.current = false; // creation didn't complete — these uploads are reclaimable again
       setError(
         err instanceof ConvexError
           ? String(err.data)
           : err instanceof Error
             ? err.message
             : 'Could not post your report',
-      )
-      setSubmitting(false)
+      );
+      setSubmitting(false);
     }
   }
 
@@ -602,20 +604,20 @@ export function ReportForm({
   // picker cache into the persistent drafts dir, then upsert the draft (it flushes on reconnect).
   // Editing an existing draft reuses its id + idempotencyKey so a later retry stays deduped.
   async function handleSaveDraft() {
-    if (!form) return
+    if (!form) return;
     // Refuse to save over a draft that's mid-flush — the flush's checkpoint writes + delete would
     // clobber this edit and idempotency would re-serve the pre-edit report, losing the change
     // silently. Checked synchronously right before the sync `saveDraft` so a flush can't claim the
     // id in between (see `flushService` `flushingIds`).
     if (isDraftFlushing(draft?.id)) {
-      setError('This draft is syncing right now — try saving again in a moment.')
-      return
+      setError('This draft is syncing right now — try saving again in a moment.');
+      return;
     }
-    setError(null)
-    setSavingDraft(true)
+    setError(null);
+    setSavingDraft(true);
     try {
-      const id = draft?.id ?? randomUUID()
-      const idempotencyKey = draft?.idempotencyKey ?? randomUUID()
+      const id = draft?.id ?? randomUUID();
+      const idempotencyKey = draft?.idempotencyKey ?? randomUUID();
       const draftPhotos: DraftPhoto[] = await Promise.all(
         photos.map(async (p) => ({
           id: p.id,
@@ -633,14 +635,14 @@ export function ReportForm({
           thumbStorageId: p.thumbStorageId,
           photoId: p.uploadedId,
         })),
-      )
+      );
       // Re-check right before the synchronous write: a flush could have claimed this id during the
       // photo-persist await above. No `await` between here and `saveDraft`, so a flush can't slip in
       // between the check and the write.
       if (isDraftFlushing(draft?.id)) {
-        setError('This draft is syncing right now — try saving again in a moment.')
-        setSavingDraft(false)
-        return
+        setError('This draft is syncing right now — try saving again in a moment.');
+        setSavingDraft(false);
+        return;
       }
       saveDraft(
         createDraft({
@@ -654,30 +656,30 @@ export function ReportForm({
           putInPin: putInPin ?? undefined,
           photos: draftPhotos,
         }),
-      )
+      );
       // These photos now belong to the saved draft — skip the unmount reclaim sweep. (They carry no
       // server objects yet anyway; the flush uploads them.)
-      submittedRef.current = true
-      ;(onSaved ?? onClose)()
+      submittedRef.current = true;
+      (onSaved ?? onClose)();
     } catch {
-      setError("Couldn't save this draft. Please try again.")
-      setSavingDraft(false)
+      setError("Couldn't save this draft. Please try again.");
+      setSavingDraft(false);
     }
   }
 
   // Offline there's no live map to tap, so set the put-in to the device's current location (D42/S1).
   async function useCurrentLocationAsPutIn() {
-    setError(null)
+    setError(null);
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync()
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setError('Location permission is needed to set the access point.')
-        return
+        setError('Location permission is needed to set the access point.');
+        return;
       }
-      const pos = await Location.getCurrentPositionAsync({})
-      setPutInPin({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+      const pos = await Location.getCurrentPositionAsync({});
+      setPutInPin({ lat: pos.coords.latitude, lng: pos.coords.longitude });
     } catch {
-      setError("Couldn't get your current location.")
+      setError("Couldn't get your current location.");
     }
   }
 
@@ -954,5 +956,5 @@ export function ReportForm({
         </Button>
       </XStack>
     </YStack>
-  )
+  );
 }

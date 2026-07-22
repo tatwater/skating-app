@@ -1,5 +1,5 @@
-import { ThemeProvider as NextThemeProvider } from 'next-themes'
-import type { ReactNode } from 'react'
+import { ThemeProvider as NextThemeProvider } from 'next-themes';
+import type { ReactNode } from 'react';
 
 /**
  * Two first-class themes (D34): high-contrast bright-outdoor (light) + evening (dark),
@@ -16,5 +16,5 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     >
       {children}
     </NextThemeProvider>
-  )
+  );
 }

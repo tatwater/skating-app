@@ -1,5 +1,5 @@
-import * as Sentry from '@sentry/tanstackstart-react'
-import { env, isConfigured } from './lib/env'
+import * as Sentry from '@sentry/tanstackstart-react';
+import { env, isConfigured } from './lib/env';
 
 /**
  * Server-side Sentry init (D29), imported as the very first statement of the server entry
@@ -19,5 +19,5 @@ if (isConfigured.sentry) {
     dsn: env.sentryDsn,
     tracesSampleRate: 1.0,
     sendDefaultPii: false,
-  })
+  });
 }

@@ -24,8 +24,8 @@ export function bundledHazardIds(
   candidateIds: readonly string[],
   optedOutIds: readonly string[],
 ): string[] {
-  const optedOut = new Set(optedOutIds)
-  return candidateIds.filter((id) => !optedOut.has(id))
+  const optedOut = new Set(optedOutIds);
+  return candidateIds.filter((id) => !optedOut.has(id));
 }
 
 /** Toggle one candidate's opt-out state. `checked` is the *desired* state of the checkbox. */
@@ -34,7 +34,7 @@ export function toggleBundleOptOut(
   hazardId: string,
   checked: boolean,
 ): string[] {
-  if (checked) return optedOutIds.filter((id) => id !== hazardId)
+  if (checked) return optedOutIds.filter((id) => id !== hazardId);
   // Deselecting is idempotent — a double-fire from a jittery tap must not add the id twice.
-  return optedOutIds.includes(hazardId) ? [...optedOutIds] : [...optedOutIds, hazardId]
+  return optedOutIds.includes(hazardId) ? [...optedOutIds] : [...optedOutIds, hazardId];
 }

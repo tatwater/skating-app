@@ -1,9 +1,9 @@
-import { buildFeedCardView, type FeedCardData } from '@skating/core'
-import { BlockedChip } from './SafetyControls'
-import { Badge } from './ui/badge'
+import { buildFeedCardView, type FeedCardData } from '@skating/core';
+import { BlockedChip } from './SafetyControls';
+import { Badge } from './ui/badge';
 
 /** Max chips shown on a card before we stop (the drawer shows the full breakdown). */
-const MAX_CHIPS = 4
+const MAX_CHIPS = 4;
 
 /**
  * A single newsfeed card (Phase 5) — body name + point-derived location, skate-end relative time,
@@ -17,12 +17,12 @@ export function FeedCard({
   now,
   onOpen,
 }: {
-  data: FeedCardData
-  now: number
-  onOpen: () => void
+  data: FeedCardData;
+  now: number;
+  onOpen: () => void;
 }) {
-  const card = buildFeedCardView(data, now)
-  const chips = card.chips.slice(0, MAX_CHIPS)
+  const card = buildFeedCardView(data, now);
+  const chips = card.chips.slice(0, MAX_CHIPS);
 
   return (
     <button
@@ -85,5 +85,5 @@ export function FeedCard({
         </div>
       ) : null}
     </button>
-  )
+  );
 }

@@ -22,13 +22,13 @@
  * ice*, *ice edge*, *rotten candled ice*, *loose-plate ridge*.
  */
 
-import type { HazardFreshness } from './hazardDecay'
-import type { HazardVerdict } from './hazardLifecycle'
-import { HAZARD_TYPE_LABELS, type HazardType, isPassageMarker } from './types'
+import type { HazardFreshness } from './hazardDecay';
+import type { HazardVerdict } from './hazardLifecycle';
+import { HAZARD_TYPE_LABELS, type HazardType, isPassageMarker } from './types';
 
 /** The human label for a hazard type — "Open water / lead", not `open_water`. */
 export function hazardTypeLabel(type: HazardType): string {
-  return HAZARD_TYPE_LABELS[type]
+  return HAZARD_TYPE_LABELS[type];
 }
 
 /**
@@ -38,11 +38,11 @@ export function hazardTypeLabel(type: HazardType): string {
 export function freshnessLabel(freshness: HazardFreshness): string {
   switch (freshness) {
     case 'fresh':
-      return 'Recently reported'
+      return 'Recently reported';
     case 'aging':
-      return 'Not confirmed recently'
+      return 'Not confirmed recently';
     case 'stale':
-      return 'Old report — unverified'
+      return 'Old report — unverified';
   }
 }
 
@@ -56,32 +56,32 @@ export function freshnessLabel(freshness: HazardFreshness): string {
 export function stalenessCaveat(type: HazardType): string {
   switch (type) {
     case 'open_water':
-      return 'May have skinned over since — a refrozen lead is thin ice.'
+      return 'May have skinned over since — a refrozen lead is thin ice.';
     case 'thin_ice':
-      return 'May have thickened or reopened since — thin new ice can weaken in under an hour.'
+      return 'May have thickened or reopened since — thin new ice can weaken in under an hour.';
     case 'overflow_slush':
-      return 'May have frozen into gray ice since, or may still be slush under a skin.'
+      return 'May have frozen into gray ice since, or may still be slush under a skin.';
     case 'drain_hole':
     case 'wind_hole':
     case 'slush_hole':
-      return 'May have refrozen since — refrozen holes stay weaker than the ice around them.'
+      return 'May have refrozen since — refrozen holes stay weaker than the ice around them.';
     case 'thawed_rotten':
-      return 'Cold since then does not fix this. A thawed sheet grows a hard skin overnight and gives way as it warms.'
+      return 'Cold since then does not fix this. A thawed sheet grows a hard skin overnight and gives way as it warms.';
     case 'ridge_crossing':
-      return 'Crossings change hour to hour — this may no longer be passable.'
+      return 'Crossings change hour to hour — this may no longer be passable.';
     case 'wet_crack':
-      return 'Working cracks reopen and close daily; may be wider or refrozen.'
+      return 'Working cracks reopen and close daily; may be wider or refrozen.';
     case 'drilled_hole':
-      return 'Likely re-skinned, but a drilled hole stays a weak spot for days.'
+      return 'Likely re-skinned, but a drilled hole stays a weak spot for days.';
     case 'shell_area':
-      return 'Shell ice is hard to see and lingers days after the thaw that made it.'
+      return 'Shell ice is hard to see and lingers days after the thaw that made it.';
     case 'pressure_ridge':
     case 'ice_heave':
-      return 'Ridges do not heal within a season. A warm spell can open one into water; a cold one leaves refrozen blocks ("ice sharks").'
+      return 'Ridges do not heal within a season. A warm spell can open one into water; a cold one leaves refrozen blocks ("ice sharks").';
     case 'spring_current':
     case 'gas_hole':
     case 'reef_hole':
-      return 'This is a permanent feature — weak every season regardless of how cold it has been.'
+      return 'This is a permanent feature — weak every season regardless of how cold it has been.';
   }
 }
 
@@ -90,20 +90,20 @@ export function verdictLabel(verdict: HazardVerdict, type: HazardType): string {
   if (isPassageMarker(type)) {
     switch (verdict) {
       case 'still_there':
-        return 'Still crossable'
+        return 'Still crossable';
       case 'healing_unsafe':
-        return 'Crossing looks dicey now'
+        return 'Crossing looks dicey now';
       case 'fully_healed':
-        return 'Ridge closed / healed'
+        return 'Ridge closed / healed';
     }
   }
   switch (verdict) {
     case 'still_there':
-      return 'Still here'
+      return 'Still here';
     case 'healing_unsafe':
-      return 'Healing — still unsafe'
+      return 'Healing — still unsafe';
     case 'fully_healed':
-      return 'Fully healed & safe'
+      return 'Fully healed & safe';
   }
 }
 
@@ -123,34 +123,34 @@ export function verdictHelp(verdict: HazardVerdict, type: HazardType): string {
   if (isPassageMarker(type)) {
     switch (verdict) {
       case 'still_there':
-        return 'You got across here. Ridges change hour to hour — check it yourself before you rely on it.'
+        return 'You got across here. Ridges change hour to hour — check it yourself before you rely on it.';
       case 'healing_unsafe':
-        return 'The crossing has gotten worse. The marker stays up, now flagged as dicey.'
+        return 'The crossing has gotten worse. The marker stays up, now flagged as dicey.';
       case 'fully_healed':
-        return 'The ridge has closed here — this is no longer a way across. Two of these retire the marker.'
+        return 'The ridge has closed here — this is no longer a way across. Two of these retire the marker.';
     }
   }
   switch (verdict) {
     case 'still_there':
-      return 'You can see it. Resets the clock on this report.'
+      return 'You can see it. Resets the clock on this report.';
     case 'healing_unsafe':
-      return 'It has changed but is still dangerous. The marker stays up so the next skater can read it.'
+      return 'It has changed but is still dangerous. The marker stays up so the next skater can read it.';
     case 'fully_healed':
-      return 'Only if the ice here is genuinely sound. Two of these retire the marker for everyone.'
+      return 'Only if the ice here is genuinely sound. Two of these retire the marker for everyone.';
   }
 }
 
 /** The annotation shown on a pin whose latest verdict was "healing but unsafe". */
 export function healingNote(type: HazardType): string {
   if (type === 'pressure_ridge' || type === 'ice_heave') {
-    return 'Reported healing — likely refrozen blocks ("ice sharks"). Still a fall hazard.'
+    return 'Reported healing — likely refrozen blocks ("ice sharks"). Still a fall hazard.';
   }
-  return 'Reported healing, but still called unsafe by the last skater who looked.'
+  return 'Reported healing, but still called unsafe by the last skater who looked.';
 }
 
 /** The on-ice soft prompt for an unconfirmed hazard. Its answer *is* the confirmation (D54). */
 export function confirmRequestPrompt(type: HazardType): string {
-  return `Someone flagged ${hazardTypeLabel(type).toLowerCase()} near here — can you see it?`
+  return `Someone flagged ${hazardTypeLabel(type).toLowerCase()} near here — can you see it?`;
 }
 
 /**
@@ -159,8 +159,8 @@ export function confirmRequestPrompt(type: HazardType): string {
  */
 export function warningHeadline(type: HazardType, distanceMeters: number): string {
   const approx =
-    distanceMeters < 25 ? 'right here' : `~${Math.round(distanceMeters / 10) * 10} m away`
-  return `${hazardTypeLabel(type)} reported ${approx}`
+    distanceMeters < 25 ? 'right here' : `~${Math.round(distanceMeters / 10) * 10} m away`;
+  return `${hazardTypeLabel(type)} reported ${approx}`;
 }
 
 /**
@@ -169,15 +169,15 @@ export function warningHeadline(type: HazardType, distanceMeters: number): strin
  * foreground-only coverage makes that worse, not better.
  */
 export const NO_ALERT_IS_NOT_ALL_CLEAR =
-  'No alert does not mean the ice is safe — it only means nothing has been reported near you.'
+  'No alert does not mean the ice is safe — it only means nothing has been reported near you.';
 
 /**
  * The standing caveat under any hazard footprint. Reinforces that the shape is an approximation drawn
  * by a person, not a surveyed boundary (D3/D51).
  */
 export const FOOTPRINT_IS_APPROXIMATE =
-  'Reported around here — the shape is an approximation, not a surveyed boundary.'
+  'Reported around here — the shape is an approximation, not a surveyed boundary.';
 
 /** Explains why a permanent body feature has no age and no confirm loop (D53). */
 export const BODY_FEATURE_CAVEAT =
-  'A known seasonal feature of this water body — weak every season regardless of recent cold.'
+  'A known seasonal feature of this water body — weak every season regardless of recent cold.';

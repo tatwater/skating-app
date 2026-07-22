@@ -8,8 +8,8 @@
  * mobile. Only the colours are per-app, because they come from the design tokens.
  */
 
-import type { HazardPalette } from '@skating/core'
-import { themes } from '@skating/design'
+import type { HazardPalette } from '@skating/core';
+import { themes } from '@skating/design';
 
 export {
   bodyFeaturesToFeatureCollection,
@@ -21,7 +21,7 @@ export {
   type MappableBodyFeature,
   type MappableHazard,
   PROVISIONAL_OPACITY_SCALE,
-} from '@skating/core'
+} from '@skating/core';
 
 /**
  * Hazard colours per basemap flavor, keyed to match `WATER_PALETTE` so the map component looks both
@@ -41,4 +41,4 @@ export const HAZARD_PALETTE: Record<'white' | 'dark', HazardPalette> = {
     passage: themes.dark.success,
     feature: themes.dark.foregroundMuted,
   },
-}
+};

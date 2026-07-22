@@ -1,5 +1,5 @@
 module.exports = (api) => {
-  api.cache(true)
+  api.cache(true);
   return {
     presets: ['babel-preset-expo'],
     plugins: [
@@ -16,5 +16,5 @@ module.exports = (api) => {
       // react-native-reanimated 4 ships its worklets plugin here; it MUST be last.
       'react-native-worklets/plugin',
     ],
-  }
-}
+  };
+};

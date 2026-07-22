@@ -18,17 +18,17 @@ import {
   type HazardType,
   type LatLng,
   type ProximityHazard,
-} from '@skating/core'
+} from '@skating/core';
 
 /** The hazard fields the cached list gives us, as `hazards.listForBody` returns them. */
 export interface HazardRow {
-  _id: string
-  type: HazardType
-  geometryKind: HazardShape['geometryKind']
-  geometry: unknown
-  radiusMeters?: number
-  bufferMeters?: number
-  confirmCount: number
+  _id: string;
+  type: HazardType;
+  geometryKind: HazardShape['geometryKind'];
+  geometry: unknown;
+  radiusMeters?: number;
+  bufferMeters?: number;
+  confirmCount: number;
 }
 
 /** Narrow the server rows to what the pure evaluator needs. */
@@ -43,7 +43,7 @@ export function toProximityHazards(rows: readonly HazardRow[]): ProximityHazard[
       ...(r.radiusMeters !== undefined ? { radiusMeters: r.radiusMeters } : {}),
       ...(r.bufferMeters !== undefined ? { bufferMeters: r.bufferMeters } : {}),
     },
-  }))
+  }));
 }
 
 /**
@@ -54,12 +54,12 @@ export function toProximityHazards(rows: readonly HazardRow[]): ProximityHazard[
  * worse than never alerting at all.
  */
 export interface AlertSession {
-  alerted: ReadonlySet<string>
-  banner: HazardAlert | null
+  alerted: ReadonlySet<string>;
+  banner: HazardAlert | null;
 }
 
 export function emptyAlertSession(): AlertSession {
-  return { alerted: new Set(), banner: null }
+  return { alerted: new Set(), banner: null };
 }
 
 /**
@@ -79,15 +79,15 @@ export function advanceAlertSession(
   hazards: readonly ProximityHazard[],
   options?: { alertBufferMeters?: number; confirmThreshold?: number },
 ): AlertSession {
-  const alerts = evaluateOnIceAlert(coord, hazards, session.alerted, options)
-  const next = alerts[0]
-  if (!next) return session
+  const alerts = evaluateOnIceAlert(coord, hazards, session.alerted, options);
+  const next = alerts[0];
+  if (!next) return session;
   if (session.banner) {
     // Keep the visible banner, but don't let the queue behind it grow stale: the hazards we've now
     // decided not to show are left unalerted, so they can surface once this banner clears.
-    return session
+    return session;
   }
-  return { alerted: new Set([...session.alerted, next.hazardId]), banner: next }
+  return { alerted: new Set([...session.alerted, next.hazardId]), banner: next };
 }
 
 /**
@@ -98,7 +98,7 @@ export function advanceAlertSession(
  * and never the hazard's lifecycle.
  */
 export function dismissBanner(session: AlertSession): AlertSession {
-  return { alerted: session.alerted, banner: null }
+  return { alerted: session.alerted, banner: null };
 }
 
 /**
@@ -113,17 +113,17 @@ export function resolveOnIceBody(
   onlineBodyId: string | null | undefined,
   cachedBodyId: string | null,
 ): string | null {
-  return onlineBodyId !== undefined ? onlineBodyId : cachedBodyId
+  return onlineBodyId !== undefined ? onlineBodyId : cachedBodyId;
 }
 
 /** Inputs to the once-per-open auto-select decision. */
 export interface AutoSelectInput {
-  resolvedBodyId: string | null
-  alreadyAutoSelected: boolean
+  resolvedBodyId: string | null;
+  alreadyAutoSelected: boolean;
   /** True only when the app opened on the bare map (not a deep link into a drawer). */
-  openedOnBareMap: boolean
+  openedOnBareMap: boolean;
   /** The live route — auto-select must not fire once the skater has navigated somewhere themselves. */
-  onBareMapNow: boolean
+  onBareMapNow: boolean;
 }
 
 /**
@@ -137,5 +137,5 @@ export function shouldAutoSelectOnIce(input: AutoSelectInput): boolean {
     !input.alreadyAutoSelected &&
     input.openedOnBareMap &&
     input.onBareMapNow
-  )
+  );
 }

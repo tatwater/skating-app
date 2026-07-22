@@ -1,5 +1,5 @@
-import * as Sentry from '@sentry/tanstackstart-react'
-import { env, isConfigured } from './lib/env'
+import * as Sentry from '@sentry/tanstackstart-react';
+import { env, isConfigured } from './lib/env';
 
 /**
  * Client-side Sentry init (D29), imported as the very first statement of the client entry
@@ -18,5 +18,5 @@ if (isConfigured.sentry) {
     tracesSampleRate: 1.0,
     // Don't attach IP/PII to events by default — a location app with minors (D29).
     sendDefaultPii: false,
-  })
+  });
 }

@@ -7,16 +7,16 @@
  * Per-user local-time / true-sunset timing is deferred (single-timezone pilot) — see the roadmap.
  */
 
-const HOUR_MS = 60 * 60 * 1000
-const DAY_MS = 24 * HOUR_MS
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 interface ZonedParts {
-  year: number
-  month: number // 1-12
-  day: number
-  hour: number // 0-23
-  minute: number
-  second: number
+  year: number;
+  month: number; // 1-12
+  day: number;
+  hour: number; // 0-23
+  minute: number;
+  second: number;
 }
 
 /** Wall-clock parts of `ms` in `timeZone` (via `Intl`), as numbers. */
@@ -30,13 +30,13 @@ export function zonedParts(ms: number, timeZone: string): ZonedParts {
     minute: '2-digit',
     second: '2-digit',
     hour12: false,
-  })
-  const map: Record<string, string> = {}
+  });
+  const map: Record<string, string> = {};
   for (const part of dtf.formatToParts(new Date(ms))) {
-    if (part.type !== 'literal') map[part.type] = part.value
+    if (part.type !== 'literal') map[part.type] = part.value;
   }
   // `hour12: false` can render midnight as "24"; normalize it to 0.
-  const hour = Number(map.hour) % 24
+  const hour = Number(map.hour) % 24;
   return {
     year: Number(map.year),
     month: Number(map.month),
@@ -44,19 +44,19 @@ export function zonedParts(ms: number, timeZone: string): ZonedParts {
     hour,
     minute: Number(map.minute),
     second: Number(map.second),
-  }
+  };
 }
 
 /** Signed offset (ms) such that `localWallClock = utc + offset` at instant `ms` in `timeZone`. */
 function zoneOffsetMs(ms: number, timeZone: string): number {
-  const p = zonedParts(ms, timeZone)
-  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second)
-  return asUtc - ms
+  const p = zonedParts(ms, timeZone);
+  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  return asUtc - ms;
 }
 
 /** The current hour-of-day (0-23) in `timeZone`. */
 export function zonedHour(ms: number, timeZone: string): number {
-  return zonedParts(ms, timeZone).hour
+  return zonedParts(ms, timeZone).hour;
 }
 
 /**
@@ -66,17 +66,17 @@ export function zonedHour(ms: number, timeZone: string): number {
  * once — enough to settle either side of a spring-forward / fall-back boundary.
  */
 export function nextZonedHourMs(nowMs: number, hour: number, timeZone: string): number {
-  const p = zonedParts(nowMs, timeZone)
+  const p = zonedParts(nowMs, timeZone);
   // The target calendar day: today if the target hour is still ahead in-zone, else tomorrow.
-  const targetIsToday = p.hour < hour
-  const dayAnchorMs = targetIsToday ? nowMs : nowMs + DAY_MS
-  const day = zonedParts(dayAnchorMs, timeZone)
+  const targetIsToday = p.hour < hour;
+  const dayAnchorMs = targetIsToday ? nowMs : nowMs + DAY_MS;
+  const day = zonedParts(dayAnchorMs, timeZone);
 
-  const wallClockUtc = Date.UTC(day.year, day.month - 1, day.day, hour, 0, 0)
+  const wallClockUtc = Date.UTC(day.year, day.month - 1, day.day, hour, 0, 0);
   // First guess using the offset at `now`, then correct with the offset at the guessed instant.
-  let target = wallClockUtc - zoneOffsetMs(nowMs, timeZone)
-  target = wallClockUtc - zoneOffsetMs(target, timeZone)
+  let target = wallClockUtc - zoneOffsetMs(nowMs, timeZone);
+  target = wallClockUtc - zoneOffsetMs(target, timeZone);
   // A DST jump can leave the corrected target a hair before `now`; nudge to the following day.
-  if (target <= nowMs) target += DAY_MS
-  return target
+  if (target <= nowMs) target += DAY_MS;
+  return target;
 }

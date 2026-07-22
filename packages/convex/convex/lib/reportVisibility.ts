@@ -11,9 +11,9 @@
  * annotate, not a gate). `loadBlockedAuthorIds` below is the single source of that block set.
  */
 
-import { canViewReport } from '@skating/core'
-import type { Doc, Id } from '../_generated/dataModel'
-import type { QueryCtx } from '../_generated/server'
+import { canViewReport } from '@skating/core';
+import type { Doc, Id } from '../_generated/dataModel';
+import type { QueryCtx } from '../_generated/server';
 
 /**
  * The set of author profile ids blocked from `viewerId`, unioned across **both** directions — I
@@ -24,21 +24,21 @@ export async function loadBlockedAuthorIds(
   ctx: QueryCtx,
   viewerId: Id<'profiles'> | '',
 ): Promise<Set<string>> {
-  if (viewerId === '') return new Set<string>()
-  const blocked = new Set<string>()
+  if (viewerId === '') return new Set<string>();
+  const blocked = new Set<string>();
   // Users I blocked.
   const asBlocker = await ctx.db
     .query('blocks')
     .withIndex('by_blocker', (q) => q.eq('blockerId', viewerId))
-    .collect()
-  for (const b of asBlocker) blocked.add(b.blockedId)
+    .collect();
+  for (const b of asBlocker) blocked.add(b.blockedId);
   // Users who blocked me (bidirectional — a block hides both ways, D32).
   const asBlocked = await ctx.db
     .query('blocks')
     .withIndex('by_blocked', (q) => q.eq('blockedId', viewerId))
-    .collect()
-  for (const b of asBlocked) blocked.add(b.blockerId)
-  return blocked
+    .collect();
+  for (const b of asBlocked) blocked.add(b.blockerId);
+  return blocked;
 }
 
 /**
@@ -50,7 +50,7 @@ export async function getViewableReport(
   ctx: QueryCtx,
   reportId: Id<'reports'>,
 ): Promise<Doc<'reports'> | null> {
-  const report = await ctx.db.get(reportId)
-  if (report === null) return null
-  return canViewReport(report.moderationStatus) ? report : null
+  const report = await ctx.db.get(reportId);
+  if (report === null) return null;
+  return canViewReport(report.moderationStatus) ? report : null;
 }

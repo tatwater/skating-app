@@ -6,8 +6,8 @@
  * Untested native glue (like `photoPipeline`); the queue *logic* is tested in `@skating/core`.
  */
 
-import type { HazardQueueItem, ReportDraft } from '@skating/core'
-import * as SQLite from 'expo-sqlite'
+import type { HazardQueueItem, ReportDraft } from '@skating/core';
+import * as SQLite from 'expo-sqlite';
 
 /**
  * The queue is one table with a `kind` discriminator (Phase 9 offline), not a table per kind.
@@ -16,8 +16,8 @@ import * as SQLite from 'expo-sqlite'
  * keeping three copies of that in sync — and the flush has to drain them in **capture order**
  * anyway, which is trivial in one table and fiddly across three.
  */
-const KIND_REPORT = 'report'
-const HAZARD_KINDS = ['hazard', 'hazard_confirmation'] as const
+const KIND_REPORT = 'report';
+const HAZARD_KINDS = ['hazard', 'hazard_confirmation'] as const;
 
 /**
  * The subset of `expo-sqlite`'s sync API this store uses. Factored out so `ensureSchema` — the one
@@ -25,10 +25,10 @@ const HAZARD_KINDS = ['hazard', 'hazard_confirmation'] as const
  * against a real SQLite engine in a unit test, which the rest of this native glue can't be.
  */
 export interface SqliteLike {
-  execSync(source: string): void
-  runSync(source: string, params: (string | number | null)[]): unknown
-  getAllSync<T>(source: string, params: (string | number | null)[]): T[]
-  getFirstSync<T>(source: string, params: (string | number | null)[]): T | null
+  execSync(source: string): void;
+  runSync(source: string, params: (string | number | null)[]): unknown;
+  getAllSync<T>(source: string, params: (string | number | null)[]): T[];
+  getFirstSync<T>(source: string, params: (string | number | null)[]): T | null;
 }
 
 /**
@@ -48,10 +48,10 @@ export function ensureSchema(db: SqliteLike): void {
       updatedAt INTEGER NOT NULL,
       data TEXT NOT NULL
     )`,
-  )
-  const columns = db.getAllSync<{ name: string }>('PRAGMA table_info(report_drafts)', [])
+  );
+  const columns = db.getAllSync<{ name: string }>('PRAGMA table_info(report_drafts)', []);
   if (!columns.some((c) => c.name === 'kind')) {
-    db.execSync(`ALTER TABLE report_drafts ADD COLUMN kind TEXT NOT NULL DEFAULT '${KIND_REPORT}'`)
+    db.execSync(`ALTER TABLE report_drafts ADD COLUMN kind TEXT NOT NULL DEFAULT '${KIND_REPORT}'`);
   }
 }
 
@@ -63,16 +63,16 @@ export function readReportDrafts(db: SqliteLike): ReportDraft[] {
       'SELECT data FROM report_drafts WHERE kind = ? ORDER BY createdAt ASC',
       [KIND_REPORT],
     )
-    .map((r) => JSON.parse(r.data) as ReportDraft)
+    .map((r) => JSON.parse(r.data) as ReportDraft);
 }
 
-let db: SQLite.SQLiteDatabase | null = null
+let db: SQLite.SQLiteDatabase | null = null;
 function getDb(): SQLite.SQLiteDatabase {
   if (db === null) {
-    db = SQLite.openDatabaseSync('skating-drafts.db')
-    ensureSchema(db)
+    db = SQLite.openDatabaseSync('skating-drafts.db');
+    ensureSchema(db);
   }
-  return db
+  return db;
 }
 
 function upsert(
@@ -86,12 +86,12 @@ function upsert(
      ON CONFLICT(id) DO UPDATE SET
        status = excluded.status, updatedAt = excluded.updatedAt, data = excluded.data`,
     [row.id, kind, row.status, row.createdAt, row.updatedAt, JSON.stringify(record)],
-  )
+  );
 }
 
 /** Upsert a draft (the `persist` effect). Whole record serialized; status/timestamps kept queryable. */
 export function saveDraft(draft: ReportDraft): void {
-  upsert(KIND_REPORT, draft, draft)
+  upsert(KIND_REPORT, draft, draft);
 }
 
 /**
@@ -101,24 +101,24 @@ export function saveDraft(draft: ReportDraft): void {
  * "drafts", and a hazard silently appearing in either would be a bug rather than a feature.
  */
 export function listDrafts(): ReportDraft[] {
-  return readReportDrafts(getDb())
+  return readReportDrafts(getDb());
 }
 
 export function getDraft(id: string): ReportDraft | null {
   const row = getDb().getFirstSync<{ data: string }>(
     'SELECT data FROM report_drafts WHERE id = ? AND kind = ?',
     [id, KIND_REPORT],
-  )
-  return row ? (JSON.parse(row.data) as ReportDraft) : null
+  );
+  return row ? (JSON.parse(row.data) as ReportDraft) : null;
 }
 
 export function deleteDraft(id: string): void {
-  getDb().runSync('DELETE FROM report_drafts WHERE id = ?', [id])
+  getDb().runSync('DELETE FROM report_drafts WHERE id = ?', [id]);
 }
 
 /** Upsert a queued hazard or confirmation (Phase 9 offline) — the hazard `persist` effect. */
 export function saveHazardItem(item: HazardQueueItem): void {
-  upsert(item.kind, item, item)
+  upsert(item.kind, item, item);
 }
 
 /** Every queued hazard + confirmation, oldest first. */
@@ -129,17 +129,17 @@ export function listHazardItems(): HazardQueueItem[] {
        ORDER BY createdAt ASC`,
       [...HAZARD_KINDS],
     )
-    .map((r) => JSON.parse(r.data) as HazardQueueItem)
+    .map((r) => JSON.parse(r.data) as HazardQueueItem);
 }
 
 export function getHazardItem(id: string): HazardQueueItem | null {
   const row = getDb().getFirstSync<{ data: string }>(
     `SELECT data FROM report_drafts WHERE id = ? AND kind IN (${HAZARD_KINDS.map(() => '?').join(',')})`,
     [id, ...HAZARD_KINDS],
-  )
-  return row ? (JSON.parse(row.data) as HazardQueueItem) : null
+  );
+  return row ? (JSON.parse(row.data) as HazardQueueItem) : null;
 }
 
 export function deleteHazardItem(id: string): void {
-  getDb().runSync('DELETE FROM report_drafts WHERE id = ?', [id])
+  getDb().runSync('DELETE FROM report_drafts WHERE id = ?', [id]);
 }

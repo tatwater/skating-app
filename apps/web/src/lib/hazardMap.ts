@@ -9,8 +9,8 @@
  * Re-exported here so the map component keeps importing its layer helpers from one place.
  */
 
-import type { HazardPalette } from '@skating/core'
-import { themes } from '@skating/design'
+import type { HazardPalette } from '@skating/core';
+import { themes } from '@skating/design';
 
 export {
   bodyFeaturesToFeatureCollection,
@@ -22,7 +22,7 @@ export {
   type MappableBodyFeature,
   type MappableHazard,
   PROVISIONAL_OPACITY_SCALE,
-} from '@skating/core'
+} from '@skating/core';
 
 /**
  * Hazard fill/outline per theme. Routed through the design tokens rather than the ad-hoc hex the
@@ -42,4 +42,4 @@ export const HAZARD_PALETTE: Record<'white' | 'dark', HazardPalette> = {
     passage: themes.dark.success,
     feature: themes.dark.foregroundMuted,
   },
-}
+};

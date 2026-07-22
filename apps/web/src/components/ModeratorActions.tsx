@@ -1,8 +1,8 @@
-import { api } from '@skating/convex/api'
-import { useMutation, useQuery } from 'convex/react'
-import { ShieldIcon } from 'lucide-react'
-import { useState } from 'react'
-import { Button } from './ui/button'
+import { api } from '@skating/convex/api';
+import { useMutation, useQuery } from 'convex/react';
+import { ShieldIcon } from 'lucide-react';
+import { useState } from 'react';
+import { Button } from './ui/button';
 import {
   Dialog,
   DialogClose,
@@ -12,14 +12,14 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from './ui/dialog'
-import { Label } from './ui/label'
-import { Textarea } from './ui/textarea'
+} from './ui/dialog';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
 
 /** Whether the current user is at least a moderator (D37) — gates the inline actions below. */
 export function useIsModerator(): boolean {
-  const profile = useQuery(api.profiles.current, {})
-  return profile?.role === 'moderator' || profile?.role === 'admin'
+  const profile = useQuery(api.profiles.current, {});
+  return profile?.role === 'moderator' || profile?.role === 'admin';
 }
 
 /**
@@ -32,28 +32,28 @@ export function ModeratorActions({
   targetType,
   targetId,
 }: {
-  targetType: 'report' | 'comment'
-  targetId: string
+  targetType: 'report' | 'comment';
+  targetId: string;
 }) {
-  const isModerator = useIsModerator()
-  const setStatus = useMutation(api.moderation.setModerationStatus)
-  const [reason, setReason] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const isModerator = useIsModerator();
+  const setStatus = useMutation(api.moderation.setModerationStatus);
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
-  if (!isModerator) return null
+  if (!isModerator) return null;
 
   const act = async (status: 'hidden' | 'removed') => {
     if (!reason.trim()) {
-      setError('A reason is required.')
-      return
+      setError('A reason is required.');
+      return;
     }
-    setError(null)
+    setError(null);
     try {
-      await setStatus({ targetType, targetId, status, reason: reason.trim() })
+      await setStatus({ targetType, targetId, status, reason: reason.trim() });
     } catch {
-      setError('Could not apply the action. Please try again.')
+      setError('Could not apply the action. Please try again.');
     }
-  }
+  };
 
   return (
     <Dialog>
@@ -89,5 +89,5 @@ export function ModeratorActions({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

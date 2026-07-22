@@ -15,7 +15,7 @@
  * (`isValidHazardShape` remains the authority; this module never re-implements that judgement.)
  */
 
-import type { LatLng } from './geometry'
+import type { LatLng } from './geometry';
 import {
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_DEFAULT_GEOMETRY_KIND,
@@ -24,8 +24,8 @@ import {
   isValidHazardShape,
   lineShape,
   pointRadiusShape,
-} from './hazardGeometry'
-import type { HazardType } from './types'
+} from './hazardGeometry';
+import type { HazardType } from './types';
 
 /**
  * The primitives a person can actually *draw* in v1 (D51 build staging, call 5).
@@ -33,32 +33,32 @@ import type { HazardType } from './types'
  * Freeform polygon is missing on purpose: it renders and it stores, but authoring it needs vertex
  * dragging and self-intersection handling, and D51 already calls it the opt-in/advanced primitive.
  */
-export type HazardAuthorableKind = 'point_radius' | 'line'
+export type HazardAuthorableKind = 'point_radius' | 'line';
 
 /** A hazard mid-capture. `coord: null` / `vertices: []` are the legitimate "not placed yet" states. */
 export type HazardDraft =
   | { geometryKind: 'point_radius'; coord: LatLng | null; radiusMeters: number }
-  | { geometryKind: 'line'; vertices: LatLng[]; bufferMeters: number }
+  | { geometryKind: 'line'; vertices: LatLng[]; bufferMeters: number };
 
 /**
  * The size ladders, in metres. Coarse and non-linear on purpose: this is an eyeball estimate of
  * something on a lake, not a survey (D3), and a short ladder is what makes the control a pair of
  * −/+ buttons rather than a slider — sliders are miserable with gloves on.
  */
-export const HAZARD_RADIUS_STEPS_M = [5, 10, 25, 50, 100, 200, 400] as const
+export const HAZARD_RADIUS_STEPS_M = [5, 10, 25, 50, 100, 200, 400] as const;
 
 /**
  * The uncertainty half-width ladder for linear hazards. It bottoms out lower and tops out far lower
  * than the radius ladder: a wide band on a polyline covers a *lot* of ice, and a ridge drawn 400 m
  * wide would swallow the lake rather than describe the hazard.
  */
-export const HAZARD_BUFFER_STEPS_M = [2, 4, 8, 15, 25, 40, 60] as const
+export const HAZARD_BUFFER_STEPS_M = [2, 4, 8, 15, 25, 40, 60] as const;
 
 /** Move `current` to the neighbouring rung, clamping at the ends. Off-ladder values snap inward. */
 export function stepSize(current: number, steps: readonly number[], direction: 1 | -1): number {
-  if (steps.length === 0) return current
-  if (direction === 1) return steps.find((s) => s > current) ?? Math.max(...steps, current)
-  return [...steps].reverse().find((s) => s < current) ?? Math.min(...steps, current)
+  if (steps.length === 0) return current;
+  if (direction === 1) return steps.find((s) => s > current) ?? Math.max(...steps, current);
+  return [...steps].reverse().find((s) => s < current) ?? Math.min(...steps, current);
 }
 
 /**
@@ -71,7 +71,7 @@ export function stepSize(current: number, steps: readonly number[], direction: 1
 export function draftForType(type: HazardType): HazardDraft {
   return HAZARD_DEFAULT_GEOMETRY_KIND[type] === 'line'
     ? { geometryKind: 'line', vertices: [], bufferMeters: HAZARD_DEFAULT_BUFFER_M[type] }
-    : pointDraftForType(type)
+    : pointDraftForType(type);
 }
 
 /**
@@ -85,7 +85,7 @@ export function draftForType(type: HazardType): HazardDraft {
  * it. Web, where there's a mouse and no cold, starts linear types linear.
  */
 export function pointDraftForType(type: HazardType): HazardDraft {
-  return { geometryKind: 'point_radius', coord: null, radiusMeters: HAZARD_DEFAULT_RADIUS_M[type] }
+  return { geometryKind: 'point_radius', coord: null, radiusMeters: HAZARD_DEFAULT_RADIUS_M[type] };
 }
 
 /**
@@ -102,13 +102,13 @@ export function switchDraftKind(
   kind: HazardAuthorableKind,
   type: HazardType,
 ): HazardDraft {
-  if (draft.geometryKind === kind) return draft
+  if (draft.geometryKind === kind) return draft;
   if (draft.geometryKind === 'point_radius') {
     return {
       geometryKind: 'line',
       vertices: draft.coord ? [draft.coord] : [],
       bufferMeters: HAZARD_DEFAULT_BUFFER_M[type],
-    }
+    };
   }
   return {
     geometryKind: 'point_radius',
@@ -116,20 +116,20 @@ export function switchDraftKind(
     // survives an undo of everything after it.
     coord: draft.vertices[0] ?? null,
     radiusMeters: HAZARD_DEFAULT_RADIUS_M[type],
-  }
+  };
 }
 
 /** Re-type an in-progress draft: keep the placement, adopt the new type's default size. */
 export function retypeDraft(draft: HazardDraft, type: HazardType): HazardDraft {
   const kind: HazardAuthorableKind =
-    HAZARD_DEFAULT_GEOMETRY_KIND[type] === 'line' ? 'line' : 'point_radius'
+    HAZARD_DEFAULT_GEOMETRY_KIND[type] === 'line' ? 'line' : 'point_radius';
   // `switchDraftKind` handles the size swap when the primitive changes; when it doesn't, the size
   // still has to follow the new type (a drilled hole and a thaw-rotten zone are 5 m vs 60 m).
-  const switched = switchDraftKind(draft, kind, type)
-  if (switched !== draft) return switched
+  const switched = switchDraftKind(draft, kind, type);
+  if (switched !== draft) return switched;
   return draft.geometryKind === 'line'
     ? { ...draft, bufferMeters: HAZARD_DEFAULT_BUFFER_M[type] }
-    : { ...draft, radiusMeters: HAZARD_DEFAULT_RADIUS_M[type] }
+    : { ...draft, radiusMeters: HAZARD_DEFAULT_RADIUS_M[type] };
 }
 
 /**
@@ -139,7 +139,7 @@ export function retypeDraft(draft: HazardDraft, type: HazardType): HazardDraft {
 export function applyDraftMapClick(draft: HazardDraft, coord: LatLng): HazardDraft {
   return draft.geometryKind === 'point_radius'
     ? { ...draft, coord }
-    : { ...draft, vertices: [...draft.vertices, coord] }
+    : { ...draft, vertices: [...draft.vertices, coord] };
 }
 
 /**
@@ -149,24 +149,28 @@ export function applyDraftMapClick(draft: HazardDraft, coord: LatLng): HazardDra
 export function undoDraftPlacement(draft: HazardDraft): HazardDraft {
   return draft.geometryKind === 'point_radius'
     ? { ...draft, coord: null }
-    : { ...draft, vertices: draft.vertices.slice(0, -1) }
+    : { ...draft, vertices: draft.vertices.slice(0, -1) };
 }
 
 /** −/+ on whichever size the current primitive uses. */
 export function resizeDraft(draft: HazardDraft, direction: 1 | -1): HazardDraft {
   return draft.geometryKind === 'point_radius'
     ? { ...draft, radiusMeters: stepSize(draft.radiusMeters, HAZARD_RADIUS_STEPS_M, direction) }
-    : { ...draft, bufferMeters: stepSize(draft.bufferMeters, HAZARD_BUFFER_STEPS_M, direction) }
+    : { ...draft, bufferMeters: stepSize(draft.bufferMeters, HAZARD_BUFFER_STEPS_M, direction) };
 }
 
 /** How many placements the draft holds — what the "2 points" counter on the drawing bar shows. */
 export function draftPlacementCount(draft: HazardDraft): number {
-  return draft.geometryKind === 'point_radius' ? (draft.coord ? 1 : 0) : draft.vertices.length
+  return draft.geometryKind === 'point_radius' ? (draft.coord ? 1 : 0) : draft.vertices.length;
 }
 
 /** The vertices to render as dots while drawing, so a tap you can't yet see a shape from still lands. */
 export function draftVertices(draft: HazardDraft): LatLng[] {
-  return draft.geometryKind === 'point_radius' ? (draft.coord ? [draft.coord] : []) : draft.vertices
+  return draft.geometryKind === 'point_radius'
+    ? draft.coord
+      ? [draft.coord]
+      : []
+    : draft.vertices;
 }
 
 /**
@@ -182,12 +186,12 @@ export function draftToShape(draft: HazardDraft): HazardShape | null {
       ? draft.coord
         ? pointRadiusShape(draft.coord, draft.radiusMeters)
         : null
-      : lineShape(draft.vertices, draft.bufferMeters)
-  if (!shape || !isValidHazardShape(shape)) return null
-  return shape
+      : lineShape(draft.vertices, draft.bufferMeters);
+  if (!shape || !isValidHazardShape(shape)) return null;
+  return shape;
 }
 
 /** Can this draft be posted yet? */
 export function isDraftSubmittable(draft: HazardDraft): boolean {
-  return draftToShape(draft) !== null
+  return draftToShape(draft) !== null;
 }

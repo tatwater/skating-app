@@ -1,19 +1,19 @@
-import { api } from '@skating/convex/api'
-import { BIO_MAX_LENGTH, isMinor, TOWN_LABEL_MAX_LENGTH } from '@skating/core'
-import { useMutation, useQuery } from 'convex/react'
-import { useState } from 'react'
-import { Button } from './ui/button'
-import { Card, CardContent } from './ui/card'
-import { Checkbox } from './ui/checkbox'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
-import { Textarea } from './ui/textarea'
+import { api } from '@skating/convex/api';
+import { BIO_MAX_LENGTH, isMinor, TOWN_LABEL_MAX_LENGTH } from '@skating/core';
+import { useMutation, useQuery } from 'convex/react';
+import { useState } from 'react';
+import { Button } from './ui/button';
+import { Card, CardContent } from './ui/card';
+import { Checkbox } from './ui/checkbox';
+import { Input } from './ui/input';
+import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
 
 /** Editable profile values (D13). */
 export interface ProfileEditValues {
-  bio: string
-  homeTownLabel: string
-  isPublic: boolean
+  bio: string;
+  homeTownLabel: string;
+  isPublic: boolean;
 }
 
 /**
@@ -29,17 +29,17 @@ export function ProfileEditForm({
   error,
   saved = false,
 }: {
-  initial: ProfileEditValues
-  canGoPublic: boolean
-  onSave: (values: ProfileEditValues) => void
-  saving?: boolean
-  error?: string | null
-  saved?: boolean
+  initial: ProfileEditValues;
+  canGoPublic: boolean;
+  onSave: (values: ProfileEditValues) => void;
+  saving?: boolean;
+  error?: string | null;
+  saved?: boolean;
 }) {
-  const [bio, setBio] = useState(initial.bio)
-  const [homeTownLabel, setHomeTownLabel] = useState(initial.homeTownLabel)
+  const [bio, setBio] = useState(initial.bio);
+  const [homeTownLabel, setHomeTownLabel] = useState(initial.homeTownLabel);
   // A minor is forced private regardless of the stored value.
-  const [isPublic, setIsPublic] = useState(canGoPublic && initial.isPublic)
+  const [isPublic, setIsPublic] = useState(canGoPublic && initial.isPublic);
 
   return (
     <Card>
@@ -89,21 +89,21 @@ export function ProfileEditForm({
         </div>
       </CardContent>
     </Card>
-  )
+  );
 }
 
 /** Container: reads the caller's own profile and saves edits via `updateProfile`. */
 export function ProfileEdit() {
-  const profile = useQuery(api.profiles.current, {})
-  const updateProfile = useMutation(api.profiles.updateProfile)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const profile = useQuery(api.profiles.current, {});
+  const updateProfile = useMutation(api.profiles.updateProfile);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  if (profile === undefined) return null
-  if (profile === null) return null
+  if (profile === undefined) return null;
+  if (profile === null) return null;
 
-  const canGoPublic = !isMinor(profile.dateOfBirth, Date.now())
+  const canGoPublic = !isMinor(profile.dateOfBirth, Date.now());
 
   return (
     <ProfileEditForm
@@ -117,22 +117,22 @@ export function ProfileEdit() {
       saved={saved}
       error={error}
       onSave={async (values) => {
-        setSaving(true)
-        setSaved(false)
-        setError(null)
+        setSaving(true);
+        setSaved(false);
+        setError(null);
         try {
           await updateProfile({
             bio: values.bio,
             homeTownLabel: values.homeTownLabel,
             profileVisibility: values.isPublic ? 'public' : 'private',
-          })
-          setSaved(true)
+          });
+          setSaved(true);
         } catch {
-          setError('Could not save your profile. Please try again.')
+          setError('Could not save your profile. Please try again.');
         } finally {
-          setSaving(false)
+          setSaving(false);
         }
       }}
     />
-  )
+  );
 }

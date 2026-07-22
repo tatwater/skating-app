@@ -8,11 +8,11 @@
  * `loadBlockedAuthorIds` (`lib/reportVisibility.ts`); this module owns the writes + the settings list.
  */
 
-import { canBlock } from '@skating/core'
-import { ConvexError, v } from 'convex/values'
-import { mutation, query } from './_generated/server'
-import { requireProfile } from './lib/auth'
-import { loadBlockedAuthorIds } from './lib/reportVisibility'
+import { canBlock } from '@skating/core';
+import { ConvexError, v } from 'convex/values';
+import { mutation, query } from './_generated/server';
+import { requireProfile } from './lib/auth';
+import { loadBlockedAuthorIds } from './lib/reportVisibility';
 
 /**
  * Block a user (D32). `requireProfile`; reject self-block; idempotent — a re-block returns the
@@ -21,26 +21,26 @@ import { loadBlockedAuthorIds } from './lib/reportVisibility'
 export const block = mutation({
   args: { targetUserId: v.id('profiles') },
   handler: async (ctx, { targetUserId }) => {
-    const profile = await requireProfile(ctx)
-    if (!canBlock(profile._id, targetUserId)) throw new ConvexError('You cannot block yourself')
+    const profile = await requireProfile(ctx);
+    if (!canBlock(profile._id, targetUserId)) throw new ConvexError('You cannot block yourself');
 
-    const target = await ctx.db.get(targetUserId)
-    if (!target) throw new ConvexError('User not found')
+    const target = await ctx.db.get(targetUserId);
+    if (!target) throw new ConvexError('User not found');
 
     const existing = await ctx.db
       .query('blocks')
       .withIndex('by_blocker', (q) => q.eq('blockerId', profile._id))
       .filter((q) => q.eq(q.field('blockedId'), targetUserId))
-      .unique()
-    if (existing) return existing._id
+      .unique();
+    if (existing) return existing._id;
 
     return ctx.db.insert('blocks', {
       blockerId: profile._id,
       blockedId: targetUserId,
       createdAt: Date.now(),
-    })
+    });
   },
-})
+});
 
 /**
  * Unblock a user (D32). Idempotent — removing a block that isn't there is a no-op. Only removes the
@@ -49,16 +49,16 @@ export const block = mutation({
 export const unblock = mutation({
   args: { targetUserId: v.id('profiles') },
   handler: async (ctx, { targetUserId }) => {
-    const profile = await requireProfile(ctx)
+    const profile = await requireProfile(ctx);
     const existing = await ctx.db
       .query('blocks')
       .withIndex('by_blocker', (q) => q.eq('blockerId', profile._id))
       .filter((q) => q.eq(q.field('blockedId'), targetUserId))
-      .unique()
-    if (existing) await ctx.db.delete(existing._id)
-    return null
+      .unique();
+    if (existing) await ctx.db.delete(existing._id);
+    return null;
   },
-})
+});
 
 /**
  * The caller's own block list for the settings screen — the users *they* blocked (their own edges,
@@ -68,21 +68,21 @@ export const unblock = mutation({
 export const myBlocks = query({
   args: {},
   handler: async (ctx) => {
-    const profile = await requireProfile(ctx)
+    const profile = await requireProfile(ctx);
     const rows = await ctx.db
       .query('blocks')
       .withIndex('by_blocker', (q) => q.eq('blockerId', profile._id))
       .order('desc')
-      .collect()
+      .collect();
     const result: {
-      userId: string
-      username: string
-      displayName: string
-      profileImageUrl?: string
-    }[] = []
+      userId: string;
+      username: string;
+      displayName: string;
+      profileImageUrl?: string;
+    }[] = [];
     for (const row of rows) {
-      const target = await ctx.db.get(row.blockedId)
-      if (!target) continue // blocked user deleted — drop from the list
+      const target = await ctx.db.get(row.blockedId);
+      if (!target) continue; // blocked user deleted — drop from the list
       result.push({
         userId: target._id,
         username: target.username,
@@ -90,11 +90,11 @@ export const myBlocks = query({
         ...(target.profileImageUrl !== undefined
           ? { profileImageUrl: target.profileImageUrl }
           : {}),
-      })
+      });
     }
-    return result
+    return result;
   },
-})
+});
 
 /**
  * The viewer's full block set as an id array — unioned across **both** directions (I blocked them OR
@@ -106,7 +106,7 @@ export const myBlocks = query({
 export const blockedUserIds = query({
   args: {},
   handler: async (ctx) => {
-    const profile = await requireProfile(ctx)
-    return [...(await loadBlockedAuthorIds(ctx, profile._id))]
+    const profile = await requireProfile(ctx);
+    return [...(await loadBlockedAuthorIds(ctx, profile._id))];
   },
-})
+});

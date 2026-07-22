@@ -1,4 +1,4 @@
-import { PlaceholderScreen } from '../../src/components/PlaceholderScreen'
+import { PlaceholderScreen } from '../../src/components/PlaceholderScreen';
 
 // Browse / request report bounties (D10/D17); built in Phase 9.
 export default function BountiesScreen() {
@@ -7,5 +7,5 @@ export default function BountiesScreen() {
       title="Bounties"
       subtitle="Request a report for a lake, or fulfill one — arrives in Phase 9."
     />
-  )
+  );
 }

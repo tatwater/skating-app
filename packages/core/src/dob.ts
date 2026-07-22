@@ -10,20 +10,20 @@
  * junk data. We cap at a sane human lifespan so garbage can't masquerade as "old enough".
  * (Future dates are already rejected downstream: a not-yet-born DOB fails `meetsMinimumAge`.)
  */
-const MIN_BIRTH_YEAR = 1900
+const MIN_BIRTH_YEAR = 1900;
 
 export function parseDateOfBirth(input: string): number | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.trim())
-  if (!match) return null
-  const year = Number(match[1])
-  const month = Number(match[2])
-  const day = Number(match[3])
-  if (year < MIN_BIRTH_YEAR) return null
-  const ms = Date.UTC(year, month - 1, day)
-  const dt = new Date(ms)
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(input.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  if (year < MIN_BIRTH_YEAR) return null;
+  const ms = Date.UTC(year, month - 1, day);
+  const dt = new Date(ms);
   // Reject overflow (e.g. 2021-02-31 rolling into March) and impossible months/days.
   if (dt.getUTCFullYear() !== year || dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day) {
-    return null
+    return null;
   }
-  return ms
+  return ms;
 }

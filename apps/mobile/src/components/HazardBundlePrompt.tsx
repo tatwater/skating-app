@@ -1,9 +1,9 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { type HazardType, hazardTypeLabel } from '@skating/core'
-import { useQuery } from 'convex/react'
-import { useEffect } from 'react'
-import { Button, Paragraph, Text, XStack, YStack } from 'tamagui'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { type HazardType, hazardTypeLabel } from '@skating/core';
+import { useQuery } from 'convex/react';
+import { useEffect } from 'react';
+import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
 
 /**
  * The D55 auto-bundle prompt (mobile) — offer the author's own on-ice hazards into the report
@@ -18,9 +18,9 @@ import { Button, Paragraph, Text, XStack, YStack } from 'tamagui'
  * stay on the map either way, so declining never feels like discarding them.
  */
 export interface BundleCandidate {
-  _id: string
-  type: HazardType
-  firstReportedAt: number
+  _id: string;
+  type: HazardType;
+  firstReportedAt: number;
 }
 
 export function HazardBundlePromptView({
@@ -28,11 +28,11 @@ export function HazardBundlePromptView({
   selectedIds,
   onToggle,
 }: {
-  candidates: readonly BundleCandidate[]
-  selectedIds: readonly string[]
-  onToggle: (hazardId: string, checked: boolean) => void
+  candidates: readonly BundleCandidate[];
+  selectedIds: readonly string[];
+  onToggle: (hazardId: string, checked: boolean) => void;
 }) {
-  if (candidates.length === 0) return null
+  if (candidates.length === 0) return null;
 
   return (
     <YStack gap="$2" borderWidth={1} borderColor="$border" borderRadius="$4" padding="$3">
@@ -43,7 +43,7 @@ export function HazardBundlePromptView({
         Include them in this report? They stay on the map either way.
       </Paragraph>
       {candidates.map((candidate) => {
-        const selected = selectedIds.includes(candidate._id)
+        const selected = selectedIds.includes(candidate._id);
         return (
           <XStack key={candidate._id} gap="$2" alignItems="center">
             <Button
@@ -60,10 +60,10 @@ export function HazardBundlePromptView({
               {hazardTypeLabel(candidate.type)}
             </Button>
           </XStack>
-        )
+        );
       })}
     </YStack>
-  )
+  );
 }
 
 /** Container: looks up the author's unattached hazards for this body + skate window. */
@@ -75,13 +75,13 @@ export function HazardBundlePrompt({
   onToggle,
   onCandidates,
 }: {
-  waterBodyId: string
-  skateEndTime: number
-  skateStartTime?: number
-  selectedIds: readonly string[]
-  onToggle: (hazardId: string, checked: boolean) => void
+  waterBodyId: string;
+  skateEndTime: number;
+  skateStartTime?: number;
+  selectedIds: readonly string[];
+  onToggle: (hazardId: string, checked: boolean) => void;
   /** Reports the candidate set upward so the form can pre-check them (D55: pre-checked, opt-out). */
-  onCandidates: (hazardIds: string[]) => void
+  onCandidates: (hazardIds: string[]) => void;
 }) {
   const candidates = useQuery(
     api.hazards.listBundleCandidates,
@@ -92,14 +92,14 @@ export function HazardBundlePrompt({
           ...(skateStartTime !== undefined ? { skateStartTime } : {}),
         }
       : 'skip',
-  )
+  );
 
-  const candidateKey = (candidates ?? []).map((c) => c._id).join(',')
+  const candidateKey = (candidates ?? []).map((c) => c._id).join(',');
   // `candidateKey` is the stable content signature of the candidate set, so this only re-runs when
   // the actual hazards change — not on every query object identity.
   useEffect(() => {
-    onCandidates(candidateKey ? candidateKey.split(',') : [])
-  }, [candidateKey, onCandidates])
+    onCandidates(candidateKey ? candidateKey.split(',') : []);
+  }, [candidateKey, onCandidates]);
 
   return (
     <HazardBundlePromptView
@@ -107,5 +107,5 @@ export function HazardBundlePrompt({
       selectedIds={selectedIds}
       onToggle={onToggle}
     />
-  )
+  );
 }

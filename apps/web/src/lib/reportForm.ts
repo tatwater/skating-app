@@ -7,12 +7,12 @@
 
 /** `<input type="datetime-local">` value for a timestamp, in the viewer's local zone. */
 export function toDatetimeLocal(ms: number): string {
-  const d = new Date(ms)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 /** Parse a `datetime-local` value back to epoch ms (local zone); `NaN` if blank/invalid. */
 export function datetimeLocalToMs(value: string): number {
-  return new Date(value).getTime()
+  return new Date(value).getTime();
 }

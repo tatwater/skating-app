@@ -7,15 +7,15 @@
  * generated `DataModel` keeps exact string-literal field types.
  */
 
-import { v } from 'convex/values'
+import { v } from 'convex/values';
 
 /** Build a `v.union(v.literal(...))` from a readonly tuple, keeping literal types. */
 export function literals<const T extends readonly [string, string, ...string[]]>(values: T) {
   return v.union(
     ...(values.map((value) => v.literal(value)) as {
-      [K in keyof T]: ReturnType<typeof v.literal<T[K]>>
+      [K in keyof T]: ReturnType<typeof v.literal<T[K]>>;
     }),
-  )
+  );
 }
 
 /**
@@ -26,9 +26,9 @@ export function literals<const T extends readonly [string, string, ...string[]]>
 export function boolFlags<const T extends readonly [string, ...string[]]>(keys: T) {
   return v.object(
     Object.fromEntries(keys.map((key) => [key, v.boolean()])) as {
-      [K in T[number]]: ReturnType<typeof v.boolean>
+      [K in T[number]]: ReturnType<typeof v.boolean>;
     },
-  )
+  );
 }
 
 /**
@@ -38,13 +38,13 @@ export function boolFlags<const T extends readonly [string, ...string[]]>(keys: 
 export function partialBoolFlags<const T extends readonly [string, ...string[]]>(keys: T) {
   return v.object(
     Object.fromEntries(keys.map((key) => [key, v.optional(v.boolean())])) as {
-      [K in T[number]]: ReturnType<typeof v.optional<ReturnType<typeof v.boolean>>>
+      [K in T[number]]: ReturnType<typeof v.optional<ReturnType<typeof v.boolean>>>;
     },
-  )
+  );
 }
 
 /** A geographic point. Used for report points, centroids, and tested coords. */
-export const latLng = v.object({ lat: v.number(), lng: v.number() })
+export const latLng = v.object({ lat: v.number(), lng: v.number() });
 
 /** Axis-aligned bounding box — the cheap prefilter before precise Turf tests (D5). */
 export const bbox = v.object({
@@ -52,7 +52,7 @@ export const bbox = v.object({
   minLng: v.number(),
   maxLat: v.number(),
   maxLng: v.number(),
-})
+});
 
 /**
  * A GeoJSON geometry — the shapes we actually store (`Point` / `MultiPoint` /
@@ -66,7 +66,7 @@ export const bbox = v.object({
  * by the Turf-backed layer in `@skating/core`, not here. `GeometryCollection` is
  * intentionally omitted — it's recursive and unused.
  */
-const position = v.array(v.number()) // [lng, lat] (+ optional elevation)
+const position = v.array(v.number()); // [lng, lat] (+ optional elevation)
 export const geoJson = v.union(
   v.object({ type: v.literal('Point'), coordinates: position }),
   v.object({ type: v.literal('MultiPoint'), coordinates: v.array(position) }),
@@ -74,4 +74,4 @@ export const geoJson = v.union(
   v.object({ type: v.literal('MultiLineString'), coordinates: v.array(v.array(position)) }),
   v.object({ type: v.literal('Polygon'), coordinates: v.array(v.array(position)) }),
   v.object({ type: v.literal('MultiPolygon'), coordinates: v.array(v.array(v.array(position))) }),
-)
+);

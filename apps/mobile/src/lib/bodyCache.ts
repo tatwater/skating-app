@@ -8,18 +8,18 @@
  * (Phase 9 offline basemap) without a reshape.
  */
 
-import type { LatLng } from '@skating/core'
-import * as SQLite from 'expo-sqlite'
-import type { MultiPolygon, Polygon } from 'geojson'
-import { type CachedBody, nearestCachedBody } from './offlineBody'
+import type { LatLng } from '@skating/core';
+import * as SQLite from 'expo-sqlite';
+import type { MultiPolygon, Polygon } from 'geojson';
+import { type CachedBody, nearestCachedBody } from './offlineBody';
 
 /** Keep the 50 most-recently-viewed bodies — polygons are tiny, and it covers a day's browsing. */
-const MAX_CACHED_BODIES = 50
+const MAX_CACHED_BODIES = 50;
 
-let db: SQLite.SQLiteDatabase | null = null
+let db: SQLite.SQLiteDatabase | null = null;
 function getDb(): SQLite.SQLiteDatabase {
   if (db === null) {
-    db = SQLite.openDatabaseSync('skating-body-cache.db')
+    db = SQLite.openDatabaseSync('skating-body-cache.db');
     db.execSync(
       `CREATE TABLE IF NOT EXISTS cached_bodies (
         waterBodyId TEXT PRIMARY KEY,
@@ -31,19 +31,19 @@ function getDb(): SQLite.SQLiteDatabase {
         surfaceAreaSqM REAL NOT NULL,
         cachedAt INTEGER NOT NULL
       )`,
-    )
+    );
   }
-  return db
+  return db;
 }
 
 /** The body shape `waterBodies.get` returns (the fields the offline cache needs). */
 export interface CacheableBody {
-  waterBodyId: string
-  name: string
-  states?: string[]
-  polygon: Polygon | MultiPolygon
-  centroid: LatLng
-  surfaceAreaSqM?: number
+  waterBodyId: string;
+  name: string;
+  states?: string[];
+  polygon: Polygon | MultiPolygon;
+  centroid: LatLng;
+  surfaceAreaSqM?: number;
 }
 
 /**
@@ -52,7 +52,7 @@ export interface CacheableBody {
  */
 export function cacheBody(body: CacheableBody, now: number = Date.now()): void {
   try {
-    const d = getDb()
+    const d = getDb();
     d.runSync(
       `INSERT INTO cached_bodies
          (waterBodyId, name, states, polygon, centroidLat, centroidLng, surfaceAreaSqM, cachedAt)
@@ -71,26 +71,26 @@ export function cacheBody(body: CacheableBody, now: number = Date.now()): void {
         body.surfaceAreaSqM ?? 0,
         now,
       ],
-    )
+    );
     d.runSync(
       `DELETE FROM cached_bodies WHERE waterBodyId NOT IN
          (SELECT waterBodyId FROM cached_bodies ORDER BY cachedAt DESC LIMIT ?)`,
       [MAX_CACHED_BODIES],
-    )
+    );
   } catch {
     // Best-effort cache — a write failure never blocks the read path.
   }
 }
 
 interface CachedBodyRow {
-  waterBodyId: string
-  name: string
-  states: string
-  polygon: string
-  centroidLat: number
-  centroidLng: number
-  surfaceAreaSqM: number
-  cachedAt: number
+  waterBodyId: string;
+  name: string;
+  states: string;
+  polygon: string;
+  centroidLat: number;
+  centroidLng: number;
+  surfaceAreaSqM: number;
+  cachedAt: number;
 }
 
 function loadAll(): CachedBody[] {
@@ -104,7 +104,7 @@ function loadAll(): CachedBody[] {
       centroid: { lat: r.centroidLat, lng: r.centroidLng },
       surfaceAreaSqM: r.surfaceAreaSqM,
       cachedAt: r.cachedAt,
-    }))
+    }));
 }
 
 /**
@@ -116,8 +116,8 @@ export function resolveCachedBody(
   bufferMeters?: number,
 ): { waterBodyId: string; name: string } | null {
   try {
-    return nearestCachedBody(loadAll(), coord, bufferMeters)
+    return nearestCachedBody(loadAll(), coord, bufferMeters);
   } catch {
-    return null
+    return null;
   }
 }

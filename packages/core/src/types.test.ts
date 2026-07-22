@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest';
 import {
   CONDITION_SOURCES,
   HAZARD_TYPES,
@@ -11,7 +11,7 @@ import {
   USER_ROLES,
   USER_STATUSES,
   WATER_BODY_TYPES,
-} from './types'
+} from './types';
 
 /**
  * Locks the shared vocabulary to the **confirmed** community/official terms
@@ -33,18 +33,18 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
       'pack_ice',
       'plate_ice',
       'candled_ice',
-    ])
-  })
+    ]);
+  });
 
   it('thickness methods match the confirmed list', () => {
-    expect([...THICKNESS_METHODS]).toEqual(['measured', 'estimated'])
-  })
+    expect([...THICKNESS_METHODS]).toEqual(['measured', 'estimated']);
+  });
 
   it('conditions vocab matches the confirmed lists (D19)', () => {
-    expect([...SKY_CONDITIONS]).toEqual(['clear', 'partly_cloudy', 'overcast', 'precip'])
-    expect([...PRECIP_TYPES]).toEqual(['none', 'rain', 'snow', 'sleet'])
-    expect([...CONDITION_SOURCES]).toEqual(['user', 'openmeteo'])
-  })
+    expect([...SKY_CONDITIONS]).toEqual(['clear', 'partly_cloudy', 'overcast', 'precip']);
+    expect([...PRECIP_TYPES]).toEqual(['none', 'rain', 'snow', 'sleet']);
+    expect([...CONDITION_SOURCES]).toEqual(['user', 'openmeteo']);
+  });
 
   it('surface tags match the confirmed list', () => {
     expect([...SURFACE_TAGS]).toEqual([
@@ -62,8 +62,8 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
       'overflow',
       'frozen_chop',
       'windswept',
-    ])
-  })
+    ]);
+  });
 
   // Canonicalized 2026-07-21 (Phase 9): slash-pairs collapsed to one key each (`lead` → `open_water`,
   // `buckling` → `ice_heave`, `inlet_outlet_current`/`spring` → `spring_current`) and the research
@@ -86,8 +86,8 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
       'spring_current',
       'gas_hole',
       'reef_hole',
-    ])
-  })
+    ]);
+  });
 
   it('water-body types match the confirmed list', () => {
     expect([...WATER_BODY_TYPES]).toEqual([
@@ -99,12 +99,12 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
       'bay',
       'marsh',
       'other',
-    ])
-  })
+    ]);
+  });
 
   it('roles and statuses match the account model (D37/D33)', () => {
-    expect([...USER_ROLES]).toEqual(['member', 'moderator', 'admin'])
-    expect([...USER_STATUSES]).toEqual(['active', 'suspended', 'banned', 'deleted'])
-    expect([...SKATE_QUALITIES]).toEqual(['great', 'good', 'fair', 'poor'])
-  })
-})
+    expect([...USER_ROLES]).toEqual(['member', 'moderator', 'admin']);
+    expect([...USER_STATUSES]).toEqual(['active', 'suspended', 'banned', 'deleted']);
+    expect([...SKATE_QUALITIES]).toEqual(['great', 'good', 'fair', 'poor']);
+  });
+});

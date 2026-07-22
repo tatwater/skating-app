@@ -1,5 +1,5 @@
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { H1, Paragraph, YStack } from 'tamagui'
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { H1, Paragraph, YStack } from 'tamagui';
 
 /**
  * Barebones themed placeholder for a Phase 0 route. Each real screen (map, feed,
@@ -27,5 +27,5 @@ export function PlaceholderScreen({ title, subtitle }: { title: string; subtitle
         ) : null}
       </YStack>
     </SafeAreaView>
-  )
+  );
 }

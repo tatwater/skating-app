@@ -1,9 +1,9 @@
-import { clerkMiddleware } from '@clerk/tanstack-react-start/server'
+import { clerkMiddleware } from '@clerk/tanstack-react-start/server';
 import {
   sentryGlobalFunctionMiddleware,
   sentryGlobalRequestMiddleware,
-} from '@sentry/tanstackstart-react'
-import { createStart } from '@tanstack/react-start'
+} from '@sentry/tanstackstart-react';
+import { createStart } from '@tanstack/react-start';
 
 /**
  * Server request middleware (D26/D29). `clerkMiddleware()` reads the Clerk session on every
@@ -18,5 +18,5 @@ export const startInstance = createStart(() => {
   return {
     requestMiddleware: [sentryGlobalRequestMiddleware, clerkMiddleware()],
     functionMiddleware: [sentryGlobalFunctionMiddleware],
-  }
-})
+  };
+});

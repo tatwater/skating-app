@@ -1,22 +1,22 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { type FeedFilters, groupFeedSections } from '@skating/core'
-import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useMutation, usePaginatedQuery, useQuery } from 'convex/react'
-import { useEffect, useRef, useState } from 'react'
-import { FeedCard } from '../components/FeedCard'
-import { FeedFilterBar } from '../components/FeedFilterBar'
-import { MapSelectionProvider } from '../components/MapSelectionContext'
-import { Panel } from '../components/Panel'
-import { ProfileSearch } from '../components/ProfileSearch'
-import { ReportDetail } from '../components/ReportDetail'
-import { Button } from '../components/ui/button'
-import { Sheet, SheetContent } from '../components/ui/sheet'
-import { Skeleton } from '../components/ui/skeleton'
-import { readStoredFilters, reconcileFilters, writeStoredFilters } from '../lib/feedFilters'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { type FeedFilters, groupFeedSections } from '@skating/core';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
+import { useEffect, useRef, useState } from 'react';
+import { FeedCard } from '../components/FeedCard';
+import { FeedFilterBar } from '../components/FeedFilterBar';
+import { MapSelectionProvider } from '../components/MapSelectionContext';
+import { Panel } from '../components/Panel';
+import { ProfileSearch } from '../components/ProfileSearch';
+import { ReportDetail } from '../components/ReportDetail';
+import { Button } from '../components/ui/button';
+import { Sheet, SheetContent } from '../components/ui/sheet';
+import { Skeleton } from '../components/ui/skeleton';
+import { readStoredFilters, reconcileFilters, writeStoredFilters } from '../lib/feedFilters';
 
 /** How many feed cards to fetch per page (`usePaginatedQuery` load). */
-const PAGE_SIZE = 20
+const PAGE_SIZE = 20;
 
 /**
  * Newsfeed — the chronological, cross-water-body co-primary page (D28; Phase 5). Reads
@@ -30,23 +30,23 @@ export const Route = createFileRoute('/feed')({
   validateSearch: (search: Record<string, unknown>): { report?: string } => ({
     report: typeof search.report === 'string' ? search.report : undefined,
   }),
-})
+});
 
 function FeedPage() {
-  const { report } = Route.useSearch()
-  const navigate = useNavigate()
-  const filters = useFeedFilters()
+  const { report } = Route.useSearch();
+  const navigate = useNavigate();
+  const filters = useFeedFilters();
   const { results, status, loadMore } = usePaginatedQuery(
     api.reports.listFeed,
     { filters: filters.value },
     { initialNumItems: PAGE_SIZE },
-  )
+  );
   // One clock per render for the relative-time labels (feed re-renders reactively as reports stream).
-  const now = Date.now()
+  const now = Date.now();
 
   const openReport = (id: string) =>
-    navigate({ to: '/feed', search: { report: id }, resetScroll: false })
-  const closeReport = () => navigate({ to: '/feed', search: {}, resetScroll: false })
+    navigate({ to: '/feed', search: { report: id }, resetScroll: false });
+  const closeReport = () => navigate({ to: '/feed', search: {}, resetScroll: false });
 
   // Load-more affordance, shared by both the populated and empty-results arms. When a filter is
   // active, the first page(s) can be entirely filtered out while `status` is still `CanLoadMore`;
@@ -59,7 +59,7 @@ function FeedPage() {
       </Button>
     ) : status === 'LoadingMore' ? (
       <Skeleton className="h-28 w-full" />
-    ) : null
+    ) : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -121,7 +121,7 @@ function FeedPage() {
         </SheetContent>
       </Sheet>
     </div>
-  )
+  );
 }
 
 /**
@@ -132,32 +132,32 @@ function FeedPage() {
  * touched inside effects/handlers.
  */
 function useFeedFilters(): { value: FeedFilters; set: (next: FeedFilters) => void } {
-  const [value, setValue] = useState<FeedFilters>({})
-  const profile = useQuery(api.profiles.current, {})
-  const setServer = useMutation(api.profiles.setFeedFilterPrefs)
-  const reconciled = useRef(false)
+  const [value, setValue] = useState<FeedFilters>({});
+  const profile = useQuery(api.profiles.current, {});
+  const setServer = useMutation(api.profiles.setFeedFilterPrefs);
+  const reconciled = useRef(false);
 
   // Load the local working copy on mount (client-only).
   useEffect(() => {
-    setValue(readStoredFilters(window.localStorage))
-  }, [])
+    setValue(readStoredFilters(window.localStorage));
+  }, []);
 
   // Reconcile against the server copy once the profile arrives (LWW), a single time.
   useEffect(() => {
-    if (reconciled.current || profile === undefined) return
-    reconciled.current = true
-    const local = readStoredFilters(window.localStorage)
-    const merged = reconcileFilters(local, profile?.feedFilterPrefs)
-    setValue(merged)
-    writeStoredFilters(window.localStorage, merged)
-  }, [profile])
+    if (reconciled.current || profile === undefined) return;
+    reconciled.current = true;
+    const local = readStoredFilters(window.localStorage);
+    const merged = reconcileFilters(local, profile?.feedFilterPrefs);
+    setValue(merged);
+    writeStoredFilters(window.localStorage, merged);
+  }, [profile]);
 
   const set = (next: FeedFilters) => {
-    setValue(next)
-    writeStoredFilters(window.localStorage, next)
+    setValue(next);
+    writeStoredFilters(window.localStorage, next);
     // Best-effort server sync; the local copy already drives this session.
-    if (profile) void setServer({ filters: next })
-  }
+    if (profile) void setServer({ filters: next });
+  };
 
-  return { value, set }
+  return { value, set };
 }

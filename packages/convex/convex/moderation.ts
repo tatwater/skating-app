@@ -12,20 +12,20 @@
  * lifecycle `status` (D3) — see the hazards schema note.
  */
 
-import { ConvexError, v } from 'convex/values'
-import type { Doc } from './_generated/dataModel'
-import { mutation } from './_generated/server'
-import { requireRole } from './lib/auth'
-import { bumpContributionCount, visibleDelta } from './lib/contributionCounts'
-import { MODERATION_STATUSES } from './lib/enums'
-import { literals } from './lib/validators'
+import { ConvexError, v } from 'convex/values';
+import type { Doc } from './_generated/dataModel';
+import { mutation } from './_generated/server';
+import { requireRole } from './lib/auth';
+import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
+import { MODERATION_STATUSES } from './lib/enums';
+import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
 const ACTION_FOR_STATUS = {
   visible: 'restore',
   hidden: 'hide',
   removed: 'remove',
-} as const
+} as const;
 
 /**
  * Set a report's or comment's moderation status (D32/D37). `requireRole('moderator')`; patches the
@@ -36,7 +36,7 @@ const MODERATION_TABLE = {
   report: 'reports',
   comment: 'comments',
   hazard: 'hazards',
-} as const
+} as const;
 
 export const setModerationStatus = mutation({
   args: {
@@ -46,29 +46,29 @@ export const setModerationStatus = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'moderator')
-    if (args.reason.trim().length === 0) throw new ConvexError('A reason is required')
+    const actor = await requireRole(ctx, 'moderator');
+    if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
 
-    const targetId = ctx.db.normalizeId(MODERATION_TABLE[args.targetType], args.targetId)
-    if (!targetId) throw new ConvexError('Target not found')
-    const target = await ctx.db.get(targetId)
-    if (!target) throw new ConvexError('Target not found')
+    const targetId = ctx.db.normalizeId(MODERATION_TABLE[args.targetType], args.targetId);
+    if (!targetId) throw new ConvexError('Target not found');
+    const target = await ctx.db.get(targetId);
+    if (!target) throw new ConvexError('Target not found');
 
-    const typedTarget = target as Doc<'reports'> | Doc<'comments'> | Doc<'hazards'>
-    const priorStatus = typedTarget.moderationStatus
-    await ctx.db.patch(targetId, { moderationStatus: args.status })
+    const typedTarget = target as Doc<'reports'> | Doc<'comments'> | Doc<'hazards'>;
+    const priorStatus = typedTarget.moderationStatus;
+    await ctx.db.patch(targetId, { moderationStatus: args.status });
 
     // Reports and comments carry a denormalized contribution counter to keep exact; hazards do not.
     // Note we touch ONLY `moderationStatus` — the hazard's lifecycle `status` is deliberately left
     // alone, so a moderator hide is never mistakable for the community archiving a healed hazard (D3).
     if (args.targetType === 'report' || args.targetType === 'comment') {
-      const authored = target as Doc<'reports'> | Doc<'comments'>
+      const authored = target as Doc<'reports'> | Doc<'comments'>;
       await bumpContributionCount(
         ctx,
         authored.authorId,
         args.targetType === 'report' ? 'reportCount' : 'commentCount',
         visibleDelta(priorStatus, args.status),
-      )
+      );
     }
 
     await ctx.db.insert('moderationActions', {
@@ -79,10 +79,10 @@ export const setModerationStatus = mutation({
       reason: args.reason,
       metadata: { priorStatus, newStatus: args.status },
       createdAt: Date.now(),
-    })
-    return targetId
+    });
+    return targetId;
   },
-})
+});
 
 /**
  * Resolve a content flag (D32/D37). `requireRole('moderator')`; sets the flag terminal status
@@ -97,18 +97,18 @@ export const resolveFlag = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'moderator')
-    if (args.reason.trim().length === 0) throw new ConvexError('A reason is required')
+    const actor = await requireRole(ctx, 'moderator');
+    if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
 
-    const flag = await ctx.db.get(args.flagId)
-    if (!flag) throw new ConvexError('Flag not found')
+    const flag = await ctx.db.get(args.flagId);
+    if (!flag) throw new ConvexError('Flag not found');
 
-    const now = Date.now()
+    const now = Date.now();
     await ctx.db.patch(args.flagId, {
       status: args.resolution,
       resolvedByUserId: actor._id,
       resolvedAt: now,
-    })
+    });
 
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
@@ -117,7 +117,7 @@ export const resolveFlag = mutation({
       targetId: args.flagId,
       reason: args.reason,
       createdAt: now,
-    })
-    return args.flagId
+    });
+    return args.flagId;
   },
-})
+});

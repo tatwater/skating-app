@@ -1,27 +1,27 @@
-import { api } from '@skating/convex/api'
-import { formatSkateTime, humanizeEnum } from '@skating/core'
-import { useQuery } from 'convex/react'
-import { useLocalSearchParams, useRouter } from 'expo-router'
-import { ScrollView } from 'react-native'
-import { Text, XStack, YStack } from 'tamagui'
-import { Badge, DetailLoading, Unavailable } from '../../src/components/detailUi'
-import { ProfileView } from '../../src/components/ProfileView'
-import { BlockButton, FlagControl } from '../../src/components/SafetyControls'
+import { api } from '@skating/convex/api';
+import { formatSkateTime, humanizeEnum } from '@skating/core';
+import { useQuery } from 'convex/react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { ScrollView } from 'react-native';
+import { Text, XStack, YStack } from 'tamagui';
+import { Badge, DetailLoading, Unavailable } from '../../src/components/detailUi';
+import { ProfileView } from '../../src/components/ProfileView';
+import { BlockButton, FlagControl } from '../../src/components/SafetyControls';
 
 /** `/u/[username]` — a viewable public/private profile (D13), the mobile mirror of web's route. */
 export default function ProfileRoute() {
-  const { username } = useLocalSearchParams<{ username: string }>()
-  const router = useRouter()
-  const profile = useQuery(api.profiles.getPublicProfile, { username })
+  const { username } = useLocalSearchParams<{ username: string }>();
+  const router = useRouter();
+  const profile = useQuery(api.profiles.getPublicProfile, { username });
 
-  if (profile === undefined) return <DetailLoading />
+  if (profile === undefined) return <DetailLoading />;
   if (profile === null) {
     return (
       <Unavailable
         title="Profile not available"
         message="This profile doesn’t exist or isn’t visible to you."
       />
-    )
+    );
   }
 
   const actions = profile.isSelf ? null : (
@@ -29,7 +29,7 @@ export default function ProfileRoute() {
       <BlockButton targetUserId={profile.userId} displayName={profile.displayName} />
       <FlagControl targetType="user" targetId={profile.userId} />
     </YStack>
-  )
+  );
 
   return (
     <ScrollView style={{ flex: 1 }}>
@@ -82,5 +82,5 @@ export default function ProfileRoute() {
         }
       />
     </ScrollView>
-  )
+  );
 }

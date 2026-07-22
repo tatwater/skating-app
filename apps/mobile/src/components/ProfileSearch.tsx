@@ -1,29 +1,29 @@
-import { api } from '@skating/convex/api'
-import { useQuery } from 'convex/react'
-import { useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
-import { Keyboard } from 'react-native'
-import { Input, Text, YStack } from 'tamagui'
+import { api } from '@skating/convex/api';
+import { useQuery } from 'convex/react';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Keyboard } from 'react-native';
+import { Input, Text, YStack } from 'tamagui';
 
 /**
  * Inline profile search (D13), the mobile mirror of web's `ProfileSearch` — public profiles only
  * (server excludes private + blocked). Debounced; selecting a result opens that profile.
  */
 export function ProfileSearch() {
-  const router = useRouter()
-  const [text, setText] = useState('')
-  const [debounced, setDebounced] = useState('')
+  const router = useRouter();
+  const [text, setText] = useState('');
+  const [debounced, setDebounced] = useState('');
 
   useEffect(() => {
-    const id = setTimeout(() => setDebounced(text.trim()), 150)
-    return () => clearTimeout(id)
-  }, [text])
+    const id = setTimeout(() => setDebounced(text.trim()), 150);
+    return () => clearTimeout(id);
+  }, [text]);
 
   const results = useQuery(
     api.profiles.searchProfiles,
     debounced.length > 0 ? { query: debounced } : 'skip',
-  )
-  const loaded = debounced.length > 0 && results !== undefined
+  );
+  const loaded = debounced.length > 0 && results !== undefined;
 
   return (
     <YStack gap="$2">
@@ -41,9 +41,9 @@ export function ProfileSearch() {
             <YStack
               key={hit.userId}
               onPress={() => {
-                setText('')
-                Keyboard.dismiss()
-                router.navigate({ pathname: '/u/[username]', params: { username: hit.username } })
+                setText('');
+                Keyboard.dismiss();
+                router.navigate({ pathname: '/u/[username]', params: { username: hit.username } });
               }}
               paddingHorizontal="$3"
               paddingVertical="$2.5"
@@ -64,5 +64,5 @@ export function ProfileSearch() {
         </YStack>
       ) : null}
     </YStack>
-  )
+  );
 }

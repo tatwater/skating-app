@@ -1,6 +1,6 @@
-import { useNavigate } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
-import { Sheet, SheetContent } from './ui/sheet'
+import { useNavigate } from '@tanstack/react-router';
+import type { ReactNode } from 'react';
+import { Sheet, SheetContent } from './ui/sheet';
 
 /**
  * The right-side drawer that hosts a water-body / report detail over the persistent map (D47),
@@ -13,14 +13,14 @@ import { Sheet, SheetContent } from './ui/sheet'
  * dismiss the drawer and discard a half-filled report. Escape and the ✕ still close it.
  */
 export function DetailSheet({ children }: { children: ReactNode }) {
-  const navigate = useNavigate()
+  const navigate = useNavigate();
   return (
     <Sheet
       open
       modal={false}
       disablePointerDismissal
       onOpenChange={(open) => {
-        if (!open) navigate({ to: '/' })
+        if (!open) navigate({ to: '/' });
       }}
     >
       <SheetContent
@@ -31,5 +31,5 @@ export function DetailSheet({ children }: { children: ReactNode }) {
         {children}
       </SheetContent>
     </Sheet>
-  )
+  );
 }

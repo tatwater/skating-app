@@ -14,15 +14,15 @@
  * negative — `backfillContributionCounts` seeds real values once, after which every path stays exact.
  */
 
-import type { Doc, Id } from '../_generated/dataModel'
-import type { MutationCtx } from '../_generated/server'
+import type { Doc, Id } from '../_generated/dataModel';
+import type { MutationCtx } from '../_generated/server';
 
 /** Which profile counter a target type feeds. */
-export type ContributionField = 'reportCount' | 'commentCount'
+export type ContributionField = 'reportCount' | 'commentCount';
 
 /** A moderation status counts toward the public total only when it's `visible`. */
 function isVisible(status: Doc<'reports'>['moderationStatus']): boolean {
-  return status === 'visible'
+  return status === 'visible';
 }
 
 /**
@@ -33,7 +33,7 @@ export function visibleDelta(
   prior: Doc<'reports'>['moderationStatus'] | undefined,
   next: Doc<'reports'>['moderationStatus'],
 ): number {
-  return Number(isVisible(next)) - Number(prior !== undefined && isVisible(prior))
+  return Number(isVisible(next)) - Number(prior !== undefined && isVisible(prior));
 }
 
 /** Adjust an author's contribution counter by `delta`, clamped at 0. A missing author is a no-op. */
@@ -43,9 +43,9 @@ export async function bumpContributionCount(
   field: ContributionField,
   delta: number,
 ): Promise<void> {
-  if (delta === 0) return
-  const author = await ctx.db.get(authorId)
-  if (!author) return
-  const current = author[field] ?? 0
-  await ctx.db.patch(authorId, { [field]: Math.max(0, current + delta) })
+  if (delta === 0) return;
+  const author = await ctx.db.get(authorId);
+  if (!author) return;
+  const current = author[field] ?? 0;
+  await ctx.db.patch(authorId, { [field]: Math.max(0, current + delta) });
 }

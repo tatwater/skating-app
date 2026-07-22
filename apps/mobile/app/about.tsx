@@ -1,8 +1,8 @@
-import Constants from 'expo-constants'
-import { openBrowserAsync } from 'expo-web-browser'
-import { ScrollView } from 'react-native'
-import { Anchor, H2, Paragraph, YStack } from 'tamagui'
-import { DOC_URLS } from '../src/lib/links'
+import Constants from 'expo-constants';
+import { openBrowserAsync } from 'expo-web-browser';
+import { ScrollView } from 'react-native';
+import { Anchor, H2, Paragraph, YStack } from 'tamagui';
+import { DOC_URLS } from '../src/lib/links';
 
 /**
  * About + license disclosure (D43). The app is AGPL-3.0 with a GPLv3 §7 App
@@ -40,5 +40,5 @@ export default function AboutScreen() {
         </Anchor>
       </YStack>
     </ScrollView>
-  )
+  );
 }

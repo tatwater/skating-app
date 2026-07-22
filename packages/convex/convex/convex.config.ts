@@ -13,11 +13,11 @@
  * their per-query read caps) fully isolated rather than sharing one point index.
  */
 
-import geospatial from '@convex-dev/geospatial/convex.config'
-import { defineApp } from 'convex/server'
+import geospatial from '@convex-dev/geospatial/convex.config';
+import { defineApp } from 'convex/server';
 
-const app = defineApp()
-app.use(geospatial)
-app.use(geospatial, { name: 'adminAreasGeo' })
+const app = defineApp();
+app.use(geospatial);
+app.use(geospatial, { name: 'adminAreasGeo' });
 
-export default app
+export default app;

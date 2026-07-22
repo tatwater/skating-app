@@ -1,19 +1,19 @@
-import type { ReactNode } from 'react'
-import { Card, CardContent } from './ui/card'
-import { Separator } from './ui/separator'
+import type { ReactNode } from 'react';
+import { Card, CardContent } from './ui/card';
+import { Separator } from './ui/separator';
 
 /** Plain profile data for the presentational view — Convex-free so it's unit-testable (D40). */
 export interface ProfileViewData {
-  username: string
-  displayName: string
-  profileImageUrl?: string
-  isSelf: boolean
-  isPrivate: boolean
-  homeTownLabel?: string
-  bio?: string
-  reputationPoints?: number
-  reportCount?: number
-  commentCount?: number
+  username: string;
+  displayName: string;
+  profileImageUrl?: string;
+  isSelf: boolean;
+  isPrivate: boolean;
+  homeTownLabel?: string;
+  bio?: string;
+  reputationPoints?: number;
+  reportCount?: number;
+  commentCount?: number;
 }
 
 /** A round avatar with an initial fallback when the user has no Clerk image. */
@@ -22,9 +22,9 @@ export function Avatar({
   imageUrl,
   size = 64,
 }: {
-  displayName: string
-  imageUrl?: string
-  size?: number
+  displayName: string;
+  imageUrl?: string;
+  size?: number;
 }) {
   if (imageUrl) {
     return (
@@ -36,7 +36,7 @@ export function Avatar({
         className="rounded-full object-cover"
         style={{ width: size, height: size }}
       />
-    )
+    );
   }
   return (
     <div
@@ -46,7 +46,7 @@ export function Avatar({
     >
       {displayName.trim().charAt(0).toUpperCase() || '?'}
     </div>
-  )
+  );
 }
 
 /**
@@ -62,7 +62,7 @@ export function TrustScore({ points }: { points: number }) {
         Trust score
       </span>
     </div>
-  )
+  );
 }
 
 function Stat({ value, label }: { value: number; label: string }) {
@@ -73,7 +73,7 @@ function Stat({ value, label }: { value: number; label: string }) {
         {label}
       </span>
     </div>
-  )
+  );
 }
 
 /**
@@ -87,9 +87,9 @@ export function ProfileView({
   actions,
   reportHistory,
 }: {
-  data: ProfileViewData
-  actions?: ReactNode
-  reportHistory?: ReactNode
+  data: ProfileViewData;
+  actions?: ReactNode;
+  reportHistory?: ReactNode;
 }) {
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 py-8">
@@ -134,5 +134,5 @@ export function ProfileView({
         </section>
       ) : null}
     </div>
-  )
+  );
 }

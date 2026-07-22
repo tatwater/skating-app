@@ -1,35 +1,35 @@
-import { useAuth, useUser } from '@clerk/tanstack-react-start'
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { DRIVE_TIME_BANDS } from '@skating/core'
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMutation, useQuery } from 'convex/react'
-import { useState } from 'react'
-import { ProfileEdit } from '../components/ProfileEdit'
-import { Avatar } from '../components/ProfileView'
-import { Button, buttonVariants } from '../components/ui/button'
-import { Card, CardContent } from '../components/ui/card'
-import { Checkbox } from '../components/ui/checkbox'
-import { Label } from '../components/ui/label'
+import { useAuth, useUser } from '@clerk/tanstack-react-start';
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { DRIVE_TIME_BANDS } from '@skating/core';
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { useMutation, useQuery } from 'convex/react';
+import { useState } from 'react';
+import { ProfileEdit } from '../components/ProfileEdit';
+import { Avatar } from '../components/ProfileView';
+import { Button, buttonVariants } from '../components/ui/button';
+import { Card, CardContent } from '../components/ui/card';
+import { Checkbox } from '../components/ui/checkbox';
+import { Label } from '../components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '../components/ui/select'
+} from '../components/ui/select';
 
 /**
  * Account hub — the web analog of mobile's "You" tab (D28). Who you're signed in as, profile
  * editing (bio / town / public↔private, D13), your blocked-users list (D32), the about/license link
  * (D43), and sign-out. GPS connections + notification toggles come in later phases.
  */
-export const Route = createFileRoute('/settings')({ component: SettingsPage })
+export const Route = createFileRoute('/settings')({ component: SettingsPage });
 
 function SettingsPage() {
-  const { signOut } = useAuth()
-  const { user } = useUser()
-  const profile = useQuery(api.profiles.current, {})
+  const { signOut } = useAuth();
+  const { user } = useUser();
+  const profile = useQuery(api.profiles.current, {});
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6 py-8">
@@ -76,7 +76,7 @@ function SettingsPage() {
         </Button>
       </div>
     </div>
-  )
+  );
 }
 
 /**
@@ -86,26 +86,26 @@ function SettingsPage() {
  * the isochrone recompute that powers the drive-time feed filter + nearby notifications.
  */
 function HomeLocation() {
-  const profile = useQuery(api.profiles.current, {})
-  const setHome = useMutation(api.profiles.setHome)
-  const [status, setStatus] = useState<'idle' | 'locating' | 'error'>('idle')
+  const profile = useQuery(api.profiles.current, {});
+  const setHome = useMutation(api.profiles.setHome);
+  const [status, setStatus] = useState<'idle' | 'locating' | 'error'>('idle');
 
   const useCurrentLocation = () => {
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setStatus('error')
-      return
+      setStatus('error');
+      return;
     }
-    setStatus('locating')
+    setStatus('locating');
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        void setHome({ homeCoord: { lat: pos.coords.latitude, lng: pos.coords.longitude } })
-        setStatus('idle')
+        void setHome({ homeCoord: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
+        setStatus('idle');
       },
       () => setStatus('error'),
-    )
-  }
+    );
+  };
 
-  const hasHome = profile?.homeCoord !== undefined
+  const hasHome = profile?.homeCoord !== undefined;
 
   return (
     <section className="flex flex-col gap-2">
@@ -141,7 +141,7 @@ function HomeLocation() {
         </CardContent>
       </Card>
     </section>
-  )
+  );
 }
 
 /** A radius picker (30/60/90 min) or "off" for the notification distances. */
@@ -150,9 +150,9 @@ function RadiusSelect({
   value,
   onChange,
 }: {
-  id: string
-  value: number | undefined
-  onChange: (minutes: number | undefined) => void
+  id: string;
+  value: number | undefined;
+  onChange: (minutes: number | undefined) => void;
 }) {
   return (
     <Select
@@ -169,7 +169,7 @@ function RadiusSelect({
         ))}
       </SelectContent>
     </Select>
-  )
+  );
 }
 
 /**
@@ -178,12 +178,12 @@ function RadiusSelect({
  * and re-enforced server-side). The radii need a home set above; without one, nearby buckets never fire.
  */
 function NotificationSettings() {
-  const profile = useQuery(api.profiles.current, {})
-  const setPrefs = useMutation(api.profiles.setNotificationPrefs)
-  if (!profile) return null
-  const prefs = profile.notificationPrefs
-  const allRadius = profile.allRadiusMinutes
-  const greatRadius = profile.greatRadiusMinutes
+  const profile = useQuery(api.profiles.current, {});
+  const setPrefs = useMutation(api.profiles.setNotificationPrefs);
+  if (!profile) return null;
+  const prefs = profile.notificationPrefs;
+  const allRadius = profile.allRadiusMinutes;
+  const greatRadius = profile.greatRadiusMinutes;
 
   return (
     <section className="flex flex-col gap-2">
@@ -229,11 +229,11 @@ function NotificationSettings() {
                     const nextGreat =
                       minutes !== undefined && greatRadius !== undefined && greatRadius < minutes
                         ? minutes
-                        : greatRadius
+                        : greatRadius;
                     void setPrefs({
                       allRadiusMinutes: minutes,
                       ...(nextGreat !== greatRadius ? { greatRadiusMinutes: nextGreat } : {}),
-                    })
+                    });
                   }}
                 />
               </div>
@@ -262,10 +262,10 @@ function NotificationSettings() {
                   onChange={(minutes) => {
                     // Clamp X₂ ≥ X₁ client-side (the server rejects otherwise).
                     if (minutes !== undefined && allRadius !== undefined && minutes < allRadius) {
-                      void setPrefs({ greatRadiusMinutes: allRadius })
-                      return
+                      void setPrefs({ greatRadiusMinutes: allRadius });
+                      return;
                     }
-                    void setPrefs({ greatRadiusMinutes: minutes })
+                    void setPrefs({ greatRadiusMinutes: minutes });
                   }}
                 />
               </div>
@@ -280,15 +280,15 @@ function NotificationSettings() {
         </CardContent>
       </Card>
     </section>
-  )
+  );
 }
 
 /** The caller's blocked users (D32) with an unblock control. A block never hid their reports (D3). */
 function BlockedUsers() {
-  const blocks = useQuery(api.blocks.myBlocks, {})
-  const unblock = useMutation(api.blocks.unblock)
+  const blocks = useQuery(api.blocks.myBlocks, {});
+  const unblock = useMutation(api.blocks.unblock);
 
-  if (blocks === undefined || blocks.length === 0) return null
+  if (blocks === undefined || blocks.length === 0) return null;
 
   return (
     <section className="flex flex-col gap-2">
@@ -315,5 +315,5 @@ function BlockedUsers() {
         </CardContent>
       </Card>
     </section>
-  )
+  );
 }

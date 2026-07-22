@@ -17,13 +17,13 @@
  */
 
 /** The three-tier confirmation vote (D52). Replaces the old binary still_there|gone. */
-export type HazardVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed'
+export type HazardVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed';
 
 /** Whether the latest verdict marked the hazard as healing-but-still-dangerous. */
-export type HazardHealingState = 'none' | 'healing_unsafe'
+export type HazardHealingState = 'none' | 'healing_unsafe';
 
 /** Lifecycle status. Separate from moderation status — see the note on `HazardLifecycleState`. */
-export type HazardStatus = 'active' | 'archived'
+export type HazardStatus = 'active' | 'archived';
 
 /**
  * The mutable lifecycle fields of a hazard.
@@ -33,30 +33,30 @@ export type HazardStatus = 'active' | 'archived'
  * community clearing a real hazard — a moderator action must never read as a safety verdict (D3).
  */
 export interface HazardLifecycleState {
-  lastConfirmedAt: number
-  confirmCount: number
-  goneCount: number
-  healingState: HazardHealingState
-  status: HazardStatus
+  lastConfirmedAt: number;
+  confirmCount: number;
+  goneCount: number;
+  healingState: HazardHealingState;
+  status: HazardStatus;
 }
 
 /**
  * How many independent `still_there` confirmations promote a hazard from *provisional* to *confirmed*.
  * Tunable, admin-editable in Phase 7 (D49); no reputation weighting yet (D50/D54).
  */
-export const DEFAULT_CONFIRM_THRESHOLD = 1
+export const DEFAULT_CONFIRM_THRESHOLD = 1;
 
 /**
  * How many independent `fully_healed` verdicts archive a hazard. Higher than the confirm threshold on
  * purpose: the asymmetry is the safety margin. Believing a hazard is present when it isn't costs a
  * detour; believing it's gone when it isn't can kill someone (D3).
  */
-export const DEFAULT_REMOVAL_THRESHOLD = 2
+export const DEFAULT_REMOVAL_THRESHOLD = 2;
 
 export interface ApplyConfirmationOptions {
   /** Confirmations by the hazard's own author don't count toward either threshold (D54). */
-  isAuthor?: boolean
-  removalThreshold?: number
+  isAuthor?: boolean;
+  removalThreshold?: number;
 }
 
 /**
@@ -80,14 +80,14 @@ export function applyConfirmation(
   at: number,
   options: ApplyConfirmationOptions = {},
 ): HazardLifecycleState {
-  const { isAuthor = false, removalThreshold = DEFAULT_REMOVAL_THRESHOLD } = options
+  const { isAuthor = false, removalThreshold = DEFAULT_REMOVAL_THRESHOLD } = options;
   // The author vouching for their own report is not independent evidence (D54). It still refreshes the
   // decay clock — they were genuinely there and looked — it just can't promote or remove the pin.
-  const counts = !isAuthor
+  const counts = !isAuthor;
   // Adding an observation must never make a hazard look *less* observed. A "still here" cast at 06:00
   // that flushes at 10:05 — after an online confirm already refreshed the clock to 10:00 — must not
   // drag `lastConfirmedAt` backward and fade a pin that was verified minutes ago. Monotonic by force.
-  const lastConfirmedAt = Math.max(state.lastConfirmedAt, at)
+  const lastConfirmedAt = Math.max(state.lastConfirmedAt, at);
 
   switch (verdict) {
     case 'still_there':
@@ -97,7 +97,7 @@ export function applyConfirmation(
         confirmCount: state.confirmCount + (counts ? 1 : 0),
         // Seeing it still there supersedes an earlier "healing" note.
         healingState: 'none',
-      }
+      };
 
     case 'healing_unsafe':
       return {
@@ -107,41 +107,41 @@ export function applyConfirmation(
         // thing a future skater needs to be able to read.
         lastConfirmedAt,
         healingState: 'healing_unsafe',
-      }
+      };
 
     case 'fully_healed': {
-      const goneCount = state.goneCount + (counts ? 1 : 0)
+      const goneCount = state.goneCount + (counts ? 1 : 0);
       return {
         ...state,
         lastConfirmedAt,
         goneCount,
         healingState: 'none',
         status: shouldArchive(goneCount, removalThreshold) ? 'archived' : state.status,
-      }
+      };
     }
   }
 }
 
 /** One stored confirmation, reduced to what the lifecycle derivation needs. */
 export interface HazardVoteRecord {
-  userId: string
-  verdict: HazardVerdict
+  userId: string;
+  verdict: HazardVerdict;
   /** Epoch ms the skater observed it (the clamped `observedAt`). */
-  at: number
+  at: number;
 }
 
 export interface DeriveHazardLifecycleOptions {
   /** The hazard's author — their votes refresh the clock but never move a threshold (D54). */
-  authorId: string
+  authorId: string;
   /** Hazard creation time (epoch ms) — the floor for `lastConfirmedAt` when there are no later votes. */
-  createdAt: number
+  createdAt: number;
   /**
    * The hazard's current status. Archival is a ratchet: once the community has archived a hazard, one
    * person later changing their mind must not silently resurrect it — that path is a fresh re-report
    * (D15). So a hazard that is already `archived` stays archived regardless of the recomputed count.
    */
-  priorStatus: HazardStatus
-  removalThreshold?: number
+  priorStatus: HazardStatus;
+  removalThreshold?: number;
 }
 
 /**
@@ -168,35 +168,42 @@ export function deriveHazardLifecycle(
   votes: readonly HazardVoteRecord[],
   options: DeriveHazardLifecycleOptions,
 ): HazardLifecycleState {
-  const { authorId, createdAt, priorStatus, removalThreshold = DEFAULT_REMOVAL_THRESHOLD } = options
+  const {
+    authorId,
+    createdAt,
+    priorStatus,
+    removalThreshold = DEFAULT_REMOVAL_THRESHOLD,
+  } = options;
 
   // Reduce to each user's most recent vote.
-  const latestByUser = new Map<string, HazardVoteRecord>()
+  const latestByUser = new Map<string, HazardVoteRecord>();
   for (const vote of votes) {
-    const prior = latestByUser.get(vote.userId)
-    if (!prior || vote.at >= prior.at) latestByUser.set(vote.userId, vote)
+    const prior = latestByUser.get(vote.userId);
+    if (!prior || vote.at >= prior.at) latestByUser.set(vote.userId, vote);
   }
 
-  let confirmCount = 0
-  let goneCount = 0
-  let lastConfirmedAt = createdAt
-  let mostRecent: HazardVoteRecord | undefined
+  let confirmCount = 0;
+  let goneCount = 0;
+  let lastConfirmedAt = createdAt;
+  let mostRecent: HazardVoteRecord | undefined;
   for (const vote of latestByUser.values()) {
-    lastConfirmedAt = Math.max(lastConfirmedAt, vote.at)
-    if (!mostRecent || vote.at >= mostRecent.at) mostRecent = vote
+    lastConfirmedAt = Math.max(lastConfirmedAt, vote.at);
+    if (!mostRecent || vote.at >= mostRecent.at) mostRecent = vote;
     // The author's own vote refreshes the clock (handled above) but is not independent evidence, so it
     // moves neither threshold.
-    if (vote.userId === authorId) continue
-    if (vote.verdict === 'still_there') confirmCount += 1
-    else if (vote.verdict === 'fully_healed') goneCount += 1
+    if (vote.userId === authorId) continue;
+    if (vote.verdict === 'still_there') confirmCount += 1;
+    else if (vote.verdict === 'fully_healed') goneCount += 1;
   }
 
   const healingState: HazardHealingState =
-    mostRecent?.verdict === 'healing_unsafe' ? 'healing_unsafe' : 'none'
+    mostRecent?.verdict === 'healing_unsafe' ? 'healing_unsafe' : 'none';
   const status: HazardStatus =
-    priorStatus === 'archived' || shouldArchive(goneCount, removalThreshold) ? 'archived' : 'active'
+    priorStatus === 'archived' || shouldArchive(goneCount, removalThreshold)
+      ? 'archived'
+      : 'active';
 
-  return { lastConfirmedAt, confirmCount, goneCount, healingState, status }
+  return { lastConfirmedAt, confirmCount, goneCount, healingState, status };
 }
 
 /** Whether enough independent `fully_healed` verdicts have accumulated to archive (never delete). */
@@ -204,7 +211,7 @@ export function shouldArchive(
   goneCount: number,
   removalThreshold = DEFAULT_REMOVAL_THRESHOLD,
 ): boolean {
-  return goneCount >= removalThreshold
+  return goneCount >= removalThreshold;
 }
 
 /**
@@ -219,7 +226,7 @@ export function isProvisional(
   confirmCount: number,
   confirmThreshold = DEFAULT_CONFIRM_THRESHOLD,
 ): boolean {
-  return confirmCount < confirmThreshold
+  return confirmCount < confirmThreshold;
 }
 
 /** A fresh hazard's starting lifecycle state, at creation time `at` (epoch ms). */
@@ -230,5 +237,5 @@ export function initialLifecycleState(at: number): HazardLifecycleState {
     goneCount: 0,
     healingState: 'none',
     status: 'active',
-  }
+  };
 }

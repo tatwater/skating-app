@@ -1,13 +1,13 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { type DirectionsPlatform, directionsUrl } from '@skating/core'
-import { useQuery } from 'convex/react'
-import { buttonVariants } from './ui/button'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { type DirectionsPlatform, directionsUrl } from '@skating/core';
+import { useQuery } from 'convex/react';
+import { buttonVariants } from './ui/button';
 
 /** Detect the platform for the directions deep link — Apple Maps on iOS, Google Maps elsewhere. */
 function detectPlatform(): DirectionsPlatform {
-  if (typeof navigator === 'undefined') return 'web'
-  return /iPhone|iPad|iPod/.test(navigator.userAgent) ? 'ios' : 'web'
+  if (typeof navigator === 'undefined') return 'web';
+  return /iPhone|iPad|iPod/.test(navigator.userAgent) ? 'ios' : 'web';
 }
 
 /**
@@ -17,10 +17,10 @@ function detectPlatform(): DirectionsPlatform {
  * a lake has no known put-in yet — there's nothing safe to route to.
  */
 export function DirectionsButton({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const markers = useQuery(api.putIns.listForBody, { waterBodyId })
-  if (markers === undefined || markers.length === 0) return null
-  const target = markers[0]
-  if (!target) return null
+  const markers = useQuery(api.putIns.listForBody, { waterBodyId });
+  if (markers === undefined || markers.length === 0) return null;
+  const target = markers[0];
+  if (!target) return null;
 
   return (
     <a
@@ -31,5 +31,5 @@ export function DirectionsButton({ waterBodyId }: { waterBodyId: Id<'waterBodies
     >
       Directions{target.source === 'official' ? '' : ' (approx. put-in)'}
     </a>
-  )
+  );
 }

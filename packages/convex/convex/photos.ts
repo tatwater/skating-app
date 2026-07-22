@@ -5,27 +5,27 @@
  * `placeOnMap`, so a client bug can never leak a location.
  */
 
-import { isMinor, isValidCoord } from '@skating/core'
-import { ConvexError, v } from 'convex/values'
-import type { Id } from './_generated/dataModel'
-import { mutation, query } from './_generated/server'
-import { requireProfile } from './lib/auth'
-import { resolvePhotoUrls } from './lib/photoAccess'
-import { getViewableReport } from './lib/reportVisibility'
-import { latLng } from './lib/validators'
+import { isMinor, isValidCoord } from '@skating/core';
+import { ConvexError, v } from 'convex/values';
+import type { Id } from './_generated/dataModel';
+import { mutation, query } from './_generated/server';
+import { requireProfile } from './lib/auth';
+import { resolvePhotoUrls } from './lib/photoAccess';
+import { getViewableReport } from './lib/reportVisibility';
+import { latLng } from './lib/validators';
 
 /** Mint a one-time Convex storage upload URL for the optimized full image / thumb (auth'd). */
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    const profile = await requireProfile(ctx)
+    const profile = await requireProfile(ctx);
     // Minors are read-only (D41): don't even hand a minor an upload URL (they can't create the row).
     if (isMinor(profile.dateOfBirth, Date.now())) {
-      throw new ConvexError('Minors cannot post')
+      throw new ConvexError('Minors cannot post');
     }
-    return ctx.storage.generateUploadUrl()
+    return ctx.storage.generateUploadUrl();
   },
-})
+});
 
 /**
  * Record a `photos` row after the client uploads the optimized full + thumb. **D42 enforcement:**
@@ -42,17 +42,17 @@ export const create = mutation({
     placeOnMap: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx)
+    const profile = await requireProfile(ctx);
     // Minors are read-only (D41): photos only exist to back a report a minor can't post, so gate
     // the upload surface too — a minor never mints photo rows or storage blobs.
     if (isMinor(profile.dateOfBirth, Date.now())) {
-      throw new ConvexError('Minors cannot post')
+      throw new ConvexError('Minors cannot post');
     }
     // D42: retain a coord ONLY on placeOnMap opt-in — server-side, so a client bug can't leak it.
-    const coord = args.placeOnMap ? args.coord : undefined
+    const coord = args.placeOnMap ? args.coord : undefined;
     // Range-check before storing (the `latLng` validator checks types, not geographic bounds).
     if (coord !== undefined && !isValidCoord(coord)) {
-      throw new ConvexError('Photo coordinate is out of range')
+      throw new ConvexError('Photo coordinate is out of range');
     }
     return ctx.db.insert('photos', {
       storageId: args.storageId,
@@ -63,9 +63,9 @@ export const create = mutation({
       ...(coord !== undefined ? { coord } : {}),
       placeOnMap: args.placeOnMap,
       createdAt: Date.now(),
-    })
+    });
   },
-})
+});
 
 /**
  * Delete an uploaded photo the caller owns, plus its stored blobs — the cleanup path for a report
@@ -77,19 +77,19 @@ export const create = mutation({
 export const remove = mutation({
   args: { photoId: v.id('photos') },
   handler: async (ctx, { photoId }) => {
-    const profile = await requireProfile(ctx)
-    const photo = await ctx.db.get(photoId)
-    if (!photo) return // already gone — idempotent
-    if (photo.uploaderId !== profile._id) throw new ConvexError('Not your photo')
+    const profile = await requireProfile(ctx);
+    const photo = await ctx.db.get(photoId);
+    if (!photo) return; // already gone — idempotent
+    if (photo.uploaderId !== profile._id) throw new ConvexError('Not your photo');
     // Tolerate an already-gone blob (e.g. a concurrent `removeBlob` during form teardown) so row
     // cleanup still completes — a throw here would otherwise strand the row.
     await Promise.all([
       ctx.storage.delete(photo.storageId as Id<'_storage'>).catch(() => {}),
       ctx.storage.delete(photo.thumbStorageId as Id<'_storage'>).catch(() => {}),
-    ])
-    await ctx.db.delete(photoId)
+    ]);
+    await ctx.db.delete(photoId);
   },
-})
+});
 
 /**
  * Delete a storage blob the client uploaded but never attached to a `photos` row — the cleanup path
@@ -101,14 +101,14 @@ export const remove = mutation({
 export const removeBlob = mutation({
   args: { storageId: v.id('_storage') },
   handler: async (ctx, { storageId }) => {
-    await requireProfile(ctx)
+    await requireProfile(ctx);
     try {
-      await ctx.storage.delete(storageId)
+      await ctx.storage.delete(storageId);
     } catch {
       // Already deleted, or an upload URL that was never finalized — nothing to reclaim.
     }
   },
-})
+});
 
 /**
  * Resolve serving URLs (full + thumb) for a report's photos — what the report detail UI renders.
@@ -124,11 +124,11 @@ export const removeBlob = mutation({
 export const getUrls = query({
   args: { reportId: v.id('reports') },
   handler: async (ctx, { reportId }) => {
-    const report = await getViewableReport(ctx, reportId)
-    if (!report) return []
-    return resolvePhotoUrls(ctx, report.photoIds)
+    const report = await getViewableReport(ctx, reportId);
+    if (!report) return [];
+    return resolvePhotoUrls(ctx, report.photoIds);
   },
-})
+});
 
 /**
  * Serving URLs for a **hazard's** photos (Phase 9).
@@ -142,8 +142,8 @@ export const getUrls = query({
 export const getHazardUrls = query({
   args: { hazardId: v.id('hazards') },
   handler: async (ctx, { hazardId }) => {
-    const hazard = await ctx.db.get(hazardId)
-    if (hazard?.moderationStatus !== 'visible') return []
-    return resolvePhotoUrls(ctx, hazard.photoIds)
+    const hazard = await ctx.db.get(hazardId);
+    if (hazard?.moderationStatus !== 'visible') return [];
+    return resolvePhotoUrls(ctx, hazard.photoIds);
   },
-})
+});

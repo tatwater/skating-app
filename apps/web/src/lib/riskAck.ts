@@ -7,9 +7,9 @@
  * The copy below is presentational and deliberately lives per-surface (mirroring mobile),
  * not in `@skating/core`.
  */
-export { RISK_ACK_VERSION } from '@skating/core'
+export { RISK_ACK_VERSION } from '@skating/core';
 
 export const RISK_ACK_COPY =
   'Reports in this app are peers’ observations at a specific time and place — never a ' +
   'guarantee that ice is safe. Weather changes ice fast. You alone decide whether to ' +
-  'step onto any ice, and you assume the risk of doing so.'
+  'step onto any ice, and you assume the risk of doing so.';

@@ -1,17 +1,22 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { formatAreaAcres, formatSkateTime, humanizeEnum, SKATE_QUALITY_LABELS } from '@skating/core'
-import { usePaginatedQuery, useQuery } from 'convex/react'
-import { useRouter } from 'expo-router'
-import type { MultiPolygon, Polygon } from 'geojson'
-import { useEffect, useState } from 'react'
-import { Button, H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui'
-import { cacheBody } from '../lib/bodyCache'
-import { cacheReports } from '../lib/reportCache'
-import { Badge, DetailLoading, Section, Unavailable } from './detailUi'
-import { DirectionsButton, FavoriteButton } from './FavoriteButton'
-import { useMapSelection } from './MapSelectionContext'
-import { ReportForm } from './ReportForm'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import {
+  formatAreaAcres,
+  formatSkateTime,
+  humanizeEnum,
+  SKATE_QUALITY_LABELS,
+} from '@skating/core';
+import { usePaginatedQuery, useQuery } from 'convex/react';
+import { useRouter } from 'expo-router';
+import type { MultiPolygon, Polygon } from 'geojson';
+import { useEffect, useState } from 'react';
+import { Button, H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
+import { cacheBody } from '../lib/bodyCache';
+import { cacheReports } from '../lib/reportCache';
+import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
+import { DirectionsButton, FavoriteButton } from './FavoriteButton';
+import { useMapSelection } from './MapSelectionContext';
+import { ReportForm } from './ReportForm';
 
 /**
  * Water-body detail drawer (§F, D47) for `/water/[id]`, the mobile mirror of web's `WaterBodyDetail`.
@@ -25,20 +30,20 @@ import { ReportForm } from './ReportForm'
 export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   const result = useQuery(api.waterBodies.get, {
     waterBodyId: waterBodyId as Id<'waterBodies'>,
-  })
-  const body = result?.available ? result.body : null
-  const { setFocus, setHighlightWaterBodyId } = useMapSelection()
-  const [formOpen, setFormOpen] = useState(false)
+  });
+  const body = result?.available ? result.body : null;
+  const { setFocus, setHighlightWaterBodyId } = useMapSelection();
+  const [formOpen, setFormOpen] = useState(false);
 
   // Offline read-cache (decision #8): stash this opened lake's freshest reports as feed cards so they
   // read back on the ice with no signal. Skips until the (merge-resolved) body id is known.
   const openedLakeCards = useQuery(
     api.reports.recentCardsForBodies,
     body ? { waterBodyIds: [body._id] } : 'skip',
-  )
+  );
   useEffect(() => {
-    if (openedLakeCards && openedLakeCards.length > 0) cacheReports(openedLakeCards)
-  }, [openedLakeCards])
+    if (openedLakeCards && openedLakeCards.length > 0) cacheReports(openedLakeCards);
+  }, [openedLakeCards]);
 
   // Once the (possibly merge-resolved) lake loads, fly the map to it and highlight it by the
   // *resolved* `_id` — the survivor a merged deep link redirects to, which is what the map carries.
@@ -46,8 +51,8 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
     if (body) {
       // Pass the lake's bbox so the map zoom-to-fits it into the area above the drawer (falls back to
       // the centroid for anything without bounds).
-      setFocus({ lat: body.centroid.lat, lng: body.centroid.lng, bounds: body.bbox })
-      setHighlightWaterBodyId(body._id)
+      setFocus({ lat: body.centroid.lat, lng: body.centroid.lng, bounds: body.bbox });
+      setHighlightWaterBodyId(body._id);
       // Cache this viewed lake's reference data on-device (F2 Layer 2) so it can be GPS-resolved
       // offline for a no-signal report. Best-effort; the sqlite write never blocks viewing.
       cacheBody({
@@ -57,18 +62,18 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         polygon: body.polygon as unknown as Polygon | MultiPolygon,
         centroid: body.centroid,
         surfaceAreaSqM: body.surfaceAreaSqM,
-      })
+      });
     }
-  }, [body, setFocus, setHighlightWaterBodyId])
+  }, [body, setFocus, setHighlightWaterBodyId]);
 
-  if (result === undefined) return <DetailLoading />
+  if (result === undefined) return <DetailLoading />;
   if (result === null) {
     return (
       <Unavailable
         title="Lake not found"
         message="We couldn't find this water body. The link may be broken."
       />
-    )
+    );
   }
   if (!result.available) {
     return (
@@ -76,7 +81,7 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         title="This lake isn't available"
         message="It may have been removed from the map. Try another lake nearby."
       />
-    )
+    );
   }
 
   return (
@@ -117,32 +122,32 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         </>
       )}
     </YStack>
-  )
+  );
 }
 
 /** How many per-body reports to fetch per infinite-scroll page. */
-const REPORTS_PAGE_SIZE = 20
+const REPORTS_PAGE_SIZE = 20;
 
 function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const router = useRouter()
+  const router = useRouter();
   const { results, status, loadMore } = usePaginatedQuery(
     api.reports.listByWaterBody,
     { waterBodyId },
     { initialNumItems: REPORTS_PAGE_SIZE },
-  )
-  const authorIds = [...new Set(results.map((r) => r.authorId))]
+  );
+  const authorIds = [...new Set(results.map((r) => r.authorId))];
   const authors = useQuery(
     api.profiles.publicByIds,
     results.length > 0 ? { profileIds: authorIds } : 'skip',
-  )
+  );
 
-  if (status === 'LoadingFirstPage') return <DetailLoading />
+  if (status === 'LoadingFirstPage') return <DetailLoading />;
   if (results.length === 0) {
     return (
       <Paragraph color="$foregroundMuted">
         No reports yet — be the first to say how it skates.
       </Paragraph>
-    )
+    );
   }
 
   return (
@@ -194,5 +199,5 @@ function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
         </YStack>
       </Section>
     </YStack>
-  )
+  );
 }

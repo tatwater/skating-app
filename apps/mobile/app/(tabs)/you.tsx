@@ -1,16 +1,16 @@
-import { useAuth, useUser } from '@clerk/clerk-expo'
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { DRIVE_TIME_BANDS } from '@skating/core'
-import { useMutation, useQuery } from 'convex/react'
-import * as Location from 'expo-location'
-import { Link, useRouter } from 'expo-router'
-import { useState } from 'react'
-import { ScrollView } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, H1, Paragraph, Separator, Text, XStack, YStack } from 'tamagui'
-import { ProfileEdit } from '../../src/components/ProfileEdit'
-import { Avatar } from '../../src/components/ProfileView'
+import { useAuth, useUser } from '@clerk/clerk-expo';
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { DRIVE_TIME_BANDS } from '@skating/core';
+import { useMutation, useQuery } from 'convex/react';
+import * as Location from 'expo-location';
+import { Link, useRouter } from 'expo-router';
+import { useState } from 'react';
+import { ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button, H1, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
+import { ProfileEdit } from '../../src/components/ProfileEdit';
+import { Avatar } from '../../src/components/ProfileView';
 
 /**
  * Profile / settings hub (D28). Who you're signed in as (with a link to your public profile),
@@ -18,14 +18,14 @@ import { Avatar } from '../../src/components/ProfileView'
  * license/about link (D43), and sign-out. GPS connections + notification toggles come later.
  */
 export default function YouScreen() {
-  const { signOut } = useAuth()
-  const { user } = useUser()
-  const profile = useQuery(api.profiles.current, {})
-  const router = useRouter()
+  const { signOut } = useAuth();
+  const { user } = useUser();
+  const profile = useQuery(api.profiles.current, {});
+  const router = useRouter();
 
   async function onSignOut() {
-    await signOut()
-    router.replace('/sign-in')
+    await signOut();
+    router.replace('/sign-in');
   }
 
   return (
@@ -76,7 +76,7 @@ export default function YouScreen() {
         </YStack>
       </ScrollView>
     </SafeAreaView>
-  )
+  );
 }
 
 /**
@@ -86,24 +86,24 @@ export default function YouScreen() {
  * triggers the isochrone recompute powering the drive-time filter + nearby notifications.
  */
 function HomeLocation() {
-  const profile = useQuery(api.profiles.current, {})
-  const setHome = useMutation(api.profiles.setHome)
-  const [status, setStatus] = useState<'idle' | 'locating' | 'error'>('idle')
-  const hasHome = profile?.homeCoord !== undefined
+  const profile = useQuery(api.profiles.current, {});
+  const setHome = useMutation(api.profiles.setHome);
+  const [status, setStatus] = useState<'idle' | 'locating' | 'error'>('idle');
+  const hasHome = profile?.homeCoord !== undefined;
 
   async function useCurrentLocation() {
-    setStatus('locating')
+    setStatus('locating');
     try {
-      const perm = await Location.requestForegroundPermissionsAsync()
+      const perm = await Location.requestForegroundPermissionsAsync();
       if (!perm.granted) {
-        setStatus('error')
-        return
+        setStatus('error');
+        return;
       }
-      const pos = await Location.getCurrentPositionAsync({})
-      await setHome({ homeCoord: { lat: pos.coords.latitude, lng: pos.coords.longitude } })
-      setStatus('idle')
+      const pos = await Location.getCurrentPositionAsync({});
+      await setHome({ homeCoord: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
+      setStatus('idle');
     } catch {
-      setStatus('error')
+      setStatus('error');
     }
   }
 
@@ -136,7 +136,7 @@ function HomeLocation() {
         </Text>
       ) : null}
     </YStack>
-  )
+  );
 }
 
 /** An on/off toggle row rendered as a filled/outline button (matching the ProfileEdit pattern). */
@@ -145,9 +145,9 @@ function ToggleRow({
   value,
   onToggle,
 }: {
-  label: string
-  value: boolean
-  onToggle: (next: boolean) => void
+  label: string;
+  value: boolean;
+  onToggle: (next: boolean) => void;
 }) {
   return (
     <XStack gap="$2" alignItems="center" justifyContent="space-between">
@@ -166,7 +166,7 @@ function ToggleRow({
         {value ? 'On' : 'Off'}
       </Button>
     </XStack>
-  )
+  );
 }
 
 /** A 30/60/90-minute radius picker as a button group. */
@@ -175,9 +175,9 @@ function RadiusRow({
   value,
   onChange,
 }: {
-  label: string
-  value: number | undefined
-  onChange: (minutes: number) => void
+  label: string;
+  value: number | undefined;
+  onChange: (minutes: number) => void;
 }) {
   return (
     <XStack gap="$2" alignItems="center">
@@ -199,7 +199,7 @@ function RadiusRow({
         </Button>
       ))}
     </XStack>
-  )
+  );
 }
 
 /**
@@ -208,12 +208,12 @@ function RadiusRow({
  * and re-enforced server-side). The radii need a home set above to take effect.
  */
 function NotificationSettings() {
-  const profile = useQuery(api.profiles.current, {})
-  const setPrefs = useMutation(api.profiles.setNotificationPrefs)
-  if (!profile) return null
-  const prefs = profile.notificationPrefs
-  const allRadius = profile.allRadiusMinutes
-  const greatRadius = profile.greatRadiusMinutes
+  const profile = useQuery(api.profiles.current, {});
+  const setPrefs = useMutation(api.profiles.setNotificationPrefs);
+  if (!profile) return null;
+  const prefs = profile.notificationPrefs;
+  const allRadius = profile.allRadiusMinutes;
+  const greatRadius = profile.greatRadiusMinutes;
 
   return (
     <YStack gap="$3">
@@ -236,11 +236,11 @@ function NotificationSettings() {
           value={allRadius}
           onChange={(m) => {
             // Keep X₂ ≥ X₁: bump the great radius up if it would fall below.
-            const nextGreat = greatRadius !== undefined && greatRadius < m ? m : greatRadius
+            const nextGreat = greatRadius !== undefined && greatRadius < m ? m : greatRadius;
             void setPrefs({
               allRadiusMinutes: m,
               ...(nextGreat !== greatRadius ? { greatRadiusMinutes: nextGreat } : {}),
-            })
+            });
           }}
         />
       ) : null}
@@ -257,7 +257,7 @@ function NotificationSettings() {
             // Clamp X₂ ≥ X₁ (the server rejects otherwise).
             void setPrefs({
               greatRadiusMinutes: allRadius !== undefined && m < allRadius ? allRadius : m,
-            })
+            });
           }}
         />
       ) : null}
@@ -267,15 +267,15 @@ function NotificationSettings() {
         </Text>
       ) : null}
     </YStack>
-  )
+  );
 }
 
 /** The caller's blocked users (D32) with an unblock control. A block never hid their reports (D3). */
 function BlockedUsers() {
-  const blocks = useQuery(api.blocks.myBlocks, {})
-  const unblock = useMutation(api.blocks.unblock)
+  const blocks = useQuery(api.blocks.myBlocks, {});
+  const unblock = useMutation(api.blocks.unblock);
 
-  if (blocks === undefined || blocks.length === 0) return null
+  if (blocks === undefined || blocks.length === 0) return null;
 
   return (
     <YStack gap="$2">
@@ -294,5 +294,5 @@ function BlockedUsers() {
         </XStack>
       ))}
     </YStack>
-  )
+  );
 }

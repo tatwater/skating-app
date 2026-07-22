@@ -1,6 +1,6 @@
-import { humanizeEnum } from '@skating/core'
-import type { ReactNode } from 'react'
-import { H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui'
+import { humanizeEnum } from '@skating/core';
+import type { ReactNode } from 'react';
+import { H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
 
 /**
  * Small shared Tamagui pieces for the map detail drawers (§F) — the mobile analog of web's
@@ -13,7 +13,7 @@ export function DetailLoading() {
     <YStack padding="$4" alignItems="center">
       <Spinner color="$primary" />
     </YStack>
-  )
+  );
 }
 
 /** Friendly not-found / removed state (distinct from a blank), mirroring web's `UnavailableState`. */
@@ -23,7 +23,7 @@ export function Unavailable({ title, message }: { title: string; message: string
       <H4 color="$foreground">{title}</H4>
       <Paragraph color="$foregroundMuted">{message}</Paragraph>
     </YStack>
-  )
+  );
 }
 
 /** A labeled section block. */
@@ -35,7 +35,7 @@ export function Section({ label, children }: { label: string; children: ReactNod
       </Text>
       {children}
     </YStack>
-  )
+  );
 }
 
 /** An outline pill (chip). `tone="solid"` renders the filled variant used for skate quality. */
@@ -43,10 +43,10 @@ export function Badge({
   children,
   tone = 'outline',
 }: {
-  children: ReactNode
-  tone?: 'outline' | 'solid'
+  children: ReactNode;
+  tone?: 'outline' | 'solid';
 }) {
-  const solid = tone === 'solid'
+  const solid = tone === 'solid';
   return (
     <XStack
       borderWidth={1}
@@ -61,7 +61,7 @@ export function Badge({
         {children}
       </Text>
     </XStack>
-  )
+  );
 }
 
 /** A wrapped row of humanized enum chips (ice types, surface tags). */
@@ -72,5 +72,5 @@ export function Chips({ values }: { values: string[] }) {
         <Badge key={value}>{humanizeEnum(value)}</Badge>
       ))}
     </XStack>
-  )
+  );
 }

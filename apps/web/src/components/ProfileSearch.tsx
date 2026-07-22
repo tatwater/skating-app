@@ -1,18 +1,24 @@
-import { api } from '@skating/convex/api'
-import { useNavigate } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import { SearchIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { Avatar } from './ProfileView'
-import { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList } from './ui/combobox'
+import { api } from '@skating/convex/api';
+import { useNavigate } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
+import { SearchIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Avatar } from './ProfileView';
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from './ui/combobox';
 
 /** A public-profile search hit (from `profiles.searchProfiles`). */
 export interface ProfileHit {
-  userId: string
-  username: string
-  displayName: string
-  profileImageUrl?: string
-  homeTownLabel?: string
+  userId: string;
+  username: string;
+  displayName: string;
+  profileImageUrl?: string;
+  homeTownLabel?: string;
 }
 
 /**
@@ -28,12 +34,12 @@ export function ProfileSearchBox({
   emptyVisible,
   open,
 }: {
-  items: ProfileHit[]
-  inputValue: string
-  onInputValueChange: (value: string) => void
-  onSelect: (hit: ProfileHit) => void
-  emptyVisible: boolean
-  open?: boolean
+  items: ProfileHit[];
+  inputValue: string;
+  onInputValueChange: (value: string) => void;
+  onSelect: (hit: ProfileHit) => void;
+  emptyVisible: boolean;
+  open?: boolean;
 }) {
   return (
     <Combobox
@@ -45,7 +51,7 @@ export function ProfileSearchBox({
       itemToStringLabel={(hit: ProfileHit | null) => hit?.displayName ?? ''}
       isItemEqualToValue={(a: ProfileHit | null, b: ProfileHit | null) => a?.userId === b?.userId}
       onValueChange={(hit: ProfileHit | null) => {
-        if (hit) onSelect(hit)
+        if (hit) onSelect(hit);
       }}
     >
       <div className="relative">
@@ -75,24 +81,24 @@ export function ProfileSearchBox({
         ) : null}
       </ComboboxContent>
     </Combobox>
-  )
+  );
 }
 
 /** Public-profile search (D13); selecting a result navigates to that profile. */
 export function ProfileSearch() {
-  const navigate = useNavigate()
-  const [text, setText] = useState('')
-  const [debounced, setDebounced] = useState('')
+  const navigate = useNavigate();
+  const [text, setText] = useState('');
+  const [debounced, setDebounced] = useState('');
 
   useEffect(() => {
-    const id = setTimeout(() => setDebounced(text.trim()), 150)
-    return () => clearTimeout(id)
-  }, [text])
+    const id = setTimeout(() => setDebounced(text.trim()), 150);
+    return () => clearTimeout(id);
+  }, [text]);
 
   const results = useQuery(
     api.profiles.searchProfiles,
     debounced.length > 0 ? { query: debounced } : 'skip',
-  )
+  );
 
   return (
     <ProfileSearchBox
@@ -101,9 +107,9 @@ export function ProfileSearch() {
       onInputValueChange={setText}
       emptyVisible={debounced.length > 0 && results !== undefined && results.length === 0}
       onSelect={(hit) => {
-        setText('')
-        navigate({ to: '/u/$username', params: { username: hit.username } })
+        setText('');
+        navigate({ to: '/u/$username', params: { username: hit.username } });
       }}
     />
-  )
+  );
 }

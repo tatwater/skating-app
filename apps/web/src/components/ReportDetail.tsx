@@ -1,5 +1,5 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
   formatConditions,
   formatSkateTime,
@@ -11,38 +11,38 @@ import {
   SKATE_QUALITY_LABELS,
   type SkateQuality,
   type ThicknessReading,
-} from '@skating/core'
-import { Link } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import { useEffect } from 'react'
-import { Comments } from './CommentThread'
-import { DetailSkeleton, UnavailableState } from './DrawerStates'
-import { useMapSelection } from './MapSelectionContext'
-import { ModeratorActions } from './ModeratorActions'
-import { BlockedChip, FlagDialog } from './SafetyControls'
-import { Badge } from './ui/badge'
-import { Separator } from './ui/separator'
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet'
+} from '@skating/core';
+import { Link } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
+import { useEffect } from 'react';
+import { Comments } from './CommentThread';
+import { DetailSkeleton, UnavailableState } from './DrawerStates';
+import { useMapSelection } from './MapSelectionContext';
+import { ModeratorActions } from './ModeratorActions';
+import { BlockedChip, FlagDialog } from './SafetyControls';
+import { Badge } from './ui/badge';
+import { Separator } from './ui/separator';
+import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 
 /** The plain data a report renders from — decoupled from Convex so `ReportView` is testable. */
 export interface ReportViewData {
-  waterBodyId: string
-  bodyName?: string
-  authorName?: string
+  waterBodyId: string;
+  bodyName?: string;
+  authorName?: string;
   /** The author is in the viewer's block set — de-emphasize the line + show a "Blocked" chip (D3). */
-  authorBlocked?: boolean
+  authorBlocked?: boolean;
   /** When the skater left the ice — the primary timestamp shown (D28; Phase 5). */
-  skateEndTime: number
+  skateEndTime: number;
   /** Optional — when they got on; renders the derived duration alongside the end (Phase 5). */
-  skateStartTime?: number
-  skateQuality?: SkateQuality
-  iceTypes: string[]
-  surfaceTags: string[]
-  iceThickness?: { readings: ThicknessReading[] }
-  snowCoverCm?: number
-  conditions?: ReportConditions
-  notes?: string
-  photos: { photoId: string; url: string | null; thumbUrl: string | null; caption?: string }[]
+  skateStartTime?: number;
+  skateQuality?: SkateQuality;
+  iceTypes: string[];
+  surfaceTags: string[];
+  iceThickness?: { readings: ThicknessReading[] };
+  snowCoverCm?: number;
+  conditions?: ReportConditions;
+  notes?: string;
+  photos: { photoId: string; url: string | null; thumbUrl: string | null; caption?: string }[];
 }
 
 /**
@@ -51,9 +51,9 @@ export interface ReportViewData {
  * `ReportDetail` below feeds it live data; a test can feed it a fixture.
  */
 export function ReportView({ data }: { data: ReportViewData }) {
-  const conditions = data.conditions ? formatConditions(data.conditions) : []
-  const readings = data.iceThickness?.readings ?? []
-  const duration = formatSkateWindow(data.skateEndTime, data.skateStartTime)
+  const conditions = data.conditions ? formatConditions(data.conditions) : [];
+  const readings = data.iceThickness?.readings ?? [];
+  const duration = formatSkateWindow(data.skateEndTime, data.skateStartTime);
 
   return (
     <>
@@ -94,11 +94,11 @@ export function ReportView({ data }: { data: ReportViewData }) {
           <Section label="Thickness">
             <ul className="flex flex-col gap-0.5 text-foreground text-sm">
               {readings.map((reading, i) => {
-                const formatted = formatThicknessReading(reading)
+                const formatted = formatThicknessReading(reading);
                 return formatted ? (
                   // biome-ignore lint/suspicious/noArrayIndexKey: readings are an ordered, stable list.
                   <li key={i}>{formatted}</li>
-                ) : null
+                ) : null;
               })}
             </ul>
           </Section>
@@ -164,7 +164,7 @@ export function ReportView({ data }: { data: ReportViewData }) {
         </Link>
       </div>
     </>
-  )
+  );
 }
 
 function Section({ label, children }: { label: string; children: React.ReactNode }) {
@@ -173,7 +173,7 @@ function Section({ label, children }: { label: string; children: React.ReactNode
       <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">{label}</h3>
       {children}
     </div>
-  )
+  );
 }
 
 function Chips({ values }: { values: string[] }) {
@@ -185,7 +185,7 @@ function Chips({ values }: { values: string[] }) {
         </Badge>
       ))}
     </div>
-  )
+  );
 }
 
 /**
@@ -194,32 +194,32 @@ function Chips({ values }: { values: string[] }) {
  * `placeOnMap` photo pins (D42) up to the persistent map via `useMapSelection`.
  */
 export function ReportDetail({ reportId }: { reportId: string }) {
-  const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> })
-  const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip')
+  const report = useQuery(api.reports.get, { reportId: reportId as Id<'reports'> });
+  const body = useQuery(api.waterBodies.get, report ? { waterBodyId: report.waterBodyId } : 'skip');
   const authors = useQuery(
     api.profiles.publicByIds,
     report ? { profileIds: [report.authorId] } : 'skip',
-  )
+  );
   const photos = useQuery(
     api.photos.getUrls,
     report && report.photoIds.length > 0 ? { reportId: report._id } : 'skip',
-  )
+  );
   // The viewer's block set (both directions, D32), to de-emphasize a blocked author's report line
   // (D3). Skipped when signed out (the query requires a profile). A block never hides the report.
-  const me = useQuery(api.profiles.current, {})
-  const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip')
-  const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection()
+  const me = useQuery(api.profiles.current, {});
+  const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip');
+  const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection();
 
   // Fly to the report's put-in point as soon as the report loads.
   useEffect(() => {
-    if (report) setFocus({ lat: report.point.lat, lng: report.point.lng, zoom: 13 })
-  }, [report, setFocus])
+    if (report) setFocus({ lat: report.point.lat, lng: report.point.lng, zoom: 13 });
+  }, [report, setFocus]);
 
   // Highlight the lake by its *resolved survivor* id (what the map's features carry), so a report on
   // a since-merged body still highlights the right polygon — not the stale stored `waterBodyId`.
   useEffect(() => {
-    if (body?.available) setHighlightWaterBodyId(body.body._id)
-  }, [body, setHighlightWaterBodyId])
+    if (body?.available) setHighlightWaterBodyId(body.body._id);
+  }, [body, setHighlightWaterBodyId]);
 
   useEffect(() => {
     setPhotoPins(
@@ -231,21 +231,21 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           coord: photo.coord!,
           thumbUrl: photo.thumbUrl,
         })),
-    )
-  }, [photos, setPhotoPins])
+    );
+  }, [photos, setPhotoPins]);
 
-  if (report === undefined) return <DetailSkeleton />
+  if (report === undefined) return <DetailSkeleton />;
   if (report === null) {
     return (
       <UnavailableState
         title="Report not available"
         message="This report may have been removed or isn't visible to you."
       />
-    )
+    );
   }
 
-  const authorBlocked = (blockedIds ?? []).includes(report.authorId)
-  const isOwn = me?._id === report.authorId
+  const authorBlocked = (blockedIds ?? []).includes(report.authorId);
+  const isOwn = me?._id === report.authorId;
 
   return (
     <>
@@ -276,5 +276,5 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       ) : null}
       <Comments reportId={report._id} />
     </>
-  )
+  );
 }

@@ -1,5 +1,5 @@
-import { useLocalSearchParams } from 'expo-router'
-import { HazardDetail } from '../../../../src/components/HazardDetail'
+import { useLocalSearchParams } from 'expo-router';
+import { HazardDetail } from '../../../../src/components/HazardDetail';
 
 /**
  * `/hazard/[id]` — the hazard drawer over the map, and the target of the
@@ -10,6 +10,6 @@ import { HazardDetail } from '../../../../src/components/HazardDetail'
  * later would mean shipping a notification that opens the wrong screen.
  */
 export default function HazardRoute() {
-  const { id } = useLocalSearchParams<{ id: string }>()
-  return <HazardDetail hazardId={id} />
+  const { id } = useLocalSearchParams<{ id: string }>();
+  return <HazardDetail hazardId={id} />;
 }

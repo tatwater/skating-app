@@ -8,14 +8,14 @@
  * single source drives both surfaces.
  */
 
-import { formatSkateWindow, humanizeEnum, SKATE_QUALITY_LABELS } from './reportView'
-import type { IceType, SkateQuality, SurfaceTag } from './types'
+import { formatSkateWindow, humanizeEnum, SKATE_QUALITY_LABELS } from './reportView';
+import type { IceType, SkateQuality, SurfaceTag } from './types';
 
 /** The point-derived admin place (from `reports.place`), stamped at create via `adminAreas` (Phase 5). */
 export interface PlaceLabelParts {
-  town?: string
-  county?: string
-  state?: string
+  town?: string;
+  county?: string;
+  state?: string;
 }
 
 /**
@@ -25,19 +25,19 @@ export interface PlaceLabelParts {
  * carries its `County` suffix (data model), so this only joins the place name to the state.
  */
 export function formatPlaceLabel(place: PlaceLabelParts | undefined): string | null {
-  if (!place) return null
-  const name = place.town?.trim() || place.county?.trim() || ''
-  const state = place.state?.trim() || ''
-  if (name && state) return `${name}, ${state}`
-  if (name) return name
-  if (state) return state
-  return null
+  if (!place) return null;
+  const name = place.town?.trim() || place.county?.trim() || '';
+  const state = place.state?.trim() || '';
+  if (name && state) return `${name}, ${state}`;
+  if (name) return name;
+  if (state) return state;
+  return null;
 }
 
 /** Thresholds for the relative-time label (ms). */
-const MINUTE = 60_000
-const HOUR = 60 * MINUTE
-const DAY = 24 * HOUR
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const DAY = 24 * HOUR;
 
 /**
  * A compact "when" label relative to `now`, keyed off the skate-*end* time: `just now` · `5m ago` ·
@@ -46,13 +46,13 @@ const DAY = 24 * HOUR
  * now` rather than a negative age.
  */
 export function formatRelativeTime(ms: number, now: number): string {
-  const diff = now - ms
-  if (diff < MINUTE) return 'just now'
-  if (diff < HOUR) return `${Math.floor(diff / MINUTE)}m ago`
-  if (diff < DAY) return `${Math.floor(diff / HOUR)}h ago`
-  const days = Math.floor(diff / DAY)
-  if (days < 7) return `${days}d ago`
-  return `${Math.floor(days / 7)}w ago`
+  const diff = now - ms;
+  if (diff < MINUTE) return 'just now';
+  if (diff < HOUR) return `${Math.floor(diff / MINUTE)}m ago`;
+  if (diff < DAY) return `${Math.floor(diff / HOUR)}h ago`;
+  const days = Math.floor(diff / DAY);
+  if (days < 7) return `${days}d ago`;
+  return `${Math.floor(days / 7)}w ago`;
 }
 
 /**
@@ -62,39 +62,39 @@ export function formatRelativeTime(ms: number, now: number): string {
  * never hides the report (D3, safety-first) — a block is not a moderation action.
  */
 export interface FeedCardData {
-  reportId: string
-  waterBodyId: string
-  bodyName: string
-  place?: PlaceLabelParts
-  skateEndTime: number
-  skateStartTime?: number
-  iceTypes: IceType[]
-  surfaceTags: SurfaceTag[]
-  skateQuality?: SkateQuality
-  photoThumbUrls: string[]
-  author: { displayName: string; username: string }
-  blocked: boolean
+  reportId: string;
+  waterBodyId: string;
+  bodyName: string;
+  place?: PlaceLabelParts;
+  skateEndTime: number;
+  skateStartTime?: number;
+  iceTypes: IceType[];
+  surfaceTags: SurfaceTag[];
+  skateQuality?: SkateQuality;
+  photoThumbUrls: string[];
+  author: { displayName: string; username: string };
+  blocked: boolean;
   /** Viewer has favorited this body (Phase 4) — drives the feed badge + the per-page boost. */
-  isFavorite?: boolean
+  isFavorite?: boolean;
 }
 
 /** Render-ready feed card. `relativeTime` depends on `now`, so it's computed per render, not stored. */
 export interface FeedCardView {
-  reportId: string
-  waterBodyId: string
-  bodyName: string
-  placeLabel: string | null
-  skateEndTime: number
-  relativeTime: string
-  durationLabel: string | null
-  qualityLabel: string | null
+  reportId: string;
+  waterBodyId: string;
+  bodyName: string;
+  placeLabel: string | null;
+  skateEndTime: number;
+  relativeTime: string;
+  durationLabel: string | null;
+  qualityLabel: string | null;
   /** Humanized ice + surface vocabulary, ready as chip text (UI truncates if it wants). */
-  chips: string[]
-  photoThumbUrls: string[]
-  author: { displayName: string; username: string }
-  blocked: boolean
+  chips: string[];
+  photoThumbUrls: string[];
+  author: { displayName: string; username: string };
+  blocked: boolean;
   /** Viewer has favorited this body (Phase 4) — the card shows a heart/badge and boosts it. */
-  isFavorite: boolean
+  isFavorite: boolean;
 }
 
 /**
@@ -104,25 +104,25 @@ export interface FeedCardView {
  * "Today / Yesterday / Earlier this week / …". A future instant (clock skew) buckets as `today`.
  */
 export interface FeedSectionMeta {
-  key: 'today' | 'yesterday' | 'this-week' | 'this-month' | 'older'
-  label: string
+  key: 'today' | 'yesterday' | 'this-week' | 'this-month' | 'older';
+  label: string;
 }
 
 /** The recency bucket for a single skate-end time relative to `now`. Pure (see `formatRelativeTime`). */
 export function feedSectionForTime(skateEndTime: number, now: number): FeedSectionMeta {
-  const diff = now - skateEndTime
-  if (diff < DAY) return { key: 'today', label: 'Today' }
-  if (diff < 2 * DAY) return { key: 'yesterday', label: 'Yesterday' }
-  if (diff < 7 * DAY) return { key: 'this-week', label: 'Earlier this week' }
-  if (diff < 30 * DAY) return { key: 'this-month', label: 'Earlier this month' }
-  return { key: 'older', label: 'Older than a month' }
+  const diff = now - skateEndTime;
+  if (diff < DAY) return { key: 'today', label: 'Today' };
+  if (diff < 2 * DAY) return { key: 'yesterday', label: 'Yesterday' };
+  if (diff < 7 * DAY) return { key: 'this-week', label: 'Earlier this week' };
+  if (diff < 30 * DAY) return { key: 'this-month', label: 'Earlier this month' };
+  return { key: 'older', label: 'Older than a month' };
 }
 
 /** One recency section: its header meta + the cards that fall in it, order preserved. */
 export interface FeedSection<T> {
-  key: FeedSectionMeta['key']
-  label: string
-  items: T[]
+  key: FeedSectionMeta['key'];
+  label: string;
+  items: T[];
 }
 
 /**
@@ -136,14 +136,14 @@ export function groupFeedSections<T>(
   getTime: (item: T) => number,
   now: number,
 ): FeedSection<T>[] {
-  const sections: FeedSection<T>[] = []
+  const sections: FeedSection<T>[] = [];
   for (const item of items) {
-    const meta = feedSectionForTime(getTime(item), now)
-    const last = sections[sections.length - 1]
-    if (last && last.key === meta.key) last.items.push(item)
-    else sections.push({ key: meta.key, label: meta.label, items: [item] })
+    const meta = feedSectionForTime(getTime(item), now);
+    const last = sections[sections.length - 1];
+    if (last && last.key === meta.key) last.items.push(item);
+    else sections.push({ key: meta.key, label: meta.label, items: [item] });
   }
-  return sections
+  return sections;
 }
 
 /**
@@ -151,7 +151,7 @@ export function groupFeedSections<T>(
  * date-now — `now` is injected so the relative label is deterministic and stays live on the client.
  */
 export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView {
-  const chips = [...data.iceTypes.map(humanizeEnum), ...data.surfaceTags.map(humanizeEnum)]
+  const chips = [...data.iceTypes.map(humanizeEnum), ...data.surfaceTags.map(humanizeEnum)];
   return {
     reportId: data.reportId,
     waterBodyId: data.waterBodyId,
@@ -166,5 +166,5 @@ export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView
     author: data.author,
     blocked: data.blocked,
     isFavorite: data.isFavorite ?? false,
-  }
+  };
 }

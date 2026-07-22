@@ -17,14 +17,14 @@ export type MapSelection =
   | { kind: 'none' }
   | { kind: 'water'; waterBodyId: string }
   | { kind: 'report'; reportId: string }
-  | { kind: 'hazard'; hazardId: string }
+  | { kind: 'hazard'; hazardId: string };
 
 export function parseMapSelection(pathname: string): MapSelection {
-  const water = pathname.match(/^\/water\/([^/]+)\/?$/)
-  if (water?.[1]) return { kind: 'water', waterBodyId: decodeURIComponent(water[1]) }
-  const report = pathname.match(/^\/report\/([^/]+)\/?$/)
-  if (report?.[1]) return { kind: 'report', reportId: decodeURIComponent(report[1]) }
-  const hazard = pathname.match(/^\/hazard\/([^/]+)\/?$/)
-  if (hazard?.[1]) return { kind: 'hazard', hazardId: decodeURIComponent(hazard[1]) }
-  return { kind: 'none' }
+  const water = pathname.match(/^\/water\/([^/]+)\/?$/);
+  if (water?.[1]) return { kind: 'water', waterBodyId: decodeURIComponent(water[1]) };
+  const report = pathname.match(/^\/report\/([^/]+)\/?$/);
+  if (report?.[1]) return { kind: 'report', reportId: decodeURIComponent(report[1]) };
+  const hazard = pathname.match(/^\/hazard\/([^/]+)\/?$/);
+  if (hazard?.[1]) return { kind: 'hazard', hazardId: decodeURIComponent(hazard[1]) };
+  return { kind: 'none' };
 }

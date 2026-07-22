@@ -1,7 +1,7 @@
-import { DOC_URLS } from '../lib/links'
-import { RISK_ACK_COPY } from '../lib/riskAck'
-import { Checkbox } from './ui/checkbox'
-import { Label } from './ui/label'
+import { DOC_URLS } from '../lib/links';
+import { RISK_ACK_COPY } from '../lib/riskAck';
+import { Checkbox } from './ui/checkbox';
+import { Label } from './ui/label';
 
 /**
  * The blocking assumption-of-risk acknowledgment control (D45), shared by the onboarding
@@ -43,5 +43,5 @@ export function RiskAckConsent({ checked, onToggle }: { checked: boolean; onTogg
         </a>
       </div>
     </div>
-  )
+  );
 }

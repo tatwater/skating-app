@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
+import type { ReactNode } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 
 /**
  * A titled console-style panel — the FUI framing (00-vision) for the information-dense web
@@ -10,9 +10,9 @@ export function Panel({
   className,
   children,
 }: {
-  title: string
-  className?: string
-  children: ReactNode
+  title: string;
+  className?: string;
+  children: ReactNode;
 }) {
   return (
     <Card className={className}>
@@ -23,5 +23,5 @@ export function Panel({
       </CardHeader>
       <CardContent className="text-foreground-muted text-sm">{children}</CardContent>
     </Card>
-  )
+  );
 }

@@ -15,30 +15,30 @@
  */
 
 /** Surface area (m²) mapping to display score 0 — a tiny pond. At or below this the area term is 0. */
-export const DISPLAY_AREA_MIN_SQM = 100
+export const DISPLAY_AREA_MIN_SQM = 100;
 /** Surface area (m²) mapping to display score 1 — ~Lake Champlain, the pilot's largest. Above, caps at 1. */
-export const DISPLAY_AREA_MAX_SQM = 1.1e9
+export const DISPLAY_AREA_MAX_SQM = 1.1e9;
 
 /** Widest (lowest) zoom bucket — a top-score body is visible from here (whole-region view). */
-export const MIN_VISIBLE_ZOOM_WIDEST = 6
+export const MIN_VISIBLE_ZOOM_WIDEST = 6;
 /**
  * Discoverability floor (D49): every listed body is visible by this zoom regardless of score.
  * Matches the self-hosted Vermont basemap's max zoom (z14).
  */
-export const MIN_VISIBLE_ZOOM_FLOOR = 14
+export const MIN_VISIBLE_ZOOM_FLOOR = 14;
 
-const LOG_AREA_MIN = Math.log(DISPLAY_AREA_MIN_SQM)
-const LOG_AREA_SPAN = Math.log(DISPLAY_AREA_MAX_SQM) - LOG_AREA_MIN
+const LOG_AREA_MIN = Math.log(DISPLAY_AREA_MIN_SQM);
+const LOG_AREA_SPAN = Math.log(DISPLAY_AREA_MAX_SQM) - LOG_AREA_MIN;
 
 export interface DisplayScoreInput {
   /** Body surface area in m². Missing or invalid (≤ 0 / non-finite) is treated as the minimum. */
-  surfaceAreaSqM?: number
+  surfaceAreaSqM?: number;
   /**
    * Admin prominence nudge (D49); added directly to the score. Default 0. A positive boost forces a
    * small-but-beloved lake (Lake Morey) to draw wider; a negative one demotes. Popularity terms
    * join this later (Phase 3+).
    */
-  curatedBoost?: number
+  curatedBoost?: number;
 }
 
 /**
@@ -50,9 +50,9 @@ export function displayScore({ surfaceAreaSqM, curatedBoost = 0 }: DisplayScoreI
   const area =
     surfaceAreaSqM !== undefined && Number.isFinite(surfaceAreaSqM) && surfaceAreaSqM > 0
       ? surfaceAreaSqM
-      : DISPLAY_AREA_MIN_SQM
-  const areaTerm = Math.min(1, Math.max(0, (Math.log(area) - LOG_AREA_MIN) / LOG_AREA_SPAN))
-  return areaTerm + curatedBoost
+      : DISPLAY_AREA_MIN_SQM;
+  const areaTerm = Math.min(1, Math.max(0, (Math.log(area) - LOG_AREA_MIN) / LOG_AREA_SPAN));
+  return areaTerm + curatedBoost;
 }
 
 /**
@@ -62,7 +62,7 @@ export function displayScore({ surfaceAreaSqM, curatedBoost = 0 }: DisplayScoreI
  * (the discoverability guarantee, D49) and top-score bodies never draw wider than the widest bucket.
  */
 export function minVisibleZoom(score: number): number {
-  const clamped = Math.min(1, Math.max(0, score))
-  const span = MIN_VISIBLE_ZOOM_FLOOR - MIN_VISIBLE_ZOOM_WIDEST
-  return Math.round(MIN_VISIBLE_ZOOM_FLOOR - clamped * span)
+  const clamped = Math.min(1, Math.max(0, score));
+  const span = MIN_VISIBLE_ZOOM_FLOOR - MIN_VISIBLE_ZOOM_WIDEST;
+  return Math.round(MIN_VISIBLE_ZOOM_FLOOR - clamped * span);
 }

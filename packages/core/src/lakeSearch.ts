@@ -3,7 +3,7 @@
  * `waterBodies.searchByName` query identically, without a Convex/router harness.
  */
 
-export type LakeSearchArgs = { query: string; limit: number }
+export type LakeSearchArgs = { query: string; limit: number };
 
 /**
  * The `waterBodies.searchByName` argument for the current raw input — or the Convex `'skip'`
@@ -11,6 +11,6 @@ export type LakeSearchArgs = { query: string; limit: number }
  * an empty/one-char box).
  */
 export function searchQueryArg(raw: string, limit = 8): LakeSearchArgs | 'skip' {
-  const query = raw.trim()
-  return query.length >= 2 ? { query, limit } : 'skip'
+  const query = raw.trim();
+  return query.length >= 2 ? { query, limit } : 'skip';
 }

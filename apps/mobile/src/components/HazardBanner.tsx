@@ -1,23 +1,23 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
   confirmRequestPrompt,
   hazardTypeLabel,
   NO_ALERT_IS_NOT_ALL_CLEAR,
   warningHeadline,
-} from '@skating/core'
-import { useMutation, useQuery } from 'convex/react'
-import { useRouter } from 'expo-router'
-import { useEffect, useMemo, useState } from 'react'
-import { Button, Paragraph, Text, XStack, YStack } from 'tamagui'
+} from '@skating/core';
+import { useMutation, useQuery } from 'convex/react';
+import { useRouter } from 'expo-router';
+import { useEffect, useMemo, useState } from 'react';
+import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
 import {
   type AlertSession,
   advanceAlertSession,
   dismissBanner,
   emptyAlertSession,
   toProximityHazards,
-} from '../lib/onIce'
-import { useMapSelection } from './MapSelectionContext'
+} from '../lib/onIce';
+import { useMapSelection } from './MapSelectionContext';
 
 /**
  * On-ice proximity alerts (D54 Layer 1) — **foreground-only in v1** (build-kickoff call 4).
@@ -36,16 +36,16 @@ import { useMapSelection } from './MapSelectionContext'
  * feature rather than buried in settings.
  */
 export function HazardBanner() {
-  const router = useRouter()
-  const { onIceWaterBodyId, onIceCoord } = useMapSelection()
-  const confirm = useMutation(api.hazardConfirmations.confirm)
-  const [session, setSession] = useState<AlertSession>(emptyAlertSession)
+  const router = useRouter();
+  const { onIceWaterBodyId, onIceCoord } = useMapSelection();
+  const confirm = useMutation(api.hazardConfirmations.confirm);
+  const [session, setSession] = useState<AlertSession>(emptyAlertSession);
 
   const hazards = useQuery(
     api.hazards.listForBody,
     onIceWaterBodyId ? { waterBodyId: onIceWaterBodyId as Id<'waterBodies'> } : 'skip',
-  )
-  const proximityHazards = useMemo(() => toProximityHazards(hazards ?? []), [hazards])
+  );
+  const proximityHazards = useMemo(() => toProximityHazards(hazards ?? []), [hazards]);
 
   // No GPS watcher of its own — the layout owns the single watcher and publishes each fix as
   // `onIceCoord`, so proximity is evaluated here off that shared coord. One subscription for the whole
@@ -56,14 +56,14 @@ export function HazardBanner() {
   // the banner — evaluated against their latest known coord (the effect closes over the current
   // `onIceCoord` on every run).
   useEffect(() => {
-    if (!onIceCoord) return
-    setSession((prev) => advanceAlertSession(prev, onIceCoord, proximityHazards))
-  }, [onIceCoord, proximityHazards])
+    if (!onIceCoord) return;
+    setSession((prev) => advanceAlertSession(prev, onIceCoord, proximityHazards));
+  }, [onIceCoord, proximityHazards]);
 
-  const banner = session.banner
-  if (!banner) return null
+  const banner = session.banner;
+  if (!banner) return null;
 
-  const warning = banner.kind === 'warning'
+  const warning = banner.kind === 'warning';
 
   return (
     <YStack
@@ -94,8 +94,8 @@ export function HazardBanner() {
             size="$3"
             flex={1}
             onPress={() => {
-              setSession(dismissBanner)
-              router.navigate({ pathname: '/hazard/[id]', params: { id: banner.hazardId } })
+              setSession(dismissBanner);
+              router.navigate({ pathname: '/hazard/[id]', params: { id: banner.hazardId } });
             }}
           >
             Show me
@@ -112,13 +112,13 @@ export function HazardBanner() {
             size="$3"
             flex={1}
             onPress={async () => {
-              setSession(dismissBanner)
+              setSession(dismissBanner);
               try {
                 await confirm({
                   hazardId: banner.hazardId as Id<'hazards'>,
                   verdict: 'still_there',
                   via: 'proximity_alert',
-                })
+                });
               } catch {
                 // A failed confirmation is not worth interrupting someone on ice over.
               }
@@ -133,8 +133,8 @@ export function HazardBanner() {
             size="$3"
             flex={1}
             onPress={() => {
-              setSession(dismissBanner)
-              router.navigate({ pathname: '/hazard/[id]', params: { id: banner.hazardId } })
+              setSession(dismissBanner);
+              router.navigate({ pathname: '/hazard/[id]', params: { id: banner.hazardId } });
             }}
           >
             Not seeing it
@@ -150,5 +150,5 @@ export function HazardBanner() {
         {hazardTypeLabel(banner.type)} · {NO_ALERT_IS_NOT_ALL_CLEAR}
       </Paragraph>
     </YStack>
-  )
+  );
 }

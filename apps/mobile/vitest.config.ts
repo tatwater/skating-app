@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig } from 'vitest/config';
 
 /**
  * The mobile app carries no unit tests of its own: all pure, safety-relevant logic lives in
@@ -12,4 +12,4 @@ export default defineConfig({
   test: {
     passWithNoTests: true,
   },
-})
+});

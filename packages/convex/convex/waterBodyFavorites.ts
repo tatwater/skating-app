@@ -8,23 +8,23 @@
  * notification fan-out) with a `by_user_water_body` point index enforcing one row per pair.
  */
 
-import { ConvexError, v } from 'convex/values'
-import type { Id } from './_generated/dataModel'
-import { mutation, type QueryCtx, query } from './_generated/server'
-import { getCurrentProfile, requireProfile } from './lib/auth'
-import { isListed } from './lib/listing'
+import { ConvexError, v } from 'convex/values';
+import type { Id } from './_generated/dataModel';
+import { mutation, type QueryCtx, query } from './_generated/server';
+import { getCurrentProfile, requireProfile } from './lib/auth';
+import { isListed } from './lib/listing';
 
 /** The set of water-body ids a user has favorited — the shared read behind feed boost + map highlight. */
 export async function loadFavoriteBodyIds(
   ctx: QueryCtx,
   userId: Id<'profiles'> | '',
 ): Promise<Set<string>> {
-  if (userId === '') return new Set()
+  if (userId === '') return new Set();
   const rows = await ctx.db
     .query('waterBodyFavorites')
     .withIndex('by_user', (q) => q.eq('userId', userId))
-    .collect()
-  return new Set(rows.map((r) => r.waterBodyId))
+    .collect();
+  return new Set(rows.map((r) => r.waterBodyId));
 }
 
 /** Look up the single favorite row for a `(user, body)` pair, or `null`. */
@@ -32,7 +32,7 @@ async function favoriteRow(ctx: QueryCtx, userId: Id<'profiles'>, waterBodyId: I
   return ctx.db
     .query('waterBodyFavorites')
     .withIndex('by_user_water_body', (q) => q.eq('userId', userId).eq('waterBodyId', waterBodyId))
-    .unique()
+    .unique();
 }
 
 /**
@@ -44,32 +44,32 @@ async function favoriteRow(ctx: QueryCtx, userId: Id<'profiles'>, waterBodyId: I
 export const toggle = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    const profile = await requireProfile(ctx)
-    const existing = await favoriteRow(ctx, profile._id, waterBodyId)
+    const profile = await requireProfile(ctx);
+    const existing = await favoriteRow(ctx, profile._id, waterBodyId);
     if (existing) {
-      await ctx.db.delete(existing._id)
-      return { favorited: false }
+      await ctx.db.delete(existing._id);
+      return { favorited: false };
     }
-    const body = await ctx.db.get(waterBodyId)
-    if (!body || !isListed(body)) throw new ConvexError('Water body not found')
+    const body = await ctx.db.get(waterBodyId);
+    if (!body || !isListed(body)) throw new ConvexError('Water body not found');
     await ctx.db.insert('waterBodyFavorites', {
       userId: profile._id,
       waterBodyId,
       createdAt: Date.now(),
-    })
-    return { favorited: true }
+    });
+    return { favorited: true };
   },
-})
+});
 
 /** Whether the caller has favorited a given body (false when signed out). */
 export const isFavorite = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    const profile = await getCurrentProfile(ctx)
-    if (!profile) return false
-    return (await favoriteRow(ctx, profile._id, waterBodyId)) !== null
+    const profile = await getCurrentProfile(ctx);
+    if (!profile) return false;
+    return (await favoriteRow(ctx, profile._id, waterBodyId)) !== null;
   },
-})
+});
 
 /**
  * The caller's favorited bodies for a favorites list / map highlight — newest first, each resolved to
@@ -79,23 +79,23 @@ export const isFavorite = query({
 export const listForUser = query({
   args: {},
   handler: async (ctx) => {
-    const profile = await getCurrentProfile(ctx)
-    if (!profile) return []
+    const profile = await getCurrentProfile(ctx);
+    if (!profile) return [];
     const rows = await ctx.db
       .query('waterBodyFavorites')
       .withIndex('by_user', (q) => q.eq('userId', profile._id))
       .order('desc')
-      .collect()
-    const out: { waterBodyId: Id<'waterBodies'>; name: string; createdAt: number }[] = []
+      .collect();
+    const out: { waterBodyId: Id<'waterBodies'>; name: string; createdAt: number }[] = [];
     for (const row of rows) {
-      let body = await ctx.db.get(row.waterBodyId)
+      let body = await ctx.db.get(row.waterBodyId);
       for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
-        body = await ctx.db.get(body.mergedIntoId)
+        body = await ctx.db.get(body.mergedIntoId);
       }
       if (body && isListed(body)) {
-        out.push({ waterBodyId: body._id, name: body.name, createdAt: row.createdAt })
+        out.push({ waterBodyId: body._id, name: body.name, createdAt: row.createdAt });
       }
     }
-    return out
+    return out;
   },
-})
+});

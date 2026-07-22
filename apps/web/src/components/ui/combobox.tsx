@@ -1,7 +1,7 @@
-import { Combobox as ComboboxPrimitive } from '@base-ui/react/combobox'
-import { cn } from '@/lib/utils'
+import { Combobox as ComboboxPrimitive } from '@base-ui/react/combobox';
+import { cn } from '@/lib/utils';
 
-const Combobox = ComboboxPrimitive.Root
+const Combobox = ComboboxPrimitive.Root;
 
 function ComboboxInput({ className, ...props }: ComboboxPrimitive.Input.Props) {
   return (
@@ -13,7 +13,7 @@ function ComboboxInput({ className, ...props }: ComboboxPrimitive.Input.Props) {
       )}
       {...props}
     />
-  )
+  );
 }
 
 function ComboboxContent({
@@ -45,11 +45,11 @@ function ComboboxContent({
         </ComboboxPrimitive.Popup>
       </ComboboxPrimitive.Positioner>
     </ComboboxPrimitive.Portal>
-  )
+  );
 }
 
 function ComboboxList({ className, ...props }: ComboboxPrimitive.List.Props) {
-  return <ComboboxPrimitive.List data-slot="combobox-list" className={cn(className)} {...props} />
+  return <ComboboxPrimitive.List data-slot="combobox-list" className={cn(className)} {...props} />;
 }
 
 function ComboboxItem({ className, children, ...props }: ComboboxPrimitive.Item.Props) {
@@ -64,7 +64,7 @@ function ComboboxItem({ className, children, ...props }: ComboboxPrimitive.Item.
     >
       {children}
     </ComboboxPrimitive.Item>
-  )
+  );
 }
 
-export { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList }
+export { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList };

@@ -1,8 +1,8 @@
 // Sentry must initialize before the request handler runs (D29), so this import stays first.
-import './instrument.server'
+import './instrument.server';
 
-import { wrapFetchWithSentry } from '@sentry/tanstackstart-react'
-import handler, { createServerEntry } from '@tanstack/react-start/server-entry'
+import { wrapFetchWithSentry } from '@sentry/tanstackstart-react';
+import handler, { createServerEntry } from '@tanstack/react-start/server-entry';
 
 /**
  * Server entry (D26/D29). This replaces TanStack Start's default server entry so we can wrap
@@ -12,7 +12,7 @@ import handler, { createServerEntry } from '@tanstack/react-start/server-entry'
 export default createServerEntry(
   wrapFetchWithSentry({
     fetch(request: Request) {
-      return handler.fetch(request)
+      return handler.fetch(request);
     },
   }),
-)
+);

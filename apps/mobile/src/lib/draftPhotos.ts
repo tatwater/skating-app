@@ -5,15 +5,15 @@
  * store that persistent uri in the draft. Untested native glue (like `photoPipeline`).
  */
 
-import type { ReportDraft } from '@skating/core'
-import { Directory, File, Paths } from 'expo-file-system'
+import type { ReportDraft } from '@skating/core';
+import { Directory, File, Paths } from 'expo-file-system';
 
-const DRAFTS_DIRNAME = 'report-drafts'
+const DRAFTS_DIRNAME = 'report-drafts';
 
 function draftsDir(): Directory {
-  const dir = new Directory(Paths.document, DRAFTS_DIRNAME)
-  if (!dir.exists) dir.create({ idempotent: true })
-  return dir
+  const dir = new Directory(Paths.document, DRAFTS_DIRNAME);
+  if (!dir.exists) dir.create({ idempotent: true });
+  return dir;
 }
 
 /**
@@ -22,23 +22,23 @@ function draftsDir(): Directory {
  * collide. Overwrites an existing file so a re-save of the same draft photo is idempotent.
  */
 export async function persistDraftPhoto(sourceUri: string, filename: string): Promise<string> {
-  const dest = new File(draftsDir(), filename)
-  if (dest.exists) dest.delete()
-  await new File(sourceUri).copy(dest)
-  return dest.uri
+  const dest = new File(draftsDir(), filename);
+  if (dest.exists) dest.delete();
+  await new File(sourceUri).copy(dest);
+  return dest.uri;
 }
 
 /** Every persistent photo file a draft owns (full + thumb per photo) — for cleanup on flush/delete. */
 export function draftPhotoUris(draft: ReportDraft): string[] {
-  return draft.photos.flatMap((p) => [p.fullUri, p.thumbUri])
+  return draft.photos.flatMap((p) => [p.fullUri, p.thumbUri]);
 }
 
 /** Delete a draft's persisted photo files (best-effort — a stale file must never block the queue). */
 export function deleteDraftPhotoFiles(uris: readonly string[]): void {
   for (const uri of uris) {
     try {
-      const f = new File(uri)
-      if (f.exists) f.delete()
+      const f = new File(uri);
+      if (f.exists) f.delete();
     } catch {
       // best-effort
     }
@@ -48,5 +48,5 @@ export function deleteDraftPhotoFiles(uris: readonly string[]): void {
 /** True once a uri points into the persistent drafts dir (not the evictable picker cache) — so a
  *  re-save of an already-persisted draft photo skips the copy. */
 export function isPersistedUri(uri: string): boolean {
-  return uri.includes(DRAFTS_DIRNAME)
+  return uri.includes(DRAFTS_DIRNAME);
 }

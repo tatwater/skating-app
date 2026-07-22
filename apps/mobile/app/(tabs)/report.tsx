@@ -5,14 +5,14 @@ import {
   isFlushable,
   isHazardItemFlushable,
   type ReportDraft,
-} from '@skating/core'
-import { useFocusEffect, useRouter } from 'expo-router'
-import { useCallback } from 'react'
-import { ScrollView } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui'
-import { Badge } from '../../src/components/detailUi'
-import { useOfflineDrafts } from '../../src/components/OfflineDraftsContext'
+} from '@skating/core';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { useCallback } from 'react';
+import { ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { Badge } from '../../src/components/detailUi';
+import { useOfflineDrafts } from '../../src/components/OfflineDraftsContext';
 
 /**
  * The center "＋ Report" tab (D28). Online, reports are created in place from a lake's detail drawer
@@ -22,16 +22,16 @@ import { useOfflineDrafts } from '../../src/components/OfflineDraftsContext'
  * automatically on reconnect (D12); "Sync now" forces it.
  */
 export default function ReportScreen() {
-  const router = useRouter()
+  const router = useRouter();
   const { drafts, hazardItems, pendingCount, refresh, flushNow, removeDraft, removeHazardItem } =
-    useOfflineDrafts()
+    useOfflineDrafts();
 
   // Refresh from sqlite whenever the tab regains focus (e.g. after saving a draft in the modal).
   useFocusEffect(
     useCallback(() => {
-      refresh()
+      refresh();
     }, [refresh]),
-  )
+  );
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
@@ -95,7 +95,7 @@ export default function ReportScreen() {
         </YStack>
       </ScrollView>
     </SafeAreaView>
-  )
+  );
 }
 
 function DraftRow({
@@ -103,11 +103,11 @@ function DraftRow({
   onEdit,
   onDelete,
 }: {
-  draft: ReportDraft
-  onEdit: () => void
-  onDelete: () => void
+  draft: ReportDraft;
+  onEdit: () => void;
+  onDelete: () => void;
 }) {
-  const pending = isFlushable(draft)
+  const pending = isFlushable(draft);
   return (
     <YStack
       gap="$2"
@@ -142,7 +142,7 @@ function DraftRow({
         </Button>
       </XStack>
     </YStack>
-  )
+  );
 }
 
 /**
@@ -152,8 +152,8 @@ function DraftRow({
  * silent, unrecoverable row that also never frees its photo files.
  */
 function HazardItemRow({ item, onDelete }: { item: HazardQueueItem; onDelete: () => void }) {
-  const pending = isHazardItemFlushable(item)
-  const title = item.kind === 'hazard' ? hazardTypeLabel(item.type) : 'Hazard confirmation'
+  const pending = isHazardItemFlushable(item);
+  const title = item.kind === 'hazard' ? hazardTypeLabel(item.type) : 'Hazard confirmation';
   return (
     <YStack
       gap="$2"
@@ -182,5 +182,5 @@ function HazardItemRow({ item, onDelete }: { item: HazardQueueItem; onDelete: ()
         </Button>
       </XStack>
     </YStack>
-  )
+  );
 }

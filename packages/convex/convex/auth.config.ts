@@ -20,4 +20,4 @@ export default {
       applicationID: 'convex',
     },
   ],
-}
+};

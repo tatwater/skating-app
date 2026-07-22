@@ -1,6 +1,6 @@
-import { Link } from '@tanstack/react-router'
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet'
-import { Skeleton } from './ui/skeleton'
+import { Link } from '@tanstack/react-router';
+import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
+import { Skeleton } from './ui/skeleton';
 
 /**
  * Shared loading + unavailable states for the detail drawers (§D), so the water-body and report
@@ -25,7 +25,7 @@ export function DetailSkeleton() {
         <Skeleton className="h-24 w-full" />
       </div>
     </>
-  )
+  );
 }
 
 /** Friendly not-found / not-available / not-visible panel with a way back to the map. */
@@ -42,5 +42,5 @@ export function UnavailableState({ title, message }: { title: string; message: s
         </Link>
       </div>
     </>
-  )
+  );
 }

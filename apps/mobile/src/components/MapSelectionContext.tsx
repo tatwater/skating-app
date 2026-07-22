@@ -1,5 +1,5 @@
-import type { BBox, HazardDraft, HazardType } from '@skating/core'
-import { createContext, type ReactNode, useContext, useMemo, useState } from 'react'
+import type { BBox, HazardDraft, HazardType } from '@skating/core';
+import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 
 /**
  * Shared selection state for the persistent native map (Phase 2 §F), the mobile mirror of web's
@@ -12,8 +12,8 @@ import { createContext, type ReactNode, useContext, useMemo, useState } from 're
 
 /** A geotagged report photo (D42) to drop on the lake when viewing a report with `placeOnMap`. */
 export interface PhotoPin {
-  photoId: string
-  coord: { lat: number; lng: number }
+  photoId: string;
+  coord: { lat: number; lng: number };
 }
 
 /**
@@ -22,48 +22,48 @@ export interface PhotoPin {
  * fallback (e.g. a report put-in) when there's no area to fit.
  */
 export interface MapFocus {
-  lat: number
-  lng: number
-  zoom?: number
-  bounds?: BBox
+  lat: number;
+  lng: number;
+  zoom?: number;
+  bounds?: BBox;
 }
 
 interface MapSelectionValue {
-  highlightWaterBodyId: string | null
-  setHighlightWaterBodyId: (id: string | null) => void
-  focus: MapFocus | null
-  setFocus: (focus: MapFocus | null) => void
-  photoPins: PhotoPin[]
-  setPhotoPins: (pins: PhotoPin[]) => void
+  highlightWaterBodyId: string | null;
+  setHighlightWaterBodyId: (id: string | null) => void;
+  focus: MapFocus | null;
+  setFocus: (focus: MapFocus | null) => void;
+  photoPins: PhotoPin[];
+  setPhotoPins: (pins: PhotoPin[]) => void;
   /** The put-in pin the report form is placing (§E) — the access point → `reports.point`. */
-  putInPin: { lat: number; lng: number } | null
-  setPutInPin: (pin: { lat: number; lng: number } | null) => void
+  putInPin: { lat: number; lng: number } | null;
+  setPutInPin: (pin: { lat: number; lng: number } | null) => void;
   /** True while the report form has armed map-tap pin placement; the next map tap sets the pin. */
-  pinDropMode: boolean
-  setPinDropMode: (on: boolean) => void
+  pinDropMode: boolean;
+  setPinDropMode: (on: boolean) => void;
   /**
    * Fraction of the screen the drawer currently covers (0 closed → ~0.94 near-full). The map fits
    * the selected lake into the *uncovered* area by padding its camera by this much at the bottom,
    * and re-fits when the drawer settles at a new snap point.
    */
-  drawerCoveredFraction: number
-  setDrawerCoveredFraction: (fraction: number) => void
+  drawerCoveredFraction: number;
+  setDrawerCoveredFraction: (fraction: number) => void;
   /**
    * The hazard being captured (Phase 9, D51) — the shared `@skating/core` draft, so the map previews
    * the *real* buffered footprint (the same shape the proximity evaluator measures) and mobile
    * inherits web's authoring transitions rather than reimplementing them.
    */
-  hazardDraft: HazardDraft | null
-  setHazardDraft: (draft: HazardDraft | null) => void
+  hazardDraft: HazardDraft | null;
+  setHazardDraft: (draft: HazardDraft | null) => void;
   /** What's being captured — the map needs it so a `ridge_crossing` previews as a passage, not a danger. */
-  hazardDraftType: HazardType | null
-  setHazardDraftType: (type: HazardType | null) => void
+  hazardDraftType: HazardType | null;
+  setHazardDraftType: (type: HazardType | null) => void;
   /**
    * True while capture has armed map-tap placement. A circle disarms on the tap that moves it; a
    * polyline **stays armed**, taking one vertex per tap until Done.
    */
-  hazardDropMode: boolean
-  setHazardDropMode: (on: boolean) => void
+  hazardDropMode: boolean;
+  setHazardDropMode: (on: boolean) => void;
   /**
    * The lake the skater's own GPS resolved to, if any (§Mobile "the on-ice state"). Resolved through
    * the offline body cache, so it works with no signal. On app-open it auto-selects that lake (the
@@ -71,31 +71,31 @@ interface MapSelectionValue {
    * banner — but **not** the hazard *layer*, which follows the selected lake so closing the sheet and
    * panning away lets the hazards fall off naturally.
    */
-  onIceWaterBodyId: string | null
-  setOnIceWaterBodyId: (id: string | null) => void
+  onIceWaterBodyId: string | null;
+  setOnIceWaterBodyId: (id: string | null) => void;
   /**
    * The device's latest GPS fix while on the map, published by the layout's single watcher so the
    * proximity banner can evaluate it without running a *second* watcher (two GPS subscriptions on a
    * cold phone is exactly the battery cost this feature can't afford). `null` until the first fix.
    */
-  onIceCoord: { lat: number; lng: number } | null
-  setOnIceCoord: (coord: { lat: number; lng: number } | null) => void
+  onIceCoord: { lat: number; lng: number } | null;
+  setOnIceCoord: (coord: { lat: number; lng: number } | null) => void;
 }
 
-const MapSelectionContext = createContext<MapSelectionValue | null>(null)
+const MapSelectionContext = createContext<MapSelectionValue | null>(null);
 
 export function MapSelectionProvider({ children }: { children: ReactNode }) {
-  const [highlightWaterBodyId, setHighlightWaterBodyId] = useState<string | null>(null)
-  const [focus, setFocus] = useState<MapFocus | null>(null)
-  const [photoPins, setPhotoPins] = useState<PhotoPin[]>([])
-  const [putInPin, setPutInPin] = useState<{ lat: number; lng: number } | null>(null)
-  const [pinDropMode, setPinDropMode] = useState(false)
-  const [drawerCoveredFraction, setDrawerCoveredFraction] = useState(0)
-  const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null)
-  const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null)
-  const [hazardDropMode, setHazardDropMode] = useState(false)
-  const [onIceWaterBodyId, setOnIceWaterBodyId] = useState<string | null>(null)
-  const [onIceCoord, setOnIceCoord] = useState<{ lat: number; lng: number } | null>(null)
+  const [highlightWaterBodyId, setHighlightWaterBodyId] = useState<string | null>(null);
+  const [focus, setFocus] = useState<MapFocus | null>(null);
+  const [photoPins, setPhotoPins] = useState<PhotoPin[]>([]);
+  const [putInPin, setPutInPin] = useState<{ lat: number; lng: number } | null>(null);
+  const [pinDropMode, setPinDropMode] = useState(false);
+  const [drawerCoveredFraction, setDrawerCoveredFraction] = useState(0);
+  const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null);
+  const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null);
+  const [hazardDropMode, setHazardDropMode] = useState(false);
+  const [onIceWaterBodyId, setOnIceWaterBodyId] = useState<string | null>(null);
+  const [onIceCoord, setOnIceCoord] = useState<{ lat: number; lng: number } | null>(null);
 
   const value = useMemo(
     () => ({
@@ -135,15 +135,15 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       onIceWaterBodyId,
       onIceCoord,
     ],
-  )
+  );
 
-  return <MapSelectionContext.Provider value={value}>{children}</MapSelectionContext.Provider>
+  return <MapSelectionContext.Provider value={value}>{children}</MapSelectionContext.Provider>;
 }
 
 export function useMapSelection(): MapSelectionValue {
-  const value = useContext(MapSelectionContext)
-  if (!value) throw new Error('useMapSelection must be used within a MapSelectionProvider')
-  return value
+  const value = useContext(MapSelectionContext);
+  if (!value) throw new Error('useMapSelection must be used within a MapSelectionProvider');
+  return value;
 }
 
 /**
@@ -153,5 +153,5 @@ export function useMapSelection(): MapSelectionValue {
  * "use my current location" (§F2/D42).
  */
 export function useMapSelectionOptional(): MapSelectionValue | null {
-  return useContext(MapSelectionContext)
+  return useContext(MapSelectionContext);
 }

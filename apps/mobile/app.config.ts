@@ -1,4 +1,4 @@
-import type { ExpoConfig } from 'expo/config'
+import type { ExpoConfig } from 'expo/config';
 
 /**
  * Dynamic Expo config (D8). Barebones Phase 0 shell — Continuous Native Generation
@@ -75,6 +75,6 @@ const config: ExpoConfig = {
       projectId: 'bc7e5bb9-9b85-4343-b93c-cdd14cbeeb64',
     },
   },
-}
+};
 
-export default config
+export default config;

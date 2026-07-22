@@ -7,18 +7,18 @@ import {
   type PressEvent,
   type PressEventWithFeatures,
   type ViewStateChangeEvent,
-} from '@maplibre/maplibre-react-native'
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { applyDraftMapClick, type BBox } from '@skating/core'
-import { useQuery } from 'convex/react'
-import * as Location from 'expo-location'
-import { useRouter } from 'expo-router'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import type { NativeSyntheticEvent } from 'react-native'
-import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native'
-import { cacheBody } from '../lib/bodyCache'
-import { env } from '../lib/env'
+} from '@maplibre/maplibre-react-native';
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { applyDraftMapClick, type BBox } from '@skating/core';
+import { useQuery } from 'convex/react';
+import * as Location from 'expo-location';
+import { useRouter } from 'expo-router';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import type { NativeSyntheticEvent } from 'react-native';
+import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
+import { cacheBody } from '../lib/bodyCache';
+import { env } from '../lib/env';
 import {
   bodyFeaturesToFeatureCollection,
   HAZARD_PALETTE,
@@ -26,8 +26,8 @@ import {
   hazardDraftToFeatureCollection,
   hazardFillOpacityExpression,
   hazardsToFeatureCollection,
-} from '../lib/hazardMap'
-import { ensureForegroundPermission } from '../lib/location'
+} from '../lib/hazardMap';
+import { ensureForegroundPermission } from '../lib/location';
 import {
   boundsToViewport,
   buildMapStyle,
@@ -46,8 +46,8 @@ import {
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
   zoomForViewport,
-} from '../lib/waterMap'
-import { useMapSelection } from './MapSelectionContext'
+} from '../lib/waterMap';
+import { useMapSelection } from './MapSelectionContext';
 
 /**
  * Interactive native MapLibre map — the read side of the Phase 2 loop (§F, D5/D6/D47/D49), the
@@ -63,10 +63,10 @@ import { useMapSelection } from './MapSelectionContext'
  * since they're siblings of this persistent map). RN has no `setFeatureState`, so the selection
  * highlight is a data-driven `filter` on dedicated layers rather than a feature-state flag.
  */
-const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] }
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 /** How long a hazard tap suppresses the water-body tap underneath it (one gesture's worth). */
-const HAZARD_PRESS_PRECEDENCE_MS = 300
+const HAZARD_PRESS_PRECEDENCE_MS = 300;
 
 // The initial query covers the whole pilot region at the state zoom, so the map shows the prominent
 // bodies (Champlain, boosted Morey) immediately — before the first `onRegionDidChange` — then each
@@ -79,21 +79,21 @@ const INITIAL_QUERY: { viewport: BBox; zoom: number } = {
     maxLat: NORTHEAST_MAX_BOUNDS[1][1],
   },
   zoom: Math.floor(INITIAL_ZOOM),
-}
+};
 
 /**
  * Only seed the offline body cache once zoomed in to a browse level. Below this the viewport spans a
  * whole region and would cache dozens of bodies no one is looking at; at/above it the on-screen set is
  * small and is plausibly "lakes near where I am". A floor, not a guarantee — it just bounds the writes.
  */
-const CACHE_SEED_MIN_ZOOM = 11
+const CACHE_SEED_MIN_ZOOM = 11;
 
 export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolean }) {
-  const scheme = useColorScheme()
-  const flavor = scheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light
-  const water = WATER_PALETTE[flavor]
-  const router = useRouter()
-  const cameraRef = useRef<CameraRef>(null)
+  const scheme = useColorScheme();
+  const flavor = scheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
+  const water = WATER_PALETTE[flavor];
+  const router = useRouter();
+  const cameraRef = useRef<CameraRef>(null);
   const {
     highlightWaterBodyId,
     focus,
@@ -108,33 +108,33 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     hazardDraftType,
     hazardDropMode,
     setHazardDropMode,
-  } = useMapSelection()
-  const { height: windowHeight } = useWindowDimensions()
-  const hazardPalette = HAZARD_PALETTE[flavor]
+  } = useMapSelection();
+  const { height: windowHeight } = useWindowDimensions();
+  const hazardPalette = HAZARD_PALETTE[flavor];
   /** When the hazard source last claimed a tap — see `onWaterPress` for why both sides check. */
-  const hazardPressAtRef = useRef(0)
+  const hazardPressAtRef = useRef(0);
 
   // Basemap tiles: the demo archive is dated and Protomaps prunes old builds (it will 404), so it's
   // DEV-ONLY. A release build that omits EXPO_PUBLIC_PMTILES_URL must NOT silently fall back to it —
   // that ships a map destined to go blank. Instead we refuse to build a style (→ the blocking config
   // screen below), turning the misconfiguration into an immediate, obvious failure.
-  const pmtilesUrl = env.pmtilesUrl || (__DEV__ ? DEMO_PMTILES_URL : '')
+  const pmtilesUrl = env.pmtilesUrl || (__DEV__ ? DEMO_PMTILES_URL : '');
   const mapStyle = useMemo(
     () => (pmtilesUrl ? buildMapStyle(pmtilesUrl, flavor) : null),
     [pmtilesUrl, flavor],
-  )
+  );
 
   // Viewport bbox + zoom are the query key; seeded to the region so data shows before the first
   // region event, then `onRegionDidChange` refines it.
-  const [queryArgs, setQueryArgs] = useState<{ viewport: BBox; zoom: number }>(INITIAL_QUERY)
-  const bodies = useQuery(api.waterBodies.listInViewport, queryArgs)
+  const [queryArgs, setQueryArgs] = useState<{ viewport: BBox; zoom: number }>(INITIAL_QUERY);
+  const bodies = useQuery(api.waterBodies.listInViewport, queryArgs);
 
   // Retain the last loaded features while the next query is in flight (Convex returns `undefined`
   // for a fresh key until it resolves) so bodies never blink off the map between pans.
-  const [features, setFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FC)
+  const [features, setFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
   useEffect(() => {
-    if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies))
-  }, [bodies])
+    if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
+  }, [bodies]);
 
   // Seed the offline body cache from what's on screen when zoomed in (Phase 9 §Mobile). Until now the
   // cache filled only when a lake's *drawer* was opened, so on-ice detection missed a lake you were
@@ -142,12 +142,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // later no-signal capture. Online, the server resolver covers this already; this is the offline
   // safety net. Bounded: only past a browse-level zoom (so we don't cache a whole region at once) and
   // deduped per session so a stationary pan doesn't rewrite the same rows.
-  const seededRef = useRef<Set<string>>(new Set())
+  const seededRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (bodies === undefined || queryArgs.zoom < CACHE_SEED_MIN_ZOOM) return
+    if (bodies === undefined || queryArgs.zoom < CACHE_SEED_MIN_ZOOM) return;
     for (const body of bodies) {
-      if (seededRef.current.has(body._id)) continue
-      seededRef.current.add(body._id)
+      if (seededRef.current.has(body._id)) continue;
+      seededRef.current.add(body._id);
       cacheBody({
         waterBodyId: body._id,
         name: body.name,
@@ -155,9 +155,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         polygon: body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon,
         centroid: body.centroid,
         surfaceAreaSqM: body.surfaceAreaSqM,
-      })
+      });
     }
-  }, [bodies, queryArgs.zoom])
+  }, [bodies, queryArgs.zoom]);
 
   const photoPinsFC = useMemo<GeoJSON.FeatureCollection>(
     () => ({
@@ -169,7 +169,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       })),
     }),
     [photoPins],
-  )
+  );
 
   const putInPinFC = useMemo<GeoJSON.FeatureCollection>(
     () => ({
@@ -185,20 +185,20 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         : [],
     }),
     [putInPin],
-  )
+  );
 
   // The viewer's favorited bodies (Phase 4, decision #1) — the highlight is a data-driven `in` filter
   // on a dedicated outline layer (RN has no feature-state). Empty when signed out.
-  const favorites = useQuery(api.waterBodyFavorites.listForUser, {})
-  const favoriteIds = useMemo(() => (favorites ?? []).map((f) => f.waterBodyId), [favorites])
+  const favorites = useQuery(api.waterBodyFavorites.listForUser, {});
+  const favoriteIds = useMemo(() => (favorites ?? []).map((f) => f.waterBodyId), [favorites]);
 
   // Put-in markers for the currently-focused lake (decision #7) — bounded to the open lake. `skip`
   // when nothing is selected.
   const putIns = useQuery(
     api.putIns.listForBody,
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
-  )
-  const putInsFC = useMemo(() => putInsToFeatureCollection(putIns ?? []), [putIns])
+  );
+  const putInsFC = useMemo(() => putInsToFeatureCollection(putIns ?? []), [putIns]);
 
   // Hazards + known features for the focused lake (Phase 9, D54 Layer 0). Scoped to the open body,
   // not the viewport — hazards are only ever queried per body, which is what keeps this off the
@@ -207,20 +207,20 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const hazards = useQuery(
     api.hazards.listForBody,
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
-  )
+  );
   const bodyFeatures = useQuery(
     api.bodyFeatures.listForBody,
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
-  )
-  const hazardsFC = useMemo(() => hazardsToFeatureCollection(hazards ?? []), [hazards])
+  );
+  const hazardsFC = useMemo(() => hazardsToFeatureCollection(hazards ?? []), [hazards]);
   const bodyFeaturesFC = useMemo(
     () => bodyFeaturesToFeatureCollection(bodyFeatures ?? []),
     [bodyFeatures],
-  )
+  );
   const hazardDraftFC = useMemo(
     () => hazardDraftToFeatureCollection(hazardDraft, hazardDraftType),
     [hazardDraft, hazardDraftType],
-  )
+  );
 
   // Frame a drawer's focus (a lake / report put-in) into the area the drawer does NOT cover, re-fitting
   // whenever the drawer settles at a new snap point. A lake with a `bounds` gets zoom-to-fit
@@ -228,95 +228,95 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // becomes bottom camera padding, so the target lands in the visible strip above the sheet — not
   // hidden behind it. Skipped when the sheet is near-full (little map visible) or closed.
   useEffect(() => {
-    const cam = cameraRef.current
-    if (!cam || !focus || drawerCoveredFraction <= 0 || drawerCoveredFraction >= 0.9) return
-    const margin = 48
+    const cam = cameraRef.current;
+    if (!cam || !focus || drawerCoveredFraction <= 0 || drawerCoveredFraction >= 0.9) return;
+    const margin = 48;
     const padding = {
       top: margin,
       right: margin,
       left: margin,
       bottom: margin + drawerCoveredFraction * windowHeight,
-    }
+    };
     if (focus.bounds) {
       cam.fitBounds(
         [focus.bounds.minLng, focus.bounds.minLat, focus.bounds.maxLng, focus.bounds.maxLat],
         { padding, duration: 600 },
-      )
+      );
     } else {
       cam.flyTo({
         center: [focus.lng, focus.lat],
         ...(focus.zoom !== undefined ? { zoom: focus.zoom } : {}),
         padding,
         duration: 600,
-      })
+      });
     }
-  }, [focus, drawerCoveredFraction, windowHeight])
+  }, [focus, drawerCoveredFraction, windowHeight]);
 
   // Home/water framing on open via device geolocation (D12/D20): a fix inside the pilot region
   // recenters there; otherwise the default Vermont framing stands. Skipped on a deep-linked drawer,
   // which frames on its own target instead (see `geolocateOnMount`).
   useEffect(() => {
-    if (!geolocateOnMount) return
-    let cancelled = false
-    ;(async () => {
+    if (!geolocateOnMount) return;
+    let cancelled = false;
+    (async () => {
       try {
-        const granted = await ensureForegroundPermission()
-        if (!granted) return // denied ⇒ keep the default framing
-        const pos = await Location.getCurrentPositionAsync({})
-        const frame = frameForCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude })
+        const granted = await ensureForegroundPermission();
+        if (!granted) return; // denied ⇒ keep the default framing
+        const pos = await Location.getCurrentPositionAsync({});
+        const frame = frameForCoord({ lat: pos.coords.latitude, lng: pos.coords.longitude });
         if (!cancelled && frame) {
-          cameraRef.current?.jumpTo({ center: frame.center, zoom: frame.zoom })
+          cameraRef.current?.jumpTo({ center: frame.center, zoom: frame.zoom });
         }
       } catch {
         // Location unavailable ⇒ keep the default framing.
       }
-    })()
+    })();
     return () => {
-      cancelled = true
-    }
-  }, [geolocateOnMount])
+      cancelled = true;
+    };
+  }, [geolocateOnMount]);
 
   // In pin-drop mode (§E) the next map tap sets the put-in pin; otherwise a tap on a water body
   // (handled by the source's onPress below) opens its drawer. Handlers are recreated each render, so
   // they read the current `pinDropMode` directly (no ref needed, unlike web's once-bound handler).
   function onMapPress(e: NativeSyntheticEvent<PressEvent | PressEventWithFeatures>) {
-    const [lng, lat] = e.nativeEvent.lngLat
+    const [lng, lat] = e.nativeEvent.lngLat;
     if (pinDropMode) {
-      setPutInPin({ lat, lng })
-      setPinDropMode(false)
-      return
+      setPutInPin({ lat, lng });
+      setPinDropMode(false);
+      return;
     }
     // Hazard placement (Phase 9). A circle disarms on the tap that moves it; a polyline stays armed
     // and takes one vertex per tap, so tracing a ridge doesn't require re-arming between points.
     if (hazardDropMode && hazardDraft) {
-      setHazardDraft(applyDraftMapClick(hazardDraft, { lat, lng }))
-      if (hazardDraft.geometryKind === 'point_radius') setHazardDropMode(false)
+      setHazardDraft(applyDraftMapClick(hazardDraft, { lat, lng }));
+      if (hazardDraft.geometryKind === 'point_radius') setHazardDropMode(false);
     }
   }
 
   function onWaterPress(e: NativeSyntheticEvent<PressEventWithFeatures>) {
-    if (pinDropMode || hazardDropMode) return // a tap while placing is handled by onMapPress
+    if (pinDropMode || hazardDropMode) return; // a tap while placing is handled by onMapPress
     // A hazard footprint always lies *inside* a lake, so a tap on a pin hits both sources. The more
     // specific — and more safety-relevant — target has to win. Which handler RN fires first isn't
     // guaranteed, so precedence is enforced from both sides: if the hazard fired first this bails,
     // and if the water fired first the hazard's own navigate lands last and still wins.
-    if (Date.now() - hazardPressAtRef.current < HAZARD_PRESS_PRECEDENCE_MS) return
-    const id = e.nativeEvent.features?.[0]?.properties?._id
-    if (typeof id === 'string') router.navigate({ pathname: '/water/[id]', params: { id } })
+    if (Date.now() - hazardPressAtRef.current < HAZARD_PRESS_PRECEDENCE_MS) return;
+    const id = e.nativeEvent.features?.[0]?.properties?._id;
+    if (typeof id === 'string') router.navigate({ pathname: '/water/[id]', params: { id } });
   }
 
   function onHazardPress(e: NativeSyntheticEvent<PressEventWithFeatures>) {
-    if (pinDropMode || hazardDropMode) return
-    hazardPressAtRef.current = Date.now()
-    const id = e.nativeEvent.features?.[0]?.properties?.hazardId
-    if (typeof id === 'string') router.navigate({ pathname: '/hazard/[id]', params: { id } })
+    if (pinDropMode || hazardDropMode) return;
+    hazardPressAtRef.current = Date.now();
+    const id = e.nativeEvent.features?.[0]?.properties?.hazardId;
+    if (typeof id === 'string') router.navigate({ pathname: '/hazard/[id]', params: { id } });
   }
 
   function onRegionDidChange(e: NativeSyntheticEvent<ViewStateChangeEvent>) {
     setQueryArgs({
       viewport: boundsToViewport(e.nativeEvent.bounds),
       zoom: zoomForViewport(e.nativeEvent.zoom),
-    })
+    });
   }
 
   // Release build with no basemap URL configured — block loudly rather than render a doomed map.
@@ -328,7 +328,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           (EXPO_PUBLIC_PMTILES_URL).
         </Text>
       </View>
-    )
+    );
   }
 
   return (
@@ -511,7 +511,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         />
       </GeoJSONSource>
     </MapGL>
-  )
+  );
 }
 
 const styles = StyleSheet.create({
@@ -523,4 +523,4 @@ const styles = StyleSheet.create({
     backgroundColor: '#1c1c1e',
   },
   configErrorText: { color: '#ffffff', textAlign: 'center', fontSize: 15, lineHeight: 22 },
-})
+});

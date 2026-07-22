@@ -1,10 +1,10 @@
-import { fileURLToPath } from 'node:url'
-import { sentryTanstackStart } from '@sentry/tanstackstart-react/vite'
-import tailwindcss from '@tailwindcss/vite'
-import { tanstackStart } from '@tanstack/react-start/plugin/vite'
-import viteReact from '@vitejs/plugin-react'
-import { nitro } from 'nitro/vite'
-import { defineConfig } from 'vite'
+import { fileURLToPath } from 'node:url';
+import { sentryTanstackStart } from '@sentry/tanstackstart-react/vite';
+import tailwindcss from '@tailwindcss/vite';
+import { tanstackStart } from '@tanstack/react-start/plugin/vite';
+import viteReact from '@vitejs/plugin-react';
+import { nitro } from 'nitro/vite';
+import { defineConfig } from 'vite';
 
 /**
  * TanStack Start (Vite) config (D1/D27). Plugin order matters: Tailwind first, then the
@@ -28,7 +28,7 @@ const sentryPlugins = process.env.SENTRY_AUTH_TOKEN
         authToken: process.env.SENTRY_AUTH_TOKEN,
       }),
     ]
-  : []
+  : [];
 
 export default defineConfig({
   server: { port: 3000 },
@@ -37,4 +37,4 @@ export default defineConfig({
   // unaffected — both styles resolve.
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   plugins: [tailwindcss(), tanstackStart(), nitro(), viteReact(), ...sentryPlugins],
-})
+});

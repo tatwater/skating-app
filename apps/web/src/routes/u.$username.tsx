@@ -1,23 +1,23 @@
-import { api } from '@skating/convex/api'
-import { formatSkateTime, humanizeEnum } from '@skating/core'
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import { UnavailableState } from '../components/DrawerStates'
-import { ProfileView } from '../components/ProfileView'
-import { BlockButton, FlagDialog } from '../components/SafetyControls'
-import { Badge } from '../components/ui/badge'
-import { buttonVariants } from '../components/ui/button'
-import { Card, CardContent } from '../components/ui/card'
+import { api } from '@skating/convex/api';
+import { formatSkateTime, humanizeEnum } from '@skating/core';
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
+import { UnavailableState } from '../components/DrawerStates';
+import { ProfileView } from '../components/ProfileView';
+import { BlockButton, FlagDialog } from '../components/SafetyControls';
+import { Badge } from '../components/ui/badge';
+import { buttonVariants } from '../components/ui/button';
+import { Card, CardContent } from '../components/ui/card';
 
 // Profiles get their own page (D47), including the current user's own.
-export const Route = createFileRoute('/u/$username')({ component: ProfilePage })
+export const Route = createFileRoute('/u/$username')({ component: ProfilePage });
 
 function ProfilePage() {
-  const { username } = Route.useParams()
-  const profile = useQuery(api.profiles.getPublicProfile, { username })
+  const { username } = Route.useParams();
+  const profile = useQuery(api.profiles.getPublicProfile, { username });
 
   if (profile === undefined) {
-    return <div className="mx-auto max-w-2xl py-8 text-foreground-muted">Loading…</div>
+    return <div className="mx-auto max-w-2xl py-8 text-foreground-muted">Loading…</div>;
   }
   if (profile === null) {
     return (
@@ -27,7 +27,7 @@ function ProfilePage() {
           message="This profile doesn’t exist or isn’t visible to you."
         />
       </div>
-    )
+    );
   }
 
   const actions = profile.isSelf ? (
@@ -39,7 +39,7 @@ function ProfilePage() {
       <BlockButton targetUserId={profile.userId} displayName={profile.displayName} />
       <FlagDialog targetType="user" targetId={profile.userId} label="Flag" />
     </>
-  )
+  );
 
   return (
     <ProfileView
@@ -84,5 +84,5 @@ function ProfilePage() {
         ) : null
       }
     />
-  )
+  );
 }

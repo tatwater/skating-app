@@ -1,5 +1,5 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
   BODY_FEATURE_CAVEAT,
   FOOTPRINT_IS_APPROXIMATE,
@@ -13,50 +13,50 @@ import {
   stalenessCaveat,
   verdictHelp,
   verdictLabel,
-} from '@skating/core'
-import { Link } from '@tanstack/react-router'
-import { useMutation, useQuery } from 'convex/react'
-import { ConvexError } from 'convex/values'
-import { type ReactNode, useEffect, useState } from 'react'
-import { DetailSkeleton, UnavailableState } from './DrawerStates'
-import { useMapSelection } from './MapSelectionContext'
-import { FlagDialog } from './SafetyControls'
-import { Badge } from './ui/badge'
-import { Button } from './ui/button'
-import { Separator } from './ui/separator'
-import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet'
+} from '@skating/core';
+import { Link } from '@tanstack/react-router';
+import { useMutation, useQuery } from 'convex/react';
+import { ConvexError } from 'convex/values';
+import { type ReactNode, useEffect, useState } from 'react';
+import { DetailSkeleton, UnavailableState } from './DrawerStates';
+import { useMapSelection } from './MapSelectionContext';
+import { FlagDialog } from './SafetyControls';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Separator } from './ui/separator';
+import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
 
 /** The plain data a hazard renders from — decoupled from Convex so `HazardView` is testable. */
 export interface HazardViewData {
-  hazardId: string
-  waterBodyId: string
-  bodyName?: string
-  type: HazardType
-  freshness: HazardFreshness
-  provisional: boolean
-  healing: boolean
-  archived: boolean
-  description?: string
+  hazardId: string;
+  waterBodyId: string;
+  bodyName?: string;
+  type: HazardType;
+  freshness: HazardFreshness;
+  provisional: boolean;
+  healing: boolean;
+  archived: boolean;
+  description?: string;
   /**
    * Rendered as "… by <name>" when present. The container leaves it undefined until `hazards.get`
    * returns a reporter — until then the author line is simply omitted rather than left half-written.
    */
-  reporterName?: string
-  firstReportedAt: number
-  lastConfirmedAt: number
-  confirmCount: number
-  photos: { photoId: string; url: string | null; thumbUrl: string | null; caption?: string }[]
+  reporterName?: string;
+  firstReportedAt: number;
+  lastConfirmedAt: number;
+  confirmCount: number;
+  photos: { photoId: string; url: string | null; thumbUrl: string | null; caption?: string }[];
 }
 
 /** The three verdicts, in the order they're offered. */
-const VERDICTS: HazardVerdict[] = ['still_there', 'healing_unsafe', 'fully_healed']
+const VERDICTS: HazardVerdict[] = ['still_there', 'healing_unsafe', 'fully_healed'];
 
 function formatWhen(at: number): string {
-  const hours = (Date.now() - at) / 3_600_000
-  if (hours < 1) return 'less than an hour ago'
-  if (hours < 24) return `${Math.round(hours)} h ago`
-  const days = Math.round(hours / 24)
-  return days === 1 ? 'yesterday' : `${days} days ago`
+  const hours = (Date.now() - at) / 3_600_000;
+  if (hours < 1) return 'less than an hour ago';
+  if (hours < 24) return `${Math.round(hours)} h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
 /**
@@ -73,24 +73,24 @@ export function HazardView({
   confirmError,
   flagControl,
 }: {
-  data: HazardViewData
-  onConfirm?: (verdict: HazardVerdict) => void
-  confirming?: boolean
+  data: HazardViewData;
+  onConfirm?: (verdict: HazardVerdict) => void;
+  confirming?: boolean;
   /**
    * Why the last verdict didn't land. A dropped confirmation must say so: silently swallowing it
    * leaves the skater believing they've warned the next person when they haven't (D3).
    */
-  confirmError?: string | null
+  confirmError?: string | null;
   /**
    * The flag control, injected by the container. It needs a Convex mutation, and this component is
    * deliberately Convex-free so it can be rendered from a fixture in a test.
    */
-  flagControl?: ReactNode
+  flagControl?: ReactNode;
 }) {
   // The destructive verdict gets a confirm step. It's the only one that retires a pin for everyone,
   // and a mis-tap that clears a real hazard is the worst outcome this UI can produce (D3).
-  const [pendingHealed, setPendingHealed] = useState(false)
-  const passage = isPassageMarker(data.type)
+  const [pendingHealed, setPendingHealed] = useState(false);
+  const passage = isPassageMarker(data.type);
 
   return (
     <>
@@ -164,7 +164,7 @@ export function HazardView({
                 {passage ? 'Been through here?' : 'Seen this recently?'}
               </h3>
               {VERDICTS.map((verdict) => {
-                const destructive = verdict === 'fully_healed'
+                const destructive = verdict === 'fully_healed';
                 if (destructive && pendingHealed) {
                   return (
                     <div
@@ -181,8 +181,8 @@ export function HazardView({
                           size="sm"
                           disabled={confirming}
                           onClick={() => {
-                            setPendingHealed(false)
-                            onConfirm(verdict)
+                            setPendingHealed(false);
+                            onConfirm(verdict);
                           }}
                         >
                           Yes, it's fully healed
@@ -192,7 +192,7 @@ export function HazardView({
                         </Button>
                       </div>
                     </div>
-                  )
+                  );
                 }
                 return (
                   <button
@@ -213,7 +213,7 @@ export function HazardView({
                       {verdictHelp(verdict, data.type)}
                     </span>
                   </button>
-                )
+                );
               })}
               {confirmError ? (
                 <p role="alert" className="text-destructive text-sm">
@@ -232,30 +232,30 @@ export function HazardView({
         ) : null}
       </div>
     </>
-  )
+  );
 }
 
 /** Container: resolves the hazard + its photos, pushes map focus, and wires the confirm mutation. */
 export function HazardDetail({ hazardId }: { hazardId: string }) {
-  const hazard = useQuery(api.hazards.get, { hazardId: hazardId as Id<'hazards'> })
-  const photos = useQuery(api.photos.getHazardUrls, { hazardId: hazardId as Id<'hazards'> })
-  const body = useQuery(api.waterBodies.get, hazard ? { waterBodyId: hazard.waterBodyId } : 'skip')
-  const confirm = useMutation(api.hazardConfirmations.confirm)
-  const [confirming, setConfirming] = useState(false)
-  const [confirmError, setConfirmError] = useState<string | null>(null)
-  const { setFocus, setHighlightWaterBodyId } = useMapSelection()
+  const hazard = useQuery(api.hazards.get, { hazardId: hazardId as Id<'hazards'> });
+  const photos = useQuery(api.photos.getHazardUrls, { hazardId: hazardId as Id<'hazards'> });
+  const body = useQuery(api.waterBodies.get, hazard ? { waterBodyId: hazard.waterBodyId } : 'skip');
+  const confirm = useMutation(api.hazardConfirmations.confirm);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const { setFocus, setHighlightWaterBodyId } = useMapSelection();
 
   useEffect(() => {
-    if (!hazard) return
+    if (!hazard) return;
     const centre = {
       lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
       lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
-    }
-    setFocus({ ...centre, zoom: 14 })
-    setHighlightWaterBodyId(hazard.waterBodyId)
-  }, [hazard, setFocus, setHighlightWaterBodyId])
+    };
+    setFocus({ ...centre, zoom: 14 });
+    setHighlightWaterBodyId(hazard.waterBodyId);
+  }, [hazard, setFocus, setHighlightWaterBodyId]);
 
-  if (hazard === undefined) return <DetailSkeleton />
+  if (hazard === undefined) return <DetailSkeleton />;
   if (hazard === null) {
     return (
       <UnavailableState
@@ -264,10 +264,10 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
         // "removed from view" must never be reported to a skater as "no longer there" (D3).
         message="This marker isn't available. The link may be broken, or it may have been removed from the map."
       />
-    )
+    );
   }
 
-  const bodyName = body?.available ? body.body.name : undefined
+  const bodyName = body?.available ? body.body.name : undefined;
 
   return (
     <HazardView
@@ -290,14 +290,14 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
       confirmError={confirmError}
       flagControl={<FlagDialog targetType="hazard" targetId={hazardId} />}
       onConfirm={async (verdict) => {
-        setConfirming(true)
-        setConfirmError(null)
+        setConfirming(true);
+        setConfirmError(null);
         try {
           await confirm({
             hazardId: hazardId as Id<'hazards'>,
             verdict,
             via: 'app_open_nearby',
-          })
+          });
         } catch (err) {
           // A vote that didn't land has to say so. Web has no offline queue (that's the mobile
           // flush service), so the only honest thing here is to tell the skater it didn't send —
@@ -308,16 +308,16 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
               : err instanceof Error
                 ? err.message
                 : 'Could not record that — check your connection and try again.',
-          )
+          );
         } finally {
-          setConfirming(false)
+          setConfirming(false);
         }
       }}
     />
-  )
+  );
 }
 
 /** The always-on note under a known seasonal feature (D53) — no age, no confirm loop. */
 export function BodyFeatureNote() {
-  return <p className="text-foreground-muted text-xs">{BODY_FEATURE_CAVEAT}</p>
+  return <p className="text-foreground-muted text-xs">{BODY_FEATURE_CAVEAT}</p>;
 }

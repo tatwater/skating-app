@@ -1,37 +1,37 @@
-import { useSignIn } from '@clerk/clerk-expo'
-import { Link } from 'expo-router'
-import { useState } from 'react'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui'
+import { useSignIn } from '@clerk/clerk-expo';
+import { Link } from 'expo-router';
+import { useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui';
 
 /**
  * Minimal email/password sign-in (D26). Barebones for Phase 0 — social login,
  * magic links, and error polish come in the auth deep-dive PR.
  */
 export default function SignInScreen() {
-  const { signIn, setActive, isLoaded } = useSignIn()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const { signIn, setActive, isLoaded } = useSignIn();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function onSubmit() {
-    if (!isLoaded || busy) return
-    setBusy(true)
-    setError(null)
+    if (!isLoaded || busy) return;
+    setBusy(true);
+    setError(null);
     try {
-      const attempt = await signIn.create({ identifier: email, password })
+      const attempt = await signIn.create({ identifier: email, password });
       if (attempt.status === 'complete') {
         // Activating the session flips `isSignedIn`; the root gate takes it from here,
         // routing to the tabs (profile exists) or onboarding (D26) — see app/_layout.tsx.
-        await setActive({ session: attempt.createdSessionId })
+        await setActive({ session: attempt.createdSessionId });
       } else {
-        setError('Extra verification is required — not handled in this barebones build yet.')
+        setError('Extra verification is required — not handled in this barebones build yet.');
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Sign in failed')
+      setError(e instanceof Error ? e.message : 'Sign in failed');
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
@@ -71,5 +71,5 @@ export default function SignInScreen() {
         </Paragraph>
       </YStack>
     </SafeAreaView>
-  )
+  );
 }

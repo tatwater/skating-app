@@ -8,32 +8,32 @@
  * server-side. Callers get a `ConvexError` they can branch on.
  */
 
-import type { UserRole } from '@skating/core'
-import { ConvexError } from 'convex/values'
-import type { Doc } from '../_generated/dataModel'
-import type { MutationCtx, QueryCtx } from '../_generated/server'
+import type { UserRole } from '@skating/core';
+import { ConvexError } from 'convex/values';
+import type { Doc } from '../_generated/dataModel';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
 
-type Ctx = QueryCtx | MutationCtx
+type Ctx = QueryCtx | MutationCtx;
 
 /** Role precedence: admin ⊇ moderator ⊇ member (D37). */
-const ROLE_RANK: Record<UserRole, number> = { member: 0, moderator: 1, admin: 2 }
+const ROLE_RANK: Record<UserRole, number> = { member: 0, moderator: 1, admin: 2 };
 
 /** The caller's profile, or `null` if unauthenticated / not yet provisioned. */
 export async function getCurrentProfile(ctx: Ctx): Promise<Doc<'profiles'> | null> {
-  const identity = await ctx.auth.getUserIdentity()
-  if (!identity) return null
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) return null;
   return ctx.db
     .query('profiles')
     .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
-    .unique()
+    .unique();
 }
 
 /** The caller's profile, or throw if unauthenticated / provisioned-but-not-active (D37). */
 export async function requireProfile(ctx: Ctx): Promise<Doc<'profiles'>> {
-  const profile = await getCurrentProfile(ctx)
-  if (!profile) throw new ConvexError('Not authenticated')
+  const profile = await getCurrentProfile(ctx);
+  if (!profile) throw new ConvexError('Not authenticated');
   if (profile.status === 'banned' || profile.status === 'deleted') {
-    throw new ConvexError('Account is not active')
+    throw new ConvexError('Account is not active');
   }
   // A suspension blocks until it lapses (D37): an unset or future `suspendedUntil`
   // still gates; a past one is treated as active (the flip to `active` happens
@@ -42,16 +42,16 @@ export async function requireProfile(ctx: Ctx): Promise<Doc<'profiles'>> {
     profile.status === 'suspended' &&
     (profile.suspendedUntil === undefined || profile.suspendedUntil > Date.now())
   ) {
-    throw new ConvexError('Account is suspended')
+    throw new ConvexError('Account is suspended');
   }
-  return profile
+  return profile;
 }
 
 /** The caller's profile, or throw unless they hold at least `minRole` (D37). */
 export async function requireRole(ctx: Ctx, minRole: UserRole): Promise<Doc<'profiles'>> {
-  const profile = await requireProfile(ctx)
+  const profile = await requireProfile(ctx);
   if (ROLE_RANK[profile.role] < ROLE_RANK[minRole]) {
-    throw new ConvexError(`Requires ${minRole} role`)
+    throw new ConvexError(`Requires ${minRole} role`);
   }
-  return profile
+  return profile;
 }

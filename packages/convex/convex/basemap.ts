@@ -16,14 +16,14 @@
  * change, nothing here (see `plans/phase-1-water-bodies.md` open items + `04-integrations.md`).
  */
 
-import { v } from 'convex/values'
-import { internalMutation } from './_generated/server'
+import { v } from 'convex/values';
+import { internalMutation } from './_generated/server';
 
 /** Mint a one-time upload URL; the operator POSTs the `.pmtiles` bytes to it (see the README). */
 export const generateUploadUrl = internalMutation({
   args: {},
   handler: (ctx) => ctx.storage.generateUploadUrl(),
-})
+});
 
 /**
  * Resolve an uploaded file's stable public serving URL from the `storageId` the upload POST
@@ -33,4 +33,4 @@ export const generateUploadUrl = internalMutation({
 export const getServingUrl = internalMutation({
   args: { storageId: v.id('_storage') },
   handler: (ctx, { storageId }) => ctx.storage.getUrl(storageId),
-})
+});

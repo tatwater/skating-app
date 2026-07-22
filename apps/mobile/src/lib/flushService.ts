@@ -5,8 +5,8 @@
  * the thin adapter. Untested native glue.
  */
 
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
   type DraftFlushEffects,
   flushableDrafts,
@@ -17,10 +17,10 @@ import {
   isFlushable,
   isHazardItemFlushable,
   type ReportInput,
-} from '@skating/core'
-import { uploadToStorage } from '../components/photoPipeline'
-import { convex } from './convex'
-import { deleteDraftPhotoFiles, draftPhotoUris } from './draftPhotos'
+} from '@skating/core';
+import { uploadToStorage } from '../components/photoPipeline';
+import { convex } from './convex';
+import { deleteDraftPhotoFiles, draftPhotoUris } from './draftPhotos';
 import {
   deleteDraft,
   deleteHazardItem,
@@ -30,7 +30,7 @@ import {
   listHazardItems,
   saveDraft,
   saveHazardItem,
-} from './draftStore'
+} from './draftStore';
 
 /** Map the core report input to `reports.create` args (branded Convex ids reapplied). */
 function toCreateArgs(input: ReportInput & { idempotencyKey: string; photoIds: string[] }) {
@@ -48,18 +48,18 @@ function toCreateArgs(input: ReportInput & { idempotencyKey: string; photoIds: s
     notes: input.notes,
     point: input.point,
     photoIds: input.photoIds as Id<'photos'>[],
-  }
+  };
 }
 
 function effects(): DraftFlushEffects {
   return {
     resolveBody: async (coord) => {
-      const res = await convex.query(api.waterBodies.resolveBodyForCoord, { coord })
-      return res?.waterBodyId ?? null
+      const res = await convex.query(api.waterBodies.resolveBodyForCoord, { coord });
+      return res?.waterBodyId ?? null;
     },
     uploadPhoto: async (uri) => {
-      const url = await convex.mutation(api.photos.generateUploadUrl, {})
-      return uploadToStorage(url, uri)
+      const url = await convex.mutation(api.photos.generateUploadUrl, {});
+      return uploadToStorage(url, uri);
     },
     createPhotoRow: async ({ storageId, thumbStorageId, placeOnMap, coord }) =>
       convex.mutation(api.photos.create, {
@@ -70,9 +70,9 @@ function effects(): DraftFlushEffects {
       }),
     createReport: async (input) => convex.mutation(api.reports.create, toCreateArgs(input)),
     persist: async (draft) => {
-      saveDraft(draft)
+      saveDraft(draft);
     },
-  }
+  };
 }
 
 /**
@@ -80,7 +80,7 @@ function effects(): DraftFlushEffects {
  * an uploaded photo is an uploaded photo — and adds the two hazard mutations.
  */
 function hazardEffects(): HazardFlushEffects {
-  const shared = effects()
+  const shared = effects();
   return {
     resolveBody: shared.resolveBody,
     uploadPhoto: shared.uploadPhoto,
@@ -111,28 +111,28 @@ function hazardEffects(): HazardFlushEffects {
         via: input.via,
         ...(input.atCoord ? { atCoord: input.atCoord } : {}),
         observedAt: input.observedAt,
-      })
+      });
     },
     persist: async (item) => {
-      saveHazardItem(item)
+      saveHazardItem(item);
     },
-  }
+  };
 }
 
 // A single in-flight flush at a time: reconnect + app-foreground + manual triggers can all fire, and
 // the guard keeps them from double-sending (the report is idempotent, but this avoids wasted work).
-let flushing = false
+let flushing = false;
 
 // Ids currently being flushed. The edit form checks this (`isDraftFlushing`) and refuses to save
 // over an in-flight draft — otherwise an edit-during-flush would be clobbered by the flush's
 // checkpoint writes and then deleted, silently losing the edit (idempotency would re-serve the
 // pre-edit report). Set membership is mutated synchronously around each draft, so the check +
 // synchronous `saveDraft` in `handleSaveDraft` can't interleave with a flush claiming the same id.
-const flushingIds = new Set<string>()
+const flushingIds = new Set<string>();
 
 /** Is this draft currently being flushed? The edit form blocks a save over an in-flight draft. */
 export function isDraftFlushing(id: string | undefined): boolean {
-  return id !== undefined && flushingIds.has(id)
+  return id !== undefined && flushingIds.has(id);
 }
 
 /**
@@ -145,32 +145,32 @@ export function isDraftFlushing(id: string | undefined): boolean {
  * either picked up fresh here or blocked by `isDraftFlushing` in the form — never silently lost.
  */
 export async function flushDrafts(now: number = Date.now()): Promise<void> {
-  if (flushing) return
-  flushing = true
+  if (flushing) return;
+  flushing = true;
   try {
     // Hazards first, deliberately. They're safety content that another skater may be about to need,
     // and a queue of report drafts with photos can take a while to drain on a weak connection —
     // sending the ridge before the trip write-up is the right order to lose a connection in.
-    await flushHazardQueue(now)
-    const eff = effects()
+    await flushHazardQueue(now);
+    const eff = effects();
     for (const { id } of flushableDrafts(listDrafts())) {
-      flushingIds.add(id)
+      flushingIds.add(id);
       try {
         // Re-read the latest on-disk state — an edit between the snapshot and now must flush its
         // new content, not the stale snapshot.
-        const fresh = getDraft(id)
-        if (!fresh || !isFlushable(fresh)) continue
-        const result = await flushDraft(fresh, eff, now)
+        const fresh = getDraft(id);
+        if (!fresh || !isFlushable(fresh)) continue;
+        const result = await flushDraft(fresh, eff, now);
         if (result.ok) {
-          deleteDraftPhotoFiles(draftPhotoUris(result.draft))
-          deleteDraft(result.draft.id)
+          deleteDraftPhotoFiles(draftPhotoUris(result.draft));
+          deleteDraft(result.draft.id);
         }
       } finally {
-        flushingIds.delete(id)
+        flushingIds.delete(id);
       }
     }
   } finally {
-    flushing = false
+    flushing = false;
   }
 }
 
@@ -183,16 +183,16 @@ export async function flushDrafts(now: number = Date.now()): Promise<void> {
  * captured (the capture bar is gone by then), so there's nothing for an edit to clobber.
  */
 async function flushHazardQueue(now: number): Promise<void> {
-  const eff = hazardEffects()
+  const eff = hazardEffects();
   for (const { id } of flushableHazardItems(listHazardItems())) {
-    const fresh = getHazardItem(id)
-    if (!fresh || !isHazardItemFlushable(fresh)) continue
-    const result = await flushHazardItem(fresh, eff, now)
+    const fresh = getHazardItem(id);
+    if (!fresh || !isHazardItemFlushable(fresh)) continue;
+    const result = await flushHazardItem(fresh, eff, now);
     if (result.ok) {
       if (result.item.kind === 'hazard') {
-        deleteDraftPhotoFiles(result.item.photos.flatMap((p) => [p.fullUri, p.thumbUri]))
+        deleteDraftPhotoFiles(result.item.photos.flatMap((p) => [p.fullUri, p.thumbUri]));
       }
-      deleteHazardItem(result.item.id)
+      deleteHazardItem(result.item.id);
     }
   }
 }

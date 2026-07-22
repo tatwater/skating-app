@@ -7,7 +7,7 @@
  * for UI work before keys are provisioned — sign-in / telemetry simply stay inert.
  */
 
-const CONVEX_URL_PLACEHOLDER = 'https://placeholder.convex.cloud'
+const CONVEX_URL_PLACEHOLDER = 'https://placeholder.convex.cloud';
 
 export const env = {
   clerkPublishableKey: process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? '',
@@ -16,11 +16,11 @@ export const env = {
   // Self-built Vermont `.pmtiles` extract later; empty ⇒ the map falls back to the Protomaps demo
   // tiles (§F, mirrors web's VITE_PMTILES_URL). Read natively by MapLibre via the pmtiles:// scheme.
   pmtilesUrl: process.env.EXPO_PUBLIC_PMTILES_URL ?? '',
-} as const
+} as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */
 export const isConfigured = {
   clerk: env.clerkPublishableKey.startsWith('pk_'),
   convex: env.convexUrl !== CONVEX_URL_PLACEHOLDER,
   sentry: env.sentryDsn.length > 0,
-} as const
+} as const;

@@ -19,14 +19,14 @@
  *    would make a stale hazard look freshly verified by someone who was nowhere near it.
  */
 
-import type { DraftPhoto, DraftStatus, FlushErrorKind } from './draftQueue'
-import { classifyFlushError, PermanentFlushError } from './draftQueue'
-import type { LatLng } from './geometry'
-import { type HazardShape, isValidHazardShape } from './hazardGeometry'
-import type { HazardType } from './types'
+import type { DraftPhoto, DraftStatus, FlushErrorKind } from './draftQueue';
+import { classifyFlushError, PermanentFlushError } from './draftQueue';
+import type { LatLng } from './geometry';
+import { type HazardShape, isValidHazardShape } from './hazardGeometry';
+import type { HazardType } from './types';
 
 /** The three-tier verdict, as the confirm mutation takes it (D52). */
-export type QueuedVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed'
+export type QueuedVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed';
 
 /**
  * How a queued confirmation was triggered — mirrors the backend `HAZARD_CONFIRM_VIA` enum. Carried on
@@ -34,23 +34,27 @@ export type QueuedVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed'
  * banner (`proximity_alert`, standing within alert range — strong evidence) must not be indistinguishable
  * from one tapped in the hazard drawer (`app_open_nearby`) after the queue drains. D50 will weigh these.
  */
-export type QueuedConfirmVia = 'app_open_nearby' | 'proximity_alert' | 'report_flow' | 'strava_path'
+export type QueuedConfirmVia =
+  | 'app_open_nearby'
+  | 'proximity_alert'
+  | 'report_flow'
+  | 'strava_path';
 
 /** A hazard captured on the ice, waiting for signal. */
 export interface QueuedHazard {
-  kind: 'hazard'
-  id: string
+  kind: 'hazard';
+  id: string;
   /** Client-generated at capture, carried across every flush retry (server dedup). */
-  idempotencyKey: string
-  status: DraftStatus
-  errorMessage?: string
+  idempotencyKey: string;
+  status: DraftStatus;
+  errorMessage?: string;
   /** Resolved locally at capture via the Layer-2 body cache; absent ⇒ resolved from `coord` at flush. */
-  waterBodyId?: string
+  waterBodyId?: string;
   /** Device GPS at capture — resolves the lake at flush when `waterBodyId` is absent. */
-  coord?: LatLng
-  type: HazardType
-  shape: HazardShape
-  description?: string
+  coord?: LatLng;
+  type: HazardType;
+  shape: HazardShape;
+  description?: string;
   /**
    * Photos, flushed through the same checkpointed upload path as report photos.
    *
@@ -58,52 +62,52 @@ export interface QueuedHazard {
    * exists now so adding the camera later is a UI change rather than an on-device schema migration,
    * the same discipline `bodyCache` uses for its future tile-pack column.
    */
-  photos: DraftPhoto[]
-  capturedAt: number
-  createdAt: number
-  updatedAt: number
+  photos: DraftPhoto[];
+  capturedAt: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
 /** A three-tier confirmation cast on the ice, waiting for signal. */
 export interface QueuedHazardConfirmation {
-  kind: 'hazard_confirmation'
-  id: string
-  status: DraftStatus
-  errorMessage?: string
-  hazardId: string
-  verdict: QueuedVerdict
+  kind: 'hazard_confirmation';
+  id: string;
+  status: DraftStatus;
+  errorMessage?: string;
+  hazardId: string;
+  verdict: QueuedVerdict;
   /** The trigger that produced this vote, preserved across the offline round-trip (D50 evidence). */
-  via: QueuedConfirmVia
-  atCoord?: LatLng
+  via: QueuedConfirmVia;
+  atCoord?: LatLng;
   /** When the skater actually observed it — see the module note on why this isn't the send time. */
-  observedAt: number
-  createdAt: number
-  updatedAt: number
+  observedAt: number;
+  createdAt: number;
+  updatedAt: number;
 }
 
-export type HazardQueueItem = QueuedHazard | QueuedHazardConfirmation
+export type HazardQueueItem = QueuedHazard | QueuedHazardConfirmation;
 
 /** Still needs sending unless it's already `done` or parked in a permanent `error`. */
 export function isHazardItemFlushable(item: HazardQueueItem): boolean {
-  return item.status !== 'done' && item.status !== 'error'
+  return item.status !== 'done' && item.status !== 'error';
 }
 
 /** The flushable subset, oldest first (capture order) — the reconnect-flush work list. */
 export function flushableHazardItems(items: readonly HazardQueueItem[]): HazardQueueItem[] {
-  return items.filter(isHazardItemFlushable).sort((a, b) => a.createdAt - b.createdAt)
+  return items.filter(isHazardItemFlushable).sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export function createQueuedHazard(args: {
-  id: string
-  idempotencyKey: string
-  now: number
-  type: HazardType
-  shape: HazardShape
-  waterBodyId?: string
-  coord?: LatLng
-  description?: string
-  photos?: DraftPhoto[]
-  capturedAt?: number
+  id: string;
+  idempotencyKey: string;
+  now: number;
+  type: HazardType;
+  shape: HazardShape;
+  waterBodyId?: string;
+  coord?: LatLng;
+  description?: string;
+  photos?: DraftPhoto[];
+  capturedAt?: number;
 }): QueuedHazard {
   return {
     kind: 'hazard',
@@ -119,17 +123,17 @@ export function createQueuedHazard(args: {
     capturedAt: args.capturedAt ?? args.now,
     createdAt: args.now,
     updatedAt: args.now,
-  }
+  };
 }
 
 export function createQueuedConfirmation(args: {
-  id: string
-  now: number
-  hazardId: string
-  verdict: QueuedVerdict
-  via: QueuedConfirmVia
-  atCoord?: LatLng
-  observedAt?: number
+  id: string;
+  now: number;
+  hazardId: string;
+  verdict: QueuedVerdict;
+  via: QueuedConfirmVia;
+  atCoord?: LatLng;
+  observedAt?: number;
 }): QueuedHazardConfirmation {
   return {
     kind: 'hazard_confirmation',
@@ -142,47 +146,47 @@ export function createQueuedConfirmation(args: {
     observedAt: args.observedAt ?? args.now,
     createdAt: args.now,
     updatedAt: args.now,
-  }
+  };
 }
 
 /** External effects, injected so the orchestration is testable with fakes (as `DraftFlushEffects`). */
 export interface HazardFlushEffects {
-  resolveBody(coord: LatLng): Promise<string | null>
-  uploadPhoto(localUri: string): Promise<string>
+  resolveBody(coord: LatLng): Promise<string | null>;
+  uploadPhoto(localUri: string): Promise<string>;
   createPhotoRow(input: {
-    storageId: string
-    thumbStorageId: string
-    placeOnMap: boolean
-    coord?: LatLng
-  }): Promise<string>
+    storageId: string;
+    thumbStorageId: string;
+    placeOnMap: boolean;
+    coord?: LatLng;
+  }): Promise<string>;
   createHazard(input: {
-    waterBodyId: string
-    idempotencyKey: string
-    type: HazardType
-    shape: HazardShape
-    description?: string
-    photoIds: string[]
+    waterBodyId: string;
+    idempotencyKey: string;
+    type: HazardType;
+    shape: HazardShape;
+    description?: string;
+    photoIds: string[];
     // The on-ice capture moment, forwarded so a draft that flushes after the skate ends is still
     // stamped `firstReportedAt` at capture time — the D55 auto-bundle keys on it. Analogous to a
     // confirmation's `observedAt`: neither must reset to signal-recovery time.
-    capturedAt: number
-  }): Promise<string>
+    capturedAt: number;
+  }): Promise<string>;
   confirmHazard(input: {
-    hazardId: string
-    verdict: QueuedVerdict
-    via: QueuedConfirmVia
-    atCoord?: LatLng
-    observedAt: number
-  }): Promise<void>
-  persist(item: HazardQueueItem): Promise<void>
+    hazardId: string;
+    verdict: QueuedVerdict;
+    via: QueuedConfirmVia;
+    atCoord?: LatLng;
+    observedAt: number;
+  }): Promise<void>;
+  persist(item: HazardQueueItem): Promise<void>;
 }
 
 export type HazardFlushResult =
   | { ok: true; item: HazardQueueItem; hazardId?: string }
-  | { ok: false; item: HazardQueueItem; kind: FlushErrorKind; message: string }
+  | { ok: false; item: HazardQueueItem; kind: FlushErrorKind; message: string };
 
 function replacePhoto(photos: readonly DraftPhoto[], updated: DraftPhoto): DraftPhoto[] {
-  return photos.map((p) => (p.id === updated.id ? updated : p))
+  return photos.map((p) => (p.id === updated.id ? updated : p));
 }
 
 /**
@@ -194,18 +198,18 @@ export async function flushHazardItem(
   effects: HazardFlushEffects,
   now: number,
 ): Promise<HazardFlushResult> {
-  let current: HazardQueueItem = item
+  let current: HazardQueueItem = item;
   const save = async (patch: Partial<QueuedHazard> & Partial<QueuedHazardConfirmation>) => {
-    current = { ...current, ...patch, updatedAt: now } as HazardQueueItem
-    await effects.persist(current)
-  }
+    current = { ...current, ...patch, updatedAt: now } as HazardQueueItem;
+    await effects.persist(current);
+  };
 
   try {
-    await save({ status: 'uploading', errorMessage: undefined })
+    await save({ status: 'uploading', errorMessage: undefined });
 
     if (current.kind === 'hazard_confirmation') {
-      await save({ status: 'creating' })
-      const c = current as QueuedHazardConfirmation
+      await save({ status: 'creating' });
+      const c = current as QueuedHazardConfirmation;
       // `observedAt` is the capture moment, not `now` — a confirmation that sends hours later must
       // not reset the hazard's freshness clock to when the phone found signal.
       await effects.confirmHazard({
@@ -214,66 +218,66 @@ export async function flushHazardItem(
         via: c.via,
         ...(c.atCoord ? { atCoord: c.atCoord } : {}),
         observedAt: c.observedAt,
-      })
-      await save({ status: 'done' })
-      return { ok: true, item: current }
+      });
+      await save({ status: 'done' });
+      return { ok: true, item: current };
     }
 
-    const h = current as QueuedHazard
+    const h = current as QueuedHazard;
 
     // 1. Resolve the lake — the id captured on-device, else the coord at flush time.
-    let waterBodyId = h.waterBodyId
+    let waterBodyId = h.waterBodyId;
     if (waterBodyId === undefined) {
       if (h.coord === undefined) {
-        throw new PermanentFlushError('This hazard has no lake and no location to find one.')
+        throw new PermanentFlushError('This hazard has no lake and no location to find one.');
       }
-      const resolved = await effects.resolveBody(h.coord)
+      const resolved = await effects.resolveBody(h.coord);
       if (resolved === null) {
-        throw new PermanentFlushError("Couldn't match this hazard's location to a known lake.")
+        throw new PermanentFlushError("Couldn't match this hazard's location to a known lake.");
       }
-      waterBodyId = resolved
-      await save({ waterBodyId })
+      waterBodyId = resolved;
+      await save({ waterBodyId });
     }
 
     // 2. Re-validate the geometry before spending any uploads on it. A shape the server will reject
     //    is permanently broken, not a network problem.
     if (!isValidHazardShape(h.shape)) {
-      throw new PermanentFlushError('This hazard’s shape is incomplete.')
+      throw new PermanentFlushError('This hazard’s shape is incomplete.');
     }
 
     // 3. Photos, checkpointing each id the instant it lands so a partial failure keeps what uploaded.
-    const photoIds: string[] = []
+    const photoIds: string[] = [];
     for (const original of h.photos) {
-      let p = original
+      let p = original;
       if (p.photoId === undefined) {
-        let fullStorageId = p.fullStorageId
+        let fullStorageId = p.fullStorageId;
         if (fullStorageId === undefined) {
-          fullStorageId = await effects.uploadPhoto(p.fullUri)
-          p = { ...p, fullStorageId }
-          await save({ photos: replacePhoto((current as QueuedHazard).photos, p) })
+          fullStorageId = await effects.uploadPhoto(p.fullUri);
+          p = { ...p, fullStorageId };
+          await save({ photos: replacePhoto((current as QueuedHazard).photos, p) });
         }
-        let thumbStorageId = p.thumbStorageId
+        let thumbStorageId = p.thumbStorageId;
         if (thumbStorageId === undefined) {
-          thumbStorageId = await effects.uploadPhoto(p.thumbUri)
-          p = { ...p, thumbStorageId }
-          await save({ photos: replacePhoto((current as QueuedHazard).photos, p) })
+          thumbStorageId = await effects.uploadPhoto(p.thumbUri);
+          p = { ...p, thumbStorageId };
+          await save({ photos: replacePhoto((current as QueuedHazard).photos, p) });
         }
         const photoId = await effects.createPhotoRow({
           storageId: fullStorageId,
           thumbStorageId,
           placeOnMap: p.placeOnMap,
           ...(p.coord ? { coord: p.coord } : {}),
-        })
-        p = { ...p, photoId }
-        await save({ photos: replacePhoto((current as QueuedHazard).photos, p) })
-        photoIds.push(photoId)
+        });
+        p = { ...p, photoId };
+        await save({ photos: replacePhoto((current as QueuedHazard).photos, p) });
+        photoIds.push(photoId);
       } else {
-        photoIds.push(p.photoId)
+        photoIds.push(p.photoId);
       }
     }
 
     // 4. Create — idempotent on the capture-time key, so a lost ack replays to the same pin.
-    await save({ status: 'creating' })
+    await save({ status: 'creating' });
     const hazardId = await effects.createHazard({
       waterBodyId,
       idempotencyKey: h.idempotencyKey,
@@ -282,16 +286,16 @@ export async function flushHazardItem(
       ...(h.description !== undefined ? { description: h.description } : {}),
       photoIds,
       capturedAt: h.capturedAt,
-    })
-    await save({ status: 'done' })
-    return { ok: true, item: current, hazardId }
+    });
+    await save({ status: 'done' });
+    return { ok: true, item: current, hazardId };
   } catch (error) {
-    const kind = classifyFlushError(error)
-    const message = error instanceof Error ? error.message : String(error)
+    const kind = classifyFlushError(error);
+    const message = error instanceof Error ? error.message : String(error);
     await save({
       status: kind === 'permanent' ? 'error' : 'pending',
       errorMessage: kind === 'permanent' ? message : undefined,
-    })
-    return { ok: false, item: current, kind, message }
+    });
+    return { ok: false, item: current, kind, message };
   }
 }

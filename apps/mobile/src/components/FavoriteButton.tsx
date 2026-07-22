@@ -1,9 +1,9 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { type DirectionsPlatform, directionsUrl } from '@skating/core'
-import { useMutation, useQuery } from 'convex/react'
-import { Linking, Platform } from 'react-native'
-import { Button, Text } from 'tamagui'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { type DirectionsPlatform, directionsUrl } from '@skating/core';
+import { useMutation, useQuery } from 'convex/react';
+import { Linking, Platform } from 'react-native';
+import { Button, Text } from 'tamagui';
 
 /**
  * Favorite toggle (Phase 4, decision #1) — the mobile mirror of web's `FavoriteButton`. Favoriting a
@@ -11,9 +11,9 @@ import { Button, Text } from 'tamagui'
  * the reactive `isFavorite` query; the mutation requires auth.
  */
 export function FavoriteButton({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const favorited = useQuery(api.waterBodyFavorites.isFavorite, { waterBodyId })
-  const toggle = useMutation(api.waterBodyFavorites.toggle)
-  const isFav = favorited === true
+  const favorited = useQuery(api.waterBodyFavorites.isFavorite, { waterBodyId });
+  const toggle = useMutation(api.waterBodyFavorites.toggle);
+  const isFav = favorited === true;
 
   return (
     <Button
@@ -27,12 +27,12 @@ export function FavoriteButton({ waterBodyId }: { waterBodyId: Id<'waterBodies'>
     >
       <Text color={isFav ? '$primary' : '$foreground'}>{isFav ? '★ Favorited' : '☆ Favorite'}</Text>
     </Button>
-  )
+  );
 }
 
 /** Detect the directions platform — Apple Maps on iOS, Google Maps elsewhere. */
 function detectPlatform(): DirectionsPlatform {
-  return Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web'
+  return Platform.OS === 'ios' ? 'ios' : Platform.OS === 'android' ? 'android' : 'web';
 }
 
 /**
@@ -41,9 +41,9 @@ function detectPlatform(): DirectionsPlatform {
  * nothing until a put-in is known (nothing safe to route to yet).
  */
 export function DirectionsButton({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const markers = useQuery(api.putIns.listForBody, { waterBodyId })
-  const target = markers?.[0]
-  if (!target) return null
+  const markers = useQuery(api.putIns.listForBody, { waterBodyId });
+  const target = markers?.[0];
+  if (!target) return null;
 
   return (
     <Button
@@ -55,5 +55,5 @@ export function DirectionsButton({ waterBodyId }: { waterBodyId: Id<'waterBodies
     >
       <Text color="$foreground">Directions{target.source === 'official' ? '' : ' (approx.)'}</Text>
     </Button>
-  )
+  );
 }

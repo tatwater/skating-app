@@ -10,27 +10,27 @@
  *    the conversion so callers never juggle axis order.
  */
 
-import area from '@turf/area'
-import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
-import buffer from '@turf/buffer'
-import { feature, featureCollection } from '@turf/helpers'
-import intersect from '@turf/intersect'
-import pointOnFeature from '@turf/point-on-feature'
-import truncate from '@turf/truncate'
-import type { Feature, LineString, MultiPolygon, Polygon, Position } from 'geojson'
+import area from '@turf/area';
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
+import buffer from '@turf/buffer';
+import { feature, featureCollection } from '@turf/helpers';
+import intersect from '@turf/intersect';
+import pointOnFeature from '@turf/point-on-feature';
+import truncate from '@turf/truncate';
+import type { Feature, LineString, MultiPolygon, Polygon, Position } from 'geojson';
 
 /** A geographic point — mirrors the Convex `latLng` validator. */
 export interface LatLng {
-  lat: number
-  lng: number
+  lat: number;
+  lng: number;
 }
 
 /** An axis-aligned bounding box — mirrors the Convex `bbox` validator. */
 export interface BBox {
-  minLat: number
-  minLng: number
-  maxLat: number
-  maxLng: number
+  minLat: number;
+  minLng: number;
+  maxLat: number;
+  maxLng: number;
 }
 
 /**
@@ -42,7 +42,7 @@ export interface BBox {
 export function bboxIntersects(a: BBox, b: BBox): boolean {
   return (
     a.minLng <= b.maxLng && a.maxLng >= b.minLng && a.minLat <= b.maxLat && a.maxLat >= b.minLat
-  )
+  );
 }
 
 /** The bounding box of a polygon / multipolygon / line — e.g. to fill `waterBodies.bbox`. */
@@ -52,30 +52,30 @@ export function polygonBBox(geom: Polygon | MultiPolygon | LineString): BBox {
       ? geom.coordinates
       : geom.type === 'Polygon'
         ? geom.coordinates.flat()
-        : geom.coordinates.flat(2)
+        : geom.coordinates.flat(2);
 
-  let minLat = Number.POSITIVE_INFINITY
-  let minLng = Number.POSITIVE_INFINITY
-  let maxLat = Number.NEGATIVE_INFINITY
-  let maxLng = Number.NEGATIVE_INFINITY
+  let minLat = Number.POSITIVE_INFINITY;
+  let minLng = Number.POSITIVE_INFINITY;
+  let maxLat = Number.NEGATIVE_INFINITY;
+  let maxLng = Number.NEGATIVE_INFINITY;
   // GeoJSON positions are always `[lng, lat, …]`; cast past noUncheckedIndexedAccess.
   for (const [lng, lat] of positions as [number, number][]) {
-    if (lat < minLat) minLat = lat
-    if (lat > maxLat) maxLat = lat
-    if (lng < minLng) minLng = lng
-    if (lng > maxLng) maxLng = lng
+    if (lat < minLat) minLat = lat;
+    if (lat > maxLat) maxLat = lat;
+    if (lng < minLng) minLng = lng;
+    if (lng > maxLng) maxLng = lng;
   }
-  return { minLat, minLng, maxLat, maxLng }
+  return { minLat, minLng, maxLat, maxLng };
 }
 
 /** Is a point inside a polygon / multipolygon? (A point on the boundary counts as inside.) */
 export function pointInPolygon(point: LatLng, polygon: Polygon | MultiPolygon): boolean {
-  return booleanPointInPolygon([point.lng, point.lat], polygon)
+  return booleanPointInPolygon([point.lng, point.lat], polygon);
 }
 
 /** Mean Earth radius in metres (matches Turf's WGS84 mean radius). */
-const EARTH_RADIUS_M = 6_371_008.8
-const DEG = Math.PI / 180
+const EARTH_RADIUS_M = 6_371_008.8;
+const DEG = Math.PI / 180;
 
 /**
  * Great-circle (crow-flies) distance between two points in metres — the shared radius primitive
@@ -84,12 +84,12 @@ const DEG = Math.PI / 180
  * which is exact enough at drive-time / lake scale and dependency-free.
  */
 export function haversineMeters(a: LatLng, b: LatLng): number {
-  const dLat = (b.lat - a.lat) * DEG
-  const dLng = (b.lng - a.lng) * DEG
-  const lat1 = a.lat * DEG
-  const lat2 = b.lat * DEG
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2
-  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)))
+  const dLat = (b.lat - a.lat) * DEG;
+  const dLng = (b.lng - a.lng) * DEG;
+  const lat1 = a.lat * DEG;
+  const lat2 = b.lat * DEG;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
 /**
@@ -102,7 +102,7 @@ function toLocalMetres([lng, lat]: readonly [number, number], origin: LatLng): [
   return [
     (lng - origin.lng) * DEG * EARTH_RADIUS_M * Math.cos(origin.lat * DEG),
     (lat - origin.lat) * DEG * EARTH_RADIUS_M,
-  ]
+  ];
 }
 
 /** Distance from `(px,py)` to segment `a–b`, all in local metres. Handles a zero-length edge. */
@@ -112,11 +112,11 @@ function segmentDistanceMetres(
   [ax, ay]: [number, number],
   [bx, by]: [number, number],
 ): number {
-  const dx = bx - ax
-  const dy = by - ay
-  const len2 = dx * dx + dy * dy
-  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2))
-  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
 }
 
 /**
@@ -130,23 +130,23 @@ function segmentDistanceMetres(
  * pure/dependency-free and accurate far beyond the buffer distances that consume it.
  */
 export function distanceToPolygonMeters(point: LatLng, polygon: Polygon | MultiPolygon): number {
-  if (pointInPolygon(point, polygon)) return 0
+  if (pointInPolygon(point, polygon)) return 0;
   const rings: Position[][] =
-    polygon.type === 'Polygon' ? polygon.coordinates : polygon.coordinates.flat(1)
-  let min = Number.POSITIVE_INFINITY
+    polygon.type === 'Polygon' ? polygon.coordinates : polygon.coordinates.flat(1);
+  let min = Number.POSITIVE_INFINITY;
   for (const ring of rings) {
-    const local = (ring as [number, number][]).map((c) => toLocalMetres(c, point))
+    const local = (ring as [number, number][]).map((c) => toLocalMetres(c, point));
     for (let i = 0; i + 1 < local.length; i++) {
       const d = segmentDistanceMetres(
         0,
         0,
         local[i] as [number, number],
         local[i + 1] as [number, number],
-      )
-      if (d < min) min = d
+      );
+      if (d < min) min = d;
     }
   }
-  return min
+  return min;
 }
 
 /**
@@ -159,14 +159,14 @@ export function pointNearPolygon(
   polygon: Polygon | MultiPolygon,
   bufferMeters: number,
 ): boolean {
-  return distanceToPolygonMeters(point, polygon) <= bufferMeters
+  return distanceToPolygonMeters(point, polygon) <= bufferMeters;
 }
 
 /** A body considered for point→lake resolution: an opaque `ref` + the geometry to test against. */
 export interface BodyCandidate<T> {
-  ref: T
-  polygon: Polygon | MultiPolygon
-  surfaceAreaSqM: number
+  ref: T;
+  polygon: Polygon | MultiPolygon;
+  surfaceAreaSqM: number;
 }
 
 /**
@@ -182,19 +182,19 @@ export function nearestBodyForPoint<T>(
   candidates: readonly BodyCandidate<T>[],
   bufferMeters: number,
 ): T | null {
-  let best: { ref: T; distance: number; area: number } | null = null
+  let best: { ref: T; distance: number; area: number } | null = null;
   for (const c of candidates) {
-    const distance = distanceToPolygonMeters(point, c.polygon)
-    if (distance > bufferMeters) continue
+    const distance = distanceToPolygonMeters(point, c.polygon);
+    if (distance > bufferMeters) continue;
     if (
       best === null ||
       distance < best.distance ||
       (distance === best.distance && c.surfaceAreaSqM < best.area)
     ) {
-      best = { ref: c.ref, distance, area: c.surfaceAreaSqM }
+      best = { ref: c.ref, distance, area: c.surfaceAreaSqM };
     }
   }
-  return best?.ref ?? null
+  return best?.ref ?? null;
 }
 
 /**
@@ -219,13 +219,13 @@ export function nearestBodyForPoint<T>(
  */
 export function representativePoint(geom: Polygon | MultiPolygon): LatLng {
   // GeoJSON positions are `[lng, lat]`; cast past noUncheckedIndexedAccess.
-  const [lng, lat] = pointOnFeature(feature(geom)).geometry.coordinates as [number, number]
-  return { lat, lng }
+  const [lng, lat] = pointOnFeature(feature(geom)).geometry.coordinates as [number, number];
+  return { lat, lng };
 }
 
 /** Surface area of a water body's polygon in square metres (geodesic; wraps `@turf/area`). */
 export function surfaceAreaSqM(geom: Polygon | MultiPolygon): number {
-  return area(feature(geom))
+  return area(feature(geom));
 }
 
 /**
@@ -240,12 +240,12 @@ export function surfaceAreaSqM(geom: Polygon | MultiPolygon): number {
  * near-coincident is *exactly* the near-duplicate case dedup exists to catch (D36).
  */
 export function polygonIoU(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon): number {
-  const fa = truncate(feature(a), { precision: 9 })
-  const fb = truncate(feature(b), { precision: 9 })
-  const shared = intersect(featureCollection([fa, fb]))
-  const sharedArea = shared ? area(shared) : 0
-  if (sharedArea === 0) return 0
-  return sharedArea / (area(fa) + area(fb) - sharedArea)
+  const fa = truncate(feature(a), { precision: 9 });
+  const fb = truncate(feature(b), { precision: 9 });
+  const shared = intersect(featureCollection([fa, fb]));
+  const sharedArea = shared ? area(shared) : 0;
+  if (sharedArea === 0) return 0;
+  return sharedArea / (area(fa) + area(fb) - sharedArea);
 }
 
 /**
@@ -258,9 +258,9 @@ export function polygonIoU(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon)
 export function bufferedLineOverlap(a: LineString, b: LineString, bufferMeters: number): number {
   const ribbonA = buffer(feature(a), bufferMeters, { units: 'meters' }) as Feature<
     Polygon | MultiPolygon
-  >
+  >;
   const ribbonB = buffer(feature(b), bufferMeters, { units: 'meters' }) as Feature<
     Polygon | MultiPolygon
-  >
-  return polygonIoU(ribbonA.geometry, ribbonB.geometry)
+  >;
+  return polygonIoU(ribbonA.geometry, ribbonB.geometry);
 }

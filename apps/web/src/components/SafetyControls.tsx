@@ -1,10 +1,10 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
-import { useMutation } from 'convex/react'
-import { FlagIcon } from 'lucide-react'
-import { useState } from 'react'
-import { Badge } from './ui/badge'
-import { Button } from './ui/button'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
+import { useMutation } from 'convex/react';
+import { FlagIcon } from 'lucide-react';
+import { useState } from 'react';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
 import {
   Dialog,
   DialogClose,
@@ -14,13 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from './ui/dialog'
-import { Label } from './ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select'
-import { Textarea } from './ui/textarea'
+} from './ui/dialog';
+import { Label } from './ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+import { Textarea } from './ui/textarea';
 
 /** Flag targets + reasons mirror the backend enums (`FLAG_TARGET_TYPES` / `FLAG_REASONS`). */
-export type FlagTargetType = 'report' | 'comment' | 'photo' | 'user' | 'hazard'
+export type FlagTargetType = 'report' | 'comment' | 'photo' | 'user' | 'hazard';
 
 /** `unsafe_false_report` leads — a dangerously false "ice is great" claim is a safety issue (D3). */
 const REASONS: { value: string; label: string }[] = [
@@ -29,7 +29,7 @@ const REASONS: { value: string; label: string }[] = [
   { value: 'harassment', label: 'Harassment' },
   { value: 'inappropriate', label: 'Inappropriate' },
   { value: 'other', label: 'Other' },
-]
+];
 
 /**
  * "De-emphasized + Blocked chip" author line (D3): a blocked author's *report* stays visible (safety),
@@ -40,7 +40,7 @@ export function BlockedChip() {
     <Badge variant="outline" className="text-foreground-muted">
       Blocked
     </Badge>
-  )
+  );
 }
 
 /**
@@ -53,31 +53,31 @@ export function FlagDialog({
   targetId,
   label = 'Flag',
 }: {
-  targetType: FlagTargetType
-  targetId: string
-  label?: string
+  targetType: FlagTargetType;
+  targetId: string;
+  label?: string;
 }) {
-  const flag = useMutation(api.contentFlags.flag)
-  const [reason, setReason] = useState<string>('')
-  const [note, setNote] = useState('')
-  const [submitted, setSubmitted] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const flag = useMutation(api.contentFlags.flag);
+  const [reason, setReason] = useState<string>('');
+  const [note, setNote] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const submit = async () => {
-    if (!reason) return
-    setError(null)
+    if (!reason) return;
+    setError(null);
     try {
       await flag({
         targetType,
         targetId,
         reason: reason as 'unsafe_false_report',
         ...(note.trim() ? { note: note.trim() } : {}),
-      })
-      setSubmitted(true)
+      });
+      setSubmitted(true);
     } catch {
-      setError('Could not submit the flag. Please try again.')
+      setError('Could not submit the flag. Please try again.');
     }
-  }
+  };
 
   return (
     <Dialog>
@@ -137,7 +137,7 @@ export function FlagDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }
 
 /**
@@ -150,30 +150,30 @@ export function BlockButton({
   targetUserId,
   displayName,
 }: {
-  targetUserId: string
-  displayName: string
+  targetUserId: string;
+  displayName: string;
 }) {
-  const block = useMutation(api.blocks.block)
-  const [open, setOpen] = useState(false)
-  const [pending, setPending] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const block = useMutation(api.blocks.block);
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Controlled dialog: only close on success. Wrapping the confirm in `DialogClose` closed the
   // dialog synchronously — before the mutation resolved — so a failure's `setError` painted a
   // hidden/unmounted dialog and the user saw the block silently "succeed". Now a throw keeps the
   // dialog open with the error, and blocking a harasser can't fail invisibly.
   const confirm = async () => {
-    setError(null)
-    setPending(true)
+    setError(null);
+    setPending(true);
     try {
-      await block({ targetUserId: targetUserId as Id<'profiles'> })
-      setOpen(false)
+      await block({ targetUserId: targetUserId as Id<'profiles'> });
+      setOpen(false);
     } catch {
-      setError('Could not block. Please try again.')
+      setError('Could not block. Please try again.');
     } finally {
-      setPending(false)
+      setPending(false);
     }
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -195,5 +195,5 @@ export function BlockButton({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

@@ -9,5 +9,5 @@ export function Placeholder({ title, subtitle }: { title: string; subtitle?: str
       <h1 className="font-semibold text-3xl text-foreground">{title}</h1>
       {subtitle ? <p className="max-w-prose text-foreground-muted">{subtitle}</p> : null}
     </div>
-  )
+  );
 }

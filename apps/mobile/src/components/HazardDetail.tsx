@@ -1,5 +1,5 @@
-import { api } from '@skating/convex/api'
-import type { Id } from '@skating/convex/dataModel'
+import { api } from '@skating/convex/api';
+import type { Id } from '@skating/convex/dataModel';
 import {
   classifyFlushError,
   createQueuedConfirmation,
@@ -12,18 +12,18 @@ import {
   stalenessCaveat,
   verdictHelp,
   verdictLabel,
-} from '@skating/core'
-import { useMutation, useQuery } from 'convex/react'
-import { ConvexError } from 'convex/values'
-import { randomUUID } from 'expo-crypto'
-import * as Location from 'expo-location'
-import { useEffect, useState } from 'react'
-import { Image } from 'react-native'
-import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui'
-import { saveHazardItem } from '../lib/draftStore'
-import { Badge, DetailLoading, Section, Unavailable } from './detailUi'
-import { useMapSelection } from './MapSelectionContext'
-import { FlagControl } from './SafetyControls'
+} from '@skating/core';
+import { useMutation, useQuery } from 'convex/react';
+import { ConvexError } from 'convex/values';
+import { randomUUID } from 'expo-crypto';
+import * as Location from 'expo-location';
+import { useEffect, useState } from 'react';
+import { Image } from 'react-native';
+import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { saveHazardItem } from '../lib/draftStore';
+import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
+import { useMapSelection } from './MapSelectionContext';
+import { FlagControl } from './SafetyControls';
 
 /**
  * The hazard drawer (Phase 9) — reached by tapping a pin, from an on-ice banner, or via the
@@ -42,41 +42,41 @@ import { FlagControl } from './SafetyControls'
  */
 
 /** The three verdicts, in the order they're offered — destructive last, and visually last. */
-const VERDICTS: HazardVerdict[] = ['still_there', 'healing_unsafe', 'fully_healed']
+const VERDICTS: HazardVerdict[] = ['still_there', 'healing_unsafe', 'fully_healed'];
 
 function formatWhen(at: number): string {
-  const hours = (Date.now() - at) / 3_600_000
-  if (hours < 1) return 'less than an hour ago'
-  if (hours < 24) return `${Math.round(hours)} h ago`
-  const days = Math.round(hours / 24)
-  return days === 1 ? 'yesterday' : `${days} days ago`
+  const hours = (Date.now() - at) / 3_600_000;
+  if (hours < 1) return 'less than an hour ago';
+  if (hours < 24) return `${Math.round(hours)} h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
 }
 
 export function HazardDetail({ hazardId }: { hazardId: string }) {
-  const hazard = useQuery(api.hazards.get, { hazardId: hazardId as Id<'hazards'> })
-  const photos = useQuery(api.photos.getHazardUrls, { hazardId: hazardId as Id<'hazards'> })
-  const confirm = useMutation(api.hazardConfirmations.confirm)
-  const { setHighlightWaterBodyId, setFocus } = useMapSelection()
+  const hazard = useQuery(api.hazards.get, { hazardId: hazardId as Id<'hazards'> });
+  const photos = useQuery(api.photos.getHazardUrls, { hazardId: hazardId as Id<'hazards'> });
+  const confirm = useMutation(api.hazardConfirmations.confirm);
+  const { setHighlightWaterBodyId, setFocus } = useMapSelection();
 
-  const [pendingHealed, setPendingHealed] = useState(false)
-  const [confirming, setConfirming] = useState(false)
-  const [done, setDone] = useState<HazardVerdict | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [pendingHealed, setPendingHealed] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [done, setDone] = useState<HazardVerdict | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Highlight the hazard's lake so the map paints its hazard layer — this is also what makes the
   // deep link land somewhere legible when the app was opened cold onto this route.
   useEffect(() => {
-    if (hazard) setHighlightWaterBodyId(hazard.waterBodyId)
-  }, [hazard, setHighlightWaterBodyId])
+    if (hazard) setHighlightWaterBodyId(hazard.waterBodyId);
+  }, [hazard, setHighlightWaterBodyId]);
 
   // Frame the hazard, but depend on the bbox *numbers*, not the whole `hazard` object. Casting a vote
   // patches `lastConfirmedAt`, so the reactive query hands back a new object identity every confirm —
   // depending on `hazard` re-fired this and re-`fitBounds`, throwing a skater who'd zoomed in to
   // inspect right back out at the very moment they confirmed. The bbox itself doesn't change on a vote.
-  const bboxMinLat = hazard?.bbox?.minLat
-  const bboxMaxLat = hazard?.bbox?.maxLat
-  const bboxMinLng = hazard?.bbox?.minLng
-  const bboxMaxLng = hazard?.bbox?.maxLng
+  const bboxMinLat = hazard?.bbox?.minLat;
+  const bboxMaxLat = hazard?.bbox?.maxLat;
+  const bboxMinLng = hazard?.bbox?.minLng;
+  const bboxMaxLng = hazard?.bbox?.maxLng;
   useEffect(() => {
     if (
       bboxMinLat !== undefined &&
@@ -88,38 +88,38 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
         lat: (bboxMinLat + bboxMaxLat) / 2,
         lng: (bboxMinLng + bboxMaxLng) / 2,
         bounds: { minLat: bboxMinLat, maxLat: bboxMaxLat, minLng: bboxMinLng, maxLng: bboxMaxLng },
-      })
+      });
     }
-  }, [bboxMinLat, bboxMaxLat, bboxMinLng, bboxMaxLng, setFocus])
+  }, [bboxMinLat, bboxMaxLat, bboxMinLng, bboxMaxLng, setFocus]);
 
-  if (hazard === undefined) return <DetailLoading />
+  if (hazard === undefined) return <DetailLoading />;
   if (hazard === null) {
     return (
       <Unavailable
         title="Hazard unavailable"
         message="This hazard has been removed, or the link is out of date."
       />
-    )
+    );
   }
 
-  const passage = isPassageMarker(hazard.type)
-  const archived = hazard.status !== 'active'
+  const passage = isPassageMarker(hazard.type);
+  const archived = hazard.status !== 'active';
 
   async function cast(verdict: HazardVerdict) {
-    setConfirming(true)
-    setError(null)
+    setConfirming(true);
+    setError(null);
     // Stamped before anything can await — this is the moment the skater is looking at the hazard.
-    const observedAt = Date.now()
+    const observedAt = Date.now();
 
     // Stamp where the skater stood, when we can get it — a confirmation made *at* the hazard is
     // worth more than one made from the couch, and `via` records which this was. Resolved outside the
     // send so the queued fallback carries the same coord the online path would have sent.
-    let atCoord: { lat: number; lng: number } | undefined
+    let atCoord: { lat: number; lng: number } | undefined;
     try {
-      const { status } = await Location.getForegroundPermissionsAsync()
+      const { status } = await Location.getForegroundPermissionsAsync();
       if (status === 'granted') {
-        const pos = await Location.getCurrentPositionAsync({})
-        atCoord = { lat: pos.coords.latitude, lng: pos.coords.longitude }
+        const pos = await Location.getCurrentPositionAsync({});
+        atCoord = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       }
     } catch {
       // No fix ⇒ confirm without one. Never block a confirmation on location.
@@ -132,8 +132,8 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
         via: 'app_open_nearby',
         ...(atCoord ? { atCoord } : {}),
         observedAt,
-      })
-      setDone(verdict)
+      });
+      setDone(verdict);
     } catch (e) {
       if (classifyFlushError(e) === 'permanent') {
         setError(
@@ -142,10 +142,10 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
             : e instanceof Error
               ? e.message
               : 'Couldn’t record that.',
-        )
-        setConfirming(false)
-        setPendingHealed(false)
-        return
+        );
+        setConfirming(false);
+        setPendingHealed(false);
+        return;
       }
       // No signal — queue it. `observedAt` is *now*, when they're standing here looking at it, not
       // whenever the phone reconnects: a verdict that lands hours later must not reset the hazard's
@@ -161,11 +161,11 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
           observedAt,
           ...(atCoord ? { atCoord } : {}),
         }),
-      )
-      setDone(verdict)
+      );
+      setDone(verdict);
     } finally {
-      setConfirming(false)
-      setPendingHealed(false)
+      setConfirming(false);
+      setPendingHealed(false);
     }
   }
 
@@ -239,7 +239,7 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
         <Section label={passage ? 'Is it still crossable?' : 'Is it still there?'}>
           <YStack gap="$2">
             {VERDICTS.map((verdict) => {
-              const destructive = verdict === 'fully_healed'
+              const destructive = verdict === 'fully_healed';
               // The destructive verdict is the only one that retires the pin for everyone, so it
               // asks twice. The asymmetry is the point.
               if (destructive && pendingHealed) {
@@ -270,7 +270,7 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
                       </Button>
                     </XStack>
                   </YStack>
-                )
+                );
               }
               return (
                 <Button
@@ -289,7 +289,7 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
                     </Text>
                   </YStack>
                 </Button>
-              )
+              );
             })}
           </YStack>
         </Section>
@@ -313,5 +313,5 @@ export function HazardDetail({ hazardId }: { hazardId: string }) {
         <FlagControl targetType="hazard" targetId={hazardId} label="Flag this hazard" />
       </XStack>
     </YStack>
-  )
+  );
 }

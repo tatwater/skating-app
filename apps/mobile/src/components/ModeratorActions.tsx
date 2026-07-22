@@ -1,12 +1,12 @@
-import { api } from '@skating/convex/api'
-import { useMutation, useQuery } from 'convex/react'
-import { useState } from 'react'
-import { Button, Text, TextArea, XStack, YStack } from 'tamagui'
+import { api } from '@skating/convex/api';
+import { useMutation, useQuery } from 'convex/react';
+import { useState } from 'react';
+import { Button, Text, TextArea, XStack, YStack } from 'tamagui';
 
 /** Whether the current user is at least a moderator (D37). */
 export function useIsModerator(): boolean {
-  const profile = useQuery(api.profiles.current, {})
-  return profile?.role === 'moderator' || profile?.role === 'admin'
+  const profile = useQuery(api.profiles.current, {});
+  return profile?.role === 'moderator' || profile?.role === 'admin';
 }
 
 /**
@@ -18,30 +18,30 @@ export function ModeratorActions({
   targetType,
   targetId,
 }: {
-  targetType: 'report' | 'comment'
-  targetId: string
+  targetType: 'report' | 'comment';
+  targetId: string;
 }) {
-  const isModerator = useIsModerator()
-  const setStatus = useMutation(api.moderation.setModerationStatus)
-  const [open, setOpen] = useState(false)
-  const [reason, setReason] = useState('')
+  const isModerator = useIsModerator();
+  const setStatus = useMutation(api.moderation.setModerationStatus);
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
 
-  if (!isModerator) return null
+  if (!isModerator) return null;
 
   if (!open) {
     return (
       <Button size="$2" chromeless onPress={() => setOpen(true)}>
         Moderate
       </Button>
-    )
+    );
   }
 
   const act = async (status: 'hidden' | 'removed') => {
-    if (!reason.trim()) return
-    await setStatus({ targetType, targetId, status, reason: reason.trim() })
-    setOpen(false)
-    setReason('')
-  }
+    if (!reason.trim()) return;
+    await setStatus({ targetType, targetId, status, reason: reason.trim() });
+    setOpen(false);
+    setReason('');
+  };
 
   return (
     <YStack
@@ -77,5 +77,5 @@ export function ModeratorActions({
         </Button>
       </XStack>
     </YStack>
-  )
+  );
 }

@@ -25,9 +25,9 @@ import {
   USER_ROLES,
   USER_STATUSES,
   WATER_BODY_TYPES,
-} from '@skating/core'
-import { defineSchema, defineTable } from 'convex/server'
-import { v } from 'convex/values'
+} from '@skating/core';
+import { defineSchema, defineTable } from 'convex/server';
+import { v } from 'convex/values';
 import {
   ACTIVITY_PROMPT_STATES,
   ACTIVITY_PROVIDERS,
@@ -60,11 +60,11 @@ import {
   SUPPORT_CATEGORIES,
   SUPPORT_STATUSES,
   WATER_BODY_SOURCES,
-} from './lib/enums'
-import { bbox, boolFlags, geoJson, latLng, literals } from './lib/validators'
+} from './lib/enums';
+import { bbox, boolFlags, geoJson, latLng, literals } from './lib/validators';
 
 /** Per-type notification toggles; keys single-sourced to mirror `notifications.type` 1:1 (D16). */
-const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS)
+const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
 
 export default defineSchema({
   profiles: defineTable({
@@ -574,4 +574,4 @@ export default defineSchema({
   })
     .index('by_flush', ['flushAfter'])
     .index('by_coalesce', ['coalesceKey']),
-})
+});

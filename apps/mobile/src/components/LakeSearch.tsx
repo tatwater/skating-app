@@ -1,25 +1,25 @@
-import { api } from '@skating/convex/api'
-import { humanizeEnum, searchQueryArg } from '@skating/core'
-import { useQuery } from 'convex/react'
-import { useRouter } from 'expo-router'
-import { useEffect, useState } from 'react'
-import { Keyboard } from 'react-native'
-import { useSafeAreaInsets } from 'react-native-safe-area-context'
-import { Input, Text, YStack } from 'tamagui'
+import { api } from '@skating/convex/api';
+import { humanizeEnum, searchQueryArg } from '@skating/core';
+import { useQuery } from 'convex/react';
+import { useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
+import { Keyboard } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Input, Text, YStack } from 'tamagui';
 
 /** A search result row from `waterBodies.searchByName` (the light fly-to fields). */
 export type LakeHit = {
-  _id: string
-  name: string
-  type: string
-  centroid: { lat: number; lng: number }
-  states: string[]
-}
+  _id: string;
+  name: string;
+  type: string;
+  centroid: { lat: number; lng: number };
+  states: string[];
+};
 
 /** "Lake · NY" — or "Lake · NY, VT" for a border-spanning body; just the type if unknown. */
 function hitMeta(hit: LakeHit): string {
-  const type = humanizeEnum(hit.type)
-  return hit.states.length ? `${type} · ${hit.states.join(', ')}` : type
+  const type = humanizeEnum(hit.type);
+  return hit.states.length ? `${type} · ${hit.states.join(', ')}` : type;
 }
 
 /**
@@ -37,13 +37,13 @@ export function LakeSearchBox({
   emptyVisible,
   topInset = 0,
 }: {
-  items: LakeHit[]
-  value: string
-  onChangeText: (text: string) => void
-  onSelect: (hit: LakeHit) => void
-  showResults: boolean
-  emptyVisible: boolean
-  topInset?: number
+  items: LakeHit[];
+  value: string;
+  onChangeText: (text: string) => void;
+  onSelect: (hit: LakeHit) => void;
+  showResults: boolean;
+  emptyVisible: boolean;
+  topInset?: number;
 }) {
   return (
     <YStack position="absolute" top={topInset + 8} left={12} right={12} gap="$2" zIndex={10}>
@@ -88,7 +88,7 @@ export function LakeSearchBox({
         </YStack>
       ) : null}
     </YStack>
-  )
+  );
 }
 
 /**
@@ -98,19 +98,19 @@ export function LakeSearchBox({
  * existing fly-to), so search needs no map wiring of its own.
  */
 export function LakeSearch() {
-  const router = useRouter()
-  const insets = useSafeAreaInsets()
-  const [text, setText] = useState('')
-  const [debounced, setDebounced] = useState('')
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [text, setText] = useState('');
+  const [debounced, setDebounced] = useState('');
 
   useEffect(() => {
-    const id = setTimeout(() => setDebounced(text), 150)
-    return () => clearTimeout(id)
-  }, [text])
+    const id = setTimeout(() => setDebounced(text), 150);
+    return () => clearTimeout(id);
+  }, [text]);
 
-  const arg = searchQueryArg(debounced)
-  const results = useQuery(api.waterBodies.searchByName, arg)
-  const loaded = arg !== 'skip' && results !== undefined
+  const arg = searchQueryArg(debounced);
+  const results = useQuery(api.waterBodies.searchByName, arg);
+  const loaded = arg !== 'skip' && results !== undefined;
 
   return (
     <LakeSearchBox
@@ -121,10 +121,10 @@ export function LakeSearch() {
       emptyVisible={loaded && (results?.length ?? 0) === 0}
       topInset={insets.top}
       onSelect={(hit) => {
-        setText('')
-        Keyboard.dismiss()
-        router.navigate({ pathname: '/water/[id]', params: { id: hit._id } })
+        setText('');
+        Keyboard.dismiss();
+        router.navigate({ pathname: '/water/[id]', params: { id: hit._id } });
       }}
     />
-  )
+  );
 }

@@ -11,7 +11,7 @@
  * in `reports.create`, not here — D41.)
  */
 
-import type { LatLng } from './geometry'
+import type { LatLng } from './geometry';
 import {
   CONDITION_SOURCES,
   type ConditionSource,
@@ -27,97 +27,97 @@ import {
   type SurfaceTag,
   THICKNESS_METHODS,
   type ThicknessMethod,
-} from './types'
+} from './types';
 
 /** A skate-end time more than this far past `now` is treated as implausibly future and rejected. */
-export const SKATE_TIME_FUTURE_TOLERANCE_MS = 60 * 60 * 1000
+export const SKATE_TIME_FUTURE_TOLERANCE_MS = 60 * 60 * 1000;
 
 export interface ThicknessReadingInput {
-  valueCm?: number
-  minCm?: number
-  maxCm?: number
-  method: ThicknessMethod
-  coord?: LatLng
-  note?: string
+  valueCm?: number;
+  minCm?: number;
+  maxCm?: number;
+  method: ThicknessMethod;
+  coord?: LatLng;
+  note?: string;
 }
 
 export interface ReportConditionsInput {
-  airTempC?: number
-  windSpeedKph?: number
-  windDir?: string
-  sky?: SkyCondition
-  precip?: PrecipType
-  source?: ConditionSource
+  airTempC?: number;
+  windSpeedKph?: number;
+  windDir?: string;
+  sky?: SkyCondition;
+  precip?: PrecipType;
+  source?: ConditionSource;
 }
 
 export interface ReportInput {
-  waterBodyId: string
+  waterBodyId: string;
   /** When the skater **left the ice** — the primary sort key everywhere (D28; Phase 5 rename). */
-  skateEndTime: number
+  skateEndTime: number;
   /** Optional — when they got *on* the ice. Duration is derived (`end − start`), never stored. */
-  skateStartTime?: number
-  iceTypes?: IceType[]
-  surfaceTags?: SurfaceTag[]
-  skateQuality?: SkateQuality
-  iceThickness?: { readings: ThicknessReadingInput[] }
-  snowCoverCm?: number
-  conditions?: ReportConditionsInput
-  notes?: string
+  skateStartTime?: number;
+  iceTypes?: IceType[];
+  surfaceTags?: SurfaceTag[];
+  skateQuality?: SkateQuality;
+  iceThickness?: { readings: ThicknessReadingInput[] };
+  snowCoverCm?: number;
+  conditions?: ReportConditionsInput;
+  notes?: string;
   /** Optional put-in pin the skater dropped (access point); becomes `reports.point`. */
-  point?: LatLng
+  point?: LatLng;
 }
 
 export interface NormalizedThicknessReading {
-  valueCm?: number
-  minCm?: number
-  maxCm?: number
-  method: ThicknessMethod
-  coord?: LatLng
-  note?: string
+  valueCm?: number;
+  minCm?: number;
+  maxCm?: number;
+  method: ThicknessMethod;
+  coord?: LatLng;
+  note?: string;
 }
 
 /** Normalized conditions — `source` is always set (defaulted to `user`), matching the stored shape. */
 export interface NormalizedConditions {
-  airTempC?: number
-  windSpeedKph?: number
-  windDir?: string
-  sky?: SkyCondition
-  precip?: PrecipType
-  source: ConditionSource
+  airTempC?: number;
+  windSpeedKph?: number;
+  windDir?: string;
+  sky?: SkyCondition;
+  precip?: PrecipType;
+  source: ConditionSource;
 }
 
 /** The clean, defaulted report ready for `reports.create` to server-stamp + insert. */
 export interface NormalizedReport {
-  waterBodyId: string
-  skateEndTime: number
-  skateStartTime?: number
-  iceTypes: IceType[]
-  surfaceTags: SurfaceTag[]
-  skateQuality?: SkateQuality
-  iceThickness?: { readings: NormalizedThicknessReading[] }
-  snowCoverCm?: number
-  conditions?: NormalizedConditions
-  notes?: string
-  point?: LatLng
+  waterBodyId: string;
+  skateEndTime: number;
+  skateStartTime?: number;
+  iceTypes: IceType[];
+  surfaceTags: SurfaceTag[];
+  skateQuality?: SkateQuality;
+  iceThickness?: { readings: NormalizedThicknessReading[] };
+  snowCoverCm?: number;
+  conditions?: NormalizedConditions;
+  notes?: string;
+  point?: LatLng;
 }
 
 export interface ReportValidationError {
-  field: string
-  message: string
+  field: string;
+  message: string;
 }
 
 export type ReportValidationResult =
   | { ok: true; normalized: NormalizedReport }
-  | { ok: false; errors: ReportValidationError[] }
+  | { ok: false; errors: ReportValidationError[] };
 
 export interface ReportValidationContext {
   /** Current time (epoch ms) — injected, not read, so validation stays pure/testable. */
-  now: number
+  now: number;
 }
 
 function isMember<T extends string>(arr: readonly T[], value: unknown): value is T {
   // `Array.includes` safely returns false for a non-string, so no separate typeof guard is needed.
-  return (arr as readonly string[]).includes(value as string)
+  return (arr as readonly string[]).includes(value as string);
 }
 
 /** True when a coord's lat/lng are finite and within valid geographic ranges (D42 storage guard). */
@@ -129,12 +129,12 @@ export function isValidCoord(coord: LatLng): boolean {
     coord.lat <= 90 &&
     coord.lng >= -180 &&
     coord.lng <= 180
-  )
+  );
 }
 
 /** A finite number ≥ 0 — thickness/snow/wind can't be negative. Callers pass a defined number. */
 function isNonNegativeFinite(value: number): boolean {
-  return Number.isFinite(value) && value >= 0
+  return Number.isFinite(value) && value >= 0;
 }
 
 /**
@@ -147,47 +147,47 @@ function validateReading(
   path: string,
   errors: ReportValidationError[],
 ): NormalizedThicknessReading | null {
-  const before = errors.length
-  const { valueCm, minCm, maxCm } = reading
+  const before = errors.length;
+  const { valueCm, minCm, maxCm } = reading;
 
   if (!isMember(THICKNESS_METHODS, reading.method)) {
-    errors.push({ field: `${path}.method`, message: 'must be measured or estimated' })
+    errors.push({ field: `${path}.method`, message: 'must be measured or estimated' });
   }
 
   if (valueCm !== undefined && (minCm !== undefined || maxCm !== undefined)) {
-    errors.push({ field: path, message: 'give a single value OR a min/max range, not both' })
+    errors.push({ field: path, message: 'give a single value OR a min/max range, not both' });
   } else if (valueCm !== undefined) {
     if (!isNonNegativeFinite(valueCm)) {
-      errors.push({ field: `${path}.valueCm`, message: 'must be a number ≥ 0' })
+      errors.push({ field: `${path}.valueCm`, message: 'must be a number ≥ 0' });
     }
   } else if (minCm !== undefined || maxCm !== undefined) {
     if (minCm === undefined || maxCm === undefined) {
-      errors.push({ field: path, message: 'a range needs both minCm and maxCm' })
+      errors.push({ field: path, message: 'a range needs both minCm and maxCm' });
     } else if (!isNonNegativeFinite(minCm) || !isNonNegativeFinite(maxCm)) {
-      errors.push({ field: path, message: 'minCm and maxCm must be numbers ≥ 0' })
+      errors.push({ field: path, message: 'minCm and maxCm must be numbers ≥ 0' });
     } else if (minCm > maxCm) {
-      errors.push({ field: path, message: 'minCm must be ≤ maxCm' })
+      errors.push({ field: path, message: 'minCm must be ≤ maxCm' });
     }
   } else {
-    errors.push({ field: path, message: 'give a value or a min/max range' })
+    errors.push({ field: path, message: 'give a value or a min/max range' });
   }
 
   if (reading.coord !== undefined && !isValidCoord(reading.coord)) {
-    errors.push({ field: `${path}.coord`, message: 'is not a valid coordinate' })
+    errors.push({ field: `${path}.coord`, message: 'is not a valid coordinate' });
   }
 
-  if (errors.length > before) return null
+  if (errors.length > before) return null;
 
-  const normalized: NormalizedThicknessReading = { method: reading.method }
-  if (valueCm !== undefined) normalized.valueCm = valueCm
+  const normalized: NormalizedThicknessReading = { method: reading.method };
+  if (valueCm !== undefined) normalized.valueCm = valueCm;
   else {
-    normalized.minCm = minCm
-    normalized.maxCm = maxCm
+    normalized.minCm = minCm;
+    normalized.maxCm = maxCm;
   }
-  if (reading.coord !== undefined) normalized.coord = reading.coord
-  const note = reading.note?.trim()
-  if (note) normalized.note = note
-  return normalized
+  if (reading.coord !== undefined) normalized.coord = reading.coord;
+  const note = reading.note?.trim();
+  if (note) normalized.note = note;
+  return normalized;
 }
 
 function validateConditions(
@@ -195,31 +195,31 @@ function validateConditions(
   errors: ReportValidationError[],
 ): NormalizedConditions {
   if (conditions.airTempC !== undefined && !Number.isFinite(conditions.airTempC)) {
-    errors.push({ field: 'conditions.airTempC', message: 'must be a number' })
+    errors.push({ field: 'conditions.airTempC', message: 'must be a number' });
   }
   if (conditions.windSpeedKph !== undefined && !isNonNegativeFinite(conditions.windSpeedKph)) {
-    errors.push({ field: 'conditions.windSpeedKph', message: 'must be a number ≥ 0' })
+    errors.push({ field: 'conditions.windSpeedKph', message: 'must be a number ≥ 0' });
   }
   if (conditions.sky !== undefined && !isMember(SKY_CONDITIONS, conditions.sky)) {
-    errors.push({ field: 'conditions.sky', message: 'is not a known sky condition' })
+    errors.push({ field: 'conditions.sky', message: 'is not a known sky condition' });
   }
   if (conditions.precip !== undefined && !isMember(PRECIP_TYPES, conditions.precip)) {
-    errors.push({ field: 'conditions.precip', message: 'is not a known precipitation type' })
+    errors.push({ field: 'conditions.precip', message: 'is not a known precipitation type' });
   }
   if (conditions.source !== undefined && !isMember(CONDITION_SOURCES, conditions.source)) {
-    errors.push({ field: 'conditions.source', message: 'is not a known source' })
+    errors.push({ field: 'conditions.source', message: 'is not a known source' });
   }
 
   // Phase 2 conditions are manual entry (D19) — default the provenance to the user. Built even on
   // error (the caller discards it when `errors` is non-empty), so the return type stays concrete.
-  const normalized: NormalizedConditions = { source: conditions.source ?? 'user' }
-  if (conditions.airTempC !== undefined) normalized.airTempC = conditions.airTempC
-  if (conditions.windSpeedKph !== undefined) normalized.windSpeedKph = conditions.windSpeedKph
-  const windDir = conditions.windDir?.trim()
-  if (windDir) normalized.windDir = windDir
-  if (conditions.sky !== undefined) normalized.sky = conditions.sky
-  if (conditions.precip !== undefined) normalized.precip = conditions.precip
-  return normalized
+  const normalized: NormalizedConditions = { source: conditions.source ?? 'user' };
+  if (conditions.airTempC !== undefined) normalized.airTempC = conditions.airTempC;
+  if (conditions.windSpeedKph !== undefined) normalized.windSpeedKph = conditions.windSpeedKph;
+  const windDir = conditions.windDir?.trim();
+  if (windDir) normalized.windDir = windDir;
+  if (conditions.sky !== undefined) normalized.sky = conditions.sky;
+  if (conditions.precip !== undefined) normalized.precip = conditions.precip;
+  return normalized;
 }
 
 /**
@@ -232,88 +232,88 @@ export function validateReportInput(
   input: ReportInput,
   ctx: ReportValidationContext,
 ): ReportValidationResult {
-  const errors: ReportValidationError[] = []
+  const errors: ReportValidationError[] = [];
 
   if (!input.waterBodyId || input.waterBodyId.trim() === '') {
-    errors.push({ field: 'waterBodyId', message: 'is required' })
+    errors.push({ field: 'waterBodyId', message: 'is required' });
   }
 
   if (!Number.isFinite(input.skateEndTime) || input.skateEndTime <= 0) {
-    errors.push({ field: 'skateEndTime', message: 'is required' })
+    errors.push({ field: 'skateEndTime', message: 'is required' });
   } else if (input.skateEndTime > ctx.now + SKATE_TIME_FUTURE_TOLERANCE_MS) {
-    errors.push({ field: 'skateEndTime', message: 'cannot be in the future' })
+    errors.push({ field: 'skateEndTime', message: 'cannot be in the future' });
   }
 
   // Optional start (when they got on the ice). Must be a valid instant and not after the end —
   // duration is `end − start`, so an inverted window is nonsensical (Phase 5).
   if (input.skateStartTime !== undefined) {
     if (!Number.isFinite(input.skateStartTime) || input.skateStartTime <= 0) {
-      errors.push({ field: 'skateStartTime', message: 'must be a valid time' })
+      errors.push({ field: 'skateStartTime', message: 'must be a valid time' });
     } else if (Number.isFinite(input.skateEndTime) && input.skateStartTime > input.skateEndTime) {
-      errors.push({ field: 'skateStartTime', message: 'must be before the end time' })
+      errors.push({ field: 'skateStartTime', message: 'must be before the end time' });
     }
   }
 
-  const iceTypes = input.iceTypes ?? []
+  const iceTypes = input.iceTypes ?? [];
   for (const [i, t] of iceTypes.entries()) {
     if (!isMember(ICE_TYPES, t))
-      errors.push({ field: `iceTypes[${i}]`, message: 'is not a known ice type' })
+      errors.push({ field: `iceTypes[${i}]`, message: 'is not a known ice type' });
   }
 
-  const surfaceTags = input.surfaceTags ?? []
+  const surfaceTags = input.surfaceTags ?? [];
   for (const [i, t] of surfaceTags.entries()) {
     if (!isMember(SURFACE_TAGS, t)) {
-      errors.push({ field: `surfaceTags[${i}]`, message: 'is not a known surface tag' })
+      errors.push({ field: `surfaceTags[${i}]`, message: 'is not a known surface tag' });
     }
   }
 
   if (input.skateQuality !== undefined && !isMember(SKATE_QUALITIES, input.skateQuality)) {
-    errors.push({ field: 'skateQuality', message: 'is not a known quality' })
+    errors.push({ field: 'skateQuality', message: 'is not a known quality' });
   }
 
-  const normalizedReadings: NormalizedThicknessReading[] = []
+  const normalizedReadings: NormalizedThicknessReading[] = [];
   if (input.iceThickness !== undefined) {
-    const readings = input.iceThickness.readings
+    const readings = input.iceThickness.readings;
     if (!Array.isArray(readings)) {
-      errors.push({ field: 'iceThickness.readings', message: 'must be a list of readings' })
+      errors.push({ field: 'iceThickness.readings', message: 'must be a list of readings' });
     } else {
       for (const [i, reading] of readings.entries()) {
-        const normalized = validateReading(reading, `iceThickness.readings[${i}]`, errors)
-        if (normalized) normalizedReadings.push(normalized)
+        const normalized = validateReading(reading, `iceThickness.readings[${i}]`, errors);
+        if (normalized) normalizedReadings.push(normalized);
       }
     }
   }
 
   if (input.snowCoverCm !== undefined && !isNonNegativeFinite(input.snowCoverCm)) {
-    errors.push({ field: 'snowCoverCm', message: 'must be a number ≥ 0' })
+    errors.push({ field: 'snowCoverCm', message: 'must be a number ≥ 0' });
   }
 
-  let normalizedConditions: NormalizedConditions | undefined
+  let normalizedConditions: NormalizedConditions | undefined;
   if (input.conditions !== undefined) {
-    normalizedConditions = validateConditions(input.conditions, errors)
+    normalizedConditions = validateConditions(input.conditions, errors);
   }
 
   if (input.point !== undefined && !isValidCoord(input.point)) {
-    errors.push({ field: 'point', message: 'is not a valid coordinate' })
+    errors.push({ field: 'point', message: 'is not a valid coordinate' });
   }
 
-  if (errors.length > 0) return { ok: false, errors }
+  if (errors.length > 0) return { ok: false, errors };
 
   const normalized: NormalizedReport = {
     waterBodyId: input.waterBodyId,
     skateEndTime: input.skateEndTime,
     iceTypes,
     surfaceTags,
-  }
-  if (input.skateStartTime !== undefined) normalized.skateStartTime = input.skateStartTime
-  if (input.skateQuality !== undefined) normalized.skateQuality = input.skateQuality
+  };
+  if (input.skateStartTime !== undefined) normalized.skateStartTime = input.skateStartTime;
+  if (input.skateQuality !== undefined) normalized.skateQuality = input.skateQuality;
   // Drop an empty thickness section — an `iceThickness: { readings: [] }` carries no information.
-  if (normalizedReadings.length > 0) normalized.iceThickness = { readings: normalizedReadings }
-  if (input.snowCoverCm !== undefined) normalized.snowCoverCm = input.snowCoverCm
-  if (normalizedConditions !== undefined) normalized.conditions = normalizedConditions
-  const notes = input.notes?.trim()
-  if (notes) normalized.notes = notes
-  if (input.point !== undefined) normalized.point = input.point
+  if (normalizedReadings.length > 0) normalized.iceThickness = { readings: normalizedReadings };
+  if (input.snowCoverCm !== undefined) normalized.snowCoverCm = input.snowCoverCm;
+  if (normalizedConditions !== undefined) normalized.conditions = normalizedConditions;
+  const notes = input.notes?.trim();
+  if (notes) normalized.notes = notes;
+  if (input.point !== undefined) normalized.point = input.point;
 
-  return { ok: true, normalized }
+  return { ok: true, normalized };
 }

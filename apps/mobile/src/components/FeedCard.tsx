@@ -1,11 +1,11 @@
-import { buildFeedCardView, type FeedCardData } from '@skating/core'
-import { Image, ScrollView } from 'react-native'
-import { Text, XStack, YStack } from 'tamagui'
-import { Badge } from './detailUi'
-import { BlockedChip } from './SafetyControls'
+import { buildFeedCardView, type FeedCardData } from '@skating/core';
+import { Image, ScrollView } from 'react-native';
+import { Text, XStack, YStack } from 'tamagui';
+import { Badge } from './detailUi';
+import { BlockedChip } from './SafetyControls';
 
 /** Max chips shown on a card before we stop (the drawer shows the full breakdown). */
-const MAX_CHIPS = 4
+const MAX_CHIPS = 4;
 
 /**
  * A single newsfeed card (Phase 5) — the mobile mirror of web's `FeedCard`. Body name +
@@ -20,12 +20,12 @@ export function FeedCard({
   now,
   onOpen,
 }: {
-  data: FeedCardData
-  now: number
-  onOpen: () => void
+  data: FeedCardData;
+  now: number;
+  onOpen: () => void;
 }) {
-  const card = buildFeedCardView(data, now)
-  const chips = card.chips.slice(0, MAX_CHIPS)
+  const card = buildFeedCardView(data, now);
+  const chips = card.chips.slice(0, MAX_CHIPS);
 
   return (
     <YStack
@@ -91,5 +91,5 @@ export function FeedCard({
         </ScrollView>
       ) : null}
     </YStack>
-  )
+  );
 }

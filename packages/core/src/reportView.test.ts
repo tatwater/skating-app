@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest';
 import {
   formatConditions,
   formatDurationLabel,
@@ -11,61 +11,61 @@ import {
   SKATE_QUALITY_LABELS,
   SKY_LABELS,
   THICKNESS_METHOD_LABELS,
-} from './reportView'
-import { inchesToCm } from './units'
+} from './reportView';
+import { inchesToCm } from './units';
 
 describe('humanizeEnum', () => {
   it('sentence-cases a snake_case token', () => {
-    expect(humanizeEnum('black_ice')).toBe('Black ice')
-    expect(humanizeEnum('orange_peel')).toBe('Orange peel')
-  })
+    expect(humanizeEnum('black_ice')).toBe('Black ice');
+    expect(humanizeEnum('orange_peel')).toBe('Orange peel');
+  });
 
   it('handles a single-word token', () => {
-    expect(humanizeEnum('glass')).toBe('Glass')
-  })
-})
+    expect(humanizeEnum('glass')).toBe('Glass');
+  });
+});
 
 describe('label maps', () => {
   it('cover every level with reader-facing wording', () => {
-    expect(SKATE_QUALITY_LABELS.great).toBe('Great')
-    expect(SKY_LABELS.partly_cloudy).toBe('Partly cloudy')
-    expect(PRECIP_LABELS.none).toBe('None')
-    expect(THICKNESS_METHOD_LABELS.estimated).toBe('estimated')
-  })
-})
+    expect(SKATE_QUALITY_LABELS.great).toBe('Great');
+    expect(SKY_LABELS.partly_cloudy).toBe('Partly cloudy');
+    expect(PRECIP_LABELS.none).toBe('None');
+    expect(THICKNESS_METHOD_LABELS.estimated).toBe('estimated');
+  });
+});
 
 describe('formatThicknessReading', () => {
   it('formats a single measured value in inches', () => {
     // 4″ exactly → 10.16 cm stored; round-trips to "4″ (measured)".
     expect(formatThicknessReading({ valueCm: inchesToCm(4), method: 'measured' })).toBe(
       '4″ (measured)',
-    )
-  })
+    );
+  });
 
   it('formats a min–max range in inches with the method', () => {
     expect(
       formatThicknessReading({ minCm: inchesToCm(2), maxCm: inchesToCm(4), method: 'estimated' }),
-    ).toBe('2–4″ (estimated)')
-  })
+    ).toBe('2–4″ (estimated)');
+  });
 
   it('prefers the single value when (defensively) both value and range are present', () => {
     expect(
       formatThicknessReading({ valueCm: inchesToCm(3), minCm: 1, maxCm: 2, method: 'measured' }),
-    ).toBe('3″ (measured)')
-  })
+    ).toBe('3″ (measured)');
+  });
 
   it('returns null for a reading with neither a value nor a full range', () => {
-    expect(formatThicknessReading({ method: 'measured' })).toBeNull()
-    expect(formatThicknessReading({ minCm: inchesToCm(2), method: 'measured' })).toBeNull()
-  })
-})
+    expect(formatThicknessReading({ method: 'measured' })).toBeNull();
+    expect(formatThicknessReading({ minCm: inchesToCm(2), method: 'measured' })).toBeNull();
+  });
+});
 
 describe('formatSnowCoverInches', () => {
   it('renders depth in inches', () => {
-    expect(formatSnowCoverInches(inchesToCm(1.5))).toBe('1.5″')
-    expect(formatSnowCoverInches(0)).toBe('0″')
-  })
-})
+    expect(formatSnowCoverInches(inchesToCm(1.5))).toBe('1.5″');
+    expect(formatSnowCoverInches(0)).toBe('0″');
+  });
+});
 
 describe('formatConditions', () => {
   it('renders only the populated fields, imperial + humanized', () => {
@@ -76,66 +76,66 @@ describe('formatConditions', () => {
       sky: 'overcast',
       precip: 'snow',
       source: 'user',
-    })
+    });
     expect(rows).toEqual([
       { label: 'Air temp', value: '32°F' },
       { label: 'Wind', value: '10 mph NW' },
       { label: 'Sky', value: 'Overcast' },
       { label: 'Precip', value: 'Snow' },
-    ])
-  })
+    ]);
+  });
 
   it('omits wind direction when absent and skips blank fields', () => {
-    const rows = formatConditions({ windSpeedKph: 16.09344, source: 'user' })
-    expect(rows).toEqual([{ label: 'Wind', value: '10 mph' }])
-  })
+    const rows = formatConditions({ windSpeedKph: 16.09344, source: 'user' });
+    expect(rows).toEqual([{ label: 'Wind', value: '10 mph' }]);
+  });
 
   it('returns an empty list when nothing was recorded', () => {
-    expect(formatConditions({ source: 'user' })).toEqual([])
-  })
-})
+    expect(formatConditions({ source: 'user' })).toEqual([]);
+  });
+});
 
 describe('formatSkateTime', () => {
   it('formats a timestamp deterministically in a fixed zone', () => {
     // 2026-01-05T19:30:00Z → 2:30 PM in America/New_York.
-    const ms = Date.UTC(2026, 0, 5, 19, 30)
-    expect(formatSkateTime(ms, 'America/New_York')).toBe('Jan 5, 2026, 2:30 PM')
-  })
+    const ms = Date.UTC(2026, 0, 5, 19, 30);
+    expect(formatSkateTime(ms, 'America/New_York')).toBe('Jan 5, 2026, 2:30 PM');
+  });
 
   it('renders in the local zone when none is given', () => {
-    const ms = Date.UTC(2026, 0, 5, 19, 30)
+    const ms = Date.UTC(2026, 0, 5, 19, 30);
     // Exact wording is locale/zone-dependent; assert it produced a non-empty string.
-    expect(formatSkateTime(ms)).toMatch(/2026/)
-  })
-})
+    expect(formatSkateTime(ms)).toMatch(/2026/);
+  });
+});
 
 describe('formatDurationLabel', () => {
   it('formats minutes-only, hours-only, and mixed spans', () => {
-    expect(formatDurationLabel(45)).toBe('45m')
-    expect(formatDurationLabel(60)).toBe('1h')
-    expect(formatDurationLabel(90)).toBe('1h 30m')
-    expect(formatDurationLabel(150)).toBe('2h 30m')
-  })
+    expect(formatDurationLabel(45)).toBe('45m');
+    expect(formatDurationLabel(60)).toBe('1h');
+    expect(formatDurationLabel(90)).toBe('1h 30m');
+    expect(formatDurationLabel(150)).toBe('2h 30m');
+  });
 
   it('rounds to the nearest minute and floors at zero', () => {
-    expect(formatDurationLabel(29.6)).toBe('30m')
-    expect(formatDurationLabel(-5)).toBe('0m')
-  })
-})
+    expect(formatDurationLabel(29.6)).toBe('30m');
+    expect(formatDurationLabel(-5)).toBe('0m');
+  });
+});
 
 describe('formatSkateWindow', () => {
   it('returns the derived duration when a start is present', () => {
-    const end = Date.UTC(2026, 0, 5, 16, 0)
-    expect(formatSkateWindow(end, end - 90 * 60_000)).toBe('1h 30m')
-  })
+    const end = Date.UTC(2026, 0, 5, 16, 0);
+    expect(formatSkateWindow(end, end - 90 * 60_000)).toBe('1h 30m');
+  });
 
   it('returns null with no start (end-only report)', () => {
-    expect(formatSkateWindow(Date.UTC(2026, 0, 5, 16, 0))).toBeNull()
-  })
+    expect(formatSkateWindow(Date.UTC(2026, 0, 5, 16, 0))).toBeNull();
+  });
 
   it('returns null for a zero or inverted span', () => {
-    const end = Date.UTC(2026, 0, 5, 16, 0)
-    expect(formatSkateWindow(end, end)).toBeNull()
-    expect(formatSkateWindow(end, end + 60_000)).toBeNull()
-  })
-})
+    const end = Date.UTC(2026, 0, 5, 16, 0);
+    expect(formatSkateWindow(end, end)).toBeNull();
+    expect(formatSkateWindow(end, end + 60_000)).toBeNull();
+  });
+});

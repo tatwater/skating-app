@@ -7,12 +7,12 @@
  */
 
 function toFiniteNumber(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
   if (typeof value === 'string') {
-    const n = Number(value)
-    if (Number.isFinite(n)) return n
+    const n = Number(value);
+    if (Number.isFinite(n)) return n;
   }
-  return undefined
+  return undefined;
 }
 
 /**
@@ -23,22 +23,22 @@ function toFiniteNumber(value: unknown): number | undefined {
 export function exifCoord(
   exif: Record<string, unknown> | null | undefined,
 ): { lat: number; lng: number } | undefined {
-  if (!exif) return undefined
-  const rawLat = toFiniteNumber(exif.GPSLatitude)
-  const rawLng = toFiniteNumber(exif.GPSLongitude)
-  if (rawLat === undefined || rawLng === undefined) return undefined
+  if (!exif) return undefined;
+  const rawLat = toFiniteNumber(exif.GPSLatitude);
+  const rawLng = toFiniteNumber(exif.GPSLongitude);
+  if (rawLat === undefined || rawLng === undefined) return undefined;
 
   const latRef = String(exif.GPSLatitudeRef ?? '')
     .trim()
-    .toUpperCase()
+    .toUpperCase();
   const lngRef = String(exif.GPSLongitudeRef ?? '')
     .trim()
-    .toUpperCase()
+    .toUpperCase();
   // A ref forces the sign against the magnitude; without one, trust the value as given.
-  const lat = latRef === 'S' ? -Math.abs(rawLat) : latRef === 'N' ? Math.abs(rawLat) : rawLat
-  const lng = lngRef === 'W' ? -Math.abs(rawLng) : lngRef === 'E' ? Math.abs(rawLng) : rawLng
+  const lat = latRef === 'S' ? -Math.abs(rawLat) : latRef === 'N' ? Math.abs(rawLat) : rawLat;
+  const lng = lngRef === 'W' ? -Math.abs(rawLng) : lngRef === 'E' ? Math.abs(rawLng) : rawLng;
 
-  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return undefined
-  if (lat === 0 && lng === 0) return undefined // null-island: almost always missing GPS, not a real fix
-  return { lat, lng }
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return undefined;
+  if (lat === 0 && lng === 0) return undefined; // null-island: almost always missing GPS, not a real fix
+  return { lat, lng };
 }

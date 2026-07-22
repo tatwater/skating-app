@@ -1,24 +1,30 @@
-import { api } from '@skating/convex/api'
-import { humanizeEnum, searchQueryArg } from '@skating/core'
-import { useNavigate } from '@tanstack/react-router'
-import { useQuery } from 'convex/react'
-import { SearchIcon } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { Combobox, ComboboxContent, ComboboxInput, ComboboxItem, ComboboxList } from './ui/combobox'
+import { api } from '@skating/convex/api';
+import { humanizeEnum, searchQueryArg } from '@skating/core';
+import { useNavigate } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
+import { SearchIcon } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  Combobox,
+  ComboboxContent,
+  ComboboxInput,
+  ComboboxItem,
+  ComboboxList,
+} from './ui/combobox';
 
 /** A search result row from `waterBodies.searchByName` (the light fly-to fields). */
 export type LakeHit = {
-  _id: string
-  name: string
-  type: string
-  centroid: { lat: number; lng: number }
-  states: string[]
-}
+  _id: string;
+  name: string;
+  type: string;
+  centroid: { lat: number; lng: number };
+  states: string[];
+};
 
 /** "Lake · NY" — or "Lake · NY, VT" for a border-spanning body; just the type if unknown. */
 function hitMeta(hit: LakeHit): string {
-  const type = humanizeEnum(hit.type)
-  return hit.states.length ? `${type} · ${hit.states.join(', ')}` : type
+  const type = humanizeEnum(hit.type);
+  return hit.states.length ? `${type} · ${hit.states.join(', ')}` : type;
 }
 
 /**
@@ -34,12 +40,12 @@ export function LakeSearchBox({
   emptyVisible,
   open,
 }: {
-  items: LakeHit[]
-  inputValue: string
-  onInputValueChange: (value: string) => void
-  onSelect: (hit: LakeHit) => void
-  emptyVisible: boolean
-  open?: boolean
+  items: LakeHit[];
+  inputValue: string;
+  onInputValueChange: (value: string) => void;
+  onSelect: (hit: LakeHit) => void;
+  emptyVisible: boolean;
+  open?: boolean;
 }) {
   return (
     <Combobox
@@ -51,7 +57,7 @@ export function LakeSearchBox({
       itemToStringLabel={(hit: LakeHit | null) => hit?.name ?? ''}
       isItemEqualToValue={(a: LakeHit | null, b: LakeHit | null) => a?._id === b?._id}
       onValueChange={(hit: LakeHit | null) => {
-        if (hit) onSelect(hit)
+        if (hit) onSelect(hit);
       }}
     >
       <div className="relative">
@@ -76,7 +82,7 @@ export function LakeSearchBox({
         ) : null}
       </ComboboxContent>
     </Combobox>
-  )
+  );
 }
 
 /**
@@ -86,17 +92,17 @@ export function LakeSearchBox({
  * the map to the lake (reusing the existing fly-to), so search needs no map wiring of its own.
  */
 export function LakeSearch() {
-  const navigate = useNavigate()
-  const [text, setText] = useState('')
-  const [debounced, setDebounced] = useState('')
+  const navigate = useNavigate();
+  const [text, setText] = useState('');
+  const [debounced, setDebounced] = useState('');
 
   useEffect(() => {
-    const id = setTimeout(() => setDebounced(text), 150)
-    return () => clearTimeout(id)
-  }, [text])
+    const id = setTimeout(() => setDebounced(text), 150);
+    return () => clearTimeout(id);
+  }, [text]);
 
-  const arg = searchQueryArg(debounced)
-  const results = useQuery(api.waterBodies.searchByName, arg)
+  const arg = searchQueryArg(debounced);
+  const results = useQuery(api.waterBodies.searchByName, arg);
 
   return (
     <LakeSearchBox
@@ -105,9 +111,9 @@ export function LakeSearch() {
       onInputValueChange={setText}
       emptyVisible={arg !== 'skip' && results !== undefined && results.length === 0}
       onSelect={(hit) => {
-        setText('')
-        navigate({ to: '/water/$id', params: { id: hit._id } })
+        setText('');
+        navigate({ to: '/water/$id', params: { id: hit._id } });
       }}
     />
-  )
+  );
 }

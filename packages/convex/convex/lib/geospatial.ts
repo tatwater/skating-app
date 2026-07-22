@@ -21,9 +21,9 @@
  * the *most prominent* bodies (lowest `minVisibleZoom`) instead of an arbitrary slice.
  */
 
-import { GeospatialIndex } from '@convex-dev/geospatial'
-import { components } from '../_generated/api'
-import type { Id } from '../_generated/dataModel'
+import { GeospatialIndex } from '@convex-dev/geospatial';
+import { components } from '../_generated/api';
+import type { Id } from '../_generated/dataModel';
 
 /**
  * Water bodies indexed by `centroid`, keyed by the `waterBodies` doc id, filtered by the
@@ -36,7 +36,7 @@ import type { Id } from '../_generated/dataModel'
  */
 export const waterBodiesGeo = new GeospatialIndex<Id<'waterBodies'>, { listed: boolean }>(
   components.geospatial as unknown as ConstructorParameters<typeof GeospatialIndex>[0],
-)
+);
 
 /**
  * Admin-boundary polygons indexed by `centroid`, keyed by the `adminAreas` doc id and filtered by
@@ -50,4 +50,4 @@ export const waterBodiesGeo = new GeospatialIndex<Id<'waterBodies'>, { listed: b
  */
 export const adminAreasGeo = new GeospatialIndex<Id<'adminAreas'>, { level: string }>(
   components.adminAreasGeo as unknown as ConstructorParameters<typeof GeospatialIndex>[0],
-)
+);

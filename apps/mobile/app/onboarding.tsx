@@ -1,4 +1,4 @@
-import { api } from '@skating/convex/api'
+import { api } from '@skating/convex/api';
 import {
   isValidDisplayName,
   isValidUsername,
@@ -7,15 +7,15 @@ import {
   normalizeDisplayName,
   normalizeUsername,
   parseDateOfBirth,
-} from '@skating/core'
-import { useMutation } from 'convex/react'
-import { ConvexError } from 'convex/values'
-import { useState } from 'react'
-import { ScrollView } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
-import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui'
-import { RiskAckConsent } from '../src/components/RiskAckConsent'
-import { RISK_ACK_VERSION } from '../src/lib/riskAck'
+} from '@skating/core';
+import { useMutation } from 'convex/react';
+import { ConvexError } from 'convex/values';
+import { useState } from 'react';
+import { ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { Button, H1, Input, Paragraph, Text, YStack } from 'tamagui';
+import { RiskAckConsent } from '../src/components/RiskAckConsent';
+import { RISK_ACK_VERSION } from '../src/lib/riskAck';
 
 /**
  * Profile provisioning (D26). Reached only when the user is Clerk-authenticated but has
@@ -29,30 +29,30 @@ import { RISK_ACK_VERSION } from '../src/lib/riskAck'
  * gate swaps this screen for the tabs, so no manual navigation is needed.
  */
 export default function OnboardingScreen() {
-  const upsertFromClerk = useMutation(api.profiles.upsertFromClerk)
+  const upsertFromClerk = useMutation(api.profiles.upsertFromClerk);
 
-  const [displayName, setDisplayName] = useState('')
-  const [username, setUsername] = useState('')
-  const [dob, setDob] = useState('')
-  const [ack, setAck] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [displayName, setDisplayName] = useState('');
+  const [username, setUsername] = useState('');
+  const [dob, setDob] = useState('');
+  const [ack, setAck] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
-  const dobMs = parseDateOfBirth(dob)
-  const oldEnough = dobMs !== null && meetsMinimumAge(dobMs, Date.now())
-  const dobTouched = dob.trim().length > 0
+  const dobMs = parseDateOfBirth(dob);
+  const oldEnough = dobMs !== null && meetsMinimumAge(dobMs, Date.now());
+  const dobTouched = dob.trim().length > 0;
 
-  const normalizedUsername = normalizeUsername(username)
-  const usernameOk = isValidUsername(normalizedUsername)
-  const usernameTouched = username.trim().length > 0
-  const nameOk = isValidDisplayName(normalizeDisplayName(displayName))
+  const normalizedUsername = normalizeUsername(username);
+  const usernameOk = isValidUsername(normalizedUsername);
+  const usernameTouched = username.trim().length > 0;
+  const nameOk = isValidDisplayName(normalizeDisplayName(displayName));
 
-  const canSubmit = !busy && nameOk && usernameOk && oldEnough && ack
+  const canSubmit = !busy && nameOk && usernameOk && oldEnough && ack;
 
   async function onSubmit() {
-    if (!canSubmit || dobMs === null) return
-    setBusy(true)
-    setError(null)
+    if (!canSubmit || dobMs === null) return;
+    setBusy(true);
+    setError(null);
     try {
       await upsertFromClerk({
         displayName: normalizeDisplayName(displayName),
@@ -60,7 +60,7 @@ export default function OnboardingScreen() {
         dateOfBirth: dobMs,
         riskAckVersion: RISK_ACK_VERSION,
         // The acceptance time is stamped server-side (trust boundary, D37) — not sent.
-      })
+      });
       // Success: no navigation — the root gate reacts to the now-provisioned profile.
     } catch (e) {
       // ConvexErrors carry a user-safe message in `.data` (e.g. "Username is already
@@ -71,9 +71,9 @@ export default function OnboardingScreen() {
           : e instanceof Error
             ? e.message
             : 'Could not finish setting up your profile',
-      )
+      );
     } finally {
-      setBusy(false)
+      setBusy(false);
     }
   }
 
@@ -140,5 +140,5 @@ export default function OnboardingScreen() {
         </YStack>
       </ScrollView>
     </SafeAreaView>
-  )
+  );
 }

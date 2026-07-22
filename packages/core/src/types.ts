@@ -8,16 +8,16 @@
 // profile's discoverability, below.
 
 /** Profile discoverability (D13): `public` = searchable + browsable; `private` = neither. */
-export const PROFILE_VISIBILITIES = ['public', 'private'] as const
-export type ProfileVisibility = (typeof PROFILE_VISIBILITIES)[number]
+export const PROFILE_VISIBILITIES = ['public', 'private'] as const;
+export type ProfileVisibility = (typeof PROFILE_VISIBILITIES)[number];
 
 /** Account roles; admin ⊇ moderator (D37). */
-export const USER_ROLES = ['member', 'moderator', 'admin'] as const
-export type UserRole = (typeof USER_ROLES)[number]
+export const USER_ROLES = ['member', 'moderator', 'admin'] as const;
+export type UserRole = (typeof USER_ROLES)[number];
 
 /** Account lifecycle state (D33/D37). */
-export const USER_STATUSES = ['active', 'suspended', 'banned', 'deleted'] as const
-export type UserStatus = (typeof USER_STATUSES)[number]
+export const USER_STATUSES = ['active', 'suspended', 'banned', 'deleted'] as const;
+export type UserStatus = (typeof USER_STATUSES)[number];
 
 /** Water body kinds (D4/D14). */
 export const WATER_BODY_TYPES = [
@@ -29,12 +29,12 @@ export const WATER_BODY_TYPES = [
   'bay',
   'marsh',
   'other',
-] as const
-export type WaterBodyType = (typeof WATER_BODY_TYPES)[number]
+] as const;
+export type WaterBodyType = (typeof WATER_BODY_TYPES)[number];
 
 /** Coarse overall skating quality (D23) — never a safety verdict (D3). */
-export const SKATE_QUALITIES = ['great', 'good', 'fair', 'poor'] as const
-export type SkateQuality = (typeof SKATE_QUALITIES)[number]
+export const SKATE_QUALITIES = ['great', 'good', 'fair', 'poor'] as const;
+export type SkateQuality = (typeof SKATE_QUALITIES)[number];
 
 /** What the ice *is* (community vocabulary, D23 / nordicskaters.squarespace.com). */
 export const ICE_TYPES = [
@@ -48,12 +48,12 @@ export const ICE_TYPES = [
   'pack_ice',
   'plate_ice',
   'candled_ice',
-] as const
-export type IceType = (typeof ICE_TYPES)[number]
+] as const;
+export type IceType = (typeof ICE_TYPES)[number];
 
 /** Ice-thickness reading trust level (D22) — `estimated` is lower-trust than `measured`. */
-export const THICKNESS_METHODS = ['measured', 'estimated'] as const
-export type ThicknessMethod = (typeof THICKNESS_METHODS)[number]
+export const THICKNESS_METHODS = ['measured', 'estimated'] as const;
+export type ThicknessMethod = (typeof THICKNESS_METHODS)[number];
 
 /** How the ice *skates* (community vocabulary, D23). */
 export const SURFACE_TAGS = [
@@ -71,19 +71,19 @@ export const SURFACE_TAGS = [
   'overflow',
   'frozen_chop',
   'windswept',
-] as const
-export type SurfaceTag = (typeof SURFACE_TAGS)[number]
+] as const;
+export type SurfaceTag = (typeof SURFACE_TAGS)[number];
 
 /**
  * Conditions AT skate time (D19). Phase 2 stores these as optional **manual** entry
  * (`source: 'user'`); Open-Meteo auto-fill (`source: 'openmeteo'`) arrives in Phase 10.
  */
-export const SKY_CONDITIONS = ['clear', 'partly_cloudy', 'overcast', 'precip'] as const
-export type SkyCondition = (typeof SKY_CONDITIONS)[number]
-export const PRECIP_TYPES = ['none', 'rain', 'snow', 'sleet'] as const
-export type PrecipType = (typeof PRECIP_TYPES)[number]
-export const CONDITION_SOURCES = ['user', 'openmeteo'] as const
-export type ConditionSource = (typeof CONDITION_SOURCES)[number]
+export const SKY_CONDITIONS = ['clear', 'partly_cloudy', 'overcast', 'precip'] as const;
+export type SkyCondition = (typeof SKY_CONDITIONS)[number];
+export const PRECIP_TYPES = ['none', 'rain', 'snow', 'sleet'] as const;
+export type PrecipType = (typeof PRECIP_TYPES)[number];
+export const CONDITION_SOURCES = ['user', 'openmeteo'] as const;
+export type ConditionSource = (typeof CONDITION_SOURCES)[number];
 
 /**
  * Localized hazards that drive the lifecycle (D15/D52). **Exactly one per hazard** — per-type decay,
@@ -120,8 +120,8 @@ export const HAZARD_TYPES = [
   'spring_current',
   'gas_hole',
   'reef_hole',
-] as const
-export type HazardType = (typeof HAZARD_TYPES)[number]
+] as const;
+export type HazardType = (typeof HAZARD_TYPES)[number];
 
 /**
  * Display labels. The slash-pairs the enum collapsed keep both words here, so a skater still sees the
@@ -144,13 +144,13 @@ export const HAZARD_TYPE_LABELS: Record<HazardType, string> = {
   spring_current: 'Spring / inlet-outlet current',
   gas_hole: 'Gas hole',
   reef_hole: 'Reef hole',
-}
+};
 
 /**
  * The three types that account for ~80% of real hazard mentions in the regional corpus (research §6) —
  * surfaced as one-tap presets, with everything else behind "more".
  */
-export const HAZARD_TYPE_PRESETS = ['open_water', 'pressure_ridge', 'thin_ice'] as const
+export const HAZARD_TYPE_PRESETS = ['open_water', 'pressure_ridge', 'thin_ice'] as const;
 
 /**
  * `ridge_crossing` is a **passage marker, not a danger** (D51 research §4): it marks where a pressure
@@ -159,5 +159,5 @@ export const HAZARD_TYPE_PRESETS = ['open_water', 'pressure_ridge', 'thin_ice'] 
  * verdicts and `hazardProximity.ts` for its exclusion from warnings.
  */
 export function isPassageMarker(type: HazardType): boolean {
-  return type === 'ridge_crossing'
+  return type === 'ridge_crossing';
 }

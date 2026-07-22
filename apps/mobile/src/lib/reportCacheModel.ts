@@ -9,17 +9,17 @@
  * small ~400px URLs, never the full images (which would blow the cache, decision #8).
  */
 
-import type { FeedCardData } from '@skating/core'
+import type { FeedCardData } from '@skating/core';
 
 /** Keep the N most-recently-cached reports (LRU by `cachedAt`) — bounds the on-device footprint. */
-export const MAX_CACHED_REPORTS = 200
+export const MAX_CACHED_REPORTS = 200;
 
 /** One cache row: the identity + sort key columns, plus the full card as a JSON blob. */
 export interface CachedReportRow {
-  reportId: string
-  waterBodyId: string
-  cachedAt: number
-  data: string // JSON.stringify(FeedCardData)
+  reportId: string;
+  waterBodyId: string;
+  cachedAt: number;
+  data: string; // JSON.stringify(FeedCardData)
 }
 
 /** Turn a feed card into a cache row (thumbnails only — that's already what the card carries). */
@@ -29,7 +29,7 @@ export function toCachedRow(data: FeedCardData, cachedAt: number): CachedReportR
     waterBodyId: data.waterBodyId,
     cachedAt,
     data: JSON.stringify(data),
-  }
+  };
 }
 
 /**
@@ -39,13 +39,13 @@ export function toCachedRow(data: FeedCardData, cachedAt: number): CachedReportR
  */
 export function fromCachedRow(row: Pick<CachedReportRow, 'data'>): FeedCardData | null {
   try {
-    const parsed = JSON.parse(row.data) as unknown
-    if (!parsed || typeof parsed !== 'object') return null
-    const card = parsed as FeedCardData
-    if (typeof card.reportId !== 'string' || typeof card.waterBodyId !== 'string') return null
-    return card
+    const parsed = JSON.parse(row.data) as unknown;
+    if (!parsed || typeof parsed !== 'object') return null;
+    const card = parsed as FeedCardData;
+    if (typeof card.reportId !== 'string' || typeof card.waterBodyId !== 'string') return null;
+    return card;
   } catch {
-    return null
+    return null;
   }
 }
 
@@ -54,5 +54,5 @@ export function cachedReportsFromRows(rows: readonly CachedReportRow[]): FeedCar
   return [...rows]
     .sort((a, b) => b.cachedAt - a.cachedAt)
     .map(fromCachedRow)
-    .filter((card): card is FeedCardData => card !== null)
+    .filter((card): card is FeedCardData => card !== null);
 }

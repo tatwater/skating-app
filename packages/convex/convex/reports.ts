@@ -26,27 +26,27 @@ import {
   sanitizeFeedFilters,
   THICKNESS_METHODS,
   validateReportInput,
-} from '@skating/core'
-import { paginationOptsValidator } from 'convex/server'
-import { ConvexError, v } from 'convex/values'
-import type { Doc, Id } from './_generated/dataModel'
-import { internalMutation, mutation, type QueryCtx, query } from './_generated/server'
-import { resolvePlaceForCoord } from './adminAreas'
+} from '@skating/core';
+import { paginationOptsValidator } from 'convex/server';
+import { ConvexError, v } from 'convex/values';
+import type { Doc, Id } from './_generated/dataModel';
+import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
+import { resolvePlaceForCoord } from './adminAreas';
 import {
   attachHazardsToReport,
   HAZARD_MAX_PER_REPORT,
   inReportHazardArgs,
   insertHazard,
-} from './hazards'
-import { getCurrentProfile, requireProfile } from './lib/auth'
-import { resolveSurvivor } from './lib/bodies'
-import { bumpContributionCount } from './lib/contributionCounts'
-import { isListed } from './lib/listing'
-import { assertOwnedPhotos } from './lib/photoAccess'
-import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
-import { latLng, literals } from './lib/validators'
-import { enqueueReportNotifications } from './notifications'
-import { loadFavoriteBodyIds } from './waterBodyFavorites'
+} from './hazards';
+import { getCurrentProfile, requireProfile } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
+import { bumpContributionCount } from './lib/contributionCounts';
+import { isListed } from './lib/listing';
+import { assertOwnedPhotos } from './lib/photoAccess';
+import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
+import { latLng, literals } from './lib/validators';
+import { enqueueReportNotifications } from './notifications';
+import { loadFavoriteBodyIds } from './waterBodyFavorites';
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
 const reportContent = {
@@ -88,21 +88,21 @@ const reportContent = {
   // Private-property opt-out (Phase 4, decision #7): false suppresses this report's derived put-in
   // marker (keeps the coarse `place` label). Default (undefined) shows it.
   showPutIn: v.optional(v.boolean()),
-}
+};
 
 /** Build the `@skating/core` validation input from mutation args (all reports are public, D13). */
 function toReportInput(
   args: {
-    skateEndTime: number
-    skateStartTime?: number
-    iceTypes?: string[]
-    surfaceTags?: string[]
-    skateQuality?: string
-    iceThickness?: ReportInput['iceThickness']
-    snowCoverCm?: number
-    conditions?: ReportInput['conditions']
-    notes?: string
-    point?: { lat: number; lng: number }
+    skateEndTime: number;
+    skateStartTime?: number;
+    iceTypes?: string[];
+    surfaceTags?: string[];
+    skateQuality?: string;
+    iceThickness?: ReportInput['iceThickness'];
+    snowCoverCm?: number;
+    conditions?: ReportInput['conditions'];
+    notes?: string;
+    point?: { lat: number; lng: number };
   },
   waterBodyId: string,
 ): ReportInput {
@@ -118,7 +118,7 @@ function toReportInput(
     conditions: args.conditions,
     notes: args.notes,
     point: args.point,
-  }
+  };
 }
 
 /**
@@ -144,8 +144,8 @@ export const create = mutation({
     ...reportContent,
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx)
-    const now = Date.now()
+    const profile = await requireProfile(ctx);
+    const now = Date.now();
 
     // Idempotency short-circuit (F2/D30): if this key already produced a report, return it — the
     // flush is a retry, not a new post. Scoped to the author so a (UUID-collision-improbable) shared
@@ -155,44 +155,44 @@ export const create = mutation({
       const existing = await ctx.db
         .query('reports')
         .withIndex('by_idempotency_key', (q) => q.eq('idempotencyKey', args.idempotencyKey))
-        .unique()
+        .unique();
       if (existing) {
-        if (existing.authorId !== profile._id) throw new ConvexError('Idempotency key conflict')
-        return existing._id
+        if (existing.authorId !== profile._id) throw new ConvexError('Idempotency key conflict');
+        return existing._id;
       }
     }
 
     // Minors are read-only (D41): reports are always public (D13), so we never let a minor broadcast.
     if (isMinor(profile.dateOfBirth, now)) {
-      throw new ConvexError('Users under 18 cannot post reports')
+      throw new ConvexError('Users under 18 cannot post reports');
     }
 
     // Bound the hazard fan-out: each in-report hazard is several document writes, so an unbounded
     // array makes one create arbitrarily expensive. A real skate produces a handful, not dozens.
     if ((args.hazards?.length ?? 0) + (args.attachHazardIds?.length ?? 0) > HAZARD_MAX_PER_REPORT) {
-      throw new ConvexError('Too many hazards for one report')
+      throw new ConvexError('Too many hazards for one report');
     }
 
-    const body = await resolveSurvivor(ctx, args.waterBodyId)
-    if (!body || !isListed(body)) throw new ConvexError('Water body not found')
+    const body = await resolveSurvivor(ctx, args.waterBodyId);
+    if (!body || !isListed(body)) throw new ConvexError('Water body not found');
 
-    const result = validateReportInput(toReportInput(args, args.waterBodyId), { now })
+    const result = validateReportInput(toReportInput(args, args.waterBodyId), { now });
     if (!result.ok) {
       throw new ConvexError({
         code: 'invalid_report',
         errors: result.errors.map((e) => `${e.field}: ${e.message}`),
-      })
+      });
     }
-    const n = result.normalized
+    const n = result.normalized;
 
-    const photoIds = args.photoIds ?? []
-    await assertOwnedPhotos(ctx, photoIds, profile._id)
+    const photoIds = args.photoIds ?? [];
+    await assertOwnedPhotos(ctx, photoIds, profile._id);
 
     // Stamp the point-derived location label (Phase 5) from the resolved put-in point (else the
     // body centroid) against the `adminAreas` boundaries — so the feed reads `{town/county, state}`
     // directly with no per-read geocode. Absent when the point is outside the imported region.
-    const point = n.point ?? body.centroid
-    const place = await resolvePlaceForCoord(ctx, point)
+    const point = n.point ?? body.centroid;
+    const place = await resolvePlaceForCoord(ctx, point);
 
     const reportId = await ctx.db.insert('reports', {
       authorId: profile._id,
@@ -217,18 +217,18 @@ export const create = mutation({
       hazardIdsCreated: [], // filled in below once the hazards know their report id
       createdAt: now,
       updatedAt: now,
-    })
+    });
 
     // Hazards (Phase 9). Two sources, both landing in `hazardIdsCreated`:
     //  - `hazards`: drawn as part of this report (the in-report authoring path, D51).
     //  - `attachHazardIds`: the author's own standalone on-ice pins, bundled in after the fact (D55).
     // Created after the report so each hazard carries `originReportId` from birth — one write order,
     // no back-patching, and the two collections stay consistent inside a single transaction.
-    const createdHazardIds: Id<'hazards'>[] = []
+    const createdHazardIds: Id<'hazards'>[] = [];
     for (const hazard of args.hazards ?? []) {
       createdHazardIds.push(
         await insertHazard(ctx, { ...hazard, waterBodyId: body._id }, profile._id, now, reportId),
-      )
+      );
     }
     const bundledHazardIds = await attachHazardsToReport(
       ctx,
@@ -236,22 +236,22 @@ export const create = mutation({
       reportId,
       profile._id,
       body._id,
-    )
-    const hazardIdsCreated = [...createdHazardIds, ...bundledHazardIds]
-    if (hazardIdsCreated.length > 0) await ctx.db.patch(reportId, { hazardIdsCreated })
+    );
+    const hazardIdsCreated = [...createdHazardIds, ...bundledHazardIds];
+    if (hazardIdsCreated.length > 0) await ctx.db.patch(reportId, { hazardIdsCreated });
 
     // Bump the author's denormalized report counter (born visible) so the profile shows a true total
     // without scanning their history (D13). Moderation transitions adjust it symmetrically.
-    await bumpContributionCount(ctx, profile._id, 'reportCount', 1)
+    await bumpContributionCount(ctx, profile._id, 'reportCount', 1);
 
     // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
     // coalescing queue — the cron flushes them (decision #4). Read-back keeps `enqueue` off the raw args.
-    const inserted = await ctx.db.get(reportId)
-    if (inserted) await enqueueReportNotifications(ctx, inserted)
+    const inserted = await ctx.db.get(reportId);
+    if (inserted) await enqueueReportNotifications(ctx, inserted);
 
-    return reportId
+    return reportId;
   },
-})
+});
 
 /**
  * A water body's report feed — newest **skate-end time** first (D28), **paginated** for infinite
@@ -269,20 +269,20 @@ export const listByWaterBody = query({
         q.eq('waterBodyId', waterBodyId).eq('moderationStatus', 'visible'),
       )
       .order('desc')
-      .paginate(paginationOpts)
+      .paginate(paginationOpts);
   },
-})
+});
 
 /** A single report for its detail view — moderation-checked (hidden/removed excluded, D32). */
 export const get = query({
   args: { reportId: v.id('reports') },
   handler: (ctx, { reportId }) => getViewableReport(ctx, reportId),
-})
+});
 
 /** A resolved survivor body's feed-relevant fields: display name + on-water centroid (for band calc). */
 interface BodyInfo {
-  name: string
-  centroid: LatLng
+  name: string;
+  centroid: LatLng;
 }
 
 /** Resolve a report's surviving water-body name + centroid, following `mergedIntoId` (D36); cached. */
@@ -291,19 +291,19 @@ async function bodyInfoFor(
   waterBodyId: Id<'waterBodies'>,
   cache: Map<string, BodyInfo>,
 ): Promise<BodyInfo> {
-  const cached = cache.get(waterBodyId)
-  if (cached !== undefined) return cached
-  let body = await ctx.db.get(waterBodyId)
+  const cached = cache.get(waterBodyId);
+  if (cached !== undefined) return cached;
+  let body = await ctx.db.get(waterBodyId);
   for (let hops = 0; body?.mergedIntoId !== undefined && hops < 8; hops++) {
-    body = await ctx.db.get(body.mergedIntoId)
+    body = await ctx.db.get(body.mergedIntoId);
   }
   const info: BodyInfo = {
     name: body?.name ?? 'Unknown water body',
     // A resolvable body always has a centroid; the fallback keeps the type total for a dangling ref.
     centroid: body?.centroid ?? { lat: 0, lng: 0 },
-  }
-  cache.set(waterBodyId, info)
-  return info
+  };
+  cache.set(waterBodyId, info);
+  return info;
 }
 
 /** Resolve a report author's public `{ displayName, username }` (D13); cached per query. */
@@ -312,20 +312,20 @@ async function authorFor(
   authorId: Id<'profiles'>,
   cache: Map<string, { displayName: string; username: string }>,
 ): Promise<{ displayName: string; username: string }> {
-  const cached = cache.get(authorId)
-  if (cached !== undefined) return cached
-  const profile = await ctx.db.get(authorId)
+  const cached = cache.get(authorId);
+  if (cached !== undefined) return cached;
+  const profile = await ctx.db.get(authorId);
   const author = profile
     ? { displayName: profile.displayName, username: profile.username }
-    : { displayName: 'Unknown', username: '' }
-  cache.set(authorId, author)
-  return author
+    : { displayName: 'Unknown', username: '' };
+  cache.set(authorId, author);
+  return author;
 }
 
 /** Per-query enrichment caches shared across a page of feed cards (body info + author attribution). */
 interface FeedCardCaches {
-  bodyInfo: Map<string, BodyInfo>
-  authors: Map<string, { displayName: string; username: string }>
+  bodyInfo: Map<string, BodyInfo>;
+  authors: Map<string, { displayName: string; username: string }>;
 }
 
 /**
@@ -340,7 +340,7 @@ async function toFeedCard(
   caches: FeedCardCaches,
   sets: { blocked: Set<string>; favorites: Set<string> },
 ): Promise<FeedCardData> {
-  const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo)
+  const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
   return {
     reportId: r._id,
     waterBodyId: r.waterBodyId,
@@ -355,7 +355,7 @@ async function toFeedCard(
     author: await authorFor(ctx, r.authorId, caches.authors),
     blocked: sets.blocked.has(r.authorId),
     isFavorite: sets.favorites.has(r.waterBodyId),
-  }
+  };
 }
 
 /** Resolve a report's photo **thumbnail** serving URLs for the feed carousel; missing files skipped. */
@@ -367,12 +367,12 @@ async function thumbUrlsFor(
   // serialize into dozens of round-trips per `listFeed` call. Missing files resolve to null, dropped.
   const urls = await Promise.all(
     photoIds.map(async (photoId) => {
-      const photo = await ctx.db.get(photoId)
-      if (!photo) return null
-      return ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>)
+      const photo = await ctx.db.get(photoId);
+      if (!photo) return null;
+      return ctx.storage.getUrl(photo.thumbStorageId as Id<'_storage'>);
     }),
-  )
-  return urls.filter((url): url is string => url !== null)
+  );
+  return urls.filter((url): url is string => url !== null);
 }
 
 /**
@@ -397,22 +397,22 @@ async function thumbUrlsFor(
 export const listFeed = query({
   args: { paginationOpts: paginationOptsValidator, filters: v.optional(v.any()) },
   handler: async (ctx, { paginationOpts, filters: rawFilters }) => {
-    const viewer = await getCurrentProfile(ctx)
-    const viewerId = viewer?._id ?? ''
+    const viewer = await getCurrentProfile(ctx);
+    const viewerId = viewer?._id ?? '';
     const [blocked, favorites] = await Promise.all([
       loadBlockedAuthorIds(ctx, viewerId),
       loadFavoriteBodyIds(ctx, viewerId),
-    ])
-    const filters = sanitizeFeedFilters(rawFilters)
+    ]);
+    const filters = sanitizeFeedFilters(rawFilters);
     // Stored bands validate as the broad GeoJSON union, but ORS only ever writes Polygon/MultiPolygon;
     // cast to the band shape `bandForCoord` consumes (same pattern as `adminAreas` polygon reads).
     const bands = {
       band30: viewer?.cachedIsochrones?.band30,
       band60: viewer?.cachedIsochrones?.band60,
       outerRadiusMeters: viewer?.outerRadiusMeters,
-    } as DriveTimeBands
-    const home = viewer?.homeCoord
-    const now = Date.now()
+    } as DriveTimeBands;
+    const home = viewer?.homeCoord;
+    const now = Date.now();
 
     // Moderation-only gate (D32), applied *in* the index (`moderationStatus: 'visible'`) rather than
     // after `paginate`. A blocked author's report still comes through (D3), de-emphasized via `blocked`.
@@ -420,14 +420,14 @@ export const listFeed = query({
       .query('reports')
       .withIndex('by_moderation_and_skate_end_time', (q) => q.eq('moderationStatus', 'visible'))
       .order('desc')
-      .paginate(paginationOpts)
+      .paginate(paginationOpts);
 
-    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() }
-    const page: FeedCardData[] = []
+    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
+    const page: FeedCardData[] = [];
     for (const r of result.page) {
-      const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo)
-      const isFavorite = favorites.has(r.waterBodyId)
-      const band = bandForCoord(body.centroid, bands, home)
+      const body = await bodyInfoFor(ctx, r.waterBodyId, caches.bodyInfo);
+      const isFavorite = favorites.has(r.waterBodyId);
+      const band = bandForCoord(body.centroid, bands, home);
       // The additive narrow — an empty `filters` matches everything (Phase 5 behavior preserved).
       if (
         !matchesFilters(
@@ -442,19 +442,19 @@ export const listFeed = query({
           { band, isFavorite, now },
         )
       ) {
-        continue
+        continue;
       }
-      page.push(await toFeedCard(ctx, r, caches, { blocked, favorites }))
+      page.push(await toFeedCard(ctx, r, caches, { blocked, favorites }));
     }
     // Boost favorites to the top of THIS page (stable sort keeps skate-end order within each group).
-    page.sort((a, b) => Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false))
-    return { ...result, page }
+    page.sort((a, b) => Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false));
+    return { ...result, page };
   },
-})
+});
 
 /** Offline read-cache bounds (decision #8): the freshest few reports per body, within a recent window. */
-const OFFLINE_CACHE_MAX_PER_BODY = 5
-const OFFLINE_CACHE_WINDOW_MS = 72 * 60 * 60 * 1000 // 72h
+const OFFLINE_CACHE_MAX_PER_BODY = 5;
+const OFFLINE_CACHE_WINDOW_MS = 72 * 60 * 60 * 1000; // 72h
 
 /**
  * Recent reports for a set of bodies as ready-to-cache `FeedCardData` (Phase 4, decision #8) — the
@@ -465,15 +465,15 @@ const OFFLINE_CACHE_WINDOW_MS = 72 * 60 * 60 * 1000 // 72h
 export const recentCardsForBodies = query({
   args: { waterBodyIds: v.array(v.id('waterBodies')) },
   handler: async (ctx, { waterBodyIds }) => {
-    const viewer = await getCurrentProfile(ctx)
-    const viewerId = viewer?._id ?? ''
+    const viewer = await getCurrentProfile(ctx);
+    const viewerId = viewer?._id ?? '';
     const [blocked, favorites] = await Promise.all([
       loadBlockedAuthorIds(ctx, viewerId),
       loadFavoriteBodyIds(ctx, viewerId),
-    ])
-    const cutoff = Date.now() - OFFLINE_CACHE_WINDOW_MS
-    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() }
-    const cards: FeedCardData[] = []
+    ]);
+    const cutoff = Date.now() - OFFLINE_CACHE_WINDOW_MS;
+    const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
+    const cards: FeedCardData[] = [];
     for (const waterBodyId of [...new Set(waterBodyIds)]) {
       const recent = await ctx.db
         .query('reports')
@@ -484,14 +484,14 @@ export const recentCardsForBodies = query({
             .gte('skateEndTime', cutoff),
         )
         .order('desc')
-        .take(OFFLINE_CACHE_MAX_PER_BODY)
+        .take(OFFLINE_CACHE_MAX_PER_BODY);
       for (const r of recent) {
-        cards.push(await toFeedCard(ctx, r, caches, { blocked, favorites }))
+        cards.push(await toFeedCard(ctx, r, caches, { blocked, favorites }));
       }
     }
-    return cards
+    return cards;
   },
-})
+});
 
 /**
  * Author-only edit (D25): last-write-wins over the content fields + a fresh `updatedAt`. Re-runs the
@@ -501,33 +501,33 @@ export const recentCardsForBodies = query({
 export const update = mutation({
   args: { reportId: v.id('reports'), ...reportContent },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx)
-    const existing = await ctx.db.get(args.reportId)
-    if (!existing) throw new ConvexError('Report not found')
+    const profile = await requireProfile(ctx);
+    const existing = await ctx.db.get(args.reportId);
+    if (!existing) throw new ConvexError('Report not found');
     if (existing.authorId !== profile._id)
-      throw new ConvexError('Only the author can edit a report')
+      throw new ConvexError('Only the author can edit a report');
     // Don't let an author keep editing content a moderator has taken down (hidden/removed, D32) —
     // the edit path doesn't touch `moderationStatus`, so re-appearing it would require re-moderation.
     if (existing.moderationStatus !== 'visible')
-      throw new ConvexError('This report has been moderated and can no longer be edited')
+      throw new ConvexError('This report has been moderated and can no longer be edited');
 
-    const now = Date.now()
-    const result = validateReportInput(toReportInput(args, existing.waterBodyId), { now })
+    const now = Date.now();
+    const result = validateReportInput(toReportInput(args, existing.waterBodyId), { now });
     if (!result.ok) {
       throw new ConvexError({
         code: 'invalid_report',
         errors: result.errors.map((e) => `${e.field}: ${e.message}`),
-      })
+      });
     }
-    const n = result.normalized
+    const n = result.normalized;
 
-    const photoIds = args.photoIds ?? existing.photoIds
-    await assertOwnedPhotos(ctx, photoIds, profile._id)
+    const photoIds = args.photoIds ?? existing.photoIds;
+    await assertOwnedPhotos(ctx, photoIds, profile._id);
 
     // Re-resolve the point-derived place (Phase 5) from the final point — an edited put-in pin moves
     // the location label with it. `place` is cleared to undefined when the new point resolves nowhere.
-    const point = n.point ?? existing.point
-    const place = await resolvePlaceForCoord(ctx, point)
+    const point = n.point ?? existing.point;
+    const place = await resolvePlaceForCoord(ctx, point);
 
     await ctx.db.patch(args.reportId, {
       point,
@@ -544,10 +544,10 @@ export const update = mutation({
       ...(args.showPutIn !== undefined ? { showPutIn: args.showPutIn } : {}),
       photoIds,
       updatedAt: now,
-    })
-    return args.reportId
+    });
+    return args.reportId;
   },
-})
+});
 
 /**
  * One-time migration (Phase 5): copy each report's legacy `skateTime` → `skateEndTime`, drop the old
@@ -562,32 +562,32 @@ export const update = mutation({
 export const renameSkateTimeToSkateEndTime = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const reports = await ctx.db.query('reports').collect()
-    let renamed = 0
-    let placed = 0
+    const reports = await ctx.db.query('reports').collect();
+    let renamed = 0;
+    let placed = 0;
     for (const r of reports) {
       // The legacy field is off the typed schema now, so read it through a narrow cast.
-      const legacy = (r as { skateTime?: number }).skateTime
-      const patch: Record<string, unknown> = {}
+      const legacy = (r as { skateTime?: number }).skateTime;
+      const patch: Record<string, unknown> = {};
       if (r.skateEndTime === undefined && typeof legacy === 'number') {
-        patch.skateEndTime = legacy
+        patch.skateEndTime = legacy;
       }
       // Drop the dangling old field so strict validation passes once re-enabled.
-      if (legacy !== undefined) patch.skateTime = undefined
+      if (legacy !== undefined) patch.skateTime = undefined;
       if (r.place === undefined) {
-        const place = await resolvePlaceForCoord(ctx, r.point)
+        const place = await resolvePlaceForCoord(ctx, r.point);
         if (place !== undefined) {
-          patch.place = place
-          placed++
+          patch.place = place;
+          placed++;
         }
       }
       if (Object.keys(patch).length > 0) {
-        await ctx.db.patch(r._id, patch as Partial<Doc<'reports'>>)
+        await ctx.db.patch(r._id, patch as Partial<Doc<'reports'>>);
         // Count only an actual copy — a cleanup-only patch (report already had `skateEndTime`, we
         // just drop a dangling legacy `skateTime`) isn't a rename and mustn't inflate the count.
-        if ('skateEndTime' in patch) renamed++
+        if ('skateEndTime' in patch) renamed++;
       }
     }
-    return { total: reports.length, renamed, placed }
+    return { total: reports.length, renamed, placed };
   },
-})
+});

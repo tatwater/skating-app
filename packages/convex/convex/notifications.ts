@@ -22,44 +22,44 @@ import {
   type DriveTimeBands,
   isDriveTimeBand,
   nextZonedHourMs,
-} from '@skating/core'
-import type { Doc, Id } from './_generated/dataModel'
-import { internalMutation, type MutationCtx } from './_generated/server'
+} from '@skating/core';
+import type { Doc, Id } from './_generated/dataModel';
+import { internalMutation, type MutationCtx } from './_generated/server';
 
 /** The digest rolls up to 8pm in this zone (single-timezone pilot; per-user timing deferred). */
-const DIGEST_HOUR = 20
-const DIGEST_TIMEZONE = 'America/New_York'
+const DIGEST_HOUR = 20;
+const DIGEST_TIMEZONE = 'America/New_York';
 /** Favorite/great pushes fire after this quiet window so a burst on one lake coalesces into one. */
-const DEBOUNCE_MS = 2 * 60 * 1000
+const DEBOUNCE_MS = 2 * 60 * 1000;
 
-type QueueKind = Doc<'notificationQueue'>['kind']
-type NotificationType = Doc<'notificationQueue'>['type']
+type QueueKind = Doc<'notificationQueue'>['kind'];
+type NotificationType = Doc<'notificationQueue'>['type'];
 
 /** Upsert a coalescing queue row for `(user, body, kind)` — bump an existing pending row, else insert. */
 async function enqueue(
   ctx: MutationCtx,
   params: {
-    userId: Id<'profiles'>
-    waterBodyId: Id<'waterBodies'>
-    reportId: Id<'reports'>
-    kind: QueueKind
-    type: NotificationType
-    flushAfter: number
-    now: number
+    userId: Id<'profiles'>;
+    waterBodyId: Id<'waterBodies'>;
+    reportId: Id<'reports'>;
+    kind: QueueKind;
+    type: NotificationType;
+    flushAfter: number;
+    now: number;
   },
 ): Promise<void> {
-  const coalesceKey = `${params.userId}:${params.waterBodyId}:${params.kind}`
+  const coalesceKey = `${params.userId}:${params.waterBodyId}:${params.kind}`;
   const existing = await ctx.db
     .query('notificationQueue')
     .withIndex('by_coalesce', (q) => q.eq('coalesceKey', coalesceKey))
-    .first()
+    .first();
   if (existing) {
     await ctx.db.patch(existing._id, {
       count: existing.count + 1,
       latestReportId: params.reportId,
       flushAfter: Math.min(existing.flushAfter, params.flushAfter),
-    })
-    return
+    });
+    return;
   }
   await ctx.db.insert('notificationQueue', {
     userId: params.userId,
@@ -71,7 +71,7 @@ async function enqueue(
     count: 1,
     flushAfter: params.flushAfter,
     createdAt: params.now,
-  })
+  });
 }
 
 /**
@@ -84,21 +84,21 @@ export async function enqueueReportNotifications(
   ctx: MutationCtx,
   report: Doc<'reports'>,
 ): Promise<void> {
-  const now = Date.now()
-  const body = await ctx.db.get(report.waterBodyId)
-  if (!body) return
-  const centroid = body.centroid
+  const now = Date.now();
+  const body = await ctx.db.get(report.waterBodyId);
+  if (!body) return;
+  const centroid = body.centroid;
 
   // 1. Favorites — notify anyone who favorited this body (any distance), default on.
   const favorites = await ctx.db
     .query('waterBodyFavorites')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', report.waterBodyId))
-    .collect()
+    .collect();
   for (const fav of favorites) {
-    if (fav.userId === report.authorId) continue
-    const user = await ctx.db.get(fav.userId)
-    if (!user) continue
-    if (user.status !== 'active' || !user.notificationPrefs.favoriteReport) continue
+    if (fav.userId === report.authorId) continue;
+    const user = await ctx.db.get(fav.userId);
+    if (!user) continue;
+    if (user.status !== 'active' || !user.notificationPrefs.favoriteReport) continue;
     await enqueue(ctx, {
       userId: fav.userId,
       waterBodyId: report.waterBodyId,
@@ -107,21 +107,21 @@ export async function enqueueReportNotifications(
       type: 'favorite_report',
       flushAfter: now + DEBOUNCE_MS,
       now,
-    })
+    });
   }
 
   // 2 & 3. Digest (all within X₁) + great (great report within X₂) — the per-report profile scan.
-  const isGreat = report.skateQuality === 'great'
-  const digestFlushAfter = nextZonedHourMs(now, DIGEST_HOUR, DIGEST_TIMEZONE)
-  const profiles = await ctx.db.query('profiles').collect()
+  const isGreat = report.skateQuality === 'great';
+  const digestFlushAfter = nextZonedHourMs(now, DIGEST_HOUR, DIGEST_TIMEZONE);
+  const profiles = await ctx.db.query('profiles').collect();
   for (const p of profiles) {
-    if (p._id === report.authorId || p.status !== 'active') continue
+    if (p._id === report.authorId || p.status !== 'active') continue;
     const bands: DriveTimeBands = {
       band30: p.cachedIsochrones?.band30 as DriveTimeBands['band30'],
       band60: p.cachedIsochrones?.band60 as DriveTimeBands['band60'],
       outerRadiusMeters: p.outerRadiusMeters,
-    }
-    const band = bandForCoord(centroid, bands, p.homeCoord)
+    };
+    const band = bandForCoord(centroid, bands, p.homeCoord);
 
     if (
       p.notificationPrefs.nearbyReportDigest &&
@@ -136,7 +136,7 @@ export async function enqueueReportNotifications(
         type: 'nearby_report_digest',
         flushAfter: digestFlushAfter,
         now,
-      })
+      });
     }
 
     if (
@@ -153,7 +153,7 @@ export async function enqueueReportNotifications(
         type: 'great_report_nearby',
         flushAfter: now + DEBOUNCE_MS,
         now,
-      })
+      });
     }
   }
 }
@@ -173,21 +173,21 @@ export async function enqueueReportNotifications(
 export const flushNotificationQueue = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const now = Date.now()
+    const now = Date.now();
     const due = await ctx.db
       .query('notificationQueue')
       .withIndex('by_flush', (q) => q.lte('flushAfter', now))
-      .collect()
+      .collect();
 
     // Digest rows accumulate per user into a single consolidated notification; fav/great deliver 1:1.
-    const digestByUser = new Map<Id<'profiles'>, Doc<'notificationQueue'>[]>()
-    let delivered = 0
+    const digestByUser = new Map<Id<'profiles'>, Doc<'notificationQueue'>[]>();
+    let delivered = 0;
     for (const row of due) {
       if (row.kind === 'digest') {
-        const rows = digestByUser.get(row.userId)
-        if (rows) rows.push(row)
-        else digestByUser.set(row.userId, [row])
-        continue
+        const rows = digestByUser.get(row.userId);
+        if (rows) rows.push(row);
+        else digestByUser.set(row.userId, [row]);
+        continue;
       }
       await ctx.db.insert('notifications', {
         userId: row.userId,
@@ -199,9 +199,9 @@ export const flushNotificationQueue = internalMutation({
           coalesceKey: row.coalesceKey,
         },
         createdAt: now,
-      })
-      await ctx.db.delete(row._id)
-      delivered++
+      });
+      await ctx.db.delete(row._id);
+      delivered++;
     }
 
     // One consolidated digest per user: enumerate the bodies (each with its own coalesced count),
@@ -211,17 +211,17 @@ export const flushNotificationQueue = internalMutation({
         waterBodyId: r.waterBodyId,
         reportId: r.latestReportId,
         count: r.count,
-      }))
-      const totalCount = bodies.reduce((sum, b) => sum + b.count, 0)
+      }));
+      const totalCount = bodies.reduce((sum, b) => sum + b.count, 0);
       await ctx.db.insert('notifications', {
         userId,
         type: 'nearby_report_digest',
         payload: { bodies, totalCount, coalesceKey: `${userId}:digest` },
         createdAt: now,
-      })
-      for (const r of rows) await ctx.db.delete(r._id)
-      delivered++
+      });
+      for (const r of rows) await ctx.db.delete(r._id);
+      delivered++;
     }
-    return { delivered }
+    return { delivered };
   },
-})
+});

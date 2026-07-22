@@ -12,28 +12,28 @@
  * behind them — an admin can already graduate a recurring hazard during Phase 9.
  */
 
-import { type HazardShape, hazardBbox, isValidHazardShape } from '@skating/core'
-import { ConvexError, v } from 'convex/values'
-import type { Doc, Id } from './_generated/dataModel'
-import { type MutationCtx, mutation, query } from './_generated/server'
-import { requireRole } from './lib/auth'
-import { resolveSurvivor } from './lib/bodies'
-import { BODY_FEATURE_TYPES } from './lib/enums'
-import { HAZARD_GEOMETRY_KINDS } from './lib/hazardValidators'
-import { geoJson, literals } from './lib/validators'
+import { type HazardShape, hazardBbox, isValidHazardShape } from '@skating/core';
+import { ConvexError, v } from 'convex/values';
+import type { Doc, Id } from './_generated/dataModel';
+import { type MutationCtx, mutation, query } from './_generated/server';
+import { requireRole } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
+import { BODY_FEATURE_TYPES } from './lib/enums';
+import { HAZARD_GEOMETRY_KINDS } from './lib/hazardValidators';
+import { geoJson, literals } from './lib/validators';
 
 /** Active known features for a body — rendered alongside hazards with distinct styling. */
 export const listForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    const body = await resolveSurvivor(ctx, waterBodyId)
-    if (!body) return []
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return [];
     return ctx.db
       .query('bodyFeatures')
       .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', body._id).eq('active', true))
-      .collect()
+      .collect();
   },
-})
+});
 
 /** Create a known feature directly (admin/seed path). */
 export const create = mutation({
@@ -50,18 +50,18 @@ export const create = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'admin')
-    if (args.reason.trim().length === 0) throw new ConvexError('A reason is required')
-    const body = await resolveSurvivor(ctx, args.waterBodyId)
-    if (!body) throw new ConvexError('Water body not found')
+    const actor = await requireRole(ctx, 'admin');
+    if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const body = await resolveSurvivor(ctx, args.waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
 
     // An explicit `point_radius` with no radius would otherwise fall through to the generic "Invalid
     // body-feature geometry" from the shape gate — surface the actual missing field instead.
     if (args.geometryKind === 'point_radius' && args.radiusMeters === undefined) {
-      throw new ConvexError('radiusMeters is required for point_radius body features')
+      throw new ConvexError('radiusMeters is required for point_radius body features');
     }
     const geometryKind =
-      args.geometryKind ?? (args.radiusMeters !== undefined ? 'point_radius' : 'polygon')
+      args.geometryKind ?? (args.radiusMeters !== undefined ? 'point_radius' : 'polygon');
     const id = await insertFeature(ctx, {
       waterBodyId: body._id,
       type: args.type,
@@ -71,11 +71,11 @@ export const create = mutation({
       ...(args.bufferMeters !== undefined ? { bufferMeters: args.bufferMeters } : {}),
       ...(args.note !== undefined ? { note: args.note } : {}),
       addedByUserId: actor._id,
-    })
-    await audit(ctx, actor._id, 'promote_body_feature', id, args.reason, { source: 'create' })
-    return id
+    });
+    await audit(ctx, actor._id, 'promote_body_feature', id, args.reason, { source: 'create' });
+    return id;
   },
-})
+});
 
 /**
  * Graduate a recurring hazard into a permanent body feature (D53).
@@ -95,16 +95,16 @@ export const promote = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { hazardId, type, note, reason }) => {
-    const actor = await requireRole(ctx, 'admin')
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required')
-    const hazard = await ctx.db.get(hazardId)
-    if (!hazard) throw new ConvexError('Hazard not found')
+    const actor = await requireRole(ctx, 'admin');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const hazard = await ctx.db.get(hazardId);
+    if (!hazard) throw new ConvexError('Hazard not found');
     // A second promote would insert a *second* active feature while `promotedToFeatureId` only ever
     // records the last one — leaving the first feature orphaned and active with no automated cleanup,
     // rendering alongside the hazard once the newer feature is demoted. One hazard promotes once; demote
     // first to re-promote.
     if (hazard.promotedToFeatureId !== undefined) {
-      throw new ConvexError('Hazard is already promoted to a body feature')
+      throw new ConvexError('Hazard is already promoted to a body feature');
     }
 
     const id = await insertFeature(ctx, {
@@ -119,14 +119,14 @@ export const promote = mutation({
       ...(note !== undefined ? { note } : {}),
       addedByUserId: actor._id,
       promotedFromHazardId: hazardId,
-    })
+    });
     // The feature carries the warning now, permanently and without decay — so hide the source hazard
     // via the supersession axis, NOT by archiving it (which would read as a community all-clear, D3).
-    await ctx.db.patch(hazardId, { promotedToFeatureId: id })
-    await audit(ctx, actor._id, 'promote_body_feature', id, reason, { hazardId })
-    return id
+    await ctx.db.patch(hazardId, { promotedToFeatureId: id });
+    await audit(ctx, actor._id, 'promote_body_feature', id, reason, { hazardId });
+    return id;
   },
-})
+});
 
 /**
  * Reversible demotion — flips `active` off, never hard-deletes (D53). If the feature was promoted from
@@ -136,25 +136,25 @@ export const promote = mutation({
 export const demote = mutation({
   args: { bodyFeatureId: v.id('bodyFeatures'), reason: v.string() },
   handler: async (ctx, { bodyFeatureId, reason }) => {
-    const actor = await requireRole(ctx, 'admin')
-    if (reason.trim().length === 0) throw new ConvexError('A reason is required')
-    const feature = await ctx.db.get(bodyFeatureId)
-    if (!feature) throw new ConvexError('Body feature not found')
+    const actor = await requireRole(ctx, 'admin');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const feature = await ctx.db.get(bodyFeatureId);
+    if (!feature) throw new ConvexError('Body feature not found');
 
-    await ctx.db.patch(bodyFeatureId, { active: false })
+    await ctx.db.patch(bodyFeatureId, { active: false });
     if (feature.promotedFromHazardId) {
-      const source = await ctx.db.get(feature.promotedFromHazardId)
+      const source = await ctx.db.get(feature.promotedFromHazardId);
       // Only clear supersession if this feature is still the one superseding it — a hazard promoted,
       // demoted, then re-promoted elsewhere must not be resurfaced by the stale demotion.
       if (source?.promotedToFeatureId === bodyFeatureId) {
-        await ctx.db.patch(feature.promotedFromHazardId, { promotedToFeatureId: undefined })
+        await ctx.db.patch(feature.promotedFromHazardId, { promotedToFeatureId: undefined });
       }
     }
     await audit(ctx, actor._id, 'demote_body_feature', bodyFeatureId, reason, {
       priorActive: feature.active,
-    })
+    });
   },
-})
+});
 
 async function insertFeature(
   ctx: MutationCtx,
@@ -176,18 +176,18 @@ async function insertFeature(
           geometryKind: args.geometryKind,
           geometry: args.geometry as HazardShape['geometry'],
           ...(args.bufferMeters !== undefined ? { bufferMeters: args.bufferMeters } : {}),
-        }
+        };
 
   // Same single gate hazards use. `create` takes raw GeoJSON from an admin, and a malformed ring or a
   // MultiLineString would otherwise reach `turf/buffer` and throw mid-mutation or store a junk bbox.
-  if (!isValidHazardShape(shape)) throw new ConvexError('Invalid body-feature geometry')
+  if (!isValidHazardShape(shape)) throw new ConvexError('Invalid body-feature geometry');
 
   return ctx.db.insert('bodyFeatures', {
     ...args,
     bbox: hazardBbox(shape),
     active: true,
     createdAt: Date.now(),
-  })
+  });
 }
 
 async function audit(
@@ -206,5 +206,5 @@ async function audit(
     reason,
     metadata,
     createdAt: Date.now(),
-  })
+  });
 }

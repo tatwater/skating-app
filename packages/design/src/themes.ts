@@ -10,7 +10,7 @@
  * tokens in sync across both themes and re-run the contrast test before shipping.
  */
 
-import { danger, ice, neutral, success, warning } from './colors'
+import { danger, ice, neutral, success, warning } from './colors';
 
 /** The high-contrast, bright-outdoor theme (default). */
 export const light = {
@@ -43,7 +43,7 @@ export const light = {
   /** Fresh / good-condition / confirmation fill. */
   success: success[700],
   successForeground: '#ffffff',
-} as const
+} as const;
 
 /** The dark theme — evening planning at home. */
 export const dark = {
@@ -63,15 +63,15 @@ export const dark = {
   warningForeground: neutral[950],
   success: success[700],
   successForeground: '#ffffff',
-} as const
+} as const;
 
-export const themes = { light, dark } as const
+export const themes = { light, dark } as const;
 
 /** Available theme names (D34). */
-export const THEME_NAMES = ['light', 'dark'] as const
-export type ThemeName = (typeof THEME_NAMES)[number]
+export const THEME_NAMES = ['light', 'dark'] as const;
+export type ThemeName = (typeof THEME_NAMES)[number];
 
 /** A semantic color role (e.g. `'primary'`, `'foregroundMuted'`). */
-export type SemanticColorToken = keyof typeof light
+export type SemanticColorToken = keyof typeof light;
 /** A resolved theme: every semantic role → a hex string. */
-export type Theme = Record<SemanticColorToken, string>
+export type Theme = Record<SemanticColorToken, string>;
