@@ -5,6 +5,7 @@ import * as Notifications from 'expo-notifications';
 import { Slot, usePathname, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef } from 'react';
 import { AppState, View } from 'react-native';
+import { BackToLakeButton } from '../../../src/components/BackToLakeButton';
 import { HazardBanner } from '../../../src/components/HazardBanner';
 import { HazardCapture } from '../../../src/components/HazardCapture';
 import { LakeSearch } from '../../../src/components/LakeSearch';
@@ -228,6 +229,7 @@ function MapLayoutInner() {
           warning, and the flag button + on-ice control have to stay reachable while a drawer is open. */}
       <HazardCapture />
       <OnIceModeControl />
+      <BackToLakeButton />
       <HazardBanner />
     </View>
   );
