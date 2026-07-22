@@ -89,6 +89,18 @@ describe('flushHazardItem — hazards', () => {
     expect(keys).toEqual(['key-1', 'key-1'])
   })
 
+  // The server stamps `firstReportedAt` from `capturedAt`, so a draft that flushes long after the skate
+  // ends still lands inside the skate window for the D55 auto-bundle. Sending flush time here would drop
+  // it — the same signal-recovery-clock bug the confirmation path avoids with `observedAt`.
+  it('forwards the capture time, not the flush time', async () => {
+    const { eff } = effects()
+    const item = hazard({ capturedAt: NOW - 3_600_000 })
+    await flushHazardItem(item, eff, NOW)
+    expect(eff.createHazard).toHaveBeenCalledWith(
+      expect.objectContaining({ capturedAt: NOW - 3_600_000 }),
+    )
+  })
+
   it('resolves the lake from the capture coord when none was known on-device', async () => {
     const { eff } = effects()
     const item = hazard({ waterBodyId: undefined, coord: AT })

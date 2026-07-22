@@ -100,6 +100,7 @@ function hazardEffects(): HazardFlushEffects {
           : {}),
         ...(input.description !== undefined ? { description: input.description } : {}),
         photoIds: input.photoIds as Id<'photos'>[],
+        capturedAt: input.capturedAt,
       }),
     confirmHazard: async (input) => {
       await convex.mutation(api.hazardConfirmations.confirm, {

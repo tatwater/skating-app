@@ -72,6 +72,15 @@ export const hazardCreateArgs = {
    * confirm loop then has to retire both. Omitted by web/online callers.
    */
   idempotencyKey: v.optional(v.string()),
+  /**
+   * On-ice capture time (Phase 9 offline / D55). A hazard flagged from the ice is stamped when it was
+   * *captured*, not when its offline draft finally flushes — otherwise a hazard captured mid-skate but
+   * flushed after the skater leaves the ice reads as "reported after the skate ended" and the D55
+   * auto-bundle (`listBundleCandidates`, keyed on `firstReportedAt`) silently drops it. Clamped to the
+   * server clock so a skewed device can't stamp a hazard in the future. Omitted by online callers, for
+   * whom capture and create are the same instant.
+   */
+  capturedAt: v.optional(v.number()),
   ...inReportHazardArgs,
 }
 
@@ -118,6 +127,7 @@ export async function insertHazard(
     description?: string
     photoIds?: Id<'photos'>[]
     idempotencyKey?: string
+    capturedAt?: number
   },
   authorId: Id<'profiles'>,
   now: number,
@@ -153,7 +163,10 @@ export async function insertHazard(
     status: lifecycle.status,
     moderationStatus: 'visible',
     healingState: lifecycle.healingState,
-    firstReportedAt: now,
+    // Capture time for an offline-flushed hazard, else now — clamped to the server clock (mirrors the
+    // `observedAt` handling for confirmations) so an offline draft that flushes after the skate ends is
+    // still stamped inside the skate window for the D55 auto-bundle.
+    firstReportedAt: Math.min(args.capturedAt ?? now, now),
     lastConfirmedAt: lifecycle.lastConfirmedAt,
     confirmCount: lifecycle.confirmCount,
     goneCount: lifecycle.goneCount,

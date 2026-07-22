@@ -162,6 +162,10 @@ export interface HazardFlushEffects {
     shape: HazardShape
     description?: string
     photoIds: string[]
+    // The on-ice capture moment, forwarded so a draft that flushes after the skate ends is still
+    // stamped `firstReportedAt` at capture time — the D55 auto-bundle keys on it. Analogous to a
+    // confirmation's `observedAt`: neither must reset to signal-recovery time.
+    capturedAt: number
   }): Promise<string>
   confirmHazard(input: {
     hazardId: string
@@ -277,6 +281,7 @@ export async function flushHazardItem(
       shape: h.shape,
       ...(h.description !== undefined ? { description: h.description } : {}),
       photoIds,
+      capturedAt: h.capturedAt,
     })
     await save({ status: 'done' })
     return { ok: true, item: current, hazardId }

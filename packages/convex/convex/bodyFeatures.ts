@@ -55,6 +55,11 @@ export const create = mutation({
     const body = await resolveSurvivor(ctx, args.waterBodyId)
     if (!body) throw new ConvexError('Water body not found')
 
+    // An explicit `point_radius` with no radius would otherwise fall through to the generic "Invalid
+    // body-feature geometry" from the shape gate — surface the actual missing field instead.
+    if (args.geometryKind === 'point_radius' && args.radiusMeters === undefined) {
+      throw new ConvexError('radiusMeters is required for point_radius body features')
+    }
     const geometryKind =
       args.geometryKind ?? (args.radiusMeters !== undefined ? 'point_radius' : 'polygon')
     const id = await insertFeature(ctx, {
@@ -94,6 +99,13 @@ export const promote = mutation({
     if (reason.trim().length === 0) throw new ConvexError('A reason is required')
     const hazard = await ctx.db.get(hazardId)
     if (!hazard) throw new ConvexError('Hazard not found')
+    // A second promote would insert a *second* active feature while `promotedToFeatureId` only ever
+    // records the last one — leaving the first feature orphaned and active with no automated cleanup,
+    // rendering alongside the hazard once the newer feature is demoted. One hazard promotes once; demote
+    // first to re-promote.
+    if (hazard.promotedToFeatureId !== undefined) {
+      throw new ConvexError('Hazard is already promoted to a body feature')
+    }
 
     const id = await insertFeature(ctx, {
       waterBodyId: hazard.waterBodyId,

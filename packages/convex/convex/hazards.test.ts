@@ -467,6 +467,26 @@ describe('hazards.listBundleCandidates (D55)', () => {
     expect(candidates).toHaveLength(0)
   })
 
+  test('bundles an offline hazard captured during the skate but flushed after it ended', async () => {
+    const t = harness()
+    const author = await seedUser(t, 'author')
+    const waterBodyId = await seedBody(t)
+    const now = Date.now()
+    const skateEndTime = now - 45 * 60 * 1000 // skate ended 45 min ago
+    const capturedAt = now - 90 * 60 * 1000 // hazard captured mid-skate, 90 min ago
+    // Flush happens *now* (signal came back after leaving the ice) — but capturedAt lands it in-window.
+    const hazardId = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { idempotencyKey: 'k', capturedAt }),
+    )
+
+    const candidates = await author.as.query(api.hazards.listBundleCandidates, {
+      waterBodyId,
+      skateEndTime,
+    })
+    expect(candidates.map((c) => c._id)).toEqual([hazardId])
+  })
+
   test('excludes hazards outside the skate window', async () => {
     const t = harness()
     const author = await seedUser(t, 'author')

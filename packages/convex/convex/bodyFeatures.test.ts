@@ -164,6 +164,23 @@ describe('bodyFeatures.create', () => {
     ).rejects.toThrow(/geometry/)
   })
 
+  test('names the missing radius when point_radius is explicit', async () => {
+    const t = harness()
+    const admin = await seedUser(t, 'admin', 'admin')
+    const waterBodyId = await seedBody(t)
+    // An admin who explicitly asked for point_radius but forgot the radius gets the actual missing
+    // field, not the generic "invalid geometry" from the shape gate.
+    await expect(
+      admin.as.mutation(api.bodyFeatures.create, {
+        waterBodyId,
+        type: 'constriction',
+        geometryKind: 'point_radius',
+        geometry: POINT,
+        reason: 'narrow channel',
+      }),
+    ).rejects.toThrow(/radiusMeters is required/)
+  })
+
   test('requires a non-blank reason', async () => {
     const t = harness()
     const admin = await seedUser(t, 'admin', 'admin')
@@ -248,6 +265,35 @@ describe('bodyFeatures.promote', () => {
     // And it drops out of the map read path in favour of the feature.
     const listed = await admin.as.query(api.hazards.listForBody, { waterBodyId })
     expect(listed).toHaveLength(0)
+  })
+
+  test('refuses to promote a hazard that is already promoted', async () => {
+    const t = harness()
+    const admin = await seedUser(t, 'admin', 'admin')
+    const waterBodyId = await seedBody(t)
+    const hazardId = await seedHazard(t, waterBodyId)
+
+    const featureId = await admin.as.mutation(api.bodyFeatures.promote, {
+      hazardId,
+      type: 'recurring_pressure_ridge',
+      reason: 'recurs annually',
+    })
+
+    // A second promote would strand the first feature: `promotedToFeatureId` only records the latest,
+    // so both features go active and demoting the second resurfaces the hazard alongside the orphaned
+    // first. The guard blocks it, and the source still points at the one real feature.
+    await expect(
+      admin.as.mutation(api.bodyFeatures.promote, {
+        hazardId,
+        type: 'recurring_pressure_ridge',
+        reason: 'promoting again by mistake',
+      }),
+    ).rejects.toThrow(/already promoted/)
+
+    const features = await admin.as.query(api.bodyFeatures.listForBody, { waterBodyId })
+    expect(features).toHaveLength(1)
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId))
+    expect(hazard?.promotedToFeatureId).toBe(featureId)
   })
 
   // The regression this whole schema change fixed: a polyline-traced recurring ridge — the flagship
