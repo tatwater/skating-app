@@ -402,7 +402,10 @@ export default defineSchema({
   })
     .index('by_hazard', ['hazardId'])
     // One confirmation per user per hazard per window — re-confirming updates rather than stacking.
-    .index('by_hazard_and_user', ['hazardId', 'userId']),
+    .index('by_hazard_and_user', ['hazardId', 'userId'])
+    // A user's confirmations across all hazards — the `Watchdog` badge counts distinct *others'*
+    // hazards this user has acted on (D50, Phase 6).
+    .index('by_user', ['userId']),
 
   // Known seasonal water-body hazards — persistent, NOT decayed, no confirmation loop (D53).
   // Springs/current, constrictions and bridges/narrows are weaker every season regardless of cold, and

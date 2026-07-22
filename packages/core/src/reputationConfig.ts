@@ -80,8 +80,8 @@ export const TRUST_CLASS_LABELS: Record<TrustClass, string> = {
  */
 export const POINT_WEIGHTS = {
   report_submitted: 2, // baseline observation; cheap on purpose
-  photo_evidence: 3, // report carries ≥1 photo; once per report
-  measured_thickness: 3, // report carries ≥1 measured (not estimated) reading; once per report
+  photo_evidence: 3, // report carries ≥1 photo; once per report — self-verifying evidence
+  measured_thickness: 2, // report carries ≥1 measured (not estimated) reading; once per report — take-my-word rigor, so below photo
   helpful_thumb: 5, // a peer thumbed your report or hazard helpful
   report_corroborated: 4, // independent in-window same-body agreement (both authors)
   hazard_confirmed: 1, // the confirmer's helpful act

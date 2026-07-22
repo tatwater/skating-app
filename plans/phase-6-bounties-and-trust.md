@@ -54,7 +54,7 @@ Phase 7 admin UI can bind controls to them and the founder can retune without an
    |---|---|---|---|
    | `report_submitted` | **+2** | report author | baseline observation; cheap on purpose |
    | `photo_evidence` | **+3** | report author | report carries ≥1 photo; **once per report** |
-   | `measured_thickness` | **+3** | report author | report carries ≥1 **measured** (not estimated) reading; **once per report** — rewards rigor |
+   | `measured_thickness` | **+2** | report author | report carries ≥1 **measured** (not estimated) reading; **once per report** — rewards rigor, but below `photo_evidence` since a claimed reading is take-my-word, not self-verifying |
    | `helpful_thumb` | **+5** | target author | a peer thumbed your **report or hazard** helpful |
    | `report_corroborated` | **+4** | both authors | independent in-window agreement; capped (below) |
    | `hazard_confirmed` | **+1** | the **confirmer** | *existing* — you did a helpful act confirming |

@@ -12,14 +12,18 @@
 import {
   bandForCoord,
   CONDITION_SOURCES,
+  CORROBORATION_MAX_PER_REPORT,
+  CORROBORATION_WINDOW_MS,
   type DriveTimeBands,
   type FeedCardData,
+  hasMeasuredThickness,
   ICE_TYPES,
   isMinor,
   type LatLng,
   matchesFilters,
   PRECIP_TYPES,
   type ReportInput,
+  reportsAgree,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
@@ -30,7 +34,13 @@ import {
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
 import {
   attachHazardsToReport,
@@ -44,6 +54,7 @@ import { bumpContributionCount } from './lib/contributionCounts';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
+import { awardPointEvent, checkAndAwardBadges } from './lib/reputation';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
 import { loadFavoriteBodyIds } from './waterBodyFavorites';
@@ -244,14 +255,129 @@ export const create = mutation({
     // without scanning their history (D13). Moderation transitions adjust it symmetrically.
     await bumpContributionCount(ctx, profile._id, 'reportCount', 1);
 
-    // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
-    // coalescing queue — the cron flushes them (decision #4). Read-back keeps `enqueue` off the raw args.
+    // Reputation (D50): per-report author awards + retroactive corroboration (both authors, capped),
+    // then a single badge recompute per affected author. Read the inserted doc once (photoIds /
+    // iceThickness / iceTypes / skateQuality drive the awards + the "agrees" test).
     const inserted = await ctx.db.get(reportId);
-    if (inserted) await enqueueReportNotifications(ctx, inserted);
+    if (inserted) {
+      await awardReportCreationPoints(ctx, inserted);
+      const corroboratedAuthorIds = await runCorroboration(ctx, inserted);
+      await checkAndAwardBadges(ctx, inserted.authorId);
+      for (const authorId of corroboratedAuthorIds) await checkAndAwardBadges(ctx, authorId);
+
+      // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
+      // coalescing queue — the cron flushes them (decision #4).
+      await enqueueReportNotifications(ctx, inserted);
+    }
 
     return reportId;
   },
 });
+
+/**
+ * Award a new report's author their per-report point events (D50 decision 2), each **once per report**:
+ * `report_submitted` (baseline), `photo_evidence` (≥1 photo — self-verifying), and `measured_thickness`
+ * (≥1 measured, not estimated, reading — rewards rigor). Weights are single-sourced in `@skating/core`.
+ */
+async function awardReportCreationPoints(ctx: MutationCtx, report: Doc<'reports'>): Promise<void> {
+  await awardPointEvent(ctx, {
+    userId: report.authorId,
+    reason: 'report_submitted',
+    refId: report._id,
+  });
+  if (report.photoIds.length > 0) {
+    await awardPointEvent(ctx, {
+      userId: report.authorId,
+      reason: 'photo_evidence',
+      refId: report._id,
+    });
+  }
+  if (hasMeasuredThickness(report)) {
+    await awardPointEvent(ctx, {
+      userId: report.authorId,
+      reason: 'measured_thickness',
+      refId: report._id,
+    });
+  }
+}
+
+/**
+ * Corroboration (D50 decision 3). Scan prior **visible** reports on the same body whose skate-end is
+ * within `CORROBORATION_WINDOW` of the new one, and for each that **agrees** (`reportsAgree` — quality
+ * within one step OR a shared ice type), award `report_corroborated` to **both** the new author and the
+ * prior author (a new agreeing report retroactively corroborates the older one), and drop a
+ * `report_rated`-style notice to the prior author.
+ *
+ * **Self-corroboration is excluded** (same author never corroborates themselves), and the count is
+ * **capped at `CORROBORATION_MAX_PER_REPORT`** so a popular lake can't inflate one reporter (D50).
+ * Purely additive in Phase 6 — the contradiction penalty needs weather-since and lands in Phase 10.
+ *
+ * Returns the distinct prior-author ids awarded, so the caller recomputes their badges once.
+ * Alpha-scale scan (a lake gets a handful of reports per window); Phase 7 can cap/paginate if needed.
+ */
+async function runCorroboration(
+  ctx: MutationCtx,
+  report: Doc<'reports'>,
+): Promise<Set<Id<'profiles'>>> {
+  const lower = report.skateEndTime - CORROBORATION_WINDOW_MS;
+  const upper = report.skateEndTime + CORROBORATION_WINDOW_MS;
+  const candidates = await ctx.db
+    .query('reports')
+    .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+      q
+        .eq('waterBodyId', report.waterBodyId)
+        .eq('moderationStatus', 'visible')
+        .gte('skateEndTime', lower),
+    )
+    .order('desc') // newest-in-window first — the reports most likely to share the freeze cycle
+    .collect();
+
+  const priorAuthorIds = new Set<Id<'profiles'>>();
+  let counted = 0;
+  for (const prior of candidates) {
+    if (counted >= CORROBORATION_MAX_PER_REPORT) break;
+    if (prior._id === report._id) continue; // the just-inserted report itself
+    if (prior.skateEndTime > upper) continue; // outside the far edge of the window
+    if (prior.authorId === report.authorId) continue; // self-corroboration excluded
+    if (!reportsAgree(report, prior)) continue;
+
+    counted++;
+    priorAuthorIds.add(prior.authorId);
+    await awardPointEvent(ctx, {
+      userId: report.authorId,
+      reason: 'report_corroborated',
+      refId: report._id,
+    });
+    await awardPointEvent(ctx, {
+      userId: prior.authorId,
+      reason: 'report_corroborated',
+      refId: prior._id,
+    });
+    await notifyCorroboration(ctx, prior, report);
+  }
+  return priorAuthorIds;
+}
+
+/**
+ * Tell a prior report's author their report was independently corroborated by a fresh one — reuses the
+ * `report_rated` channel (a "report_rated-style" notice, decision 3), gated on `reportRated` prefs +
+ * active status. In-app row; push stays deferred repo-wide.
+ */
+async function notifyCorroboration(
+  ctx: MutationCtx,
+  priorReport: Doc<'reports'>,
+  byReport: Doc<'reports'>,
+): Promise<void> {
+  const author = await ctx.db.get(priorReport.authorId);
+  if (!author) return;
+  if (author.status !== 'active' || !author.notificationPrefs.reportRated) return;
+  await ctx.db.insert('notifications', {
+    userId: priorReport.authorId,
+    type: 'report_rated',
+    payload: { kind: 'corroboration', reportId: priorReport._id, byReportId: byReport._id },
+    createdAt: Date.now(),
+  });
+}
 
 /**
  * A water body's report feed — newest **skate-end time** first (D28), **paginated** for infinite
