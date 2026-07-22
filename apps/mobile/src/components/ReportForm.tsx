@@ -728,7 +728,9 @@ export function ReportForm({
 
       {prefilledFromDwell ? (
         <Text color="$foregroundMuted" fontSize={12}>
-          Filled in from your time on the ice here today — edit if it's off.
+          {suggestedStart !== undefined
+            ? "Filled in from your time on the ice here today — edit if it's off."
+            : "End time filled from your time on the ice here today — edit if it's off."}
         </Text>
       ) : null}
 

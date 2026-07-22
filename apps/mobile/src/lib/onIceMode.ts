@@ -112,7 +112,11 @@ export function ingestOnIceFix(fix: DirectionalFix): void {
     session = { alerted: result.alerted, approached: result.approached, banner: result.banner };
   } else {
     session = { alerted: result.alerted, approached: result.approached, banner: null };
-    if (result.fired) void fireHazardNotification(result.fired);
+    // Only fire while armed. `disarmOnIceMode` flips `armed` synchronously but stops the background task
+    // asynchronously, so the OS can still deliver a straggler fix in that gap — this guard keeps it from
+    // surprising someone who just tapped "Stop" with a fresh notification. (A background fix only reaches
+    // here while the task is running, i.e. an armed session; the guard just covers the teardown race.)
+    if (armed && result.fired) void fireHazardNotification(result.fired);
   }
   emit();
 }

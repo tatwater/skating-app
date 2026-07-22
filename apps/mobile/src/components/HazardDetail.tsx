@@ -64,9 +64,11 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
 
   // For the `?action=confirm` deep link: scroll the confirm control into view once it lays out. The
   // section sits below the fold in the drawer's scroll view; `onLayout` gives us its offset and the
-  // drawer does the scroll. A ref (not state) guards it to a single scroll — a vote patches the
-  // hazard and re-lays-out the drawer, and we must not yank a reading skater back down each time.
-  const confirmScrolledRef = useRef(false);
+  // drawer does the scroll. The ref holds the hazard id we last scrolled for (not a bare boolean): a
+  // vote patches the hazard and re-lays-out the drawer, and we must not yank a reading skater back down
+  // each time — but a *different* hazard deep-linked into the already-open drawer (a second on-ice
+  // notification; `router.navigate` reuses the route without remounting) must scroll afresh.
+  const confirmScrolledForRef = useRef<string | null>(null);
 
   const [pendingHealed, setPendingHealed] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -249,8 +251,8 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       ) : archived ? null : (
         <View
           onLayout={(e) => {
-            if (action === 'confirm' && !confirmScrolledRef.current) {
-              confirmScrolledRef.current = true;
+            if (action === 'confirm' && confirmScrolledForRef.current !== hazardId) {
+              confirmScrolledForRef.current = hazardId;
               // `layout.y` is relative to the root stack, itself ~16 px (container padding) into the
               // scroll content — so scrolling to `y` lands the section just below the top edge.
               scrollToY(Math.max(0, e.nativeEvent.layout.y));
