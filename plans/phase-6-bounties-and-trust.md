@@ -361,8 +361,20 @@ their consumers:
   **stateless** (`selectRecommended` caps ≤2 bodies per fetch). The per-user impressions store +
   `acknowledgeRecommended` mutation (for the hard per-day cap + cross-fetch/day "don't repeat this lake"
   dedup) is a **fast-follow**: qualifying reports are vanishingly rare at alpha volume, so a flood can't
-  occur yet — build it when the feature proves it fires often enough to need pacing. A query can't write,
-  so it needs the read-query + ack-mutation split, not a change to the query alone.
+  occur yet — build it when the feature proves it fires often enough to need pacing.
+  - **Why it's not premature-built (2026-07-22 design call):** it guards a flood the alpha gate can't
+    produce, and it can't be validated without that volume — so building it now is speculative infra that
+    would rot. The right trigger is real data showing the feature feels spammy, not spare time.
+  - **Shape when we do build it.** A query can't write, so it's the **read-query + ack-mutation split**:
+    `feed.recommended` reads a per-user impressions store (recent `{userId, waterBodyId, at}` rows) to
+    subtract the day's shown bodies from the budget and exclude recently-shown lakes; the client calls
+    `acknowledgeRecommended` once it renders the cards to record them.
+  - **Build it FAIL-OPEN (non-negotiable design guardrail).** If the impression state is missing/uncertain
+    (double-render, StrictMode double-effect, offline, a second device, the card scrolled off below the
+    fold, a dropped ack), **show the card** — never suppress. The failure we're avoiding is the accounting
+    wrongly concluding "budget spent" and silently killing the whole feature, which is strictly worse than
+    occasionally re-showing one genuinely exceptional lake. Decide up front what "shown" means (rendered vs.
+    actually seen) and when the daily budget decrements, and bias every ambiguous case toward showing.
 - **Bounty map/browse at scale** — `bounties.listOpen` scans the bounded `by_status_expires` index and
   filters in JS (fine at alpha). A dedicated bounties **geospatial** instance is only needed if the live
   open-bounty set ever grows past the `OPEN_BOUNTY_SCAN_CAP` (200) — and unlike `listInViewport` it would
