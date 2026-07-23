@@ -179,7 +179,7 @@ describe('bounties.create', () => {
     await expect(
       requester.as.mutation(internal.bounties.createChecked, {
         waterBodyId,
-        weatherReopenedReportIds: [],
+        weatherReopenedReports: [],
       }),
     ).rejects.toThrow(/already has fresh eyes/);
   });
@@ -189,13 +189,33 @@ describe('bounties.create', () => {
     const requester = await seedUser(t, 'requester');
     const reporter = await seedUser(t, 'reporter');
     const waterBodyId = await seedBody(t);
-    const reportId = await seedReport(reporter, waterBodyId, Date.now() - 1 * HOUR);
-    // The same fresh suppressor, but the action flagged it weather-reopened — so it must NOT block.
+    const skateEndTime = Date.now() - 1 * HOUR;
+    const reportId = await seedReport(reporter, waterBodyId, skateEndTime);
+    // The same fresh suppressor, but the action flagged it weather-reopened (id + the timestamp its verdict
+    // was computed against) — so it must NOT block.
     const bountyId = await requester.as.mutation(internal.bounties.createChecked, {
       waterBodyId,
-      weatherReopenedReportIds: [reportId],
+      weatherReopenedReports: [{ reportId, skateEndTime }],
     });
     expect(bountyId).toBeTruthy();
+  });
+
+  test('createChecked drops a weather-reopen exemption whose skateEndTime changed since the verdict (§7c)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const skateEndTime = Date.now() - 1 * HOUR;
+    const reportId = await seedReport(reporter, waterBodyId, skateEndTime);
+    // The report was edited to a LATER skate time after the action computed its weather verdict against the
+    // OLD one. The shorter window can no longer justify the reopen, so the stale exemption (keyed on the old
+    // timestamp) must not match the current report — it suppresses again and the bounty is blocked.
+    await expect(
+      requester.as.mutation(internal.bounties.createChecked, {
+        waterBodyId,
+        weatherReopenedReports: [{ reportId, skateEndTime: skateEndTime - 3 * HOUR }],
+      }),
+    ).rejects.toThrow(/already has fresh eyes/);
   });
 
   test('weather that changed the ice reopens a bounty despite a suppressing report (§7c)', async () => {

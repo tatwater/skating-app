@@ -181,7 +181,11 @@ export const create = action({
     // against the reports as they exist at commit. That closes the read-in-action / write-in-mutation
     // TOCTOU (§7c): a suppressing report that lands mid-fetch is seen by the mutation, not the action,
     // and — absent from this reopened set — correctly blocks the bounty instead of slipping through.
-    const weatherReopenedReportIds: Id<'reports'>[] = [];
+    //
+    // Each exemption carries the `skateEndTime` the verdict was computed against: a report edited to a
+    // LATER skate time between here and the commit has a *shorter* weather window that may no longer
+    // justify the reopen, so `createChecked` only honors the exemption when the timestamp still matches.
+    const weatherReopenedReports: { reportId: Id<'reports'>; skateEndTime: number }[] = [];
     if (inputs) {
       for (const r of inputs.reports) {
         const summary = await resolveWeatherSince(ctx, inputs.lat, inputs.lng, r.skateEndTime, now);
@@ -197,12 +201,14 @@ export const create = action({
                 thawDegreeHours: BOUNTY_REOPEN_THAW_DEGREE_HOURS,
               })
             : false;
-        if (reopened) weatherReopenedReportIds.push(r.reportId);
+        if (reopened) {
+          weatherReopenedReports.push({ reportId: r.reportId, skateEndTime: r.skateEndTime });
+        }
       }
     }
     return ctx.runMutation(internal.bounties.createChecked, {
       waterBodyId,
-      weatherReopenedReportIds,
+      weatherReopenedReports,
     });
   },
 });
@@ -215,10 +221,16 @@ export const create = action({
 export const createChecked = internalMutation({
   args: {
     waterBodyId: v.id('waterBodies'),
-    /** Reports the action's weather pass determined are likely reopened (ice changed since); §7c. */
-    weatherReopenedReportIds: v.array(v.id('reports')),
+    /**
+     * Reports the action's weather pass determined are likely reopened (ice changed since), each tagged
+     * with the `skateEndTime` its weather window was computed against so the exemption can be revalidated
+     * against the current report at commit (§7c).
+     */
+    weatherReopenedReports: v.array(
+      v.object({ reportId: v.id('reports'), skateEndTime: v.number() }),
+    ),
   },
-  handler: async (ctx, { waterBodyId, weatherReopenedReportIds }) => {
+  handler: async (ctx, { waterBodyId, weatherReopenedReports }) => {
     const profile = await requireProfile(ctx);
     const now = Date.now();
     if (isMinor(profile.dateOfBirth, now)) {
@@ -231,14 +243,17 @@ export const createChecked = internalMutation({
     // Freshness gate (decision 8), re-evaluated **transactionally** here (§7c) rather than trusting the
     // action's snapshot: recompute the body's baseline suppressors from the reports *as they exist now*
     // and block on any the action did NOT clear as weather-reopened. Because weather only ever reopens
-    // (never creates) suppression, a suppressor absent from `weatherReopenedReportIds` is genuine fresh
-    // eyes — including a report that landed during the action's Open-Meteo round-trip, whose near-zero
-    // weather window means its baseline verdict already equals its weather-aware one. This closes the
-    // read-in-action / write-in-mutation race that could otherwise persist an ineligible bounty (+ fan
-    // out its notifications).
-    const reopened = new Set<Id<'reports'>>(weatherReopenedReportIds);
+    // (never creates) suppression, a suppressor absent from the reopened set is genuine fresh eyes —
+    // including a report that landed during the action's Open-Meteo round-trip, whose near-zero weather
+    // window means its baseline verdict already equals its weather-aware one. This closes the read-in-
+    // action / write-in-mutation race that could otherwise persist an ineligible bounty (+ fan out notices).
+    //
+    // The exemption is keyed on `reportId:skateEndTime`, not id alone: if a report's `skateEndTime` was
+    // edited later after the weather verdict was computed, its window is now shorter and may no longer
+    // justify the reopen, so the stale exemption is dropped and the (now-fresher) report suppresses again.
+    const reopened = new Set(weatherReopenedReports.map((r) => `${r.reportId}:${r.skateEndTime}`));
     const candidates = await suppressingCandidates(ctx, body, now);
-    if (candidates.some((c) => !reopened.has(c.reportId))) {
+    if (candidates.some((c) => !reopened.has(`${c.reportId}:${c.skateEndTime}`))) {
       throw new ConvexError('This lake already has fresh eyes — no bounty needed');
     }
 

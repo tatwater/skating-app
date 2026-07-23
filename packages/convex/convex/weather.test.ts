@@ -31,6 +31,11 @@ function square(half: number): Polygon {
   };
 }
 
+/** An authenticated caller — `getWeatherSinceForBody` gates on a signed-in identity (resource-abuse guard). */
+function asViewer(t: ReturnType<typeof convexTest>) {
+  return t.withIdentity({ subject: 'viewer' });
+}
+
 async function seedBody(t: ReturnType<typeof convexTest>, centroid = { lat: 44.0, lng: -72.0 }) {
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
@@ -81,7 +86,7 @@ describe('weather.getWeatherSinceForBody', () => {
     );
     vi.stubGlobal('fetch', fetchMock);
 
-    const summary = await t.action(api.weather.getWeatherSinceForBody, {
+    const summary = await asViewer(t).action(api.weather.getWeatherSinceForBody, {
       waterBodyId,
       startMs: now - 4 * HOUR_MS,
     });
@@ -112,8 +117,8 @@ describe('weather.getWeatherSinceForBody', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const args = { waterBodyId, startMs: now - 4 * HOUR_MS };
-    const first = await t.action(api.weather.getWeatherSinceForBody, args);
-    const second = await t.action(api.weather.getWeatherSinceForBody, args);
+    const first = await asViewer(t).action(api.weather.getWeatherSinceForBody, args);
+    const second = await asViewer(t).action(api.weather.getWeatherSinceForBody, args);
 
     expect(second).toEqual(first);
     expect(fetchMock).toHaveBeenCalledOnce(); // served from cache the second time
@@ -125,7 +130,7 @@ describe('weather.getWeatherSinceForBody', () => {
     const fetchMock = vi.fn(async () => new Response('nope', { status: 503 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    const summary = await t.action(api.weather.getWeatherSinceForBody, {
+    const summary = await asViewer(t).action(api.weather.getWeatherSinceForBody, {
       waterBodyId,
       startMs: Date.now() - 4 * HOUR_MS,
     });
@@ -141,12 +146,33 @@ describe('weather.getWeatherSinceForBody', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
 
-    const summary = await t.action(api.weather.getWeatherSinceForBody, {
+    const summary = await asViewer(t).action(api.weather.getWeatherSinceForBody, {
       waterBodyId,
       startMs: Date.now(), // window start == now ⇒ no full hour to summarize
     });
 
     expect(summary.hours).toBe(0);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('rejects an unauthenticated caller before any fetch or cache write (resource-abuse guard)', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify(openMeteoResponse(Date.now())), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    // No identity ⇒ a blank summary with no Open-Meteo call and no persistent `weatherCache` insert,
+    // so an anonymous caller can't enumerate windows to exhaust the shared weather quota / grow the cache.
+    const summary = await t.action(api.weather.getWeatherSinceForBody, {
+      waterBodyId,
+      startMs: Date.now() - 4 * HOUR_MS,
+    });
+
+    expect(summary.hours).toBe(0);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const cached = await t.run((ctx) => ctx.db.query('weatherCache').collect());
+    expect(cached).toHaveLength(0);
   });
 });

@@ -216,22 +216,24 @@ describe('summarizeWeatherSince (D19 / D56)', () => {
           6,
         );
 
-        // Order-dependent freeze run + cycles. Continuous doubles are ~never exactly 0, so the simple
-        // `t < 0` rule matches the reducer's exactly-0-carries-prior logic here.
+        // Order-dependent freeze run + cycles. Mirror the reducer EXACTLY, including its exactly-0°C
+        // rule: a below-0 hour is freezing, an above-0 hour is thawing, and an exactly-0 hour *carries
+        // the prior state* (a flat 0°C stretch neither starts nor breaks a freeze). fast-check does
+        // generate exactly 0.0, so a `t < 0` shortcut would spuriously diverge (see weather.ts).
         let longest = 0;
         let cur = 0;
         let cycles = 0;
         let prev: boolean | null = null;
         for (const h of hours) {
-          const f = h.temperatureC < 0;
-          if (f) {
+          const f: boolean | null = h.temperatureC < 0 ? true : h.temperatureC > 0 ? false : prev;
+          if (f === true) {
             cur += 1;
             longest = Math.max(longest, cur);
-          } else {
+          } else if (f === false) {
             cur = 0;
           }
           if (prev === true && f === false) cycles += 1;
-          prev = f;
+          if (f !== null) prev = f;
         }
         expect(s.longestFreezeRunHours).toBe(longest);
         expect(s.freezeThawCycles).toBe(cycles);

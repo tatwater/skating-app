@@ -314,6 +314,12 @@ export const getWeatherSinceForBody = action({
     ctx,
     { waterBodyId, startMs, sinceLastConfirmedAt, near },
   ): Promise<WeatherSinceSummary> => {
+    // Require an authenticated session BEFORE any sample-point read or Open-Meteo fetch/cache write.
+    // `startMs` is a client-supplied window start at hourly granularity, so an anonymous caller could
+    // otherwise enumerate distinct windows for a known body — each a fresh cache key — to drive unbounded
+    // external fetches + persistent `weatherCache` inserts on the app's shared free tier (resource
+    // exhaustion). A blank strip for a signed-out caller matches this action's other fail-soft returns.
+    if (!(await ctx.auth.getUserIdentity())) return EMPTY_SUMMARY;
     const now = Date.now();
     const windowStart =
       sinceLastConfirmedAt !== undefined
