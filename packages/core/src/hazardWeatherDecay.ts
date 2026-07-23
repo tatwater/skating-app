@@ -236,14 +236,29 @@ export function weatherAdjustedFreshness(
   opts: WeatherDecayOptions = {},
 ): WeatherAdjustedFreshness {
   const { multiplier, snowHidden } = weatherDecaySignal(type, weather, opts);
+  return {
+    freshness: freshnessWithMultiplier(type, lastConfirmedAt, now, multiplier),
+    multiplier,
+    snowHidden,
+  };
+}
+
+/**
+ * Apply a **pre-computed** multiplier to freshness with the never-hide bound. This is what the online
+ * read path (`hazards.ts` `toView`, a query that can't fetch) calls with the multiplier the decay cron
+ * stored on the hazard row (§6): time-independent, so the query recomputes the live bucket from the
+ * always-current `elapsed`. A missing multiplier ⇒ pass `1` (fail-open = plain base decay).
+ */
+export function freshnessWithMultiplier(
+  type: HazardType,
+  lastConfirmedAt: number,
+  now: number,
+  multiplier: number,
+): HazardFreshness {
   const baseline = deriveHazardFreshness(type, lastConfirmedAt, now);
-
-  const elapsed = Math.max(0, now - lastConfirmedAt);
-  const effElapsed = effectiveElapsedMs(elapsed, multiplier);
+  const effElapsed = effectiveElapsedMs(Math.max(0, now - lastConfirmedAt), multiplier);
   let freshness = deriveHazardFreshness(type, now - effElapsed, now);
-
   // Never-hide: weather alone can't reach `stale`. Only real elapsed time (baseline stale) can.
   if (baseline !== 'stale' && freshness === 'stale') freshness = 'aging';
-
-  return { freshness, multiplier, snowHidden };
+  return freshness;
 }

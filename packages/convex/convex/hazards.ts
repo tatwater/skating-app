@@ -17,7 +17,8 @@
 
 import {
   clipFootprintToBody,
-  deriveHazardFreshness,
+  type deriveHazardFreshness,
+  freshnessWithMultiplier,
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_DEFAULT_RADIUS_M,
   type HazardShape,
@@ -242,7 +243,15 @@ export interface HazardView extends Doc<'hazards'> {
 function toView(hazard: Doc<'hazards'>, now: number): HazardView {
   return {
     ...hazard,
-    freshness: deriveHazardFreshness(hazard.type, hazard.lastConfirmedAt, now),
+    // Weather-adjusted freshness (D56): the decay cron (§6) stores a time-independent `decayMultiplier`;
+    // this query recomputes the live bucket from it + the always-current elapsed. Absent ⇒ 1 (fail-open =
+    // plain base decay). Freshness itself is still never stored — only the weather *input* is.
+    freshness: freshnessWithMultiplier(
+      hazard.type,
+      hazard.lastConfirmedAt,
+      now,
+      hazard.decayMultiplier ?? 1,
+    ),
     provisional: isProvisional(hazard.confirmCount),
   };
 }

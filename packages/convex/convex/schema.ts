@@ -399,12 +399,22 @@ export default defineSchema({
     lastConfirmedAt: v.number(), // drives the per-type freshness decay (D15/D52)
     confirmCount: v.number(), // "still here" confirms; excludes the author's own (D54 confirm-gate)
     goneCount: v.number(), // "fully healed & safe" verdicts ONLY — never "healing but unsafe" (D52)
+    // Weather-driven decay (Phase 10 / D56). The decay cron (§6) stores the **time-independent**
+    // `decayMultiplier` (NOT a frozen freshness bucket, which would drift between ticks) so the online
+    // `toView` recomputes the live bucket, and the offline on-ice payload carries a snapshot. Absent ⇒ 1
+    // (fail-open — missing weather never makes a hazard less visible). `snowHidden` is the "possibly
+    // snow-covered" caveat (sign-flip 3); `weatherAdjustedAt` gates the cron's per-hazard refresh cadence.
+    decayMultiplier: v.optional(v.number()),
+    snowHidden: v.optional(v.boolean()),
+    weatherAdjustedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_water_body_status', ['waterBodyId', 'status'])
     .index('by_water_body', ['waterBodyId'])
     // D55 auto-bundle: find an author's own unattached hazards on a body to offer into their report.
     .index('by_author_and_water_body', ['createdByUserId', 'waterBodyId'])
+    // Phase 10 decay cron: sweep every active hazard (across bodies) to refresh weather-adjusted decay.
+    .index('by_status', ['status'])
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
   // NOTE: no geospatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the

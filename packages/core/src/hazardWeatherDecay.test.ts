@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { deriveHazardFreshness } from './hazardDecay';
 import {
   decayMultiplier,
+  freshnessWithMultiplier,
   HAZARD_WEATHER_RESPONSE,
   isSnowHidden,
   weatherAdjustedFreshness,
@@ -218,6 +219,36 @@ describe('weatherAdjustedFreshness (D56) — the never-hide invariant', () => {
     const thaw = wx({ thawDegreeHours: 200 });
     expect(deriveHazardFreshness(type, oldish, NOW)).toBe('aging');
     expect(weatherAdjustedFreshness(type, oldish, NOW, thaw).freshness).toBe('fresh');
+  });
+
+  it('freshnessWithMultiplier(1) is exactly the base decay (fail-open online path)', () => {
+    fc.assert(
+      fc.property(arbType, fc.integer({ min: 0, max: 2000 }), (type, elapsedHours) => {
+        const lastConfirmedAt = NOW - elapsedHours * HOUR_MS;
+        expect(freshnessWithMultiplier(type, lastConfirmedAt, NOW, 1)).toBe(
+          deriveHazardFreshness(type, lastConfirmedAt, NOW),
+        );
+      }),
+    );
+  });
+
+  it('the stored-multiplier path matches the full weather path (same never-hide bound)', () => {
+    // The online query stores the multiplier and recomputes via freshnessWithMultiplier; it must equal
+    // what weatherAdjustedFreshness produces from the weather it was derived from.
+    fc.assert(
+      fc.property(
+        arbType,
+        fc.integer({ min: 0, max: 2000 }),
+        arbWeather,
+        (type, elapsedHours, w) => {
+          const lastConfirmedAt = NOW - elapsedHours * HOUR_MS;
+          const full = weatherAdjustedFreshness(type, lastConfirmedAt, NOW, w);
+          expect(freshnessWithMultiplier(type, lastConfirmedAt, NOW, full.multiplier)).toBe(
+            full.freshness,
+          );
+        },
+      ),
+    );
   });
 
   it('passes the multiplier and snow-hidden flag through for the caller (§6 stores them)', () => {
