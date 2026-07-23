@@ -303,6 +303,28 @@ describe('bounties.create', () => {
       /maximum number of open bounties/,
     );
   });
+
+  test('rejects a capped requester before any weather I/O (§7c resource guard)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    // Fill the cap on empty bodies (no suppressors ⇒ the create loop never fetches weather).
+    for (let i = 0; i < 3; i++) {
+      await requester.as.action(api.bounties.create, { waterBodyId: await seedBody(t) });
+    }
+    // A 4th body that DOES have a suppressing report — its weather would be fetched in the loop if the
+    // cap weren't checked first. The pre-weather cap gate must reject before any Open-Meteo call.
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 12 * HOUR);
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ hourly: { time: [] } }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
+      /maximum number of open bounties/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
 
 describe('bounties.cancel', () => {

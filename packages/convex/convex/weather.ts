@@ -256,6 +256,18 @@ export const getBodySamplePoint = internalQuery({
  *     callers fail open on WITHOUT caching, so the next call retries. The decay cron relies on this to
  *     avoid overwriting a good multiplier (and blocking retry) on a transient blip.
  */
+/**
+ * Hard ceiling on how far back a weather window may start. Every legitimate window sits far inside it —
+ * the report strip renders only for reports 6h–**14d** old (`reportStripState`), the hazard/decay window
+ * is ≤7d, the bounty gate ≤6d — so clamping here never clips a real strip. What it *does* cap is the
+ * number of distinct hourly cache keys any one caller can mint by pushing `startMs` into the arbitrary
+ * past: without it, an (even authenticated) client could enumerate unbounded windows for a discoverable
+ * body, each triggering an Open-Meteo fetch + a persistent `weatherCache` insert until real strips/decay
+ * refreshes are throttled. Applied at the shared resolver so the strip, decay cron and bounty gate all
+ * clamp identically → the same window→key (§5 consistency preserved).
+ */
+export const WEATHER_WINDOW_MAX_LOOKBACK_MS = 30 * DAY_MS;
+
 export async function resolveWeatherSince(
   ctx: ActionCtx,
   lat: number,
@@ -263,7 +275,7 @@ export async function resolveWeatherSince(
   startMs: number,
   nowMs: number,
 ): Promise<WeatherSinceSummary | null> {
-  const windowStartMs = hourBucket(startMs);
+  const windowStartMs = hourBucket(Math.max(startMs, nowMs - WEATHER_WINDOW_MAX_LOOKBACK_MS));
   const windowEndBucketMs = hourBucket(nowMs);
   if (windowStartMs >= windowEndBucketMs) return EMPTY_SUMMARY; // no full hour of window yet
 

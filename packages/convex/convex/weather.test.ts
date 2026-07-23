@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
+import { WEATHER_WINDOW_MAX_LOOKBACK_MS } from './weather';
 
 const modules = import.meta.glob('./**/*.*s');
 const HOUR_MS = 3_600_000;
@@ -174,5 +175,29 @@ describe('weather.getWeatherSinceForBody', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     const cached = await t.run((ctx) => ctx.db.query('weatherCache').collect());
     expect(cached).toHaveLength(0);
+  });
+
+  test('clamps an over-old window start so cache-key cardinality stays bounded (resource guard)', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify(openMeteoResponse(now)), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    // A caller asks for a window 60 days back — well beyond any legitimate strip (report ≤14d, hazard
+    // ≤7d). The resolver clamps it to the max lookback, so the persisted cache key can't be pushed to an
+    // arbitrary past bucket (bounding how many distinct keys any one caller can mint per sample point).
+    await asViewer(t).action(api.weather.getWeatherSinceForBody, {
+      waterBodyId,
+      startMs: now - 60 * 24 * HOUR_MS,
+    });
+
+    const cached = await t.run((ctx) => ctx.db.query('weatherCache').collect());
+    expect(cached).toHaveLength(1);
+    const clampFloor = now - WEATHER_WINDOW_MAX_LOOKBACK_MS;
+    expect(cached[0]?.windowStartMs).toBeGreaterThanOrEqual(clampFloor - HOUR_MS);
+    expect(cached[0]?.windowStartMs).toBeLessThanOrEqual(clampFloor + HOUR_MS);
   });
 });

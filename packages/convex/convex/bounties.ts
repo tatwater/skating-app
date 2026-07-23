@@ -131,6 +131,33 @@ async function suppressingCandidates(
 }
 
 /**
+ * The rolling per-requester open-bounty cap (decision 7): rejects when the requester already holds
+ * `MAX_OPEN_BOUNTIES_PER_DAY` open bounties inside the window. Reads only, so it's shared by the
+ * pre-weather gate (`bountyFreshnessInputs`, to reject a capped caller BEFORE any Open-Meteo I/O) and
+ * `createChecked` (the transactional authority — a concurrent create could fill the cap after the pre-check).
+ */
+async function assertUnderOpenBountyCap(
+  ctx: QueryCtx,
+  requesterId: Id<'profiles'>,
+  now: number,
+): Promise<void> {
+  const open = await ctx.db
+    .query('bounties')
+    .withIndex('by_requester_status', (q) => q.eq('requesterId', requesterId).eq('status', 'open'))
+    .collect();
+  if (
+    !withinDailyBountyLimit(
+      open.map((b) => b.createdAt),
+      now,
+      MAX_OPEN_BOUNTIES_PER_DAY,
+      BOUNTY_DAILY_WINDOW_MS,
+    )
+  ) {
+    throw new ConvexError('You already have the maximum number of open bounties');
+  }
+}
+
+/**
  * The decay-freshness gate's DB inputs (Phase 10 / §7c): the body's weather sample point + its baseline
  * suppressors (newest-first, read-bounded), each carrying its `reportId`. Null when the body is
  * missing/unlisted (the action then lets `createChecked` throw the proper error). The action fetches each
@@ -152,6 +179,10 @@ export const bountyFreshnessInputs = internalQuery({
     }
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || !isListed(body)) return null;
+    // Enforce the rolling open-bounty cap here too, BEFORE the action's weather loop: a capped requester
+    // would be rejected by `createChecked` regardless, so don't let repeated capped requests drive
+    // per-report Open-Meteo fetches + cache writes first (§7c resource guard).
+    await assertUnderOpenBountyCap(ctx, profile._id, now);
     const point = nearestSamplePoint(body, body.centroid);
     const reports = await suppressingCandidates(ctx, body, now);
     return { lat: point.lat, lng: point.lng, reports };
@@ -257,23 +288,9 @@ export const createChecked = internalMutation({
       throw new ConvexError('This lake already has fresh eyes — no bounty needed');
     }
 
-    // Rolling per-requester cap — count the requester's currently-open bounties in the window (decision 7).
-    const open = await ctx.db
-      .query('bounties')
-      .withIndex('by_requester_status', (q) =>
-        q.eq('requesterId', profile._id).eq('status', 'open'),
-      )
-      .collect();
-    if (
-      !withinDailyBountyLimit(
-        open.map((b) => b.createdAt),
-        now,
-        MAX_OPEN_BOUNTIES_PER_DAY,
-        BOUNTY_DAILY_WINDOW_MS,
-      )
-    ) {
-      throw new ConvexError('You already have the maximum number of open bounties');
-    }
+    // Rolling per-requester cap (decision 7), re-checked transactionally here — the pre-weather gate
+    // already rejected obviously-capped callers, but a concurrent create could have filled the cap since.
+    await assertUnderOpenBountyCap(ctx, profile._id, now);
 
     const bountyId = await ctx.db.insert('bounties', {
       requesterId: profile._id,
