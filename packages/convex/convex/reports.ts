@@ -39,6 +39,7 @@ import {
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
@@ -279,6 +280,13 @@ export const create = mutation({
       // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
       // coalescing queue — the cron flushes them (decision #4).
       await enqueueReportNotifications(ctx, inserted);
+    }
+
+    // Conditions auto-fill (Phase 10 / §7a): when the reporter left conditions blank, schedule a
+    // post-insert action to pull the weather AT the skate time (a mutation can't fetch). A user-entered
+    // value always wins, so we only schedule when none was provided. Eventually-consistent by design.
+    if (n.conditions === undefined) {
+      await ctx.scheduler.runAfter(0, internal.conditions.autofillConditions, { reportId });
     }
 
     return reportId;
