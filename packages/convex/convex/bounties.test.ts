@@ -117,8 +117,20 @@ describe('bounties.create', () => {
     await seedReport(reporter, waterBodyId, Date.now() - 2 * HOUR); // well within 48h
 
     await expect(requester.as.mutation(api.bounties.create, { waterBodyId })).rejects.toThrow(
-      /already has a fresh report/,
+      /already has fresh eyes/,
     );
+  });
+
+  test('decay: a lone new-account report past its shortened window no longer blocks (§7c)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter'); // brand-new account ⇒ 24h freshness window, not 48h
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 30 * HOUR); // stale at 24h though the old cutoff was 48h
+
+    // The old hard 48h gate would have blocked this; the decay window (24h for a new account) allows it.
+    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    expect(bountyId).toBeTruthy();
   });
 
   test('enforces the rolling open-bounty cap', async () => {

@@ -185,8 +185,15 @@ export const BADGE_THRESHOLDS: Record<BadgeType, { first: number; step: number }
 // Bounties (D10/D17/D44 decisions 7–12)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** A bounty is blocked on a body with a visible report this fresh — "no fresh eyes lately" (decision 8). */
+/** The **base** decay-freshness window (Phase 10 / §7c): a plain report suppresses bounties this long; a
+ *  corroborated/trusted one longer, a lone new-account one less (see `bountyFreshWindowHours`). */
 export const FRESH_REPORT_HOURS = 48;
+
+/** Widest the decay window can stretch (leader + max thumbs = 3× base) — how far back the gate scans. */
+export const BOUNTY_FRESH_MAX_MULTIPLIER = 3;
+
+/** Cap on reports the freshness gate evaluates per create (newest first) — bounds the read fan-out. */
+export const BOUNTY_FRESH_MAX_REPORTS = 10;
 
 /** Max open bounties one requester may hold in a rolling 24h — the only junk control (decision 7). */
 export const MAX_OPEN_BOUNTIES_PER_DAY = 3;

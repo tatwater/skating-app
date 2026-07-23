@@ -8,11 +8,65 @@
  * Convex layer passes the live config value (and tests can pin it).
  */
 
+import type { TrustClass } from './reputationConfig';
+
 const HOUR_MS = 60 * 60 * 1000;
 
 /** The one report field the freshness gate reads — when the skater left the ice (D28). */
 export interface FreshnessReport {
   skateEndTime: number;
+}
+
+/**
+ * How much longer (as a multiple of the base window) a report from each trust class suppresses bounties —
+ * a well-trusted local's read stays "fresh eyes" longer; a brand-new account's less. Tunable (Phase 7).
+ */
+const TRUST_WINDOW_BOOST: Record<TrustClass, number> = {
+  new: -0.5,
+  trusted: 0,
+  expert: 0.5,
+  leader: 1,
+};
+
+export interface BountyFreshnessFactors {
+  /** helpful − unhelpful thumbs on the report — corroboration extends its freshness. */
+  netThumbs: number;
+  /** The report author's trust class (`null` ⇒ treated as the lowest, `new`). */
+  trustClass: TrustClass | null;
+  /**
+   * When known, whether a meaningful freeze/thaw has occurred since the report (D56). `true` collapses
+   * the window — warming/refreezing weather means the ice may have changed, so fresh eyes are wanted now.
+   * **Deferred in v1** (the create mutation can't fetch weather); accepted here so the signal wires in
+   * cleanly once it's available.
+   */
+  weatherChangedIceSince?: boolean;
+}
+
+function clamp(x: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, x));
+}
+
+/**
+ * The **decay-based bounty-freshness window** (Phase 10 / §7c, D56) — replaces the hard `FRESH_REPORT_HOURS`
+ * cutoff. A report suppresses bounties for `base × (1 + thumbBoost + trustBoost)` hours, so a
+ * well-corroborated, trusted read holds bounties off longer than a lone stale one — and weather that
+ * likely changed the ice reopens them immediately. Never negative.
+ */
+export function bountyFreshWindowHours(baseHours: number, f: BountyFreshnessFactors): number {
+  if (f.weatherChangedIceSince) return 0; // ice likely changed ⇒ fresh eyes wanted now
+  const thumbBoost = clamp(f.netThumbs, -2, 4) * 0.25; // each net thumb ±¼ window, bounded
+  const trustBoost = f.trustClass ? TRUST_WINDOW_BOOST[f.trustClass] : TRUST_WINDOW_BOOST.new;
+  return Math.max(0, baseHours * (1 + thumbBoost + trustBoost));
+}
+
+/** Does this report still suppress a new bounty — is it inside its decay-based freshness window? */
+export function reportSuppressesBounty(
+  skateEndTime: number,
+  now: number,
+  baseHours: number,
+  f: BountyFreshnessFactors,
+): boolean {
+  return now - skateEndTime < bountyFreshWindowHours(baseHours, f) * HOUR_MS;
 }
 
 /**

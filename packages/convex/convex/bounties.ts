@@ -16,14 +16,16 @@
 import {
   BOUNTY_DAILY_WINDOW_MS,
   BOUNTY_ELIGIBILITY_WINDOW_HOURS,
+  BOUNTY_FRESH_MAX_MULTIPLIER,
+  BOUNTY_FRESH_MAX_REPORTS,
   bboxIntersects,
   DEFAULT_BOUNTY_LIFETIME_MS,
   DEFAULT_BOUNTY_REWARD_POINTS,
   FRESH_REPORT_HOURS,
   haversineMeters,
-  isBodyFreshForBounty,
   isMinor,
   MAX_OPEN_BOUNTIES_PER_DAY,
+  reportSuppressesBounty,
   withinDailyBountyLimit,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -38,7 +40,7 @@ import {
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
-import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
+import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
 import { bbox, latLng } from './lib/validators';
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -88,10 +90,28 @@ export const create = mutation({
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || !isListed(body)) throw new ConvexError('Water body not found');
 
-    // Freshness gate — a body with fresh eyes doesn't need a bounty (decision 8).
-    const fresh = await recentReports(ctx, body._id, now - FRESH_REPORT_HOURS * HOUR_MS);
-    if (isBodyFreshForBounty(fresh, now, FRESH_REPORT_HOURS)) {
-      throw new ConvexError('This lake already has a fresh report — no bounty needed');
+    // Freshness gate — a body with fresh eyes doesn't need a bounty (decision 8). Phase 10 / §7c replaces
+    // the hard 48h cutoff with a DECAY-based window: a well-corroborated, trusted read holds bounties off
+    // longer (up to 3× base), a lone new-account one less. Scan reports within the widest possible window
+    // (newest first, read-bounded) and block if any still suppresses. Weather-since — which would reopen
+    // bounties sooner — is deferred (the create mutation can't fetch; the score accepts the signal when
+    // it's wired). See `reportSuppressesBounty`.
+    const maxWindowMs = FRESH_REPORT_HOURS * BOUNTY_FRESH_MAX_MULTIPLIER * HOUR_MS;
+    const recent = await recentReports(ctx, body._id, now - maxWindowMs);
+    const newestFirst = [...recent]
+      .sort((a, b) => b.skateEndTime - a.skateEndTime)
+      .slice(0, BOUNTY_FRESH_MAX_REPORTS);
+    for (const r of newestFirst) {
+      const author = await ctx.db.get(r.authorId);
+      const { helpful, unhelpful } = await tallyThumbs(ctx, 'report', r._id);
+      if (
+        reportSuppressesBounty(r.skateEndTime, now, FRESH_REPORT_HOURS, {
+          netThumbs: helpful - unhelpful,
+          trustClass: author ? trustClassFor(author, now) : null,
+        })
+      ) {
+        throw new ConvexError('This lake already has fresh eyes — no bounty needed');
+      }
     }
 
     // Rolling per-requester cap — count the requester's currently-open bounties in the window (decision 7).
