@@ -78,6 +78,12 @@ status: enum(active, suspended, banned, deleted)  // suspend/ban = D37; deleted 
 statusReason?: string          // mod-visible; optionally surfaced to the user (D37)
 suspendedUntil?: timestamp      // temp suspension; null on a ban = indefinite (D37)
 moderatedByUserId?: ref(profiles)  // who set the current suspend/ban state (D37)
+canPostReports?: boolean       // D57: per-action posting right; absent ⇒ true for adults. Revocable as a
+canPostHazards?: boolean        // moderation lever finer than a whole-app ban — proportionate + appealable.
+                                // reports.create / hazards.create gate on these server-side (like `status`).
+contradictionCount?: number     // D56/D57: private, non-scoring tally of weather-unexplained, never-
+                                // corroborated contradictions. NOT trust (D50 stays boost-only) — a
+                                // moderation input; the Phase-7 panel charts it tenure-aware. Absent ⇒ 0.
 deletedAt?: timestamp
 createdAt: timestamp
 ```

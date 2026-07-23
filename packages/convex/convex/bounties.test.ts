@@ -1,6 +1,6 @@
 import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
@@ -13,6 +13,40 @@ function harness() {
   geospatial.register(t, 'adminAreasGeo');
   return t;
 }
+
+// The bounty-create action (§7c) fetches weather per recent report. Default to an empty response so the
+// suite exercises the recency×thumbs×trust decay with NEUTRAL weather (and never touches the network);
+// the weather-reopen test overrides this. A genuine hard freeze since a report ⇒ the ice likely changed ⇒
+// reopen. Default 12h × −20°C = 240 freezing-degree-hours, comfortably over the bounty-reopen bar
+// (`BOUNTY_REOPEN_FREEZING_DEGREE_HOURS` = 180 — a HIGHER bar than the contradiction check's 48, so an
+// ordinary single freezing night does NOT reopen; see the "modest freeze" test below).
+function coldWeather(refMs: number, n = 12, tempC = -20) {
+  const s = (hoursBeforeRef: number) => Math.floor((refMs - hoursBeforeRef * HOUR) / 1000);
+  return {
+    utc_offset_seconds: -18000,
+    hourly: {
+      time: Array.from({ length: n }, (_, i) => s(n - i)),
+      temperature_2m: Array.from({ length: n }, () => tempC),
+      precipitation: Array.from({ length: n }, () => 0),
+      rain: Array.from({ length: n }, () => 0),
+      snowfall: Array.from({ length: n }, () => 0),
+      snow_depth: Array.from({ length: n }, () => 0),
+      wind_speed_10m: Array.from({ length: n }, () => 5),
+      wind_gusts_10m: Array.from({ length: n }, () => 8),
+      cloud_cover: Array.from({ length: n }, () => 50),
+      sunshine_duration: Array.from({ length: n }, () => 0),
+      shortwave_radiation: Array.from({ length: n }, () => 0),
+    },
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ hourly: { time: [] } }), { status: 200 })),
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -99,7 +133,7 @@ describe('bounties.create', () => {
     // A report 60h old: outside the 48h freshness block but inside the 72h eligibility window.
     await seedReport(reporter, waterBodyId, Date.now() - 60 * HOUR);
 
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     const bounty = await t.run((ctx) => ctx.db.get(bountyId));
     expect(bounty?.status).toBe('open');
 
@@ -116,9 +150,145 @@ describe('bounties.create', () => {
     const waterBodyId = await seedBody(t);
     await seedReport(reporter, waterBodyId, Date.now() - 2 * HOUR); // well within 48h
 
-    await expect(requester.as.mutation(api.bounties.create, { waterBodyId })).rejects.toThrow(
-      /already has a fresh report/,
+    await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
+      /already has fresh eyes/,
     );
+  });
+
+  test('decay: a lone new-account report past its shortened window no longer blocks (§7c)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter'); // brand-new account ⇒ 24h freshness window, not 48h
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 30 * HOUR); // stale at 24h though the old cutoff was 48h
+
+    // The old hard 48h gate would have blocked this; the decay window (24h for a new account) allows it.
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
+    expect(bountyId).toBeTruthy();
+  });
+
+  test('createChecked re-checks freshness transactionally — a suppressor that landed after the weather pass still blocks (§7c TOCTOU)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    // Model the race: the action's weather pass saw no suppressor (empty reopened set), but by commit a
+    // fresh report has landed. The transactional re-check inside the mutation must catch it rather than
+    // trusting the action's stale snapshot and persisting an ineligible bounty (+ fanning out notices).
+    await seedReport(reporter, waterBodyId, Date.now() - 1 * HOUR);
+    await expect(
+      requester.as.mutation(internal.bounties.createChecked, {
+        waterBodyId,
+        weatherReopenedReports: [],
+      }),
+    ).rejects.toThrow(/already has fresh eyes/);
+  });
+
+  test("createChecked honors the action's weather-reopened set — a reopened suppressor does not block (§7c)", async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const skateEndTime = Date.now() - 1 * HOUR;
+    const reportId = await seedReport(reporter, waterBodyId, skateEndTime);
+    // The same fresh suppressor, but the action flagged it weather-reopened (id + the timestamp its verdict
+    // was computed against) — so it must NOT block.
+    const bountyId = await requester.as.mutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReports: [{ reportId, skateEndTime }],
+    });
+    expect(bountyId).toBeTruthy();
+  });
+
+  test('createChecked drops a weather-reopen exemption whose skateEndTime changed since the verdict (§7c)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const skateEndTime = Date.now() - 1 * HOUR;
+    const reportId = await seedReport(reporter, waterBodyId, skateEndTime);
+    // The report was edited to a LATER skate time after the action computed its weather verdict against the
+    // OLD one. The shorter window can no longer justify the reopen, so the stale exemption (keyed on the old
+    // timestamp) must not match the current report — it suppresses again and the bounty is blocked.
+    await expect(
+      requester.as.mutation(internal.bounties.createChecked, {
+        waterBodyId,
+        weatherReopenedReports: [{ reportId, skateEndTime: skateEndTime - 3 * HOUR }],
+      }),
+    ).rejects.toThrow(/already has fresh eyes/);
+  });
+
+  test('weather that changed the ice reopens a bounty despite a suppressing report (§7c)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const skate = Date.now() - 12 * HOUR; // 12h old ⇒ inside the 24h new-account window ⇒ would suppress
+    await seedReport(reporter, waterBodyId, skate);
+
+    // But a hard freeze since the skate (12h × −16°C = 192 freezing-degree-hours, over the 180 bar) means
+    // the ice likely changed → fresh eyes wanted → allow the bounty. The window is [skate, now], so the
+    // stub's in-window hours must carry the whole signal (a longer/colder run than the modest-freeze test).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify(coldWeather(Date.now(), 12, -16)), { status: 200 }),
+      ),
+    );
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
+    expect(bountyId).toBeTruthy();
+  });
+
+  test('a modest overnight freeze does NOT reopen a bounty — the reopen bar is higher than the contradiction check (§7c)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const skate = Date.now() - 6 * HOUR; // 6h old ⇒ inside the new-account window ⇒ suppresses
+    await seedReport(reporter, waterBodyId, skate);
+
+    // 6h × −8°C = 48 freezing-degree-hours — enough for the contradiction check, but BELOW the 180-FDH
+    // bounty-reopen bar. An ordinary cold night must not un-suppress a still-fresh report's bounty.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify(coldWeather(Date.now(), 6, -8)), { status: 200 }),
+      ),
+    );
+    await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
+      /fresh eyes/,
+    );
+  });
+
+  test('rejects an unauthenticated caller before doing any weather I/O (§7c)', async () => {
+    const t = harness();
+    const waterBodyId = await seedBody(t);
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ hourly: { time: [] } }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    // No `.as` identity ⇒ the up-front auth guard must throw before any DB read or Open-Meteo fetch.
+    await expect(t.action(api.bounties.create, { waterBodyId })).rejects.toThrow(/signed in/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test('rejects an authenticated-but-ineligible caller (minor) before any weather I/O (§7c security)', async () => {
+    const t = harness();
+    const minor = await seedUser(t, 'minor');
+    await t.run((ctx) =>
+      ctx.db.patch(minor.id, { dateOfBirth: Date.now() - 10 * 365 * 24 * HOUR }),
+    );
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 12 * HOUR); // a suppressor the loop would fetch
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ hourly: { time: [] } }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    // Eligibility is now enforced in `bountyFreshnessInputs` (which runs first), so a minor is rejected
+    // before the action ever drives an Open-Meteo fetch on the shared quota — not just at write time.
+    await expect(minor.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(/under 18/);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   test('enforces the rolling open-bounty cap', async () => {
@@ -126,12 +296,34 @@ describe('bounties.create', () => {
     const requester = await seedUser(t, 'requester');
     for (let i = 0; i < 3; i++) {
       const body = await seedBody(t);
-      await requester.as.mutation(api.bounties.create, { waterBodyId: body });
+      await requester.as.action(api.bounties.create, { waterBodyId: body });
     }
     const fourth = await seedBody(t);
-    await expect(
-      requester.as.mutation(api.bounties.create, { waterBodyId: fourth }),
-    ).rejects.toThrow(/maximum number of open bounties/);
+    await expect(requester.as.action(api.bounties.create, { waterBodyId: fourth })).rejects.toThrow(
+      /maximum number of open bounties/,
+    );
+  });
+
+  test('rejects a capped requester before any weather I/O (§7c resource guard)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    // Fill the cap on empty bodies (no suppressors ⇒ the create loop never fetches weather).
+    for (let i = 0; i < 3; i++) {
+      await requester.as.action(api.bounties.create, { waterBodyId: await seedBody(t) });
+    }
+    // A 4th body that DOES have a suppressing report — its weather would be fetched in the loop if the
+    // cap weren't checked first. The pre-weather cap gate must reject before any Open-Meteo call.
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 12 * HOUR);
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ hourly: { time: [] } }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
+      /maximum number of open bounties/,
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -141,7 +333,7 @@ describe('bounties.cancel', () => {
     const requester = await seedUser(t, 'requester');
     const other = await seedUser(t, 'other');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
 
     await expect(other.as.mutation(api.bounties.cancel, { bountyId })).rejects.toThrow(
       /Only the requester/,
@@ -163,7 +355,7 @@ describe('bounties fulfillment', () => {
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
 
     const reportId = await seedReport(author, waterBodyId);
     // Auto-attached.
@@ -194,7 +386,7 @@ describe('bounties fulfillment', () => {
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     const reportId = await seedReport(author, waterBodyId);
 
     // First: the requester thumbs the report helpful from the FEED — no `bountyId`, so it doesn't fulfill.
@@ -235,7 +427,7 @@ describe('bounties fulfillment', () => {
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     const reportId = await seedReport(author, waterBodyId);
 
     await requester.as.mutation(api.ratings.rate, {
@@ -256,8 +448,8 @@ describe('bounties.listOpen (global / near-me / viewport browse)', () => {
     const requester = await seedUser(t, 'requester');
     const body0 = await seedBody(t);
     const body1 = await seedBody(t);
-    const b0 = await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
-    const b1 = await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    const b0 = await requester.as.action(api.bounties.create, { waterBodyId: body0 });
+    const b1 = await requester.as.action(api.bounties.create, { waterBodyId: body1 });
     // Make b1 unambiguously newer than b0 so the sort is deterministic.
     await t.run((ctx) => ctx.db.patch(b0, { createdAt: Date.now() - HOUR }));
 
@@ -278,8 +470,8 @@ describe('bounties.listOpen (global / near-me / viewport browse)', () => {
     const requester = await seedUser(t, 'requester');
     const body0 = await seedBody(t); // bbox lng [n, n+1]
     const body1 = await seedBody(t); // bbox lng [n+1, n+2]
-    const b0 = await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
-    await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    const b0 = await requester.as.action(api.bounties.create, { waterBodyId: body0 });
+    await requester.as.action(api.bounties.create, { waterBodyId: body1 });
     const body0Doc = await t.run((ctx) => ctx.db.get(body0));
     // A rectangle covering only body0's bbox.
     const viewport = {
@@ -299,8 +491,8 @@ describe('bounties.listOpen (global / near-me / viewport browse)', () => {
     const requester = await seedUser(t, 'requester');
     const body0 = await seedBody(t);
     const body1 = await seedBody(t);
-    await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
-    const b1 = await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    await requester.as.action(api.bounties.create, { waterBodyId: body0 });
+    const b1 = await requester.as.action(api.bounties.create, { waterBodyId: body1 });
     const body1Doc = await t.run((ctx) => ctx.db.get(body1));
     // A viewer whose home sits on body1's centroid → body1's bounty sorts first, but no distance leaks.
     const viewer = await seedUser(t, 'viewer');
@@ -317,8 +509,8 @@ describe('bounties.listOpen (global / near-me / viewport browse)', () => {
     const requester = await seedUser(t, 'requester');
     const body0 = await seedBody(t);
     const body1 = await seedBody(t);
-    await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
-    const b1 = await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    await requester.as.action(api.bounties.create, { waterBodyId: body0 });
+    const b1 = await requester.as.action(api.bounties.create, { waterBodyId: body1 });
     const body1Doc = await t.run((ctx) => ctx.db.get(body1));
     // biome-ignore lint/style/noNonNullAssertion: seeded body always exists.
     const near = body1Doc!.centroid;
@@ -335,7 +527,7 @@ describe('bounties.getDetail', () => {
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     const reportId = await seedReport(author, waterBodyId); // auto-attaches
 
     const asRequester = await requester.as.query(api.bounties.getDetail, { bountyId });
@@ -393,7 +585,7 @@ describe('bounties.expireBounties', () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     await t.run((ctx) => ctx.db.patch(bountyId, { expiresAt: Date.now() - HOUR }));
 
     const res = await t.mutation(internal.bounties.expireBounties, {});

@@ -112,6 +112,14 @@ export const CORROBORATION_MAX_PER_REPORT = 3;
 /** A hazard's `confirmCount` (peers, author excluded) must reach this for the author's `hazard_corroborated` boost. */
 export const HAZARD_CORROBORATION_MIN_CONFIRMS = 2;
 
+/**
+ * Weather-unexplained contradictions (D56 §7) at/above which an author is auto-flagged for moderator
+ * review (targeting the *pattern*, not one incident — a moderator judges the tenure-aware good-vs-bad
+ * chart in Phase 7). NOT a trust penalty: trust stays boost-only (D50); this only routes a persistent
+ * pattern to a human, whose lever is the D57 posting restriction.
+ */
+export const CONTRADICTION_FLAG_THRESHOLD = 3;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Ratings / moderation (D50 decision 4)
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,8 +185,29 @@ export const BADGE_THRESHOLDS: Record<BadgeType, { first: number; step: number }
 // Bounties (D10/D17/D44 decisions 7–12)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** A bounty is blocked on a body with a visible report this fresh — "no fresh eyes lately" (decision 8). */
+/** The **base** decay-freshness window (Phase 10 / §7c): a plain report suppresses bounties this long; a
+ *  corroborated/trusted one longer, a lone new-account one less (see `bountyFreshWindowHours`). */
 export const FRESH_REPORT_HOURS = 48;
+
+/** Widest the decay window can stretch (leader + max thumbs = 3× base) — how far back the gate scans. */
+export const BOUNTY_FRESH_MAX_MULTIPLIER = 3;
+
+/** Cap on reports the freshness gate evaluates per create (newest first) — bounds the read fan-out. */
+export const BOUNTY_FRESH_MAX_REPORTS = 10;
+
+/**
+ * How much freeze/thaw since a suppressing report counts as "the ice materially changed → reopen the
+ * bounty now" (Phase 10 / §7c). **Deliberately higher than the contradiction check's 48 FDH / 36 TDH**
+ * (`weatherExplainsIceChange` defaults): that gate asks "could weather explain two reports disagreeing?",
+ * where one cold night is a plausible explanation; *this* gate asks "should a big enough change reopen a
+ * well-corroborated report's bounty early?", and one ordinary sub-freezing night (~48 FDH) must NOT — else
+ * the trust/thumbs window weighting collapses for most of the skating season. ~1.5× a "full" cold signal
+ * (`fdhScaleHours` 120) / ~1.3× a full thaw (`tdhScaleHours` 90): a solid multi-day hard freeze or a real
+ * thaw, not a routine night. **Admin-tunable in Phase 7** (see `07-roadmap.md` — the same lever + the
+ * bounty-suppression chart that shows an admin the effect of moving it).
+ */
+export const BOUNTY_REOPEN_FREEZING_DEGREE_HOURS = 180;
+export const BOUNTY_REOPEN_THAW_DEGREE_HOURS = 120;
 
 /** Max open bounties one requester may hold in a rolling 24h — the only junk control (decision 7). */
 export const MAX_OPEN_BOUNTIES_PER_DAY = 3;

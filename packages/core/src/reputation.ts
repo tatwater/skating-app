@@ -54,6 +54,22 @@ export function reportsAgree(a: AgreeableReport, b: AgreeableReport): boolean {
   return shareIceType(a.iceTypes, b.iceTypes);
 }
 
+/**
+ * The corroboration **contradiction** test (Phase 10 / D56 §7, the inverse seam of `reportsAgree`). A
+ * genuine contradiction needs conflicting *signal*, not mere absence: both reports carry a `skateQuality`
+ * that differs by **≥2 ordinal steps** (e.g. `great` vs `fair`/`poor`) **and** they share **no** ice type
+ * (a shared ice type is itself an agreement signal). This is a strict subset of `!reportsAgree`, so a pair
+ * can never both agree *and* contradict.
+ *
+ * A contradiction is only the *candidate* — the caller must still confirm the weather-since doesn't explain
+ * the change before it counts (an honest "the ice changed" report is never a contradiction; D3/D50).
+ */
+export function reportsContradict(a: AgreeableReport, b: AgreeableReport): boolean {
+  if (a.skateQuality === undefined || b.skateQuality === undefined) return false;
+  if (Math.abs(QUALITY_RANK[a.skateQuality] - QUALITY_RANK[b.skateQuality]) < 2) return false;
+  return !shareIceType(a.iceTypes, b.iceTypes);
+}
+
 /** The hazard field the agreement test reads — a hazard carries exactly one `type` (Phase 9). */
 export interface AgreeableHazard {
   type: string;

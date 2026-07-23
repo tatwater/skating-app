@@ -62,7 +62,7 @@ import {
   SUPPORT_STATUSES,
   WATER_BODY_SOURCES,
 } from './lib/enums';
-import { bbox, boolFlags, geoJson, latLng, literals } from './lib/validators';
+import { bbox, boolFlags, geoJson, latLng, literals, weatherSinceSummary } from './lib/validators';
 
 /** Per-type notification toggles; keys single-sourced to mirror `notifications.type` 1:1 (D16). */
 const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
@@ -123,6 +123,16 @@ export default defineSchema({
     reportCount: v.optional(v.number()),
     commentCount: v.optional(v.number()),
     badges: v.optional(v.array(v.string())),
+    // Granular posting permissions (Phase 10 / D57): a moderation lever FINER than a whole-app ban —
+    // a user who abuses one surface loses that surface, appealably and reversibly, not the whole app.
+    // Optional booleans, **absent ⇒ allowed** (fail-open in the safe direction; default-on for adults —
+    // minors are already read-only, D41). Restricted/restored from the Phase 7 admin surface; fed by the
+    // contradiction signal (D56). `contradictionCount` is a PRIVATE, non-scoring tally of weather-
+    // unexplained, never-corroborated contradictions — NOT trust (D50 stays boost-only), a moderation
+    // input the Phase 7 panel charts tenure-aware. Absent ⇒ 0.
+    canPostReports: v.optional(v.boolean()),
+    canPostHazards: v.optional(v.boolean()),
+    contradictionCount: v.optional(v.number()),
     role: literals(USER_ROLES), // mod=content; admin ⊇ mod (D37)
     status: literals(USER_STATUSES), // suspend/ban (D37); deleted (D33)
     statusReason: v.optional(v.string()),
@@ -193,6 +203,12 @@ export default defineSchema({
     // so it's queried by a direct short-list scan instead of the centroid index. Derived from
     // bbox extent at import/create; see `waterBodies.listInViewport`.
     isLarge: v.optional(v.boolean()),
+    // Weather sampling escape hatch (Phase 10 / D56 §5). Weather doesn't vary below Open-Meteo's grid
+    // (~2–25 km), so **every body samples at its centroid by default** — town/county is the wrong
+    // abstraction. Only the few genuinely multi-cell giants (Champlain ~200 km) need more: an admin sets
+    // a handful of points spaced at grid resolution here, and a hazard/report picks its nearest. Absent /
+    // empty ⇒ `[centroid]`. Populated via the Phase 7 admin surface; no auto-population in v1.
+    weatherSamplePoints: v.optional(v.array(latLng)),
     surfaceAreaSqM: v.optional(v.number()),
     // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
     // `minVisibleZoom` is its integer bucket, ALSO written as the geospatial `sortKey` so
@@ -236,6 +252,20 @@ export default defineSchema({
     .index('by_level', ['level'])
     // Idempotent re-import upsert key (OSM re-runs), mirroring waterBodies.by_external_id (D14).
     .index('by_external_id', ['externalId']),
+
+  // Cached Open-Meteo "weather-since" summaries (Phase 10 / D19 / D56). One row per
+  // (sample point, window start, current-hour bucket): concurrent viewers of the same body/window share a
+  // fetch, and bucketing the `now` end to the hour makes windows append-friendly. Warmed two ways — the
+  // strip's drawer-open fetch action and the decay cron (§6) — and read by both. Source is the
+  // **forecast API with `past_days`** (recent windows), never the ~5-day-lagged archive (§2). Ephemeral;
+  // safe to drop/prune (a miss just refetches).
+  weatherCache: defineTable({
+    samplePointKey: v.string(), // rounded "lat,lng" — the grid-ish cache key
+    windowStartMs: v.number(), // window start, bucketed to the hour (absolute UTC ms)
+    windowEndBucketMs: v.number(), // `now` bucketed to the hour — the append-friendly end
+    summary: weatherSinceSummary, // the computed reducer output (both consumers read this)
+    fetchedAt: v.number(),
+  }).index('by_key', ['samplePointKey', 'windowStartMs', 'windowEndBucketMs']),
 
   reports: defineTable({
     authorId: v.id('profiles'),
@@ -301,6 +331,18 @@ export default defineSchema({
     // the same report back instead of a duplicate. Optional ⇒ migration-free (web/online omits it).
     idempotencyKey: v.optional(v.string()),
     moderationStatus: literals(MODERATION_STATUSES), // default visible (D32)
+    // Soft "conflicting reports" indicator (Phase 10 / D56 §7): set when another recent report on this
+    // body strongly disagreed AND the weather-since didn't explain the change. A disclosure for skaters
+    // (both reports show it) so the human judges the disagreement — NOT a trust penalty (D50 stays
+    // boost-only) and NEVER hides the report (D3). Absent ⇒ no known conflict. **Symmetric** — both sides
+    // of a disagreement carry it.
+    conflicting: v.optional(v.boolean()),
+    // The escalation half of the contradiction signal (Phase 10 / D56 §7b) — set when this report is the
+    // weather-unexplained, **un-corroborated minority** against a *more-corroborated* opposing report. Drives
+    // the author's private `contradictionCount`; recomputed each settle, so a report that later earns
+    // corroboration clears it (self-correcting, order-independent — never the corroborated majority). NOT a
+    // trust penalty, NOT shown to skaters (that's `conflicting`). Absent ⇒ not a settled contradiction.
+    contradiction: v.optional(v.boolean()),
     hazardIdsCreated: v.array(v.id('hazards')),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -385,12 +427,22 @@ export default defineSchema({
     lastConfirmedAt: v.number(), // drives the per-type freshness decay (D15/D52)
     confirmCount: v.number(), // "still here" confirms; excludes the author's own (D54 confirm-gate)
     goneCount: v.number(), // "fully healed & safe" verdicts ONLY — never "healing but unsafe" (D52)
+    // Weather-driven decay (Phase 10 / D56). The decay cron (§6) stores the **time-independent**
+    // `decayMultiplier` (NOT a frozen freshness bucket, which would drift between ticks) so the online
+    // `toView` recomputes the live bucket, and the offline on-ice payload carries a snapshot. Absent ⇒ 1
+    // (fail-open — missing weather never makes a hazard less visible). `snowHidden` is the "possibly
+    // snow-covered" caveat (sign-flip 3); `weatherAdjustedAt` gates the cron's per-hazard refresh cadence.
+    decayMultiplier: v.optional(v.number()),
+    snowHidden: v.optional(v.boolean()),
+    weatherAdjustedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_water_body_status', ['waterBodyId', 'status'])
     .index('by_water_body', ['waterBodyId'])
     // D55 auto-bundle: find an author's own unattached hazards on a body to offer into their report.
     .index('by_author_and_water_body', ['createdByUserId', 'waterBodyId'])
+    // Phase 10 decay cron: sweep every active hazard (across bodies) to refresh weather-adjusted decay.
+    .index('by_status', ['status'])
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
   // NOTE: no geospatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the

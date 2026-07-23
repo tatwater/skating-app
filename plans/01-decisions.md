@@ -1026,3 +1026,84 @@ want a coherent story. Bundling gets both without asking the skater to re-enter 
 the standalone quick-flag path (D51) from a parallel silo into the front half of the report flow.
 **Not this:** auto-attaching *other people's* hazards, or attaching silently — both would misattribute
 observations, and mis-sourced safety content is a D3 problem.
+
+## D56 — Weather-driven dynamic hazard decay + the expanded weather-since variable set
+**Decided (2026-07-22; built in Phase 10).** Extends **D52**. Phase 10's Open-Meteo "weather-since" pull
+(D19) modulates hazard freshness instead of relying on elapsed time alone:
+`effectiveAge = elapsed × decayMultiplier(type, weatherSince)`, then `deriveHazardFreshness` runs on
+`effectiveAge`. Pure logic in `@skating/core`, property-tested (D40), admin-tunable in Phase 7 (D49) like
+the D52 tiers.
+
+**Variable set (supersedes the original strip's five vars).** The descriptive strip (peak temp · hours
+near/above freezing · sun · precip · wind) misses what the model needs. Added:
+- **Derived integrals (model-internal):** `freezingDegreeHours` / `thawDegreeHours` (magnitude, not
+  hour-counts — the ~1″/15-FDD backbone; thaw ~30% faster), `longestFreezeRunHours` (a *sustained*
+  freeze, the `thawed_rotten` gate), `freezeThawCycles`.
+- **Raw variables:** overnight low (`minTempC`), **rain vs snow split** (opposite signs), **shortwave
+  radiation** (insolation — subsumes the season/solar-term multiplier), clear-night cloud cover
+  (radiational cooling), wind gusts / wind-run. Out of scope: dew point / freezing-rain glaze.
+
+**The three sign-flips (locked in D52 §5), plus two Phase-10 invariants:**
+1. `thawed_rotten` cold multiplier **≥1** (a cold skin over rotten ice is not healing — the "overnight-ice
+   trap"); 2. `pressure_ridge`/`ice_heave` thaw multiplier **≥1** (ridges escalate in thaws, springs/
+   gas/reef holes ≈×1); 3. snow **lowers confidence, never accelerates decay**.
+- **Never-hide invariant (answer to the founder's Q2, reinforces D3):** weather can **age** a hazard
+  (fresh→aging) but the cold-acceleration direction is **bounded so weather alone can never push a hazard
+  past `aging` into hidden/`stale`** — only elapsed time + a human `fully_healed` confirmation fully
+  retires a pin. A refrozen lead is still thin ice.
+- **Fail-open:** missing/failed weather ⇒ `multiplier = 1` (plain `elapsed`); weather trouble can never
+  make a hazard less visible.
+
+**Sampling.** Body **centroid by default** (nearly every body < one Open-Meteo grid cell; town/county is
+the wrong abstraction and buys no sub-grid signal), with an optional `weatherSamplePoints[]` escape hatch
+for the few genuinely multi-cell bodies (Champlain/Winnipesaukee); a hazard/report picks its nearest
+sample point. **Cron:** only the decay precompute needs one — it sweeps **bodies with ≥1 active hazard**
+(not the full corpus) at a fixed hourly tick, skipping hazards refreshed within an admin-tunable
+`weatherRefreshMinIntervalHours` (Convex crons can't retune their interval at runtime, so the config gates
+work inside a fixed tick), and stores the **time-independent `decayMultiplier`** (not a frozen freshness
+bucket, which would drift between ticks — online `toView()` recomputes the live bucket). The strip itself
+**fetches on drawer-open** via the action (a query can't fetch, so a read-only strip would never fill on
+the hazard-free bodies the cron skips), sharing the same `weatherCache`. This precompute
+is what makes weather-adjusted freshness available to the **offline on-ice alert** (D54) — a phone on the
+ice can't fetch Open-Meteo, so the server bakes the adjusted freshness into the synced hazard payload.
+
+**Also in Phase 10 scope (all waiting on the fetch):** report **conditions auto-fill** (the stubbed
+`openmeteo` source — weather *at* the skate time; user entries win); the Phase-6 **corroboration
+contradiction *signal*** (weather-since lets a disagreeing later report count as a contradiction *only when
+the weather doesn't explain the change* — and even then it **never subtracts trust**: it withholds the
+boost, discloses a "conflicting reports" indicator, and escalates *on pattern* to the D57 posting-permission
+lever, so honest "the ice changed" reports stay unpenalized — D50/D3/D57); and the Phase-6 **decay-based
+bounty-freshness score** (recency × thumbs × trust × weather-since replaces the hard `FRESH_REPORT_HOURS`
+cutoff). Both fetch-dependent report-create tasks run as a **scheduled post-insert action** (a mutation
+can't fetch — the `isochrones.ts` pattern), so they're eventually-consistent.
+
+**Why:** A single global clock faded persistent ridges too fast and kept volatile open water too long;
+weather-modulated decay matches how the ice actually behaves — while the never-hide bound + fail-open keep
+it firmly on the safe side of D3 (accelerated decay ≠ "safe").
+
+## D57 — Granular posting permissions (a moderation lever finer than suspend/ban)
+**Decided (2026-07-22; fields + enforcement in Phase 10, admin surface in Phase 7).** Adds per-action
+posting rights on `profiles` — **`canPostReports`** and **`canPostHazards`** — **default ON for every
+adult** (minors are already read-only, D41), revocable **individually** as a moderation action. A user who
+abuses one surface loses *that* surface, not the whole app: proportionate, **appealable, and reversible**
+without the collateral of a full `status: banned` (D37). Optional booleans ⇒ **migration-free** (absent =
+full adult posting rights).
+
+- **Enforcement (Phase 10):** `reports.create` / `hazards.create` gate on the respective permission
+  server-side, the same way every function already gates on `status` (D37). The revocation/restore mutation
+  writes a `moderationActions` audit row.
+- **What feeds it (Phase 10; D56/D50):** the corroboration **contradiction signal** — repeated
+  weather-unexplained, *never-corroborated* contradictions auto-file a `/admin` flag; a **human, not the
+  system**, decides whether to restrict a right. Trust stays **boost-only** (D50); this lever — not point
+  subtraction — is how deliberate false-reporting is actually deterred (a boost-only score can't bite a bad
+  actor, and a point penalty is too harsh for an honest "the ice changed" report).
+- **Admin tooling (Phase 7):** restrict/restore each right; an **appeals / reinstatement** workflow; and a
+  **contributor-trust panel** showing the private, non-scoring **contradiction counter** *alongside* a
+  **good-vs-bad reports trend over time** — deliberately **tenure-aware**, so a 10-year contributor and a
+  1-month account with the *same* raw contradiction count are clearly distinguishable at a glance (a raw
+  count alone hides who's actually trustworthy).
+
+**Why:** whole-app suspend/ban (D37) is too blunt for "posted a bad hazard" — un-appealable in practice
+and it drives good-faith users off. A per-action, reversible right matches the offense to the consequence
+and keeps the door open for reinstatement, while still giving moderators a real deterrent. Pairs with D56's
+contradiction signal and D50's boost-only trust.

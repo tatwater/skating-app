@@ -205,9 +205,31 @@ Quantitative backbone (lakeice *ice-growth* page):
 
 Also for Phase 10:
 - **Season/solar term.** Late-season sun weakens ice even when cold: ~600 W/m² early March vs ~70 late
-  November at 45°N. Same air temp, very different risk. A seasonal/solar multiplier belongs here.
+  November at 45°N. Same air temp, very different risk. **Captured as accumulated shortwave radiation
+  (insolation)** rather than a separate date/latitude multiplier — the radiation value bakes in the
+  seasonal intensity automatically (Phase-10 scoping, 2026-07-22).
 - **Depth / shallow.** Shallow ponds & bays melt from the bottom and go out first — a body-level
-  shallow/pond signal sharpens decay (see `shallow_bay_early_thaw` bodyFeature).
+  shallow/pond signal sharpens decay (see `shallow_bay_early_thaw` bodyFeature). **No depth data source
+  exists in OSM;** v1 ships this as a manual bodyFeature, with a HydroLAKES + GLOBathy backfill deferred
+  (see `phase-10-weather.md` → Later/deferred).
+
+**The Phase-10 variable set (expanded 2026-07-22 scoping — supersedes the original strip's five vars).**
+The original `WeatherSinceSummary` (peak temp · hours near/above freezing · sun-hours · precip · max wind)
+is a fine *descriptive* strip but misses what the *decay model* needs. Two kinds of addition:
+- **Derived integrals (model-internal, the biggest miss):** `freezingDegreeHours` = Σ(0−tempC) over
+  freezing hours and `thawDegreeHours` = Σ(tempC−0) over thawing hours — *magnitude*, not hour-counts
+  (12h at −1°C vs −20°C grow ~5× different ice). These drive `decayMultiplier`. Plus
+  `longestFreezeRunHours` (a *sustained* freeze, not one cold night — the `thawed_rotten` gate, sign-flip
+  1) and `freezeThawCycles` (0°C-crossing count → candling/shell).
+- **Raw variables we were flattening away:** **`minTempC`** (overnight low — "did it freeze last night,"
+  the bimodal open_water/thin_ice driver we lacked, having only peak); **rain vs snow split** (opposite
+  signs — rain degrades, snow insulates+hides, sign-flip 3 — never lump as one `precip`); **shortwave
+  radiation** (insolation, the season/solar term above); **clear-night `cloudCoverPct`** (radiational
+  cooling → thin-ice growth even near 0°C); and **`windGustKph`/wind-run** in context (wind during thaw =
+  wind holes; during freeze = faster growth). Open-Meteo raw fields to fetch:
+  `temperature_2m, precipitation, rain, snowfall, snow_depth, wind_speed_10m, wind_gusts_10m, cloud_cover,
+  sunshine_duration, shortwave_radiation`. **Out of scope:** dew point / humidity / freezing-rain glaze
+  (below our usable resolution). Full build plan: `phase-10-weather.md`.
 
 ---
 

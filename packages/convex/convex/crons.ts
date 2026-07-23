@@ -21,4 +21,14 @@ crons.interval(
 // for a ~30-day default lifetime — expiry is not time-critical, and the sweep reads a dedicated index.
 crons.interval('expire bounties', { hours: 6 }, internal.bounties.expireBounties, {});
 
+// Refresh weather-adjusted hazard decay (Phase 10 / D56 §6). Fixed hourly base tick; each hazard is
+// actually re-fetched at most every WEATHER_REFRESH_MIN_INTERVAL_HOURS (the effective cadence gate, so
+// the interval is tunable without a redeploy). Sweeps only bodies with an active hazard, not the corpus.
+crons.interval(
+  'refresh hazard weather',
+  { hours: 1 },
+  internal.hazardWeather.refreshHazardWeather,
+  {},
+);
+
 export default crons;

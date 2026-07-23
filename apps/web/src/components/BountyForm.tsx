@@ -1,12 +1,8 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import {
-  DEFAULT_BOUNTY_REWARD_POINTS,
-  FRESH_REPORT_HOURS,
-  MAX_OPEN_BOUNTIES_PER_DAY,
-} from '@skating/core';
+import { DEFAULT_BOUNTY_REWARD_POINTS, MAX_OPEN_BOUNTIES_PER_DAY } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
-import { useMutation } from 'convex/react';
+import { useAction } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useState } from 'react';
 import { Button } from './ui/button';
@@ -29,7 +25,7 @@ export function BountyForm({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const create = useMutation(api.bounties.create);
+  const create = useAction(api.bounties.create);
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +64,10 @@ export function BountyForm({
             .
           </p>
           <ul className="list-disc pl-5 text-foreground-muted">
-            <li>Only if there’s no fresh report in the last {FRESH_REPORT_HOURS} hours.</li>
+            <li>
+              Only if the lake doesn’t already have a recent report — a well-confirmed read keeps it
+              covered longer, and a big thaw or freeze reopens it sooner.
+            </li>
             <li>Up to {MAX_OPEN_BOUNTIES_PER_DAY} open bounties at a time.</li>
           </ul>
           {error ? (

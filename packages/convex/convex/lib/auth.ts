@@ -55,3 +55,20 @@ export async function requireRole(ctx: Ctx, minRole: UserRole): Promise<Doc<'pro
   }
   return profile;
 }
+
+/**
+ * Granular posting permissions (D57) — a moderation lever finer than suspend/ban. A moderator can
+ * revoke `canPostReports` / `canPostHazards` individually; **absent ⇒ allowed** (fail-open in the safe
+ * direction, default-on for adults). Throws a branchable `ConvexError` when the surface is restricted.
+ */
+export function assertCanPostReports(profile: Doc<'profiles'>): void {
+  if (profile.canPostReports === false) {
+    throw new ConvexError('Your report posting has been restricted');
+  }
+}
+
+export function assertCanPostHazards(profile: Doc<'profiles'>): void {
+  if (profile.canPostHazards === false) {
+    throw new ConvexError('Your hazard posting has been restricted');
+  }
+}

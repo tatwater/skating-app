@@ -5,6 +5,7 @@ import {
   hasMeasuredThickness,
   hazardsAgree,
   reportsAgree,
+  reportsContradict,
 } from './reputation';
 import { NEW_ACCOUNT_WINDOW_MS, TRUST_CLASS_THRESHOLDS } from './reputationConfig';
 
@@ -70,6 +71,50 @@ describe('reportsAgree', () => {
       false,
     );
     expect(reportsAgree(rep(), rep())).toBe(false);
+  });
+});
+
+describe('reportsContradict', () => {
+  it('contradicts on a strong quality gap with no shared ice type', () => {
+    expect(reportsContradict(rep({ skateQuality: 'great' }), rep({ skateQuality: 'poor' }))).toBe(
+      true,
+    );
+    expect(reportsContradict(rep({ skateQuality: 'great' }), rep({ skateQuality: 'fair' }))).toBe(
+      true,
+    );
+  });
+
+  it('does not contradict within one ordinal step (that is agreement)', () => {
+    expect(reportsContradict(rep({ skateQuality: 'great' }), rep({ skateQuality: 'good' }))).toBe(
+      false,
+    );
+  });
+
+  it('a shared ice type overrides a quality gap (an agreement signal, never a contradiction)', () => {
+    expect(
+      reportsContradict(
+        rep({ skateQuality: 'great', iceTypes: ['black_ice'] }),
+        rep({ skateQuality: 'poor', iceTypes: ['black_ice'] }),
+      ),
+    ).toBe(false);
+  });
+
+  it('needs quality on both sides — absence is not a contradiction', () => {
+    expect(reportsContradict(rep({ skateQuality: 'great' }), rep({ iceTypes: ['snow_ice'] }))).toBe(
+      false,
+    );
+    expect(reportsContradict(rep(), rep())).toBe(false);
+  });
+
+  it('is mutually exclusive with reportsAgree', () => {
+    const qualities = ['great', 'good', 'fair', 'poor'] as const;
+    for (const a of qualities) {
+      for (const b of qualities) {
+        const x = rep({ skateQuality: a });
+        const y = rep({ skateQuality: b });
+        expect(reportsAgree(x, y) && reportsContradict(x, y)).toBe(false);
+      }
+    }
   });
 });
 

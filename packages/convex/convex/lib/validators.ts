@@ -75,3 +75,32 @@ export const geoJson = v.union(
   v.object({ type: v.literal('Polygon'), coordinates: v.array(v.array(position)) }),
   v.object({ type: v.literal('MultiPolygon'), coordinates: v.array(v.array(v.array(position))) }),
 );
+
+const nullableNumber = v.union(v.number(), v.null());
+
+/**
+ * The `WeatherSinceSummary` shape from `@skating/core` (D19/D56), for the `weatherCache` table. **Keep in
+ * sync with the core interface** — a compile-time `Infer` check in `weather.ts` catches drift. Nullable
+ * fields read `null` only when there is no data (empty window / no timestamps / no gust or depth data).
+ */
+export const weatherSinceSummary = v.object({
+  hours: v.number(),
+  peakTempC: nullableNumber,
+  minTempC: nullableNumber,
+  hoursNearFreezing: v.number(),
+  hoursAboveFreezing: v.number(),
+  nightsBelowFreezing: nullableNumber,
+  hoursOfSun: v.number(),
+  totalPrecipMm: v.number(),
+  rainMm: v.number(),
+  snowfallCm: v.number(),
+  maxSnowDepthM: nullableNumber,
+  maxWindKph: nullableNumber,
+  maxWindGustKph: nullableNumber,
+  windRunKm: v.number(),
+  freezingDegreeHours: v.number(),
+  thawDegreeHours: v.number(),
+  insolationWhM2: v.number(),
+  longestFreezeRunHours: v.number(),
+  freezeThawCycles: v.number(),
+});

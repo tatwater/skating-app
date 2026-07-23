@@ -185,27 +185,44 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
 
 ## Weather (context, not prediction)
 
-- Provider: **Open-Meteo** — forecast + **historical archive**, free, no API key.
-- Use: annotate aging reports with what the weather has *done since the skate time*
-  to support the skater's own judgment. **Never** used to assert ice safety.
+- Provider: **Open-Meteo** — the **forecast API with `past_days`** (up to 92 days back), free, no API key.
+  **Not the historical archive** (ERA5-backed, ~5-day lag) — our windows are all recent, and `past_days`
+  covers both the strip and the longest decay window (≤45 days); see `phase-10-weather.md` §2.
+- Use: annotate aging **reports** (window = since the skate time) **and hazards** (window = a rolling
+  recent ~5–7 days, since "first reported" is meaningless for a season-long ridge) with what the weather
+  has *done*, to support the skater's own judgment. **Never** used to assert ice safety.
+- **Attribution:** show a small "Weather: Open-Meteo" credit wherever the strip appears (legal checklist
+  **L13** — same class as "Powered by Strava" / "© OpenStreetMap contributors").
 
 ### "Weather since report" spec (derived summary)
 Computed over the window **[skate time → now]** from Open-Meteo **hourly** data,
 for the water body's coordinates:
 
-| We show | Derived from Open-Meteo hourly vars |
+| We show / compute | Derived from Open-Meteo hourly vars |
 |---|---|
 | **Peak temperature** | max(`temperature_2m`) |
+| **Overnight low** *(added — "did it freeze last night")* | min(`temperature_2m`) / per-night min |
 | **Hours at/near freezing** | count of hours where `temperature_2m` in a band (e.g. -2°C … +2°C) |
 | **Hours above freezing** | count of hours where `temperature_2m` > 0°C |
 | **Hours of sun** | sum(`sunshine_duration`) or low-`cloud_cover` hours |
-| **Total precipitation** | sum(`precipitation`) (+ split rain vs snow) |
-| **Wind** | max / avg `wind_speed_10m` (+ gusts) |
+| **Rain vs snow** *(split — opposite decay signs)* | sum(`rain`) and sum(`snowfall`)/`snow_depth` separately, **never lumped** |
+| **Wind** | max/avg `wind_speed_10m` + `wind_gusts_10m` (+ wind-run) |
+| **Insolation** *(added — season/solar term)* | sum(`shortwave_radiation`) — bakes in seasonal intensity |
+| **Freezing-/thaw-degree-hours** *(model-internal)* | Σ(0−`temperature_2m`) over freezing h · Σ(`temperature_2m`−0) over thaw h |
+| **Sustained-freeze run / freeze-thaw cycles** *(model-internal)* | longest consecutive freezing run · count of 0°C crossings |
 
-- Present as a compact factual strip (e.g. "since this report: peak 41°F · 18h
-  above freezing · 6h sun · 0.3in rain"). No verdict, no color-coded "safe/unsafe".
-- Cache the fetch per (water body, window) to avoid refetching on every view;
-  windows only extend, so results are append-friendly.
+- **Fetch vars (hourly):** `temperature_2m, precipitation, rain, snowfall, snow_depth,
+  wind_speed_10m, wind_gusts_10m, cloud_cover, sunshine_duration, shortwave_radiation`.
+- **Two consumers, one fetch (Phase 10):** the **descriptive strip** (D19) reads the human
+  subset; the **hazard decay model** (D52/D56) reads the degree-hour integrals + freeze-run
+  counts. See `phase-10-weather.md` for the full variable rationale.
+- Present the strip as a compact **plain-text, verdict-free** factual line (e.g. "since this
+  report: peak 41°F · low 22°F · 3 nights below freezing · 6h strong sun · ½″ rain"). No
+  verdict, no color-coded "safe/unsafe"; degree-hour integrals stay model-internal.
+- Cache the fetch per **(sample point, window)** to avoid refetching on every view; windows
+  only extend, so results are append-friendly. **Sampling:** body **centroid by default**
+  (a body is usually smaller than one Open-Meteo grid cell — *not* town/county), with an
+  optional `weatherSamplePoints[]` for the few multi-cell giants (Champlain/Winnipesaukee).
 
 ## Transactional email — Resend + React Email (D38)
 

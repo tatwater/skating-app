@@ -60,6 +60,14 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   as a cosmetic class chip + `TrustAvatar` ring (never a raw number); polymorphic helpful/unhelpful thumbs
   over reports **and** hazards; badges; and the corroboration-gated **recommended** filter-breaking feed.
   *(Built after Phase 9 — safety before reputation.)* **✅ Complete on dev (2026-07-22); prod deferred.**
+- [Phase 10 — Weather-since strips + weather-driven hazard decay](./phase-10-weather.md) — a live
+  Open-Meteo **forecast-`past_days`** fetch + `weatherCache` (fetched on drawer-open), the plain-text
+  **weather-since strip** on aging reports **and hazards** (D19; reducer already built), **weather-driven
+  hazard decay** (`decayMultiplier` + `effectiveAge`, precomputed for the offline on-ice alert —
+  D52/**D56**), and three deferred tasks the fetch unblocks (report conditions auto-fill; the Phase-6
+  corroboration **contradiction signal** → conflicting-reports disclosure + the new **D57** granular
+  posting-permission lever, never a trust subtraction; and the decay-based **bounty-freshness** score).
+  *(Auto-suggest skate times already shipped in Phase 9.5.)* **📋 Scoped 2026-07-22; not yet built.**
 
 ## How these fit together
 

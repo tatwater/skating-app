@@ -9,6 +9,7 @@ import {
   formatThicknessReading,
   humanizeEnum,
   type ReportConditions,
+  reportStripState,
   SKATE_QUALITY_LABELS,
   type SkateQuality,
   type ThicknessReading,
@@ -26,6 +27,7 @@ import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
+import { WeatherStrip } from './WeatherStrip';
 
 /** The plain data a report renders from — decoupled from Convex so `ReportView` is testable. */
 export interface ReportViewData {
@@ -48,6 +50,11 @@ export interface ReportViewData {
   snowCoverCm?: number;
   conditions?: ReportConditions;
   notes?: string;
+  /**
+   * Another recent report on this body strongly disagreed AND the weather-since didn't explain the change
+   * (Phase 10 / D56 §7) — a soft disclosure for the reader, never a verdict or a hidden report (D3).
+   */
+  conflicting?: boolean;
   photos: { photoId: string; url: string | null; thumbUrl: string | null; caption?: string }[];
 }
 
@@ -56,7 +63,14 @@ export interface ReportViewData {
  * `reportDisplay` helpers, so the formatting is unit-testable without Convex or a map. The container
  * `ReportDetail` below feeds it live data; a test can feed it a fixture.
  */
-export function ReportView({ data }: { data: ReportViewData }) {
+export function ReportView({
+  data,
+  weatherStrip,
+}: {
+  data: ReportViewData;
+  /** The weather-since strip node (Phase 10 / §3); the container builds it so `ReportView` stays pure. */
+  weatherStrip?: React.ReactNode;
+}) {
   const conditions = data.conditions ? formatConditions(data.conditions) : [];
   const readings = data.iceThickness?.readings ?? [];
   const duration = formatSkateWindow(data.skateEndTime, data.skateStartTime);
@@ -85,9 +99,12 @@ export function ReportView({ data }: { data: ReportViewData }) {
         </div>
       ) : null}
       <div className="flex flex-col gap-4 px-4 pb-4">
-        {data.skateQuality ? (
+        {data.skateQuality || data.conflicting ? (
           <div className="flex flex-wrap items-center gap-1">
-            <Badge variant="secondary">{SKATE_QUALITY_LABELS[data.skateQuality]}</Badge>
+            {data.skateQuality ? (
+              <Badge variant="secondary">{SKATE_QUALITY_LABELS[data.skateQuality]}</Badge>
+            ) : null}
+            {data.conflicting ? <Badge variant="outline">Conflicting reports</Badge> : null}
           </div>
         ) : null}
 
@@ -137,6 +154,8 @@ export function ReportView({ data }: { data: ReportViewData }) {
             </dl>
           </Section>
         ) : null}
+
+        {weatherStrip}
 
         {data.notes ? (
           <Section label="Notes">
@@ -260,9 +279,20 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const authorBlocked = (blockedIds ?? []).includes(report.authorId);
   const isOwn = me?._id === report.authorId;
 
+  // Weather-since strip (§3): shown only once the report is >~6h old and collapses past ~14d — the header
+  // already carries the "off the ice <date>" age line, so an aged report needs no strip.
+  const stripState = reportStripState(report.skateEndTime, Date.now());
+  const weatherStrip =
+    stripState.kind === 'strip' ? (
+      // The server derives the window (body, put-in sample point, skate time) from the report id — the
+      // client passes no raw timestamp (§3 resource guard).
+      <WeatherStrip reportId={report._id} label="Weather since this report" />
+    ) : null;
+
   return (
     <>
       <ReportView
+        weatherStrip={weatherStrip}
         data={{
           waterBodyId: report.waterBodyId,
           bodyName: body?.available ? body.body.name : undefined,
@@ -279,6 +309,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           snowCoverCm: report.snowCoverCm,
           conditions: report.conditions,
           notes: report.notes,
+          conflicting: report.conflicting,
           photos: photos ?? [],
         }}
       />

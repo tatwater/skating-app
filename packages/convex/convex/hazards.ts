@@ -17,7 +17,8 @@
 
 import {
   clipFootprintToBody,
-  deriveHazardFreshness,
+  type deriveHazardFreshness,
+  freshnessWithMultiplier,
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_DEFAULT_RADIUS_M,
   type HazardShape,
@@ -32,7 +33,7 @@ import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { getCurrentProfile, requireProfile } from './lib/auth';
+import { assertCanPostHazards, getCurrentProfile, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { isListed } from './lib/listing';
@@ -221,6 +222,8 @@ export const create = mutation({
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post hazards');
     }
+    // Granular posting permission (D57): a moderator can restrict hazard posting alone (finer than a ban).
+    assertCanPostHazards(profile);
     return insertHazard(ctx, args, profile._id, now);
   },
 });
@@ -242,7 +245,15 @@ export interface HazardView extends Doc<'hazards'> {
 function toView(hazard: Doc<'hazards'>, now: number): HazardView {
   return {
     ...hazard,
-    freshness: deriveHazardFreshness(hazard.type, hazard.lastConfirmedAt, now),
+    // Weather-adjusted freshness (D56): the decay cron (§6) stores a time-independent `decayMultiplier`;
+    // this query recomputes the live bucket from it + the always-current elapsed. Absent ⇒ 1 (fail-open =
+    // plain base decay). Freshness itself is still never stored — only the weather *input* is.
+    freshness: freshnessWithMultiplier(
+      hazard.type,
+      hazard.lastConfirmedAt,
+      now,
+      hazard.decayMultiplier ?? 1,
+    ),
     provisional: isProvisional(hazard.confirmCount),
   };
 }

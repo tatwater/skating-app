@@ -39,6 +39,7 @@ import {
 } from '@skating/core';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
@@ -55,7 +56,12 @@ import {
   inReportHazardArgs,
   insertHazard,
 } from './hazards';
-import { getCurrentProfile, requireProfile } from './lib/auth';
+import {
+  assertCanPostHazards,
+  assertCanPostReports,
+  getCurrentProfile,
+  requireProfile,
+} from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { bumpContributionCount } from './lib/contributionCounts';
 import { isListed } from './lib/listing';
@@ -185,6 +191,14 @@ export const create = mutation({
       throw new ConvexError('Users under 18 cannot post reports');
     }
 
+    // Granular posting permission (D57): a moderator can restrict this surface without a whole-app ban.
+    assertCanPostReports(profile);
+    // Posting a hazard (drawn in-report or bundled) requires the hazard permission too, so the report
+    // path can't be a way around a hazard-posting restriction.
+    if ((args.hazards?.length ?? 0) + (args.attachHazardIds?.length ?? 0) > 0) {
+      assertCanPostHazards(profile);
+    }
+
     // Bound the hazard fan-out: each in-report hazard is several document writes, so an unbounded
     // array makes one create arbitrarily expensive. A real skate produces a handful, not dozens.
     if ((args.hazards?.length ?? 0) + (args.attachHazardIds?.length ?? 0) > HAZARD_MAX_PER_REPORT) {
@@ -279,6 +293,22 @@ export const create = mutation({
       // Fan out Phase-4 notification candidates (favorites / nearby digest / great nearby) into the
       // coalescing queue — the cron flushes them (decision #4).
       await enqueueReportNotifications(ctx, inserted);
+    }
+
+    // Conditions auto-fill (Phase 10 / §7a): when the reporter left conditions blank, schedule a
+    // post-insert action to pull the weather AT the skate time (a mutation can't fetch). A user-entered
+    // value always wins, so we only schedule when none was provided. Eventually-consistent by design.
+    if (n.conditions === undefined) {
+      await ctx.scheduler.runAfter(0, internal.conditions.autofillConditions, { reportId });
+    }
+
+    // Contradiction signal (Phase 10 / §7b): a report can only contradict on `skateQuality`, so only
+    // schedule the (weather-fetching) settle when one is present. Runs after this mutation commits, so
+    // `runCorroboration`'s awards are already in the ledger and the settle sees current corroboration. It
+    // discloses conflicts + escalates the un-corroborated minority to moderation — never a trust penalty
+    // (D50/D3), and self-corrects as corroboration accrues.
+    if (n.skateQuality !== undefined) {
+      await ctx.scheduler.runAfter(0, internal.contradictions.settleContradictions, { reportId });
     }
 
     return reportId;
