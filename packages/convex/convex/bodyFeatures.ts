@@ -7,9 +7,9 @@
  * is busywork *and* a false-negative risk — an un-re-marked spring looks "gone". So they live here
  * instead: always shown, no time decay, no confirmation loop.
  *
- * Population is admin/seed-driven. v1 ships the schema, the reads, and the promote/demote mutations;
- * the operator UI is Phase 7 (D49-style), which is why these mutations exist now with no screen
- * behind them — an admin can already graduate a recurring hazard during Phase 9.
+ * Population is moderator/seed-driven (D37, refined 2026-07-23: promote/demote is part of the
+ * moderator content toolkit, not admin-only). v1 shipped the schema, the reads, and the
+ * promote/demote mutations; the operator UI lands in Phase 7 (D49-style).
  */
 
 import { type HazardShape, hazardBbox, isValidHazardShape } from '@skating/core';
@@ -50,7 +50,7 @@ export const create = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireRole(ctx, 'moderator');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
     const body = await resolveSurvivor(ctx, args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
@@ -95,7 +95,7 @@ export const promote = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { hazardId, type, note, reason }) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireRole(ctx, 'moderator');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const hazard = await ctx.db.get(hazardId);
     if (!hazard) throw new ConvexError('Hazard not found');
@@ -136,7 +136,7 @@ export const promote = mutation({
 export const demote = mutation({
   args: { bodyFeatureId: v.id('bodyFeatures'), reason: v.string() },
   handler: async (ctx, { bodyFeatureId, reason }) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireRole(ctx, 'moderator');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const feature = await ctx.db.get(bodyFeatureId);
     if (!feature) throw new ConvexError('Body feature not found');

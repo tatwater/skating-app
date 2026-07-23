@@ -450,13 +450,14 @@ export const get = query({
 });
 
 /**
- * Admin: set a body's `curatedBoost` (D49), recompute `displayScore` + `minVisibleZoom`, re-insert
+ * Moderator: set a body's `curatedBoost` (D49), recompute `displayScore` + `minVisibleZoom`, re-insert
  * the geospatial key so the new zoom prominence takes effect, and write a `moderationActions` row.
+ * (D37, refined 2026-07-23: curation is a moderator content lever, not admin-only.)
  */
 export const setCuratedBoost = mutation({
   args: { waterBodyId: v.id('waterBodies'), curatedBoost: v.number() },
   handler: async (ctx, { waterBodyId, curatedBoost }) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireRole(ctx, 'moderator');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
