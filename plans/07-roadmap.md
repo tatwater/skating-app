@@ -364,6 +364,20 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   admin UI to edit the **per-type freshness/decay durations** (the `HAZARD_DECAY` tiers) and the
   **confirm / removal thresholds** (1 confirm to promote, 2 "fully healed" to archive; no reputation
   yet). Phase 9 ships these as tuned constants; Phase 7 lifts them behind `/admin`.
+- **Bounty-freshness tuning + chart (D56 §7c, from Phase 10):** same D49 lever applied to the decay-based
+  bounty gate — admin controls for `FRESH_REPORT_HOURS` (the base suppression window), the trust/thumbs
+  window boosts, and especially the **weather-reopen thresholds** (`BOUNTY_REOPEN_FREEZING_DEGREE_HOURS` /
+  `BOUNTY_REOPEN_THAW_DEGREE_HOURS`) — raise them and a corroborated report holds bounties off through more
+  weather; lower them and bounties reopen sooner. Ship a **bounty-suppression chart** so the effect is
+  legible before touching a number: instrument every `bounties.create` gate decision into a lightweight
+  `bountyGateEvents` log — `{ waterBodyId, decision: suppressed|allowed, suppressingReportId?, reportAgeH,
+  netThumbs, trustClass, weatherReopened: bool, appliedWindowH }` — and chart, over a chosen window,
+  **(a)** a scatter of *report age at bounty attempt* vs *the suppression window actually applied* (dots
+  above the line = blocked, below = allowed) with the base/boosted window bands overlaid, and **(b)** a
+  time series of the **weather-reopen rate** (share of attempts where warming/freezing flipped a
+  would-be-block to allow). Too-many dots clustered just under the line ⇒ bounties open too easily (raise
+  the reopen thresholds / base window); a flat-zero reopen rate through a real thaw ⇒ too hard (lower them).
+  The event log is also the honest input for the Phase-10-deferred **decay-magnitude refit**.
 - **Known seasonal body features (D53, from Phase 9):** a moderator surface to **promote** a recurring
   hazard into a persistent **`bodyFeatures`** attribute (spring/current, constriction, bridge-narrows,
   recurring pressure ridge) and to **demote** one — so a permanent risk stops needing user re-marking.

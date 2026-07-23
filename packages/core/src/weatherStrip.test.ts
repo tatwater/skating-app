@@ -47,6 +47,17 @@ describe('formatWeatherSinceStrip (D19, verdict-free)', () => {
     expect(formatWeatherSinceStrip(summarizeWeatherSince([]))).toBeNull();
   });
 
+  it('falls back to sustained wind when gust data is absent', () => {
+    // A windy stretch whose hours carried no `wind_gusts_10m` — surface the sustained max, not silence.
+    const s = wx({ peakTempC: 2, minTempC: -3, maxWindGustKph: null, maxWindKph: 40 }); // ~25 mph
+    expect(formatWeatherSinceStrip(s)).toBe('peak 36°F · low 27°F · winds to 25 mph');
+  });
+
+  it('prefers the gust peak over sustained wind when both are present', () => {
+    const s = wx({ peakTempC: 2, minTempC: -3, maxWindGustKph: 48, maxWindKph: 40 });
+    expect(formatWeatherSinceStrip(s)).toBe('peak 36°F · low 27°F · gusts to 30 mph');
+  });
+
   it('falls back to lumped precip when the rain/snow split is absent', () => {
     const s = wx({ peakTempC: 3, minTempC: 0, totalPrecipMm: 5, rainMm: 0, snowfallCm: 0 });
     expect(formatWeatherSinceStrip(s)).toContain('precip');

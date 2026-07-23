@@ -287,6 +287,9 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       <WeatherStrip
         waterBodyId={report.waterBodyId}
         startMs={stripState.windowStartMs}
+        // Sample at the report's put-in, so a report and a co-located hazard resolve the same point once a
+        // multi-cell giant gets `weatherSamplePoints` (a no-op today — every body samples its centroid).
+        near={{ lat: report.point.lat, lng: report.point.lng }}
         label="Weather since this report"
       />
     ) : null;

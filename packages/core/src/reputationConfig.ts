@@ -195,6 +195,20 @@ export const BOUNTY_FRESH_MAX_MULTIPLIER = 3;
 /** Cap on reports the freshness gate evaluates per create (newest first) — bounds the read fan-out. */
 export const BOUNTY_FRESH_MAX_REPORTS = 10;
 
+/**
+ * How much freeze/thaw since a suppressing report counts as "the ice materially changed → reopen the
+ * bounty now" (Phase 10 / §7c). **Deliberately higher than the contradiction check's 48 FDH / 36 TDH**
+ * (`weatherExplainsIceChange` defaults): that gate asks "could weather explain two reports disagreeing?",
+ * where one cold night is a plausible explanation; *this* gate asks "should a big enough change reopen a
+ * well-corroborated report's bounty early?", and one ordinary sub-freezing night (~48 FDH) must NOT — else
+ * the trust/thumbs window weighting collapses for most of the skating season. ~1.5× a "full" cold signal
+ * (`fdhScaleHours` 120) / ~1.3× a full thaw (`tdhScaleHours` 90): a solid multi-day hard freeze or a real
+ * thaw, not a routine night. **Admin-tunable in Phase 7** (see `07-roadmap.md` — the same lever + the
+ * bounty-suppression chart that shows an admin the effect of moving it).
+ */
+export const BOUNTY_REOPEN_FREEZING_DEGREE_HOURS = 180;
+export const BOUNTY_REOPEN_THAW_DEGREE_HOURS = 120;
+
 /** Max open bounties one requester may hold in a rolling 24h — the only junk control (decision 7). */
 export const MAX_OPEN_BOUNTIES_PER_DAY = 3;
 

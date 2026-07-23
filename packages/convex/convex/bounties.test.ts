@@ -16,8 +16,11 @@ function harness() {
 
 // The bounty-create action (§7c) fetches weather per recent report. Default to an empty response so the
 // suite exercises the recency×thumbs×trust decay with NEUTRAL weather (and never touches the network);
-// the weather-reopen test overrides this. Cold weather since a report ⇒ the ice likely changed ⇒ reopen.
-function coldWeather(refMs: number, n = 6, tempC = -20) {
+// the weather-reopen test overrides this. A genuine hard freeze since a report ⇒ the ice likely changed ⇒
+// reopen. Default 12h × −20°C = 240 freezing-degree-hours, comfortably over the bounty-reopen bar
+// (`BOUNTY_REOPEN_FREEZING_DEGREE_HOURS` = 180 — a HIGHER bar than the contradiction check's 48, so an
+// ordinary single freezing night does NOT reopen; see the "modest freeze" test below).
+function coldWeather(refMs: number, n = 12, tempC = -20) {
   const s = (hoursBeforeRef: number) => Math.floor((refMs - hoursBeforeRef * HOUR) / 1000);
   return {
     utc_offset_seconds: -18000,
@@ -169,16 +172,53 @@ describe('bounties.create', () => {
     const requester = await seedUser(t, 'requester');
     const reporter = await seedUser(t, 'reporter');
     const waterBodyId = await seedBody(t);
-    const skate = Date.now() - 6 * HOUR; // 6h old ⇒ inside the 24h new-account window ⇒ would suppress
+    const skate = Date.now() - 12 * HOUR; // 12h old ⇒ inside the 24h new-account window ⇒ would suppress
     await seedReport(reporter, waterBodyId, skate);
 
-    // But a hard freeze since the skate means the ice likely changed → fresh eyes wanted → allow the bounty.
+    // But a hard freeze since the skate (12h × −16°C = 192 freezing-degree-hours, over the 180 bar) means
+    // the ice likely changed → fresh eyes wanted → allow the bounty. The window is [skate, now], so the
+    // stub's in-window hours must carry the whole signal (a longer/colder run than the modest-freeze test).
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => new Response(JSON.stringify(coldWeather(Date.now())), { status: 200 })),
+      vi.fn(
+        async () => new Response(JSON.stringify(coldWeather(Date.now(), 12, -16)), { status: 200 }),
+      ),
     );
     const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     expect(bountyId).toBeTruthy();
+  });
+
+  test('a modest overnight freeze does NOT reopen a bounty — the reopen bar is higher than the contradiction check (§7c)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const skate = Date.now() - 6 * HOUR; // 6h old ⇒ inside the new-account window ⇒ suppresses
+    await seedReport(reporter, waterBodyId, skate);
+
+    // 6h × −8°C = 48 freezing-degree-hours — enough for the contradiction check, but BELOW the 180-FDH
+    // bounty-reopen bar. An ordinary cold night must not un-suppress a still-fresh report's bounty.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify(coldWeather(Date.now(), 6, -8)), { status: 200 }),
+      ),
+    );
+    await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
+      /fresh eyes/,
+    );
+  });
+
+  test('rejects an unauthenticated caller before doing any weather I/O (§7c)', async () => {
+    const t = harness();
+    const waterBodyId = await seedBody(t);
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ hourly: { time: [] } }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    // No `.as` identity ⇒ the up-front auth guard must throw before any DB read or Open-Meteo fetch.
+    await expect(t.action(api.bounties.create, { waterBodyId })).rejects.toThrow(/signed in/);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   test('enforces the rolling open-bounty cap', async () => {

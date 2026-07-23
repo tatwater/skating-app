@@ -64,8 +64,12 @@ export function formatWeatherSinceStrip(s: WeatherSinceSummary): string | null {
     parts.push(`${roundTo(mmToInches(s.totalPrecipMm), 2)}″ precip`);
   }
 
+  // Wind — prefer the gust peak, but fall back to the sustained max so a windy stretch with no gust series
+  // (Open-Meteo can return null `wind_gusts_10m`) still surfaces. Only called out once brisk enough to matter.
   if (s.maxWindGustKph !== null && kphToMph(s.maxWindGustKph) >= GUST_MENTION_MPH) {
     parts.push(`gusts to ${formatWindMph(s.maxWindGustKph)}`);
+  } else if (s.maxWindKph !== null && kphToMph(s.maxWindKph) >= GUST_MENTION_MPH) {
+    parts.push(`winds to ${formatWindMph(s.maxWindKph)}`);
   }
 
   return parts.length > 0 ? parts.join(' · ') : null;

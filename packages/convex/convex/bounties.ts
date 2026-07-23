@@ -18,6 +18,8 @@ import {
   BOUNTY_ELIGIBILITY_WINDOW_HOURS,
   BOUNTY_FRESH_MAX_MULTIPLIER,
   BOUNTY_FRESH_MAX_REPORTS,
+  BOUNTY_REOPEN_FREEZING_DEGREE_HOURS,
+  BOUNTY_REOPEN_THAW_DEGREE_HOURS,
   bboxIntersects,
   DEFAULT_BOUNTY_LIFETIME_MS,
   DEFAULT_BOUNTY_REWARD_POINTS,
@@ -135,6 +137,10 @@ export const bountyFreshnessInputs = internalQuery({
 export const create = action({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }): Promise<Id<'bounties'>> => {
+    // Gate on auth BEFORE any DB read or outbound Open-Meteo fetch, so an unauthenticated caller can't
+    // drive external weather I/O (and the app's shared free-tier quota) on bodies it can't post to. The
+    // real identity/minor/cap checks still run in `createChecked`; this is the cheap up-front guard.
+    if (!(await ctx.auth.getUserIdentity())) throw new ConvexError('Not signed in');
     const now = Date.now();
     const inputs = await ctx.runQuery(internal.bounties.bountyFreshnessInputs, { waterBodyId });
 
@@ -146,7 +152,14 @@ export const create = action({
         // window ⇒ leave it undefined so the score falls back to recency × thumbs × trust (fail-open —
         // a fetch miss never opens a bounty).
         const weatherChangedIceSince =
-          summary && summary.hours > 0 ? weatherExplainsIceChange(summary) : undefined;
+          summary && summary.hours > 0
+            ? weatherExplainsIceChange(summary, {
+                // A HIGHER bar than the contradiction check's default — one ordinary freezing night must
+                // not reopen a well-corroborated report's bounty (§7c). Admin-tunable in Phase 7.
+                freezingDegreeHours: BOUNTY_REOPEN_FREEZING_DEGREE_HOURS,
+                thawDegreeHours: BOUNTY_REOPEN_THAW_DEGREE_HOURS,
+              })
+            : undefined;
         if (
           reportSuppressesBounty(r.skateEndTime, now, FRESH_REPORT_HOURS, {
             netThumbs: r.netThumbs,

@@ -10,33 +10,34 @@ import { useEffect, useState } from 'react';
  * **plain-text, verdict-free** line (D3). Descriptive only; never a safety claim. Attribution required
  * (legal L13). Renders nothing until there's something to say — a fresh window has no weather-since.
  *
- * The parent decides the window: reports pass the skate time (gated by `reportStripState`); hazards pass a
- * rolling recent start (`hazardStripWindowStartMs`). `caveat` carries a hazard's "possibly snow-hidden".
+ * The parent picks the window mode: a **report** passes the skate time (`startMs`, a fixed instant, gated
+ * by `reportStripState`); a **hazard** passes `sinceLastConfirmedAt` and the action derives the rolling
+ * recent window server-side (one clock, matching the decay — §3). `caveat` carries "possibly snow-hidden".
  */
-export function WeatherStrip({
-  waterBodyId,
-  startMs,
-  label = 'Weather since',
-  caveat,
-  near,
-}: {
+export type WeatherStripProps = {
   waterBodyId: string;
-  startMs: number;
   label?: string;
   caveat?: string;
   /** The hazard/report location, so the strip samples the same point the decay does (§5). */
   near?: { lat: number; lng: number };
-}) {
+} & ({ startMs: number } | { sinceLastConfirmedAt: number });
+
+export function WeatherStrip(props: WeatherStripProps) {
+  const { waterBodyId, label = 'Weather since', caveat, near } = props;
   const getWeather = useAction(api.weather.getWeatherSinceForBody);
   const [summary, setSummary] = useState<WeatherSinceSummary | null>(null);
   const nearLat = near?.lat;
   const nearLng = near?.lng;
+  const startMs = 'startMs' in props ? props.startMs : undefined;
+  const sinceLastConfirmedAt =
+    'sinceLastConfirmedAt' in props ? props.sinceLastConfirmedAt : undefined;
 
   useEffect(() => {
     let cancelled = false;
     getWeather({
       waterBodyId: waterBodyId as Id<'waterBodies'>,
-      startMs,
+      ...(startMs !== undefined ? { startMs } : {}),
+      ...(sinceLastConfirmedAt !== undefined ? { sinceLastConfirmedAt } : {}),
       ...(nearLat !== undefined && nearLng !== undefined
         ? { near: { lat: nearLat, lng: nearLng } }
         : {}),
@@ -50,7 +51,7 @@ export function WeatherStrip({
     return () => {
       cancelled = true;
     };
-  }, [getWeather, waterBodyId, startMs, nearLat, nearLng]);
+  }, [getWeather, waterBodyId, startMs, sinceLastConfirmedAt, nearLat, nearLng]);
 
   const line = summary ? formatWeatherSinceStrip(summary) : null;
   if (!line && !caveat) return null;

@@ -6,7 +6,6 @@ import {
   FOOTPRINT_IS_APPROXIMATE,
   freshnessLabel,
   type HazardVerdict,
-  hazardStripWindowStartMs,
   hazardTypeLabel,
   healingNote,
   isPassageMarker,
@@ -114,14 +113,9 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
     }
   }, [bboxMinLat, bboxMaxLat, bboxMinLng, bboxMaxLng, setFocus]);
 
-  // Freeze the strip's window + sample point so its effect doesn't refetch on every re-render (`Date.now()`
-  // inline would make `startMs` a fresh value each render for a >7d-old hazard). Recomputed only on change.
-  const lastConfirmedAt = hazard?.lastConfirmedAt;
-  const weatherStart = useMemo(
-    () =>
-      lastConfirmedAt !== undefined ? hazardStripWindowStartMs(lastConfirmedAt, Date.now()) : 0,
-    [lastConfirmedAt],
-  );
+  // Freeze the strip's sample point so its effect doesn't refetch on every re-render. The rolling window
+  // is derived server-side from `sinceLastConfirmedAt` (one clock, matching the decay cron — §3), so the
+  // client no longer computes it with `Date.now()`. Recomputed only on change.
   const weatherNear = useMemo(
     () =>
       bboxMinLat !== undefined &&
@@ -290,7 +284,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       {archived ? null : (
         <WeatherStrip
           waterBodyId={hazard.waterBodyId}
-          startMs={weatherStart}
+          sinceLastConfirmedAt={hazard.lastConfirmedAt}
           near={weatherNear}
           label="Recent weather here"
           caveat={hazard.snowHidden ? 'Possibly snow-hidden.' : undefined}

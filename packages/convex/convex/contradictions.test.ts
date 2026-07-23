@@ -242,6 +242,87 @@ describe('contradictions.settleContradictions', () => {
     expect((await t.run((ctx) => ctx.db.get(wasMinority)))?.contradictionCount).toBe(0);
   });
 
+  test("escalates two disagreeing reports under an hour apart — weather can't explain a sub-hour gap (no fetch)", async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const opponent = await seedProfile(t, 'opponent');
+    const liar = await seedProfile(t, 'liar');
+    const oppSkate = Date.now() - DAY_MS;
+    const oppReport = await seedReport(t, bodyId, opponent, oppSkate, 'poor', ['snow_ice']);
+    await seedCorroboration(t, oppReport, opponent, 2);
+    // 30 minutes later — too close for weather to have changed the ice, so this is a genuine contradiction.
+    const liarReport = await seedReport(t, bodyId, liar, oppSkate + 30 * 60_000, 'great', [
+      'black_ice',
+    ]);
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ hourly: { time: [] } }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+
+    await t.action(internal.contradictions.settleContradictions, { reportId: liarReport });
+
+    expect((await t.run((ctx) => ctx.db.get(liarReport)))?.contradiction).toBe(true);
+    expect((await t.run((ctx) => ctx.db.get(liar)))?.contradictionCount).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(oppReport)))?.contradiction ?? false).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled(); // sub-hour ⇒ no weather fetch at all
+  });
+
+  test("a throwaway report just outside a flagged report's window CANNOT clear its contradiction (consensus-global, not window-membership)", async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const liar = await seedProfile(t, 'liar', { contradictionCount: 1 });
+    const opponent = await seedProfile(t, 'opponent');
+    const bystander = await seedProfile(t, 'bystander');
+    const t0 = Date.now() - 30 * DAY_MS;
+    // opponent (corroborated majority) at t0; liar (un-corroborated minority) 6d later — already flagged.
+    const oppReport = await seedReport(t, bodyId, opponent, t0, 'poor', ['snow_ice']);
+    await seedCorroboration(t, oppReport, opponent, 2);
+    const liarReport = await seedReport(t, bodyId, liar, t0 + 6 * DAY_MS, 'great', ['black_ice']);
+    await t.run((ctx) => ctx.db.patch(liarReport, { contradiction: true, conflicting: true }));
+    // A throwaway posted 12d after t0: its NARROW ±7d window [t0+5d, t0+19d] contains the liar but NOT the
+    // opponent — the exact evasion the old anchor-window reconcile allowed. The widened ±2×7d load must
+    // still see the opponent and re-confirm the liar's flag.
+    const throwaway = await seedReport(t, bodyId, bystander, t0 + 12 * DAY_MS, 'good', [
+      'black_ice',
+    ]);
+    vi.stubGlobal('fetch', quietWeather(t0 + 6 * DAY_MS));
+
+    await t.action(internal.contradictions.settleContradictions, { reportId: throwaway });
+
+    expect((await t.run((ctx) => ctx.db.get(liarReport)))?.contradiction).toBe(true);
+    expect((await t.run((ctx) => ctx.db.get(liarReport)))?.conflicting).toBe(true);
+    expect((await t.run((ctx) => ctx.db.get(liar)))?.contradictionCount).toBe(1); // NOT decremented
+  });
+
+  test('sizes Open-Meteo `past_days` from the real now, not the (past) window end — no truncation for a delayed report', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const a = await seedProfile(t, 'a');
+    const b = await seedProfile(t, 'b');
+    // Both skates are days in the PAST (a report logged after a reporting delay); the pair window is
+    // [now−5d, now−3d]. Sized from the window END that'd be past_days≈2 and drop the early days; sized from
+    // real now it must cover ≈5 days so the intervening weather is actually fetched.
+    const lo = Date.now() - 5 * DAY_MS;
+    const hi = Date.now() - 3 * DAY_MS;
+    const priorId = await seedReport(t, bodyId, a, lo, 'great', ['black_ice']);
+    const newId = await seedReport(t, bodyId, b, hi, 'poor', ['snow_ice']);
+    await seedCorroboration(t, newId, b, 2);
+    let capturedUrl = '';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL) => {
+        capturedUrl = String(url);
+        return new Response(JSON.stringify(weatherBetween(hi, -0.5)), { status: 200 });
+      }),
+    );
+
+    await t.action(internal.contradictions.settleContradictions, { reportId: newId });
+
+    const pastDays = Number(new URL(capturedUrl).searchParams.get('past_days'));
+    expect(pastDays).toBeGreaterThanOrEqual(5); // covers from real now back past `lo`, not just hi−lo
+    void priorId;
+  });
+
   test('escalates to a moderator flag once the pattern threshold is crossed — never a trust penalty', async () => {
     const t = harness();
     const bodyId = await seedBody(t);

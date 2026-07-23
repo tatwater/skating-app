@@ -7,7 +7,6 @@ import {
   type HazardFreshness,
   type HazardType,
   type HazardVerdict,
-  hazardStripWindowStartMs,
   hazardTypeLabel,
   healingNote,
   isPassageMarker,
@@ -320,20 +319,14 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
     setHighlightWaterBodyId(hazard.waterBodyId);
   }, [hazard, setFocus, setHighlightWaterBodyId]);
 
-  // Freeze the strip's window + sample point per hazard so the WeatherStrip effect doesn't refetch on
-  // every parent re-render: `Date.now()` inline would make `startMs` a fresh value each render. Depend on
-  // the bbox/confirm *numbers* (not the whole `hazard`, whose identity changes on every confirm), so the
-  // memo only recomputes when the values actually change.
-  const lastConfirmedAt = hazard?.lastConfirmedAt;
+  // Freeze the strip's sample point per hazard so the WeatherStrip effect doesn't refetch on every parent
+  // re-render. The rolling window itself is now derived server-side from `sinceLastConfirmedAt` (one clock,
+  // matching the decay cron — §3), so the client no longer computes it with `Date.now()`. Depend on the
+  // bbox *numbers* (not the whole `hazard`, whose identity changes on every confirm).
   const bboxMinLat = hazard?.bbox.minLat;
   const bboxMaxLat = hazard?.bbox.maxLat;
   const bboxMinLng = hazard?.bbox.minLng;
   const bboxMaxLng = hazard?.bbox.maxLng;
-  const weatherStart = useMemo(
-    () =>
-      lastConfirmedAt !== undefined ? hazardStripWindowStartMs(lastConfirmedAt, Date.now()) : 0,
-    [lastConfirmedAt],
-  );
   const weatherNear = useMemo(
     () =>
       bboxMinLat !== undefined &&
@@ -371,7 +364,9 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         freshness: hazard.freshness,
         provisional: hazard.provisional,
         healing: hazard.healingState === 'healing_unsafe',
-        archived: hazard.status === 'archived',
+        // Any non-active status is "retired" for display (unified with mobile): a new status defaults to
+        // hidden strip / no-confirm rather than silently rendering as active.
+        archived: hazard.status !== 'active',
         description: hazard.description,
         // Phase 6 wires the reporter through `publicByIds` so the author line carries the TrustAvatar
         // ring + avatar (superseding Phase 9.5's plain `hazard.reporterName`).
@@ -385,10 +380,10 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       }}
       weatherStrip={
         // Only active hazards show recent weather — a retired/archived pin needn't hit Open-Meteo (§3).
-        hazard.status === 'archived' ? undefined : (
+        hazard.status !== 'active' ? undefined : (
           <WeatherStrip
             waterBodyId={hazard.waterBodyId}
-            startMs={weatherStart}
+            sinceLastConfirmedAt={hazard.lastConfirmedAt}
             near={weatherNear}
             label="Recent weather here"
             caveat={hazard.snowHidden ? 'Possibly snow-hidden.' : undefined}

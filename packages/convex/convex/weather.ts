@@ -16,7 +16,12 @@
  * the cron + conditions auto-fill reuse.
  */
 
-import { type HourlyWeather, summarizeWeatherSince, type WeatherSinceSummary } from '@skating/core';
+import {
+  HAZARD_WEATHER_LOOKBACK_DAYS,
+  type HourlyWeather,
+  summarizeWeatherSince,
+  type WeatherSinceSummary,
+} from '@skating/core';
 import type { Infer } from 'convex/values';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
@@ -87,9 +92,16 @@ async function fetchOpenMeteoHourly(
   windowStartMs: number,
   nowMs: number,
 ): Promise<HourlyWeather[] | null> {
+  // Open-Meteo anchors `past_days` to the REAL current date, so size it from `Date.now()`, never from the
+  // window end `nowMs` (which a caller may set in the past — e.g. the contradiction settle passes the older
+  // report's skate time). Sizing from `nowMs` would make the returned series start at `realNow − (nowMs −
+  // windowStart)`, silently dropping the earliest `(realNow − nowMs)` of the intended window and biasing
+  // `weatherExplainsIceChange` toward under-firing (over-flagging honest "the ice changed" reports). The
+  // window filter below still trims the top at `nowMs`. `Date.now() ≥ nowMs` always, so this only ever
+  // widens the fetch enough to cover the whole window.
   const pastDays = Math.min(
     MAX_PAST_DAYS,
-    Math.max(1, Math.ceil((nowMs - windowStartMs) / DAY_MS)),
+    Math.max(1, Math.ceil((Date.now() - windowStartMs) / DAY_MS)),
   );
   const params = new URLSearchParams({
     latitude: String(lat),
@@ -278,18 +290,40 @@ export async function resolveWeatherSince(
 }
 
 /**
- * Public: the weather since `startMs` for a body's sample point. Called by the strip on drawer-open
- * (web + mobile). `near` resolves the hazard/report's nearest sample point so the strip matches the decay
- * (§5). Returns the empty summary when the body is unavailable OR the fetch fails (`null`) — a blank strip,
- * uncached, retried on the next open.
+ * Public: the weather-since summary for a body's sample point. Called by the strip on drawer-open (web +
+ * mobile). `near` resolves the hazard/report's nearest sample point so the strip matches the decay (§5).
+ *
+ * Two window modes, both ending at the server's `now`:
+ *   - **report strip:** pass `startMs` (the skate time — a fixed past instant).
+ *   - **hazard strip:** pass `sinceLastConfirmedAt`; the window start is derived **server-side** as
+ *     `max(lastConfirmedAt, now − lookback)` — the SAME expression the decay cron uses (§6). Deriving it
+ *     here (not on the client) keeps the strip and the decay on one clock, so a client-clock skew can't
+ *     bucket the strip into a different `weatherCache` entry than the stored multiplier (§3 consistency).
+ *
+ * Returns the empty summary when the body is unavailable, no window is given, or the fetch fails (`null`) —
+ * a blank strip, uncached, retried on the next open.
  */
 export const getWeatherSinceForBody = action({
-  args: { waterBodyId: v.id('waterBodies'), startMs: v.number(), near: v.optional(latLng) },
-  handler: async (ctx, { waterBodyId, startMs, near }): Promise<WeatherSinceSummary> => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    startMs: v.optional(v.number()),
+    sinceLastConfirmedAt: v.optional(v.number()),
+    near: v.optional(latLng),
+  },
+  handler: async (
+    ctx,
+    { waterBodyId, startMs, sinceLastConfirmedAt, near },
+  ): Promise<WeatherSinceSummary> => {
+    const now = Date.now();
+    const windowStart =
+      sinceLastConfirmedAt !== undefined
+        ? Math.max(sinceLastConfirmedAt, now - HAZARD_WEATHER_LOOKBACK_DAYS * DAY_MS)
+        : startMs;
+    if (windowStart === undefined) return EMPTY_SUMMARY;
     const point = await ctx.runQuery(internal.weather.getBodySamplePoint, { waterBodyId, near });
     if (!point) return EMPTY_SUMMARY;
     return (
-      (await resolveWeatherSince(ctx, point.lat, point.lng, startMs, Date.now())) ?? EMPTY_SUMMARY
+      (await resolveWeatherSince(ctx, point.lat, point.lng, windowStart, now)) ?? EMPTY_SUMMARY
     );
   },
 });

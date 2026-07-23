@@ -39,6 +39,13 @@ import {
 import { nearestSamplePoint } from './lib/sampling';
 import { resolveWeatherSince } from './weather';
 
+/**
+ * The shortest inter-report gap over which weather could plausibly change the ice. Below it, a disagreement
+ * is a real contradiction (weather can't explain it) rather than a "can't tell" — and the window is too
+ * short to even summarize. One hour, matching the `weatherCache` bucket granularity.
+ */
+const WEATHER_MIN_EXPLAIN_WINDOW_MS = 3_600_000;
+
 /** One report in the settle cluster, with its current corroboration tally + stored flags. */
 interface ClusterReport {
   id: Id<'reports'>;
@@ -53,10 +60,17 @@ interface ClusterReport {
 }
 
 /**
- * Load the settle cluster around a report: the quality-bearing visible reports within
+ * Load the settle cluster around a report: the quality-bearing visible reports within **twice** the
  * `CORROBORATION_WINDOW` of it, each with its live corroboration count, plus the body's sample point (the
  * same point the decay uses, §5). Only quality-bearing reports can contradict (`reportsContradict` needs a
  * quality on both sides). Null when the report/body is gone.
+ *
+ * **Why 2×window.** `settleContradictions` only *reconciles* reports within ±`CORROBORATION_WINDOW` of the
+ * anchor (the set whose status this new report can change), but to judge each of those correctly it needs
+ * that report's OWN ±window neighborhood — which reaches up to 2×window from the anchor. Loading the wider
+ * band makes each reconciled report's verdict a pure function of its true neighborhood, so escalation is
+ * order-independent and a valid contradiction can't be spuriously cleared by an unrelated later report
+ * whose narrow window happens to exclude the corroborated opponent (the §7b consensus guarantee).
  */
 export const contradictionCluster = internalQuery({
   args: { reportId: v.id('reports') },
@@ -64,8 +78,8 @@ export const contradictionCluster = internalQuery({
     const anchor = await ctx.db.get(reportId);
     if (!anchor) return null;
 
-    const lower = anchor.skateEndTime - CORROBORATION_WINDOW_MS;
-    const upper = anchor.skateEndTime + CORROBORATION_WINDOW_MS;
+    const lower = anchor.skateEndTime - 2 * CORROBORATION_WINDOW_MS;
+    const upper = anchor.skateEndTime + 2 * CORROBORATION_WINDOW_MS;
     const inWindow = await ctx.db
       .query('reports')
       .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
@@ -99,7 +113,7 @@ export const contradictionCluster = internalQuery({
     const body = await ctx.db.get(anchor.waterBodyId);
     if (!body) return null;
     const point = nearestSamplePoint(body, anchor.point);
-    return { lat: point.lat, lng: point.lng, reports };
+    return { lat: point.lat, lng: point.lng, anchorSkateEndTime: anchor.skateEndTime, reports };
   },
 });
 
@@ -175,13 +189,27 @@ export const applyContradictionSettlement = internalMutation({
  * weather-unexplained disagreeing pair it discloses the conflict on both, and escalates the strictly-less-
  * corroborated side **only when that side has zero corroboration** — so a genuinely unsettled disagreement
  * (both un-corroborated) discloses but escalates no one, and the corroborated majority is never escalated.
+ *
+ * **Consensus, not order.** Only reports within ±`CORROBORATION_WINDOW` of the anchor (the *reconcile band*)
+ * can have their status changed by this new report, so only they are patched; the outer band is loaded
+ * purely as context (a band report's neighbors). Each pair is judged on the same-window rule
+ * `|a − b| ≤ CORROBORATION_WINDOW` (what `runCorroboration` uses). Because every reconciled report's full
+ * neighborhood is loaded (§ `contradictionCluster`), its verdict is identical no matter which report
+ * triggered the settle — a bad actor can't post a throwaway report just outside a flagged report's window
+ * to clear it.
  */
 export const settleContradictions = internalAction({
   args: { reportId: v.id('reports') },
   handler: async (ctx, { reportId }) => {
     const cluster = await ctx.runQuery(internal.contradictions.contradictionCluster, { reportId });
     if (!cluster || cluster.reports.length < 2) return;
-    const { lat, lng, reports } = cluster;
+    const { lat, lng, anchorSkateEndTime, reports } = cluster;
+
+    // The reconcile band: reports whose contradiction status the anchor's creation can actually change.
+    const bandLo = anchorSkateEndTime - CORROBORATION_WINDOW_MS;
+    const bandHi = anchorSkateEndTime + CORROBORATION_WINDOW_MS;
+    const inBand = (r: (typeof reports)[number]) =>
+      r.skateEndTime >= bandLo && r.skateEndTime <= bandHi;
 
     const conflicting = new Set<Id<'reports'>>();
     const contradiction = new Set<Id<'reports'>>();
@@ -193,13 +221,23 @@ export const settleContradictions = internalAction({
         const b = reports[j];
         if (!a || !b) continue;
         if (a.authorId === b.authorId) continue; // a reporter can't contradict themselves
+        // Two reports only bear on each other within a corroboration window of EACH OTHER (same rule as
+        // `runCorroboration`); and skip any pair with no band member — its result is never patched.
+        if (Math.abs(a.skateEndTime - b.skateEndTime) > CORROBORATION_WINDOW_MS) continue;
+        if (!inBand(a) && !inBand(b)) continue;
         if (!reportsContradict(a, b)) continue;
 
         const lo = Math.min(a.skateEndTime, b.skateEndTime);
         const hi = Math.max(a.skateEndTime, b.skateEndTime);
-        const summary = await resolveWeatherSince(ctx, lat, lng, lo, hi);
-        if (!summary || summary.hours === 0) continue; // no data ⇒ can't confirm ⇒ fail open
-        if (weatherExplainsIceChange(summary)) continue; // honest "the ice changed" — not a contradiction
+        // Weather can't plausibly change the ice in under an hour, so two disagreeing reports that close in
+        // time are a real contradiction — NOT a "can't tell" to fail open on. Skip the fetch and treat the
+        // change as weather-unexplained. (A sub-hour window also can't be summarized: `resolveWeatherSince`
+        // returns the empty summary for it, which the old `hours === 0` guard silently swallowed.)
+        if (hi - lo >= WEATHER_MIN_EXPLAIN_WINDOW_MS) {
+          const summary = await resolveWeatherSince(ctx, lat, lng, lo, hi);
+          if (summary === null) continue; // fetch FAILED ⇒ can't confirm ⇒ fail open, don't record
+          if (summary.hours > 0 && weatherExplainsIceChange(summary)) continue; // honest "ice changed"
+        }
 
         conflicting.add(a.id);
         conflicting.add(b.id);
@@ -216,10 +254,11 @@ export const settleContradictions = internalAction({
       }
     }
 
-    // Reconcile every report in the cluster — including clearing stale flags on reports no longer in a
-    // (minority) contradiction, so the counter self-corrects as corroboration accrues.
+    // Reconcile ONLY the reconcile-band reports (clearing stale flags on any no longer in a minority
+    // contradiction, so the counter self-corrects as corroboration accrues). Context reports in the outer
+    // band are owned by their own settle — patching them here from a partial neighborhood is the bug we fixed.
     await ctx.runMutation(internal.contradictions.applyContradictionSettlement, {
-      reports: reports.map((r) => ({
+      reports: reports.filter(inBand).map((r) => ({
         id: r.id,
         conflicting: conflicting.has(r.id),
         contradiction: contradiction.has(r.id),

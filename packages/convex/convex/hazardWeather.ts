@@ -119,19 +119,27 @@ export const refreshHazardWeather = internalAction({
       if (job.weatherAdjustedAt !== undefined && now - job.weatherAdjustedAt < minIntervalMs) {
         continue; // refreshed recently enough — the effective cadence gate
       }
-      const windowStart = Math.max(job.lastConfirmedAt, now - lookbackMs);
-      const summary = await resolveWeatherSince(ctx, job.lat, job.lng, windowStart, now);
-      // A failed fetch (`null`) is NOT an empty summary: keep the last good multiplier and DON'T stamp
-      // `weatherAdjustedAt`, so a transient Open-Meteo blip can't erase a real signal or block retry for
-      // the cadence window — the next tick tries again (fail-open, matches the cache layer's no-cache-on-
-      // failure discipline in `weather.ts`).
-      if (summary === null) continue;
-      await ctx.runMutation(internal.hazardWeather.storeHazardWeather, {
-        hazardId: job.hazardId,
-        decayMultiplier: decayMultiplier(job.type, summary),
-        snowHidden: isSnowHidden(summary),
-        weatherAdjustedAt: now,
-      });
+      // Isolate each hazard: an unexpected throw from the resolver/mutation (e.g. a transient OCC or cache
+      // write conflict) skips just this hazard, not the whole tick. `fetchOpenMeteoHourly` already swallows
+      // network/HTTP errors into `null`; this catches everything else so one bad job can't starve the rest.
+      // Fail-open: a skipped hazard keeps its last-good multiplier (or none ⇒ 1) and retries next tick.
+      try {
+        const windowStart = Math.max(job.lastConfirmedAt, now - lookbackMs);
+        const summary = await resolveWeatherSince(ctx, job.lat, job.lng, windowStart, now);
+        // A failed fetch (`null`) is NOT an empty summary: keep the last good multiplier and DON'T stamp
+        // `weatherAdjustedAt`, so a transient Open-Meteo blip can't erase a real signal or block retry for
+        // the cadence window — the next tick tries again (fail-open, matches the cache layer's no-cache-on-
+        // failure discipline in `weather.ts`).
+        if (summary === null) continue;
+        await ctx.runMutation(internal.hazardWeather.storeHazardWeather, {
+          hazardId: job.hazardId,
+          decayMultiplier: decayMultiplier(job.type, summary),
+          snowHidden: isSnowHidden(summary),
+          weatherAdjustedAt: now,
+        });
+      } catch (err) {
+        console.warn(`hazard weather refresh failed for ${job.hazardId}`, err);
+      }
     }
   },
 });
