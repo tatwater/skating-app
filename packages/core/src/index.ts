@@ -19,6 +19,7 @@ export * from './hazardGeometry';
 export * from './hazardLayer';
 export * from './hazardLifecycle';
 export * from './hazardProjection';
+export * from './hazardWeatherDecay';
 export * from './hazardProximity';
 export * from './hazardQueue';
 export * from './lakeSearch';
