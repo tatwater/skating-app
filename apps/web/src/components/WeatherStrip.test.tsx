@@ -15,7 +15,7 @@ function wx(partial: Partial<WeatherSinceSummary> = {}): WeatherSinceSummary {
 describe('WeatherStrip', () => {
   it('renders the verdict-free line + Open-Meteo attribution', async () => {
     getWeather.mockResolvedValue(wx({ peakTempC: 5, minTempC: -5.6 }));
-    render(<WeatherStrip waterBodyId="wb1" startMs={0} label="Weather since this report" />);
+    render(<WeatherStrip reportId="r1" label="Weather since this report" />);
 
     expect(await screen.findByText(/peak 41°F · low 22°F/)).toBeInTheDocument();
     expect(screen.getByText('Weather since this report')).toBeInTheDocument();
@@ -24,14 +24,14 @@ describe('WeatherStrip', () => {
 
   it('shows the caveat even when there is no line (snow-hidden, no weather data)', async () => {
     getWeather.mockResolvedValue(summarizeWeatherSince([])); // hours 0 ⇒ no line
-    render(<WeatherStrip waterBodyId="wb1" startMs={0} caveat="Possibly snow-hidden." />);
+    render(<WeatherStrip reportId="r1" caveat="Possibly snow-hidden." />);
 
     expect(await screen.findByText('Possibly snow-hidden.')).toBeInTheDocument();
   });
 
   it('renders nothing when there is neither a line nor a caveat', async () => {
     getWeather.mockResolvedValue(summarizeWeatherSince([]));
-    const { container } = render(<WeatherStrip waterBodyId="wb1" startMs={0} />);
+    const { container } = render(<WeatherStrip reportId="r1" />);
 
     await waitFor(() => expect(getWeather).toHaveBeenCalled());
     expect(container).toBeEmptyDOMElement();

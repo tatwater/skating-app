@@ -15,32 +15,24 @@ import { useEffect, useState } from 'react';
  * recent window server-side (one clock, matching the decay — §3). `caveat` carries "possibly snow-hidden".
  */
 export type WeatherStripProps = {
-  waterBodyId: string;
   label?: string;
   caveat?: string;
-  /** The hazard/report location, so the strip samples the same point the decay does (§5). */
-  near?: { lat: number; lng: number };
-} & ({ startMs: number } | { sinceLastConfirmedAt: number });
+} & ({ reportId: string } | { hazardId: string });
 
 export function WeatherStrip(props: WeatherStripProps) {
-  const { waterBodyId, label = 'Weather since', caveat, near } = props;
+  const { label = 'Weather since', caveat } = props;
   const getWeather = useAction(api.weather.getWeatherSinceForBody);
   const [summary, setSummary] = useState<WeatherSinceSummary | null>(null);
-  const nearLat = near?.lat;
-  const nearLng = near?.lng;
-  const startMs = 'startMs' in props ? props.startMs : undefined;
-  const sinceLastConfirmedAt =
-    'sinceLastConfirmedAt' in props ? props.sinceLastConfirmedAt : undefined;
+  // The window (body, sample point, start) is derived server-side from the entity id — the client never
+  // supplies a raw timestamp, so it can't amplify weather fetches/cache keys (§3 resource guard).
+  const reportId = 'reportId' in props ? props.reportId : undefined;
+  const hazardId = 'hazardId' in props ? props.hazardId : undefined;
 
   useEffect(() => {
     let cancelled = false;
     getWeather({
-      waterBodyId: waterBodyId as Id<'waterBodies'>,
-      ...(startMs !== undefined ? { startMs } : {}),
-      ...(sinceLastConfirmedAt !== undefined ? { sinceLastConfirmedAt } : {}),
-      ...(nearLat !== undefined && nearLng !== undefined
-        ? { near: { lat: nearLat, lng: nearLng } }
-        : {}),
+      ...(reportId !== undefined ? { reportId: reportId as Id<'reports'> } : {}),
+      ...(hazardId !== undefined ? { hazardId: hazardId as Id<'hazards'> } : {}),
     })
       .then((s) => {
         if (!cancelled) setSummary(s);
@@ -51,7 +43,7 @@ export function WeatherStrip(props: WeatherStripProps) {
     return () => {
       cancelled = true;
     };
-  }, [getWeather, waterBodyId, startMs, sinceLastConfirmedAt, nearLat, nearLng]);
+  }, [getWeather, reportId, hazardId]);
 
   const line = summary ? formatWeatherSinceStrip(summary) : null;
   if (!line && !caveat) return null;

@@ -183,14 +183,8 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         // "off the ice <date>" already carries the age line).
         const strip = reportStripState(report.skateEndTime, Date.now());
         return strip.kind === 'strip' ? (
-          <WeatherStrip
-            waterBodyId={report.waterBodyId}
-            startMs={strip.windowStartMs}
-            // Sample at the report's put-in, so a report and a co-located hazard resolve the same point
-            // once a giant gets `weatherSamplePoints` (a no-op today — every body samples its centroid).
-            near={{ lat: report.point.lat, lng: report.point.lng }}
-            label="Weather since this report"
-          />
+          // The server derives the window (body, put-in sample point, skate time) from the report id.
+          <WeatherStrip reportId={report._id} label="Weather since this report" />
         ) : null;
       })()}
 

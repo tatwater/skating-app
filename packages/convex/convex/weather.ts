@@ -25,10 +25,11 @@ import {
 import type { Infer } from 'convex/values';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, internalQuery } from './_generated/server';
-import { nearestSamplePoint } from './lib/sampling';
-import { latLng, weatherSinceSummary } from './lib/validators';
+import { hazardCenter, nearestSamplePoint } from './lib/sampling';
+import { weatherSinceSummary } from './lib/validators';
 
 // The validator and the core type must stay structurally identical — assert it at compile time so drift
 // in either is a build error, not a silent DB/runtime mismatch.
@@ -232,30 +233,56 @@ export const writeWeatherCache = internalMutation({
 });
 
 /**
- * The weather sample point for a body, resolved the **same way the decay cron does** (§5) so the strip and
- * the decay always read the same point → the same cache entry. `near` (a report's put-in or a hazard's
- * center) picks the nearest of `weatherSamplePoints`; absent, it falls back to the centroid. In v1 (no
- * sample points set) every path collapses to the centroid, but wiring `near` keeps strip↔decay consistent
- * the moment a giant gets multi-cell sample points.
+ * Resolve a strip's weather window from a **server-validated entity**, never a client-supplied timestamp
+ * (§3 resource guard). The strip fetches by `reportId` or `hazardId`; the server reads the entity's real
+ * skate time / last-confirmed time and its body's sample point, so a caller can't mint arbitrary windows
+ * to amplify Open-Meteo fetches + `weatherCache` inserts — the reachable window set is exactly the reports
+ * / hazards that actually exist and are user-visible (Convex ids are unguessable, so an account only ever
+ * reaches what it can already see). Sample point resolved the **same way the decay cron does** (§5) so the
+ * strip and decay share one cache entry.
+ *
+ * Window start matches the decay cron / `reportStripState` exactly: a report uses its skate time; a hazard
+ * uses `max(lastConfirmedAt, now − lookback)`. Returns `null` (⇒ a blank strip) when the entity is missing,
+ * not user-visible, or its body is gone.
  */
-export const getBodySamplePoint = internalQuery({
-  args: { waterBodyId: v.id('waterBodies'), near: v.optional(latLng) },
-  handler: async (ctx, { waterBodyId, near }) => {
+export const resolveStripAnchor = internalQuery({
+  args: {
+    reportId: v.optional(v.id('reports')),
+    hazardId: v.optional(v.id('hazards')),
+  },
+  handler: async (ctx, { reportId, hazardId }) => {
+    const now = Date.now();
+    let waterBodyId: Id<'waterBodies'>;
+    let startMs: number;
+    let near: { lat: number; lng: number };
+    if (reportId !== undefined) {
+      const report = await ctx.db.get(reportId);
+      if (!report) return null;
+      if (report.moderationStatus !== 'visible') return null;
+      waterBodyId = report.waterBodyId;
+      startMs = report.skateEndTime;
+      near = report.point;
+    } else if (hazardId !== undefined) {
+      const hazard = await ctx.db.get(hazardId);
+      if (!hazard) return null;
+      // Same visibility gate the hazard drawer uses — a moderator-hidden or feature-promoted pin has no
+      // strip (it doesn't render), so it can't drive a fetch either.
+      if (hazard.moderationStatus !== 'visible' || hazard.promotedToFeatureId !== undefined) {
+        return null;
+      }
+      waterBodyId = hazard.waterBodyId;
+      startMs = Math.max(hazard.lastConfirmedAt, now - HAZARD_WEATHER_LOOKBACK_DAYS * DAY_MS);
+      near = hazardCenter(hazard);
+    } else {
+      return null;
+    }
     const body = await ctx.db.get(waterBodyId);
     if (!body || body.removedAt) return null;
-    return nearestSamplePoint(body, near ?? body.centroid);
+    const point = nearestSamplePoint(body, near);
+    return { lat: point.lat, lng: point.lng, startMs };
   },
 });
 
-/**
- * Resolve the weather-since summary for a point + window, cache-first. Shared by the strip action, the
- * decay cron (§6), and the bounty/contradiction gates (§7). Returns:
- *   - a summary (possibly the empty one) when the window is valid — cached for the hour bucket;
- *   - the **empty** summary, uncached, when the window isn't a full hour yet (a real "no weather" result);
- *   - **`null`** when the fetch itself failed (network/HTTP/empty-200) — a distinct "couldn't tell" that
- *     callers fail open on WITHOUT caching, so the next call retries. The decay cron relies on this to
- *     avoid overwriting a good multiplier (and blocking retry) on a transient blip.
- */
 /**
  * Hard ceiling on how far back a weather window may start. Every legitimate window sits far inside it —
  * the report strip renders only for reports 6h–**14d** old (`reportStripState`), the hazard/decay window
@@ -268,6 +295,15 @@ export const getBodySamplePoint = internalQuery({
  */
 export const WEATHER_WINDOW_MAX_LOOKBACK_MS = 30 * DAY_MS;
 
+/**
+ * Resolve the weather-since summary for a point + window, cache-first. Shared by the strip action, the
+ * decay cron (§6), and the bounty/contradiction gates (§7). Returns:
+ *   - a summary (possibly the empty one) when the window is valid — cached for the hour bucket;
+ *   - the **empty** summary, uncached, when the window isn't a full hour yet (a real "no weather" result);
+ *   - **`null`** when the fetch itself failed (network/HTTP/empty-200) — a distinct "couldn't tell" that
+ *     callers fail open on WITHOUT caching, so the next call retries. The decay cron relies on this to
+ *     avoid overwriting a good multiplier (and blocking retry) on a transient blip.
+ */
 export async function resolveWeatherSince(
   ctx: ActionCtx,
   lat: number,
@@ -302,46 +338,31 @@ export async function resolveWeatherSince(
 }
 
 /**
- * Public: the weather-since summary for a body's sample point. Called by the strip on drawer-open (web +
- * mobile). `near` resolves the hazard/report's nearest sample point so the strip matches the decay (§5).
+ * Public: the weather-since summary for the strip on a **report** or **hazard** drawer (web + mobile),
+ * fetched on drawer-open. The caller identifies the entity by **id** — `reportId` for a report strip,
+ * `hazardId` for a hazard strip — and the server derives the body, sample point and window start from that
+ * entity (`resolveStripAnchor`): a report uses its skate time, a hazard its `max(lastConfirmedAt, now −
+ * lookback)` (the decay cron's window, §5).
  *
- * Two window modes, both ending at the server's `now`:
- *   - **report strip:** pass `startMs` (the skate time — a fixed past instant).
- *   - **hazard strip:** pass `sinceLastConfirmedAt`; the window start is derived **server-side** as
- *     `max(lastConfirmedAt, now − lookback)` — the SAME expression the decay cron uses (§6). Deriving it
- *     here (not on the client) keeps the strip and the decay on one clock, so a client-clock skew can't
- *     bucket the strip into a different `weatherCache` entry than the stored multiplier (§3 consistency).
- *
- * Returns the empty summary when the body is unavailable, no window is given, or the fetch fails (`null`) —
- * a blank strip, uncached, retried on the next open.
+ * Deriving the window from **server state instead of a client timestamp** is the resource guard (§3): with
+ * a signed-in caller *and* server-derived windows, neither an anonymous nor an authenticated account can
+ * enumerate arbitrary windows for a discoverable body to amplify Open-Meteo fetches + `weatherCache`
+ * inserts — the reachable set is exactly the reports/hazards that exist and are visible (unguessable ids).
+ * Returns the empty summary (a blank strip) when unauthenticated, the entity is gone/hidden, the window
+ * isn't a full hour yet, or the fetch fails.
  */
 export const getWeatherSinceForBody = action({
   args: {
-    waterBodyId: v.id('waterBodies'),
-    startMs: v.optional(v.number()),
-    sinceLastConfirmedAt: v.optional(v.number()),
-    near: v.optional(latLng),
+    reportId: v.optional(v.id('reports')),
+    hazardId: v.optional(v.id('hazards')),
   },
-  handler: async (
-    ctx,
-    { waterBodyId, startMs, sinceLastConfirmedAt, near },
-  ): Promise<WeatherSinceSummary> => {
-    // Require an authenticated session BEFORE any sample-point read or Open-Meteo fetch/cache write.
-    // `startMs` is a client-supplied window start at hourly granularity, so an anonymous caller could
-    // otherwise enumerate distinct windows for a known body — each a fresh cache key — to drive unbounded
-    // external fetches + persistent `weatherCache` inserts on the app's shared free tier (resource
-    // exhaustion). A blank strip for a signed-out caller matches this action's other fail-soft returns.
+  handler: async (ctx, { reportId, hazardId }): Promise<WeatherSinceSummary> => {
     if (!(await ctx.auth.getUserIdentity())) return EMPTY_SUMMARY;
-    const now = Date.now();
-    const windowStart =
-      sinceLastConfirmedAt !== undefined
-        ? Math.max(sinceLastConfirmedAt, now - HAZARD_WEATHER_LOOKBACK_DAYS * DAY_MS)
-        : startMs;
-    if (windowStart === undefined) return EMPTY_SUMMARY;
-    const point = await ctx.runQuery(internal.weather.getBodySamplePoint, { waterBodyId, near });
-    if (!point) return EMPTY_SUMMARY;
+    const anchor = await ctx.runQuery(internal.weather.resolveStripAnchor, { reportId, hazardId });
+    if (!anchor) return EMPTY_SUMMARY;
     return (
-      (await resolveWeatherSince(ctx, point.lat, point.lng, windowStart, now)) ?? EMPTY_SUMMARY
+      (await resolveWeatherSince(ctx, anchor.lat, anchor.lng, anchor.startMs, Date.now())) ??
+      EMPTY_SUMMARY
     );
   },
 });

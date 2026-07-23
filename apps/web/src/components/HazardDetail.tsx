@@ -18,7 +18,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { FlagDialog } from './SafetyControls';
@@ -319,25 +319,6 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
     setHighlightWaterBodyId(hazard.waterBodyId);
   }, [hazard, setFocus, setHighlightWaterBodyId]);
 
-  // Freeze the strip's sample point per hazard so the WeatherStrip effect doesn't refetch on every parent
-  // re-render. The rolling window itself is now derived server-side from `sinceLastConfirmedAt` (one clock,
-  // matching the decay cron — §3), so the client no longer computes it with `Date.now()`. Depend on the
-  // bbox *numbers* (not the whole `hazard`, whose identity changes on every confirm).
-  const bboxMinLat = hazard?.bbox.minLat;
-  const bboxMaxLat = hazard?.bbox.maxLat;
-  const bboxMinLng = hazard?.bbox.minLng;
-  const bboxMaxLng = hazard?.bbox.maxLng;
-  const weatherNear = useMemo(
-    () =>
-      bboxMinLat !== undefined &&
-      bboxMaxLat !== undefined &&
-      bboxMinLng !== undefined &&
-      bboxMaxLng !== undefined
-        ? { lat: (bboxMinLat + bboxMaxLat) / 2, lng: (bboxMinLng + bboxMaxLng) / 2 }
-        : undefined,
-    [bboxMinLat, bboxMaxLat, bboxMinLng, bboxMaxLng],
-  );
-
   if (hazard === undefined) return <DetailSkeleton />;
   if (hazard === null) {
     return (
@@ -382,9 +363,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         // Only active hazards show recent weather — a retired/archived pin needn't hit Open-Meteo (§3).
         hazard.status !== 'active' ? undefined : (
           <WeatherStrip
-            waterBodyId={hazard.waterBodyId}
-            sinceLastConfirmedAt={hazard.lastConfirmedAt}
-            near={weatherNear}
+            hazardId={hazard._id}
             label="Recent weather here"
             caveat={hazard.snowHidden ? 'Possibly snow-hidden.' : undefined}
           />

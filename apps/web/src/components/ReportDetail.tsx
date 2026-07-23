@@ -284,14 +284,9 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   const stripState = reportStripState(report.skateEndTime, Date.now());
   const weatherStrip =
     stripState.kind === 'strip' ? (
-      <WeatherStrip
-        waterBodyId={report.waterBodyId}
-        startMs={stripState.windowStartMs}
-        // Sample at the report's put-in, so a report and a co-located hazard resolve the same point once a
-        // multi-cell giant gets `weatherSamplePoints` (a no-op today — every body samples its centroid).
-        near={{ lat: report.point.lat, lng: report.point.lng }}
-        label="Weather since this report"
-      />
+      // The server derives the window (body, put-in sample point, skate time) from the report id — the
+      // client passes no raw timestamp (§3 resource guard).
+      <WeatherStrip reportId={report._id} label="Weather since this report" />
     ) : null;
 
   return (

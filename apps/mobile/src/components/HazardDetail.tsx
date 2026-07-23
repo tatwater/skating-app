@@ -17,7 +17,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { randomUUID } from 'expo-crypto';
 import * as Location from 'expo-location';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Image, View } from 'react-native';
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { saveHazardItem } from '../lib/draftStore';
@@ -112,20 +112,6 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       });
     }
   }, [bboxMinLat, bboxMaxLat, bboxMinLng, bboxMaxLng, setFocus]);
-
-  // Freeze the strip's sample point so its effect doesn't refetch on every re-render. The rolling window
-  // is derived server-side from `sinceLastConfirmedAt` (one clock, matching the decay cron — §3), so the
-  // client no longer computes it with `Date.now()`. Recomputed only on change.
-  const weatherNear = useMemo(
-    () =>
-      bboxMinLat !== undefined &&
-      bboxMaxLat !== undefined &&
-      bboxMinLng !== undefined &&
-      bboxMaxLng !== undefined
-        ? { lat: (bboxMinLat + bboxMaxLat) / 2, lng: (bboxMinLng + bboxMaxLng) / 2 }
-        : undefined,
-    [bboxMinLat, bboxMaxLat, bboxMinLng, bboxMaxLng],
-  );
 
   if (hazard === undefined) return <DetailLoading />;
   if (hazard === null) {
@@ -283,9 +269,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       {/* Only active hazards show recent weather — a retired/archived pin needn't hit Open-Meteo (§3). */}
       {archived ? null : (
         <WeatherStrip
-          waterBodyId={hazard.waterBodyId}
-          sinceLastConfirmedAt={hazard.lastConfirmedAt}
-          near={weatherNear}
+          hazardId={hazard._id}
           label="Recent weather here"
           caveat={hazard.snowHidden ? 'Possibly snow-hidden.' : undefined}
         />
