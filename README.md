@@ -30,22 +30,30 @@ carry proper safety gear, skate with others, and know your rescue plan.
 
 ## Status
 
-**Pre-alpha — planning and foundations.** There's no shippable app yet. The design is
-documented in depth under [`plans/`](./plans/) and is the best place to start.
+**Alpha in progress — built on dev, not yet released.** Phases 0–10 are complete on the
+**development** deployment: the map + peer reports, community + safety tooling, drive-time
+filtering, the newsfeed, bounties + trust score, hazards + on-ice alerting, and weather-since
+context. **Nothing is deployed to production yet** (prod cutover is deliberately deferred). The
+operator/admin surface (Phase 7) and GPS-provider ingestion (Phase 8) are next. The full design
+record lives under [`plans/`](./plans/).
 
 First target: a small **friends-only alpha** (~20 skaters) before any regional rollout,
 timed for the first ice of the season (~November).
 
 ## What's here
 
-Right now this repo is **planning documentation**. Start with the plans index:
+A TypeScript monorepo (Turborepo + pnpm) — a working app on the dev deployment, plus the design
+docs that drive it:
 
-- 📖 **[`plans/README.md`](./plans/README.md)** — guided index to all the design docs.
-- The **[vision](./plans/00-vision.md)**, the **[decisions log](./plans/01-decisions.md)**
-  (ADR-style, with rationale), the **[data model](./plans/06-data-model.md)**, and the
+- **`apps/mobile`** (Expo / React Native, primary) · **`apps/web`** (TanStack Start, secondary,
+  home of the `/admin` operator surface) · shared **`packages/`** (`convex` backend, `core` logic,
+  `design` tokens).
+- 📖 **[`plans/README.md`](./plans/README.md)** — guided index to all the design docs: the
+  **[vision](./plans/00-vision.md)**, the **[decisions log](./plans/01-decisions.md)** (ADR-style,
+  with rationale), the **[data model](./plans/06-data-model.md)**, and the
   **[roadmap](./plans/07-roadmap.md)**.
 
-## Planned tech stack
+## Tech stack
 
 Full rationale in [`plans/03-tech-stack-options.md`](./plans/03-tech-stack-options.md).
 
@@ -62,7 +70,7 @@ Full rationale in [`plans/03-tech-stack-options.md`](./plans/03-tech-stack-optio
 | Testing / CI | Vitest (+ fast-check, convex-test) · GitHub Actions |
 | Observability | Sentry (crash/error) · PostHog (analytics, later) |
 
-## Planned repo layout
+## Repo layout
 
 ```
 apps/
@@ -77,7 +85,7 @@ plans/        # design documentation (start here today)
 
 ## Contributing
 
-Contributions are welcome once foundations land — see
+Contributions are welcome — see
 [`CONTRIBUTING.md`](./CONTRIBUTING.md) and our
 [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md). Given the subject matter, the
 [safety-first, non-authoritative principle](./plans/00-vision.md#product-principles)

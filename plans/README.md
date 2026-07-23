@@ -62,12 +62,20 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   *(Built after Phase 9 — safety before reputation.)* **✅ Complete on dev (2026-07-22); prod deferred.**
 - [Phase 10 — Weather-since strips + weather-driven hazard decay](./phase-10-weather.md) — a live
   Open-Meteo **forecast-`past_days`** fetch + `weatherCache` (fetched on drawer-open), the plain-text
-  **weather-since strip** on aging reports **and hazards** (D19; reducer already built), **weather-driven
-  hazard decay** (`decayMultiplier` + `effectiveAge`, precomputed for the offline on-ice alert —
-  D52/**D56**), and three deferred tasks the fetch unblocks (report conditions auto-fill; the Phase-6
-  corroboration **contradiction signal** → conflicting-reports disclosure + the new **D57** granular
-  posting-permission lever, never a trust subtraction; and the decay-based **bounty-freshness** score).
-  *(Auto-suggest skate times already shipped in Phase 9.5.)* **📋 Scoped 2026-07-22; not yet built.**
+  **weather-since strip** on aging reports **and hazards** (D19), **weather-driven hazard decay**
+  (`decayMultiplier` + `effectiveAge`, precomputed for the offline on-ice alert — D52/**D56**), and three
+  deferred tasks the fetch unblocks (report conditions auto-fill; the Phase-6 corroboration
+  **contradiction signal** → conflicting-reports disclosure + the new **D57** granular posting-permission
+  lever, never a trust subtraction; and the decay-based **bounty-freshness** score).
+  *(Auto-suggest skate times already shipped in Phase 9.5.)* **✅ Merged to `main` (PR #23, 2026-07-23),
+  deployed to dev; prod deferred.**
+- [Phase 7 — Operator surface](./phase-7-operator-surface.md) — the role-gated `/admin` route tree in the
+  web app (D37): moderation work queues (flags with an `unsafe_false_report` priority lane, user admin,
+  water-body dedup/review, support inbox), in-context moderation across the app, ban/suspend + granular
+  posting permissions (D57) + water-body merge, a read-only **config control-room** pairing every tunable
+  magic-number with the chart that tunes it, in-house Convex analytics, and Resend operator alerts (D38).
+  Mobile-responsive but web-only. **📋 Planned 2026-07-23; not yet built** *(two-PR split: operator core,
+  then analytics & tuning)*.
 
 ## How these fit together
 

@@ -176,7 +176,7 @@ only **after auth resolves AND `isMinor === false`**, and **update PRIVACY.md** 
 ## L13 — Weather attribution (Open-Meteo) 🟢
 Open-Meteo is free with no key; attribution is appreciated. Minor, but note it wherever the
 weather-since strip appears (Phase 10).
-- [ ] Open-Meteo attribution shown on the weather-since strip.
+- [x] Open-Meteo attribution shown on the weather-since strip. *(Done — Phase 10, PR #23; `WeatherStrip` on web + mobile.)*
 
 ---
 

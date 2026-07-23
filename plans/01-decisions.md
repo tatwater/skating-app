@@ -890,7 +890,7 @@ along their route, "gone" is split so a healing-but-still-dangerous spot doesn't
   deleted — can resurface on re-report, D15).
 **Copy rule (D3):** a decaying/aging open-water hazard must never read as "all clear" — the honest
 interpretation is "was open, may now be thinly skinned."
-**Future — weather-driven dynamic decay (Phase 10, documented now; corrected 2026-07-21 by the
+**Weather-driven dynamic decay (built in Phase 10, PR #23, 2026-07-23; corrected 2026-07-21 by the
 hazard-research pass).** Phase 10's Open-Meteo "weather-since" data feeds a per-type decay multiplier:
 `effectiveAge = elapsed × decayMultiplier(type, weatherSince)`, quantified against lakeice's growth
 model (~1" ice per **15 freezing-degree-days**, Ashton 1989) and the fact that **thawing runs ~30%
