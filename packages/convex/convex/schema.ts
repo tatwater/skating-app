@@ -62,7 +62,7 @@ import {
   SUPPORT_STATUSES,
   WATER_BODY_SOURCES,
 } from './lib/enums';
-import { bbox, boolFlags, geoJson, latLng, literals } from './lib/validators';
+import { bbox, boolFlags, geoJson, latLng, literals, weatherSinceSummary } from './lib/validators';
 
 /** Per-type notification toggles; keys single-sourced to mirror `notifications.type` 1:1 (D16). */
 const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
@@ -236,6 +236,20 @@ export default defineSchema({
     .index('by_level', ['level'])
     // Idempotent re-import upsert key (OSM re-runs), mirroring waterBodies.by_external_id (D14).
     .index('by_external_id', ['externalId']),
+
+  // Cached Open-Meteo "weather-since" summaries (Phase 10 / D19 / D56). One row per
+  // (sample point, window start, current-hour bucket): concurrent viewers of the same body/window share a
+  // fetch, and bucketing the `now` end to the hour makes windows append-friendly. Warmed two ways — the
+  // strip's drawer-open fetch action and the decay cron (§6) — and read by both. Source is the
+  // **forecast API with `past_days`** (recent windows), never the ~5-day-lagged archive (§2). Ephemeral;
+  // safe to drop/prune (a miss just refetches).
+  weatherCache: defineTable({
+    samplePointKey: v.string(), // rounded "lat,lng" — the grid-ish cache key
+    windowStartMs: v.number(), // window start, bucketed to the hour (absolute UTC ms)
+    windowEndBucketMs: v.number(), // `now` bucketed to the hour — the append-friendly end
+    summary: weatherSinceSummary, // the computed reducer output (both consumers read this)
+    fetchedAt: v.number(),
+  }).index('by_key', ['samplePointKey', 'windowStartMs', 'windowEndBucketMs']),
 
   reports: defineTable({
     authorId: v.id('profiles'),
