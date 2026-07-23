@@ -5,6 +5,7 @@ import { DRIVE_TIME_BANDS } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
+import { ContactSupport } from '../components/ContactSupport';
 import { ProfileEdit } from '../components/ProfileEdit';
 import { Avatar } from '../components/ProfileView';
 import { Button, buttonVariants } from '../components/ui/button';
@@ -65,6 +66,13 @@ function SettingsPage() {
       <HomeLocation />
       <NotificationSettings />
       <BlockedUsers />
+
+      <section className="flex flex-col gap-2">
+        <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
+          Contact support
+        </h2>
+        <ContactSupport />
+      </section>
 
       <p className="text-foreground-muted text-sm">GPS connections arrive in later phases.</p>
       <div className="flex gap-3">

@@ -41,6 +41,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Link to="/feed" className={navLinkClass} activeProps={{ className: navActiveClass }}>
             Newsfeed
           </Link>
+          {profile?.role === 'moderator' || profile?.role === 'admin' ? (
+            <Link to="/admin" className={navLinkClass} activeProps={{ className: navActiveClass }}>
+              Admin
+            </Link>
+          ) : null}
         </nav>
         <div className="ml-auto flex items-center gap-2 text-sm">
           <ThemeToggle />

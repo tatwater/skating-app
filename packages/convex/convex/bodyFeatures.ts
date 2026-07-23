@@ -35,6 +35,33 @@ export const listForBody = query({
   },
 });
 
+/**
+ * Operator: recent active body features across all bodies (D37/D53), each with its water-body name, for
+ * the `/admin/features` management page. `requireRole('moderator')`; bounded (never scans the corpus).
+ */
+export const listRecent = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, 'moderator');
+    const features = await ctx.db.query('bodyFeatures').order('desc').take(100);
+    const active = features.filter((f) => f.active);
+    return Promise.all(
+      active.map(async (f) => {
+        const body = await ctx.db.get(f.waterBodyId);
+        return {
+          id: f._id,
+          type: f.type,
+          note: f.note,
+          waterBodyId: f.waterBodyId,
+          waterBodyName: body?.name ?? 'Unknown water body',
+          promotedFromHazardId: f.promotedFromHazardId,
+          createdAt: f.createdAt,
+        };
+      }),
+    );
+  },
+});
+
 /** Create a known feature directly (admin/seed path). */
 export const create = mutation({
   args: {

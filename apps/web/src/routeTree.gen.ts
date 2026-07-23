@@ -15,10 +15,19 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as ReackRouteImport } from './routes/reack'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as FeedRouteImport } from './routes/feed'
+import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as MapRouteImport } from './routes/_map'
+import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as MapIndexRouteImport } from './routes/_map.index'
 import { Route as UUsernameRouteImport } from './routes/u.$username'
+import { Route as AdminWaterRouteImport } from './routes/admin.water'
+import { Route as AdminUsersRouteImport } from './routes/admin.users'
+import { Route as AdminTuningRouteImport } from './routes/admin.tuning'
+import { Route as AdminSupportRouteImport } from './routes/admin.support'
+import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
+import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
+import { Route as AdminUsersIdRouteImport } from './routes/admin.users.$id'
 import { Route as MapWaterIdRouteImport } from './routes/_map.water.$id'
 import { Route as MapReportIdRouteImport } from './routes/_map.report.$id'
 import { Route as MapHazardIdRouteImport } from './routes/_map.hazard.$id'
@@ -54,6 +63,11 @@ const FeedRoute = FeedRouteImport.update({
   path: '/feed',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminRoute = AdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -62,6 +76,11 @@ const AboutRoute = AboutRouteImport.update({
 const MapRoute = MapRouteImport.update({
   id: '/_map',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminIndexRoute = AdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AdminRoute,
 } as any)
 const MapIndexRoute = MapIndexRouteImport.update({
   id: '/',
@@ -72,6 +91,41 @@ const UUsernameRoute = UUsernameRouteImport.update({
   id: '/u/$username',
   path: '/u/$username',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AdminWaterRoute = AdminWaterRouteImport.update({
+  id: '/water',
+  path: '/water',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/users',
+  path: '/users',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminTuningRoute = AdminTuningRouteImport.update({
+  id: '/tuning',
+  path: '/tuning',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminSupportRoute = AdminSupportRouteImport.update({
+  id: '/support',
+  path: '/support',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFlagsRoute = AdminFlagsRouteImport.update({
+  id: '/flags',
+  path: '/flags',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminFeaturesRoute = AdminFeaturesRouteImport.update({
+  id: '/features',
+  path: '/features',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminUsersIdRoute = AdminUsersIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => AdminUsersRoute,
 } as any)
 const MapWaterIdRoute = MapWaterIdRouteImport.update({
   id: '/water/$id',
@@ -97,17 +151,26 @@ const MapBountyIdRoute = MapBountyIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof MapIndexRoute
   '/about': typeof AboutRoute
+  '/admin': typeof AdminRouteWithChildren
   '/feed': typeof FeedRoute
   '/onboarding': typeof OnboardingRoute
   '/reack': typeof ReackRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/admin/features': typeof AdminFeaturesRoute
+  '/admin/flags': typeof AdminFlagsRoute
+  '/admin/support': typeof AdminSupportRoute
+  '/admin/tuning': typeof AdminTuningRoute
+  '/admin/users': typeof AdminUsersRouteWithChildren
+  '/admin/water': typeof AdminWaterRoute
   '/u/$username': typeof UUsernameRoute
+  '/admin/': typeof AdminIndexRoute
   '/bounty/$id': typeof MapBountyIdRoute
   '/hazard/$id': typeof MapHazardIdRoute
   '/report/$id': typeof MapReportIdRoute
   '/water/$id': typeof MapWaterIdRoute
+  '/admin/users/$id': typeof AdminUsersIdRoute
 }
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
@@ -117,46 +180,72 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/admin/features': typeof AdminFeaturesRoute
+  '/admin/flags': typeof AdminFlagsRoute
+  '/admin/support': typeof AdminSupportRoute
+  '/admin/tuning': typeof AdminTuningRoute
+  '/admin/users': typeof AdminUsersRouteWithChildren
+  '/admin/water': typeof AdminWaterRoute
   '/u/$username': typeof UUsernameRoute
   '/': typeof MapIndexRoute
+  '/admin': typeof AdminIndexRoute
   '/bounty/$id': typeof MapBountyIdRoute
   '/hazard/$id': typeof MapHazardIdRoute
   '/report/$id': typeof MapReportIdRoute
   '/water/$id': typeof MapWaterIdRoute
+  '/admin/users/$id': typeof AdminUsersIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_map': typeof MapRouteWithChildren
   '/about': typeof AboutRoute
+  '/admin': typeof AdminRouteWithChildren
   '/feed': typeof FeedRoute
   '/onboarding': typeof OnboardingRoute
   '/reack': typeof ReackRoute
   '/settings': typeof SettingsRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/admin/features': typeof AdminFeaturesRoute
+  '/admin/flags': typeof AdminFlagsRoute
+  '/admin/support': typeof AdminSupportRoute
+  '/admin/tuning': typeof AdminTuningRoute
+  '/admin/users': typeof AdminUsersRouteWithChildren
+  '/admin/water': typeof AdminWaterRoute
   '/u/$username': typeof UUsernameRoute
   '/_map/': typeof MapIndexRoute
+  '/admin/': typeof AdminIndexRoute
   '/_map/bounty/$id': typeof MapBountyIdRoute
   '/_map/hazard/$id': typeof MapHazardIdRoute
   '/_map/report/$id': typeof MapReportIdRoute
   '/_map/water/$id': typeof MapWaterIdRoute
+  '/admin/users/$id': typeof AdminUsersIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/about'
+    | '/admin'
     | '/feed'
     | '/onboarding'
     | '/reack'
     | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/admin/features'
+    | '/admin/flags'
+    | '/admin/support'
+    | '/admin/tuning'
+    | '/admin/users'
+    | '/admin/water'
     | '/u/$username'
+    | '/admin/'
     | '/bounty/$id'
     | '/hazard/$id'
     | '/report/$id'
     | '/water/$id'
+    | '/admin/users/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/about'
@@ -166,33 +255,51 @@ export interface FileRouteTypes {
     | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/admin/features'
+    | '/admin/flags'
+    | '/admin/support'
+    | '/admin/tuning'
+    | '/admin/users'
+    | '/admin/water'
     | '/u/$username'
     | '/'
+    | '/admin'
     | '/bounty/$id'
     | '/hazard/$id'
     | '/report/$id'
     | '/water/$id'
+    | '/admin/users/$id'
   id:
     | '__root__'
     | '/_map'
     | '/about'
+    | '/admin'
     | '/feed'
     | '/onboarding'
     | '/reack'
     | '/settings'
     | '/sign-in'
     | '/sign-up'
+    | '/admin/features'
+    | '/admin/flags'
+    | '/admin/support'
+    | '/admin/tuning'
+    | '/admin/users'
+    | '/admin/water'
     | '/u/$username'
     | '/_map/'
+    | '/admin/'
     | '/_map/bounty/$id'
     | '/_map/hazard/$id'
     | '/_map/report/$id'
     | '/_map/water/$id'
+    | '/admin/users/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   MapRoute: typeof MapRouteWithChildren
   AboutRoute: typeof AboutRoute
+  AdminRoute: typeof AdminRouteWithChildren
   FeedRoute: typeof FeedRoute
   OnboardingRoute: typeof OnboardingRoute
   ReackRoute: typeof ReackRoute
@@ -246,6 +353,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FeedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin': {
+      id: '/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -260,6 +374,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/': {
+      id: '/admin/'
+      path: '/'
+      fullPath: '/admin/'
+      preLoaderRoute: typeof AdminIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/_map/': {
       id: '/_map/'
       path: '/'
@@ -273,6 +394,55 @@ declare module '@tanstack/react-router' {
       fullPath: '/u/$username'
       preLoaderRoute: typeof UUsernameRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/admin/water': {
+      id: '/admin/water'
+      path: '/water'
+      fullPath: '/admin/water'
+      preLoaderRoute: typeof AdminWaterRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/tuning': {
+      id: '/admin/tuning'
+      path: '/tuning'
+      fullPath: '/admin/tuning'
+      preLoaderRoute: typeof AdminTuningRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/support': {
+      id: '/admin/support'
+      path: '/support'
+      fullPath: '/admin/support'
+      preLoaderRoute: typeof AdminSupportRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/flags': {
+      id: '/admin/flags'
+      path: '/flags'
+      fullPath: '/admin/flags'
+      preLoaderRoute: typeof AdminFlagsRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/features': {
+      id: '/admin/features'
+      path: '/features'
+      fullPath: '/admin/features'
+      preLoaderRoute: typeof AdminFeaturesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/users/$id': {
+      id: '/admin/users/$id'
+      path: '/$id'
+      fullPath: '/admin/users/$id'
+      preLoaderRoute: typeof AdminUsersIdRouteImport
+      parentRoute: typeof AdminUsersRoute
     }
     '/_map/water/$id': {
       id: '/_map/water/$id'
@@ -323,9 +493,44 @@ const MapRouteChildren: MapRouteChildren = {
 
 const MapRouteWithChildren = MapRoute._addFileChildren(MapRouteChildren)
 
+interface AdminUsersRouteChildren {
+  AdminUsersIdRoute: typeof AdminUsersIdRoute
+}
+
+const AdminUsersRouteChildren: AdminUsersRouteChildren = {
+  AdminUsersIdRoute: AdminUsersIdRoute,
+}
+
+const AdminUsersRouteWithChildren = AdminUsersRoute._addFileChildren(
+  AdminUsersRouteChildren,
+)
+
+interface AdminRouteChildren {
+  AdminFeaturesRoute: typeof AdminFeaturesRoute
+  AdminFlagsRoute: typeof AdminFlagsRoute
+  AdminSupportRoute: typeof AdminSupportRoute
+  AdminTuningRoute: typeof AdminTuningRoute
+  AdminUsersRoute: typeof AdminUsersRouteWithChildren
+  AdminWaterRoute: typeof AdminWaterRoute
+  AdminIndexRoute: typeof AdminIndexRoute
+}
+
+const AdminRouteChildren: AdminRouteChildren = {
+  AdminFeaturesRoute: AdminFeaturesRoute,
+  AdminFlagsRoute: AdminFlagsRoute,
+  AdminSupportRoute: AdminSupportRoute,
+  AdminTuningRoute: AdminTuningRoute,
+  AdminUsersRoute: AdminUsersRouteWithChildren,
+  AdminWaterRoute: AdminWaterRoute,
+  AdminIndexRoute: AdminIndexRoute,
+}
+
+const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   MapRoute: MapRouteWithChildren,
   AboutRoute: AboutRoute,
+  AdminRoute: AdminRouteWithChildren,
   FeedRoute: FeedRoute,
   OnboardingRoute: OnboardingRoute,
   ReackRoute: ReackRoute,
