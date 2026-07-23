@@ -144,6 +144,7 @@ export const MODERATION_ACTIONS = [
   'dismiss_flag',
   'grant_role',
   'revoke_role',
+  'set_posting_permission', // restrict/restore a canPost* right — finer than ban/suspend (D57, Phase 7)
   'promote_body_feature', // a recurring hazard graduated to a persistent body feature (D53, Phase 9)
   'demote_body_feature', // reversible: flips `active` off, never hard-deletes (D53)
 ] as const;

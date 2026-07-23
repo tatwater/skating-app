@@ -8,11 +8,12 @@
  */
 
 import { normalizeUsername, type TrustClass } from '@skating/core';
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
-import { query } from './_generated/server';
+import { mutation, query } from './_generated/server';
 import { requireRole } from './lib/auth';
 import { trustClassFor } from './lib/reputation';
+import { literals } from './lib/validators';
 
 interface UserHit {
   userId: string;
@@ -67,5 +68,59 @@ export const userSearch = query({
       hits.push(toHit(p));
     }
     return hits;
+  },
+});
+
+/**
+ * Grant a `moderator` or `admin` role (D37 — **admin-only**, the keys to the app's identity). Patches
+ * `role` and audits `grant_role` with the prior role. Idempotent (re-granting the same role still
+ * records the decision).
+ */
+export const grantRole = mutation({
+  args: { userId: v.id('profiles'), role: literals(['moderator', 'admin']), reason: v.string() },
+  handler: async (ctx, { userId, role, reason }) => {
+    const actor = await requireRole(ctx, 'admin');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const target = await ctx.db.get(userId);
+    if (!target) throw new ConvexError('User not found');
+
+    await ctx.db.patch(userId, { role });
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'grant_role',
+      targetType: 'user',
+      targetId: userId,
+      reason,
+      metadata: { role, priorRole: target.role },
+      createdAt: Date.now(),
+    });
+    return userId;
+  },
+});
+
+/**
+ * Revoke all elevated roles back to `member` (D37 — **admin-only**). Guards against an admin revoking
+ * **their own** role (which could lock the last admin out). Audits `revoke_role` with the prior role.
+ */
+export const revokeRole = mutation({
+  args: { userId: v.id('profiles'), reason: v.string() },
+  handler: async (ctx, { userId, reason }) => {
+    const actor = await requireRole(ctx, 'admin');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    if (userId === actor._id) throw new ConvexError('You cannot revoke your own role');
+    const target = await ctx.db.get(userId);
+    if (!target) throw new ConvexError('User not found');
+
+    await ctx.db.patch(userId, { role: 'member' });
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'revoke_role',
+      targetType: 'user',
+      targetId: userId,
+      reason,
+      metadata: { priorRole: target.role },
+      createdAt: Date.now(),
+    });
+    return userId;
   },
 });

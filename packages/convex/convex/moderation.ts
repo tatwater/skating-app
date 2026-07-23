@@ -13,8 +13,9 @@
  */
 
 import { ConvexError, v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { mutation, type QueryCtx, query } from './_generated/server';
+import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { requireRole } from './lib/auth';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
@@ -350,5 +351,167 @@ export const listActions = query({
     const filtered =
       args.action !== undefined ? rows.filter((r) => r.action === args.action) : rows;
     return Promise.all(filtered.map((a) => toActionView(ctx, a)));
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User-lifecycle + posting-permission mutations (Phase 7 write side). All moderator-level per the
+// D37 refinement (2026-07-23) — a moderator handling a hateful account can act without escalating.
+// Each writes exactly one `moderationActions` row; role-grant/revoke live in `admin.ts` (admin-only).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Load a user a moderator is about to act on, with two safety guards: a moderator can't act on
+ * **their own** account (no self-ban lockout) and can't act on an **admin** unless they're an admin
+ * themselves (a volunteer/compromised moderator can never touch the app owner — D37 draws the trust
+ * line at admin).
+ */
+async function loadModeratableUser(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  userId: Id<'profiles'>,
+): Promise<Doc<'profiles'>> {
+  const target = await ctx.db.get(userId);
+  if (!target) throw new ConvexError('User not found');
+  if (target._id === actor._id) throw new ConvexError('You cannot moderate your own account');
+  if (target.role === 'admin' && actor.role !== 'admin') {
+    throw new ConvexError('Only an admin can moderate an admin');
+  }
+  return target;
+}
+
+async function auditUser(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'>,
+  action: 'ban' | 'suspend' | 'unban' | 'set_posting_permission',
+  userId: Id<'profiles'>,
+  reason: string,
+  metadata?: Record<string, unknown>,
+): Promise<void> {
+  await ctx.db.insert('moderationActions', {
+    actorId,
+    action,
+    targetType: 'user',
+    targetId: userId,
+    reason,
+    ...(metadata !== undefined ? { metadata } : {}),
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * Ban a user indefinitely (D37). Patches `status: banned` + reason + `moderatedByUserId`, clears any
+ * suspension window, audits `ban`, and — belt + suspenders — locks the Clerk user so no new session
+ * issues. The Convex `status` gate (`requireProfile`) is the real boundary; the Clerk lock just stops
+ * fresh sign-ins. A ban preserves the account for appeal/reversal (distinct from D33 deletion).
+ */
+export const banUser = mutation({
+  args: { userId: v.id('profiles'), reason: v.string() },
+  handler: async (ctx, { userId, reason }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const target = await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, {
+      status: 'banned',
+      statusReason: reason,
+      suspendedUntil: undefined,
+      moderatedByUserId: actor._id,
+    });
+    await auditUser(ctx, actor._id, 'ban', userId, reason);
+    // Fire-and-forget: a mutation can't fetch. Permanent bans only touch Clerk (founder decision).
+    await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
+      clerkUserId: target.clerkUserId,
+      banned: true,
+    });
+    return userId;
+  },
+});
+
+/**
+ * Temporarily suspend a user until `suspendedUntil` (D37). The Convex gate (`requireProfile`) rejects
+ * while the window is open and **auto-lifts** with no cron — so, per the founder decision (2026-07-23),
+ * a suspension deliberately does NOT touch Clerk (that would leave the user locked out of sign-in after
+ * the window naturally expired). Audits `suspend` with the window in metadata.
+ */
+export const suspendUser = mutation({
+  args: { userId: v.id('profiles'), reason: v.string(), suspendedUntil: v.number() },
+  handler: async (ctx, { userId, reason, suspendedUntil }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    if (suspendedUntil <= Date.now()) {
+      throw new ConvexError('Suspension must end in the future');
+    }
+    await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, {
+      status: 'suspended',
+      statusReason: reason,
+      suspendedUntil,
+      moderatedByUserId: actor._id,
+    });
+    await auditUser(ctx, actor._id, 'suspend', userId, reason, { suspendedUntil });
+    return userId;
+  },
+});
+
+/**
+ * Lift a ban or suspension (D37) — returns the account to `active`, clears the suspension window +
+ * reason, audits `unban`, and unlocks the Clerk user (reverses a prior ban; harmless if they were only
+ * suspended). Idempotent: unbanning an already-active account still records the moderator's decision.
+ */
+export const unbanUser = mutation({
+  args: { userId: v.id('profiles'), reason: v.string() },
+  handler: async (ctx, { userId, reason }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const target = await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, {
+      status: 'active',
+      statusReason: undefined,
+      suspendedUntil: undefined,
+      moderatedByUserId: actor._id,
+    });
+    await auditUser(ctx, actor._id, 'unban', userId, reason);
+    await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
+      clerkUserId: target.clerkUserId,
+      banned: false,
+    });
+    return userId;
+  },
+});
+
+/** Which `profiles` boolean each posting surface maps to (D57). */
+const POSTING_PERMISSION_FIELD = {
+  reports: 'canPostReports',
+  hazards: 'canPostHazards',
+  comments: 'canPostComments',
+} as const;
+
+/**
+ * Restrict or restore a single posting right (D57) — the lever finer than suspend/ban. A user who
+ * abuses one surface loses *that* surface (proportionate, appealable, reversible) while their other
+ * contributions stand. Stores the boolean (`false` = restricted; `true` = explicitly allowed), audits
+ * `set_posting_permission` with which right + direction.
+ */
+export const setPostingPermission = mutation({
+  args: {
+    userId: v.id('profiles'),
+    permission: literals(['reports', 'hazards', 'comments']),
+    allowed: v.boolean(),
+    reason: v.string(),
+  },
+  handler: async (ctx, { userId, permission, allowed, reason }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, { [POSTING_PERMISSION_FIELD[permission]]: allowed });
+    await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+      permission,
+      allowed,
+    });
+    return userId;
   },
 });
