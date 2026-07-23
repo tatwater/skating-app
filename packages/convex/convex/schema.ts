@@ -193,6 +193,12 @@ export default defineSchema({
     // so it's queried by a direct short-list scan instead of the centroid index. Derived from
     // bbox extent at import/create; see `waterBodies.listInViewport`.
     isLarge: v.optional(v.boolean()),
+    // Weather sampling escape hatch (Phase 10 / D56 §5). Weather doesn't vary below Open-Meteo's grid
+    // (~2–25 km), so **every body samples at its centroid by default** — town/county is the wrong
+    // abstraction. Only the few genuinely multi-cell giants (Champlain ~200 km) need more: an admin sets
+    // a handful of points spaced at grid resolution here, and a hazard/report picks its nearest. Absent /
+    // empty ⇒ `[centroid]`. Populated via the Phase 7 admin surface; no auto-population in v1.
+    weatherSamplePoints: v.optional(v.array(latLng)),
     surfaceAreaSqM: v.optional(v.number()),
     // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
     // `minVisibleZoom` is its integer bucket, ALSO written as the geospatial `sortKey` so
