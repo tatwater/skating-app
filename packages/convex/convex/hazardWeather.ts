@@ -19,11 +19,12 @@
  * → one cache entry → guaranteed consistency.
  */
 
-import { decayMultiplier, isSnowHidden } from '@skating/core';
+import { decayMultiplier, HAZARD_WEATHER_LOOKBACK_DAYS, isSnowHidden } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { hazardCenter, nearestSamplePoint } from './lib/sampling';
 import { resolveWeatherSince } from './weather';
 
 const HOUR_MS = 3_600_000;
@@ -31,41 +32,9 @@ const DAY_MS = 86_400_000;
 
 /** Effective refresh cadence: skip a hazard refreshed more recently than this (Phase 7 → admin config). */
 export const WEATHER_REFRESH_MIN_INTERVAL_HOURS = 3;
-/** Weather window lookback: recent conditions are what erode confidence — a month-old thaw is irrelevant. */
-export const HAZARD_WEATHER_LOOKBACK_DAYS = 7;
 
-/** Squared degree distance — fine for picking the nearest of a handful of sample points at lake scale. */
-function distSq(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
-  const dLat = a.lat - b.lat;
-  const dLng = a.lng - b.lng;
-  return dLat * dLat + dLng * dLng;
-}
-
-/** The nearest weather sample point to `target` — the body's centroid by default (D56 §5). */
-export function nearestSamplePoint(
-  body: Doc<'waterBodies'>,
-  target: { lat: number; lng: number },
-): { lat: number; lng: number } {
-  const points = body.weatherSamplePoints?.length ? body.weatherSamplePoints : [body.centroid];
-  let best = points[0] ?? body.centroid;
-  let bestD = distSq(best, target);
-  for (const p of points) {
-    const d = distSq(p, target);
-    if (d < bestD) {
-      best = p;
-      bestD = d;
-    }
-  }
-  return best;
-}
-
-/** Center of a hazard's footprint bbox — its representative point for nearest-sample-point selection. */
-function hazardCenter(hazard: Doc<'hazards'>): { lat: number; lng: number } {
-  return {
-    lat: (hazard.bbox.minLat + hazard.bbox.maxLat) / 2,
-    lng: (hazard.bbox.minLng + hazard.bbox.maxLng) / 2,
-  };
-}
+// Sampling helpers (`nearestSamplePoint`/`hazardCenter`) live in `lib/sampling` so `weather.ts` can share
+// them without an import cycle — the strip must resolve the same point this cron does (§5 consistency).
 
 interface HazardWeatherJob {
   hazardId: Id<'hazards'>;
@@ -152,6 +121,11 @@ export const refreshHazardWeather = internalAction({
       }
       const windowStart = Math.max(job.lastConfirmedAt, now - lookbackMs);
       const summary = await resolveWeatherSince(ctx, job.lat, job.lng, windowStart, now);
+      // A failed fetch (`null`) is NOT an empty summary: keep the last good multiplier and DON'T stamp
+      // `weatherAdjustedAt`, so a transient Open-Meteo blip can't erase a real signal or block retry for
+      // the cadence window — the next tick tries again (fail-open, matches the cache layer's no-cache-on-
+      // failure discipline in `weather.ts`).
+      if (summary === null) continue;
       await ctx.runMutation(internal.hazardWeather.storeHazardWeather, {
         hazardId: job.hazardId,
         decayMultiplier: decayMultiplier(job.type, summary),

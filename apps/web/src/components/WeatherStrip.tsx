@@ -18,18 +18,29 @@ export function WeatherStrip({
   startMs,
   label = 'Weather since',
   caveat,
+  near,
 }: {
   waterBodyId: string;
   startMs: number;
   label?: string;
   caveat?: string;
+  /** The hazard/report location, so the strip samples the same point the decay does (§5). */
+  near?: { lat: number; lng: number };
 }) {
   const getWeather = useAction(api.weather.getWeatherSinceForBody);
   const [summary, setSummary] = useState<WeatherSinceSummary | null>(null);
+  const nearLat = near?.lat;
+  const nearLng = near?.lng;
 
   useEffect(() => {
     let cancelled = false;
-    getWeather({ waterBodyId: waterBodyId as Id<'waterBodies'>, startMs })
+    getWeather({
+      waterBodyId: waterBodyId as Id<'waterBodies'>,
+      startMs,
+      ...(nearLat !== undefined && nearLng !== undefined
+        ? { near: { lat: nearLat, lng: nearLng } }
+        : {}),
+    })
       .then((s) => {
         if (!cancelled) setSummary(s);
       })
@@ -39,7 +50,7 @@ export function WeatherStrip({
     return () => {
       cancelled = true;
     };
-  }, [getWeather, waterBodyId, startMs]);
+  }, [getWeather, waterBodyId, startMs, nearLat, nearLng]);
 
   const line = summary ? formatWeatherSinceStrip(summary) : null;
   if (!line && !caveat) return null;

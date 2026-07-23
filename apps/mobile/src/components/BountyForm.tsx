@@ -1,10 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import {
-  DEFAULT_BOUNTY_REWARD_POINTS,
-  FRESH_REPORT_HOURS,
-  MAX_OPEN_BOUNTIES_PER_DAY,
-} from '@skating/core';
+import { DEFAULT_BOUNTY_REWARD_POINTS, MAX_OPEN_BOUNTIES_PER_DAY } from '@skating/core';
 import { useAction } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useRouter } from 'expo-router';
@@ -60,7 +56,8 @@ export function BountyForm({
       </Paragraph>
       <YStack gap="$1">
         <Text color="$foregroundMuted" fontSize={13}>
-          • Only if there's no fresh report in the last {FRESH_REPORT_HOURS} hours.
+          • Only if the lake doesn't already have a recent report — a well-confirmed read keeps it
+          covered longer, and a big thaw or freeze reopens it sooner.
         </Text>
         <Text color="$foregroundMuted" fontSize={13}>
           • Up to {MAX_OPEN_BOUNTIES_PER_DAY} open bounties at a time.

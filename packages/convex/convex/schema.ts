@@ -334,8 +334,15 @@ export default defineSchema({
     // Soft "conflicting reports" indicator (Phase 10 / D56 §7): set when another recent report on this
     // body strongly disagreed AND the weather-since didn't explain the change. A disclosure for skaters
     // (both reports show it) so the human judges the disagreement — NOT a trust penalty (D50 stays
-    // boost-only) and NEVER hides the report (D3). Absent ⇒ no known conflict.
+    // boost-only) and NEVER hides the report (D3). Absent ⇒ no known conflict. **Symmetric** — both sides
+    // of a disagreement carry it.
     conflicting: v.optional(v.boolean()),
+    // The escalation half of the contradiction signal (Phase 10 / D56 §7b) — set when this report is the
+    // weather-unexplained, **un-corroborated minority** against a *more-corroborated* opposing report. Drives
+    // the author's private `contradictionCount`; recomputed each settle, so a report that later earns
+    // corroboration clears it (self-correcting, order-independent — never the corroborated majority). NOT a
+    // trust penalty, NOT shown to skaters (that's `conflicting`). Absent ⇒ not a settled contradiction.
+    contradiction: v.optional(v.boolean()),
     hazardIdsCreated: v.array(v.id('hazards')),
     createdAt: v.number(),
     updatedAt: v.number(),

@@ -24,6 +24,13 @@ import type { WeatherSinceSummary } from './weather';
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
+/**
+ * The rolling recent-weather window (days) a hazard's strip and the decay cron both look back over —
+ * single-sourced here so the two can't drift (the convex cron imports this same constant). "Recent
+ * conditions are what erode confidence; a month-old thaw is irrelevant" (§4/§6).
+ */
+export const HAZARD_WEATHER_LOOKBACK_DAYS = 7;
+
 /** Below this much rain/snow we don't mention precip (rounding noise, not weather worth reporting). */
 const PRECIP_MENTION_MM = 0.2;
 const PRECIP_MENTION_CM = 0.2;
@@ -100,7 +107,7 @@ export function reportStripState(
 export function hazardStripWindowStartMs(
   lastConfirmedAt: number,
   now: number,
-  lookbackDays = 7,
+  lookbackDays = HAZARD_WEATHER_LOOKBACK_DAYS,
 ): number {
   return Math.max(lastConfirmedAt, now - lookbackDays * DAY_MS);
 }

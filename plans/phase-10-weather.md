@@ -33,9 +33,13 @@ mid-build:
   action (weather) → `createChecked` (internal mutation, auth/minor/cap/insert).
 - **Conditions auto-fill is object-level "user wins":** the scheduled action fills only when the report
   has **no** conditions at all (not field-by-field), clean given `source` is one enum for the object.
-- **Contradiction escalation** files a system `contentFlags` row (targetType `user`, reason
-  `unsafe_false_report`) with a *contradicted* reporter as `flaggerId` — the `ratings.ts` auto-flag
-  pattern (the flag table needs a real flagger). The `/admin` queue + Resend alert are Phase 7.
+- **Contradiction escalation is consensus-based + order-independent** (revised in the 2026-07-23 review;
+  §7b). `settleContradictions` escalates the weather-unexplained **un-corroborated minority** (a report
+  disagreeing with a *more-corroborated* one, itself un-corroborated) — never the later poster, never the
+  corroborated majority — via a private `reports.contradiction` flag that drives the author's non-scoring
+  `contradictionCount` and **self-corrects** (a report that later earns corroboration clears + decrements).
+  Crossing the threshold files a system `contentFlags` row (targetType `user`, reason `unsafe_false_report`,
+  a corroborated opponent as `flaggerId`). The `/admin` queue + Resend alert are Phase 7.
 - **Units follow Open-Meteo native** (`snowfallCm`, `snowDepthM`) not the plan's loose `snowfallMm`, to
   avoid a silent unit bug; imperial conversion at display.
 - **Schema is all additive/optional** (fail-open defaults) — no migration needed after all, despite the
@@ -315,12 +319,18 @@ bits land a beat later.
   2. **Disclose** the conflict to skaters: both reports carry a soft **"conflicting reports"** indicator so
      the human judges the disagreement, rather than us secretly deciding who's wrong (the most D3-honest
      move).
-  3. **Escalate on pattern, via humans:** increment a **private, non-scoring contradiction counter** on the
-     author; when someone accrues repeated weather-unexplained contradictions that are *never* corroborated,
-     auto-file a flag into the `/admin` queue (`contentFlags` / the safety-priority path that already
-     triggers Resend operator alerts — D37/D38). A moderator then acts through the **D57 posting-permission
-     lever** — restrict `canPostReports` / `canPostHazards` (finer and *appealable*, not a blunt whole-app
-     ban).
+  3. **Escalate on pattern, via humans — the un-corroborated minority, not the later poster (consensus-based,
+     order-independent; settled in the 2026-07-23 review).** A report is a *contradiction* only when a report
+     it disagrees with (weather-unexplained) has **strictly more corroboration** while it itself has **none**
+     — so a lone false read, *whenever it was posted*, accrues the author's **private, non-scoring
+     contradiction counter**, and the corroborated majority never does. (An earlier draft blamed whoever
+     posted *later*, which escalated honest correctors of a false first report — see the review.) It's
+     recomputed from current corroboration on each settle, so a report that *later* earns corroboration
+     **clears** its flag and decrements the author (self-correcting). Once the counter crosses the threshold,
+     auto-file a flag into the `/admin` queue (`contentFlags` / the safety-priority path that already triggers
+     Resend operator alerts — D37/D38), with a corroborated opponent as `flaggerId`. A moderator then acts
+     through the **D57 posting-permission lever** — restrict `canPostReports` / `canPostHazards` (finer and
+     *appealable*, not a blunt whole-app ban).
 
   The deterrent against bad actors is **restriction/ban risk + the low default weight of an un-corroborated
   report**, not micro-penalties (which are both too weak for a real bad actor and too harsh for an honest
@@ -410,3 +420,28 @@ No backfill needed anywhere.
 - **Decay-magnitude refit from a real in-app corpus** — once real hazard rows exist, refit the
   `HAZARD_DECAY` constants *and* the `decayMultiplier` magnitudes against observed confirm/re-report
   intervals (research §8). The signs are locked; the numbers are tunable defaults.
+
+### Deferred fast-follows (from the pre-PR code review, 2026-07-23)
+
+Accepted as postponable at alpha scale; logged here so they're not lost. (The review's substantive fixes
+— cron fail-fast on a failed fetch, empty-200 no-cache-retry, stable strip window/`near`, active-only
+strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix — landed on the branch.)
+
+- **`.collect()` read-cap hardening across the weather gates.** `hazardWeather.listActiveHazardsForWeather`
+  (all active hazards, all bodies), `bounties.bountyFreshnessInputs` / `recentReports` (all recent reports
+  in the 144h window), and `contradictions.findContradictingPriors` (all disagreeing priors in a 7d window,
+  one Open-Meteo fetch each) all `.collect()` unbounded. Same class as the `listInViewport` read-cap lesson
+  (PRs #10/#11) — fine at alpha, needs pagination + a logged truncation cap at corpus scale. **Fold into the
+  `listInViewport` hardening item** in `07-roadmap.md` Later/deferred (same discipline, one pass).
+- **`weatherCache` TTL / prune.** No pruner today; a new row per `(samplePoint, windowStart, hourBucket)`
+  accumulates as the `now`-bucket advances. It's a *disk-growth* concern, not staleness (served summaries
+  are ≤1 hour old by the bucket key). A tiny prune cron (drop rows older than N days) clears it.
+- **Sample-point admin surface (Phase 7).** `waterBodies.weatherSamplePoints[]` is wired end-to-end
+  (cron + strip now resolve the **same** nearest point via `lib/sampling`, so they can't diverge), but
+  nothing populates it. The Phase-7 admin UI should let a mod place/preview/bundle sample points on a
+  flagged giant (Champlain, Winnipesaukee) on a map, spaced at grid resolution.
+- **Contradiction re-flag bundling.** The auto-flag dedups only on an *open* flag, so a user parked above
+  threshold files a fresh `/admin` row on each further contradiction after a mod resolves the prior one.
+  Bundle repeated auto-flags into one queue entry in the Phase-7 moderation surface. (The escalation
+  *targeting* was fixed in the review — §7b now escalates the un-corroborated minority, order-independent,
+  and self-corrects — so this is purely the mod-queue UX, not a correctness item.)

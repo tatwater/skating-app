@@ -5,8 +5,9 @@
  * **Forecast API with `past_days`, never the archive.** The historical archive is ERA5-backed and lags
  * ~5 days, but every window here is *recent* (a report from yesterday, a hazard's last few days). The
  * forecast endpoint's `past_days` (≤ 92) reaches right up to `now`, and 92 days comfortably covers the
- * longest window any consumer needs (the decay model's ≤ 45-day since-`lastConfirmedAt` span). So one
- * endpoint serves both; the archive is never worth a second integration. See `plans/phase-10-weather.md` §2.
+ * longest window any consumer needs (the report strip's ≤ 14-day cap and the hazard/decay 7-day
+ * lookback). So one endpoint serves both; the archive is never worth a second integration. See
+ * `plans/phase-10-weather.md` §2.
  *
  * Like `isochrones.ts`, the outbound HTTP call lives in an **action** (no direct db access): it reads the
  * cache via an internal query and writes it via an internal mutation. The strip calls
@@ -21,7 +22,8 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, internalQuery } from './_generated/server';
-import { weatherSinceSummary } from './lib/validators';
+import { nearestSamplePoint } from './lib/sampling';
+import { latLng, weatherSinceSummary } from './lib/validators';
 
 // The validator and the core type must stay structurally identical — assert it at compile time so drift
 // in either is a build error, not a silent DB/runtime mismatch.
@@ -162,7 +164,11 @@ async function fetchOpenMeteoHourly(
     if (typeof shortwaveV === 'number') h.shortwaveWm2 = shortwaveV;
     out.push(h);
   }
-  return out;
+  // A 200 that yields zero usable hours (Open-Meteo's most recent hours can lag a live window) is a soft
+  // failure, not a real "no weather" result — the sub-hour-window case is already handled upstream before
+  // we ever fetch. Return `null` so the caller fails open and DOESN'T cache it, and the next drawer-open /
+  // cron tick retries instead of serving a blank strip for the rest of the hour bucket.
+  return out.length > 0 ? out : null;
 }
 
 /** Read a cached summary for an exact (key, window) triple, or null on miss. */
@@ -213,20 +219,30 @@ export const writeWeatherCache = internalMutation({
   },
 });
 
-/** The sample point for a body — its centroid in v1 (§5 makes this the nearest of `weatherSamplePoints`). */
+/**
+ * The weather sample point for a body, resolved the **same way the decay cron does** (§5) so the strip and
+ * the decay always read the same point → the same cache entry. `near` (a report's put-in or a hazard's
+ * center) picks the nearest of `weatherSamplePoints`; absent, it falls back to the centroid. In v1 (no
+ * sample points set) every path collapses to the centroid, but wiring `near` keeps strip↔decay consistent
+ * the moment a giant gets multi-cell sample points.
+ */
 export const getBodySamplePoint = internalQuery({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  args: { waterBodyId: v.id('waterBodies'), near: v.optional(latLng) },
+  handler: async (ctx, { waterBodyId, near }) => {
     const body = await ctx.db.get(waterBodyId);
     if (!body || body.removedAt) return null;
-    return body.centroid;
+    return nearestSamplePoint(body, near ?? body.centroid);
   },
 });
 
 /**
  * Resolve the weather-since summary for a point + window, cache-first. Shared by the strip action, the
- * decay cron (§6), and conditions auto-fill (§7). Fails open: a fetch failure returns the empty summary
- * (strip shows nothing, decay multiplier stays 1) and is **not** cached, so the next call retries.
+ * decay cron (§6), and the bounty/contradiction gates (§7). Returns:
+ *   - a summary (possibly the empty one) when the window is valid — cached for the hour bucket;
+ *   - the **empty** summary, uncached, when the window isn't a full hour yet (a real "no weather" result);
+ *   - **`null`** when the fetch itself failed (network/HTTP/empty-200) — a distinct "couldn't tell" that
+ *     callers fail open on WITHOUT caching, so the next call retries. The decay cron relies on this to
+ *     avoid overwriting a good multiplier (and blocking retry) on a transient blip.
  */
 export async function resolveWeatherSince(
   ctx: ActionCtx,
@@ -234,7 +250,7 @@ export async function resolveWeatherSince(
   lng: number,
   startMs: number,
   nowMs: number,
-): Promise<WeatherSinceSummary> {
+): Promise<WeatherSinceSummary | null> {
   const windowStartMs = hourBucket(startMs);
   const windowEndBucketMs = hourBucket(nowMs);
   if (windowStartMs >= windowEndBucketMs) return EMPTY_SUMMARY; // no full hour of window yet
@@ -248,7 +264,7 @@ export async function resolveWeatherSince(
   if (cached) return cached;
 
   const hourly = await fetchOpenMeteoHourly(lat, lng, windowStartMs, nowMs);
-  if (hourly === null) return EMPTY_SUMMARY; // fail open, don't cache
+  if (hourly === null) return null; // fetch failed — don't cache, let the caller retry next time
 
   const summary = summarizeWeatherSince(hourly);
   await ctx.runMutation(internal.weather.writeWeatherCache, {
@@ -263,13 +279,17 @@ export async function resolveWeatherSince(
 
 /**
  * Public: the weather since `startMs` for a body's sample point. Called by the strip on drawer-open
- * (web + mobile). Returns the empty summary when the body/centroid is unavailable.
+ * (web + mobile). `near` resolves the hazard/report's nearest sample point so the strip matches the decay
+ * (§5). Returns the empty summary when the body is unavailable OR the fetch fails (`null`) — a blank strip,
+ * uncached, retried on the next open.
  */
 export const getWeatherSinceForBody = action({
-  args: { waterBodyId: v.id('waterBodies'), startMs: v.number() },
-  handler: async (ctx, { waterBodyId, startMs }): Promise<WeatherSinceSummary> => {
-    const point = await ctx.runQuery(internal.weather.getBodySamplePoint, { waterBodyId });
+  args: { waterBodyId: v.id('waterBodies'), startMs: v.number(), near: v.optional(latLng) },
+  handler: async (ctx, { waterBodyId, startMs, near }): Promise<WeatherSinceSummary> => {
+    const point = await ctx.runQuery(internal.weather.getBodySamplePoint, { waterBodyId, near });
     if (!point) return EMPTY_SUMMARY;
-    return resolveWeatherSince(ctx, point.lat, point.lng, startMs, Date.now());
+    return (
+      (await resolveWeatherSince(ctx, point.lat, point.lng, startMs, Date.now())) ?? EMPTY_SUMMARY
+    );
   },
 });

@@ -4,7 +4,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { nearestSamplePoint } from './hazardWeather';
+import { nearestSamplePoint } from './lib/sampling';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -203,5 +203,27 @@ describe('hazardWeather.refreshHazardWeather', () => {
     await t.action(internal.hazardWeather.refreshHazardWeather, {});
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('a failed fetch leaves the prior multiplier untouched and does not stamp a refresh', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    const staleAt = Date.now() - 6 * HOUR_MS; // older than the 3h gate ⇒ due for a refresh
+    const hazardId = await seedHazard(t, waterBodyId, authorId, {
+      decayMultiplier: 1.8, // a real signal from a prior successful tick
+      weatherAdjustedAt: staleAt,
+    });
+    // Open-Meteo is down: the cron must NOT overwrite 1.8 with a fail-open 1, and must NOT re-stamp
+    // `weatherAdjustedAt` (which would block retry for the whole cadence window). The next tick retries.
+    const fetchMock = vi.fn(async () => new Response('down', { status: 503 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await t.action(internal.hazardWeather.refreshHazardWeather, {});
+
+    expect(fetchMock).toHaveBeenCalledOnce(); // it tried
+    const h = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(h?.decayMultiplier).toBe(1.8); // prior signal preserved, not clobbered to 1
+    expect(h?.weatherAdjustedAt).toBe(staleAt); // NOT re-stamped ⇒ still due next tick
   });
 });

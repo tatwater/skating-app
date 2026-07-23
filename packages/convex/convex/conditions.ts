@@ -14,7 +14,7 @@ import { conditionsFromHour, PRECIP_TYPES, SKY_CONDITIONS } from '@skating/core'
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
-import { nearestSamplePoint } from './hazardWeather';
+import { nearestSamplePoint } from './lib/sampling';
 import { literals } from './lib/validators';
 
 const HOUR_MS = 3_600_000;

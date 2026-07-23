@@ -1,17 +1,24 @@
 /**
  * Corroboration **contradiction signal** (Phase 10 / D56 §7b) — the inverse seam of `runCorroboration`.
- * When a later report strongly disagrees with a prior one on the same body AND the weather-since between
- * them doesn't explain the change, it's a contradiction. This does **three** things, none of which
- * subtracts trust (D50 stays boost-only; honest "the ice changed" reports are never punished — D3):
+ * When recent reports on the same body strongly disagree AND the weather-since between them doesn't explain
+ * the change, it's a contradiction. This does **three** things, none of which subtracts trust (D50 stays
+ * boost-only; honest "the ice changed" reports are never punished — D3):
  *   1. **Withhold** the corroboration boost — already the default (only agreement awards).
- *   2. **Disclose** the conflict — both reports get a soft `conflicting` flag skaters can see.
- *   3. **Escalate on pattern** — bump the author's private, non-scoring `contradictionCount`; once it
- *      crosses `CONTRADICTION_FLAG_THRESHOLD`, auto-file a moderator flag (the D57 posting-permission
- *      lever is the human's response, not a point penalty).
+ *   2. **Disclose** the conflict — every disagreeing report gets a soft, **symmetric** `conflicting` flag
+ *      skaters can see, so the human judges the disagreement rather than us secretly deciding who's wrong.
+ *   3. **Escalate on pattern — the un-corroborated minority, not the later poster.** This is consensus-based
+ *      and **order-independent** (D56 §7b, decided in the 2026-07-23 review): a report is a *contradiction*
+ *      only when a report it disagrees with (weather-unexplained) has **strictly more corroboration** while
+ *      it itself has **none**. So a lone false read — whether it was posted first or last — accrues the
+ *      author's private, non-scoring `contradictionCount`, while the corroborated majority never does. It's
+ *      recomputed from the current corroboration state on every settle, so a report that *later* earns
+ *      corroboration **clears** its flag and decrements its author (self-correcting). Once an author's count
+ *      crosses `CONTRADICTION_FLAG_THRESHOLD`, a moderator flag is filed — the D57 posting-permission lever
+ *      is the human's response, never a point penalty.
  *
- * A mutation can't fetch, so `reports.create` schedules `evaluateContradictions` post-insert (the
- * isochrones/conditions pattern). Fail-open: no weather data ⇒ we can't confirm the contradiction, so we
- * don't record one.
+ * A mutation can't fetch, so `reports.create` schedules `settleContradictions` post-insert (after
+ * `runCorroboration` has run, so the new report's agreements are already in the ledger). Fail-open: no
+ * weather data ⇒ we can't confirm a disagreement, so we don't record it.
  */
 
 import {
@@ -22,59 +29,77 @@ import {
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import {
   internalAction,
   internalMutation,
   internalQuery,
   type MutationCtx,
 } from './_generated/server';
-import { nearestSamplePoint } from './hazardWeather';
+import { nearestSamplePoint } from './lib/sampling';
 import { resolveWeatherSince } from './weather';
 
+/** One report in the settle cluster, with its current corroboration tally + stored flags. */
+interface ClusterReport {
+  id: Id<'reports'>;
+  authorId: Id<'profiles'>;
+  skateEndTime: number;
+  skateQuality: Doc<'reports'>['skateQuality'];
+  iceTypes: Doc<'reports'>['iceTypes'];
+  /** `report_corroborated` ledger rows keyed to this report — its community backing (D50). */
+  corroborations: number;
+  conflicting: boolean;
+  contradiction: boolean;
+}
+
 /**
- * Prior reports on the same body that **strongly disagree** with the new one (candidates only — the caller
- * still confirms the weather doesn't explain the change). Null when the report is gone, carries no
- * `skateQuality`, or has no contradicting priors. Resolves the body's nearest sample point for the fetch.
+ * Load the settle cluster around a report: the quality-bearing visible reports within
+ * `CORROBORATION_WINDOW` of it, each with its live corroboration count, plus the body's sample point (the
+ * same point the decay uses, §5). Only quality-bearing reports can contradict (`reportsContradict` needs a
+ * quality on both sides). Null when the report/body is gone.
  */
-export const findContradictingPriors = internalQuery({
+export const contradictionCluster = internalQuery({
   args: { reportId: v.id('reports') },
   handler: async (ctx, { reportId }) => {
-    const report = await ctx.db.get(reportId);
-    if (!report || report.skateQuality === undefined) return null; // no quality ⇒ nothing to contradict
+    const anchor = await ctx.db.get(reportId);
+    if (!anchor) return null;
 
-    const lower = report.skateEndTime - CORROBORATION_WINDOW_MS;
-    const candidates = await ctx.db
+    const lower = anchor.skateEndTime - CORROBORATION_WINDOW_MS;
+    const upper = anchor.skateEndTime + CORROBORATION_WINDOW_MS;
+    const inWindow = await ctx.db
       .query('reports')
       .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
         q
-          .eq('waterBodyId', report.waterBodyId)
+          .eq('waterBodyId', anchor.waterBodyId)
           .eq('moderationStatus', 'visible')
           .gte('skateEndTime', lower)
-          .lte('skateEndTime', report.skateEndTime),
+          .lte('skateEndTime', upper),
       )
       .collect();
 
-    const priors: { id: Id<'reports'>; skateEndTime: number; authorId: Id<'profiles'> }[] = [];
-    for (const prior of candidates) {
-      if (prior._id === report._id) continue;
-      if (prior.authorId === report.authorId) continue; // a reporter can't contradict themselves
-      if (prior.skateEndTime >= report.skateEndTime) continue; // priors are strictly earlier
-      if (!reportsContradict(report, prior)) continue;
-      priors.push({ id: prior._id, skateEndTime: prior.skateEndTime, authorId: prior.authorId });
+    const reports: ClusterReport[] = [];
+    for (const r of inWindow) {
+      if (r.skateQuality === undefined) continue;
+      const events = await ctx.db
+        .query('pointEvents')
+        .withIndex('by_ref', (q) => q.eq('refId', r._id))
+        .collect();
+      reports.push({
+        id: r._id,
+        authorId: r.authorId,
+        skateEndTime: r.skateEndTime,
+        skateQuality: r.skateQuality,
+        iceTypes: r.iceTypes,
+        corroborations: events.filter((e) => e.reason === 'report_corroborated').length,
+        conflicting: r.conflicting ?? false,
+        contradiction: r.contradiction ?? false,
+      });
     }
-    if (priors.length === 0) return null;
 
-    const body = await ctx.db.get(report.waterBodyId);
+    const body = await ctx.db.get(anchor.waterBodyId);
     if (!body) return null;
-    const point = nearestSamplePoint(body, report.point);
-    return {
-      skateEndTime: report.skateEndTime,
-      authorId: report.authorId,
-      lat: point.lat,
-      lng: point.lng,
-      priors,
-    };
+    const point = nearestSamplePoint(body, anchor.point);
+    return { lat: point.lat, lng: point.lng, reports };
   },
 });
 
@@ -92,73 +117,114 @@ async function flagContradictionPattern(
     .first();
   if (existing) return;
   await ctx.db.insert('contentFlags', {
-    flaggerId, // a contradicted reporter, the action that crossed the line; `note` marks it system-generated
+    flaggerId, // a corroborated opponent — the action that crossed the line; `note` marks it system-generated
     targetType: 'user',
     targetId: authorId,
     reason: 'unsafe_false_report',
-    note: 'Auto: repeated weather-unexplained contradictions (D56 §7). Review the good-vs-bad trend.',
+    note: 'Auto: repeated weather-unexplained contradictions against corroborated reports (D56 §7). Review the good-vs-bad trend.',
     status: 'open',
     createdAt: Date.now(),
   });
 }
 
-/**
- * Record confirmed (weather-unexplained) contradictions: flag both sides `conflicting`, bump the author's
- * non-scoring `contradictionCount`, and escalate on pattern. Never touches reputation points (D50).
- */
-export const recordContradictions = internalMutation({
-  args: {
-    newReportId: v.id('reports'),
-    priorReportIds: v.array(v.id('reports')),
-    authorId: v.id('profiles'),
-    triggerFlaggerId: v.id('profiles'),
-  },
-  handler: async (ctx, a) => {
-    await ctx.db.patch(a.newReportId, { conflicting: true });
-    for (const pid of a.priorReportIds) {
-      const prior = await ctx.db.get(pid);
-      if (prior) await ctx.db.patch(pid, { conflicting: true });
-    }
+/** The settled per-report verdict the action hands the mutation to apply. */
+const settledReport = v.object({
+  id: v.id('reports'),
+  conflicting: v.boolean(),
+  contradiction: v.boolean(),
+  /** A corroborated opponent, for the flag's `flaggerId` — present only when `contradiction` is true. */
+  flaggerId: v.optional(v.id('profiles')),
+});
 
-    const author = await ctx.db.get(a.authorId);
-    if (!author) return;
-    const count = (author.contradictionCount ?? 0) + 1; // one event per report, not per contradicted prior
-    await ctx.db.patch(a.authorId, { contradictionCount: count });
-    if (count >= CONTRADICTION_FLAG_THRESHOLD) {
-      await flagContradictionPattern(ctx, a.authorId, a.triggerFlaggerId);
+/**
+ * Apply a settled cluster: reconcile each report's `conflicting` (symmetric disclosure) + `contradiction`
+ * (private escalation) to the freshly computed values, moving the author's non-scoring `contradictionCount`
+ * as the escalation flag flips (self-correcting — a cleared flag decrements). Files a moderator flag when an
+ * author's count crosses the threshold. **Never touches reputation points** (D50 boost-only).
+ */
+export const applyContradictionSettlement = internalMutation({
+  args: { reports: v.array(settledReport) },
+  handler: async (ctx, { reports }) => {
+    for (const entry of reports) {
+      const report = await ctx.db.get(entry.id);
+      if (!report) continue;
+
+      if ((report.conflicting ?? false) !== entry.conflicting) {
+        await ctx.db.patch(entry.id, { conflicting: entry.conflicting });
+      }
+
+      const was = report.contradiction ?? false;
+      if (was === entry.contradiction) continue;
+      await ctx.db.patch(entry.id, { contradiction: entry.contradiction });
+
+      const author = await ctx.db.get(report.authorId);
+      if (!author) continue;
+      const delta = entry.contradiction ? 1 : -1;
+      const count = Math.max(0, (author.contradictionCount ?? 0) + delta);
+      await ctx.db.patch(report.authorId, { contradictionCount: count });
+
+      if (entry.contradiction && entry.flaggerId && count >= CONTRADICTION_FLAG_THRESHOLD) {
+        await flagContradictionPattern(ctx, report.authorId, entry.flaggerId);
+      }
     }
   },
 });
 
-/** Evaluate a new report against its disagreeing priors, keeping only weather-unexplained contradictions. */
-export const evaluateContradictions = internalAction({
+/**
+ * Settle the contradiction state of a report's cluster (scheduled from `reports.create`). For each
+ * weather-unexplained disagreeing pair it discloses the conflict on both, and escalates the strictly-less-
+ * corroborated side **only when that side has zero corroboration** — so a genuinely unsettled disagreement
+ * (both un-corroborated) discloses but escalates no one, and the corroborated majority is never escalated.
+ */
+export const settleContradictions = internalAction({
   args: { reportId: v.id('reports') },
   handler: async (ctx, { reportId }) => {
-    const info = await ctx.runQuery(internal.contradictions.findContradictingPriors, { reportId });
-    if (!info) return;
+    const cluster = await ctx.runQuery(internal.contradictions.contradictionCluster, { reportId });
+    if (!cluster || cluster.reports.length < 2) return;
+    const { lat, lng, reports } = cluster;
 
-    const unexplained: Id<'reports'>[] = [];
-    let triggerFlaggerId: Id<'profiles'> | null = null;
-    for (const prior of info.priors) {
-      const summary = await resolveWeatherSince(
-        ctx,
-        info.lat,
-        info.lng,
-        prior.skateEndTime,
-        info.skateEndTime,
-      );
-      if (summary.hours === 0) continue; // no data ⇒ can't confirm ⇒ fail open (no contradiction)
-      if (weatherExplainsIceChange(summary)) continue; // honest "the ice changed" — not a contradiction
-      unexplained.push(prior.id);
-      if (triggerFlaggerId === null) triggerFlaggerId = prior.authorId;
+    const conflicting = new Set<Id<'reports'>>();
+    const contradiction = new Set<Id<'reports'>>();
+    const flaggerFor = new Map<Id<'reports'>, Id<'profiles'>>();
+
+    for (let i = 0; i < reports.length; i++) {
+      for (let j = i + 1; j < reports.length; j++) {
+        const a = reports[i];
+        const b = reports[j];
+        if (!a || !b) continue;
+        if (a.authorId === b.authorId) continue; // a reporter can't contradict themselves
+        if (!reportsContradict(a, b)) continue;
+
+        const lo = Math.min(a.skateEndTime, b.skateEndTime);
+        const hi = Math.max(a.skateEndTime, b.skateEndTime);
+        const summary = await resolveWeatherSince(ctx, lat, lng, lo, hi);
+        if (!summary || summary.hours === 0) continue; // no data ⇒ can't confirm ⇒ fail open
+        if (weatherExplainsIceChange(summary)) continue; // honest "the ice changed" — not a contradiction
+
+        conflicting.add(a.id);
+        conflicting.add(b.id);
+        // Escalate the un-corroborated minority against a corroborated opponent (order-independent). A tie
+        // — notably both at zero — escalates neither: the disagreement isn't settled yet.
+        if (a.corroborations === 0 && b.corroborations > a.corroborations) {
+          contradiction.add(a.id);
+          if (!flaggerFor.has(a.id)) flaggerFor.set(a.id, b.authorId);
+        }
+        if (b.corroborations === 0 && a.corroborations > b.corroborations) {
+          contradiction.add(b.id);
+          if (!flaggerFor.has(b.id)) flaggerFor.set(b.id, a.authorId);
+        }
+      }
     }
-    if (unexplained.length === 0 || triggerFlaggerId === null) return;
 
-    await ctx.runMutation(internal.contradictions.recordContradictions, {
-      newReportId: reportId,
-      priorReportIds: unexplained,
-      authorId: info.authorId,
-      triggerFlaggerId,
+    // Reconcile every report in the cluster — including clearing stale flags on reports no longer in a
+    // (minority) contradiction, so the counter self-corrects as corroboration accrues.
+    await ctx.runMutation(internal.contradictions.applyContradictionSettlement, {
+      reports: reports.map((r) => ({
+        id: r.id,
+        conflicting: conflicting.has(r.id),
+        contradiction: contradiction.has(r.id),
+        ...(flaggerFor.has(r.id) ? { flaggerId: flaggerFor.get(r.id) } : {}),
+      })),
     });
   },
 });

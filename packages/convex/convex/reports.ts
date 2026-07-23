@@ -303,10 +303,12 @@ export const create = mutation({
     }
 
     // Contradiction signal (Phase 10 / §7b): a report can only contradict on `skateQuality`, so only
-    // schedule the (weather-fetching) evaluation when one is present. It withholds a boost + discloses a
-    // conflict + escalates a pattern to moderation — never a trust penalty (D50/D3).
+    // schedule the (weather-fetching) settle when one is present. Runs after this mutation commits, so
+    // `runCorroboration`'s awards are already in the ledger and the settle sees current corroboration. It
+    // discloses conflicts + escalates the un-corroborated minority to moderation — never a trust penalty
+    // (D50/D3), and self-corrects as corroboration accrues.
     if (n.skateQuality !== undefined) {
-      await ctx.scheduler.runAfter(0, internal.contradictions.evaluateContradictions, { reportId });
+      await ctx.scheduler.runAfter(0, internal.contradictions.settleContradictions, { reportId });
     }
 
     return reportId;

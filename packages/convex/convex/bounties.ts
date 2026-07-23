@@ -41,11 +41,11 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { nearestSamplePoint } from './hazardWeather';
 import { getCurrentProfile, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
+import { nearestSamplePoint } from './lib/sampling';
 import { bbox, latLng } from './lib/validators';
 import { resolveWeatherSince } from './weather';
 
@@ -99,20 +99,28 @@ export const bountyFreshnessInputs = internalQuery({
     const now = Date.now();
     const maxWindowMs = FRESH_REPORT_HOURS * BOUNTY_FRESH_MAX_MULTIPLIER * HOUR_MS;
     const recent = await recentReports(ctx, body._id, now - maxWindowMs);
-    const newestFirst = [...recent]
-      .sort((a, b) => b.skateEndTime - a.skateEndTime)
-      .slice(0, BOUNTY_FRESH_MAX_REPORTS);
+    // Newest-first: the freshest suppressor has the shortest weather window, so it's the most robust
+    // (least likely a freeze/thaw reopens it) and the action usually blocks on it first.
+    const newestFirst = [...recent].sort((a, b) => b.skateEndTime - a.skateEndTime);
 
     const point = nearestSamplePoint(body, body.centroid);
     const reports: BountyFreshnessReport[] = [];
     for (const r of newestFirst) {
+      // Cap the candidate set — but on *suppressors*, not raw recency. Weather only ever SHRINKS a
+      // report's freshness window, so a report that doesn't suppress even without weather can never
+      // suppress with it: drop it here. That both skips its weather fetch AND stops a strong OLDER read
+      // from being crowded out of the cap by fresher-but-expired reads (the newest-N-of-all bug).
+      if (reports.length >= BOUNTY_FRESH_MAX_REPORTS) break;
       const author = await ctx.db.get(r.authorId);
       const { helpful, unhelpful } = await tallyThumbs(ctx, 'report', r._id);
-      reports.push({
-        skateEndTime: r.skateEndTime,
-        netThumbs: helpful - unhelpful,
-        trustClass: author ? trustClassFor(author, now) : null,
-      });
+      const netThumbs = helpful - unhelpful;
+      const trustClass = author ? trustClassFor(author, now) : null;
+      if (
+        !reportSuppressesBounty(r.skateEndTime, now, FRESH_REPORT_HOURS, { netThumbs, trustClass })
+      ) {
+        continue;
+      }
+      reports.push({ skateEndTime: r.skateEndTime, netThumbs, trustClass });
     }
     return { lat: point.lat, lng: point.lng, reports };
   },
@@ -134,10 +142,11 @@ export const create = action({
     if (inputs) {
       for (const r of inputs.reports) {
         const summary = await resolveWeatherSince(ctx, inputs.lat, inputs.lng, r.skateEndTime, now);
-        // Only trust the weather signal when we actually have data; no data ⇒ leave it undefined so the
-        // score falls back to recency × thumbs × trust (fail-open — a fetch miss never opens a bounty).
+        // Only trust the weather signal when we actually have data; a failed fetch (`null`) or empty
+        // window ⇒ leave it undefined so the score falls back to recency × thumbs × trust (fail-open —
+        // a fetch miss never opens a bounty).
         const weatherChangedIceSince =
-          summary.hours > 0 ? weatherExplainsIceChange(summary) : undefined;
+          summary && summary.hours > 0 ? weatherExplainsIceChange(summary) : undefined;
         if (
           reportSuppressesBounty(r.skateEndTime, now, FRESH_REPORT_HOURS, {
             netThumbs: r.netThumbs,

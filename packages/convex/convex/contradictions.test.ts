@@ -106,6 +106,26 @@ async function seedReport(
   ) as Promise<Id<'reports'>>;
 }
 
+/** Seed `count` `report_corroborated` ledger rows for a report — its "community backing" in the model. */
+async function seedCorroboration(
+  t: ReturnType<typeof convexTest>,
+  reportId: Id<'reports'>,
+  authorId: Id<'profiles'>,
+  count: number,
+) {
+  await t.run(async (ctx) => {
+    for (let i = 0; i < count; i++) {
+      await ctx.db.insert('pointEvents', {
+        userId: authorId,
+        delta: 1,
+        reason: 'report_corroborated' as const,
+        refId: reportId,
+        createdAt: Date.now(),
+      });
+    }
+  });
+}
+
 /** Open-Meteo response with `n` hours of a uniform temperature ending just before the new skate. */
 function weatherBetween(newSkateMs: number, tempC: number, n = 6) {
   const s = (hoursBeforeNew: number) => Math.floor((newSkateMs - hoursBeforeNew * HOUR_MS) / 1000);
@@ -131,39 +151,63 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('contradictions.evaluateContradictions', () => {
-  test('records a weather-unexplained contradiction on both reports + the author counter', async () => {
+const quietWeather = (newSkate: number) =>
+  vi.fn(async () => new Response(JSON.stringify(weatherBetween(newSkate, -0.5)), { status: 200 }));
+
+describe('contradictions.settleContradictions', () => {
+  test('discloses a disagreement but escalates no one while it is unsettled (both un-corroborated)', async () => {
     const t = harness();
     const bodyId = await seedBody(t);
-    const author = await seedProfile(t, 'author');
-    const other = await seedProfile(t, 'other');
+    const a = await seedProfile(t, 'a');
+    const b = await seedProfile(t, 'b');
     const newSkate = Date.now() - DAY_MS;
-    const priorId = await seedReport(t, bodyId, other, newSkate - DAY_MS, 'great', ['black_ice']);
-    const newId = await seedReport(t, bodyId, author, newSkate, 'poor', ['snow_ice']);
-    // Quiet weather between them (~0°C) → nothing explains a great→poor flip → a real contradiction.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () => new Response(JSON.stringify(weatherBetween(newSkate, -0.5)), { status: 200 }),
-      ),
-    );
+    const priorId = await seedReport(t, bodyId, a, newSkate - DAY_MS, 'great', ['black_ice']);
+    const newId = await seedReport(t, bodyId, b, newSkate, 'poor', ['snow_ice']);
+    vi.stubGlobal('fetch', quietWeather(newSkate));
 
-    await t.action(internal.contradictions.evaluateContradictions, { reportId: newId });
+    await t.action(internal.contradictions.settleContradictions, { reportId: newId });
 
+    // Symmetric disclosure to skaters…
     expect((await t.run((ctx) => ctx.db.get(newId)))?.conflicting).toBe(true);
     expect((await t.run((ctx) => ctx.db.get(priorId)))?.conflicting).toBe(true);
-    expect((await t.run((ctx) => ctx.db.get(author)))?.contradictionCount).toBe(1);
+    // …but neither side is the corroborated-vs-uncorroborated split yet, so no one is escalated.
+    expect((await t.run((ctx) => ctx.db.get(newId)))?.contradiction ?? false).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get(priorId)))?.contradiction ?? false).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get(a)))?.contradictionCount ?? 0).toBe(0);
+    expect((await t.run((ctx) => ctx.db.get(b)))?.contradictionCount ?? 0).toBe(0);
+  });
+
+  test('escalates the un-corroborated minority, NOT the corroborated report (order-independent)', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const liar = await seedProfile(t, 'liar');
+    const honest = await seedProfile(t, 'honest');
+    const newSkate = Date.now() - DAY_MS;
+    // The false read is posted FIRST and stays un-corroborated; the honest correction is corroborated.
+    const liarReport = await seedReport(t, bodyId, liar, newSkate - DAY_MS, 'great', ['black_ice']);
+    const honestReport = await seedReport(t, bodyId, honest, newSkate, 'poor', ['snow_ice']);
+    await seedCorroboration(t, honestReport, honest, 2);
+    vi.stubGlobal('fetch', quietWeather(newSkate));
+
+    await t.action(internal.contradictions.settleContradictions, { reportId: honestReport });
+
+    // The first-posted liar is the minority and is escalated; the corroborated honest reporter never is.
+    expect((await t.run((ctx) => ctx.db.get(liarReport)))?.contradiction).toBe(true);
+    expect((await t.run((ctx) => ctx.db.get(liar)))?.contradictionCount).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(honestReport)))?.contradiction ?? false).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get(honest)))?.contradictionCount ?? 0).toBe(0);
   });
 
   test('does NOT record when the weather-since explains the change (honest "ice changed")', async () => {
     const t = harness();
     const bodyId = await seedBody(t);
-    const author = await seedProfile(t, 'author');
-    const other = await seedProfile(t, 'other');
+    const a = await seedProfile(t, 'a');
+    const b = await seedProfile(t, 'b');
     const newSkate = Date.now() - DAY_MS;
-    const priorId = await seedReport(t, bodyId, other, newSkate - DAY_MS, 'great', ['black_ice']);
-    const newId = await seedReport(t, bodyId, author, newSkate, 'poor', ['snow_ice']);
-    // A hard freeze between them plausibly changed the ice → not a contradiction.
+    const priorId = await seedReport(t, bodyId, a, newSkate - DAY_MS, 'great', ['black_ice']);
+    const newId = await seedReport(t, bodyId, b, newSkate, 'poor', ['snow_ice']);
+    await seedCorroboration(t, newId, b, 2); // even a corroborated disagreement isn't a contradiction if…
+    // …a hard freeze between them plausibly changed the ice.
     vi.stubGlobal(
       'fetch',
       vi.fn(
@@ -171,37 +215,55 @@ describe('contradictions.evaluateContradictions', () => {
       ),
     );
 
-    await t.action(internal.contradictions.evaluateContradictions, { reportId: newId });
+    await t.action(internal.contradictions.settleContradictions, { reportId: newId });
 
-    expect((await t.run((ctx) => ctx.db.get(newId)))?.conflicting).toBeUndefined();
-    expect((await t.run((ctx) => ctx.db.get(priorId)))?.conflicting).toBeUndefined();
-    expect((await t.run((ctx) => ctx.db.get(author)))?.contradictionCount ?? 0).toBe(0);
+    expect((await t.run((ctx) => ctx.db.get(newId)))?.conflicting ?? false).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get(priorId)))?.contradiction ?? false).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get(a)))?.contradictionCount ?? 0).toBe(0);
   });
 
-  test('escalates to a moderator flag once the pattern threshold is crossed', async () => {
+  test('self-corrects: a report that later earns corroboration clears its flag and decrements the author', async () => {
     const t = harness();
     const bodyId = await seedBody(t);
-    const author = await seedProfile(t, 'author', { contradictionCount: 2 }); // one away from the threshold
-    const other = await seedProfile(t, 'other');
+    const wasMinority = await seedProfile(t, 'x', { contradictionCount: 1 });
+    const opponent = await seedProfile(t, 'y');
     const newSkate = Date.now() - DAY_MS;
-    await seedReport(t, bodyId, other, newSkate - DAY_MS, 'great', ['black_ice']);
-    const newId = await seedReport(t, bodyId, author, newSkate, 'poor', ['snow_ice']);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () => new Response(JSON.stringify(weatherBetween(newSkate, -0.5)), { status: 200 }),
-      ),
-    );
+    // `r` was flagged a contradiction on an earlier settle; now it has picked up its own corroboration.
+    const r = await seedReport(t, bodyId, wasMinority, newSkate - DAY_MS, 'great', ['black_ice']);
+    await t.run((ctx) => ctx.db.patch(r, { contradiction: true }));
+    const opp = await seedReport(t, bodyId, opponent, newSkate, 'poor', ['snow_ice']);
+    await seedCorroboration(t, opp, opponent, 1);
+    await seedCorroboration(t, r, wasMinority, 2); // now the better-backed side ⇒ no longer the minority
+    vi.stubGlobal('fetch', quietWeather(newSkate));
 
-    await t.action(internal.contradictions.evaluateContradictions, { reportId: newId });
+    await t.action(internal.contradictions.settleContradictions, { reportId: opp });
 
-    expect((await t.run((ctx) => ctx.db.get(author)))?.contradictionCount).toBe(3);
+    expect((await t.run((ctx) => ctx.db.get(r)))?.contradiction).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get(wasMinority)))?.contradictionCount).toBe(0);
+  });
+
+  test('escalates to a moderator flag once the pattern threshold is crossed — never a trust penalty', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const liar = await seedProfile(t, 'liar', { contradictionCount: 2 }); // one away from the threshold
+    const honest = await seedProfile(t, 'honest');
+    const newSkate = Date.now() - DAY_MS;
+    const liarReport = await seedReport(t, bodyId, liar, newSkate - DAY_MS, 'great', ['black_ice']);
+    const honestReport = await seedReport(t, bodyId, honest, newSkate, 'poor', ['snow_ice']);
+    await seedCorroboration(t, honestReport, honest, 2);
+    vi.stubGlobal('fetch', quietWeather(newSkate));
+
+    await t.action(internal.contradictions.settleContradictions, { reportId: honestReport });
+
+    expect((await t.run((ctx) => ctx.db.get(liar)))?.contradictionCount).toBe(3);
     const flags = await t.run((ctx) => ctx.db.query('contentFlags').collect());
     expect(flags).toHaveLength(1);
     expect(flags[0]?.targetType).toBe('user');
-    expect(flags[0]?.targetId).toBe(author);
+    expect(flags[0]?.targetId).toBe(liar);
     expect(flags[0]?.reason).toBe('unsafe_false_report');
+    expect(flags[0]?.flaggerId).toBe(honest); // a corroborated opponent, per the model
     // Never a reputation penalty — trust stays boost-only (D50).
-    expect((await t.run((ctx) => ctx.db.get(author)))?.reputationPoints).toBe(0);
+    expect((await t.run((ctx) => ctx.db.get(liar)))?.reputationPoints).toBe(0);
+    expect((await t.run((ctx) => ctx.db.get(liarReport)))?.contradiction).toBe(true);
   });
 });
