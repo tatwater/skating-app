@@ -495,7 +495,7 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   - The buffered auto-select (a tunable ~parking/approach radius so opening from the car still
     resolves the lake) is the same primitive hazard capture uses to bind a hazard to its body.
 
-## Phase 10 — Weather-since strips + weather-driven hazard decay
+## Phase 10 — Weather-since strips + weather-driven hazard decay ✅ Complete (dev; prod deferred) (2026-07-23)
 > **Detailed build plan:** [`phase-10-weather.md`](./phase-10-weather.md) (scoping settled 2026-07-22;
 > new decision **D56**). **Scoping scan found half of this phase already on dev:** the D19 **weather-since
 > reducer** (`summarizeWeatherSince`) is built + property-tested in `@skating/core`, and **auto-suggest

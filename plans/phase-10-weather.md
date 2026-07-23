@@ -11,6 +11,10 @@
 > decisions **D56** (weather-decay design) and **D57** (granular posting permissions — the moderation
 > lever the contradiction signal feeds).
 >
+> **Status:** ✅ **Complete — merged to `main` via PR #23 (2026-07-23); on dev, prod cutover deferred.**
+> New decisions **D56** (weather-driven decay) + **D57** (granular posting permissions). Shipped-vs-plan
+> deltas + the post-merge review rounds are in *Built — shipped vs. plan* below.
+>
 > **Prod note.** Like everything since Phase 2.5, Phase 10 lands on **dev**; prod cutover stays deferred
 > (Convex prod uninitialized, blocked on Clerk PROD env). Not a Phase 10 blocker.
 
