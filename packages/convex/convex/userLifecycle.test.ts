@@ -55,13 +55,10 @@ async function seed(
 }
 
 const as = (t: ReturnType<typeof convexTest>, subject: string) => t.withIdentity({ subject });
-const actionsFor = (t: ReturnType<typeof convexTest>, userId: Id<'profiles'>) =>
-  t.run((ctx) =>
-    ctx.db
-      .query('moderationActions')
-      .withIndex('by_target', (q) => q.eq('targetType', 'user').eq('targetId', userId))
-      .collect(),
-  );
+const actionsFor = async (t: ReturnType<typeof convexTest>, userId: Id<'profiles'>) => {
+  const rows = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+  return rows.filter((r) => r.targetType === 'user' && r.targetId === userId);
+};
 
 describe('moderation.banUser', () => {
   test('a moderator bans a member — status + reason + one audit row', async () => {

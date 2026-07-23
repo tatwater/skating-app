@@ -427,6 +427,129 @@ export const restore = mutation({
 });
 
 /**
+ * Moderator: reject a user-drawn body (D37) — the third arm of the review triad beside `approve` and
+ * the D36 `merge`. Mirrors `approve`'s guards (user-source, still-pending), flips `reviewStatus` to
+ * `rejected` (which `isListed` treats as unlisted), re-derives the geospatial key so it drops off the
+ * map, and audits `reject_waterbody`.
+ */
+export const reject = mutation({
+  args: { waterBodyId: v.id('waterBodies'), reason: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const actor = await requireRole(ctx, 'moderator');
+    const body = await ctx.db.get(args.waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+    if (body.source !== 'user') {
+      throw new ConvexError('Only user-created water bodies can be reviewed');
+    }
+    if (body.reviewStatus !== 'pending') {
+      throw new ConvexError('Water body is not pending review');
+    }
+
+    await ctx.db.patch(args.waterBodyId, { reviewStatus: 'rejected' });
+    await waterBodiesGeo.insert(
+      ctx,
+      args.waterBodyId,
+      { latitude: body.centroid.lat, longitude: body.centroid.lng },
+      { listed: isListed({ ...body, reviewStatus: 'rejected' }) },
+      zoomSortKey(body),
+    );
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'reject_waterbody',
+      targetType: 'waterbody',
+      targetId: args.waterBodyId,
+      reason: args.reason?.trim() || 'Rejected user-created water body',
+      createdAt: Date.now(),
+    });
+    return args.waterBodyId;
+  },
+});
+
+/**
+ * Moderator: merge a duplicate water body into a survivor (D36) — the missing dedup mutation. Re-points
+ * every child (`reports`/`hazards`/`bounties`/`bodyFeatures`) from the loser to the survivor, then
+ * soft-tombstones the loser (`dedupStatus: merged` + `mergedIntoId`) so read paths follow the chain to
+ * the survivor and `isListed` drops it off the map. Never a hard delete (reversible in spirit with the
+ * D15/D33 ethos); audits `merge_waterbody` with the re-pointed counts.
+ *
+ * NOTE: `waterBodyFavorites` and `putIns` are intentionally NOT re-pointed in v1 — a dedup loser is a
+ * user-drawn suspected-duplicate (Phase 8) that won't carry them; revisit if merge is ever applied to a
+ * rich canonical body.
+ */
+export const merge = mutation({
+  args: {
+    survivorId: v.id('waterBodies'),
+    loserId: v.id('waterBodies'),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { survivorId, loserId, reason }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (survivorId === loserId) throw new ConvexError('Cannot merge a water body into itself');
+    const survivor = await ctx.db.get(survivorId);
+    const loser = await ctx.db.get(loserId);
+    if (!survivor || !loser) throw new ConvexError('Water body not found');
+    // Don't merge into a tombstone, and don't re-merge an already-merged loser — the operator must
+    // pick a live canonical survivor, which also keeps the merge chain a single hop.
+    if (survivor.mergedIntoId !== undefined) {
+      throw new ConvexError('Survivor is itself merged — pick the canonical body');
+    }
+    if (loser.dedupStatus === 'merged') throw new ConvexError('Water body is already merged');
+
+    // Re-point every child from loser → survivor. Merge is a rare manual action on a typically-small
+    // dedup loser, so a bounded `collect()` per child table is acceptable (cf. `listPendingReview`).
+    // Unrolled per table so each `withIndex` keeps its exact type (Convex index builders are per-table).
+    const reports = await ctx.db
+      .query('reports')
+      .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', loserId))
+      .collect();
+    const hazards = await ctx.db
+      .query('hazards')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))
+      .collect();
+    const bounties = await ctx.db
+      .query('bounties')
+      .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', loserId))
+      .collect();
+    // A merge loser is normally a user-drawn suspected-duplicate with no promoted features, but a
+    // stranded known-hazard feature would be a safety false-negative — so re-point these too.
+    const features = await ctx.db
+      .query('bodyFeatures')
+      .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', loserId))
+      .collect();
+    for (const child of [...reports, ...hazards, ...bounties, ...features]) {
+      await ctx.db.patch(child._id, { waterBodyId: survivorId });
+    }
+    const repointed = {
+      reports: reports.length,
+      hazards: hazards.length,
+      bounties: bounties.length,
+      bodyFeatures: features.length,
+    };
+
+    // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
+    // `merged` as unlisted, so drop its geospatial key too.
+    await ctx.db.patch(loserId, { dedupStatus: 'merged', mergedIntoId: survivorId });
+    await waterBodiesGeo.insert(
+      ctx,
+      loserId,
+      { latitude: loser.centroid.lat, longitude: loser.centroid.lng },
+      { listed: isListed({ ...loser, dedupStatus: 'merged' }) },
+      zoomSortKey(loser),
+    );
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'merge_waterbody',
+      targetType: 'waterbody',
+      targetId: loserId,
+      reason: reason?.trim() || `Merged into ${survivor.name}`,
+      metadata: { survivorId, repointed },
+      createdAt: Date.now(),
+    });
+    return survivorId;
+  },
+});
+
+/**
  * Public: a single water body for its detail view (D47). **Follows `mergedIntoId` to the survivor**
  * (D36) so a deep link to a merged duplicate lands on the canonical body. Returns a discriminated
  * result so the UI can tell apart the three cases:
