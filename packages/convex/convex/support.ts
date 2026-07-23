@@ -9,12 +9,15 @@
  * admin-only `list` query the inbox reads.
  */
 
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { type QueryCtx, query } from './_generated/server';
-import { requireRole } from './lib/auth';
+import { mutation, type QueryCtx, query } from './_generated/server';
+import { getCurrentProfile, requireRole } from './lib/auth';
 import { SUPPORT_CATEGORIES, SUPPORT_STATUSES } from './lib/enums';
 import { literals } from './lib/validators';
+
+/** Support-ticket body bounds — enough for a real report, capped so it stays an inbox row not an essay. */
+const MAX_BODY_LENGTH = 5000;
 
 const INBOX_LIMIT = 100;
 
@@ -84,5 +87,77 @@ export const list = query({
         ...(t.context !== undefined ? { context: t.context } : {}),
       })),
     );
+  },
+});
+
+/**
+ * File a support ticket / bug report (D35) — the one Phase-7 path that ships on **web and mobile**.
+ * Deliberately uses `getCurrentProfile` (not `requireProfile`) so a **suspended or banned** user can
+ * still file an **appeal** (`category: 'account'`) — the very people who most need the channel. Signed-in
+ * ⇒ the `userId` is attached; a not-yet-provisioned caller files pre-auth (userId absent). The client
+ * supplies auto-captured `context` (app version / platform / device / recent Sentry event id) an email
+ * can't. (The founder email alert is wired in the Resend commit.)
+ */
+export const create = mutation({
+  args: {
+    category: literals(SUPPORT_CATEGORIES),
+    body: v.string(),
+    context: v.optional(
+      v.object({
+        appVersion: v.optional(v.string()),
+        platform: v.optional(v.string()),
+        deviceModel: v.optional(v.string()),
+        sentryEventId: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, { category, body, context }) => {
+    const trimmed = body.trim();
+    if (trimmed.length === 0) throw new ConvexError('Please describe the issue');
+    if (trimmed.length > MAX_BODY_LENGTH) throw new ConvexError('Message is too long');
+    const profile = await getCurrentProfile(ctx);
+
+    return ctx.db.insert('supportTickets', {
+      ...(profile ? { userId: profile._id } : {}),
+      category,
+      body: trimmed,
+      status: 'open',
+      ...(context !== undefined ? { context } : {}),
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Assign a ticket for triage (D37 — **admin-only**, PII). Defaults to the acting admin when no
+ * assignee is given (the common "I've got this" action), and moves an `open` ticket to `in_progress`.
+ */
+export const assign = mutation({
+  args: { ticketId: v.id('supportTickets'), assigneeId: v.optional(v.id('profiles')) },
+  handler: async (ctx, { ticketId, assigneeId }) => {
+    const actor = await requireRole(ctx, 'admin');
+    const ticket = await ctx.db.get(ticketId);
+    if (!ticket) throw new ConvexError('Ticket not found');
+    await ctx.db.patch(ticketId, {
+      assignedToUserId: assigneeId ?? actor._id,
+      status: ticket.status === 'open' ? 'in_progress' : ticket.status,
+    });
+    return ticketId;
+  },
+});
+
+/** Resolve a ticket (D37 — **admin-only**). Stamps `resolvedBy`/`resolvedAt` and closes it. */
+export const resolve = mutation({
+  args: { ticketId: v.id('supportTickets') },
+  handler: async (ctx, { ticketId }) => {
+    const actor = await requireRole(ctx, 'admin');
+    const ticket = await ctx.db.get(ticketId);
+    if (!ticket) throw new ConvexError('Ticket not found');
+    await ctx.db.patch(ticketId, {
+      status: 'resolved',
+      resolvedByUserId: actor._id,
+      resolvedAt: Date.now(),
+    });
+    return ticketId;
   },
 });
