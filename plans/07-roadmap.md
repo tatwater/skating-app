@@ -368,13 +368,19 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   hazard into a persistent **`bodyFeatures`** attribute (spring/current, constriction, bridge-narrows,
   recurring pressure ridge) and to **demote** one — so a permanent risk stops needing user re-marking.
   Includes the **`hazard` flag queue** (`contentFlags.targetType: hazard`) to hide a bad/malicious pin.
+- **Posting-rights & appeals tooling (D57, feeds from Phase 10):** restrict/restore per-action posting
+  rights (`canPostReports` / `canPostHazards`) as a lever **finer than suspend/ban** (D37) — proportionate,
+  appealable, reversible — plus an **appeals / reinstatement** workflow. Backed by a **contributor-trust
+  panel**: the private, non-scoring **contradiction counter** (from the Phase-10 D56 signal) shown
+  *alongside* a **good-vs-bad reports trend over time**, deliberately **tenure-aware** so a 10-year
+  contributor and a 1-month account with the same raw count are obviously distinguishable at a glance.
 - Every admin mutation gates on `role` server-side and writes a **`moderationActions`**
   audit row.
 - **Operator alerts (D38):** Resend + React Email — email the founder on new
   `supportTickets` and safety-priority items, deep-linking into `/admin`.
-- **Done:** operators can ban/unban users, approve/reject user-drawn water bodies, and
-  triage flags + support from `/admin`, with every action audited and safety items
-  alerted by email.
+- **Done:** operators can ban/unban users, **restrict/restore per-action posting rights and handle
+  appeals** (D57), approve/reject user-drawn water bodies, and triage flags + support from `/admin`, with
+  every action audited and safety items alerted by email.
 - Needs: Resend (domain verified).
 
 ## Phase 8 — GPS providers (fast-follow order — D24)
@@ -406,7 +412,7 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   water can create/attach a body from the trusted path (dedup-steered).
 - Needs: provider approvals/keys (all applied for in Phase 0).
 
-## Phase 9 — Hazards
+## Phase 9 — Hazards ✅ Complete (dev; prod deferred) (2026-07-22)
 > **Detailed build plan:** [`phase-9-hazards.md`](./phase-9-hazards.md) (decisions settled 2026-07-18;
 > **D51–D55** — D55 added at build kickoff: on-ice hazards auto-bundle into the skater's later report).
 > Ship order within the **single PR**: online-first commits (authoring + lifecycle + render +
@@ -475,8 +481,32 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   - The buffered auto-select (a tunable ~parking/approach radius so opening from the car still
     resolves the lake) is the same primitive hazard capture uses to bind a hazard to its body.
 
-## Phase 10 — Weather-since strips
-- Open-Meteo "what the weather has done since this report" factual strip (D19).
+## Phase 10 — Weather-since strips + weather-driven hazard decay
+> **Detailed build plan:** [`phase-10-weather.md`](./phase-10-weather.md) (scoping settled 2026-07-22;
+> new decision **D56**). **Scoping scan found half of this phase already on dev:** the D19 **weather-since
+> reducer** (`summarizeWeatherSince`) is built + property-tested in `@skating/core`, and **auto-suggest
+> skate times is done (Phase 9.5)** — see the struck bullet below. The genuinely new work is **four
+> deliverables:** (1) a live **Open-Meteo fetch + `weatherCache`** (the one new piece of infra — a Convex
+> action like `isochrones.ts`, on the **forecast API with `past_days`** — *not* the ~5-day-lagged
+> archive — fetched **on drawer-open**), (2) wiring the **weather-since strip** onto aging report **and
+> hazard** views (plain-text, verdict-free, Open-Meteo-attributed), (3) **weather-driven hazard decay**
+> (`decayMultiplier(type, weatherSince)` + `effectiveAge`, threaded through `hazards.ts` and **precomputed
+> server-side for the offline on-ice alert**), and (4) **report conditions auto-fill** (`openmeteo`
+> source, already stubbed) **+ the Phase-6 corroboration contradiction *signal*** (withhold-boost +
+> conflicting-reports disclosure + escalate-to-moderation via the new **D57** posting-permission lever —
+> never a trust subtraction) **+ the Phase-6 decay-based bounty-freshness score** — the deferred tasks
+> that were explicitly waiting on weather-since. Lands on **dev**; prod deferred.
+- Open-Meteo "what the weather has done since this report" factual strip (D19). **Plain-text,
+  verdict-free** (e.g. "since this report: peak 41°F · low 22°F · 3 nights below freezing · 6h strong sun
+  · ½″ rain"); the quantitative degree-hour integrals stay model-internal. The pure reducer
+  (`summarizeWeatherSince`) is already built — Phase 10 adds the fetch + display wiring, not the math.
+- **Expanded weather-variable set (scoping pass 2026-07-22).** The original five (peak temp · hours
+  near/above freezing · sun · precip · wind) miss what the *decay model* needs: **freezing- & thaw-degree-
+  *hours*** (magnitude, not hour-counts — the ~1″/15-FDD backbone), **overnight low** ("did it freeze last
+  night"), **rain vs snow split** (opposite signs — snow insulates + hides, never heals), **solar
+  radiation** (insolation subsumes the season/solar-term multiplier — 8× seasonal swing), **clear-night
+  radiational cooling**, **wind-in-context**, and **sustained-freeze-run / freeze-thaw-cycle** counts. Full
+  variable table in the phase doc / hazard-research §5.
 - **Weather-driven dynamic hazard decay (extends D52, planned here 2026-07-18; signs corrected by the
   2026-07-21 research pass).** Reuse the same Open-Meteo "weather-since" pull to modulate hazard
   freshness instead of relying on elapsed time alone: `effectiveAge = elapsed × decayMultiplier(type,
@@ -495,14 +525,50 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   **cold-weather multiplier floored at ≥1 (never <1)**; only a sustained hard freeze of the whole
   sheet — not one cold night — heals it. **Same D3 caveat as D52:** accelerated decay ≠ "safe" — a
   refrozen lead is thin ice, so the copy must never imply skateability. Pure logic in `@skating/core`
-  (property-tested, D40); admin-tunable alongside the D52 decay tiers (Phase 7).
-- **Auto-suggest skate start/end times from the on-ice dwell (founder idea, 2026-07-21; from Phase 9).**
-  Phase 9's single on-ice GPS watcher already knows when a device entered and left a lake footprint; that
-  interval is a strong prior for the report form's currently-manual skate window. Needs enter/leave
+  (property-tested, D40); admin-tunable alongside the D52 decay tiers (Phase 7). **Never-hide invariant
+  (founder call 2026-07-22, D56):** weather can **age** a hazard (fresh→aging) but the cold-acceleration
+  direction is **bounded so weather alone can never push a hazard past `aging` into hidden/`stale`** —
+  only elapsed time + a human `fully_healed` confirmation fully retires a pin. **Fail-open** (missing
+  weather ⇒ multiplier=1; weather trouble never makes a hazard less visible). **Sampling:** body
+  **centroid by default** (nearly every body < one Open-Meteo grid cell — *not* town/county, wrong
+  abstraction); an optional `weatherSamplePoints[]` escape hatch covers the few multi-cell giants
+  (Champlain/Winnipesaukee), nearest-point assignment. **Cron:** the decay precompute sweeps **only bodies
+  with ≥1 active hazard** (not all 116k) at a fixed hourly tick, skipping hazards refreshed within an
+  admin-tunable `weatherRefreshMinIntervalHours` (Convex crons can't retune interval at runtime), and
+  **stores the `decayMultiplier` (time-independent), not a frozen freshness bucket** (which would drift
+  between ticks — online `toView()` recomputes the live bucket). The **strip fetches on drawer-open** (no
+  cron — a query can't fetch, so a read-only strip would never fill on hazard-free bodies), sharing the
+  same `weatherCache`.
+- **Three deferred tasks the fetch unblocks (added to scope 2026-07-22).** (a) **Conditions auto-fill:**
+  populate the stubbed `openmeteo` source (weather *at* the skate time) on report create — user-entered
+  values always win; runs as a **scheduled post-insert action** (a mutation can't fetch), so it's
+  eventually-consistent. (b) **Corroboration contradiction *signal* (D56/D57):** finish the Phase-6
+  `runCorroboration` stub — a later disagreeing report counts as a contradiction **only when the
+  weather-since doesn't explain the change**, and even then it **never subtracts trust** (D50 stays
+  boost-only): it withholds the boost, shows a "conflicting reports" indicator, and — *on a repeated,
+  never-corroborated pattern* — auto-files an `/admin` flag so a human can restrict the offender's
+  `canPostReports`/`canPostHazards` right (D57, finer + appealable vs a whole-app ban). Honest "the ice
+  changed" reports stay unpenalized (D3/D50). (c) **Decay-based bounty-freshness (Phase-6 upgrade):**
+  replace the hard `FRESH_REPORT_HOURS = 48h` bounty gate with a **freshness score = recency × thumbs ×
+  trust × weather-since** (reuses §4's decay shape) so warming weather reopens bounties sooner. All land
+  with tests + the boost-only invariant intact.
+- **~~Auto-suggest skate start/end times from the on-ice dwell~~ ✅ Done (Phase 9.5, 2026-07-22).** Built
+  ahead of schedule: `apps/mobile/src/lib/dwell.ts` (`suggestedSkateWindow`) + `dwellTracker.ts`, wired
+  into `ReportForm.tsx` (earliest-in/latest-out across today's dwells, grace-debounced). **No Phase 10
+  work.** *(Original note, kept for history:* the on-ice GPS watcher knows when a device entered/left a
+  lake footprint; that interval is a strong prior for the report form's skate window. Needs enter/leave
   bookkeeping (debounced against brief GPS excursions) + a form pre-fill, and overlaps the D24
-  activity-detection path — so it lands with the report-form / activity work, not the hazard feature.
-- **Done:** aging reports show peak temp / hours above freezing / sun / precip / wind; hazard decay
-  reflects what the weather actually did, not just the clock.
+  activity-detection path — so it lands with the report-form / activity work, not the hazard feature.)*
+- **Deferred to this phase's Later/deferred (see the phase doc):** the **lake-depth / shallow-water decay
+  signal** ships v1 as a manual `shallow_bay_early_thaw` `bodyFeature` (no depth data source exists in
+  OSM); the real fix is a **HydroLAKES + GLOBathy** backfill of `meanDepthM`/`maxDepthM`, a separate data
+  PR. Full write-up (sources, state bathymetry, ETL update) in `phase-10-weather.md` → Later/deferred.
+- **Done:** aging reports **and hazards** show a plain-text, Open-Meteo-attributed weather-since strip
+  (peak/overnight-low temp · nights below freezing · sun · rain-vs-snow · wind); hazard decay reflects
+  what the weather actually did (never hiding a hazard); report conditions auto-fill from Open-Meteo;
+  corroboration distinguishes a weather-explained change from a real contradiction and escalates a
+  repeated bad-actor pattern to the D57 posting-permission lever (never subtracting trust); and bounty
+  freshness is weather-aware.
 
 ## Later / deferred (see 02-open-questions)
 - **Per-body summary cards on the map at appropriate zoom (founder ask, 2026-07-21).** Today the map
