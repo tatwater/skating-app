@@ -7,6 +7,7 @@ import {
   formatSnowCoverInches,
   formatThicknessReading,
   type ReportConditions,
+  reportStripState,
   SKATE_QUALITY_LABELS,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
@@ -22,6 +23,7 @@ import { ModeratorActions } from './ModeratorActions';
 import { BlockedChip, FlagControl } from './SafetyControls';
 import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
+import { WeatherStrip } from './WeatherStrip';
 
 /**
  * Report detail drawer (§F, D42/D47) for `/report/[id]`, the mobile mirror of web's `ReportDetail`.
@@ -120,9 +122,12 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         ) : null}
       </YStack>
 
-      {report.skateQuality ? (
+      {report.skateQuality || report.conflicting ? (
         <XStack gap="$1.5" flexWrap="wrap" alignItems="center">
-          <Badge tone="solid">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
+          {report.skateQuality ? (
+            <Badge tone="solid">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
+          ) : null}
+          {report.conflicting ? <Badge>Conflicting reports</Badge> : null}
         </XStack>
       ) : null}
 
@@ -172,6 +177,19 @@ export function ReportDetail({ reportId }: { reportId: string }) {
           </YStack>
         </Section>
       ) : null}
+
+      {(() => {
+        // Weather-since strip (§3): shown once the report is >~6h old, gone past ~14d (the header's
+        // "off the ice <date>" already carries the age line).
+        const strip = reportStripState(report.skateEndTime, Date.now());
+        return strip.kind === 'strip' ? (
+          <WeatherStrip
+            waterBodyId={report.waterBodyId}
+            startMs={strip.windowStartMs}
+            label="Weather since this report"
+          />
+        ) : null;
+      })()}
 
       {report.notes ? (
         <Section label="Notes">

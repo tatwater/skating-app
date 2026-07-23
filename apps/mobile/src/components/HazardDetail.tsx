@@ -6,6 +6,7 @@ import {
   FOOTPRINT_IS_APPROXIMATE,
   freshnessLabel,
   type HazardVerdict,
+  hazardStripWindowStartMs,
   hazardTypeLabel,
   healingNote,
   isPassageMarker,
@@ -27,6 +28,7 @@ import { useMapSelection } from './MapSelectionContext';
 import { FlagControl } from './SafetyControls';
 import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
+import { WeatherStrip } from './WeatherStrip';
 
 /**
  * The hazard drawer (Phase 9) — reached by tapping a pin, from an on-ice banner, or via the
@@ -264,6 +266,13 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
           <Paragraph color="$foreground">{hazard.description}</Paragraph>
         </Section>
       ) : null}
+
+      <WeatherStrip
+        waterBodyId={hazard.waterBodyId}
+        startMs={hazardStripWindowStartMs(hazard.lastConfirmedAt, Date.now())}
+        label="Recent weather here"
+        caveat={hazard.snowHidden ? 'Possibly snow-hidden.' : undefined}
+      />
 
       <Paragraph color="$foregroundMuted" fontSize={12}>
         {FOOTPRINT_IS_APPROXIMATE}

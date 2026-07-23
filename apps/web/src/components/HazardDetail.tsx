@@ -7,6 +7,7 @@ import {
   type HazardFreshness,
   type HazardType,
   type HazardVerdict,
+  hazardStripWindowStartMs,
   hazardTypeLabel,
   healingNote,
   isPassageMarker,
@@ -28,6 +29,7 @@ import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Separator } from './ui/separator';
 import { SheetDescription, SheetHeader, SheetTitle } from './ui/sheet';
+import { WeatherStrip } from './WeatherStrip';
 
 /** The plain data a hazard renders from — decoupled from Convex so `HazardView` is testable. */
 export interface HazardViewData {
@@ -79,6 +81,7 @@ export function HazardView({
   confirmError,
   flagControl,
   thumbControl,
+  weatherStrip,
   action,
 }: {
   data: HazardViewData;
@@ -96,6 +99,8 @@ export function HazardView({
   flagControl?: ReactNode;
   /** The helpful/unhelpful thumbs control, injected by the container (Convex-free view, D40). */
   thumbControl?: ReactNode;
+  /** The recent-weather strip node (Phase 10 / §3); the container builds it so the view stays Convex-free. */
+  weatherStrip?: ReactNode;
   /**
    * Deep-link intent (D54 Layer 2). `confirm` lands from an on-ice notification tap and scrolls the
    * three-tier confirm control into view. It never *expands* the destructive "fully healed" step —
@@ -178,6 +183,8 @@ export function HazardView({
         ) : null}
 
         {data.description ? <p className="text-sm">{data.description}</p> : null}
+
+        {weatherStrip}
 
         {data.photos.length > 0 ? (
           <div className="grid grid-cols-2 gap-2">
@@ -351,6 +358,14 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         confirmCount: hazard.confirmCount,
         photos: photos ?? [],
       }}
+      weatherStrip={
+        <WeatherStrip
+          waterBodyId={hazard.waterBodyId}
+          startMs={hazardStripWindowStartMs(hazard.lastConfirmedAt, Date.now())}
+          label="Recent weather here"
+          caveat={hazard.snowHidden ? 'Possibly snow-hidden.' : undefined}
+        />
+      }
       confirming={confirming}
       confirmError={confirmError}
       action={action}
