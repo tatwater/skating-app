@@ -132,6 +132,10 @@ export default defineSchema({
     // input the Phase 7 panel charts tenure-aware. Absent ⇒ 0.
     canPostReports: v.optional(v.boolean()),
     canPostHazards: v.optional(v.boolean()),
+    // `canPostComments` (D57 extension, Phase 7): comments are free-text content — the classic
+    // harassment/spam surface — so a boolean revocation fits, exactly like reports/hazards. Its point
+    // is muting a toxic commenter *without* silencing their safety reports. Absent ⇒ allowed.
+    canPostComments: v.optional(v.boolean()),
     contradictionCount: v.optional(v.number()),
     role: literals(USER_ROLES), // mod=content; admin ⊇ mod (D37)
     status: literals(USER_STATUSES), // suspend/ban (D37); deleted (D33)

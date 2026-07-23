@@ -18,7 +18,7 @@ function harness() {
 async function seedUser(
   t: ReturnType<typeof convexTest>,
   subject: string,
-  perms: { canPostReports?: boolean; canPostHazards?: boolean } = {},
+  perms: { canPostReports?: boolean; canPostHazards?: boolean; canPostComments?: boolean } = {},
 ) {
   await t.run((ctx) =>
     ctx.db.insert('profiles', {
@@ -137,5 +137,26 @@ describe('D57 granular posting permissions', () => {
         ],
       }),
     ).rejects.toThrow(/hazard posting has been restricted/);
+  });
+
+  test('canPostComments:false mutes comments but leaves reports standing', async () => {
+    const t = harness();
+    // An author who can still report but has had comments revoked — the D57 payoff.
+    const as = await seedUser(t, 'nocomments', { canPostComments: false });
+    const waterBodyId = await seedBody(t);
+    const reportId = await as.mutation(api.reports.create, reportArgs(waterBodyId));
+    await expect(
+      as.mutation(api.comments.create, { reportId, body: 'nice ice' }),
+    ).rejects.toThrow(/comment posting has been restricted/);
+  });
+
+  test('absent canPostComments ⇒ comments allowed', async () => {
+    const t = harness();
+    const as = await seedUser(t, 'cancomment');
+    const waterBodyId = await seedBody(t);
+    const reportId = await as.mutation(api.reports.create, reportArgs(waterBodyId));
+    await expect(
+      as.mutation(api.comments.create, { reportId, body: 'looks solid' }),
+    ).resolves.toBeTruthy();
   });
 });

@@ -72,3 +72,13 @@ export function assertCanPostHazards(profile: Doc<'profiles'>): void {
     throw new ConvexError('Your hazard posting has been restricted');
   }
 }
+
+/**
+ * `canPostComments` (D57 extension) — mute a toxic commenter *without* silencing their safety reports.
+ * Same fail-open shape as the report/hazard gates: absent ⇒ allowed.
+ */
+export function assertCanPostComments(profile: Doc<'profiles'>): void {
+  if (profile.canPostComments === false) {
+    throw new ConvexError('Your comment posting has been restricted');
+  }
+}
