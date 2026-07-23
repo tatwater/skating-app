@@ -33,7 +33,7 @@ import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { getCurrentProfile, requireProfile } from './lib/auth';
+import { assertCanPostHazards, getCurrentProfile, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { isListed } from './lib/listing';
@@ -222,6 +222,8 @@ export const create = mutation({
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post hazards');
     }
+    // Granular posting permission (D57): a moderator can restrict hazard posting alone (finer than a ban).
+    assertCanPostHazards(profile);
     return insertHazard(ctx, args, profile._id, now);
   },
 });

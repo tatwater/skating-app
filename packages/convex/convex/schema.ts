@@ -123,6 +123,16 @@ export default defineSchema({
     reportCount: v.optional(v.number()),
     commentCount: v.optional(v.number()),
     badges: v.optional(v.array(v.string())),
+    // Granular posting permissions (Phase 10 / D57): a moderation lever FINER than a whole-app ban —
+    // a user who abuses one surface loses that surface, appealably and reversibly, not the whole app.
+    // Optional booleans, **absent ⇒ allowed** (fail-open in the safe direction; default-on for adults —
+    // minors are already read-only, D41). Restricted/restored from the Phase 7 admin surface; fed by the
+    // contradiction signal (D56). `contradictionCount` is a PRIVATE, non-scoring tally of weather-
+    // unexplained, never-corroborated contradictions — NOT trust (D50 stays boost-only), a moderation
+    // input the Phase 7 panel charts tenure-aware. Absent ⇒ 0.
+    canPostReports: v.optional(v.boolean()),
+    canPostHazards: v.optional(v.boolean()),
+    contradictionCount: v.optional(v.number()),
     role: literals(USER_ROLES), // mod=content; admin ⊇ mod (D37)
     status: literals(USER_STATUSES), // suspend/ban (D37); deleted (D33)
     statusReason: v.optional(v.string()),

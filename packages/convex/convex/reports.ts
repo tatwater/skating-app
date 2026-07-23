@@ -56,7 +56,12 @@ import {
   inReportHazardArgs,
   insertHazard,
 } from './hazards';
-import { getCurrentProfile, requireProfile } from './lib/auth';
+import {
+  assertCanPostHazards,
+  assertCanPostReports,
+  getCurrentProfile,
+  requireProfile,
+} from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { bumpContributionCount } from './lib/contributionCounts';
 import { isListed } from './lib/listing';
@@ -184,6 +189,14 @@ export const create = mutation({
     // Minors are read-only (D41): reports are always public (D13), so we never let a minor broadcast.
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post reports');
+    }
+
+    // Granular posting permission (D57): a moderator can restrict this surface without a whole-app ban.
+    assertCanPostReports(profile);
+    // Posting a hazard (drawn in-report or bundled) requires the hazard permission too, so the report
+    // path can't be a way around a hazard-posting restriction.
+    if ((args.hazards?.length ?? 0) + (args.attachHazardIds?.length ?? 0) > 0) {
+      assertCanPostHazards(profile);
     }
 
     // Bound the hazard fan-out: each in-report hazard is several document writes, so an unbounded
