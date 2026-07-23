@@ -188,7 +188,26 @@ async function recomputeLifecycle(ctx: MutationCtx, hazard: Doc<'hazards'>): Pro
     createdAt: hazard.firstReportedAt,
     priorStatus: hazard.status,
   });
-  await ctx.db.patch(hazard._id, next);
+
+  // A confirmation that advances the decay clock (`lastConfirmedAt`) invalidates the stored weather
+  // multiplier (Phase 10 / D56): the decay cron computed `decayMultiplier`/`snowHidden` over the *old*
+  // "since last confirmed" window, so applying them to the new epoch would show the wrong freshness
+  // bucket until the next cron pass (up to ~3h). Clear them and the refresh stamp — the read path then
+  // fails open to plain base decay (which a just-confirmed pin reads as fresh anyway, never *less*
+  // visible), and dropping `weatherAdjustedAt` lets the cron recompute against the new window on its
+  // very next tick (its cadence gate no longer defers this hazard). A vote that leaves `lastConfirmedAt`
+  // unchanged (e.g. `fully_healed`) keeps the still-valid multiplier — its window is unchanged.
+  const clockAdvanced = next.lastConfirmedAt !== hazard.lastConfirmedAt;
+  const hasStoredWeather =
+    hazard.decayMultiplier !== undefined ||
+    hazard.snowHidden !== undefined ||
+    hazard.weatherAdjustedAt !== undefined;
+  await ctx.db.patch(hazard._id, {
+    ...next,
+    ...(clockAdvanced && hasStoredWeather
+      ? { decayMultiplier: undefined, snowHidden: undefined, weatherAdjustedAt: undefined }
+      : {}),
+  });
 }
 
 /** The confirmation history for a hazard's detail drawer — newest first. */

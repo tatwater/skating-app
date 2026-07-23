@@ -80,18 +80,62 @@ async function recentReports(
     .collect();
 }
 
-/** One recent report's decay-freshness inputs (everything but the weather, which the action fetches). */
-interface BountyFreshnessReport {
+/**
+ * One recent report that suppresses a bounty on the **base (weather-free)** gate — the candidate set both
+ * the freshness query (which fetches each one's weather) and the transactional create-check (which
+ * re-decides at commit) work from. Carries `reportId` so a weather verdict can be tied back to its report.
+ */
+interface SuppressorCandidate {
+  reportId: Id<'reports'>;
   skateEndTime: number;
   netThumbs: number;
   trustClass: ReturnType<typeof trustClassFor>;
 }
 
 /**
- * The decay-freshness gate's DB inputs (Phase 10 / §7c): the body's weather sample point + the recent
- * reports (newest-first, read-bounded) each weighted by author trust + net thumbs. Null when the body is
- * missing/unlisted (the action then lets `createChecked` throw the proper error). The action adds the
- * per-report **weather-since** and decides freshness.
+ * The body's baseline (weather-free) bounty suppressors: recent visible reports, newest-first, each
+ * weighted by author trust + net thumbs, kept only if they suppress **without** weather and capped at
+ * `BOUNTY_FRESH_MAX_REPORTS`. Weather only ever *shrinks* a report's freshness window (a big freeze/thaw
+ * **reopens** a bounty, D56), so a report that doesn't suppress even weather-free can never suppress with
+ * it — dropping it here is safe and bounds both the action's weather fetch and this scan. Reads only, so
+ * it's shared by the `bountyFreshnessInputs` query and the `createChecked` mutation (§7c).
+ *
+ * Newest-first matters twice: the freshest suppressor has the shortest weather window (most robust to a
+ * reopen), and capping on *suppressors* rather than raw recency stops a strong OLDER read from being
+ * crowded out of the cap by fresher-but-expired reads (the newest-N-of-all bug).
+ */
+async function suppressingCandidates(
+  ctx: QueryCtx,
+  body: Doc<'waterBodies'>,
+  now: number,
+): Promise<SuppressorCandidate[]> {
+  const maxWindowMs = FRESH_REPORT_HOURS * BOUNTY_FRESH_MAX_MULTIPLIER * HOUR_MS;
+  const recent = await recentReports(ctx, body._id, now - maxWindowMs);
+  const newestFirst = [...recent].sort((a, b) => b.skateEndTime - a.skateEndTime);
+
+  const candidates: SuppressorCandidate[] = [];
+  for (const r of newestFirst) {
+    if (candidates.length >= BOUNTY_FRESH_MAX_REPORTS) break;
+    const author = await ctx.db.get(r.authorId);
+    const { helpful, unhelpful } = await tallyThumbs(ctx, 'report', r._id);
+    const netThumbs = helpful - unhelpful;
+    const trustClass = author ? trustClassFor(author, now) : null;
+    if (
+      !reportSuppressesBounty(r.skateEndTime, now, FRESH_REPORT_HOURS, { netThumbs, trustClass })
+    ) {
+      continue;
+    }
+    candidates.push({ reportId: r._id, skateEndTime: r.skateEndTime, netThumbs, trustClass });
+  }
+  return candidates;
+}
+
+/**
+ * The decay-freshness gate's DB inputs (Phase 10 / §7c): the body's weather sample point + its baseline
+ * suppressors (newest-first, read-bounded), each carrying its `reportId`. Null when the body is
+ * missing/unlisted (the action then lets `createChecked` throw the proper error). The action fetches each
+ * candidate's **weather-since** to decide which weather has likely reopened; the final fresh-eyes verdict
+ * is re-made transactionally in `createChecked`, so a suppressor that lands mid-fetch can't slip through.
  */
 export const bountyFreshnessInputs = internalQuery({
   args: { waterBodyId: v.id('waterBodies') },
@@ -99,31 +143,8 @@ export const bountyFreshnessInputs = internalQuery({
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || !isListed(body)) return null;
     const now = Date.now();
-    const maxWindowMs = FRESH_REPORT_HOURS * BOUNTY_FRESH_MAX_MULTIPLIER * HOUR_MS;
-    const recent = await recentReports(ctx, body._id, now - maxWindowMs);
-    // Newest-first: the freshest suppressor has the shortest weather window, so it's the most robust
-    // (least likely a freeze/thaw reopens it) and the action usually blocks on it first.
-    const newestFirst = [...recent].sort((a, b) => b.skateEndTime - a.skateEndTime);
-
     const point = nearestSamplePoint(body, body.centroid);
-    const reports: BountyFreshnessReport[] = [];
-    for (const r of newestFirst) {
-      // Cap the candidate set — but on *suppressors*, not raw recency. Weather only ever SHRINKS a
-      // report's freshness window, so a report that doesn't suppress even without weather can never
-      // suppress with it: drop it here. That both skips its weather fetch AND stops a strong OLDER read
-      // from being crowded out of the cap by fresher-but-expired reads (the newest-N-of-all bug).
-      if (reports.length >= BOUNTY_FRESH_MAX_REPORTS) break;
-      const author = await ctx.db.get(r.authorId);
-      const { helpful, unhelpful } = await tallyThumbs(ctx, 'report', r._id);
-      const netThumbs = helpful - unhelpful;
-      const trustClass = author ? trustClassFor(author, now) : null;
-      if (
-        !reportSuppressesBounty(r.skateEndTime, now, FRESH_REPORT_HOURS, { netThumbs, trustClass })
-      ) {
-        continue;
-      }
-      reports.push({ skateEndTime: r.skateEndTime, netThumbs, trustClass });
-    }
+    const reports = await suppressingCandidates(ctx, body, now);
     return { lat: point.lat, lng: point.lng, reports };
   },
 });
@@ -144,14 +165,20 @@ export const create = action({
     const now = Date.now();
     const inputs = await ctx.runQuery(internal.bounties.bountyFreshnessInputs, { waterBodyId });
 
-    let bodyIsFresh = false;
+    // Weather only ever REOPENS a bounty (it shrinks a suppressor's freshness window, D56) — it never
+    // *creates* suppression. So the action's only job is to find which baseline suppressors the weather
+    // has likely cleared; the actual fresh-eyes decision is re-made transactionally in `createChecked`
+    // against the reports as they exist at commit. That closes the read-in-action / write-in-mutation
+    // TOCTOU (§7c): a suppressing report that lands mid-fetch is seen by the mutation, not the action,
+    // and — absent from this reopened set — correctly blocks the bounty instead of slipping through.
+    const weatherReopenedReportIds: Id<'reports'>[] = [];
     if (inputs) {
       for (const r of inputs.reports) {
         const summary = await resolveWeatherSince(ctx, inputs.lat, inputs.lng, r.skateEndTime, now);
         // Only trust the weather signal when we actually have data; a failed fetch (`null`) or empty
-        // window ⇒ leave it undefined so the score falls back to recency × thumbs × trust (fail-open —
-        // a fetch miss never opens a bounty).
-        const weatherChangedIceSince =
+        // window ⇒ no reopen (fail-open — a fetch miss never opens a bounty, it just leaves the report
+        // suppressing via recency × thumbs × trust in the mutation).
+        const reopened =
           summary && summary.hours > 0
             ? weatherExplainsIceChange(summary, {
                 // A HIGHER bar than the contradiction check's default — one ordinary freezing night must
@@ -159,31 +186,29 @@ export const create = action({
                 freezingDegreeHours: BOUNTY_REOPEN_FREEZING_DEGREE_HOURS,
                 thawDegreeHours: BOUNTY_REOPEN_THAW_DEGREE_HOURS,
               })
-            : undefined;
-        if (
-          reportSuppressesBounty(r.skateEndTime, now, FRESH_REPORT_HOURS, {
-            netThumbs: r.netThumbs,
-            trustClass: r.trustClass,
-            weatherChangedIceSince,
-          })
-        ) {
-          bodyIsFresh = true;
-          break; // one suppressing report is enough — stop fetching
-        }
+            : false;
+        if (reopened) weatherReopenedReportIds.push(r.reportId);
       }
     }
-    return ctx.runMutation(internal.bounties.createChecked, { waterBodyId, bodyIsFresh });
+    return ctx.runMutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReportIds,
+    });
   },
 });
 
 /**
- * Finish a bounty create once the (weather-aware) freshness verdict is known: `requireProfile`, **reject
- * minors**, honor the freshness gate + rolling open-bounty cap (decision 7), insert, and fan out
- * `bounty_request` notices. Internal — only `create` (the action) calls it, passing `bodyIsFresh`.
+ * Finish a bounty create once the action has fetched weather: `requireProfile`, **reject minors**, honor
+ * the freshness gate + rolling open-bounty cap (decision 7), insert, and fan out `bounty_request` notices.
+ * Internal — only `create` (the action) calls it, passing the reports weather has likely reopened.
  */
 export const createChecked = internalMutation({
-  args: { waterBodyId: v.id('waterBodies'), bodyIsFresh: v.boolean() },
-  handler: async (ctx, { waterBodyId, bodyIsFresh }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /** Reports the action's weather pass determined are likely reopened (ice changed since); §7c. */
+    weatherReopenedReportIds: v.array(v.id('reports')),
+  },
+  handler: async (ctx, { waterBodyId, weatherReopenedReportIds }) => {
     const profile = await requireProfile(ctx);
     const now = Date.now();
     if (isMinor(profile.dateOfBirth, now)) {
@@ -193,10 +218,17 @@ export const createChecked = internalMutation({
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || !isListed(body)) throw new ConvexError('Water body not found');
 
-    // Freshness gate (decision 8) — a body with fresh eyes doesn't need a bounty. The weather-aware verdict
-    // was computed in the action (§7c): a well-corroborated/trusted read holds bounties off longer, but a
-    // big freeze/thaw since the report reopens them.
-    if (bodyIsFresh) {
+    // Freshness gate (decision 8), re-evaluated **transactionally** here (§7c) rather than trusting the
+    // action's snapshot: recompute the body's baseline suppressors from the reports *as they exist now*
+    // and block on any the action did NOT clear as weather-reopened. Because weather only ever reopens
+    // (never creates) suppression, a suppressor absent from `weatherReopenedReportIds` is genuine fresh
+    // eyes — including a report that landed during the action's Open-Meteo round-trip, whose near-zero
+    // weather window means its baseline verdict already equals its weather-aware one. This closes the
+    // read-in-action / write-in-mutation race that could otherwise persist an ineligible bounty (+ fan
+    // out its notifications).
+    const reopened = new Set<Id<'reports'>>(weatherReopenedReportIds);
+    const candidates = await suppressingCandidates(ctx, body, now);
+    if (candidates.some((c) => !reopened.has(c.reportId))) {
       throw new ConvexError('This lake already has fresh eyes — no bounty needed');
     }
 

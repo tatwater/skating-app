@@ -123,6 +123,38 @@ describe('still_there', () => {
     expect(view?.freshness).toBe('fresh');
   });
 
+  test('invalidates the stale weather multiplier when it advances the decay clock (D56)', async () => {
+    const { t, hazardId, waterBodyId } = await setup();
+    const skater = await seedUser(t, 'skater');
+    // A hazard confirmed a while back, carrying a weather multiplier the cron computed over that OLD
+    // "since last confirmed" window. A fresh confirmation advances `lastConfirmedAt`, so that multiplier
+    // no longer describes the window it was derived from — leaving it would apply obsolete-window weather
+    // to the new epoch and could show the wrong freshness bucket until the next cron pass.
+    await t.run((ctx) =>
+      ctx.db.patch(hazardId, {
+        lastConfirmedAt: Date.now() - 10 * 60 * 60 * 1000,
+        decayMultiplier: 1.9,
+        snowHidden: true,
+        weatherAdjustedAt: Date.now() - 10 * 60 * 60 * 1000,
+      }),
+    );
+
+    await skater.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+    // Cleared → the read path fails open to plain base decay (a just-confirmed pin reads fresh anyway),
+    // and the dropped stamp lets the decay cron recompute against the new window on its next tick.
+    expect(hazard?.decayMultiplier).toBeUndefined();
+    expect(hazard?.snowHidden).toBeUndefined();
+    expect(hazard?.weatherAdjustedAt).toBeUndefined();
+    const [view] = await skater.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(view?.freshness).toBe('fresh'); // not the stale 1.9× accelerated bucket
+  });
+
   // The confirm-gate (D54): one independent confirm promotes a soft "can you see it?" into a real
   // warning for subsequent skaters.
   test('promotes a hazard out of provisional', async () => {

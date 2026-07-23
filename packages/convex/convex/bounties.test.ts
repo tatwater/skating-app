@@ -167,6 +167,37 @@ describe('bounties.create', () => {
     expect(bountyId).toBeTruthy();
   });
 
+  test('createChecked re-checks freshness transactionally — a suppressor that landed after the weather pass still blocks (§7c TOCTOU)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    // Model the race: the action's weather pass saw no suppressor (empty reopened set), but by commit a
+    // fresh report has landed. The transactional re-check inside the mutation must catch it rather than
+    // trusting the action's stale snapshot and persisting an ineligible bounty (+ fanning out notices).
+    await seedReport(reporter, waterBodyId, Date.now() - 1 * HOUR);
+    await expect(
+      requester.as.mutation(internal.bounties.createChecked, {
+        waterBodyId,
+        weatherReopenedReportIds: [],
+      }),
+    ).rejects.toThrow(/already has fresh eyes/);
+  });
+
+  test("createChecked honors the action's weather-reopened set — a reopened suppressor does not block (§7c)", async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const reportId = await seedReport(reporter, waterBodyId, Date.now() - 1 * HOUR);
+    // The same fresh suppressor, but the action flagged it weather-reopened — so it must NOT block.
+    const bountyId = await requester.as.mutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReportIds: [reportId],
+    });
+    expect(bountyId).toBeTruthy();
+  });
+
   test('weather that changed the ice reopens a bounty despite a suppressing report (§7c)', async () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');
