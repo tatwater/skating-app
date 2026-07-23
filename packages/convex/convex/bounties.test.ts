@@ -252,6 +252,25 @@ describe('bounties.create', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  test('rejects an authenticated-but-ineligible caller (minor) before any weather I/O (§7c security)', async () => {
+    const t = harness();
+    const minor = await seedUser(t, 'minor');
+    await t.run((ctx) =>
+      ctx.db.patch(minor.id, { dateOfBirth: Date.now() - 10 * 365 * 24 * HOUR }),
+    );
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 12 * HOUR); // a suppressor the loop would fetch
+    const fetchSpy = vi.fn(
+      async () => new Response(JSON.stringify({ hourly: { time: [] } }), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchSpy);
+    // Eligibility is now enforced in `bountyFreshnessInputs` (which runs first), so a minor is rejected
+    // before the action ever drives an Open-Meteo fetch on the shared quota — not just at write time.
+    await expect(minor.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(/under 18/);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   test('enforces the rolling open-bounty cap', async () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');

@@ -226,4 +226,50 @@ describe('hazardWeather.refreshHazardWeather', () => {
     expect(h?.decayMultiplier).toBe(1.8); // prior signal preserved, not clobbered to 1
     expect(h?.weatherAdjustedAt).toBe(staleAt); // NOT re-stamped ⇒ still due next tick
   });
+
+  test('drops a stale multiplier write when a confirmation advanced lastConfirmedAt mid-refresh (§6 CAS)', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    const now = Date.now();
+    // The hazard's clock has SINCE been advanced by a fresh confirmation (which also cleared the multiplier).
+    const hazardId = await seedHazard(t, waterBodyId, authorId, { lastConfirmedAt: now });
+    const staleEpoch = now - 6 * HOUR_MS; // the OLD window an in-flight refresh had snapshotted
+
+    // The in-flight refresh finally commits its old-window multiplier — the CAS guard must reject it, or it
+    // would resurrect stale weather against the new epoch that the confirmation just cleared.
+    await t.mutation(internal.hazardWeather.storeHazardWeather, {
+      hazardId,
+      decayMultiplier: 1.9,
+      snowHidden: true,
+      weatherAdjustedAt: now,
+      expectedLastConfirmedAt: staleEpoch,
+    });
+
+    const h = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(h?.decayMultiplier).toBeUndefined(); // dropped, not resurrected
+    expect(h?.weatherAdjustedAt).toBeUndefined();
+  });
+
+  test('stores the multiplier when the confirmation epoch still matches (§6 CAS)', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    const now = Date.now();
+    const epoch = now - 6 * HOUR_MS;
+    const hazardId = await seedHazard(t, waterBodyId, authorId, { lastConfirmedAt: epoch });
+
+    await t.mutation(internal.hazardWeather.storeHazardWeather, {
+      hazardId,
+      decayMultiplier: 1.9,
+      snowHidden: true,
+      weatherAdjustedAt: now,
+      expectedLastConfirmedAt: epoch, // unchanged ⇒ the write applies
+    });
+
+    const h = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(h?.decayMultiplier).toBe(1.9);
+    expect(h?.snowHidden).toBe(true);
+    expect(h?.weatherAdjustedAt).toBe(now);
+  });
 });

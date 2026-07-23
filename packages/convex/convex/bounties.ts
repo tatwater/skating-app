@@ -140,9 +140,18 @@ async function suppressingCandidates(
 export const bountyFreshnessInputs = internalQuery({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
+    const now = Date.now();
+    // Authorize BEFORE any weather I/O (§7c security). This query is the action's first step, so gating
+    // it here means an authenticated-but-ineligible caller — no profile, suspended/banned (`requireProfile`),
+    // or a minor — is rejected before we drive any per-report Open-Meteo fetch + cache write on the app's
+    // shared free-tier quota. `createChecked` re-asserts the same gate at write time as the transactional
+    // authority (defense in depth); this pre-gate just stops rejected callers from burning external I/O.
+    const profile = await requireProfile(ctx);
+    if (isMinor(profile.dateOfBirth, now)) {
+      throw new ConvexError('Users under 18 cannot post bounties');
+    }
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || !isListed(body)) return null;
-    const now = Date.now();
     const point = nearestSamplePoint(body, body.centroid);
     const reports = await suppressingCandidates(ctx, body, now);
     return { lat: point.lat, lng: point.lng, reports };
@@ -158,9 +167,10 @@ export const bountyFreshnessInputs = internalQuery({
 export const create = action({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }): Promise<Id<'bounties'>> => {
-    // Gate on auth BEFORE any DB read or outbound Open-Meteo fetch, so an unauthenticated caller can't
-    // drive external weather I/O (and the app's shared free-tier quota) on bodies it can't post to. The
-    // real identity/minor/cap checks still run in `createChecked`; this is the cheap up-front guard.
+    // Cheap anonymous-caller reject BEFORE the runQuery round-trip — a fully unauthenticated request never
+    // even hits the DB. The full posting eligibility (profile exists, active, adult) is then enforced inside
+    // `bountyFreshnessInputs` below, which runs before any Open-Meteo fetch, so an authenticated-but-
+    // ineligible caller can't drive external weather I/O either. `createChecked` re-asserts at write time.
     if (!(await ctx.auth.getUserIdentity())) throw new ConvexError('Not signed in');
     const now = Date.now();
     const inputs = await ctx.runQuery(internal.bounties.bountyFreshnessInputs, { waterBodyId });

@@ -90,10 +90,23 @@ export const storeHazardWeather = internalMutation({
     decayMultiplier: v.number(),
     snowHidden: v.boolean(),
     weatherAdjustedAt: v.number(),
+    /**
+     * The `lastConfirmedAt` this multiplier was computed against (the window's start floor). The
+     * compare-and-swap guard below drops the write if it no longer matches — see the handler note.
+     */
+    expectedLastConfirmedAt: v.number(),
   },
   handler: async (ctx, a) => {
     const hazard = await ctx.db.get(a.hazardId);
     if (!hazard) return;
+    // Compare-and-swap on the confirmation epoch. The refresh action snapshots a job (with its
+    // `lastConfirmedAt`), fetches weather over the "since last confirmed" window, then calls this mutation.
+    // If a confirmation advanced `lastConfirmedAt` in that gap, it already CLEARED the stored multiplier
+    // (hazardConfirmations `recomputeLifecycle`), and this just-computed value is for the *old* window —
+    // writing it now would resurrect stale weather against the new epoch and show the wrong freshness
+    // bucket. So drop it; the next cron tick recomputes against the current window. Mirrors the read-in-
+    // action / write-in-mutation guard the bounty path uses (§7c).
+    if (hazard.lastConfirmedAt !== a.expectedLastConfirmedAt) return;
     await ctx.db.patch(a.hazardId, {
       decayMultiplier: a.decayMultiplier,
       snowHidden: a.snowHidden,
@@ -136,6 +149,8 @@ export const refreshHazardWeather = internalAction({
           decayMultiplier: decayMultiplier(job.type, summary),
           snowHidden: isSnowHidden(summary),
           weatherAdjustedAt: now,
+          // The epoch the window (and thus this multiplier) was computed against — the CAS guard's key.
+          expectedLastConfirmedAt: job.lastConfirmedAt,
         });
       } catch (err) {
         console.warn(`hazard weather refresh failed for ${job.hazardId}`, err);
