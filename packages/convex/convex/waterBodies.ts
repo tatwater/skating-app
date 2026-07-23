@@ -781,3 +781,31 @@ export const listPendingReview = query({
       .collect();
   },
 });
+
+/**
+ * Moderator: the dedup-review queue (D36) — bodies marked `suspected_duplicate`, off `by_dedup_status`.
+ * Each row resolves its `duplicateCandidateIds` to `{ id, name }` pairs so the merge UI can show the
+ * candidate survivors without a second round-trip. **Expect ~zero rows until Phase 8** wires
+ * match-on-create; the queue degrades gracefully to empty. Bounded — never scans the corpus.
+ */
+export const listDedupCandidates = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, 'moderator');
+    const rows = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'suspected_duplicate'))
+      .take(100);
+    return Promise.all(
+      rows.map(async (body) => {
+        const candidates = await Promise.all(
+          (body.duplicateCandidateIds ?? []).map(async (id) => {
+            const c = await ctx.db.get(id);
+            return c ? { id: c._id, name: c.name } : null;
+          }),
+        );
+        return { body, candidates: candidates.filter((c) => c !== null) };
+      }),
+    );
+  },
+});
