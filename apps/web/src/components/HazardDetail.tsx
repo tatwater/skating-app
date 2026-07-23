@@ -19,6 +19,7 @@ import { Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { HazardModeratorControls } from './admin/HazardModeratorControls';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { useMapSelection } from './MapSelectionContext';
 import { FlagDialog } from './SafetyControls';
@@ -372,7 +373,12 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       confirming={confirming}
       confirmError={confirmError}
       action={action}
-      flagControl={<FlagDialog targetType="hazard" targetId={hazardId} />}
+      flagControl={
+        <div className="flex flex-col gap-2">
+          <FlagDialog targetType="hazard" targetId={hazardId} />
+          <HazardModeratorControls hazardId={hazardId} />
+        </div>
+      }
       thumbControl={
         <ThumbControl targetType="hazard" targetId={hazardId} canRate={!!me && !isOwn} />
       }

@@ -2,39 +2,25 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
-import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader, StatTile } from '../components/admin/adminUi';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { UserModerationControls } from '../components/admin/UserModerationControls';
 import { Avatar } from '../components/ProfileView';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
-import { Label } from '../components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
 import { useRole } from '../lib/useRole';
 
 /**
  * Operator user detail (D37/D50/D57). The **contributor-trust panel** (contradiction count + tenure)
  * feeds the D57 posting-permission decision; the **raw trust number** is admin-only (D50, gated
- * server-side). Lifecycle (ban/suspend/unban), posting-permission levers, and — for admins — role
- * grant/revoke, each audited via the shared reason dialog. The tenure-aware good-vs-bad trend chart
- * arrives with the analytics commit.
+ * server-side). Lifecycle + posting-permission levers come from the shared `UserModerationControls`
+ * (also used in-context on a profile); role grant/revoke is admin-only and lives here. The tenure-aware
+ * good-vs-bad trend chart arrives with the analytics commit.
  */
 export const Route = createFileRoute('/admin/users/$id')({ component: AdminUserDetail });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const SUSPEND_OPTIONS = [
-  { label: '1 day', days: 1 },
-  { label: '3 days', days: 3 },
-  { label: '7 days', days: 7 },
-  { label: '30 days', days: 30 },
-];
 
 function ageLabel(createdAt: number): string {
   const days = Math.max(0, Math.round((Date.now() - createdAt) / DAY_MS));
@@ -44,69 +30,13 @@ function ageLabel(createdAt: number): string {
   return `${Math.round(months / 12)}y old`;
 }
 
-function PostingPermissionRow({
-  userId,
-  label,
-  permission,
-  allowed,
-}: {
-  userId: Id<'profiles'>;
-  label: string;
-  permission: 'reports' | 'hazards' | 'comments';
-  allowed: boolean;
-}) {
-  const setPerm = useMutation(api.moderation.setPostingPermission);
-  return (
-    <div className="flex items-center justify-between gap-2">
-      <span className="text-foreground text-sm">
-        {label}
-        {!allowed ? (
-          <Badge variant="destructive" className="ml-2">
-            restricted
-          </Badge>
-        ) : null}
-      </span>
-      {allowed ? (
-        <ReasonDialog
-          trigger={
-            <Button variant="outline" size="sm">
-              Restrict
-            </Button>
-          }
-          title={`Restrict ${permission} posting`}
-          description="A lever finer than a ban — their other contributions stand."
-          confirmLabel="Restrict"
-          onConfirm={(reason) => setPerm({ userId, permission, allowed: false, reason })}
-        />
-      ) : (
-        <ReasonDialog
-          trigger={
-            <Button variant="secondary" size="sm">
-              Restore
-            </Button>
-          }
-          title={`Restore ${permission} posting`}
-          confirmLabel="Restore"
-          confirmVariant="secondary"
-          onConfirm={(reason) => setPerm({ userId, permission, allowed: true, reason })}
-        />
-      )}
-    </div>
-  );
-}
-
 function AdminUserDetail() {
   const { id } = Route.useParams();
   const userId = id as Id<'profiles'>;
   const { isAdmin } = useRole();
   const user = useQuery(api.profiles.getAdmin, { userId });
-
-  const banUser = useMutation(api.moderation.banUser);
-  const suspendUser = useMutation(api.moderation.suspendUser);
-  const unbanUser = useMutation(api.moderation.unbanUser);
   const grantRole = useMutation(api.admin.grantRole);
   const revokeRole = useMutation(api.admin.revokeRole);
-  const [suspendDays, setSuspendDays] = useState(3);
 
   if (user === undefined) return <AdminEmpty>Loading…</AdminEmpty>;
   if (user === null) return <AdminEmpty>User not found.</AdminEmpty>;
@@ -159,108 +89,12 @@ function AdminUserDetail() {
         </p>
       </section>
 
-      {/* Posting-permission levers (D57). */}
+      {/* Posting-permission levers (D57) + account lifecycle (D37) — shared with the profile panel. */}
       <section className="flex flex-col gap-2">
         <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-          Posting permissions
+          Moderation
         </h2>
-        <Card>
-          <CardContent className="flex flex-col gap-3">
-            <PostingPermissionRow
-              userId={userId}
-              label="Reports"
-              permission="reports"
-              allowed={user.canPostReports}
-            />
-            <PostingPermissionRow
-              userId={userId}
-              label="Hazards"
-              permission="hazards"
-              allowed={user.canPostHazards}
-            />
-            <PostingPermissionRow
-              userId={userId}
-              label="Comments"
-              permission="comments"
-              allowed={user.canPostComments}
-            />
-          </CardContent>
-        </Card>
-      </section>
-
-      {/* Account lifecycle (D37). */}
-      <section className="flex flex-col gap-2">
-        <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-          Account status
-        </h2>
-        <Card>
-          <CardContent className="flex flex-wrap gap-2">
-            {isActive ? (
-              <>
-                <ReasonDialog
-                  trigger={
-                    <Button variant="outline" size="sm">
-                      Suspend
-                    </Button>
-                  }
-                  title={`Suspend @${user.username}`}
-                  description="A temporary hold; the account reactivates automatically when it lapses."
-                  confirmLabel="Suspend"
-                  extraFields={
-                    <div className="flex flex-col gap-1.5">
-                      <Label htmlFor="suspend-days">Duration</Label>
-                      <Select
-                        value={String(suspendDays)}
-                        onValueChange={(v) => setSuspendDays(Number(v))}
-                      >
-                        <SelectTrigger id="suspend-days" size="sm" className="w-40">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {SUSPEND_OPTIONS.map((o) => (
-                            <SelectItem key={o.days} value={String(o.days)}>
-                              {o.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  }
-                  onConfirm={(reason) =>
-                    suspendUser({
-                      userId,
-                      reason,
-                      suspendedUntil: Date.now() + suspendDays * DAY_MS,
-                    })
-                  }
-                />
-                <ReasonDialog
-                  trigger={
-                    <Button variant="destructive" size="sm">
-                      Ban
-                    </Button>
-                  }
-                  title={`Ban @${user.username}`}
-                  description="Indefinite. Preserves the account for appeal; also locks their sign-in."
-                  confirmLabel="Ban"
-                  onConfirm={(reason) => banUser({ userId, reason })}
-                />
-              </>
-            ) : (
-              <ReasonDialog
-                trigger={
-                  <Button variant="secondary" size="sm">
-                    Lift ban / suspension
-                  </Button>
-                }
-                title={`Reinstate @${user.username}`}
-                confirmLabel="Reinstate"
-                confirmVariant="secondary"
-                onConfirm={(reason) => unbanUser({ userId, reason })}
-              />
-            )}
-          </CardContent>
-        </Card>
+        <UserModerationControls user={user} />
       </section>
 
       {/* Role management — admin only (D37). */}

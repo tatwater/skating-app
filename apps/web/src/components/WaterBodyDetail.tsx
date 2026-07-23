@@ -9,6 +9,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
+import { WaterBodyModeratorControls } from './admin/WaterBodyModeratorControls';
 import { BountyForm } from './BountyForm';
 import { BountyList } from './BountyList';
 import { DirectionsButton } from './DirectionsButton';
@@ -96,6 +97,7 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
           </Button>
           <DirectionsButton waterBodyId={result.body._id} />
         </div>
+        <WaterBodyModeratorControls body={result.body} />
         <BountyList waterBodyId={result.body._id} />
         <HazardList waterBodyId={result.body._id} />
         <ReportFeed waterBodyId={result.body._id} />
