@@ -1,6 +1,6 @@
 import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
@@ -13,6 +13,37 @@ function harness() {
   geospatial.register(t, 'adminAreasGeo');
   return t;
 }
+
+// The bounty-create action (§7c) fetches weather per recent report. Default to an empty response so the
+// suite exercises the recency×thumbs×trust decay with NEUTRAL weather (and never touches the network);
+// the weather-reopen test overrides this. Cold weather since a report ⇒ the ice likely changed ⇒ reopen.
+function coldWeather(refMs: number, n = 6, tempC = -20) {
+  const s = (hoursBeforeRef: number) => Math.floor((refMs - hoursBeforeRef * HOUR) / 1000);
+  return {
+    utc_offset_seconds: -18000,
+    hourly: {
+      time: Array.from({ length: n }, (_, i) => s(n - i)),
+      temperature_2m: Array.from({ length: n }, () => tempC),
+      precipitation: Array.from({ length: n }, () => 0),
+      rain: Array.from({ length: n }, () => 0),
+      snowfall: Array.from({ length: n }, () => 0),
+      snow_depth: Array.from({ length: n }, () => 0),
+      wind_speed_10m: Array.from({ length: n }, () => 5),
+      wind_gusts_10m: Array.from({ length: n }, () => 8),
+      cloud_cover: Array.from({ length: n }, () => 50),
+      sunshine_duration: Array.from({ length: n }, () => 0),
+      shortwave_radiation: Array.from({ length: n }, () => 0),
+    },
+  };
+}
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ hourly: { time: [] } }), { status: 200 })),
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -99,7 +130,7 @@ describe('bounties.create', () => {
     // A report 60h old: outside the 48h freshness block but inside the 72h eligibility window.
     await seedReport(reporter, waterBodyId, Date.now() - 60 * HOUR);
 
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     const bounty = await t.run((ctx) => ctx.db.get(bountyId));
     expect(bounty?.status).toBe('open');
 
@@ -116,7 +147,7 @@ describe('bounties.create', () => {
     const waterBodyId = await seedBody(t);
     await seedReport(reporter, waterBodyId, Date.now() - 2 * HOUR); // well within 48h
 
-    await expect(requester.as.mutation(api.bounties.create, { waterBodyId })).rejects.toThrow(
+    await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
       /already has fresh eyes/,
     );
   });
@@ -129,7 +160,24 @@ describe('bounties.create', () => {
     await seedReport(reporter, waterBodyId, Date.now() - 30 * HOUR); // stale at 24h though the old cutoff was 48h
 
     // The old hard 48h gate would have blocked this; the decay window (24h for a new account) allows it.
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
+    expect(bountyId).toBeTruthy();
+  });
+
+  test('weather that changed the ice reopens a bounty despite a suppressing report (§7c)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const skate = Date.now() - 6 * HOUR; // 6h old ⇒ inside the 24h new-account window ⇒ would suppress
+    await seedReport(reporter, waterBodyId, skate);
+
+    // But a hard freeze since the skate means the ice likely changed → fresh eyes wanted → allow the bounty.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(coldWeather(Date.now())), { status: 200 })),
+    );
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     expect(bountyId).toBeTruthy();
   });
 
@@ -138,12 +186,12 @@ describe('bounties.create', () => {
     const requester = await seedUser(t, 'requester');
     for (let i = 0; i < 3; i++) {
       const body = await seedBody(t);
-      await requester.as.mutation(api.bounties.create, { waterBodyId: body });
+      await requester.as.action(api.bounties.create, { waterBodyId: body });
     }
     const fourth = await seedBody(t);
-    await expect(
-      requester.as.mutation(api.bounties.create, { waterBodyId: fourth }),
-    ).rejects.toThrow(/maximum number of open bounties/);
+    await expect(requester.as.action(api.bounties.create, { waterBodyId: fourth })).rejects.toThrow(
+      /maximum number of open bounties/,
+    );
   });
 });
 
@@ -153,7 +201,7 @@ describe('bounties.cancel', () => {
     const requester = await seedUser(t, 'requester');
     const other = await seedUser(t, 'other');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
 
     await expect(other.as.mutation(api.bounties.cancel, { bountyId })).rejects.toThrow(
       /Only the requester/,
@@ -175,7 +223,7 @@ describe('bounties fulfillment', () => {
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
 
     const reportId = await seedReport(author, waterBodyId);
     // Auto-attached.
@@ -206,7 +254,7 @@ describe('bounties fulfillment', () => {
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     const reportId = await seedReport(author, waterBodyId);
 
     // First: the requester thumbs the report helpful from the FEED — no `bountyId`, so it doesn't fulfill.
@@ -247,7 +295,7 @@ describe('bounties fulfillment', () => {
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     const reportId = await seedReport(author, waterBodyId);
 
     await requester.as.mutation(api.ratings.rate, {
@@ -268,8 +316,8 @@ describe('bounties.listOpen (global / near-me / viewport browse)', () => {
     const requester = await seedUser(t, 'requester');
     const body0 = await seedBody(t);
     const body1 = await seedBody(t);
-    const b0 = await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
-    const b1 = await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    const b0 = await requester.as.action(api.bounties.create, { waterBodyId: body0 });
+    const b1 = await requester.as.action(api.bounties.create, { waterBodyId: body1 });
     // Make b1 unambiguously newer than b0 so the sort is deterministic.
     await t.run((ctx) => ctx.db.patch(b0, { createdAt: Date.now() - HOUR }));
 
@@ -290,8 +338,8 @@ describe('bounties.listOpen (global / near-me / viewport browse)', () => {
     const requester = await seedUser(t, 'requester');
     const body0 = await seedBody(t); // bbox lng [n, n+1]
     const body1 = await seedBody(t); // bbox lng [n+1, n+2]
-    const b0 = await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
-    await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    const b0 = await requester.as.action(api.bounties.create, { waterBodyId: body0 });
+    await requester.as.action(api.bounties.create, { waterBodyId: body1 });
     const body0Doc = await t.run((ctx) => ctx.db.get(body0));
     // A rectangle covering only body0's bbox.
     const viewport = {
@@ -311,8 +359,8 @@ describe('bounties.listOpen (global / near-me / viewport browse)', () => {
     const requester = await seedUser(t, 'requester');
     const body0 = await seedBody(t);
     const body1 = await seedBody(t);
-    await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
-    const b1 = await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    await requester.as.action(api.bounties.create, { waterBodyId: body0 });
+    const b1 = await requester.as.action(api.bounties.create, { waterBodyId: body1 });
     const body1Doc = await t.run((ctx) => ctx.db.get(body1));
     // A viewer whose home sits on body1's centroid → body1's bounty sorts first, but no distance leaks.
     const viewer = await seedUser(t, 'viewer');
@@ -329,8 +377,8 @@ describe('bounties.listOpen (global / near-me / viewport browse)', () => {
     const requester = await seedUser(t, 'requester');
     const body0 = await seedBody(t);
     const body1 = await seedBody(t);
-    await requester.as.mutation(api.bounties.create, { waterBodyId: body0 });
-    const b1 = await requester.as.mutation(api.bounties.create, { waterBodyId: body1 });
+    await requester.as.action(api.bounties.create, { waterBodyId: body0 });
+    const b1 = await requester.as.action(api.bounties.create, { waterBodyId: body1 });
     const body1Doc = await t.run((ctx) => ctx.db.get(body1));
     // biome-ignore lint/style/noNonNullAssertion: seeded body always exists.
     const near = body1Doc!.centroid;
@@ -347,7 +395,7 @@ describe('bounties.getDetail', () => {
     const requester = await seedUser(t, 'requester');
     const author = await seedUser(t, 'author');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     const reportId = await seedReport(author, waterBodyId); // auto-attaches
 
     const asRequester = await requester.as.query(api.bounties.getDetail, { bountyId });
@@ -405,7 +453,7 @@ describe('bounties.expireBounties', () => {
     const t = harness();
     const requester = await seedUser(t, 'requester');
     const waterBodyId = await seedBody(t);
-    const bountyId = await requester.as.mutation(api.bounties.create, { waterBodyId });
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId });
     await t.run((ctx) => ctx.db.patch(bountyId, { expiresAt: Date.now() - HOUR }));
 
     const res = await t.mutation(internal.bounties.expireBounties, {});

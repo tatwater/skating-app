@@ -5,7 +5,7 @@ import {
   FRESH_REPORT_HOURS,
   MAX_OPEN_BOUNTIES_PER_DAY,
 } from '@skating/core';
-import { useMutation } from 'convex/react';
+import { useAction } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -28,7 +28,7 @@ export function BountyForm({
   bodyName: string;
   onClose: () => void;
 }) {
-  const create = useMutation(api.bounties.create);
+  const create = useAction(api.bounties.create);
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

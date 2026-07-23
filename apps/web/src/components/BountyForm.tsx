@@ -6,7 +6,7 @@ import {
   MAX_OPEN_BOUNTIES_PER_DAY,
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
-import { useMutation } from 'convex/react';
+import { useAction } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useState } from 'react';
 import { Button } from './ui/button';
@@ -29,7 +29,7 @@ export function BountyForm({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const create = useMutation(api.bounties.create);
+  const create = useAction(api.bounties.create);
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);

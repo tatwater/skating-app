@@ -6,6 +6,8 @@ export default defineConfig({
     // environment matches Convex's V8 isolate more closely than jsdom/node.
     environment: 'edge-runtime',
     server: { deps: { inline: ['convex-test'] } },
+    // A benign default `fetch` stub so scheduled weather actions never hit the real network in tests.
+    setupFiles: ['./test.setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
