@@ -41,3 +41,4 @@ export * from './units';
 export * from './visibility';
 export * from './weather';
 export * from './weatherConditions';
+export * from './weatherStrip';
