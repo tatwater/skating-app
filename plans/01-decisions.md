@@ -424,10 +424,16 @@ reputation-weighted confirmations).
 - Operators need the same context members see (report, thread, map) **plus** extra
   actions — sharing the app reuses those components instead of rebuilding them.
 **Role model.** Expand `users.role` from `member | moderator` to
-**`member | moderator | admin`**. Moderator = content (flags, takedowns, water-body
-merges/rejections). **Admin ⊇ moderator**, plus bans, role-granting, support, and
-anything touching PII / account lifecycle. Keeps the door open for external/volunteer
-moderators without handing them the keys. Role-granting is admin-only and audited.
+**`member | moderator | admin`**. **Moderator = the full content + community-safety
+toolkit:** flags, takedowns, water-body merges/rejections, `curatedBoost`, `bodyFeatures`
+promote/demote, per-action posting restrictions (D57), **and ban/suspend/unban**. **Admin
+⊇ moderator**, and the admin-only line is drawn at exactly three things: **role-granting,
+support/PII (the support inbox), and the constants/tuning control-room** (editing the
+magic-number levers). *(Refined 2026-07-23: the original split reserved bans and curation
+for admin; in practice a moderator handling a hateful account needs to suspend it without
+escalating, so those moved to moderator — while role-granting, PII, and the tuning
+surface stay admin so volunteer/external moderators never get the keys to the app's
+identity, private data, or safety constants.)* Role-granting is admin-only and audited.
 **Model additions (see `06-data-model.md`):**
 - **Ban/suspend state on `users`:** `status` gains `suspended | banned`
   (+ `statusReason`, `suspendedUntil`, `moderatedByUserId`). Source of truth in Convex
@@ -1107,3 +1113,22 @@ full adult posting rights).
 and it drives good-faith users off. A per-action, reversible right matches the offense to the consequence
 and keeps the door open for reinstatement, while still giving moderators a real deterrent. Pairs with D56's
 contradiction signal and D50's boost-only trust.
+
+**Extending the lever (planned — not yet built, 2026-07-23).** The per-capability pattern generalizes, but
+the *shape* of each lever must match the abuse it answers — never blanket symmetry:
+- **`canPostComments` (planned, Phase 7 — the strongest addition).** Comments are free-text user content
+  (D21) — the classic harassment/spam surface — so a **boolean** revocation fits, exactly like reports and
+  hazards. Its distinct payoff: mute a toxic commenter *while preserving their safety contributions* (a bad
+  commenter can still be a useful ice reporter), which neither `block` (interpersonal mute, D32) nor a
+  whole-app `status` (D37) can express. Enforcement point would be `comments.create` (an `assertCanPostComments`
+  mirroring the existing gates); minors are already read-only there. Optional boolean ⇒ migration-free.
+- **Bounties: no `canPostBounties` boolean — prefer a nullable `activeBountyPostLimit`, and defer it.** Bounty
+  abuse is *volumetric*, not content: a bounty carries no free-text payload, is hard-capped at
+  `MAX_OPEN_BOUNTIES_PER_DAY = 3`, expires, and rewards the *fulfilling report author* (no self-dealing
+  incentive to spam). The fitting lever is therefore a per-user override of that rolling cap
+  (`activeBountyPostLimit ?? 3`; `0` ⇒ effectively can't post), which **subsumes** a boolean and allows a
+  graduated response. Since the existing cap already does ~all of the work, this is a **noted seam, deferred**
+  until a real spammer earns it — not built speculatively.
+- **Shape guardrail:** keep the per-capability-boolean form (plus that one bounty int); do **not** graduate to a
+  `postingRestrictions` object/framework for 3–4 fields — that would break the clean `assertCanPost*` pattern
+  and is the actual over-engineering risk here.

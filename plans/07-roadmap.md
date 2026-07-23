@@ -348,6 +348,9 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 
 ## Phase 7 — Operator surface (admin, moderation, dedup review)
 *(The founder-facing back office — the second half of the old combined phase.)*
+> **Detailed build plan:** [`phase-7-operator-surface.md`](./phase-7-operator-surface.md) (planning
+> session 2026-07-23; D37/D38 + the D49/D52/D56/D57 tuning surfaces). Read-only config control-room,
+> in-house Convex analytics, in-context moderation across the web app, two PRs (operator core + analytics).
 - **Admin/moderator surface (D37):** a role-gated **`/admin` route tree in the web app**
   (not a separate app), organized as **work queues** — flag queue (with
   `unsafe_false_report` in a **priority lane** per D3), user admin (search/history,
@@ -388,6 +391,13 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   panel**: the private, non-scoring **contradiction counter** (from the Phase-10 D56 signal) shown
   *alongside* a **good-vs-bad reports trend over time**, deliberately **tenure-aware** so a 10-year
   contributor and a 1-month account with the same raw count are obviously distinguishable at a glance.
+  - **Planned 3rd lever — `canPostComments` (boolean, D57 extension):** comments are free-text content, so a
+    boolean revocation fits; its point is muting a toxic commenter *without* silencing their safety reports.
+    Enforce in `comments.create` (`assertCanPostComments`); optional/migration-free. See D57 in `01-decisions.md`.
+  - **Deferred bounty lever — `activeBountyPostLimit` (nullable int, NOT a boolean):** bounty abuse is
+    volumetric, so the lever is a per-user override of `MAX_OPEN_BOUNTIES_PER_DAY` (`?? 3`; `0` ⇒ can't post),
+    which subsumes a `canPostBounties` flag. Built only if a real spammer earns it — the existing cap does most
+    of the work. Keep the boolean-per-capability shape; don't build a `postingRestrictions` framework for 3–4 fields.
 - Every admin mutation gates on `role` server-side and writes a **`moderationActions`**
   audit row.
 - **Operator alerts (D38):** Resend + React Email — email the founder on new
