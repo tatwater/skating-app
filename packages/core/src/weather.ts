@@ -109,6 +109,29 @@ function nightIndex(startMs: number): number {
   return Math.floor((startMs - 12 * HOUR_MS) / DAY_MS);
 }
 
+export interface IceChangeThresholds {
+  /** Freezing-degree-hours that plausibly refroze/changed the ice. Default 48 (~2 freezing-degree-days). */
+  freezingDegreeHours?: number;
+  /** Thaw-degree-hours that plausibly weakened/changed the ice. Default 36 (thaw runs ~30% faster). */
+  thawDegreeHours?: number;
+}
+
+/**
+ * Did the weather over a window plausibly **change the ice** (Phase 10 / §7b)? True when a meaningful
+ * freeze *or* thaw occurred. The corroboration contradiction check uses this to tell an honest "the ice
+ * changed" report from a real contradiction: if the weather-since between two disagreeing reports explains
+ * the change, it is **not** a contradiction (D3/D50). An empty summary (`hours === 0`, e.g. a failed
+ * fetch) returns `false` — the caller treats "can't tell" as fail-open and does not record a contradiction.
+ */
+export function weatherExplainsIceChange(
+  summary: WeatherSinceSummary,
+  opts: IceChangeThresholds = {},
+): boolean {
+  const fdh = opts.freezingDegreeHours ?? 48;
+  const tdh = opts.thawDegreeHours ?? 36;
+  return summary.freezingDegreeHours >= fdh || summary.thawDegreeHours >= tdh;
+}
+
 /**
  * Reduce hourly weather into the descriptive strip + the model-internal decay integrals (D19/D56).
  * A single pass; every aggregate is recomputed independently in the property test so a stub can't pass.

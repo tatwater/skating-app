@@ -302,6 +302,13 @@ export const create = mutation({
       await ctx.scheduler.runAfter(0, internal.conditions.autofillConditions, { reportId });
     }
 
+    // Contradiction signal (Phase 10 / §7b): a report can only contradict on `skateQuality`, so only
+    // schedule the (weather-fetching) evaluation when one is present. It withholds a boost + discloses a
+    // conflict + escalates a pattern to moderation — never a trust penalty (D50/D3).
+    if (n.skateQuality !== undefined) {
+      await ctx.scheduler.runAfter(0, internal.contradictions.evaluateContradictions, { reportId });
+    }
+
     return reportId;
   },
 });

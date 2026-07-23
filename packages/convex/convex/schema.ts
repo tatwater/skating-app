@@ -331,6 +331,11 @@ export default defineSchema({
     // the same report back instead of a duplicate. Optional ⇒ migration-free (web/online omits it).
     idempotencyKey: v.optional(v.string()),
     moderationStatus: literals(MODERATION_STATUSES), // default visible (D32)
+    // Soft "conflicting reports" indicator (Phase 10 / D56 §7): set when another recent report on this
+    // body strongly disagreed AND the weather-since didn't explain the change. A disclosure for skaters
+    // (both reports show it) so the human judges the disagreement — NOT a trust penalty (D50 stays
+    // boost-only) and NEVER hides the report (D3). Absent ⇒ no known conflict.
+    conflicting: v.optional(v.boolean()),
     hazardIdsCreated: v.array(v.id('hazards')),
     createdAt: v.number(),
     updatedAt: v.number(),

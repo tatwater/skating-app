@@ -112,6 +112,14 @@ export const CORROBORATION_MAX_PER_REPORT = 3;
 /** A hazard's `confirmCount` (peers, author excluded) must reach this for the author's `hazard_corroborated` boost. */
 export const HAZARD_CORROBORATION_MIN_CONFIRMS = 2;
 
+/**
+ * Weather-unexplained contradictions (D56 §7) at/above which an author is auto-flagged for moderator
+ * review (targeting the *pattern*, not one incident — a moderator judges the tenure-aware good-vs-bad
+ * chart in Phase 7). NOT a trust penalty: trust stays boost-only (D50); this only routes a persistent
+ * pattern to a human, whose lever is the D57 posting restriction.
+ */
+export const CONTRADICTION_FLAG_THRESHOLD = 3;
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Ratings / moderation (D50 decision 4)
 // ─────────────────────────────────────────────────────────────────────────────

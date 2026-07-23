@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { type HourlyWeather, summarizeWeatherSince } from './weather';
+import { type HourlyWeather, summarizeWeatherSince, weatherExplainsIceChange } from './weather';
 
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -259,6 +259,23 @@ describe('summarizeWeatherSince (D19 / D56)', () => {
         }
       }),
     );
+  });
+
+  it('weatherExplainsIceChange flags a meaningful freeze or thaw, not a quiet window', () => {
+    // Build a summary via the reducer so thresholds are exercised on real integrals.
+    const cold = summarizeWeatherSince(
+      Array.from({ length: 12 }, () => ({ temperatureC: -6, precipitationMm: 0, windSpeedKph: 0 })),
+    );
+    const warm = summarizeWeatherSince(
+      Array.from({ length: 12 }, () => ({ temperatureC: 4, precipitationMm: 0, windSpeedKph: 0 })),
+    );
+    const quiet = summarizeWeatherSince(
+      Array.from({ length: 12 }, () => ({ temperatureC: 0, precipitationMm: 0, windSpeedKph: 0 })),
+    );
+    expect(weatherExplainsIceChange(cold)).toBe(true); // 12h × 6°C = 72 FDH ≥ 48
+    expect(weatherExplainsIceChange(warm)).toBe(true); // 12h × 4°C = 48 TDH ≥ 36
+    expect(weatherExplainsIceChange(quiet)).toBe(false); // no degree-hours
+    expect(weatherExplainsIceChange(summarizeWeatherSince([]))).toBe(false); // no data ⇒ can't tell
   });
 
   it('nights-below-freezing matches an independent night-bucketed recompute (property)', () => {
