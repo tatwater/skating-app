@@ -464,7 +464,24 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - **Done:** logging an ice skate on a supported device prompts a report with the
   real path prefilled, the skate shows up in that lake's history by name, and a skate on **new**
   water can create/attach a body from the trusted path (dedup-steered).
-- Needs: provider approvals/keys (all applied for in Phase 0).
+- **Status (2026-07-24): planning — re-scoped for zero credentials (approach "A").** ⚠️ Correction:
+  provider approvals were **never applied for** in Phase 0 (contrary to earlier drafts on this line and
+  in `04-integrations.md`/`05-accounts-and-credentials.md`); **no provider keys exist yet.** Chosen
+  approach:
+  1. Register the **free Strava** API app (instant, no review for single-athlete dev) → build the
+     **Strava vertical slice** end-to-end on the founder's own account (OAuth → webhook → ingest →
+     report prefill).
+  2. Build the **credential-free** halves now regardless — **user-created bodies + match-on-create
+     dedup (D14/D36)** and the **provider-agnostic ingest/resolution core** (new `convex/http.ts`
+     router, normalization, D44 resolver, `gpsActivity`→report-prefill) — testable with fixtures and
+     feeding the already-built Phase 7 dedup/merge review queue (which currently has nothing flowing
+     into it).
+  - **Shelved until approvals land:** Garmin/COROS/Polar (partner review, ~weeks — apply *now* so they
+    don't gate later), Apple HealthKit (needs the $99 Apple enrollment + a real device), Google Health
+    Connect (Play health-data review). The ingest core makes each an incremental add.
+  - **Cross-user path display (D24/D35) deferred** — ToS-gated on a current Strava-Agreement read that
+    hasn't happened; this slice is **ingest-only** (detect → prefill → resolve-to-lake), which per D24
+    never blocks shipping (native reports never required a path).
 
 ## Phase 9 — Hazards ✅ Complete (dev; prod deferred) (2026-07-22)
 > **Detailed build plan:** [`phase-9-hazards.md`](./phase-9-hazards.md) (decisions settled 2026-07-18;

@@ -135,6 +135,34 @@ const snapshot = (t: ReturnType<typeof harness>, metric: string, date: string) =
       .unique(),
   );
 
+// `runRollup`/`backfill` now fan out to scheduled per-transaction jobs (each stays inside Convex's read
+// budget). Rather than drive the scheduler (which needs fake timers, at odds with the `Date.now()` these
+// seeds use), the metric tests invoke each job as its own mutation — exactly how prod runs them, one
+// transaction apiece. The fan-out/chain *wiring* of `runRollup`/`backfill` is asserted separately below.
+async function doRollup(t: ReturnType<typeof harness>): Promise<void> {
+  const now = Date.now();
+  await t.mutation(internal.analyticsRollup.rollupDayJob, { date: metricDay(now - DAY) });
+  await t.mutation(internal.analyticsRollup.rollupDayJob, { date: metricDay(now) });
+  await t.mutation(internal.analyticsRollup.rollupDistributionsJob, {});
+  await t.mutation(internal.analyticsRollup.rollupActivityJob, {});
+  await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
+}
+async function doBackfill(t: ReturnType<typeof harness>, days: number): Promise<void> {
+  const now = Date.now();
+  for (let i = days - 1; i >= 0; i--) {
+    await t.mutation(internal.analyticsRollup.rollupDayJob, { date: metricDay(now - i * DAY) });
+  }
+  await t.mutation(internal.analyticsRollup.rollupDistributionsJob, {});
+  await t.mutation(internal.analyticsRollup.rollupActivityJob, {});
+  await t.mutation(internal.analyticsRollup.rollupOperationalJob, {});
+}
+
+/** Pending (not-yet-run) scheduled functions, by the function they'll invoke. */
+async function pendingJobs(t: ReturnType<typeof harness>): Promise<string[]> {
+  const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+  return scheduled.filter((f) => f.state.kind === 'pending').map((f) => f.name);
+}
+
 describe('runRollup — day attribution', () => {
   test('counts a report on the day its skate ended, not the day it synced', async () => {
     const t = harness();
@@ -145,7 +173,7 @@ describe('runRollup — day attribution', () => {
     // to the day it describes — otherwise a reconnect would move a day's activity onto today.
     await seedReport(t, author, body, skate, Date.now());
 
-    await t.mutation(internal.analyticsRollup.backfill, { days: 4 });
+    await doBackfill(t, 4);
 
     expect((await snapshot(t, 'reports_created', metricDay(skate)))?.scalar).toBe(1);
     expect((await snapshot(t, 'reports_created', metricDay(Date.now())))?.scalar).toBe(0);
@@ -159,7 +187,7 @@ describe('runRollup — day attribution', () => {
     await seedReport(t, author, body, skate);
     await seedReport(t, author, body, skate, skate, { moderationStatus: 'hidden' as const });
 
-    await t.mutation(internal.analyticsRollup.runRollup, {});
+    await doRollup(t);
     expect((await snapshot(t, 'reports_created', metricDay(skate)))?.scalar).toBe(1);
   });
 });
@@ -171,9 +199,9 @@ describe('runRollup — idempotence', () => {
     const body = await seedBody(t);
     await seedReport(t, author, body, Date.now() - HOUR);
 
-    await t.mutation(internal.analyticsRollup.runRollup, {});
-    await t.mutation(internal.analyticsRollup.runRollup, {});
-    await t.mutation(internal.analyticsRollup.runRollup, {});
+    await doRollup(t);
+    await doRollup(t);
+    await doRollup(t);
 
     const today = metricDay(Date.now());
     expect((await snapshot(t, 'reports_created', today))?.scalar).toBe(1);
@@ -187,9 +215,9 @@ describe('runRollup — idempotence', () => {
     const body = await seedBody(t);
     await seedReport(t, author, body, Date.now() - HOUR);
 
-    await t.mutation(internal.analyticsRollup.runRollup, {});
+    await doRollup(t);
     const live = (await snapshot(t, 'reports_created', metricDay(Date.now())))?.scalar;
-    await t.mutation(internal.analyticsRollup.backfill, { days: 7 });
+    await doBackfill(t, 7);
     const replayed = (await snapshot(t, 'reports_created', metricDay(Date.now())))?.scalar;
 
     expect(replayed).toBe(live);
@@ -229,7 +257,7 @@ describe('runRollup — bounty funnel', () => {
       fulfilledAt: created + 8 * HOUR,
     });
 
-    await t.mutation(internal.analyticsRollup.runRollup, {});
+    await doRollup(t);
     const today = metricDay(Date.now());
 
     expect((await snapshot(t, 'bounty_outcomes', today))?.meta).toEqual({
@@ -249,7 +277,7 @@ describe('runRollup — bounty funnel', () => {
     const body = await seedBody(t);
     await seedBounty(t, user, body, { status: 'fulfilled' as const }); // no `fulfilledAt`
 
-    await t.mutation(internal.analyticsRollup.runRollup, {});
+    await doRollup(t);
     const today = metricDay(Date.now());
     expect((await snapshot(t, 'bounty_outcomes', today))?.meta).toEqual({ fulfilled: 1 });
     expect((await snapshot(t, 'bounty_time_to_fulfillment_h', today))?.scalar).toBe(0);
@@ -279,7 +307,7 @@ describe('runRollup — photo orphans', () => {
     void orphan;
     await seedPhoto(t, user, Date.now() - 5 * 60 * 1000); // uploaded 5 minutes ago — mid-form
 
-    await t.mutation(internal.analyticsRollup.runRollup, {});
+    await doRollup(t);
     expect((await snapshot(t, 'photo_orphans', metricDay(Date.now())))?.scalar).toBe(1);
   });
 
@@ -292,8 +320,37 @@ describe('runRollup — photo orphans', () => {
       photoIds: [photoId],
     });
 
-    await t.mutation(internal.analyticsRollup.runRollup, {});
+    await doRollup(t);
     expect((await snapshot(t, 'photo_orphans', metricDay(Date.now())))?.scalar).toBe(0);
+  });
+});
+
+describe('rollup orchestration (fan-out + chain wiring)', () => {
+  test('runRollup schedules the five per-transaction jobs, not one fat mutation', async () => {
+    const t = harness();
+    await t.mutation(internal.analyticsRollup.runRollup, {});
+    const jobs = await pendingJobs(t);
+    // Two day rollups + the three point-in-time chunks — each its own transaction (the read-budget fix).
+    expect(jobs.filter((n) => n.includes('rollupDayJob'))).toHaveLength(2);
+    expect(jobs.some((n) => n.includes('rollupDistributionsJob'))).toBe(true);
+    expect(jobs.some((n) => n.includes('rollupActivityJob'))).toBe(true);
+    expect(jobs.some((n) => n.includes('rollupOperationalJob'))).toBe(true);
+  });
+
+  test('backfill self-chains one day per transaction rather than looping in one', async () => {
+    const t = harness();
+    await t.mutation(internal.analyticsRollup.backfill, { days: 5 });
+    // Kicks a single `backfillStep` — each step does one day then schedules the next, so at no point is
+    // more than one day's read load in a transaction (the fix for a long backfill blowing the budget).
+    const jobs = await pendingJobs(t);
+    expect(jobs.filter((n) => n.includes('backfillStep'))).toHaveLength(1);
+    expect(jobs.some((n) => n.includes('rollupDayJob'))).toBe(false);
+  });
+
+  test('backfill clamps the window to [1, 365] days', async () => {
+    const t = harness();
+    expect((await t.mutation(internal.analyticsRollup.backfill, { days: 10_000 })).days).toBe(365);
+    expect((await t.mutation(internal.analyticsRollup.backfill, { days: 0 })).days).toBe(1);
   });
 });
 

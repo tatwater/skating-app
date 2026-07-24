@@ -237,17 +237,18 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
 // Point-in-time rollups — "what is true right now", stamped on today
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Distributions and queue state as of now. Not replayable (a histogram of *current* reputation can't
- * be reconstructed for last Tuesday), so these are always stamped on today and simply overwritten by
- * the next tick — the series is a record of what each day looked like when we last measured it.
- */
-async function rollupNow(ctx: MutationCtx, now: number): Promise<void> {
-  const date = metricDay(now);
+// The point-in-time metrics are stamped on *today* and simply overwritten by the next tick — the
+// series is a record of what each day looked like when we last measured it, not a replayable history
+// (a histogram of *current* reputation can't be reconstructed for last Tuesday). They're split into
+// three functions of roughly equal read weight so each can run as its own scheduled mutation and stay
+// well inside Convex's per-transaction read budget (see the scan-cap note above); `runRollup` and
+// `backfill` fan them out rather than calling all three in one transaction.
 
-  // --- Contributor distributions -------------------------------------------
-  // One scan, two histograms. Deleted accounts are excluded: a distribution meant to answer "do the
-  // class thresholds spread people?" shouldn't be diluted by rows that represent nobody.
+/** Contributor distributions — one full-`profiles` scan, two histograms. The heaviest single scan. */
+async function rollupDistributions(ctx: MutationCtx, now: number): Promise<void> {
+  const date = metricDay(now);
+  // Deleted accounts are excluded: a distribution meant to answer "do the class thresholds spread
+  // people?" shouldn't be diluted by rows that represent nobody.
   const profiles = await capped(
     ctx.db.query('profiles').take(PROFILE_SCAN_CAP),
     PROFILE_SCAN_CAP,
@@ -268,8 +269,12 @@ async function rollupNow(ctx: MutationCtx, now: number): Promise<void> {
     ),
     scalar: live.length,
   });
+}
 
-  // --- Active contributors --------------------------------------------------
+/** Activity + reputation flow — active contributors, the bounty funnel, and point-source composition. */
+async function rollupActivity(ctx: MutationCtx, now: number): Promise<void> {
+  const date = metricDay(now);
+
   // Distinct authors across reports AND hazards in the trailing window — one person who did both is
   // one contributor, which is why this is a set union and not the sum of two counts.
   const since = now - ACTIVE_CONTRIBUTOR_DAYS * DAY_MS;
@@ -295,7 +300,6 @@ async function rollupNow(ctx: MutationCtx, now: number): Promise<void> {
   ]);
   await writeMetricSnapshot(ctx, 'active_contributors', date, { scalar: contributors.size });
 
-  // --- Bounty funnel + time to fulfillment ---------------------------------
   const bounties = await capped(
     ctx.db
       .query('bounties')
@@ -318,7 +322,6 @@ async function rollupNow(ctx: MutationCtx, now: number): Promise<void> {
     scalar: fulfillmentHours.length,
   });
 
-  // --- Point-source composition --------------------------------------------
   // Summed by *delta*, not by row count: the question is which reasons the points came from, and
   // POINT_WEIGHTS deliberately makes a corroboration worth more than a submission.
   const pointEvents = await capped(
@@ -332,8 +335,12 @@ async function rollupNow(ctx: MutationCtx, now: number): Promise<void> {
   const bySource: Record<string, number> = {};
   for (const e of pointEvents) bySource[e.reason] = (bySource[e.reason] ?? 0) + e.delta;
   await writeMetricSnapshot(ctx, 'point_source_composition', date, { meta: bySource });
+}
 
-  // --- Flag queue health ----------------------------------------------------
+/** Operational health — flag-queue depth/age, weather-strip coverage, orphaned photos. */
+async function rollupOperational(ctx: MutationCtx, now: number): Promise<void> {
+  const date = metricDay(now);
+
   const openFlags: Doc<'contentFlags'>[] = [];
   for (const status of ['open', 'reviewing'] as const) {
     openFlags.push(
@@ -362,7 +369,6 @@ async function rollupNow(ctx: MutationCtx, now: number): Promise<void> {
     scalar: oldest === null ? 0 : hoursBetween(oldest, now),
   });
 
-  // --- Weather-strip coverage ----------------------------------------------
   // The trailing-30d corpus classified by the strip state it would render in *right now*. Reports
   // older than the window are all `aged` by definition, so scanning further would only pad one bar.
   const stripReports = await capped(
@@ -380,7 +386,6 @@ async function rollupNow(ctx: MutationCtx, now: number): Promise<void> {
     scalar: stripReports.length,
   });
 
-  // --- Orphaned photos ------------------------------------------------------
   await writeMetricSnapshot(ctx, 'photo_orphans', date, {
     scalar: await countOrphanPhotos(ctx, now),
   });
@@ -435,40 +440,98 @@ async function countOrphanPhotos(ctx: MutationCtx, now: number): Promise<number>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Scheduled jobs — each is its own transaction, so no single mutation reads past the budget
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** One UTC day of the day-scoped rollups, as a schedulable unit. */
+export const rollupDayJob = internalMutation({
+  args: { date: v.string() },
+  handler: (ctx, { date }) => rollupDay(ctx, date),
+});
+
+/** The point-in-time chunks, each a separate transaction (see the scan-cap note). */
+export const rollupDistributionsJob = internalMutation({
+  args: {},
+  handler: (ctx) => rollupDistributions(ctx, Date.now()),
+});
+export const rollupActivityJob = internalMutation({
+  args: {},
+  handler: (ctx) => rollupActivity(ctx, Date.now()),
+});
+export const rollupOperationalJob = internalMutation({
+  args: {},
+  handler: (ctx) => rollupOperational(ctx, Date.now()),
+});
+
+/** The five point-in-time + two-day jobs a full rollup fans out to (`runAfter(0)`, so no ordering). */
+async function scheduleRollupJobs(ctx: MutationCtx, now: number): Promise<void> {
+  await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDayJob, {
+    date: metricDay(now - DAY_MS),
+  });
+  await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDayJob, { date: metricDay(now) });
+  await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDistributionsJob, {});
+  await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupActivityJob, {});
+  await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupOperationalJob, {});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Entry points
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The scheduled rollup. Recomputes **today and yesterday** plus the point-in-time metrics; snapshot
- * writes replace, so running it four times a day is idempotent and gives the dashboard near-live
- * numbers without a second, corpus-scanning read path. Yesterday is included so a day that was still
- * accumulating at the last tick before midnight ends up complete.
+ * The scheduled rollup (cron entry). Recomputes **today and yesterday** plus the point-in-time
+ * metrics, but **fans each out to its own transaction** rather than running them inline — a single
+ * mutation running every scan at once would, at scale, exceed Convex's per-transaction read budget
+ * before the scan caps ever engaged (see the scan-cap note). The jobs write disjoint metric keys, so
+ * order doesn't matter and a `runAfter(0)` fan-out is safe. Snapshot writes replace, so running it four
+ * times a day is idempotent and gives the dashboard near-live numbers without a corpus-scanning read
+ * path. Yesterday is included so a day still accumulating at the last tick before midnight completes.
  */
 export const runRollup = internalMutation({
   args: {},
-  handler: async (ctx) => {
-    const now = Date.now();
-    await rollupDay(ctx, metricDay(now - DAY_MS));
-    await rollupDay(ctx, metricDay(now));
-    await rollupNow(ctx, now);
-  },
+  handler: (ctx) => scheduleRollupJobs(ctx, Date.now()),
 });
 
 /**
  * Replay the day-scoped rollups over the last `days` UTC days — for a fresh deployment, or after a
- * metric's definition changes. Only the day-scoped half is replayable (a histogram of *current*
- * reputation has no meaning for last Tuesday), and only from rows that still exist: `bountyGateEvents`
- * is forward-only, so backfilled days predating it show honest zeroes rather than invented gate
- * decisions. Run with `pnpm exec convex run analyticsRollup:backfill '{"days":30}'`.
+ * metric's definition changes. **Self-chains one day per transaction** (like `sweepCorpus`): a single
+ * mutation looping hundreds of days would blow the per-transaction read budget on cumulative reads even
+ * at modest per-day volume. Each step does one day, then schedules the next; the last step fans out the
+ * point-in-time jobs. Only the day-scoped half is replayable (a histogram of *current* reputation has
+ * no meaning for last Tuesday), and only from rows that still exist: `bountyGateEvents` is forward-only,
+ * so backfilled days predating it show honest zeroes. Run with
+ * `pnpm exec convex run analyticsRollup:backfill '{"days":30}'`.
  */
 export const backfill = internalMutation({
   args: { days: v.optional(v.number()) },
   handler: async (ctx, { days }) => {
-    const now = Date.now();
     const count = Math.min(Math.max(1, days ?? TRAILING_30_DAYS), 365);
-    for (let i = count - 1; i >= 0; i--) await rollupDay(ctx, metricDay(now - i * DAY_MS));
-    await rollupNow(ctx, now);
+    // Kick the chain at the oldest day; each step walks one day newer until offset 0 (today).
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.backfillStep, { offset: count - 1 });
     return { days: count };
+  },
+});
+
+/**
+ * One day of the backfill chain: roll up `today − offset`, then schedule the next-newer day — or, at
+ * offset 0, fan out the point-in-time jobs (stamped today, once, at the end). `now` is re-read each
+ * step; across a multi-second backfill the day keys are stable enough (the boundary case just
+ * recomputes an adjacent day on the next scheduled rollup).
+ */
+export const backfillStep = internalMutation({
+  args: { offset: v.number() },
+  handler: async (ctx, { offset }) => {
+    const now = Date.now();
+    await rollupDay(ctx, metricDay(now - offset * DAY_MS));
+    if (offset > 0) {
+      await ctx.scheduler.runAfter(0, internal.analyticsRollup.backfillStep, {
+        offset: offset - 1,
+      });
+      return;
+    }
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupDistributionsJob, {});
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupActivityJob, {});
+    await ctx.scheduler.runAfter(0, internal.analyticsRollup.rollupOperationalJob, {});
   },
 });
 
