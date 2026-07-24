@@ -22,7 +22,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, mutation, query } from './_generated/server';
+import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
 import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
 import { waterBodiesGeo } from './lib/geospatial';
@@ -852,30 +852,7 @@ export const resolveBodyForCoord = query({
   args: { coord: latLng, bufferMeters: v.optional(v.number()) },
   handler: async (ctx, { coord, bufferMeters }) => {
     const buffer = bufferMeters ?? AUTOSELECT_BUFFER_M;
-    const rectangle = {
-      west: coord.lng - VIEWPORT_MARGIN_DEG,
-      east: coord.lng + VIEWPORT_MARGIN_DEG,
-      south: coord.lat - VIEWPORT_MARGIN_DEG,
-      north: coord.lat + VIEWPORT_MARGIN_DEG,
-    };
-    // Tier 1 — centroid prefilter near the coord (no `listed` filter, refined below — same read-cap
-    // reasoning as listInViewport). A single small (~5 km) rectangle around one point holds far
-    // fewer than the limit, so no pagination is needed.
-    const page = await waterBodiesGeo.query(ctx, {
-      shape: { type: 'rectangle', rectangle },
-      limit: DEFAULT_VIEWPORT_LIMIT,
-    });
-    const tier1 = await Promise.all(page.results.map(({ key }) => ctx.db.get(key)));
-    // Tier 2 — large bodies whose centroid can sit outside the rectangle though the coord is on them.
-    const tier2 = await ctx.db
-      .query('waterBodies')
-      .withIndex('by_is_large', (q) => q.eq('isLarge', true))
-      .collect();
-
-    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
-    for (const body of [...tier1, ...tier2]) {
-      if (body && isListed(body)) byId.set(body._id, body);
-    }
+    const byId = await listedBodiesNearCoord(ctx, coord);
     const matchId = nearestBodyForPoint(
       coord,
       [...byId.values()].map((b) => ({
@@ -889,6 +866,51 @@ export const resolveBodyForCoord = query({
     return body ? { waterBodyId: body._id, name: body.name } : null;
   },
 });
+
+/**
+ * The listed bodies worth testing a single coord against — the **read-cap-safe** candidate lookup
+ * shared by `resolveBodyForCoord` and the Phase 8 track resolver (D44).
+ *
+ * Two tiers, matching `listInViewport`'s structure:
+ *  - **Tier 1**, a centroid prefilter over a *small* rectangle around the point. Small is what makes
+ *    this safe: the geospatial component reads roughly ∝ `maxResults` over an S2 cell covering, so a
+ *    wide rectangle is the documented read-cap trap (roadmap Later/deferred) — a ~5 km box around one
+ *    coord holds far fewer than the limit, so no pagination is needed.
+ *  - **Tier 2**, every `isLarge` body, whose centroid can sit far outside the rectangle even though
+ *    the coord is squarely on it (Champlain).
+ *
+ * Exported rather than copied so a future fix to the geospatial read shape lands in **one** place for
+ * both callers; unlisted bodies are refined out here, in JS, for the same reason the viewport query
+ * does it (`listed` is derived, and putting it in the geospatial filter halves the safe ceiling).
+ */
+export async function listedBodiesNearCoord(
+  ctx: QueryCtx,
+  coord: { lat: number; lng: number },
+): Promise<Map<Id<'waterBodies'>, Doc<'waterBodies'>>> {
+  const page = await waterBodiesGeo.query(ctx, {
+    shape: {
+      type: 'rectangle',
+      rectangle: {
+        west: coord.lng - VIEWPORT_MARGIN_DEG,
+        east: coord.lng + VIEWPORT_MARGIN_DEG,
+        south: coord.lat - VIEWPORT_MARGIN_DEG,
+        north: coord.lat + VIEWPORT_MARGIN_DEG,
+      },
+    },
+    limit: DEFAULT_VIEWPORT_LIMIT,
+  });
+  const tier1 = await Promise.all(page.results.map(({ key }) => ctx.db.get(key)));
+  const tier2 = await ctx.db
+    .query('waterBodies')
+    .withIndex('by_is_large', (q) => q.eq('isLarge', true))
+    .collect();
+
+  const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
+  for (const body of [...tier1, ...tier2]) {
+    if (body && isListed(body)) byId.set(body._id, body);
+  }
+  return byId;
+}
 
 /**
  * Public: full-text search listed water bodies by name for the map's search box. Uses the
