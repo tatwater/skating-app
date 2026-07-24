@@ -348,3 +348,83 @@ describe('contradictions.settleContradictions', () => {
     expect((await t.run((ctx) => ctx.db.get(liarReport)))?.contradiction).toBe(true);
   });
 });
+
+/**
+ * The enforcement funnel (Phase 7b). These three counters are the *only* record that a disagreement
+ * was ever considered: a pair the weather gate explains away is a `continue`, and afterwards it's
+ * indistinguishable from two reports that never disagreed. Without them, a permissive weather gate and
+ * a quiet season look identical — which is precisely the question the 48 FDH / 36 TDH numbers need
+ * answered.
+ */
+describe('contradiction funnel metrics', () => {
+  const counter = async (t: ReturnType<typeof harness>, metric: string) => {
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query('metricSnapshots')
+        .withIndex('by_metric_date', (q) => q.eq('metric', metric))
+        .collect(),
+    );
+    return rows.reduce((sum, r) => sum + (r.scalar ?? 0), 0);
+  };
+
+  test('counts a detected disagreement and the escalation it produced', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const liar = await seedProfile(t, 'liar');
+    const honest = await seedProfile(t, 'honest');
+    const newSkate = Date.now() - DAY_MS;
+    await seedReport(t, bodyId, liar, newSkate - DAY_MS, 'great', ['black_ice']);
+    const honestReport = await seedReport(t, bodyId, honest, newSkate, 'poor', ['snow_ice']);
+    await seedCorroboration(t, honestReport, honest, 2);
+    vi.stubGlobal('fetch', quietWeather(newSkate));
+
+    await t.action(internal.contradictions.settleContradictions, { reportId: honestReport });
+
+    expect(await counter(t, 'contradiction_detected')).toBe(1);
+    expect(await counter(t, 'contradiction_weather_explained')).toBe(0);
+    expect(await counter(t, 'contradiction_escalated')).toBe(1);
+  });
+
+  test('counts a weather-explained drop at the middle stage, and escalates no one', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const a = await seedProfile(t, 'a');
+    const b = await seedProfile(t, 'b');
+    const newSkate = Date.now() - DAY_MS;
+    await seedReport(t, bodyId, a, newSkate - DAY_MS, 'great', ['black_ice']);
+    const newId = await seedReport(t, bodyId, b, newSkate, 'poor', ['snow_ice']);
+    await seedCorroboration(t, newId, b, 2);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify(weatherBetween(newSkate, -20)), { status: 200 }),
+      ),
+    );
+
+    await t.action(internal.contradictions.settleContradictions, { reportId: newId });
+
+    expect(await counter(t, 'contradiction_detected')).toBe(1);
+    expect(await counter(t, 'contradiction_weather_explained')).toBe(1);
+    expect(await counter(t, 'contradiction_escalated')).toBe(0);
+  });
+
+  test('does not re-count an escalation that was already standing', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const liar = await seedProfile(t, 'liar');
+    const honest = await seedProfile(t, 'honest');
+    const newSkate = Date.now() - DAY_MS;
+    await seedReport(t, bodyId, liar, newSkate - DAY_MS, 'great', ['black_ice']);
+    const honestReport = await seedReport(t, bodyId, honest, newSkate, 'poor', ['snow_ice']);
+    await seedCorroboration(t, honestReport, honest, 2);
+    vi.stubGlobal('fetch', quietWeather(newSkate));
+
+    // Two settles of the same unchanged cluster. Only the first *escalates* anything; a re-settle that
+    // leaves the flag where it was would otherwise drift the stage upward on traffic alone.
+    await t.action(internal.contradictions.settleContradictions, { reportId: honestReport });
+    await t.action(internal.contradictions.settleContradictions, { reportId: honestReport });
+
+    expect(await counter(t, 'contradiction_detected')).toBe(2); // detection is per settle, by design
+    expect(await counter(t, 'contradiction_escalated')).toBe(1); // escalation is per *new* flag
+  });
+});

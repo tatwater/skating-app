@@ -8,6 +8,7 @@ import {
   histogram,
   hoursBetween,
   METRIC_KEYS,
+  METRIC_SPECS,
   METRICS,
   metricDay,
   metricDayRange,
@@ -116,7 +117,7 @@ describe('bucket edge choices', () => {
 
   it('keeps every bucket-edge array strictly ascending', () => {
     for (const key of METRIC_KEYS) {
-      const edges = METRICS[key].edges;
+      const edges = METRIC_SPECS[key].edges;
       if (!edges) continue;
       for (let i = 1; i < edges.length; i++) {
         expect(edges[i]).toBeGreaterThan(edges[i - 1] as number);
@@ -128,7 +129,7 @@ describe('bucket edge choices', () => {
 describe('the metric vocabulary', () => {
   it('gives every bucketed metric its edges, and no other metric any', () => {
     for (const key of METRIC_KEYS) {
-      const spec = METRICS[key];
+      const spec = METRIC_SPECS[key];
       expect(spec.shape === 'buckets').toBe(spec.edges !== undefined);
     }
   });

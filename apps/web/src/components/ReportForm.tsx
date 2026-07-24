@@ -5,6 +5,7 @@ import {
   bundledHazardIds,
   emptyReportForm,
   emptyThicknessReading,
+  hasFutureSkateTimeError,
   humanizeEnum,
   ICE_TYPES,
   isMinor,
@@ -561,6 +562,7 @@ export function ReportForm({
   const navigate = useNavigate();
   const profile = useQuery(api.profiles.current, {});
   const createReport = useMutation(api.reports.create);
+  const recordSignal = useMutation(api.analytics.recordClientSignal);
   const { putInPin, setPutInPin, setPinDropMode, pinDropMode } = useMapSelection();
 
   const [form, setForm] = useState<ReportFormState | null>(null);
@@ -609,6 +611,13 @@ export function ReportForm({
     const result = validateReportInput(input, { now: Date.now() });
     if (!result.ok) {
       setError(result.errors.map((e) => `${e.field}: ${e.message}`).join('; '));
+      // A future skate time is nearly always device clock skew, not a bogus claim — and this
+      // rejection happens *client-side*, so the server never sees it. Report it (Phase 7b) so the
+      // rate is visible and `SKATE_TIME_FUTURE_TOLERANCE_MS` can be judged on evidence. Advisory
+      // telemetry: fire-and-forget, and a failure here must never affect the form.
+      if (hasFutureSkateTimeError(result.errors)) {
+        void recordSignal({ signal: 'report_rejected_future_skate' }).catch(() => {});
+      }
       return;
     }
 

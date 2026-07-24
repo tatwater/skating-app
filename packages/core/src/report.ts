@@ -110,6 +110,20 @@ export type ReportValidationResult =
   | { ok: true; normalized: NormalizedReport }
   | { ok: false; errors: ReportValidationError[] };
 
+/**
+ * The one validation message with a caller outside the form: both apps report a future-skate-time
+ * rejection as an analytics signal (Phase 7b), because that failure is almost always **device clock
+ * skew costing someone a report**, not someone claiming a skate that hasn't happened — and a
+ * persistent non-zero rate is the case for widening `SKATE_TIME_FUTURE_TOLERANCE_MS`. Shared as a
+ * constant so the check and the copy can't drift into a silently-dead detector.
+ */
+export const FUTURE_SKATE_TIME_MESSAGE = 'cannot be in the future';
+
+/** Did this validation fail on the future-skate-time rule? See `FUTURE_SKATE_TIME_MESSAGE`. */
+export function hasFutureSkateTimeError(errors: readonly ReportValidationError[]): boolean {
+  return errors.some((e) => e.field === 'skateEndTime' && e.message === FUTURE_SKATE_TIME_MESSAGE);
+}
+
 export interface ReportValidationContext {
   /** Current time (epoch ms) — injected, not read, so validation stays pure/testable. */
   now: number;
@@ -241,7 +255,7 @@ export function validateReportInput(
   if (!Number.isFinite(input.skateEndTime) || input.skateEndTime <= 0) {
     errors.push({ field: 'skateEndTime', message: 'is required' });
   } else if (input.skateEndTime > ctx.now + SKATE_TIME_FUTURE_TOLERANCE_MS) {
-    errors.push({ field: 'skateEndTime', message: 'cannot be in the future' });
+    errors.push({ field: 'skateEndTime', message: FUTURE_SKATE_TIME_MESSAGE });
   }
 
   // Optional start (when they got on the ice). Must be a valid instant and not after the end —

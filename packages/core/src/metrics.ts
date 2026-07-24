@@ -271,12 +271,12 @@ export const METRICS = {
   },
 
   // ── Display / map (the minVisibleZoom curve, MAX_VIEWPORT_LIMIT) ───────────
-  viewport_truncated: {
-    label: 'Viewport truncations',
+  zoom_band_distribution: {
+    label: 'Bodies by zoom band',
     description:
-      'Map reads that hit the result clamp and dropped bodies (D5). Non-zero means the 256 cap or the displayScore curve is hiding water at some zoom.',
-    kind: 'counter',
-    shape: 'scalar',
+      'Listed water bodies per minVisibleZoom band — how many bodies the displayScore curve makes eligible at each zoom. Compare a band against the 256-row viewport cap: once a band holds far more than that, any dense viewport at that zoom is being truncated, and the curve (not the cap) is the thing to move.',
+    kind: 'rollup',
+    shape: 'meta',
   },
 
   // ── Operational health (tunes the operator) ────────────────────────────────
@@ -323,11 +323,11 @@ export const METRICS = {
     kind: 'rollup',
     shape: 'scalar',
   },
-  weather_strip_renders: {
-    label: 'Weather-strip renders',
+  weather_strip_coverage: {
+    label: 'Weather-strip coverage',
     description:
-      'Weather-since strip resolutions, split fresh vs aged. Tunes the strip’s minAgeHours=6 / maxAgeDays=14 window — an all-aged split means the window outlives the data people actually look at.',
-    kind: 'counter',
+      'Trailing-30-day reports classified by the strip state they’d render in right now — hidden (younger than minAgeHours=6), strip, or aged (older than maxAgeDays=14). Tunes that window directly: a corpus that is mostly `aged` means the strip expires before people stop reading the report.',
+    kind: 'rollup',
     shape: 'meta',
   },
   report_rejected_future_skate: {
@@ -347,6 +347,14 @@ export const METRICS = {
 } as const satisfies Record<string, MetricSpec>;
 
 export type MetricKey = keyof typeof METRICS;
+
+/**
+ * `METRICS` widened to the common spec shape. The `satisfies` above keeps each entry's literal type
+ * (so `METRICS.contradiction_count_hist.edges` is exact where it's known statically), but that same
+ * precision means the union has no common `edges` member for code iterating the catalogue generically.
+ * This view is that code's entry point.
+ */
+export const METRIC_SPECS: Record<MetricKey, MetricSpec> = METRICS;
 
 /** Every metric key — the cron's checklist and the control-room's index. */
 export const METRIC_KEYS = Object.keys(METRICS) as MetricKey[];

@@ -47,10 +47,10 @@ describe('bumpMetricCounter', () => {
     const day = 24 * 60 * 60 * 1000;
     const now = Date.now();
     await t.run(async (ctx) => {
-      await bumpMetricCounter(ctx, 'viewport_truncated', 1, now);
-      await bumpMetricCounter(ctx, 'viewport_truncated', 1, now - day);
+      await bumpMetricCounter(ctx, 'report_rejected_future_skate', 1, now);
+      await bumpMetricCounter(ctx, 'report_rejected_future_skate', 1, now - day);
     });
-    const found = await rows(t, 'viewport_truncated');
+    const found = await rows(t, 'report_rejected_future_skate');
     expect(found).toHaveLength(2);
     expect(new Set(found.map((r) => r.date))).toEqual(
       new Set([metricDay(now), metricDay(now - day)]),
@@ -59,14 +59,14 @@ describe('bumpMetricCounter', () => {
 
   test('a zero delta writes nothing — an unmeasured day must read as a generated zero, not a row', async () => {
     const t = harness();
-    await t.run((ctx) => bumpMetricCounter(ctx, 'viewport_truncated', 0));
-    expect(await rows(t, 'viewport_truncated')).toHaveLength(0);
+    await t.run((ctx) => bumpMetricCounter(ctx, 'report_rejected_future_skate', 0));
+    expect(await rows(t, 'report_rejected_future_skate')).toHaveLength(0);
   });
 
   test('drops an unknown key instead of throwing on the caller’s hot path', async () => {
     const t = harness();
     await expect(
-      t.run((ctx) => bumpMetricCounter(ctx, 'not_a_metric' as 'viewport_truncated')),
+      t.run((ctx) => bumpMetricCounter(ctx, 'not_a_metric' as 'report_rejected_future_skate')),
     ).resolves.not.toThrow();
     expect(await rows(t, 'not_a_metric')).toHaveLength(0);
   });
