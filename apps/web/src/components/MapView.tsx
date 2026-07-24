@@ -170,6 +170,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     api.bodyFeatures.listForBody,
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   );
+  // The aggregate tracks layer (D58) — where people actually skated on the open lake. Scoped per
+  // body like hazards, deliberately NOT a viewport scan: that's the read-cap-fragile path.
+  const aggregateTracks = useQuery(
+    api.gpsActivities.listTracksForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  );
 
   // Open bounties across the viewport (D10/D17 browse). Unlike hazards, this is safe to query per
   // viewport: the open-bounty set is small + bounded, so `bounties.listOpen` scans a plain index and
@@ -539,15 +545,25 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const map = mapRef.current;
     if (!map || !loaded) return;
     const source = map.getSource('tracks') as maplibregl.GeoJSONSource | undefined;
-    source?.setData(
-      trackPath
-        ? {
-            type: 'FeatureCollection',
-            features: [{ type: 'Feature', geometry: trackPath, properties: {} }],
-          }
-        : EMPTY_FEATURES,
-    );
-  }, [trackPath, loaded]);
+    // A single report's own path (drawer open) takes precedence over the lake-wide aggregate: when
+    // you're reading one report, that report's line is the subject, at full strength.
+    if (trackPath) {
+      source?.setData({
+        type: 'FeatureCollection',
+        features: [{ type: 'Feature', geometry: trackPath, properties: { opacity: 1 } }],
+      });
+      return;
+    }
+    source?.setData({
+      type: 'FeatureCollection',
+      features: (aggregateTracks?.tracks ?? []).map((t) => ({
+        type: 'Feature' as const,
+        geometry: t.path,
+        // Server-computed from the linked report's D59 freshness — the map never re-derives decay.
+        properties: { opacity: t.opacity },
+      })),
+    });
+  }, [trackPath, aggregateTracks, loaded]);
 
   // Hazard footprints for the focused lake (Phase 9) — cleared when no lake is selected.
   useEffect(() => {

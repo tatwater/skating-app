@@ -406,3 +406,57 @@ export function processTrack(
     stats: trackStats(processed, opts),
   };
 }
+
+/**
+ * How much of each end of a track is withheld when its report didn't share a put-in (D58).
+ *
+ * The threat is specific and real: someone who skates from their own back yard, or from a friend's
+ * dock, has a track whose first and last points are a home address. 150 m is enough to put the
+ * endpoint somewhere on the ice rather than at a door, while leaving the part of the line that
+ * actually says something about the lake.
+ */
+export const PUT_IN_CLIP_M = 150;
+
+/**
+ * Trim `clipMeters` from **both ends** of a path — the put-in-gated clipping the D58 aggregate layer
+ * applies to any track whose report withheld its put-in (`showPutIn === false`).
+ *
+ * Returns `null` when there's nothing meaningful left, and that is a feature rather than an edge case:
+ * a short skate that is *entirely* endpoints would otherwise render as a stub pointing straight at
+ * where someone got on the ice. Dropping it is the correct answer — the aggregate is about where
+ * people skate, and this track has nothing to contribute that isn't the thing we're protecting.
+ *
+ * Whole segments are dropped rather than interpolated: an interpolated point at exactly 150 m is a
+ * fabricated coordinate, and "the first fix beyond the clip radius" is both simpler and a real
+ * position the skater actually occupied.
+ */
+export function clipPathEnds(
+  path: LineString,
+  clipMeters: number = PUT_IN_CLIP_M,
+): LineString | null {
+  const coords = path.coordinates;
+  if (coords.length < 2 || !(clipMeters > 0)) {
+    return coords.length >= 2 ? path : null;
+  }
+  const at = (i: number): LatLng => {
+    const [lng, lat] = coords[i] as number[];
+    return { lat: lat as number, lng: lng as number };
+  };
+
+  let start = 0;
+  let travelled = 0;
+  while (start < coords.length - 1 && travelled < clipMeters) {
+    travelled += haversineMeters(at(start), at(start + 1));
+    start++;
+  }
+
+  let end = coords.length - 1;
+  travelled = 0;
+  while (end > 0 && travelled < clipMeters) {
+    travelled += haversineMeters(at(end), at(end - 1));
+    end--;
+  }
+
+  if (end - start < 1) return null;
+  return { type: 'LineString', coordinates: coords.slice(start, end + 1) };
+}

@@ -394,3 +394,171 @@ describe('gpsActivities.setPromptState', () => {
     ).rejects.toThrow(/Not your activity/);
   });
 });
+
+describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
+  /** Record a skate, file a report on it, and return both ids. */
+  async function skateAndReport(
+    user: {
+      id: Id<'profiles'>;
+      as: ReturnType<typeof convexTest>['withIdentity'] extends (...a: never[]) => infer R
+        ? R
+        : never;
+    },
+    bodyId: Id<'waterBodies'>,
+    over: { key?: string; showPutIn?: boolean; skateEndTime?: number } = {},
+  ) {
+    const activityId = await user.as.mutation(
+      api.gpsActivities.ingestTrack,
+      ingestArgs({ idempotencyKey: over.key ?? 'session-1' }),
+    );
+    const reportId = await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      activityId,
+      // Defaults to "just now" so the freshness assertions read a live value — T0 is a fixed
+      // January instant, which is genuinely months stale and correctly renders at the floor.
+      skateEndTime: over.skateEndTime ?? Date.now() - 60_000,
+      iceTypes: ['black_ice' as const],
+      surfaceTags: [],
+      ...(over.showPutIn !== undefined ? { showPutIn: over.showPutIn } : {}),
+    });
+    return { activityId, reportId };
+  }
+
+  test('a single public track renders — there is deliberately NO contributor-count gate (D58)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    await skateAndReport(user, bodyId);
+
+    const { tracks, truncated } = await t.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks).toHaveLength(1);
+    expect(truncated).toBe(0);
+    expect(tracks[0]?.path.type).toBe('LineString');
+    // Freshly skated ⇒ near-full opacity, and never above 1.
+    expect(tracks[0]?.opacity).toBeGreaterThan(0.5);
+    expect(tracks[0]?.opacity).toBeLessThanOrEqual(1);
+  });
+
+  test('an UNLINKED recording never aggregates — publishing the report IS the consent', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    await user.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+
+    const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
+    expect(tracks).toEqual([]);
+  });
+
+  test("a minor's recording can never reach the layer — by construction, not by an age check", async () => {
+    const t = harness();
+    const minor = await seedUser(t, 'teen', { dateOfBirth: MINOR_DOB });
+    const bodyId = await seedBody(t);
+    await minor.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+    // The minor cannot file the report the track would need to aggregate (D41)...
+    await expect(
+      minor.as.mutation(api.reports.create, {
+        waterBodyId: bodyId,
+        skateEndTime: T0,
+        iceTypes: ['black_ice' as const],
+        surfaceTags: [],
+      }),
+    ).rejects.toThrow(/under 18/i);
+    // ...so the layer is empty without anything having to check an age.
+    const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
+    expect(tracks).toEqual([]);
+  });
+
+  test('a hidden report takes its track off the map with it', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    const { reportId } = await skateAndReport(user, bodyId);
+
+    await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' as const }));
+    const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
+    expect(tracks).toEqual([]);
+  });
+
+  test('withholding the put-in clips both ends — a skate from a back yard cannot point at the house', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    const { activityId } = await skateAndReport(user, bodyId, { showPutIn: false });
+
+    const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
+    expect(tracks).toHaveLength(1);
+    expect(tracks[0]?.clipped).toBe(true);
+
+    const stored = await t.run((ctx) => ctx.db.get(activityId));
+    const full = (stored?.path as { coordinates: number[][] } | undefined)?.coordinates ?? [];
+    const drawn = tracks[0]?.path.coordinates as number[][];
+    expect(drawn.length).toBeLessThan(full.length);
+    expect(drawn[0]).not.toEqual(full[0]);
+    expect(drawn.at(-1)).not.toEqual(full.at(-1));
+  });
+
+  test('sharing the put-in leaves the path whole — it is a declared public access point', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    const { activityId } = await skateAndReport(user, bodyId, { showPutIn: true });
+
+    const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
+    expect(tracks[0]?.clipped).toBe(false);
+    const stored = await t.run((ctx) => ctx.db.get(activityId));
+    const full = (stored?.path as { coordinates: number[][] } | undefined)?.coordinates ?? [];
+    expect(tracks[0]?.path.coordinates).toHaveLength(full.length);
+  });
+
+  test('the global opt-out drops a person’s tracks RETROACTIVELY (D58)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    await skateAndReport(user, bodyId);
+
+    expect(
+      (await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId })).tracks,
+    ).toHaveLength(1);
+
+    // Flipping the person-level preference removes the track they already contributed — which is the
+    // whole reason the flag lives on the profile rather than on each activity.
+    await t.run((ctx) => ctx.db.patch(user.id, { excludeTracksFromAggregate: true }));
+    expect(
+      (await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId })).tracks,
+    ).toEqual([]);
+  });
+
+  test('opacity fades with the linked report’s age, and never below the floor', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    const { reportId } = await skateAndReport(user, bodyId);
+
+    const fresh = (await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId }))
+      .tracks[0]?.opacity as number;
+
+    // Age the report a year. The path fades — but it is still drawn, because an empty stretch of
+    // lake would read as "nobody found a problem here" (D3).
+    await t.run((ctx) =>
+      ctx.db.patch(reportId, { skateEndTime: Date.now() - 365 * 24 * 3_600_000 }),
+    );
+    const stale = (await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId }))
+      .tracks[0]?.opacity as number;
+
+    expect(stale).toBeLessThan(fresh);
+    expect(stale).toBeGreaterThan(0);
+  });
+
+  test('returns nothing for an unlisted body', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    await skateAndReport(user, bodyId);
+    await t.run((ctx) => ctx.db.patch(bodyId, { removedAt: Date.now() }));
+
+    const { tracks } = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
+    expect(tracks).toEqual([]);
+  });
+});

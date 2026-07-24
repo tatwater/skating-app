@@ -25,7 +25,14 @@
  * predicate D58 rests on.
  */
 
-import { nearestBodyForPoint, pointInPolygon } from '@skating/core';
+import {
+  clipPathEnds,
+  nearestBodyForPoint,
+  PUT_IN_CLIP_M,
+  pathOpacity,
+  pointInPolygon,
+  reportFreshness,
+} from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
@@ -326,3 +333,133 @@ export const listMine = query({
     );
   },
 });
+
+/**
+ * Cap on the tracks returned for one body. A giant, popular lake (Champlain) will eventually
+ * accumulate more paths than are worth drawing, and past a certain density the overlay says the same
+ * thing with 200 lines as with 2,000. Newest first, so the cap drops the faintest, not the freshest.
+ *
+ * The count of what was dropped is returned alongside — a silently truncated map reads as "this is
+ * everything", which is exactly the sort of quiet lie the Phase 7 "no silent caps" rule exists to stop.
+ */
+const MAX_TRACKS_PER_BODY = 200;
+
+/** One aggregated public track, with the opacity it should draw at. */
+export interface AggregateTrackView {
+  activityId: Id<'gpsActivities'>;
+  path: LineString;
+  /** From the linked report's D59 freshness — the identical number the report's own aging reads. */
+  opacity: number;
+  /** Whether this track was clipped at the ends because its report withheld its put-in. */
+  clipped: boolean;
+}
+
+/**
+ * The **aggregate tracks layer** for one water body (D58) — the decaying overlay of where people
+ * actually skated.
+ *
+ * Privacy here is structural, not a filter someone has to remember to write. Four things gate it, and
+ * every one of them is a property of data that already exists rather than a new consent surface:
+ *
+ * 1. **Publish-is-consent.** Only tracks linked to a **visible** report aggregate. Filing a public
+ *    report *is* the act of sharing — there's no separate `sharedToAggregate` flag, because a second
+ *    flag would let the two disagree and would ask people to consent twice to one thing.
+ * 2. **Minors excluded by construction.** Minors can't post reports (D41), so their tracks never link
+ *    to one and can never reach here. Nothing checks an age; the exclusion falls out of the model.
+ * 3. **Put-in-gated clipping.** The report's existing `showPutIn` opt-out doubles as the clipping
+ *    consent: shared put-in ⇒ full path (it's a declared public access point we *want* to surface);
+ *    withheld ⇒ the first and last 150 m are cut, so a skate that started in a back yard can't point
+ *    at the house. The report's own detail view still shows its author their full path.
+ * 4. **Global opt-out.** `profiles.excludeTracksFromAggregate` drops a person's tracks retroactively.
+ *
+ * Deliberately **no k-anonymity threshold** (D58): a single skater's public path renders. A public
+ * report is meant to be shared, the path is already on it, and a contributor-count gate would render
+ * an empty map for the entire alpha while protecting nothing that publishing hadn't already decided.
+ *
+ * Scoped **per body**, like Phase 9 hazards — never a cross-viewport geospatial scan, which is the
+ * read-cap-fragile path `listInViewport` has already had to be fixed for twice.
+ */
+export const listTracksForBody = query({
+  args: { waterBodyId: v.id('waterBodies'), limit: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<{ tracks: AggregateTrackView[]; truncated: number }> => {
+    const body = await resolveSurvivor(ctx, args.waterBodyId);
+    if (!body || !isListed(body)) return { tracks: [], truncated: 0 };
+
+    const limit = Math.min(Math.max(args.limit ?? MAX_TRACKS_PER_BODY, 1), MAX_TRACKS_PER_BODY);
+    const activities = await ctx.db
+      .query('gpsActivities')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .order('desc')
+      .take(limit + 1);
+    const truncated = Math.max(0, activities.length - limit);
+
+    const now = Date.now();
+    const optOutCache = new Map<Id<'profiles'>, boolean>();
+    const tracks: AggregateTrackView[] = [];
+
+    for (const activity of activities.slice(0, limit)) {
+      if (activity.path?.type !== 'LineString') continue;
+      // (1) Publish-is-consent: no linked report ⇒ never aggregates. This is also what keeps a
+      // minor's recording out, since a minor can't have filed the report it would need (D41).
+      if (activity.linkedReportId === undefined) continue;
+      const report = await ctx.db.get(activity.linkedReportId);
+      if (report?.moderationStatus !== 'visible') continue;
+
+      // (4) Global opt-out, cached per author across the loop.
+      let optedOut = optOutCache.get(activity.userId);
+      if (optedOut === undefined) {
+        const author = await ctx.db.get(activity.userId);
+        optedOut = author?.excludeTracksFromAggregate === true;
+        optOutCache.set(activity.userId, optedOut);
+      }
+      if (optedOut) continue;
+
+      // (3) Put-in-gated clipping. `showPutIn === false` is the author withholding their access
+      // point; anything else (shared, or never asked) leaves the path whole.
+      const clipped = report.showPutIn === false;
+      const path = clipped
+        ? clipPathEnds(activity.path as LineString, PUT_IN_CLIP_M)
+        : (activity.path as LineString);
+      // A path that is entirely endpoints comes back null — dropping it is the point (see clipPathEnds).
+      if (!path) continue;
+
+      // Opacity is the linked report's freshness (D59) — the *same* number, not a parallel decay, so
+      // a path can never read as fresher or staler than the report it belongs to.
+      const netThumbs = await tallyNetThumbs(ctx, activity.linkedReportId);
+      const corroborationCount = await countCorroborations(ctx, activity.linkedReportId);
+      const freshness = reportFreshness(
+        { skateEndTime: report.skateEndTime, netThumbs, corroborationCount },
+        now,
+      );
+
+      tracks.push({
+        activityId: activity._id,
+        path,
+        opacity: pathOpacity(freshness),
+        clipped,
+      });
+    }
+
+    return { tracks, truncated };
+  },
+});
+
+/** helpful − unhelpful on a report — the shared thumbs signal D59's freshness reads. */
+async function tallyNetThumbs(ctx: QueryCtx, reportId: Id<'reports'>): Promise<number> {
+  const ratings = await ctx.db
+    .query('reportRatings')
+    .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', reportId))
+    .take(200);
+  let net = 0;
+  for (const rating of ratings) net += rating.verdict === 'helpful' ? 1 : -1;
+  return net;
+}
+
+/** Independent in-window agreeing reports (`pointEvents.by_ref`) — the other D59 freshness signal. */
+async function countCorroborations(ctx: QueryCtx, reportId: Id<'reports'>): Promise<number> {
+  const events = await ctx.db
+    .query('pointEvents')
+    .withIndex('by_ref', (q) => q.eq('refId', reportId))
+    .take(50);
+  return events.filter((e) => e.reason === 'report_corroborated').length;
+}

@@ -65,6 +65,8 @@ export default function YouScreen() {
           <HomeLocation />
           <NotificationSettings />
 
+          <AggregateTracksSetting />
+
           <BlockedUsers />
 
           <Separator borderColor="$border" />
@@ -216,6 +218,38 @@ function RadiusRow({
  * "all reports nearby" digest within X₁, and "great reports nearby" within X₂ (X₂ ≥ X₁, clamped here
  * and re-enforced server-side). The radii need a home set above to take effect.
  */
+/**
+ * The D58 aggregate opt-out. Deliberately worded as what it does to *other people's view of the map*
+ * rather than as a privacy scare: the paths that aggregate are already public on their reports, so
+ * the honest framing is "should your line be part of the crowd picture", not "hide your data".
+ *
+ * Recording and Strava push are untouched by this — that's stated, because a toggle in a privacy
+ * section reads as bigger than it is unless you say what it leaves alone.
+ */
+function AggregateTracksSetting() {
+  const profile = useQuery(api.profiles.current, {});
+  const updateProfile = useMutation(api.profiles.updateProfile);
+  if (!profile) return null;
+
+  return (
+    <YStack gap="$2">
+      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+        Community lake maps
+      </Text>
+      <ToggleRow
+        label="Don't use my paths in community lake maps"
+        value={profile.excludeTracksFromAggregate === true}
+        onToggle={(v) => void updateProfile({ excludeTracksFromAggregate: v })}
+      />
+      <Paragraph color="$foregroundMuted" fontSize={11}>
+        When this is on, the routes you skate won't be drawn on a lake's map for other people —
+        including ones you've already posted. You'll still see your own path on your own reports,
+        recording works the same, and Strava uploads are unaffected.
+      </Paragraph>
+    </YStack>
+  );
+}
+
 function NotificationSettings() {
   const profile = useQuery(api.profiles.current, {});
   const setPrefs = useMutation(api.profiles.setNotificationPrefs);

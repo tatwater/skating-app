@@ -107,6 +107,14 @@ export default defineSchema({
     allRadiusMinutes: v.optional(v.number()),
     greatRadiusMinutes: v.optional(v.number()),
     profileVisibility: literals(PROFILE_VISIBILITIES), // public=searchable/browsable; minors forced private (D13/D41)
+    /**
+     * Global opt-out from the aggregate tracks layer (D58, Phase 8). Person-level rather than
+     * per-activity **on purpose**: a preference about being in a crowd map is about the person, and
+     * putting it here means flipping it retroactively drops every track they've ever contributed
+     * rather than only future ones. Recording and Strava push are unaffected — this only governs
+     * whether their path draws on a lake's community map. Optional ⇒ migration-free.
+     */
+    excludeTracksFromAggregate: v.optional(v.boolean()),
     notificationPrefs, // every type toggleable (D16)
     dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)

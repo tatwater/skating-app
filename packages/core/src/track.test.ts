@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { haversineMeters } from './geometry';
 import {
   appendPoint,
+  clipPathEnds,
   DEFAULT_MAX_ACCURACY_M,
   DEFAULT_MIN_DISTANCE_M,
   evaluateTrackPoint,
@@ -365,5 +366,51 @@ describe('processTrack (the one canonical pipeline)', () => {
     const result = processTrack([pt()]);
     expect(result.path).toBeNull();
     expect(result.stats.pointCount).toBe(1);
+  });
+});
+
+describe('clipPathEnds (D58 put-in-gated clipping)', () => {
+  it('removes at least the clip distance from each end', () => {
+    const track = straightTrack(60, 20, 3); // 60 points, 20 m apart = ~1.18 km
+    const clipped = clipPathEnds(
+      toGeoJsonLineString(track) as NonNullable<ReturnType<typeof toGeoJsonLineString>>,
+      150,
+    );
+    expect(clipped).not.toBeNull();
+    if (!clipped) return;
+    const first = clipped.coordinates[0] as number[];
+    const last = clipped.coordinates.at(-1) as number[];
+    const origin = { lat: LAT, lng: LNG };
+    const originalEnd = { lat: LAT, lng: (track.at(-1) as TrackPoint).lng };
+    expect(
+      haversineMeters(origin, { lat: first[1] as number, lng: first[0] as number }),
+    ).toBeGreaterThanOrEqual(150);
+    expect(
+      haversineMeters(originalEnd, { lat: last[1] as number, lng: last[0] as number }),
+    ).toBeGreaterThanOrEqual(150);
+  });
+
+  it('drops a track that is ENTIRELY endpoints rather than rendering a stub at the put-in', () => {
+    // A 200 m skate: clipping 150 m from each end leaves nothing worth drawing, and what it would
+    // leave points straight at where someone got on the ice.
+    const short = straightTrack(10, 20, 3);
+    expect(clipPathEnds(toGeoJsonLineString(short) as never, 150)).toBeNull();
+  });
+
+  it('keeps only real recorded positions — it never fabricates an interpolated endpoint', () => {
+    const track = straightTrack(60, 20, 3);
+    const line = toGeoJsonLineString(track) as NonNullable<ReturnType<typeof toGeoJsonLineString>>;
+    const clipped = clipPathEnds(line, 150);
+    expect(clipped).not.toBeNull();
+    if (!clipped) return;
+    const originalPositions = new Set(line.coordinates.map((c) => JSON.stringify(c)));
+    for (const coord of clipped.coordinates) {
+      expect(originalPositions.has(JSON.stringify(coord))).toBe(true);
+    }
+  });
+
+  it('is a no-op for a zero clip distance', () => {
+    const line = toGeoJsonLineString(straightTrack(20)) as never;
+    expect(clipPathEnds(line, 0)).toEqual(line);
   });
 });

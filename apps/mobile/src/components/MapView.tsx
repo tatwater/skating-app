@@ -242,12 +242,26 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   );
   const hazardsFC = useMemo(() => hazardsToFeatureCollection(hazards ?? []), [hazards]);
+  // The aggregate tracks layer (D58) for the open lake — scoped per body like hazards, never a
+  // viewport scan. A single report's own path (sheet open) wins over the lake-wide aggregate: when
+  // you're reading one report, that report's line is the subject, at full strength.
+  const aggregateTracks = useQuery(
+    api.gpsActivities.listTracksForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  );
   const tracksFC = useMemo<GeoJSON.FeatureCollection>(
     () => ({
       type: 'FeatureCollection',
-      features: trackPath ? [{ type: 'Feature', geometry: trackPath, properties: {} }] : [],
+      features: trackPath
+        ? [{ type: 'Feature', geometry: trackPath, properties: { opacity: 1 } }]
+        : (aggregateTracks?.tracks ?? []).map((t) => ({
+            type: 'Feature' as const,
+            geometry: t.path,
+            // Server-computed from the linked report's D59 freshness — never re-derived here.
+            properties: { opacity: t.opacity },
+          })),
     }),
-    [trackPath],
+    [trackPath, aggregateTracks],
   );
   const bodyFeaturesFC = useMemo(
     () => bodyFeaturesToFeatureCollection(bodyFeatures ?? []),

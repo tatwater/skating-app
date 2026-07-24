@@ -357,7 +357,7 @@ export const pushActivity = action({
     });
     if (!activity) return { ok: false, error: 'Activity not found' };
     if (activity.userId !== profile._id) return { ok: false, error: 'Not your activity' };
-    if (!activity.path || activity.path.type !== 'LineString') {
+    if (activity.path?.type !== 'LineString') {
       return { ok: false, error: 'That skate has no recorded path' };
     }
 
