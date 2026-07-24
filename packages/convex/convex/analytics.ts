@@ -38,6 +38,7 @@ import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { requireProfile, requireRole } from './lib/auth';
 import { bumpMetricCounter } from './lib/metrics';
+import { tallyThumbs } from './lib/reputation';
 
 /**
  * The only metrics a client may report. Kept as an explicit allowlist rather than "any counter key" so
@@ -213,6 +214,94 @@ export const bountyGateScatter = query({
           trustClass: e.trustClass ?? null,
           createdAt: e.createdAt,
         })),
+    };
+  },
+});
+
+/** Cap on a contributor's report history walked for the trend. Bounded; truncation is reported. */
+const TREND_REPORT_CAP = 300;
+
+/**
+ * The **contributor-trust trend** behind the D57 panel (`/admin/users/$id`) — one bucket per calendar
+ * month of a contributor's history, split good vs bad, returned alongside the account's creation date.
+ *
+ * Tenure-awareness is the entire point (D57). A raw `contradictionCount` of 3 means something very
+ * different for a ten-year contributor with four hundred good reports than for a one-month account with
+ * five — and a moderator deciding whether to pull a posting right is exactly the person who must not
+ * confuse the two. So this deliberately returns the *shape over time* plus `accountCreatedAt`, never a
+ * single score: the judgment stays human, and the chart's job is to make the two cases impossible to
+ * mistake for each other at a glance.
+ *
+ * - **bad** = reports settled as weather-unexplained contradictions (D56 §7b), plus `unsafe_false_report`
+ *   flags a moderator actually **upheld**. An open or dismissed flag is an accusation, not a finding, and
+ *   counting it would let anyone darken someone's record by flagging them.
+ * - **good** = reports the community corroborated or thumbed net-helpful. Volume alone is not good; this
+ *   mirrors the D50 rule that reputation comes from peers' reactions, not from posting a lot.
+ *
+ * Moderator-gated: this is their lever's input. The raw `reputationPoints` number stays admin-only
+ * (D50) and is not returned here.
+ */
+export const contributorTrend = query({
+  args: { userId: v.id('profiles') },
+  handler: async (ctx, { userId }) => {
+    await requireRole(ctx, 'moderator');
+    const target = await ctx.db.get(userId);
+    if (!target) return null;
+
+    const reports = await ctx.db
+      .query('reports')
+      .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', userId))
+      .order('desc')
+      .take(TREND_REPORT_CAP);
+    const truncated = reports.length === TREND_REPORT_CAP;
+    if (truncated) {
+      console.warn(
+        `analytics.contributorTrend walked the ${TREND_REPORT_CAP}-report cap for ${userId}; the trend covers their most recent history only.`,
+      );
+    }
+
+    const months = new Map<string, { good: number; bad: number; total: number }>();
+    const bucket = (ms: number) => {
+      const month = metricDay(ms).slice(0, 7); // 'YYYY-MM'
+      const entry = months.get(month) ?? { good: 0, bad: 0, total: 0 };
+      months.set(month, entry);
+      return entry;
+    };
+
+    for (const report of reports) {
+      const entry = bucket(report.skateEndTime);
+      entry.total++;
+      if (report.contradiction) {
+        entry.bad++;
+        continue; // a settled contradiction is not also counted as good
+      }
+      const corroborations = await ctx.db
+        .query('pointEvents')
+        .withIndex('by_ref', (q) => q.eq('refId', report._id))
+        .collect();
+      const corroborated = corroborations.some((e) => e.reason === 'report_corroborated');
+      const { helpful, unhelpful } = await tallyThumbs(ctx, 'report', report._id);
+      if (corroborated || helpful - unhelpful > 0) entry.good++;
+    }
+
+    // Upheld safety flags naming this user, bucketed by when the moderator ruled — the month the
+    // finding was made, not the month the accusation was filed.
+    const flags = await ctx.db
+      .query('contentFlags')
+      .withIndex('by_target', (q) => q.eq('targetType', 'user').eq('targetId', userId))
+      .take(TREND_REPORT_CAP);
+    for (const flag of flags) {
+      if (flag.status !== 'actioned' || flag.reason !== 'unsafe_false_report') continue;
+      bucket(flag.resolvedAt ?? flag.createdAt).bad++;
+    }
+
+    return {
+      accountCreatedAt: target.createdAt,
+      contradictionCount: target.contradictionCount ?? 0,
+      truncated,
+      months: [...months.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([month, counts]) => ({ month, ...counts })),
     };
   },
 });
