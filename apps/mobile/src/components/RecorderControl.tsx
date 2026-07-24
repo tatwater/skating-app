@@ -1,4 +1,5 @@
 import { formatDistanceMiles } from '@skating/core';
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Button, Paragraph, Switch, Text, XStack, YStack } from 'tamagui';
 import {
@@ -29,8 +30,11 @@ import { useMapSelection } from './MapSelectionContext';
 export function RecorderControl() {
   const { onIceWaterBodyId, hazardDraft } = useMapSelection();
   const recorder = useRecorder();
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(false);
+  /** The just-finished skate, offered as a report until the skater acts on it or waves it off. */
+  const [finished, setFinished] = useState<{ id: string; waterBodyId?: string } | null>(null);
 
   // Stay out of the way while a hazard is being captured — the adjust bar owns the bottom then.
   if (hazardDraft) return null;
@@ -52,11 +56,71 @@ export function RecorderControl() {
   async function stop() {
     setBusy(true);
     try {
-      await stopRecording();
+      const track = await stopRecording();
       setExpanded(false);
+      // Offer the report immediately. The track is safe on disk either way — this is the prompt, not
+      // the save — but a skater who has to go find the button later mostly doesn't, and the path on
+      // the report is the entire point of having recorded.
+      if (track) {
+        setFinished({
+          id: track.id,
+          ...(track.waterBodyId ? { waterBodyId: track.waterBodyId } : {}),
+        });
+      }
     } finally {
       setBusy(false);
     }
+  }
+
+  // The post-skate prompt. Dismissing it never deletes anything: the recording is queued, it will
+  // sync, and it stays available to attach to a report later.
+  if (finished) {
+    return (
+      <YStack
+        position="absolute"
+        bottom={188}
+        left={16}
+        right={72}
+        zIndex={30}
+        backgroundColor="$surface"
+        borderColor="$primary"
+        borderWidth={1}
+        borderRadius="$4"
+        padding="$3"
+        gap="$2"
+      >
+        <Text color="$foreground" fontWeight="700">
+          Skate saved
+        </Text>
+        <Paragraph color="$foregroundMuted" fontSize={12}>
+          {finished.waterBodyId
+            ? 'Want to post a report? Your recorded path goes on it, so other skaters can see where the ice was good.'
+            : "We couldn't match this to a lake we know. You can add it from your track — that's the only way new water gets on the map."}
+        </Paragraph>
+        <XStack gap="$2">
+          <Button
+            size="$3"
+            flex={1}
+            onPress={() => {
+              const target = finished.waterBodyId;
+              setFinished(null);
+              if (target) {
+                router.navigate({
+                  pathname: '/water/[id]',
+                  params: { id: target, track: finished.id },
+                });
+              }
+            }}
+            disabled={!finished.waterBodyId}
+          >
+            Report this skate
+          </Button>
+          <Button size="$3" chromeless onPress={() => setFinished(null)}>
+            Not now
+          </Button>
+        </XStack>
+      </YStack>
+    );
   }
 
   if (recorder.status === 'idle') {

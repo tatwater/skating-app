@@ -29,13 +29,24 @@ import { ReportForm } from './ReportForm';
  * open. "Add a report" swaps the feed for the create form in place (D47), kept mounted in this same
  * sheet so its state survives the put-in-pin peek.
  */
-export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
+export function WaterBodyDetail({
+  waterBodyId,
+  trackDraftId,
+}: {
+  waterBodyId: string;
+  /**
+   * A just-finished recording to file this report against (Phase 8). When present the form opens
+   * straight away — the skater tapped "Report this skate", and making them find the button again
+   * would be the moment the whole record→report loop leaks people.
+   */
+  trackDraftId?: string;
+}) {
   const result = useQuery(api.waterBodies.get, {
     waterBodyId: waterBodyId as Id<'waterBodies'>,
   });
   const body = result?.available ? result.body : null;
   const { setFocus, setHighlightWaterBodyId } = useMapSelection();
-  const [formOpen, setFormOpen] = useState(false);
+  const [formOpen, setFormOpen] = useState(trackDraftId !== undefined);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
 
   // Offline read-cache (decision #8): stash this opened lake's freshest reports as feed cards so they
@@ -109,6 +120,7 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
         <ReportForm
           waterBodyId={result.body._id}
           bodyName={result.body.name}
+          {...(trackDraftId !== undefined ? { trackDraftId } : {})}
           onClose={() => setFormOpen(false)}
         />
       ) : bountyFormOpen ? (

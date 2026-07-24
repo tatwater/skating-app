@@ -39,7 +39,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { Button, Input, Spinner, Text, TextArea, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, isPersistedUri, persistDraftPhoto } from '../lib/draftPhotos';
-import { saveDraft } from '../lib/draftStore';
+import { getTrack, saveDraft } from '../lib/draftStore';
 import { getSuggestedSkateWindow } from '../lib/dwellTracker';
 import { isDraftFlushing } from '../lib/flushService';
 import { HazardBundlePrompt } from './HazardBundlePrompt';
@@ -333,6 +333,7 @@ export function ReportForm({
   bodyName,
   coord,
   draft,
+  trackDraftId,
   onClose,
   onSaved,
 }: {
@@ -343,6 +344,13 @@ export function ReportForm({
   coord?: { lat: number; lng: number };
   /** An existing draft to hydrate + update (offline edit); absent = a fresh report/draft. */
   draft?: ReportDraft;
+  /**
+   * The **local** id of a recording this report describes (Phase 8), when the form was opened from a
+   * finished skate. Local rather than server, because both may have been captured with no signal: the
+   * flush resolves it to an `activityId` once the track lands, and if the track can't be sent the
+   * report goes out without a path (D24) rather than waiting.
+   */
+  trackDraftId?: string;
   onClose: () => void;
   /** Called after saving a draft (defaults to `onClose`). */
   onSaved?: () => void;
@@ -612,10 +620,15 @@ export function ReportForm({
       // otherwise sweep (submittedRef still false) and delete the very photo rows the committing
       // report is about to reference — leaving it with permanently missing images.
       submittedRef.current = true;
+      // A recorded skate that's already synced can be attached directly; one that hasn't is picked
+      // up by the draft path below instead. Either way the report never waits on the track.
+      const activityId =
+        trackDraftId !== undefined ? (getTrack(trackDraftId)?.activityId ?? undefined) : undefined;
       const reportId = await createReport({
         ...input,
         waterBodyId,
         photoIds,
+        ...(activityId !== undefined ? { activityId: activityId as Id<'gpsActivities'> } : {}),
         ...(bundleHazardIds.length > 0
           ? { attachHazardIds: bundleHazardIds as Id<'hazards'>[] }
           : {}),
@@ -692,6 +705,7 @@ export function ReportForm({
           coord,
           putInPin: putInPin ?? undefined,
           photos: draftPhotos,
+          ...(trackDraftId !== undefined ? { trackDraftId } : {}),
         }),
       );
       // These photos now belong to the saved draft — skip the unmount reclaim sweep. (They carry no
