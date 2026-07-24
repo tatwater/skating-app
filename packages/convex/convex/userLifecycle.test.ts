@@ -214,4 +214,17 @@ describe('admin.grantRole / revokeRole (admin-only, D37)', () => {
       as(t, 'boss').mutation(api.admin.revokeRole, { userId: bossId, reason: 'x' }),
     ).rejects.toThrow(/your own role/);
   });
+
+  test('an admin cannot demote themselves via grantRole (the revoke guard, back door)', async () => {
+    const t = harness();
+    const bossId = await seed(t, 'boss', 'admin');
+    await expect(
+      as(t, 'boss').mutation(api.admin.grantRole, {
+        userId: bossId,
+        role: 'moderator',
+        reason: 'oops',
+      }),
+    ).rejects.toThrow(/your own role/);
+    expect((await t.run((ctx) => ctx.db.get(bossId)))?.role).toBe('admin');
+  });
 });

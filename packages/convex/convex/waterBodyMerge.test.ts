@@ -66,7 +66,11 @@ async function seedMod(t: ReturnType<typeof convexTest>, subject = 'mod') {
 function seedBody(
   t: ReturnType<typeof convexTest>,
   name: string,
-  opts: { source?: 'osm' | 'user'; dedupStatus?: 'clean' | 'suspected_duplicate'; reviewStatus?: 'pending' } = {},
+  opts: {
+    source?: 'osm' | 'user';
+    dedupStatus?: 'clean' | 'suspected_duplicate';
+    reviewStatus?: 'pending';
+  } = {},
 ) {
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
@@ -180,6 +184,107 @@ describe('waterBodies.merge (D36)', () => {
     expect(mergeRow?.metadata?.repointed).toMatchObject({ reports: 1, hazards: 1, bounties: 1 });
   });
 
+  test('re-points put-ins and favorites, collapsing a user who favorited both bodies', async () => {
+    const t = harness();
+    const mod = await seedMod(t);
+    const survivor = await seedBody(t, 'Official Pond');
+    const loser = await seedBody(t, 'Dup Pond', {
+      source: 'user',
+      dedupStatus: 'suspected_duplicate',
+    });
+
+    const { officialPutIn, hiddenPutIn, onlyLoserFav, bothFav } = await t.run(async (ctx) => {
+      const userA = await ctx.db
+        .query('profiles')
+        .withIndex('by_username', (q) => q.eq('username', 'mod'))
+        .unique();
+      const aId = userA?._id as Id<'profiles'>;
+      const officialPutIn = await ctx.db.insert('putIns', {
+        waterBodyId: loser,
+        coord: CENTROID,
+        source: 'official',
+        status: 'visible',
+        createdAt: Date.now(),
+      });
+      // A moderator-suppressed coord: stranding this un-hides a put-in they deliberately killed.
+      const hiddenPutIn = await ctx.db.insert('putIns', {
+        waterBodyId: loser,
+        coord: CENTROID,
+        source: 'derived',
+        status: 'hidden',
+        createdAt: Date.now(),
+      });
+      // This user favorited only the loser → the row moves.
+      const onlyLoserFav = await ctx.db.insert('waterBodyFavorites', {
+        userId: aId,
+        waterBodyId: loser,
+        createdAt: Date.now(),
+      });
+      // This one favorited BOTH → the loser row is dropped, not duplicated.
+      const bothUser = await ctx.db.insert('profiles', {
+        clerkUserId: 'both',
+        displayName: 'both',
+        username: 'both',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public',
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyFulfilled: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: false,
+          greatReportNearby: false,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'member',
+        status: 'active',
+        createdAt: Date.now(),
+      });
+      const bothFav = await ctx.db.insert('waterBodyFavorites', {
+        userId: bothUser,
+        waterBodyId: loser,
+        createdAt: Date.now(),
+      });
+      await ctx.db.insert('waterBodyFavorites', {
+        userId: bothUser,
+        waterBodyId: survivor,
+        createdAt: Date.now(),
+      });
+      return { officialPutIn, hiddenPutIn, onlyLoserFav, bothFav };
+    });
+
+    await mod.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+
+    const after = await t.run(async (ctx) => ({
+      officialPutIn: await ctx.db.get(officialPutIn),
+      hiddenPutIn: await ctx.db.get(hiddenPutIn),
+      onlyLoserFav: await ctx.db.get(onlyLoserFav),
+      bothFav: await ctx.db.get(bothFav),
+      stranded: await ctx.db
+        .query('waterBodyFavorites')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', loser))
+        .collect(),
+    }));
+    expect(after.officialPutIn?.waterBodyId).toBe(survivor);
+    expect(after.hiddenPutIn?.waterBodyId).toBe(survivor);
+    expect(after.onlyLoserFav?.waterBodyId).toBe(survivor);
+    expect(after.bothFav).toBeNull(); // collapsed into the existing survivor favorite
+    expect(after.stranded).toHaveLength(0);
+
+    const audit = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    const mergeRow = audit.find((a) => a.action === 'merge_waterbody');
+    expect(mergeRow?.metadata?.repointed).toMatchObject({
+      putIns: 2,
+      favorites: 1,
+      favoritesDeduped: 1,
+    });
+  });
+
   test('rejects merging a body into itself and re-merging a tombstone', async () => {
     const t = harness();
     const mod = await seedMod(t);
@@ -223,8 +328,8 @@ describe('waterBodies.reject (D37)', () => {
     const t = harness();
     const mod = await seedMod(t);
     const canonical = await seedBody(t, 'OSM Lake', { source: 'osm' });
-    await expect(
-      mod.mutation(api.waterBodies.reject, { waterBodyId: canonical }),
-    ).rejects.toThrow(/user-created/);
+    await expect(mod.mutation(api.waterBodies.reject, { waterBodyId: canonical })).rejects.toThrow(
+      /user-created/,
+    );
   });
 });

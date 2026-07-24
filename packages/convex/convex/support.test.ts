@@ -1,6 +1,8 @@
 /**
- * Phase 7 support tickets (D35/D37). Covers the admin-only inbox gate and the key affordance that a
- * suspended/banned user can still file an appeal (create uses getCurrentProfile, not requireProfile).
+ * Phase 7 support tickets (D35/D37). Covers the admin-only inbox gate, the key affordance that a
+ * suspended/banned user can still file an appeal (create uses getCurrentProfile, not requireProfile),
+ * and the two abuse bounds that affordance needs to stay safe: authentication is required, and one
+ * account is capped per window (2026-07-24 review).
  */
 import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
@@ -85,6 +87,63 @@ describe('support.create', () => {
       as(t, 'user').mutation(api.support.create, { category: 'other', body: '   ' }),
     ).rejects.toThrow(/describe the issue/);
   });
+
+  test('an UNAUTHENTICATED caller cannot file (no anonymous ticket/email flood)', async () => {
+    const t = harness();
+    await expect(
+      t.mutation(api.support.create, { category: 'bug', body: 'anonymous spam' }),
+    ).rejects.toThrow(/Sign in/);
+    expect(await t.run((ctx) => ctx.db.query('supportTickets').collect())).toHaveLength(0);
+  });
+
+  test('a signed-in caller with no profile row yet can file, stamped with their Clerk subject', async () => {
+    const t = harness();
+    const id = await as(t, 'unprovisioned').mutation(api.support.create, {
+      category: 'bug',
+      body: 'signup is broken so I have no account',
+    });
+    const ticket = await t.run((ctx) => ctx.db.get(id));
+    expect(ticket?.userId).toBeUndefined();
+    expect(ticket?.clerkUserId).toBe('unprovisioned');
+  });
+
+  test('one account is rate-limited after 5 tickets in the window', async () => {
+    const t = harness();
+    await seed(t, 'noisy');
+    for (let i = 0; i < 5; i++) {
+      await as(t, 'noisy').mutation(api.support.create, { category: 'bug', body: `issue ${i}` });
+    }
+    await expect(
+      as(t, 'noisy').mutation(api.support.create, { category: 'bug', body: 'issue 6' }),
+    ).rejects.toThrow(/several messages recently/);
+    expect(await t.run((ctx) => ctx.db.query('supportTickets').collect())).toHaveLength(5);
+
+    // The cap is per submitter, not global — a second account is unaffected.
+    await seed(t, 'other');
+    await expect(
+      as(t, 'other').mutation(api.support.create, { category: 'bug', body: 'my own issue' }),
+    ).resolves.toBeTruthy();
+  });
+
+  test('the rate limit only counts tickets inside the window', async () => {
+    const t = harness();
+    await seed(t, 'olduser');
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 5; i++) {
+        await ctx.db.insert('supportTickets', {
+          clerkUserId: 'olduser',
+          category: 'bug',
+          body: `old ${i}`,
+          status: 'open',
+          createdAt: dayAgo,
+        });
+      }
+    });
+    await expect(
+      as(t, 'olduser').mutation(api.support.create, { category: 'bug', body: 'a new issue' }),
+    ).resolves.toBeTruthy();
+  });
 });
 
 describe('support inbox (admin-only, D37 PII)', () => {
@@ -97,12 +156,12 @@ describe('support inbox (admin-only, D37 PII)', () => {
       body: 'x is broken',
     });
     void user;
-    await expect(
-      as(t, 'member').mutation(api.support.assign, { ticketId }),
-    ).rejects.toThrow(/admin/);
-    await expect(
-      as(t, 'member').mutation(api.support.resolve, { ticketId }),
-    ).rejects.toThrow(/admin/);
+    await expect(as(t, 'member').mutation(api.support.assign, { ticketId })).rejects.toThrow(
+      /admin/,
+    );
+    await expect(as(t, 'member').mutation(api.support.resolve, { ticketId })).rejects.toThrow(
+      /admin/,
+    );
   });
 
   test('an admin assigns (open -> in_progress) then resolves', async () => {

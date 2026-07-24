@@ -75,12 +75,17 @@ export const userSearch = query({
  * Grant a `moderator` or `admin` role (D37 — **admin-only**, the keys to the app's identity). Patches
  * `role` and audits `grant_role` with the prior role. Idempotent (re-granting the same role still
  * records the decision).
+ *
+ * Self-targeting is refused, same as `revokeRole` — `grantRole(self, 'moderator')` is a *demotion*
+ * dressed as a grant, and it would let the last admin strip their own admin rights (locking support,
+ * trust, and role management out of the app entirely). Another admin can always change your role.
  */
 export const grantRole = mutation({
   args: { userId: v.id('profiles'), role: literals(['moderator', 'admin']), reason: v.string() },
   handler: async (ctx, { userId, role, reason }) => {
     const actor = await requireRole(ctx, 'admin');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    if (userId === actor._id) throw new ConvexError('You cannot change your own role');
     const target = await ctx.db.get(userId);
     if (!target) throw new ConvexError('User not found');
 

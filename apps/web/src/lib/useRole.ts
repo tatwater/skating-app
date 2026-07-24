@@ -10,6 +10,8 @@ export type Role = 'member' | 'moderator' | 'admin';
  */
 export function useRole(): {
   role: Role | undefined;
+  /** The caller's own profile id — used to hide self-targeting operator controls. */
+  userId: string | undefined;
   isModerator: boolean;
   isAdmin: boolean;
   isLoading: boolean;
@@ -18,6 +20,7 @@ export function useRole(): {
   const role = profile?.role as Role | undefined;
   return {
     role,
+    userId: profile?._id,
     isModerator: role === 'moderator' || role === 'admin',
     isAdmin: role === 'admin',
     isLoading: profile === undefined,

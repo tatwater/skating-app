@@ -22,6 +22,15 @@ const MAX_BODY_LENGTH = 5000;
 
 const INBOX_LIMIT = 100;
 
+/**
+ * Per-submitter abuse bound. `create` is deliberately status-blind (a banned user must be able to
+ * appeal), so the boundary can't be `requireProfile` — it's *authenticated identity + a rate limit*.
+ * Five tickets an hour is far above any honest use (a person filing a bug, then a follow-up) and caps
+ * both table growth and the D38 operator-email fan-out at 5/hour/account.
+ */
+const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const MAX_TICKETS_PER_WINDOW = 5;
+
 interface TicketUser {
   userId: string;
   username: string;
@@ -93,11 +102,19 @@ export const list = query({
 
 /**
  * File a support ticket / bug report (D35) — the one Phase-7 path that ships on **web and mobile**.
- * Deliberately uses `getCurrentProfile` (not `requireProfile`) so a **suspended or banned** user can
- * still file an **appeal** (`category: 'account'`) — the very people who most need the channel. Signed-in
- * ⇒ the `userId` is attached; a not-yet-provisioned caller files pre-auth (userId absent). The client
- * supplies auto-captured `context` (app version / platform / device / recent Sentry event id) an email
- * can't. (The founder email alert is wired in the Resend commit.)
+ *
+ * Two gates, deliberately split (2026-07-24 review):
+ *  - **Authentication is required** — a Clerk identity must be present. Without it, an anonymous client
+ *    could loop this mutation into unbounded rows *and* unbounded D38 operator emails. Both clients
+ *    already sit behind sign-in, so this costs no real submitter anything.
+ *  - **Account status is NOT checked** — `getCurrentProfile`, not `requireProfile`, so a **suspended or
+ *    banned** user can still file an **appeal** (`category: 'account'`). That's the whole point of the
+ *    channel. A signed-in caller whose profile isn't provisioned yet files with `userId` absent; the
+ *    Clerk subject is stamped either way so the rate limit still binds them.
+ *
+ * On top of that, `MAX_TICKETS_PER_WINDOW` per submitter per hour bounds the abuse an authenticated
+ * account can do. The client supplies auto-captured `context` (app version / platform / device /
+ * recent Sentry event id) an email can't.
  */
 export const create = mutation({
   args: {
@@ -113,18 +130,32 @@ export const create = mutation({
     ),
   },
   handler: async (ctx, { category, body, context }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new ConvexError('Sign in to contact support');
     const trimmed = body.trim();
     if (trimmed.length === 0) throw new ConvexError('Please describe the issue');
     if (trimmed.length > MAX_BODY_LENGTH) throw new ConvexError('Message is too long');
     const profile = await getCurrentProfile(ctx);
 
+    const now = Date.now();
+    const recent = await ctx.db
+      .query('supportTickets')
+      .withIndex('by_clerk_user_created', (q) =>
+        q.eq('clerkUserId', identity.subject).gte('createdAt', now - RATE_LIMIT_WINDOW_MS),
+      )
+      .take(MAX_TICKETS_PER_WINDOW);
+    if (recent.length >= MAX_TICKETS_PER_WINDOW) {
+      throw new ConvexError("You've sent several messages recently — we'll reply to those first");
+    }
+
     const ticketId = await ctx.db.insert('supportTickets', {
       ...(profile ? { userId: profile._id } : {}),
+      clerkUserId: identity.subject,
       category,
       body: trimmed,
       status: 'open',
       ...(context !== undefined ? { context } : {}),
-      createdAt: Date.now(),
+      createdAt: now,
     });
 
     // Alert the founder on every new ticket (D38) — fire-and-forget; no-ops without Resend keys.
@@ -132,7 +163,7 @@ export const create = mutation({
       subject: `New ${category} ticket`,
       heading: `New support ticket · ${category}`,
       lines: [
-        profile ? `From @${profile.username}` : 'From an anonymous / pre-auth user',
+        profile ? `From @${profile.username}` : 'From a signed-in user with no profile row yet',
         trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed,
       ],
       deepLinkPath: '/admin/support',

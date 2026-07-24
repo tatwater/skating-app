@@ -529,7 +529,10 @@ export default defineSchema({
     .index('by_actor', ['actorId']),
 
   supportTickets: defineTable({
-    userId: v.optional(v.id('profiles')), // null if submitted pre-auth
+    userId: v.optional(v.id('profiles')), // absent when the Clerk user has no profile row yet
+    // The submitter's Clerk subject — always present (`create` requires an authenticated identity) and
+    // stamped even when `userId` is absent, so the per-submitter rate limit works pre-provisioning.
+    clerkUserId: v.optional(v.string()),
     category: literals(SUPPORT_CATEGORIES),
     body: v.string(),
     status: literals(SUPPORT_STATUSES),
@@ -545,7 +548,10 @@ export default defineSchema({
     resolvedByUserId: v.optional(v.id('profiles')),
     createdAt: v.number(),
     resolvedAt: v.optional(v.number()),
-  }).index('by_status', ['status']),
+  })
+    .index('by_status', ['status'])
+    // Rate-limit lookup: how many tickets this submitter filed inside the window.
+    .index('by_clerk_user_created', ['clerkUserId', 'createdAt']),
 
   bounties: defineTable({
     requesterId: v.id('profiles'),

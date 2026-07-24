@@ -145,9 +145,9 @@ describe('D57 granular posting permissions', () => {
     const as = await seedUser(t, 'nocomments', { canPostComments: false });
     const waterBodyId = await seedBody(t);
     const reportId = await as.mutation(api.reports.create, reportArgs(waterBodyId));
-    await expect(
-      as.mutation(api.comments.create, { reportId, body: 'nice ice' }),
-    ).rejects.toThrow(/comment posting has been restricted/);
+    await expect(as.mutation(api.comments.create, { reportId, body: 'nice ice' })).rejects.toThrow(
+      /comment posting has been restricted/,
+    );
   });
 
   test('absent canPostComments ⇒ comments allowed', async () => {

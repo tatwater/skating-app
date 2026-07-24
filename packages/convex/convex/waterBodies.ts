@@ -467,14 +467,20 @@ export const reject = mutation({
 
 /**
  * Moderator: merge a duplicate water body into a survivor (D36) — the missing dedup mutation. Re-points
- * every child (`reports`/`hazards`/`bounties`/`bodyFeatures`) from the loser to the survivor, then
- * soft-tombstones the loser (`dedupStatus: merged` + `mergedIntoId`) so read paths follow the chain to
- * the survivor and `isListed` drops it off the map. Never a hard delete (reversible in spirit with the
- * D15/D33 ethos); audits `merge_waterbody` with the re-pointed counts.
+ * **every** body-keyed child (`reports`/`hazards`/`bounties`/`bodyFeatures`/`putIns`/
+ * `waterBodyFavorites`) from the loser to the survivor, then soft-tombstones the loser
+ * (`dedupStatus: merged` + `mergedIntoId`) so read paths follow the chain to the survivor and
+ * `isListed` drops it off the map. Never a hard delete (reversible in spirit with the D15/D33 ethos);
+ * audits `merge_waterbody` with the re-pointed counts.
  *
- * NOTE: `waterBodyFavorites` and `putIns` are intentionally NOT re-pointed in v1 — a dedup loser is a
- * user-drawn suspected-duplicate (Phase 8) that won't carry them; revisit if merge is ever applied to a
- * rich canonical body.
+ * Favorites and put-ins were initially left behind on the theory that a dedup loser is always a bare
+ * user-drawn duplicate; they're re-pointed as of the 2026-07-24 review, because stranding them on a
+ * tombstone silently drops official put-ins, loses hidden-put-in suppression, and cuts favoriters off
+ * from drive-time matching and report notifications for a lake they still care about.
+ *
+ * `notificationQueue` rows are deliberately left alone — they're transient (drained within hours by the
+ * flush cron) and carry a `coalesceKey` baked from the old id, so re-pointing them would break
+ * coalescing for no lasting benefit.
  */
 export const merge = mutation({
   args: {
@@ -516,14 +522,49 @@ export const merge = mutation({
       .query('bodyFeatures')
       .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', loserId))
       .collect();
-    for (const child of [...reports, ...hazards, ...bounties, ...features]) {
+    // Put-ins carry `official` (accurate, priority-styled) and `hidden` (moderator suppression that has
+    // to outlive re-clustering, decision #7) rows — both are silent safety/quality losses if stranded.
+    const putIns = await ctx.db
+      .query('putIns')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))
+      .collect();
+    for (const child of [...reports, ...hazards, ...bounties, ...features, ...putIns]) {
       await ctx.db.patch(child._id, { waterBodyId: survivorId });
     }
+
+    // Favorites are one-row-per-user×body (`by_user_water_body` is the uniqueness key), so a user who
+    // favorited BOTH bodies would end up with a duplicate pair. Re-point when they only had the loser;
+    // drop the loser row when the survivor is already favorited.
+    const favorites = await ctx.db
+      .query('waterBodyFavorites')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))
+      .collect();
+    let favoritesRepointed = 0;
+    let favoritesDeduped = 0;
+    for (const fav of favorites) {
+      const existing = await ctx.db
+        .query('waterBodyFavorites')
+        .withIndex('by_user_water_body', (q) =>
+          q.eq('userId', fav.userId).eq('waterBodyId', survivorId),
+        )
+        .unique();
+      if (existing) {
+        await ctx.db.delete(fav._id);
+        favoritesDeduped++;
+      } else {
+        await ctx.db.patch(fav._id, { waterBodyId: survivorId });
+        favoritesRepointed++;
+      }
+    }
+
     const repointed = {
       reports: reports.length,
       hazards: hazards.length,
       bounties: bounties.length,
       bodyFeatures: features.length,
+      putIns: putIns.length,
+      favorites: favoritesRepointed,
+      favoritesDeduped,
     };
 
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats

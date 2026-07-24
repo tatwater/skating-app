@@ -33,7 +33,7 @@ function ageLabel(createdAt: number): string {
 function AdminUserDetail() {
   const { id } = Route.useParams();
   const userId = id as Id<'profiles'>;
-  const { isAdmin } = useRole();
+  const { isAdmin, userId: viewerId } = useRole();
   const user = useQuery(api.profiles.getAdmin, { userId });
   const grantRole = useMutation(api.admin.grantRole);
   const revokeRole = useMutation(api.admin.revokeRole);
@@ -97,8 +97,9 @@ function AdminUserDetail() {
         <UserModerationControls user={user} />
       </section>
 
-      {/* Role management — admin only (D37). */}
-      {isAdmin ? (
+      {/* Role management — admin only, and never on your own row: `grantRole`/`revokeRole` both
+          refuse self-targeting so the last admin can't demote themselves out of the app (D37). */}
+      {isAdmin && viewerId !== userId ? (
         <section className="flex flex-col gap-2">
           <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
             Role
