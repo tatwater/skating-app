@@ -104,6 +104,14 @@ export const resolveFlag = mutation({
 
     const flag = await ctx.db.get(args.flagId);
     if (!flag) throw new ConvexError('Flag not found');
+    // Resolution is terminal and single-shot. Guard it so a stale queue view — two moderators acting
+    // on the same open flag, or a re-submit of an already-closed one — can't patch it twice, write a
+    // second audit row, or (worse) double-count the disposition metric below and even record the flag
+    // under *both* outcomes, poisoning the tuning signal. Convex's OCC makes this race-safe: a
+    // concurrent second resolver re-reads the now-terminal status on retry and lands here.
+    if (flag.status === 'actioned' || flag.status === 'dismissed') {
+      throw new ConvexError('This flag has already been resolved');
+    }
 
     const now = Date.now();
     await ctx.db.patch(args.flagId, {
