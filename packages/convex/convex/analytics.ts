@@ -38,7 +38,6 @@ import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { requireProfile, requireRole } from './lib/auth';
 import { bumpMetricCounter } from './lib/metrics';
-import { tallyThumbs } from './lib/reputation';
 
 /**
  * The only metrics a client may report. Kept as an explicit allowlist rather than "any counter key" so
@@ -296,32 +295,61 @@ export const contributorTrend = query({
       return entry;
     };
 
-    // Walk newest-first (the `.take` above is `order('desc')`), stopping once the reaction fan-out
-    // hits its read budget so the query stays inside Convex's per-transaction document-read limit.
-    // We stop at a report boundary, so — exactly like the report cap — the oldest surviving month may
-    // be partial and older months drop out entirely; both cases are disclosed via `truncated`.
+    // Walk newest-first (the `.take` above is `order('desc')`), keeping the reaction fan-out inside a
+    // read budget so the query stays under Convex's per-transaction document-read limit. Each source is
+    // read with `.take(remaining + 1)`, not `.collect()` — so a single high-reaction report can't blow
+    // the limit on its own — and a report is committed to a bucket only after it classifies *fully*
+    // within budget. When a source would exceed the remaining budget we stop before counting that
+    // report (drop it whole, never half-count): total reaction docs read is capped at the budget + 1.
+    // The oldest surviving month may be partial and older months drop out entirely — like the report
+    // cap — both disclosed via `truncated`.
     let reactionReads = 0;
+    const hitBudget = () => {
+      truncated = true;
+      console.warn(
+        `analytics.contributorTrend hit the ${TREND_REACTION_READ_BUDGET}-reaction read budget for ${userId}; the trend covers their most recent history only.`,
+      );
+    };
     for (const report of reports) {
-      if (reactionReads >= TREND_REACTION_READ_BUDGET) {
-        truncated = true;
-        console.warn(
-          `analytics.contributorTrend hit the ${TREND_REACTION_READ_BUDGET}-reaction read budget for ${userId}; the trend covers their most recent history only.`,
-        );
-        break;
-      }
-      const entry = bucket(report.skateEndTime);
-      entry.total++;
       if (report.contradiction) {
-        entry.bad++;
-        continue; // a settled contradiction is not also counted as good (no reaction reads)
+        const entry = bucket(report.skateEndTime);
+        entry.total++;
+        entry.bad++; // a settled contradiction is not also counted as good, and costs no reaction reads
+        continue;
       }
+
+      // Corroboration: read at most the remaining budget (+1 to detect overflow). Bail before counting
+      // this report if its events alone would exceed what's left.
       const corroborations = await ctx.db
         .query('pointEvents')
         .withIndex('by_ref', (q) => q.eq('refId', report._id))
-        .collect();
+        .take(TREND_REACTION_READ_BUDGET - reactionReads + 1);
+      if (corroborations.length > TREND_REACTION_READ_BUDGET - reactionReads) {
+        hitBudget();
+        break;
+      }
+      reactionReads += corroborations.length;
+
+      // Thumbs: same bounded read. Inlined (not `tallyThumbs`) because we need `.take`, not `.collect`.
+      const ratings = await ctx.db
+        .query('reportRatings')
+        .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', report._id))
+        .take(TREND_REACTION_READ_BUDGET - reactionReads + 1);
+      if (ratings.length > TREND_REACTION_READ_BUDGET - reactionReads) {
+        hitBudget();
+        break;
+      }
+      reactionReads += ratings.length;
+
+      const entry = bucket(report.skateEndTime);
+      entry.total++;
       const corroborated = corroborations.some((e) => e.reason === 'report_corroborated');
-      const { helpful, unhelpful } = await tallyThumbs(ctx, 'report', report._id);
-      reactionReads += corroborations.length + helpful + unhelpful;
+      let helpful = 0;
+      let unhelpful = 0;
+      for (const r of ratings) {
+        if (r.verdict === 'helpful') helpful++;
+        else unhelpful++;
+      }
       if (corroborated || helpful - unhelpful > 0) entry.good++;
     }
 
