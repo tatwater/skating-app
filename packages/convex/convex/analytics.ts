@@ -240,6 +240,16 @@ export const bountyGateScatter = query({
 const TREND_REPORT_CAP = 300;
 
 /**
+ * Ceiling on the *reaction* documents (corroboration events + thumbs) the trend fans out to read.
+ * Classifying a report as "good" scans its `pointEvents` and `reportRatings`, so a prolific,
+ * high-reaction contributor could otherwise push a single trend query past Convex's per-transaction
+ * document-read budget and fail to render. We walk newest-first and stop once this budget is hit —
+ * the same "most recent history only" degradation the report cap already applies, surfaced via
+ * `truncated`. Sized to leave headroom under the ~16k read limit after the ≤300 report + ≤300 flag reads.
+ */
+const TREND_REACTION_READ_BUDGET = 12_000;
+
+/**
  * The **contributor-trust trend** behind the D57 panel (`/admin/users/$id`) — one bucket per calendar
  * month of a contributor's history, split good vs bad, returned alongside the account's creation date.
  *
@@ -271,7 +281,7 @@ export const contributorTrend = query({
       .withIndex('by_author_skate_end_time', (q) => q.eq('authorId', userId))
       .order('desc')
       .take(TREND_REPORT_CAP);
-    const truncated = reports.length === TREND_REPORT_CAP;
+    let truncated = reports.length === TREND_REPORT_CAP;
     if (truncated) {
       console.warn(
         `analytics.contributorTrend walked the ${TREND_REPORT_CAP}-report cap for ${userId}; the trend covers their most recent history only.`,
@@ -286,12 +296,24 @@ export const contributorTrend = query({
       return entry;
     };
 
+    // Walk newest-first (the `.take` above is `order('desc')`), stopping once the reaction fan-out
+    // hits its read budget so the query stays inside Convex's per-transaction document-read limit.
+    // We stop at a report boundary, so — exactly like the report cap — the oldest surviving month may
+    // be partial and older months drop out entirely; both cases are disclosed via `truncated`.
+    let reactionReads = 0;
     for (const report of reports) {
+      if (reactionReads >= TREND_REACTION_READ_BUDGET) {
+        truncated = true;
+        console.warn(
+          `analytics.contributorTrend hit the ${TREND_REACTION_READ_BUDGET}-reaction read budget for ${userId}; the trend covers their most recent history only.`,
+        );
+        break;
+      }
       const entry = bucket(report.skateEndTime);
       entry.total++;
       if (report.contradiction) {
         entry.bad++;
-        continue; // a settled contradiction is not also counted as good
+        continue; // a settled contradiction is not also counted as good (no reaction reads)
       }
       const corroborations = await ctx.db
         .query('pointEvents')
@@ -299,6 +321,7 @@ export const contributorTrend = query({
         .collect();
       const corroborated = corroborations.some((e) => e.reason === 'report_corroborated');
       const { helpful, unhelpful } = await tallyThumbs(ctx, 'report', report._id);
+      reactionReads += corroborations.length + helpful + unhelpful;
       if (corroborated || helpful - unhelpful > 0) entry.good++;
     }
 

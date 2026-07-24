@@ -350,4 +350,43 @@ describe('analytics.contributorTrend', () => {
     const month = trend?.months[0];
     expect(month).toMatchObject({ good: 0, bad: 1, total: 1 });
   });
+
+  test(
+    'stops walking once the reaction read budget is hit — bounded reads, truncation reported',
+    async () => {
+      const t = harness();
+      const mod = await seedUser(t, 'mod', 'moderator');
+      const subject = await seedUser(t, 'subject');
+      const rater = await seedUser(t, 'rater');
+      const body = await seedBody(t);
+
+      // A newest report so heavily rated that classifying it alone exhausts the reaction read budget
+      // (the exact scenario the P1 fix guards: a prolific, high-reaction account blowing Convex's
+      // per-transaction document-read limit). tallyThumbs counts rows, so same-rater rows are fine here.
+      const heavy = await seedReport(t, subject.id, body, Date.now() - DAY);
+      await t.run(async (ctx) => {
+        for (let i = 0; i <= 12_000; i++) {
+          await ctx.db.insert('reportRatings', {
+            targetType: 'report' as const,
+            targetId: heavy,
+            raterId: rater.id,
+            verdict: 'helpful' as const,
+            createdAt: Date.now(),
+          });
+        }
+      });
+      // An older report that must be dropped entirely once the budget trips — not half-counted.
+      await seedReport(t, subject.id, body, Date.now() - 2 * DAY);
+
+      const trend = await mod.as.query(api.analytics.contributorTrend, { userId: subject.id });
+      expect(trend?.truncated).toBe(true);
+      const totals = (trend?.months ?? []).reduce(
+        (acc, m) => ({ good: acc.good + m.good, total: acc.total + m.total }),
+        { good: 0, total: 0 },
+      );
+      // Only the heavy report was reached; the older one was skipped rather than partially tallied.
+      expect(totals).toEqual({ good: 1, total: 1 });
+    },
+    30_000, // heavy seed + full-history read; CI runs ~8×+ slower than local (see memory: ci-test-timeout-5s)
+  );
 });
