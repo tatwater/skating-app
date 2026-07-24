@@ -67,6 +67,9 @@ export default function YouScreen() {
           <BlockedUsers />
 
           <Separator borderColor="$border" />
+          <Link href="/support" asChild>
+            <Button>Contact support</Button>
+          </Link>
           <Link href="/about" asChild>
             <Button>About &amp; licenses</Button>
           </Link>

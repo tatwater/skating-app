@@ -48,6 +48,12 @@ function RootNavigator() {
           name="about"
           options={{ presentation: 'modal', headerShown: true, title: 'About' }}
         />
+        {/* Contact support / report a bug (D35) — a submission path, open even to suspended/banned
+            users for appeals (support.create doesn't gate on status). */}
+        <Stack.Screen
+          name="support"
+          options={{ presentation: 'modal', headerShown: true, title: 'Contact support' }}
+        />
         {/* Offline report capture + draft editing (F2) — full-screen modals, off the map. */}
         <Stack.Screen
           name="draft/new"
