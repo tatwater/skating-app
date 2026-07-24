@@ -217,23 +217,23 @@ export const METRICS = {
 
   // ── Enforcement (CONTRADICTION_FLAG_THRESHOLD, the weather gate, AUTO_LOW_QUALITY_*) ──
   contradiction_detected: {
-    label: 'Contradictions detected',
+    label: 'Disagreements considered',
     description:
-      'Disagreeing report pairs found before the weather gate runs — the top of the enforcement funnel.',
+      'Disagreeing report PAIRS the settle loop weighed before the weather gate — counted per settle, so a report re-examined by a later neighbour is counted again. NOT a strict superset of the two stages below (those count reports, not pairs); read the three as "how the gate behaves", not "a ⊇ b ⊇ c".',
     kind: 'counter',
     shape: 'scalar',
   },
   contradiction_weather_explained: {
-    label: 'Explained by weather',
+    label: 'Explained away by weather',
     description:
-      'Disagreements the weather gate dismissed as an honest "the ice changed". If this explains away almost everything, the 48 FDH / 36 TDH gate is too permissive to catch anyone.',
+      'Disagreements the weather gate dismissed as an honest "the ice changed" (a fetch that FAILED is not counted here — an outage must not read as a permissive gate). If this explains away almost everything, the 48 FDH / 36 TDH gate is too permissive to catch anyone.',
     kind: 'counter',
     shape: 'scalar',
   },
   contradiction_escalated: {
-    label: 'Escalated',
+    label: 'Reports escalated',
     description:
-      'Weather-unexplained disagreements where the un-corroborated minority accrued a contradiction — the only stage that touches a contributor.',
+      'REPORTS newly flagged as a weather-unexplained, un-corroborated minority (counted once, when the flag is first raised — a re-settle or a self-correcting clear does not move it). The only stage that touches a contributor.',
     kind: 'counter',
     shape: 'scalar',
   },

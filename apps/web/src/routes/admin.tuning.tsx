@@ -235,16 +235,16 @@ function AdminTuning() {
         </div>
         <div className="grid gap-3 lg:grid-cols-2">
           <ScalarTrend
-            title="Contradiction funnel"
-            description="Detected disagreements, the share weather explained away, and the share that escalated. If weather explains almost everything, the 48/36 gate is too permissive."
+            title="Contradiction gate"
+            description="Disagreements considered (pairs), the share weather explained away, and reports escalated. Not a strict funnel — the first counts pairs, the last counts reports — but if weather explains away almost everything, the 48/36 gate is too permissive."
             metrics={[
-              { key: 'contradiction_detected', label: 'Detected' },
+              { key: 'contradiction_detected', label: 'Considered (pairs)' },
               {
                 key: 'contradiction_weather_explained',
                 label: 'Weather-explained',
                 status: 'warning',
               },
-              { key: 'contradiction_escalated', label: 'Escalated', status: 'bad' },
+              { key: 'contradiction_escalated', label: 'Escalated (reports)', status: 'bad' },
             ]}
             height={180}
           />
