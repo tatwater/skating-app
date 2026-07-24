@@ -11,16 +11,20 @@
 
 import {
   bboxIntersects,
+  classifyDedup,
+  type DedupClassification,
+  type DedupShape,
   displayScore,
   isKnownStateCode,
   isMinor,
   KNOWN_STATE_CODES,
   minVisibleZoom,
   nearestBodyForPoint,
+  pathToBody,
   WATER_BODY_TYPES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
-import type { MultiPolygon, Polygon } from 'geojson';
+import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
 import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
@@ -270,47 +274,166 @@ export const create = mutation({
   args: {
     name: v.string(),
     type: literals(WATER_BODY_TYPES),
-    polygon: geoJson,
-    bbox,
-    centroid: latLng,
-    surfaceAreaSqM: v.optional(v.number()),
+    /**
+     * The recorded skate this body is derived from. **Required** — the geometry is computed
+     * server-side from its trusted path, and the client cannot supply a polygon at all.
+     */
+    activityId: v.id('gpsActivities'),
+    /** Set after the user has seen the ranked matches and answered "none of these" (D36). */
+    confirmedNew: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx);
     const now = Date.now();
     // Minors are read-only (D41) — mirror `reports.create`, so a minor can't push a public map
-    // contribution attributed to them. (This stays a v1 scaffold; GPS-backed create + dedup is
-    // Phase 8, D36 — TODO: match-on-create dedup / bbox prefilter → Turf IoU / name similarity.)
+    // contribution attributed to them.
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot create water bodies');
     }
-    const scores = scoreFields({ surfaceAreaSqM: args.surfaceAreaSqM }); // no boost on a new body
+
+    // Path-only, enforced at the trust boundary (D14/D36, D37 "the server contract is the boundary").
+    // There is no freehand drawing in this app and there is no argument by which a client can hand us
+    // a shape: without a trusted path there's no proof of presence and no frame of reference for
+    // scale or position, so a body derived from anything else would be a guess that then collects
+    // other people's reports.
+    const activity = await ctx.db.get(args.activityId);
+    if (!activity) throw new ConvexError('Activity not found');
+    if (activity.userId !== profile._id) throw new ConvexError('Not your activity');
+    if (activity.path?.type !== 'LineString') {
+      throw new ConvexError('That skate has no recorded path');
+    }
+    if (activity.waterBodyId !== undefined) {
+      throw new ConvexError('That skate already resolved to a known lake');
+    }
+
+    const derived = pathToBody(activity.path as LineString);
+    if (derived === null) {
+      throw new ConvexError(
+        "That recording is too short to map a new lake from — it didn't move far enough.",
+      );
+    }
+
+    // Match on create (D36): score the derived shape against everything nearby and refuse to mint a
+    // duplicate silently. The caller must have seen the ranked matches and said "none of these".
+    const { status, matches } = await scoreAgainstNearby(ctx, {
+      name: args.name,
+      geometry: derived.polygon,
+      centroid: derived.centroid,
+      bbox: derived.bbox,
+    });
+    if (matches.length > 0 && args.confirmedNew !== true) {
+      throw new ConvexError({
+        code: 'possible_duplicate',
+        message: 'This looks like water we already know about.',
+        candidateIds: matches.map((m) => m.ref),
+      });
+    }
+
+    const scores = scoreFields({ surfaceAreaSqM: derived.surfaceAreaSqM }); // no boost on a new body
     const id = await ctx.db.insert('waterBodies', {
       name: args.name,
       type: args.type,
       source: 'user',
-      polygon: args.polygon,
-      bbox: args.bbox,
-      centroid: args.centroid,
-      isLarge: isLargeBody(args.bbox),
-      surfaceAreaSqM: args.surfaceAreaSqM,
+      polygon: derived.polygon,
+      bbox: derived.bbox,
+      centroid: derived.centroid,
+      isLarge: isLargeBody(derived.bbox),
+      surfaceAreaSqM: derived.surfaceAreaSqM,
       ...scores,
       createdByUserId: profile._id,
       reviewStatus: 'pending', // auto-visible, review-after (D37)
-      dedupStatus: 'clean', // default (D36)
+      // The verdict is stamped even when the user confirmed it's new — that stamp is exactly what
+      // feeds the Phase 7 moderator merge queue, which has had nothing flowing into it until now.
+      dedupStatus: status,
+      ...(matches.length > 0 ? { duplicateCandidateIds: matches.map((m) => m.ref) } : {}),
       createdAt: now,
     });
     // Index the centroid for viewport lookups (D5); a pending user body is auto-visible
     // (D37/D48), so it lists immediately — `listed` is the filter key public queries use.
-    // sortKey = minVisibleZoom (D49).
+    // A suspected/near-certain duplicate still lists: hiding it would take any reports filed against
+    // it off the map on a machine's guess (D3). sortKey = minVisibleZoom (D49).
     await waterBodiesGeo.insert(
       ctx,
       id,
-      { latitude: args.centroid.lat, longitude: args.centroid.lng },
-      { listed: isListed({ reviewStatus: 'pending', dedupStatus: 'clean' }) },
+      { latitude: derived.centroid.lat, longitude: derived.centroid.lng },
+      { listed: isListed({ reviewStatus: 'pending', dedupStatus: status }) },
       scores.minVisibleZoom,
     );
+    // Bind the skate to the water it discovered, so the report flow can carry straight on.
+    await ctx.db.patch(args.activityId, { waterBodyId: id });
     return id;
+  },
+});
+
+/**
+ * Score a proposed body against every listed body near it (D36) — the shared half of
+ * `findMatchCandidates` (which shows the user the steer) and `create` (which stamps the verdict), so
+ * the ranked list someone chose "none of these" against is provably the same list the stamp came from.
+ */
+async function scoreAgainstNearby(
+  ctx: QueryCtx,
+  candidate: DedupShape,
+): Promise<DedupClassification<Id<'waterBodies'>>> {
+  const nearby = await listedBodiesNearCoord(ctx, candidate.centroid);
+  return classifyDedup(
+    candidate,
+    [...nearby.values()].map((body) => ({
+      ref: body._id,
+      name: body.name,
+      geometry: body.polygon as unknown as Polygon | MultiPolygon,
+      centroid: body.centroid,
+      bbox: body.bbox,
+      // D36 prefers attaching to official data, so canonical bodies rank first among equals.
+      official: body.source !== 'user',
+    })),
+  );
+}
+
+/**
+ * "Attach here?" — the ranked matches for the body a skate would create (D36).
+ *
+ * The **producer** the Phase 7 dedup queue has been waiting for. The client calls this before
+ * `create`, shows the matches, and only sends `confirmedNew` once the user has explicitly rejected
+ * all of them. Deriving the shape here (rather than taking one) means the preview is scored against
+ * the *exact* geometry that would be stored.
+ */
+export const findMatchCandidates = query({
+  args: { activityId: v.id('gpsActivities'), name: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const profile = await requireProfile(ctx);
+    const activity = await ctx.db.get(args.activityId);
+    if (!activity) throw new ConvexError('Activity not found');
+    if (activity.userId !== profile._id) throw new ConvexError('Not your activity');
+    if (activity.path?.type !== 'LineString') {
+      return { status: 'clean' as const, derivable: false, matches: [] };
+    }
+    const derived = pathToBody(activity.path as LineString);
+    if (derived === null) return { status: 'clean' as const, derivable: false, matches: [] };
+
+    const { status, matches } = await scoreAgainstNearby(ctx, {
+      name: args.name ?? '',
+      geometry: derived.polygon,
+      centroid: derived.centroid,
+      bbox: derived.bbox,
+    });
+
+    return {
+      status,
+      derivable: true,
+      surfaceAreaSqM: derived.surfaceAreaSqM,
+      matches: await Promise.all(
+        matches.map(async (m) => {
+          const body = await ctx.db.get(m.ref);
+          return {
+            waterBodyId: m.ref,
+            name: body?.name ?? '',
+            official: m.official,
+            verdict: m.verdict,
+            centroidDistanceM: Math.round(m.centroidDistanceM),
+          };
+        }),
+      ),
+    };
   },
 });
 
@@ -978,10 +1101,18 @@ export const listDedupCandidates = query({
   args: {},
   handler: async (ctx) => {
     await requireRole(ctx, 'moderator');
-    const rows = await ctx.db
+    // Both match-on-create tiers land in the queue, near-certain first (D36) — a body flagged as
+    // almost certainly a duplicate is the one a moderator should merge before anything else, and
+    // before more reports accumulate on the wrong row.
+    const nearCertain = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'near_certain'))
+      .take(100);
+    const suspected = await ctx.db
       .query('waterBodies')
       .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'suspected_duplicate'))
-      .take(100);
+      .take(100 - nearCertain.length);
+    const rows = [...nearCertain, ...suspected];
     return Promise.all(
       rows.map(async (body) => {
         const candidates = await Promise.all(

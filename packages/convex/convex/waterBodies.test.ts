@@ -99,12 +99,55 @@ async function seedUser(
   return t.withIdentity({ subject });
 }
 
-describe('waterBodies.create', () => {
+/**
+ * Seed a recorded skate for `subject` and return the `create` args derived from it.
+ *
+ * Phase 8 made `waterBodies.create` **path-only** (D14/D36): the client cannot supply a polygon at
+ * all — the server derives it from a trusted GPS track. So every create test now needs a real
+ * recorded activity behind it, which is the point: there is no way to mint a body without one.
+ *
+ * The track is a ~1 km line well away from the fixtures at 0..1, so it never dedup-matches them.
+ */
+async function seedTrackCreateArgs(
+  t: ReturnType<typeof convexTest>,
+  subject: string,
+  overrides: { name?: string; lat?: number; lng?: number } = {},
+) {
+  const lat = overrides.lat ?? 20;
+  const lng = overrides.lng ?? 20;
+  const profiles = await t.run((ctx) => ctx.db.query('profiles').collect());
+  const profile = profiles.find((p) => p.clerkUserId === subject);
+  if (!profile) throw new Error(`no profile for ${subject}`);
+  const activityId = await t.run((ctx) =>
+    ctx.db.insert('gpsActivities', {
+      userId: profile._id,
+      provider: 'native' as const,
+      providerActivityId: `track-${subject}-${lat}-${lng}`,
+      sportType: 'IceSkate',
+      startTime: Date.now() - 3_600_000,
+      endTime: Date.now(),
+      path: {
+        type: 'LineString' as const,
+        coordinates: Array.from({ length: 12 }, (_, i) => [lng + i * 0.001, lat]),
+      },
+      promptState: 'pending' as const,
+      detectedAt: Date.now(),
+    }),
+  );
+  return {
+    name: overrides.name ?? 'Lake Morey',
+    type: 'lake' as const,
+    activityId,
+    confirmedNew: true,
+  };
+}
+
+describe('waterBodies.create (path-only, D14/D36)', () => {
   test('rejects unauthenticated callers', async () => {
     const t = convexTestWithGeo();
-    await expect(t.mutation(api.waterBodies.create, SAMPLE_BODY)).rejects.toThrow(
-      /not authenticated/i,
-    );
+    await seedUser(t, 'clerk_member');
+    const args = await seedTrackCreateArgs(t, 'clerk_member');
+    await expect(t.mutation(api.waterBodies.create, args)).rejects.toThrow(/not authenticated/i);
   });
 
   test('rejects a minor — read-only (D41)', async () => {
@@ -136,66 +179,147 @@ describe('waterBodies.create', () => {
       }),
     );
     const asMinor = t.withIdentity({ subject: 'clerk_minor' });
-    await expect(asMinor.mutation(api.waterBodies.create, SAMPLE_BODY)).rejects.toThrow(
-      /under 18/i,
-    );
+    const args = await seedTrackCreateArgs(t, 'clerk_minor');
+    await expect(asMinor.mutation(api.waterBodies.create, args)).rejects.toThrow(/under 18/i);
   });
 
   test('rejects a banned account (status gate, D37)', async () => {
     const t = convexTestWithGeo();
     const asBanned = await seedUser(t, 'clerk_banned', 'member', 'banned');
-    await expect(asBanned.mutation(api.waterBodies.create, SAMPLE_BODY)).rejects.toThrow(
-      /not active/i,
-    );
+    const args = await seedTrackCreateArgs(t, 'clerk_banned');
+    await expect(asBanned.mutation(api.waterBodies.create, args)).rejects.toThrow(/not active/i);
   });
 
   test('rejects an account under active suspension (D37)', async () => {
     const t = convexTestWithGeo();
     const future = Date.now() + 7 * 24 * 60 * 60 * 1000;
     const asSuspended = await seedUser(t, 'clerk_susp', 'member', 'suspended', future);
-    await expect(asSuspended.mutation(api.waterBodies.create, SAMPLE_BODY)).rejects.toThrow(
-      /suspended/i,
-    );
+    const args = await seedTrackCreateArgs(t, 'clerk_susp');
+    await expect(asSuspended.mutation(api.waterBodies.create, args)).rejects.toThrow(/suspended/i);
   });
 
   test('allows an account whose suspension has lapsed (D37)', async () => {
     const t = convexTestWithGeo();
     const past = Date.now() - 1000;
     const asLapsed = await seedUser(t, 'clerk_lapsed', 'member', 'suspended', past);
-    await expect(asLapsed.mutation(api.waterBodies.create, SAMPLE_BODY)).resolves.toBeDefined();
+    const args = await seedTrackCreateArgs(t, 'clerk_lapsed');
+    await expect(asLapsed.mutation(api.waterBodies.create, args)).resolves.toBeDefined();
   });
 
-  test('rejects a malformed (non-GeoJSON) polygon at the validator boundary (D5)', async () => {
+  test('a client CANNOT supply geometry at all — there is no freehand path into the map', async () => {
     const t = convexTestWithGeo();
     const asMember = await seedUser(t, 'clerk_member');
+    const args = await seedTrackCreateArgs(t, 'clerk_member');
+    // The old contract took a client polygon and validated its shape. The Phase 8 contract doesn't
+    // take one, so a hand-drawn blob is rejected by the arg validator before any handler logic runs
+    // — the "no freehand drawing, ever" rule enforced at the trust boundary rather than in the UI.
     await expect(
       asMember.mutation(api.waterBodies.create, {
-        ...SAMPLE_BODY,
-        // Deliberately invalid geometry — cast past the arg type to exercise the
-        // runtime validator (the whole point of the structured `geoJson` union).
-        polygon: { type: 'Blob', coordinates: [] } as unknown as (typeof SAMPLE_BODY)['polygon'],
-      }),
+        ...args,
+        polygon: { type: 'Polygon', coordinates: [] },
+      } as unknown as typeof args),
     ).rejects.toThrow();
   });
 
-  test('a member creates a pending, user-sourced body attributed to them', async () => {
+  test('rejects a skate that is not yours, and one with no recorded path', async () => {
+    const t = convexTestWithGeo();
+    await seedUser(t, 'clerk_owner');
+    const asOther = await seedUser(t, 'clerk_other');
+    const owned = await seedTrackCreateArgs(t, 'clerk_owner');
+    await expect(asOther.mutation(api.waterBodies.create, owned)).rejects.toThrow(
+      /Not your activity/i,
+    );
+
+    const pathless = await seedTrackCreateArgs(t, 'clerk_other', { lat: 25, lng: 25 });
+    await t.run((ctx) => ctx.db.patch(pathless.activityId, { path: undefined }));
+    await expect(asOther.mutation(api.waterBodies.create, pathless)).rejects.toThrow(
+      /no recorded path/i,
+    );
+  });
+
+  test('rejects a skate that already resolved to a known lake', async () => {
     const t = convexTestWithGeo();
     const asMember = await seedUser(t, 'clerk_member');
+    const args = await seedTrackCreateArgs(t, 'clerk_member');
+    const existing = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Known',
+        type: 'lake' as const,
+        source: 'osm' as const,
+        polygon: SAMPLE_BODY.polygon,
+        bbox: SAMPLE_BODY.bbox,
+        centroid: SAMPLE_BODY.centroid,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    await t.run((ctx) => ctx.db.patch(args.activityId, { waterBodyId: existing }));
+    await expect(asMember.mutation(api.waterBodies.create, args)).rejects.toThrow(
+      /already resolved/i,
+    );
+  });
 
-    const id = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY);
+  test('a member creates a pending, user-sourced body whose shape came from their track', async () => {
+    const t = convexTestWithGeo();
+    const asMember = await seedUser(t, 'clerk_member');
+    const args = await seedTrackCreateArgs(t, 'clerk_member');
+
+    const id = await asMember.mutation(api.waterBodies.create, args);
     const body = await t.run((ctx) => ctx.db.get(id));
 
     expect(body?.source).toBe('user');
     expect(body?.reviewStatus).toBe('pending');
     expect(body?.dedupStatus).toBe('clean');
     expect(body?.name).toBe('Lake Morey');
+    // The geometry is derived, not supplied — a real polygon around where they actually skated.
+    expect(body?.polygon.type).toBe('Polygon');
+    expect(body?.surfaceAreaSqM ?? 0).toBeGreaterThan(0);
+    // ...and the skate is now bound to the water it discovered, so the report flow carries on.
+    const activity = await t.run((ctx) => ctx.db.get(args.activityId));
+    expect(activity?.waterBodyId).toBe(id);
+  });
+
+  test('refuses to mint a duplicate silently — the user must say "none of these" (D36)', async () => {
+    const t = convexTestWithGeo();
+    const asMember = await seedUser(t, 'clerk_member');
+    const first = await seedTrackCreateArgs(t, 'clerk_member', { name: 'Hidden Pond' });
+    await asMember.mutation(api.waterBodies.create, first);
+
+    // A second skate over the same water, without the explicit confirmation.
+    const second = await seedTrackCreateArgs(t, 'clerk_member', {
+      name: 'Hidden Pond',
+      lat: 20.0005,
+    });
+    await expect(
+      asMember.mutation(api.waterBodies.create, { ...second, confirmedNew: false }),
+    ).rejects.toThrow(/already know about/i);
+  });
+
+  test('stamps the dedup verdict + candidates even when the user confirms it is new — this is what feeds the merge queue', async () => {
+    const t = convexTestWithGeo();
+    const asMember = await seedUser(t, 'clerk_member');
+    const first = await seedTrackCreateArgs(t, 'clerk_member', { name: 'Hidden Pond' });
+    const firstId = await asMember.mutation(api.waterBodies.create, first);
+
+    const second = await seedTrackCreateArgs(t, 'clerk_member', {
+      name: 'Hidden Pond',
+      lat: 20.0005,
+    });
+    const secondId = await asMember.mutation(api.waterBodies.create, second);
+    const body = await t.run((ctx) => ctx.db.get(secondId));
+
+    expect(body?.dedupStatus).not.toBe('clean');
+    expect(body?.duplicateCandidateIds).toContain(firstId);
+    // ...and it is STILL listed: hiding it would take reports filed against it off the map on a
+    // machine's guess (D3). A moderator merges it; the classifier never does.
+    expect(body?.removedAt).toBeUndefined();
   });
 });
 
 describe('waterBodies.approve (role gating + audit log, D37)', () => {
   async function seedPendingBody(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodies'>> {
     const asMember = await seedUser(t, 'clerk_member');
-    return asMember.mutation(api.waterBodies.create, SAMPLE_BODY);
+    return asMember.mutation(api.waterBodies.create, await seedTrackCreateArgs(t, 'clerk_member'));
   }
 
   test('a member cannot approve', async () => {
@@ -291,7 +415,10 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
   test('a pending user body is auto-visible (D37/D48) and stays visible after approval', async () => {
     const t = convexTestWithGeo();
     const asMember = await seedUser(t, 'clerk_member');
-    const bodyId = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY);
+    const bodyId = await asMember.mutation(
+      api.waterBodies.create,
+      await seedTrackCreateArgs(t, 'clerk_member', { lat: 0.5, lng: 0.5 }),
+    );
 
     // D48 fix: a fresh (pending) user body is listed immediately — not hidden until approved.
     const whilePending = await t.query(api.waterBodies.listInViewport, {
@@ -312,7 +439,10 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
   test('excludes a body whose bbox does not intersect the viewport', async () => {
     const t = convexTestWithGeo();
     const asMember = await seedUser(t, 'clerk_member');
-    await asMember.mutation(api.waterBodies.create, SAMPLE_BODY);
+    await asMember.mutation(
+      api.waterBodies.create,
+      await seedTrackCreateArgs(t, 'clerk_member', { lat: 0.5, lng: 0.5 }),
+    );
 
     const elsewhere = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_ELSEWHERE,
@@ -515,15 +645,16 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     const asMember = await seedUser(t, 'clerk_member');
     const asMod = await seedUser(t, 'clerk_mod', 'moderator');
 
-    // Inside VIEWPORT_CONTAINING (centroid 0.5, 0.5).
-    const insideId = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY);
-    // Outside: centroid at (50, 50).
-    const outsideId = await asMember.mutation(api.waterBodies.create, {
-      ...SAMPLE_BODY,
-      name: 'Far Pond',
-      bbox: { minLat: 49, minLng: 49, maxLat: 51, maxLng: 51 },
-      centroid: { lat: 50, lng: 50 },
-    });
+    // Inside VIEWPORT_CONTAINING — a skate at (0.5, 0.5) derives a body there.
+    const insideId = await asMember.mutation(
+      api.waterBodies.create,
+      await seedTrackCreateArgs(t, 'clerk_member', { lat: 0.5, lng: 0.5 }),
+    );
+    // Outside: a skate at (50, 50).
+    const outsideId = await asMember.mutation(
+      api.waterBodies.create,
+      await seedTrackCreateArgs(t, 'clerk_member', { name: 'Far Pond', lat: 50, lng: 50 }),
+    );
     await asMod.mutation(api.waterBodies.approve, { waterBodyId: insideId });
     await asMod.mutation(api.waterBodies.approve, { waterBodyId: outsideId });
 
@@ -781,11 +912,14 @@ describe('waterBodies.listPendingReview', () => {
   test('a moderator sees pending bodies but not approved ones', async () => {
     const t = convexTestWithGeo();
     const asMember = await seedUser(t, 'clerk_member');
-    const pendingId = await asMember.mutation(api.waterBodies.create, SAMPLE_BODY);
-    const otherId = await asMember.mutation(api.waterBodies.create, {
-      ...SAMPLE_BODY,
-      name: 'Joes Pond',
-    });
+    const pendingId = await asMember.mutation(
+      api.waterBodies.create,
+      await seedTrackCreateArgs(t, 'clerk_member', { lat: 0.5, lng: 0.5 }),
+    );
+    const otherId = await asMember.mutation(
+      api.waterBodies.create,
+      await seedTrackCreateArgs(t, 'clerk_member', { name: 'Joes Pond', lat: 30, lng: 30 }),
+    );
 
     const asMod = await seedUser(t, 'clerk_mod', 'moderator');
     await asMod.mutation(api.waterBodies.approve, { waterBodyId: otherId });
@@ -1223,5 +1357,72 @@ describe('waterBodies.resolveBodyForCoord (F2 offline flush / coord→lake)', ()
       coord: { lat: 0.5, lng: 0.5 },
     });
     expect(res).toBeNull();
+  });
+});
+
+describe('waterBodies.findMatchCandidates (the "attach here?" steer, D36)', () => {
+  test('returns no matches on genuinely new water, and reports the derived area', async () => {
+    const t = convexTestWithGeo();
+    const asMember = await seedUser(t, 'clerk_member');
+    const args = await seedTrackCreateArgs(t, 'clerk_member', { lat: 60, lng: 60 });
+
+    const result = await asMember.query(api.waterBodies.findMatchCandidates, {
+      activityId: args.activityId,
+      name: 'Somewhere New',
+    });
+    expect(result.status).toBe('clean');
+    expect(result.derivable).toBe(true);
+    expect(result.matches).toEqual([]);
+    expect(result.surfaceAreaSqM ?? 0).toBeGreaterThan(0);
+  });
+
+  test('ranks nearby existing water as candidates, scored against the shape that WOULD be stored', async () => {
+    const t = convexTestWithGeo();
+    const asMember = await seedUser(t, 'clerk_member');
+    const first = await seedTrackCreateArgs(t, 'clerk_member', { name: 'Hidden Pond', lat: 61 });
+    await asMember.mutation(api.waterBodies.create, first);
+
+    const second = await seedTrackCreateArgs(t, 'clerk_member', { lat: 61.0005 });
+    const result = await asMember.query(api.waterBodies.findMatchCandidates, {
+      activityId: second.activityId,
+      name: 'Hidden Pond',
+    });
+    expect(result.status).not.toBe('clean');
+    expect(result.matches.length).toBeGreaterThan(0);
+    expect(result.matches[0]?.name).toBe('Hidden Pond');
+    expect(result.matches[0]?.centroidDistanceM).toBeGreaterThanOrEqual(0);
+  });
+
+  test('reports a track it cannot derive a body from, rather than throwing', async () => {
+    const t = convexTestWithGeo();
+    const asMember = await seedUser(t, 'clerk_member');
+    const args = await seedTrackCreateArgs(t, 'clerk_member', { lat: 62 });
+    // A "skate" that never moved — the parking-lot pond `pathToBody` refuses to invent.
+    await t.run((ctx) =>
+      ctx.db.patch(args.activityId, {
+        path: {
+          type: 'LineString' as const,
+          coordinates: [
+            [62, 62],
+            [62, 62],
+          ],
+        },
+      }),
+    );
+    const result = await asMember.query(api.waterBodies.findMatchCandidates, {
+      activityId: args.activityId,
+    });
+    expect(result.derivable).toBe(false);
+    expect(result.matches).toEqual([]);
+  });
+
+  test("refuses to preview someone else's skate", async () => {
+    const t = convexTestWithGeo();
+    await seedUser(t, 'clerk_owner');
+    const asOther = await seedUser(t, 'clerk_other');
+    const owned = await seedTrackCreateArgs(t, 'clerk_owner', { lat: 63 });
+    await expect(
+      asOther.query(api.waterBodies.findMatchCandidates, { activityId: owned.activityId }),
+    ).rejects.toThrow(/Not your activity/i);
   });
 });

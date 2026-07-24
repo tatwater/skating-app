@@ -43,7 +43,17 @@ export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const;
 export const ADMIN_AREA_LEVELS = ['state', 'county', 'town'] as const;
 
 /** Dedup state for user-created water bodies (D36). */
-export const DEDUP_STATUSES = ['clean', 'suspected_duplicate', 'merged'] as const;
+/**
+ * Dedup lifecycle (D36). `near_certain` is the top match-on-create tier — kept distinct from
+ * `suspected_duplicate` so the moderator queue can put the obvious ones first, and because the two
+ * mean genuinely different things ("these might be the same water" vs "these are almost certainly
+ * the same water"). Adding a member to the union is migration-free: no stored row carries it yet.
+ *
+ * A `near_certain` body is still **listed** (`isListed`) — it is auto-visible then reviewed (D37).
+ * Hiding it would take any reports and hazards filed against it off the map on a machine's guess,
+ * which is exactly the never-hide line we don't cross (D3).
+ */
+export const DEDUP_STATUSES = ['clean', 'suspected_duplicate', 'near_certain', 'merged'] as const;
 
 /** Why an admin soft-delisted a water body — reversible, never a hard delete (D48). */
 export const REMOVAL_REASONS = [
