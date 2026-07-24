@@ -20,6 +20,8 @@ import { cn } from '@/lib/utils';
 import { Card, CardContent } from '../ui/card';
 import { CHART_TOKENS, type ChartStatus, chartSeries, statusColor } from './palette';
 
+export type { ChartStatus };
+
 /**
  * The operator chart kit (Phase 7b) — thin, themed wrappers over Recharts (the shadcn `chart` house
  * choice), one per data shape the analytics layer produces: a time series, a histogram, a composition,

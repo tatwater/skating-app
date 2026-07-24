@@ -18,6 +18,17 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
   })) as typeof window.matchMedia;
 }
 
+// jsdom has no `ResizeObserver`; Recharts' `ResponsiveContainer` constructs one on mount. A no-op stub
+// lets the admin charts mount under test — they render at a 0×0 measured size, which is fine because
+// the DOM tests assert scaffolding (legend, table, empty states), not pixel geometry.
+if (typeof globalThis.ResizeObserver === 'undefined') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+
 // We run Vitest without global injection (tests import describe/it/expect explicitly), so
 // Testing Library's automatic afterEach cleanup doesn't self-register — do it here, or rendered
 // trees leak across tests and duplicate-match queries.
