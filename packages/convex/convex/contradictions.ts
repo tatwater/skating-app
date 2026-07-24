@@ -139,6 +139,17 @@ async function flagContradictionPattern(
     status: 'open',
     createdAt: Date.now(),
   });
+  // Safety-priority alert (D38): the auto-flag lands in the priority lane; email the founder to review
+  // the good-vs-bad trend and decide the D57 lever. Fire-and-forget; no-ops without Resend keys.
+  await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
+    subject: 'Safety flag: contradiction pattern',
+    heading: 'New safety flag · contradiction pattern',
+    lines: [
+      'A contributor crossed the contradiction threshold (weather-unexplained, un-corroborated).',
+      'Review their tenure-aware good-vs-bad trend before acting.',
+    ],
+    deepLinkPath: '/admin/flags',
+  });
 }
 
 /** The settled per-report verdict the action hands the mutation to apply. */

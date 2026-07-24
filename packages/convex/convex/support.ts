@@ -10,6 +10,7 @@
  */
 
 import { ConvexError, v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
 import { getCurrentProfile, requireRole } from './lib/auth';
@@ -117,7 +118,7 @@ export const create = mutation({
     if (trimmed.length > MAX_BODY_LENGTH) throw new ConvexError('Message is too long');
     const profile = await getCurrentProfile(ctx);
 
-    return ctx.db.insert('supportTickets', {
+    const ticketId = await ctx.db.insert('supportTickets', {
       ...(profile ? { userId: profile._id } : {}),
       category,
       body: trimmed,
@@ -125,6 +126,18 @@ export const create = mutation({
       ...(context !== undefined ? { context } : {}),
       createdAt: Date.now(),
     });
+
+    // Alert the founder on every new ticket (D38) — fire-and-forget; no-ops without Resend keys.
+    await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
+      subject: `New ${category} ticket`,
+      heading: `New support ticket · ${category}`,
+      lines: [
+        profile ? `From @${profile.username}` : 'From an anonymous / pre-auth user',
+        trimmed.length > 200 ? `${trimmed.slice(0, 200)}…` : trimmed,
+      ],
+      deepLinkPath: '/admin/support',
+    });
+    return ticketId;
   },
 });
 
