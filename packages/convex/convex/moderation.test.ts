@@ -266,4 +266,90 @@ describe('moderation.resolveFlag', () => {
     expect(audits).toHaveLength(1);
     expect(audits[0]).toMatchObject({ action: 'resolve_flag', targetType: 'contentFlag' });
   });
+
+  test('counts the disposition by flag reason — the enforcement funnel’s last stage (Phase 7b)', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const flagger = await seedUser(t, 'f');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reportId = await seedReport(t, author.id);
+
+    const upheld = await flagger.as.mutation(api.contentFlags.flag, {
+      targetType: 'report',
+      targetId: reportId,
+      reason: 'unsafe_false_report',
+    });
+    await mod.as.mutation(api.moderation.resolveFlag, {
+      flagId: upheld,
+      resolution: 'actioned',
+      reason: 'genuinely dangerous',
+    });
+
+    const otherReport = await seedReport(t, author.id);
+    const dismissed = await flagger.as.mutation(api.contentFlags.flag, {
+      targetType: 'report',
+      targetId: otherReport,
+      reason: 'auto_low_quality',
+    });
+    await mod.as.mutation(api.moderation.resolveFlag, {
+      flagId: dismissed,
+      resolution: 'dismissed',
+      reason: 'fine, just unpopular',
+    });
+
+    // Keyed by reason, not just by outcome: that's what turns a workload stat into a tuning signal —
+    // mostly-dismissed `auto_low_quality` indicts AUTO_LOW_QUALITY_NET_UNHELPFUL, and mostly-dismissed
+    // `unsafe_false_report` indicts CONTRADICTION_FLAG_THRESHOLD.
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query('metricSnapshots')
+        .withIndex('by_metric_date', (q) => q.eq('metric', 'flag_dispositions'))
+        .collect(),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.meta).toEqual({
+      'unsafe_false_report:actioned': 1,
+      'auto_low_quality:dismissed': 1,
+    });
+  });
+
+  test('re-resolving a terminal flag is rejected — no second audit row or double-counted disposition', async () => {
+    const t = convexTest(schema, modules);
+    const author = await seedUser(t, 'a');
+    const flagger = await seedUser(t, 'f');
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const reportId = await seedReport(t, author.id);
+    const flagId = await flagger.as.mutation(api.contentFlags.flag, {
+      targetType: 'report',
+      targetId: reportId,
+      reason: 'unsafe_false_report',
+    });
+
+    await mod.as.mutation(api.moderation.resolveFlag, {
+      flagId,
+      resolution: 'actioned',
+      reason: 'genuinely dangerous',
+    });
+
+    // A stale queue view re-submits the same flag — now under the opposite outcome.
+    await expect(
+      mod.as.mutation(api.moderation.resolveFlag, {
+        flagId,
+        resolution: 'dismissed',
+        reason: 'changed my mind',
+      }),
+    ).rejects.toThrow(/already been resolved/i);
+
+    // The first ruling stands; nothing was written twice or recorded under both outcomes.
+    expect((await t.run((ctx) => ctx.db.get(flagId)))?.status).toBe('actioned');
+    const audits = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(audits).toHaveLength(1);
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query('metricSnapshots')
+        .withIndex('by_metric_date', (q) => q.eq('metric', 'flag_dispositions'))
+        .collect(),
+    );
+    expect(rows[0]?.meta).toEqual({ 'unsafe_false_report:actioned': 1 });
+  });
 });

@@ -2,11 +2,13 @@ import { api } from '@skating/convex/api';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { AdminEmpty, AdminPageHeader, StatTile, Table, Td, Th } from '../components/admin/adminUi';
+import { ScalarTrend } from '../components/admin/MetricCharts';
+import { useRole } from '../lib/useRole';
 
 /**
- * Operator dashboard (D37) — queue depths at a glance + the recent-actions audit feed. The app-health
- * strip and tuning charts land with the analytics commit (they need the `metricSnapshots` rollups);
- * everything here is computable live off bounded indexes.
+ * Operator dashboard (D37) — queue depths at a glance, the app-health strip, and the recent-actions
+ * audit feed. Queue depths are computed live off bounded indexes; the app-health trends read the daily
+ * `metricSnapshots` rollups (admin-only, so a moderator sees everything else but not the strip).
  */
 export const Route = createFileRoute('/admin/')({ component: AdminDashboard });
 
@@ -21,6 +23,7 @@ function timeAgo(ts: number): string {
 }
 
 function AdminDashboard() {
+  const { isAdmin } = useRole();
   const flags = useQuery(api.moderation.listFlags, {});
   const pending = useQuery(api.waterBodies.listPendingReview, {});
   const dedup = useQuery(api.waterBodies.listDedupCandidates, {});
@@ -62,6 +65,36 @@ function AdminDashboard() {
           Review water bodies →
         </Link>
       </div>
+
+      {/* App-health strip (D37) — "how's it going" context every operator wants. Admin-only because it
+          reads the metric rollups; a moderator sees the queues above but not the trends. */}
+      {isAdmin ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
+            App health · last 30 days
+          </h2>
+          <div className="grid gap-3 lg:grid-cols-3">
+            <ScalarTrend
+              title="Reports"
+              description="Visible reports per day, by skate-end time."
+              metrics={[{ key: 'reports_created', label: 'Reports' }]}
+              height={160}
+            />
+            <ScalarTrend
+              title="New accounts"
+              description="Signups per day."
+              metrics={[{ key: 'signups', label: 'Signups' }]}
+              height={160}
+            />
+            <ScalarTrend
+              title="Active contributors"
+              description="Distinct authors posting in the trailing 7 days."
+              metrics={[{ key: 'active_contributors', label: 'Contributors' }]}
+              height={160}
+            />
+          </div>
+        </section>
+      ) : null}
 
       <section className="flex flex-col gap-2">
         <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">

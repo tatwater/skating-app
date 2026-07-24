@@ -1,8 +1,10 @@
 # Phase 7 — Operator surface (admin, moderation, dedup review, analytics)
 
-> **Status:** 📋 Planned (2026-07-23). Detailed build plan for the roadmap's Phase 7 (D37/D38 +
-> the D49/D52/D56/D57 tuning surfaces). Decisions settled with the founder in the 2026-07-23
-> planning session — see **Settled decisions** below.
+> **Status:** ✅ Complete on dev (prod deferred), 2026-07-24. PR 7a (operator core) merged as #24;
+> PR 7b (analytics & tuning) on branch `phase-7b-analytics-tuning`. All green: core 653 / convex 480 /
+> web 152 / mobile 76. Detailed build plan for the roadmap's Phase 7 (D37/D38 + the D49/D52/D56/D57
+> tuning surfaces). Decisions settled with the founder in the 2026-07-23 planning session — see
+> **Settled decisions** below; **build deltas are recorded in `07-roadmap.md` → Phase 7**.
 >
 > **The one-line shape:** a **role-gated `/admin` route tree inside the existing web app** (D37 — not
 > a second app), mobile-responsive but web-only (no Expo surface), organized as **work queues +
@@ -306,13 +308,22 @@ mutations gate at moderator; role-grant/revoke and support/tuning stay admin. Ev
    water bodies, hazards, photos) — same server-gated mutations, web only.
 9. Resend action + React Email templates behind **placeholder env** (no-op without key).
 
-**PR 7b — Analytics & tuning**
-8. `bountyGateEvents` table + instrument `bounties.createChecked`.
-9. `metricSnapshots` table + daily rollup cron.
-10. shadcn `chart` component wired into the UI kit.
-11. `_admin.index` dashboard (KPI tiles + queue depths + app-health strip).
-12. `_admin.tuning` control-room (read-only constants + companion `[CORE]` charts).
-13. Contributor-trust panel (tenure-aware good-vs-bad trend) on `_admin.users.$id`.
+**PR 7b — Analytics & tuning** *(built as 7 commits, 2026-07-24)*
+1. `metricSnapshots` + `bountyGateEvents` schema + the `@skating/core` metric vocabulary + write helpers.
+2. Instrument the bounty gate — refactor `createChecked` from throw-to-reject into a returned decision
+   so `suppressed`/`capped` events survive the transaction; append one gate event per attempt.
+3. Maintain-on-write counters for the events that leave no trace (contradiction funnel, flag
+   dispositions, future-skate-time rejections via a narrow client signal).
+4. `analyticsRollup.ts` — the 6-hourly rollup + weekly corpus sweep + daily gate-event prune + backfill.
+5. The admin read layer (`series`/`latest`/`catalogue`/`bountyGateScatter`) + the tenure-aware
+   `contributorTrend`.
+6. The themed Recharts chart kit (dataviz-validated palette) in `components/charts/`.
+7. `admin.index` app-health strip + `admin.tuning` control-room + the contributor-trend panel on
+   `admin.users.$id`.
+
+**Naming note:** 7a shipped the route tree as **pathful `admin.*.tsx`** files (not the pathless
+`_admin.*.tsx` sketched below) — TanStack resolves the gate + chrome from `admin.tsx` all the same.
+Follow the code.
 
 ---
 
@@ -345,9 +356,16 @@ The Phase-7 merge UI should degrade gracefully to an empty queue until then.
 - Give convex-test/property suites explicit longer timeouts (CI 5s default flakes — see memory).
 - Web: role-gate redirect for non-operators; a11y + dark-mode pass on charts (D34).
 
-## Open questions to settle at build kickoff
+## Open questions — settled during the build
 
-- **Snapshot granularity/retention** for `metricSnapshots` (daily forever is fine at alpha scale; revisit
-  if it grows).
-- **Clerk lock mechanism** — confirm the Backend API call to lock/ban a user (the `clerk-backend-api`
-  skill covers this) and that unbanning fully reverses it.
+- **Snapshot granularity/retention** for `metricSnapshots`: **daily rows, kept forever** (one row per
+  metric per day is tiny; revisit only if it grows). `bountyGateEvents` — the one append-per-attempt
+  table — is **pruned at 180d** by the daily cron, both to bound storage and because it carries
+  `requesterId` (don't keep a permanent behavioural record). Days are UTC (`metricDay`).
+- **Clerk lock mechanism** — resolved in 7a (`banUser`/`unbanUser` lock/unlock the Clerk user via the
+  Backend API from a Convex action; unban fully reverses). Not touched in 7b.
+- **Metric channels** (settled during 7b): three ways a number enters the surface — a **rollup** (cron,
+  backfillable), a **maintain-on-write counter** (event site, forward-only, for events that leave no
+  queryable trace), and a narrow **client signal** (`analytics.recordClientSignal`, allowlisted +
+  authenticated, only for the future-skate rejection the server can't see). Nothing that gates content,
+  trust, or moderation is ever client-reported.

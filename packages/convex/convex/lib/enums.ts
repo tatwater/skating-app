@@ -166,6 +166,14 @@ export const SUPPORT_STATUSES = ['open', 'in_progress', 'resolved'] as const;
 /** Bounty lifecycle (D17). */
 export const BOUNTY_STATUSES = ['open', 'fulfilled', 'expired', 'cancelled'] as const;
 
+/**
+ * What the bounty-create gate decided (Phase 7b analytics). One row per *attempt* — including the two
+ * rejections, which is the whole point: a gate you only observe when it passes tells you nothing about
+ * whether it's set right. `suppressed` = a recent report still counted as fresh eyes (decision 8);
+ * `capped` = the requester already holds MAX_OPEN_BOUNTIES_PER_DAY (decision 7).
+ */
+export const BOUNTY_GATE_DECISIONS = ['allowed', 'suppressed', 'capped'] as const;
+
 /** Helpful/unhelpful thumb on a report (D17). */
 export const RATING_VERDICTS = ['helpful', 'unhelpful'] as const;
 

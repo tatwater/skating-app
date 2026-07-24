@@ -21,6 +21,7 @@ import {
   BOUNTY_REOPEN_FREEZING_DEGREE_HOURS,
   BOUNTY_REOPEN_THAW_DEGREE_HOURS,
   bboxIntersects,
+  bountyFreshWindowHours,
   DEFAULT_BOUNTY_LIFETIME_MS,
   DEFAULT_BOUNTY_REWARD_POINTS,
   FRESH_REPORT_HOURS,
@@ -81,88 +82,156 @@ async function recentReports(
 }
 
 /**
- * One recent report that suppresses a bounty on the **base (weather-free)** gate — the candidate set both
- * the freshness query (which fetches each one's weather) and the transactional create-check (which
- * re-decides at commit) work from. Carries `reportId` so a weather verdict can be tied back to its report.
+ * One recent report weighed by the **base (weather-free)** freshness gate. Both the freshness query
+ * (which fetches each suppressor's weather) and the transactional create-check (which re-decides at
+ * commit) work from these. Carries `reportId` so a weather verdict can be tied back to its report, and
+ * `windowH` so the analytics log can record the window the gate *actually applied* rather than the
+ * base constant (Phase 7b — that pair is one dot on the suppression scatter).
  */
-interface SuppressorCandidate {
+interface EvaluatedReport {
   reportId: Id<'reports'>;
   skateEndTime: number;
   netThumbs: number;
   trustClass: ReturnType<typeof trustClassFor>;
+  /** The trust/thumbs-weighted freshness window applied to this report, in hours. */
+  windowH: number;
 }
 
 /**
- * The body's baseline (weather-free) bounty suppressors: recent visible reports, newest-first, each
- * weighted by author trust + net thumbs, kept only if they suppress **without** weather and capped at
- * `BOUNTY_FRESH_MAX_REPORTS`. Weather only ever *shrinks* a report's freshness window (a big freeze/thaw
- * **reopens** a bounty, D56), so a report that doesn't suppress even weather-free can never suppress with
- * it — dropping it here is safe and bounds both the action's weather fetch and this scan. Reads only, so
- * it's shared by the `bountyFreshnessInputs` query and the `createChecked` mutation (§7c).
+ * The body's baseline (weather-free) freshness verdict: recent visible reports, newest-first, each
+ * weighted by author trust + net thumbs.
  *
- * Newest-first matters twice: the freshest suppressor has the shortest weather window (most robust to a
- * reopen), and capping on *suppressors* rather than raw recency stops a strong OLDER read from being
+ * `suppressors` are the ones that suppress **without** weather, capped at `BOUNTY_FRESH_MAX_REPORTS`.
+ * Weather only ever *shrinks* a report's freshness window (a big freeze/thaw **reopens** a bounty,
+ * D56), so a report that doesn't suppress even weather-free can never suppress with it — dropping it
+ * is safe and bounds both the action's weather fetch and this scan. Reads only, so it's shared by the
+ * `bountyFreshnessInputs` query and the `createChecked` mutation (§7c).
+ *
+ * `newest` is the freshest recent report **whether or not it suppresses** — carried purely for the
+ * gate log (Phase 7b). Without it the suppression scatter would only ever plot blocked attempts, and
+ * "dots below the line = allowed" would be empty by construction: an allowed attempt usually has no
+ * suppressors at all, so the closest call is the only honest reference point it has.
+ *
+ * Newest-first matters twice: the freshest suppressor has the shortest weather window (most robust to
+ * a reopen), and capping on *suppressors* rather than raw recency stops a strong OLDER read from being
  * crowded out of the cap by fresher-but-expired reads (the newest-N-of-all bug).
  */
-async function suppressingCandidates(
+async function evaluateFreshness(
   ctx: QueryCtx,
   body: Doc<'waterBodies'>,
   now: number,
-): Promise<SuppressorCandidate[]> {
+): Promise<{ suppressors: EvaluatedReport[]; newest: EvaluatedReport | null }> {
   const maxWindowMs = FRESH_REPORT_HOURS * BOUNTY_FRESH_MAX_MULTIPLIER * HOUR_MS;
   const recent = await recentReports(ctx, body._id, now - maxWindowMs);
   const newestFirst = [...recent].sort((a, b) => b.skateEndTime - a.skateEndTime);
 
-  const candidates: SuppressorCandidate[] = [];
+  const suppressors: EvaluatedReport[] = [];
+  let newest: EvaluatedReport | null = null;
   for (const r of newestFirst) {
-    if (candidates.length >= BOUNTY_FRESH_MAX_REPORTS) break;
+    if (suppressors.length >= BOUNTY_FRESH_MAX_REPORTS) break;
     const author = await ctx.db.get(r.authorId);
     const { helpful, unhelpful } = await tallyThumbs(ctx, 'report', r._id);
     const netThumbs = helpful - unhelpful;
     const trustClass = author ? trustClassFor(author, now) : null;
+    const evaluated: EvaluatedReport = {
+      reportId: r._id,
+      skateEndTime: r.skateEndTime,
+      netThumbs,
+      trustClass,
+      windowH: bountyFreshWindowHours(FRESH_REPORT_HOURS, { netThumbs, trustClass }),
+    };
+    // The list is newest-first, so the first report we weigh is the freshest one on the body.
+    newest ??= evaluated;
     if (
       !reportSuppressesBounty(r.skateEndTime, now, FRESH_REPORT_HOURS, { netThumbs, trustClass })
     ) {
       continue;
     }
-    candidates.push({ reportId: r._id, skateEndTime: r.skateEndTime, netThumbs, trustClass });
+    suppressors.push(evaluated);
   }
-  return candidates;
+  return { suppressors, newest };
 }
 
 /**
- * The rolling per-requester open-bounty cap (decision 7): rejects when the requester already holds
- * `MAX_OPEN_BOUNTIES_PER_DAY` open bounties inside the window. Reads only, so it's shared by the
- * pre-weather gate (`bountyFreshnessInputs`, to reject a capped caller BEFORE any Open-Meteo I/O) and
- * `createChecked` (the transactional authority — a concurrent create could fill the cap after the pre-check).
+ * Is this requester under the rolling per-requester open-bounty cap (decision 7)? Returns a boolean
+ * rather than throwing so the **caller** decides what a rejection means: the pre-weather gate
+ * (`bountyFreshnessInputs`) uses it to skip the Open-Meteo round-trip for a caller who'd be rejected
+ * anyway, and `createChecked` — the transactional authority, since a concurrent create could fill the
+ * cap after the pre-check — uses it to record a `capped` gate event before returning the rejection.
+ * (A thrown mutation rolls its writes back, so the log has to happen on a path that commits.)
  */
-async function assertUnderOpenBountyCap(
+async function underOpenBountyCap(
   ctx: QueryCtx,
   requesterId: Id<'profiles'>,
   now: number,
-): Promise<void> {
+): Promise<boolean> {
   const open = await ctx.db
     .query('bounties')
     .withIndex('by_requester_status', (q) => q.eq('requesterId', requesterId).eq('status', 'open'))
     .collect();
-  if (
-    !withinDailyBountyLimit(
-      open.map((b) => b.createdAt),
-      now,
-      MAX_OPEN_BOUNTIES_PER_DAY,
-      BOUNTY_DAILY_WINDOW_MS,
-    )
-  ) {
-    throw new ConvexError('You already have the maximum number of open bounties');
-  }
+  return withinDailyBountyLimit(
+    open.map((b) => b.createdAt),
+    now,
+    MAX_OPEN_BOUNTIES_PER_DAY,
+    BOUNTY_DAILY_WINDOW_MS,
+  );
+}
+
+/** The user-facing rejection copy for each gate verdict — one place, so the action and tests agree. */
+const GATE_MESSAGES = {
+  suppressed: 'This lake already has fresh eyes — no bounty needed',
+  capped: 'You already have the maximum number of open bounties',
+} as const;
+
+/**
+ * Append the gate's verdict to `bountyGateEvents` (Phase 7b). Called on **every** attempt, including
+ * both rejections — that's the entire point of the table: the suppression window and the daily cap are
+ * invisible constants until you can see the attempts they blocked. `decidingReport` is the blocker
+ * when suppressed and the closest call when allowed, so each row is one (age, window) dot on the
+ * scatter the roadmap asks for.
+ */
+async function logGateEvent(
+  ctx: MutationCtx,
+  args: {
+    waterBodyId: Id<'waterBodies'>;
+    requesterId: Id<'profiles'>;
+    decision: 'allowed' | 'suppressed' | 'capped';
+    decidingReport: EvaluatedReport | null;
+    weatherReopened: boolean;
+    now: number;
+  },
+): Promise<void> {
+  const r = args.decidingReport;
+  await ctx.db.insert('bountyGateEvents', {
+    waterBodyId: args.waterBodyId,
+    requesterId: args.requesterId,
+    decision: args.decision,
+    weatherReopened: args.weatherReopened,
+    ...(r
+      ? {
+          decidingReportId: r.reportId,
+          reportAgeH: Math.max(0, (args.now - r.skateEndTime) / HOUR_MS),
+          appliedWindowH: r.windowH,
+          netThumbs: r.netThumbs,
+          ...(r.trustClass !== null ? { trustClass: r.trustClass } : {}),
+        }
+      : {}),
+    createdAt: args.now,
+  });
 }
 
 /**
  * The decay-freshness gate's DB inputs (Phase 10 / §7c): the body's weather sample point + its baseline
- * suppressors (newest-first, read-bounded), each carrying its `reportId`. Null when the body is
- * missing/unlisted (the action then lets `createChecked` throw the proper error). The action fetches each
+ * suppressors (newest-first, read-bounded), each carrying its `reportId`. The action fetches each
  * candidate's **weather-since** to decide which weather has likely reopened; the final fresh-eyes verdict
  * is re-made transactionally in `createChecked`, so a suppressor that lands mid-fetch can't slip through.
+ *
+ * Returns a **verdict, not a throw**, for the two outcomes the analytics log cares about (Phase 7b):
+ * `unavailable` (body missing/unlisted — `createChecked` raises the proper error) and `capped`. The cap
+ * used to throw right here; it now short-circuits instead, so the attempt still reaches a mutation that
+ * can record it. The resource guard the throw provided is preserved exactly — a capped caller skips the
+ * per-report Open-Meteo fetch loop, it just gets counted on the way out. Genuine *auth* failures (no
+ * profile, suspended/banned, minor) still throw: they aren't gate tuning signals, they're rejections.
  */
 export const bountyFreshnessInputs = internalQuery({
   args: { waterBodyId: v.id('waterBodies') },
@@ -178,14 +247,19 @@ export const bountyFreshnessInputs = internalQuery({
       throw new ConvexError('Users under 18 cannot post bounties');
     }
     const body = await resolveSurvivor(ctx, waterBodyId);
-    if (!body || !isListed(body)) return null;
-    // Enforce the rolling open-bounty cap here too, BEFORE the action's weather loop: a capped requester
-    // would be rejected by `createChecked` regardless, so don't let repeated capped requests drive
-    // per-report Open-Meteo fetches + cache writes first (§7c resource guard).
-    await assertUnderOpenBountyCap(ctx, profile._id, now);
+    if (!body || !isListed(body)) return { status: 'unavailable' as const };
+    // The rolling open-bounty cap, BEFORE the action's weather loop: a capped requester would be
+    // rejected by `createChecked` regardless, so don't let repeated capped requests drive per-report
+    // Open-Meteo fetches + cache writes first (§7c resource guard).
+    if (!(await underOpenBountyCap(ctx, profile._id, now))) return { status: 'capped' as const };
     const point = nearestSamplePoint(body, body.centroid);
-    const reports = await suppressingCandidates(ctx, body, now);
-    return { lat: point.lat, lng: point.lng, reports };
+    const { suppressors } = await evaluateFreshness(ctx, body, now);
+    return {
+      status: 'ok' as const,
+      lat: point.lat,
+      lng: point.lng,
+      reports: suppressors.map((s) => ({ reportId: s.reportId, skateEndTime: s.skateEndTime })),
+    };
   },
 });
 
@@ -217,7 +291,7 @@ export const create = action({
     // LATER skate time between here and the commit has a *shorter* weather window that may no longer
     // justify the reopen, so `createChecked` only honors the exemption when the timestamp still matches.
     const weatherReopenedReports: { reportId: Id<'reports'>; skateEndTime: number }[] = [];
-    if (inputs) {
+    if (inputs.status === 'ok') {
       for (const r of inputs.reports) {
         const summary = await resolveWeatherSince(ctx, inputs.lat, inputs.lng, r.skateEndTime, now);
         // Only trust the weather signal when we actually have data; a failed fetch (`null`) or empty
@@ -237,17 +311,40 @@ export const create = action({
         }
       }
     }
-    return ctx.runMutation(internal.bounties.createChecked, {
+    // `createChecked` **returns** its gate verdict rather than throwing it, so the rejection commits
+    // alongside the `bountyGateEvents` row that records it (a thrown mutation rolls its writes back —
+    // which would have made the two most interesting decisions, `suppressed` and `capped`, the two the
+    // analytics could never see). The action turns a rejection back into the user-facing error here,
+    // after the log has landed.
+    const result = await ctx.runMutation(internal.bounties.createChecked, {
       waterBodyId,
       weatherReopenedReports,
     });
+    if (!result.ok) throw new ConvexError(result.message);
+    return result.bountyId;
   },
 });
 
+/** What the gate decided — `ok` carries the new bounty, a rejection carries its user-facing copy. */
+type CreateOutcome =
+  | { ok: true; bountyId: Id<'bounties'> }
+  | { ok: false; decision: 'suppressed' | 'capped'; message: string };
+
 /**
  * Finish a bounty create once the action has fetched weather: `requireProfile`, **reject minors**, honor
- * the freshness gate + rolling open-bounty cap (decision 7), insert, and fan out `bounty_request` notices.
- * Internal — only `create` (the action) calls it, passing the reports weather has likely reopened.
+ * the rolling open-bounty cap + freshness gate (decision 7/8), insert, and fan out `bounty_request`
+ * notices. Internal — only `create` (the action) calls it, passing the reports weather has likely reopened.
+ *
+ * **The two gate rejections return instead of throwing** (Phase 7b). Every attempt appends a
+ * `bountyGateEvents` row, and a thrown mutation rolls its writes back — so a throwing gate could only
+ * ever log the attempts it *allowed*, which is precisely the half that can't tell you whether
+ * `FRESH_REPORT_HOURS` or `MAX_OPEN_BOUNTIES_PER_DAY` is set right. The caller re-raises. Auth failures
+ * (no profile, minor, missing body) still throw — those are errors, not tuning signals.
+ *
+ * The cap is now checked **before** freshness (it used to be after). Two reasons: the cap is the
+ * unambiguous reason when both apply, so it's the more actionable message; and the weather pass is
+ * skipped for a capped caller, which would leave the freshness verdict computed without its exemptions
+ * and mislabel the event as `suppressed`.
  */
 export const createChecked = internalMutation({
   args: {
@@ -261,7 +358,7 @@ export const createChecked = internalMutation({
       v.object({ reportId: v.id('reports'), skateEndTime: v.number() }),
     ),
   },
-  handler: async (ctx, { waterBodyId, weatherReopenedReports }) => {
+  handler: async (ctx, { waterBodyId, weatherReopenedReports }): Promise<CreateOutcome> => {
     const profile = await requireProfile(ctx);
     const now = Date.now();
     if (isMinor(profile.dateOfBirth, now)) {
@@ -270,6 +367,21 @@ export const createChecked = internalMutation({
 
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || !isListed(body)) throw new ConvexError('Water body not found');
+
+    // Rolling per-requester cap (decision 7), re-checked transactionally here — the pre-weather gate
+    // already short-circuited obviously-capped callers, but a concurrent create could have filled the
+    // cap since. Checked before freshness so the recorded decision names the unambiguous reason.
+    if (!(await underOpenBountyCap(ctx, profile._id, now))) {
+      await logGateEvent(ctx, {
+        waterBodyId: body._id,
+        requesterId: profile._id,
+        decision: 'capped',
+        decidingReport: null,
+        weatherReopened: false,
+        now,
+      });
+      return { ok: false, decision: 'capped', message: GATE_MESSAGES.capped };
+    }
 
     // Freshness gate (decision 8), re-evaluated **transactionally** here (§7c) rather than trusting the
     // action's snapshot: recompute the body's baseline suppressors from the reports *as they exist now*
@@ -283,14 +395,34 @@ export const createChecked = internalMutation({
     // edited later after the weather verdict was computed, its window is now shorter and may no longer
     // justify the reopen, so the stale exemption is dropped and the (now-fresher) report suppresses again.
     const reopened = new Set(weatherReopenedReports.map((r) => `${r.reportId}:${r.skateEndTime}`));
-    const candidates = await suppressingCandidates(ctx, body, now);
-    if (candidates.some((c) => !reopened.has(`${c.reportId}:${c.skateEndTime}`))) {
-      throw new ConvexError('This lake already has fresh eyes — no bounty needed');
+    const { suppressors, newest } = await evaluateFreshness(ctx, body, now);
+    const blocking = suppressors.find((c) => !reopened.has(`${c.reportId}:${c.skateEndTime}`));
+    if (blocking) {
+      await logGateEvent(ctx, {
+        waterBodyId: body._id,
+        requesterId: profile._id,
+        decision: 'suppressed',
+        decidingReport: blocking,
+        weatherReopened: false,
+        now,
+      });
+      return { ok: false, decision: 'suppressed', message: GATE_MESSAGES.suppressed };
     }
 
-    // Rolling per-requester cap (decision 7), re-checked transactionally here — the pre-weather gate
-    // already rejected obviously-capped callers, but a concurrent create could have filled the cap since.
-    await assertUnderOpenBountyCap(ctx, profile._id, now);
+    // An allow that had suppressors is exactly the weather-reopen case (D56): the base gate would have
+    // blocked this, and a freeze/thaw since cleared every blocker. That share, over time, is the only
+    // evidence for whether BOUNTY_REOPEN_FREEZING/THAW_DEGREE_HOURS ever fire in the real world.
+    await logGateEvent(ctx, {
+      waterBodyId: body._id,
+      requesterId: profile._id,
+      decision: 'allowed',
+      // The report the verdict turned on: the newest suppressor weather cleared, or — when nothing
+      // suppressed at all — the freshest report on the body, i.e. the closest this attempt came to
+      // being blocked. Either way the row plots a real (age, window) pair below the line.
+      decidingReport: suppressors[0] ?? newest,
+      weatherReopened: suppressors.length > 0,
+      now,
+    });
 
     const bountyId = await ctx.db.insert('bounties', {
       requesterId: profile._id,
@@ -310,7 +442,7 @@ export const createChecked = internalMutation({
       windowHours: BOUNTY_ELIGIBILITY_WINDOW_HOURS,
       now,
     });
-    return bountyId;
+    return { ok: true, bountyId };
   },
 });
 
@@ -415,7 +547,10 @@ export async function fulfillBountyOnHelpful(
   const report = await ctx.db.get(args.reportId);
   if (!report) return;
 
-  await ctx.db.patch(args.bountyId, { status: 'fulfilled' });
+  // `fulfilledAt` is stamped alongside the status so the time-to-fulfillment histogram has an end
+  // point (Phase 7b) — `status` alone only records *that* it happened, never how long people waited,
+  // which is the half that says whether DEFAULT_BOUNTY_LIFETIME_MS is anywhere near the real answer time.
+  await ctx.db.patch(args.bountyId, { status: 'fulfilled', fulfilledAt: Date.now() });
   await awardPointEvent(ctx, {
     userId: report.authorId,
     reason: 'bounty_fulfilled',

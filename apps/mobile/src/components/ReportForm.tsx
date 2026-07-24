@@ -9,6 +9,7 @@ import {
   emptyReportForm,
   emptyThicknessReading,
   formatSkateTime,
+  hasFutureSkateTimeError,
   humanizeEnum,
   ICE_TYPES,
   isMinor,
@@ -353,6 +354,7 @@ export function ReportForm({
   const deletePhoto = useMutation(api.photos.remove);
   const removeBlob = useMutation(api.photos.removeBlob);
   const createReport = useMutation(api.reports.create);
+  const recordSignal = useMutation(api.analytics.recordClientSignal);
   // On the map (online, from a lake's detail drawer) the put-in is dropped by tapping the live map;
   // off the map (the offline capture/edit routes, outside the `(map)` layout) there's no map, so the
   // put-in falls back to local state + a "use my current location" button.
@@ -543,6 +545,14 @@ export function ReportForm({
     const result = validateReportInput(input, { now: Date.now() });
     if (!result.ok) {
       setError(result.errors.map((e) => `${e.field}: ${e.message}`).join('; '));
+      // A future skate time is nearly always device clock skew, not a bogus claim — and this
+      // rejection happens *client-side*, so the server never sees it. Report it (Phase 7b) so the
+      // rate is visible and `SKATE_TIME_FUTURE_TOLERANCE_MS` can be judged on evidence. Advisory
+      // telemetry: fire-and-forget, and a failure here must never affect the form. Deliberately not
+      // wired into the offline flush — a queued draft retries, and retries would inflate the count.
+      if (hasFutureSkateTimeError(result.errors)) {
+        void recordSignal({ signal: 'report_rejected_future_skate' }).catch(() => {});
+      }
       return;
     }
 

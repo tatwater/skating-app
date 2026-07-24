@@ -19,6 +19,7 @@ import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/s
 import { requireRole } from './lib/auth';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
+import { bumpMetricMetaCounter } from './lib/metrics';
 import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
@@ -103,6 +104,14 @@ export const resolveFlag = mutation({
 
     const flag = await ctx.db.get(args.flagId);
     if (!flag) throw new ConvexError('Flag not found');
+    // Resolution is terminal and single-shot. Guard it so a stale queue view — two moderators acting
+    // on the same open flag, or a re-submit of an already-closed one — can't patch it twice, write a
+    // second audit row, or (worse) double-count the disposition metric below and even record the flag
+    // under *both* outcomes, poisoning the tuning signal. Convex's OCC makes this race-safe: a
+    // concurrent second resolver re-reads the now-terminal status on retry and lands here.
+    if (flag.status === 'actioned' || flag.status === 'dismissed') {
+      throw new ConvexError('This flag has already been resolved');
+    }
 
     const now = Date.now();
     await ctx.db.patch(args.flagId, {
@@ -119,6 +128,20 @@ export const resolveFlag = mutation({
       reason: args.reason,
       createdAt: now,
     });
+
+    // The enforcement funnel's last stage (Phase 7b): upheld vs dismissed, **keyed by flag reason**.
+    // The reason is what makes it a tuning signal rather than a workload stat — mostly-dismissed
+    // `auto_low_quality` says AUTO_LOW_QUALITY_NET_UNHELPFUL is too low, and mostly-dismissed
+    // `unsafe_false_report` says CONTRADICTION_FLAG_THRESHOLD is. Counted on write because the
+    // dispositions of *today's* resolutions can't be reconstructed from a queue that only holds
+    // what's still open.
+    await bumpMetricMetaCounter(
+      ctx,
+      'flag_dispositions',
+      `${flag.reason}:${args.resolution}`,
+      1,
+      now,
+    );
     return args.flagId;
   },
 });

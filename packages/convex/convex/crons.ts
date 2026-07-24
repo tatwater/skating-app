@@ -31,4 +31,37 @@ crons.interval(
   {},
 );
 
+// Operator analytics (Phase 7b / D37). Three cadences, because the three jobs answer to different
+// things — see `analyticsRollup.ts`. The 6-hourly rollup recomputes today *and* yesterday, and its
+// writes replace rather than accumulate, so re-running is idempotent: the dashboard gets near-live
+// numbers without a second read path that scans the corpus, and a missed tick self-heals.
+crons.interval('roll up operator metrics', { hours: 6 }, internal.analyticsRollup.runRollup, {});
+
+// The whole-corpus sweep (bodies per state, bodies per zoom band). Both are properties of the ETL
+// import and operator curation, not of user activity, so a daily full sweep would be waste. It pages
+// through the corpus with a cursor and schedules its own continuation.
+crons.interval(
+  'sweep water-body coverage',
+  { hours: 24 * 7 },
+  internal.analyticsRollup.sweepCorpus,
+  {},
+);
+
+// `bountyGateEvents` retention. The one append-per-attempt analytics table, and the one carrying a
+// user id — so the bound is a privacy decision as much as a storage one.
+crons.interval(
+  'prune bounty gate events',
+  { hours: 24 },
+  internal.analyticsRollup.pruneGateEvents,
+  {},
+);
+
+// `clientSignalEvents` retention — the client-signal rate-limit bookkeeping is worthless past its window.
+crons.interval(
+  'prune client signal events',
+  { hours: 24 },
+  internal.analyticsRollup.pruneClientSignals,
+  {},
+);
+
 export default crons;

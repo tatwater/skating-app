@@ -36,6 +36,7 @@ import {
   internalQuery,
   type MutationCtx,
 } from './_generated/server';
+import { bumpMetricCounter } from './lib/metrics';
 import { nearestSamplePoint } from './lib/sampling';
 import { resolveWeatherSince } from './weather';
 
@@ -152,6 +153,16 @@ async function flagContradictionPattern(
   });
 }
 
+/**
+ * The enforcement funnel's first two stages (Phase 7b). They're counted here rather than derived later
+ * because **they leave nothing behind to derive from**: a disagreement the weather gate explains away is
+ * a `continue` in the settle loop, and the pair that produced it is indistinguishable afterwards from two
+ * reports that never disagreed. Without these two numbers there is no way to tell whether the 48 FDH /
+ * 36 TDH gate is calibrated — a gate that explains away everything and a season with no disagreements
+ * look identical from the stored rows.
+ */
+const funnelCounts = v.object({ detected: v.number(), weatherExplained: v.number() });
+
 /** The settled per-report verdict the action hands the mutation to apply. */
 const settledReport = v.object({
   id: v.id('reports'),
@@ -168,8 +179,12 @@ const settledReport = v.object({
  * author's count crosses the threshold. **Never touches reputation points** (D50 boost-only).
  */
 export const applyContradictionSettlement = internalMutation({
-  args: { reports: v.array(settledReport) },
-  handler: async (ctx, { reports }) => {
+  args: { reports: v.array(settledReport), funnel: v.optional(funnelCounts) },
+  handler: async (ctx, { reports, funnel }) => {
+    if (funnel) {
+      await bumpMetricCounter(ctx, 'contradiction_detected', funnel.detected);
+      await bumpMetricCounter(ctx, 'contradiction_weather_explained', funnel.weatherExplained);
+    }
     for (const entry of reports) {
       const report = await ctx.db.get(entry.id);
       if (!report) continue;
@@ -181,6 +196,11 @@ export const applyContradictionSettlement = internalMutation({
       const was = report.contradiction ?? false;
       if (was === entry.contradiction) continue;
       await ctx.db.patch(entry.id, { contradiction: entry.contradiction });
+      // The funnel's last stage: only a *newly* escalated report counts. A re-settle that leaves the
+      // flag where it was isn't a new escalation, and a clearing one (self-correction as corroboration
+      // arrives) isn't an escalation at all — counting either would make the stage drift upward on
+      // traffic alone rather than on enforcement.
+      if (entry.contradiction) await bumpMetricCounter(ctx, 'contradiction_escalated');
 
       const author = await ctx.db.get(report.authorId);
       if (!author) continue;
@@ -225,6 +245,10 @@ export const settleContradictions = internalAction({
     const conflicting = new Set<Id<'reports'>>();
     const contradiction = new Set<Id<'reports'>>();
     const flaggerFor = new Map<Id<'reports'>, Id<'profiles'>>();
+    // Funnel instrumentation (Phase 7b) — see `funnelCounts`. Tallied per settle and handed to the
+    // mutation, since only a mutation can write.
+    let detected = 0;
+    let weatherExplained = 0;
 
     for (let i = 0; i < reports.length; i++) {
       for (let j = i + 1; j < reports.length; j++) {
@@ -237,6 +261,7 @@ export const settleContradictions = internalAction({
         if (Math.abs(a.skateEndTime - b.skateEndTime) > CORROBORATION_WINDOW_MS) continue;
         if (!inBand(a) && !inBand(b)) continue;
         if (!reportsContradict(a, b)) continue;
+        detected++;
 
         const lo = Math.min(a.skateEndTime, b.skateEndTime);
         const hi = Math.max(a.skateEndTime, b.skateEndTime);
@@ -247,7 +272,14 @@ export const settleContradictions = internalAction({
         if (hi - lo >= WEATHER_MIN_EXPLAIN_WINDOW_MS) {
           const summary = await resolveWeatherSince(ctx, lat, lng, lo, hi);
           if (summary === null) continue; // fetch FAILED ⇒ can't confirm ⇒ fail open, don't record
-          if (summary.hours > 0 && weatherExplainsIceChange(summary)) continue; // honest "ice changed"
+          if (summary.hours > 0 && weatherExplainsIceChange(summary)) {
+            // Counted, not just skipped: this is the stage that decides whether the weather gate is
+            // calibrated. A failed fetch above is deliberately NOT counted here — "we couldn't tell"
+            // is a different thing from "weather explains it", and folding them together would make
+            // an Open-Meteo outage look like a permissive gate.
+            weatherExplained++;
+            continue; // honest "ice changed"
+          }
         }
 
         conflicting.add(a.id);
@@ -269,6 +301,7 @@ export const settleContradictions = internalAction({
     // contradiction, so the counter self-corrects as corroboration accrues). Context reports in the outer
     // band are owned by their own settle — patching them here from a partial neighborhood is the bug we fixed.
     await ctx.runMutation(internal.contradictions.applyContradictionSettlement, {
+      funnel: { detected, weatherExplained },
       reports: reports.filter(inBand).map((r) => ({
         id: r.id,
         conflicting: conflicting.has(r.id),

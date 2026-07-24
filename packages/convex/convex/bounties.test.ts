@@ -176,12 +176,13 @@ describe('bounties.create', () => {
     // fresh report has landed. The transactional re-check inside the mutation must catch it rather than
     // trusting the action's stale snapshot and persisting an ineligible bounty (+ fanning out notices).
     await seedReport(reporter, waterBodyId, Date.now() - 1 * HOUR);
-    await expect(
-      requester.as.mutation(internal.bounties.createChecked, {
-        waterBodyId,
-        weatherReopenedReports: [],
-      }),
-    ).rejects.toThrow(/already has fresh eyes/);
+    // The gate returns its rejection rather than throwing (Phase 7b) so the decision commits alongside
+    // the `bountyGateEvents` row recording it; `bounties.create` re-raises it to the caller.
+    const outcome = await requester.as.mutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReports: [],
+    });
+    expect(outcome).toMatchObject({ ok: false, decision: 'suppressed' });
   });
 
   test("createChecked honors the action's weather-reopened set — a reopened suppressor does not block (§7c)", async () => {
@@ -193,11 +194,11 @@ describe('bounties.create', () => {
     const reportId = await seedReport(reporter, waterBodyId, skateEndTime);
     // The same fresh suppressor, but the action flagged it weather-reopened (id + the timestamp its verdict
     // was computed against) — so it must NOT block.
-    const bountyId = await requester.as.mutation(internal.bounties.createChecked, {
+    const outcome = await requester.as.mutation(internal.bounties.createChecked, {
       waterBodyId,
       weatherReopenedReports: [{ reportId, skateEndTime }],
     });
-    expect(bountyId).toBeTruthy();
+    expect(outcome.ok).toBe(true);
   });
 
   test('createChecked drops a weather-reopen exemption whose skateEndTime changed since the verdict (§7c)', async () => {
@@ -210,12 +211,11 @@ describe('bounties.create', () => {
     // The report was edited to a LATER skate time after the action computed its weather verdict against the
     // OLD one. The shorter window can no longer justify the reopen, so the stale exemption (keyed on the old
     // timestamp) must not match the current report — it suppresses again and the bounty is blocked.
-    await expect(
-      requester.as.mutation(internal.bounties.createChecked, {
-        waterBodyId,
-        weatherReopenedReports: [{ reportId, skateEndTime: skateEndTime - 3 * HOUR }],
-      }),
-    ).rejects.toThrow(/already has fresh eyes/);
+    const outcome = await requester.as.mutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReports: [{ reportId, skateEndTime: skateEndTime - 3 * HOUR }],
+    });
+    expect(outcome).toMatchObject({ ok: false, decision: 'suppressed' });
   });
 
   test('weather that changed the ice reopens a bounty despite a suppressing report (§7c)', async () => {
@@ -324,6 +324,121 @@ describe('bounties.create', () => {
       /maximum number of open bounties/,
     );
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The gate log (Phase 7b). The reason this table exists is that a rejected attempt is invisible: you
+ * cannot tell whether FRESH_REPORT_HOURS or MAX_OPEN_BOUNTIES_PER_DAY is set right by looking only at
+ * the bounties that got through. So the invariant under test is that **every** attempt lands a row —
+ * including the two that end in a thrown error for the caller — with the (age, window) pair the
+ * suppression scatter plots.
+ */
+describe('bountyGateEvents', () => {
+  const gateEvents = (t: ReturnType<typeof harness>) =>
+    t.run((ctx) => ctx.db.query('bountyGateEvents').collect());
+
+  test('records an allowed attempt, attributed to the requester', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const waterBodyId = await seedBody(t);
+    await requester.as.action(api.bounties.create, { waterBodyId });
+
+    const events = await gateEvents(t);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      decision: 'allowed',
+      waterBodyId,
+      requesterId: requester.id,
+      weatherReopened: false,
+    });
+  });
+
+  test('records the closest call on an allowed attempt, so the scatter has dots below the line', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter'); // new account ⇒ 24h window
+    const waterBodyId = await seedBody(t);
+    // Past its shortened window, so it doesn't suppress — but it's still the freshest read on the body,
+    // which is the only honest reference point an allowed attempt has.
+    const reportId = await seedReport(reporter, waterBodyId, Date.now() - 30 * HOUR);
+    await requester.as.action(api.bounties.create, { waterBodyId });
+
+    const event = (await gateEvents(t))[0];
+    expect(event?.decision).toBe('allowed');
+    expect(event?.decidingReportId).toBe(reportId);
+    expect(event?.reportAgeH).toBeCloseTo(30, 0);
+    expect(event?.appliedWindowH).toBeCloseTo(24, 0); // 48h base, halved for a new account
+    // The dot sits ABOVE its window — an allowed attempt whose closest call had already expired.
+    expect(event?.reportAgeH ?? 0).toBeGreaterThan(event?.appliedWindowH ?? 0);
+  });
+
+  test('a suppressed attempt is logged even though the caller sees an error', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const reportId = await seedReport(reporter, waterBodyId, Date.now() - 2 * HOUR);
+
+    await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
+      /already has fresh eyes/,
+    );
+    // The rejection is what the log is FOR — a throwing gate would have rolled this row back.
+    const events = await gateEvents(t);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({ decision: 'suppressed', decidingReportId: reportId });
+    expect(events[0]?.reportAgeH ?? 0).toBeLessThan(events[0]?.appliedWindowH ?? 0);
+  });
+
+  test('a capped attempt is logged as capped, not mislabelled as suppressed', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    for (let i = 0; i < 3; i++) {
+      await requester.as.action(api.bounties.create, { waterBodyId: await seedBody(t) });
+    }
+    // A 4th body that also has fresh eyes: both gates would reject, and the cap is the unambiguous
+    // reason (the weather pass is skipped for a capped caller, so the freshness verdict would be
+    // computed without its exemptions).
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 2 * HOUR);
+    await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
+      /maximum number of open bounties/,
+    );
+
+    const events = await gateEvents(t);
+    expect(events).toHaveLength(4);
+    expect(events.filter((e) => e.decision === 'capped')).toHaveLength(1);
+    expect(events.some((e) => e.decision === 'suppressed')).toBe(false);
+  });
+
+  test('flags the weather reopen — the numerator of the reopen rate (D56)', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    await seedReport(reporter, waterBodyId, Date.now() - 12 * HOUR); // would suppress on the base gate
+    // A hard freeze across the whole window since the skate (12h × −16°C = 192 FDH, over the 180 bar)
+    // ⇒ the ice likely changed ⇒ the suppressor is cleared and the attempt flips to allowed.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify(coldWeather(Date.now(), 12, -16)), { status: 200 }),
+      ),
+    );
+    await requester.as.action(api.bounties.create, { waterBodyId });
+
+    const event = (await gateEvents(t))[0];
+    expect(event).toMatchObject({ decision: 'allowed', weatherReopened: true });
+  });
+
+  test('does not log a rejection that never reached the gate (unauthorized, missing body)', async () => {
+    const t = harness();
+    const waterBodyId = await seedBody(t);
+    // Anonymous: rejected before any DB work. An auth failure is not a tuning signal, and counting it
+    // would inflate the denominator of every rate the gate charts.
+    await expect(t.action(api.bounties.create, { waterBodyId })).rejects.toThrow(/Not signed in/);
+    expect(await gateEvents(t)).toHaveLength(0);
   });
 });
 

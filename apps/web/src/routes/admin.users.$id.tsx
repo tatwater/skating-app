@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { createFileRoute } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { AdminEmpty, AdminPageHeader, StatTile } from '../components/admin/adminUi';
+import { ContributorTrend } from '../components/admin/ContributorTrend';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { UserModerationControls } from '../components/admin/UserModerationControls';
 import { Avatar } from '../components/ProfileView';
@@ -84,9 +85,7 @@ function AdminUserDetail() {
             <StatTile label="Trust class" value={user.trustClass ?? '—'} />
           )}
         </div>
-        <p className="text-foreground-muted text-xs">
-          The tenure-aware good-vs-bad trend chart arrives with the analytics surface.
-        </p>
+        <ContributorTrend userId={userId} />
       </section>
 
       {/* Posting-permission levers (D57) + account lifecycle (D37) — shared with the profile panel. */}
