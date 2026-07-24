@@ -44,9 +44,18 @@ const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 /**
- * Ceiling on any single day-scoped scan. Far above real alpha volume; its job is to make a runaway
- * impossible rather than to be reached. Hitting it is logged, never silent (D5) — a chart drawn from a
- * truncated scan is worse than a missing chart, because it looks authoritative.
+ * Ceilings on any single scan. Far above real alpha volume; their job is to make a runaway impossible
+ * rather than to be reached. Hitting one is logged, never silent (D5) — a chart drawn from a truncated
+ * scan is worse than a missing chart, because it looks authoritative.
+ *
+ * ⚠ **Scaling boundary (documented, not yet hit).** `runRollup` executes `rollupDay`×2 + `rollupNow` in
+ * ONE mutation, and `backfill` loops `rollupDay` over N days in one mutation — so the *binding* limit at
+ * scale is Convex's per-transaction read budget (~16k documents), which is smaller than the sum of these
+ * caps across a run. At alpha scale (hundreds of rows, prod undeployed) neither is close; the plan's
+ * settled position is "daily forever is fine at alpha scale; revisit if it grows". When it grows, the
+ * fix is to split each phase — and `rollupNow`'s ~nine scans — into their own scheduled mutations, the
+ * way `sweepCorpus` already self-chains, rather than to raise these caps. `backfill` should likewise
+ * schedule one day per mutation. Until then these caps bound a runaway, not the transaction.
  */
 const DAY_SCAN_CAP = 5_000;
 /** Ceiling on the profile scan behind the two distribution histograms. */
