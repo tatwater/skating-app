@@ -159,6 +159,28 @@ export default defineSchema({
       filterFields: ['profileVisibility'],
     }),
 
+  /**
+   * Short-lived OAuth `state` nonces (Phase 8, Strava).
+   *
+   * The OAuth callback arrives at an **unauthenticated** HTTP endpoint — there is no Clerk identity on
+   * a redirect from Strava — so without this table there would be no way to know *whose* account is
+   * being connected, and anyone could bind a Strava account to someone else's profile by replaying a
+   * callback URL. So an authenticated mutation mints a single-use nonce bound to the user, and the
+   * callback exchanges it. Rows are deleted on use and swept on expiry; nothing here outlives a
+   * connect flow by more than a few minutes.
+   */
+  oauthStates: defineTable({
+    state: v.string(), // the opaque nonce echoed back by the provider
+    userId: v.id('profiles'),
+    provider: literals(ACTIVITY_PROVIDERS),
+    /** Where to send the browser afterwards — the app deep link (mobile) or a web route. */
+    redirectTo: v.optional(v.string()),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_state', ['state'])
+    .index('by_expires_at', ['expiresAt']),
+
   activityConnections: defineTable({
     userId: v.id('profiles'),
     provider: literals(ACTIVITY_PROVIDERS),

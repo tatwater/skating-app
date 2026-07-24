@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H1, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
 import { ProfileEdit } from '../../src/components/ProfileEdit';
 import { Avatar } from '../../src/components/ProfileView';
+import { StravaConnect } from '../../src/components/StravaConnect';
 
 /**
  * Profile / settings hub (D28). Who you're signed in as (with a link to your public profile),
@@ -65,6 +66,11 @@ export default function YouScreen() {
           <NotificationSettings />
 
           <BlockedUsers />
+
+          <Separator borderColor="$border" />
+          {/* Strava push (Phase 8). Sits with the account settings because it IS an account link —
+              your skates going to your Strava — not a map or safety feature. */}
+          <StravaConnect />
 
           <Separator borderColor="$border" />
           <Link href="/support" asChild>
