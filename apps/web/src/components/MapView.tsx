@@ -36,6 +36,7 @@ import {
   NORTHEAST_MAX_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
+  TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
   zoomForViewport,
@@ -84,6 +85,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     highlightWaterBodyId,
     focus,
     photoPins,
+    trackPath,
     putInPin,
     pinDropMode,
     setPutInPin,
@@ -104,6 +106,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const water = WATER_PALETTE[flavor];
   const hazardPalette = HAZARD_PALETTE[flavor];
+  const trackColor = TRACK_PALETTE[flavor];
   const lastViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
 
   // The map click handler is registered once (in the create effect) but must read the *current*
@@ -367,6 +370,25 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           ],
         },
       });
+      // ── Recorded GPS tracks (Phase 8). The path someone actually skated, drawn under the hazard
+      // layers so a warning is never hidden by a line. Display-only: a path can only ever come from
+      // a recorded track, so there is no draw interaction here or anywhere else.
+      //
+      // `line-opacity` is data-driven off each feature's `opacity`, which the server computes from
+      // the linked report's D59 freshness — so a path fades exactly as its report ages, floored so
+      // it never disappears (an empty lake would read as "all clear", which we never assert).
+      map.addSource('tracks', { type: 'geojson', data: EMPTY_FEATURES });
+      map.addLayer({
+        id: 'track-line',
+        type: 'line',
+        source: 'tracks',
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: {
+          'line-color': trackColor,
+          'line-width': 3,
+          'line-opacity': ['coalesce', ['get', 'opacity'], 1] as maplibregl.ExpressionSpecification,
+        },
+      });
       // ── Known seasonal body features (D53). No freshness, no decay — they're permanent, so they
       // render in a steady neutral rather than the danger ramp, and they are always visible.
       map.addSource('body-features', { type: 'geojson', data: EMPTY_FEATURES });
@@ -473,7 +495,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       maplibregl.removeProtocol('pmtiles');
     };
     // `flavor`/`water` re-create the map on a theme change (viewport preserved via lastViewRef).
-  }, [pmtilesUrl, navigate, flavor, water, hazardPalette]);
+  }, [pmtilesUrl, navigate, flavor, water, hazardPalette, trackColor]);
 
   // Push query results into the source once the style has loaded; re-apply the highlight after
   // (setData resets feature-state).
@@ -509,6 +531,23 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const source = map.getSource('put-in-markers') as maplibregl.GeoJSONSource | undefined;
     source?.setData(putInsToFeatureCollection(putIns ?? []));
   }, [putIns, loaded]);
+
+  // The recorded path behind the open report (Phase 8) — cleared when the drawer closes. The drawer
+  // pushes it up rather than the map fetching it, matching how photo pins already work: the map is
+  // persistent across navigations and shouldn't know which report is open.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    const source = map.getSource('tracks') as maplibregl.GeoJSONSource | undefined;
+    source?.setData(
+      trackPath
+        ? {
+            type: 'FeatureCollection',
+            features: [{ type: 'Feature', geometry: trackPath, properties: {} }],
+          }
+        : EMPTY_FEATURES,
+    );
+  }, [trackPath, loaded]);
 
   // Hazard footprints for the focused lake (Phase 9) — cleared when no lake is selected.
   useEffect(() => {

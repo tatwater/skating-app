@@ -280,7 +280,8 @@ export const getForReport = query({
       if (!isOwner && !isModerator) return null;
     }
     const activity = await ctx.db.get(report.activityId);
-    if (!activity?.path || activity.path.type !== 'LineString') return null;
+    if (activity === null) return null;
+    if (activity.path?.type !== 'LineString') return null;
     return {
       activityId: activity._id,
       path: activity.path as LineString,

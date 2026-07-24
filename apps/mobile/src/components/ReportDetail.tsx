@@ -48,7 +48,11 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   // hides the report itself. Skipped when signed out (the query requires a profile).
   const me = useQuery(api.profiles.current, {});
   const blockedIds = useQuery(api.blocks.blockedUserIds, me ? {} : 'skip');
-  const { setHighlightWaterBodyId, setFocus, setPhotoPins } = useMapSelection();
+  const { setHighlightWaterBodyId, setFocus, setPhotoPins, setTrackPath } = useMapSelection();
+
+  // The recorded GPS path behind this report (Phase 8), when there is one — most reports have none
+  // (D24), so this resolves to null and the layer stays empty.
+  const track = useQuery(api.gpsActivities.getForReport, { reportId: reportId as Id<'reports'> });
 
   // Fly to the report's put-in point as soon as the report loads.
   useEffect(() => {
@@ -71,6 +75,13 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         })),
     );
   }, [photos, setPhotoPins]);
+
+  // Draw the path while this sheet is open and clear it on close — the map is persistent, so a path
+  // left behind would hang over the next report.
+  useEffect(() => {
+    setTrackPath(track?.path ?? null);
+    return () => setTrackPath(null);
+  }, [track, setTrackPath]);
 
   if (report === undefined) return <DetailLoading />;
   if (report === null) {

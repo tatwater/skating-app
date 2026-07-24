@@ -11,12 +11,16 @@ import {
   type DraftFlushEffects,
   flushableDrafts,
   flushableHazardItems,
+  flushableTracks,
   flushDraft,
   flushHazardItem,
+  flushTrack,
   type HazardFlushEffects,
   isFlushable,
   isHazardItemFlushable,
+  isTrackFlushable,
   type ReportInput,
+  type TrackFlushEffects,
 } from '@skating/core';
 import { uploadToStorage } from '../components/photoPipeline';
 import { convex } from './convex';
@@ -26,14 +30,19 @@ import {
   deleteHazardItem,
   getDraft,
   getHazardItem,
+  getTrack,
   listDrafts,
   listHazardItems,
+  listTracks,
   saveDraft,
   saveHazardItem,
+  saveTrack,
 } from './draftStore';
 
 /** Map the core report input to `reports.create` args (branded Convex ids reapplied). */
-function toCreateArgs(input: ReportInput & { idempotencyKey: string; photoIds: string[] }) {
+function toCreateArgs(
+  input: ReportInput & { idempotencyKey: string; photoIds: string[]; activityId?: string },
+) {
   return {
     waterBodyId: input.waterBodyId as Id<'waterBodies'>,
     idempotencyKey: input.idempotencyKey,
@@ -48,6 +57,9 @@ function toCreateArgs(input: ReportInput & { idempotencyKey: string; photoIds: s
     notes: input.notes,
     point: input.point,
     photoIds: input.photoIds as Id<'photos'>[],
+    ...(input.activityId !== undefined
+      ? { activityId: input.activityId as Id<'gpsActivities'> }
+      : {}),
   };
 }
 
@@ -69,10 +81,59 @@ function effects(): DraftFlushEffects {
         coord,
       }),
     createReport: async (input) => convex.mutation(api.reports.create, toCreateArgs(input)),
+    // Phase 8: resolve a report draft's LOCAL track id to a server activity id, flushing the track
+    // first if it hasn't landed. Best-effort — see `flushOneTrack`: a track that can't be sent must
+    // never hold back the report it belongs to (D24).
+    resolveActivityId: async (trackDraftId) => {
+      const queued = getTrack(trackDraftId);
+      if (!queued) return null;
+      if (queued.activityId !== undefined) return queued.activityId;
+      if (!isTrackFlushable(queued)) return null;
+      const result = await flushOneTrack(queued.id, Date.now());
+      return result?.activityId ?? null;
+    },
     persist: async (draft) => {
       saveDraft(draft);
     },
   };
+}
+
+/** The recorded-track adapter (Phase 8) — ingest, then the optional Strava courtesy copy. */
+function trackEffects(): TrackFlushEffects {
+  const shared = effects();
+  return {
+    resolveBody: shared.resolveBody,
+    ingestTrack: async (input) =>
+      convex.mutation(api.gpsActivities.ingestTrack, {
+        idempotencyKey: input.idempotencyKey,
+        path: input.path,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        elapsedSeconds: input.elapsedSeconds,
+        distanceMeters: input.distanceMeters,
+        ...(input.waterBodyId !== undefined
+          ? { waterBodyId: input.waterBodyId as Id<'waterBodies'> }
+          : {}),
+      }),
+    persist: async (track) => {
+      saveTrack(track);
+    },
+  };
+}
+
+/**
+ * Flush one recorded track by local id, returning its result. Shared by the queue drain and by a
+ * report draft that needs its linked track's server id *now* (`resolveActivityId`), so a skater who
+ * records and reports in one offline session gets both, in the right order, without being told to
+ * wait. A finished track's row is **kept** after a successful flush (unlike a report draft's, which is
+ * deleted): the local id is what a not-yet-flushed report draft still points at, and the row now
+ * carries the `activityId` that resolves it.
+ */
+async function flushOneTrack(id: string, now: number): Promise<{ activityId: string } | null> {
+  const fresh = getTrack(id);
+  if (!fresh || !isTrackFlushable(fresh)) return null;
+  const result = await flushTrack(fresh, trackEffects(), now);
+  return result.ok ? { activityId: result.activityId } : null;
 }
 
 /**
@@ -152,6 +213,10 @@ export async function flushDrafts(now: number = Date.now()): Promise<void> {
     // and a queue of report drafts with photos can take a while to drain on a weak connection —
     // sending the ridge before the trip write-up is the right order to lose a connection in.
     await flushHazardQueue(now);
+    // Then tracks, before reports: a report draft linked to one needs its `activityId`. A report
+    // whose track is still queued resolves it on demand anyway (`resolveActivityId`), so this is an
+    // ordering optimization, not a correctness requirement.
+    await flushTrackQueue(now);
     const eff = effects();
     for (const { id } of flushableDrafts(listDrafts())) {
       flushingIds.add(id);
@@ -194,5 +259,19 @@ async function flushHazardQueue(now: number): Promise<void> {
       }
       deleteHazardItem(result.item.id);
     }
+  }
+}
+
+/**
+ * Drain the recorded-track queue once, oldest first. Only **finished** sessions are flushable, so a
+ * recording still in progress is never sent half-done.
+ *
+ * A successful track's row is deliberately **not deleted**: a report draft may still reference it by
+ * local id, and the row now carries the `activityId` that resolves that reference. Rows are cleaned
+ * up by the recorder's own history UI, not by the flush.
+ */
+async function flushTrackQueue(now: number): Promise<void> {
+  for (const { id } of flushableTracks(listTracks())) {
+    await flushOneTrack(id, now);
   }
 }
