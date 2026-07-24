@@ -7,11 +7,13 @@
  * lesson from PRs #10/#11, applied before it bites). Everything in here is **bounded** — a day-scoped
  * index range, or a capped scan that logs when it truncates rather than silently charting a slice (D5).
  *
- * Three jobs, on three cadences, for three different reasons:
+ * Three crons, on three cadences, for three different reasons:
  *
- *   - **`runRollup` (every 6h)** recomputes *today and yesterday*. Writes replace rather than
- *     accumulate, so re-running is idempotent — which buys near-live dashboard numbers without a
- *     separate live-query path, and self-heals a tick that was missed or ran mid-write.
+ *   - **`runRollup` (every 6h)** recomputes *today and yesterday* plus the point-in-time metrics. It
+ *     doesn't do the work inline — it **fans out to per-transaction jobs** (`rollupDayJob` ×2 and the
+ *     three point-in-time chunks), so no single mutation reads past Convex's per-transaction budget
+ *     even as the corpus grows. Writes replace rather than accumulate, so re-running is idempotent —
+ *     near-live dashboard numbers without a separate live-query path, and a missed tick self-heals.
  *   - **`sweepCorpus` (weekly, self-chaining)** computes the two whole-corpus figures. They change
  *     only when the ETL imports or an operator re-curates, so a daily full sweep would be waste; and
  *     the water-body corpus is far past what one transaction can read, so it pages through with a
@@ -19,6 +21,10 @@
  *   - **`pruneGateEvents` (daily)** enforces `bountyGateEvents` retention. It's the one append-per-
  *     attempt table here, and it carries `requesterId` — so bounding it is both a storage decision and
  *     a "don't keep a permanent behavioural record" one.
+ *
+ * `backfill` likewise self-chains one UTC day per transaction (`backfillStep`). So every entry point
+ * here keeps a single transaction's read load bounded by *one* day or *one* point-in-time chunk, never
+ * the whole run.
  */
 
 import {
@@ -48,14 +54,10 @@ const DAY_MS = 24 * HOUR_MS;
  * rather than to be reached. Hitting one is logged, never silent (D5) — a chart drawn from a truncated
  * scan is worse than a missing chart, because it looks authoritative.
  *
- * ⚠ **Scaling boundary (documented, not yet hit).** `runRollup` executes `rollupDay`×2 + `rollupNow` in
- * ONE mutation, and `backfill` loops `rollupDay` over N days in one mutation — so the *binding* limit at
- * scale is Convex's per-transaction read budget (~16k documents), which is smaller than the sum of these
- * caps across a run. At alpha scale (hundreds of rows, prod undeployed) neither is close; the plan's
- * settled position is "daily forever is fine at alpha scale; revisit if it grows". When it grows, the
- * fix is to split each phase — and `rollupNow`'s ~nine scans — into their own scheduled mutations, the
- * way `sweepCorpus` already self-chains, rather than to raise these caps. `backfill` should likewise
- * schedule one day per mutation. Until then these caps bound a runaway, not the transaction.
+ * Each cap bounds ONE job's scan, and every job is its own transaction (the entry points fan out /
+ * self-chain — see the module note), so a cap sits comfortably under Convex's per-transaction read
+ * budget (~16k documents) with a single day or point-in-time chunk in flight. The cap is a
+ * runaway-backstop, not the real ceiling; the fan-out is what keeps the transaction safe.
  */
 const DAY_SCAN_CAP = 5_000;
 /** Ceiling on the profile scan behind the two distribution histograms. */
