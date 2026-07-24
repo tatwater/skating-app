@@ -21,7 +21,7 @@ function harness() {
   return t;
 }
 
-const rows = (t: ReturnType<typeof convexTest>, metric: string) =>
+const rows = (t: ReturnType<typeof harness>, metric: string) =>
   t.run((ctx) =>
     ctx.db
       .query('metricSnapshots')
