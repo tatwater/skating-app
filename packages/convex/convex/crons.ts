@@ -56,4 +56,12 @@ crons.interval(
   {},
 );
 
+// `clientSignalEvents` retention — the client-signal rate-limit bookkeeping is worthless past its window.
+crons.interval(
+  'prune client signal events',
+  { hours: 24 },
+  internal.analyticsRollup.pruneClientSignals,
+  {},
+);
+
 export default crons;

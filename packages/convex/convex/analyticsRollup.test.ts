@@ -411,3 +411,25 @@ describe('pruneGateEvents', () => {
     expect(left).toHaveLength(1);
   });
 });
+
+describe('pruneClientSignals', () => {
+  test('drops rate-limit rows past their short window and keeps recent ones', async () => {
+    const t = harness();
+    const user = await seedProfile(t, 'u');
+    const insert = (createdAt: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('clientSignalEvents', {
+          userId: user,
+          signal: 'report_rejected_future_skate',
+          createdAt,
+        }),
+      );
+    await insert(Date.now() - 5 * DAY); // past the 2-day retention
+    await insert(Date.now() - HOUR); // still fresh
+
+    const result = await t.mutation(internal.analyticsRollup.pruneClientSignals, {});
+    expect(result.deleted).toBe(1);
+    const left = await t.run((ctx) => ctx.db.query('clientSignalEvents').collect());
+    expect(left).toHaveLength(1);
+  });
+});

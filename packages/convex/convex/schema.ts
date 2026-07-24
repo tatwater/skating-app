@@ -747,6 +747,21 @@ export default defineSchema({
     .index('by_water_body', ['waterBodyId']),
 
   /**
+   * Per-user rate-limit bookkeeping for the client analytics signal (Phase 7b). `recordClientSignal`
+   * is the one metric a browser reports directly (the future-skate rejection the server never sees),
+   * so — like `supportTickets` — it needs a per-submitter window cap to keep one caller from inflating
+   * an advisory chart. One row per accepted bump; the daily prune drops rows past the window, so this
+   * never accumulates. Deliberately NOT a metric input itself — it only gates the bump.
+   */
+  clientSignalEvents: defineTable({
+    userId: v.id('profiles'),
+    signal: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_user_created', ['userId', 'createdAt']) // the per-user window rate-limit lookup
+    .index('by_created_at', ['createdAt']), // the daily retention prune
+
+  /**
    * The pre-aggregated numbers every chart reads — one row per `(metric, date)` (UTC day).
    *
    * Two writers, never mixed on one metric (see `metrics.ts`): **counters** are bumped at the event

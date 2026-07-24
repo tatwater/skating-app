@@ -46,14 +46,32 @@ import { tallyThumbs } from './lib/reputation';
  */
 const CLIENT_SIGNALS = ['report_rejected_future_skate'] as const satisfies readonly MetricKey[];
 
+/** Per-user rate limit on the client signal — generous for a real clock-skew streak, tight on abuse. */
+const CLIENT_SIGNAL_WINDOW_MS = 60 * 60 * 1000; // 1h
+const CLIENT_SIGNAL_MAX_PER_WINDOW = 10;
+
 /**
- * Record one client-observed signal against today's counter. Authenticated, allowlisted, and additive —
- * see the module note on why this one is client-reported and why that's contained.
+ * Record one client-observed signal against today's counter. Authenticated, allowlisted, additive —
+ * and **per-user rate-limited** (mirroring `supportTickets`), so one caller can't inflate an advisory
+ * chart past a plausible clock-skew streak. Over the cap it **silently drops** rather than throwing:
+ * the caller is fire-and-forget telemetry, and a real user who legitimately hit the form's future-skate
+ * guard should never see an error because they hit it a few times. See the module note on why this
+ * single metric is client-reported and why that's contained.
  */
 export const recordClientSignal = mutation({
   args: { signal: v.union(...CLIENT_SIGNALS.map((s) => v.literal(s))) },
   handler: async (ctx, { signal }) => {
-    await requireProfile(ctx);
+    const profile = await requireProfile(ctx);
+    const now = Date.now();
+    const recent = await ctx.db
+      .query('clientSignalEvents')
+      .withIndex('by_user_created', (q) =>
+        q.eq('userId', profile._id).gte('createdAt', now - CLIENT_SIGNAL_WINDOW_MS),
+      )
+      .take(CLIENT_SIGNAL_MAX_PER_WINDOW);
+    if (recent.length >= CLIENT_SIGNAL_MAX_PER_WINDOW) return; // over the cap — drop, don't error
+
+    await ctx.db.insert('clientSignalEvents', { userId: profile._id, signal, createdAt: now });
     await bumpMetricCounter(ctx, signal);
   },
 });

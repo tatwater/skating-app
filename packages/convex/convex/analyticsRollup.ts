@@ -556,6 +556,27 @@ export const pruneGateEvents = internalMutation({
   },
 });
 
+/** How long a `clientSignalEvents` rate-limit row lives — just past the window, then it's noise. */
+const CLIENT_SIGNAL_RETENTION_DAYS = 2;
+
+/**
+ * `clientSignalEvents` retention. These rows exist only to rate-limit the client analytics signal, so
+ * they're worthless once past the (1h) window — kept a couple days for margin, then dropped. Bounded
+ * page per run, daily cadence; a backlog drains over days rather than blowing a transaction.
+ */
+export const pruneClientSignals = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - CLIENT_SIGNAL_RETENTION_DAYS * DAY_MS;
+    const stale = await ctx.db
+      .query('clientSignalEvents')
+      .withIndex('by_created_at', (q) => q.lt('createdAt', cutoff))
+      .take(DAY_SCAN_CAP);
+    for (const row of stale) await ctx.db.delete(row._id);
+    return { deleted: stale.length };
+  },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Whole-corpus sweep (weekly, self-chaining)
 // ─────────────────────────────────────────────────────────────────────────────

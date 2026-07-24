@@ -116,6 +116,65 @@ async function seedReport(
   );
 }
 
+describe('recordClientSignal', () => {
+  const bumped = async (t: ReturnType<typeof harness>) => {
+    const row = await t.run((ctx) =>
+      ctx.db
+        .query('metricSnapshots')
+        .withIndex('by_metric_date', (q) => q.eq('metric', 'report_rejected_future_skate'))
+        .unique(),
+    );
+    return row?.scalar ?? 0;
+  };
+
+  test('requires an authenticated profile', async () => {
+    const t = harness();
+    await expect(
+      t.mutation(api.analytics.recordClientSignal, { signal: 'report_rejected_future_skate' }),
+    ).rejects.toThrow();
+  });
+
+  test('bumps the day counter for a signed-in user', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'u');
+    await user.as.mutation(api.analytics.recordClientSignal, {
+      signal: 'report_rejected_future_skate',
+    });
+    expect(await bumped(t)).toBe(1);
+  });
+
+  test('caps one user so they cannot inflate an advisory chart — and drops silently, never errors', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'u');
+    // Well past the per-window cap; every call resolves (fire-and-forget telemetry never surfaces an
+    // error to a user who legitimately tripped the form guard a few times).
+    for (let i = 0; i < 25; i++) {
+      await expect(
+        user.as.mutation(api.analytics.recordClientSignal, {
+          signal: 'report_rejected_future_skate',
+        }),
+      ).resolves.not.toThrow();
+    }
+    // The counter is bounded by the cap, not by how many times they called.
+    expect(await bumped(t)).toBe(10);
+  });
+
+  test('the cap is per user — a second user is unaffected by the first hitting it', async () => {
+    const t = harness();
+    const a = await seedUser(t, 'a');
+    const b = await seedUser(t, 'b');
+    for (let i = 0; i < 15; i++) {
+      await a.as.mutation(api.analytics.recordClientSignal, {
+        signal: 'report_rejected_future_skate',
+      });
+    }
+    await b.as.mutation(api.analytics.recordClientSignal, {
+      signal: 'report_rejected_future_skate',
+    });
+    expect(await bumped(t)).toBe(11); // 10 from a (capped) + 1 from b
+  });
+});
+
 describe('role gates', () => {
   test('the charts are admin-only — a moderator cannot read the series, latest, or catalogue', async () => {
     const t = harness();
