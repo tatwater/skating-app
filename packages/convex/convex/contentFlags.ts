@@ -7,6 +7,7 @@
  */
 
 import { ConvexError, v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Id, TableNames } from './_generated/dataModel';
 import { mutation } from './_generated/server';
 import { requireProfile } from './lib/auth';
@@ -55,7 +56,7 @@ export const flag = mutation({
       .first();
     if (existing) return existing._id;
 
-    return ctx.db.insert('contentFlags', {
+    const flagId = await ctx.db.insert('contentFlags', {
       flaggerId: profile._id,
       targetType: args.targetType,
       targetId: args.targetId,
@@ -64,5 +65,20 @@ export const flag = mutation({
       status: 'open',
       createdAt: Date.now(),
     });
+
+    // Safety-priority alert (D38/D3): a dangerously-false "ice is great" flag is a safety incident, not
+    // FIFO spam — email the founder to the priority lane. Fire-and-forget; no-ops without Resend keys.
+    if (args.reason === 'unsafe_false_report') {
+      await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
+        subject: 'Safety flag: unsafe false report',
+        heading: 'New safety flag · unsafe false report',
+        lines: [
+          `A ${args.targetType} was flagged as a dangerously false report.`,
+          'Review it in the priority lane.',
+        ],
+        deepLinkPath: '/admin/flags',
+      });
+    }
+    return flagId;
   },
 });

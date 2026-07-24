@@ -32,7 +32,7 @@ export function ModeratorActions({
   targetType,
   targetId,
 }: {
-  targetType: 'report' | 'comment';
+  targetType: 'report' | 'comment' | 'hazard';
   targetId: string;
 }) {
   const isModerator = useIsModerator();

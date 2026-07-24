@@ -851,7 +851,7 @@ describe('waterBodies.get (detail + merged redirect, D36/D47)', () => {
   });
 });
 
-describe('waterBodies.setCuratedBoost (D49, admin)', () => {
+describe('waterBodies.setCuratedBoost (D49, moderator — D37 refined 2026-07-23)', () => {
   test('a member cannot set the boost', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
@@ -859,17 +859,17 @@ describe('waterBodies.setCuratedBoost (D49, admin)', () => {
     const asMember = await seedUser(t, 'clerk_member');
     await expect(
       asMember.mutation(api.waterBodies.setCuratedBoost, { waterBodyId: id, curatedBoost: 0.5 }),
-    ).rejects.toThrow(/admin/i);
+    ).rejects.toThrow(/moderator/i);
   });
 
-  test('an admin sets the boost — raises prominence + writes one audit row', async () => {
+  test('a moderator sets the boost — raises prominence + writes one audit row', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
     const id = await onlyBodyId(t);
     const before = await t.run((ctx) => ctx.db.get(id));
-    const asAdmin = await seedUser(t, 'clerk_admin', 'admin');
+    const asMod = await seedUser(t, 'clerk_mod', 'moderator');
 
-    await asAdmin.mutation(api.waterBodies.setCuratedBoost, { waterBodyId: id, curatedBoost: 1 });
+    await asMod.mutation(api.waterBodies.setCuratedBoost, { waterBodyId: id, curatedBoost: 1 });
     const after = await t.run((ctx) => ctx.db.get(id));
     expect(after?.curatedBoost).toBe(1);
     // A higher score ⇒ an equal-or-lower minVisibleZoom (drawn at a wider zoom).

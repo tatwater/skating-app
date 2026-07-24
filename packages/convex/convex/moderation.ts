@@ -13,11 +13,12 @@
  */
 
 import { ConvexError, v } from 'convex/values';
-import type { Doc } from './_generated/dataModel';
-import { mutation } from './_generated/server';
+import { internal } from './_generated/api';
+import type { Doc, Id } from './_generated/dataModel';
+import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { requireRole } from './lib/auth';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
-import { MODERATION_STATUSES } from './lib/enums';
+import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { literals } from './lib/validators';
 
 /** The audit action implied by a target moderation status (D37). */
@@ -119,5 +120,398 @@ export const resolveFlag = mutation({
       createdAt: now,
     });
     return args.flagId;
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Admin queue queries (Phase 7 read side). Every one gates `requireRole('moderator')`,
+// reads off an index, and is bounded — a queue read never `.collect()`s a whole table.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Cap on how many rows any single queue read returns — queues drain oldest-first, so this is a page. */
+const QUEUE_LIMIT = 100;
+
+/** Minimal public attribution for a related profile (never private state) — for queue context. */
+interface QueueUser {
+  userId: string;
+  username: string;
+  displayName: string;
+}
+
+async function loadQueueUser(
+  ctx: QueryCtx,
+  userId: Id<'profiles'> | undefined,
+): Promise<QueueUser | null> {
+  if (!userId) return null;
+  const p = await ctx.db.get(userId);
+  return p ? { userId: p._id, username: p.username, displayName: p.displayName } : null;
+}
+
+/** The resolved subject of a flag — enough to triage without opening the item. */
+interface FlagTarget {
+  exists: boolean;
+  /** The author/owner of the flagged content (or the accused, for a `user` flag). */
+  author: QueueUser | null;
+  /** A short human label for the queue row. */
+  summary: string;
+  /** Present for content that carries a moderation axis (report/comment/hazard) — lets the queue show
+   *  whether it's already hidden. */
+  moderationStatus?: string;
+}
+
+/** Truncate free text to a queue-friendly snippet without splitting mid-surrogate awkwardly. */
+function snippet(text: string | undefined, max = 100): string {
+  if (!text) return '';
+  const t = text.trim();
+  return t.length > max ? `${t.slice(0, max)}…` : t;
+}
+
+/**
+ * Resolve a flag's target to just enough context to triage it in the queue (D37). `targetId` is a
+ * string on the flag; we normalize it against the right table and read the one doc. Never fans out.
+ */
+async function resolveFlagTarget(
+  ctx: QueryCtx,
+  targetType: Doc<'contentFlags'>['targetType'],
+  rawTargetId: string,
+): Promise<FlagTarget> {
+  const notFound: FlagTarget = { exists: false, author: null, summary: '(deleted)' };
+  switch (targetType) {
+    case 'report': {
+      const id = ctx.db.normalizeId('reports', rawTargetId);
+      const doc = id ? await ctx.db.get(id) : null;
+      if (!doc) return notFound;
+      return {
+        exists: true,
+        author: await loadQueueUser(ctx, doc.authorId),
+        summary: snippet(doc.notes) || 'Ice report',
+        moderationStatus: doc.moderationStatus,
+      };
+    }
+    case 'comment': {
+      const id = ctx.db.normalizeId('comments', rawTargetId);
+      const doc = id ? await ctx.db.get(id) : null;
+      if (!doc) return notFound;
+      return {
+        exists: true,
+        author: await loadQueueUser(ctx, doc.authorId),
+        summary: snippet(doc.body) || 'Comment',
+        moderationStatus: doc.moderationStatus,
+      };
+    }
+    case 'hazard': {
+      const id = ctx.db.normalizeId('hazards', rawTargetId);
+      const doc = id ? await ctx.db.get(id) : null;
+      if (!doc) return notFound;
+      return {
+        exists: true,
+        author: await loadQueueUser(ctx, doc.createdByUserId),
+        summary: `Hazard: ${doc.type}`,
+        moderationStatus: doc.moderationStatus,
+      };
+    }
+    case 'photo': {
+      const id = ctx.db.normalizeId('photos', rawTargetId);
+      const doc = id ? await ctx.db.get(id) : null;
+      if (!doc) return notFound;
+      return {
+        exists: true,
+        author: await loadQueueUser(ctx, doc.uploaderId),
+        summary: snippet(doc.caption) || 'Photo',
+      };
+    }
+    case 'user': {
+      const id = ctx.db.normalizeId('profiles', rawTargetId);
+      const doc = id ? await ctx.db.get(id) : null;
+      if (!doc) return notFound;
+      // The accused *is* the target — the "author" slot doubles as the subject for a user flag.
+      const subject = { userId: doc._id, username: doc.username, displayName: doc.displayName };
+      return { exists: true, author: subject, summary: `User: @${doc.username}` };
+    }
+    default:
+      return notFound;
+  }
+}
+
+/** A flag as the queue presents it — the row, who filed it, and the resolved subject. */
+interface FlagView {
+  id: string;
+  targetType: Doc<'contentFlags'>['targetType'];
+  targetId: string;
+  reason: Doc<'contentFlags'>['reason'];
+  note?: string;
+  status: Doc<'contentFlags'>['status'];
+  createdAt: number;
+  flagger: QueueUser | null;
+  target: FlagTarget;
+}
+
+async function toFlagView(ctx: QueryCtx, flag: Doc<'contentFlags'>): Promise<FlagView> {
+  return {
+    id: flag._id,
+    targetType: flag.targetType,
+    targetId: flag.targetId,
+    reason: flag.reason,
+    ...(flag.note !== undefined ? { note: flag.note } : {}),
+    status: flag.status,
+    createdAt: flag.createdAt,
+    flagger: await loadQueueUser(ctx, flag.flaggerId),
+    target: await resolveFlagTarget(ctx, flag.targetType, flag.targetId),
+  };
+}
+
+/**
+ * The moderator flag queue (D37/D3). Open + reviewing flags off `by_status`, oldest-first (a queue
+ * drains front-to-back so nothing rots), split into a **priority lane** — `unsafe_false_report` is a
+ * *safety* incident, not FIFO spam (D3) — and a standard lane. Each row carries its resolved subject
+ * so a moderator can triage without opening every item. Bounded to `QUEUE_LIMIT` per status.
+ */
+export const listFlags = query({
+  args: {},
+  handler: async (ctx): Promise<{ priority: FlagView[]; standard: FlagView[] }> => {
+    await requireRole(ctx, 'moderator');
+    const open = await ctx.db
+      .query('contentFlags')
+      .withIndex('by_status', (q) => q.eq('status', 'open'))
+      .take(QUEUE_LIMIT);
+    const reviewing = await ctx.db
+      .query('contentFlags')
+      .withIndex('by_status', (q) => q.eq('status', 'reviewing'))
+      .take(QUEUE_LIMIT);
+    // Oldest first across both statuses so the queue is a true work order.
+    const rows = [...open, ...reviewing].sort((a, b) => a.createdAt - b.createdAt);
+    const views = await Promise.all(rows.map((f) => toFlagView(ctx, f)));
+    return {
+      priority: views.filter((v) => v.reason === 'unsafe_false_report'),
+      standard: views.filter((v) => v.reason !== 'unsafe_false_report'),
+    };
+  },
+});
+
+/** An audit row as the dashboard/history panel presents it — the action plus who took it. */
+interface ActionView {
+  id: string;
+  action: Doc<'moderationActions'>['action'];
+  targetType: Doc<'moderationActions'>['targetType'];
+  targetId: string;
+  reason: string;
+  metadata?: unknown;
+  createdAt: number;
+  actor: QueueUser | null;
+}
+
+async function toActionView(ctx: QueryCtx, a: Doc<'moderationActions'>): Promise<ActionView> {
+  return {
+    id: a._id,
+    action: a.action,
+    targetType: a.targetType,
+    targetId: a.targetId,
+    reason: a.reason,
+    ...(a.metadata !== undefined ? { metadata: a.metadata } : {}),
+    createdAt: a.createdAt,
+    actor: await loadQueueUser(ctx, a.actorId),
+  };
+}
+
+/**
+ * The moderation audit trail (D37) — newest first. Filter by `targetType`+`targetId` (a user/report's
+ * full history, off `by_target`), by `actorId` (one moderator's actions, off `by_actor`), or neither
+ * (the dashboard's recent-actions panel, off the implicit creation-time order). Always bounded.
+ */
+export const listActions = query({
+  args: {
+    targetType: v.optional(literals(MODERATION_TARGET_TYPES)),
+    targetId: v.optional(v.string()),
+    actorId: v.optional(v.id('profiles')),
+    action: v.optional(literals(MODERATION_ACTIONS)),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<ActionView[]> => {
+    await requireRole(ctx, 'moderator');
+    const limit = Math.min(args.limit ?? QUEUE_LIMIT, QUEUE_LIMIT);
+
+    const { targetType, targetId, actorId } = args;
+    let rows: Doc<'moderationActions'>[];
+    if (targetType !== undefined && targetId !== undefined) {
+      rows = await ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
+        .order('desc')
+        .take(limit);
+    } else if (actorId !== undefined) {
+      rows = await ctx.db
+        .query('moderationActions')
+        .withIndex('by_actor', (q) => q.eq('actorId', actorId))
+        .order('desc')
+        .take(limit);
+    } else {
+      rows = await ctx.db.query('moderationActions').order('desc').take(limit);
+    }
+
+    const filtered =
+      args.action !== undefined ? rows.filter((r) => r.action === args.action) : rows;
+    return Promise.all(filtered.map((a) => toActionView(ctx, a)));
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User-lifecycle + posting-permission mutations (Phase 7 write side). All moderator-level per the
+// D37 refinement (2026-07-23) — a moderator handling a hateful account can act without escalating.
+// Each writes exactly one `moderationActions` row; role-grant/revoke live in `admin.ts` (admin-only).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Load a user a moderator is about to act on, with two safety guards: a moderator can't act on
+ * **their own** account (no self-ban lockout) and can't act on an **admin** unless they're an admin
+ * themselves (a volunteer/compromised moderator can never touch the app owner — D37 draws the trust
+ * line at admin).
+ */
+async function loadModeratableUser(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  userId: Id<'profiles'>,
+): Promise<Doc<'profiles'>> {
+  const target = await ctx.db.get(userId);
+  if (!target) throw new ConvexError('User not found');
+  if (target._id === actor._id) throw new ConvexError('You cannot moderate your own account');
+  if (target.role === 'admin' && actor.role !== 'admin') {
+    throw new ConvexError('Only an admin can moderate an admin');
+  }
+  return target;
+}
+
+async function auditUser(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'>,
+  action: 'ban' | 'suspend' | 'unban' | 'set_posting_permission',
+  userId: Id<'profiles'>,
+  reason: string,
+  metadata?: Record<string, unknown>,
+): Promise<void> {
+  await ctx.db.insert('moderationActions', {
+    actorId,
+    action,
+    targetType: 'user',
+    targetId: userId,
+    reason,
+    ...(metadata !== undefined ? { metadata } : {}),
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * Ban a user indefinitely (D37). Patches `status: banned` + reason + `moderatedByUserId`, clears any
+ * suspension window, audits `ban`, and — belt + suspenders — locks the Clerk user so no new session
+ * issues. The Convex `status` gate (`requireProfile`) is the real boundary; the Clerk lock just stops
+ * fresh sign-ins. A ban preserves the account for appeal/reversal (distinct from D33 deletion).
+ */
+export const banUser = mutation({
+  args: { userId: v.id('profiles'), reason: v.string() },
+  handler: async (ctx, { userId, reason }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const target = await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, {
+      status: 'banned',
+      statusReason: reason,
+      suspendedUntil: undefined,
+      moderatedByUserId: actor._id,
+    });
+    await auditUser(ctx, actor._id, 'ban', userId, reason);
+    // Fire-and-forget: a mutation can't fetch. Permanent bans only touch Clerk (founder decision).
+    await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
+      clerkUserId: target.clerkUserId,
+      banned: true,
+    });
+    return userId;
+  },
+});
+
+/**
+ * Temporarily suspend a user until `suspendedUntil` (D37). The Convex gate (`requireProfile`) rejects
+ * while the window is open and **auto-lifts** with no cron — so, per the founder decision (2026-07-23),
+ * a suspension deliberately does NOT touch Clerk (that would leave the user locked out of sign-in after
+ * the window naturally expired). Audits `suspend` with the window in metadata.
+ */
+export const suspendUser = mutation({
+  args: { userId: v.id('profiles'), reason: v.string(), suspendedUntil: v.number() },
+  handler: async (ctx, { userId, reason, suspendedUntil }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    if (suspendedUntil <= Date.now()) {
+      throw new ConvexError('Suspension must end in the future');
+    }
+    await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, {
+      status: 'suspended',
+      statusReason: reason,
+      suspendedUntil,
+      moderatedByUserId: actor._id,
+    });
+    await auditUser(ctx, actor._id, 'suspend', userId, reason, { suspendedUntil });
+    return userId;
+  },
+});
+
+/**
+ * Lift a ban or suspension (D37) — returns the account to `active`, clears the suspension window +
+ * reason, audits `unban`, and unlocks the Clerk user (reverses a prior ban; harmless if they were only
+ * suspended). Idempotent: unbanning an already-active account still records the moderator's decision.
+ */
+export const unbanUser = mutation({
+  args: { userId: v.id('profiles'), reason: v.string() },
+  handler: async (ctx, { userId, reason }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const target = await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, {
+      status: 'active',
+      statusReason: undefined,
+      suspendedUntil: undefined,
+      moderatedByUserId: actor._id,
+    });
+    await auditUser(ctx, actor._id, 'unban', userId, reason);
+    await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
+      clerkUserId: target.clerkUserId,
+      banned: false,
+    });
+    return userId;
+  },
+});
+
+/** Which `profiles` boolean each posting surface maps to (D57). */
+const POSTING_PERMISSION_FIELD = {
+  reports: 'canPostReports',
+  hazards: 'canPostHazards',
+  comments: 'canPostComments',
+} as const;
+
+/**
+ * Restrict or restore a single posting right (D57) — the lever finer than suspend/ban. A user who
+ * abuses one surface loses *that* surface (proportionate, appealable, reversible) while their other
+ * contributions stand. Stores the boolean (`false` = restricted; `true` = explicitly allowed), audits
+ * `set_posting_permission` with which right + direction.
+ */
+export const setPostingPermission = mutation({
+  args: {
+    userId: v.id('profiles'),
+    permission: literals(['reports', 'hazards', 'comments']),
+    allowed: v.boolean(),
+    reason: v.string(),
+  },
+  handler: async (ctx, { userId, permission, allowed, reason }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, { [POSTING_PERMISSION_FIELD[permission]]: allowed });
+    await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+      permission,
+      allowed,
+    });
+    return userId;
   },
 });

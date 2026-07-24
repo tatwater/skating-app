@@ -130,7 +130,7 @@ describe('bodyFeatures.create', () => {
     expect(feature?.bbox.maxLat).toBeGreaterThan(0.5);
   });
 
-  test('requires the admin role', async () => {
+  test('requires the moderator role (D37 refined 2026-07-23)', async () => {
     const t = harness();
     const member = await seedUser(t, 'member');
     const mod = await seedUser(t, 'mod', 'moderator');
@@ -139,13 +139,14 @@ describe('bodyFeatures.create', () => {
       waterBodyId,
       type: 'spring_current' as const,
       geometry: POINT,
+      radiusMeters: 30,
       reason: 'x',
     };
 
-    await expect(member.as.mutation(api.bodyFeatures.create, args)).rejects.toThrow(/admin/);
-    // Body features are permanent, unconfirmable claims about a lake — a moderator hiding a bad post
-    // is a different kind of authority from asserting a lake is permanently dangerous here.
-    await expect(mod.as.mutation(api.bodyFeatures.create, args)).rejects.toThrow(/admin/);
+    await expect(member.as.mutation(api.bodyFeatures.create, args)).rejects.toThrow(/moderator/);
+    // Promote/demote moved into the moderator content toolkit (D37 refinement): a mod working a
+    // recurring-hazard pin can graduate it without escalating to an admin.
+    await expect(mod.as.mutation(api.bodyFeatures.create, args)).resolves.toBeTruthy();
   });
 
   test('rejects a point geometry with no radius', async () => {
@@ -388,7 +389,7 @@ describe('bodyFeatures.promote', () => {
     expect(feature?.bbox).toEqual(hazard?.bbox);
   });
 
-  test('requires the admin role', async () => {
+  test('requires the moderator role', async () => {
     const t = harness();
     const member = await seedUser(t, 'member');
     const waterBodyId = await seedBody(t);
@@ -400,7 +401,7 @@ describe('bodyFeatures.promote', () => {
         type: 'recurring_pressure_ridge',
         reason: 'x',
       }),
-    ).rejects.toThrow(/admin/);
+    ).rejects.toThrow(/moderator/);
   });
 
   test('writes an audit row naming the source hazard', async () => {
@@ -464,7 +465,7 @@ describe('bodyFeatures.demote', () => {
     expect(actions.map((a) => a.action)).toEqual(['promote_body_feature', 'demote_body_feature']);
   });
 
-  test('requires the admin role and a reason', async () => {
+  test('requires the moderator role and a reason', async () => {
     const t = harness();
     const admin = await seedUser(t, 'admin', 'admin');
     const member = await seedUser(t, 'member');
@@ -479,7 +480,7 @@ describe('bodyFeatures.demote', () => {
 
     await expect(
       member.as.mutation(api.bodyFeatures.demote, { bodyFeatureId: id, reason: 'x' }),
-    ).rejects.toThrow(/admin/);
+    ).rejects.toThrow(/moderator/);
     await expect(
       admin.as.mutation(api.bodyFeatures.demote, { bodyFeatureId: id, reason: '' }),
     ).rejects.toThrow(/reason is required/);

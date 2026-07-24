@@ -22,7 +22,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
-import { getCurrentProfile, requireProfile } from './lib/auth';
+import { assertCanPostComments, getCurrentProfile, requireProfile } from './lib/auth';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
@@ -48,6 +48,9 @@ export const create = mutation({
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post comments');
     }
+
+    // D57 posting lever — a moderator can mute a toxic commenter while their safety reports stand.
+    assertCanPostComments(profile);
 
     const report = await ctx.db.get(args.reportId);
     if (report?.moderationStatus !== 'visible') {

@@ -30,7 +30,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
-import { getCurrentProfile, requireProfile } from './lib/auth';
+import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
@@ -527,6 +527,71 @@ export const searchProfiles = query({
   },
 });
 
+/**
+ * The operator detail view of a user (D37/D50/D57). `requireRole('moderator')`: a moderator sees the
+ * lifecycle state, posting perms, and the **private, non-scoring `contradictionCount`** (their D57
+ * lever's input) — but the **raw trust/bounty numbers stay admin-only** (D50), gated on the *viewer's*
+ * role server-side so they never leave the deployment for a moderator. Bundles the user's recent
+ * moderation history (actions taken against them) + any open flags naming them, so the detail page is
+ * one read. The tenure-aware good-vs-bad trend is computed separately (the contributor-trust panel).
+ */
+export const getAdmin = query({
+  args: { userId: v.id('profiles') },
+  handler: async (ctx, { userId }) => {
+    const viewer = await requireRole(ctx, 'moderator');
+    const isAdmin = viewer.role === 'admin';
+    const target = await ctx.db.get(userId);
+    if (!target) return null;
+
+    const now = Date.now();
+    const recentActions = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_target', (q) => q.eq('targetType', 'user').eq('targetId', userId))
+      .order('desc')
+      .take(50);
+    const openFlags = await ctx.db
+      .query('contentFlags')
+      .withIndex('by_target', (q) => q.eq('targetType', 'user').eq('targetId', userId))
+      .filter((q) => q.eq(q.field('status'), 'open'))
+      .take(50);
+
+    return {
+      userId: target._id,
+      username: target.username,
+      displayName: target.displayName,
+      ...(target.profileImageUrl !== undefined ? { profileImageUrl: target.profileImageUrl } : {}),
+      role: target.role,
+      status: target.status,
+      ...(target.statusReason !== undefined ? { statusReason: target.statusReason } : {}),
+      ...(target.suspendedUntil !== undefined ? { suspendedUntil: target.suspendedUntil } : {}),
+      trustClass: trustClassFor(target, now),
+      // Posting-permission levers (D57) — absent ⇒ allowed; surfaced as booleans the UI toggles.
+      canPostReports: target.canPostReports ?? true,
+      canPostHazards: target.canPostHazards ?? true,
+      canPostComments: target.canPostComments ?? true,
+      // Moderator-visible (their lever input); the raw trust score below is admin-gated separately.
+      contradictionCount: target.contradictionCount ?? 0,
+      reportCount: target.reportCount ?? 0,
+      commentCount: target.commentCount ?? 0,
+      createdAt: target.createdAt,
+      // Raw numbers are admin-only (D50) — omitted from the wire for a moderator viewer.
+      ...(isAdmin
+        ? {
+            reputationPoints: target.reputationPoints,
+            bountyPoints: target.bountyPoints ?? 0,
+          }
+        : {}),
+      recentActions: recentActions.map((a) => ({
+        id: a._id,
+        action: a.action,
+        reason: a.reason,
+        createdAt: a.createdAt,
+      })),
+      openFlagCount: openFlags.length,
+    };
+  },
+});
+
 /** The `profiles` fields the current schema allows — anything else on a stored row is retired drift. */
 const PROFILE_FIELDS = [
   'clerkUserId',
@@ -549,9 +614,14 @@ const PROFILE_FIELDS = [
   'riskAckVersion',
   'riskAckAt',
   'reputationPoints',
+  'bountyPoints',
   'reportCount',
   'commentCount',
   'badges',
+  'canPostReports',
+  'canPostHazards',
+  'canPostComments',
+  'contradictionCount',
   'role',
   'status',
   'statusReason',
