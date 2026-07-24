@@ -68,6 +68,14 @@ export interface ReportDraft {
   putInPin?: LatLng;
   form: ReportFormState;
   photos: DraftPhoto[];
+  /**
+   * The **local** id of a recorded track this report describes (Phase 8). Both may be captured offline
+   * on the same lake, so neither has a server id at capture time; the flush resolves this to an
+   * `activityId` once the track has been ingested (`TrackFlushEffects` → `resolveActivityId`).
+   */
+  trackDraftId?: string;
+  /** Flush checkpoint: the server `gpsActivities` id, once resolved. */
+  activityId?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -83,6 +91,7 @@ export function createDraft(args: {
   coord?: LatLng;
   putInPin?: LatLng;
   photos?: DraftPhoto[];
+  trackDraftId?: string;
 }): ReportDraft {
   return {
     id: args.id,
@@ -94,6 +103,7 @@ export function createDraft(args: {
     putInPin: args.putInPin,
     form: args.form,
     photos: args.photos ?? [],
+    trackDraftId: args.trackDraftId,
     createdAt: args.now,
     updatedAt: args.now,
   };
@@ -151,9 +161,21 @@ export interface DraftFlushEffects {
     placeOnMap: boolean;
     coord?: LatLng;
   }): Promise<string>;
+  /**
+   * Resolve a local track-draft id to its server `gpsActivities` id (Phase 8), flushing the track
+   * first if it hasn't landed yet. Returns `null` when the track can't be sent — the report then goes
+   * out **without** a path rather than waiting, because a report never requires one (D24) and the
+   * observation about the ice is the part that matters.
+   */
+  resolveActivityId?(trackDraftId: string): Promise<string | null>;
   /** Create the report (`reports.create`, idempotent on `idempotencyKey`); returns its reportId. */
   createReport(
-    input: ReportInput & { waterBodyId: string; idempotencyKey: string; photoIds: string[] },
+    input: ReportInput & {
+      waterBodyId: string;
+      idempotencyKey: string;
+      photoIds: string[];
+      activityId?: string;
+    },
   ): Promise<string>;
   /** Persist the (checkpointed) draft back to sqlite — called after every state advance. */
   persist(draft: ReportDraft): Promise<void>;
@@ -246,13 +268,22 @@ export async function flushDraft(
       }
     }
 
-    // 4. Create the report — idempotent on the draft's key, so a lost-ack retry returns the same one.
+    // 4. Resolve a linked recorded track to its server id (Phase 8). Best-effort by design: a track
+    //    that can't be sent must not hold back the report, so a null resolution just drops the path.
+    let activityId = d.activityId;
+    if (activityId === undefined && d.trackDraftId !== undefined && effects.resolveActivityId) {
+      activityId = (await effects.resolveActivityId(d.trackDraftId)) ?? undefined;
+      if (activityId !== undefined) await save({ activityId });
+    }
+
+    // 5. Create the report — idempotent on the draft's key, so a lost-ack retry returns the same one.
     await save({ status: 'creating' });
     const reportId = await effects.createReport({
       ...input,
       waterBodyId,
       idempotencyKey: d.idempotencyKey,
       photoIds,
+      ...(activityId !== undefined ? { activityId } : {}),
     });
     await save({ status: 'done' });
     return { ok: true, draft: d, reportId };

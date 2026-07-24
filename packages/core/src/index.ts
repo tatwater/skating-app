@@ -38,6 +38,8 @@ export * from './reputation';
 export * from './reputationConfig';
 export * from './riskAck';
 export * from './schedule';
+export * from './track';
+export * from './trackQueue';
 export * from './types';
 export * from './units';
 export * from './visibility';
