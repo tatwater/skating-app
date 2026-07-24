@@ -437,51 +437,55 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   every action audited and safety items alerted by email.
 - Needs: Resend (domain verified).
 
-## Phase 8 — GPS providers (fast-follow order — D24)
-- **Strava + Apple HealthKit first** (covers most of the US alpha; Strava carries
-  write-ups/photos, HealthKit covers Apple Watch).
-- **Garmin next** (watch GPS + fallback for cross-user map display if Strava's terms
-  forbid it — see `04-integrations.md`).
-- **COROS · Polar · Google Health Connect** fast-follow.
-- Detect ice-skate activities → prompt report → ingest **trusted path** (+ media
-  where ToS allows). Normalize to `gpsActivities` and **resolve each to its
-  `waterBodyId`** (D44) so skates are findable by lake.
-- **User-created water bodies (D14) + match-on-create dedup (D36)** *(moved here from Phase 2 on
-  2026-07-13 — needs GPS to be good)*. When an ingested path resolves to **no** known body (the D44
-  fallback), this is where a new body gets created — **GPS-path-backed, not freehand**:
-  - **Derive bounds from the trusted path** (buffer + concave hull of `gpsActivities.path`) to
-    propose a polygon + centroid + `surfaceAreaSqM`, instead of asking the user to draw one by hand
-    (freehand shapes are messy and low-trust; a real skated track is far better evidence).
-  - **Match-on-create dedup before inserting (D36):** bbox + geospatial-nearest prefilter → score
-    each candidate with `@skating/core` `geometry.ts` (`polygonIoU`, `pointInPolygon`,
-    `bboxIntersects`) + a new **`dedup.ts`** (`nameSimilarity`, `classifyDedup` with the D36
-    thresholds) → **steer the user onto a nearby existing body** ("attach here?") via a
-    `findMatchCandidates` query; require an explicit `confirmedNew` to insert when strong matches
-    exist. Stamp `dedupStatus` / `duplicateCandidateIds`; auto-visible then review-after (D37).
-  - The **moderator dedup review queue + merge** is already Phase 7; this feeds it.
-  - Deferred sub-decision: whether to also offer a **manual draw** path (e.g. Terra Draw) for users
-    without a GPS provider connected, or to gate creation on a path entirely. Decide at build.
-- **Done:** logging an ice skate on a supported device prompts a report with the
-  real path prefilled, the skate shows up in that lake's history by name, and a skate on **new**
-  water can create/attach a body from the trusted path (dedup-steered).
-- **Status (2026-07-24): planning — re-scoped for zero credentials (approach "A").** ⚠️ Correction:
-  provider approvals were **never applied for** in Phase 0 (contrary to earlier drafts on this line and
-  in `04-integrations.md`/`05-accounts-and-credentials.md`); **no provider keys exist yet.** Chosen
-  approach:
-  1. Register the **free Strava** API app (instant, no review for single-athlete dev) → build the
-     **Strava vertical slice** end-to-end on the founder's own account (OAuth → webhook → ingest →
-     report prefill).
-  2. Build the **credential-free** halves now regardless — **user-created bodies + match-on-create
-     dedup (D14/D36)** and the **provider-agnostic ingest/resolution core** (new `convex/http.ts`
-     router, normalization, D44 resolver, `gpsActivity`→report-prefill) — testable with fixtures and
-     feeding the already-built Phase 7 dedup/merge review queue (which currently has nothing flowing
-     into it).
-  - **Shelved until approvals land:** Garmin/COROS/Polar (partner review, ~weeks — apply *now* so they
-    don't gate later), Apple HealthKit (needs the $99 Apple enrollment + a real device), Google Health
-    Connect (Play health-data review). The ingest core makes each an incremental add.
-  - **Cross-user path display (D24/D35) deferred** — ToS-gated on a current Strava-Agreement read that
-    hasn't happened; this slice is **ingest-only** (detect → prefill → resolve-to-lake), which per D24
-    never blocks shipping (native reports never required a path).
+## Phase 8 — Native track capture + Strava push (the A→B→C pipeline)
+> **Detailed build plan:** [`phase-8-native-capture.md`](./phase-8-native-capture.md) (scoped
+> 2026-07-24). Reframe write-up:
+> [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md)
+> + Strava legal read (`08-legal-feasibility-checklist.md` L7). New decisions: **D58** (aggregate-track
+> privacy), **D59** (unified report freshness).
+
+> **⚠️ The old "pull GPS from Strava" plan is dead.** Strava's Nov-2024 terms **forbid** displaying one
+> athlete's data to any other user (even public data) and **ban AI/ML** over it — killing the cross-user
+> map/heatmap/report-path off Strava data. **The whole phase inverted:** we **record the track in a native
+> in-app recorder** (first-party data we own → legal to aggregate + draw on public reports) and **push** it
+> to Strava (`activity:write`, the Garmin model — clearly allowed, the adoption lever: *record once, keep
+> your Strava stats*). Modeled as **A → B → C**: A = capture inputs (**native recorder** first;
+> Garmin/HealthKit/COROS/Polar deferred), **B = our own track store + resolve-to-lake + aggregate, the
+> always-owned hub**, C = push outputs (**Strava** first). No provider keys exist yet; only the **free
+> Strava app** (instant, no review) is needed, and only for the push slice.
+
+- **Native recorder (A-input #1)** — session record/pause/resume/stop over a durable expo-sqlite buffer,
+  a Record-grade GPS profile, background/foreground-service, reusing the **Phase 9.5 on-ice primitives**.
+  Track post-processing (smooth/gate/cull → GPX + GeoJSON) in `@skating/core`. Phone-only skater's source;
+  battery is an honest, opt-in trade (D3 copy). **Paths only ever come from legitimate recorded sources —
+  no freehand drawing, ever.**
+- **B — our track store + resolve-to-lake (D44)** — normalize any track → `gpsActivities`, resolve to its
+  `waterBodyId`, link to a report. **The recorded path renders on the report detail view** (display-only)
+  **and** on the aggregate tracks layer.
+- **User-created water bodies (D14) + match-on-create dedup (D36)** *(moved here from Phase 2 — needs a
+  trusted path)*. A skate resolving to **no** known body creates/attaches one **from the trusted path only**
+  (buffer + hull → polygon; new `core/dedup.ts` + `pathToBody.ts`; `findMatchCandidates` steer; stamp
+  `dedupStatus`/`duplicateCandidateIds`; auto-visible then review-after, D37). **Path-only gated — no manual
+  draw** (no path ⇒ no proof of presence, no scale/shape reference). **Feeds the already-built Phase 7 merge
+  queue** (which has had nothing flowing into it).
+- **Strava push (C-output #1)** — new `convex/http.ts` router (first in the repo), OAuth `activity:write` +
+  per-user token refresh, `POST /uploads` + poll, per-session "also upload?" toggle (watch-wins deferred),
+  "Powered by Strava" / "Connect with Strava" brand kit (L7).
+- **Aggregate tracks layer (B, D58)** — decaying public-track overlay per selected body (opacity fades as
+  the linked report ages, D59). Privacy = **publish-is-consent** (only report-linked, non-minor paths), **no
+  k-anonymity** (a public report is meant to be shared — one skater is enough), **put-in-gated endpoint
+  clipping** (`showPutIn` withheld ⇒ clip first/last ~150 m, protecting a skate-from-home), **minors excluded
+  by construction**, global **opt-out**. The tuning-heavy crowd-intelligence derivations (pressure-ridge /
+  clearest-side, L9 deduction) are **deferred** — need volume + calibration.
+- **Unified report freshness (D59)** — one `core/reportFreshness` primitive; report-aging and path-opacity
+  consume the *identical* value (the path is the report's extent — can't diverge); **bounties refactor onto
+  the shared primitives** (keeping their own window/trust/reopen policy; existing Phase 6 tests stay green).
+- **Done:** a phone-only skater records a skate in-app, sees the real path on their report and on the lake
+  map (fading as it ages), can push it to their Strava, and a skate on **new** water creates/attaches a body
+  from the trusted path (dedup-steered).
+- **Deferred:** third-party capture adapters (Garmin/HealthKit/HC/COROS/Polar) + the watch-wins ingest path
+  — each integrated individually later (**apply for Garmin/COROS/Polar partner programs now**, ~weeks of
+  review); additional push targets (Whoop); path-cluster hazard deduction (L9/Q11).
 
 ## Phase 9 — Hazards ✅ Complete (dev; prod deferred) (2026-07-22)
 > **Detailed build plan:** [`phase-9-hazards.md`](./phase-9-hazards.md) (decisions settled 2026-07-18;

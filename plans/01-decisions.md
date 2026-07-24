@@ -1132,3 +1132,54 @@ the *shape* of each lever must match the abuse it answers — never blanket symm
 - **Shape guardrail:** keep the per-capability-boolean form (plus that one bounty int); do **not** graduate to a
   `postingRestrictions` object/framework for 3–4 fields — that would break the clean `assertCanPost*` pattern
   and is the actual over-engineering risk here.
+
+## D58 — Aggregate-track privacy: publish-is-consent, not k-anonymity (Phase 8)
+**Decided (2026-07-24).** With the L7 pivot, cross-user track display is sourced from **our own
+native-recorded tracks** (not Strava data), so *our* privacy design — not an upstream ToS — is what
+protects skaters (promotes **L14**; see `phase-8-native-capture.md`). The model:
+- **Publish-is-consent, no k-anonymity.** A public report is *meant* to be shared, so a single
+  skater's public path may render — there is **no contributor-count threshold** gating a cell.
+  (Rejected the k-anon design: it would leave the alpha's map empty, and the paths are already public
+  on their reports.) The aggregate is built **only** from tracks linked to a **visible, non-minor
+  report** — publishing the report *is* the consent. No separate `sharedToAggregate` flag.
+- **Minors excluded by construction.** Minors are read-only (D41) and can't post reports, so their
+  tracks never link to a public report and never aggregate. (A minor *may* still use the recorder for
+  personal use + their own Strava push — their own data, no public surface.)
+- **Put-in-gated endpoint clipping.** The report's existing `showPutIn?` opt-out doubles as the
+  clipping consent: **put-in shared (`showPutIn !== false`) ⇒ full path** (the put-in is a declared
+  public-access point we *want* to surface); **put-in withheld ⇒ clip the first/last ~150 m** before
+  the track enters any aggregate, so a skate-from-the-backyard start/stop can't reveal a residence.
+  The report's *own* detail view still shows the skater's full path (their choice).
+- **Global opt-out** — a per-user `profiles.excludeTracksFromAggregate?` (person-level, so a later
+  opt-out retroactively drops all their tracks). Recording / Strava push are unaffected.
+- **Paths decay with their report** — opacity fades via D59 (never fully vanishes: a D3 min-opacity
+  floor, so a stale path never reads as "all clear").
+**Why:** the binding constraint moved from Strava to us; this model matches the app's ethos (public
+reports are a safety commons), populates the map from day one, and rests protection on minor-exclusion
++ put-in-gated clipping + publish-consent + opt-out rather than a threshold that would render nothing
+at alpha scale. **Deferred:** the crowd-intelligence *derivations* over the aggregate (pressure-ridge /
+clearest-side, path-cluster hazard deduction L9/Q11) — legal now (our data) but need volume + a
+calibration/privacy pass before they render.
+
+## D59 — Unified report freshness: the report is the unit of decay (Phase 8)
+**Decided (2026-07-24).** A GPS path has **no independent freshness** — it is a report's trusted
+extent (`reports.activityId → gpsActivities.path`), so its on-map opacity must be a pure function of
+the *report's* freshness. Rather than keep parallel copies of the "recency × usefulness ×
+weather-since" math, extract a shared primitive:
+- **One `core/reportFreshness`** blending `skateEndTime` recency, `netThumbs` (ratings), corroboration
+  count (`pointEvents.by_ref`), and `weatherExplainsIceChange` (weather). **Report-aging display and
+  path-opacity consume the identical value** → they *cannot* diverge (path opacity = that value +
+  a D3 min-opacity floor).
+- **Bounties refactor onto the shared *primitives*, not the whole formula.** `bountyFreshWindowHours`
+  keeps its genuinely-different policy (trust-window boost up to `BOUNTY_FRESH_MAX_MULTIPLIER = 3`, **no**
+  corroboration, weather hard-collapse, D56 reopen thresholds) but calls the shared recency/thumbs/
+  weather helpers instead of a private copy. Bounty answers a *different* question than "how faded is
+  this path," so identical-formula unification is wrong; sharing the drift-prone primitives is right.
+  **Hard gate: every existing Phase 6 bounty test stays green, untouched** — if the extraction can't
+  preserve behavior exactly, stop and reassess (do not edit tests to fit); fallback is to unify only
+  report+path and leave bounties' private copy.
+- **One tunable decay-rate constant** in `reputationConfig.ts`, surfaced as a read-only `ConstantCard`
+  in `admin.tuning.tsx` (edit-and-redeploy, Phase 7 posture — no runtime `appConfig` table).
+**Why:** "one copy of the math" for the part that would actually drift (the shared primitives), with
+each consumer keeping the policy its question demands — the report↔path pair provably can't diverge
+because they're one number, and bounties stop carrying a duplicate of the blend.
