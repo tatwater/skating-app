@@ -437,7 +437,41 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   every action audited and safety items alerted by email.
 - Needs: Resend (domain verified).
 
-## Phase 8 — Native track capture + Strava push (the A→B→C pipeline)
+## Phase 8 — Native track capture + Strava push (the A→B→C pipeline) ✅ Built (dev pending; prod deferred) (2026-07-24)
+> **Status: ✅ all five workstreams built** on branch `phase-8-native-capture` (unmerged; **not yet
+> deployed or device-tested**). Suites green: core 752 / convex 540 / web 152 / mobile 76.
+> 8a unified freshness (D59) → 8b recorder + B spine → 8c user bodies + dedup (D14/D36) →
+> 8d Strava push (C) → 8e aggregate layer + privacy (D58).
+>
+> **Key build deltas vs this plan** (the phase doc's "Open questions" resolved, plus what the code found):
+> - **D59's premise was partly wrong.** `bounties.ts` had **no recency-decay curve to extract** — it
+>   computes a *window in hours* and compares. The genuinely shared surface is the netThumbs clamp; the
+>   decay curve is **net-new**. Every Phase 6 bounty test passes untouched (the D59 acceptance gate).
+> - **Two deliberate bounty↔report divergences, now documented rather than accidental:** net-unhelpful
+>   thumbs *shorten* a bounty window (shortening summons fresh eyes — safety-positive) but are
+>   **boost-only** for report freshness, where they'd let downvotes fade someone's path off the map;
+>   and weather collapses a bounty window to 0 but only *multiplies* report freshness down.
+> - **Freshness has no visible report-aging consumer in v1** (founder call): it drives path opacity +
+>   the shared bounty primitives; report cards keep their relative-time labels. Least D3 risk.
+> - **`pathToBody` buffers but does NOT hull** — a hull swallows land/islands on any non-circumnavigating
+>   track. It *does* fill interior rings (a lap around a pond would otherwise store a donut with a hole
+>   at the lake's centre where reports fail to resolve) and refuses a track with no extent (turf happily
+>   buffers a motionless phone into a perfect circular "pond"). No `@turf/convex` dep added.
+> - **`waterBodies.create` is now path-only at the trust boundary** — it takes an `activityId`, **not a
+>   polygon**, so "no freehand drawing, ever" is a server contract rather than a UI convention. Existing
+>   tests were migrated to the new contract, not relaxed.
+> - **`near_certain` added to `DEDUP_STATUSES`** — D36 always had three tiers and the schema had two.
+>   `listDedupCandidates` now surfaces both, near-certain first. A flagged body stays **listed** (D3).
+> - **New `oauthStates` table + `convex/http.ts`** (first HTTP router in the repo): an OAuth callback is
+>   an unauthenticated browser redirect, so a single-use state nonce is what binds it to a user.
+>   **Token refresh is net-new** for this codebase (every other integration uses a static key).
+> - **No `toEncodedPolyline`/`@mapbox/polyline`** — both maps draw the GeoJSON path directly.
+> - **Aggregate layer caps at 200 tracks/body** and returns the dropped count (no silent truncation).
+>
+> **Outstanding:** device verification (Android-emulator GPX playback + a friend's iPhone for iOS
+> background/battery parity), a real Strava sandbox upload (needs the callback domain set on the Strava
+> app), dev deploy, and the prod cutover.
+
 > **Detailed build plan:** [`phase-8-native-capture.md`](./phase-8-native-capture.md) (scoped
 > 2026-07-24). Reframe write-up:
 > [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md)

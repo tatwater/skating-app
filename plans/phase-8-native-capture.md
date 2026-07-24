@@ -324,6 +324,60 @@ B; 8e needs B producing tracks + 8a's opacity.
 - **Encoded-polyline transport** — only if a client render path needs it; default is GeoJSON.
 - **Code-level GPS replay rig for CI** — the emulator GPX playback covers manual QA today.
 
+## Build outcome (2026-07-24) — what shipped, and where it differs from this plan
+
+All five PR slices are built on `phase-8-native-capture` (unmerged, not yet deployed or
+device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
+
+**Founder calls taken at kickoff:**
+1. **Freshness is internal in v1** — it drives path opacity and the shared bounty primitives; report
+   cards keep their existing relative-time labels. Adding a visible freshness meter was rejected as
+   the closest thing here to an authoritative safety verdict (D3).
+2. **Recorder lives on the map beside on-ice mode** — the two are orthogonal choices about the same
+   skate, so adjacency is what makes that legible.
+3. **Full offline record→report linkage** — a report draft carries the track's *local* id and the
+   flush resolves it to an `activityId`.
+4. Strava app registered; **callback domain still to be set** to the Convex `.site` host.
+
+**Deltas the build found (this section supersedes the plan above where they conflict):**
+- **§`reportFreshness` — D59's premise was partly wrong.** `bounties.ts` has **no recency-decay curve**
+  to extract; it computes a window in hours and compares. The shared surface is the netThumbs clamp
+  (`clampedNetThumbs` / `netThumbsBoost`); the decay curve is net-new. The refactor is therefore
+  smaller and far safer than the plan implied — **every Phase 6 bounty test passes untouched.**
+- **Two bounty↔report divergences are now explicit, not accidental.** Net-unhelpful thumbs *shorten* a
+  bounty window (safety-positive: it summons fresh eyes sooner) but are **boost-only** for report
+  freshness, where they would let downvotes fade a person's path off the map. Weather collapses a
+  bounty window to 0 but only *multiplies* report freshness down.
+- **Range is `[0,1]`, not `(0,1]`** — freshness underflows to a true 0 past ~1000 half-lives. The
+  never-hide guarantee lives in `pathOpacity`'s floor, which holds at any age.
+- **§`pathToBody` — buffer, don't hull.** A hull swallows land, islands and the next bay over on any
+  track that doesn't circumnavigate. It **does** fill interior rings (a lap around a pond otherwise
+  stores a donut, and a hole at the lake's centre is where later reports fail to resolve) and refuses
+  a track with no real extent (turf buffers a motionless phone into a perfect circular "pond"). No
+  `@turf/convex`/`@turf/concave` dependency was added. Accepted cost: an out-and-back yields a
+  corridor, so a later report from the far shore may create a near-certain duplicate — which is
+  exactly what the D36 queue is for, and widening a shape is safer than shrinking an over-claimed one.
+- **§`waterBodies.create` is path-only at the trust boundary.** It takes `activityId`, **not a
+  polygon** — the server derives the geometry — so "no freehand drawing, ever" is a server contract,
+  not a UI convention. The pre-existing tests were migrated to the new contract rather than relaxed.
+- **`near_certain` added to `DEDUP_STATUSES`.** D36 always had three tiers; the schema had two, so the
+  top tier had nowhere to go. `listDedupCandidates` surfaces both, near-certain first. A flagged body
+  stays **listed** — hiding it would pull reports filed against it off the map on a machine's guess (D3).
+- **§Strava — a new `oauthStates` table was required.** The plan didn't cover it: an OAuth callback is
+  an *unauthenticated* browser redirect, so without a single-use state nonce a replayed callback could
+  bind a Strava account to the wrong profile. Nonces are burned on read (even when expired) and swept
+  by a cron. **Token refresh is net-new** for this codebase — every other integration uses a static key.
+- **§`toEncodedPolyline` — not built.** Both maps draw the GeoJSON path directly, so encoded-polyline
+  transport (and `@mapbox/polyline`) buys nothing.
+- **§Aggregate layer caps at 200 tracks per body** and returns the dropped count — a silently
+  truncated map reads as "this is everything".
+- **A failed Strava push never fails a flush**, and a failed track never blocks its report (D24). The
+  activity is ours the moment it's ingested; Strava is a courtesy copy and the path is enrichment.
+
+**Still outstanding:** device verification (Android-emulator GPX playback; a friend's iPhone for iOS
+background/battery parity), a real Strava sandbox upload once the callback domain is set, dev deploy,
+prod cutover.
+
 ## Open questions / risks
 
 - **Bounty-refactor behavior preservation.** If extracting the shared primitives can't reproduce
