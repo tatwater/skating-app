@@ -32,6 +32,7 @@ export * from './recommended';
 export * from './regions';
 export * from './report';
 export * from './reportForm';
+export * from './reportFreshness';
 export * from './reportView';
 export * from './reputation';
 export * from './reputationConfig';
