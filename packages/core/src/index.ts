@@ -23,6 +23,7 @@ export * from './hazardProximity';
 export * from './hazardQueue';
 export * from './hazardWeatherDecay';
 export * from './lakeSearch';
+export * from './metrics';
 export * from './osm';
 export * from './photo';
 export * from './profile';

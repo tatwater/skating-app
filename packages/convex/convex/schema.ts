@@ -34,6 +34,7 @@ import {
   ACTIVITY_PROVIDERS,
   ADMIN_AREA_LEVELS,
   BODY_FEATURE_TYPES,
+  BOUNTY_GATE_DECISIONS,
   BOUNTY_STATUSES,
   COMMENT_SOURCES,
   DEDUP_STATUSES,
@@ -148,6 +149,9 @@ export default defineSchema({
     .index('by_clerk_user_id', ['clerkUserId'])
     .index('by_username', ['username'])
     .index('by_status', ['status'])
+    // Signups-per-day for the analytics rollup (Phase 7b). The implicit creation order can't be
+    // range-scanned to "just this UTC day", so the daily job reads a bounded slice off this instead.
+    .index('by_created_at', ['createdAt'])
     // Name search for public profiles (D13). The filter field lets the query exclude private
     // profiles in-index (they're not searchable); exact `@handle` lookups keep using `by_username`.
     .searchIndex('search_profile', {
@@ -369,6 +373,11 @@ export default defineSchema({
     // `visible`, D32) rather than after `paginate`, which would let a page of all-hidden reports
     // return empty with `isDone: false` and strand the feed on its empty state.
     .index('by_moderation_and_skate_end_time', ['moderationStatus', 'skateEndTime'])
+    // Submission-time (not skate-time) day slices for the analytics rollup (Phase 7b). Deliberately
+    // NOT the skate-end index: an offline report syncs days after the skate, so "what landed today"
+    // and "what ice was skated today" are different questions and the photo-orphan sweep needs the
+    // former (a photo is attached at create, whatever the skate time claims).
+    .index('by_created_at', ['createdAt'])
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (F2/D30)
 
   comments: defineTable({
@@ -447,6 +456,7 @@ export default defineSchema({
     .index('by_author_and_water_body', ['createdByUserId', 'waterBodyId'])
     // Phase 10 decay cron: sweep every active hazard (across bodies) to refresh weather-adjusted decay.
     .index('by_status', ['status'])
+    .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 7b)
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
   // NOTE: no geospatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
@@ -467,7 +477,10 @@ export default defineSchema({
     .index('by_hazard_and_user', ['hazardId', 'userId'])
     // A user's confirmations across all hazards — the `Watchdog` badge counts distinct *others'*
     // hazards this user has acted on (D50, Phase 6).
-    .index('by_user', ['userId']),
+    .index('by_user', ['userId'])
+    // Per-day confirmation outcomes + age-at-confirmation, the empirical check on the D52 decay
+    // table (Phase 7b). Day-sliced so the rollup never re-reads the whole confirmation history.
+    .index('by_created_at', ['createdAt']),
 
   // Known seasonal water-body hazards — persistent, NOT decayed, no confirmation loop (D53).
   // Springs/current, constrictions and bridges/narrows are weaker every season regardless of cold, and
@@ -514,7 +527,12 @@ export default defineSchema({
     resolvedAt: v.optional(v.number()),
   })
     .index('by_status', ['status'])
-    .index('by_target', ['targetType', 'targetId']),
+    .index('by_target', ['targetType', 'targetId'])
+    // Analytics (Phase 7b): flags *filed* on a day, and flags *resolved* on a day. The resolution
+    // index is keyed by status first so the rollup reads only terminal rows in the day's range —
+    // `actioned`/`dismissed` accumulate forever, and a scan of all of them would grow without bound.
+    .index('by_created_at', ['createdAt'])
+    .index('by_status_resolved_at', ['status', 'resolvedAt']),
 
   moderationActions: defineTable({
     actorId: v.id('profiles'), // the moderator/admin who acted
@@ -551,7 +569,11 @@ export default defineSchema({
   })
     .index('by_status', ['status'])
     // Rate-limit lookup: how many tickets this submitter filed inside the window.
-    .index('by_clerk_user_created', ['clerkUserId', 'createdAt']),
+    .index('by_clerk_user_created', ['clerkUserId', 'createdAt'])
+    // Analytics (Phase 7b): volume by category on a day, and resolution latency for tickets closed
+    // that day — same bounded-by-status shape as `contentFlags` above.
+    .index('by_created_at', ['createdAt'])
+    .index('by_status_resolved_at', ['status', 'resolvedAt']),
 
   bounties: defineTable({
     requesterId: v.id('profiles'),
@@ -560,10 +582,18 @@ export default defineSchema({
     status: literals(BOUNTY_STATUSES),
     rewardPoints: v.number(), // cosmetic (D17)
     fulfillingReportIds: v.array(v.id('reports')),
+    // When the requester's helpful thumb flipped this to `fulfilled` (Phase 7b). Stamped so the
+    // time-to-fulfillment histogram — the chart that says whether DEFAULT_BOUNTY_LIFETIME_MS is
+    // anywhere near the real answer time — has an end point; `status` alone only says *that* it
+    // happened. Optional ⇒ migration-free, and forward-only: bounties fulfilled before this shipped
+    // carry no timestamp and are simply absent from the histogram rather than guessed at.
+    fulfilledAt: v.optional(v.number()),
     createdAt: v.number(),
     expiresAt: v.number(),
   })
     .index('by_water_body_status', ['waterBodyId', 'status'])
+    // Trailing-window outcome funnel for the analytics rollup (Phase 7b).
+    .index('by_created_at', ['createdAt'])
     // Global expiry sweep (`open → expired` past `expiresAt`, decision 12). The body-keyed index above
     // can't drive a global sweep without a full scan, so the cron reads `by_status_expires`.
     .index('by_status_expires', ['status', 'expiresAt'])
@@ -597,7 +627,11 @@ export default defineSchema({
     coord: v.optional(latLng), // preserved only if placeOnMap == true (D42)
     placeOnMap: v.boolean(), // opt-in: pin at coord vs. report-only (D42)
     createdAt: v.number(),
-  }).index('by_uploader', ['uploaderId']),
+  })
+    .index('by_uploader', ['uploaderId'])
+    // Day-sliced orphan sweep (Phase 7b): a photo abandoned between upload and attach is invisible
+    // today, and the number decides whether the deferred GC cron is worth building.
+    .index('by_created_at', ['createdAt']),
 
   notifications: defineTable({
     userId: v.id('profiles'), // recipient
@@ -617,7 +651,10 @@ export default defineSchema({
     .index('by_user', ['userId'])
     // Count a report's corroborators for the recommended feed (Phase 6 Step 5): `report_corroborated`
     // rows carry `refId = the corroborated report`, so a per-ref lookup tallies them without a scan.
-    .index('by_ref', ['refId']),
+    .index('by_ref', ['refId'])
+    // Point-source composition over a trailing window (Phase 7b) — the chart that says whether
+    // POINT_WEIGHTS lets volume masquerade as trust.
+    .index('by_created_at', ['createdAt']),
 
   // Place-based curation (Phase 4, decision #1) — the D13 stand-in for the removed people-follow
   // graph. A user favorites specific water bodies: those reports notify by default, boost + badge in
@@ -666,4 +703,66 @@ export default defineSchema({
   })
     .index('by_flush', ['flushAfter'])
     .index('by_coalesce', ['coalesceKey']),
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Analytics (Phase 7b / D37). Two tables, shaped to keep every chart's read cost independent of
+  // the corpus — the `listInViewport` lesson (PRs #10/#11) applied before it can bite: charts read
+  // pre-aggregated rows, never the live corpus. See `@skating/core` `metrics.ts` for the vocabulary.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  /**
+   * One row per **bounty-create attempt**, appended by the create gate (Phase 7b, forward-only).
+   *
+   * The rejections are the point. `bounties.create` decides whether a lake already has fresh eyes by
+   * comparing each recent report's age against a window that stretches with the author's trust and
+   * the report's thumbs — and there is no way to know whether that window is set right without seeing
+   * the attempts it blocked. So the gate records its verdict *and its inputs*: the (age, window) pair
+   * is one dot on the scatter the roadmap asks for (dots above the line = blocked), and
+   * `weatherReopened` is the numerator of the weather-reopen rate that says whether
+   * BOUNTY_REOPEN_FREEZING/THAW_DEGREE_HOURS ever fire at all.
+   *
+   * `requesterId` is retained deliberately (founder call, 2026-07-24): a cap-hit *rate* tunes the cap,
+   * but only attribution answers whether a handful of requesters account for all of it — the
+   * empirical case for or against the deferred per-user `activeBountyPostLimit` lever (D57). It's
+   * operator-only data of the same sensitivity as `moderationActions`, and the daily cron prunes rows
+   * past the retention window so it can't accumulate a permanent behavioural record.
+   */
+  bountyGateEvents: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    requesterId: v.id('profiles'),
+    decision: literals(BOUNTY_GATE_DECISIONS),
+    /** The report the verdict turned on — the blocker when suppressed, the closest call when allowed. */
+    decidingReportId: v.optional(v.id('reports')),
+    /** Age in hours of `decidingReportId` at the attempt — the scatter's x. Absent ⇒ no recent report. */
+    reportAgeH: v.optional(v.number()),
+    /** The freshness window actually applied to it, after trust/thumbs weighting — the scatter's y. */
+    appliedWindowH: v.optional(v.number()),
+    netThumbs: v.optional(v.number()),
+    trustClass: v.optional(v.string()), // the deciding report author's class; absent ⇒ no class
+    /** Did the weather pass clear a report that would otherwise have suppressed this attempt (D56)? */
+    weatherReopened: v.boolean(),
+    createdAt: v.number(),
+  })
+    .index('by_created_at', ['createdAt']) // the charts' bounded window read + the retention prune
+    .index('by_water_body', ['waterBodyId']),
+
+  /**
+   * The pre-aggregated numbers every chart reads — one row per `(metric, date)` (UTC day).
+   *
+   * Two writers, never mixed on one metric (see `metrics.ts`): **counters** are bumped at the event
+   * site, because the event leaves no trace to sweep for later (a weather-explained contradiction is
+   * a `continue`); **rollups** are computed once a day by the cron, because the source rows are still
+   * there and can be re-derived. `scalar` / `buckets` / `meta` are the three payload shapes, chosen by
+   * the metric's spec, so the chart layer renders from the shape rather than special-casing each key.
+   */
+  metricSnapshots: defineTable({
+    metric: v.string(), // a `MetricKey` from @skating/core — validated on write, not in the schema
+    date: v.string(), // 'YYYY-MM-DD' UTC; lexicographic order == chronological, so a range is an index range
+    scalar: v.optional(v.number()),
+    buckets: v.optional(v.array(v.number())),
+    meta: v.optional(v.any()), // small labelled record: a funnel, a composition, a per-type table
+    updatedAt: v.number(),
+  })
+    // Point lookup for the upsert + the per-metric date-range read every chart makes.
+    .index('by_metric_date', ['metric', 'date']),
 });
