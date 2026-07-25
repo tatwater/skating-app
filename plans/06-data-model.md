@@ -48,10 +48,15 @@ feedFilterPrefs?: {          // Phase 4: server-sync copy of the newsfeed filter
   recencyHours?: number            // hard recency floor (e.g. 24/48/168); null = off
 }                            // NOTE: driveTimePrefMinutes (old single D18 pref) folds into the notification
                              // radii + this filter; kept/dropped at the Phase-4 migration.
-profileVisibility: enum(public, private)  // THE ONLY privacy switch (reports are always public, D13).
-                             // public = searchable + browsable (name, photo, town, bio, counts, trust
-                             // score, report history); private = name + photo only, not searchable.
-                             // Minors forced private; adults default public (D13/D41).
+profileVisibility: enum(public, private)  // THE ONLY privacy switch for the PERSON (reports are always
+                             // public, D13). public = searchable + browsable (name, photo, town, bio,
+                             // counts, trust score, report history); private = name + photo only, not
+                             // searchable. Minors forced private; adults default public (D13/D41).
+excludeTracksFromAggregate?: boolean  // Phase 8 / D58: keep my recorded paths out of the community
+                             // aggregate tracks layer. PERSON-level on purpose — flipping it
+                             // retroactively drops every track they've contributed, not just future
+                             // ones. Recording + Strava push are unaffected; this governs only whether
+                             // their line draws on a lake's map for other people.
 notificationPrefs: {         // per-type toggles — EVERY type is toggleable (D16)
   activityDetected,          // ice-skate detected on ANY linked provider (D24)
   bountyRequest,
@@ -108,7 +113,7 @@ createdAt: timestamp
 ```
 _id
 userId: ref(profiles)
-provider: enum(strava, garmin, coros, polar, apple_health, google_health_connect, other)
+provider: enum(native, strava, garmin, coros, polar, apple_health, google_health_connect, other)
 externalUserId: string       // e.g. Strava athleteId
 accessToken?, refreshToken?: string  // SERVER-ONLY; provider auth models differ
 scopes: string[]
@@ -120,13 +125,44 @@ connectedAt: timestamp
 > provider-agnostic (D24); they simply **ship in a fast-follow order** —
 > Strava + Apple HealthKit first, Garmin next, then COROS / Polar / Google Health
 > Connect — so every skater's device can contribute a **trusted** GPS path.
+>
+> **Amended by Phase 8 (2026-07-24, L7/D58).** Two changes the build made real:
+> **(a)** `provider` gained **`native`** — our own in-app recorder, and the only A-input wired today.
+> It's a first-class provider value rather than a special case because the *legal* status of a track
+> follows its source: a `native` track is our first-party data (free to aggregate and draw on public
+> reports), where a track read out of `strava` never could be (L7). **(b)** For Strava this row now
+> holds a **push** credential (`activity:write`), not a read one — the pull direction is shelved. The
+> remaining providers are the deferred watch adapters, kept in the enum so adding one later is an
+> adapter, not a migration.
 
-### `gpsActivities`  (detected ice skates from any provider; dedup + trusted path)
+### `oauthStates`  (short-lived OAuth `state` nonces — Phase 8, Strava)
+```
+_id
+state: string                 // the opaque nonce echoed back by the provider
+userId: ref(profiles)
+provider: enum(ACTIVITY_PROVIDERS)
+redirectTo?: string           // app deep link (mobile) or web route to bounce back to
+expiresAt: timestamp
+createdAt: timestamp
+indexes: by_state, by_expires_at
+```
+> **Why this table exists (a Phase-8 discovery, not in the original plan):** an OAuth callback lands on
+> an **unauthenticated** HTTP endpoint — a browser redirect from Strava carries no Clerk identity — so
+> without a nonce bound to the user there is no way to know *whose* account is being connected, and a
+> replayed callback URL could bind a Strava account to the wrong profile. An authenticated mutation
+> mints the nonce; the callback burns it (on read, even when expired). A 6-hourly cron sweeps
+> abandoned rows: a nonce that lingers is a credential that lingers. Nothing here outlives a connect
+> flow by more than a few minutes.
+
+### `gpsActivities`  (ice skates from any capture source; dedup + trusted path)
 ```
 _id
 userId: ref(profiles)
-provider: enum(strava, garmin, coros, polar, apple_health, google_health_connect, other)
-providerActivityId: string   // unique per provider — dedup webhook re-deliveries
+provider: enum(native, strava, garmin, coros, polar, apple_health, google_health_connect, other)
+                             // Phase 8: `native` (our own recorder) is the only one wired.
+providerActivityId: string   // unique per provider — dedup webhook re-deliveries. For `native`
+                             // it's the recorder session's client-generated idempotency key, which
+                             // is what makes an offline re-flush return the original row.
 sportType: string            // provider's ice-skate type (e.g. Strava "IceSkate")
 startTime: timestamp         // GPS start → report.skateStartTime on convert
 endTime?: timestamp          // Phase 5 prep (wired Phase 8): GPS end → report.skateEndTime
@@ -146,6 +182,15 @@ detectedAt: timestamp
 > resolved `waterBodyId` so skates are findable **by lake identity/name**, not by
 > drawing a geospatial box ("5 miles on *Lake Morey*", not "5 miles somewhere here").
 > If the path matches no known body, fall back to the D14/D36 create-or-attach flow.
+> **Wired in Phase 8 (2026-07-24).** `gpsActivities.ingestTrack` fills this table from the native
+> recorder; a device-supplied `waterBodyId` is treated as a **hint only** and re-resolved unless it
+> still checks out (the offline body cache goes stale, and the body may have been merged away since).
+> `linkedReportId` is written in the **same transaction** as `reports.create` — a half-linked pair
+> can't exist, which matters because the *activity* side is what the D58 aggregate layer's
+> publish-is-consent predicate reads. The table needed **no schema change**: the Phase-5 stub already
+> had the right shape and indexes. `path` is the substrate for the **aggregate tracks layer** —
+> see D58 for the four structural privacy gates that decide which rows in this table ever draw for
+> anyone but their owner.
 
 ### `waterBodies`  (canonical + user-created, unified per D14)
 ```
@@ -160,7 +205,7 @@ centroid: { lat, lng }       // geospatial point index
 surfaceAreaSqM?: number      // from NHD/OSM, or estimated for user shapes
 createdByUserId?: ref(profiles) // when source == user
 reviewStatus?: enum(pending, approved, rejected)  // source==user only; auto-visible then review-after (D37)
-dedupStatus: enum(clean, suspected_duplicate, merged)  // default clean (D36)
+dedupStatus: enum(clean, suspected_duplicate, near_certain, merged)  // default clean (D36)
 mergedIntoId?: ref(waterBodies)       // set when merged; reads follow the survivor
 duplicateCandidateIds?: ref(waterBodies)[]  // cached suspects for the review queue
 removedAt?: timestamp                 // soft-delist (D48); reversible, cleared on restore
@@ -187,6 +232,14 @@ createdAt: timestamp
 > child reports/hazards/bounties** to the survivor and soft-tombstones the loser
 > (`merged` + `mergedIntoId`) — never hard-deleted, so bad merges reverse. Rivers
 > compared by buffered-line overlap, not IoU.
+> **Built in Phase 8 (2026-07-24), with two amendments.** **(a)** `dedupStatus` gained
+> **`near_certain`** — D36 always described three match tiers but the schema had two, so the top tier
+> had nowhere to go; `listDedupCandidates` now surfaces both, near-certain first. A flagged body stays
+> **listed**: hiding it would take every report and hazard filed against it off the map on a machine's
+> guess (D3). **(b)** `create` is **path-only at the trust boundary** — it takes a
+> `gpsActivities` **`activityId`, not a polygon**, and derives the geometry server-side from the
+> recorded track (`core/pathToBody.ts`: buffer the LineString, fill interior rings, refuse a track with
+> no extent). "No freehand drawing, ever" (D14) is therefore a server contract, not a UI convention.
 
 ### `adminAreas`  (administrative boundaries for point→place labels — Phase 5)
 ```

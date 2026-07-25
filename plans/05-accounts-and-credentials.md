@@ -9,6 +9,30 @@ Legend: 💰 = costs money · ⏳ = has approval/enrollment lead time · 🆓 = 
 > **Cost posture (D35):** favor hosted free tiers over self-hosted infra; a small
 > paid bill (target < ~$100/mo at ~1000 users) beats ops toil.
 
+## Where this stands (added 2026-07-24, with every phase built)
+
+Inferred from what the code actually uses — **not** from a founder confirmation, so treat the
+"unknown" rows as *check before relying on them*. This exists because "which account is still
+missing" is now the question that gates several deferred items, and the list below had no status at all.
+
+| Account | State | Notes |
+|---|---|---|
+| Convex (dev) | ✅ in use | **Prod deployment never initialized** — the prod cutover's first blocker |
+| Clerk (dev) | ✅ in use | Prod instance env vars are what unblock `convex deploy` to prod |
+| Vercel | ✅ in use | `SENTRY_AUTH_TOKEN` still unset ⇒ no build-time source-map upload |
+| Expo / EAS | ✅ in use | Dev builds; a **new dev-client build** is needed for the Phase 8 recorder |
+| Sentry | ✅ in use | Both surfaces |
+| OpenRouteService (hosted) | ✅ in use | 60-min isochrone ceiling ⇒ the 90-min band is a radius fallback |
+| Cloudflare R2 | ✅ in use | 948 MB 5-state basemap |
+| Open-Meteo | ✅ no account | Phase 10 |
+| Apple Developer | ✅ enrolled | Per the Phase 8 doc. TestFlight distribution to the alpha crew still pending |
+| Strava API app | ✅ registered | **Callback domain not yet set** to the Convex `.site` host ⇒ no real OAuth round-trip yet |
+| Resend | ❔ unknown | Operator alerts log-and-skip until the key + verified domain exist (D38) |
+| Google Play | ❔ unknown | $25 one-time; needed for Android distribution **and** any Health Connect review |
+| PostHog | ⬜ not set up | Deliberate (D29) — add when there's usage to measure; replay is L12-gated |
+| Garmin / COROS / Polar | ❔ unknown whether applied | **Weeks of review.** These gate the deferred watch adapters — the roadmap has said "apply now" since Phase 0 |
+| Expo Push / APNs / FCM | ⬜ not set up | No push infrastructure exists at all; blocks push delivery + silent-push refresh |
+
 ---
 
 ## Do these first (longest lead time / blocking)

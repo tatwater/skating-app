@@ -1,5 +1,9 @@
 # Phase 8 — Native track capture + Strava push (the A→B→C pipeline)
 
+> **✅ COMPLETE on dev (2026-07-24); prod deferred.** All five workstreams (8a–8e) shipped; suites
+> green (core 752 / convex 540 / web 157 / mobile 76), lint + typecheck clean. **Still
+> device-unverified** — see "Build outcome" below. This was the last unbuilt phase in the roadmap.
+
 *Detailed build plan — scoped 2026-07-24. Supersedes the original "GPS providers (pull/ingest)"
 framing of Phase 8 in [`07-roadmap.md`](./07-roadmap.md). Built on the reframe in
 [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md)
@@ -324,7 +328,7 @@ B; 8e needs B producing tracks + 8a's opacity.
 - **Encoded-polyline transport** — only if a client render path needs it; default is GeoJSON.
 - **Code-level GPS replay rig for CI** — the emulator GPX playback covers manual QA today.
 
-## Build outcome (2026-07-24) — what shipped, and where it differs from this plan
+## Build outcome (2026-07-24) — ✅ complete; what shipped, and where it differs from this plan
 
 All five PR slices are built on `phase-8-native-capture` (unmerged, not yet deployed or
 device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
@@ -375,8 +379,29 @@ device-tested). Suites green: core 752 / convex 540 / web 152 / mobile 76.
   activity is ours the moment it's ingested; Strava is a courtesy copy and the path is enrichment.
 
 **Still outstanding:** device verification (Android-emulator GPX playback; a friend's iPhone for iOS
-background/battery parity), a real Strava sandbox upload once the callback domain is set, dev deploy,
-prod cutover.
+background/battery parity), a real Strava sandbox upload, prod cutover.
+
+## Post-build follow-ups (2026-07-25)
+
+Both came out of a full read of `plans/` against the code after the phase was called done.
+
+- **✅ FIXED — the D58 opt-out was mobile-only.** `apps/web` had no way to set
+  `excludeTracksFromAggregate`, so a web user whose paths were already aggregating couldn't withdraw
+  them — and unlike the recorder (reasonably phone-only), a *consent control over data already
+  collected* has to work wherever you signed in. Shipped as
+  `apps/web/src/components/AggregateTracksSetting.tsx` on the settings page, saving immediately like
+  the notification toggles rather than behind the profile editor's Save (a privacy switch shouldn't
+  have a second step you can abandon). The copy moved to **`packages/core/src/trackPrivacy.ts`** and
+  both surfaces now read it: two surfaces wording one privacy promise differently means one of them is
+  describing behavior the app doesn't have. **Connecting Strava stays mobile-only** — it's an adjunct
+  to recording, and the settings page says so.
+- **✅ FIXED — `ingestTrack` accepted a `distanceMeters` it never stored.** `processTrack` derives
+  distance from the very points it emits as `path`, so the value was exactly
+  `trackStats(path).distanceMeters` — no information, but an argument that let a client assert a number
+  contradicting the stored geometry, and a signature implying a persisted distance. Dropped from the
+  mutation, `TrackFlushEffects`, and the mobile adapter; the recorder's live readout keeps its own
+  (display state). If a read ever needs distance without loading paths, denormalize it *then*, with
+  the consumer that justifies it.
 
 ## Open questions / risks
 

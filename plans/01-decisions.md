@@ -129,6 +129,14 @@ public **trust score** (D50), not by friending or private tiers.
 **Why:** OSM/NHD miss small ponds, flooded fields, specific put-ins.
 **Follow-up (must address before too long):** deduplication of user-created
 locations that overlap each other or official polygons. Kept simple for now.
+### Amendment + build (2026-07-24, Phase 8) — path-only; "draw" is gone
+**Shipped**, and narrower than written above: a user-created body comes **only from a recorded GPS
+path**, never a drawn shape. `waterBodies.create` takes a `gpsActivities` **`activityId`** and derives
+the polygon server-side (`core/pathToBody.ts`), so *no freehand drawing, ever* is a **server contract**
+rather than a UI convention. **Why the narrowing:** no path ⇒ no proof the person was there and no
+scale/shape/location frame of reference — a hand-drawn blob is a claim, a skated track is evidence.
+The follow-up dedup question above is answered by **D36**, also built this phase (match-on-create
+scoring feeds the Phase 7 merge queue, which until now had nothing flowing into it).
 
 ## D15 — Hazard lifecycle (Waze-style time-decay + confirmation)
 **Decided (defaults, tweakable).**
@@ -242,6 +250,28 @@ Health Connect) are v1-scoped.
 skated; hand-drawn areas can't. Multiple providers widen who can contribute.
 **Why (also, D4 reconciliation):** the "north half was good" nuance is captured by
 the GPS path (where they went) + the report's overall description, not a drawn area.
+
+### Amendment (2026-07-24, Phase 8) — the flow inverted: we record, then push
+The **core claim above survives unchanged** (trusted extent = a real GPS track; no hand-drawn areas;
+provider-agnostic storage), but the *plumbing* is now the opposite direction, because the **L7 read
+of Strava's post-Nov-2024 terms** killed the pull model:
+- **The "cross-user map display is ToS-gated / we'll display a Strava path publicly if the terms
+  allow" bullet is RESOLVED — they don't allow it.** Strava data provided by a user may only be shown
+  *to that user*, publicly-viewable or not, plus a blanket AI/ML ban. So **Strava *pull* is shelved
+  indefinitely**: it can never legally feed the lake map, a heatmap, or a path on a public report.
+- **The first A-input is our own `native` recorder**, not a provider. A track we record is
+  first-party Developer Application Data, so aggregating it, drawing it on public reports, and later
+  heatmapping it are all legal with **none** of Strava's restrictions. The binding privacy constraint
+  moved from Strava to **us** (→ **D58**, L14).
+- **Strava's role flips to *push* only** (`activity:write` — the user's own skate to their own
+  account). It's the adoption lever ("record once, keep your Strava stats"), not a data source.
+- **The remaining five providers stay deferred adapters**, unchanged in intent: each is an incremental
+  A-input into the same normalized `gpsActivities` shape (L8 per-provider ToS at integration time).
+  **The "apply for Garmin/COROS/Polar partner programs now" instruction still stands** — approvals
+  take weeks and would otherwise gate the fast-follow.
+- **Fitbit remains a non-provider.** Unchanged.
+See [`phase-8-native-capture.md`](./phase-8-native-capture.md) and L7 in
+[`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md) for the full read.
 
 ## D25 — Units, edits, comment depth (housekeeping)
 **Decided.** (a) Store **metric internally, display imperial** (US crowd).
@@ -406,6 +436,16 @@ one that never creates the duplicate.**
 **Why:** No clustering infra needed at our scale; the UX prevents most dups and the
 merge reuses patterns already in the plan (soft tombstones, moderator queue,
 reputation-weighted confirmations).
+### Build note (2026-07-24, Phase 8) — the producer finally exists
+Match-on-create shipped: `waterBodies.findMatchCandidates` (bbox + geospatial-nearest prefilter →
+`core/dedup.ts` scoring over the *existing* `geometry.ts` primitives — no new geodesy) stamps
+`dedupStatus` / `duplicateCandidateIds`, and creating new requires an explicit `confirmedNew`. This
+is what the **Phase 7 merge queue** has been waiting for — it shipped in 7a with nothing flowing into
+it. **One schema amendment:** `DEDUP_STATUSES` gained **`near_certain`**; the thresholds above always
+described three tiers but the enum had two, so the top tier had nowhere to go. `listDedupCandidates`
+surfaces both, near-certain first, and a flagged body stays **listed** (D3 — hiding it would pull
+every report and hazard filed against it off the map on a machine's guess). The **re-ETL overlap scan**
+and **auto-merge + community confirmations** remain deferred, as staged above.
 
 ## D37 — Admin/moderator surface: gated `/admin` in the web app (not a separate app)
 **Decided.** The operator experience (moderation + app administration + support) is a
@@ -1114,9 +1154,11 @@ and it drives good-faith users off. A per-action, reversible right matches the o
 and keeps the door open for reinstatement, while still giving moderators a real deterrent. Pairs with D56's
 contradiction signal and D50's boost-only trust.
 
-**Extending the lever (planned — not yet built, 2026-07-23).** The per-capability pattern generalizes, but
-the *shape* of each lever must match the abuse it answers — never blanket symmetry:
-- **`canPostComments` (planned, Phase 7 — the strongest addition).** Comments are free-text user content
+**Extending the lever (2026-07-23; first extension shipped 2026-07-24).** The per-capability pattern
+generalizes, but the *shape* of each lever must match the abuse it answers — never blanket symmetry:
+- **`canPostComments` — ✅ BUILT in Phase 7** *(status corrected 2026-07-24; the "planned" wording below
+  described it before it landed. It's on `profiles`, flipped by `moderation.setPostingPermission`, and
+  enforced by `assertCanPostComments` in `comments.create`.)* Comments are free-text user content
   (D21) — the classic harassment/spam surface — so a **boolean** revocation fits, exactly like reports and
   hazards. Its distinct payoff: mute a toxic commenter *while preserving their safety contributions* (a bad
   commenter can still be a useful ice reporter), which neither `block` (interpersonal mute, D32) nor a

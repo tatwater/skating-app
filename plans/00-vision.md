@@ -72,7 +72,10 @@ the freshest peer reports for each — then makes their own call.
 
 Reports are seeded and kept fresh via:
 - Native in-app reporting (live or just-finished).
-- **Strava integration** — auto-detect ice-skate activities and prompt a report.
+- **The in-app GPS recorder** — record the skate here, and stopping it offers to file the report
+  with the real path attached. *(Amended 2026-07-24: this used to read "Strava integration —
+  auto-detect ice-skate activities"; Strava's terms forbid the pull direction, so we record it
+  ourselves and **push** to Strava instead — see D24's amendment and L7.)*
 - (Aspirational) **Bridging** existing Google Group / Facebook posts into
   summarized in-app reports.
 
@@ -88,11 +91,15 @@ Reports are seeded and kept fresh via:
   earned from corroboration + helpful marks (D50); town (not address) optionally public
   on profile. Deliberately **no follow/friend graph** — a report is a report regardless
   of who made it, and any private coordination belongs off-platform.
-- **GPS providers** — connect Strava, Garmin, COROS, Polar, Apple Health, Google
-  Health Connect; auto-detect ice-skate activities, prompt reports, ingest the
-  trusted GPS path (+ media where terms allow) (D24). Each skate is **resolved to the
-  water body it was on** (D44), so you can find "skates on Lake Morey" by name, not
-  by drawing a box on the map.
+- **GPS tracks — recorded here, pushed out** *(reframed 2026-07-24, D24 amendment / L7)*. A native
+  in-app **recorder** produces the trusted path; a track that's ours is legal to draw on a public
+  report and aggregate into a lake's community map (a Strava-sourced one never would be). It
+  **pushes** to Strava (`activity:write`) so you keep your stats — record once, get both. Garmin /
+  COROS / Polar / Apple Health / Google Health Connect stay planned **input adapters** into the same
+  store, deferred. Each skate is **resolved to the water body it was on** (D44), so you can find
+  "skates on Lake Morey" by name, not by drawing a box on the map. Where a path came from is also
+  what lets a skate on unmapped water **create** that water body — a track is evidence, a drawing
+  isn't (D14).
 - **Bounties** — request a report for a water body; skaters who were recently
   there get prompted; honest reports (esp. with photo evidence) earn reputation.
 - **Newsfeed** — reports/conversations within the user's drive radius, sorted by

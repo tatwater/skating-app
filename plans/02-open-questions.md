@@ -35,11 +35,19 @@ friends alpha. The **License App Store exception** wording (D43) is also legal-g
 here. **Status:** interim guardrails in place; full legal review still required before
 broad launch.
 
-### Q11 — Strava-path hazard *deduction* (future edge)
+### Q11 — GPS-path hazard *deduction* (future edge)
+*(Was "Strava-path hazard deduction" — renamed 2026-07-24, see below.)*
 If many skaters' paths on the same day detour around the same stretch, that's a
 signal of an unreported hazard (pressure ridge / open water). Noisy (people detour
 for many reasons), needs volume + privacy care. **Status:** future bet; logged
 because it's a genuine advantage over email forums.
+**Unblocked legally, blocked on volume (2026-07-24, Phase 8 / L7).** The legal half of this question
+is answered: it now runs over **our own** natively-recorded tracks, not Strava data, so Strava's
+cross-user-display and AI/ML bans don't reach it, and Phase 8 built the substrate (`gpsActivities`
+paths + the D58-governed aggregate layer). What's left is **not** a legal gate — it's **volume +
+calibration + an L14 privacy pass** on inferring hazards from clustered paths. Same for the sibling
+crowd-intelligence derivations (pressure-ridge / clearest-side). Don't build it until real paths
+exist to calibrate against; a noisy hazard inference is worse than none (D3).
 
 ---
 
@@ -80,7 +88,11 @@ big lake isn't one label. Relevant when modeling Champlain-scale bodies + seedin
 - **Q7 → D18** — Real drive-time via cached per-user isochrone (radius fallback).
 - **Q9 (baseline) → D19** — "Weather since report" = descriptive facts, no AI.
 - **Q13 → D24** — All six GPS providers v1-scoped (provider-agnostic); apply for all
-  approvals in Phase 0, ship fast-follow (Strava + Apple first, Garmin next, rest follow).
+  approvals in Phase 0, ship fast-follow. **Amended 2026-07-24 (Phase 8 / L7):** the *pull* model is
+  dead — the first capture source is our own **native recorder**, Strava is **push-only**
+  (`activity:write`), and the watch providers are deferred adapters. See the D24 amendment.
+- **Q11 (legal half) → D58/L7** — path deduction over **our own** tracks is outside Strava's terms;
+  what remains is volume + calibration + the L14 privacy pass, not a legal question. Q11 stays open.
 - **Q12 → D36** — User-location dedup: match-on-create (bbox + IoU + name) +
   soft-tombstone merge; v1 moderator queue, community/auto later.
 - **Data model (06) → D21–D25** — comments v1, structured ice thickness, dual

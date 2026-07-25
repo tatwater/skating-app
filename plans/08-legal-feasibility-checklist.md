@@ -37,12 +37,12 @@ Each item cross-references its decision (`D#`) / open question (`Q#`) elsewhere 
 | L6 | AI summarization beyond weather facts | Q9, D21 | ⛔ | Liability review + source-ToS pass |
 | L7 | Strava API terms — cross-user path display, AI, branding | D24 | 🟢 | **Read 2026-07-24:** *pull* forbidden → shelved; *push* (`activity:write`) allowed; aggregate off **our own** tracks |
 | L8 | Other GPS provider ToS / brand / health-data review | D24 | ⛔ | Per-provider terms at integration time |
-| L9 | Strava-path hazard **deduction** | Q11 | 🔬 | Volume + privacy pass (future bet) |
+| L9 | GPS-path hazard **deduction** (our own tracks) | Q11 | 🔬 | Volume + calibration + privacy pass (legal half cleared by L7) |
 | L10 | OSM **ODbL share-alike** if we publish the derived DB | D5 | 🟡 | Only bites if we redistribute the extract |
 | L11 | Landowner takedown wording / obligation | D48, Q10 | 🟡 | Lawyer confirms takedown policy |
 | L12 | PostHog session replay (minors + location) | D29 | ⛔ | Masking + minor-exclusion + PRIVACY update |
 | L13 | Weather (Open-Meteo) attribution | 04-integrations | 🟢 | Minor — attribution appreciated |
-| L14 | Aggregate/heatmap privacy for **our own** tracks | D41, D42, D58 | 🟡 | Model decided (**D58**): publish-is-consent (no k-anon) + minors-out + put-in-gated clip + opt-out |
+| L14 | Aggregate/heatmap privacy for **our own** tracks | D41, D42, D58 | 🟡 | Model decided (**D58**) **and built** (Phase 8): publish-is-consent (no k-anon) + minors-out + put-in-gated clip + opt-out. Still 🟡 — the *derivations* over the aggregate (L9) need their own pass |
 
 ---
 
@@ -157,9 +157,15 @@ What the current (post-Nov-2024) Agreement actually says, and how it moved our d
 - **Strava *push* (write the user's own activity via `activity:write`) is ALLOWED** and becomes the
   **adoption lever** (record once, keep your Strava stats/kudos). This is the canonical complementary
   integration (Garmin model), squarely in Strava's "still allowed" bucket.
-- [ ] "Powered by Strava" / "Connect with Strava" brand kit met on the connect + push surfaces
+- [x] "Powered by Strava" / "Connect with Strava" brand kit met on the connect + push surfaces
       (see `04-integrations.md`) — honor it even though a pure push shows no Strava *data*.
-- [ ] `activity:write` consent screen clearly states we upload on the user's behalf.
+      *(Done — Phase 8: copy + brand orange single-sourced in `@skating/core/strava.ts` so web and
+      mobile can't drift; rendered by `StravaConnect.tsx`. The connect surface is **mobile-only**
+      today, which is where recording happens.)*
+- [x] `activity:write` consent screen clearly states we upload on the user's behalf.
+      *(Done — `STRAVA_CONNECT_EXPLAINER` states it plainly before the OAuth screen opens, including
+      the thing users actually wonder about: we never read anything back.)*
+- [ ] Re-check the brand kit if a **web** connect surface is ever added.
 
 ## L8 — Other GPS provider ToS / brand / health-data review (D24) ⛔
 Garmin / COROS / Polar (partner-program terms + brand) and Apple HealthKit / Google Health Connect
@@ -168,7 +174,7 @@ brand terms and data-use limits.
 - [ ] Per-provider ToS + brand checklist at the point each integration lands (Phase 8).
 - [ ] Google Play health-data access review for Health Connect permissions.
 
-## L9 — Path-cluster hazard deduction (Q11) 🔬
+## L9 — Path-cluster hazard deduction (Q11) 🔬 — legal half cleared 2026-07-24
 Future bet: many skaters detouring around the same stretch = a possible unreported hazard. Noisy +
 needs volume + privacy care. Logged, not committed. **Note (2026-07-24):** now runs on **our own**
 recorded tracks (L7 pivot), so it's **outside Strava's AI terms** — but still needs the L14 privacy
@@ -202,19 +208,24 @@ weather-since strip appears (Phase 10).
 The **L7 pivot moved the binding constraint from Strava to us.** Once we render crowd layers off our own
 recorded tracks, *our* privacy design is what protects skaters — there's no upstream ToS doing it. **The
 model is now decided — D58** (see `phase-8-native-capture.md`): **publish-is-consent, not k-anonymity.**
-Requirements the aggregate layer must meet (Phase 8, PR 8e):
-- [ ] **Minors excluded** from all aggregate layers by construction (D41) — automatic: minors can't post
-      reports, so their tracks never link to a public report and never aggregate.
-- [ ] **Publish-is-consent** — the aggregate is built **only** from tracks linked to a *visible, non-minor*
+Requirements the aggregate layer must meet (Phase 8, PR 8e) — **all five built 2026-07-24**
+(`gpsActivities.listTracksForBody`, convex-tested for each gate; still to be **deployed + device-verified**):
+- [x] **Minors excluded** from all aggregate layers by construction (D41) — automatic: minors can't post
+      reports, so their tracks never link to a public report and never aggregate. *(Nothing checks an age;
+      the exclusion falls out of the model, which is why it can't be forgotten in a later query.)*
+- [x] **Publish-is-consent** — the aggregate is built **only** from tracks linked to a *visible, non-minor*
       report; publishing the report is the consent. **No k-anonymity threshold** (a public report is meant
       to be shared — one skater is enough; the old N-contributor gate is **dropped** by D58). **No** separate
-      `sharedToAggregate` flag.
-- [ ] **Put-in-gated endpoint clipping** — the report's existing `showPutIn?` opt-out is the clipping
+      `sharedToAggregate` flag. *(Enforced as `linkedReportId` set **and** `moderationStatus === 'visible'`.)*
+- [x] **Put-in-gated endpoint clipping** — the report's existing `showPutIn?` opt-out is the clipping
       consent: put-in shared ⇒ full path; put-in withheld ⇒ clip first/last ~150 m before it aggregates, so
       a skate-from-home start/stop can't reveal a residence. (Replaces the old blanket `sortByHome` clip.)
-- [ ] **Global opt-out** — `profiles.excludeTracksFromAggregate?` (person-level; a later opt-out
-      retroactively drops all their tracks). Recording / Strava push unaffected.
-- [ ] **Decay with the report** — path opacity fades via D59 and never fully vanishes (D3 min-opacity floor).
+      *(A path that is entirely endpoints is dropped, not emitted short.)*
+- [x] **Global opt-out** — `profiles.excludeTracksFromAggregate?` (person-level; a later opt-out
+      retroactively drops all their tracks). Recording / Strava push unaffected. *(Ships on **both**
+      surfaces — mobile `you.tsx` and web `/settings`, added 2026-07-25 when the web gap was caught.
+      Copy single-sourced in `core/trackPrivacy.ts` so the promise can't be worded two ways.)*
+- [x] **Decay with the report** — path opacity fades via D59 and never fully vanishes (D3 min-opacity floor).
 - [ ] **Deferred derivations** — pressure-ridge/clearest-side intelligence + path-cluster hazard deduction
       (L9) render only after a volume + calibration pass; the substrate privacy above still governs them.
 - [x] Open-Meteo attribution shown on the weather-since strip. *(Done — Phase 10, PR #23; `WeatherStrip` on web + mobile.)*
