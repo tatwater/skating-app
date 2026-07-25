@@ -1,4 +1,4 @@
-# Native Track Capture + Strava Push
+# Phase 8 — Native Track Capture + Strava Push
 
 *Scoping doc — 2026-07-24. Extends [`04-integrations.md`](../04-integrations.md) (esp.
 "Cross-user map display — our stance") and [`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md)

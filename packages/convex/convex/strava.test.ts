@@ -49,7 +49,15 @@ async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {
   return { id, as: t.withIdentity({ subject }) };
 }
 
-async function seedActivity(t: ReturnType<typeof convexTest>, userId: Id<'profiles'>) {
+/** An hour on the ice, twelve stored coordinates — the gap the GPX timestamps have to bridge. */
+const ACTIVITY_SECONDS = 3600;
+
+async function seedActivity(
+  t: ReturnType<typeof convexTest>,
+  userId: Id<'profiles'>,
+  overrides: { endTime?: number | undefined; elapsedSeconds?: number } = {},
+) {
+  const endTime = 'endTime' in overrides ? overrides.endTime : T0 + ACTIVITY_SECONDS * 1000;
   return t.run((ctx) =>
     ctx.db.insert('gpsActivities', {
       userId,
@@ -57,7 +65,10 @@ async function seedActivity(t: ReturnType<typeof convexTest>, userId: Id<'profil
       providerActivityId: `key-${userId}`,
       sportType: 'IceSkate',
       startTime: T0,
-      endTime: T0 + 3_600_000,
+      ...(endTime !== undefined ? { endTime } : {}),
+      ...(overrides.elapsedSeconds !== undefined
+        ? { elapsedSeconds: overrides.elapsedSeconds }
+        : {}),
       path: {
         type: 'LineString' as const,
         coordinates: Array.from({ length: 12 }, (_, i) => [-72.15 + i * 0.001, 43.9]),
@@ -66,6 +77,19 @@ async function seedActivity(t: ReturnType<typeof convexTest>, userId: Id<'profil
       detectedAt: T0,
     }),
   );
+}
+
+type FetchCall = { url: string; method: string; body: unknown };
+
+/** Pull the GPX back out of the multipart upload, so the timestamps we actually sent can be read. */
+async function uploadedTrackTimes(calls: FetchCall[]): Promise<number[]> {
+  const post = calls.find((c) => c.method === 'POST' && /\/uploads$/.test(c.url));
+  const file = (post?.body as FormData | undefined)?.get('file');
+  if (!(file instanceof Blob)) throw new Error('no GPX file in the upload');
+  const gpx = await file.text();
+  // Only the <trkpt> times — the <metadata> block carries one too, and it isn't a track point.
+  const seg = gpx.slice(gpx.indexOf('<trkseg>'));
+  return [...seg.matchAll(/<time>([^<]+)<\/time>/g)].map((m) => Date.parse(m[1] as string));
 }
 
 async function seedConnection(
@@ -89,7 +113,7 @@ async function seedConnection(
 
 /** A `fetch` stub that answers by URL + method, recording every call. */
 function stubFetch(routes: Array<{ match: RegExp; method?: string; body: unknown; ok?: boolean }>) {
-  const calls: Array<{ url: string; method: string; body: unknown }> = [];
+  const calls: FetchCall[] = [];
   const fake = vi.fn(async (input: string | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
@@ -276,6 +300,55 @@ describe('pushActivity (upload → poll)', () => {
     expect(calls.some((c) => c.method === 'PUT' && c.url.includes('/activities/555'))).toBe(true);
   }, 30_000);
 
+  // Strava reads distance from the geometry but *duration and pace from the timestamps*. Spacing the
+  // points a fixed second apart posted an hour-long skate as a twelve-second one at an absurd pace.
+  test('spreads the GPX timestamps across the recorded duration, not one per second', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedConnection(t, user.id);
+    const activityId = await seedActivity(t, user.id);
+
+    const calls = stubFetch([
+      { match: /api\/v3\/uploads\/\d+/, method: 'GET', body: { activity_id: 555, error: null } },
+      { match: /api\/v3\/uploads$/, method: 'POST', body: { id: 42 } },
+      { match: /api\/v3\/activities\/\d+/, method: 'PUT', body: {} },
+    ]);
+    await user.as.action(api.strava.pushActivity, { activityId });
+
+    const times = await uploadedTrackTimes(calls);
+    expect(times).toHaveLength(12);
+    expect(times[0]).toBe(T0);
+    expect(times.at(-1)).toBe(T0 + ACTIVITY_SECONDS * 1000);
+    // ...and evenly, so the pace is smooth rather than a stall followed by a sprint.
+    const gaps = times.slice(1).map((time, i) => time - (times[i] as number));
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(1);
+  }, 30_000);
+
+  test('falls back to elapsed time when a row predates endTime, and to 1 Hz when neither exists', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedConnection(t, user.id);
+    const routes = [
+      { match: /api\/v3\/uploads\/\d+/, method: 'GET', body: { activity_id: 555, error: null } },
+      { match: /api\/v3\/uploads$/, method: 'POST', body: { id: 42 } },
+      { match: /api\/v3\/activities\/\d+/, method: 'PUT', body: {} },
+    ];
+
+    const withElapsed = await seedActivity(t, user.id, {
+      endTime: undefined,
+      elapsedSeconds: 1800,
+    });
+    let calls = stubFetch(routes);
+    await user.as.action(api.strava.pushActivity, { activityId: withElapsed });
+    expect((await uploadedTrackTimes(calls)).at(-1)).toBe(T0 + 1_800_000);
+
+    await t.run((ctx) => ctx.db.delete(withElapsed));
+    const bare = await seedActivity(t, user.id, { endTime: undefined });
+    calls = stubFetch(routes);
+    await user.as.action(api.strava.pushActivity, { activityId: bare });
+    expect((await uploadedTrackTimes(calls)).at(-1)).toBe(T0 + 11_000);
+  }, 60_000);
+
   test("surfaces Strava's duplicate rejection rather than retrying forever", async () => {
     const t = harness();
     const user = await seedUser(t, 'skater');
@@ -294,6 +367,9 @@ describe('pushActivity (upload → poll)', () => {
     const result = await user.as.action(api.strava.pushActivity, { activityId });
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/duplicate/i);
+    // The reason is what lets the client record the skate as uploaded rather than failed: it *is* on
+    // Strava — a watch just got there first.
+    expect(result.reason).toBe('duplicate');
   }, 30_000);
 
   test('refreshes an expired access token before uploading', async () => {
@@ -342,9 +418,12 @@ describe('pushActivity (upload → poll)', () => {
     const user = await seedUser(t, 'skater');
     const activityId = await seedActivity(t, user.id);
     stubFetch([{ match: /./, body: {} }]);
+    // `not_connected` is the reason the client turns into a *skipped* push rather than a failed one —
+    // the upload toggle defaults on, so "never linked an account" is the common case, not an error.
     expect(await user.as.action(api.strava.pushActivity, { activityId })).toMatchObject({
       ok: false,
       error: 'Strava is not connected',
+      reason: 'not_connected',
     });
   });
 
@@ -356,6 +435,7 @@ describe('pushActivity (upload → poll)', () => {
     expect(await user.as.action(api.strava.pushActivity, { activityId })).toMatchObject({
       ok: false,
       error: 'Strava is not configured',
+      reason: 'not_configured',
     });
   });
 });

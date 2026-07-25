@@ -30,6 +30,13 @@ import { processTrack, type TrackPoint } from './track';
 /** How far the Strava push has got for this track — `null`/absent when the user didn't ask for one. */
 export type StravaPushState = 'pending' | 'uploaded' | 'skipped' | 'failed';
 
+/**
+ * What a push attempt *settled* as. Deliberately narrower than `StravaPushState` (no `pending`), and
+ * deliberately not a boolean: "we never tried" (no connection, nothing to send) is a different fact
+ * from "we tried and Strava said no", and only the host adapter can tell them apart.
+ */
+export type StravaPushOutcome = 'uploaded' | 'skipped' | 'failed';
+
 /** A recorded skate on the device, waiting to become a `gpsActivities` row. */
 export interface QueuedTrack {
   kind: 'track';
@@ -127,8 +134,15 @@ export interface TrackFlushEffects {
     elapsedSeconds: number;
     waterBodyId?: string;
   }): Promise<string>;
-  /** Kick off the Strava push (`strava.pushActivity`), when the user asked for one. */
-  pushToStrava?(input: { activityId: string }): Promise<void>;
+  /**
+   * Kick off the Strava push (`strava.pushActivity`), when the user asked for one.
+   *
+   * Returns how it settled rather than resolving-means-success: the toggle defaults *on*, so the
+   * overwhelmingly common answer from a phone-only skater is "you aren't connected to Strava" — which
+   * is `skipped`, not `failed`. Throwing is still honoured (→ `failed`) so an adapter can just let a
+   * transport error escape. Optional: a host with no Strava integration at all omits it entirely.
+   */
+  pushToStrava?(input: { activityId: string }): Promise<StravaPushOutcome>;
   persist(track: QueuedTrack): Promise<void>;
 }
 
@@ -204,8 +218,7 @@ export async function flushTrack(
     if (t.uploadToStrava && effects.pushToStrava) {
       try {
         await save({ stravaPushState: 'pending' });
-        await effects.pushToStrava({ activityId });
-        await save({ stravaPushState: 'uploaded' });
+        await save({ stravaPushState: await effects.pushToStrava({ activityId }) });
       } catch {
         // Deliberately swallowed — see the note above. The skate is safe in our store either way.
         await save({ stravaPushState: 'failed' });

@@ -322,6 +322,9 @@ export const getActivityForUpload = internalQuery({
       userId: activity.userId,
       path: activity.path ?? null,
       startTime: activity.startTime,
+      // Both carried because the GPX needs a *span*, not just an origin — see `pathToTrackPoints`.
+      endTime: activity.endTime ?? null,
+      elapsedSeconds: activity.elapsedSeconds ?? null,
       bodyName: body?.name ?? null,
     };
   },
@@ -357,25 +360,64 @@ async function accessTokenFor(ctx: ActionCtx, userId: Id<'profiles'>): Promise<s
   return tokens.access_token;
 }
 
-/** Turn a stored GeoJSON path back into the points the GPX emitter wants. */
-function pathToTrackPoints(path: LineString, startTime: number): TrackPoint[] {
+/**
+ * Turn a stored GeoJSON path back into the points the GPX emitter wants, spread evenly across the
+ * activity's **real** span.
+ *
+ * Timestamps aren't stored per-coordinate (the path is geometry, not a time series), so the span has
+ * to come from the row: Strava derives distance from the geometry but *duration and pace from the
+ * timestamps*, so anything other than the recorded span posts a skate with the wrong elapsed time —
+ * an hour on the ice arriving as twelve seconds. An even spread over the true span yields the correct
+ * totals with a smoothed pace, which is honest for a track we post-processed anyway.
+ *
+ * `endTime` is preferred over `elapsedSeconds` because it *is* the elapsed span; `elapsedSeconds` is
+ * moving time (pauses excluded) and so understates it. The 1 Hz fallback only catches rows predating
+ * the field — both are optional in the schema.
+ */
+function pathToTrackPoints(
+  path: LineString,
+  startTime: number,
+  endTime: number | null,
+  elapsedSeconds: number | null,
+): TrackPoint[] {
   const coords = path.coordinates;
-  // Timestamps aren't stored per-coordinate (the path is geometry, not a time series), so the GPX
-  // gets an even distribution across the activity's real span. Strava derives distance from the
-  // geometry and duration from the timestamps, so an even spread yields the correct totals with a
-  // smoothed pace — honest for a track we post-processed anyway, and far better than omitting time.
+  const span =
+    endTime !== null && endTime > startTime
+      ? endTime - startTime
+      : elapsedSeconds !== null && elapsedSeconds > 0
+        ? elapsedSeconds * 1000
+        : (coords.length - 1) * 1000;
+  const step = coords.length > 1 ? span / (coords.length - 1) : 0;
   return coords.map(([lng, lat, elevation], i) => ({
     lat: lat as number,
     lng: lng as number,
-    t: startTime + i * 1000,
+    t: Math.round(startTime + i * step),
     ...(typeof elevation === 'number' ? { elevation } : {}),
   }));
 }
+
+/**
+ * Why a push didn't happen. The client needs this to tell "we never tried" from "Strava refused":
+ * the first is a `skipped` track, the second a `failed` one, and the difference is what the skater
+ * eventually sees. `duplicate` is a *success* wearing a failure's clothes — the activity is already
+ * on Strava (a watch beat us to it), so there is nothing to retry and nothing to apologise for.
+ */
+export type StravaPushFailure =
+  | 'not_configured'
+  | 'not_signed_in'
+  | 'not_connected'
+  | 'not_found'
+  | 'not_owner'
+  | 'no_path'
+  | 'too_short'
+  | 'duplicate'
+  | 'upload_failed';
 
 interface UploadResult {
   ok: boolean;
   activityId?: number;
   error?: string;
+  reason?: StravaPushFailure;
 }
 
 /**
@@ -388,28 +430,39 @@ interface UploadResult {
 export const pushActivity = action({
   args: { activityId: v.id('gpsActivities') },
   handler: async (ctx, args): Promise<UploadResult> => {
-    if (!stravaConfigured()) return { ok: false, error: 'Strava is not configured' };
+    if (!stravaConfigured()) {
+      return { ok: false, error: 'Strava is not configured', reason: 'not_configured' };
+    }
     const profile = await ctx.runQuery(internal.strava.getPushProfile, {});
-    if (!profile) return { ok: false, error: 'Not signed in' };
+    if (!profile) return { ok: false, error: 'Not signed in', reason: 'not_signed_in' };
 
     const activity = await ctx.runQuery(internal.strava.getActivityForUpload, {
       activityId: args.activityId,
     });
-    if (!activity) return { ok: false, error: 'Activity not found' };
-    if (activity.userId !== profile._id) return { ok: false, error: 'Not your activity' };
+    if (!activity) return { ok: false, error: 'Activity not found', reason: 'not_found' };
+    if (activity.userId !== profile._id) {
+      return { ok: false, error: 'Not your activity', reason: 'not_owner' };
+    }
     if (activity.path?.type !== 'LineString') {
-      return { ok: false, error: 'That skate has no recorded path' };
+      return { ok: false, error: 'That skate has no recorded path', reason: 'no_path' };
     }
 
     const token = await accessTokenFor(ctx, profile._id);
-    if (!token) return { ok: false, error: 'Strava is not connected' };
+    if (!token) return { ok: false, error: 'Strava is not connected', reason: 'not_connected' };
 
     const name = activity.bodyName ? `Skate on ${activity.bodyName}` : 'Ice skate';
-    const gpx = toGpx(pathToTrackPoints(activity.path as LineString, activity.startTime), {
-      name,
-      type: 'IceSkate',
-    });
-    if (!gpx) return { ok: false, error: 'That recording is too short to upload' };
+    const gpx = toGpx(
+      pathToTrackPoints(
+        activity.path as LineString,
+        activity.startTime,
+        activity.endTime,
+        activity.elapsedSeconds,
+      ),
+      { name, type: 'IceSkate' },
+    );
+    if (!gpx) {
+      return { ok: false, error: 'That recording is too short to upload', reason: 'too_short' };
+    }
 
     return await uploadAndPoll(token, gpx, name, String(args.activityId));
   },
@@ -458,12 +511,12 @@ async function uploadAndPoll(
       body: form,
     });
     const body = (await res.json()) as { id?: number; error?: string; message?: string };
-    if (!res.ok) return { ok: false, error: body.message ?? body.error ?? `HTTP ${res.status}` };
-    if (body.error) return { ok: false, error: body.error };
-    if (typeof body.id !== 'number') return { ok: false, error: 'Strava returned no upload id' };
+    if (!res.ok) return uploadError(body.message ?? body.error ?? `HTTP ${res.status}`);
+    if (body.error) return uploadError(body.error);
+    if (typeof body.id !== 'number') return uploadError('Strava returned no upload id');
     uploadId = body.id;
   } catch (err) {
-    return { ok: false, error: `Strava upload threw: ${String(err)}` };
+    return uploadError(`Strava upload threw: ${String(err)}`);
   }
 
   for (let attempt = 0; attempt < UPLOAD_POLL_MAX_ATTEMPTS; attempt++) {
@@ -480,7 +533,7 @@ async function uploadAndPoll(
       // Strava reports a duplicate here rather than at POST time. Surface it verbatim — it's the
       // expected outcome when a watch already uploaded this skate, and the caller treats it as
       // "nothing more to do" rather than as a failure worth retrying.
-      if (body.error) return { ok: false, error: body.error };
+      if (body.error) return uploadError(body.error);
       if (typeof body.activity_id === 'number') {
         // GPX carries no formal sport vocabulary, so the type is set explicitly once the activity
         // exists — otherwise the skate lands as a generic workout.
@@ -488,10 +541,19 @@ async function uploadAndPoll(
         return { ok: true, activityId: body.activity_id };
       }
     } catch (err) {
-      return { ok: false, error: `Strava poll threw: ${String(err)}` };
+      return uploadError(`Strava poll threw: ${String(err)}`);
     }
   }
-  return { ok: false, error: 'Strava is still processing this upload' };
+  return uploadError('Strava is still processing this upload');
+}
+
+/**
+ * Classify one of Strava's own error strings. Only `duplicate` is special-cased, and only because
+ * Strava has no error code to key off — its own wording ("duplicate of activity 123") is the signal,
+ * and the outcome it implies (the skate is already up there) is the opposite of every other failure.
+ */
+function uploadError(error: string): UploadResult {
+  return { ok: false, error, reason: /duplicate/i.test(error) ? 'duplicate' : 'upload_failed' };
 }
 
 /** Best-effort: stamp the activity as an ice skate. A failure here doesn't undo a successful upload. */

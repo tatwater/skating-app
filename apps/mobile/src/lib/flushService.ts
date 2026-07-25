@@ -98,6 +98,14 @@ function effects(): DraftFlushEffects {
   };
 }
 
+/**
+ * Push outcomes that mean *we never sent anything* — an unconfigured deployment, an unconnected
+ * account, a recording too short to be a GPX. The "also upload to Strava" toggle defaults on, so for
+ * every phone-only skater who never linked an account this is the normal answer; recording it as a
+ * failure would manufacture an error out of a feature they simply don't use.
+ */
+const PUSH_NOT_ATTEMPTED = new Set(['not_configured', 'not_connected', 'too_short']);
+
 /** The recorded-track adapter (Phase 8) — ingest, then the optional Strava courtesy copy. */
 function trackEffects(): TrackFlushEffects {
   const shared = effects();
@@ -114,6 +122,19 @@ function trackEffects(): TrackFlushEffects {
           ? { waterBodyId: input.waterBodyId as Id<'waterBodies'> }
           : {}),
       }),
+    // The courtesy copy — "record once, get both" only holds if this is actually wired. `pushActivity`
+    // is an action (it talks to Strava over HTTP and may refresh a token first) and it *returns* its
+    // failures rather than throwing, so a bad result has to be translated here; only a transport
+    // error escapes as an exception, which `flushTrack` already treats as `failed`.
+    pushToStrava: async ({ activityId }) => {
+      const res = await convex.action(api.strava.pushActivity, {
+        activityId: activityId as Id<'gpsActivities'>,
+      });
+      // A duplicate is Strava telling us the skate is already on the account (a watch got there
+      // first). Nothing to send, nothing to retry — that's an upload, not a failure.
+      if (res.ok || res.reason === 'duplicate') return 'uploaded';
+      return res.reason !== undefined && PUSH_NOT_ATTEMPTED.has(res.reason) ? 'skipped' : 'failed';
+    },
     persist: async (track) => {
       saveTrack(track);
     },

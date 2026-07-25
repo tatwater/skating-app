@@ -159,7 +159,7 @@ describe('flushTrack', () => {
 
 describe('the Strava push is a courtesy copy, never a gate', () => {
   it('pushes when the session asked for it', async () => {
-    const pushToStrava = vi.fn().mockResolvedValue(undefined);
+    const pushToStrava = vi.fn().mockResolvedValue('uploaded');
     const result = await flushTrack(
       queued({ uploadToStrava: true }),
       effects({ pushToStrava }),
@@ -184,8 +184,23 @@ describe('the Strava push is a courtesy copy, never a gate', () => {
     expect(result.track.stravaPushState).toBe('failed');
   });
 
-  it('records "skipped" when the user wanted a push but no Strava connection exists', async () => {
+  it('records "skipped" on a host that has no Strava integration at all', async () => {
     const result = await flushTrack(queued({ uploadToStrava: true }), effects(), T0 + 60_000);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.track.stravaPushState).toBe('skipped');
+  });
+
+  // The distinction that matters: the toggle defaults ON, so an unconnected account is the *common*
+  // case. It must not be recorded as a failure — only the adapter knows which of the two it was.
+  it('records the outcome the adapter reports, not merely "it resolved"', async () => {
+    const pushToStrava = vi.fn().mockResolvedValue('skipped');
+    const result = await flushTrack(
+      queued({ uploadToStrava: true }),
+      effects({ pushToStrava }),
+      T0 + 60_000,
+    );
+    expect(pushToStrava).toHaveBeenCalledWith({ activityId: 'activity-1' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.track.stravaPushState).toBe('skipped');
