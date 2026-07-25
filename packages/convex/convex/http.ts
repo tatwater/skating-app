@@ -16,10 +16,19 @@
  * "Authorization Callback Domain" setting.
  */
 
-import { OAUTH_RESULT_COPY, type OAuthResult, planOAuthRedirect } from '@skating/core';
+import {
+  browserOwnsOAuthFlow,
+  clearStateCookie,
+  OAUTH_RESULT_COPY,
+  type OAuthFailureReason,
+  type OAuthResult,
+  planOAuthRedirect,
+  serializeStateCookie,
+} from '@skating/core';
 import { httpRouter } from 'convex/server';
 import { internal } from './_generated/api';
 import { httpAction } from './_generated/server';
+import { OAUTH_STATE_TTL_SECONDS, stravaAuthorizeUrl } from './strava';
 
 const http = httpRouter();
 
@@ -66,11 +75,53 @@ function resultPage(result: OAuthResult): Response {
 }
 
 /**
+ * **Where a connect flow actually starts.** The app opens this, not Strava's URL.
+ *
+ * Its whole job is to bind the flow to *this browser* — drop the session cookie carrying the nonce,
+ * then forward to Strava. Without this step the state nonce only proves "some signed-in user began a
+ * flow", which lets an attacker mint a state on their own account and have a victim complete the
+ * consent screen, landing the victim's Strava tokens on the attacker's profile. See
+ * `core/oauthSession.ts`.
+ *
+ * The state is **peeked, not consumed** — the user hasn't seen Strava yet, and burning the nonce here
+ * would make every legitimate flow fail at the callback.
+ */
+http.route({
+  path: '/strava/start',
+  method: 'GET',
+  handler: httpAction(async (ctx, request) => {
+    const state = new URL(request.url).searchParams.get('state');
+    if (!state) return resultPage('failed');
+
+    // An unknown or expired nonce never reaches Strava: no point sending someone through a consent
+    // screen for a flow that cannot complete.
+    const live = await ctx.runQuery(internal.strava.peekOAuthState, { state });
+    if (!live) return resultPage('failed');
+
+    return new Response(null, {
+      status: 302,
+      headers: {
+        Location: stravaAuthorizeUrl(state),
+        'Set-Cookie': serializeStateCookie(state, OAUTH_STATE_TTL_SECONDS),
+      },
+    });
+  }),
+});
+
+/**
  * Strava's OAuth redirect target.
  *
  * Strava sends `code` + `state` on success, or `error=access_denied` when the athlete declines. Every
  * outcome ends somewhere intelligible — a deep link back into the app, our own web app, or the page
  * above — because the user is sitting in a browser window they expect to close itself.
+ *
+ * Before anything else, the **session check**: the `state` must match the cookie `/strava/start` set
+ * in this browser. A mismatch is refused *before* the code is exchanged, so a victim's authorization
+ * code is never traded for tokens. That failure reports `reason=session`, because "the cookie was
+ * missing" is both the attack signature and the cookies-are-blocked signature, and on a real device
+ * the difference matters.
+ *
+ * The cookie is cleared on every outcome — the nonce is spent either way.
  */
 http.route({
   path: '/strava/callback',
@@ -81,13 +132,23 @@ http.route({
     const state = url.searchParams.get('state');
     const declined = url.searchParams.get('error');
 
-    const finish = (target: string | null, result: OAuthResult) => {
-      const plan = planOAuthRedirect(target, process.env.WEB_APP_URL, result);
-      if (plan.kind === 'page') return resultPage(result);
-      return new Response(null, { status: 302, headers: { Location: plan.location } });
+    const finish = (target: string | null, result: OAuthResult, reason?: OAuthFailureReason) => {
+      const plan = planOAuthRedirect(target, process.env.WEB_APP_URL, result, reason);
+      const headers: Record<string, string> = { 'Set-Cookie': clearStateCookie() };
+      if (plan.kind === 'page') {
+        const page = resultPage(result);
+        page.headers.set('Set-Cookie', headers['Set-Cookie'] as string);
+        return page;
+      }
+      return new Response(null, { status: 302, headers: { ...headers, Location: plan.location } });
     };
 
     if (declined || !code || !state) return finish(null, declined ? 'declined' : 'failed');
+
+    // The session binding, checked before the token exchange — see the note above.
+    if (!browserOwnsOAuthFlow(request.headers.get('Cookie'), state)) {
+      return finish(null, 'failed', 'session');
+    }
 
     const outcome = await ctx.runAction(internal.strava.completeConnect, { code, state });
     return finish(outcome.redirectTo, outcome.ok ? 'connected' : 'failed');

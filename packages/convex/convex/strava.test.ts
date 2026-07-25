@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
+import { stravaAuthorizeUrl } from './strava';
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -120,18 +121,30 @@ afterEach(() => {
 });
 
 describe('the connect flow is bound to a user by a single-use nonce', () => {
-  test('beginConnect mints a state row and an authorize URL carrying it', async () => {
+  test("beginConnect mints a state row and returns OUR start URL, not Strava's", async () => {
     const t = harness();
     const user = await seedUser(t, 'skater');
-    const { authorizeUrl } = await user.as.mutation(api.strava.beginConnect, {});
+    const { connectUrl } = await user.as.mutation(api.strava.beginConnect, {});
 
     const states = await t.run((ctx) => ctx.db.query('oauthStates').collect());
     expect(states).toHaveLength(1);
     expect(states[0]?.userId).toBe(user.id);
+    // Handing out Strava's URL directly is what allowed the account-linking attack: the browser
+    // must pass through `/strava/start` so the session cookie gets set first.
+    expect(connectUrl).toContain('https://example.convex.site/strava/start');
+    expect(connectUrl).toContain(`state=${states[0]?.state}`);
+    expect(connectUrl).not.toContain('strava.com');
+  });
+
+  test('the Strava consent URL asks for nothing we cannot legally act on', async () => {
+    const authorizeUrl = stravaAuthorizeUrl('nonce');
     expect(authorizeUrl).toContain('https://www.strava.com/oauth/authorize');
-    expect(authorizeUrl).toContain(`state=${states[0]?.state}`);
     expect(authorizeUrl).toContain('activity%3Awrite');
-    // We ask for nothing we can legally act on — no `activity:read_all`, no follower scopes.
+    expect(authorizeUrl).toContain('state=nonce');
+    expect(authorizeUrl).toContain(
+      'redirect_uri=https%3A%2F%2Fexample.convex.site%2Fstrava%2Fcallback',
+    );
+    // No `activity:read_all`, no follower scopes — we never read anyone's activities.
     expect(authorizeUrl).not.toContain('read_all');
   });
 
@@ -375,10 +388,20 @@ describe('pruneOAuthStates', () => {
 });
 
 describe('the /strava/callback endpoint', () => {
-  /** Drive the real HTTP route the way Strava will. */
-  function callback(t: ReturnType<typeof convexTest>, query: Record<string, string>) {
+  /**
+   * Drive the real HTTP route the way Strava will. `cookieState` is what `/strava/start` would have
+   * planted in this browser — omit it to simulate a browser that never started the flow.
+   */
+  function callback(
+    t: ReturnType<typeof convexTest>,
+    query: Record<string, string>,
+    cookieState?: string,
+  ) {
     const params = new URLSearchParams(query).toString();
-    return t.fetch(`/strava/callback?${params}`, { method: 'GET' });
+    return t.fetch(`/strava/callback?${params}`, {
+      method: 'GET',
+      ...(cookieState ? { headers: { Cookie: `skating_oauth_state=${cookieState}` } } : {}),
+    });
   }
 
   test('bounces back into the app via the deep link the flow started with', async () => {
@@ -399,9 +422,11 @@ describe('the /strava/callback endpoint', () => {
       },
     ]);
 
-    const res = await callback(t, { code: 'abc', state });
+    const res = await callback(t, { code: 'abc', state }, state);
     expect(res.status).toBe(302);
     expect(res.headers.get('Location')).toBe('skating://settings?strava=connected');
+    // The nonce is spent, so the cookie goes with it.
+    expect(res.headers.get('Set-Cookie')).toContain('Max-Age=0');
   });
 
   test('a declined authorization comes back as declined, without touching the token endpoint', async () => {
@@ -434,7 +459,7 @@ describe('the /strava/callback endpoint', () => {
     vi.stubEnv('WEB_APP_URL', 'https://skating.example');
     const t = harness();
     stubFetch([{ match: /oauth\/token/, body: {} }]);
-    const res = await callback(t, { code: 'abc', state: 'forged' });
+    const res = await callback(t, { code: 'abc', state: 'forged' }, 'forged');
     expect(res.headers.get('Location')).toBe('https://skating.example/settings?strava=failed');
     expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
   });
@@ -457,5 +482,138 @@ describe('beginConnect refuses an unsafe return target (open-redirect guard)', (
     await expect(
       user.as.mutation(api.strava.beginConnect, { redirectTo: 'skating://settings' }),
     ).resolves.toBeDefined();
+  });
+});
+
+describe('/strava/start binds the flow to the browser', () => {
+  test('sets the session cookie and forwards to Strava', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    const res = await t.fetch(`/strava/start?state=${state}`, { method: 'GET' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toContain('https://www.strava.com/oauth/authorize');
+
+    const cookie = res.headers.get('Set-Cookie') ?? '';
+    expect(cookie).toContain(`skating_oauth_state=${state}`);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('Secure');
+    // Strict would withhold the cookie on the cross-site navigation back from Strava, breaking every
+    // connect. Lax is load-bearing, not a default.
+    expect(cookie).toContain('SameSite=Lax');
+  });
+
+  test('does NOT consume the nonce — the user has not seen Strava yet', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    await t.fetch(`/strava/start?state=${state}`, { method: 'GET' });
+    expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(1);
+  });
+
+  test('refuses an unknown or expired nonce instead of sending someone to a doomed consent screen', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await t.run((ctx) =>
+      ctx.db.insert('oauthStates', {
+        state: 'stale',
+        userId: user.id,
+        provider: 'strava' as const,
+        expiresAt: Date.now() - 1,
+        createdAt: Date.now() - 10_000,
+      }),
+    );
+
+    for (const url of [
+      '/strava/start',
+      '/strava/start?state=unknown',
+      '/strava/start?state=stale',
+    ]) {
+      const res = await t.fetch(url, { method: 'GET' });
+      expect(res.status).toBe(200); // the fallback page, not a redirect to Strava
+      expect(res.headers.get('Location')).toBeNull();
+    }
+  });
+});
+
+describe('the account-linking attack is refused before any token exchange', () => {
+  test("a victim's browser has no cookie, so their code is never exchanged", async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    const attacker = await seedUser(t, 'attacker');
+    // The attacker mints a state on their OWN account and sends the consent link to a victim.
+    await attacker.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    // The victim approves on Strava. Their browser never visited `/strava/start`, so it carries no
+    // cookie. The stub records every outbound call, so we can assert the exchange never happened
+    // rather than inferring it from the response.
+    const calls = stubFetch([{ match: /./, body: {} }]);
+    const res = await t.fetch(`/strava/callback?code=victim-code&state=${state}`, {
+      method: 'GET',
+    });
+
+    // The decisive assertion: the victim's authorization code was never traded for tokens.
+    expect(calls).toHaveLength(0);
+
+    expect(res.headers.get('Location')).toContain('strava=failed');
+    // Distinguishable from a real OAuth error, so a cookie problem on a device isn't a mystery.
+    expect(res.headers.get('Location')).toContain('strava_reason=session');
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+    // ...and the nonce survives, so the attacker gains nothing by burning a victim's consent.
+    expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(1);
+  });
+
+  test("a cookie from a DIFFERENT flow doesn't satisfy the check", async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    const res = await t.fetch(`/strava/callback?code=abc&state=${state}`, {
+      method: 'GET',
+      headers: { Cookie: 'skating_oauth_state=some-other-flow' },
+    });
+    expect(res.headers.get('Location')).toContain('strava_reason=session');
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+  });
+
+  test('the honest end-to-end path still works: start → consent → callback', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, { redirectTo: 'skating://settings' });
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    // Step 1: the app opens our start route, which plants the cookie.
+    const start = await t.fetch(`/strava/start?state=${state}`, { method: 'GET' });
+    const planted = (start.headers.get('Set-Cookie') ?? '').split(';')[0] as string;
+
+    stubFetch([
+      {
+        match: /oauth\/token/,
+        body: {
+          access_token: 'a',
+          refresh_token: 'r',
+          expires_at: Math.floor(Date.now() / 1000) + 21_600,
+          athlete: { id: 7 },
+        },
+      },
+    ]);
+
+    // Step 2: Strava redirects back, and the browser presents the cookie it was given.
+    const res = await t.fetch(`/strava/callback?code=abc&state=${state}`, {
+      method: 'GET',
+      headers: { Cookie: planted },
+    });
+
+    expect(res.headers.get('Location')).toBe('skating://settings?strava=connected');
+    const connections = await t.run((ctx) => ctx.db.query('activityConnections').collect());
+    expect(connections).toHaveLength(1);
+    expect(connections[0]?.userId).toBe(user.id);
   });
 });

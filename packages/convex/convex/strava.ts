@@ -71,12 +71,13 @@ function stravaConfigured(): boolean {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Start a connect flow: mint a single-use state nonce bound to the signed-in user and return the
- * Strava authorize URL to open.
+ * Start a connect flow: mint a single-use state nonce bound to the signed-in user, and return the URL
+ * the app should open.
  *
- * The nonce is the whole security story of this flow. The callback lands on an unauthenticated HTTP
- * endpoint, so without it a replayed redirect could attach an attacker's Strava account to whichever
- * profile happened to be guessed — or worse, attach a victim's Strava to the attacker's profile.
+ * **That URL is ours, not Strava's** — `/strava/start`, which sets the browser-session cookie and
+ * *then* forwards to Strava. Handing out Strava's URL directly is what made the account-linking
+ * attack possible: the nonce alone proves "some signed-in user began a flow", not "the person now
+ * approving on Strava is that user". See `core/oauthSession.ts` for the full shape of that attack.
  */
 export const beginConnect = mutation({
   args: { redirectTo: v.optional(v.string()) },
@@ -107,15 +108,45 @@ export const beginConnect = mutation({
       createdAt: now,
     });
 
-    const params = new URLSearchParams({
-      client_id: process.env.STRAVA_CLIENT_ID as string,
-      redirect_uri: `${process.env.CONVEX_SITE_URL}/strava/callback`,
-      response_type: 'code',
-      approval_prompt: 'auto',
-      scope: STRAVA_SCOPES,
-      state,
-    });
-    return { authorizeUrl: `${STRAVA_AUTHORIZE_URL}?${params.toString()}` };
+    // Our own start route — it binds the browser before anyone reaches Strava.
+    return { connectUrl: `${process.env.CONVEX_SITE_URL}/strava/start?state=${state}` };
+  },
+});
+
+/**
+ * Strava's consent URL for a minted state. Built here (not in `beginConnect`) because only
+ * `/strava/start` sends anyone there now, and having one construction site keeps the `redirect_uri`
+ * we send from drifting away from the route that actually receives it.
+ */
+export function stravaAuthorizeUrl(state: string): string {
+  const params = new URLSearchParams({
+    client_id: process.env.STRAVA_CLIENT_ID as string,
+    redirect_uri: `${process.env.CONVEX_SITE_URL}/strava/callback`,
+    response_type: 'code',
+    approval_prompt: 'auto',
+    scope: STRAVA_SCOPES,
+    state,
+  });
+  return `${STRAVA_AUTHORIZE_URL}?${params.toString()}`;
+}
+
+/** How long the browser-session cookie lives — the state TTL, in seconds. */
+export const OAUTH_STATE_TTL_SECONDS = OAUTH_STATE_TTL_MS / 1000;
+
+/**
+ * Internal: does this state exist and is it still live? **Does not consume it** — `/strava/start`
+ * runs before the user has even seen Strava's consent screen, so burning the nonce here would make
+ * every flow fail at the callback. Only the callback consumes.
+ */
+export const peekOAuthState = internalQuery({
+  args: { state: v.string() },
+  handler: async (ctx, args) => {
+    const row = await ctx.db
+      .query('oauthStates')
+      .withIndex('by_state', (q) => q.eq('state', args.state))
+      .unique();
+    if (!row || row.expiresAt < Date.now()) return null;
+    return { ok: true as const };
   },
 });
 

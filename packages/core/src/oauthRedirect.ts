@@ -29,6 +29,18 @@ export type OAuthResult = 'connected' | 'failed' | 'declined';
 export const OAUTH_RESULT_PARAM = 'strava';
 
 /**
+ * Optional second parameter naming *why* a flow failed.
+ *
+ * It exists for one case that would otherwise be indistinguishable from a real OAuth error: the
+ * browser-session cookie was missing (`session`). That's both the account-linking attack signature
+ * and the cookies-are-blocked signature, and on a device the difference between "someone tried
+ * something" and "this browser drops our cookie" is the difference between ignoring it and having a
+ * bug to chase.
+ */
+export const OAUTH_REASON_PARAM = 'strava_reason';
+export type OAuthFailureReason = 'session';
+
+/**
  * May we redirect to `target`? See the module note — web targets are origin-locked, app schemes pass.
  * An unparseable target is refused: if we can't tell where it points, we don't send anyone there.
  */
@@ -53,14 +65,20 @@ export function isSafeOAuthRedirect(target: string, webAppUrl?: string): boolean
  * for targets `URL` can't parse — which `isSafeOAuthRedirect` has already excluded, so in practice
  * this is belt-and-braces for a caller that skipped the check.
  */
-export function withOAuthResult(target: string, result: OAuthResult): string {
+export function withOAuthResult(
+  target: string,
+  result: OAuthResult,
+  reason?: OAuthFailureReason,
+): string {
   try {
     const url = new URL(target);
     url.searchParams.set(OAUTH_RESULT_PARAM, result);
+    if (reason) url.searchParams.set(OAUTH_REASON_PARAM, reason);
     return url.toString();
   } catch {
     const separator = target.includes('?') ? '&' : '?';
-    return `${target}${separator}${OAUTH_RESULT_PARAM}=${result}`;
+    const suffix = reason ? `&${OAUTH_REASON_PARAM}=${reason}` : '';
+    return `${target}${separator}${OAUTH_RESULT_PARAM}=${result}${suffix}`;
   }
 }
 
@@ -80,14 +98,15 @@ export function planOAuthRedirect(
   target: string | null | undefined,
   webAppUrl: string | undefined,
   result: OAuthResult,
+  reason?: OAuthFailureReason,
 ): OAuthRedirectPlan {
   if (target && isSafeOAuthRedirect(target, webAppUrl)) {
-    return { kind: 'redirect', location: withOAuthResult(target, result) };
+    return { kind: 'redirect', location: withOAuthResult(target, result, reason) };
   }
   if (webAppUrl) {
     const fallback = `${webAppUrl.replace(/\/+$/, '')}/settings`;
     if (isSafeOAuthRedirect(fallback, webAppUrl)) {
-      return { kind: 'redirect', location: withOAuthResult(fallback, result) };
+      return { kind: 'redirect', location: withOAuthResult(fallback, result, reason) };
     }
   }
   return { kind: 'page', result };

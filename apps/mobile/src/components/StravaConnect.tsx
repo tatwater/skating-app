@@ -45,11 +45,14 @@ export function StravaConnect() {
   async function connect() {
     setBusy(true);
     try {
-      const { authorizeUrl } = await beginConnect({
+      // This URL is OURS (`/strava/start`), not Strava's: it binds the flow to this browser session
+      // with a cookie before forwarding to Strava, which is what stops someone else's consent from
+      // being attached to this account (see `core/oauthSession.ts`).
+      const { connectUrl } = await beginConnect({
         // Where the callback sends the browser once it's done — straight back into the app.
         redirectTo: Linking.createURL('/settings'),
       });
-      await WebBrowser.openAuthSessionAsync(authorizeUrl, Linking.createURL('/settings'));
+      await WebBrowser.openAuthSessionAsync(connectUrl, Linking.createURL('/settings'));
     } finally {
       setBusy(false);
     }
