@@ -81,9 +81,11 @@ describe('flushTrack', () => {
     expect(input.path.type).toBe('LineString');
     expect(input.waterBodyId).toBe('body-1');
     expect(input.startTime).toBe(T0);
-    expect(input.distanceMeters).toBeGreaterThan(0);
     // Stored elapsed is MOVING time (the schema's non-redundant field), so it excludes stops.
     expect(input.elapsedSeconds).toBeGreaterThan(0);
+    // Distance is NOT sent: it's derivable from `path` exactly, so shipping it would invite the
+    // server to look like it stores one. See `TrackFlushEffects.ingestTrack`.
+    expect(input).not.toHaveProperty('distanceMeters');
   });
 
   it('ingests unresolved when the track matches no known body — that is the D14 new-water case, not an error', async () => {

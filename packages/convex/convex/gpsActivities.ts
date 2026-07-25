@@ -148,6 +148,12 @@ async function candidateBodiesForSamples(
  * key at session start and carries it across every retry, so a replayed flush returns the original
  * activity. Resolution to a lake happens here, at write time, so every downstream read (report link,
  * bounty eligibility, the aggregate layer) sees a resolved row without re-deriving it.
+ *
+ * **No `distanceMeters` argument, on purpose.** The client's distance comes from `trackStats` over the
+ * same points it sends as `path`, so it is `trackStats(path).distanceMeters` exactly — accepting it
+ * would let a client assert a number that contradicts the geometry we store, and accepting-then-ignoring
+ * it (which is what this did before 2026-07-25) reads as though a distance is persisted when none is.
+ * Derive it where it's needed; denormalize only when a read appears that can't afford to.
  */
 export const ingestTrack = mutation({
   args: {
@@ -158,7 +164,6 @@ export const ingestTrack = mutation({
     endTime: v.number(),
     /** Moving time in seconds (excludes pauses) — see the schema note on why it isn't end − start. */
     elapsedSeconds: v.optional(v.number()),
-    distanceMeters: v.optional(v.number()),
     /** Resolved on-device from the offline body cache; re-checked server-side. */
     waterBodyId: v.optional(v.id('waterBodies')),
   },

@@ -108,7 +108,6 @@ function ingestArgs(over: Record<string, unknown> = {}) {
     startTime: T0,
     endTime: T0 + 45 * 60_000,
     elapsedSeconds: 2400,
-    distanceMeters: 8000,
     ...over,
   };
 }

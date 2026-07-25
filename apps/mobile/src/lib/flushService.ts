@@ -110,7 +110,6 @@ function trackEffects(): TrackFlushEffects {
         startTime: input.startTime,
         endTime: input.endTime,
         elapsedSeconds: input.elapsedSeconds,
-        distanceMeters: input.distanceMeters,
         ...(input.waterBodyId !== undefined
           ? { waterBodyId: input.waterBodyId as Id<'waterBodies'> }
           : {}),

@@ -110,14 +110,21 @@ export const MIN_TRACK_POINTS = 10;
 export interface TrackFlushEffects {
   /** Resolve a coord to a lake (`waterBodies.resolveBodyForCoord`); null ⇒ no known body matched. */
   resolveBody(coord: LatLng): Promise<string | null>;
-  /** Ingest the processed track (`gpsActivities.ingestTrack`); returns its activityId. */
+  /**
+   * Ingest the processed track (`gpsActivities.ingestTrack`); returns its activityId.
+   *
+   * Deliberately **no `distanceMeters`**: `processTrack` derives it from the very points that become
+   * `path`, so it's exactly `trackStats(path).distanceMeters` and carries no information the geometry
+   * doesn't. Sending it would make the server look like it stores a distance it doesn't. If a future
+   * read genuinely needs distance without loading paths, denormalize it *then*, with the consumer that
+   * justifies it. (The recorder's live readout keeps its own `distanceMeters` — that's display state.)
+   */
   ingestTrack(input: {
     idempotencyKey: string;
     path: { type: 'LineString'; coordinates: number[][] };
     startTime: number;
     endTime: number;
     elapsedSeconds: number;
-    distanceMeters: number;
     waterBodyId?: string;
   }): Promise<string>;
   /** Kick off the Strava push (`strava.pushActivity`), when the user asked for one. */
@@ -190,7 +197,6 @@ export async function flushTrack(
       startTime: processed.stats.startTime,
       endTime: processed.stats.endTime,
       elapsedSeconds: Math.round(processed.stats.movingSeconds),
-      distanceMeters: processed.stats.distanceMeters,
       ...(waterBodyId !== undefined ? { waterBodyId } : {}),
     });
     await save({ activityId, status: 'done' });
