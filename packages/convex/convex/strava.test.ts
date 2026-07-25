@@ -373,3 +373,89 @@ describe('pruneOAuthStates', () => {
     expect(left.map((r) => r.state)).toEqual(['live']);
   });
 });
+
+describe('the /strava/callback endpoint', () => {
+  /** Drive the real HTTP route the way Strava will. */
+  function callback(t: ReturnType<typeof convexTest>, query: Record<string, string>) {
+    const params = new URLSearchParams(query).toString();
+    return t.fetch(`/strava/callback?${params}`, { method: 'GET' });
+  }
+
+  test('bounces back into the app via the deep link the flow started with', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, { redirectTo: 'skating://settings' });
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    stubFetch([
+      {
+        match: /oauth\/token/,
+        body: {
+          access_token: 'a',
+          refresh_token: 'r',
+          expires_at: Math.floor(Date.now() / 1000) + 21_600,
+          athlete: { id: 1 },
+        },
+      },
+    ]);
+
+    const res = await callback(t, { code: 'abc', state });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe('skating://settings?strava=connected');
+  });
+
+  test('a declined authorization comes back as declined, without touching the token endpoint', async () => {
+    const t = harness();
+    // No fetch stub at all: reaching Strava here would throw, which is the assertion.
+    const res = await callback(t, { error: 'access_denied' });
+    expect(res.status).toBe(200); // no target and no WEB_APP_URL ⇒ the fallback page
+    expect(await res.text()).toContain('Strava not connected');
+  });
+
+  test('renders a page instead of a dead-end relative redirect when nothing is configured', async () => {
+    const t = harness();
+    const res = await callback(t, { state: 'forged' }); // no code ⇒ failed, no target
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/html');
+    expect(await res.text()).toContain("Couldn't connect Strava");
+    // The bug this pins: a relative Location resolves against the .site host and 404s.
+    expect(res.headers.get('Location')).toBeNull();
+  });
+
+  test('falls back to the configured web app when there is no deep link', async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    const res = await callback(t, { error: 'access_denied' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe('https://skating.example/settings?strava=declined');
+  });
+
+  test('a forged state connects nobody and still lands somewhere intelligible', async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    stubFetch([{ match: /oauth\/token/, body: {} }]);
+    const res = await callback(t, { code: 'abc', state: 'forged' });
+    expect(res.headers.get('Location')).toBe('https://skating.example/settings?strava=failed');
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+  });
+});
+
+describe('beginConnect refuses an unsafe return target (open-redirect guard)', () => {
+  test('rejects a foreign origin before it ever reaches the database', async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await expect(
+      user.as.mutation(api.strava.beginConnect, { redirectTo: 'https://evil.example/steal' }),
+    ).rejects.toThrow(/Unsafe redirect/i);
+    expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(0);
+  });
+
+  test('accepts the app deep link', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await expect(
+      user.as.mutation(api.strava.beginConnect, { redirectTo: 'skating://settings' }),
+    ).resolves.toBeDefined();
+  });
+});

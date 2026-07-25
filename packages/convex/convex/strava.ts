@@ -24,7 +24,7 @@
  * breaks a recording, because the activity is already ours the moment it's ingested.
  */
 
-import { type TrackPoint, toGpx } from '@skating/core';
+import { isSafeOAuthRedirect, type TrackPoint, toGpx } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { LineString } from 'geojson';
 import { internal } from './_generated/api';
@@ -84,6 +84,15 @@ export const beginConnect = mutation({
     const profile = await requireProfile(ctx);
     if (!stravaConfigured()) {
       throw new ConvexError('Strava is not configured on this deployment');
+    }
+    // Validate the return target here, at mint time, as well as in the callback: an unsafe target
+    // should never reach the database in the first place, and rejecting it where the client supplies
+    // it gives a real error instead of a silent fallback three redirects later.
+    if (
+      args.redirectTo !== undefined &&
+      !isSafeOAuthRedirect(args.redirectTo, process.env.WEB_APP_URL)
+    ) {
+      throw new ConvexError('Unsafe redirect target');
     }
     const now = Date.now();
     // `crypto.randomUUID` is available in the Convex runtime; two of them make a nonce with far more

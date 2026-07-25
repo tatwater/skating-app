@@ -25,6 +25,7 @@ export * from './hazardQueue';
 export * from './hazardWeatherDecay';
 export * from './lakeSearch';
 export * from './metrics';
+export * from './oauthRedirect';
 export * from './osm';
 export * from './pathToBody';
 export * from './photo';
