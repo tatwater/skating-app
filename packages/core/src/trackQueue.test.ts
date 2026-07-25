@@ -67,6 +67,25 @@ describe('the queue contract', () => {
     expect(isTrackFlushable(queued({ status: 'uploading' }))).toBe(true);
     expect(isTrackFlushable(queued({ status: 'creating' }))).toBe(true);
   });
+
+  // `done` means "the skate is ours", which is written before Strava is consulted. The gap between
+  // the two is exactly where a phone gets suspended, and nothing else would ever revisit the row.
+  it('keeps an ingested track flushable while its requested push has no answer', () => {
+    const ingested = { status: 'done' as const, activityId: 'activity-1', uploadToStrava: true };
+    expect(isTrackFlushable(queued(ingested))).toBe(true);
+    expect(isTrackFlushable(queued({ ...ingested, stravaPushState: 'pending' }))).toBe(true);
+  });
+
+  it('lets a settled push go — including a failed one, which is an answer, not a gap', () => {
+    const ingested = { status: 'done' as const, activityId: 'activity-1', uploadToStrava: true };
+    expect(isTrackFlushable(queued({ ...ingested, stravaPushState: 'uploaded' }))).toBe(false);
+    expect(isTrackFlushable(queued({ ...ingested, stravaPushState: 'skipped' }))).toBe(false);
+    // A `failed` push retried on every drain would hammer Strava forever, unbounded, on behalf of a
+    // skate that's already safe. Unsettled means unknown, not unsuccessful.
+    expect(isTrackFlushable(queued({ ...ingested, stravaPushState: 'failed' }))).toBe(false);
+    // ...and a track nobody asked to push is finished the moment it's ingested.
+    expect(isTrackFlushable(queued({ ...ingested, uploadToStrava: false }))).toBe(false);
+  });
 });
 
 describe('flushTrack', () => {
@@ -210,6 +229,85 @@ describe('the Strava push is a courtesy copy, never a gate', () => {
     const pushToStrava = vi.fn();
     await flushTrack(queued({ uploadToStrava: false }), effects({ pushToStrava }), T0 + 60_000);
     expect(pushToStrava).not.toHaveBeenCalled();
+  });
+});
+
+// The app is likeliest to be suspended *during* the push — it's the one step that waits on a third
+// party. Resuming has to complete the outstanding half without redoing the finished one.
+describe('an interrupted flush resumes the half that did not finish', () => {
+  it('completes a push that was cut off after ingest, without re-ingesting', async () => {
+    const fx = effects({ pushToStrava: vi.fn().mockResolvedValue('uploaded') });
+    const killed = queued({
+      status: 'done',
+      activityId: 'activity-1',
+      uploadToStrava: true,
+      stravaPushState: 'pending', // written before the attempt; the app died before the answer
+    });
+    expect(isTrackFlushable(killed)).toBe(true);
+
+    const result = await flushTrack(killed, fx, T0 + 600_000);
+    expect(fx.ingestTrack).not.toHaveBeenCalled();
+    expect(fx.pushToStrava).toHaveBeenCalledWith({ activityId: 'activity-1' });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.track.stravaPushState).toBe('uploaded');
+    // ...and it now settles, so the queue lets go of it instead of retrying every drain.
+    expect(isTrackFlushable(result.track)).toBe(false);
+  });
+
+  it('completes a push that was never attempted — the ack arrived, the app then died', async () => {
+    const fx = effects({ pushToStrava: vi.fn().mockResolvedValue('uploaded') });
+    const result = await flushTrack(
+      queued({ status: 'done', activityId: 'activity-1', uploadToStrava: true }),
+      fx,
+      T0 + 600_000,
+    );
+    expect(fx.pushToStrava).toHaveBeenCalledTimes(1);
+    expect(result.ok).toBe(true);
+  });
+
+  it('never re-pushes a track whose push already settled', async () => {
+    const fx = effects({ pushToStrava: vi.fn() });
+    await flushTrack(
+      queued({
+        status: 'done',
+        activityId: 'activity-1',
+        uploadToStrava: true,
+        stravaPushState: 'uploaded',
+      }),
+      fx,
+      T0 + 600_000,
+    );
+    expect(fx.pushToStrava).not.toHaveBeenCalled();
+  });
+
+  it('settles a re-attempted push that fails, rather than readmitting it forever', async () => {
+    // The adapter throws (transport died), so the push settles as `failed` — an answer, and the loop
+    // terminates. The only way back into the queue is a genuinely unsettled state.
+    const fx = effects({ pushToStrava: vi.fn().mockRejectedValue(new Error('socket closed')) });
+    const result = await flushTrack(
+      queued({ status: 'done', activityId: 'activity-1', uploadToStrava: true }),
+      fx,
+      T0 + 600_000,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.track.status).toBe('done');
+    expect(result.track.stravaPushState).toBe('failed');
+    expect(isTrackFlushable(result.track)).toBe(false);
+  });
+
+  it('marks an unpushable resumed track skipped on a host with no Strava adapter', async () => {
+    const result = await flushTrack(
+      queued({ status: 'done', activityId: 'activity-1', uploadToStrava: true }),
+      effects(),
+      T0 + 600_000,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Settled, so it stops being readmitted — otherwise it would be re-examined on every drain forever.
+    expect(result.track.stravaPushState).toBe('skipped');
+    expect(isTrackFlushable(result.track)).toBe(false);
   });
 });
 

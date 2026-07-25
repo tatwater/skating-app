@@ -94,12 +94,35 @@ export function createQueuedTrack(args: {
 }
 
 /**
+ * The user asked for a Strava copy and we hold no answer about it — either the push hasn't been
+ * attempted or we were killed mid-flight (`pending` is written *before* the attempt, precisely so an
+ * interrupted one is distinguishable afterwards).
+ *
+ * Deliberately **not** true for `failed`: that's a settled answer. Retrying it on every drain would
+ * hammer Strava forever on behalf of a skate that is already safely ours, and there's no retry budget
+ * here to bound it. Unsettled means *unknown*, not *unsuccessful*.
+ */
+function pushUnsettled(track: QueuedTrack): boolean {
+  return (
+    track.uploadToStrava &&
+    (track.stravaPushState === undefined || track.stravaPushState === 'pending')
+  );
+}
+
+/**
  * Is this track ready to send? **Unfinished recordings are excluded** — a session still in progress is
  * persisted for crash-safety, not for flushing, and shipping half a skate would create an activity the
  * rest of the recording could never join.
+ *
+ * `done` means *ingested*, not *finished with*. A track is marked done the moment the activity is ours
+ * (a Strava outage must never make a safely-stored skate look unsaved), so if the app is suspended
+ * between that and the push settling, the requested upload would be stranded in a row nothing ever
+ * looks at again. Such a track stays flushable until its push has an answer; the re-run skips ingest
+ * (it has an `activityId`) and does only the outstanding half.
  */
 export function isTrackFlushable(track: QueuedTrack): boolean {
-  return track.finished && track.status !== 'done' && track.status !== 'error';
+  if (!track.finished || track.status === 'error') return false;
+  return track.status !== 'done' || pushUnsettled(track);
 }
 
 /** The flushable subset, oldest first (capture order) — matching the other two queues. */
@@ -160,6 +183,11 @@ export type TrackFlushResult =
  * **A failed Strava push is not a failed flush.** The activity is ours the moment it's ingested; Strava
  * is a courtesy copy. A push failure is recorded on the item and the flush still succeeds, so a Strava
  * outage can never strand a skate in the retry loop.
+ *
+ * **Every step is resumable, and the two halves resume independently.** An item carrying an
+ * `activityId` never re-ingests; an item whose push never settled re-enters here and does only that.
+ * A phone suspended between the two — the likeliest moment, since the push is the one step that waits
+ * on a third party — loses neither.
  */
 export async function flushTrack(
   track: QueuedTrack,
@@ -173,58 +201,69 @@ export async function flushTrack(
   };
 
   try {
-    await save({ status: 'uploading', errorMessage: undefined });
+    // Already ingested by a prior attempt — whose ack was lost, or which was killed before its Strava
+    // push settled. Either way the activity exists and must not be re-sent; only what's left runs.
+    let activityId = t.activityId;
 
-    // Already ingested by a prior attempt whose ack was lost — don't re-send, just finish.
-    if (t.activityId !== undefined) {
-      await save({ status: 'done' });
-      return { ok: true, track: t, activityId: t.activityId };
+    if (activityId === undefined) {
+      await save({ status: 'uploading', errorMessage: undefined });
+
+      if (t.points.length < MIN_TRACK_POINTS) {
+        throw new PermanentFlushError('This recording is too short to save as a skate.');
+      }
+
+      const processed = processTrack(t.points);
+      if (
+        processed.path === null ||
+        processed.stats.startTime === null ||
+        processed.stats.endTime === null
+      ) {
+        throw new PermanentFlushError("This recording didn't capture a usable path.");
+      }
+
+      // Resolve the lake when the device didn't already (no body cache hit at record time). A miss is
+      // NOT permanent here — unlike a report, a track that matches no known body is exactly the D14
+      // "new water" case, so it ingests unresolved and the create-or-attach flow picks it up.
+      let waterBodyId = t.waterBodyId;
+      if (waterBodyId === undefined) {
+        const mid = processed.points[Math.floor(processed.points.length / 2)] as TrackPoint;
+        waterBodyId = (await effects.resolveBody({ lat: mid.lat, lng: mid.lng })) ?? undefined;
+        if (waterBodyId !== undefined) await save({ waterBodyId });
+      }
+
+      await save({ status: 'creating' });
+      activityId = await effects.ingestTrack({
+        idempotencyKey: t.idempotencyKey,
+        path: processed.path as { type: 'LineString'; coordinates: number[][] },
+        startTime: processed.stats.startTime,
+        endTime: processed.stats.endTime,
+        elapsedSeconds: Math.round(processed.stats.movingSeconds),
+        ...(waterBodyId !== undefined ? { waterBodyId } : {}),
+      });
     }
 
-    if (t.points.length < MIN_TRACK_POINTS) {
-      throw new PermanentFlushError('This recording is too short to save as a skate.');
-    }
-
-    const processed = processTrack(t.points);
-    if (
-      processed.path === null ||
-      processed.stats.startTime === null ||
-      processed.stats.endTime === null
-    ) {
-      throw new PermanentFlushError("This recording didn't capture a usable path.");
-    }
-
-    // Resolve the lake when the device didn't already (no body cache hit at record time). A miss is
-    // NOT permanent here — unlike a report, a track that matches no known body is exactly the D14
-    // "new water" case, so it ingests unresolved and the create-or-attach flow picks it up.
-    let waterBodyId = t.waterBodyId;
-    if (waterBodyId === undefined) {
-      const mid = processed.points[Math.floor(processed.points.length / 2)] as TrackPoint;
-      waterBodyId = (await effects.resolveBody({ lat: mid.lat, lng: mid.lng })) ?? undefined;
-      if (waterBodyId !== undefined) await save({ waterBodyId });
-    }
-
-    await save({ status: 'creating' });
-    const activityId = await effects.ingestTrack({
-      idempotencyKey: t.idempotencyKey,
-      path: processed.path as { type: 'LineString'; coordinates: number[][] },
-      startTime: processed.stats.startTime,
-      endTime: processed.stats.endTime,
-      elapsedSeconds: Math.round(processed.stats.movingSeconds),
-      ...(waterBodyId !== undefined ? { waterBodyId } : {}),
-    });
+    // Done the moment the skate is ours, *before* Strava is consulted: a courtesy copy that fails
+    // (or hangs, or never gets attempted because the phone slept) must never make a safely-ingested
+    // track look unsaved. `isTrackFlushable` is what keeps the unfinished push from being forgotten.
     await save({ activityId, status: 'done' });
 
-    if (t.uploadToStrava && effects.pushToStrava) {
-      try {
-        await save({ stravaPushState: 'pending' });
-        await save({ stravaPushState: await effects.pushToStrava({ activityId }) });
-      } catch {
-        // Deliberately swallowed — see the note above. The skate is safe in our store either way.
-        await save({ stravaPushState: 'failed' });
+    // Only when we have no answer yet — a resumed track whose push already settled must not re-send
+    // (and a settled `failed` is a decision, not a gap: see `pushUnsettled`).
+    if (pushUnsettled(t)) {
+      if (effects.pushToStrava) {
+        try {
+          // Written before the attempt so an interruption is legible afterwards. A push that in fact
+          // reached Strava before the app died is re-sent on resume and comes back as a *duplicate*,
+          // which the adapter reports as `uploaded` — the retry is safe by construction.
+          await save({ stravaPushState: 'pending' });
+          await save({ stravaPushState: await effects.pushToStrava({ activityId }) });
+        } catch {
+          // Deliberately swallowed — see the note above. The skate is safe in our store either way.
+          await save({ stravaPushState: 'failed' });
+        }
+      } else {
+        await save({ stravaPushState: 'skipped' });
       }
-    } else if (t.uploadToStrava) {
-      await save({ stravaPushState: 'skipped' });
     }
 
     return { ok: true, track: t, activityId };
