@@ -42,6 +42,7 @@ export * from './riskAck';
 export * from './schedule';
 export * from './strava';
 export * from './track';
+export * from './trackPrivacy';
 export * from './trackQueue';
 export * from './types';
 export * from './units';
