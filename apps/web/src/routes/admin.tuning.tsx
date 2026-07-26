@@ -280,7 +280,7 @@ function AdminTuning() {
       {/* ── Display / map ────────────────────────────────────────────────── */}
       <TuningSection
         title="Display & map"
-        blurb="The displayScore curve decides which bodies draw at each zoom. Compare a band against the 256-row viewport cap — once a band holds far more than that, dense viewports at that zoom are being truncated and the curve is what to move."
+        blurb="The displayScore curve decides which bodies draw at each zoom. Compare a band against the 1,000-body render budget — once a band holds far more than that, dense viewports at that zoom are being truncated and the curve is what to move. (That budget is now a rendering choice, not a safety limit: since N1 the viewport read is bounded by the cell index rather than by a tuned row cap.)"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ConstantCard

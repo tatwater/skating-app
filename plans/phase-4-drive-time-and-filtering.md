@@ -76,6 +76,10 @@ the feed, and highlighted on the map.
      report, "which users have *this lake* in their X-band?" With only polygons that's a scan over users'
      polygons per report — **fine at alpha scale** (dozens–hundreds of users). A reverse spatial index
      (index user home-points, or per-lake precomputed notify sets) is the future optimization; **not now.**
+     *(Amended by N1, 2026-07-26: that scan was inline in `reports.create`, i.e. an unbounded read inside
+     the app's most important write. It's now a **scheduled, self-continuing paged job** — bounded per
+     invocation, and nobody gets dropped. The reverse index is still the real fix, still deferred: N1
+     made the walk cheap to survive, not unnecessary.)*
 
 3. **Newsfeed dynamic filter row — persisted, offline-first, additive on `listFeed`.**
    A filter bar above the Phase 5 feed, defaulting to *show all*:

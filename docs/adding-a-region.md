@@ -14,11 +14,15 @@ a matching basemap live on the map, with no app-code surprises.
 
 ## The mental model (read this first)
 
-The map is built from **two independent data sets that must agree on the same bounding box**:
+The map is built from **three data sets that must agree on the same bounding box**:
 
 1. **Water bodies** — the lake/pond polygons we render as our own layer and attach reports to.
    Sourced from OpenStreetMap via the ETL pipeline (`scripts/etl`), loaded into Convex.
-2. **Basemap tiles** — the underlying land/roads/labels, a Protomaps `.pmtiles` file we build
+2. **Admin boundaries** — state/county/town polygons that turn a report's coordinate into its
+   "Burlington, VT" label in the newsfeed. Same Geofabrik extracts, different pipeline
+   (`scripts/admin-areas`). **Easy to forget**, and the symptom is quiet: reports in the new region
+   simply have no place label.
+3. **Basemap tiles** — the underlying land/roads/labels, a Protomaps `.pmtiles` file we build
    and host on Cloudflare R2 (`scripts/basemap`). The app reads its URL from an env var.
 
 On top of those, **three places hard-code the region's bounding box**, and they must stay in
@@ -123,14 +127,53 @@ Key facts that make this safe to repeat:
   `source + externalId`, so a lake in two extracts (e.g. Lake Champlain in both VT and NY) lands
   as one row and its `states` unions to both. **Run order doesn't matter**, and re-running is
   idempotent (it also preserves any `removed` state).
-- **Each body is D49-scored on insert** (`displayScore` + `minVisibleZoom` for zoom-based
-  prominence), and the loader paginates under Convex's 4,096-read-per-mutation cap. A big corpus
-  is fine — Phase 2.5 loaded ~116k bodies with zero read-cap errors.
+- **Each body is D49-scored and cell-indexed on insert** — `displayScore` + `minVisibleZoom` for
+  zoom-based prominence, plus the `waterBodyCells` rows the map reads (N1). Import cost per body is
+  flat regardless of how big the corpus already is, so the loader's batching has plenty of headroom;
+  its binding constraint is `ARG_MAX` on the `convex run` argument string, not reads. Dev holds
+  **116,070** bodies across five states.
 - **Record the md5 + Geofabrik replication timestamp per extract** in your PR — Geofabrik
   rebuilds `-latest` daily, so the date alone doesn't pin the source, and it catches a truncated
   download before tens of thousands of bad bodies load. Log them in the ETL README's run table.
 
 **Verify before moving on:** open the read-only web map and confirm the new lakes render.
+
+---
+
+## Step 1b — Import the admin boundaries (per state)
+
+The step it's easiest to skip, because nothing breaks visibly when you do — reports in the new
+region just quietly have no "Burlington, VT" label. Full detail:
+[`scripts/admin-areas/README.md`](../scripts/admin-areas/README.md). It reuses the **same extract**
+you already downloaded in Step 1:
+
+```bash
+cd scripts/admin-areas && mkdir -p .scratch && cd .scratch
+
+# 1. Filter to administrative boundary relations, export polygons
+osmium tags-filter ../../etl/.scratch/<state>-latest.osm.pbf r/boundary=administrative \
+  -o boundaries.osm.pbf --overwrite
+osmium export boundaries.osm.pbf --geometry-types=polygon -a type,id \
+  -f geojsonseq -x print_record_separator=false -o boundaries.geojsonseq --overwrite
+
+# 2. Transform (keeps admin_level 4 / 6 / 7–8 → state / county / town)
+cd .. && pnpm --filter @skating/admin-areas transform .scratch/boundaries.geojsonseq .scratch/areas.ndjson
+
+# 3. Load into Convex dev
+pnpm --filter @skating/admin-areas load .scratch/areas.ndjson --state=<XX>
+```
+
+- **Use the clipped extract for a clipped state.** If Step 1 clipped NY downstate, boundaries must
+  use the same clipped `.osm.pbf`, or you import downstate towns you deliberately excluded.
+- **`--state=XX` is required here too** — unlike lakes, boundaries don't span states, so each
+  extract is exactly one state's worth.
+- **Town size doesn't matter.** Containment runs off the same bbox-coverage cell index as water
+  bodies (N1), so an enormous rural town resolves as exactly as a small one. It didn't used to: the
+  previous centroid-margin lookup silently fell back to a county-only label for towns wider than
+  ~0.4°, which the Adirondacks are full of.
+
+**Verify before moving on:** file a test report on a lake in the new region and confirm the feed
+card shows a town/county line, not just the lake name.
 
 ---
 
@@ -252,9 +295,12 @@ other **and** the Step 2 `--bbox`:
 - [ ] `curatedBoost` re-seeded (if the region has known destinations); wins spot-checked.
 - [ ] Bounds/framing widened in **both** `waterMap.ts` files (== the tile `--bbox`); both
       `waterMap.test.ts` updated; `pnpm test` green.
-- [ ] Wide-zoom read counts validated against the new (larger) corpus — the in-query
-      `minVisibleZoom` filter should *shrink* wide-zoom reads, not grow them (D49 read-cap
-      watch-out).
+- [ ] Admin boundaries imported per state (`scripts/admin-areas`), and a report in the new region
+      shows a town/county label rather than a bare lake name.
+- [ ] Read counts spot-checked against the new corpus with `waterBodies:viewportReadStats` — a wide
+      zoom, a dense zoom, and a pan into empty space. *(This checklist item existed before N1 and was
+      never actually performed, which is how a 256-body clamp sized for a 9,967-body corpus survived
+      a jump to 116k and started dropping real lakes. It takes a minute; do it.)*
 
 ---
 

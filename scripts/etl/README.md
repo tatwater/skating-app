@@ -160,19 +160,37 @@ so the normal command can't upsert into production by accident — and prints th
 deployment before loading. Confirm the data renders on the read-only web map before touching
 prod. The import is **idempotent** (upsert on `source + externalId`) and **preserves removed
 state**, so re-running (or resuming after a failed batch, which the loader reports) is safe.
-`importCanonical` also derives each body's `isLarge` flag from its bbox (the `listInViewport`
-tier-2 marker, D5), so **re-running the loader is how you backfill `isLarge` onto an
-already-loaded corpus** — the chunked batches stay under the per-mutation read cap, whereas the
-single-pass `backfillListed` mutation would blow it at Vermont scale.
+`importCanonical` also **cell-indexes each body** (N1) — one `waterBodyCells` row per grid cell its
+bbox covers, at a rung no finer than the zoom it first draws at — which is what `listInViewport`
+reads. Cells are reconciled, not appended, so a re-import of a redrawn lake moves its rows rather
+than leaving stale ones behind, and re-running the loader is a safe way to repair a body's index.
+To repair the *whole* corpus without re-running the ETL, use the paginated
+`waterBodies:backfillCells` migration instead (see below).
 
 Batches are bounded by two limits (see `src/load.ts`):
 
-- **Reads/mutation (the binding one):** Convex caps a mutation at 4,096 document reads, and
-  each body's geospatial index insert reads several S2-cell docs — a cost that *grows with the
-  index size*. So batches are capped by **count** (~150 bodies), not just bytes, to stay under
-  4,096 even at full-corpus index size.
-- **ARG_MAX:** `convex run` takes args only as an inline JSON string, so each batch's serialized
-  args are also kept under a byte budget (Champlain, ~0.3 MiB, is the only near-solo batch).
+- **Reads/mutation:** Convex caps a mutation at 4,096 document reads. This *used* to be the binding
+  constraint — each body's geospatial index insert read ~15–20 S2-cell docs, a cost that grew with
+  the index size, so a batch fine against an empty index blew the cap once tens of thousands of
+  bodies were loaded. **Since N1 a body costs one `by_body` lookup plus ≤ 4 cell writes, flat
+  regardless of corpus size**, so the ~150-body count cap now has enormous headroom here.
+- **ARG_MAX (now the binding one):** `convex run` takes args only as an inline JSON string, so each
+  batch's serialized args are kept under a byte budget (Champlain, ~0.3 MiB, is the only near-solo
+  batch).
+
+### Repairing the spatial index without a re-import
+
+`waterBodies:backfillCells` re-derives a body's D49 prominence and rebuilds its cell rows, paginated
+so it's safe at any corpus size (dev's 116,070 bodies took 233 batches). Loop it until `isDone`:
+
+```bash
+# one batch; feed the returned `cursor` back in until `isDone` is true
+pnpm exec convex run waterBodies:backfillCells '{"batchSize": 500}'
+pnpm exec convex run waterBodies:backfillCells '{"batchSize": 500, "cursor": "<cursor>"}'
+```
+
+`adminAreas:backfillCells` is the same shape for boundaries. You need these only after a schema or
+scoring change that invalidates existing rows — a normal import maintains them itself.
 
 ### Fixture (no extract needed)
 
@@ -219,7 +237,8 @@ transform/load already handle multiple states. Full runbook + rationale:
   Geofabrik replication timestamp in the run table below. This is what makes a corpus reproducible
   and catches a truncated download (e.g. the `-latest` redirect trap) before ~30k bad bodies load.
 - **Executed 2026-07-15 (dev):** NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885 inserted (+ VT ~9,970)
-  ≈ 116k bodies, zero read-cap errors. Extract builds dated 2026-07-14. **md5s not captured this run**
+  ≈ 116k bodies, zero read-cap errors. *(Exact count confirmed 2026-07-26 by N1's cell backfill:
+  **116,070** bodies.)* Extract builds dated 2026-07-14. **md5s not captured this run**
   — record them per state on the next re-run (dated build no longer retrievable to hash retroactively):
 
   | State | Extract | md5 | Geofabrik replication |

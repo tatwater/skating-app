@@ -14,7 +14,7 @@
 > rename + `skateStartTime` + `resolveSkateWindow`/`formatSkateWindow` + new `feed.ts` —
 > `formatPlaceLabel`/`formatRelativeTime`/`buildFeedCardView`, 100% coverage); **B** Convex (schema
 > rename + indexes + `skateStartTime`/`place`/`gpsActivities` timestamps + `adminAreas` table & second
-> geospatial component instance + `adminAreas.ts` import/`resolvePlaceForCoord` + `reports.create` place
+> spatial index for boundaries + `adminAreas.ts` import/`resolvePlaceForCoord` + `reports.create` place
 > stamp + `reports.listFeed` + `renameSkateTimeToSkateEndTime` migration + `scripts/admin-areas` OSM
 > boundary ETL, all `convex-test`ed); **C** Web (`/feed` page, `FeedCard` + component tests, tap→drawer
 > `?report=` overlay, report-form relabel + optional start/duration); **D** Mobile (feed tab FlatList +

@@ -1,7 +1,8 @@
 # Planning docs
 
-> **Where things stand (2026-07-24): every roadmap phase — 0 through 10 — is built.** Phase 8 was
-> the last. Everything still unbuilt is *explicitly* deferred and registered in
+> **Where things stand (2026-07-26): every roadmap phase — 0 through 10 — is built**, and the first
+> next-phase candidate (**N1**, read-path durability) has shipped on dev. Phase 8 was the last
+> numbered phase. Everything still unbuilt is *explicitly* deferred and registered in
 > [`07-roadmap.md`](./07-roadmap.md) → *Later / deferred*, each phase doc's *Out of scope / deferred*
 > section, [`02-open-questions.md`](./02-open-questions.md), and
 > [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md). Non-feature work still
@@ -93,6 +94,13 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   forbid cross-user display (L7). New decisions **D58** (aggregate-track privacy: publish-is-consent,
   not k-anonymity) and **D59**. **✅ Complete on dev (2026-07-24); prod deferred** — still
   **device-unverified**.
+**Next-phase candidates** (the post-roadmap register in 07 → *Later / deferred*):
+- [N1 — Read-path durability](./phase-N1-read-path-durability.md) — the ladder-grid spatial index
+  replacing `@convex-dev/geospatial` (retired entirely), `adminAreas` containment made exact, and a
+  full `.collect()` triage including moving the notification fan-out off the report-create write
+  path. **✅ Complete on dev (2026-07-26); prod deferred.** Measured against the real 116k-body
+  corpus — the numbers live in the doc.
+
 
 ## How these fit together
 
