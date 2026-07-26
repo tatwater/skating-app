@@ -3,7 +3,7 @@
  *
  * Shared vocabulary comes from `@skating/core` (single source of truth); backend-only
  * enums come from `./lib/enums`. Point/bbox/GeoJSON fields are defined here, but the
- * spatial *indexes* (`@convex-dev/geospatial`) are layered on later (D5) — see README.
+ * spatial *indexes* are the `*Cells` ladder-grid tables below (D5/N1) — see README.
  *
  * Identity split (D26): **Clerk owns the auth user**; we own a `profiles` row per
  * user holding all domain data (display, prefs, role, status, reputation). The two
@@ -235,7 +235,7 @@ export default defineSchema({
     states: v.optional(v.array(v.string())),
     polygon: geoJson, // Polygon / MultiPolygon (rivers: the reach/segment)
     bbox, // prefilter index
-    centroid: latLng, // geospatial point index (D5)
+    centroid: latLng, // on-water representative point (D48); display + distance, not lookup
     // Outlier flag for the two-tier `listInViewport` (D5): a body whose bbox spans more than the
     // centroid prefilter's margin can have its centroid off-screen while its bbox fills the view,
     // so it's queried by a direct short-list scan instead of the centroid index. Derived from
@@ -249,7 +249,7 @@ export default defineSchema({
     weatherSamplePoints: v.optional(v.array(latLng)),
     surfaceAreaSqM: v.optional(v.number()),
     // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
-    // `minVisibleZoom` is its integer bucket, ALSO written as the geospatial `sortKey` so
+    // `minVisibleZoom` is its integer bucket, ALSO denormalized onto `waterBodyCells` so
     // `listInViewport` filters `minVisibleZoom <= zoom` in-query. All optional ⇒ migration-free;
     // computed on import/create/setCuratedBoost. `curatedBoost` is admin-set (D49), preserved on
     // re-import like the other curation fields.
@@ -520,9 +520,9 @@ export default defineSchema({
     .index('by_status', ['status'])
     .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 7b)
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
-  // NOTE: no geospatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
+  // NOTE: no spatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
-  // proximity evaluator runs against that same cached set. A third @convex-dev/geospatial instance
+  // proximity evaluator runs against that same cached set. A third spatial index
   // would re-enter the read-cap fragility that took PRs #10/#11 to fix on `listInViewport`, for no v1
   // benefit. Cross-viewport aggregation belongs to the deferred per-body summary cards.
 

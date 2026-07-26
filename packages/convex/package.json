@@ -21,7 +21,6 @@
     "test:watch": "pnpm codegen && vitest"
   },
   "dependencies": {
-    "@convex-dev/geospatial": "^0.2.1",
     "@skating/core": "workspace:*",
     "convex": "^1.42.1"
   },

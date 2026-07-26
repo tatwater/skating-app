@@ -23,14 +23,15 @@ import { fileURLToPath } from 'node:url';
 const convexDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'convex');
 const generatedDir = join(convexDir, '_generated');
 
-// When a `convex.config.ts` exists, this app installs Convex *components* (D5:
-// `@convex-dev/geospatial`). Component codegen has a fully-typed form that needs
-// live deployment analysis — the exact thing we can't do offline — but that typing
-// only benefits `components.*` call sites, and installed components (e.g. the
-// geospatial client) re-apply their own precise types on top. So we emit the same
-// loosely-typed `components` *stub* that `convex dev` writes before its first push
-// (`componentApiStubDTS`): `componentsGeneric()` in `api.js`, `AnyComponents` in
-// `api.d.ts`. The app's own `api`/`internal` stay precisely derived, as before.
+// When a `convex.config.ts` exists, this app installs Convex *components*. Component
+// codegen has a fully-typed form that needs live deployment analysis — the exact thing
+// we can't do offline — so we emit the same loosely-typed `components` *stub* that
+// `convex dev` writes before its first push (`componentApiStubDTS`):
+// `componentsGeneric()` in `api.js`, `AnyComponents` in `api.d.ts`. The app's own
+// `api`/`internal` stay precisely derived, as before.
+// Currently **no components are installed**: N1 retired `@convex-dev/geospatial` in favour
+// of the plain `waterBodyCells` / `adminAreaCells` tables, so this branch is dormant. It
+// stays because installing one again shouldn't mean rediscovering the stub trick.
 const hasComponents = existsSync(join(convexDir, 'convex.config.ts'));
 
 const header = (desc) => `/* eslint-disable */

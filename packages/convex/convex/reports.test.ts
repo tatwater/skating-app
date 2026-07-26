@@ -1,4 +1,3 @@
-import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -8,8 +7,6 @@ const modules = import.meta.glob('./**/*.*s');
 
 function convexTestWithGeo() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 
@@ -877,8 +874,6 @@ describe('reports.listFeed filters + favorite boost (Phase 4)', () => {
  *  report can be seeded to exercise the rename migration. */
 function convexTestNoValidation() {
   const t = convexTest({ ...schema, schemaValidation: false }, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 

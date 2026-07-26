@@ -57,10 +57,10 @@ const HOUR_MS = 60 * 60 * 1000;
 /**
  * Hard ceiling on the `listOpen` index scan (decision 13 browse surface). The open-bounty set is small
  * and bounded by design (≤3 open per requester in a rolling 24h × a ~30-day lifetime), so a plain
- * `by_status_expires` scan is read-cap-safe — unlike the water-body geospatial viewport path, whose
+ * `by_status_expires` scan is read-cap-safe — unlike the water-body centroid viewport path (since
  * reads scale with search *area* (see roadmap → Later/deferred: `listInViewport` hardening). If the
  * live open set ever approaches this cap we log the truncation (never silent, D5) and would then add a
- * dedicated bounties geospatial instance; at alpha scale it never bites.
+ * dedicated bounties cell index; at alpha scale it never bites.
  */
 const OPEN_BOUNTY_SCAN_CAP = 200;
 
@@ -681,7 +681,7 @@ export const listForBody = query({
 
 /**
  * The **global / near-me / in-viewport open-bounty browse** (decision 3 clarification, 2026-07-22). This
- * deliberately sidesteps the read-cap-fragile water-body geospatial viewport path: the open-bounty set is
+ * deliberately sidesteps what was then the read-cap-fragile water-body viewport path: the open-bounty set is
  * small and bounded, so we scan the dedicated `by_status_expires` index (open, not-yet-expired), hydrate
  * each body + requester, then filter/sort **in JS** — no S2 read-ahead, no 4,096-reads crash surface.
  *

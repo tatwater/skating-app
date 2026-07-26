@@ -3,7 +3,6 @@
  * self/admin safety guards, the status patches, the audit-row-written invariant, and that a suspension
  * is enforced by the Convex gate (`requireProfile`) with no Clerk dependency.
  */
-import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
@@ -14,8 +13,6 @@ const modules = import.meta.glob('./**/*.*s');
 
 function harness() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 

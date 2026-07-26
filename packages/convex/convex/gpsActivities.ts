@@ -381,7 +381,7 @@ export interface AggregateTrackView {
  * report is meant to be shared, the path is already on it, and a contributor-count gate would render
  * an empty map for the entire alpha while protecting nothing that publishing hadn't already decided.
  *
- * Scoped **per body**, like Phase 9 hazards — never a cross-viewport geospatial scan, which is the
+ * Scoped **per body**, like Phase 9 hazards — never a cross-viewport spatial scan, which is the
  * read-cap-fragile path `listInViewport` has already had to be fixed for twice.
  */
 export const listTracksForBody = query({

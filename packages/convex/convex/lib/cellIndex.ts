@@ -84,8 +84,7 @@ export function diffCells<T extends StoredCell>(
  * assumption weaker over time; this makes it irrelevant.
  *
  * Call it after **any** patch to a body's bbox, `minVisibleZoom`, or listing-bearing fields
- * (`removedAt` / `reviewStatus` / `dedupStatus`) — the same points that used to re-insert the
- * geospatial key.
+ * (`removedAt` / `reviewStatus` / `dedupStatus`).
  */
 export async function syncWaterBodyCells(
   ctx: MutationCtx,

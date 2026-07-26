@@ -1,6 +1,6 @@
 /**
  * `listed` — the derived boolean that decides whether a water body appears on the public
- * map (D48/D5). It's the `@convex-dev/geospatial` filter key (see `./geospatial`), set at
+ * map (D48/D5). It decides whether a body has rows in the cell index at all (see `./cellIndex`), set at
  * import / `create` / `approve` / `reject` / `remove`, and queried by
  * `waterBodies.listInViewport` (`listed == true`).
  *
@@ -27,7 +27,7 @@ export interface ListableBody {
   removedAt?: number;
 }
 
-/** Whether a water body shows on the public map — the derived geospatial filter key (D48). */
+/** Whether a water body shows on the public map — decides whether it's cell-indexed at all (D48). */
 export function isListed(body: ListableBody): boolean {
   return (
     body.reviewStatus !== 'rejected' &&

@@ -278,9 +278,6 @@ importers:
 
   packages/convex:
     dependencies:
-      '@convex-dev/geospatial':
-        specifier: ^0.2.1
-        version: 0.2.1(convex@1.42.1(@clerk/clerk-react@5.61.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(@clerk/react@6.12.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6))
       '@skating/core':
         specifier: workspace:*
         version: link:../core
@@ -1022,11 +1019,6 @@ packages:
 
   '@coinbase/wallet-sdk@4.3.0':
     resolution: {integrity: sha512-T3+SNmiCw4HzDm4we9wCHCxlP0pqCiwKe4sOwPH3YAK2KSKjxPRydKu6UQJrdONFVLG7ujXvbd/6ZqmvJb8rkw==}
-
-  '@convex-dev/geospatial@0.2.1':
-    resolution: {integrity: sha512-qSo5UJyX0il0zYbtdss9Gew5wVishL8jKxEwjx3FysxOWzzpODFN87ct/YUayAVuYCnXqdhxZ2xpvXADKqdrbg==}
-    peerDependencies:
-      convex: ^1.24.8
 
   '@csstools/color-helpers@6.1.0':
     resolution: {integrity: sha512-064IFJdjTfUqnjpCVpMOdbr8FLQBhinbZj6yRv2An2E41O/pLEXqfFRWqGq/SxlE5PEUYTlvWsG2r8MswAVvkg==}
@@ -4662,9 +4654,6 @@ packages:
     resolution: {integrity: sha512-LElXdjswlqjWrPpJFg1Fx4wpkOCxj1TDHlSV4PlaRxHGWko024xICaa97ZkMfs6DRKlCguiAI+rbXv5GWwXIkg==}
     hasBin: true
 
-  async-channel@0.2.0:
-    resolution: {integrity: sha512-BJyjI/sfKlyijaBt2hbOSxT28xGNtLR0QLzAKO1Hlnv5BULY7sAoYoTPW3lfr1ZIC7y+FxabxO9T8GXpyoofGg==}
-
   await-lock@2.2.2:
     resolution: {integrity: sha512-aDczADvlvTGajTDjcjpJMqRkOF6Qdz3YbPZm/PyW6tKPkx2hlYBzxMhEywM/tU72HrVZjgl5VCdRuMlA7pZ8Gw==}
 
@@ -5886,10 +5875,6 @@ packages:
   hasown@2.0.4:
     resolution: {integrity: sha512-T2UbfbBEF32wiepXIsMlTW9+dDYC6wMh/t/vYA4tuOMKqWz/n3vr1NFSxQiyP+zk2mXsoMA/i/7qV6LKut1t1A==}
     engines: {node: '>= 0.4'}
-
-  heap-js@2.7.1:
-    resolution: {integrity: sha512-EQfezRg0NCZGNlhlDR3Evrw1FVL2G3LhU7EgPoxufQKruNBSYA8MiRPHeWbU+36o+Fhel0wMwM+sLEiBAlNLJA==}
-    engines: {node: '>=10.0.0'}
 
   heic2any@0.0.4:
     resolution: {integrity: sha512-3lLnZiDELfabVH87htnRolZ2iehX9zwpRyGNz22GKXIu0fznlblf0/ftppXKNqS26dqFSeqfIBhAmAj/uSp0cA==}
@@ -8910,12 +8895,6 @@ snapshots:
       preact: 10.29.7
     transitivePeerDependencies:
       - preact-render-to-string
-
-  '@convex-dev/geospatial@0.2.1(convex@1.42.1(@clerk/clerk-react@5.61.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(@clerk/react@6.12.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6))':
-    dependencies:
-      async-channel: 0.2.0
-      convex: 1.42.1(@clerk/clerk-react@5.61.3(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(@clerk/react@6.12.2(react-dom@19.2.3(react@19.2.3))(react@19.2.3))(bufferutil@4.1.0)(react@19.2.3)(utf-8-validate@6.0.6)
-      heap-js: 2.7.1
 
   '@csstools/color-helpers@6.1.0': {}
 
@@ -13466,8 +13445,6 @@ snapshots:
 
   astring@1.9.0: {}
 
-  async-channel@0.2.0: {}
-
   await-lock@2.2.2: {}
 
   babel-dead-code-elimination@1.0.12:
@@ -14775,8 +14752,6 @@ snapshots:
   hasown@2.0.4:
     dependencies:
       function-bind: 1.1.2
-
-  heap-js@2.7.1: {}
 
   heic2any@0.0.4: {}
 

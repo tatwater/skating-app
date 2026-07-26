@@ -216,7 +216,7 @@ export const importCanonical = internalMutation({
  * repair path for any body whose scores predate a scoring change.
  *
  * **Paginated, deliberately.** Its predecessor `collect()`-ed the whole table and re-inserted a
- * geospatial point per body, which read far past Convex's 4,096-reads/mutation cap on anything
+ * centroid-index point per body, which read far past Convex's 4,096-reads/mutation cap on anything
  * bigger than the handful of user-created bodies — so the canonical corpus had to be backfilled by
  * re-running the ETL loader instead. That stopped being viable at Phase 2.5's ~116k bodies. This
  * walks a `cursor` in bounded batches; the caller loops until `isDone`, and each batch is its own
@@ -453,7 +453,7 @@ export const approve = mutation({
 
 /**
  * Admin: soft-delist a body from the map — curation or a landowner takedown (D48). Reversible
- * (never a hard delete): stamp `removed*`, flip `listed` off in the geospatial index, and
+ * (never a hard delete): stamp `removed*`, drop its cell-index rows, and
  * write a `moderationActions` audit row. A re-import preserves this (see `importCanonical`).
  */
 export const remove = mutation({
@@ -524,7 +524,7 @@ export const restore = mutation({
 /**
  * Moderator: reject a user-drawn body (D37) — the third arm of the review triad beside `approve` and
  * the D36 `merge`. Mirrors `approve`'s guards (user-source, still-pending), flips `reviewStatus` to
- * `rejected` (which `isListed` treats as unlisted), re-derives the geospatial key so it drops off the
+ * `rejected` (which `isListed` treats as unlisted), drops its cell rows so it leaves the
  * map, and audits `reject_waterbody`.
  */
 export const reject = mutation({
@@ -706,7 +706,7 @@ export const get = query({
 
 /**
  * Moderator: set a body's `curatedBoost` (D49), recompute `displayScore` + `minVisibleZoom`, re-insert
- * the geospatial key so the new zoom prominence takes effect, and write a `moderationActions` row.
+ * its cell rows so the new zoom prominence takes effect, and write a `moderationActions` row.
  * (D37, refined 2026-07-23: curation is a moderator content lever, not admin-only.)
  */
 export const setCuratedBoost = mutation({

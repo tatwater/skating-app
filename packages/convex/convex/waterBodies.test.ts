@@ -1,4 +1,3 @@
-import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -7,11 +6,9 @@ import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
 
-/** A `convexTest` instance with the geospatial component registered (D5). */
+/** A `convexTest` instance. (It used to register the geospatial component; N1 retired it.) */
 function convexTestWithGeo() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 
@@ -411,7 +408,7 @@ describe('waterBodies.approve (role gating + audit log, D37)', () => {
   });
 });
 
-describe('waterBodies.listInViewport (geospatial, D5)', () => {
+describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => {
   test('a pending user body is auto-visible (D37/D48) and stays visible after approval', async () => {
     const t = convexTestWithGeo();
     const asMember = await seedUser(t, 'clerk_member');
@@ -615,43 +612,43 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     }
   });
 
-  test('clamps an over-large client limit so tier-1 stays under the read cap (D5, regression)', async () => {
-    // Guards the fix for a live crash: the geospatial component reads roughly ∝ `maxResults`, so
-    // a big client `limit` made it read past Convex's 4,096-reads cap and *crash* (not page
-    // slowly). `sanitizeLimit` clamps any client value to `MAX_VIEWPORT_LIMIT`. Seed *more* than
-    // the cap, all in-view + small (tier-1 only), and confirm a huge limit returns the same
-    // bounded set as the default — never the unclamped 300. (convex-test can't reproduce the real
-    // read cap itself; this locks the clamp that keeps us under it.)
+  test('returns all 300 in-view bodies — the old 256 clamp used to drop the tail (N1)', async () => {
+    // The user-visible half of N1. `MAX_VIEWPORT_LIMIT` was 256, measured as a *safety* number
+    // against Vermont's 9,967 bodies; across the Phase-2.5 corpus a dense viewport exceeds it, so
+    // lakes silently stopped being drawn. With reads bounded by geometry the limit is only a render
+    // budget, and 300 prominent bodies in view all come back. A client asking for a million still
+    // gets no more than the ceiling — the clamp exists so the read-budget arithmetic holds.
     const t = convexTestWithGeo();
-    const OVER = 300; // > MAX_VIEWPORT_LIMIT (256)
+    const COUNT = 300;
     await t.mutation(internal.waterBodies.importCanonical, {
-      bodies: Array.from({ length: OVER }, (_, i) => {
-        const c = 0.001 + (i * 0.998) / OVER; // spread across [0,1), inside VIEWPORT_CONTAINING
+      bodies: Array.from({ length: COUNT }, (_, i) => {
+        const c = 0.001 + (i * 0.998) / COUNT; // spread across [0,1), inside VIEWPORT_CONTAINING
         return {
           source: 'osm' as const,
-          externalId: `osm/clamp/${i}`,
+          externalId: `osm/dense/${i}`,
           name: `Body ${i}`,
-          type: 'pond' as const,
+          type: 'lake' as const,
           polygon: SAMPLE_BODY.polygon,
           bbox: { minLat: c - 0.0005, minLng: c - 0.0005, maxLat: c + 0.0005, maxLng: c + 0.0005 },
           centroid: { lat: c, lng: c },
+          surfaceAreaSqM: 1e9, // prominent, so the D49 cutoff isn't what's being measured here
         };
       }),
     });
     const atDefault = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
-      zoom: 14,
+      zoom: 8,
     });
+    expect(atDefault).toHaveLength(COUNT); // nothing dropped — this was 256 before
+
     const atHugeLimit = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
       limit: 1_000_000,
-      zoom: 14,
+      zoom: 8,
     });
-    expect(atDefault.length).toBeLessThan(OVER); // clamped — not all 300 come back
-    expect(atHugeLimit.length).toBe(atDefault.length); // a huge limit is clamped to the same cap
-    // Seeding 300 bodies (each a geospatial insert reading ~15–20 S2-cell docs) + two viewport
-    // queries runs well past the 5 s default on a slow CI runner; this is inherently heavy, not
-    // flaky logic, so give it headroom rather than shrinking the seed below the 256 cap it tests.
+    expect(atHugeLimit).toHaveLength(COUNT); // clamped to the ceiling, which 300 is under
+    // Seeding 300 bodies + two viewport queries runs past vitest's 5 s default on a slow CI runner;
+    // inherently heavy, not flaky logic, so give it headroom rather than shrinking the corpus.
   }, 30_000);
 
   test('returns only the bodies inside the viewport when several exist', async () => {
