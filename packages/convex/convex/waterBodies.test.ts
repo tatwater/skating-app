@@ -1303,6 +1303,66 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
     expect(stats.truncated).toBe(true); // …which is the part that has to be said out loud
   });
 
+  test('an over-budget cell plan drops whole rungs, not the tail of one (N1)', async () => {
+    // Greptile PR #27, round 7: the cell plan is built coarsest rung first and row-major within a
+    // rung, so cutting it at `CELL_SCAN_BUDGET` blanked whichever corner of the box the walk reached
+    // last — and pass 2 can't rank a body back in from a cell nobody looked up. The two ponds below
+    // are identical in every way that the read is allowed to care about (same size, same score, same
+    // z14 rung); only their longitude differs. Keeping one and dropping the other is the bug.
+    //
+    // The geometry is exact, not approximate. This box is 5.55° × 0.005°: wide and short, so every
+    // rung stays under `MAX_CELLS_PER_LEVEL` (the finest is 254) while the ladder sums to 515 cells,
+    // past the 512 budget. Rungs 6–13 are 261 cells; the old cut kept those plus the first 251 z14
+    // cells, i.e. everything up to lng 6.5039 — head pond in, tail pond out.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/anchor',
+          name: 'Anchor Lake',
+          surfaceAreaSqM: 1e10, // top score ⇒ minVisibleZoom 6, so it rides the coarsest rung
+          bbox: { minLat: 1.0, minLng: 3.0, maxLat: 1.002, maxLng: 3.002 },
+          centroid: { lat: 1.001, lng: 3.001 },
+        },
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/head',
+          name: 'Head Pond',
+          surfaceAreaSqM: 200, // ⇒ minVisibleZoom 14, and a tiny bbox ⇒ the z14 rung
+          bbox: { minLat: 1.0, minLng: 1.015, maxLat: 1.002, maxLng: 1.017 },
+          centroid: { lat: 1.001, lng: 1.016 },
+        },
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/tail',
+          name: 'Tail Pond', // same rung, same score — three z14 cells from the end of the plan
+          surfaceAreaSqM: 200,
+          bbox: { minLat: 1.0, minLng: 6.53, maxLat: 1.002, maxLng: 6.532 },
+          centroid: { lat: 1.001, lng: 6.531 },
+        },
+      ],
+    });
+
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const stats = await t.query(internal.waterBodies.viewportReadStats, {
+      viewport: { minLat: 1.0, minLng: 1.0, maxLat: 1.005, maxLng: 6.55 },
+      zoom: 14,
+      names: true,
+    });
+    // Whichever way the budget falls, it has to fall the same way on both ponds: the answer may not
+    // depend on where in the box a body sits. (Old behaviour: head in, tail out.)
+    const names = stats.names ?? [];
+    expect(names.includes('Head Pond')).toBe(names.includes('Tail Pond'));
+    // What's dropped is the finest *rung* — the tier that only draws once you've zoomed all the way
+    // in — so the rungs that did fit are scanned whole and their bodies are all here.
+    expect(names).toContain('Anchor Lake');
+    expect(stats.cellsScanned).toBe(261); // rungs 6–13 entire; not 512 cells cut mid-rung
+    expect(stats.truncated).toBe(true); // and the partial answer says so (D5)
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('skipped whole'));
+    warn.mockRestore();
+  });
+
   test('the row floor does not ration a viewport whose budget is ample', async () => {
     // The other half of the same trade: reserving rows for later cells must not cost completeness
     // when nothing is contended. An even up-front split would cap each cell of a 28-cell plan at a

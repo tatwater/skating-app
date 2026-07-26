@@ -73,7 +73,11 @@ const MAX_VIEWPORT_LIMIT = DEFAULT_VIEWPORT_LIMIT;
  * viewport claiming zoom 14, which would want ~2,000 cells — where we skip the rung and say so.
  */
 const MAX_CELLS_PER_LEVEL = 256;
-/** Total cells one read may look up across all rungs. */
+/**
+ * Total cells one read may look up across all rungs. Spent a **whole rung at a time** — see the
+ * plan walk in `bodiesCoveringBox` for why a partial rung is the one truncation with no honest
+ * story to tell.
+ */
 const CELL_SCAN_BUDGET = 512;
 /** Pending user-created bodies shown in the moderator review queue at once. */
 const REVIEW_QUEUE_CAP = 500;
@@ -841,6 +845,11 @@ export const applyCuratedBoostSeed = internalMutation({
  * and a cell that comes up short passes its slack to the ones behind. When the budget binds, the
  * result is the most prominent bodies from *across* the box rather than everything from one corner.
  *
+ * **And the cell budget is spent a whole rung at a time**, for the same reason one level up: a plan
+ * cut mid-rung drops a row-major slice of the box, which is a spatial hole no downstream ranking can
+ * fill. Skipping the rung drops a *prominence tier* instead, uniformly across the box — see the walk
+ * below.
+ *
  * The residual is honest and unavoidable: a hard row budget means a dense cell is read only to its
  * share's depth, so a body can be missed if its own cell holds more prominent bodies than that share.
  * Fixing that completely would mean reading every row, which is the unbounded scan this phase exists
@@ -872,32 +881,58 @@ async function bodiesCoveringBox(
   const { zoom, limit } = opts;
   const rowCeiling = Math.min(opts.maxRows ?? CELL_ROW_SCAN_BUDGET, CELL_ROW_SCAN_BUDGET);
   let rowBudget = rowCeiling;
-  let cellBudget = CELL_SCAN_BUDGET;
+  let cellsScanned = 0;
   let truncated = false;
 
   // The full cell walk, materialized before any I/O so the row budget can be divided by how many
-  // cells still have to be served. Pure arithmetic on the bbox — no reads — and the per-rung
-  // absurdity guard runs here, so a skipped rung doesn't inflate anyone else's share.
+  // cells still have to be served. Pure arithmetic on the bbox — no reads — and both cell guards run
+  // here, so a rung that never gets scanned doesn't inflate anyone else's share.
+  //
+  // **Rungs are admitted whole or not at all.** Cutting an over-budget plan at 512 cells was a
+  // truncation with no honest story: cells within a rung are enumerated row-major, so the cut blanked
+  // whichever corner of the box came last, and pass 2 cannot rank a body back in from a cell that was
+  // never looked up (Greptile PR #27, round 7). Dropping the *rung* instead degrades along
+  // prominence, the axis the rest of this query already degrades along: `indexLevelFor` puts a body on
+  // the coarser of "how big it is" and its `minVisibleZoom`, so a body on a fine rung is by
+  // construction one that only draws once you've zoomed in. That makes a short plan still say
+  // something exact — scanning rungs `minZ…K` whole finds **every** body in the box with
+  // `minVisibleZoom ≤ K`, wherever in the box it sits — where the row-major cut could only say "some
+  // of them, from over here".
+  //
+  // Stopping at the first rung that doesn't fit (rather than skipping it and trying the next) loses
+  // nothing: a finer rung's cells are strictly smaller, so its covering of the same box is never
+  // smaller either. Once a rung doesn't fit, none behind it does.
   const levels =
     zoom === undefined ? allLevels(WATER_BODY_LADDER) : scanLevels(zoom, WATER_BODY_LADDER);
   const plan: { z: number; x: number; y: number }[] = [];
   for (const level of levels) {
-    // A box far wider than its zoom implies (a hand-rolled client, a wrapped bbox) is the only way
-    // this trips. Skip the rung and say so rather than materializing a huge covering — the
-    // guarantee is worth more stated honestly than silently half-kept.
     const range = cellRangeCovering(box, level);
+    // Two ways a rung can fail to fit, worth telling apart in the log. The per-rung guard is an
+    // absurdity check — only a box far wider than its zoom implies (a hand-rolled client, a wrapped
+    // bbox) reaches it. The budget guard is reachable from a real window that is very wide and short,
+    // whose rungs each stay under the per-rung cap but sum past the total. Either way, say what was
+    // dropped rather than materializing a huge covering: the guarantee is worth more stated honestly
+    // than silently half-kept.
+    //
+    // (The `zoom === undefined` containment walk scans every rung, and dropping its *finest* would be
+    // exactly the wrong end — the pond you are standing on is the unprominent one. It never binds:
+    // that caller's box is ~0.02° wide, so each of the ladder's nine rungs contributes at most four
+    // cells.)
     if (range.count > MAX_CELLS_PER_LEVEL) {
       console.warn(
-        `waterBodyCells: box covers ${range.count} cells at level ${level} (max ${MAX_CELLS_PER_LEVEL}); rung skipped, so bodies indexed there are omitted (N1).`,
+        `waterBodyCells: box covers ${range.count} cells at level ${level} (max ${MAX_CELLS_PER_LEVEL}); rungs ${level}+ skipped, so bodies that first draw at zoom ≥ ${level} are omitted (N1).`,
       );
       truncated = true;
-      continue;
+      break;
+    }
+    if (plan.length + range.count > CELL_SCAN_BUDGET) {
+      console.warn(
+        `waterBodyCells: cell budget ${CELL_SCAN_BUDGET} would be exceeded by level ${level} (${plan.length} cells planned + ${range.count}); rungs ${level}+ skipped whole, so the answer is complete for bodies drawing at zoom < ${level} and omits finer-indexed ones (N1).`,
+      );
+      truncated = true;
+      break;
     }
     plan.push(...cellsCovering(box, level));
-  }
-  if (plan.length > cellBudget) {
-    truncated = true;
-    plan.length = cellBudget;
   }
 
   // Pass 1 — candidate ids and their prominence, deduped. A body straddling a cell boundary appears
@@ -909,7 +944,7 @@ async function bodiesCoveringBox(
       truncated = true;
       break;
     }
-    cellBudget--;
+    cellsScanned++;
     // Greedy, but never at the expense of a cell behind this one: take as much as wanted *after*
     // setting aside a floor for every cell still unserved. Rationing only bites when the budget is
     // actually scarce — dividing it evenly up front instead would cap an ordinary 39-cell viewport
@@ -982,7 +1017,7 @@ async function bodiesCoveringBox(
     byId,
     truncated,
     rowsRead: rowCeiling - rowBudget,
-    cellsScanned: CELL_SCAN_BUDGET - cellBudget,
+    cellsScanned,
   };
 }
 

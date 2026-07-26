@@ -403,3 +403,35 @@ becomes an incorrect thing later. The invariant is now pinned by a property test
 in `evaluateFreshness` has to be revisited with it. The convex-side test pins the allow, too, so the
 next reader doesn't "fix" it into a false block: blocking here would deny a legitimate weather reopen
 on any body busy enough to carry eleven fresh reports.
+
+### Round 7: the last cap that was still ordered wrongly
+
+Two rounds went into making the *row* budget spend itself fairly across the box. The **cell** budget
+above it was still doing what the row budget used to: the plan is built coarsest rung first and
+row-major within a rung, and an over-budget plan was cut with `plan.length = CELL_SCAN_BUDGET`. That
+cut lands mid-rung, so it blanks whichever corner of the box the walk reaches last — and unlike a
+short row budget, there is no recovering from it downstream, because pass 2 can only rank bodies that
+some cell lookup actually returned. The same class as the other three: *a cap is only as good as the
+scan order it caps*, one level up from where it had been fixed.
+
+It is reachable without an absurd viewport, which is what makes it worth fixing rather than guarding.
+A wide, short window — 5.55° × 0.005° — keeps every rung under `MAX_CELLS_PER_LEVEL` (the finest is
+254 cells) while the ladder sums to **515**, three past the budget.
+
+**Rungs are now admitted whole or not at all.** The scan takes rungs coarsest-first while they fit and
+stops at the first one that doesn't. What that buys is a guarantee a partial rung can't state: because
+`indexLevelFor` puts a body on the coarser of its size and its `minVisibleZoom`, scanning rungs
+`minZ…K` whole finds **every** body in the box with `minVisibleZoom ≤ K`, wherever in the box it sits.
+So the budget now degrades along prominence — the same axis the render budget and the D49 cutoff
+already degrade along — instead of along longitude. Stopping at the first rung that doesn't fit is
+exact rather than conservative: a finer rung's cells are strictly smaller, so its covering of the same
+box is never smaller, and once a rung doesn't fit none behind it can. The per-rung absurdity guard
+(`MAX_CELLS_PER_LEVEL`) stops for the same reason, where it used to `continue` and re-warn once per
+remaining rung.
+
+The trade is deliberate and it is a real one: a viewport that used to get 512 cells' worth of bodies
+now gets 261, because the 254-cell rung it can't afford is dropped entire. Fewer bodies, but a
+statable answer — and the omitted tier is the one that only draws when you zoom further in, which is
+where the map was heading anyway. The regression test (`waterBodies.test.ts`, "an over-budget cell
+plan drops whole rungs") puts two ponds identical in size and score at opposite ends of that box and
+asserts they share a fate; against the old cut, the head pond came back and the tail pond didn't.
