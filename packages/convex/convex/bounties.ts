@@ -49,7 +49,7 @@ import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
 import { nearestSamplePoint } from './lib/sampling';
-import { takeCapped } from './lib/scan';
+import { takeCapped, takeCappedResult } from './lib/scan';
 import { bbox, latLng } from './lib/validators';
 import { resolveWeatherSince } from './weather';
 
@@ -88,7 +88,10 @@ async function recentReports(
   waterBodyId: Id<'waterBodies'>,
   cutoff: number,
 ): Promise<{ reports: Doc<'reports'>[]; truncated: boolean }> {
-  const reports = await takeCapped(
+  // `takeCappedResult`, not `takeCapped`: the boundary has to be exact here, because `truncated` is
+  // what turns into a block. A body with *exactly* the cap's worth of reports is a complete scan,
+  // and reading it as a truncation would reject a valid bounty (Greptile PR #27).
+  const { rows: reports, truncated } = await takeCappedResult(
     ctx.db
       .query('reports')
       .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
@@ -101,7 +104,7 @@ async function recentReports(
     RECENT_REPORT_SCAN_CAP,
     `bounties.recentReports(${waterBodyId})`,
   );
-  return { reports, truncated: reports.length === RECENT_REPORT_SCAN_CAP };
+  return { reports, truncated };
 }
 
 /**
@@ -783,8 +786,11 @@ export const listOpen = query({
     const open = await ctx.db
       .query('bounties')
       .withIndex('by_status_expires', (q) => q.eq('status', 'open').gt('expiresAt', now))
-      .take(OPEN_BOUNTY_SCAN_CAP);
-    if (open.length === OPEN_BOUNTY_SCAN_CAP) {
+      .take(OPEN_BOUNTY_SCAN_CAP + 1);
+    // `+ 1` then trim: exactly-cap rows is a complete answer, not a truncated one, and a warning
+    // that fires on the boundary is a warning nobody trusts (Greptile PR #27, same fix as `takeCapped`).
+    if (open.length > OPEN_BOUNTY_SCAN_CAP) {
+      open.length = OPEN_BOUNTY_SCAN_CAP;
       console.warn(
         `bounties.listOpen hit the ${OPEN_BOUNTY_SCAN_CAP}-row scan cap; some open bounties may be omitted.`,
       );

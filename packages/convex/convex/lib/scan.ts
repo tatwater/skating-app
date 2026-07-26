@@ -41,15 +41,37 @@
  * would be worse than a slow one). Revisit if any of them ever shows up in a read-limit error.
  */
 
-/** Read at most `cap` rows, logging (never silently) when the cap is what stopped us. */
+/**
+ * Read at most `cap` rows, and say whether the cap is what stopped us.
+ *
+ * It asks for `cap + 1` and returns `cap`. Without that extra row, "I got exactly `cap`" is
+ * ambiguous — it means *either* the set is exactly that size *or* there's more behind it — and every
+ * caller has to guess. Guessing "truncated" cries wolf on a complete answer; guessing "complete"
+ * hides a real truncation, which is the failure this module exists to prevent. One row buys the
+ * distinction outright (Greptile PR #27).
+ *
+ * That matters most where the flag decides something rather than just logging: `bounties`
+ * `evaluateFreshness` blocks a bounty when its scan saturates, so reading the boundary case as
+ * truncated would reject perfectly valid requests on a body with exactly `cap` reports.
+ */
+export async function takeCappedResult<T>(
+  query: { take(n: number): Promise<T[]> },
+  cap: number,
+  what: string,
+): Promise<{ rows: T[]; truncated: boolean }> {
+  const probed = await query.take(cap + 1);
+  const truncated = probed.length > cap;
+  if (truncated) {
+    console.warn(`${what}: hit the ${cap}-row scan cap — results are truncated (D5/N1).`);
+  }
+  return { rows: truncated ? probed.slice(0, cap) : probed, truncated };
+}
+
+/** {@link takeCappedResult} for the callers that only need the rows. */
 export async function takeCapped<T>(
   query: { take(n: number): Promise<T[]> },
   cap: number,
   what: string,
 ): Promise<T[]> {
-  const rows = await query.take(cap);
-  if (rows.length === cap) {
-    console.warn(`${what}: hit the ${cap}-row scan cap — results are truncated (D5/N1).`);
-  }
-  return rows;
+  return (await takeCappedResult(query, cap, what)).rows;
 }

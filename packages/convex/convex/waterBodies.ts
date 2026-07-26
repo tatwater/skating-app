@@ -927,11 +927,16 @@ async function bodiesCoveringBox(
         const atCell = q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y);
         return zoom === undefined ? atCell : atCell.lte('minVisibleZoom', zoom);
       })
-      .take(take);
+      // `take + 1`, so "this cell had more" is a fact rather than a guess: stopping at exactly
+      // `take` can't distinguish a cell that holds precisely that many from one that holds
+      // thousands, and reporting the first as a truncation is how a D5 warning becomes noise
+      // (Greptile PR #27 — the same boundary `takeCapped` gets wrong). The probe row is kept when
+      // it exists and charged to the budget like any other, so it costs at most one row per cell.
+      .take(take + 1);
     rowBudget -= rows.length;
-    // A cell that filled its take may have more behind it — those rows are the least prominent in
-    // that cell, so they can't change the top of the ranking, but the answer is a partial one.
-    if (rows.length === take) truncated = true;
+    // Rows past this cell's share are the least prominent in it, so they can't change the top of
+    // the ranking — but the answer is a partial one, and that has to be said (D5).
+    if (rows.length > take) truncated = true;
     for (const row of rows) {
       const best = candidates.get(row.waterBodyId);
       if (best === undefined || row.minVisibleZoom < best) {

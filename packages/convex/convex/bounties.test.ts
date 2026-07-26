@@ -499,12 +499,13 @@ describe('bountyGateEvents', () => {
     const waterBodyId = await seedBody(t);
     const now = Date.now();
 
-    // Exactly the cap's worth, all inside the 144h query window but all well past their own 24h
-    // (new-account) windows — so nothing in the scanned set suppresses, and the cap is what stopped
-    // the scan. Whether an older report just past the cap would have suppressed is unknowable here;
-    // that's the point.
+    // One MORE than the cap, all inside the 144h query window but all well past their own 24h
+    // (new-account) windows — so nothing in the scanned set suppresses, and the cap is genuinely what
+    // stopped the scan. Whether the report just past the cap would have suppressed is unknowable
+    // here; that's the point. (201, not 200: at exactly the cap the scan is *complete*, and treating
+    // that as a truncation would reject a valid bounty — see the boundary test below.)
     await t.run(async (ctx) => {
-      for (let i = 0; i < 200; i++) {
+      for (let i = 0; i < 201; i++) {
         await ctx.db.insert('reports', {
           authorId: reporter.id,
           waterBodyId,
@@ -533,6 +534,45 @@ describe('bountyGateEvents', () => {
       waterBodyId,
     });
     expect(inputs.status).toBe('suppressed');
+  }, 30_000);
+
+  test('a body with EXACTLY the scan cap is a complete scan, not a saturated one (N1)', async () => {
+    // The boundary the saturation rule turns on. `take(cap)` returning `cap` rows is ambiguous —
+    // exactly that many, or more behind them — and calling it a truncation would reject a bounty on
+    // a body whose every report was read and none of which suppresses. The scan asks for `cap + 1`
+    // so the two cases are distinguishable (Greptile PR #27). Same fixture as the test above, one
+    // report short of overflowing.
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 200; i++) {
+        await ctx.db.insert('reports', {
+          authorId: reporter.id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: now - (100 + i * 0.2) * HOUR,
+          reportTime: now,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          moderationStatus: 'visible' as const,
+          photoIds: [],
+          hazardIdsCreated: [],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    const outcome = await requester.as.mutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReports: [],
+    });
+    expect(outcome.ok).toBe(true); // nothing suppresses, and we know it — so the bounty is allowed
   }, 30_000);
 
   test('does not log a rejection that never reached the gate (unauthorized, missing body)', async () => {

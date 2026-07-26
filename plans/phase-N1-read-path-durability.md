@@ -218,8 +218,8 @@ same kind of unchecked claim this whole phase exists to retire. Re-run any line 
 | Eastern Maine lakes | 44.6, −69.8 → 45.3, −68.4 | 11 | **314** | 74 | 768 | **1,156** | *would have been clamped to 256* |
 | Adirondacks | 43.5, −74.8 → 44.0, −74.0 | 11 | **404** | 43 | 989 | **1,436** | |
 | Eastern Maine, deep | 44.6, −69.8 → 45.3, −68.4 | 12 | **513** | 227 | 1,031 | **1,771** | |
-| Wider Adirondacks | 43.2, −75.2 → 44.3, −73.8 | 11 | 915 | 112 | 1,500 | **2,527** | row budget hit, logged |
-| 1°-wide box claiming z14 | 44.0, −73.0 → 45.0, −72.0 | 14 | 1,000 | 233 | 1,400 | **2,633** | incoherent input, bounded anyway |
+| Wider Adirondacks | 43.2, −75.2 → 44.3, −73.8 | 11 | 958 | 74 | 1,501 | **2,533** | row budget hit, logged |
+| 1°-wide box claiming z14 | 44.0, −73.0 → 45.0, −72.0 | 14 | 1,000 | 233 | 1,408 | **2,641** | incoherent input, bounded anyway |
 
 **What this establishes.**
 
@@ -234,7 +234,7 @@ same kind of unchecked claim this whole phase exists to retire. Re-run any line 
    was reading.
 4. **Incoherent input degrades instead of crashing.** A 1°-wide viewport claiming zoom 14 is not a
    thing a real client sends; it stops at the row budget, returns the 1,000 most prominent bodies,
-   logs the truncation, and reads 2,633 — bounded by the budgets rather than by luck.
+   logs the truncation, and reads 2,641 — bounded by the budgets rather than by luck.
 
 **The `adminAreas` bug, quantified.** The retired `findContainingTown` searched town centroids within
 ±0.2°, sized on the premise that towns run "well under 0.4° across". Reading the rung each town
@@ -246,7 +246,7 @@ the Adirondacks now returns `{ town: "Town of Long Lake", county: "Hamilton Coun
 **Still worth knowing.** The wider-Adirondacks case reads 62% of the cap before its budgets stop it.
 That's the design working — the budgets are hard limits, so it cannot crash — but it's the number to
 watch if the render budget is ever raised past 1,000. Note *which* budget stops it: the **row**
-budget, at 915 of the ~1,000 bodies it could draw. Raising `CELL_ROW_SCAN_BUDGET` is the lever, and
+budget, at 958 of the ~1,000 bodies it could draw. Raising `CELL_ROW_SCAN_BUDGET` is the lever, and
 it has a ceiling — reads are bounded by `CELL_SCAN_BUDGET + 2 × CELL_ROW_SCAN_BUDGET` (a row can
 cost a hydrating `get`), so 1,500 already sits close to the largest value that keeps the worst case
 under 4,096. Past that the render budget has to come down instead.
@@ -312,8 +312,8 @@ denormalized onto the row, so ranking costs no document read), then sort by prom
 in that order. The answer is the top-`limit` bodies by `minVisibleZoom` wherever they sit in the box.
 
 The cost of not stopping the scan early is visible in the table: the wider-Adirondacks case now
-reads to the row budget rather than to the render budget, and returns 915 bodies instead of 1,000.
-That is the right side of the trade — 915 correctly-chosen bodies beat 1,000 chosen by scan order —
+reads to the row budget rather than to the render budget, and returns 958 bodies instead of 1,000.
+That is the right side of the trade — 958 correctly-chosen bodies beat 1,000 chosen by scan order —
 but it is a real change, and it's why the note above cares which budget binds.
 
 **And sorting alone wasn't enough** (review round 3, same finding pushed one level down). Ranking
@@ -333,3 +333,17 @@ only the two budget-bound rows move.
 The residual is stated rather than fixed: a dense cell is read to its share's depth, so under a bound
 budget a body can be missed if its own cell holds more prominent bodies than that share. Removing
 that would mean reading every row — the unbounded scan this phase exists to retire.
+
+### "Exactly the cap" is a complete answer, not a truncated one
+
+Round 4, and the smallest bug of the set with the largest blast radius: `take(cap)` returning `cap`
+rows can't tell "there are exactly this many" from "there are thousands", and every caller was
+reading it as truncation. Mostly that only cried wolf in a log — but the round-3 saturation rule had
+just given the flag *authority*, so a body with exactly 200 reports in the window, every one of them
+read and none of them suppressing, would have had a perfectly valid bounty rejected.
+
+`takeCapped` now asks for `cap + 1` and returns `cap`, so the boundary is a fact rather than a guess;
+`bounties.listOpen` and the viewport's per-cell read do the same thing inline. One row buys the
+distinction, at 13 call sites and every cell of a viewport scan. The lesson is narrower than the
+others and worth keeping anyway: **a flag that only logs can be sloppy at the boundary; the moment it
+decides something, it can't.**
