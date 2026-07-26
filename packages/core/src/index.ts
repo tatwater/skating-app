@@ -3,6 +3,7 @@ export * from './authRoute';
 export * from './badges';
 export * from './block';
 export * from './bounties';
+export * from './coalesce';
 export * from './comment';
 export * from './dedup';
 export * from './display';

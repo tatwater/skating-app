@@ -9,6 +9,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   compactTrack,
+  createCoalescedRunner,
   type DraftFlushEffects,
   flushableDrafts,
   flushableHazardItems,
@@ -214,10 +215,6 @@ function hazardEffects(): HazardFlushEffects {
   };
 }
 
-// A single in-flight flush at a time: reconnect + app-foreground + manual triggers can all fire, and
-// the guard keeps them from double-sending (the report is idempotent, but this avoids wasted work).
-let flushing = false;
-
 // Ids currently being flushed. The edit form checks this (`isDraftFlushing`) and refuses to save
 // over an in-flight draft — otherwise an edit-during-flush would be clobbered by the flush's
 // checkpoint writes and then deleted, silently losing the edit (idempotency would re-serve the
@@ -231,49 +228,61 @@ export function isDraftFlushing(id: string | undefined): boolean {
 }
 
 /**
- * Flush every pending draft once, oldest first. Each draft that succeeds has its photo files deleted
- * and its row removed; a transient failure leaves it `pending` (retried next flush), a permanent one
- * parks it in `error` for the user — both persisted by `flushDraft` itself. Re-entrant calls no-op.
+ * Flush every pending queue once. Reconnect, app-foreground, "Sync now" and the Strava retry button
+ * all land here, and only one drain runs at a time.
+ *
+ * **A call made during a drain is served by a follow-up drain, not dropped.** Each queue is
+ * snapshotted at the top of the run below, so an item written a moment later — the whole point of the
+ * Retry button, which marks a track flushable and then asks for a flush — is in none of the batches
+ * the current run is working through. Returning early would report success while doing nothing, and
+ * leave that upload waiting on an unrelated reconnect. `createCoalescedRunner` instead folds every
+ * mid-drain request into one extra drain and resolves them all against it, so `await flushDrafts()`
+ * means the caller's item has actually been through a run.
+ */
+export function flushDrafts(): Promise<void> {
+  return drain();
+}
+
+const drain = createCoalescedRunner(() => drainOnce(Date.now()));
+
+/**
+ * One pass over the queues, oldest first. Each draft that succeeds has its photo files deleted and its
+ * row removed; a transient failure leaves it `pending` (retried next drain), a permanent one parks it
+ * in `error` for the user — both persisted by `flushDraft` itself.
  *
  * Each draft is **re-read from sqlite immediately before flushing** (not taken from the initial batch
  * snapshot) and held under `flushingIds` for the duration, so an edit saved after the snapshot is
  * either picked up fresh here or blocked by `isDraftFlushing` in the form — never silently lost.
  */
-export async function flushDrafts(now: number = Date.now()): Promise<void> {
-  if (flushing) return;
-  flushing = true;
-  try {
-    // Hazards first, deliberately. They're safety content that another skater may be about to need,
-    // and a queue of report drafts with photos can take a while to drain on a weak connection —
-    // sending the ridge before the trip write-up is the right order to lose a connection in.
-    await flushHazardQueue(now);
-    // Then tracks, before reports: a report draft linked to one needs its `activityId`. A report
-    // whose track is still queued resolves it on demand anyway (`resolveActivityId`), so this is an
-    // ordering optimization, not a correctness requirement.
-    await flushTrackQueue(now);
-    const eff = effects();
-    for (const { id } of flushableDrafts(listDrafts())) {
-      flushingIds.add(id);
-      try {
-        // Re-read the latest on-disk state — an edit between the snapshot and now must flush its
-        // new content, not the stale snapshot.
-        const fresh = getDraft(id);
-        if (!fresh || !isFlushable(fresh)) continue;
-        const result = await flushDraft(fresh, eff, now);
-        if (result.ok) {
-          deleteDraftPhotoFiles(draftPhotoUris(result.draft));
-          deleteDraft(result.draft.id);
-        }
-      } finally {
-        flushingIds.delete(id);
+async function drainOnce(now: number): Promise<void> {
+  // Hazards first, deliberately. They're safety content that another skater may be about to need,
+  // and a queue of report drafts with photos can take a while to drain on a weak connection —
+  // sending the ridge before the trip write-up is the right order to lose a connection in.
+  await flushHazardQueue(now);
+  // Then tracks, before reports: a report draft linked to one needs its `activityId`. A report
+  // whose track is still queued resolves it on demand anyway (`resolveActivityId`), so this is an
+  // ordering optimization, not a correctness requirement.
+  await flushTrackQueue(now);
+  const eff = effects();
+  for (const { id } of flushableDrafts(listDrafts())) {
+    flushingIds.add(id);
+    try {
+      // Re-read the latest on-disk state — an edit between the snapshot and now must flush its
+      // new content, not the stale snapshot.
+      const fresh = getDraft(id);
+      if (!fresh || !isFlushable(fresh)) continue;
+      const result = await flushDraft(fresh, eff, now);
+      if (result.ok) {
+        deleteDraftPhotoFiles(draftPhotoUris(result.draft));
+        deleteDraft(result.draft.id);
       }
+    } finally {
+      flushingIds.delete(id);
     }
-    // Last, deliberately: the drafts that just flushed have released their track references, so a
-    // track finished with weeks ago is free to go on this pass rather than the next one.
-    sweepTracks(now);
-  } finally {
-    flushing = false;
   }
+  // Last, deliberately: the drafts that just flushed have released their track references, so a
+  // track finished with weeks ago is free to go on this pass rather than the next one.
+  sweepTracks(now);
 }
 
 /**

@@ -8,7 +8,7 @@ import {
 } from '@skating/core';
 import { useCallback, useEffect, useState } from 'react';
 import { Button, Separator, Text, XStack, YStack } from 'tamagui';
-import { deleteTrack, listDrafts, listTracks, saveTrack } from '../lib/draftStore';
+import { deleteTrack, getTrack, listDrafts, listTracks, saveTrack } from '../lib/draftStore';
 import { flushDrafts } from '../lib/flushService';
 
 /**
@@ -66,10 +66,20 @@ export function TrackHistory() {
     async (track: QueuedTrack) => {
       setBusyId(track.id);
       try {
-        // Clear the settled state first, then drain: `requestStravaPush` is what makes the track
-        // flushable again, and the flush is what actually sends it.
-        saveTrack(requestStravaPush(track, Date.now()));
-        refresh();
+        // Re-read before writing. The row on screen is a render old, and a drain may have advanced it
+        // since — patching the stale copy back over disk could clobber an `activityId` written in the
+        // meantime and send the skate for a second ingest.
+        const fresh = getTrack(track.id);
+        // If it's no longer settled, a drain is already doing exactly what this tap asked for; take
+        // the request as served rather than resetting an attempt that's currently in flight.
+        if (fresh && describeStravaPush(fresh).action !== null) {
+          // Clear the settled state first, then drain: `requestStravaPush` is what makes the track
+          // flushable again, and the flush is what actually sends it.
+          saveTrack(requestStravaPush(fresh, Date.now()));
+          refresh();
+        }
+        // Resolves once a drain that could see this write has finished — including when one was
+        // already running when the tap landed (`flushDrafts` coalesces rather than dropping).
         await flushDrafts();
       } finally {
         setBusyId(null);
