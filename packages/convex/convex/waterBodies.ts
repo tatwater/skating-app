@@ -31,7 +31,13 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
+import {
+  internalMutation,
+  internalQuery,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
 import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
@@ -822,6 +828,7 @@ async function bodiesCoveringBox(
   byId: Map<Id<'waterBodies'>, Doc<'waterBodies'>>;
   truncated: boolean;
   rowsRead: number;
+  cellsScanned: number;
 }> {
   const { zoom, limit } = opts;
   const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
@@ -879,7 +886,12 @@ async function bodiesCoveringBox(
       }
     }
   }
-  return { byId, truncated, rowsRead: CELL_ROW_SCAN_BUDGET - rowBudget };
+  return {
+    byId,
+    truncated,
+    rowsRead: CELL_ROW_SCAN_BUDGET - rowBudget,
+    cellsScanned: CELL_SCAN_BUDGET - cellBudget,
+  };
 }
 
 /**
@@ -943,6 +955,34 @@ export const listInViewport = query({
       }
     }
     return [...byId.values()];
+  },
+});
+
+/**
+ * Internal: what one viewport read actually costs (N1). Same scan as `listInViewport`, returning the
+ * counters instead of the bodies.
+ *
+ * This exists because the constants it measures were wrong for a year without anyone noticing — the
+ * 256-row clamp was tuned live against a 9,967-body corpus and never revisited after that corpus grew
+ * to 116k, and no test could catch it because `convex-test` doesn't model Convex's read cap. A claim
+ * about read cost should be checkable against the real deployment:
+ * `pnpm exec convex run waterBodies:viewportReadStats '{"viewport": {...}, "zoom": 12}'`.
+ */
+export const viewportReadStats = internalQuery({
+  args: { viewport: bbox, zoom: v.number(), limit: v.optional(v.number()) },
+  handler: async (ctx, { viewport, zoom, limit }) => {
+    const { byId, truncated, rowsRead, cellsScanned } = await bodiesCoveringBox(ctx, viewport, {
+      zoom: Math.floor(zoom),
+      limit: sanitizeLimit(limit),
+    });
+    return {
+      bodies: byId.size,
+      cellsScanned,
+      cellRowsRead: rowsRead,
+      // The read the 4,096 cap actually counts: index rows + one hydrating get per distinct body.
+      approxDocumentReads: cellsScanned + rowsRead + byId.size,
+      truncated,
+    };
   },
 });
 

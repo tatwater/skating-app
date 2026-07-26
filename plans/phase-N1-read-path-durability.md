@@ -184,5 +184,54 @@ Committed in the order below; one PR at the end (per the phase convention).
 
 ## Measured results
 
-*(Filled in at step 8 — read counts per viewport class, before and after, against the ~116k-body
-dev corpus.)*
+Taken **2026-07-26 against the dev deployment** (`agile-bee-397`) after backfilling the real corpus:
+**116,070 water bodies** in 233 batches, **3,240 admin boundaries** in 17. The corpus size the
+roadmap estimated at "~116k" is exact.
+
+Numbers come from `waterBodies:viewportReadStats`, which runs the same scan as `listInViewport` and
+returns the counters instead of the bodies. It's a permanent internal query on purpose: the
+constants it measures were wrong for a year without anyone noticing, and `convex-test` structurally
+cannot catch that (it doesn't model the read cap), so the claim needs to stay checkable against a
+real deployment.
+
+`reads` below is cells looked up + cell rows scanned + one hydrating `get` per distinct body — the
+figure Convex's **4,096** cap counts.
+
+| Viewport | zoom | bodies | cells | rows | **reads** | |
+|---|---|---|---|---|---|---|
+| Whole Northeast | 6 | 7 | 8 | 10 | **25** | the widest zoom anything draws at |
+| Atlantic, off-data | 10 | 0 | 16 | 5 | **21** | *the PR #11 crash case* |
+| Northern Vermont | 9 | 45 | 21 | 103 | **169** | |
+| Maine lake belt | 14 | 9 | 31 | 144 | **184** | |
+| Burlington waterfront | 14 | 12 | 21 | 216 | **249** | |
+| Burlington + Champlain | 12 | 122 | 24 | 271 | **417** | |
+| Adirondack lake country | 12 | 230 | 48 | 446 | **724** | |
+| Adirondacks | 11 | 222 | 20 | 560 | **802** | |
+| Eastern Maine lakes | 12 | **319** | 145 | 930 | **1,394** | *would have been clamped to 256* |
+| Wider Adirondacks | 11 | 1,000 | 58 | 1,383 | **2,441** | render budget hit, logged |
+| 1°-wide box claiming z14 | 14 | 1,000 | 180 | 1,373 | **2,553** | incoherent input, bounded anyway |
+
+**What this establishes.**
+
+1. **The crash case is gone and is now the *cheapest* read on the board.** Panning off-data used to
+   exhaust an S2 covering looking for results that weren't there; it now costs 21 reads, because an
+   empty cell costs an index lookup and nothing else.
+2. **Real viewports sit 5–25× under the cap.** The heaviest genuine one (dense eastern Maine at z12)
+   is 1,394 — about a third of budget.
+3. **The 256 clamp was costing real lakes.** That same eastern-Maine viewport returns **319** bodies.
+   Under the old ceiling, 63 of them — Great Moose, Sebasticook, Pushaw, Schoodic, Seboeis and the
+   rest — were simply absent from the map, with a log line nobody was reading.
+4. **Incoherent input degrades instead of crashing.** A 1°-wide viewport claiming zoom 14 is not a
+   thing a real client sends; it stops at the row budget, returns the 1,000 most prominent bodies,
+   logs the truncation, and reads 2,553 — bounded by the budgets rather than by luck.
+
+**The `adminAreas` bug, quantified.** The retired `findContainingTown` searched town centroids within
+±0.2°, sized on the premise that towns run "well under 0.4° across". Reading the rung each town
+landed on in the new index: **9 towns span more than 0.35°** (up to 0.70°) — for these the old
+lookup could not reliably find the town from an interior point at all — and a further **264 span
+0.18°–0.35°**, where a point near a corner sits more than 0.2° from the centroid. Sampling inside
+the Adirondacks now returns `{ town: "Town of Long Lake", county: "Hamilton County", state: "NY" }`.
+
+**Still worth knowing.** The wider-Adirondacks case reads 60% of the cap before its budgets stop it.
+That's the design working — the budgets are hard limits, so it cannot crash — but it's the number to
+watch if the render budget is ever raised past 1,000.
