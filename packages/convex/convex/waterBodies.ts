@@ -36,6 +36,7 @@ import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
 import { isListed } from './lib/listing';
+import { takeCapped } from './lib/scan';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 
 /**
@@ -67,6 +68,8 @@ const MAX_VIEWPORT_LIMIT = DEFAULT_VIEWPORT_LIMIT;
 const MAX_CELLS_PER_LEVEL = 256;
 /** Total cells one read may look up across all rungs. */
 const CELL_SCAN_BUDGET = 512;
+/** Pending user-created bodies shown in the moderator review queue at once. */
+const REVIEW_QUEUE_CAP = 500;
 /** Total cell rows one read may scan. With the two budgets above and the render limit, the worst
  *  case is 512 lookups + 1,500 rows + 1,000 hydrating gets ≈ 3,000 against Convex's 4,096 cap. */
 const CELL_ROW_SCAN_BUDGET = 1500;
@@ -1065,10 +1068,15 @@ export const listPendingReview = query({
   args: {},
   handler: async (ctx) => {
     await requireRole(ctx, 'moderator');
-    return ctx.db
-      .query('waterBodies')
-      .withIndex('by_review_status', (q) => q.eq('reviewStatus', 'pending'))
-      .collect();
+    // A moderator queue is meant to be short; if it isn't, showing a bounded page beats failing the
+    // whole screen, and the log says the queue is running away (N1).
+    return takeCapped(
+      ctx.db
+        .query('waterBodies')
+        .withIndex('by_review_status', (q) => q.eq('reviewStatus', 'pending')),
+      REVIEW_QUEUE_CAP,
+      'waterBodies.listPendingReview',
+    );
   },
 });
 

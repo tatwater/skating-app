@@ -11,9 +11,11 @@
  * one push ("2 new reports on Lake Morey"). `coalesceKey` seeds the eventual APNs collapse-id / Android
  * tag (push delivery itself is deferred, like Phase 3 — flush lands an in-app `notifications` row).
  *
- * **Scaling seam (decision #2):** the digest/great fan-out scans profiles per new report (a per-user
- * polygon test). Fine at alpha scale (dozens–hundreds of users); a reverse spatial index is the future
- * optimization, documented in the roadmap.
+ * **Scaling seam (decision #2):** digest/great eligibility is a per-user polygon test against that
+ * viewer's cached drive-time bands, so there's no index to look recipients up by — it means walking
+ * profiles. N1 moved that walk out of `reports.create` and into a **scheduled, self-continuing paged
+ * job** (`fanOutNearbyNotifications`), so the write path no longer scales with user count. Making the
+ * walk itself unnecessary — a reverse spatial index — is still the future optimization (roadmap N7).
  */
 
 import {
@@ -23,8 +25,11 @@ import {
   isDriveTimeBand,
   nextZonedHourMs,
 } from '@skating/core';
+import { v } from 'convex/values';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
+import { takeCapped } from './lib/scan';
 
 /** The digest rolls up to 8pm in this zone (single-timezone pilot; per-user timing deferred). */
 const DIGEST_HOUR = 20;
@@ -74,11 +79,27 @@ async function enqueue(
   });
 }
 
+/** Queue rows drained per flush tick — see `flushNotificationQueue`. */
+const FLUSH_BATCH_CAP = 1000;
+
+/** Profiles classified per scheduled fan-out page. Each costs a band test + at most two queue
+ *  upserts, so a few hundred sits far inside a mutation's budget with room for the upserts. */
+const FANOUT_PAGE_SIZE = 200;
+
 /**
- * Enqueue every candidate notification for a freshly created report (decision #4). Called from
- * `reports.create` after insert. Favorites fan out cheaply via `waterBodyFavorites.by_water_body`;
- * digest/great scan active profiles and classify the body's centroid against each viewer's cached
- * bands (the documented per-report scan). The report's own author is never notified.
+ * Enqueue the notifications that belong to the report's *own* audience — the people who favorited
+ * this lake — and hand the distance-based fan-out to a scheduled job (N1).
+ *
+ * Called from `reports.create` after insert. Favorites are keyed by
+ * `waterBodyFavorites.by_water_body`, so this scans only the handful of people who care about this
+ * one lake and stays inside the create transaction.
+ *
+ * **Why the rest is scheduled.** Digest/great recipients can't be found by an index — each viewer's
+ * eligibility is a polygon test against *their* cached drive-time bands — so it means walking
+ * profiles. Doing that inline meant `reports.create` scanned **every profile in the app** on every
+ * report: an unbounded read inside the app's most important write, which starts failing outright
+ * somewhere around a few thousand users. Now it's a paged, self-continuing job. Users can't tell:
+ * these notifications were already debounced two minutes (great) or rolled up to 8pm (digest).
  */
 export async function enqueueReportNotifications(
   ctx: MutationCtx,
@@ -87,7 +108,6 @@ export async function enqueueReportNotifications(
   const now = Date.now();
   const body = await ctx.db.get(report.waterBodyId);
   if (!body) return;
-  const centroid = body.centroid;
 
   // 1. Favorites — notify anyone who favorited this body (any distance), default on.
   const favorites = await ctx.db
@@ -110,53 +130,101 @@ export async function enqueueReportNotifications(
     });
   }
 
-  // 2 & 3. Digest (all within X₁) + great (great report within X₂) — the per-report profile scan.
-  const isGreat = report.skateQuality === 'great';
-  const digestFlushAfter = nextZonedHourMs(now, DIGEST_HOUR, DIGEST_TIMEZONE);
-  const profiles = await ctx.db.query('profiles').collect();
-  for (const p of profiles) {
-    if (p._id === report.authorId || p.status !== 'active') continue;
-    const bands: DriveTimeBands = {
-      band30: p.cachedIsochrones?.band30 as DriveTimeBands['band30'],
-      band60: p.cachedIsochrones?.band60 as DriveTimeBands['band60'],
-      outerRadiusMeters: p.outerRadiusMeters,
-    };
-    const band = bandForCoord(centroid, bands, p.homeCoord);
-
-    if (
-      p.notificationPrefs.nearbyReportDigest &&
-      isDriveTimeBand(p.allRadiusMinutes) &&
-      bandWithinRadius(band, p.allRadiusMinutes)
-    ) {
-      await enqueue(ctx, {
-        userId: p._id,
-        waterBodyId: report.waterBodyId,
-        reportId: report._id,
-        kind: 'digest',
-        type: 'nearby_report_digest',
-        flushAfter: digestFlushAfter,
-        now,
-      });
-    }
-
-    if (
-      isGreat &&
-      p.notificationPrefs.greatReportNearby &&
-      isDriveTimeBand(p.greatRadiusMinutes) &&
-      bandWithinRadius(band, p.greatRadiusMinutes)
-    ) {
-      await enqueue(ctx, {
-        userId: p._id,
-        waterBodyId: report.waterBodyId,
-        reportId: report._id,
-        kind: 'great',
-        type: 'great_report_nearby',
-        flushAfter: now + DEBOUNCE_MS,
-        now,
-      });
-    }
-  }
+  // 2 & 3. Digest + great — scheduled, not inline (see above).
+  await ctx.scheduler.runAfter(0, internal.notifications.fanOutNearbyNotifications, {
+    reportId: report._id,
+  });
 }
+
+/**
+ * One page of the distance-based fan-out (N1): classify up to `FANOUT_PAGE_SIZE` profiles against
+ * the report's body, enqueue the digest/great rows they qualify for, and schedule the next page.
+ *
+ * Self-continuing rather than capped, because a cap here would mean quietly not telling someone
+ * about ice near them — a silent wrong answer, which is the one outcome worse than a slow one (D5).
+ * Bounded per invocation, unbounded in total.
+ *
+ * The report is re-read each page: it may have been hidden or removed mid-fan-out, and there's no
+ * reason to keep notifying people about something no longer on the map.
+ */
+export const fanOutNearbyNotifications = internalMutation({
+  args: { reportId: v.id('reports'), cursor: v.optional(v.string()) },
+  handler: async (ctx, { reportId, cursor }) => {
+    const now = Date.now();
+    const report = await ctx.db.get(reportId);
+    if (report?.moderationStatus !== 'visible') return { stopped: 'report_gone' as const };
+    const body = await ctx.db.get(report.waterBodyId);
+    if (!body) return { stopped: 'body_gone' as const };
+    const centroid = body.centroid;
+
+    const isGreat = report.skateQuality === 'great';
+    const digestFlushAfter = nextZonedHourMs(now, DIGEST_HOUR, DIGEST_TIMEZONE);
+    const page = await ctx.db
+      .query('profiles')
+      .paginate({ cursor: cursor ?? null, numItems: FANOUT_PAGE_SIZE });
+
+    let enqueued = 0;
+    for (const p of page.page) {
+      if (p._id === report.authorId || p.status !== 'active') continue;
+      const bands: DriveTimeBands = {
+        band30: p.cachedIsochrones?.band30 as DriveTimeBands['band30'],
+        band60: p.cachedIsochrones?.band60 as DriveTimeBands['band60'],
+        outerRadiusMeters: p.outerRadiusMeters,
+      };
+      const band = bandForCoord(centroid, bands, p.homeCoord);
+
+      if (
+        p.notificationPrefs.nearbyReportDigest &&
+        isDriveTimeBand(p.allRadiusMinutes) &&
+        bandWithinRadius(band, p.allRadiusMinutes)
+      ) {
+        await enqueue(ctx, {
+          userId: p._id,
+          waterBodyId: report.waterBodyId,
+          reportId: report._id,
+          kind: 'digest',
+          type: 'nearby_report_digest',
+          flushAfter: digestFlushAfter,
+          now,
+        });
+        enqueued++;
+      }
+
+      if (
+        isGreat &&
+        p.notificationPrefs.greatReportNearby &&
+        isDriveTimeBand(p.greatRadiusMinutes) &&
+        bandWithinRadius(band, p.greatRadiusMinutes)
+      ) {
+        await enqueue(ctx, {
+          userId: p._id,
+          waterBodyId: report.waterBodyId,
+          reportId: report._id,
+          kind: 'great',
+          type: 'great_report_nearby',
+          flushAfter: now + DEBOUNCE_MS,
+          now,
+        });
+        enqueued++;
+      }
+    }
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.notifications.fanOutNearbyNotifications, {
+        reportId,
+        cursor: page.continueCursor,
+      });
+    }
+    // `cursor` is returned as well as self-scheduled, so the job can also be driven page-by-page
+    // from an operator console or a test without re-scanning page one forever.
+    return {
+      scanned: page.page.length,
+      enqueued,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
 
 /**
  * Drain every queue row whose `flushAfter` has passed into an in-app `notifications` row and delete it
@@ -174,10 +242,15 @@ export const flushNotificationQueue = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const due = await ctx.db
-      .query('notificationQueue')
-      .withIndex('by_flush', (q) => q.lte('flushAfter', now))
-      .collect();
+    // Bounded per tick (N1). Rows survive until delivered, so a cap delays a notification by one
+    // interval rather than losing it — and a very large backlog would otherwise crash the whole flush,
+    // delivering nothing at all. The one visible edge: if a single user's due digest rows straddle a
+    // cap boundary they arrive as two digests instead of one.
+    const due = await takeCapped(
+      ctx.db.query('notificationQueue').withIndex('by_flush', (q) => q.lte('flushAfter', now)),
+      FLUSH_BATCH_CAP,
+      'notifications.flushNotificationQueue',
+    );
 
     // Digest rows accumulate per user into a single consolidated notification; fav/great deliver 1:1.
     const digestByUser = new Map<Id<'profiles'>, Doc<'notificationQueue'>[]>();

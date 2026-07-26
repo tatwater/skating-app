@@ -49,6 +49,7 @@ import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
 import { nearestSamplePoint } from './lib/sampling';
+import { takeCapped } from './lib/scan';
 import { bbox, latLng } from './lib/validators';
 import { resolveWeatherSince } from './weather';
 
@@ -63,6 +64,11 @@ const HOUR_MS = 60 * 60 * 1000;
  * dedicated bounties cell index; at alpha scale it never bites.
  */
 const OPEN_BOUNTY_SCAN_CAP = 200;
+/** Bounties the expiry cron retires per tick. Anything past it goes on the next interval (N1). */
+const EXPIRE_SWEEP_CAP = 500;
+/** Reports the freshness gate weighs for one body+window. Ordered newest-first by the index, so a
+ *  truncation drops the *oldest* candidates — which are the least likely to suppress anyway (N1). */
+const RECENT_REPORT_SCAN_CAP = 200;
 
 /** Visible reports on a body with a skate-end at or after `cutoff` — the input to both create gates. */
 async function recentReports(
@@ -70,15 +76,18 @@ async function recentReports(
   waterBodyId: Id<'waterBodies'>,
   cutoff: number,
 ): Promise<Doc<'reports'>[]> {
-  return ctx.db
-    .query('reports')
-    .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
-      q
-        .eq('waterBodyId', waterBodyId)
-        .eq('moderationStatus', 'visible')
-        .gte('skateEndTime', cutoff),
-    )
-    .collect();
+  return takeCapped(
+    ctx.db
+      .query('reports')
+      .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+        q
+          .eq('waterBodyId', waterBodyId)
+          .eq('moderationStatus', 'visible')
+          .gte('skateEndTime', cutoff),
+      ),
+    RECENT_REPORT_SCAN_CAP,
+    `bounties.recentReports(${waterBodyId})`,
+  );
 }
 
 /**
@@ -578,10 +587,15 @@ export const expireBounties = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const due = await ctx.db
-      .query('bounties')
-      .withIndex('by_status_expires', (q) => q.eq('status', 'open').lte('expiresAt', now))
-      .collect();
+    // Bounded per tick, not per run: whatever the cap leaves behind expires on the next interval,
+    // so a backlog drains rather than crashing the sweep (N1).
+    const due = await takeCapped(
+      ctx.db
+        .query('bounties')
+        .withIndex('by_status_expires', (q) => q.eq('status', 'open').lte('expiresAt', now)),
+      EXPIRE_SWEEP_CAP,
+      'bounties.expireBounties',
+    );
     for (const bounty of due) await ctx.db.patch(bounty._id, { status: 'expired' });
     return { expired: due.length };
   },

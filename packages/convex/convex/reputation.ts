@@ -11,13 +11,19 @@
  */
 
 import { deriveEarnedBadges } from '@skating/core';
+import { v } from 'convex/values';
 import { internalMutation } from './_generated/server';
 import { computeBadgeStats } from './lib/reputation';
 
 export const backfillReputation = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const profiles = await ctx.db.query('profiles').collect();
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    // Small pages on purpose: `computeBadgeStats` reads five lifetime histories per profile, so the
+    // per-profile cost dominates (N1).
+    const page = await ctx.db
+      .query('profiles')
+      .paginate({ cursor: cursor ?? null, numItems: Math.min(200, Math.max(1, batchSize ?? 50)) });
+    const profiles = page.page;
     let patched = 0;
     for (const p of profiles) {
       const events = await ctx.db
@@ -47,6 +53,6 @@ export const backfillReputation = internalMutation({
         patched++;
       }
     }
-    return { patched, total: profiles.length };
+    return { patched, total: profiles.length, cursor: page.continueCursor, isDone: page.isDone };
   },
 });

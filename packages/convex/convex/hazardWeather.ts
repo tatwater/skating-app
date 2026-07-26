@@ -25,8 +25,12 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
 import { hazardCenter, nearestSamplePoint } from './lib/sampling';
+import { takeCapped } from './lib/scan';
 import { resolveWeatherSince } from './weather';
 
+/** Active hazards the decay sweep considers per tick. Hundreds at peak by design (the cron scopes
+ *  to hazard-carrying bodies, not the 116k-lake corpus), so this is a backstop, not a bound (N1). */
+const ACTIVE_HAZARD_SCAN_CAP = 1000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
@@ -53,10 +57,14 @@ interface HazardWeatherJob {
 export const listActiveHazardsForWeather = internalQuery({
   args: {},
   handler: async (ctx): Promise<HazardWeatherJob[]> => {
-    const hazards = await ctx.db
-      .query('hazards')
-      .withIndex('by_status', (q) => q.eq('status', 'active'))
-      .collect();
+    // The corpus-scaling read the Phase-10 review flagged. Bounded per tick; the cadence gate in
+    // `refreshHazardWeather` already skips recently-refreshed hazards, so a capped run still makes
+    // progress through the backlog on subsequent ticks rather than starving (N1).
+    const hazards = await takeCapped(
+      ctx.db.query('hazards').withIndex('by_status', (q) => q.eq('status', 'active')),
+      ACTIVE_HAZARD_SCAN_CAP,
+      'hazardWeather.listActiveHazardsForWeather',
+    );
 
     const bodyCache = new Map<string, Doc<'waterBodies'> | null>();
     const jobs: HazardWeatherJob[] = [];

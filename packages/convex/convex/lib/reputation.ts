@@ -22,6 +22,16 @@ import {
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { takeCapped } from './scan';
+
+/** Thumbs tallied for one report/hazard. A single item drawing more than this is a story in itself. */
+const THUMB_TALLY_CAP = 500;
+/**
+ * Rows read from one user's *lifetime* history per badge family. These sets never stop growing for a
+ * prolific contributor, so they need a bound; badges are cosmetic (D17), so a capped count can only
+ * withhold a badge, never invent one — and the log names whose history outgrew it (N1).
+ */
+const USER_HISTORY_CAP = 1000;
 
 type PointReason = Doc<'pointEvents'>['reason'];
 
@@ -104,10 +114,13 @@ export async function tallyThumbs(
   targetType: Doc<'reportRatings'>['targetType'],
   targetId: string,
 ): Promise<{ helpful: number; unhelpful: number }> {
-  const ratings = await ctx.db
-    .query('reportRatings')
-    .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
-    .collect();
+  const ratings = await takeCapped(
+    ctx.db
+      .query('reportRatings')
+      .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId)),
+    THUMB_TALLY_CAP,
+    `tallyThumbs(${targetType}:${targetId})`,
+  );
   let helpful = 0;
   let unhelpful = 0;
   for (const r of ratings) {
@@ -121,10 +134,13 @@ export async function tallyThumbs(
  * Recompute a user's badge stats from live rows (decision 6). Every field is a *quality-gated* count, so
  * `deriveEarnedBadges` in `@skating/core` is a pure threshold check over the result.
  *
- * **Scan cost (alpha-scale, documented seam).** This reads the user's whole ledger + their reports +
- * their hazards (each with a thumb tally) + their confirmations + their hazard thumbs. Fine at
- * dozens–hundreds of items per user; Phase 7 can move to incremental counters or a scheduled recompute
- * if a power user's history grows. Kept a pure read so `backfillReputation` and the live paths share it.
+ * **Scan cost.** This reads the user's whole ledger + their reports + their hazards (each with a thumb
+ * tally) + their confirmations + their hazard thumbs — five *lifetime* histories, so it grows forever
+ * for a prolific contributor rather than settling. N1 caps each at `USER_HISTORY_CAP` with a log; the
+ * degradation is benign because badges are cosmetic (D17) — a capped count can only *withhold* a badge,
+ * never invent one, and the log says whose history outgrew the cap. The real fix is incremental
+ * counters or a scheduled recompute (the Phase 4 `contributionCounts` pattern), still deferred.
+ * Kept a pure read so `backfillReputation` and the live paths share it.
  */
 export async function computeBadgeStats(
   ctx: QueryCtx,
@@ -132,10 +148,11 @@ export async function computeBadgeStats(
 ): Promise<BadgeStats> {
   // Ledger-derived families — one `by_user` scan (helpful thumbs received, corroborations, measured
   // reports, bounties fulfilled all map 1:1 to a ledger reason).
-  const events = await ctx.db
-    .query('pointEvents')
-    .withIndex('by_user', (q) => q.eq('userId', userId))
-    .collect();
+  const events = await takeCapped(
+    ctx.db.query('pointEvents').withIndex('by_user', (q) => q.eq('userId', userId)),
+    USER_HISTORY_CAP,
+    `computeBadgeStats.pointEvents(${userId})`,
+  );
   let helpfulThumbsReceived = 0;
   let reportsCorroborated = 0;
   let measuredReports = 0;
@@ -155,10 +172,11 @@ export async function computeBadgeStats(
 
   // Author's reports: `trusted_reporter` (≥2 helpful thumbs) and `straight_shooter` (a helpful
   // "don't skate" report — proxied by `skateQuality: 'poor'`, the strongest negative signal we store).
-  const reports = await ctx.db
-    .query('reports')
-    .withIndex('by_author', (q) => q.eq('authorId', userId))
-    .collect();
+  const reports = await takeCapped(
+    ctx.db.query('reports').withIndex('by_author', (q) => q.eq('authorId', userId)),
+    USER_HISTORY_CAP,
+    `computeBadgeStats.reports(${userId})`,
+  );
   let reportsWithHelpfulThumbs = 0;
   let negativeReportsHelpful = 0;
   for (const r of reports) {
@@ -169,10 +187,13 @@ export async function computeBadgeStats(
   }
 
   // Author's hazards: `hazard_spotter` = confirmed by ≥2 peers AND thumbed helpful by ≥2.
-  const hazards = await ctx.db
-    .query('hazards')
-    .withIndex('by_author_and_water_body', (q) => q.eq('createdByUserId', userId))
-    .collect();
+  const hazards = await takeCapped(
+    ctx.db
+      .query('hazards')
+      .withIndex('by_author_and_water_body', (q) => q.eq('createdByUserId', userId)),
+    USER_HISTORY_CAP,
+    `computeBadgeStats.hazards(${userId})`,
+  );
   let hazardsConfirmedHelpful = 0;
   for (const h of hazards) {
     if (h.moderationStatus !== 'visible') continue;
@@ -182,18 +203,20 @@ export async function computeBadgeStats(
 
   // `watchdog` = distinct hazards **reported by other people** that this user confirmed or thumbed.
   const actedOthersHazards = new Set<string>();
-  const myConfirms = await ctx.db
-    .query('hazardConfirmations')
-    .withIndex('by_user', (q) => q.eq('userId', userId))
-    .collect();
+  const myConfirms = await takeCapped(
+    ctx.db.query('hazardConfirmations').withIndex('by_user', (q) => q.eq('userId', userId)),
+    USER_HISTORY_CAP,
+    `computeBadgeStats.confirmations(${userId})`,
+  );
   for (const c of myConfirms) {
     const h = await ctx.db.get(c.hazardId);
     if (h && h.createdByUserId !== userId) actedOthersHazards.add(c.hazardId);
   }
-  const myRatings = await ctx.db
-    .query('reportRatings')
-    .withIndex('by_rater', (q) => q.eq('raterId', userId))
-    .collect();
+  const myRatings = await takeCapped(
+    ctx.db.query('reportRatings').withIndex('by_rater', (q) => q.eq('raterId', userId)),
+    USER_HISTORY_CAP,
+    `computeBadgeStats.ratingsGiven(${userId})`,
+  );
   for (const rt of myRatings) {
     if (rt.targetType !== 'hazard') continue;
     const hid = ctx.db.normalizeId('hazards', rt.targetId);

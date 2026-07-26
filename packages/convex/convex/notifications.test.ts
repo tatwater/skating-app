@@ -128,6 +128,22 @@ async function flushAllDue(t: ReturnType<typeof convexTest>) {
   return t.run((ctx) => ctx.db.query('notifications').collect());
 }
 
+/**
+ * Create a report and run its distance fan-out, the way the scheduler does in production (N1).
+ * `reports.create` schedules `fanOutNearbyNotifications` rather than walking every profile inline;
+ * convex-test won't drive a `runAfter(0)` job without fake timers, so drive it explicitly here.
+ * (That the scheduling *happens* is asserted separately, off `_scheduled_functions`.)
+ */
+async function createReport(
+  t: ReturnType<typeof convexTest>,
+  as: ReturnType<ReturnType<typeof convexTest>['withIdentity']>,
+  args: { waterBodyId: Id<'waterBodies'>; skateEndTime: number; skateQuality?: string },
+) {
+  const reportId = await as.mutation(api.reports.create, args as never);
+  await t.mutation(internal.notifications.fanOutNearbyNotifications, { reportId });
+  return reportId;
+}
+
 describe('notifications — favorites', () => {
   test('a favorited-body report enqueues for the favoriter, not the author, and coalesces', async () => {
     const t = convexTestWithGeo();
@@ -136,8 +152,9 @@ describe('notifications — favorites', () => {
     const fan = await seedProfile(t, 'fan');
     await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id });
 
-    await author.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
-    await author.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME + 1 });
+    await createReport(t, author.as, { waterBodyId: id, skateEndTime: SKATE_TIME });
+
+    await createReport(t, author.as, { waterBodyId: id, skateEndTime: SKATE_TIME + 1 });
 
     const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
     expect(queue).toHaveLength(1); // coalesced into one row
@@ -151,7 +168,7 @@ describe('notifications — favorites', () => {
     const id = await seedBody(t);
     const author = await seedProfile(t, 'author');
     await author.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id });
-    await author.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await createReport(t, author.as, { waterBodyId: id, skateEndTime: SKATE_TIME });
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
   });
 
@@ -161,7 +178,7 @@ describe('notifications — favorites', () => {
     const author = await seedProfile(t, 'author');
     const fan = await seedProfile(t, 'fan');
     await fan.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: id });
-    await author.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await createReport(t, author.as, { waterBodyId: id, skateEndTime: SKATE_TIME });
 
     const delivered = await flushAllDue(t);
     expect(delivered).toHaveLength(1);
@@ -185,7 +202,8 @@ describe('notifications — nearby digest (X₁)', () => {
       inBand: true,
     });
 
-    await author.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await createReport(t, author.as, { waterBodyId: id, skateEndTime: SKATE_TIME });
+
     const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
     expect(queue).toHaveLength(1);
     expect(queue[0]?.kind).toBe('digest');
@@ -208,12 +226,12 @@ describe('notifications — nearby digest (X₁)', () => {
     });
 
     // Two reports on body A (coalesce into one queue row) + one on body B → two digest queue rows.
-    await author.as.mutation(api.reports.create, { waterBodyId: bodyA, skateEndTime: SKATE_TIME });
-    await author.as.mutation(api.reports.create, {
+    await createReport(t, author.as, { waterBodyId: bodyA, skateEndTime: SKATE_TIME });
+    await createReport(t, author.as, {
       waterBodyId: bodyA,
       skateEndTime: SKATE_TIME + 1,
     });
-    await author.as.mutation(api.reports.create, {
+    await createReport(t, author.as, {
       waterBodyId: bodyB,
       skateEndTime: SKATE_TIME + 2,
     });
@@ -237,7 +255,7 @@ describe('notifications — nearby digest (X₁)', () => {
     const author = await seedProfile(t, 'author');
     // Digest on + radius set, but no home/bands → band is null → out of range.
     await seedProfile(t, 'faraway', { prefs: { nearbyReportDigest: true }, allRadiusMinutes: 30 });
-    await author.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+    await createReport(t, author.as, { waterBodyId: id, skateEndTime: SKATE_TIME });
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
   });
 });
@@ -254,7 +272,7 @@ describe('notifications — great nearby (X₂)', () => {
     });
 
     // A non-great report → nothing.
-    await author.as.mutation(api.reports.create, {
+    await createReport(t, author.as, {
       waterBodyId: id,
       skateEndTime: SKATE_TIME,
       skateQuality: 'good',
@@ -262,7 +280,7 @@ describe('notifications — great nearby (X₂)', () => {
     expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
 
     // A great report → one great queue row.
-    await author.as.mutation(api.reports.create, {
+    await createReport(t, author.as, {
       waterBodyId: id,
       skateEndTime: SKATE_TIME + 1,
       skateQuality: 'great',
@@ -270,5 +288,97 @@ describe('notifications — great nearby (X₂)', () => {
     const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
     expect(queue).toHaveLength(1);
     expect(queue[0]?.kind).toBe('great');
+  });
+});
+
+describe('notifications — the fan-out is scheduled, not inline (N1)', () => {
+  test('reports.create schedules the fan-out instead of walking every profile in the transaction', async () => {
+    // The write path used to `collect()` the whole profiles table on every report — an unbounded
+    // read inside the app's most important mutation. Now create schedules a paged job.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    await author.as.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
+
+    const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(scheduled.map((s) => s.name)).toContain('notifications:fanOutNearbyNotifications');
+  });
+
+  test('pages, and schedules its own continuation rather than stopping at the page boundary', async () => {
+    // A cap here would mean silently not telling someone about ice near them — the one failure
+    // worse than a slow one — so the job continues itself instead. Seed past one page to prove it.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 210; i++) {
+        await ctx.db.insert('profiles', {
+          clerkUserId: `bulk${i}`,
+          displayName: `bulk${i}`,
+          username: `bulk${i}`,
+          homeCoord: { lat: 0.5, lng: 0.5 },
+          cachedIsochrones: { band30: BAND30 },
+          allRadiusMinutes: 30,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public',
+          notificationPrefs: { ...BASE_PREFS, nearbyReportDigest: true },
+          dateOfBirth: Date.parse('1990-01-01'),
+          reputationPoints: 0,
+          role: 'member',
+          status: 'active',
+          createdAt: Date.now(),
+        });
+      }
+    });
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
+
+    const first: { isDone?: boolean; scanned?: number } = await t.mutation(
+      internal.notifications.fanOutNearbyNotifications,
+      { reportId },
+    );
+    expect(first.isDone).toBe(false); // more profiles than one page holds
+    const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(
+      scheduled.filter((f) => f.name === 'notifications:fanOutNearbyNotifications').length,
+    ).toBeGreaterThan(0); // it queued its own next page
+
+    // Drain the rest the way the scheduler would, then assert nobody was dropped.
+    let cursor = (first as { cursor?: string }).cursor;
+    for (let i = 0; i < 10; i++) {
+      const page: { isDone?: boolean; cursor?: string } = await t.mutation(
+        internal.notifications.fanOutNearbyNotifications,
+        { reportId, cursor },
+      );
+      if (page.isDone) break;
+      cursor = page.cursor;
+    }
+    const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
+    expect(queue.filter((q) => q.kind === 'digest')).toHaveLength(210);
+  }, 30_000);
+
+  test('stops early when the report is hidden mid-fan-out', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const author = await seedProfile(t, 'author');
+    await seedProfile(t, 'nearby', {
+      prefs: { nearbyReportDigest: true },
+      allRadiusMinutes: 30,
+      inBand: true,
+    });
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
+    await t.run((ctx) => ctx.db.patch(reportId, { moderationStatus: 'hidden' }));
+
+    const result: { stopped?: string } = await t.mutation(
+      internal.notifications.fanOutNearbyNotifications,
+      { reportId },
+    );
+    expect(result.stopped).toBe('report_gone');
+    expect(await t.run((ctx) => ctx.db.query('notificationQueue').collect())).toEqual([]);
   });
 });

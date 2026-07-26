@@ -924,7 +924,7 @@ describe('reports.renameSkateTimeToSkateEndTime (Phase 5 migration)', () => {
     // A modern report (already has skateEndTime + place) is untouched by the migration.
     await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
     const result = await t.mutation(internal.reports.renameSkateTimeToSkateEndTime, {});
-    expect(result).toEqual({ total: 1, renamed: 0, placed: 0 });
+    expect(result).toMatchObject({ total: 1, renamed: 0, placed: 0, isDone: true }); // paginated (N1)
   });
 
   test('a cleanup-only patch (dangling skateTime, skateEndTime already set) is not counted as a rename', async () => {

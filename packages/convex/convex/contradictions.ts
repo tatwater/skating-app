@@ -36,8 +36,15 @@ import {
   internalQuery,
   type MutationCtx,
 } from './_generated/server';
+
+/** Reports the settle cluster loads around one anchor (±2× the corroboration window on one body). */
+const CLUSTER_REPORT_CAP = 200;
+/** Ledger rows read per clustered report to count corroborations — the N+1 inside the cluster load. */
+const CLUSTER_EVENT_CAP = 100;
+
 import { bumpMetricCounter } from './lib/metrics';
 import { nearestSamplePoint } from './lib/sampling';
+import { takeCapped } from './lib/scan';
 import { resolveWeatherSince } from './weather';
 
 /**
@@ -81,24 +88,31 @@ export const contradictionCluster = internalQuery({
 
     const lower = anchor.skateEndTime - 2 * CORROBORATION_WINDOW_MS;
     const upper = anchor.skateEndTime + 2 * CORROBORATION_WINDOW_MS;
-    const inWindow = await ctx.db
-      .query('reports')
-      .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
-        q
-          .eq('waterBodyId', anchor.waterBodyId)
-          .eq('moderationStatus', 'visible')
-          .gte('skateEndTime', lower)
-          .lte('skateEndTime', upper),
-      )
-      .collect();
+    // Two reads scale here, and the roadmap only named one of them (under a function name that no
+    // longer exists). Both are bounded now: the window scan, and the per-report corroboration tally
+    // below — an N+1 that multiplied the first one (N1).
+    const inWindow = await takeCapped(
+      ctx.db
+        .query('reports')
+        .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+          q
+            .eq('waterBodyId', anchor.waterBodyId)
+            .eq('moderationStatus', 'visible')
+            .gte('skateEndTime', lower)
+            .lte('skateEndTime', upper),
+        ),
+      CLUSTER_REPORT_CAP,
+      `contradictions.contradictionCluster(${anchor.waterBodyId})`,
+    );
 
     const reports: ClusterReport[] = [];
     for (const r of inWindow) {
       if (r.skateQuality === undefined) continue;
-      const events = await ctx.db
-        .query('pointEvents')
-        .withIndex('by_ref', (q) => q.eq('refId', r._id))
-        .collect();
+      const events = await takeCapped(
+        ctx.db.query('pointEvents').withIndex('by_ref', (q) => q.eq('refId', r._id)),
+        CLUSTER_EVENT_CAP,
+        `contradictions.corroborations(${r._id})`,
+      );
       reports.push({
         id: r._id,
         authorId: r.authorId,
