@@ -49,6 +49,23 @@ pnpm test             # Vitest across packages
 > These commands are the *target* setup; until the scaffold is committed they may not
 > all exist yet. Check back, or open an issue if you'd like to help stand them up.
 
+### Convex MCP (optional, for AI-assisted work)
+
+`.mcp.json` at the repo root configures the **Convex MCP server**, which lets an AI coding
+assistant inspect the deployment directly — list tables, read rows, run a one-off read-only query,
+and read function logs — instead of deploying a throwaway query to answer a question.
+
+It authenticates with whatever `packages/convex/.env.local` already grants you, so it can't reach
+anything you couldn't reach with the CLI, and it's configured deliberately narrowly:
+
+- **`envGet` / `envSet` / `envRemove` are disabled** — deployment env vars hold Clerk, Strava and
+  Resend secrets, and no assistant needs to read or change them. `envList` (names only, no values)
+  stays on, since "is `CLERK_SECRET_KEY` set yet?" is a real question during the prod cutover.
+- **Production is off by default** — the server refuses production deployments unless explicitly
+  started with `--dangerously-enable-production-deployments`. Don't.
+
+Nothing else in the repo depends on it; delete the file if you'd rather not run it.
+
 ### Tests
 
 We aim for high coverage of both apps' **logic**, with:

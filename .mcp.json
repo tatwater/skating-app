@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "convex": {
+      "command": "node_modules/.bin/convex",
+      "args": [
+        "mcp",
+        "start",
+        "--project-dir",
+        "packages/convex",
+        "--disable-tools",
+        "envGet,envSet,envRemove"
+      ]
+    }
+  }
+}
