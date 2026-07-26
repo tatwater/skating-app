@@ -1,8 +1,13 @@
 # N1 — Read-path durability: the crash class
 
-> **Status: in progress (started 2026-07-26).** The first item in the roadmap's *Next-phase
-> candidates* register ([`07-roadmap.md`](./07-roadmap.md) → *Later / deferred* → N1), picked first
-> because this is the map's front door and its failure mode is a **crash**, not a slowdown.
+> **Status: ✅ complete on dev (2026-07-26); prod deferred.** PR **#27**. The first item in the
+> roadmap's *Next-phase candidates* register ([`07-roadmap.md`](./07-roadmap.md) → *Later /
+> deferred* → N1), picked first because this is the map's front door and its failure mode is a
+> **crash**, not a slowdown.
+>
+> Nothing from the plan below is outstanding. The retired `isLarge` field was stripped from all
+> 116,070 rows and dropped from the schema; the notification **reverse spatial index** was never in
+> scope and remains N7 (N1 made the profile walk bounded, not unnecessary).
 
 **Goal.** End the read-cap crash class on the water-body read path for good: replace the centroid
 prefilter + two-tier large-body workaround with a spatial index whose reads are bounded **by
@@ -194,36 +199,42 @@ constants it measures were wrong for a year without anyone noticing, and `convex
 cannot catch that (it doesn't model the read cap), so the claim needs to stay checkable against a
 real deployment.
 
-`reads` below is cells looked up + cell rows scanned + one hydrating `get` per distinct body — the
-figure Convex's **4,096** cap counts.
+`reads` below is cells looked up + cell rows scanned + one hydrating `get` per distinct candidate —
+the figure Convex's **4,096** cap counts.
 
-| Viewport | zoom | bodies | cells | rows | **reads** | |
-|---|---|---|---|---|---|---|
-| Whole Northeast | 6 | 7 | 8 | 10 | **25** | the widest zoom anything draws at |
-| Atlantic, off-data | 10 | 0 | 16 | 5 | **21** | *the PR #11 crash case* |
-| Northern Vermont | 9 | 45 | 21 | 103 | **169** | |
-| Maine lake belt | 14 | 9 | 31 | 144 | **184** | |
-| Burlington waterfront | 14 | 12 | 21 | 216 | **249** | |
-| Burlington + Champlain | 12 | 122 | 24 | 271 | **417** | |
-| Adirondack lake country | 12 | 230 | 48 | 446 | **724** | |
-| Adirondacks | 11 | 222 | 20 | 560 | **802** | |
-| Eastern Maine lakes | 12 | **319** | 145 | 930 | **1,394** | *would have been clamped to 256* |
-| Wider Adirondacks | 11 | 1,000 | 58 | 1,383 | **2,441** | render budget hit, logged |
-| 1°-wide box claiming z14 | 14 | 1,000 | 180 | 1,373 | **2,553** | incoherent input, bounded anyway |
+Each row records the **exact bbox** it was measured with, because a table you can't re-run is the
+same kind of unchecked claim this whole phase exists to retire. Re-run any line as
+`pnpm exec convex run waterBodies:viewportReadStats '{"viewport":{…},"zoom":N}'`.
+
+| Viewport | bbox (minLat, minLng → maxLat, maxLng) | zoom | bodies | cells | rows | **reads** | |
+|---|---|---|---|---|---|---|---|
+| Whole Northeast | 40.5, −80.0 → 47.5, −67.0 | 6 | 7 | 8 | 10 | **25** | the widest zoom anything draws at |
+| Atlantic, off-data | 41.0, −69.0 → 41.5, −68.5 | 10 | 0 | 17 | 5 | **22** | *the PR #11 crash case* |
+| Maine lake belt | 45.0, −69.2 → 45.05, −69.1 | 14 | 2 | 32 | 87 | **121** | |
+| Northern Vermont | 44.4, −73.4 → 45.0, −71.5 | 9 | 36 | 22 | 110 | **168** | |
+| Burlington waterfront | 44.46, −73.24 → 44.50, −73.18 | 14 | 49 | 27 | 232 | **308** | |
+| Burlington + Champlain | 44.35, −73.35 → 44.55, −73.05 | 12 | 138 | 28 | 286 | **452** | |
+| Adirondack lake country | 43.7, −74.6 → 43.95, −74.2 | 12 | 154 | 39 | 538 | **731** | |
+| Eastern Maine lakes | 44.6, −69.8 → 45.3, −68.4 | 11 | **314** | 74 | 768 | **1,156** | *would have been clamped to 256* |
+| Adirondacks | 43.5, −74.8 → 44.0, −74.0 | 11 | **404** | 43 | 989 | **1,436** | |
+| Eastern Maine, deep | 44.6, −69.8 → 45.3, −68.4 | 12 | **513** | 227 | 1,031 | **1,771** | |
+| Wider Adirondacks | 43.2, −75.2 → 44.3, −73.8 | 11 | 954 | 71 | 1,500 | **2,525** | row budget hit, logged |
+| 1°-wide box claiming z14 | 44.0, −73.0 → 45.0, −72.0 | 14 | 1,000 | 233 | 1,408 | **2,641** | incoherent input, bounded anyway |
 
 **What this establishes.**
 
 1. **The crash case is gone and is now the *cheapest* read on the board.** Panning off-data used to
-   exhaust an S2 covering looking for results that weren't there; it now costs 21 reads, because an
+   exhaust an S2 covering looking for results that weren't there; it now costs 22 reads, because an
    empty cell costs an index lookup and nothing else.
-2. **Real viewports sit 5–25× under the cap.** The heaviest genuine one (dense eastern Maine at z12)
-   is 1,394 — about a third of budget.
-3. **The 256 clamp was costing real lakes.** That same eastern-Maine viewport returns **319** bodies.
-   Under the old ceiling, 63 of them — Great Moose, Sebasticook, Pushaw, Schoodic, Seboeis and the
-   rest — were simply absent from the map, with a log line nobody was reading.
+2. **Real viewports sit 2–100× under the cap.** The heaviest genuine one (eastern Maine at z12) is
+   1,771 — under half of budget.
+3. **The 256 clamp was costing real lakes.** That eastern-Maine viewport returns **513** bodies and
+   the Adirondacks **404**. Under the old ceiling, 257 and 148 of them — Great Moose, Sebasticook,
+   Pushaw, Schoodic, Seboeis and the rest — were simply absent from the map, with a log line nobody
+   was reading.
 4. **Incoherent input degrades instead of crashing.** A 1°-wide viewport claiming zoom 14 is not a
    thing a real client sends; it stops at the row budget, returns the 1,000 most prominent bodies,
-   logs the truncation, and reads 2,553 — bounded by the budgets rather than by luck.
+   logs the truncation, and reads 2,641 — bounded by the budgets rather than by luck.
 
 **The `adminAreas` bug, quantified.** The retired `findContainingTown` searched town centroids within
 ±0.2°, sized on the premise that towns run "well under 0.4° across". Reading the rung each town
@@ -232,6 +243,55 @@ lookup could not reliably find the town from an interior point at all — and a 
 0.18°–0.35°**, where a point near a corner sits more than 0.2° from the centroid. Sampling inside
 the Adirondacks now returns `{ town: "Town of Long Lake", county: "Hamilton County", state: "NY" }`.
 
-**Still worth knowing.** The wider-Adirondacks case reads 60% of the cap before its budgets stop it.
+**Still worth knowing.** The wider-Adirondacks case reads 62% of the cap before its budgets stop it.
 That's the design working — the budgets are hard limits, so it cannot crash — but it's the number to
-watch if the render budget is ever raised past 1,000.
+watch if the render budget is ever raised past 1,000. Note *which* budget stops it: the **row**
+budget, at 954 of the ~1,000 bodies it could draw. Raising `CELL_ROW_SCAN_BUDGET` is the lever, and
+it has a ceiling — reads are bounded by `CELL_SCAN_BUDGET + 2 × CELL_ROW_SCAN_BUDGET` (a row can
+cost a hydrating `get`), so 1,500 already sits close to the largest value that keeps the worst case
+under 4,096. Past that the render budget has to come down instead.
+
+## Corrections from review round 2
+
+Three of the caps this phase added were bounded correctly but ordered wrongly — each kept the rows
+the index happened to reach first rather than the rows the caller needed. Worth naming as a class:
+**a cap is only as good as the scan order it caps.** `takeCapped` makes the bound explicit and logs
+it, but it can't know which end of the index matters; that has to be decided at each call site.
+
+### The recent-report cap kept the oldest reports
+
+`bounties.recentReports` reads `by_water_body_moderation_and_skate_end_time`, which runs *ascending*
+on `skateEndTime` — so `take(200)` on a busy body retained the 200 oldest reports in the 144-hour
+window and discarded the newest. Both callers want the opposite end: the freshness gate needs the
+freshest suppressor (someone could otherwise open a bounty on ice skated an hour ago), and the
+eligibility fan-out wants the people who reported most recently, not least. Fixed with `.order('desc')`,
+which also makes the cap drop the candidates least likely to matter. The comment above the constant
+claimed newest-first ordering that the query never had — the claim was right, the code wasn't.
+
+### The hazard-weather cap could never rotate
+
+The decay cron capped its sweep at 1,000 active hazards off `by_status`, whose order never changes.
+Past that count, every hourly tick re-read the same prefix and the hazards behind it would keep
+absent decay and snow-hidden state forever. The per-hazard cadence gate can't rescue that: it filters
+rows that have *already* been read. Now indexed `by_status_weather_adjusted` and scanned ascending —
+`undefined` sorts first, so never-refreshed hazards lead, then the longest-stale — and a refresh
+stamps `weatherAdjustedAt`, sending that hazard to the back. The cap became a rotation rather than a
+wall. (A hazard whose Open-Meteo fetch keeps failing deliberately isn't stamped, so it stays at the
+head and retries; that's the fail-open behaviour, and it only costs a slot.)
+
+### The viewport kept whichever cell it scanned first
+
+The first cut of `bodiesCoveringBox` hydrated bodies as the cell walk reached them and stopped at
+the render budget. Within one cell that's prominence-ordered (`by_cell` is ascending on
+`minVisibleZoom`), but a viewport spans many cells, and row-major traversal is not a prominence
+order — so when the budget bound, an early cell's least prominent ponds displaced a later cell's
+headline lake. Which lakes the map drew depended on cell arithmetic.
+
+It now runs in two passes: collect candidate *rows* across every rung (cheap — `minVisibleZoom` is
+denormalized onto the row, so ranking costs no document read), then sort by prominence and hydrate
+in that order. The answer is the top-`limit` bodies by `minVisibleZoom` wherever they sit in the box.
+
+The cost of not stopping the scan early is visible in the table: the wider-Adirondacks case now
+reads to the row budget rather than to the render budget, and returns 954 bodies instead of 1,000.
+That is the right side of the trade — 954 correctly-chosen bodies beat 1,000 chosen by scan order —
+but it is a real change, and it's why the note above cares which budget binds.

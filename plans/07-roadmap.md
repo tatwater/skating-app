@@ -736,15 +736,14 @@ one quietly lost its town label; and **`reports.create` was scanning every profi
 fan out notifications, an unbounded read on the most important write in the product, now a scheduled
 self-continuing paged job.
 
-Measured on dev after backfilling 116,070 bodies: the off-data pan that used to crash costs **21**
-document reads, the heaviest real viewport **1,394** (a third of Convex's 4,096 cap), and dense
-eastern Maine returns **319** bodies where the old clamp returned 256 — 63 real lakes that had been
-missing from the map. `waterBodies:viewportReadStats` keeps that checkable.
+Measured on dev after backfilling 116,070 bodies: the off-data pan that used to crash costs **22**
+document reads, the heaviest real viewport **1,771** (under half of Convex's 4,096 cap), and dense
+eastern Maine returns **513** bodies where the old clamp returned 256 — 257 real lakes that had been
+missing from the map. `waterBodies:viewportReadStats` keeps that checkable, and every measured
+viewport is recorded with its exact bbox so the table can be re-run rather than trusted.
 
-*Left for later:* stripping the now-dead `isLarge` field from ~116k rows (its index is dropped;
-the field stays because removing it from the schema would fail validation on existing rows), and the
-notification **reverse spatial index** — still N7, since N1 only made the profile walk bounded, not
-unnecessary.
+*Left for later:* the notification **reverse spatial index** — still N7, since N1 only made the
+profile walk bounded, not unnecessary.
 
 **N2 — Operator surface completion + corpus curation.** *(Second because it's the cheapest way to make
 what alpha skaters see materially better — and because the founder IS the operator, so these are the
@@ -909,7 +908,7 @@ The long-form write-ups the entries above point at — preserved verbatim, since
     N1 replaced it with a plain-table ladder grid, where reads cost only the rows returned. See
     [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md).
   - Its "do this when" trigger — *the 256 clamp visibly drops bodies at normal zoom* — had **already
-    fired and gone unnoticed**: dense eastern Maine holds 319 bodies at z12. That's the lesson worth
+    fired and gone unnoticed**: dense eastern Maine holds 513 bodies at z12. That's the lesson worth
     carrying forward more than the mechanism.
 - ~~**Clip hazard footprints to the water-body boundary**~~ **✅ SHIPPED in Phase 9.5 (2026-07-22)** —
   this entry was stale (caught 2026-07-24). `core/hazardGeometry.clipFootprintToBody` precomputes the
