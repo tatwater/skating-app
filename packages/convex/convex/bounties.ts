@@ -133,6 +133,18 @@ interface EvaluatedReport {
  * is safe and bounds both the action's weather fetch and this scan. Reads only, so it's shared by the
  * `bountyFreshnessInputs` query and the `createChecked` mutation (§7c).
  *
+ * **Why stopping at ten suppressors can't hide an eleventh** (Greptile PR #27, round 6). `createChecked`
+ * may allow a bounty when weather reopened every suppressor it was given — so the cap would be unsafe
+ * if an older, unweighed suppressor could still be blocking. It can't be: a report's reopen verdict is
+ * read over `[skateEndTime, now]`, an older report's window strictly contains a newer one's, and both
+ * degree-hour integrals only accumulate. So if the ten newest suppressors were all reopened, anything
+ * older was too — reopening is *monotone in report age*.
+ *
+ * That is a real dependency on arithmetic living in another package, so it is pinned by a property
+ * test rather than assumed: `weather.test.ts` → "is monotone in window length". If either integral
+ * ever gains a term that can decrease with more data (a net figure, a mean, a recency weighting) that
+ * test fails, and this cap has to be revisited with it.
+ *
  * `newest` is the freshest recent report **whether or not it suppresses** — carried purely for the
  * gate log (Phase 7b). Without it the suppression scatter would only ever plot blocked attempts, and
  * "dots below the line = allowed" would be empty by construction: an allowed attempt usually has no

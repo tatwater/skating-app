@@ -477,6 +477,66 @@ describe('bountyGateEvents', () => {
     expect(event?.decidingReportId).not.toBe(oldest);
   });
 
+  test('an 11th suppressor past BOUNTY_FRESH_MAX_REPORTS cannot block what weather already cleared', async () => {
+    // Greptile PR #27 round 6 asked whether the ten-suppressor cap can hide an older blocker once the
+    // ten it saw are all weather-reopened. It can't, and the reason is worth pinning: reopening is
+    // MONOTONE IN REPORT AGE. A verdict is read over `[skateEndTime, now]`, an older report's window
+    // strictly contains a newer one's, and both degree-hour integrals only accumulate — so if the ten
+    // newest suppressors were reopened, anything older was too. (`weather.test.ts` → "is monotone in
+    // window length" pins the arithmetic that makes this true.)
+    //
+    // This is the *allow* side, and it is deliberate: blocking here would deny a legitimate reopen on
+    // any body busy enough to carry eleven fresh reports. The scan is complete — 12 rows, well under
+    // the 200-row cap — so `truncated` is false and only the suppressor cap is in play.
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+
+    // Twelve reports inside the 48h base window, so every one of them suppresses weather-free and the
+    // evaluator stops at ten. Spread so the newest ten are strictly newer than the last two.
+    const seeded: { id: Id<'reports'>; skateEndTime: number }[] = [];
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 12; i++) {
+        const skateEndTime = now - (1 + i) * HOUR;
+        const id = await ctx.db.insert('reports', {
+          authorId: reporter.id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime,
+          reportTime: now,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          moderationStatus: 'visible' as const,
+          photoIds: [],
+          hazardIdsCreated: [],
+          createdAt: now,
+          updatedAt: now,
+        });
+        seeded.push({ id, skateEndTime });
+      }
+    });
+
+    // What the action would hand back: the ten newest suppressors, all reopened by the freeze since.
+    const inputs = await requester.as.query(internal.bounties.bountyFreshnessInputs, {
+      waterBodyId,
+    });
+    expect(inputs.status).toBe('ok');
+    const reopened = inputs.status === 'ok' ? inputs.reports : [];
+    expect(reopened).toHaveLength(10); // BOUNTY_FRESH_MAX_REPORTS — the cap under discussion
+    // Every one of them is newer than the two the cap never reached.
+    const oldestReopened = Math.min(...reopened.map((r) => r.skateEndTime));
+    expect(seeded.filter((r) => r.skateEndTime < oldestReopened)).toHaveLength(2);
+
+    const outcome = await requester.as.mutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReports: reopened,
+    });
+    expect(outcome.ok).toBe(true);
+  });
+
   test('a truncated scan blocks even when every suppressor it found was weather-reopened (N1)', async () => {
     // Greptile PR #27 round 5: the first saturation rule was "truncated AND no suppressors", which
     // left the hole exactly where the logic gets interesting. A truncated scan whose suppressors were

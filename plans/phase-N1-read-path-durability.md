@@ -378,3 +378,28 @@ ceiling that reads 1,501 is not a 1,500-row ceiling. Clamping the probe to the r
 last of the budget, which sets `truncated` on the next iteration anyway. The derived worst case is
 now `CELL_SCAN_BUDGET + 2 × CELL_ROW_SCAN_BUDGET` = 512 + 3,000 = **3,512** reads against the 4,096
 cap, with the heaviest measured viewport at 1,771 and the heaviest bounded one at 2,531.
+
+### Round 6: one real hole, and one invariant that was load-bearing without saying so
+
+**The clamp created a boundary at the end of the plan.** When the row budget cuts the probe short,
+"was there more in this cell?" goes unanswered. On any cell but the last that's harmless — the
+exhausted budget flags the truncation on the next iteration — but on the *last* cell there is no next
+iteration, and the scan would have returned a partial answer claiming to be whole. Exactly the
+failure D5 exists to prevent, introduced by the fix for the previous one. A budget-clamped probe that
+comes back full is now reported as a truncation. That can over-report on a scan which happened to fit
+the budget exactly, and that is the right direction to be wrong in.
+
+**The ten-suppressor cap turned out to rest on an unstated invariant.** The review asked whether
+`BOUNTY_FRESH_MAX_REPORTS` can hide an eleventh, older suppressor once weather has reopened the ten
+the evaluator saw. It can't — but only because **reopening is monotone in report age**: a verdict is
+read over `[skateEndTime, now]`, an older report's window strictly contains a newer one's, and both
+degree-hour integrals accumulate non-negative per-hour contributions, so a superset window can only
+push further past the thresholds. If the ten newest suppressors were reopened, anything older was too.
+
+The code was right and said nothing about why, which on this branch's evidence is how a correct thing
+becomes an incorrect thing later. The invariant is now pinned by a property test in
+`weather.test.ts` ("is monotone in window length"): if either integral ever gains a term that can
+*decrease* with more data — a net figure, a mean, a recency weighting — that test fails, and the cap
+in `evaluateFreshness` has to be revisited with it. The convex-side test pins the allow, too, so the
+next reader doesn't "fix" it into a false block: blocking here would deny a legitimate weather reopen
+on any body busy enough to carry eleven fresh reports.

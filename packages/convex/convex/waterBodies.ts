@@ -921,6 +921,7 @@ async function bodiesCoveringBox(
     // The floor is `MIN_ROWS_PER_CELL`, or an equal split when even that can't be met.
     const floorPerCell = Math.min(MIN_ROWS_PER_CELL, Math.floor(rowBudget / (unserved + 1)));
     const take = Math.max(1, Math.min(rowBudget - unserved * floorPerCell, limit + 1));
+    const probe = Math.min(take + 1, rowBudget);
     const rows = await ctx.db
       .query('waterBodyCells')
       .withIndex('by_cell', (q) => {
@@ -934,14 +935,22 @@ async function bodiesCoveringBox(
       //
       // Clamped to `rowBudget` so the probe is *inside* the budget rather than beside it: every row
       // returned is charged below, and the clamp is what keeps `CELL_ROW_SCAN_BUDGET` an exact
-      // ceiling instead of one-per-cell more than it says. Nothing is lost by it — the only cell it
-      // binds is one already spending the last of the budget, and that sets `truncated` on the next
-      // iteration anyway.
-      .take(Math.min(take + 1, rowBudget));
+      // ceiling instead of one-per-cell more than it says.
+      .take(probe);
     rowBudget -= rows.length;
-    // Rows past this cell's share are the least prominent in it, so they can't change the top of
-    // the ranking — but the answer is a partial one, and that has to be said (D5).
-    if (rows.length > take) truncated = true;
+    if (rows.length > take) {
+      // Exact: the probe row came back, so this cell holds more than its share. Those rows are the
+      // least prominent in it and can't change the top of the ranking, but the answer is partial.
+      truncated = true;
+    } else if (rows.length === probe && probe < take + 1) {
+      // The budget cut the probe short, so "there was nothing more" was never actually established.
+      // On any cell but the last, the exhausted budget flags this on the next iteration — on the
+      // last one, nothing would have (Greptile PR #27, round 6: an earlier comment here claimed the
+      // next iteration always covers it, which is false precisely at the end of the plan). Report it:
+      // D5 would rather a warning that occasionally fires on a scan that happened to fit exactly than
+      // a truncation that goes out silently.
+      truncated = true;
+    }
     for (const row of rows) {
       const best = candidates.get(row.waterBodyId);
       if (best === undefined || row.minVisibleZoom < best) {

@@ -1267,6 +1267,42 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
     expect(stats.names).toContain('Headline Lake');
   });
 
+  test('a truncation in the LAST cell of the plan is still reported (N1)', async () => {
+    // Greptile PR #27 round 6. Clamping the probe to the remaining budget made the row ceiling exact,
+    // but created a boundary: when the budget cuts the probe short, "was there more?" goes unanswered.
+    // On any cell but the last, the exhausted budget flags it on the next iteration — on the last one
+    // nothing would have, and the scan would return a partial answer claiming to be whole. The one
+    // failure mode D5 exists to prevent.
+    //
+    // Reaching that branch needs the budget to run out on the plan's FINAL cell, so the plan here is
+    // exactly one cell: at zoom 6 (the ladder's coarsest rung) `scanLevels` yields a single rung, and
+    // a viewport well inside one z6 cell covers a single cell of it.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: Array.from({ length: 8 }, (_, i) => {
+        const lng = 1.05 + i * 0.01;
+        return {
+          ...CANONICAL_ITEM,
+          externalId: `osm/lastcell/${i}`,
+          name: `Crowded ${i}`,
+          surfaceAreaSqM: 1e10, // top score ⇒ minVisibleZoom 6, so all eight draw at this zoom
+          bbox: { minLat: 1.05, minLng: lng, maxLat: 1.06, maxLng: lng + 0.005 },
+          centroid: { lat: 1.055, lng: lng + 0.002 },
+        };
+      }),
+    });
+    const stats = await t.query(internal.waterBodies.viewportReadStats, {
+      viewport: { minLat: 1.0, minLng: 1.0, maxLat: 1.2, maxLng: 1.2 },
+      zoom: 6,
+      maxRows: 5, // spent entirely inside the one and only cell, with rows left behind it
+      names: true,
+    });
+    expect(stats.cellsScanned).toBe(1); // the plan really is a single cell — no next iteration
+    expect(stats.cellRowsRead).toBe(5); // the ceiling means what it says
+    expect(stats.bodies).toBe(5); // and three bodies were genuinely left out
+    expect(stats.truncated).toBe(true); // …which is the part that has to be said out loud
+  });
+
   test('the row floor does not ration a viewport whose budget is ample', async () => {
     // The other half of the same trade: reserving rows for later cells must not cost completeness
     // when nothing is contended. An even up-front split would cap each cell of a 28-cell plan at a
