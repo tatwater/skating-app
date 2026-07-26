@@ -240,12 +240,6 @@ export default defineSchema({
     // centroid prefilter's margin can have its centroid off-screen while its bbox fills the view,
     // so it's queried by a direct short-list scan instead of the centroid index. Derived from
     // bbox extent at import/create; see `waterBodies.listInViewport`.
-    // RETIRED by N1 (2026-07-26). Was the two-tier viewport's outlier flag: a body whose bbox spans
-    // more than the centroid prefilter's margin, scanned as a short list because its centroid could be
-    // off-screen. The cell index makes size irrelevant, so nothing reads or writes this any more and
-    // its index is gone. The field stays only because ~116k dev rows still carry it and dropping it
-    // from the schema would fail validation on read; a strip pass can retire it properly.
-    isLarge: v.optional(v.boolean()),
     // Weather sampling escape hatch (Phase 10 / D56 §5). Weather doesn't vary below Open-Meteo's grid
     // (~2–25 km), so **every body samples at its centroid by default** — town/county is the wrong
     // abstraction. Only the few genuinely multi-cell giants (Champlain ~200 km) need more: an admin sets

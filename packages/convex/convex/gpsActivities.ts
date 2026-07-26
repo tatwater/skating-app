@@ -120,8 +120,8 @@ export async function resolveTrackToBodies(
 /**
  * Bodies worth testing a set of sampled track points against.
  *
- * Delegates each sample to `waterBodies.listedBodiesNearCoord` — the shared two-tier lookup that is
- * already proven read-cap-safe for a single point (small centroid rectangle + the `isLarge` index).
+ * Delegates each sample to `waterBodies.listedBodiesNearCoord` — the shared containment lookup, which
+ * is one cell per ladder rung around the point and so bounded regardless of body size (N1).
  * Sampling caps how many of those lookups run, so the read cost is bounded by `SPAN_SAMPLE_POINTS`
  * rather than by track length; and consecutive samples on one lake are deduped to a coarse grid cell
  * so a 3,000-point path on one pond costs one lookup, not twenty-four.
