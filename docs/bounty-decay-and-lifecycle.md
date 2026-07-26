@@ -67,7 +67,8 @@ windowHours = base × (1 + thumbBoost + trustBoost)          (never negative)
   thumbs = 3× base = ~6 days). This also sets **how far back the create gate scans** for
   suppressing reports.
 - **`BOUNTY_FRESH_MAX_REPORTS = 10`** — cap on suppressing reports evaluated per create (newest
-  first), bounding the read fan-out. `OPEN_BOUNTY_SCAN_CAP = 200` caps the open-bounty index scan.
+  first), bounding the read fan-out. `OPEN_BOUNTY_SCAN_CAP = 200` caps the open-bounty index scan, and
+  the per-body recent-report window is capped alongside it (N1) — both log what they drop.
 
 A body is "too fresh to bounty" when *any* report is still inside its own weighted window (judged
 on `skateEndTime`, the freshest read of the ice, so a late-synced offline report still counts by

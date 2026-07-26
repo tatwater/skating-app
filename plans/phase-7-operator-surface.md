@@ -231,9 +231,11 @@ Constants cited by their `@skating/core` names.
 - **[LATER]** Archive-vs-re-report rate (D15 resurface) — high = archiving too eagerly.
 
 **Display / map** — `DISPLAY_AREA_MIN/MAX_SQM`, `minVisibleZoom` curve, `curatedBoost`,
-`MAX_VIEWPORT_LIMIT=256`
+`MAX_VIEWPORT_LIMIT` *(256 when this was written; **1,000 since N1**, and now a render budget rather
+than a read-cap guard — a viewport read is bounded by the cell index, not by this number)*
 - **[CORE-lite]** **Viewport-truncation frequency** — the D5 truncation log **already exists**;
-  surfacing how often it fires flags when the 256 clamp / curve is dropping bodies. Cheap.
+  surfacing how often it fires flags when the render budget / curve is dropping bodies. Cheap.
+  *(`waterBodies:viewportReadStats` gives the same answer on demand for one viewport.)*
 - **[LATER]** Body distribution by `minVisibleZoom` band.
 
 **Recommended feed** — `RECOMMENDED_MIN_CORROBORATION=3`, `_MIN_PHOTOS=2`, `_RECENCY_HOURS=48`,

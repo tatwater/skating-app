@@ -431,12 +431,14 @@ Accepted as postponable at alpha scale; logged here so they're not lost. (The re
 — cron fail-fast on a failed fetch, empty-200 no-cache-retry, stable strip window/`near`, active-only
 strip, single-sourced 7-day lookback, and the bounty-suppressor-selection fix — landed on the branch.)
 
-- **`.collect()` read-cap hardening across the weather gates.** `hazardWeather.listActiveHazardsForWeather`
-  (all active hazards, all bodies), `bounties.bountyFreshnessInputs` / `recentReports` (all recent reports
-  in the 144h window), and `contradictions.findContradictingPriors` (all disagreeing priors in a 7d window,
-  one Open-Meteo fetch each) all `.collect()` unbounded. Same class as the `listInViewport` read-cap lesson
-  (PRs #10/#11) — fine at alpha, needs pagination + a logged truncation cap at corpus scale. **Fold into the
-  `listInViewport` hardening item** in `07-roadmap.md` Later/deferred (same discipline, one pass).
+- ~~**`.collect()` read-cap hardening across the weather gates.**~~ **✅ DONE in N1 (2026-07-26)**, folded
+  into the `listInViewport` hardening as this entry asked. `hazardWeather.listActiveHazardsForWeather`,
+  `bounties.recentReports` and the contradiction cluster load are all capped-and-logged now (via
+  `lib/scan.takeCapped`). Two corrections worth carrying: **`contradictions.findContradictingPriors`
+  never existed** — the real function is `contradictionCluster`, and it hid a *second* unbounded read
+  this entry didn't see (a `pointEvents` scan per clustered report, an N+1 multiplying the first) — and
+  `bountyFreshnessInputs` isn't itself a scan; it reads through `recentReports`, which is where the cap
+  went. See [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md).
 - **`weatherCache` TTL / prune.** No pruner today; a new row per `(samplePoint, windowStart, hourBucket)`
   accumulates as the `now`-bucket advances. It's a *disk-growth* concern, not staleness (served summaries
   are ≤1 hour old by the bucket key). A tiny prune cron (drop rows older than N days) clears it.

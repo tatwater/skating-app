@@ -1,4 +1,3 @@
-import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -8,8 +7,6 @@ const modules = import.meta.glob('./**/*.*s');
 
 function convexTestWithGeo() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 
@@ -877,8 +874,6 @@ describe('reports.listFeed filters + favorite boost (Phase 4)', () => {
  *  report can be seeded to exercise the rename migration. */
 function convexTestNoValidation() {
   const t = convexTest({ ...schema, schemaValidation: false }, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 
@@ -929,7 +924,7 @@ describe('reports.renameSkateTimeToSkateEndTime (Phase 5 migration)', () => {
     // A modern report (already has skateEndTime + place) is untouched by the migration.
     await asUser.mutation(api.reports.create, { waterBodyId: id, skateEndTime: SKATE_TIME });
     const result = await t.mutation(internal.reports.renameSkateTimeToSkateEndTime, {});
-    expect(result).toEqual({ total: 1, renamed: 0, placed: 0 });
+    expect(result).toMatchObject({ total: 1, renamed: 0, placed: 0, isDone: true }); // paginated (N1)
   });
 
   test('a cleanup-only patch (dangling skateTime, skateEndTime already set) is not counted as a rename', async () => {

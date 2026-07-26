@@ -656,11 +656,14 @@ const PROFILE_FIELDS = [
  * (replaced by `cachedIsochrones`/`outerRadiusMeters`). Run it as part of the Phase-4 deploy.
  */
 export const backfillNotificationPrefs = internalMutation({
-  args: {},
-  handler: async (ctx) => {
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
     const now = Date.now();
     const allowed = new Set<string>(PROFILE_FIELDS);
-    const profiles = await ctx.db.query('profiles').collect();
+    const page = await ctx.db
+      .query('profiles')
+      .paginate({ cursor: cursor ?? null, numItems: Math.min(500, Math.max(1, batchSize ?? 200)) });
+    const profiles = page.page;
     let patched = 0;
     for (const p of profiles) {
       const raw = p as unknown as Record<string, unknown>;
@@ -699,7 +702,7 @@ export const backfillNotificationPrefs = internalMutation({
       );
       patched++;
     }
-    return { patched, total: profiles.length };
+    return { patched, total: profiles.length, cursor: page.continueCursor, isDone: page.isDone };
   },
 });
 
@@ -712,9 +715,14 @@ export const backfillNotificationPrefs = internalMutation({
  * corpus would page. Run: `convex run profiles:backfillContributionCounts`.
  */
 export const backfillContributionCounts = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const profiles = await ctx.db.query('profiles').collect();
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    // Smaller pages than the other migrations: each profile costs two *lifetime* history scans, so
+    // the per-profile read cost is what binds here, not the profile count (N1).
+    const page = await ctx.db
+      .query('profiles')
+      .paginate({ cursor: cursor ?? null, numItems: Math.min(200, Math.max(1, batchSize ?? 50)) });
+    const profiles = page.page;
     let patched = 0;
     for (const p of profiles) {
       const reports = await ctx.db
@@ -732,6 +740,6 @@ export const backfillContributionCounts = internalMutation({
         patched++;
       }
     }
-    return { patched, total: profiles.length };
+    return { patched, total: profiles.length, cursor: page.continueCursor, isDone: page.isDone };
   },
 });

@@ -872,9 +872,12 @@ export const update = mutation({
  * large corpus would need pagination.
  */
 export const renameSkateTimeToSkateEndTime = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const reports = await ctx.db.query('reports').collect();
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const page = await ctx.db
+      .query('reports')
+      .paginate({ cursor: cursor ?? null, numItems: Math.min(500, Math.max(1, batchSize ?? 100)) });
+    const reports = page.page;
     let renamed = 0;
     let placed = 0;
     for (const r of reports) {
@@ -900,6 +903,12 @@ export const renameSkateTimeToSkateEndTime = internalMutation({
         if ('skateEndTime' in patch) renamed++;
       }
     }
-    return { total: reports.length, renamed, placed };
+    return {
+      total: reports.length,
+      renamed,
+      placed,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
   },
 });

@@ -280,6 +280,46 @@ describe('summarizeWeatherSince (D19 / D56)', () => {
     expect(weatherExplainsIceChange(summarizeWeatherSince([]))).toBe(false); // no data ⇒ can't tell
   });
 
+  it('is monotone in window length — a longer window never un-explains a change (property)', () => {
+    // An invariant the **bounty gate depends on for correctness**, so it is pinned here rather than
+    // left as a property of the current arithmetic (Greptile PR #27).
+    //
+    // `evaluateFreshness` weighs at most `BOUNTY_FRESH_MAX_REPORTS` suppressors, newest-first, and
+    // `createChecked` may allow a bounty when weather has reopened every one of them. That is only
+    // sound if an *older* suppressor, which the cap never reached, would also have been reopened —
+    // and it would, because its weather window is `[skateEndTime, now]` and an older report's window
+    // strictly contains a newer one's. Both degree-hour integrals accumulate non-negative per-hour
+    // contributions, so a superset window can only push them further past the thresholds.
+    //
+    // If either integral ever gains a term that can *decrease* with more data — a net figure, a mean,
+    // a recency weighting — this test fails, and the cap in `evaluateFreshness` stops being safe.
+    const arbHour: fc.Arbitrary<HourlyWeather> = fc.record({
+      temperatureC: fc.double({ min: -60, max: 60, noNaN: true }),
+      precipitationMm: fc.double({ min: 0, max: 100, noNaN: true }),
+      windSpeedKph: fc.double({ min: 0, max: 200, noNaN: true }),
+    });
+    fc.assert(
+      fc.property(
+        fc.array(arbHour, { maxLength: 200 }),
+        fc.nat(),
+        fc.double({ min: 1, max: 500, noNaN: true }),
+        fc.double({ min: 1, max: 500, noNaN: true }),
+        (hours, rawSplit, freezingDegreeHours, thawDegreeHours) => {
+          // The suffix is the newer report's window; the full array is the older report's.
+          const split = hours.length === 0 ? 0 : rawSplit % (hours.length + 1);
+          const opts = { freezingDegreeHours, thawDegreeHours };
+          const newer = summarizeWeatherSince(hours.slice(split));
+          const older = summarizeWeatherSince(hours);
+          expect(older.freezingDegreeHours).toBeGreaterThanOrEqual(newer.freezingDegreeHours);
+          expect(older.thawDegreeHours).toBeGreaterThanOrEqual(newer.thawDegreeHours);
+          if (weatherExplainsIceChange(newer, opts)) {
+            expect(weatherExplainsIceChange(older, opts)).toBe(true);
+          }
+        },
+      ),
+    );
+  });
+
   it('nights-below-freezing matches an independent night-bucketed recompute (property)', () => {
     fc.assert(
       fc.property(

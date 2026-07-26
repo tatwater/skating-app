@@ -90,12 +90,28 @@ state). Chunks the NDJSON and calls the internal `adminAreas.importCanonical` mu
 resolved deployment before loading. The import is **idempotent** (upsert on `externalId`), so
 re-running (or resuming after a failed batch) is safe.
 
+The import also **cell-indexes each boundary** (N1): one `adminAreaCells` row per grid cell the
+boundary's bbox covers, which is what `resolvePlaceForCoord` reads. Cells are reconciled rather than
+appended, so re-importing a redrawn boundary moves its rows instead of leaving stale ones. To rebuild
+the index for every boundary without re-importing, loop the paginated migration until `isDone`:
+
+```bash
+pnpm exec convex run adminAreas:backfillCells '{"batchSize": 200}'
+pnpm exec convex run adminAreas:backfillCells '{"batchSize": 200, "cursor": "<cursor>"}'
+```
+
+> **Size no longer matters here.** Containment used to run off a *centroid* prefilter with a ±0.2°
+> town margin, which silently degraded to a county-only label for any town wider than ~0.4° (the
+> Adirondacks have several). A boundary is now indexed in every cell it covers, so a point resolves
+> exactly regardless of how big the town is.
+
 ### 5. Backfill `reports.place` (one-time, after the import)
 
 Existing reports predate the point-derived label, so once the boundaries are loaded, run the Phase-5
 report migration to stamp `place` (and complete the `skateTime` → `skateEndTime` rename) — see
 [`plans/phase-5-newsfeed.md`](../../plans/phase-5-newsfeed.md) → schema-migration dance and
-`reports.renameSkateTimeToSkateEndTime`.
+`reports.renameSkateTimeToSkateEndTime`. It's paginated (N1), so loop it on its returned `cursor`
+until `isDone`.
 
 ---
 

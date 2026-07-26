@@ -2,7 +2,7 @@
 
 Conceptual schema for the app's core entities. Notation is schema-flavored
 pseudocode (`field: type`), **not** final Convex code — it's for us to react to.
-Convex-specific notes (indexes, geospatial component) are at the bottom.
+Convex-specific notes (indexes, the ladder-grid spatial index) are at the bottom.
 
 Guiding constraints from `01-decisions.md`:
 - **Safety framing (D3):** no field asserts ice is "safe." Reports are observations;
@@ -214,10 +214,10 @@ removalReason?: enum(landowner_request, unskateable, junk, duplicate, other)  //
 createdAt: timestamp
 ```
 > **Listing (`listed`, D48/D5).** Whether a body shows on the public map is a **derived
-> boolean** indexed as the `@convex-dev/geospatial` filter key: **`true`** for canonical
-> (`osm`/`nhd`) bodies and auto-visible/approved user bodies; **`false`** when `rejected`,
-> `merged`, or **removed** (`removedAt` set). `waterBodies.listInViewport` filters
-> `listed == true`. Removal (D48) is a **reversible soft-delist** (never a hard delete):
+> boolean**: **`true`** for canonical (`osm`/`nhd`) bodies and auto-visible/approved user bodies;
+> **`false`** when `rejected`, `merged`, or **removed** (`removedAt` set). Since N1 it decides
+> whether the body is in the spatial index at all — an unlisted body has no `waterBodyCells` rows,
+> so `waterBodies.listInViewport` can't reach it. Removal (D48) is a **reversible soft-delist** (never a hard delete):
 > flip `listed` off, stamp `removed*`, write a `moderationActions` audit row, and — because
 > the OSM import re-runs — the idempotent `importCanonical` upsert **must preserve** a
 > removed state so a re-import never resurrects it.
@@ -760,8 +760,10 @@ profiles 1─* pointEvents
 - **Drive-time band (Phase 4):** `profiles.cachedIsochrones.band30/band60` (ORS) + `outerRadiusMeters`
   (90-min crow-flies fallback) → point-in-polygon / radius test against `waterBodies.centroid` /
   `reports.point`, yielding `30 | 60 | 90 | null` **at read time** (D18). Deliberately not materialized
-  per-user (staleness + scale). **Notification fan-out is the reverse lookup** — a per-user polygon scan
-  at alpha scale; a reverse spatial index is a documented future seam.
+  per-user (staleness + scale). **Notification fan-out is the reverse lookup** — a per-user polygon scan,
+  moved out of `reports.create` into a scheduled paged job by N1 so the write path doesn't scale with user
+  count; a reverse spatial index (making the walk unnecessary rather than merely bounded) is still a
+  documented future seam.
 - **Derived put-in markers (Phase 4):** cluster `reports.point` (visible + `showPutIn != false`) per body,
   snap to shore, merge with `putIns` (`official`) minus `hidden`/suppressed.
 - **Weather-since-report strip:** computed from Open-Meteo over [skateTime → now]
@@ -779,35 +781,34 @@ profiles 1─* pointEvents
 ---
 
 ## Convex notes
-- **Geospatial component (`@convex-dev/geospatial`)** indexes point fields
-  (`waterBodies.centroid`, `reports.point`, `hazards` bbox center) for
-  viewport/nearest queries.
-  - **Implemented (D5):** the component is installed (`convex/convex.config.ts`) and
-    `waterBodies.centroid` is indexed on `create`/`approve`, queried by
-    `waterBodies.listInViewport`. The offline hermetic codegen (`scripts/codegen.mjs`)
-    emits the `components` handle so this typechecks/tests without a deployment; see the
-    convex package README.
-  - **Phase 1 change (D48):** the filter key becomes the derived boolean **`listed`**
-    (replacing the Phase-0 `reviewStatus`-only filter, which would have hidden all
-    canonical bodies and all auto-visible `pending` user bodies). Set `listed` at
-    import/`create`/`approve`/`reject`/`remove`; `listInViewport` filters `listed == true`.
-  - **Still to wire:** `reports.point` / hazard-center indexing and the bbox-intersection
-    refine (below).
-  - **Viewport semantic (decided): a body is "in view" when its `bbox` intersects the
-    viewport, not when its centroid is inside it** — a large lake can fill the screen
-    with its centroid off-screen. The component indexes *points*, so `listInViewport`
-    currently answers the narrower centroid-in-viewport (an under-approximation that's
-    fine for the pilot region's small bodies). The target implementation: query the
-    geospatial index over the viewport **expanded by the largest body's half-extent**
-    (a superset prefilter), then refine with `bboxIntersects(body.bbox, viewport)` from
-    `@skating/core` (+ optional Turf polygon clip for exact edges). Deferred to Phase 1,
-    where the OSM ETL's real polygons let us tune the expansion instead of guessing.
+- **Spatial index (D5, rebuilt as N1 2026-07-26): the ladder grid.** An object gets one row per
+  grid cell its **bbox** covers, in a plain Convex table — `waterBodyCells` and `adminAreaCells`,
+  both keyed `by_cell = [z, x, y, …]`. A viewport read scans the cells covering the viewport at every
+  rung up to the current zoom; a containment lookup scans one cell per rung. See
+  [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) and
+  `packages/core/src/spatialCells.ts`.
+  - **Which rung:** the coarser of *how big the object is* and (for water bodies) *the zoom it first
+    draws at* (D49 `minVisibleZoom`). That ceiling is what makes a zoom-filtered query provably
+    complete — an object is never indexed finer than the zoom it appears at.
+  - **Viewport semantic (unchanged, now exact): a body is "in view" when its `bbox` intersects the
+    viewport**, not when its centroid is inside it — a large lake can fill the screen with its
+    centroid off-screen. Because a body is in *every* cell it covers, this needs no margin and no
+    large-body special case; candidates are refined with `bboxIntersects` from `@skating/core`.
+  - **`listed` (D48) decides whether a body is indexed at all.** A removed / rejected / merged body
+    has no cell rows, so the listing filter costs a read nothing. (It was previously a filter *key* on
+    a centroid index that the query couldn't afford to use — the component's filter-stream
+    intersection roughly halved its safe ceiling — so listing was re-checked in JS instead.)
+  - **`@convex-dev/geospatial` was retired here**, along with `convex.config.ts`: the app installs no
+    Convex components. Its reads scaled with `maxResults` rather than with results returned, which
+    crashed a wide viewport against the 4,096-read cap twice (PRs #10/#11), and its one-point-per-key
+    write API couldn't express bbox coverage at all.
+  - **Still not spatially indexed, deliberately:** `reports.point` and hazard centers. Hazards are
+    only ever read per body (Phase 9 call 6); a reports index waits for a near-me query that needs it.
 - **Polygon tests** (in-isochrone, in-water-body, hazard proximity) = bbox prefilter
   via indexed `bbox` fields + precise **Turf.js** in a Convex query/action. The pure
-  Turf-backed primitives now live in `@skating/core` (`bboxIntersects`, `pointInPolygon`,
-  `polygonIoU`, `bufferedLineOverlap`, `polygonBBox`) with property tests, ready to wire
-  into a Convex query. *(The centroid/bbox prefilter exists; the Convex-side refine does
-  not yet.)*
+  Turf-backed primitives live in `@skating/core` (`bboxIntersects`, `pointInPolygon`,
+  `polygonIoU`, `bufferedLineOverlap`, `polygonBBox`) with property tests, and the Convex side wires
+  them in: the cell scan prefilters, `bboxIntersects` / `pointInPolygon` refine.
 - **Suggested indexes:** `reports` by `waterBodyId + skateTime`, by `authorId`;
   `hazards` by `waterBodyId + status`;
   `gpsActivities` by `provider + providerActivityId` (unique, dedup) and by

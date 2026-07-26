@@ -21,18 +21,17 @@ and a Clerk JWT template named `convex`).
   (ice types, hazards, roles, …) is imported from `@skating/core` via the `literals()` helper
   so it's single-sourced; backend-only enums live in `convex/lib/enums.ts`.
 - **`convex/lib/`** — `auth.ts` (identity + role/status gating), `validators.ts`
-  (`literals`, `boolFlags`, `latLng`, `bbox`, `geoJson`), `enums.ts`, `geospatial.ts`
-  (typed `@convex-dev/geospatial` index of water-body centroids, filtered by the derived
-  `listed` boolean, D5/D48; the entry **`sortKey` holds the derived integer `minVisibleZoom`**
-  for the D49 in-query zoom filter), `listing.ts` (the `isListed` derivation).
-- **`convex/convex.config.ts`** — the app definition; `app.use(geospatial)` installs the
-  geospatial component (its `components.geospatial` handle powers `lib/geospatial.ts`).
+  (`literals`, `boolFlags`, `latLng`, `bbox`, `geoJson`), `enums.ts`, `cellIndex.ts`
+  (the ladder-grid spatial index — write-side reconciliation for `waterBodyCells` /
+  `adminAreaCells`, D5/D48/N1), `listing.ts` (the `isListed` derivation).
+- **No Convex components are installed.** `convex.config.ts` was deleted with
+  `@convex-dev/geospatial` in N1; spatial lookups are plain tables + indexes now.
 - **`convex/profiles.ts`** — `current` + `upsertFromClerk` (idempotent Clerk→profile
   bridge; enforces the 16+ gate and username uniqueness) + `publicByIds` (minimal public
   attribution — `username`/`displayName` keyed by id — for report feeds/detail, Phase 2).
 - **`convex/waterBodies.ts`** — internal `importCanonical` (idempotent OSM/NHD upsert keyed
   on `by_external_id`, preserves removed state across re-import, D14/D48; now also computes the
-  D49 `displayScore`/`minVisibleZoom`) + `backfillListed` (small-scale key/field migration);
+  D49 `displayScore`/`minVisibleZoom`) + `backfillCells` (the paginated cell-index migration);
   user `create` (queued for after-the-fact review, D37), moderator `approve`, admin
   `remove`/`restore` (reversible soft-delist + audit row, D48); public **`get`** (single-body
   detail; follows `mergedIntoId` to the survivor, flags removed/unlisted vs not-found, D36/D47),
@@ -56,8 +55,8 @@ and a Clerk JWT template named `convex`).
   [`scripts/basemap`](../../scripts/basemap/README.md), never client-callable.
 - **`convex/*.test.ts`** — `convex-test` suites: auth/role/suspension gating, upsert
   idempotency + age/username invariants, approve/remove/restore → audit-log paths, the
-  two-tier `listInViewport` (small-body prefilter, off-screen-centroid large body, refine,
-  cap-truncation log) **+ the D49 zoom cutoff / `setCuratedBoost` recompute + audit**, `get`'s
+  ladder-grid `listInViewport` (cell scan, bbox refine, render-budget truncation log, a
+  300-body dense viewport) **+ the D49 zoom cutoff / `setCuratedBoost` recompute + audit**, `get`'s
   merged-redirect/unavailable signal, report `create` (centroid default, minor rejection,
   idempotency-key dedup) / `listByWaterBody` (moderation + block filter), and photo `create`
   dropping `coord` without `placeOnMap`.
@@ -67,19 +66,17 @@ and a Clerk JWT template named `convex`).
 - **`profiles` renames the doc's `users` table.** Per the identity model above;
   `plans/06-data-model.md` and `01-decisions.md` (D26) have been reconciled to match.
   `clerkUserId` (+ `by_clerk_user_id` index) is the Clerk tie the doc didn't spell out.
-- **Geospatial (D5) `listInViewport` is the shipped two-tier bbox-intersection query.**
-  `@convex-dev/geospatial` indexes water-body centroids filtered by `listed`. A body is "in
-  view" when its **bbox** intersects the viewport (a large lake shows even with its centroid
-  off-screen), so the query is two-tier: (1) page the centroid index over the viewport + a
-  small margin, catching every body whose bbox spans ≤ the margin; (2) scan the `by_is_large`
-  short list (bbox extent > the margin) directly — the handful of big lakes. Both refined by
-  `@skating/core`'s `bboxIntersects` + `isListed`. A naïve single blanket expansion returned
-  **0** at the 9,967-body Vermont scale (read-cap truncation) — see the `listInViewport`
-  doc-comment + `plans/phase-1-water-bodies.md`. **D49 (Phase 2) shipped:** the derived integer
-  `minVisibleZoom` rides the geospatial entry's `sortKey`, and `listInViewport(zoom?)` filters
-  `sortKey <= zoom` *inside* the query, so wide zooms return the few prominent bodies (a boosted
-  Lake Morey guaranteed) instead of an arbitrary read-capped slice. Still deferred: a geospatial
-  index on `reports.point` (near-me / cross-body queries, Phase 5/6).
+- **Spatial lookups (D5) run on the N1 ladder grid.** A water body has one `waterBodyCells`
+  row per grid cell its **bbox** covers, at a level no finer than the zoom it first draws at, so
+  `listInViewport` is "scan the cells covering the viewport, at every rung up to this zoom" —
+  bounded by geometry rather than by a tuned constant, with `by_cell`'s trailing `minVisibleZoom`
+  turning the D49 cutoff into an index range. Admin boundaries use the same shape
+  (`adminAreaCells`). This replaced a centroid index (`@convex-dev/geospatial`) whose reads
+  scaled with `maxResults` rather than with results, and which crashed a wide viewport twice
+  (PRs #10/#11) before its workarounds were retired here. `zoom` is a **required** argument —
+  the completeness guarantee is stated against it. See
+  `plans/phase-N1-read-path-durability.md` and `packages/core/src/spatialCells.ts`. Still
+  deferred: a spatial index on `reports.point` (near-me / cross-body queries, Phase 5/6).
 - **`geoJson` is now a structured GeoJSON-geometry validator** (`lib/validators.ts`),
   not `v.any()` — a discriminated union over Point/MultiPoint/Line/MultiLine/Polygon/
   MultiPolygon that rejects unknown `type`s and wrong nesting at the mutation boundary.
@@ -107,8 +104,8 @@ When a `convex.config.ts` exists, the script also emits the component handle: a
 `componentsGeneric()` in `api.js` and the loosely-typed `components: AnyComponents` stub
 in `api.d.ts` — the same stub `convex dev` writes before its first push. The precisely-
 typed component form needs live deployment analysis (the one thing we can't do offline),
-but installed components re-apply their own types at the call site (see the
-`ConstructorParameters` assertion in `lib/geospatial.ts`), so the stub is sufficient.
+but installed components re-apply their own types at the call site, so the stub is
+sufficient. **Currently dormant** — N1 removed the only component we had.
 
 ## Scripts
 

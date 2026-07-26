@@ -49,6 +49,7 @@ import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
 import { nearestSamplePoint } from './lib/sampling';
+import { takeCapped, takeCappedResult } from './lib/scan';
 import { bbox, latLng } from './lib/validators';
 import { resolveWeatherSince } from './weather';
 
@@ -57,28 +58,53 @@ const HOUR_MS = 60 * 60 * 1000;
 /**
  * Hard ceiling on the `listOpen` index scan (decision 13 browse surface). The open-bounty set is small
  * and bounded by design (≤3 open per requester in a rolling 24h × a ~30-day lifetime), so a plain
- * `by_status_expires` scan is read-cap-safe — unlike the water-body geospatial viewport path, whose
+ * `by_status_expires` scan is read-cap-safe — unlike the water-body centroid viewport path (since
  * reads scale with search *area* (see roadmap → Later/deferred: `listInViewport` hardening). If the
  * live open set ever approaches this cap we log the truncation (never silent, D5) and would then add a
- * dedicated bounties geospatial instance; at alpha scale it never bites.
+ * dedicated bounties cell index; at alpha scale it never bites.
  */
 const OPEN_BOUNTY_SCAN_CAP = 200;
+/** Bounties the expiry cron retires per tick. Anything past it goes on the next interval (N1). */
+const EXPIRE_SWEEP_CAP = 500;
+/**
+ * Reports the freshness gate weighs for one body+window (N1). It bounds more than the index scan: the
+ * gate does an author `get` + a `tallyThumbs` scan **per report**, so this is really a cap on read
+ * fan-out, and it can't simply be raised — 1,000 here would be ~2,000+ reads on its own.
+ */
+const RECENT_REPORT_SCAN_CAP = 200;
 
-/** Visible reports on a body with a skate-end at or after `cutoff` — the input to both create gates. */
+/**
+ * Visible reports on a body with a skate-end at or after `cutoff` — the input to both create gates —
+ * **newest first**, plus whether the cap is what stopped us.
+ *
+ * `.order('desc')` is not a convenience: the index runs ascending on `skateEndTime`, so a `take(cap)`
+ * on it would retain the *oldest* rows in the window, and both callers want the newest. A busy body
+ * would then have hidden its freshest report from the suppression gate (letting a bounty be opened on
+ * ice someone just skated) and notified only the people who reported longest ago. Reversed, the cap
+ * drops the oldest candidates instead (N1, Greptile PR #27).
+ */
 async function recentReports(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
   cutoff: number,
-): Promise<Doc<'reports'>[]> {
-  return ctx.db
-    .query('reports')
-    .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
-      q
-        .eq('waterBodyId', waterBodyId)
-        .eq('moderationStatus', 'visible')
-        .gte('skateEndTime', cutoff),
-    )
-    .collect();
+): Promise<{ reports: Doc<'reports'>[]; truncated: boolean }> {
+  // `takeCappedResult`, not `takeCapped`: the boundary has to be exact here, because `truncated` is
+  // what turns into a block. A body with *exactly* the cap's worth of reports is a complete scan,
+  // and reading it as a truncation would reject a valid bounty (Greptile PR #27).
+  const { rows: reports, truncated } = await takeCappedResult(
+    ctx.db
+      .query('reports')
+      .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+        q
+          .eq('waterBodyId', waterBodyId)
+          .eq('moderationStatus', 'visible')
+          .gte('skateEndTime', cutoff),
+      )
+      .order('desc'),
+    RECENT_REPORT_SCAN_CAP,
+    `bounties.recentReports(${waterBodyId})`,
+  );
+  return { reports, truncated };
 }
 
 /**
@@ -107,6 +133,18 @@ interface EvaluatedReport {
  * is safe and bounds both the action's weather fetch and this scan. Reads only, so it's shared by the
  * `bountyFreshnessInputs` query and the `createChecked` mutation (§7c).
  *
+ * **Why stopping at ten suppressors can't hide an eleventh** (Greptile PR #27, round 6). `createChecked`
+ * may allow a bounty when weather reopened every suppressor it was given — so the cap would be unsafe
+ * if an older, unweighed suppressor could still be blocking. It can't be: a report's reopen verdict is
+ * read over `[skateEndTime, now]`, an older report's window strictly contains a newer one's, and both
+ * degree-hour integrals only accumulate. So if the ten newest suppressors were all reopened, anything
+ * older was too — reopening is *monotone in report age*.
+ *
+ * That is a real dependency on arithmetic living in another package, so it is pinned by a property
+ * test rather than assumed: `weather.test.ts` → "is monotone in window length". If either integral
+ * ever gains a term that can decrease with more data (a net figure, a mean, a recency weighting) that
+ * test fails, and this cap has to be revisited with it.
+ *
  * `newest` is the freshest recent report **whether or not it suppresses** — carried purely for the
  * gate log (Phase 7b). Without it the suppression scatter would only ever plot blocked attempts, and
  * "dots below the line = allowed" would be empty by construction: an allowed attempt usually has no
@@ -115,15 +153,38 @@ interface EvaluatedReport {
  * Newest-first matters twice: the freshest suppressor has the shortest weather window (most robust to
  * a reopen), and capping on *suppressors* rather than raw recency stops a strong OLDER read from being
  * crowded out of the cap by fresher-but-expired reads (the newest-N-of-all bug).
+ *
+ * **`truncated` is how the scan cap stops being able to give a wrong answer.** Newest-first is only a
+ * *heuristic* for "most likely to suppress": a report's window stretches with author trust and thumbs
+ * (up to 3× base) and shrinks to as little as zero, so a trusted read from four days ago can outlast
+ * 200 newer throwaway ones. Once the cap has bitten, "nothing here suppresses" is a statement about
+ * the prefix we read, not about the body — so the caller blocks instead of allowing (Greptile PR #27).
+ * Raising the cap wouldn't fix it; only reading every report in the window would, and the per-report
+ * author + thumbs reads make that the unbounded scan this phase exists to retire.
+ *
+ * The first cut of this rule tried to be clever — block only when the scan truncated *and* found no
+ * suppressor at all — and left a hole exactly where the logic gets interesting: a truncated scan whose
+ * suppressors were all weather-reopened has no blocker either, and weather says nothing about the
+ * reports past the cap. So the flag is now the raw truncation, and the decision is made *after* the
+ * reopen set is applied. **A truncated scan cannot clear a body, however the scanned rows resolve.**
+ *
+ * Blocking is also the right *product* answer, not just the safe one. A body with 200+ visible reports
+ * inside six days demonstrably has fresh eyes on it, which is the exact thing a bounty asks for.
  */
 async function evaluateFreshness(
   ctx: QueryCtx,
   body: Doc<'waterBodies'>,
   now: number,
-): Promise<{ suppressors: EvaluatedReport[]; newest: EvaluatedReport | null }> {
+): Promise<{
+  suppressors: EvaluatedReport[];
+  newest: EvaluatedReport | null;
+  /** The scan cap bit, so reports in the window went unexamined — no verdict from this is conclusive. */
+  truncated: boolean;
+}> {
   const maxWindowMs = FRESH_REPORT_HOURS * BOUNTY_FRESH_MAX_MULTIPLIER * HOUR_MS;
-  const recent = await recentReports(ctx, body._id, now - maxWindowMs);
-  const newestFirst = [...recent].sort((a, b) => b.skateEndTime - a.skateEndTime);
+  // Already newest-first — `recentReports` scans the index descending, which is also what makes its
+  // cap drop the oldest rather than the freshest.
+  const { reports: newestFirst, truncated } = await recentReports(ctx, body._id, now - maxWindowMs);
 
   const suppressors: EvaluatedReport[] = [];
   let newest: EvaluatedReport | null = null;
@@ -149,7 +210,12 @@ async function evaluateFreshness(
     }
     suppressors.push(evaluated);
   }
-  return { suppressors, newest };
+  if (truncated) {
+    console.warn(
+      `bounties.evaluateFreshness(${body._id}): hit the ${RECENT_REPORT_SCAN_CAP}-report scan cap, so an older long-window report may be unweighed — blocking rather than guessing (D5/N1).`,
+    );
+  }
+  return { suppressors, newest, truncated };
 }
 
 /**
@@ -253,7 +319,11 @@ export const bountyFreshnessInputs = internalQuery({
     // Open-Meteo fetches + cache writes first (§7c resource guard).
     if (!(await underOpenBountyCap(ctx, profile._id, now))) return { status: 'capped' as const };
     const point = nearestSamplePoint(body, body.centroid);
-    const { suppressors } = await evaluateFreshness(ctx, body, now);
+    const { suppressors, truncated } = await evaluateFreshness(ctx, body, now);
+    // A truncated scan is going to be blocked by `createChecked` no matter what the weather says, so
+    // don't spend Open-Meteo calls establishing it. Same resource-guard reasoning as the cap check
+    // above: the transactional authority still re-decides, this just stops the pointless fetch.
+    if (truncated) return { status: 'suppressed' as const };
     return {
       status: 'ok' as const,
       lat: point.lat,
@@ -395,14 +465,24 @@ export const createChecked = internalMutation({
     // edited later after the weather verdict was computed, its window is now shorter and may no longer
     // justify the reopen, so the stale exemption is dropped and the (now-fresher) report suppresses again.
     const reopened = new Set(weatherReopenedReports.map((r) => `${r.reportId}:${r.skateEndTime}`));
-    const { suppressors, newest } = await evaluateFreshness(ctx, body, now);
+    const { suppressors, newest, truncated } = await evaluateFreshness(ctx, body, now);
     const blocking = suppressors.find((c) => !reopened.has(`${c.reportId}:${c.skateEndTime}`));
-    if (blocking) {
+    // `truncated` means reports in the window went unexamined, so "nothing suppresses" is unproven
+    // rather than established — an older high-trust report (up to a 3× window) could sit just past
+    // the cap. Block on the unknown: the failure it prevents (a bounty on ice that already has fresh
+    // eyes) is a wrong answer, and a body carrying 200+ visible reports in six days is one nobody
+    // needs to be asked to go look at (Greptile PR #27).
+    //
+    // Tested *here*, after the reopen set is applied, and not as "truncated with no suppressors"
+    // back in `evaluateFreshness`: a truncated scan whose every suppressor was weather-reopened has
+    // no blocker either, and a freeze clearing the reports we *did* read says nothing about the ones
+    // we didn't. Whatever the scanned rows resolve to, a truncated scan can't clear the body.
+    if (blocking || truncated) {
       await logGateEvent(ctx, {
         waterBodyId: body._id,
         requesterId: profile._id,
         decision: 'suppressed',
-        decidingReport: blocking,
+        decidingReport: blocking ?? newest,
         weatherReopened: false,
         now,
       });
@@ -462,7 +542,14 @@ async function fanOutEligibility(
     now: number;
   },
 ): Promise<void> {
-  const recent = await recentReports(ctx, args.waterBodyId, args.now - args.windowHours * HOUR_MS);
+  // Newest-first, so a truncation here notifies the 200 most recent reporters rather than the 200
+  // longest-ago ones — a defensible product answer on its own terms, unlike the freshness gate, where
+  // truncation had to be turned into a block (see `evaluateFreshness`'s `truncated`).
+  const { reports: recent } = await recentReports(
+    ctx,
+    args.waterBodyId,
+    args.now - args.windowHours * HOUR_MS,
+  );
   const notified = new Set<string>([args.requesterId]); // never notify the requester; dedup authors
   for (const report of recent) {
     if (notified.has(report.authorId)) continue;
@@ -578,10 +665,15 @@ export const expireBounties = internalMutation({
   args: {},
   handler: async (ctx) => {
     const now = Date.now();
-    const due = await ctx.db
-      .query('bounties')
-      .withIndex('by_status_expires', (q) => q.eq('status', 'open').lte('expiresAt', now))
-      .collect();
+    // Bounded per tick, not per run: whatever the cap leaves behind expires on the next interval,
+    // so a backlog drains rather than crashing the sweep (N1).
+    const due = await takeCapped(
+      ctx.db
+        .query('bounties')
+        .withIndex('by_status_expires', (q) => q.eq('status', 'open').lte('expiresAt', now)),
+      EXPIRE_SWEEP_CAP,
+      'bounties.expireBounties',
+    );
     for (const bounty of due) await ctx.db.patch(bounty._id, { status: 'expired' });
     return { expired: due.length };
   },
@@ -681,7 +773,7 @@ export const listForBody = query({
 
 /**
  * The **global / near-me / in-viewport open-bounty browse** (decision 3 clarification, 2026-07-22). This
- * deliberately sidesteps the read-cap-fragile water-body geospatial viewport path: the open-bounty set is
+ * deliberately sidesteps what was then the read-cap-fragile water-body viewport path: the open-bounty set is
  * small and bounded, so we scan the dedicated `by_status_expires` index (open, not-yet-expired), hydrate
  * each body + requester, then filter/sort **in JS** — no S2 read-ahead, no 4,096-reads crash surface.
  *
@@ -715,8 +807,11 @@ export const listOpen = query({
     const open = await ctx.db
       .query('bounties')
       .withIndex('by_status_expires', (q) => q.eq('status', 'open').gt('expiresAt', now))
-      .take(OPEN_BOUNTY_SCAN_CAP);
-    if (open.length === OPEN_BOUNTY_SCAN_CAP) {
+      .take(OPEN_BOUNTY_SCAN_CAP + 1);
+    // `+ 1` then trim: exactly-cap rows is a complete answer, not a truncated one, and a warning
+    // that fires on the boundary is a warning nobody trusts (Greptile PR #27, same fix as `takeCapped`).
+    if (open.length > OPEN_BOUNTY_SCAN_CAP) {
+      open.length = OPEN_BOUNTY_SCAN_CAP;
       console.warn(
         `bounties.listOpen hit the ${OPEN_BOUNTY_SCAN_CAP}-row scan cap; some open bounties may be omitted.`,
       );

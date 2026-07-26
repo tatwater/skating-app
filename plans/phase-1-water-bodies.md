@@ -8,6 +8,14 @@ the *how* — ordered workstreams, file-level changes, and the test plan.
 > drive-time, and tap candidate lakes — *before* anyone has reported on them. Storage is the
 > substrate for discovery (D14/D28); display is curated separately (D48).
 
+> **⚠️ The spatial mechanism described below was replaced by N1 (2026-07-26).** Everything about
+> *what* `listInViewport` must answer still holds — a body is "in view" when its **bbox** intersects
+> the viewport — but the *how* (a `@convex-dev/geospatial` centroid index, a margin-expanded query
+> rectangle, the `isLarge` two-tier scan, the 256-row clamp) is gone. Reads now run on a bbox-coverage
+> cell index whose cost follows from geometry. This doc is kept as history because its two
+> read-cap postmortems are the clearest record of the failure mode; see
+> [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) for what replaced it.
+
 ## Scope (decided)
 
 - **Pilot region: Vermont.** Compact, the Nordic-skating heartland (Lake Morey, Lake
@@ -191,6 +199,9 @@ corpus scale and must be fixed as the first thing in PR#4, before the map can re
 **Symptom.** With all 9,967 Vermont bodies loaded, `listInViewport` returns **0** for a normal
 city-zoom viewport (e.g. the Burlington waterfront) even though a manual bbox scan finds 14
 bodies there, incl. Lake Champlain. So the data is correct; the *query* is broken.
+
+> **Superseded by N1** (see the banner at the top) — both fixes below were workarounds for one
+> property of the component: it reads ∝ `maxResults`, not ∝ results returned.
 
 **Root cause.** `listInViewport` indexes **centroids** and expands the query rectangle by
 `MAX_BODY_EXTENT_DEG` (±2°, sized to catch Lake Champlain — 1.53° tall — via its off-screen

@@ -12,10 +12,14 @@ reporting; web (TanStack Start) is secondary for planning/long-form.
 Web serves the "big screen + keyboard" planning use case.
 
 ## D2 — Convex as the app database
-**Decided.** Convex for reactive data (feeds, notifications, reports),
-file storage (photos), and its geospatial component for point queries.
+**Decided.** Convex for reactive data (feeds, notifications, reports) and
+file storage (photos).
 **Why:** Real-time reactivity fits live reports/feeds; TS-native; batteries
 included (files, geo). Not a geospatial DB for polygons — see D5.
+**Amended 2026-07-26 (N1):** the geospatial *component* is no longer part of this — spatial queries
+run on plain Convex tables + indexes. The batteries-included argument held for everything except
+geo, where the component's read profile (∝ requested results, not returned ones) turned a wide
+viewport into a crash. See D5.
 
 ## D3 — Safety-first, non-authoritative framing (product-defining)
 **Decided.** The app never asserts ice is safe/good. Reports are named-peer
@@ -33,9 +37,16 @@ skateable") while still capturing localized danger.
 ## D5 — Geo stack: renderer + tiles + routing + data are separate concerns
 **Decided (direction).** Mapbox/MapLibre render + geocode + isochrones; water-body
 polygons come from OSM/USGS NHD (offline ETL into Convex); spatial logic via
-Convex geospatial component + Turf.js. No runtime PostGIS at our scale.
+Turf.js over our own index. No runtime PostGIS at our scale.
 **Why:** Map SDKs don't provide queryable water-body *records*; we own the data
 and the spatial queries.
+**Amended 2026-07-26 (N1):** "spatial logic via the Convex geospatial component" became **our own
+ladder-grid index** — one row per grid cell an object's bbox covers, in plain Convex tables
+(`waterBodyCells` / `adminAreaCells`), with Turf.js still doing the precise refine. The component
+indexed a single *point* per row and read roughly ∝ the results you asked for rather than the ones
+it returned, so a wide sparse viewport blew Convex's 4,096-read cap — a crash that took two patches
+before the mechanism itself was replaced. Owning the index means the read bound follows from
+geometry. See [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md).
 
 ## D6 — Renderer: MapLibre GL (locked)
 **Decided.** MapLibre GL is the renderer (web + React Native via `@rnmapbox/maps`),
@@ -760,10 +771,12 @@ else (hazard archive D15, account anonymize D33, merge tombstone D36).
 - **Re-ETL safety:** the idempotent `importCanonical` upsert (keyed on `source +
   externalId`) **must preserve a removed state** — a later re-import must NOT resurrect a
   removed body, above all a landowner takedown.
-**The `listed` key (also resolves a Phase-0 latent bug).** This introduces a boolean
-`listed` geospatial filter key that replaces the old `reviewStatus`-only filter on
-`waterBodies.listInViewport`. `listed` is **true** for canonical (`osm`/`nhd`) bodies and
-for auto-visible/approved user bodies; **false** for `rejected`, `merged`, or `removed`.
+**The `listed` key (also resolves a Phase-0 latent bug).** This introduces a derived boolean
+`listed`, replacing the old `reviewStatus`-only filter on `waterBodies.listInViewport`. It was a
+geospatial filter key originally; **since N1 it governs whether the body is spatially indexed at
+all**, so an unlisted body is unreachable from the map rather than fetched and dropped. `listed` is
+**true** for canonical (`osm`/`nhd`) bodies and for auto-visible/approved user bodies; **false** for
+`rejected`, `merged`, or `removed`.
 The old `reviewStatus === 'approved'` filter (Phase 0 scaffold) would have (a) **hidden
 every canonical body** — they carry no `reviewStatus` — which is the exact opposite of
 Phase 1's goal, and (b) contradicted D37's "**user bodies are auto-visible,

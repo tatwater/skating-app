@@ -1,7 +1,6 @@
-import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -9,8 +8,6 @@ const modules = import.meta.glob('./**/*.*s');
 
 function harness() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 
@@ -55,39 +52,45 @@ async function seedUser(
 }
 
 /**
- * A square lake spanning lat/lng 0..1. The geospatial component is registered, and the body is
- * `isLarge` so the resolver's tier-2 index lookup finds it without depending on centroid indexing
- * inside the test harness.
+ * A square lake spanning lat/lng 0..1, seeded through the **real** import path so it lands in the
+ * N1 cell index the resolver reads. (It used to be a bare `db.insert` carrying `isLarge: true`, to
+ * be picked up by the old tier-2 large-body scan — which meant the test never touched the spatial
+ * index at all, and so couldn't have caught it being wrong.)
  */
 async function seedBody(
   t: ReturnType<typeof convexTest>,
   overrides: { name?: string; offset?: number } = {},
 ) {
   const o = overrides.offset ?? 0;
-  return t.run((ctx) =>
-    ctx.db.insert('waterBodies', {
-      name: overrides.name ?? 'Shelburne Pond',
-      type: 'lake' as const,
-      source: 'osm' as const,
-      polygon: {
-        type: 'Polygon' as const,
-        coordinates: [
-          [
-            [o, o],
-            [o, o + 1],
-            [o + 1, o + 1],
-            [o + 1, o],
-            [o, o],
+  const externalId = `osm/seed-${o}`;
+  await t.mutation(internal.waterBodies.importCanonical, {
+    bodies: [
+      {
+        source: 'osm' as const,
+        externalId,
+        name: overrides.name ?? 'Shelburne Pond',
+        type: 'lake' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [o, o],
+              [o, o + 1],
+              [o + 1, o + 1],
+              [o + 1, o],
+              [o, o],
+            ],
           ],
-        ],
+        },
+        bbox: { minLat: o, minLng: o, maxLat: o + 1, maxLng: o + 1 },
+        centroid: { lat: o + 0.5, lng: o + 0.5 },
       },
-      bbox: { minLat: o, minLng: o, maxLat: o + 1, maxLng: o + 1 },
-      centroid: { lat: o + 0.5, lng: o + 0.5 },
-      isLarge: true,
-      dedupStatus: 'clean' as const,
-      createdAt: Date.now(),
-    }),
-  );
+    ],
+  });
+  const bodies = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+  const body = bodies.find((b) => b.externalId === externalId);
+  if (!body) throw new Error('seedBody: import did not produce a body');
+  return body._id;
 }
 
 /** A believable recorded path across the seeded lake. */

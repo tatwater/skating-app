@@ -20,12 +20,12 @@ import { isKnownStateCode, KNOWN_STATE_CODES } from '@skating/core';
 /**
  * Batches are bounded by two Convex/OS limits:
  *
- *  1. **Reads per mutation (the binding one): Convex caps a single mutation at 4096 document
- *     reads.** Each body's geospatial `.insert()` in `importCanonical` reads several S2-cell
- *     docs, and that cost *grows with the index size* — so a batch that's fine against an empty
- *     index blows the limit once tens of thousands of bodies are indexed. `MAX_BATCH_COUNT`
- *     keeps a batch's total reads well under 4096 even at full-corpus index size (~15–20
- *     reads/body × 150 ≈ a few thousand, with headroom).
+ *  1. **Reads per mutation: Convex caps a single mutation at 4096 document reads.** This used to
+ *     be the binding constraint — each body's geospatial `.insert()` read ~15–20 S2-cell docs,
+ *     a cost that *grew with the index size*, so a batch fine against an empty index blew the
+ *     limit once tens of thousands of bodies were indexed. Since N1 a body costs one `by_body`
+ *     lookup plus ≤ 4 cell writes, flat regardless of corpus size, so `MAX_BATCH_COUNT` now has
+ *     enormous headroom here; ARG_MAX below is what actually binds.
  *  2. **ARG_MAX:** `convex run` takes its args only as an inline JSON string (macOS ARG_MAX
  *     ≈ 1 MiB for the whole argv+env). `MAX_BATCH_BYTES` keeps a batch's serialized args well
  *     under that; Lake Champlain (~0.3 MiB simplified) is the only body that ever nears a solo

@@ -5,7 +5,6 @@
  * the same day and land on the same number), and neither ever throws on a bad key — analytics hangs
  * off user-facing paths and must never be the reason a bounty create fails.
  */
-import geospatial from '@convex-dev/geospatial/test';
 import { metricDay } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
@@ -16,8 +15,6 @@ const modules = import.meta.glob('../**/*.*s');
 
 function harness() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 

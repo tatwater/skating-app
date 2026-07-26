@@ -5,6 +5,12 @@
 > mobile offline draft queue §F2 + docs §G (2026-07-16). Convex **prod remains uninitialized** by
 > decision, so everything runs on the **dev** deployment; the prod cutover is a later pass. Native
 > mobile UI carries a pending emulator-verification pass (pure + Convex layers are tested).
+>
+> **Spatial-mechanism note (N1, 2026-07-26):** D49's zoom-scored prominence is unchanged and still
+> live, but the machinery it rides on isn't — `minVisibleZoom` was the geospatial entry's `sortKey`
+> and is now the trailing field of `waterBodyCells.by_cell`. The `@convex-dev/geospatial@0.2.1`
+> `sortKey` spike recorded below is therefore historical. See
+> [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md).
 
 The concrete implementation plan for **Phase 2** of [`07-roadmap.md`](./07-roadmap.md). Design
 rationale lives in the decisions log (D3, D4, D6, D9, D13, D14, D20, D22–D25, D30, D31, D36,

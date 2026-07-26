@@ -1,4 +1,3 @@
-import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
@@ -9,8 +8,6 @@ const modules = import.meta.glob('./**/*.*s');
 
 function convexTestWithGeo() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 
@@ -79,20 +76,12 @@ describe('adminAreas.importCanonical', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.name).toBe('Burlington City');
 
-    // The re-import must also *replace* the geospatial centroid, not append a second stale point —
-    // a duplicate would silently eat into `findContainingTown`'s read cap. Query the town level over
-    // the box and assert exactly one entry survives, keyed to the surviving row. `adminAreasGeo` is
-    // imported inside `t.run` so its backend-only constructor runs in the convex-test context.
-    const geoHits = await t.run(async (ctx) => {
-      const { adminAreasGeo } = await import('./lib/geospatial');
-      return adminAreasGeo.query(ctx, {
-        shape: { type: 'rectangle', rectangle: { west: 0, east: 1, south: 0, north: 1 } },
-        limit: 128,
-        filter: (q) => q.eq('level', 'town'),
-      });
-    });
-    expect(geoHits.results).toHaveLength(1);
-    expect(geoHits.results[0]?.key).toBe(rows[0]?._id);
+    // The re-import must *reconcile* the boundary's cells, not append a second stale set — stale
+    // rows would send containment lookups chasing a boundary that has moved (N1).
+    const cells = await t.run((ctx) => ctx.db.query('adminAreaCells').collect());
+    expect(new Set(cells.map((c) => c.adminAreaId))).toEqual(new Set([rows[0]?._id]));
+    expect(new Set(cells.map((c) => c.z)).size).toBe(1); // one rung, no leftovers from before
+    expect(cells.length).toBeLessThanOrEqual(4); // theorem 2
   });
 });
 
@@ -131,5 +120,48 @@ describe('adminAreas.resolvePlace', () => {
     const t = convexTestWithGeo();
     const place = await t.query(api.adminAreas.resolvePlace, { point: { lat: 0.5, lng: 0.5 } });
     expect(place).toBeNull();
+  });
+});
+
+describe('adminAreas.resolvePlace — boundaries too big for the old centroid margin (N1)', () => {
+  test('labels a point in a town far wider than 0.4°, which used to silently lose its town', async () => {
+    // The regression this migration exists for. `findContainingTown` used to query town *centroids*
+    // within ±0.2° of the point, on the stated premise that "our towns run well under 0.4° across".
+    // Phase 2.5 loaded the Adirondacks, where towns like Long Lake span more than that — and the
+    // failure was silent: the label just quietly degraded to county+state. Here the point sits deep
+    // in a 2°-wide town, more than the old margin from its centroid.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.adminAreas.importCanonical, {
+      areas: [
+        area('relation/ny', 'New York', 'state', 'NY', [0, 0, 10, 10]),
+        area('relation/hamilton', 'Hamilton County', 'county', 'NY', [0, 0, 4, 4]),
+        area('relation/longlake', 'Long Lake', 'town', 'NY', [0, 0, 2, 2]),
+      ],
+    });
+
+    // Centroid of Long Lake is (1, 1); this point is ~0.9° away in both axes — outside the ±0.2°
+    // rectangle the old lookup would have searched, but squarely inside the town.
+    const place = await t.query(api.adminAreas.resolvePlace, { point: { lat: 0.1, lng: 0.1 } });
+    expect(place).toEqual({ town: 'Long Lake', county: 'Hamilton County', state: 'NY' });
+  });
+
+  test('resolves state and county without scanning every row of their level', async () => {
+    // The other half: county/state containment used to `collect()` an entire level, because a state
+    // centroid can sit degrees from an interior point. That scan grew with every state imported.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.adminAreas.importCanonical, {
+      areas: [
+        area('relation/big', 'Big State', 'state', 'ME', [0, 0, 10, 10]),
+        area('relation/far', 'Far State', 'state', 'MA', [20, 20, 30, 30]),
+        area('relation/farther', 'Farther State', 'state', 'NH', [40, 40, 50, 50]),
+      ],
+    });
+    const place = await t.query(api.adminAreas.resolvePlace, { point: { lat: 9.5, lng: 9.5 } });
+    expect(place).toEqual({ state: 'ME' });
+
+    // Only the containing state has cells anywhere near the point — the others are never read.
+    const cells = await t.run((ctx) => ctx.db.query('adminAreaCells').collect());
+    expect(cells.length).toBeGreaterThan(0);
+    expect(new Set(cells.map((c) => c.adminAreaId)).size).toBe(3);
   });
 });

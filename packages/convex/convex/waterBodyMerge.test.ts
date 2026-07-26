@@ -2,7 +2,6 @@
  * Phase 7 dedup merge (D36) + user-body reject (D37). Verifies the merge re-points every child to the
  * survivor, soft-tombstones the loser, and audits; and that reject flips a pending user body unlisted.
  */
-import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
@@ -13,8 +12,6 @@ const modules = import.meta.glob('./**/*.*s');
 
 function harness() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 

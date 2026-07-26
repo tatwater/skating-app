@@ -43,6 +43,7 @@ export * from './reputation';
 export * from './reputationConfig';
 export * from './riskAck';
 export * from './schedule';
+export * from './spatialCells';
 export * from './strava';
 export * from './track';
 export * from './trackPrivacy';

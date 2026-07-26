@@ -1,4 +1,3 @@
-import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -12,8 +11,6 @@ const HOUR_MS = 3_600_000;
 
 function convexTestWithGeo() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 
@@ -190,6 +187,89 @@ describe('hazardWeather.refreshHazardWeather', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     const h = await t.run((ctx) => ctx.db.get(hazardId));
     expect(h?.decayMultiplier).toBe(1.5); // untouched
+  });
+
+  test('scans stalest-first, so the per-tick cap rotates through the backlog (N1)', async () => {
+    // Greptile PR #27: the sweep used to read `by_status`, whose order never changes — so once the
+    // active set passed ACTIVE_HAZARD_SCAN_CAP, every hourly tick re-read the same prefix and the
+    // hazards behind it kept absent decay and snow-hidden state forever. The cadence gate can't
+    // rescue that: it filters rows that have *already* been read. Ordering by `weatherAdjustedAt`
+    // makes a refresh push its hazard to the back of the queue, so the cap rotates.
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    const now = Date.now();
+    // Inserted freshest-first, so creation order is the exact opposite of the order wanted.
+    const justRefreshed = await seedHazard(t, waterBodyId, authorId, {
+      weatherAdjustedAt: now - HOUR_MS,
+    });
+    const longStale = await seedHazard(t, waterBodyId, authorId, {
+      weatherAdjustedAt: now - 50 * HOUR_MS,
+    });
+    const neverRefreshed = await seedHazard(t, waterBodyId, authorId); // no weatherAdjustedAt
+
+    const { jobs } = await t.query(internal.hazardWeather.listActiveHazardsForWeather, {});
+    expect(jobs.map((j) => j.hazardId)).toEqual([neverRefreshed, longStale, justRefreshed]);
+  });
+
+  test('a hazard the sweep skips is rotated out of the queue, not left at its head (N1)', async () => {
+    // Greptile PR #27 round 5: stalest-first only rotates what actually gets stamped. A hazard the
+    // sweep declines to refresh is never stamped, so on an `undefined`-first index it sorts to the
+    // front FOREVER and holds a slot in the cap against everything behind it — the same starvation
+    // one level in. Hidden pins are excluded by the index now; the two that can only be judged after
+    // reading get stamped so they move to the back.
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const removedBodyId = await seedBody(t, { removedAt: Date.now() });
+    const authorId = await seedProfile(t);
+    const featureId = await t.run((ctx) =>
+      ctx.db.insert('bodyFeatures', {
+        waterBodyId,
+        type: 'spring_current' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point', coordinates: [-72.0, 44.0] },
+        radiusMeters: 20,
+        bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },
+        addedByUserId: authorId,
+        active: true,
+        createdAt: Date.now(),
+      }),
+    );
+    // Three ineligible-but-active hazards, all never refreshed, so all ahead of the real one.
+    const hidden = await seedHazard(t, waterBodyId, authorId, { moderationStatus: 'hidden' });
+    const promoted = await seedHazard(t, waterBodyId, authorId, {
+      promotedToFeatureId: featureId,
+    });
+    const onRemovedBody = await seedHazard(t, removedBodyId, authorId);
+    const real = await seedHazard(t, waterBodyId, authorId);
+
+    const listed = await t.query(internal.hazardWeather.listActiveHazardsForWeather, {});
+    // Hidden never even enters the scan — the index excludes it, so it can't hold a slot.
+    expect(listed.jobs.map((j) => j.hazardId)).toEqual([real]);
+    expect(listed.deferred.sort()).toEqual([promoted, onRemovedBody].sort());
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify(coldSnowyResponse(Date.now())), { status: 200 }),
+      ),
+    );
+    await t.action(internal.hazardWeather.refreshHazardWeather, {});
+
+    // Every row the sweep touched now carries a stamp, so next tick's cap starts past all of them.
+    const stamps = await t.run(async (ctx) => ({
+      promoted: (await ctx.db.get(promoted))?.weatherAdjustedAt,
+      onRemovedBody: (await ctx.db.get(onRemovedBody))?.weatherAdjustedAt,
+      real: (await ctx.db.get(real))?.weatherAdjustedAt,
+      hidden: (await ctx.db.get(hidden))?.weatherAdjustedAt,
+    }));
+    expect(stamps.promoted).toBeGreaterThan(0);
+    expect(stamps.onRemovedBody).toBeGreaterThan(0);
+    expect(stamps.real).toBeGreaterThan(0);
+    expect(stamps.hidden).toBeUndefined(); // never read, so nothing to rotate
+    // A promoted pin gets no invented decay — only its place in the queue moves.
+    const promotedDoc = await t.run((ctx) => ctx.db.get(promoted));
+    expect(promotedDoc?.decayMultiplier).toBeUndefined();
   });
 
   test('skips moderator-hidden and feature-promoted hazards', async () => {

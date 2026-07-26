@@ -3,7 +3,7 @@
  *
  * Shared vocabulary comes from `@skating/core` (single source of truth); backend-only
  * enums come from `./lib/enums`. Point/bbox/GeoJSON fields are defined here, but the
- * spatial *indexes* (`@convex-dev/geospatial`) are layered on later (D5) — see README.
+ * spatial *indexes* are the `*Cells` ladder-grid tables below (D5/N1) — see README.
  *
  * Identity split (D26): **Clerk owns the auth user**; we own a `profiles` row per
  * user holding all domain data (display, prefs, role, status, reputation). The two
@@ -235,12 +235,11 @@ export default defineSchema({
     states: v.optional(v.array(v.string())),
     polygon: geoJson, // Polygon / MultiPolygon (rivers: the reach/segment)
     bbox, // prefilter index
-    centroid: latLng, // geospatial point index (D5)
+    centroid: latLng, // on-water representative point (D48); display + distance, not lookup
     // Outlier flag for the two-tier `listInViewport` (D5): a body whose bbox spans more than the
     // centroid prefilter's margin can have its centroid off-screen while its bbox fills the view,
     // so it's queried by a direct short-list scan instead of the centroid index. Derived from
     // bbox extent at import/create; see `waterBodies.listInViewport`.
-    isLarge: v.optional(v.boolean()),
     // Weather sampling escape hatch (Phase 10 / D56 §5). Weather doesn't vary below Open-Meteo's grid
     // (~2–25 km), so **every body samples at its centroid by default** — town/county is the wrong
     // abstraction. Only the few genuinely multi-cell giants (Champlain ~200 km) need more: an admin sets
@@ -249,7 +248,7 @@ export default defineSchema({
     weatherSamplePoints: v.optional(v.array(latLng)),
     surfaceAreaSqM: v.optional(v.number()),
     // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
-    // `minVisibleZoom` is its integer bucket, ALSO written as the geospatial `sortKey` so
+    // `minVisibleZoom` is its integer bucket, ALSO denormalized onto `waterBodyCells` so
     // `listInViewport` filters `minVisibleZoom <= zoom` in-query. All optional ⇒ migration-free;
     // computed on import/create/setCuratedBoost. `curatedBoost` is admin-set (D49), preserved on
     // re-import like the other curation fields.
@@ -269,8 +268,39 @@ export default defineSchema({
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
     .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
     .index('by_external_id', ['source', 'externalId']) // idempotent canonical upsert (D14/D48)
-    .index('by_is_large', ['isLarge']) // large-body short list for listInViewport tier 2 (D5)
     .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
+
+  // The water-body spatial index (N1) — one row per grid cell a *listed* body's bbox covers, at the
+  // ladder level `indexLevelFor` picks (see `lib/cellIndex` / `@skating/core`'s `spatialCells`).
+  // Replaces `@convex-dev/geospatial`, whose per-row *point* and read-∝-`maxResults` query shape
+  // crashed a wide viewport against Convex's 4,096-read cap. `by_cell`'s trailing `minVisibleZoom`
+  // makes the D49 zoom cutoff a *range* on the index — so a wide zoom reads only the bodies it will
+  // actually draw, in prominence order — rather than a filter applied after the reads are spent.
+  // An unlisted body has no rows at all, which is what makes the listing filter free.
+  waterBodyCells: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    z: v.number(), // ladder level — coarser levels hold bigger / more prominent bodies
+    x: v.number(), // cell column, east from -180°
+    y: v.number(), // cell row, north from -90°
+    minVisibleZoom: v.number(), // denormalized from the body (D49), the in-query zoom cutoff
+  })
+    .index('by_cell', ['z', 'x', 'y', 'minVisibleZoom'])
+    .index('by_body', ['waterBodyId']), // the write-path diff + backfill
+
+  // The admin-boundary spatial index (N1), same shape keyed by boundary `level` instead of zoom.
+  // Retires `findContainingTown`'s ±0.2° centroid rectangle, which was explicitly sized on the
+  // premise that "our towns run well under 0.4° across" — false for the Adirondack towns the
+  // Phase-2.5 corpus added, and its failure was *silent* (the label quietly degraded to
+  // county+state). A bbox covering has no such premise: containment is exact at any size.
+  adminAreaCells: defineTable({
+    adminAreaId: v.id('adminAreas'),
+    z: v.number(),
+    x: v.number(),
+    y: v.number(),
+    level: v.string(), // town | county | state — resolve asks for one level at a time
+  })
+    .index('by_cell', ['z', 'x', 'y', 'level'])
+    .index('by_area', ['adminAreaId']),
 
   // Administrative-boundary polygons for point→place labels (Phase 5). A report's `point` (put-in
   // pin / GPS start) resolves against these to `{ town?, county?, state? }`, stamped onto
@@ -284,11 +314,11 @@ export default defineSchema({
     externalId: v.string(), // OSM relation id (way/123 · relation/456) — idempotent upsert key
     polygon: geoJson, // boundary
     bbox, // cheap point-containment prefilter before the Turf pointInPolygon test
-    centroid: latLng, // geospatial point index (like waterBodies.centroid)
+    centroid: latLng, // representative interior point; kept for display/debug, not for lookup (N1)
     createdAt: v.number(),
   })
-    .index('by_level', ['level'])
     // Idempotent re-import upsert key (OSM re-runs), mirroring waterBodies.by_external_id (D14).
+    // Containment lookups go through `adminAreaCells`, not a level scan — see `findContainingArea`.
     .index('by_external_id', ['externalId']),
 
   // Cached Open-Meteo "weather-since" summaries (Phase 10 / D19 / D56). One row per
@@ -484,13 +514,27 @@ export default defineSchema({
     .index('by_water_body', ['waterBodyId'])
     // D55 auto-bundle: find an author's own unattached hazards on a body to offer into their report.
     .index('by_author_and_water_body', ['createdByUserId', 'waterBodyId'])
-    // Phase 10 decay cron: sweep every active hazard (across bodies) to refresh weather-adjusted decay.
-    .index('by_status', ['status'])
+    // Phase 10 decay cron: sweep active hazards (across bodies) to refresh weather-adjusted decay,
+    // **stalest first**. The trailing `weatherAdjustedAt` is what lets that sweep be capped without
+    // starving anyone: on a plain `by_status` scan the cap always returns the same index prefix, so a
+    // hazard past it would never be refreshed at all, no matter how many ticks ran (N1, Greptile PR
+    // #27). Ascending, `undefined` sorts first — never-refreshed hazards ahead of stale ones — and a
+    // refresh moves that hazard to the back of the queue.
+    //
+    // `moderationStatus` sits in the middle so the sweep's largest exclusion is a *range* rather than
+    // a post-read filter. A hidden hazard is never refreshed, so it never gets stamped, so it sorts to
+    // the front forever — filtering it in JS means it holds a slot in the cap for good and the rows
+    // behind it starve, which is the same bug one level in. Excluded by the index, it costs nothing.
+    .index('by_status_moderation_weather_adjusted', [
+      'status',
+      'moderationStatus',
+      'weatherAdjustedAt',
+    ])
     .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 7b)
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
-  // NOTE: no geospatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
+  // NOTE: no spatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
-  // proximity evaluator runs against that same cached set. A third @convex-dev/geospatial instance
+  // proximity evaluator runs against that same cached set. A third spatial index
   // would re-enter the read-cap fragility that took PRs #10/#11 to fix on `listInViewport`, for no v1
   // benefit. Cross-viewport aggregation belongs to the deferred per-body summary cards.
 

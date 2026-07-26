@@ -293,8 +293,9 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   (thumbnails only) for on-ice-without-service recall (D9).
 - **Done:** feed/map/notifications scope by favorites + quality-weighted drive-time; put-ins + directions
   on the map; filters persist; recent reports readable offline.
-- **Needs:** OpenRouteService key. Notification fan-out uses a per-user polygon scan (fine at alpha
-  scale; reverse spatial index is a documented future seam).
+- **Needs:** OpenRouteService key. Notification fan-out uses a per-user polygon scan — moved off the
+  `reports.create` write path into a scheduled paged job by N1; a reverse spatial index (removing the
+  scan entirely) is still a documented future seam.
 
 ## Phase 5 — Newsfeed page ✅ Complete (dev; prod deferred) (2026-07-17)  *(brought forward ahead of Phase 4 — see doc)*
 > **Detailed build plan:** [`phase-5-newsfeed.md`](./phase-5-newsfeed.md) (decisions settled 2026-07-16).
@@ -709,21 +710,40 @@ with a shared test/verification shape, ordered **highest-impact first** — wher
 skater or the operator feels during the first-ice friends alpha*, not what's most interesting to build.
 Chunks are independent unless noted; sizes are rough.
 
-**N1 — Read-path durability: the crash class.** *(Biggest chunk, and first for a reason: this is the
-map's front door, and the failure mode is a **crash**, not a slowdown.)*
-- Multi-cell / bbox-coverage geospatial indexing for `waterBodies.listInViewport` — index each body
-  under **every** S2 cell its bbox covers, so a wide sparse viewport reads a bounded cell set instead of
-  expanding a covering into Convex's hard 4,096-read cap. Lets the `listed` filter move **back into**
-  the query and retires today's workarounds (`MAX_VIEWPORT_LIMIT = 256`, the JS `listed` re-check).
-  Full root-cause write-up in the sketch below.
-- **Fold in the four unbounded `.collect()` sites** flagged by the Phase-10 review — same lesson, one
-  pass, one discipline: `hazardWeather.listActiveHazardsForWeather`, `bounties.bountyFreshnessInputs` /
-  `recentReports`, `contradictions.findContradictingPriors`. Each needs pagination + a *logged*
-  truncation cap (never silent).
-- Also here because it's the same reasoning: make `bounties.listOpen`'s `OPEN_BOUNTY_SCAN_CAP` (200)
-  log what it dropped, so the graceful-degradation claim is observable rather than assumed.
-- **Needs:** an index-shape decision, a reindex/ETL path, a `listInViewport` rewrite, the two-tier
-  large-body merge, and a fresh read-cap test surface. Its own PR series, not a feature ride-along.
+~~**N1 — Read-path durability: the crash class.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
+[`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) for the design, the
+corrections to what this entry used to say, and the measured results.
+
+Shipped: `@convex-dev/geospatial` is **gone entirely** (both instances, plus `convex.config.ts` —
+the app installs no components now). Water bodies and admin boundaries are indexed into
+`waterBodyCells` / `adminAreaCells`, one row per grid cell an object's **bbox** covers, at a rung no
+finer than the zoom it first draws at — so a viewport read is "scan the cells covering the viewport,
+at every rung up to this zoom", bounded by geometry rather than by a measured constant. That retired
+the ±margin, the `isLarge` outlier list and both of its per-read `.collect()`s, the 256 clamp's role
+as a crash guard, and the JS `listed` re-check (an unlisted body has no cell rows at all).
+
+Four things this entry had wrong, all corrected in the phase doc: the fix **wasn't expressible** in
+the component we were on (it indexes one point per key); the trigger had **already fired** (the 256
+clamp was measured against 9,967 bodies and never revisited after Phase 2.5 loaded ~116k); a **fifth**
+unbounded `.collect()` ran on every viewport read and wasn't listed; and two of the four named
+`.collect()` sites were misfiled (the bounty cap already logged; `findContradictingPriors` doesn't
+exist — it's `contradictionCluster`, which hid a second scan inside an N+1).
+
+Two things came out that weren't scoped: **`adminAreas` had the same bug with a worse symptom** — a
+±0.2° centroid search sized on the premise that "our towns run well under 0.4° across", which the
+Adirondacks falsified silently (9 towns exceed 0.35°, 264 more are marginal), so a report from inside
+one quietly lost its town label; and **`reports.create` was scanning every profile in the app** to
+fan out notifications, an unbounded read on the most important write in the product, now a scheduled
+self-continuing paged job.
+
+Measured on dev after backfilling 116,070 bodies: the off-data pan that used to crash costs **22**
+document reads, the heaviest real viewport **1,771** (under half of Convex's 4,096 cap), and dense
+eastern Maine returns **513** bodies where the old clamp returned 256 — 257 real lakes that had been
+missing from the map. `waterBodies:viewportReadStats` keeps that checkable, and every measured
+viewport is recorded with its exact bbox so the table can be re-run rather than trusted.
+
+*Left for later:* the notification **reverse spatial index** — still N7, since N1 only made the
+profile walk bounded, not unnecessary.
 
 **N2 — Operator surface completion + corpus curation.** *(Second because it's the cheapest way to make
 what alpha skaters see materially better — and because the founder IS the operator, so these are the
@@ -768,8 +788,8 @@ mobile; these were each deferred alone but reviewing them together is far cheape
   before building.
 
 **N6 — Lake-depth backfill: HydroLAKES + GLOBathy.** *(Sharpens the D56 decay model with real data
-instead of a manual flag. Sequenced **after N1** deliberately — both touch the ETL/reindex path, and
-doing them in one order means one reindex, not two.)* A one-time spatial join stamping
+instead of a manual flag. Was sequenced after N1 so the two shared one reindex; **N1 has now shipped
+and its backfill is run**, so this is unblocked and its ETL pass stands alone.)* A one-time spatial join stamping
 `meanDepthM` / `maxDepthM` / `depthSource` onto water bodies, replacing the manual
 `shallow_bay_early_thaw` `bodyFeature` stand-in for most bodies; plus an ETL update to carry OSM depth
 tags where they exist (rare) and fall back to the GLOBathy match on future imports. State-agency
@@ -780,8 +800,11 @@ bathymetry (NH F&G, VT DEC) can refine specific lakes later. Own data PR — no 
 scalable by the time delivery lands.)*
 - **Per-user local-time / true-sunset digest timing** (today: a fixed 8pm ET, fine for a
   single-timezone pilot).
-- **Reverse spatial index for notification fan-out** — replace the per-user polygon scan (fine at alpha
-  scale; a documented seam since Phase 4).
+- **Reverse spatial index for notification fan-out** — replace the per-user polygon scan (a documented
+  seam since Phase 4). **N1 changed its urgency, not its value:** the scan no longer sits inside
+  `reports.create` (it's a scheduled, self-continuing paged job), so this is now a cost optimization
+  rather than a latent write-path crash. Still the right end state — every new report walks every
+  profile, which is work proportional to users × reports.
 
 **N8 — The unbundled remainder.** *(Genuinely independent, genuinely low-urgency — do these
 opportunistically or when a trigger fires, not as a planned phase.)*
@@ -857,9 +880,11 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   **Deliberately not in Phase 9** (decided at kickoff): it is a map-browse feature, not a hazard feature,
   and doing it properly would roughly double Phase 9's backend surface.
   - **Why it's its own piece of work:** it needs *cross-viewport* aggregation over both reports and
-    hazards, which is exactly the read-cap-fragile geospatial path Phase 9 avoids by scoping hazards to
-    the selected body (see PR #10/#11 on `listInViewport`). Computing it per read at viewport scale
-    would reproduce that bug class.
+    hazards. When this was written that meant the read-cap-fragile geospatial path Phase 9 avoided by
+    scoping hazards to the selected body (PR #10/#11). **N1 changed the calculus**: a viewport read is
+    now bounded, so the objection is no longer "this reproduces a crash" but the plain cost of
+    aggregating per read at viewport scale — which the denormalized-on-write shape below still answers
+    better. The per-body scoping decision stands on its own merits.
   - **Likely shape:** a denormalized per-body summary maintained **on write** — the Phase 4
     contribution-counter pattern (`lib/contributionCounts.ts`) generalized. Something like
     `waterBodies.summary { recentReportCount, consensusQuality, topHazardTypes[], updatedAt }`, bumped by
@@ -871,28 +896,20 @@ The long-form write-ups the entries above point at — preserved verbatim, since
     `minVisibleZoom`/`displayScore` (D49) so cards don't fight the existing prominence scoring.
   - **Do this when** there's enough report density that a lake summary is non-empty for most bodies in a
     viewport — before that it's mostly blank cards.
-- **Harden `waterBodies.listInViewport` against the read-cap crash — multi-cell / bbox-coverage geospatial
-  indexing (surfaced 2026-07-22, Phase 6).** The current two-tier centroid query (PR #10/#11) is *safe at
-  today's scale* but structurally fragile: the `@convex-dev/geospatial` component reads roughly **∝
-  `maxResults`** (S2 read-ahead over the rectangle's cell covering), **not** ∝ results returned, so a wide,
-  sparse viewport exhausts a large covering and hits Convex's hard **4,096-reads/query cap** — a *crash*,
-  not slow paging. Today's mitigations are workarounds, not fixes: `maxResults` clamped to 256
-  (`MAX_VIEWPORT_LIMIT`, ~20% under the measured ~320 crash edge on the ~10k-body VT corpus), and the
-  `listed` filter is **kept out of the geospatial query** (its filter-stream intersection ~halves the safe
-  ceiling) and re-checked in JS instead — cheap only because Phase 1 has ~no unlisted bodies.
-  - **Why it's its own piece of work:** the real fix is the deferred **fully-general** approach noted in
-    [`phase-1-water-bodies.md`](./phase-1-water-bodies.md) (PR#4 root-cause, ~line 211) and flagged again as
-    a scale risk in [`phase-2.5-regional-expansion.md`](./phase-2.5-regional-expansion.md) (~line 255):
-    **index each body under every S2 cell its bbox covers** (not just its centroid point), so a wide query
-    reads a bounded set of cells rather than expanding a covering until it blows the cap — and lets the
-    `listed` filter move back into the query. It's a sizable geospatial rework (index shape, reindex/ETL
-    path, `listInViewport` rewrite, the two-tier large-body merge, and a fresh read-cap test surface), so it
-    belongs in its own PR, not bundled into a feature phase.
-  - **Do this when** the corpus grows enough (Phase 2.5+ multi-state expansion) that the 256 clamp visibly
-    drops bodies at normal zoom, or many unlisted/removed bodies make the JS `listed` re-check lossy behind
-    the cap — whichever bites first. Until then the two-tier + D49 zoom-score mitigation holds. *(Context:
-    revisited during Phase 6 Step 4 while scoping bounty browse, which deliberately sidesteps this path by
-    serving off the `bounties.by_status_expires` index instead of a geospatial viewport query.)*
+- ~~**Harden `waterBodies.listInViewport` against the read-cap crash — multi-cell / bbox-coverage
+  geospatial indexing**~~ **✅ SHIPPED as N1 (2026-07-26).** Kept as a pointer because the *root cause*
+  is worth remembering: `@convex-dev/geospatial` reads roughly **∝ `maxResults`** (S2 read-ahead over
+  the query rectangle's covering), **not** ∝ results returned, so a wide sparse viewport exhausted a
+  covering and hit Convex's hard **4,096-reads/query** cap — a crash, not slow paging. Every mitigation
+  around it (`MAX_VIEWPORT_LIMIT = 256`, keeping the `listed` filter out of the query, the `isLarge`
+  outlier scan) was a workaround for that one property.
+  - The fix this entry proposed — "index each body under every S2 cell its bbox covers" — turned out
+    **not to be expressible in that component at all**: its write API is one point per unique key. So
+    N1 replaced it with a plain-table ladder grid, where reads cost only the rows returned. See
+    [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md).
+  - Its "do this when" trigger — *the 256 clamp visibly drops bodies at normal zoom* — had **already
+    fired and gone unnoticed**: dense eastern Maine holds 513 bodies at z12. That's the lesson worth
+    carrying forward more than the mechanism.
 - ~~**Clip hazard footprints to the water-body boundary**~~ **✅ SHIPPED in Phase 9.5 (2026-07-22)** —
   this entry was stale (caught 2026-07-24). `core/hazardGeometry.clipFootprintToBody` precomputes the
   clipped polygon at create time and `hazardLayer` render, bbox and `distanceToHazard` all read the

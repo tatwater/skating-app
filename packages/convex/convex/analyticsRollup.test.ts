@@ -11,7 +11,6 @@
  *    time-to-fulfillment histogram, not guessed at.
  *  - **honest windows** — a photo uploaded minutes ago is mid-submission, not an orphan.
  */
-import geospatial from '@convex-dev/geospatial/test';
 import { HOUR_BUCKETS, metricDay } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
@@ -25,8 +24,6 @@ const DAY = 24 * HOUR;
 
 function harness() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 

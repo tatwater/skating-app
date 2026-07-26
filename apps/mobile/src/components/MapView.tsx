@@ -231,7 +231,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
   // Hazards + known features for the focused lake (Phase 9, D54 Layer 0). Scoped to the open body,
   // not the viewport — hazards are only ever queried per body, which is what keeps this off the
-  // read-cap-fragile path `listInViewport` needed two PRs to fix. A subscribed client gets new
+  // path `listInViewport` needed two PRs to fix before N1 bounded it. A subscribed client gets new
   // hazards live; that reactive query *is* the sync layer.
   const hazards = useQuery(
     api.hazards.listForBody,

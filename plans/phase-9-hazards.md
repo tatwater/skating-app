@@ -30,7 +30,8 @@
 > "Layer 2" body-reference cache (`apps/mobile/src/lib/offlineBody.ts` pure resolver +
 > `bodyCache.ts` sqlite glue) is factored as a reusable module *explicitly for Phase 9 hazard capture*,
 > and `bodyCache.ts` is already "designed to gain a tile-pack column later." `adminAreas`
-> (place labels, Phase 5) and the `@convex-dev/geospatial` machinery (Phase 1/5) are live. The
+> (place labels, Phase 5) and the spatial-index machinery (Phase 1/5 — then `@convex-dev/geospatial`,
+> since N1 the ladder-grid cell tables) are live. The
 > **Layer 3 offline basemap tile-pack** was the one genuinely-unbuilt piece — a native spike — and it
 > was **timeboxed and dropped from this phase** (findings below); the online-first degrade mirrors F2
 > report capture, and on-ice capture never depended on the basemap in the first place.
@@ -115,7 +116,9 @@ into the skater's later report**.
   `waterBodyId + active`. **No geospatial instance for hazards (call 6)** — the originally-planned
   bbox-center geospatial index is dropped, because hazards are only ever queried *per body* (the map
   renders them for the selected/focused lake, the mobile cache stores them per cached body, and the
-  proximity evaluator runs against that same cached set). A third `@convex-dev/geospatial` instance
+  proximity evaluator runs against that same cached set). *(N1 removed the read-cap fragility this
+  reasoned from, but the call stands on its own: hazards are only ever asked for per body.)* A third
+  `@convex-dev/geospatial` instance
   would re-enter the read-cap fragility that took two PRs to fix on `listInViewport` (#10/#11) for no
   v1 benefit. Cross-viewport aggregation lives with the deferred **summary cards** roadmap entry.
 - **Moderation plumbing:** `FLAG_TARGET_TYPES += 'hazard'`, `MODERATION_TARGET_TYPES += 'hazard'`, and

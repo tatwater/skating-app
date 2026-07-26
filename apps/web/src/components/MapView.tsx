@@ -161,7 +161,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
   // Hazards + known features for the focused lake (Phase 9). Deliberately scoped to the open body,
   // not the viewport: hazards are only ever queried per body, which is what keeps this off the
-  // read-cap-fragile path `listInViewport` had to be fixed for twice (PRs #10/#11).
+  // path `listInViewport` had to be fixed for twice (PRs #10/#11) before N1 made it bounded.
   const hazards = useQuery(
     api.hazards.listForBody,
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
@@ -171,7 +171,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   );
   // The aggregate tracks layer (D58) — where people actually skated on the open lake. Scoped per
-  // body like hazards, deliberately NOT a viewport scan: that's the read-cap-fragile path.
+  // body like hazards, deliberately NOT a viewport scan — per-body is the Phase 9 design call.
   const aggregateTracks = useQuery(
     api.gpsActivities.listTracksForBody,
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
@@ -179,8 +179,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
 
   // Open bounties across the viewport (D10/D17 browse). Unlike hazards, this is safe to query per
   // viewport: the open-bounty set is small + bounded, so `bounties.listOpen` scans a plain index and
-  // filters to the rect in JS — it never touches the read-cap-fragile geospatial path (see the
-  // roadmap → Later/deferred `listInViewport` note). A pin per bounty; tap opens `/bounty/$id`.
+  // filters to the rect in JS — it never needed the spatial index at all. A pin per bounty; tap
+  // opens `/bounty/$id`.
   const openBounties = useQuery(
     api.bounties.listOpen,
     queryArgs ? { viewport: queryArgs.viewport } : 'skip',

@@ -120,8 +120,8 @@ export async function resolveTrackToBodies(
 /**
  * Bodies worth testing a set of sampled track points against.
  *
- * Delegates each sample to `waterBodies.listedBodiesNearCoord` — the shared two-tier lookup that is
- * already proven read-cap-safe for a single point (small centroid rectangle + the `isLarge` index).
+ * Delegates each sample to `waterBodies.listedBodiesNearCoord` — the shared containment lookup, which
+ * is one cell per ladder rung around the point and so bounded regardless of body size (N1).
  * Sampling caps how many of those lookups run, so the read cost is bounded by `SPAN_SAMPLE_POINTS`
  * rather than by track length; and consecutive samples on one lake are deduped to a coarse grid cell
  * so a 3,000-point path on one pond costs one lookup, not twenty-four.
@@ -381,7 +381,7 @@ export interface AggregateTrackView {
  * report is meant to be shared, the path is already on it, and a contributor-count gate would render
  * an empty map for the entire alpha while protecting nothing that publishing hadn't already decided.
  *
- * Scoped **per body**, like Phase 9 hazards — never a cross-viewport geospatial scan, which is the
+ * Scoped **per body**, like Phase 9 hazards — never a cross-viewport spatial scan, which is the
  * read-cap-fragile path `listInViewport` has already had to be fixed for twice.
  */
 export const listTracksForBody = query({

@@ -16,10 +16,11 @@ import process from 'node:process';
 import { isKnownStateCode, KNOWN_STATE_CODES } from '@skating/core';
 
 /**
- * Batches bounded like the water ETL: Convex caps a mutation at 4096 document reads, and each row's
- * geospatial `.insert()` reads several S2-cell docs (a cost that grows with the index size), so cap
- * by count; `convex run` also takes args only as an inline JSON string (ARG_MAX), so cap by bytes —
- * a state/county boundary can be large (~hundreds of KB simplified), so the byte budget matters here.
+ * Batches bounded like the water ETL: Convex caps a mutation at 4096 document reads, so cap by
+ * count (since N1 a row costs one `by_area` lookup plus ≤ 4 cell writes — flat, not growing with
+ * the index — so this cap has plenty of headroom); `convex run` also takes args only as an inline
+ * JSON string (ARG_MAX), so cap by bytes — a state/county boundary can be large (~hundreds of KB
+ * simplified), so the byte budget is what actually binds here.
  */
 const MAX_BATCH_COUNT = 150;
 const MAX_BATCH_BYTES = 512 * 1024;

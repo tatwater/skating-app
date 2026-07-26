@@ -7,7 +7,6 @@
  *  - **The series never lies by omission.** A day with no rows is a real, rendered zero: gap-filling in
  *    the query is what stops a flat week from collapsing into a dense-looking one on the axis.
  */
-import geospatial from '@convex-dev/geospatial/test';
 import { metricDay } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
@@ -20,8 +19,6 @@ const DAY = 24 * 60 * 60 * 1000;
 
 function harness() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 

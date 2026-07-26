@@ -1,4 +1,3 @@
-import geospatial from '@convex-dev/geospatial/test';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
@@ -7,11 +6,9 @@ import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
 
-/** `reports.create` resolves a place label through the adminAreas geospatial index. */
+/** `reports.create` resolves a place label through the adminAreas cell index. */
 function harness() {
   const t = convexTest(schema, modules);
-  geospatial.register(t);
-  geospatial.register(t, 'adminAreasGeo');
   return t;
 }
 
