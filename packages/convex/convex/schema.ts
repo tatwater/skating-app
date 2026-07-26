@@ -520,7 +520,16 @@ export default defineSchema({
     // hazard past it would never be refreshed at all, no matter how many ticks ran (N1, Greptile PR
     // #27). Ascending, `undefined` sorts first — never-refreshed hazards ahead of stale ones — and a
     // refresh moves that hazard to the back of the queue.
-    .index('by_status_weather_adjusted', ['status', 'weatherAdjustedAt'])
+    //
+    // `moderationStatus` sits in the middle so the sweep's largest exclusion is a *range* rather than
+    // a post-read filter. A hidden hazard is never refreshed, so it never gets stamped, so it sorts to
+    // the front forever — filtering it in JS means it holds a slot in the cap for good and the rows
+    // behind it starve, which is the same bug one level in. Excluded by the index, it costs nothing.
+    .index('by_status_moderation_weather_adjusted', [
+      'status',
+      'moderationStatus',
+      'weatherAdjustedAt',
+    ])
     .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 7b)
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
   // NOTE: no spatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —

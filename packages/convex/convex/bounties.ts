@@ -142,13 +142,19 @@ interface EvaluatedReport {
  * a reopen), and capping on *suppressors* rather than raw recency stops a strong OLDER read from being
  * crowded out of the cap by fresher-but-expired reads (the newest-N-of-all bug).
  *
- * **`saturated` is how the scan cap stops being able to give a wrong answer.** Newest-first is only a
+ * **`truncated` is how the scan cap stops being able to give a wrong answer.** Newest-first is only a
  * *heuristic* for "most likely to suppress": a report's window stretches with author trust and thumbs
  * (up to 3× base) and shrinks to as little as zero, so a trusted read from four days ago can outlast
- * 200 newer throwaway ones. If the cap truncated and nothing in the scanned set suppressed, the honest
- * answer is "we don't know" — and the caller resolves that by blocking rather than allowing (Greptile
- * PR #27). Raising the cap wouldn't fix this; only reading every report in the window would, and the
- * per-report author + thumbs reads make that the unbounded scan this phase exists to retire.
+ * 200 newer throwaway ones. Once the cap has bitten, "nothing here suppresses" is a statement about
+ * the prefix we read, not about the body — so the caller blocks instead of allowing (Greptile PR #27).
+ * Raising the cap wouldn't fix it; only reading every report in the window would, and the per-report
+ * author + thumbs reads make that the unbounded scan this phase exists to retire.
+ *
+ * The first cut of this rule tried to be clever — block only when the scan truncated *and* found no
+ * suppressor at all — and left a hole exactly where the logic gets interesting: a truncated scan whose
+ * suppressors were all weather-reopened has no blocker either, and weather says nothing about the
+ * reports past the cap. So the flag is now the raw truncation, and the decision is made *after* the
+ * reopen set is applied. **A truncated scan cannot clear a body, however the scanned rows resolve.**
  *
  * Blocking is also the right *product* answer, not just the safe one. A body with 200+ visible reports
  * inside six days demonstrably has fresh eyes on it, which is the exact thing a bounty asks for.
@@ -160,8 +166,8 @@ async function evaluateFreshness(
 ): Promise<{
   suppressors: EvaluatedReport[];
   newest: EvaluatedReport | null;
-  /** Truncated scan **and** nothing found to suppress — the verdict is unknown, so don't trust it. */
-  saturated: boolean;
+  /** The scan cap bit, so reports in the window went unexamined — no verdict from this is conclusive. */
+  truncated: boolean;
 }> {
   const maxWindowMs = FRESH_REPORT_HOURS * BOUNTY_FRESH_MAX_MULTIPLIER * HOUR_MS;
   // Already newest-first — `recentReports` scans the index descending, which is also what makes its
@@ -192,13 +198,12 @@ async function evaluateFreshness(
     }
     suppressors.push(evaluated);
   }
-  const saturated = truncated && suppressors.length === 0;
-  if (saturated) {
+  if (truncated) {
     console.warn(
-      `bounties.evaluateFreshness(${body._id}): scanned the ${RECENT_REPORT_SCAN_CAP}-report cap without finding a suppressor, so an older long-window report may be unweighed — blocking rather than guessing (D5/N1).`,
+      `bounties.evaluateFreshness(${body._id}): hit the ${RECENT_REPORT_SCAN_CAP}-report scan cap, so an older long-window report may be unweighed — blocking rather than guessing (D5/N1).`,
     );
   }
-  return { suppressors, newest, saturated };
+  return { suppressors, newest, truncated };
 }
 
 /**
@@ -302,11 +307,11 @@ export const bountyFreshnessInputs = internalQuery({
     // Open-Meteo fetches + cache writes first (§7c resource guard).
     if (!(await underOpenBountyCap(ctx, profile._id, now))) return { status: 'capped' as const };
     const point = nearestSamplePoint(body, body.centroid);
-    const { suppressors, saturated } = await evaluateFreshness(ctx, body, now);
-    // A saturated scan is going to be blocked by `createChecked` no matter what the weather says, so
+    const { suppressors, truncated } = await evaluateFreshness(ctx, body, now);
+    // A truncated scan is going to be blocked by `createChecked` no matter what the weather says, so
     // don't spend Open-Meteo calls establishing it. Same resource-guard reasoning as the cap check
     // above: the transactional authority still re-decides, this just stops the pointless fetch.
-    if (saturated) return { status: 'suppressed' as const };
+    if (truncated) return { status: 'suppressed' as const };
     return {
       status: 'ok' as const,
       lat: point.lat,
@@ -448,15 +453,19 @@ export const createChecked = internalMutation({
     // edited later after the weather verdict was computed, its window is now shorter and may no longer
     // justify the reopen, so the stale exemption is dropped and the (now-fresher) report suppresses again.
     const reopened = new Set(weatherReopenedReports.map((r) => `${r.reportId}:${r.skateEndTime}`));
-    const { suppressors, newest, saturated } = await evaluateFreshness(ctx, body, now);
+    const { suppressors, newest, truncated } = await evaluateFreshness(ctx, body, now);
     const blocking = suppressors.find((c) => !reopened.has(`${c.reportId}:${c.skateEndTime}`));
-    // `saturated` means the scan hit its cap without finding a suppressor, so "nothing suppresses"
-    // is unproven rather than established — an older high-trust report (up to a 3× window) could sit
-    // just past the cap. Block on the unknown: the failure it prevents (a bounty on ice that already
-    // has fresh eyes) is a wrong answer, and a body carrying 200+ visible reports in six days is one
-    // nobody needs to be asked to go look at (Greptile PR #27). Weather can't clear this the way it
-    // clears a known suppressor — there is no identified report for it to reopen.
-    if (blocking || saturated) {
+    // `truncated` means reports in the window went unexamined, so "nothing suppresses" is unproven
+    // rather than established — an older high-trust report (up to a 3× window) could sit just past
+    // the cap. Block on the unknown: the failure it prevents (a bounty on ice that already has fresh
+    // eyes) is a wrong answer, and a body carrying 200+ visible reports in six days is one nobody
+    // needs to be asked to go look at (Greptile PR #27).
+    //
+    // Tested *here*, after the reopen set is applied, and not as "truncated with no suppressors"
+    // back in `evaluateFreshness`: a truncated scan whose every suppressor was weather-reopened has
+    // no blocker either, and a freeze clearing the reports we *did* read says nothing about the ones
+    // we didn't. Whatever the scanned rows resolve to, a truncated scan can't clear the body.
+    if (blocking || truncated) {
       await logGateEvent(ctx, {
         waterBodyId: body._id,
         requesterId: profile._id,
@@ -523,7 +532,7 @@ async function fanOutEligibility(
 ): Promise<void> {
   // Newest-first, so a truncation here notifies the 200 most recent reporters rather than the 200
   // longest-ago ones — a defensible product answer on its own terms, unlike the freshness gate, where
-  // truncation had to be turned into a block (see `evaluateFreshness`'s `saturated`).
+  // truncation had to be turned into a block (see `evaluateFreshness`'s `truncated`).
   const { reports: recent } = await recentReports(
     ctx,
     args.waterBodyId,

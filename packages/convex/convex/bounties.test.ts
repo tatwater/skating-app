@@ -429,19 +429,69 @@ describe('bountyGateEvents', () => {
     expect(event).toMatchObject({ decision: 'allowed', weatherReopened: true });
   });
 
-  test('the recent-report scan cap drops the OLDEST reports, so a fresh suppressor still blocks (N1)', async () => {
-    // Greptile PR #27: `recentReports` reads an index that runs ascending on `skateEndTime`, so a
-    // `take(200)` on it kept the 200 *oldest* reports in the 144h window and threw away the newest —
-    // the exact rows both callers need. On a body with more recent reports than the cap, someone
-    // could open a bounty on ice that had been skated an hour ago.
+  test('the freshness scan reads newest-first, so the gate weighs the freshest report (N1)', async () => {
+    // Greptile PR #27: the index runs *ascending* on `skateEndTime`, so the scan needed `.order('desc')`
+    // — without it the gate weighed the oldest rows in the window and the fan-out notified whoever
+    // reported longest ago. Observable here with no truncation at all: `decidingReport` falls back to
+    // the freshest report on the body when nothing suppresses, so an ascending scan would log the
+    // 5-day-old one instead. (The truncated case can't isolate this any more — a truncated scan blocks
+    // whatever it read; see the two tests below.)
     const t = harness();
     const requester = await seedUser(t, 'requester');
     const reporter = await seedUser(t, 'reporter');
     const waterBodyId = await seedBody(t);
     const now = Date.now();
 
-    // 200 reports (= RECENT_REPORT_SCAN_CAP) inside the 144h query window but far past even the
-    // widest freshness window, so none of them suppresses on its own.
+    const insert = (skateEndTime: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('reports', {
+          authorId: reporter.id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime,
+          reportTime: now,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          moderationStatus: 'visible' as const,
+          photoIds: [],
+          hazardIdsCreated: [],
+          createdAt: now,
+          updatedAt: now,
+        }),
+      ) as Promise<Id<'reports'>>;
+
+    // All inside the 144h scan window, all past their own 24h (new-account) freshness window, so
+    // nothing suppresses and the bounty is allowed either way — what differs is which one is logged.
+    const oldest = await insert(now - 140 * HOUR);
+    await insert(now - 90 * HOUR);
+    const freshest = await insert(now - 30 * HOUR);
+
+    const outcome = await requester.as.mutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReports: [],
+    });
+    expect(outcome.ok).toBe(true);
+    const event = (await gateEvents(t))[0];
+    expect(event?.decidingReportId).toBe(freshest);
+    expect(event?.decidingReportId).not.toBe(oldest);
+  });
+
+  test('a truncated scan blocks even when every suppressor it found was weather-reopened (N1)', async () => {
+    // Greptile PR #27 round 5: the first saturation rule was "truncated AND no suppressors", which
+    // left the hole exactly where the logic gets interesting. A truncated scan whose suppressors were
+    // all weather-reopened has no blocker either — and a freeze clearing the reports we *did* read
+    // says nothing about the ones past the cap. So the block is decided after the reopen set is
+    // applied: whatever the scanned rows resolve to, a truncated scan can't clear the body.
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+    const skateEndTime = now - 1 * HOUR;
+
+    // 200 expired reports + one fresh suppressor = 201 rows, so the scan truncates.
+    let suppressorId: Id<'reports'> | undefined;
     await t.run(async (ctx) => {
       for (let i = 0; i < 200; i++) {
         await ctx.db.insert('reports', {
@@ -460,12 +510,11 @@ describe('bountyGateEvents', () => {
           updatedAt: now,
         });
       }
-      // The one that matters: skated an hour ago, and last in ascending index order.
-      await ctx.db.insert('reports', {
+      suppressorId = await ctx.db.insert('reports', {
         authorId: reporter.id,
         waterBodyId,
         point: { lat: 0.5, lng: 0.5 },
-        skateEndTime: now - 1 * HOUR,
+        skateEndTime,
         reportTime: now,
         source: 'native' as const,
         iceTypes: [],
@@ -478,13 +527,13 @@ describe('bountyGateEvents', () => {
       });
     });
 
+    // The action clears the ONLY suppressor it found. On a complete scan that would allow the bounty
+    // (the test above this proves the reopen path works); on a truncated one it must not.
     const outcome = await requester.as.mutation(internal.bounties.createChecked, {
       waterBodyId,
-      weatherReopenedReports: [],
+      weatherReopenedReports: [{ reportId: suppressorId as Id<'reports'>, skateEndTime }],
     });
     expect(outcome).toMatchObject({ ok: false, decision: 'suppressed' });
-    // Seeding 201 reports and weighing each one runs past vitest's 5 s default on CI (memory: heavy
-    // convex-test suites need explicit headroom); inherently heavy, not flaky.
   }, 30_000);
 
   test('a saturated freshness scan blocks rather than guessing (N1)', async () => {

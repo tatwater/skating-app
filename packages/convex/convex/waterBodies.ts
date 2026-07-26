@@ -930,9 +930,14 @@ async function bodiesCoveringBox(
       // `take + 1`, so "this cell had more" is a fact rather than a guess: stopping at exactly
       // `take` can't distinguish a cell that holds precisely that many from one that holds
       // thousands, and reporting the first as a truncation is how a D5 warning becomes noise
-      // (Greptile PR #27 — the same boundary `takeCapped` gets wrong). The probe row is kept when
-      // it exists and charged to the budget like any other, so it costs at most one row per cell.
-      .take(take + 1);
+      // (Greptile PR #27 — the same boundary `takeCapped` gets wrong).
+      //
+      // Clamped to `rowBudget` so the probe is *inside* the budget rather than beside it: every row
+      // returned is charged below, and the clamp is what keeps `CELL_ROW_SCAN_BUDGET` an exact
+      // ceiling instead of one-per-cell more than it says. Nothing is lost by it — the only cell it
+      // binds is one already spending the last of the budget, and that sets `truncated` on the next
+      // iteration anyway.
+      .take(Math.min(take + 1, rowBudget));
     rowBudget -= rows.length;
     // Rows past this cell's share are the least prominent in it, so they can't change the top of
     // the ranking — but the answer is a partial one, and that has to be said (D5).

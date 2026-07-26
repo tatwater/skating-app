@@ -218,7 +218,7 @@ same kind of unchecked claim this whole phase exists to retire. Re-run any line 
 | Eastern Maine lakes | 44.6, −69.8 → 45.3, −68.4 | 11 | **314** | 74 | 768 | **1,156** | *would have been clamped to 256* |
 | Adirondacks | 43.5, −74.8 → 44.0, −74.0 | 11 | **404** | 43 | 989 | **1,436** | |
 | Eastern Maine, deep | 44.6, −69.8 → 45.3, −68.4 | 12 | **513** | 227 | 1,031 | **1,771** | |
-| Wider Adirondacks | 43.2, −75.2 → 44.3, −73.8 | 11 | 958 | 74 | 1,501 | **2,533** | row budget hit, logged |
+| Wider Adirondacks | 43.2, −75.2 → 44.3, −73.8 | 11 | 957 | 74 | 1,500 | **2,531** | row budget hit, logged |
 | 1°-wide box claiming z14 | 44.0, −73.0 → 45.0, −72.0 | 14 | 1,000 | 233 | 1,408 | **2,641** | incoherent input, bounded anyway |
 
 **What this establishes.**
@@ -246,7 +246,7 @@ the Adirondacks now returns `{ town: "Town of Long Lake", county: "Hamilton Coun
 **Still worth knowing.** The wider-Adirondacks case reads 62% of the cap before its budgets stop it.
 That's the design working — the budgets are hard limits, so it cannot crash — but it's the number to
 watch if the render budget is ever raised past 1,000. Note *which* budget stops it: the **row**
-budget, at 958 of the ~1,000 bodies it could draw. Raising `CELL_ROW_SCAN_BUDGET` is the lever, and
+budget, at 957 of the ~1,000 bodies it could draw. Raising `CELL_ROW_SCAN_BUDGET` is the lever, and
 it has a ceiling — reads are bounded by `CELL_SCAN_BUDGET + 2 × CELL_ROW_SCAN_BUDGET` (a row can
 cost a hydrating `get`), so 1,500 already sits close to the largest value that keeps the worst case
 under 4,096. Past that the render budget has to come down instead.
@@ -312,8 +312,8 @@ denormalized onto the row, so ranking costs no document read), then sort by prom
 in that order. The answer is the top-`limit` bodies by `minVisibleZoom` wherever they sit in the box.
 
 The cost of not stopping the scan early is visible in the table: the wider-Adirondacks case now
-reads to the row budget rather than to the render budget, and returns 958 bodies instead of 1,000.
-That is the right side of the trade — 958 correctly-chosen bodies beat 1,000 chosen by scan order —
+reads to the row budget rather than to the render budget, and returns 957 bodies instead of 1,000.
+That is the right side of the trade — 957 correctly-chosen bodies beat 1,000 chosen by scan order —
 but it is a real change, and it's why the note above cares which budget binds.
 
 **And sorting alone wasn't enough** (review round 3, same finding pushed one level down). Ranking
@@ -347,3 +347,34 @@ read and none of them suppressing, would have had a perfectly valid bounty rejec
 distinction, at 13 call sites and every cell of a viewport scan. The lesson is narrower than the
 others and worth keeping anyway: **a flag that only logs can be sloppy at the boundary; the moment it
 decides something, it can't.**
+
+### Round 5: the guards needed guarding
+
+Three more, each one a hole in a fix from an earlier round rather than in the original design. Worth
+recording as a pattern in its own right — **a guard that only covers the simple case tends to leave
+the interesting one open**, and the interesting one is where the bug lives.
+
+**A truncated scan can't be cleared by weather either.** Round 3 blocked a bounty when the freshness
+scan truncated *and* found no suppressor. But a truncated scan whose suppressors were all
+weather-reopened has no blocker either — and a freeze clearing the reports we *did* read says nothing
+about the ones past the cap. The flag is now the raw truncation, and the decision moved to after the
+reopen set is applied. The rule states more simply than the thing it replaced: **a truncated scan
+cannot clear a body, however the scanned rows resolve.**
+
+**Anything the hazard sweep skips has to rotate too.** Stalest-first only rotates what actually gets
+*stamped*. A hazard the sweep declines to refresh is never stamped, so on an `undefined`-first index
+it sorts to the front forever and holds a slot in the cap against everything behind it — the round-2
+starvation bug, one level in. Moderator-hidden pins (the numerous case) are now excluded by the index
+via a `moderationStatus` column, so they never cost a slot at all. The two that can only be judged
+after reading — a feature-promoted pin (D53), a hazard whose body was removed — are stamped by
+`deferHazardWeather`, which moves only `weatherAdjustedAt` and invents no decay for a pin that
+doesn't render. The stamp is honest: the field records when the sweep last *considered* a hazard, and
+"this one needs no weather" is a considered answer.
+
+**The probe row belongs inside the budget, not beside it.** The `cap + 1` probe was already charged
+to `rowBudget`, so the overshoot was one row for the whole query rather than one per cell — but a
+ceiling that reads 1,501 is not a 1,500-row ceiling. Clamping the probe to the remaining budget makes
+`CELL_ROW_SCAN_BUDGET` exact, and costs nothing: the only cell it binds is one already spending the
+last of the budget, which sets `truncated` on the next iteration anyway. The derived worst case is
+now `CELL_SCAN_BUDGET + 2 × CELL_ROW_SCAN_BUDGET` = 512 + 3,000 = **3,512** reads against the 4,096
+cap, with the heaviest measured viewport at 1,771 and the heaviest bounded one at 2,531.

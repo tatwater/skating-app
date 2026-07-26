@@ -53,41 +53,59 @@ interface HazardWeatherJob {
 
 /**
  * The active, user-visible hazards the decay cron should refresh next — **stalest first** — each
- * resolved to its nearest sample point. Skips moderator-hidden and feature-promoted pins (they don't
- * render, so weather is wasted on them). Alpha-scale scan (tens–hundreds of active hazards); the
- * index keeps it off archived rows.
+ * resolved to its nearest sample point. Alpha-scale scan (tens–hundreds of active hazards); the
+ * index keeps it off archived and moderator-hidden rows.
  *
- * The scan order *is* the backlog rotation. `by_status_weather_adjusted` is ascending on
+ * The scan order *is* the backlog rotation. `by_status_moderation_weather_adjusted` is ascending on
  * `weatherAdjustedAt` with `undefined` first, so a tick reads the never-refreshed hazards, then the
  * longest-stale ones; refreshing a hazard stamps `weatherAdjustedAt = now` and sends it to the back.
  * On the plain `by_status` scan this used to run, the cap returned the *same* prefix every hour — a
  * hazard sitting past row 1,000 would have kept absent decay and snow-hidden state forever, and the
  * cadence gate downstream couldn't help, because it filters what was already read (Greptile PR #27).
+ *
+ * **Anything skipped has to rotate too, or it's the same bug one level in** (Greptile PR #27, round
+ * 5). A hazard the sweep declines to refresh is never stamped, so it sorts to the front of a
+ * `undefined`-first index *forever* and holds its slot in the cap against everything behind it.
+ * Moderator-hidden rows — the numerous case — are excluded by the index and cost nothing. The two
+ * that can only be judged after reading (a feature-promoted pin, D53; a hazard whose body was
+ * removed) come back as `deferred`, and the action stamps them so they move to the back. That stamp
+ * is honest: `weatherAdjustedAt` records when the sweep last *considered* a hazard, and the answer
+ * "this one needs no weather" is a considered one. If such a hazard becomes eligible again it waits
+ * at most one cadence window, and its decay is absent-⇒-1 meanwhile, which is fail-open.
  */
 export const listActiveHazardsForWeather = internalQuery({
   args: {},
-  handler: async (ctx): Promise<HazardWeatherJob[]> => {
+  handler: async (ctx): Promise<{ jobs: HazardWeatherJob[]; deferred: Id<'hazards'>[] }> => {
     // The corpus-scaling read the Phase-10 review flagged. Bounded per tick, and because the order is
     // stalest-first, a capped run drains the backlog across ticks instead of re-reading one prefix.
     const hazards = await takeCapped(
       ctx.db
         .query('hazards')
-        .withIndex('by_status_weather_adjusted', (q) => q.eq('status', 'active')),
+        .withIndex('by_status_moderation_weather_adjusted', (q) =>
+          q.eq('status', 'active').eq('moderationStatus', 'visible'),
+        ),
       ACTIVE_HAZARD_SCAN_CAP,
       'hazardWeather.listActiveHazardsForWeather',
     );
 
     const bodyCache = new Map<string, Doc<'waterBodies'> | null>();
     const jobs: HazardWeatherJob[] = [];
+    const deferred: Id<'hazards'>[] = [];
     for (const h of hazards) {
-      if (h.moderationStatus !== 'visible' || h.promotedToFeatureId !== undefined) continue;
+      if (h.promotedToFeatureId !== undefined) {
+        deferred.push(h._id);
+        continue;
+      }
       const key = h.waterBodyId;
       let body = bodyCache.get(key);
       if (body === undefined) {
         body = await ctx.db.get(h.waterBodyId);
         bodyCache.set(key, body);
       }
-      if (!body || body.removedAt) continue;
+      if (!body || body.removedAt) {
+        deferred.push(h._id);
+        continue;
+      }
       const point = nearestSamplePoint(body, hazardCenter(h));
       jobs.push({
         hazardId: h._id,
@@ -98,7 +116,24 @@ export const listActiveHazardsForWeather = internalQuery({
         lng: point.lng,
       });
     }
-    return jobs;
+    return { jobs, deferred };
+  },
+});
+
+/**
+ * Mark hazards the sweep looked at and decided need no weather (promoted to a feature, or on a
+ * removed body), so they leave the front of the stalest-first queue. Only `weatherAdjustedAt` moves —
+ * no multiplier is invented for a pin that doesn't render. Without this they would be re-read, and
+ * re-skipped, on every tick forever, holding slots against hazards that do need refreshing.
+ */
+export const deferHazardWeather = internalMutation({
+  args: { hazardIds: v.array(v.id('hazards')), weatherAdjustedAt: v.number() },
+  handler: async (ctx, { hazardIds, weatherAdjustedAt }) => {
+    for (const hazardId of hazardIds) {
+      const hazard = await ctx.db.get(hazardId);
+      if (!hazard) continue;
+      await ctx.db.patch(hazardId, { weatherAdjustedAt });
+    }
   },
 });
 
@@ -146,7 +181,18 @@ export const refreshHazardWeather = internalAction({
     const minIntervalMs = WEATHER_REFRESH_MIN_INTERVAL_HOURS * HOUR_MS;
     const lookbackMs = HAZARD_WEATHER_LOOKBACK_DAYS * DAY_MS;
 
-    const jobs = await ctx.runQuery(internal.hazardWeather.listActiveHazardsForWeather, {});
+    const { jobs, deferred } = await ctx.runQuery(
+      internal.hazardWeather.listActiveHazardsForWeather,
+      {},
+    );
+    // Rotate the ones we declined out of the queue's front before doing any work, so a tick that
+    // fails partway through still leaves the backlog draining rather than stuck.
+    if (deferred.length > 0) {
+      await ctx.runMutation(internal.hazardWeather.deferHazardWeather, {
+        hazardIds: deferred,
+        weatherAdjustedAt: now,
+      });
+    }
     for (const job of jobs) {
       if (job.weatherAdjustedAt !== undefined && now - job.weatherAdjustedAt < minIntervalMs) {
         continue; // refreshed recently enough — the effective cadence gate
