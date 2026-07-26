@@ -9,13 +9,13 @@
  * geocoder. Reused by GPS ingest (Phase 8) + hazards (Phase 9).
  */
 
-import { bboxIntersects, pointInPolygon } from '@skating/core';
+import { allLevels, bboxIntersects, cellForPoint, pointInPolygon } from '@skating/core';
 import { v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type QueryCtx, query } from './_generated/server';
+import { ADMIN_AREA_LADDER, syncAdminAreaCells } from './lib/cellIndex';
 import { ADMIN_AREA_LEVELS } from './lib/enums';
-import { adminAreasGeo } from './lib/geospatial';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 
 /** An admin-boundary row as the offline `scripts/admin-areas` pipeline prepares it. */
@@ -70,17 +70,9 @@ export const importCanonical = internalMutation({
         });
         inserted++;
       }
-      // Re-index the centroid in one place for both paths. `GeospatialIndex.insert` is
-      // upsert-by-key: the component removes any existing point for this doc id before inserting
-      // (see @convex-dev/geospatial `document.insert` → `removePointByKey`), so re-running the
-      // import overwrites a boundary's centroid rather than stacking duplicates — which would eat
-      // into `findContainingTown`'s read cap (the same pressure that forced the 0.2° margin).
-      await adminAreasGeo.insert(
-        ctx,
-        id,
-        { latitude: item.centroid.lat, longitude: item.centroid.lng },
-        { level: item.level },
-      );
+      // Re-cell the boundary in one place for both paths (N1). The sync diffs desired cells against
+      // stored ones, so a re-import moves a redrawn boundary rather than stacking duplicate rows.
+      await syncAdminAreaCells(ctx, id, { bbox: item.bbox, level: item.level });
     }
     return { inserted, updated };
   },
@@ -97,55 +89,64 @@ function pointInArea(point: { lat: number; lng: number }, area: Doc<'adminAreas'
   return pointInPolygon(point, area.polygon as unknown as Polygon | MultiPolygon);
 }
 
-/**
- * Half-width (degrees) of the centroid rectangle used to find the containing **town**. Sized to
- * comfortably contain a town's centroid from any interior point (a town's centroid sits within ~half
- * its diameter of any point it contains, and our towns run well under 0.4° across) while keeping the
- * rectangle's S2 covering small — a wider box blows the geospatial component's ~1024-row read cap in
- * the dense NY/MA town belt (measured: a 1° box read 1045 rows and capped, missing the target town).
- * A town larger than this margin can allow degrades to a county+state label (a fine fallback), never
- * a wrong town. Counties/states are far larger (a centroid can sit degrees from an interior point),
- * so those levels are scanned by the `by_level` index (a handful of rows), not queried geospatially.
- */
-const TOWN_QUERY_MARGIN_DEG = 0.2;
-/** Cap on town centroids pulled from the prefilter — the small rectangle holds far fewer in practice. */
-const TOWN_QUERY_LIMIT = 128;
+/** Candidate rows one cell may contribute. Boundaries of a level tile the map without overlapping,
+ *  so a cell realistically holds a handful; this is the never-silent backstop (D5), not a bound. */
+const AREA_CELL_CAP = 64;
 
-/** Find the town containing `point` via the geospatial centroid prefilter + a `pointInPolygon` refine. */
-async function findContainingTown(
+/**
+ * Find the boundary of `level` containing `point` (N1). One cell lookup per ladder rung, then a
+ * `pointInPolygon` refine — a point sits inside exactly one area per level, so the first hit wins.
+ *
+ * **This replaced two different broken things.** Towns used to come from a ±0.2° *centroid*
+ * rectangle, sized on the stated premise that "our towns run well under 0.4° across" — which the
+ * Phase-2.5 corpus falsified the moment the Adirondacks loaded, and whose failure mode was silent
+ * (its own comment: a town bigger than the margin "degrades to a county+state label"). Counties and
+ * states, meanwhile, couldn't use that trick at all — a state centroid sits degrees from most
+ * interior points — so they scanned **every** row of their level and grew with each state imported.
+ * Indexing by bbox coverage makes size irrelevant to both: containment is exact at any scale.
+ */
+async function findContainingArea(
   ctx: QueryCtx,
+  level: 'town' | 'county' | 'state',
   point: { lat: number; lng: number },
 ): Promise<Doc<'adminAreas'> | null> {
-  const rectangle = {
-    west: point.lng - TOWN_QUERY_MARGIN_DEG,
-    east: point.lng + TOWN_QUERY_MARGIN_DEG,
-    south: point.lat - TOWN_QUERY_MARGIN_DEG,
-    north: point.lat + TOWN_QUERY_MARGIN_DEG,
-  };
-  const page = await adminAreasGeo.query(ctx, {
-    shape: { type: 'rectangle', rectangle },
-    limit: TOWN_QUERY_LIMIT,
-    filter: (q) => q.eq('level', 'town'),
-  });
-  for (const { key } of page.results) {
-    const area = await ctx.db.get(key);
-    if (area && pointInArea(point, area)) return area;
+  for (const z of allLevels(ADMIN_AREA_LADDER)) {
+    const cell = cellForPoint(point, z);
+    const rows = await ctx.db
+      .query('adminAreaCells')
+      .withIndex('by_cell', (q) =>
+        q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y).eq('level', level),
+      )
+      .take(AREA_CELL_CAP);
+    if (rows.length === AREA_CELL_CAP) {
+      console.warn(
+        `findContainingArea hit the ${AREA_CELL_CAP}-row cap for ${level} at rung ${z}; a containing area may have been missed (N1).`,
+      );
+    }
+    for (const row of rows) {
+      const area = await ctx.db.get(row.adminAreaId);
+      if (area && pointInArea(point, area)) return area;
+    }
   }
   return null;
 }
 
-/** Find the county/state containing `point` by scanning that level's short `by_level` list. */
-async function findContainingByLevel(
-  ctx: QueryCtx,
-  level: 'county' | 'state',
-  point: { lat: number; lng: number },
-): Promise<Doc<'adminAreas'> | null> {
-  const areas = await ctx.db
-    .query('adminAreas')
-    .withIndex('by_level', (q) => q.eq('level', level))
-    .collect();
-  return areas.find((area) => pointInArea(point, area)) ?? null;
-}
+/**
+ * Internal migration (run via `pnpm exec convex run`): cell-index every boundary (N1). Paginated
+ * like the water-body backfill — `adminAreas` is only single-digit thousands of rows, but a
+ * migration that can't resume is a migration you can't safely re-run.
+ */
+export const backfillCells = internalMutation({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('adminAreas').paginate({ cursor: cursor ?? null, numItems });
+    for (const area of page.page) {
+      await syncAdminAreaCells(ctx, area._id, { bbox: area.bbox, level: area.level });
+    }
+    return { reindexed: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
 
 /** The point-derived place label parts stamped onto `reports.place` (Phase 5). */
 export interface ResolvedPlace {
@@ -155,20 +156,20 @@ export interface ResolvedPlace {
 }
 
 /**
- * Resolve a coord to its most-specific `{ town?, county?, state? }` (Phase 5). Towns come from the
- * geospatial prefilter; county/state from their short `by_level` scans (a point sits in exactly one
- * of each). The `state` code is taken from the most-specific match's denormalized `state`. Returns
- * `undefined` when nothing contains the point (ocean / outside the imported region), so the caller
- * simply omits `place`. Reused by `reports.create` now and GPS (Phase 8) + hazards (Phase 9) later.
+ * Resolve a coord to its most-specific `{ town?, county?, state? }` (Phase 5). All three levels now
+ * come from the same cell-index lookup (a point sits in exactly one of each). The `state` code is
+ * taken from the most-specific match's denormalized `state`. Returns `undefined` when nothing
+ * contains the point (ocean / outside the imported region), so the caller simply omits `place`.
+ * Reused by `reports.create`, GPS (Phase 8) and hazards (Phase 9).
  */
 export async function resolvePlaceForCoord(
   ctx: QueryCtx,
   point: { lat: number; lng: number },
 ): Promise<ResolvedPlace | undefined> {
   const [town, county, state] = await Promise.all([
-    findContainingTown(ctx, point),
-    findContainingByLevel(ctx, 'county', point),
-    findContainingByLevel(ctx, 'state', point),
+    findContainingArea(ctx, 'town', point),
+    findContainingArea(ctx, 'county', point),
+    findContainingArea(ctx, 'state', point),
   ]);
   const place: ResolvedPlace = {};
   if (town) place.town = town.name;

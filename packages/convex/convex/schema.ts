@@ -316,11 +316,11 @@ export default defineSchema({
     externalId: v.string(), // OSM relation id (way/123 · relation/456) — idempotent upsert key
     polygon: geoJson, // boundary
     bbox, // cheap point-containment prefilter before the Turf pointInPolygon test
-    centroid: latLng, // geospatial point index (like waterBodies.centroid)
+    centroid: latLng, // representative interior point; kept for display/debug, not for lookup (N1)
     createdAt: v.number(),
   })
-    .index('by_level', ['level'])
     // Idempotent re-import upsert key (OSM re-runs), mirroring waterBodies.by_external_id (D14).
+    // Containment lookups go through `adminAreaCells`, not a level scan — see `findContainingArea`.
     .index('by_external_id', ['externalId']),
 
   // Cached Open-Meteo "weather-since" summaries (Phase 10 / D19 / D56). One row per
