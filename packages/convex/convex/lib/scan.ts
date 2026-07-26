@@ -14,6 +14,14 @@
  * When truncation would be a *wrong answer* rather than a partial one — notification fan-out, a
  * migration — page instead: `paginate()` with a cursor, self-continuing. See
  * `notifications.fanOutNearbyNotifications` and `waterBodies.backfillCells` for that shape.
+ *
+ * **A cap is only as good as the scan order it caps.** This helper bounds the read and logs it, but
+ * it can't know which end of the index the caller needs — `take(n)` keeps the rows the index reaches
+ * first, which is ascending unless you say otherwise. Three of N1's own caps got that wrong before
+ * review caught them: the bounty freshness gate kept the *oldest* reports when it wanted the newest
+ * (fixed with `.order('desc')`), and the hazard-weather cron re-read one fixed prefix every tick so
+ * the backlog behind it never refreshed (fixed with an index whose order rotates as rows are
+ * processed). Before capping a scan, say which end matters and check the index runs that way.
  */
 
 /**

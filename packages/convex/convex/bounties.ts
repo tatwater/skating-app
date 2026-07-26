@@ -66,17 +66,29 @@ const HOUR_MS = 60 * 60 * 1000;
 const OPEN_BOUNTY_SCAN_CAP = 200;
 /** Bounties the expiry cron retires per tick. Anything past it goes on the next interval (N1). */
 const EXPIRE_SWEEP_CAP = 500;
-/** Reports the freshness gate weighs for one body+window. Ordered newest-first by the index, so a
- *  truncation drops the *oldest* candidates — which are the least likely to suppress anyway (N1). */
+/**
+ * Reports the freshness gate weighs for one body+window (N1). It bounds more than the index scan: the
+ * gate does an author `get` + a `tallyThumbs` scan **per report**, so this is really a cap on read
+ * fan-out, and it can't simply be raised — 1,000 here would be ~2,000+ reads on its own.
+ */
 const RECENT_REPORT_SCAN_CAP = 200;
 
-/** Visible reports on a body with a skate-end at or after `cutoff` — the input to both create gates. */
+/**
+ * Visible reports on a body with a skate-end at or after `cutoff` — the input to both create gates —
+ * **newest first**, plus whether the cap is what stopped us.
+ *
+ * `.order('desc')` is not a convenience: the index runs ascending on `skateEndTime`, so a `take(cap)`
+ * on it would retain the *oldest* rows in the window, and both callers want the newest. A busy body
+ * would then have hidden its freshest report from the suppression gate (letting a bounty be opened on
+ * ice someone just skated) and notified only the people who reported longest ago. Reversed, the cap
+ * drops the oldest candidates instead (N1, Greptile PR #27).
+ */
 async function recentReports(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
   cutoff: number,
-): Promise<Doc<'reports'>[]> {
-  return takeCapped(
+): Promise<{ reports: Doc<'reports'>[]; truncated: boolean }> {
+  const reports = await takeCapped(
     ctx.db
       .query('reports')
       .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
@@ -84,10 +96,12 @@ async function recentReports(
           .eq('waterBodyId', waterBodyId)
           .eq('moderationStatus', 'visible')
           .gte('skateEndTime', cutoff),
-      ),
+      )
+      .order('desc'),
     RECENT_REPORT_SCAN_CAP,
     `bounties.recentReports(${waterBodyId})`,
   );
+  return { reports, truncated: reports.length === RECENT_REPORT_SCAN_CAP };
 }
 
 /**
@@ -124,15 +138,32 @@ interface EvaluatedReport {
  * Newest-first matters twice: the freshest suppressor has the shortest weather window (most robust to
  * a reopen), and capping on *suppressors* rather than raw recency stops a strong OLDER read from being
  * crowded out of the cap by fresher-but-expired reads (the newest-N-of-all bug).
+ *
+ * **`saturated` is how the scan cap stops being able to give a wrong answer.** Newest-first is only a
+ * *heuristic* for "most likely to suppress": a report's window stretches with author trust and thumbs
+ * (up to 3× base) and shrinks to as little as zero, so a trusted read from four days ago can outlast
+ * 200 newer throwaway ones. If the cap truncated and nothing in the scanned set suppressed, the honest
+ * answer is "we don't know" — and the caller resolves that by blocking rather than allowing (Greptile
+ * PR #27). Raising the cap wouldn't fix this; only reading every report in the window would, and the
+ * per-report author + thumbs reads make that the unbounded scan this phase exists to retire.
+ *
+ * Blocking is also the right *product* answer, not just the safe one. A body with 200+ visible reports
+ * inside six days demonstrably has fresh eyes on it, which is the exact thing a bounty asks for.
  */
 async function evaluateFreshness(
   ctx: QueryCtx,
   body: Doc<'waterBodies'>,
   now: number,
-): Promise<{ suppressors: EvaluatedReport[]; newest: EvaluatedReport | null }> {
+): Promise<{
+  suppressors: EvaluatedReport[];
+  newest: EvaluatedReport | null;
+  /** Truncated scan **and** nothing found to suppress — the verdict is unknown, so don't trust it. */
+  saturated: boolean;
+}> {
   const maxWindowMs = FRESH_REPORT_HOURS * BOUNTY_FRESH_MAX_MULTIPLIER * HOUR_MS;
-  const recent = await recentReports(ctx, body._id, now - maxWindowMs);
-  const newestFirst = [...recent].sort((a, b) => b.skateEndTime - a.skateEndTime);
+  // Already newest-first — `recentReports` scans the index descending, which is also what makes its
+  // cap drop the oldest rather than the freshest.
+  const { reports: newestFirst, truncated } = await recentReports(ctx, body._id, now - maxWindowMs);
 
   const suppressors: EvaluatedReport[] = [];
   let newest: EvaluatedReport | null = null;
@@ -158,7 +189,13 @@ async function evaluateFreshness(
     }
     suppressors.push(evaluated);
   }
-  return { suppressors, newest };
+  const saturated = truncated && suppressors.length === 0;
+  if (saturated) {
+    console.warn(
+      `bounties.evaluateFreshness(${body._id}): scanned the ${RECENT_REPORT_SCAN_CAP}-report cap without finding a suppressor, so an older long-window report may be unweighed — blocking rather than guessing (D5/N1).`,
+    );
+  }
+  return { suppressors, newest, saturated };
 }
 
 /**
@@ -262,7 +299,11 @@ export const bountyFreshnessInputs = internalQuery({
     // Open-Meteo fetches + cache writes first (§7c resource guard).
     if (!(await underOpenBountyCap(ctx, profile._id, now))) return { status: 'capped' as const };
     const point = nearestSamplePoint(body, body.centroid);
-    const { suppressors } = await evaluateFreshness(ctx, body, now);
+    const { suppressors, saturated } = await evaluateFreshness(ctx, body, now);
+    // A saturated scan is going to be blocked by `createChecked` no matter what the weather says, so
+    // don't spend Open-Meteo calls establishing it. Same resource-guard reasoning as the cap check
+    // above: the transactional authority still re-decides, this just stops the pointless fetch.
+    if (saturated) return { status: 'suppressed' as const };
     return {
       status: 'ok' as const,
       lat: point.lat,
@@ -404,14 +445,20 @@ export const createChecked = internalMutation({
     // edited later after the weather verdict was computed, its window is now shorter and may no longer
     // justify the reopen, so the stale exemption is dropped and the (now-fresher) report suppresses again.
     const reopened = new Set(weatherReopenedReports.map((r) => `${r.reportId}:${r.skateEndTime}`));
-    const { suppressors, newest } = await evaluateFreshness(ctx, body, now);
+    const { suppressors, newest, saturated } = await evaluateFreshness(ctx, body, now);
     const blocking = suppressors.find((c) => !reopened.has(`${c.reportId}:${c.skateEndTime}`));
-    if (blocking) {
+    // `saturated` means the scan hit its cap without finding a suppressor, so "nothing suppresses"
+    // is unproven rather than established — an older high-trust report (up to a 3× window) could sit
+    // just past the cap. Block on the unknown: the failure it prevents (a bounty on ice that already
+    // has fresh eyes) is a wrong answer, and a body carrying 200+ visible reports in six days is one
+    // nobody needs to be asked to go look at (Greptile PR #27). Weather can't clear this the way it
+    // clears a known suppressor — there is no identified report for it to reopen.
+    if (blocking || saturated) {
       await logGateEvent(ctx, {
         waterBodyId: body._id,
         requesterId: profile._id,
         decision: 'suppressed',
-        decidingReport: blocking,
+        decidingReport: blocking ?? newest,
         weatherReopened: false,
         now,
       });
@@ -471,7 +518,14 @@ async function fanOutEligibility(
     now: number;
   },
 ): Promise<void> {
-  const recent = await recentReports(ctx, args.waterBodyId, args.now - args.windowHours * HOUR_MS);
+  // Newest-first, so a truncation here notifies the 200 most recent reporters rather than the 200
+  // longest-ago ones — a defensible product answer on its own terms, unlike the freshness gate, where
+  // truncation had to be turned into a block (see `evaluateFreshness`'s `saturated`).
+  const { reports: recent } = await recentReports(
+    ctx,
+    args.waterBodyId,
+    args.now - args.windowHours * HOUR_MS,
+  );
   const notified = new Set<string>([args.requesterId]); // never notify the requester; dedup authors
   for (const report of recent) {
     if (notified.has(report.authorId)) continue;

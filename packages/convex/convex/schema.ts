@@ -514,8 +514,13 @@ export default defineSchema({
     .index('by_water_body', ['waterBodyId'])
     // D55 auto-bundle: find an author's own unattached hazards on a body to offer into their report.
     .index('by_author_and_water_body', ['createdByUserId', 'waterBodyId'])
-    // Phase 10 decay cron: sweep every active hazard (across bodies) to refresh weather-adjusted decay.
-    .index('by_status', ['status'])
+    // Phase 10 decay cron: sweep active hazards (across bodies) to refresh weather-adjusted decay,
+    // **stalest first**. The trailing `weatherAdjustedAt` is what lets that sweep be capped without
+    // starving anyone: on a plain `by_status` scan the cap always returns the same index prefix, so a
+    // hazard past it would never be refreshed at all, no matter how many ticks ran (N1, Greptile PR
+    // #27). Ascending, `undefined` sorts first — never-refreshed hazards ahead of stale ones — and a
+    // refresh moves that hazard to the back of the queue.
+    .index('by_status_weather_adjusted', ['status', 'weatherAdjustedAt'])
     .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 7b)
     .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
   // NOTE: no spatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —

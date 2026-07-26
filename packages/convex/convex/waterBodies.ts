@@ -55,8 +55,9 @@ import { bbox, geoJson, latLng, literals } from './lib/validators';
  * scale with what's *on screen*, not with how big the query rectangle or the corpus is.
  *
  * Worst case, this query reads `CELL_ROW_SCAN_BUDGET` cell rows + one hydrating `ctx.db.get` per
- * distinct body (≤ `MAX_VIEWPORT_LIMIT`) + a viewer's favorites — ~3,000 against Convex's 4,096
- * cap, with the geometry (§theorems 1–2) keeping real viewports orders of magnitude below that.
+ * *distinct candidate* (also ≤ `CELL_ROW_SCAN_BUDGET`, since a candidate comes from a row) + a
+ * viewer's favorites — ~3,000 against Convex's 4,096 cap, with the geometry (§theorems 1–2) keeping
+ * real viewports orders of magnitude below that.
  */
 /** How many bodies to hand the map. Purely a render budget: at dense z13–14 viewports across the
  *  Phase-2.5 corpus the old 256 was visibly short, and MapLibre is comfortable with ~1k small
@@ -76,9 +77,19 @@ const MAX_CELLS_PER_LEVEL = 256;
 const CELL_SCAN_BUDGET = 512;
 /** Pending user-created bodies shown in the moderator review queue at once. */
 const REVIEW_QUEUE_CAP = 500;
-/** Total cell rows one read may scan. With the two budgets above and the render limit, the worst
- *  case is 512 lookups + 1,500 rows + 1,000 hydrating gets ≈ 3,000 against Convex's 4,096 cap. */
+/** Total cell rows one read may scan. Rows are also what bounds hydration (one `db.get` per distinct
+ *  candidate row at most), so the worst case is 512 lookups + 1,500 rows + ≤1,500 hydrating gets ≈
+ *  3,000 document reads against Convex's 4,096 cap. */
 const CELL_ROW_SCAN_BUDGET = 1500;
+/**
+ * Rows held in reserve for each not-yet-scanned cell, so a dense early cell can't spend the row
+ * budget before the walk reaches the rest of the viewport (Greptile PR #27). It is a *floor*, not a
+ * ration: a cell still takes everything it wants whenever the budget is ample, which is every real
+ * viewport measured. Four because that's what theorem 2 bounds a body's own-rung footprint to — a
+ * cell that yields four rows has said something about what's there, and a whole neighbourhood of the
+ * map going blank is a worse failure than a slightly shallower read of one dense cell.
+ */
+const MIN_ROWS_PER_CELL = 4;
 
 /**
  * `listInViewport.limit` is public, client-supplied input, so guard it (D5/D37 — validate at the
@@ -810,11 +821,33 @@ export const applyCuratedBoostSeed = internalMutation({
  * change to the read shape can't land in one and miss the other (the old centroid path had exactly
  * that split, and the comment on it said so).
  *
- * Walks the ladder rungs coarsest-first, and within a cell `by_cell` returns ascending
- * `minVisibleZoom` — so bodies accumulate in prominence order and a truncation drops the *least*
- * prominent, never an arbitrary slice. Every candidate is refined against the real bbox: a cell is
- * coarser than the query box at all but the finest rung, so "in this cell" is a superset of "in
- * view", exactly as intended.
+ * **Two passes, because prominence is a global order.** Pass 1 walks the ladder rungs and the cells
+ * covering the box, collecting candidate *rows* — cheap, since `minVisibleZoom` is denormalized onto
+ * the cell row, so ranking costs no document read. Pass 2 sorts those candidates by prominence and
+ * hydrates in that order until the render budget is full.
+ *
+ * Ranking *after* the scan is the load-bearing part. `by_cell` returns ascending `minVisibleZoom`
+ * within one cell, but a viewport spans many cells: accepting bodies as the walk reached them meant
+ * an early cell's least prominent ponds displaced a later cell's headline lake whenever the budget
+ * bound, so which lakes the map showed depended on row-major cell order rather than on prominence
+ * (Greptile PR #27). Sorting the whole candidate set first makes the answer traversal-independent —
+ * the top-`limit` bodies by `minVisibleZoom`, wherever in the box they sit.
+ *
+ * **Sorting isn't enough on its own, though: the row budget has to be spent fairly too.** If early
+ * cells could take the whole budget, the sort would be ranking a *spatially selected* prefix and the
+ * bias would survive one level down — whole neighbourhoods of a dense viewport blank while the first
+ * cells scanned rendered their every pond. So each cell's `take` is its **fair share of what's left**
+ * (`remaining budget / remaining cells`), which means no cell can be starved by the ones ahead of it,
+ * and a cell that comes up short passes its slack to the ones behind. When the budget binds, the
+ * result is the most prominent bodies from *across* the box rather than everything from one corner.
+ *
+ * The residual is honest and unavoidable: a hard row budget means a dense cell is read only to its
+ * share's depth, so a body can be missed if its own cell holds more prominent bodies than that share.
+ * Fixing that completely would mean reading every row, which is the unbounded scan this phase exists
+ * to retire. Truncation is logged either way (D5).
+ *
+ * Every candidate is refined against the real bbox: a cell is coarser than the query box at all but
+ * the finest rung, so "in this cell" is a superset of "in view", exactly as intended.
  *
  * `zoom` present ⇒ scan rungs up to that zoom and apply D49's cutoff as an index range (the map).
  * `zoom` absent ⇒ scan every rung with no cutoff (a containment lookup: the pond you are standing
@@ -823,7 +856,13 @@ export const applyCuratedBoostSeed = internalMutation({
 async function bodiesCoveringBox(
   ctx: QueryCtx,
   box: { minLat: number; minLng: number; maxLat: number; maxLng: number },
-  opts: { zoom?: number; limit: number },
+  /**
+   * `maxRows` overrides `CELL_ROW_SCAN_BUDGET` for one call. Only `viewportReadStats` passes it —
+   * "what would this viewport do on a tighter row budget?" is the question you have to be able to
+   * answer *before* changing the constant, and it's the only way to exercise the budget-bound
+   * branches without seeding 1,500 cell rows. The public query never sets it.
+   */
+  opts: { zoom?: number; limit: number; maxRows?: number },
 ): Promise<{
   byId: Map<Id<'waterBodies'>, Doc<'waterBodies'>>;
   truncated: boolean;
@@ -831,21 +870,18 @@ async function bodiesCoveringBox(
   cellsScanned: number;
 }> {
   const { zoom, limit } = opts;
-  const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
-  // Distinct ids already hydrated (or tried). A body straddling a cell boundary appears in several
-  // cells; without this it would cost a `ctx.db.get` per appearance.
-  const hydrated = new Set<Id<'waterBodies'>>();
-  let rowBudget = CELL_ROW_SCAN_BUDGET;
+  const rowCeiling = Math.min(opts.maxRows ?? CELL_ROW_SCAN_BUDGET, CELL_ROW_SCAN_BUDGET);
+  let rowBudget = rowCeiling;
   let cellBudget = CELL_SCAN_BUDGET;
   let truncated = false;
 
+  // The full cell walk, materialized before any I/O so the row budget can be divided by how many
+  // cells still have to be served. Pure arithmetic on the bbox — no reads — and the per-rung
+  // absurdity guard runs here, so a skipped rung doesn't inflate anyone else's share.
   const levels =
     zoom === undefined ? allLevels(WATER_BODY_LADDER) : scanLevels(zoom, WATER_BODY_LADDER);
+  const plan: { z: number; x: number; y: number }[] = [];
   for (const level of levels) {
-    if (rowBudget <= 0 || cellBudget <= 0 || byId.size >= limit) {
-      truncated = true;
-      break;
-    }
     // A box far wider than its zoom implies (a hand-rolled client, a wrapped bbox) is the only way
     // this trips. Skip the rung and say so rather than materializing a huge covering — the
     // guarantee is worth more stated honestly than silently half-kept.
@@ -857,39 +893,76 @@ async function bodiesCoveringBox(
       truncated = true;
       continue;
     }
-    for (const cell of cellsCovering(box, level)) {
-      if (rowBudget <= 0 || cellBudget <= 0 || byId.size >= limit) {
-        truncated = true;
-        break;
-      }
-      cellBudget--;
-      const rows = await ctx.db
-        .query('waterBodyCells')
-        .withIndex('by_cell', (q) => {
-          const atCell = q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y);
-          return zoom === undefined ? atCell : atCell.lte('minVisibleZoom', zoom);
-        })
-        .take(Math.min(rowBudget, limit + 1));
-      rowBudget -= rows.length;
-      for (const row of rows) {
-        if (byId.size >= limit) {
-          truncated = true;
-          break;
-        }
-        if (hydrated.has(row.waterBodyId)) continue;
-        hydrated.add(row.waterBodyId);
-        const body = await ctx.db.get(row.waterBodyId);
-        // `isListed` is defense-in-depth — an unlisted body has no cell rows to be found through in
-        // the first place, which is what makes the listing filter free here.
-        if (!body || !bboxIntersects(body.bbox, box) || !isListed(body)) continue;
-        byId.set(body._id, body);
+    plan.push(...cellsCovering(box, level));
+  }
+  if (plan.length > cellBudget) {
+    truncated = true;
+    plan.length = cellBudget;
+  }
+
+  // Pass 1 — candidate ids and their prominence, deduped. A body straddling a cell boundary appears
+  // in several cells (and at several rungs when `zoom` is absent); keep the coarsest rung's value,
+  // which is the body's own `minVisibleZoom`, so the rank never depends on which cell found it.
+  const candidates = new Map<Id<'waterBodies'>, number>();
+  for (const [i, cell] of plan.entries()) {
+    if (rowBudget <= 0) {
+      truncated = true;
+      break;
+    }
+    cellBudget--;
+    // Greedy, but never at the expense of a cell behind this one: take as much as wanted *after*
+    // setting aside a floor for every cell still unserved. Rationing only bites when the budget is
+    // actually scarce — dividing it evenly up front instead would cap an ordinary 39-cell viewport
+    // at 38 rows a cell and truncate reads that comfortably fit, which is a worse answer than the
+    // bias it fixes. `limit + 1` still caps a single cell: rows arrive ascending by
+    // `minVisibleZoom`, so anything past a full render budget's worth from one cell is less
+    // prominent than `limit` bodies already in hand and can never win.
+    const unserved = plan.length - i - 1;
+    // The floor is `MIN_ROWS_PER_CELL`, or an equal split when even that can't be met.
+    const floorPerCell = Math.min(MIN_ROWS_PER_CELL, Math.floor(rowBudget / (unserved + 1)));
+    const take = Math.max(1, Math.min(rowBudget - unserved * floorPerCell, limit + 1));
+    const rows = await ctx.db
+      .query('waterBodyCells')
+      .withIndex('by_cell', (q) => {
+        const atCell = q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y);
+        return zoom === undefined ? atCell : atCell.lte('minVisibleZoom', zoom);
+      })
+      .take(take);
+    rowBudget -= rows.length;
+    // A cell that filled its take may have more behind it — those rows are the least prominent in
+    // that cell, so they can't change the top of the ranking, but the answer is a partial one.
+    if (rows.length === take) truncated = true;
+    for (const row of rows) {
+      const best = candidates.get(row.waterBodyId);
+      if (best === undefined || row.minVisibleZoom < best) {
+        candidates.set(row.waterBodyId, row.minVisibleZoom);
       }
     }
   }
+
+  // Pass 2 — hydrate in global prominence order, most prominent first, so the render budget spends
+  // itself on the biggest lakes in the box rather than on whichever cell the walk opened first. Ties
+  // break on id purely so the same viewport returns the same bodies twice running.
+  const ranked = [...candidates].sort(([aId, aZoom], [bId, bZoom]) =>
+    aZoom !== bZoom ? aZoom - bZoom : aId < bId ? -1 : 1,
+  );
+  const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
+  for (const [waterBodyId] of ranked) {
+    if (byId.size >= limit) {
+      truncated = true;
+      break;
+    }
+    const body = await ctx.db.get(waterBodyId);
+    // `isListed` is defense-in-depth — an unlisted body has no cell rows to be found through in the
+    // first place, which is what makes the listing filter free here.
+    if (!body || !bboxIntersects(body.bbox, box) || !isListed(body)) continue;
+    byId.set(body._id, body);
+  }
+
   return {
     byId,
     truncated,
-    rowsRead: CELL_ROW_SCAN_BUDGET - rowBudget,
+    rowsRead: rowCeiling - rowBudget,
     cellsScanned: CELL_SCAN_BUDGET - cellBudget,
   };
 }
@@ -967,13 +1040,25 @@ export const listInViewport = query({
  * to 116k, and no test could catch it because `convex-test` doesn't model Convex's read cap. A claim
  * about read cost should be checkable against the real deployment:
  * `pnpm exec convex run waterBodies:viewportReadStats '{"viewport": {...}, "zoom": 12}'`.
+ *
+ * `maxRows` lowers the row budget for one call, and `names` returns *which* bodies survived rather
+ * than how many. Together they answer the question you have to settle before touching
+ * `CELL_ROW_SCAN_BUDGET`: when the budget binds, is what's left the most prominent bodies from
+ * across the viewport, or everything from the corner the scan started in?
  */
 export const viewportReadStats = internalQuery({
-  args: { viewport: bbox, zoom: v.number(), limit: v.optional(v.number()) },
-  handler: async (ctx, { viewport, zoom, limit }) => {
+  args: {
+    viewport: bbox,
+    zoom: v.number(),
+    limit: v.optional(v.number()),
+    maxRows: v.optional(v.number()),
+    names: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { viewport, zoom, limit, maxRows, names }) => {
     const { byId, truncated, rowsRead, cellsScanned } = await bodiesCoveringBox(ctx, viewport, {
       zoom: Math.floor(zoom),
       limit: sanitizeLimit(limit),
+      maxRows,
     });
     return {
       bodies: byId.size,
@@ -982,6 +1067,7 @@ export const viewportReadStats = internalQuery({
       // The read the 4,096 cap actually counts: index rows + one hydrating get per distinct body.
       approxDocumentReads: cellsScanned + rowsRead + byId.size,
       truncated,
+      ...(names ? { names: [...byId.values()].map((b) => b.name) } : {}),
     };
   },
 });

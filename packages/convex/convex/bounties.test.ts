@@ -429,6 +429,112 @@ describe('bountyGateEvents', () => {
     expect(event).toMatchObject({ decision: 'allowed', weatherReopened: true });
   });
 
+  test('the recent-report scan cap drops the OLDEST reports, so a fresh suppressor still blocks (N1)', async () => {
+    // Greptile PR #27: `recentReports` reads an index that runs ascending on `skateEndTime`, so a
+    // `take(200)` on it kept the 200 *oldest* reports in the 144h window and threw away the newest —
+    // the exact rows both callers need. On a body with more recent reports than the cap, someone
+    // could open a bounty on ice that had been skated an hour ago.
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+
+    // 200 reports (= RECENT_REPORT_SCAN_CAP) inside the 144h query window but far past even the
+    // widest freshness window, so none of them suppresses on its own.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 200; i++) {
+        await ctx.db.insert('reports', {
+          authorId: reporter.id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: now - (100 + i * 0.2) * HOUR,
+          reportTime: now,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          moderationStatus: 'visible' as const,
+          photoIds: [],
+          hazardIdsCreated: [],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+      // The one that matters: skated an hour ago, and last in ascending index order.
+      await ctx.db.insert('reports', {
+        authorId: reporter.id,
+        waterBodyId,
+        point: { lat: 0.5, lng: 0.5 },
+        skateEndTime: now - 1 * HOUR,
+        reportTime: now,
+        source: 'native' as const,
+        iceTypes: [],
+        surfaceTags: [],
+        moderationStatus: 'visible' as const,
+        photoIds: [],
+        hazardIdsCreated: [],
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+
+    const outcome = await requester.as.mutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReports: [],
+    });
+    expect(outcome).toMatchObject({ ok: false, decision: 'suppressed' });
+    // Seeding 201 reports and weighing each one runs past vitest's 5 s default on CI (memory: heavy
+    // convex-test suites need explicit headroom); inherently heavy, not flaky.
+  }, 30_000);
+
+  test('a saturated freshness scan blocks rather than guessing (N1)', async () => {
+    // Greptile PR #27, round 2: newest-first is only a *heuristic* for "most likely to suppress".
+    // A report's window stretches with author trust and thumbs (to 3× base) and shrinks to as little
+    // as zero, so a trusted read from four days ago can outlast 200 newer throwaway ones — and the
+    // cap can't be raised past the read fan-out to find it. When the scan saturates without finding
+    // a suppressor, the verdict is unknown, and the gate has to block instead of allowing.
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    const reporter = await seedUser(t, 'reporter');
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+
+    // Exactly the cap's worth, all inside the 144h query window but all well past their own 24h
+    // (new-account) windows — so nothing in the scanned set suppresses, and the cap is what stopped
+    // the scan. Whether an older report just past the cap would have suppressed is unknowable here;
+    // that's the point.
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 200; i++) {
+        await ctx.db.insert('reports', {
+          authorId: reporter.id,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: now - (100 + i * 0.2) * HOUR,
+          reportTime: now,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          moderationStatus: 'visible' as const,
+          photoIds: [],
+          hazardIdsCreated: [],
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    });
+
+    const outcome = await requester.as.mutation(internal.bounties.createChecked, {
+      waterBodyId,
+      weatherReopenedReports: [],
+    });
+    expect(outcome).toMatchObject({ ok: false, decision: 'suppressed' });
+    // And the action's pre-gate short-circuits too, so a saturated body never drives weather I/O.
+    const inputs = await requester.as.query(internal.bounties.bountyFreshnessInputs, {
+      waterBodyId,
+    });
+    expect(inputs.status).toBe('suppressed');
+  }, 30_000);
+
   test('does not log a rejection that never reached the gate (unauthorized, missing body)', async () => {
     const t = harness();
     const waterBodyId = await seedBody(t);

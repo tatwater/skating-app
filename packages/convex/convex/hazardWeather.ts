@@ -3,11 +3,12 @@
  * the **decay** needs a cron: the weather-adjusted freshness must be ready for the **offline on-ice alert**
  * (a phone on the ice can't fetch Open-Meteo) and must affect the map with no viewer present.
  *
- * The cron sweeps **only bodies with ≥1 active hazard** (via the `by_status` index) — not all 116k lakes —
- * so cost tracks hazard-carrying bodies (tens–hundreds at peak), not corpus size. It runs at a fixed hourly
- * base tick but **skips any hazard refreshed within `WEATHER_REFRESH_MIN_INTERVAL_HOURS`**, giving an
- * effective ~3h cadence without a redeploy (Convex crons can't retune their interval at runtime; Phase 7
- * lifts the threshold to an admin config, same lever pattern as the D52 tiers).
+ * The cron sweeps **only bodies with ≥1 active hazard** (via the `by_status_weather_adjusted` index) — not
+ * all 116k lakes — so cost tracks hazard-carrying bodies (tens–hundreds at peak), not corpus size. It runs
+ * at a fixed hourly base tick but **skips any hazard refreshed within `WEATHER_REFRESH_MIN_INTERVAL_HOURS`**,
+ * giving an effective ~3h cadence without a redeploy (Convex crons can't retune their interval at runtime;
+ * Phase 7 lifts the threshold to an admin config, same lever pattern as the D52 tiers). The scan is
+ * stalest-first so its per-tick cap rotates through the backlog rather than re-reading one prefix (N1).
  *
  * It stores the **time-independent `decayMultiplier`** (+ `snowHidden`), never a frozen freshness bucket —
  * the online `toView` recomputes the live bucket from it. Fail-open throughout: a lagged/failed cron just
@@ -29,7 +30,8 @@ import { takeCapped } from './lib/scan';
 import { resolveWeatherSince } from './weather';
 
 /** Active hazards the decay sweep considers per tick. Hundreds at peak by design (the cron scopes
- *  to hazard-carrying bodies, not the 116k-lake corpus), so this is a backstop, not a bound (N1). */
+ *  to hazard-carrying bodies, not the 116k-lake corpus), so this is a backstop, not a bound (N1).
+ *  Safe to cap only because the scan is stalest-first — see `listActiveHazardsForWeather`. */
 const ACTIVE_HAZARD_SCAN_CAP = 1000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
@@ -50,18 +52,27 @@ interface HazardWeatherJob {
 }
 
 /**
- * Every active, user-visible hazard the decay cron should refresh, each resolved to its nearest sample
- * point. Skips moderator-hidden and feature-promoted pins (they don't render, so weather is wasted on
- * them). Alpha-scale scan (tens–hundreds of active hazards); the `by_status` index keeps it off archived.
+ * The active, user-visible hazards the decay cron should refresh next — **stalest first** — each
+ * resolved to its nearest sample point. Skips moderator-hidden and feature-promoted pins (they don't
+ * render, so weather is wasted on them). Alpha-scale scan (tens–hundreds of active hazards); the
+ * index keeps it off archived rows.
+ *
+ * The scan order *is* the backlog rotation. `by_status_weather_adjusted` is ascending on
+ * `weatherAdjustedAt` with `undefined` first, so a tick reads the never-refreshed hazards, then the
+ * longest-stale ones; refreshing a hazard stamps `weatherAdjustedAt = now` and sends it to the back.
+ * On the plain `by_status` scan this used to run, the cap returned the *same* prefix every hour — a
+ * hazard sitting past row 1,000 would have kept absent decay and snow-hidden state forever, and the
+ * cadence gate downstream couldn't help, because it filters what was already read (Greptile PR #27).
  */
 export const listActiveHazardsForWeather = internalQuery({
   args: {},
   handler: async (ctx): Promise<HazardWeatherJob[]> => {
-    // The corpus-scaling read the Phase-10 review flagged. Bounded per tick; the cadence gate in
-    // `refreshHazardWeather` already skips recently-refreshed hazards, so a capped run still makes
-    // progress through the backlog on subsequent ticks rather than starving (N1).
+    // The corpus-scaling read the Phase-10 review flagged. Bounded per tick, and because the order is
+    // stalest-first, a capped run drains the backlog across ticks instead of re-reading one prefix.
     const hazards = await takeCapped(
-      ctx.db.query('hazards').withIndex('by_status', (q) => q.eq('status', 'active')),
+      ctx.db
+        .query('hazards')
+        .withIndex('by_status_weather_adjusted', (q) => q.eq('status', 'active')),
       ACTIVE_HAZARD_SCAN_CAP,
       'hazardWeather.listActiveHazardsForWeather',
     );

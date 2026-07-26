@@ -218,8 +218,8 @@ same kind of unchecked claim this whole phase exists to retire. Re-run any line 
 | Eastern Maine lakes | 44.6, −69.8 → 45.3, −68.4 | 11 | **314** | 74 | 768 | **1,156** | *would have been clamped to 256* |
 | Adirondacks | 43.5, −74.8 → 44.0, −74.0 | 11 | **404** | 43 | 989 | **1,436** | |
 | Eastern Maine, deep | 44.6, −69.8 → 45.3, −68.4 | 12 | **513** | 227 | 1,031 | **1,771** | |
-| Wider Adirondacks | 43.2, −75.2 → 44.3, −73.8 | 11 | 954 | 71 | 1,500 | **2,525** | row budget hit, logged |
-| 1°-wide box claiming z14 | 44.0, −73.0 → 45.0, −72.0 | 14 | 1,000 | 233 | 1,408 | **2,641** | incoherent input, bounded anyway |
+| Wider Adirondacks | 43.2, −75.2 → 44.3, −73.8 | 11 | 915 | 112 | 1,500 | **2,527** | row budget hit, logged |
+| 1°-wide box claiming z14 | 44.0, −73.0 → 45.0, −72.0 | 14 | 1,000 | 233 | 1,400 | **2,633** | incoherent input, bounded anyway |
 
 **What this establishes.**
 
@@ -234,7 +234,7 @@ same kind of unchecked claim this whole phase exists to retire. Re-run any line 
    was reading.
 4. **Incoherent input degrades instead of crashing.** A 1°-wide viewport claiming zoom 14 is not a
    thing a real client sends; it stops at the row budget, returns the 1,000 most prominent bodies,
-   logs the truncation, and reads 2,641 — bounded by the budgets rather than by luck.
+   logs the truncation, and reads 2,633 — bounded by the budgets rather than by luck.
 
 **The `adminAreas` bug, quantified.** The retired `findContainingTown` searched town centroids within
 ±0.2°, sized on the premise that towns run "well under 0.4° across". Reading the rung each town
@@ -246,17 +246,23 @@ the Adirondacks now returns `{ town: "Town of Long Lake", county: "Hamilton Coun
 **Still worth knowing.** The wider-Adirondacks case reads 62% of the cap before its budgets stop it.
 That's the design working — the budgets are hard limits, so it cannot crash — but it's the number to
 watch if the render budget is ever raised past 1,000. Note *which* budget stops it: the **row**
-budget, at 954 of the ~1,000 bodies it could draw. Raising `CELL_ROW_SCAN_BUDGET` is the lever, and
+budget, at 915 of the ~1,000 bodies it could draw. Raising `CELL_ROW_SCAN_BUDGET` is the lever, and
 it has a ceiling — reads are bounded by `CELL_SCAN_BUDGET + 2 × CELL_ROW_SCAN_BUDGET` (a row can
 cost a hydrating `get`), so 1,500 already sits close to the largest value that keeps the worst case
 under 4,096. Past that the render budget has to come down instead.
 
-## Corrections from review round 2
+## Corrections from review
 
 Three of the caps this phase added were bounded correctly but ordered wrongly — each kept the rows
 the index happened to reach first rather than the rows the caller needed. Worth naming as a class:
 **a cap is only as good as the scan order it caps.** `takeCapped` makes the bound explicit and logs
 it, but it can't know which end of the index matters; that has to be decided at each call site.
+
+A second lesson came out of the follow-up rounds: **fixing the order isn't enough if the truncation
+can still change the answer.** Two of the three needed a second pass — the viewport had to spend its
+row budget across the box and not just rank what it happened to collect, and the bounty gate had to
+stop treating a saturated scan as evidence of anything. Each fix below carries a regression test
+verified to fail against the code it replaced, which is what the first round was missing.
 
 ### The recent-report cap kept the oldest reports
 
@@ -267,6 +273,20 @@ freshest suppressor (someone could otherwise open a bounty on ice skated an hour
 eligibility fan-out wants the people who reported most recently, not least. Fixed with `.order('desc')`,
 which also makes the cap drop the candidates least likely to matter. The comment above the constant
 claimed newest-first ordering that the query never had — the claim was right, the code wasn't.
+
+**Newest-first is still only a heuristic, though** (round 3). A report's freshness window stretches
+with author trust and thumbs — up to 3× base — and shrinks to as little as zero, so a trusted read
+from four days ago genuinely can outlast 200 newer throwaway ones. Raising the cap doesn't fix that
+and can't: the gate does an author `get` plus a `tallyThumbs` scan *per report*, so 1,000 here would
+be 2,000+ reads on its own. The scan cap is a fan-out cap wearing an index cap's clothes.
+
+What fixed it was making truncation unable to produce a wrong answer. `evaluateFreshness` now
+reports `saturated` — the cap was hit **and** nothing in the scanned set suppressed — and the gate
+treats that as "unknown", which resolves to a block. The failure it prevents (a bounty asking for
+fresh eyes on ice that already has them) is a wrong answer, not a slow one, and blocking is also the
+right product call on its own terms: a body carrying 200+ visible reports inside six days is not one
+anybody needs to be sent to go look at. The fan-out helper keeps its plain cap, because notifying the
+200 most recent reporters instead of all 300 is a partial answer rather than a wrong one.
 
 ### The hazard-weather cap could never rotate
 
@@ -292,6 +312,24 @@ denormalized onto the row, so ranking costs no document read), then sort by prom
 in that order. The answer is the top-`limit` bodies by `minVisibleZoom` wherever they sit in the box.
 
 The cost of not stopping the scan early is visible in the table: the wider-Adirondacks case now
-reads to the row budget rather than to the render budget, and returns 954 bodies instead of 1,000.
-That is the right side of the trade — 954 correctly-chosen bodies beat 1,000 chosen by scan order —
+reads to the row budget rather than to the render budget, and returns 915 bodies instead of 1,000.
+That is the right side of the trade — 915 correctly-chosen bodies beat 1,000 chosen by scan order —
 but it is a real change, and it's why the note above cares which budget binds.
+
+**And sorting alone wasn't enough** (review round 3, same finding pushed one level down). Ranking
+after the scan only helps if the scan collected candidates from across the box. With each cell free
+to take `limit + 1` rows, two dense cells could spend the whole 1,500-row budget between them and the
+sort would faithfully rank a *spatially selected* prefix — whole neighbourhoods of a dense viewport
+blank while the first corner scanned rendered its every pond.
+
+So each cell now takes what it wants only after reserving `MIN_ROWS_PER_CELL` for every cell still
+unserved. The first attempt at this divided the budget evenly up front, and re-measuring caught it
+immediately: a 227-cell viewport got 6 rows per cell, and four reads that previously fit inside the
+budget started truncating (eastern Maine at z12 fell from 513 bodies to 362). A floor is the right
+shape and an even split is not — rationing has to bite only when the budget is actually scarce. With
+the floor, every real viewport in the table above is byte-for-byte what it was before the change, and
+only the two budget-bound rows move.
+
+The residual is stated rather than fixed: a dense cell is read to its share's depth, so under a bound
+budget a body can be missed if its own cell holds more prominent bodies than that share. Removing
+that would mean reading every row — the unbounded scan this phase exists to retire.

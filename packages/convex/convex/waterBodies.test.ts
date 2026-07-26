@@ -1176,6 +1176,123 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
     expect(deep.map((b) => b.name)).toEqual(['Big Faint']);
   });
 
+  test('the render budget keeps the most prominent body in the box, not the first cell scanned', async () => {
+    // Greptile PR #27: prominence is a *global* order, but the scan walks cells row-major. Both
+    // bodies below sit on the same ladder rung (z6) in ADJACENT z6 cells, and the faint one is in
+    // the cell the walk opens first — so accepting bodies as they were reached handed the render
+    // budget to the pond and dropped the lake. The answer must not depend on traversal order.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/faint-early-cell',
+          name: 'Faint (first cell)',
+          // ~1.9e7 m² ⇒ minVisibleZoom 8; a 4°-wide bbox pins it to the z6 rung anyway.
+          surfaceAreaSqM: 1.9e7,
+          bbox: { minLat: 0.5, minLng: 0.5, maxLat: 4.5, maxLng: 4.5 },
+          centroid: { lat: 2.5, lng: 2.5 },
+        },
+        {
+          ...CANONICAL_ITEM,
+          externalId: 'osm/prominent-later-cell',
+          name: 'Prominent (later cell)',
+          // Top score ⇒ minVisibleZoom 6, which is also the rung it indexes at. Small bbox, one
+          // z6 cell east of the faint one (z6 cells are 5.625° wide; this straddles no boundary).
+          surfaceAreaSqM: 1e10,
+          bbox: { minLat: 1.0, minLng: 6.5, maxLat: 1.02, maxLng: 6.52 },
+          centroid: { lat: 1.01, lng: 6.51 },
+        },
+      ],
+    });
+    const box = { minLat: 0, minLng: 0, maxLat: 5, maxLng: 7 };
+
+    // A budget of one has to spend itself on the lake, even though the pond's cell is scanned first.
+    const budgetOfOne = await t.query(api.waterBodies.listInViewport, {
+      viewport: box,
+      limit: 1,
+      zoom: 8,
+    });
+    expect(budgetOfOne.map((b) => b.name)).toEqual(['Prominent (later cell)']);
+
+    // With room for both, both come back — most prominent first.
+    const roomForBoth = await t.query(api.waterBodies.listInViewport, { viewport: box, zoom: 8 });
+    expect(roomForBoth.map((b) => b.name)).toEqual([
+      'Prominent (later cell)',
+      'Faint (first cell)',
+    ]);
+  });
+
+  test('a bound row budget is shared across cells, so a later cell is not starved (N1)', async () => {
+    // Greptile PR #27, round 2: ranking after the scan isn't enough on its own — if the early cells
+    // can spend the whole row budget, the sort ranks a *spatially selected* prefix and the bias just
+    // moves down a level. Here every cell in the box holds bodies, the row budget is tightened to 6,
+    // and the single most prominent body sits in the LAST cell the walk reaches. First-come-first-
+    // served spends all 6 rows on the first cell and never sees it.
+    const t = convexTestWithGeo();
+    // Three z6 cells across (5.625° each): lng ~1, ~7, ~13 at lat ~1. Twenty faint bodies in each of
+    // the first two, one headline lake in the third.
+    const bodies = [];
+    for (const [cellIdx, lngBase] of [1, 7, 13].entries()) {
+      for (let i = 0; i < (cellIdx === 2 ? 1 : 20); i++) {
+        const lng = lngBase + i * 0.01;
+        bodies.push({
+          ...CANONICAL_ITEM,
+          externalId: `osm/cell${cellIdx}/${i}`,
+          name: cellIdx === 2 && i === 0 ? 'Headline Lake' : `Pond ${cellIdx}-${i}`,
+          // The headline lake is top-score (minVisibleZoom 6); everything else is mid (~8).
+          surfaceAreaSqM: cellIdx === 2 && i === 0 ? 1e10 : 1.9e7,
+          bbox: { minLat: 1.0, minLng: lng, maxLat: 1.02, maxLng: lng + 0.005 },
+          centroid: { lat: 1.01, lng: lng + 0.002 },
+        });
+      }
+    }
+    // Every body needs to land on the z6 rung so the contest is between CELLS, not between rungs:
+    // a 4°-wide bbox pins the faint ones there, and the headline lake's own score does the same.
+    for (const b of bodies) {
+      if (b.name.startsWith('Pond')) {
+        b.bbox = { ...b.bbox, maxLat: b.bbox.minLat + 4, maxLng: b.bbox.minLng + 4 };
+      }
+    }
+    await t.mutation(internal.waterBodies.importCanonical, { bodies });
+
+    const box = { minLat: 0.5, minLng: 0.5, maxLat: 2, maxLng: 14 };
+    const stats = await t.query(internal.waterBodies.viewportReadStats, {
+      viewport: box,
+      zoom: 8,
+      maxRows: 40, // binds against the 41 bodies in view, and stays above the 28-cell plan
+      names: true,
+    });
+    expect(stats.truncated).toBe(true); // partial answer, and it says so (D5)
+    expect(stats.names).toContain('Headline Lake');
+  });
+
+  test('the row floor does not ration a viewport whose budget is ample', async () => {
+    // The other half of the same trade: reserving rows for later cells must not cost completeness
+    // when nothing is contended. An even up-front split would cap each cell of a 28-cell plan at a
+    // handful of rows and truncate a read that fits with room to spare.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: Array.from({ length: 40 }, (_, i) => {
+        const lng = 1 + i * 0.01;
+        return {
+          ...CANONICAL_ITEM,
+          externalId: `osm/ample/${i}`,
+          name: `Ample ${i}`,
+          surfaceAreaSqM: 1.9e7,
+          bbox: { minLat: 1.0, minLng: lng, maxLat: 5.0, maxLng: lng + 4 },
+          centroid: { lat: 1.01, lng: lng + 0.002 },
+        };
+      }),
+    });
+    const stats = await t.query(internal.waterBodies.viewportReadStats, {
+      viewport: { minLat: 0.5, minLng: 0.5, maxLat: 2, maxLng: 14 },
+      zoom: 8,
+    });
+    expect(stats.truncated).toBe(false);
+    expect(stats.bodies).toBe(40);
+  });
+
   test('a viewer’s favorite is pinned visible at every zoom, but only when it’s in view', async () => {
     const t = convexTestWithGeo();
     // A tiny pond (high minVisibleZoom) that a wide zoom would otherwise drop.

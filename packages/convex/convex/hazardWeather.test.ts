@@ -189,6 +189,29 @@ describe('hazardWeather.refreshHazardWeather', () => {
     expect(h?.decayMultiplier).toBe(1.5); // untouched
   });
 
+  test('scans stalest-first, so the per-tick cap rotates through the backlog (N1)', async () => {
+    // Greptile PR #27: the sweep used to read `by_status`, whose order never changes — so once the
+    // active set passed ACTIVE_HAZARD_SCAN_CAP, every hourly tick re-read the same prefix and the
+    // hazards behind it kept absent decay and snow-hidden state forever. The cadence gate can't
+    // rescue that: it filters rows that have *already* been read. Ordering by `weatherAdjustedAt`
+    // makes a refresh push its hazard to the back of the queue, so the cap rotates.
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    const now = Date.now();
+    // Inserted freshest-first, so creation order is the exact opposite of the order wanted.
+    const justRefreshed = await seedHazard(t, waterBodyId, authorId, {
+      weatherAdjustedAt: now - HOUR_MS,
+    });
+    const longStale = await seedHazard(t, waterBodyId, authorId, {
+      weatherAdjustedAt: now - 50 * HOUR_MS,
+    });
+    const neverRefreshed = await seedHazard(t, waterBodyId, authorId); // no weatherAdjustedAt
+
+    const jobs = await t.query(internal.hazardWeather.listActiveHazardsForWeather, {});
+    expect(jobs.map((j) => j.hazardId)).toEqual([neverRefreshed, longStale, justRefreshed]);
+  });
+
   test('skips moderator-hidden and feature-promoted hazards', async () => {
     const t = convexTestWithGeo();
     const waterBodyId = await seedBody(t);

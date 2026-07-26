@@ -255,8 +255,8 @@ that no wanted lake falls outside the box or south of the clip.
 - **Read-cap at scale (D49).** ⚠️ **This risk landed, and the validation it asks for never happened**
   — caught 2026-07-26 by N1. The 116k corpus did stress `listInViewport`, but nobody re-measured
   wide-zoom read counts after the load, so the `MAX_VIEWPORT_LIMIT = 256` clamp (tuned against VT's
-  9,967 bodies) silently stayed put — dropping 63 real lakes from a dense eastern-Maine viewport that
-  holds 319. Fixed by the N1 cell index; the read counts this bullet asked for are now recorded in
+  9,967 bodies) silently stayed put — dropping 257 real lakes from a dense eastern-Maine viewport that
+  holds 513. Fixed by the N1 cell index; the read counts this bullet asked for are now recorded in
   [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) and re-checkable via
   `waterBodies:viewportReadStats`.
 - **Border-spanning bodies** — dedupe by `externalId` (verified idempotent), but spot-check Lake
