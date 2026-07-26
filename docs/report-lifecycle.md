@@ -127,13 +127,42 @@ A report is an input to two other lifecycles, documented elsewhere:
   helpful, or being independently corroborated all bump the author's boost-only
   [trust](./user-reputation.md) — and two same-body reports that *disagree* (with no weather to
   explain it) feed the contradiction signal.
+- **It sets the opacity of its recorded path.** If the skate was recorded in the app, the GPS
+  track draws on the lake's community map — and it fades as the report ages.
+
+---
+
+## The one number that *is* a freshness curve (and why it isn't report decay)
+
+Phase 8 added `packages/core/src/reportFreshness.ts`: a 0–1 value that blends recency off
+`skateEndTime` with net helpful thumbs and corroboration count. Read that and the "reports don't
+decay" claim above can look false. It isn't, and the distinction is the whole design:
+
+**Freshness never touches the report.** It is not displayed on a report, doesn't reorder the feed,
+doesn't gate visibility, and doesn't weight trust. It has exactly two consumers:
+
+1. **Path opacity on the aggregate tracks layer.** A GPS path is the report's *extent* — it has no
+   independent claim to make, so it has no independent freshness. Both the report's own age and its
+   path's opacity read the **identical** number, which is precisely why they can't drift into saying
+   different things about the same skate. Opacity is floored (`pathOpacity`), so an old path fades
+   but **never vanishes** — an empty-looking lake would read as "all clear," which this app never
+   asserts (D3).
+2. **The shared primitives bounties use.** Bounties keep their own policy (a *window in hours*, not
+   this curve) but call the same recency/thumbs helpers instead of a private copy of the math.
+
+So: the *path* fades, the *report* doesn't. A faded line means "this is old," never "this is wrong,"
+and the report behind it is as readable on day 30 as on day 1. Adding a visible freshness meter to a
+report was considered and rejected at Phase 8 kickoff — it's the closest thing in the app to an
+authoritative safety verdict. Details: `plans/01-decisions.md` → **D59**, and the aggregate layer's
+privacy gates in **D58**.
 
 ---
 
 ## What's deliberately absent
 
 - **No report decay curve.** No half-life, no confidence erosion, no age-based opacity — a
-  report's map pin looks the same on day 1 and day 30.
+  report's map pin looks the same on day 1 and day 30. *(The Phase-8 `reportFreshness` curve is
+  internal and fades only the recorded GPS **path**, never the report — see the section above.)*
 - **No hiding or archiving by age or score.** Old and low-rated reports stay fully visible;
   quality signals only *reorder* and *route to moderators*, never hide (safety content isn't
   gated by score — D3).

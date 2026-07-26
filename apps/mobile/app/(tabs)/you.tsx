@@ -1,7 +1,12 @@
 import { useAuth, useUser } from '@clerk/clerk-expo';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { DRIVE_TIME_BANDS } from '@skating/core';
+import {
+  AGGREGATE_OPT_OUT_EXPLAINER,
+  AGGREGATE_OPT_OUT_HEADING,
+  AGGREGATE_OPT_OUT_LABEL,
+  DRIVE_TIME_BANDS,
+} from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import * as Location from 'expo-location';
 import { Link, useRouter } from 'expo-router';
@@ -11,6 +16,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H1, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
 import { ProfileEdit } from '../../src/components/ProfileEdit';
 import { Avatar } from '../../src/components/ProfileView';
+import { StravaConnect } from '../../src/components/StravaConnect';
+import { TrackHistory } from '../../src/components/TrackHistory';
 
 /**
  * Profile / settings hub (D28). Who you're signed in as (with a link to your public profile),
@@ -64,7 +71,17 @@ export default function YouScreen() {
           <HomeLocation />
           <NotificationSettings />
 
+          <AggregateTracksSetting />
+
           <BlockedUsers />
+
+          <Separator borderColor="$border" />
+          {/* Strava push (Phase 8). Sits with the account settings because it IS an account link —
+              your skates going to your Strava — not a map or safety feature. The recorded-skate list
+              sits directly under it because that's where a push that didn't land is retried by hand,
+              and because connecting an account here is the thing that makes those retries work. */}
+          <StravaConnect />
+          <TrackHistory />
 
           <Separator borderColor="$border" />
           <Link href="/support" asChild>
@@ -210,6 +227,33 @@ function RadiusRow({
  * "all reports nearby" digest within X₁, and "great reports nearby" within X₂ (X₂ ≥ X₁, clamped here
  * and re-enforced server-side). The radii need a home set above to take effect.
  */
+/**
+ * The D58 aggregate opt-out. The copy lives in `@skating/core` (`trackPrivacy.ts`) because the same
+ * control ships on web — and two surfaces wording one privacy promise differently means one of them
+ * is describing behavior the app doesn't have. The reasoning behind the wording is documented there.
+ */
+function AggregateTracksSetting() {
+  const profile = useQuery(api.profiles.current, {});
+  const updateProfile = useMutation(api.profiles.updateProfile);
+  if (!profile) return null;
+
+  return (
+    <YStack gap="$2">
+      <Text color="$foregroundMuted" fontSize={11} letterSpacing={1.5} textTransform="uppercase">
+        {AGGREGATE_OPT_OUT_HEADING}
+      </Text>
+      <ToggleRow
+        label={AGGREGATE_OPT_OUT_LABEL}
+        value={profile.excludeTracksFromAggregate === true}
+        onToggle={(v) => void updateProfile({ excludeTracksFromAggregate: v })}
+      />
+      <Paragraph color="$foregroundMuted" fontSize={11}>
+        {AGGREGATE_OPT_OUT_EXPLAINER}
+      </Paragraph>
+    </YStack>
+  );
+}
+
 function NotificationSettings() {
   const profile = useQuery(api.profiles.current, {});
   const setPrefs = useMutation(api.profiles.setNotificationPrefs);

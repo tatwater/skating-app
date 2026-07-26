@@ -8,7 +8,8 @@
  * Convex layer passes the live config value (and tests can pin it).
  */
 
-import type { TrustClass } from './reputationConfig';
+import { netThumbsBoost } from './reportFreshness';
+import { REPORT_FRESHNESS_PER_THUMB, type TrustClass } from './reputationConfig';
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -42,19 +43,22 @@ export interface BountyFreshnessFactors {
   weatherChangedIceSince?: boolean;
 }
 
-function clamp(x: number, lo: number, hi: number): number {
-  return Math.min(hi, Math.max(lo, x));
-}
-
 /**
  * The **decay-based bounty-freshness window** (Phase 10 / §7c, D56) — replaces the hard `FRESH_REPORT_HOURS`
  * cutoff. A report suppresses bounties for `base × (1 + thumbBoost + trustBoost)` hours, so a
  * well-corroborated, trusted read holds bounties off longer than a lone stale one — and weather that
  * likely changed the ice reopens them immediately. Never negative.
+ *
+ * D59 refactor: the thumbs term now comes from the **shared** `netThumbsBoost` primitive that report/path
+ * freshness also uses (same clamp, same ¼-per-thumb weight), so the two can't drift. The *policy* stays
+ * bounty-specific and deliberately different from `reportFreshness`: a trust-class window boost (a
+ * bounty asks "whose read is it?"), **no** corroboration term, and weather that changed the ice
+ * **collapses the window outright** rather than multiplying it down — a bounty exists to summon fresh
+ * eyes, so a changed lake should reopen it now, where a path should merely fade.
  */
 export function bountyFreshWindowHours(baseHours: number, f: BountyFreshnessFactors): number {
   if (f.weatherChangedIceSince) return 0; // ice likely changed ⇒ fresh eyes wanted now
-  const thumbBoost = clamp(f.netThumbs, -2, 4) * 0.25; // each net thumb ±¼ window, bounded
+  const thumbBoost = netThumbsBoost(f.netThumbs, REPORT_FRESHNESS_PER_THUMB); // each net thumb ±¼ window, bounded
   const trustBoost = f.trustClass ? TRUST_WINDOW_BOOST[f.trustClass] : TRUST_WINDOW_BOOST.new;
   return Math.max(0, baseHours * (1 + thumbBoost + trustBoost));
 }

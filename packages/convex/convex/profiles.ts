@@ -239,6 +239,8 @@ export const updateProfile = mutation({
     bio: v.optional(v.string()),
     homeTownLabel: v.optional(v.string()),
     profileVisibility: v.optional(literals(PROFILE_VISIBILITIES)),
+    /** D58 global opt-out from the aggregate tracks layer. Retroactive by design (see the schema). */
+    excludeTracksFromAggregate: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const profile = await requireProfile(ctx);
@@ -247,6 +249,7 @@ export const updateProfile = mutation({
       bio?: string;
       homeTownLabel?: string;
       profileVisibility?: (typeof PROFILE_VISIBILITIES)[number];
+      excludeTracksFromAggregate?: boolean;
     } = {};
 
     if (args.bio !== undefined) {
@@ -265,6 +268,9 @@ export const updateProfile = mutation({
         throw new ConvexError('Users under 18 must keep a private profile');
       }
       patch.profileVisibility = args.profileVisibility;
+    }
+    if (args.excludeTracksFromAggregate !== undefined) {
+      patch.excludeTracksFromAggregate = args.excludeTracksFromAggregate;
     }
 
     await ctx.db.patch(profile._id, patch);

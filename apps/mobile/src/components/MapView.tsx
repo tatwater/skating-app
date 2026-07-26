@@ -44,6 +44,7 @@ import {
   PUT_IN_MARKER_OFFICIAL_COLOR,
   PUT_IN_PIN_COLOR,
   putInsToFeatureCollection,
+  TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
   zoomForViewport,
@@ -99,6 +100,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     highlightWaterBodyId,
     focus,
     photoPins,
+    trackPath,
     putInPin,
     pinDropMode,
     setPutInPin,
@@ -112,6 +114,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   } = useMapSelection();
   const { height: windowHeight } = useWindowDimensions();
   const hazardPalette = HAZARD_PALETTE[flavor];
+  const trackColor = TRACK_PALETTE[flavor];
   /** When the hazard source last claimed a tap — see `onWaterPress` for why both sides check. */
   const hazardPressAtRef = useRef(0);
 
@@ -239,6 +242,27 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
   );
   const hazardsFC = useMemo(() => hazardsToFeatureCollection(hazards ?? []), [hazards]);
+  // The aggregate tracks layer (D58) for the open lake — scoped per body like hazards, never a
+  // viewport scan. A single report's own path (sheet open) wins over the lake-wide aggregate: when
+  // you're reading one report, that report's line is the subject, at full strength.
+  const aggregateTracks = useQuery(
+    api.gpsActivities.listTracksForBody,
+    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+  );
+  const tracksFC = useMemo<GeoJSON.FeatureCollection>(
+    () => ({
+      type: 'FeatureCollection',
+      features: trackPath
+        ? [{ type: 'Feature', geometry: trackPath, properties: { opacity: 1 } }]
+        : (aggregateTracks?.tracks ?? []).map((t) => ({
+            type: 'Feature' as const,
+            geometry: t.path,
+            // Server-computed from the linked report's D59 freshness — never re-derived here.
+            properties: { opacity: t.opacity },
+          })),
+    }),
+    [trackPath, aggregateTracks],
+  );
   const bodyFeaturesFC = useMemo(
     () => bodyFeaturesToFeatureCollection(bodyFeatures ?? []),
     [bodyFeatures],
@@ -453,6 +477,24 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             ],
             'circle-stroke-color': '#ffffff',
             'circle-stroke-width': 2,
+          }}
+        />
+      </GeoJSONSource>
+
+      {/* ── Recorded GPS tracks (Phase 8). The path someone actually skated, under the hazard layers
+          so a warning is never hidden by a line. Display-only — a path can only come from a recorded
+          track, so there is no draw interaction. Opacity is data-driven off the linked report's D59
+          freshness, floored so an old path fades but never vanishes (a blank lake would read as
+          "all clear", which we never assert). */}
+      <GeoJSONSource id="tracks" data={tracksFC}>
+        <Layer
+          id="track-line"
+          type="line"
+          layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+          paint={{
+            'line-color': trackColor,
+            'line-width': 3,
+            'line-opacity': ['coalesce', ['get', 'opacity'], 1] as never,
           }}
         />
       </GeoJSONSource>

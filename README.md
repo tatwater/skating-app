@@ -30,12 +30,13 @@ carry proper safety gear, skate with others, and know your rescue plan.
 
 ## Status
 
-**Alpha in progress — built on dev, not yet released.** Phases 0–10 are complete on the
-**development** deployment: the map + peer reports, community + safety tooling, drive-time
-filtering, the newsfeed, bounties + trust score, hazards + on-ice alerting, and weather-since
-context. **Nothing is deployed to production yet** (prod cutover is deliberately deferred). The
-operator/admin surface (Phase 7) and GPS-provider ingestion (Phase 8) are next. The full design
-record lives under [`plans/`](./plans/).
+**Alpha in progress — built, not yet released.** Every planned phase (0–10) is now built: the map +
+peer reports, community + safety tooling, drive-time filtering, the newsfeed, bounties + trust
+score, hazards + on-ice alerting, weather-since context, the operator/admin surface, and — last —
+**native GPS track recording with a push to Strava**. All of it runs on the **development**
+deployment; **nothing is deployed to production yet** (the prod cutover is deliberately deferred),
+and the newest native surfaces are still awaiting on-device verification. The full design record —
+including everything deliberately deferred — lives under [`plans/`](./plans/).
 
 First target: a small **friends-only alpha** (~20 skaters) before any regional rollout,
 timed for the first ice of the season (~November).

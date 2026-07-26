@@ -1,5 +1,13 @@
 # Planning docs
 
+> **Where things stand (2026-07-24): every roadmap phase — 0 through 10 — is built.** Phase 8 was
+> the last. Everything still unbuilt is *explicitly* deferred and registered in
+> [`07-roadmap.md`](./07-roadmap.md) → *Later / deferred*, each phase doc's *Out of scope / deferred*
+> section, [`02-open-questions.md`](./02-open-questions.md), and
+> [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md). Non-feature work still
+> outstanding: the **prod cutover** (Convex prod uninitialized) and **device verification** of the
+> native surfaces.
+
 This directory is the design record for the app: the vision, the decisions (with their
 *why*), the open questions, and the build sequence. It's meant to be read top-to-bottom
 the first time, then used as a reference (decisions are numbered `D#`, open questions
@@ -74,8 +82,17 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   water-body dedup/review, support inbox), in-context moderation across the app, ban/suspend + granular
   posting permissions (D57) + water-body merge, a read-only **config control-room** pairing every tunable
   magic-number with the chart that tunes it, in-house Convex analytics, and Resend operator alerts (D38).
-  Mobile-responsive but web-only. **📋 Planned 2026-07-23; not yet built** *(two-PR split: operator core,
-  then analytics & tuning)*.
+  Mobile-responsive but web-only. **✅ Complete on dev (2026-07-24)** — PR #24 (operator core) + PR #25
+  (analytics & tuning); prod deferred. The config surface shipped **read-only** (constants stay in
+  `@skating/core`; edit = redeploy).
+- [Phase 8 — Native track capture + Strava push](./phase-8-native-capture.md) — the A→B→C pipeline:
+  a native in-app GPS **recorder** (A), **our own** track store + resolve-to-lake + the aggregate
+  tracks layer (B), and **Strava push** via `activity:write` (C). Plus user-created water bodies from
+  a trusted path + match-on-create dedup (D14/D36, moved here from Phase 2) and unified report
+  freshness (**D59**). The old "pull tracks *from* Strava" plan is **dead** — Strava's Nov-2024 terms
+  forbid cross-user display (L7). New decisions **D58** (aggregate-track privacy: publish-is-consent,
+  not k-anonymity) and **D59**. **✅ Complete on dev (2026-07-24); prod deferred** — still
+  **device-unverified**.
 
 ## How these fit together
 

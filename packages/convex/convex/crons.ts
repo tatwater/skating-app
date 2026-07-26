@@ -64,4 +64,9 @@ crons.interval(
   {},
 );
 
+// Expired OAuth connect nonces (Phase 8). They're single-use and 15-minute-lived, so an abandoned
+// connect flow is the only way one survives — but a nonce that lingers is a credential that lingers,
+// so it gets swept rather than left to sit.
+crons.interval('prune oauth states', { hours: 6 }, internal.strava.pruneOAuthStates, {});
+
 export default crons;

@@ -1,4 +1,5 @@
 import type { BBox, HazardDraft, HazardType } from '@skating/core';
+import type { LineString } from 'geojson';
 import { createContext, type ReactNode, useContext, useMemo, useState } from 'react';
 
 /**
@@ -34,6 +35,12 @@ interface MapSelectionValue {
   focus: MapFocus | null;
   setFocus: (focus: MapFocus | null) => void;
   photoPins: PhotoPin[];
+  /**
+   * The recorded GPS track behind the open report (Phase 8) — display-only. A path only ever comes
+   * from a track someone actually skated; there is no draw action anywhere in the app.
+   */
+  trackPath: LineString | null;
+  setTrackPath: (path: LineString | null) => void;
   setPhotoPins: (pins: PhotoPin[]) => void;
   /** The put-in pin the report form is placing (§E) — the access point → `reports.point`. */
   putInPin: { lat: number; lng: number } | null;
@@ -88,6 +95,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [highlightWaterBodyId, setHighlightWaterBodyId] = useState<string | null>(null);
   const [focus, setFocus] = useState<MapFocus | null>(null);
   const [photoPins, setPhotoPins] = useState<PhotoPin[]>([]);
+  const [trackPath, setTrackPath] = useState<LineString | null>(null);
   const [putInPin, setPutInPin] = useState<{ lat: number; lng: number } | null>(null);
   const [pinDropMode, setPinDropMode] = useState(false);
   const [drawerCoveredFraction, setDrawerCoveredFraction] = useState(0);
@@ -105,6 +113,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setFocus,
       photoPins,
       setPhotoPins,
+      trackPath,
+      setTrackPath,
       putInPin,
       setPutInPin,
       pinDropMode,
@@ -126,6 +136,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       highlightWaterBodyId,
       focus,
       photoPins,
+      trackPath,
       putInPin,
       pinDropMode,
       drawerCoveredFraction,

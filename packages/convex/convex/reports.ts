@@ -50,6 +50,7 @@ import {
 } from './_generated/server';
 import { resolvePlaceForCoord } from './adminAreas';
 import { attachReportToOpenBounties } from './bounties';
+import { linkActivityToReport } from './gpsActivities';
 import {
   attachHazardsToReport,
   HAZARD_MAX_PER_REPORT,
@@ -165,6 +166,10 @@ export const create = mutation({
     // The author's own standalone hazards to bundle into this report (D55). Ownership, body and
     // not-already-attached are all re-checked server-side.
     attachHazardIds: v.optional(v.array(v.id('hazards'))),
+    // The recorded skate this report describes (Phase 8). Optional by design: a report NEVER requires
+    // a path (D24) — the path is enrichment, the observation is the safety artifact. When present it
+    // flips `source` to `activity` and back-links the activity, in this transaction.
+    activityId: v.optional(v.id('gpsActivities')),
     ...reportContent,
   },
   handler: async (ctx, args) => {
@@ -234,7 +239,8 @@ export const create = mutation({
       ...(n.skateStartTime !== undefined ? { skateStartTime: n.skateStartTime } : {}),
       ...(place !== undefined ? { place } : {}),
       reportTime: now,
-      source: 'native',
+      source: args.activityId !== undefined ? 'activity' : 'native',
+      ...(args.activityId !== undefined ? { activityId: args.activityId } : {}),
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       ...(n.skateQuality !== undefined ? { skateQuality: n.skateQuality } : {}),
@@ -271,6 +277,15 @@ export const create = mutation({
     );
     const hazardIdsCreated = [...createdHazardIds, ...bundledHazardIds];
     if (hazardIdsCreated.length > 0) await ctx.db.patch(reportId, { hazardIdsCreated });
+
+    // Back-link the recorded skate (Phase 8). Both sides are written in this one transaction so a
+    // half-linked pair can't exist: the report side drives the detail-view render, and the *activity*
+    // side (`linkedReportId`) is what the D58 aggregate layer's publish-is-consent predicate reads —
+    // a missing back-link would silently drop the track from the lake map. Ownership is re-checked
+    // inside, so a client can't attach someone else's skate to their report.
+    if (args.activityId !== undefined) {
+      await linkActivityToReport(ctx, args.activityId, reportId, profile._id);
+    }
 
     // Bump the author's denormalized report counter (born visible) so the profile shows a true total
     // without scanning their history (D13). Moderation transitions adjust it symmetrically.

@@ -13,6 +13,7 @@ import { DRAWER_NORMAL, DRAWER_PEEK, MapDrawer } from '../../../src/components/M
 import { MapSelectionProvider, useMapSelection } from '../../../src/components/MapSelectionContext';
 import MapView from '../../../src/components/MapView';
 import { OnIceModeControl } from '../../../src/components/OnIceModeControl';
+import { RecorderControl } from '../../../src/components/RecorderControl';
 import { resolveCachedBody } from '../../../src/lib/bodyCache';
 import { noteDwell } from '../../../src/lib/dwellTracker';
 import { ensureForegroundPermission } from '../../../src/lib/location';
@@ -20,6 +21,7 @@ import { resolveOnIceBody, shouldAutoSelectOnIce } from '../../../src/lib/onIce'
 // Imported for its side effects: registers the on-ice fix handler, the background-location TaskManager
 // task (D54 Layer 2), and the notification handler — all of which must run at module load.
 import { type HazardNotificationData, ingestOnIceFix } from '../../../src/lib/onIceMode';
+import { adoptUnfinishedRecording } from '../../../src/lib/recorder';
 
 /**
  * Persistent-map layout (§F, D47) — the mobile mirror of web's `_map` layout. Keeps ONE `<MapView>`
@@ -85,6 +87,14 @@ function MapLayoutInner() {
     setPhotoPins([]);
     setFocus(null);
   }, [pathname, setHighlightWaterBodyId, setPhotoPins, setFocus]);
+
+  // Adopt a recording the app was killed in the middle of (Phase 8). A skate is unrepeatable, so a
+  // crash on the ice must surface the session again — paused, with everything captured so far — not
+  // silently lose it or start a second one. Runs once at mount; it never resumes GPS on its own,
+  // because the app may be launching hours later from the car.
+  useEffect(() => {
+    void adoptUnfinishedRecording();
+  }, []);
 
   // The "on-ice" state (Phase 9 §Mobile), part 1: ONE GPS watcher, owned here, publishes each fix as
   // `onIceCoord`. The proximity banner reads that shared coord instead of running a second watcher
@@ -237,6 +247,7 @@ function MapLayoutInner() {
           warning, and the flag button + on-ice control have to stay reachable while a drawer is open. */}
       <HazardCapture />
       <OnIceModeControl />
+      <RecorderControl />
       <BackToLakeButton />
       <HazardBanner />
     </View>

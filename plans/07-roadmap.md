@@ -3,6 +3,13 @@
 Phased build sequence. Each phase is independently useful and ends in something the
 alpha crew can test. Decisions referenced as D#; see `01-decisions.md`.
 
+> **Status (2026-07-24): every planned phase — 0 through 10 — is built.** Phase 8 was the last
+> one, and with it the roadmap holds nothing unbuilt that wasn't *explicitly* deferred. What
+> remains is not feature work: the **prod cutover** (Convex prod has never been initialized), the
+> **device-verification backlog** (Phases 8/9/9.5 native surfaces), and the **deferred register** at
+> the bottom of this doc — which is now grouped into candidate next phases (**N1–N8**) plus the
+> hard-blocked list.
+
 > **Seasonal context:** first ice is ~November; planning is happening in summer. The
 > alpha crew won't lean on the app until most phases are in place, so it's fine to
 > build core plumbing early even when a user-facing headline feature lands later.
@@ -421,9 +428,10 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   panel**: the private, non-scoring **contradiction counter** (from the Phase-10 D56 signal) shown
   *alongside* a **good-vs-bad reports trend over time**, deliberately **tenure-aware** so a 10-year
   contributor and a 1-month account with the same raw count are obviously distinguishable at a glance.
-  - **Planned 3rd lever — `canPostComments` (boolean, D57 extension):** comments are free-text content, so a
-    boolean revocation fits; its point is muting a toxic commenter *without* silencing their safety reports.
-    Enforce in `comments.create` (`assertCanPostComments`); optional/migration-free. See D57 in `01-decisions.md`.
+  - **3rd lever — `canPostComments` (boolean, D57 extension): ✅ BUILT in Phase 7** *(status corrected
+    2026-07-24 — this read "planned")*. Comments are free-text content, so a boolean revocation fits; its
+    point is muting a toxic commenter *without* silencing their safety reports. Enforced in
+    `comments.create` via `assertCanPostComments` (`lib/auth.ts`); optional/migration-free. See D57.
   - **Deferred bounty lever — `activeBountyPostLimit` (nullable int, NOT a boolean):** bounty abuse is
     volumetric, so the lever is a per-user override of `MAX_OPEN_BOUNTIES_PER_DAY` (`?? 3`; `0` ⇒ can't post),
     which subsumes a `canPostBounties` flag. Built only if a real spammer earns it — the existing cap does most
@@ -437,51 +445,95 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   every action audited and safety items alerted by email.
 - Needs: Resend (domain verified).
 
-## Phase 8 — GPS providers (fast-follow order — D24)
-- **Strava + Apple HealthKit first** (covers most of the US alpha; Strava carries
-  write-ups/photos, HealthKit covers Apple Watch).
-- **Garmin next** (watch GPS + fallback for cross-user map display if Strava's terms
-  forbid it — see `04-integrations.md`).
-- **COROS · Polar · Google Health Connect** fast-follow.
-- Detect ice-skate activities → prompt report → ingest **trusted path** (+ media
-  where ToS allows). Normalize to `gpsActivities` and **resolve each to its
-  `waterBodyId`** (D44) so skates are findable by lake.
-- **User-created water bodies (D14) + match-on-create dedup (D36)** *(moved here from Phase 2 on
-  2026-07-13 — needs GPS to be good)*. When an ingested path resolves to **no** known body (the D44
-  fallback), this is where a new body gets created — **GPS-path-backed, not freehand**:
-  - **Derive bounds from the trusted path** (buffer + concave hull of `gpsActivities.path`) to
-    propose a polygon + centroid + `surfaceAreaSqM`, instead of asking the user to draw one by hand
-    (freehand shapes are messy and low-trust; a real skated track is far better evidence).
-  - **Match-on-create dedup before inserting (D36):** bbox + geospatial-nearest prefilter → score
-    each candidate with `@skating/core` `geometry.ts` (`polygonIoU`, `pointInPolygon`,
-    `bboxIntersects`) + a new **`dedup.ts`** (`nameSimilarity`, `classifyDedup` with the D36
-    thresholds) → **steer the user onto a nearby existing body** ("attach here?") via a
-    `findMatchCandidates` query; require an explicit `confirmedNew` to insert when strong matches
-    exist. Stamp `dedupStatus` / `duplicateCandidateIds`; auto-visible then review-after (D37).
-  - The **moderator dedup review queue + merge** is already Phase 7; this feeds it.
-  - Deferred sub-decision: whether to also offer a **manual draw** path (e.g. Terra Draw) for users
-    without a GPS provider connected, or to gate creation on a path entirely. Decide at build.
-- **Done:** logging an ice skate on a supported device prompts a report with the
-  real path prefilled, the skate shows up in that lake's history by name, and a skate on **new**
-  water can create/attach a body from the trusted path (dedup-steered).
-- **Status (2026-07-24): planning — re-scoped for zero credentials (approach "A").** ⚠️ Correction:
-  provider approvals were **never applied for** in Phase 0 (contrary to earlier drafts on this line and
-  in `04-integrations.md`/`05-accounts-and-credentials.md`); **no provider keys exist yet.** Chosen
-  approach:
-  1. Register the **free Strava** API app (instant, no review for single-athlete dev) → build the
-     **Strava vertical slice** end-to-end on the founder's own account (OAuth → webhook → ingest →
-     report prefill).
-  2. Build the **credential-free** halves now regardless — **user-created bodies + match-on-create
-     dedup (D14/D36)** and the **provider-agnostic ingest/resolution core** (new `convex/http.ts`
-     router, normalization, D44 resolver, `gpsActivity`→report-prefill) — testable with fixtures and
-     feeding the already-built Phase 7 dedup/merge review queue (which currently has nothing flowing
-     into it).
-  - **Shelved until approvals land:** Garmin/COROS/Polar (partner review, ~weeks — apply *now* so they
-    don't gate later), Apple HealthKit (needs the $99 Apple enrollment + a real device), Google Health
-    Connect (Play health-data review). The ingest core makes each an incremental add.
-  - **Cross-user path display (D24/D35) deferred** — ToS-gated on a current Strava-Agreement read that
-    hasn't happened; this slice is **ingest-only** (detect → prefill → resolve-to-lake), which per D24
-    never blocks shipping (native reports never required a path).
+## Phase 8 — Native track capture + Strava push (the A→B→C pipeline) ✅ Complete (dev; prod deferred) (2026-07-24)
+> **Status: ✅ complete — all five workstreams shipped.** Suites green: core 752 / convex 540 /
+> web 157 / mobile 76. **Still device-unverified** (Android-emulator GPX playback + a friend's iPhone
+> for iOS background/battery parity) — the one outstanding item that isn't the prod cutover.
+> 8a unified freshness (D59) → 8b recorder + B spine → 8c user bodies + dedup (D14/D36) →
+> 8d Strava push (C) → 8e aggregate layer + privacy (D58).
+>
+> **Key build deltas vs this plan** (the phase doc's "Open questions" resolved, plus what the code found):
+> - **D59's premise was partly wrong.** `bounties.ts` had **no recency-decay curve to extract** — it
+>   computes a *window in hours* and compares. The genuinely shared surface is the netThumbs clamp; the
+>   decay curve is **net-new**. Every Phase 6 bounty test passes untouched (the D59 acceptance gate).
+> - **Two deliberate bounty↔report divergences, now documented rather than accidental:** net-unhelpful
+>   thumbs *shorten* a bounty window (shortening summons fresh eyes — safety-positive) but are
+>   **boost-only** for report freshness, where they'd let downvotes fade someone's path off the map;
+>   and weather collapses a bounty window to 0 but only *multiplies* report freshness down.
+> - **Freshness has no visible report-aging consumer in v1** (founder call): it drives path opacity +
+>   the shared bounty primitives; report cards keep their relative-time labels. Least D3 risk.
+> - **`pathToBody` buffers but does NOT hull** — a hull swallows land/islands on any non-circumnavigating
+>   track. It *does* fill interior rings (a lap around a pond would otherwise store a donut with a hole
+>   at the lake's centre where reports fail to resolve) and refuses a track with no extent (turf happily
+>   buffers a motionless phone into a perfect circular "pond"). No `@turf/convex` dep added.
+> - **`waterBodies.create` is now path-only at the trust boundary** — it takes an `activityId`, **not a
+>   polygon**, so "no freehand drawing, ever" is a server contract rather than a UI convention. Existing
+>   tests were migrated to the new contract, not relaxed.
+> - **`near_certain` added to `DEDUP_STATUSES`** — D36 always had three tiers and the schema had two.
+>   `listDedupCandidates` now surfaces both, near-certain first. A flagged body stays **listed** (D3).
+> - **New `oauthStates` table + `convex/http.ts`** (first HTTP router in the repo): an OAuth callback is
+>   an unauthenticated browser redirect, so a single-use state nonce is what binds it to a user.
+>   **Token refresh is net-new** for this codebase (every other integration uses a static key).
+> - **No `toEncodedPolyline`/`@mapbox/polyline`** — both maps draw the GeoJSON path directly.
+> - **Aggregate layer caps at 200 tracks/body** and returns the dropped count (no silent truncation).
+>
+> **Follow-ups after the build (2026-07-25):** the D58 aggregate opt-out shipped **mobile-only** and was
+> added to the web settings page (copy single-sourced in `core/trackPrivacy.ts` so a privacy promise
+> can't drift between surfaces); `ingestTrack` stopped accepting a `distanceMeters` it never stored
+> (derivable from `path` exactly).
+>
+> **Outstanding:** device verification (Android-emulator GPX playback + a friend's iPhone for iOS
+> background/battery parity), a real Strava sandbox upload (callback domain now set), and the prod
+> cutover.
+
+> **Detailed build plan:** [`phase-8-native-capture.md`](./phase-8-native-capture.md) (scoped
+> 2026-07-24). Reframe write-up:
+> [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md)
+> + Strava legal read (`08-legal-feasibility-checklist.md` L7). New decisions: **D58** (aggregate-track
+> privacy), **D59** (unified report freshness).
+
+> **⚠️ The old "pull GPS from Strava" plan is dead.** Strava's Nov-2024 terms **forbid** displaying one
+> athlete's data to any other user (even public data) and **ban AI/ML** over it — killing the cross-user
+> map/heatmap/report-path off Strava data. **The whole phase inverted:** we **record the track in a native
+> in-app recorder** (first-party data we own → legal to aggregate + draw on public reports) and **push** it
+> to Strava (`activity:write`, the Garmin model — clearly allowed, the adoption lever: *record once, keep
+> your Strava stats*). Modeled as **A → B → C**: A = capture inputs (**native recorder** first;
+> Garmin/HealthKit/COROS/Polar deferred), **B = our own track store + resolve-to-lake + aggregate, the
+> always-owned hub**, C = push outputs (**Strava** first). No provider keys exist yet; only the **free
+> Strava app** (instant, no review) is needed, and only for the push slice.
+
+- **Native recorder (A-input #1)** — session record/pause/resume/stop over a durable expo-sqlite buffer,
+  a Record-grade GPS profile, background/foreground-service, reusing the **Phase 9.5 on-ice primitives**.
+  Track post-processing (smooth/gate/cull → GPX + GeoJSON) in `@skating/core`. Phone-only skater's source;
+  battery is an honest, opt-in trade (D3 copy). **Paths only ever come from legitimate recorded sources —
+  no freehand drawing, ever.**
+- **B — our track store + resolve-to-lake (D44)** — normalize any track → `gpsActivities`, resolve to its
+  `waterBodyId`, link to a report. **The recorded path renders on the report detail view** (display-only)
+  **and** on the aggregate tracks layer.
+- **User-created water bodies (D14) + match-on-create dedup (D36)** *(moved here from Phase 2 — needs a
+  trusted path)*. A skate resolving to **no** known body creates/attaches one **from the trusted path only**
+  (buffer + hull → polygon; new `core/dedup.ts` + `pathToBody.ts`; `findMatchCandidates` steer; stamp
+  `dedupStatus`/`duplicateCandidateIds`; auto-visible then review-after, D37). **Path-only gated — no manual
+  draw** (no path ⇒ no proof of presence, no scale/shape reference). **Feeds the already-built Phase 7 merge
+  queue** (which has had nothing flowing into it).
+- **Strava push (C-output #1)** — new `convex/http.ts` router (first in the repo), OAuth `activity:write` +
+  per-user token refresh, `POST /uploads` + poll, per-session "also upload?" toggle (watch-wins deferred),
+  "Powered by Strava" / "Connect with Strava" brand kit (L7).
+- **Aggregate tracks layer (B, D58)** — decaying public-track overlay per selected body (opacity fades as
+  the linked report ages, D59). Privacy = **publish-is-consent** (only report-linked, non-minor paths), **no
+  k-anonymity** (a public report is meant to be shared — one skater is enough), **put-in-gated endpoint
+  clipping** (`showPutIn` withheld ⇒ clip first/last ~150 m, protecting a skate-from-home), **minors excluded
+  by construction**, global **opt-out**. The tuning-heavy crowd-intelligence derivations (pressure-ridge /
+  clearest-side, L9 deduction) are **deferred** — need volume + calibration.
+- **Unified report freshness (D59)** — one `core/reportFreshness` primitive; report-aging and path-opacity
+  consume the *identical* value (the path is the report's extent — can't diverge); **bounties refactor onto
+  the shared primitives** (keeping their own window/trust/reopen policy; existing Phase 6 tests stay green).
+- **Done:** a phone-only skater records a skate in-app, sees the real path on their report and on the lake
+  map (fading as it ages), can push it to their Strava, and a skate on **new** water creates/attaches a body
+  from the trusted path (dedup-steered).
+- **Deferred:** third-party capture adapters (Garmin/HealthKit/HC/COROS/Polar) + the watch-wins ingest path
+  — each integrated individually later (**apply for Garmin/COROS/Polar partner programs now**, ~weeks of
+  review); additional push targets (Whoop); path-cluster hazard deduction (L9/Q11).
 
 ## Phase 9 — Hazards ✅ Complete (dev; prod deferred) (2026-07-22)
 > **Detailed build plan:** [`phase-9-hazards.md`](./phase-9-hazards.md) (decisions settled 2026-07-18;
@@ -641,7 +693,163 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   repeated bad-actor pattern to the D57 posting-permission lever (never subtracting trust); and bounty
   freshness is weather-aware.
 
-## Later / deferred (see 02-open-questions)
+## Later / deferred — the deferred register (see 02-open-questions)
+
+*Rebuilt 2026-07-25, after a full read of `plans/` against the code with every phase built. Everything
+below is deliberately-deferred work, split by **whether we could start it tomorrow**. Two rules for
+keeping it honest: when an item ships, strike it here with a pointer (two entries had gone stale and
+were silently claiming to be deferred — hazard-footprint clipping and `canPostComments` — so **verify
+against code before trusting an entry**); and when a blocker clears, move the item up rather than
+leaving it to be rediscovered.*
+
+### Next-phase candidates — unblocked, chunked (N1–N8)
+
+Nothing in this half is waiting on anyone. It's grouped so each chunk is one coherent review surface
+with a shared test/verification shape, ordered **highest-impact first** — where impact means *what a
+skater or the operator feels during the first-ice friends alpha*, not what's most interesting to build.
+Chunks are independent unless noted; sizes are rough.
+
+**N1 — Read-path durability: the crash class.** *(Biggest chunk, and first for a reason: this is the
+map's front door, and the failure mode is a **crash**, not a slowdown.)*
+- Multi-cell / bbox-coverage geospatial indexing for `waterBodies.listInViewport` — index each body
+  under **every** S2 cell its bbox covers, so a wide sparse viewport reads a bounded cell set instead of
+  expanding a covering into Convex's hard 4,096-read cap. Lets the `listed` filter move **back into**
+  the query and retires today's workarounds (`MAX_VIEWPORT_LIMIT = 256`, the JS `listed` re-check).
+  Full root-cause write-up in the sketch below.
+- **Fold in the four unbounded `.collect()` sites** flagged by the Phase-10 review — same lesson, one
+  pass, one discipline: `hazardWeather.listActiveHazardsForWeather`, `bounties.bountyFreshnessInputs` /
+  `recentReports`, `contradictions.findContradictingPriors`. Each needs pagination + a *logged*
+  truncation cap (never silent).
+- Also here because it's the same reasoning: make `bounties.listOpen`'s `OPEN_BOUNTY_SCAN_CAP` (200)
+  log what it dropped, so the graceful-degradation claim is observable rather than assumed.
+- **Needs:** an index-shape decision, a reindex/ETL path, a `listInViewport` rewrite, the two-tier
+  large-body merge, and a fresh read-cap test surface. Its own PR series, not a feature ride-along.
+
+**N2 — Operator surface completion + corpus curation.** *(Second because it's the cheapest way to make
+what alpha skaters see materially better — and because the founder IS the operator, so these are the
+tools they'll use daily.)*
+- **Finish Phase 2.5's leftover curation** in `/admin`: fix the few bay mis-matches, **add the
+  Champlain / Lake George bays OSM lacks** (the corpus's most-skated destinations are exactly the ones
+  it models worst — see S2 in `02-open-questions.md`), and extend the `curatedBoost` seed.
+- **`weatherSamplePoints` placement UI** (Phase 10's deferred admin surface). Grouped here on purpose:
+  the bodies needing sample points (Champlain, Winnipesaukee) are the *same giants* you're already
+  curating, so it's one map, one session, two jobs.
+- **Contradiction re-flag bundling** — a user parked above threshold currently files a fresh `/admin`
+  row per contradiction after a mod resolves the last one. Mod-queue UX, not a correctness bug.
+- **`activeBountyPostLimit`** (nullable int, D57's deferred bounty lever) — build it if a real spammer
+  earns it; the shape is already decided, so it's small when needed.
+
+**N3 — Storage-hygiene crons.** *(Tiny — a half-day — and it's pure downside-avoidance: nobody notices
+these until a quota bites mid-alpha.)* Both are the same shape as the three prune crons already
+shipped, so they share a test pattern.
+- **Photo-orphan GC**: sweep unreferenced `photos` rows + orphaned storage blobs past a grace window.
+  The client reclaims best-effort today, but a killed app still strands blobs.
+- **`weatherCache` prune**: no pruner exists; a row accrues per `(samplePoint, windowStart, hourBucket)`
+  as the `now` bucket advances. Disk growth, not staleness.
+
+**N4 — Account lifecycle: deletion, export, anonymization (D33).** *(Here because it's a
+trust-and-launch requirement that touches every surface showing an author — and the longer the corpus
+grows, the more places a late implementation has to reach.)* The **mechanism is fully unblocked**; only
+the *policy wording* is legal-gated (L3), so build the machinery and leave the copy to the Q10 pass.
+Reports/comments are public and **anonymize rather than erase** (preserve the ice record, D33/D13), so
+the real work is making an anonymized author render gracefully **everywhere** — feed cards, report
+detail, comment threads, hazard reporter lines, aggregate track attribution, `/admin`.
+
+**N5 — Hazard authoring & confirmation polish.** *(One coherent pass over the hazard surface on web +
+mobile; these were each deferred alone but reviewing them together is far cheaper than five visits.)*
+- **Freeform polygon authoring** — schema + render already ship; only the vertex-dragging editor is
+  missing (Phase 9 call 5).
+- **Shore-band "snap to shoreline"** affordance for the linear-along-shore types (hazard research §4).
+- **Ridge-crossing "switch sides" hinting** — the v2 of the `ridge_crossing` passage marker (§8).
+- **"This never existed" confirmation verdict** — touches `deriveHazardLifecycle`; polymorphic thumbs
+  cover the need crudely today.
+- **Naming confirmers** — v1 shows a count; `listForHazard` already returns the rows for a
+  tap-to-expand list. Deliberate micro-decision (identities attached to "was on this ice"), so decide
+  before building.
+
+**N6 — Lake-depth backfill: HydroLAKES + GLOBathy.** *(Sharpens the D56 decay model with real data
+instead of a manual flag. Sequenced **after N1** deliberately — both touch the ETL/reindex path, and
+doing them in one order means one reindex, not two.)* A one-time spatial join stamping
+`meanDepthM` / `maxDepthM` / `depthSource` onto water bodies, replacing the manual
+`shallow_bay_early_thaw` `bodyFeature` stand-in for most bodies; plus an ETL update to carry OSM depth
+tags where they exist (rare) and fall back to the GLOBathy match on future imports. State-agency
+bathymetry (NH F&G, VT DEC) can refine specific lakes later. Own data PR — no app changes.
+
+**N7 — Notification pipeline, the non-push half.** *(Grouped because both are pipeline internals that
+**don't** need push credentials — worth doing while push is blocked, so the pipeline is correct and
+scalable by the time delivery lands.)*
+- **Per-user local-time / true-sunset digest timing** (today: a fixed 8pm ET, fine for a
+  single-timezone pilot).
+- **Reverse spatial index for notification fan-out** — replace the per-user polygon scan (fine at alpha
+  scale; a documented seam since Phase 4).
+
+**N8 — The unbundled remainder.** *(Genuinely independent, genuinely low-urgency — do these
+opportunistically or when a trigger fires, not as a planned phase.)*
+- **Apple HealthKit capture adapter** — notable as **the one watch adapter needing no partner
+  approval** (entitlement + dev build only), so it's unblocked while Garmin/COROS/Polar wait on review.
+  Shares the iOS device-verification dependency.
+- **Server-tracked "recommended" caps/dedup** — the impressions store + `acknowledgeRecommended`
+  read/write split. Fully designed **including the fail-open guardrail** (never suppress on uncertain
+  state); trigger is real data showing the feature feels spammy, plus per-hour pacing if per-day is too
+  sparse.
+- **Code-level GPS replay rig for CI** — the Android emulator's GPX playback covers manual QA today.
+- **First-class in-app avatar upload** — Clerk manages avatars for now; revisit only if its UX bites.
+
+### Waiting on a blocker
+
+Grouped by *what* is blocking, because that's what determines when it moves.
+
+- **A lawyer (Q10 / L1 — one engagement clears most of this).** Full ToS + privacy policy +
+  assumption-of-risk enforceability; the minor-data posture (L2); deletion/retention wording (L3 — the
+  N4 *mechanism* is unblocked, only the copy waits); the AGPL App Store / Play exception text (L4); the
+  landowner-takedown wording and any obligation to honor requests (L11). Separately legal-gated:
+  **forum / Facebook / Google-Group ingestion + republication** (Q8 / L5 — feasibility *and* consent
+  *and* ToS); **AI summarization beyond weather facts** (Q9 / L6 — liability review); **PostHog session
+  replay** (L12 — masking + minor-exclusion + a `PRIVACY.md` update must land first); **ODbL
+  share-alike** (L10 — only bites if we ever publish the derived `waterBodies` extract).
+- **External approval queues (weeks).** Garmin / COROS / Polar capture adapters + the watch-wins ingest
+  path (L8) — **the roadmap has said "apply now" since Phase 0; confirm whether the applications are
+  actually in, because this is the longest pole in the whole register.** Google Health Connect
+  additionally needs a Play health-data access review (and a Play account). Additional push targets
+  (Whoop) need their own API access.
+- **Device access.** Phase 8 verification (Android-emulator GPX playback + a friend's iPhone for iOS
+  background/battery parity); the **Layer-3 offline basemap tile-pack**, built flag-off in Phase 9.5 and
+  needing exactly **one** on-device confirmation; real cold-weather battery draw and real
+  compass/course-noise behavior (Phase 9.5 QA). No owned iPhone is the standing constraint — budget for
+  a QA gap and stay conservative in the iOS background-mode copy.
+- **Push infrastructure + store credentials.** Remote **push delivery** — Phases 3/4/6 all deliberately
+  land in-app `notifications` rows; `expo-notifications` is installed (Phase 9.5) but **local-only**,
+  with no token registration, no APNs/FCM credentials, and no server sender. **Silent
+  background-refresh push to a closed app** (D54) needs that whole layer *plus* a privacy decision
+  (the biggest departure from D12) *plus* accepting that iOS throttles silent pushes at its discretion —
+  a shaky base for safety content, which is why it's deferred twice over.
+- **The prod cutover.** Convex **prod has never been initialized**, and `convex deploy` stays blocked
+  until the **Clerk prod** env vars exist. Then: the multi-state import into prod, the prod tile URL,
+  Vercel/EAS env vars, `SENTRY_AUTH_TOKEN` for build-time source maps, and the Resend key + verified
+  sending domain (until which operator alerts log-and-skip). TestFlight / Play internal-testing
+  distribution to the alpha crew rides on the same accounts. *First step is a founder task, not an
+  external wait.*
+- **Volume + calibration (buildable, but building now is speculative).** Per-body map summary cards
+  (needs report density *and* its own denormalized-summary design — sketch below); **GPS-path hazard
+  deduction** (Q11 / L9 — the *legal* half cleared with the Phase 8 pivot, so what's left is path volume
+  plus an L14 privacy pass); pressure-ridge / clearest-side crowd intelligence; non-destructive
+  **consensus rendering** of clustered same-type hazards; **auto-merge** of very-high-confidence dedup
+  pairs, community "same place?" confirmations, and the re-ETL overlap scan (D36's staged half); a
+  **decay-magnitude refit** of `HAZARD_DECAY` + the `decayMultiplier` magnitudes against a real in-app
+  corpus (signs are locked, numbers are tunable defaults); a dedicated bounties **geospatial** instance
+  (only past the 200-scan cap); and **self-hosted ORS** for a true 90-min band (a ~$15–50/mo warm
+  container — a cost/ops decision, not a technical one).
+- **Needs design before it's buildable.** The **satellite imagery layer** (the entry below still says
+  the plan needs exploring — and it needs an imagery source with usable terms); **in-app guides**;
+  **group-skate organizing**; **rivers as named reaches** (the D4 model, deferred since Phase 1 —
+  validate still-water with users first). Deliberately *not* doing: **Fitbit** as a provider, the
+  **`appConfig`** runtime-tuning seam (edit-and-redeploy is the settled posture), **encoded-polyline**
+  transport, and **k-anonymity** contributor gating (dropped by D58).
+
+### Design sketches for deferred items (kept in full)
+
+The long-form write-ups the entries above point at — preserved verbatim, since the *why* is the point.
+
 - **Per-body summary cards on the map at appropriate zoom (founder ask, 2026-07-21).** Today the map
   shows water-body polygons and you must open a lake to learn anything about it. The ask: at suitable
   zoom levels, surface a compact card/label over *unselected* bodies with the at-a-glance basics — lake
@@ -685,13 +893,11 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
     the cap — whichever bites first. Until then the two-tier + D49 zoom-score mitigation holds. *(Context:
     revisited during Phase 6 Step 4 while scoping bounty browse, which deliberately sidesteps this path by
     serving off the `bounties.by_status_expires` index instead of a geospatial viewport query.)*
-- **Clip hazard footprints to the water-body boundary (founder idea, 2026-07-21; from Phase 9).** So a
-  large point+radius in a small bay can't render a circle spilling across land onto a peninsula or a
-  neighbouring lake. Deferred from Phase 9 deliberately: it touches the "what's drawn is what the
-  proximity alert measures" invariant, so it must clip render *and* alert together — cleanest as a stored,
-  precomputed clipped footprint the render, bbox and `distanceToHazard` all read. Its own focused commit
-  + device verification; full write-up in [`phase-9-hazards.md`](./phase-9-hazards.md) → Out of scope. The
-  `HAZARD_MAX_SIZE_M` ceiling shipped in Phase 9 is the interim backstop.
+- ~~**Clip hazard footprints to the water-body boundary**~~ **✅ SHIPPED in Phase 9.5 (2026-07-22)** —
+  this entry was stale (caught 2026-07-24). `core/hazardGeometry.clipFootprintToBody` precomputes the
+  clipped polygon at create time and `hazardLayer` render, bbox and `distanceToHazard` all read the
+  *same* stored footprint — which is what the "what's drawn IS what the proximity alert measures"
+  invariant required. Kept here only as a pointer; see [`phase-9.5-on-ice-alerting.md`](./phase-9.5-on-ice-alerting.md).
 - **Self-hosted OpenRouteService (true 90-min+ isochrone band).** Phase 4 ships drive-time on the
   **hosted ORS**, whose isochrone API is hardcoded to a **60-min max range** for `driving-car` — so the
   90-min band is a uniform crow-flies radius fallback there. Self-hosting ORS (a memory-hungry JVM/Docker
@@ -703,11 +909,13 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   instance, not a fleet — the graph build takes minutes, so it stays warm rather than cold-starting per
   request. **Do this when** the 90-min band's accuracy matters or hosted quota bites; until then the
   radius fallback is fine for the outer, aspirational ring. *(Context: Phase 4 discussion 2026-07-17.)*
-- Forum/Facebook ingestion + AI comment-vs-report classification (Q8).
-- GPS-path hazard *deduction* (Q11); auto-merge dedup + community confirmations (D36).
-- AI report summarization beyond weather facts (Q9); full ToS/legal review (Q10).
-- In-app guides; group-skate organizing; Fitbit as a GPS provider.
+- *(The one-line entries that used to sit here — forum/Facebook ingestion + comment-vs-report
+  classification (Q8), GPS-path hazard deduction (Q11), auto-merge dedup + community confirmations
+  (D36), AI summarization beyond weather facts (Q9), the full legal review (Q10), in-app guides,
+  group-skate organizing, and Fitbit — now live in **Waiting on a blocker** above, filed under what's
+  actually blocking each. Not dropped; sorted.)*
 - Satellite imagery layer toggleable in lake detail view. **NOTE: This plan still needs to be explored**
+  — and it needs an imagery source whose terms permit the use, which is its own question.
 - **Photo-orphan GC cron (cleanup/polish).** The Phase 2 photo pipeline uploads before
   `reports.create`, so failed/abandoned/partial submits can strand storage. The client reclaims
   best-effort (`photos.remove`/`removeBlob`, incl. uploads that resolve after the form unmounts), but
@@ -728,4 +936,5 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
 - **Sentry** crash/error hygiene; **PostHog** analytics/flags added once there's
   usage to measure (D29) — session replay masked/off where location or minors are
   involved (revisit before enabling).
-- **Account deletion + data export** wired as auth/profile matures (D33).
+- **Account deletion + data export** wired as auth/profile matures (D33) — scoped as **N4** in the
+  register above; the mechanism is unblocked, only the policy wording waits on Q10/L3.

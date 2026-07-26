@@ -1,7 +1,7 @@
-# Native Track Capture + Strava Push
+# Phase 8 — Native Track Capture + Strava Push
 
-*Scoping doc — 2026-07-24. Extends [`04-integrations.md`](./04-integrations.md) (esp.
-"Cross-user map display — our stance") and [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md)
+*Scoping doc — 2026-07-24. Extends [`04-integrations.md`](../04-integrations.md) (esp.
+"Cross-user map display — our stance") and [`08-legal-feasibility-checklist.md`](../08-legal-feasibility-checklist.md)
 (L7/L9). Not yet a numbered phase.*
 
 ## Why this exists
@@ -65,6 +65,37 @@ What's net-new:
 - **Attach-to-report flow:** a recorded track can back a report (D24: reports *never
   require* a path, so this is additive) and/or feed the aggregate layer.
 
+### Two independent user choices (and why GPS fidelity is one of them)
+
+The user makes **two orthogonal** choices, set separately:
+
+- **(a) "Keep the app watching"** — on-ice hazard alerts + quick-report while skating.
+- **(b) "Record / send my skate"** — keep it as my track here and/or push it to Strava.
+  This is an *export* intent.
+
+They matter because they demand **different GPS fidelity**, and today we only have (a)'s:
+
+- On-ice mode records at **`Accuracy.Balanced` (~100 m target), one fix per 20 m of
+  movement** — chosen deliberately: *"`Balanced` accuracy, not `BestForNavigation`,
+  because cold-weather battery matters more than sub-metre precision for a fuzzy hazard
+  alert"* (`apps/mobile/src/lib/onIceTask.ts`). Right for "is a hazard coming up in
+  30–60 s" — a 10 m hazard-projection sample step over a size-capped footprint doesn't
+  need survey precision.
+- **It is too coarse for a good Strava activity.** ~100 m fixes every 20 m produce a
+  jagged, wandering line → **inflated distance, noisy pace, an ugly map** — a visibly
+  degraded activity next to what the Strava app or a watch records. **Your worry is
+  real:** a skate recorded at hazard fidelity and pushed to Strava gives worse stats.
+
+**Resolution:** choice (b) raises fidelity for that session; (a) stays battery-friendly.
+If both are on, the *record* intent wins the fidelity knob — you can always alert off a
+finer stream, but you can't refine a coarse one after the fact. Three GPS profiles:
+
+| Mode | Accuracy | Distance filter | For |
+|---|---|---|---|
+| Hazard-only (a) | `Balanced` (~100 m) | 20 m | on-ice alerts, battery-first (today) |
+| Record (b) | `High` / `BestForNavigation` | ~5 m | export-grade track for Strava + our own data |
+| Neither | — | — | no background GPS |
+
 ### Battery — the honest section
 
 Your nervousness is correct and worth designing around, not hand-waving. Continuous
@@ -72,9 +103,11 @@ high-accuracy GPS is the single biggest drain a phone app can cause — a realis
 budget is **~5–12%/hr** depending on device, screen state, and fix cadence. A long
 lake day (3–4 hrs) is a real dent. Mitigations, roughly in ROI order:
 
-- **This is the same GPS cost on-ice mode already pays** — we're not introducing a new
-  battery class, we're *retaining* a stream we already sample. A user recording a skate
-  is not *also* running on-ice alerting for free, but the ceiling is known, not new.
+- **Record mode (b) costs more than hazard mode (a)** — export fidelity
+  (`High`/`BestForNavigation`, ~5 m) keeps the GPS radio on more than `Balanced`/20 m, so
+  budget the *upper* end of the ~5–12 %/hr range for a recorded skate. The plumbing is
+  reused from on-ice mode, but the draw is genuinely higher — don't let the shared code
+  hide that. (Hazard-only mode stays at today's cheaper profile.)
 - **Adaptive sampling:** skating is smooth and predictable. 1 Hz is overkill; **1 fix
   every 3–5 s** (or distance-filtered, e.g. every 10–15 m) is plenty for a track and
   cuts radio-on time substantially. Expose as an accuracy/battery toggle.
@@ -116,21 +149,31 @@ Mechanics (all verified against current Strava developer docs, 2026-07-24):
   Strava *data* is shown; a pure push shows none — but we'll surface the connection
   state, so honor the brand kit anyway.
 
-### The double-recording gotcha
+### The double-recording gotcha — the watch wins
 
-If a user records on **both** their watch (→ Strava directly) and our app (→ Strava
-push), they get **two overlapping activities**. This is the one real UX landmine.
-Options:
+If a user records on **both** a GPS watch (→ Strava directly, at best fidelity) and our
+phone, they'd get two overlapping activities *and* our phone track is almost certainly
+the **worse** one — a dedicated multi-band-GNSS watch (Garmin Fenix, Apple Watch Ultra,
+COROS) generally beats a pocketed phone. Your hunch is right: **defer to the watch.**
 
-- **Detect + defer:** if a Strava activity for the same time window already exists,
-  skip our push (we still keep our own track). Requires a read + heuristic.
-- **User choice:** an explicit "also upload to Strava?" per session, default off for
-  users we know have a watch, on for phone-only.
-- **Mark as ours:** name/description tags ("Recorded with <app>") so the user can tell
-  them apart and delete the dupe.
+- **Don't push ours to Strava** when a watch already does — kills the dupe, and theirs
+  is higher quality anyway.
+- **We can drop our native phone recording too** (battery win) — **but then we lose the
+  track for B.** We **cannot** legally reuse the watch's Strava copy for our cross-user
+  aggregate (that's the forbidden *pull*), so to still benefit we **ingest the watch's
+  track through an allowed provider** — HealthKit / Health Connect / Garmin / COROS /
+  Polar, whose terms permit cross-user display. That's exactly the A-input extensibility
+  below, and it's *why* the watch case still routes through our pipeline.
 
-Simplest v1: **per-session opt-in toggle**, default off, with a one-time explainer. Get
-smarter later.
+The clean split:
+
+- **Phone-only skater** → our native recorder (Record mode) → B **and** optional Strava push.
+- **Watch skater** → record on the watch → watch pushes to Strava itself → we ingest
+  that track for B via a connected watch provider (A-input), and **skip both** our phone
+  recording and our Strava push.
+
+v1 can be a **per-session "also upload to Strava?" toggle** (default off when we detect a
+connected watch provider, on for phone-only) until auto-detect is solid.
 
 ## What we win (the actual product)
 
@@ -160,49 +203,74 @@ skater's line as "the crowd"); geotag/track sharing **opt-in** (D42 class).
 - `activity:write` requires the OAuth consent screen to clearly state we upload on the
   user's behalf.
 
-## Recommended scope & phasing
+## Architecture: A → B → C, with B as the hub
 
-Split cleanly; each stage ships value alone.
+Reframed as a **pipeline**, not a sequence of features. **B is the invariant core we
+always own; A and C are pluggable provider sets on either side:**
 
-- **Stage A — native recorder + own-map path (no Strava at all).**
-  The recorder, the sqlite-backed session buffer, track post-processing in `core`,
-  attach-to-report, and rendering *your own* recorded path on *your own* report. No
-  Strava dependency, no partner risk, no branding work. **This is the foundation and
-  the bulk of the effort (mostly battery + background-mode hardening).**
+```
+  A · capture (inputs)         B · our track store (hub)          C · push (outputs)
+  ────────────────────         ─────────────────────────         ──────────────────
+  native recorder  ─┐          ┌ normalize → resolve-to-lake ┐    ┌ Strava (activity:write)
+  Garmin           ─┤          │  (gpsActivities, D44)       │    │
+  HealthKit / HC   ─┼────────► │  aggregate + heatmap        ├──► ┤ (future: Whoop, …)
+  COROS · Polar    ─┘          │  privacy: minors-out,       │    │
+                               │  k-anon, home-protect,      │    │
+                               └  opt-in sharing             ┘    └
+```
 
-- **Stage B — the aggregate layer.**
-  Heatmap + crowd intelligence off our own tracks, behind the privacy model above
-  (minors exclusion, k-anonymity, opt-in). Independent of Strava.
+- **A — capture / inputs.** However a track gets *in*. The **native recorder** is the
+  first and most important A-input (phone-only skaters, and the source we fully control).
+  **Garmin / HealthKit / Health Connect / COROS / Polar** augment A later — each an
+  incremental adapter into the same normalized shape (reusing the provider-agnostic
+  ingest core already scoped in Phase 8). The watch-user case (above) enters here.
+- **B — our track store + aggregate (the hub, always covered).** Normalize any input to
+  `gpsActivities`, resolve to `waterBodyId` (D44), and — because this data is **ours,
+  not Strava's** — build the heatmap / crowd intelligence / path-on-public-report, gated
+  by **our** privacy model (minors excluded, k-anonymity thresholds, home-location
+  protection, opt-in sharing). **This is where the app actually benefits, and it's
+  provider-independent** — it works no matter which A-input or C-output is connected.
+- **C — push / outputs.** However a track gets *out* to where the user keeps their
+  fitness identity. **Strava (`activity:write`)** is the first and highest-value C-output
+  (the adoption carrot). Others (Whoop, etc.) augment C later as adapters off the same
+  normalized track.
 
-- **Stage C — Strava push.**
-  OAuth `activity:write`, GPX/FIT encode, upload+poll, dedup toggle, branding. Small
-  and self-contained *once Stage A produces a clean track*. This is the **adoption
-  carrot** — sequence it early enough to help onboarding, but it depends on A.
+**Build all three** so the pipeline is whole end-to-end; then A and C each grow by
+adding provider adapters, while **B — our benefit — is covered from day one regardless.**
 
-**MVP cut if we want signal fast:** Stage A recorder + Stage C push, *skip B initially*.
-That ships the "record with us, it lands in your Strava" hook (adoption) and the
-report-path feature, and defers the heavier aggregate/privacy work until there's enough
-track volume for a heatmap to mean anything anyway.
+### Suggested build order (within "all three")
+
+1. **B's spine + the native A-input** — recorder → normalized `gpsActivities` →
+   resolve-to-lake → render your *own* path on your *own* report. No provider risk; the
+   bulk of the effort (battery + background-mode hardening).
+2. **C's first output — Strava push** — small once B produces a clean track; ship early
+   as the adoption hook.
+3. **B's aggregate layer** — heatmap + crowd intelligence behind the privacy model, once
+   there's enough track volume to be meaningful.
+4. **Augment A and C** — Garmin / HealthKit / COROS / Polar adapters (also the watch-user
+   path for B); additional push targets as demand appears.
 
 ## Is Strava worth it now — verdict
 
 - **Pull integration (read tracks from Strava): no.** Legally shackled to single-user
   display, AI-banned, adoption-hostile. Shelve indefinitely.
-- **Push integration (write to Strava): yes, but as Stage C, not first.** It's cheap,
-  clearly allowed, and it's the lever that makes skaters willing to record with us. But
-  it's worthless without a recorder producing a clean track — so **the recorder (Stage
-  A) is the real project; Strava push is a thin, high-leverage cap on top.**
+- **Push integration (write to Strava): yes — it's C's first output.** Cheap, clearly
+  allowed, and the lever that makes skaters willing to record with us. But it's worthless
+  without a recorder producing a clean track — so **B's spine + the native recorder is
+  the real project; Strava push is a thin, high-leverage cap on top.**
 
 The headline: **we don't need Strava's data at all — we need Strava's gravity.** Push
 gives us the gravity; our own recorder gives us the data we're legally free to build on.
 
 ## Open questions
 
-- **Q (dupe):** best default for the double-recording case — detect-and-defer vs.
-  per-session opt-in? (Lean: opt-in v1.)
-- **Q (battery):** acceptable default fix cadence + the auto-stop-on-stationary
-  heuristic threshold — needs on-ice device testing (the GPX route-playback rig from
-  Phase 9.5 helps).
+- **Q (dupe): resolved — watch wins.** When a watch is connected, skip our Strava push
+  and our phone recording; ingest the watch track for B via an allowed provider. Open
+  sub-Q: the *auto-detect* of "user has a watch" vs. the v1 per-session toggle default.
+- **Q (fidelity/battery):** default fix cadence per mode is settled in principle
+  (Balanced/20 m for hazards, High–BestForNav/~5 m for record); still needs on-ice
+  device tuning + the auto-stop-on-stationary threshold (the Phase 9.5 GPX route-playback
+  rig helps).
 - **Q (privacy):** k-anonymity threshold + minors handling for aggregate layers — this
   is a **decision-grade** call (new D-number), not an implementation detail.
 - **Q (FIT vs GPX):** GPX is trivial to emit; FIT is richer (laps, HR passthrough).

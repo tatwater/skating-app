@@ -38,6 +38,16 @@ export const WATER_PALETTE = {
   dark: { fill: '#3a6ea5', outline: '#9ecae1' },
 } as const;
 
+/**
+ * The recorded-GPS-track line (Phase 8) — mirrors web's `TRACK_PALETTE`. A warm accent, deliberately
+ * outside both the water ramp and the hazard danger ramp: a skated path is neither water nor a
+ * warning, and it must stay legible drawn over ice fill and under a hazard footprint.
+ */
+export const TRACK_PALETTE = {
+  white: '#b4531f',
+  dark: '#f0a06a',
+} as const;
+
 /** Access-point (put-in) + report-photo pin colors (§E/D42) — success green + amber, as on web. */
 export const PUT_IN_PIN_COLOR = '#137138';
 export const PHOTO_PIN_COLOR = '#f59e0b';

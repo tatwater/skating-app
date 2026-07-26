@@ -327,7 +327,14 @@ Follow the code.
 
 ---
 
-## Phase-8-deferred (dedup) — do NOT forget
+## Phase-8-deferred (dedup) — ✅ RESOLVED 2026-07-24
+
+> **Phase 8 shipped the producer.** `waterBodies.create` is no longer a scaffold: it takes a recorded
+> `activityId`, derives the polygon from the trusted path, runs `findMatchCandidates`, and stamps
+> `dedupStatus` / `duplicateCandidateIds` — so the merge queue built here finally has rows flowing
+> into it. `DEDUP_STATUSES` gained **`near_certain`** and `listDedupCandidates` surfaces both tiers,
+> near-certain first. **Still deferred** (unchanged): the re-ETL overlap scan, auto-merge of
+> very-high-confidence pairs, and community "same place?" confirmations. Original note follows.
 
 Dedup review will be near-empty until Phase 8 ships match-on-create + user-drawn bodies (`waterBodies.create`
 is still a scaffold with no dedup). Built now: the **merge mutation + review-queue UI**. Deferred to Phase 8:

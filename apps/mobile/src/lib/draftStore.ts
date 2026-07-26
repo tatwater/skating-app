@@ -6,7 +6,7 @@
  * Untested native glue (like `photoPipeline`); the queue *logic* is tested in `@skating/core`.
  */
 
-import type { HazardQueueItem, ReportDraft } from '@skating/core';
+import type { HazardQueueItem, QueuedTrack, ReportDraft } from '@skating/core';
 import * as SQLite from 'expo-sqlite';
 
 /**
@@ -18,6 +18,7 @@ import * as SQLite from 'expo-sqlite';
  */
 const KIND_REPORT = 'report';
 const HAZARD_KINDS = ['hazard', 'hazard_confirmation'] as const;
+const KIND_TRACK = 'track';
 
 /**
  * The subset of `expo-sqlite`'s sync API this store uses. Factored out so `ensureSchema` — the one
@@ -142,4 +143,49 @@ export function getHazardItem(id: string): HazardQueueItem | null {
 
 export function deleteHazardItem(id: string): void {
   getDb().runSync('DELETE FROM report_drafts WHERE id = ?', [id]);
+}
+
+/**
+ * Upsert a recorded track (Phase 8) — the recorder's `persist` effect.
+ *
+ * Called **during** recording, not only at stop: a three-hour skate is the one artifact a user cannot
+ * recreate, so the buffer is checkpointed to disk as it grows. The whole point array is re-serialized
+ * each time, which is why the recorder batches its saves rather than writing per fix.
+ */
+export function saveTrack(track: QueuedTrack): void {
+  upsert(KIND_TRACK, track, track);
+}
+
+/** Every recorded track on the device, oldest first — including still-recording ones. */
+export function listTracks(): QueuedTrack[] {
+  return getDb()
+    .getAllSync<{ data: string }>(
+      'SELECT data FROM report_drafts WHERE kind = ? ORDER BY createdAt ASC',
+      [KIND_TRACK],
+    )
+    .map((r) => JSON.parse(r.data) as QueuedTrack);
+}
+
+export function getTrack(id: string): QueuedTrack | null {
+  const row = getDb().getFirstSync<{ data: string }>(
+    'SELECT data FROM report_drafts WHERE id = ? AND kind = ?',
+    [id, KIND_TRACK],
+  );
+  return row ? (JSON.parse(row.data) as QueuedTrack) : null;
+}
+
+export function deleteTrack(id: string): void {
+  getDb().runSync('DELETE FROM report_drafts WHERE id = ?', [id]);
+}
+
+/**
+ * The session left running when the app was killed mid-recording, if any.
+ *
+ * On launch the recorder adopts it rather than starting fresh — otherwise a crash on the ice would
+ * silently split one skate into two, or lose it entirely. There should be at most one; if a bug ever
+ * leaves several, the newest wins and the others are still flushable on their own.
+ */
+export function findUnfinishedTrack(): QueuedTrack | null {
+  const unfinished = listTracks().filter((t) => !t.finished);
+  return unfinished.at(-1) ?? null;
 }

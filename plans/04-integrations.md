@@ -1,6 +1,27 @@
 # Integrations
 
+> **⚠️ Strategic update (2026-07-24) — read [`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md) (and L7 in the legal checklist).**
+> The current Strava API Agreement was read: Strava **forbids** displaying one athlete's data to any
+> other user (even public data) and **bans AI/ML** use. So the *pull* model below **cannot** feed our
+> cross-user map/heatmap/report-path, and the old "Garmin is our fallback for Strava-path display"
+> stance is retired. The pivot: a **native in-app recorder** produces tracks *we own* (not Strava
+> Data) → legal to aggregate/heatmap/draw-on-reports; and we **push** those tracks *to* Strava
+> (`activity:write`) as the adoption lever. Reframed as an **A → B → C pipeline**: A = capture inputs
+> (native recorder first; the six providers below augment it), **B = our own track store +
+> aggregate/privacy, the always-covered hub**, C = push outputs (Strava first). The provider notes
+> below still hold **for the ingest side (A)**, but cross-user *display* now comes from **B (our
+> tracks), never from a provider's data.**
+
 ## GPS activity providers — all six v1-scoped, shipped fast-follow (D24)
+
+> **⚠️ Superseded for Phase 8 (2026-07-24) — read [`phase-8-native-capture.md`](./phase-8-native-capture.md).**
+> The Strava *pull/ingest* model described below is **dead** (L7: Strava forbids cross-user display of its
+> data + bans AI/ML). Phase 8 inverted to **native capture + Strava push**: we **record the track
+> ourselves** (first-party data we own → legal to aggregate/draw on reports) and **push** it to Strava
+> (`activity:write`). The **native recorder** is now A-input #1; the other five providers
+> (Garmin/HealthKit/HC/COROS/Polar) are **deferred**, each integrated individually later. Only the **free
+> Strava app** is needed now, and only for push. The per-provider setup notes below stay as reference for
+> those later adapters; the *cross-user display* stance further down is replaced by **D58**.
 
 All six providers are v1-scoped and the architecture is **provider-agnostic**, so
 any skater's device can contribute a **trusted** GPS path. **Apply for every
@@ -67,19 +88,23 @@ and prompts them to create a report — optionally pre-filling media/text/time.
 - Activity detail includes description and **photo URLs** (`photos` field). We can
   pre-fill a report draft from these.
 
-### ⚠ Terms / compliance watch-outs
-- **2024 API Agreement tightened rules**:
-  - Restrictions on **displaying one user's Strava data to other users** (3rd
-    parties) — this is the **biggest risk to our core mechanic** (D24): showing a
-    Strava-sourced GPS *path* on the shared public map is exactly cross-user
-    display. See "Cross-user map display" below.
-  - Restrictions on using Strava data with **AI/LLMs** — directly conflicts with
-    "auto-summarize Strava text/photos via AI" (see Q9). Verify before building.
-- **"Powered by Strava"** branding is **required** wherever Strava data appears.
+### ⚠ Terms / compliance watch-outs — Agreement read 2026-07-24 (L7)
+- **Nov-2024 API Agreement (confirmed by the read):**
+  - **Displaying one user's Strava data to other users is forbidden** — even public
+    data ("*may not be displayed or disclosed*"). This **rules out** a Strava-sourced
+    path on the shared public map / heatmap / report. **Resolved by the pivot:**
+    cross-user display comes from **our own recorded tracks**, not Strava — see
+    "Cross-user map display" below and `research/native-track-capture-and-strava-push.md`.
+  - **AI/LLM use of Strava data is banned** — kills "auto-summarize Strava text/photos
+    via AI" (Q9) over Strava-sourced content.
+- **"Powered by Strava"** branding required wherever Strava data appears (and honor the
+  "Connect with Strava" button asset on the connect/push surfaces).
 - Cannot use Strava data to **train models**; cannot build competing
-  segment/leaderboard products; storage/retention constraints.
-- **Action:** read the current Strava API Agreement + brand guidelines before
-  implementing media ingestion or any AI over Strava-sourced content.
+  segment/leaderboard products; storage/retention constraints; access is a revocable
+  privilege with mandatory deletion on termination.
+- **Still allowed (and now our plan):** **pushing** a user's *own* activity to their
+  *own* Strava via `activity:write` (the Garmin model) — the adoption lever. The
+  *ingest/pull* slice remains legal only **single-user** (show a user their own data).
 
 ### "Powered by Strava" attribution — UI checklist
 Strava's brand guidelines are mandatory wherever Strava data appears. Treat these as
@@ -96,16 +121,24 @@ build-time acceptance criteria (verify against current guidelines before launch)
 - [ ] Other providers' attribution requirements checked the same way when their
       integrations land (Garmin/COROS/Polar/Apple/Google each have brand terms).
 
-### Cross-user map display — our stance (D24/D35)
-We *want* to show a skater's trusted GPS path on the shared map. Plan:
-1. **If Strava's terms allow it**, display the Strava-sourced path (with "Powered
-   by Strava" attribution).
-2. **If not**, we do **not** show the Strava path to others — instead we source the
-   same path from a provider whose terms permit display (Garmin/COROS/Polar or the
-   on-device HealthKit/Health Connect track) and nudge users to connect that too.
+### Cross-user map display — our stance (D24/D35) — updated 2026-07-24
+We *want* to show a skater's trusted GPS path on the shared map. The 2026-07-24 Strava
+read (L7) settled how:
+1. **Strava is out as a display source** — its terms forbid showing one user's data to
+   any other user, even public data. We do **not** display Strava-sourced paths cross-user.
+2. **Display comes from tracks we own (B).** The **native recorder** produces first-party
+   tracks (not Strava Data) that we're free to aggregate, heatmap, and draw on public
+   reports — gated by *our* privacy model (**D58**: publish-is-consent, minors-out,
+   put-in-gated endpoint clipping, opt-out — *not* k-anonymity; L14). A **watch skater**
+   feeds B by connecting a provider whose terms *permit*
+   cross-user display (Garmin/COROS/Polar or on-device HealthKit/Health Connect) — never
+   via Strava's copy (that's the forbidden pull).
 3. **Native reports never require a GPS path at all** (D24 data model) — so a
    missing/blocked path never stops someone posting a report. We are never blocked
    from shipping; at worst the map shows fewer trusted paths.
+
+Full reasoning + the A→B→C pipeline and Strava **push** (`activity:write`) adoption lever:
+[`research/native-track-capture-and-strava-push.md`](./research/native-track-capture-and-strava-push.md).
 
 ---
 

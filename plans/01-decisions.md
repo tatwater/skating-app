@@ -129,6 +129,14 @@ public **trust score** (D50), not by friending or private tiers.
 **Why:** OSM/NHD miss small ponds, flooded fields, specific put-ins.
 **Follow-up (must address before too long):** deduplication of user-created
 locations that overlap each other or official polygons. Kept simple for now.
+### Amendment + build (2026-07-24, Phase 8) — path-only; "draw" is gone
+**Shipped**, and narrower than written above: a user-created body comes **only from a recorded GPS
+path**, never a drawn shape. `waterBodies.create` takes a `gpsActivities` **`activityId`** and derives
+the polygon server-side (`core/pathToBody.ts`), so *no freehand drawing, ever* is a **server contract**
+rather than a UI convention. **Why the narrowing:** no path ⇒ no proof the person was there and no
+scale/shape/location frame of reference — a hand-drawn blob is a claim, a skated track is evidence.
+The follow-up dedup question above is answered by **D36**, also built this phase (match-on-create
+scoring feeds the Phase 7 merge queue, which until now had nothing flowing into it).
 
 ## D15 — Hazard lifecycle (Waze-style time-decay + confirmation)
 **Decided (defaults, tweakable).**
@@ -242,6 +250,28 @@ Health Connect) are v1-scoped.
 skated; hand-drawn areas can't. Multiple providers widen who can contribute.
 **Why (also, D4 reconciliation):** the "north half was good" nuance is captured by
 the GPS path (where they went) + the report's overall description, not a drawn area.
+
+### Amendment (2026-07-24, Phase 8) — the flow inverted: we record, then push
+The **core claim above survives unchanged** (trusted extent = a real GPS track; no hand-drawn areas;
+provider-agnostic storage), but the *plumbing* is now the opposite direction, because the **L7 read
+of Strava's post-Nov-2024 terms** killed the pull model:
+- **The "cross-user map display is ToS-gated / we'll display a Strava path publicly if the terms
+  allow" bullet is RESOLVED — they don't allow it.** Strava data provided by a user may only be shown
+  *to that user*, publicly-viewable or not, plus a blanket AI/ML ban. So **Strava *pull* is shelved
+  indefinitely**: it can never legally feed the lake map, a heatmap, or a path on a public report.
+- **The first A-input is our own `native` recorder**, not a provider. A track we record is
+  first-party Developer Application Data, so aggregating it, drawing it on public reports, and later
+  heatmapping it are all legal with **none** of Strava's restrictions. The binding privacy constraint
+  moved from Strava to **us** (→ **D58**, L14).
+- **Strava's role flips to *push* only** (`activity:write` — the user's own skate to their own
+  account). It's the adoption lever ("record once, keep your Strava stats"), not a data source.
+- **The remaining five providers stay deferred adapters**, unchanged in intent: each is an incremental
+  A-input into the same normalized `gpsActivities` shape (L8 per-provider ToS at integration time).
+  **The "apply for Garmin/COROS/Polar partner programs now" instruction still stands** — approvals
+  take weeks and would otherwise gate the fast-follow.
+- **Fitbit remains a non-provider.** Unchanged.
+See [`phase-8-native-capture.md`](./phase-8-native-capture.md) and L7 in
+[`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md) for the full read.
 
 ## D25 — Units, edits, comment depth (housekeeping)
 **Decided.** (a) Store **metric internally, display imperial** (US crowd).
@@ -406,6 +436,16 @@ one that never creates the duplicate.**
 **Why:** No clustering infra needed at our scale; the UX prevents most dups and the
 merge reuses patterns already in the plan (soft tombstones, moderator queue,
 reputation-weighted confirmations).
+### Build note (2026-07-24, Phase 8) — the producer finally exists
+Match-on-create shipped: `waterBodies.findMatchCandidates` (bbox + geospatial-nearest prefilter →
+`core/dedup.ts` scoring over the *existing* `geometry.ts` primitives — no new geodesy) stamps
+`dedupStatus` / `duplicateCandidateIds`, and creating new requires an explicit `confirmedNew`. This
+is what the **Phase 7 merge queue** has been waiting for — it shipped in 7a with nothing flowing into
+it. **One schema amendment:** `DEDUP_STATUSES` gained **`near_certain`**; the thresholds above always
+described three tiers but the enum had two, so the top tier had nowhere to go. `listDedupCandidates`
+surfaces both, near-certain first, and a flagged body stays **listed** (D3 — hiding it would pull
+every report and hazard filed against it off the map on a machine's guess). The **re-ETL overlap scan**
+and **auto-merge + community confirmations** remain deferred, as staged above.
 
 ## D37 — Admin/moderator surface: gated `/admin` in the web app (not a separate app)
 **Decided.** The operator experience (moderation + app administration + support) is a
@@ -1114,9 +1154,11 @@ and it drives good-faith users off. A per-action, reversible right matches the o
 and keeps the door open for reinstatement, while still giving moderators a real deterrent. Pairs with D56's
 contradiction signal and D50's boost-only trust.
 
-**Extending the lever (planned — not yet built, 2026-07-23).** The per-capability pattern generalizes, but
-the *shape* of each lever must match the abuse it answers — never blanket symmetry:
-- **`canPostComments` (planned, Phase 7 — the strongest addition).** Comments are free-text user content
+**Extending the lever (2026-07-23; first extension shipped 2026-07-24).** The per-capability pattern
+generalizes, but the *shape* of each lever must match the abuse it answers — never blanket symmetry:
+- **`canPostComments` — ✅ BUILT in Phase 7** *(status corrected 2026-07-24; the "planned" wording below
+  described it before it landed. It's on `profiles`, flipped by `moderation.setPostingPermission`, and
+  enforced by `assertCanPostComments` in `comments.create`.)* Comments are free-text user content
   (D21) — the classic harassment/spam surface — so a **boolean** revocation fits, exactly like reports and
   hazards. Its distinct payoff: mute a toxic commenter *while preserving their safety contributions* (a bad
   commenter can still be a useful ice reporter), which neither `block` (interpersonal mute, D32) nor a
@@ -1132,3 +1174,54 @@ the *shape* of each lever must match the abuse it answers — never blanket symm
 - **Shape guardrail:** keep the per-capability-boolean form (plus that one bounty int); do **not** graduate to a
   `postingRestrictions` object/framework for 3–4 fields — that would break the clean `assertCanPost*` pattern
   and is the actual over-engineering risk here.
+
+## D58 — Aggregate-track privacy: publish-is-consent, not k-anonymity (Phase 8)
+**Decided (2026-07-24).** With the L7 pivot, cross-user track display is sourced from **our own
+native-recorded tracks** (not Strava data), so *our* privacy design — not an upstream ToS — is what
+protects skaters (promotes **L14**; see `phase-8-native-capture.md`). The model:
+- **Publish-is-consent, no k-anonymity.** A public report is *meant* to be shared, so a single
+  skater's public path may render — there is **no contributor-count threshold** gating a cell.
+  (Rejected the k-anon design: it would leave the alpha's map empty, and the paths are already public
+  on their reports.) The aggregate is built **only** from tracks linked to a **visible, non-minor
+  report** — publishing the report *is* the consent. No separate `sharedToAggregate` flag.
+- **Minors excluded by construction.** Minors are read-only (D41) and can't post reports, so their
+  tracks never link to a public report and never aggregate. (A minor *may* still use the recorder for
+  personal use + their own Strava push — their own data, no public surface.)
+- **Put-in-gated endpoint clipping.** The report's existing `showPutIn?` opt-out doubles as the
+  clipping consent: **put-in shared (`showPutIn !== false`) ⇒ full path** (the put-in is a declared
+  public-access point we *want* to surface); **put-in withheld ⇒ clip the first/last ~150 m** before
+  the track enters any aggregate, so a skate-from-the-backyard start/stop can't reveal a residence.
+  The report's *own* detail view still shows the skater's full path (their choice).
+- **Global opt-out** — a per-user `profiles.excludeTracksFromAggregate?` (person-level, so a later
+  opt-out retroactively drops all their tracks). Recording / Strava push are unaffected.
+- **Paths decay with their report** — opacity fades via D59 (never fully vanishes: a D3 min-opacity
+  floor, so a stale path never reads as "all clear").
+**Why:** the binding constraint moved from Strava to us; this model matches the app's ethos (public
+reports are a safety commons), populates the map from day one, and rests protection on minor-exclusion
++ put-in-gated clipping + publish-consent + opt-out rather than a threshold that would render nothing
+at alpha scale. **Deferred:** the crowd-intelligence *derivations* over the aggregate (pressure-ridge /
+clearest-side, path-cluster hazard deduction L9/Q11) — legal now (our data) but need volume + a
+calibration/privacy pass before they render.
+
+## D59 — Unified report freshness: the report is the unit of decay (Phase 8)
+**Decided (2026-07-24).** A GPS path has **no independent freshness** — it is a report's trusted
+extent (`reports.activityId → gpsActivities.path`), so its on-map opacity must be a pure function of
+the *report's* freshness. Rather than keep parallel copies of the "recency × usefulness ×
+weather-since" math, extract a shared primitive:
+- **One `core/reportFreshness`** blending `skateEndTime` recency, `netThumbs` (ratings), corroboration
+  count (`pointEvents.by_ref`), and `weatherExplainsIceChange` (weather). **Report-aging display and
+  path-opacity consume the identical value** → they *cannot* diverge (path opacity = that value +
+  a D3 min-opacity floor).
+- **Bounties refactor onto the shared *primitives*, not the whole formula.** `bountyFreshWindowHours`
+  keeps its genuinely-different policy (trust-window boost up to `BOUNTY_FRESH_MAX_MULTIPLIER = 3`, **no**
+  corroboration, weather hard-collapse, D56 reopen thresholds) but calls the shared recency/thumbs/
+  weather helpers instead of a private copy. Bounty answers a *different* question than "how faded is
+  this path," so identical-formula unification is wrong; sharing the drift-prone primitives is right.
+  **Hard gate: every existing Phase 6 bounty test stays green, untouched** — if the extraction can't
+  preserve behavior exactly, stop and reassess (do not edit tests to fit); fallback is to unify only
+  report+path and leave bounties' private copy.
+- **One tunable decay-rate constant** in `reputationConfig.ts`, surfaced as a read-only `ConstantCard`
+  in `admin.tuning.tsx` (edit-and-redeploy, Phase 7 posture — no runtime `appConfig` table).
+**Why:** "one copy of the math" for the part that would actually drift (the shared primitives), with
+each consumer keeping the policy its question demands — the report↔path pair provably can't diverge
+because they're one number, and bounties stop carrying a duplicate of the blend.

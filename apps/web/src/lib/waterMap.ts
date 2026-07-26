@@ -51,6 +51,16 @@ export const WATER_PALETTE = {
   dark: { fill: '#3a6ea5', outline: '#9ecae1' },
 } as const;
 
+/**
+ * The recorded-GPS-track line (Phase 8). Deliberately a warm accent, not part of the water ramp and
+ * not part of the hazard danger ramp: a skated path is neither water nor a warning, and it must stay
+ * legible against both the ice fill and a hazard footprint drawn over it.
+ */
+export const TRACK_PALETTE = {
+  white: '#b4531f',
+  dark: '#f0a06a',
+} as const;
+
 /** Initial framing — Burlington sits near the center of the region; the fallback when no device
  *  fix is available (device geolocation reframes on open when in-region, D12/D20). */
 export const INITIAL_CENTER: [number, number] = [-73.15, 44.46];

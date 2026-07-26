@@ -222,6 +222,63 @@ export const DEFAULT_BOUNTY_LIFETIME_MS = 30 * DAY_MS;
 export const BOUNTY_ELIGIBILITY_WINDOW_HOURS = 72;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Report freshness — the shared unit of decay (D59, Phase 8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Bounds on the net-thumbs signal (helpful − unhelpful) wherever it stretches a freshness window —
+ * `bountyFreshWindowHours` and `reportFreshness` both clamp here (`clampedNetThumbs`).
+ *
+ * Asymmetric on purpose. Upward, four net thumbs is a genuinely corroborated read that stays relevant
+ * longer. Downward, we stop at −2: an unpopular report is still a first-hand observation, and D50 is
+ * boost-only — thumbs must never become a mechanism for burying what someone saw on the ice (D3).
+ */
+export const NET_THUMBS_MIN = -2;
+export const NET_THUMBS_MAX = 4;
+
+/**
+ * **The report decay rate (D59).** A report — and therefore its GPS path's opacity — loses half its
+ * freshness every this many hours. Three days is deliberately slower than the 48h bounty base window:
+ * the bounty gate asks "does anyone need fresh eyes here *today*", while this asks "how much does this
+ * observation still describe the lake", which stays partly true well past the point where a new report
+ * would be welcome. Raise it and old tracks linger dark on the map; lower it and the lake goes faint
+ * a day after a skate.
+ */
+export const REPORT_FRESHNESS_HALF_LIFE_HOURS = 72;
+
+/** How much each (clamped) net thumb stretches the report half-life, as a fraction of the base. */
+export const REPORT_FRESHNESS_PER_THUMB = 0.25;
+
+/** How much each independent corroborating report stretches the half-life — worth more than a thumb:
+ *  someone else went and looked (D50 weights corroboration above reaction). */
+export const REPORT_FRESHNESS_PER_CORROBORATION = 0.5;
+
+/** Corroborations counted toward the stretch; past this the signal has said what it can say. */
+export const REPORT_MAX_CORROBORATION = 4;
+
+/**
+ * Ceiling on the combined thumbs + corroboration stretch, so the best-supported report's half-life is
+ * at most 3× the base — the same 3× bound `BOUNTY_FRESH_MAX_MULTIPLIER` puts on the bounty window.
+ */
+export const REPORT_FRESHNESS_MAX_EXTENSION = 2;
+
+/**
+ * What a meaningful freeze/thaw since the skate (`weatherExplainsIceChange`) does to report freshness:
+ * multiplies it down hard, because the report may describe ice that no longer exists. **Multiplicative,
+ * not a collapse to zero** — unlike the bounty gate, which *should* reopen outright. Here a zero would
+ * fade a path to the floor after one cold night, and weather is evidence about the ice, never a reason
+ * to stop showing where a person actually skated (D3).
+ */
+export const REPORT_FRESHNESS_WEATHER_MULTIPLIER = 0.25;
+
+/**
+ * The floor a GPS path fades to but never below (D3/D58) — the never-hide invariant the hazard and
+ * report layers already carry, applied to tracks. A blank stretch of lake reads as "nobody found a
+ * problem here"; a faint old line reads as "someone skated here a while ago", which is the truth.
+ */
+export const PATH_MIN_OPACITY = 0.15;
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Recommended feed (decisions 13–15)
 // ─────────────────────────────────────────────────────────────────────────────
 

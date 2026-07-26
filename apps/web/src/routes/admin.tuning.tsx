@@ -14,8 +14,16 @@ import {
   MAX_OPEN_BOUNTIES_PER_DAY,
   MIN_VISIBLE_ZOOM_FLOOR,
   MIN_VISIBLE_ZOOM_WIDEST,
+  NET_THUMBS_MAX,
+  NET_THUMBS_MIN,
   NEW_ACCOUNT_WINDOW_MS,
+  PATH_MIN_OPACITY,
   POINT_WEIGHTS,
+  REPORT_FRESHNESS_HALF_LIFE_HOURS,
+  REPORT_FRESHNESS_MAX_EXTENSION,
+  REPORT_FRESHNESS_PER_CORROBORATION,
+  REPORT_FRESHNESS_PER_THUMB,
+  REPORT_FRESHNESS_WEATHER_MULTIPLIER,
   TRUST_CLASS_THRESHOLDS,
 } from '@skating/core';
 import { createFileRoute } from '@tanstack/react-router';
@@ -306,6 +314,59 @@ function AdminTuning() {
           </ConstantCard>
         </div>
         <MetricComposition metricKey="zoom_band_distribution" catalogue={catalogue} />
+      </TuningSection>
+
+      {/* ── Report freshness (D59) ───────────────────────────────────────── */}
+      <TuningSection
+        title="Report freshness & path decay"
+        blurb="One number decides how faded an aging report reads and how faded its recorded GPS path draws on the lake (D59) — they are the same value by construction, so they cannot drift apart. Boost-only: support extends the window, unhelpful marks never shorten it."
+      >
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ConstantCard
+            name="REPORT_FRESHNESS_HALF_LIFE_HOURS"
+            value={`${REPORT_FRESHNESS_HALF_LIFE_HOURS}h`}
+            file="reputationConfig.ts"
+          >
+            The decay rate: a report — and its path's opacity — loses half its freshness this often.
+            Deliberately slower than the {FRESH_REPORT_HOURS}h bounty base window, because "does
+            this still describe the lake" stays partly true well past "would a new report be
+            welcome". Raise it and old tracks linger dark; lower it and the lake goes faint a day
+            after a skate.
+          </ConstantCard>
+          <ConstantCard
+            name="REPORT_FRESHNESS_PER_THUMB / _PER_CORROBORATION"
+            value={`+${REPORT_FRESHNESS_PER_THUMB} / +${REPORT_FRESHNESS_PER_CORROBORATION}`}
+            file="reputationConfig.ts"
+          >
+            How much each net helpful thumb, and each independent corroborating report, stretches
+            the half-life. Corroboration is worth more — someone else went and looked. Capped at{' '}
+            {REPORT_FRESHNESS_MAX_EXTENSION}× extra (a {1 + REPORT_FRESHNESS_MAX_EXTENSION}×
+            ceiling, matching the bounty window's).
+          </ConstantCard>
+          <ConstantCard
+            name="NET_THUMBS_MIN / NET_THUMBS_MAX"
+            value={`${NET_THUMBS_MIN} … ${NET_THUMBS_MAX}`}
+            file="reputationConfig.ts"
+          >
+            Bounds on the net-thumbs signal wherever it stretches a window — shared by the bounty
+            gate and report freshness, so a change moves both together. Asymmetric: reaction can
+            extend further than it can shorten.
+          </ConstantCard>
+          <ConstantCard
+            name="REPORT_FRESHNESS_WEATHER_MULTIPLIER"
+            value={`×${REPORT_FRESHNESS_WEATHER_MULTIPLIER}`}
+            file="reputationConfig.ts"
+          >
+            What a meaningful freeze/thaw since the skate does to freshness. Multiplicative, never a
+            collapse to zero — unlike the bounty gate, which should reopen outright. Weather is
+            evidence about the ice, never a reason to stop showing where a person skated.
+          </ConstantCard>
+          <ConstantCard name="PATH_MIN_OPACITY" value={PATH_MIN_OPACITY} file="reputationConfig.ts">
+            The floor a GPS path fades to but never below (D3/D58) — the same never-hide invariant
+            the hazard and report layers carry. A blank stretch of lake would read as "nobody found
+            a problem here"; a faint old line reads as "someone skated here a while ago".
+          </ConstantCard>
+        </div>
       </TuningSection>
 
       {/* ── Operational health ───────────────────────────────────────────── */}

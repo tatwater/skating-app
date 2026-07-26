@@ -1,0 +1,699 @@
+import geospatial from '@convex-dev/geospatial/test';
+import { convexTest } from 'convex-test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { api, internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
+import schema from './schema';
+import { stravaAuthorizeUrl } from './strava';
+
+const modules = import.meta.glob('./**/*.*s');
+
+function harness() {
+  const t = convexTest(schema, modules);
+  geospatial.register(t);
+  geospatial.register(t, 'adminAreasGeo');
+  return t;
+}
+
+const NOTIF_PREFS = {
+  activityDetected: true,
+  bountyRequest: true,
+  hazardConfirmation: true,
+  bountyFulfilled: true,
+  reportRated: true,
+  reportCommented: true,
+  contentFlagResolved: true,
+  favoriteReport: true,
+  nearbyReportDigest: false,
+  greatReportNearby: false,
+};
+
+const T0 = Date.UTC(2026, 0, 15, 14, 0, 0);
+
+async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {
+  const id = await t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: subject,
+      displayName: subject,
+      username: subject,
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public' as const,
+      notificationPrefs: NOTIF_PREFS,
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role: 'member' as const,
+      status: 'active' as const,
+      createdAt: Date.now(),
+    }),
+  );
+  return { id, as: t.withIdentity({ subject }) };
+}
+
+/** An hour on the ice, twelve stored coordinates — the gap the GPX timestamps have to bridge. */
+const ACTIVITY_SECONDS = 3600;
+
+async function seedActivity(
+  t: ReturnType<typeof convexTest>,
+  userId: Id<'profiles'>,
+  overrides: { endTime?: number | undefined; elapsedSeconds?: number } = {},
+) {
+  const endTime = 'endTime' in overrides ? overrides.endTime : T0 + ACTIVITY_SECONDS * 1000;
+  return t.run((ctx) =>
+    ctx.db.insert('gpsActivities', {
+      userId,
+      provider: 'native' as const,
+      providerActivityId: `key-${userId}`,
+      sportType: 'IceSkate',
+      startTime: T0,
+      ...(endTime !== undefined ? { endTime } : {}),
+      ...(overrides.elapsedSeconds !== undefined
+        ? { elapsedSeconds: overrides.elapsedSeconds }
+        : {}),
+      path: {
+        type: 'LineString' as const,
+        coordinates: Array.from({ length: 12 }, (_, i) => [-72.15 + i * 0.001, 43.9]),
+      },
+      promptState: 'pending' as const,
+      detectedAt: T0,
+    }),
+  );
+}
+
+type FetchCall = { url: string; method: string; body: unknown };
+
+/** Pull the GPX back out of the multipart upload, so the timestamps we actually sent can be read. */
+async function uploadedTrackTimes(calls: FetchCall[]): Promise<number[]> {
+  const post = calls.find((c) => c.method === 'POST' && /\/uploads$/.test(c.url));
+  const file = (post?.body as FormData | undefined)?.get('file');
+  if (!(file instanceof Blob)) throw new Error('no GPX file in the upload');
+  const gpx = await file.text();
+  // Only the <trkpt> times — the <metadata> block carries one too, and it isn't a track point.
+  const seg = gpx.slice(gpx.indexOf('<trkseg>'));
+  return [...seg.matchAll(/<time>([^<]+)<\/time>/g)].map((m) => Date.parse(m[1] as string));
+}
+
+async function seedConnection(
+  t: ReturnType<typeof convexTest>,
+  userId: Id<'profiles'>,
+  overrides: { tokenExpiresAt?: number } = {},
+) {
+  return t.run((ctx) =>
+    ctx.db.insert('activityConnections', {
+      userId,
+      provider: 'strava' as const,
+      externalUserId: '12345',
+      accessToken: 'access-old',
+      refreshToken: 'refresh-old',
+      scopes: ['read', 'activity:write'],
+      tokenExpiresAt: overrides.tokenExpiresAt ?? Date.now() + 6 * 3_600_000,
+      connectedAt: Date.now(),
+    }),
+  );
+}
+
+/** A `fetch` stub that answers by URL + method, recording every call. */
+function stubFetch(routes: Array<{ match: RegExp; method?: string; body: unknown; ok?: boolean }>) {
+  const calls: FetchCall[] = [];
+  const fake = vi.fn(async (input: string | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+    calls.push({ url, method, body: init?.body });
+    const route = routes.find(
+      (r) => r.match.test(url) && (r.method === undefined || r.method === method),
+    );
+    if (!route) throw new Error(`unstubbed fetch: ${method} ${url}`);
+    return {
+      ok: route.ok ?? true,
+      status: route.ok === false ? 500 : 200,
+      json: async () => route.body,
+    } as Response;
+  });
+  vi.stubGlobal('fetch', fake);
+  return calls;
+}
+
+beforeEach(() => {
+  vi.stubEnv('STRAVA_CLIENT_ID', 'client-id');
+  vi.stubEnv('STRAVA_CLIENT_SECRET', 'client-secret');
+  vi.stubEnv('CONVEX_SITE_URL', 'https://example.convex.site');
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+
+describe('the connect flow is bound to a user by a single-use nonce', () => {
+  test("beginConnect mints a state row and returns OUR start URL, not Strava's", async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const { connectUrl } = await user.as.mutation(api.strava.beginConnect, {});
+
+    const states = await t.run((ctx) => ctx.db.query('oauthStates').collect());
+    expect(states).toHaveLength(1);
+    expect(states[0]?.userId).toBe(user.id);
+    // Handing out Strava's URL directly is what allowed the account-linking attack: the browser
+    // must pass through `/strava/start` so the session cookie gets set first.
+    expect(connectUrl).toContain('https://example.convex.site/strava/start');
+    expect(connectUrl).toContain(`state=${states[0]?.state}`);
+    expect(connectUrl).not.toContain('strava.com');
+  });
+
+  test('the Strava consent URL asks for nothing we cannot legally act on', async () => {
+    const authorizeUrl = stravaAuthorizeUrl('nonce');
+    expect(authorizeUrl).toContain('https://www.strava.com/oauth/authorize');
+    expect(authorizeUrl).toContain('activity%3Awrite');
+    expect(authorizeUrl).toContain('state=nonce');
+    expect(authorizeUrl).toContain(
+      'redirect_uri=https%3A%2F%2Fexample.convex.site%2Fstrava%2Fcallback',
+    );
+    // No `activity:read_all`, no follower scopes — we never read anyone's activities.
+    expect(authorizeUrl).not.toContain('read_all');
+  });
+
+  test('requires a signed-in user, and refuses when Strava is unconfigured', async () => {
+    const t = harness();
+    await expect(t.mutation(api.strava.beginConnect, {})).rejects.toThrow();
+
+    vi.stubEnv('STRAVA_CLIENT_ID', '');
+    const user = await seedUser(t, 'skater');
+    await expect(user.as.mutation(api.strava.beginConnect, {})).rejects.toThrow(/not configured/i);
+  });
+
+  test('a state is consumed exactly once — a replayed callback finds nothing', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    const first = await t.mutation(internal.strava.consumeOAuthState, { state });
+    expect(first?.userId).toBe(user.id);
+    // This is the replay the nonce exists to stop: a second use of the same callback URL.
+    expect(await t.mutation(internal.strava.consumeOAuthState, { state })).toBeNull();
+  });
+
+  test('an expired state is refused (and still burned)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await t.run((ctx) =>
+      ctx.db.insert('oauthStates', {
+        state: 'stale',
+        userId: user.id,
+        provider: 'strava' as const,
+        expiresAt: Date.now() - 1,
+        createdAt: Date.now() - 1000,
+      }),
+    );
+    expect(await t.mutation(internal.strava.consumeOAuthState, { state: 'stale' })).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(0);
+  });
+
+  test('completeConnect exchanges the code and stores the tokens against the right user', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    stubFetch([
+      {
+        match: /oauth\/token/,
+        body: {
+          access_token: 'access-new',
+          refresh_token: 'refresh-new',
+          expires_at: Math.floor(Date.now() / 1000) + 21_600,
+          athlete: { id: 999 },
+        },
+      },
+    ]);
+
+    const outcome = await t.action(internal.strava.completeConnect, { code: 'abc', state });
+    expect(outcome.ok).toBe(true);
+
+    const connections = await t.run((ctx) => ctx.db.query('activityConnections').collect());
+    expect(connections).toHaveLength(1);
+    expect(connections[0]?.userId).toBe(user.id);
+    expect(connections[0]?.externalUserId).toBe('999');
+    expect(connections[0]?.accessToken).toBe('access-new');
+  });
+
+  test('a callback with an unknown state connects nobody', async () => {
+    const t = harness();
+    stubFetch([{ match: /oauth\/token/, body: {} }]);
+    const outcome = await t.action(internal.strava.completeConnect, {
+      code: 'abc',
+      state: 'forged',
+    });
+    expect(outcome.ok).toBe(false);
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+  });
+});
+
+describe('connectionStatus / disconnect', () => {
+  test('exposes only whether a connection exists — never the tokens', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    expect(await user.as.query(api.strava.connectionStatus, {})).toMatchObject({
+      connected: false,
+      configured: true,
+    });
+
+    await seedConnection(t, user.id);
+    const status = await user.as.query(api.strava.connectionStatus, {});
+    expect(status.connected).toBe(true);
+    expect(JSON.stringify(status)).not.toContain('access-old');
+    expect(JSON.stringify(status)).not.toContain('refresh-old');
+  });
+
+  test('disconnect forgets the tokens but keeps every track — they were always ours', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedConnection(t, user.id);
+    const activityId = await seedActivity(t, user.id);
+
+    await user.as.mutation(api.strava.disconnect, {});
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.get(activityId))).not.toBeNull();
+  });
+});
+
+describe('pushActivity (upload → poll)', () => {
+  test('uploads a GPX and returns the created activity id', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedConnection(t, user.id);
+    const activityId = await seedActivity(t, user.id);
+
+    const calls = stubFetch([
+      { match: /api\/v3\/uploads\/\d+/, method: 'GET', body: { activity_id: 555, error: null } },
+      { match: /api\/v3\/uploads$/, method: 'POST', body: { id: 42 } },
+      { match: /api\/v3\/activities\/\d+/, method: 'PUT', body: {} },
+    ]);
+
+    const result = await user.as.action(api.strava.pushActivity, { activityId });
+    expect(result).toMatchObject({ ok: true, activityId: 555 });
+
+    const upload = calls.find((c) => c.method === 'POST');
+    expect(upload?.url).toContain('/api/v3/uploads');
+    // GPX has no formal sport vocabulary, so the type is also set explicitly afterwards — otherwise
+    // the skate lands on Strava as a generic workout.
+    expect(calls.some((c) => c.method === 'PUT' && c.url.includes('/activities/555'))).toBe(true);
+  }, 30_000);
+
+  // Strava reads distance from the geometry but *duration and pace from the timestamps*. Spacing the
+  // points a fixed second apart posted an hour-long skate as a twelve-second one at an absurd pace.
+  test('spreads the GPX timestamps across the recorded duration, not one per second', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedConnection(t, user.id);
+    const activityId = await seedActivity(t, user.id);
+
+    const calls = stubFetch([
+      { match: /api\/v3\/uploads\/\d+/, method: 'GET', body: { activity_id: 555, error: null } },
+      { match: /api\/v3\/uploads$/, method: 'POST', body: { id: 42 } },
+      { match: /api\/v3\/activities\/\d+/, method: 'PUT', body: {} },
+    ]);
+    await user.as.action(api.strava.pushActivity, { activityId });
+
+    const times = await uploadedTrackTimes(calls);
+    expect(times).toHaveLength(12);
+    expect(times[0]).toBe(T0);
+    expect(times.at(-1)).toBe(T0 + ACTIVITY_SECONDS * 1000);
+    // ...and evenly, so the pace is smooth rather than a stall followed by a sprint.
+    const gaps = times.slice(1).map((time, i) => time - (times[i] as number));
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(1);
+  }, 30_000);
+
+  test('falls back to elapsed time when a row predates endTime, and to 1 Hz when neither exists', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedConnection(t, user.id);
+    const routes = [
+      { match: /api\/v3\/uploads\/\d+/, method: 'GET', body: { activity_id: 555, error: null } },
+      { match: /api\/v3\/uploads$/, method: 'POST', body: { id: 42 } },
+      { match: /api\/v3\/activities\/\d+/, method: 'PUT', body: {} },
+    ];
+
+    const withElapsed = await seedActivity(t, user.id, {
+      endTime: undefined,
+      elapsedSeconds: 1800,
+    });
+    let calls = stubFetch(routes);
+    await user.as.action(api.strava.pushActivity, { activityId: withElapsed });
+    expect((await uploadedTrackTimes(calls)).at(-1)).toBe(T0 + 1_800_000);
+
+    await t.run((ctx) => ctx.db.delete(withElapsed));
+    const bare = await seedActivity(t, user.id, { endTime: undefined });
+    calls = stubFetch(routes);
+    await user.as.action(api.strava.pushActivity, { activityId: bare });
+    expect((await uploadedTrackTimes(calls)).at(-1)).toBe(T0 + 11_000);
+  }, 60_000);
+
+  test("surfaces Strava's duplicate rejection rather than retrying forever", async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedConnection(t, user.id);
+    const activityId = await seedActivity(t, user.id);
+
+    stubFetch([
+      {
+        match: /api\/v3\/uploads\/\d+/,
+        method: 'GET',
+        body: { activity_id: null, error: 'duplicate of activity 123' },
+      },
+      { match: /api\/v3\/uploads$/, method: 'POST', body: { id: 42 } },
+    ]);
+
+    const result = await user.as.action(api.strava.pushActivity, { activityId });
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/duplicate/i);
+    // The reason is what lets the client record the skate as uploaded rather than failed: it *is* on
+    // Strava — a watch just got there first.
+    expect(result.reason).toBe('duplicate');
+  }, 30_000);
+
+  test('refreshes an expired access token before uploading', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await seedConnection(t, user.id, { tokenExpiresAt: Date.now() - 1000 });
+    const activityId = await seedActivity(t, user.id);
+
+    const calls = stubFetch([
+      {
+        match: /oauth\/token/,
+        body: {
+          access_token: 'access-fresh',
+          refresh_token: 'refresh-fresh',
+          expires_at: Math.floor(Date.now() / 1000) + 21_600,
+        },
+      },
+      { match: /api\/v3\/uploads\/\d+/, method: 'GET', body: { activity_id: 7, error: null } },
+      { match: /api\/v3\/uploads$/, method: 'POST', body: { id: 1 } },
+      { match: /api\/v3\/activities\/\d+/, method: 'PUT', body: {} },
+    ]);
+
+    const result = await user.as.action(api.strava.pushActivity, { activityId });
+    expect(result.ok).toBe(true);
+    expect(calls.some((c) => c.url.includes('oauth/token'))).toBe(true);
+    // ...and the refreshed pair is persisted, so the next upload doesn't refresh again.
+    const connection = (await t.run((ctx) => ctx.db.query('activityConnections').collect()))[0];
+    expect(connection?.accessToken).toBe('access-fresh');
+    expect(connection?.refreshToken).toBe('refresh-fresh');
+  }, 30_000);
+
+  test('never uploads one user’s skate from another user’s account', async () => {
+    const t = harness();
+    const owner = await seedUser(t, 'owner');
+    const other = await seedUser(t, 'other');
+    await seedConnection(t, other.id);
+    const activityId = await seedActivity(t, owner.id);
+
+    stubFetch([{ match: /./, body: {} }]);
+    const result = await other.as.action(api.strava.pushActivity, { activityId });
+    expect(result).toMatchObject({ ok: false, error: 'Not your activity' });
+  });
+
+  test('reports a missing connection instead of failing obscurely', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const activityId = await seedActivity(t, user.id);
+    stubFetch([{ match: /./, body: {} }]);
+    // `not_connected` is the reason the client turns into a *skipped* push rather than a failed one —
+    // the upload toggle defaults on, so "never linked an account" is the common case, not an error.
+    expect(await user.as.action(api.strava.pushActivity, { activityId })).toMatchObject({
+      ok: false,
+      error: 'Strava is not connected',
+      reason: 'not_connected',
+    });
+  });
+
+  test('is a quiet no-op when the deployment has no Strava credentials', async () => {
+    const t = harness();
+    vi.stubEnv('STRAVA_CLIENT_ID', '');
+    const user = await seedUser(t, 'skater');
+    const activityId = await seedActivity(t, user.id);
+    expect(await user.as.action(api.strava.pushActivity, { activityId })).toMatchObject({
+      ok: false,
+      error: 'Strava is not configured',
+      reason: 'not_configured',
+    });
+  });
+});
+
+describe('pruneOAuthStates', () => {
+  test('sweeps expired nonces and leaves live ones alone', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await t.run(async (ctx) => {
+      await ctx.db.insert('oauthStates', {
+        state: 'expired',
+        userId: user.id,
+        provider: 'strava' as const,
+        expiresAt: Date.now() - 1,
+        createdAt: Date.now() - 10_000,
+      });
+      await ctx.db.insert('oauthStates', {
+        state: 'live',
+        userId: user.id,
+        provider: 'strava' as const,
+        expiresAt: Date.now() + 60_000,
+        createdAt: Date.now(),
+      });
+    });
+
+    expect(await t.mutation(internal.strava.pruneOAuthStates, {})).toEqual({ pruned: 1 });
+    const left = await t.run((ctx) => ctx.db.query('oauthStates').collect());
+    expect(left.map((r) => r.state)).toEqual(['live']);
+  });
+});
+
+describe('the /strava/callback endpoint', () => {
+  /**
+   * Drive the real HTTP route the way Strava will. `cookieState` is what `/strava/start` would have
+   * planted in this browser — omit it to simulate a browser that never started the flow.
+   */
+  function callback(
+    t: ReturnType<typeof convexTest>,
+    query: Record<string, string>,
+    cookieState?: string,
+  ) {
+    const params = new URLSearchParams(query).toString();
+    return t.fetch(`/strava/callback?${params}`, {
+      method: 'GET',
+      ...(cookieState ? { headers: { Cookie: `skating_oauth_state=${cookieState}` } } : {}),
+    });
+  }
+
+  test('bounces back into the app via the deep link the flow started with', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, { redirectTo: 'skating://settings' });
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    stubFetch([
+      {
+        match: /oauth\/token/,
+        body: {
+          access_token: 'a',
+          refresh_token: 'r',
+          expires_at: Math.floor(Date.now() / 1000) + 21_600,
+          athlete: { id: 1 },
+        },
+      },
+    ]);
+
+    const res = await callback(t, { code: 'abc', state }, state);
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe('skating://settings?strava=connected');
+    // The nonce is spent, so the cookie goes with it.
+    expect(res.headers.get('Set-Cookie')).toContain('Max-Age=0');
+  });
+
+  test('a declined authorization comes back as declined, without touching the token endpoint', async () => {
+    const t = harness();
+    // No fetch stub at all: reaching Strava here would throw, which is the assertion.
+    const res = await callback(t, { error: 'access_denied' });
+    expect(res.status).toBe(200); // no target and no WEB_APP_URL ⇒ the fallback page
+    expect(await res.text()).toContain('Strava not connected');
+  });
+
+  test('renders a page instead of a dead-end relative redirect when nothing is configured', async () => {
+    const t = harness();
+    const res = await callback(t, { state: 'forged' }); // no code ⇒ failed, no target
+    expect(res.status).toBe(200);
+    expect(res.headers.get('Content-Type')).toContain('text/html');
+    expect(await res.text()).toContain("Couldn't connect Strava");
+    // The bug this pins: a relative Location resolves against the .site host and 404s.
+    expect(res.headers.get('Location')).toBeNull();
+  });
+
+  test('falls back to the configured web app when there is no deep link', async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    const res = await callback(t, { error: 'access_denied' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toBe('https://skating.example/settings?strava=declined');
+  });
+
+  test('a forged state connects nobody and still lands somewhere intelligible', async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    stubFetch([{ match: /oauth\/token/, body: {} }]);
+    const res = await callback(t, { code: 'abc', state: 'forged' }, 'forged');
+    expect(res.headers.get('Location')).toBe('https://skating.example/settings?strava=failed');
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+  });
+});
+
+describe('beginConnect refuses an unsafe return target (open-redirect guard)', () => {
+  test('rejects a foreign origin before it ever reaches the database', async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await expect(
+      user.as.mutation(api.strava.beginConnect, { redirectTo: 'https://evil.example/steal' }),
+    ).rejects.toThrow(/Unsafe redirect/i);
+    expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(0);
+  });
+
+  test('accepts the app deep link', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await expect(
+      user.as.mutation(api.strava.beginConnect, { redirectTo: 'skating://settings' }),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe('/strava/start binds the flow to the browser', () => {
+  test('sets the session cookie and forwards to Strava', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    const res = await t.fetch(`/strava/start?state=${state}`, { method: 'GET' });
+    expect(res.status).toBe(302);
+    expect(res.headers.get('Location')).toContain('https://www.strava.com/oauth/authorize');
+
+    const cookie = res.headers.get('Set-Cookie') ?? '';
+    expect(cookie).toContain(`skating_oauth_state=${state}`);
+    expect(cookie).toContain('HttpOnly');
+    expect(cookie).toContain('Secure');
+    // Strict would withhold the cookie on the cross-site navigation back from Strava, breaking every
+    // connect. Lax is load-bearing, not a default.
+    expect(cookie).toContain('SameSite=Lax');
+  });
+
+  test('does NOT consume the nonce — the user has not seen Strava yet', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    await t.fetch(`/strava/start?state=${state}`, { method: 'GET' });
+    expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(1);
+  });
+
+  test('refuses an unknown or expired nonce instead of sending someone to a doomed consent screen', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await t.run((ctx) =>
+      ctx.db.insert('oauthStates', {
+        state: 'stale',
+        userId: user.id,
+        provider: 'strava' as const,
+        expiresAt: Date.now() - 1,
+        createdAt: Date.now() - 10_000,
+      }),
+    );
+
+    for (const url of [
+      '/strava/start',
+      '/strava/start?state=unknown',
+      '/strava/start?state=stale',
+    ]) {
+      const res = await t.fetch(url, { method: 'GET' });
+      expect(res.status).toBe(200); // the fallback page, not a redirect to Strava
+      expect(res.headers.get('Location')).toBeNull();
+    }
+  });
+});
+
+describe('the account-linking attack is refused before any token exchange', () => {
+  test("a victim's browser has no cookie, so their code is never exchanged", async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    const attacker = await seedUser(t, 'attacker');
+    // The attacker mints a state on their OWN account and sends the consent link to a victim.
+    await attacker.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    // The victim approves on Strava. Their browser never visited `/strava/start`, so it carries no
+    // cookie. The stub records every outbound call, so we can assert the exchange never happened
+    // rather than inferring it from the response.
+    const calls = stubFetch([{ match: /./, body: {} }]);
+    const res = await t.fetch(`/strava/callback?code=victim-code&state=${state}`, {
+      method: 'GET',
+    });
+
+    // The decisive assertion: the victim's authorization code was never traded for tokens.
+    expect(calls).toHaveLength(0);
+
+    expect(res.headers.get('Location')).toContain('strava=failed');
+    // Distinguishable from a real OAuth error, so a cookie problem on a device isn't a mystery.
+    expect(res.headers.get('Location')).toContain('strava_reason=session');
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+    // ...and the nonce survives, so the attacker gains nothing by burning a victim's consent.
+    expect(await t.run((ctx) => ctx.db.query('oauthStates').collect())).toHaveLength(1);
+  });
+
+  test("a cookie from a DIFFERENT flow doesn't satisfy the check", async () => {
+    vi.stubEnv('WEB_APP_URL', 'https://skating.example');
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    const res = await t.fetch(`/strava/callback?code=abc&state=${state}`, {
+      method: 'GET',
+      headers: { Cookie: 'skating_oauth_state=some-other-flow' },
+    });
+    expect(res.headers.get('Location')).toContain('strava_reason=session');
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+  });
+
+  test('the honest end-to-end path still works: start → consent → callback', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    await user.as.mutation(api.strava.beginConnect, { redirectTo: 'skating://settings' });
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    // Step 1: the app opens our start route, which plants the cookie.
+    const start = await t.fetch(`/strava/start?state=${state}`, { method: 'GET' });
+    const planted = (start.headers.get('Set-Cookie') ?? '').split(';')[0] as string;
+
+    stubFetch([
+      {
+        match: /oauth\/token/,
+        body: {
+          access_token: 'a',
+          refresh_token: 'r',
+          expires_at: Math.floor(Date.now() / 1000) + 21_600,
+          athlete: { id: 7 },
+        },
+      },
+    ]);
+
+    // Step 2: Strava redirects back, and the browser presents the cookie it was given.
+    const res = await t.fetch(`/strava/callback?code=abc&state=${state}`, {
+      method: 'GET',
+      headers: { Cookie: planted },
+    });
+
+    expect(res.headers.get('Location')).toBe('skating://settings?strava=connected');
+    const connections = await t.run((ctx) => ctx.db.query('activityConnections').collect());
+    expect(connections).toHaveLength(1);
+    expect(connections[0]?.userId).toBe(user.id);
+  });
+});

@@ -107,6 +107,14 @@ export default defineSchema({
     allRadiusMinutes: v.optional(v.number()),
     greatRadiusMinutes: v.optional(v.number()),
     profileVisibility: literals(PROFILE_VISIBILITIES), // public=searchable/browsable; minors forced private (D13/D41)
+    /**
+     * Global opt-out from the aggregate tracks layer (D58, Phase 8). Person-level rather than
+     * per-activity **on purpose**: a preference about being in a crowd map is about the person, and
+     * putting it here means flipping it retroactively drops every track they've ever contributed
+     * rather than only future ones. Recording and Strava push are unaffected — this only governs
+     * whether their path draws on a lake's community map. Optional ⇒ migration-free.
+     */
+    excludeTracksFromAggregate: v.optional(v.boolean()),
     notificationPrefs, // every type toggleable (D16)
     dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
     riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
@@ -158,6 +166,28 @@ export default defineSchema({
       searchField: 'displayName',
       filterFields: ['profileVisibility'],
     }),
+
+  /**
+   * Short-lived OAuth `state` nonces (Phase 8, Strava).
+   *
+   * The OAuth callback arrives at an **unauthenticated** HTTP endpoint — there is no Clerk identity on
+   * a redirect from Strava — so without this table there would be no way to know *whose* account is
+   * being connected, and anyone could bind a Strava account to someone else's profile by replaying a
+   * callback URL. So an authenticated mutation mints a single-use nonce bound to the user, and the
+   * callback exchanges it. Rows are deleted on use and swept on expiry; nothing here outlives a
+   * connect flow by more than a few minutes.
+   */
+  oauthStates: defineTable({
+    state: v.string(), // the opaque nonce echoed back by the provider
+    userId: v.id('profiles'),
+    provider: literals(ACTIVITY_PROVIDERS),
+    /** Where to send the browser afterwards — the app deep link (mobile) or a web route. */
+    redirectTo: v.optional(v.string()),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_state', ['state'])
+    .index('by_expires_at', ['expiresAt']),
 
   activityConnections: defineTable({
     userId: v.id('profiles'),

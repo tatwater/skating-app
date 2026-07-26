@@ -248,3 +248,53 @@ describe('flushDraft — checkpointing (no orphaned uploads on retry)', () => {
     expect(calls.reports[0]?.photoIds).toEqual(['existing-photo']);
   });
 });
+
+describe('flushDraft — linked recorded track (Phase 8, offline linkage)', () => {
+  it('resolves a local track id to an activityId and attaches it to the report', async () => {
+    const draft = draftWith({ trackDraftId: 'local-track-1' });
+    const { effects, calls } = makeEffects({
+      resolveActivityId: async (id) => (id === 'local-track-1' ? 'activity-9' : null),
+    });
+    const res = await flushDraft(draft, effects, NOW);
+    expect(res.ok).toBe(true);
+    expect(calls.reports[0]?.activityId).toBe('activity-9');
+  });
+
+  it('a track that cannot be sent NEVER blocks the report — it just goes out without a path (D24)', async () => {
+    const draft = draftWith({ trackDraftId: 'local-track-1' });
+    const { effects, calls } = makeEffects({ resolveActivityId: async () => null });
+    const res = await flushDraft(draft, effects, NOW);
+    expect(res.ok).toBe(true);
+    expect(calls.reports).toHaveLength(1);
+    expect(calls.reports[0]?.activityId).toBeUndefined();
+  });
+
+  it('checkpoints the resolved activityId, so a retry does not re-resolve it', async () => {
+    const draft = draftWith({ trackDraftId: 'local-track-1' });
+    let resolveCalls = 0;
+    const { effects } = makeEffects({
+      resolveActivityId: async () => {
+        resolveCalls++;
+        return 'activity-9';
+      },
+    });
+    const first = await flushDraft(draft, effects, NOW);
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    await flushDraft(first.draft, effects, NOW);
+    expect(resolveCalls).toBe(1);
+  });
+
+  it('does nothing when the draft has no linked track', async () => {
+    let called = false;
+    const { effects, calls } = makeEffects({
+      resolveActivityId: async () => {
+        called = true;
+        return 'nope';
+      },
+    });
+    await flushDraft(draftWith(), effects, NOW);
+    expect(called).toBe(false);
+    expect(calls.reports[0]?.activityId).toBeUndefined();
+  });
+});
