@@ -423,6 +423,7 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     // D48 fix: a fresh (pending) user body is listed immediately — not hidden until approved.
     const whilePending = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
     });
     expect(whilePending.map((b) => b._id)).toEqual([bodyId]);
     expect(whilePending[0]?.name).toBe('Lake Morey');
@@ -432,6 +433,7 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
 
     const afterApprove = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
     });
     expect(afterApprove.map((b) => b._id)).toEqual([bodyId]);
   });
@@ -446,6 +448,7 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
 
     const elsewhere = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_ELSEWHERE,
+      zoom: 14,
     });
     expect(elsewhere).toHaveLength(0);
   });
@@ -480,15 +483,18 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
       ],
     });
     const tinyViewport = { minLat: 0, minLng: 0, maxLat: 0.1, maxLng: 0.1 };
-    const inView = await t.query(api.waterBodies.listInViewport, { viewport: tinyViewport });
+    const inView = await t.query(api.waterBodies.listInViewport, {
+      viewport: tinyViewport,
+      zoom: 14,
+    });
     expect(inView.map((b) => b.name)).toEqual(['Big Lake']);
   });
 
-  test('refines out a small body whose centroid is in the tier-1 margin but bbox is not in view', async () => {
+  test('refines out a body that shares a cell with the viewport but whose bbox is not in view', async () => {
     const t = convexTestWithGeo();
-    // A small pond (0.03° span, < the 0.05° margin, so NOT large): its centroid (0.13, 0.13)
-    // falls inside the tier-1 rectangle (viewport + 0.05° margin) but its bbox (0.11–0.14)
-    // doesn't touch the viewport — the bboxIntersects refine drops it.
+    // A cell is coarser than the viewport at every rung but the finest, so "in one of these cells"
+    // is a *superset* of "in view" — this pond (bbox 0.11–0.14) sits in a neighbouring cell that
+    // the covering touches, and the bboxIntersects refine is what drops it.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
@@ -502,12 +508,10 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
         },
       ],
     });
-    const near = await t.run((ctx) => ctx.db.query('waterBodies').collect());
-    expect(near[0]?.isLarge).toBe(false); // caught by tier 1, not the large short list
     const tinyViewport = { minLat: 0, minLng: 0, maxLat: 0.1, maxLng: 0.1 };
-    expect(await t.query(api.waterBodies.listInViewport, { viewport: tinyViewport })).toHaveLength(
-      0,
-    );
+    expect(
+      await t.query(api.waterBodies.listInViewport, { viewport: tinyViewport, zoom: 14 }),
+    ).toHaveLength(0);
   });
 
   test('finds a small body at city zoom via the tier-1 centroid prefilter', async () => {
@@ -527,13 +531,16 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
       ],
     });
     const cityViewport = { minLat: 0, minLng: 0, maxLat: 0.1, maxLng: 0.1 };
-    const inView = await t.query(api.waterBodies.listInViewport, { viewport: cityViewport });
+    const inView = await t.query(api.waterBodies.listInViewport, {
+      viewport: cityViewport,
+      zoom: 14,
+    });
     expect(inView.map((b) => b.name)).toEqual(['Small Pond']);
   });
 
   test('excludes a large body whose bbox does not intersect the viewport (tier-2 refine)', async () => {
     const t = convexTestWithGeo();
-    // A large body (extent 2°, so isLarge → always tier-2 scanned) far from the viewport.
+    // A large body (extent 2°, so it rides a coarse rung a wide query scans) far from the viewport.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
@@ -548,56 +555,61 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
       ],
     });
     const tinyViewport = { minLat: 0, minLng: 0, maxLat: 0.1, maxLng: 0.1 };
-    expect(await t.query(api.waterBodies.listInViewport, { viewport: tinyViewport })).toHaveLength(
-      0,
-    );
+    expect(
+      await t.query(api.waterBodies.listInViewport, { viewport: tinyViewport, zoom: 14 }),
+    ).toHaveLength(0);
   });
 
   test('warns (does not silently drop) when the tier-1 cap is hit at a wide zoom (D5/D49)', async () => {
     const t = convexTestWithGeo();
-    // Three small listed bodies (0.02° span, not large → tier-1 only) inside the viewport; a
-    // limit of 2 forces the tier-1 centroid prefilter to truncate before the refine.
+    // Three prominent bodies inside a region-wide viewport; a limit of 2 forces the render budget
+    // to truncate. Prominence matters: a 1°-wide viewport IS a wide zoom, and D49 only draws
+    // prominent bodies there — so these carry a real area rather than being invisible ponds.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [0.3, 0.5, 0.7].map((c) => ({
         source: 'osm' as const,
         externalId: `osm/${c}`,
         name: `Body ${c}`,
-        type: 'pond' as const,
+        type: 'lake' as const,
         polygon: SAMPLE_BODY.polygon,
         bbox: { minLat: c - 0.01, minLng: c - 0.01, maxLat: c + 0.01, maxLng: c + 0.01 },
         centroid: { lat: c, lng: c },
+        surfaceAreaSqM: 1e9, // prominent enough to draw at the widest zoom
       })),
     });
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const inView = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
       limit: 2,
+      zoom: 8,
     });
     expect(inView).toHaveLength(2); // capped
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining('prefilter cap'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('render budget'));
     warn.mockRestore();
   });
 
   test('sanitizes a bogus limit (0/negative) to the default rather than emptying tier 1', async () => {
     const t = convexTestWithGeo();
-    // Three small (tier-1-only) bodies inside the viewport.
+    // Three prominent bodies inside a region-wide viewport.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [0.3, 0.5, 0.7].map((c) => ({
         source: 'osm' as const,
         externalId: `osm/${c}`,
         name: `Body ${c}`,
-        type: 'pond' as const,
+        type: 'lake' as const,
         polygon: SAMPLE_BODY.polygon,
         bbox: { minLat: c - 0.01, minLng: c - 0.01, maxLat: c + 0.01, maxLng: c + 0.01 },
         centroid: { lat: c, lng: c },
+        surfaceAreaSqM: 1e9,
       })),
     });
-    // limit: 0 must NOT wipe the tier-1 prefilter (which would leave only large bodies); it falls
-    // back to the default, so all three small bodies still come back.
+    // limit: 0 must NOT be taken literally (which would return nothing at all); it falls back to
+    // the default, so all three bodies still come back.
     for (const limit of [0, -5]) {
       const inView = await t.query(api.waterBodies.listInViewport, {
         viewport: VIEWPORT_CONTAINING,
         limit,
+        zoom: 8,
       });
       expect(inView).toHaveLength(3);
     }
@@ -628,10 +640,12 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
     });
     const atDefault = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
     });
     const atHugeLimit = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
       limit: 1_000_000,
+      zoom: 14,
     });
     expect(atDefault.length).toBeLessThan(OVER); // clamped — not all 300 come back
     expect(atHugeLimit.length).toBe(atDefault.length); // a huge limit is clamped to the same cap
@@ -660,6 +674,7 @@ describe('waterBodies.listInViewport (geospatial, D5)', () => {
 
     const inView = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
     });
     expect(inView.map((b) => b._id)).toEqual([insideId]);
   });
@@ -684,7 +699,10 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     expect(all[0]?.name).toBe('Lake Champlain (renamed)');
 
     // Canonical bodies are auto-listed (no reviewStatus), so they render on the map.
-    const inView = await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING });
+    const inView = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
+    });
     expect(inView.map((b) => b._id)).toEqual([all[0]?._id]);
   });
 
@@ -699,7 +717,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
       reason: 'landowner_request',
     });
     expect(
-      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING }),
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING, zoom: 14 }),
     ).toHaveLength(0);
 
     // The idempotent re-import must NOT resurrect the takedown.
@@ -707,7 +725,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     const body = await t.run((ctx) => ctx.db.get(bodyId));
     expect(body?.removedAt).toBeDefined();
     expect(
-      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING }),
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING, zoom: 14 }),
     ).toHaveLength(0);
   });
 
@@ -724,7 +742,7 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     expect(all.map((b) => b.source).sort()).toEqual(['nhd', 'osm']);
   });
 
-  test('flags isLarge from bbox extent — the tier-2 short list for listInViewport (D5)', async () => {
+  test('cells a body at a rung matching its size — a big body rides a coarser one (N1)', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
@@ -732,35 +750,49 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
           ...CANONICAL_ITEM,
           externalId: 'osm/big',
           name: 'Big',
-          // Wider than the 0.05° margin in latitude → large (tier-2 scanned).
+          surfaceAreaSqM: 1e9,
           bbox: { minLat: 0, minLng: 0, maxLat: 0.2, maxLng: 0.02 },
         },
         {
           ...CANONICAL_ITEM,
           externalId: 'osm/small',
           name: 'Small',
-          // Both axes under the margin → not large (tier-1 only).
+          surfaceAreaSqM: 200,
           bbox: { minLat: 0, minLng: 0, maxLat: 0.02, maxLng: 0.02 },
         },
       ],
     });
     const bodies = await t.run((ctx) => ctx.db.query('waterBodies').collect());
-    const flags = Object.fromEntries(bodies.map((b) => [b.name, b.isLarge]));
-    expect(flags).toEqual({ Big: true, Small: false });
+    const cells = await t.run((ctx) => ctx.db.query('waterBodyCells').collect());
+    const levelOf = (name: string) => {
+      const id = bodies.find((b) => b.name === name)?._id;
+      return cells.filter((c) => c.waterBodyId === id).map((c) => c.z);
+    };
+    // Every row for a body sits on ONE rung, and the big prominent lake's is coarser than the tiny
+    // pond's — which is what lets a wide query find it without a separate large-body scan. (The
+    // rung is min(size, visibility): a body is never indexed finer than the zoom it draws at.)
+    expect(new Set(levelOf('Big')).size).toBe(1);
+    expect(new Set(levelOf('Small')).size).toBe(1);
+    expect(levelOf('Big')[0]).toBeLessThan(levelOf('Small')[0] as number);
+    // Theorem 2: never more than four rows per body.
+    expect(levelOf('Big').length).toBeLessThanOrEqual(4);
+    expect(levelOf('Small').length).toBeLessThanOrEqual(4);
   });
 
-  test('re-import re-derives isLarge when a body grows past the threshold', async () => {
+  test('re-import re-cells a body that grows onto a coarser rung', async () => {
     const t = convexTestWithGeo();
-    // Import small, then re-import the same externalId with a large bbox: the flag flips.
-    await t.mutation(internal.waterBodies.importCanonical, {
-      bodies: [{ ...CANONICAL_ITEM, bbox: { minLat: 0, minLng: 0, maxLat: 0.02, maxLng: 0.02 } }],
-    });
-    expect((await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0]?.isLarge).toBe(false);
+    const small = { ...CANONICAL_ITEM, bbox: { minLat: 0, minLng: 0, maxLat: 0.02, maxLng: 0.02 } };
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [small] });
+    const before = await t.run((ctx) => ctx.db.query('waterBodyCells').collect());
 
+    // Same body, now much bigger — its old fine-rung rows must go, or a wide viewport would still
+    // be looking for it on a rung it no longer occupies.
     await t.mutation(internal.waterBodies.importCanonical, {
-      bodies: [{ ...CANONICAL_ITEM, bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 } }],
+      bodies: [{ ...small, bbox: { minLat: 0, minLng: 0, maxLat: 0.9, maxLng: 0.9 } }],
     });
-    expect((await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0]?.isLarge).toBe(true);
+    const after = await t.run((ctx) => ctx.db.query('waterBodyCells').collect());
+    expect(new Set(after.map((c) => c.z)).size).toBe(1); // no leftovers on the old rung
+    expect(after[0]?.z).toBeLessThan(before[0]?.z as number);
   });
 
   test('rejects an unknown state code before any write (Phase 2.5 guard)', async () => {
@@ -776,11 +808,11 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
   });
 });
 
-describe('waterBodies.backfillListed (listed key-switch migration, D48)', () => {
-  test('re-indexes a body that has no geospatial entry so it becomes queryable', async () => {
+describe('waterBodies.backfillCells (the migration onto the ladder grid, N1)', () => {
+  test('cells a body that has no index rows so it becomes queryable', async () => {
     const t = convexTestWithGeo();
-    // Insert a row directly WITHOUT a geospatial entry — mimics a body indexed under the old
-    // reviewStatus key (which a `listed` filter can't find) / never indexed.
+    // A row written directly, with no cell rows — what every body in the deployed corpus looks
+    // like the moment before this migration runs.
     const bodyId = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         ...SAMPLE_BODY,
@@ -792,18 +824,61 @@ describe('waterBodies.backfillListed (listed key-switch migration, D48)', () => 
     );
     // Not on the map before the backfill.
     expect(
-      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING }),
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING, zoom: 14 }),
     ).toHaveLength(0);
 
-    const result = await t.mutation(internal.waterBodies.backfillListed, {});
-    expect(result).toEqual({ reindexed: 1 });
+    const result = await t.mutation(internal.waterBodies.backfillCells, {});
+    expect(result.reindexed).toBe(1);
+    expect(result.isDone).toBe(true);
 
-    // Backfill also derives isLarge (SAMPLE_BODY spans 1°) so tier 2 can find it.
-    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.isLarge).toBe(true);
+    // It also re-derives the D49 prominence fields the cell rows are keyed on.
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.minVisibleZoom).toBeDefined();
 
     // Now visible.
-    const inView = await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING });
+    const inView = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
+    });
     expect(inView.map((b) => b._id)).toEqual([bodyId]);
+  });
+
+  test('resumes from its cursor instead of restarting — the ~116k-corpus path', async () => {
+    const t = convexTestWithGeo();
+    for (let i = 0; i < 5; i++) {
+      await t.run((ctx) =>
+        ctx.db.insert('waterBodies', {
+          ...SAMPLE_BODY,
+          source: 'osm',
+          externalId: `osm/batch-${i}`,
+          dedupStatus: 'clean',
+          createdAt: Date.now(),
+        }),
+      );
+    }
+
+    let cursor: string | undefined;
+    let done = false;
+    let batches = 0;
+    let total = 0;
+    while (!done && batches < 10) {
+      const page: { reindexed: number; cursor: string; isDone: boolean } = await t.mutation(
+        internal.waterBodies.backfillCells,
+        { cursor, batchSize: 2 },
+      );
+      cursor = page.cursor;
+      done = page.isDone;
+      total += page.reindexed;
+      batches++;
+    }
+    expect(done).toBe(true);
+    expect(total).toBe(5);
+    expect(batches).toBeGreaterThan(1); // it really did page, rather than swallowing the batchSize
+
+    const inView = await t.query(api.waterBodies.listInViewport, {
+      viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
+    });
+    expect(inView).toHaveLength(5);
   });
 });
 
@@ -836,7 +911,7 @@ describe('waterBodies.remove / restore (admin soft-delist, D48)', () => {
     expect(body?.removedByUserId).toBeDefined();
     expect(body?.removalReason).toBe('landowner_request');
     expect(
-      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING }),
+      await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING, zoom: 14 }),
     ).toHaveLength(0);
 
     await asAdmin.mutation(api.waterBodies.restore, { waterBodyId: id });
@@ -846,6 +921,7 @@ describe('waterBodies.remove / restore (admin soft-delist, D48)', () => {
     expect(body?.removalReason).toBeUndefined();
     const restored = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
+      zoom: 14,
     });
     expect(restored.map((b) => b._id)).toEqual([id]);
 
@@ -1066,17 +1142,19 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
     });
     expect(wide.map((b) => b.name)).toEqual(['Prominent']);
 
+    // A deep zoom needs a viewport that could actually BE at that zoom — a 1°-wide box is a
+    // zoom-8 view, and asking for its z14 rungs would mean ~2,000 cells. Frame on the pond.
     const deep = await t.query(api.waterBodies.listInViewport, {
-      viewport: VIEWPORT_CONTAINING,
+      viewport: { minLat: 0.49, minLng: 0.49, maxLat: 0.53, maxLng: 0.53 },
       zoom: 14,
     });
-    expect(deep.map((b) => b.name).sort()).toEqual(['Prominent', 'Tiny']);
+    expect(deep.map((b) => b.name).sort()).toEqual(['Tiny']);
   });
 
-  test('the zoom cutoff also drops a low-prominence LARGE body (tier-2 refine)', async () => {
+  test('the zoom cutoff drops a body that is physically large but faint (D49)', async () => {
     const t = convexTestWithGeo();
-    // A large-bbox (isLarge → tier-2) but tiny-area body: minVisibleZoom ~14. At a wide zoom the
-    // tier-2 JS refine must drop it (the geospatial sortKey filter only guards tier 1).
+    // Big bbox, tiny area — a long marshy reach. Its size puts it on a coarse rung that a wide
+    // query DOES scan, so only D49's cutoff keeps it off the map until you zoom in.
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [
         {
@@ -1084,12 +1162,11 @@ describe('waterBodies.listInViewport — zoom-scored prominence (D49)', () => {
           externalId: 'osm/bigfaint',
           name: 'Big Faint',
           surfaceAreaSqM: 200, // tiny area ⇒ high minVisibleZoom
-          bbox: { minLat: 0, minLng: 0, maxLat: 0.5, maxLng: 0.5 }, // wide ⇒ isLarge (tier-2)
+          bbox: { minLat: 0, minLng: 0, maxLat: 0.5, maxLng: 0.5 }, // wide ⇒ a coarse rung
           centroid: { lat: 0.25, lng: 0.25 },
         },
       ],
     });
-    expect((await t.run((ctx) => ctx.db.query('waterBodies').collect()))[0]?.isLarge).toBe(true);
     const wide = await t.query(api.waterBodies.listInViewport, {
       viewport: VIEWPORT_CONTAINING,
       zoom: 6,

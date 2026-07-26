@@ -5,12 +5,16 @@
  * are auto-listed. User-created bodies are **auto-visible then reviewed-after** (D37):
  * `create` writes a `pending` body immediately (still listed), and a moderator later resolves
  * it via `approve`. Admins can `remove`/`restore` any body — a reversible soft-delist (D48).
- * Whether a body shows on the public map is the derived `listed` boolean (see `./lib/listing`),
- * which `listInViewport` enforces when refining viewport results (see its read-cap note).
+ * Whether a body shows on the public map is the derived `listed` boolean (see `./lib/listing`) —
+ * an unlisted body simply has no rows in the N1 cell index, so it can't be reached from the map at
+ * all (see `./lib/cellIndex` and `plans/phase-N1-read-path-durability.md`).
  */
 
 import {
+  allLevels,
   bboxIntersects,
+  cellRangeCovering,
+  cellsCovering,
   classifyDedup,
   type DedupClassification,
   type DedupShape,
@@ -21,6 +25,7 @@ import {
   minVisibleZoom,
   nearestBodyForPoint,
   pathToBody,
+  scanLevels,
   WATER_BODY_TYPES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -28,54 +33,49 @@ import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, mutation, type QueryCtx, query } from './_generated/server';
 import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
+import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
-import { waterBodiesGeo } from './lib/geospatial';
 import { isListed } from './lib/listing';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 
 /**
- * Two-tier viewport tuning (D5). The geospatial component indexes *points* (centroids), but
- * "in view" means **bbox intersects the viewport** — a large lake fills the screen with its
- * centroid off-screen. A single blanket expansion sized for the largest body (Lake Champlain,
- * ~1.5°) fails at real corpus density: it covers ~all of Vermont, hits the component's internal
- * ~1024-row read cap, and returns a spatially-arbitrary slice that the refine finds nothing in
- * (this returned **0** for a normal city zoom over 9,967 bodies). So we decouple the outliers:
+ * Viewport read budget (N1). These are **product** numbers now, not safety numbers.
  *
- *  - **Tier 1 (the common case):** query the centroid index over the viewport expanded by a
- *    *small* margin (`VIEWPORT_MARGIN_DEG`). A body whose bbox intersects the viewport has its
- *    centroid within one bbox-extent of it, so this catches every body whose extent ≤ the margin
- *    — the overwhelming majority (>99% of Vermont bodies span < 0.05°). At city zoom the query
- *    rectangle holds ~100 rows, comfortably under the read cap, so the tier-1 result is correct.
- *  - **Tier 2 (the handful of large bodies):** a body whose bbox spans more than the margin
- *    (`isLarge`, set at import/create) can have its centroid outside the tier-1 rectangle, so we
- *    scan the `by_is_large` short list directly and `bboxIntersects`-test it. Vermont: 12 bodies.
+ * The old two-tier scheme (a centroid prefilter over the viewport plus a small margin, plus a scan
+ * of every `isLarge` body) had a genuine no-gap invariant, but its cost was governed by constants
+ * measured live against the 9,967-body Vermont corpus — and Phase 2.5 then grew that corpus to
+ * ~116k without anyone re-measuring. The ladder-grid index removes the coupling entirely: reads
+ * scale with what's *on screen*, not with how big the query rectangle or the corpus is.
  *
- * **No-gap invariant:** `LARGE_BODY_EXTENT_DEG ≤ VIEWPORT_MARGIN_DEG`. Every body with extent ≤
- * the margin is guaranteed caught by tier 1; everything larger is flagged `isLarge` and caught by
- * tier 2 — so the two tiers cover the full corpus with no silent hole. The fully-general
- * alternative (multi-cell / bbox-coverage indexing) is a larger geospatial rework deferred past
- * Phase 1; the zoom-scored display score is D49 (Phase 2). As more regions load, the `isLarge`
- * list grows — revisit the two-tier scan if it stops being a short list (national-scale, logged).
+ * Worst case, this query reads `CELL_ROW_SCAN_BUDGET` cell rows + one hydrating `ctx.db.get` per
+ * distinct body (≤ `MAX_VIEWPORT_LIMIT`) + a viewer's favorites — ~3,000 against Convex's 4,096
+ * cap, with the geometry (§theorems 1–2) keeping real viewports orders of magnitude below that.
  */
-const VIEWPORT_MARGIN_DEG = 0.05;
-const LARGE_BODY_EXTENT_DEG = 0.05;
-/** Cap on the tier-1 centroid prefilter — a backstop against a wide zoom pulling the whole corpus;
- *  truncation is logged, never silent (D5). Also the **read-cap guard**: the geospatial component
- *  reads ∝ `maxResults`, so this bounds a single query's reads. 256 sits ~20% under the measured
- *  ~320 crash edge for the Vermont corpus (see the `listInViewport` tier-1 note). The real
- *  display fix is the D49 zoom-scored score (Phase 2). */
-const DEFAULT_VIEWPORT_LIMIT = 256;
-/** Hard ceiling on the (client-supplied) tier-1 limit. Clamped to the default so no caller can
- *  push `maxResults` past the read-cap-safe zone — a large value crashes the geospatial query
- *  (Convex's 4,096-reads limit), it doesn't just page slowly. See `sanitizeLimit`. */
+/** How many bodies to hand the map. Purely a render budget: at dense z13–14 viewports across the
+ *  Phase-2.5 corpus the old 256 was visibly short, and MapLibre is comfortable with ~1k small
+ *  polygons. Truncation keeps the *most prominent* bodies and is logged, never silent (D5). */
+const DEFAULT_VIEWPORT_LIMIT = 1000;
+/** Hard ceiling on the client-supplied limit — the read-budget arithmetic above depends on it. */
 const MAX_VIEWPORT_LIMIT = DEFAULT_VIEWPORT_LIMIT;
+/**
+ * Cells one rung may contribute — an *absurdity* guard, not a tight bound. A square viewport at its
+ * own zoom covers ≤ 4 cells at any rung (property-tested), but a real map is many tiles wide: a
+ * 3840px-wide window spans ~15 tiles, so its finest rung covers ~150 cells. Those are empty-or-tiny
+ * index lookups and cost almost nothing. What this catches is the incoherent case — a 1°-wide
+ * viewport claiming zoom 14, which would want ~2,000 cells — where we skip the rung and say so.
+ */
+const MAX_CELLS_PER_LEVEL = 256;
+/** Total cells one read may look up across all rungs. */
+const CELL_SCAN_BUDGET = 512;
+/** Total cell rows one read may scan. With the two budgets above and the render limit, the worst
+ *  case is 512 lookups + 1,500 rows + 1,000 hydrating gets ≈ 3,000 against Convex's 4,096 cap. */
+const CELL_ROW_SCAN_BUDGET = 1500;
 
 /**
  * `listInViewport.limit` is public, client-supplied input, so guard it (D5/D37 — validate at the
- * trust boundary): a `0`/negative/non-integer value would leave the tier-1 key set empty, silently
- * returning *only* large bodies; a value past `MAX_VIEWPORT_LIMIT` would make the geospatial query
- * exceed its read cap and crash. Fall back to the default for anything that isn't a positive
- * integer, and clamp to the ceiling.
+ * trust boundary): a `0`/negative/non-integer value would silently return nothing, and a value past
+ * `MAX_VIEWPORT_LIMIT` would break the read-budget arithmetic above. Fall back to the default for
+ * anything that isn't a positive integer, and clamp to the ceiling.
  */
 function sanitizeLimit(limit: number | undefined): number {
   if (limit === undefined || !Number.isInteger(limit) || limit <= 0) return DEFAULT_VIEWPORT_LIMIT;
@@ -103,20 +103,11 @@ const canonicalBody = v.object({
   surfaceAreaSqM: v.optional(v.number()),
 });
 
-/** Largest span of a bbox in either axis, in degrees. */
-function bboxExtentDeg(b: { minLat: number; minLng: number; maxLat: number; maxLng: number }) {
-  return Math.max(b.maxLat - b.minLat, b.maxLng - b.minLng);
-}
-
-/** Whether a body is a `listInViewport` tier-2 outlier — bbox wider than the centroid margin (D5). */
-function isLargeBody(b: { minLat: number; minLng: number; maxLat: number; maxLng: number }) {
-  return bboxExtentDeg(b) > LARGE_BODY_EXTENT_DEG;
-}
-
 /**
  * Derived display-prominence fields (D49) from a body's area + admin boost. `minVisibleZoom` is
- * stored on the row AND used as the geospatial `sortKey` (see `listInViewport` / `./lib/geospatial`),
- * so a wide-zoom query returns the most-prominent bodies first and filters the rest out in-query.
+ * stored on the row AND denormalized onto its cell rows (see `./lib/cellIndex`), where it's the
+ * trailing field of `by_cell` — so a wide-zoom query returns the most-prominent bodies first and
+ * never reads the rest at all.
  */
 function scoreFields(input: { surfaceAreaSqM?: number; curatedBoost?: number }) {
   const score = displayScore(input);
@@ -124,9 +115,9 @@ function scoreFields(input: { surfaceAreaSqM?: number; curatedBoost?: number }) 
 }
 
 /**
- * The geospatial `sortKey` for a stored body — its `minVisibleZoom` (D49), recomputed from area +
- * boost. Used when a mutation re-inserts the geospatial entry without changing score inputs
- * (`approve`/`remove`/`restore`), so the key stays correct even for a legacy row missing the field.
+ * A stored body's `minVisibleZoom` (D49), recomputed from area + boost. Used when a mutation
+ * re-cells a body without changing its score inputs (`approve`/`remove`/`restore`), so the cell rows
+ * stay correct even for a legacy row missing the field.
  */
 function zoomSortKey(body: { surfaceAreaSqM?: number; curatedBoost?: number }): number {
   return scoreFields(body).minVisibleZoom;
@@ -178,20 +169,17 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
-          isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
           states: unionState(existing.states, state),
           ...scores,
         });
-        // Re-derive listing from the preserved fields (removed stays removed, D48); sortKey =
-        // minVisibleZoom (D49) so the zoom filter works.
-        await waterBodiesGeo.insert(
-          ctx,
-          existing._id,
-          { latitude: item.centroid.lat, longitude: item.centroid.lng },
-          { listed: isListed(existing) },
-          scores.minVisibleZoom,
-        );
+        // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
+        // body against its new geometry + prominence (N1).
+        await syncWaterBodyCells(ctx, existing._id, {
+          bbox: item.bbox,
+          minVisibleZoom: scores.minVisibleZoom,
+          listed: isListed(existing),
+        });
         updated++;
       } else {
         const now = Date.now();
@@ -204,20 +192,17 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
-          isLarge: isLargeBody(item.bbox),
           surfaceAreaSqM: item.surfaceAreaSqM,
           states: unionState(undefined, state),
           ...scores,
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
         });
-        await waterBodiesGeo.insert(
-          ctx,
-          id,
-          { latitude: item.centroid.lat, longitude: item.centroid.lng },
-          { listed: true },
-          scores.minVisibleZoom,
-        );
+        await syncWaterBodyCells(ctx, id, {
+          bbox: item.bbox,
+          minVisibleZoom: scores.minVisibleZoom,
+          listed: true,
+        });
         inserted++;
       }
     }
@@ -226,46 +211,42 @@ export const importCanonical = internalMutation({
 });
 
 /**
- * Internal, **small-scale** migration (run via `pnpm exec convex run`) that re-derives, in one
- * `collect()` pass, the two fields a keying change can leave stale on an existing body:
- *  1. **`listed` key-switch (D48).** The geospatial index used to be keyed on `reviewStatus`;
- *     entries written under the old key won't match a `listed` filter, so a body indexed before
- *     that switch drops off the map until re-inserted under the `listed` key.
- *  2. **`isLarge` (D5).** The two-tier `listInViewport` scans the `by_is_large` short list; a body
- *     with no `isLarge` is invisible to tier 2. Patched from bbox extent.
+ * Internal migration (run via `pnpm exec convex run`) that re-derives a body's D49 prominence and
+ * rebuilds its cell rows (N1) — the path from the old centroid index to the ladder grid, and the
+ * repair path for any body whose scores predate a scoring change.
  *
- * **Scale limit:** `collect()` + a geospatial re-insert per body reads far past Convex's
- * 4096-reads/mutation cap on a large corpus (the geospatial insert alone reads ~15–20 S2-cell docs
- * per body). This is the path for the handful of **user-created / pre-Phase-1** bodies only. The
- * **canonical corpus** (Vermont ~10k) instead gets both fields from a **re-run of the chunked ETL
- * loader** (`pnpm --filter @skating/etl load <ndjson>`) — `importCanonical` sets `isLarge` and the
- * loader batches to stay under the read cap. A national-scale backfill would need pagination.
+ * **Paginated, deliberately.** Its predecessor `collect()`-ed the whole table and re-inserted a
+ * geospatial point per body, which read far past Convex's 4,096-reads/mutation cap on anything
+ * bigger than the handful of user-created bodies — so the canonical corpus had to be backfilled by
+ * re-running the ETL loader instead. That stopped being viable at Phase 2.5's ~116k bodies. This
+ * walks a `cursor` in bounded batches; the caller loops until `isDone`, and each batch is its own
+ * transaction, so an interrupted run resumes rather than restarting.
  */
-export const backfillListed = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const bodies = await ctx.db.query('waterBodies').collect();
-    for (const body of bodies) {
-      const isLarge = isLargeBody(body.bbox);
+export const backfillCells = internalMutation({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    // Each body costs a `by_body` read plus up to 4 cell writes, so a few hundred per batch sits
+    // comfortably inside the mutation's read/write budget with room for a re-cell of every row.
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    for (const body of page.page) {
       const scores = scoreFields({
         surfaceAreaSqM: body.surfaceAreaSqM,
         curatedBoost: body.curatedBoost,
       });
       const patch: Partial<Doc<'waterBodies'>> = {};
-      if (body.isLarge !== isLarge) patch.isLarge = isLarge;
       if (body.displayScore !== scores.displayScore) patch.displayScore = scores.displayScore;
       if (body.minVisibleZoom !== scores.minVisibleZoom)
         patch.minVisibleZoom = scores.minVisibleZoom;
       if (Object.keys(patch).length > 0) await ctx.db.patch(body._id, patch);
-      await waterBodiesGeo.insert(
-        ctx,
-        body._id,
-        { latitude: body.centroid.lat, longitude: body.centroid.lng },
-        { listed: isListed(body) },
-        scores.minVisibleZoom,
-      );
+      await syncWaterBodyCells(ctx, body._id, {
+        bbox: body.bbox,
+        minVisibleZoom: scores.minVisibleZoom,
+        listed: isListed(body),
+      });
     }
-    return { reindexed: bodies.length };
+    return { reindexed: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
   },
 });
 
@@ -337,7 +318,6 @@ export const create = mutation({
       polygon: derived.polygon,
       bbox: derived.bbox,
       centroid: derived.centroid,
-      isLarge: isLargeBody(derived.bbox),
       surfaceAreaSqM: derived.surfaceAreaSqM,
       ...scores,
       createdByUserId: profile._id,
@@ -348,17 +328,14 @@ export const create = mutation({
       ...(matches.length > 0 ? { duplicateCandidateIds: matches.map((m) => m.ref) } : {}),
       createdAt: now,
     });
-    // Index the centroid for viewport lookups (D5); a pending user body is auto-visible
-    // (D37/D48), so it lists immediately — `listed` is the filter key public queries use.
-    // A suspected/near-certain duplicate still lists: hiding it would take any reports filed against
-    // it off the map on a machine's guess (D3). sortKey = minVisibleZoom (D49).
-    await waterBodiesGeo.insert(
-      ctx,
-      id,
-      { latitude: derived.centroid.lat, longitude: derived.centroid.lng },
-      { listed: isListed({ reviewStatus: 'pending', dedupStatus: status }) },
-      scores.minVisibleZoom,
-    );
+    // Cell-index it for viewport lookups (N1); a pending user body is auto-visible (D37/D48), so it
+    // lists immediately. A suspected/near-certain duplicate still lists: hiding it would take any
+    // reports filed against it off the map on a machine's guess (D3).
+    await syncWaterBodyCells(ctx, id, {
+      bbox: derived.bbox,
+      minVisibleZoom: scores.minVisibleZoom,
+      listed: isListed({ reviewStatus: 'pending', dedupStatus: status }),
+    });
     // Bind the skate to the water it discovered, so the report flow can carry straight on.
     await ctx.db.patch(args.activityId, { waterBodyId: id });
     return id;
@@ -456,14 +433,12 @@ export const approve = mutation({
     }
 
     await ctx.db.patch(args.waterBodyId, { reviewStatus: 'approved' });
-    // Keep the geospatial filter key in sync with the new listing (still listed, D48).
-    await waterBodiesGeo.insert(
-      ctx,
-      args.waterBodyId,
-      { latitude: body.centroid.lat, longitude: body.centroid.lng },
-      { listed: isListed({ ...body, reviewStatus: 'approved' }) },
-      zoomSortKey(body),
-    );
+    // Keep the cell index in sync with the new listing (still listed, D48).
+    await syncWaterBodyCells(ctx, args.waterBodyId, {
+      bbox: body.bbox,
+      minVisibleZoom: zoomSortKey(body),
+      listed: isListed({ ...body, reviewStatus: 'approved' }),
+    });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'approve_waterbody',
@@ -496,13 +471,12 @@ export const remove = mutation({
       removedByUserId: actor._id,
       removalReason: args.reason,
     });
-    await waterBodiesGeo.insert(
-      ctx,
-      args.waterBodyId,
-      { latitude: body.centroid.lat, longitude: body.centroid.lng },
-      { listed: isListed({ ...body, removedAt: now }) },
-      zoomSortKey(body),
-    );
+    // A removed body loses its cell rows outright, so it costs the read path nothing (N1).
+    await syncWaterBodyCells(ctx, args.waterBodyId, {
+      bbox: body.bbox,
+      minVisibleZoom: zoomSortKey(body),
+      listed: isListed({ ...body, removedAt: now }),
+    });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'remove',
@@ -530,13 +504,11 @@ export const restore = mutation({
       removedByUserId: undefined,
       removalReason: undefined,
     });
-    await waterBodiesGeo.insert(
-      ctx,
-      args.waterBodyId,
-      { latitude: body.centroid.lat, longitude: body.centroid.lng },
-      { listed: isListed({ ...body, removedAt: undefined }) },
-      zoomSortKey(body),
-    );
+    await syncWaterBodyCells(ctx, args.waterBodyId, {
+      bbox: body.bbox,
+      minVisibleZoom: zoomSortKey(body),
+      listed: isListed({ ...body, removedAt: undefined }),
+    });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'restore',
@@ -569,13 +541,11 @@ export const reject = mutation({
     }
 
     await ctx.db.patch(args.waterBodyId, { reviewStatus: 'rejected' });
-    await waterBodiesGeo.insert(
-      ctx,
-      args.waterBodyId,
-      { latitude: body.centroid.lat, longitude: body.centroid.lng },
-      { listed: isListed({ ...body, reviewStatus: 'rejected' }) },
-      zoomSortKey(body),
-    );
+    await syncWaterBodyCells(ctx, args.waterBodyId, {
+      bbox: body.bbox,
+      minVisibleZoom: zoomSortKey(body),
+      listed: isListed({ ...body, reviewStatus: 'rejected' }),
+    });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'reject_waterbody',
@@ -691,15 +661,13 @@ export const merge = mutation({
     };
 
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
-    // `merged` as unlisted, so drop its geospatial key too.
+    // `merged` as unlisted, so drop its cell rows too.
     await ctx.db.patch(loserId, { dedupStatus: 'merged', mergedIntoId: survivorId });
-    await waterBodiesGeo.insert(
-      ctx,
-      loserId,
-      { latitude: loser.centroid.lat, longitude: loser.centroid.lng },
-      { listed: isListed({ ...loser, dedupStatus: 'merged' }) },
-      zoomSortKey(loser),
-    );
+    await syncWaterBodyCells(ctx, loserId, {
+      bbox: loser.bbox,
+      minVisibleZoom: zoomSortKey(loser),
+      listed: isListed({ ...loser, dedupStatus: 'merged' }),
+    });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'merge_waterbody',
@@ -750,14 +718,13 @@ export const setCuratedBoost = mutation({
 
     const scores = scoreFields({ surfaceAreaSqM: body.surfaceAreaSqM, curatedBoost });
     await ctx.db.patch(waterBodyId, { curatedBoost, ...scores });
-    // Re-index with the new sortKey (minVisibleZoom) so listInViewport's zoom filter sees it.
-    await waterBodiesGeo.insert(
-      ctx,
-      waterBodyId,
-      { latitude: body.centroid.lat, longitude: body.centroid.lng },
-      { listed: isListed(body) },
-      scores.minVisibleZoom,
-    );
+    // Restamp the cell rows with the new `minVisibleZoom` — it's part of `by_cell`'s range, so a
+    // boost that didn't move the body still has to move its rows, or it draws at the old zoom (N1).
+    await syncWaterBodyCells(ctx, waterBodyId, {
+      bbox: body.bbox,
+      minVisibleZoom: scores.minVisibleZoom,
+      listed: isListed(body),
+    });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'set_curated_boost',
@@ -812,13 +779,11 @@ export const applyCuratedBoostSeed = internalMutation({
       }
       const scores = scoreFields({ surfaceAreaSqM: target.surfaceAreaSqM, curatedBoost: boost });
       await ctx.db.patch(target._id, { curatedBoost: boost, ...scores });
-      await waterBodiesGeo.insert(
-        ctx,
-        target._id,
-        { latitude: target.centroid.lat, longitude: target.centroid.lng },
-        { listed: isListed(target) },
-        scores.minVisibleZoom,
-      );
+      await syncWaterBodyCells(ctx, target._id, {
+        bbox: target.bbox,
+        minVisibleZoom: scores.minVisibleZoom,
+        listed: isListed(target),
+      });
       applied.push({
         name,
         id: target._id,
@@ -832,105 +797,127 @@ export const applyCuratedBoostSeed = internalMutation({
 });
 
 /**
- * Public: water bodies whose **bbox intersects** the viewport (D5/D48). Two-tier — see the
- * `VIEWPORT_MARGIN_DEG` / `LARGE_BODY_EXTENT_DEG` note above for why:
- *  - **Tier 1:** a centroid prefilter over the viewport + a small margin (`listed == true`),
- *    catching every non-large body.
- *  - **Tier 2:** the `by_is_large` short list, whose bodies can have off-screen centroids.
- * Both tiers are refined by `bboxIntersects` + `isListed`, then merged (a large body can appear
- * in both). `listed` filters to canonical + auto-visible/approved user bodies (not rejected,
- * merged, or removed).
+ * The one place cell rows are read (N1) — shared by the viewport query and the coord resolver so a
+ * change to the read shape can't land in one and miss the other (the old centroid path had exactly
+ * that split, and the comment on it said so).
  *
- * **Zoom-scored prominence (D49).** When the client passes its current `zoom`, tier 1 additionally
- * filters `sortKey <= zoom` (sortKey = `minVisibleZoom`) *inside* the geospatial query, and tier 2
- * applies the same cutoff in JS. So a wide zoom returns only the prominent bodies (Lake Champlain,
- * a boosted Lake Morey) instead of an arbitrary read-capped slice — and because the component orders
- * by `sortKey`, a capped query keeps the *most prominent* bodies. Omitting `zoom` disables the
- * filter (returns all listed bodies in view), preserving the pre-D49 behavior.
+ * Walks the ladder rungs coarsest-first, and within a cell `by_cell` returns ascending
+ * `minVisibleZoom` — so bodies accumulate in prominence order and a truncation drops the *least*
+ * prominent, never an arbitrary slice. Every candidate is refined against the real bbox: a cell is
+ * coarser than the query box at all but the finest rung, so "in this cell" is a superset of "in
+ * view", exactly as intended.
+ *
+ * `zoom` present ⇒ scan rungs up to that zoom and apply D49's cutoff as an index range (the map).
+ * `zoom` absent ⇒ scan every rung with no cutoff (a containment lookup: the pond you are standing
+ * on must be found however unprominent it is).
+ */
+async function bodiesCoveringBox(
+  ctx: QueryCtx,
+  box: { minLat: number; minLng: number; maxLat: number; maxLng: number },
+  opts: { zoom?: number; limit: number },
+): Promise<{
+  byId: Map<Id<'waterBodies'>, Doc<'waterBodies'>>;
+  truncated: boolean;
+  rowsRead: number;
+}> {
+  const { zoom, limit } = opts;
+  const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
+  // Distinct ids already hydrated (or tried). A body straddling a cell boundary appears in several
+  // cells; without this it would cost a `ctx.db.get` per appearance.
+  const hydrated = new Set<Id<'waterBodies'>>();
+  let rowBudget = CELL_ROW_SCAN_BUDGET;
+  let cellBudget = CELL_SCAN_BUDGET;
+  let truncated = false;
+
+  const levels =
+    zoom === undefined ? allLevels(WATER_BODY_LADDER) : scanLevels(zoom, WATER_BODY_LADDER);
+  for (const level of levels) {
+    if (rowBudget <= 0 || cellBudget <= 0 || byId.size >= limit) {
+      truncated = true;
+      break;
+    }
+    // A box far wider than its zoom implies (a hand-rolled client, a wrapped bbox) is the only way
+    // this trips. Skip the rung and say so rather than materializing a huge covering — the
+    // guarantee is worth more stated honestly than silently half-kept.
+    const range = cellRangeCovering(box, level);
+    if (range.count > MAX_CELLS_PER_LEVEL) {
+      console.warn(
+        `waterBodyCells: box covers ${range.count} cells at level ${level} (max ${MAX_CELLS_PER_LEVEL}); rung skipped, so bodies indexed there are omitted (N1).`,
+      );
+      truncated = true;
+      continue;
+    }
+    for (const cell of cellsCovering(box, level)) {
+      if (rowBudget <= 0 || cellBudget <= 0 || byId.size >= limit) {
+        truncated = true;
+        break;
+      }
+      cellBudget--;
+      const rows = await ctx.db
+        .query('waterBodyCells')
+        .withIndex('by_cell', (q) => {
+          const atCell = q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y);
+          return zoom === undefined ? atCell : atCell.lte('minVisibleZoom', zoom);
+        })
+        .take(Math.min(rowBudget, limit + 1));
+      rowBudget -= rows.length;
+      for (const row of rows) {
+        if (byId.size >= limit) {
+          truncated = true;
+          break;
+        }
+        if (hydrated.has(row.waterBodyId)) continue;
+        hydrated.add(row.waterBodyId);
+        const body = await ctx.db.get(row.waterBodyId);
+        // `isListed` is defense-in-depth — an unlisted body has no cell rows to be found through in
+        // the first place, which is what makes the listing filter free here.
+        if (!body || !bboxIntersects(body.bbox, box) || !isListed(body)) continue;
+        byId.set(body._id, body);
+      }
+    }
+  }
+  return { byId, truncated, rowsRead: CELL_ROW_SCAN_BUDGET - rowBudget };
+}
+
+/**
+ * Public: water bodies whose **bbox intersects** the viewport (D5/D48), served off the N1 ladder-grid
+ * cell index. A body is indexed under every cell its bbox covers, at a level no finer than the zoom
+ * it first draws at, so this query is exactly: *scan the cells covering the viewport, at every rung
+ * up to the current zoom.* No margin, no large-body outlier list, no read-cap tuning — see
+ * `plans/phase-N1-read-path-durability.md` for the two theorems and
+ * `packages/core/src/spatialCells.ts` for the math.
+ *
+ * **Why the reads are bounded.** Every rung scanned is coarser than or equal to the viewport's own
+ * zoom, so its cells are at least as large as the viewport and each rung contributes ~4 of them;
+ * within a cell, `by_cell`'s trailing `minVisibleZoom` makes the D49 cutoff a *range on the index*,
+ * so a wide zoom reads only the bodies it will actually draw. Both halves are geometry, not a tuned
+ * constant — which is the entire point, after two crash fixes whose safety rested on numbers
+ * measured against a corpus that then grew 11.6× (PR #10, #11).
+ *
+ * **Listing is free.** Unlisted bodies (removed / rejected / merged) have no cell rows at all, so
+ * there is nothing to filter. The `isListed` check below is a cheap belt-and-braces re-read of the
+ * hydrated row, not the load-bearing gate it used to be.
+ *
+ * **Zoom-scored prominence (D49).** `zoom` is **required**: the completeness guarantee is stated
+ * against it (a body's index level is ≤ its `minVisibleZoom`), so a query with no zoom has no
+ * bounded set of rungs to scan. Both clients have always passed it.
  */
 export const listInViewport = query({
-  args: { viewport: bbox, limit: v.optional(v.number()), zoom: v.optional(v.number()) },
+  args: { viewport: bbox, limit: v.optional(v.number()), zoom: v.number() },
   handler: async (ctx, { viewport, limit, zoom }) => {
     const effectiveLimit = sanitizeLimit(limit);
-    // Floor the client zoom to the integer bucket `minVisibleZoom` uses, so the tier-1 range filter
-    // (`sortKey < z + 1`) and the tier-2 JS cutoff (`minVisibleZoom > z`) agree at a fractional zoom.
-    // (Clients already floor via `zoomForViewport`; this is defense-in-depth against a raw value.)
-    const z = zoom === undefined ? undefined : Math.floor(zoom);
+    // Floor to the integer bucket `minVisibleZoom` uses so a fractional zoom can't fall between
+    // rungs. (Clients already floor via `zoomForViewport`; this is defense-in-depth.)
+    const z = Math.floor(zoom);
 
-    // Tier 1 — centroid prefilter over the viewport expanded by the (small) margin. The
-    // geospatial `query` returns a *partial* page plus a continuation cursor, so we page through
-    // it, accumulating up to `effectiveLimit` centroids. Stopping with a cursor still pending
-    // means we capped a wide zoom — the D5 truncation, surfaced in logs rather than dropped
-    // silently (D49 display score is the real fix, Phase 2).
-    //
-    // Read-cap safety (learned live at the 9,967-body scale — a crash, not theory): the geospatial
-    // component runs each `query` as its own execution under Convex's 4,096-reads cap, and it
-    // reads roughly ∝ `maxResults` (its internal read-ahead), *not* just the result count — so a
-    // wide viewport that can't fill `maxResults` exhausts a large S2 covering and blows the cap.
-    // Two levers keep every viewport safe: (1) we do **not** pass the `listed` filter here — the
-    // component's filter-stream *intersection* ~halves the safe `maxResults` ceiling, and the
-    // `isListed` refine below already enforces listing (Phase 1 has ~no unlisted bodies, so
-    // fetching-then-dropping them costs nothing); (2) `MAX_VIEWPORT_LIMIT` is tuned so even the
-    // worst exhausting rectangle (wide, panned off-data) stays well under the cap. Measured: at
-    // this corpus ~320 is the crash edge unfiltered, so the 256 default carries ~20% margin.
-    const rectangle = {
-      west: viewport.minLng - VIEWPORT_MARGIN_DEG,
-      east: viewport.maxLng + VIEWPORT_MARGIN_DEG,
-      south: viewport.minLat - VIEWPORT_MARGIN_DEG,
-      north: viewport.maxLat + VIEWPORT_MARGIN_DEG,
-    };
-    const keys: Id<'waterBodies'>[] = [];
-    let cursor: string | undefined;
-    let truncated = false;
-    do {
-      const page = await waterBodiesGeo.query(
-        ctx,
-        {
-          shape: { type: 'rectangle', rectangle },
-          limit: effectiveLimit,
-          // D49: keep only bodies visible at this zoom. sortKey = minVisibleZoom, and `.lt` is
-          // exclusive, so `< z + 1` means `minVisibleZoom <= z`. Ranges over the sort
-          // dimension (unlike the `listed` filter-key intersection) don't lower the read cap.
-          ...(z !== undefined ? { filter: (q) => q.lt('sortKey', z + 1) } : {}),
-        },
-        cursor,
-      );
-      for (const { key } of page.results) keys.push(key);
-      cursor = page.nextCursor;
-      if (keys.length >= effectiveLimit && cursor !== undefined) truncated = true;
-    } while (cursor !== undefined && keys.length < effectiveLimit);
-    // Since we don't filter on `listed` in the query (read-cap safety, above), an unlisted body
-    // (removed/rejected/merged) in the rectangle occupies a prefilter slot before the `isListed`
-    // refine drops it — so at the cap the visible count can undershoot while listed bodies remain
-    // behind the cursor. This only bites once the cursor is still pending at `effectiveLimit` —
-    // the wide-zoom regime already truncated-and-logged below (D5); at normal zoom the cursor
-    // exhausts and every listed body is returned. Inert in Phase 1 (~no unlisted bodies), and the
-    // real fix is the D49 zoom-scored display score (Phase 2) — re-adding the `listed` filter here
-    // would ~halve the safe `maxResults` and reintroduce the wide-zoom crash this two-tier avoids.
+    const { byId, truncated, rowsRead } = await bodiesCoveringBox(ctx, viewport, {
+      zoom: z,
+      limit: effectiveLimit,
+    });
     if (truncated) {
       console.warn(
-        `listInViewport hit the ${effectiveLimit}-row prefilter cap; some bodies may be omitted at this zoom (D5/D49).`,
+        `listInViewport stopped early at zoom ${z} with ${byId.size} bodies (render budget ${effectiveLimit}, ${rowsRead} cell rows read); the least prominent bodies were omitted (D5/D49/N1).`,
       );
-    }
-    const tier1 = await Promise.all(keys.slice(0, effectiveLimit).map((key) => ctx.db.get(key)));
-
-    // Tier 2 — the handful of large bodies, which tier 1's small margin can't guarantee to catch.
-    const tier2 = await ctx.db
-      .query('waterBodies')
-      .withIndex('by_is_large', (q) => q.eq('isLarge', true))
-      .collect();
-
-    // Merge (dedup by _id — a large body may surface in both tiers), then refine to true
-    // bbox-intersection + current listing (tier 2 isn't `listed`-filtered by the index).
-    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
-    for (const body of [...tier1, ...tier2]) {
-      if (!body || !bboxIntersects(body.bbox, viewport) || !isListed(body)) continue;
-      // D49 zoom cutoff — also applied to tier-2 (its short-list scan isn't sortKey-filtered). A
-      // legacy body missing `minVisibleZoom` is treated as visible (never silently hidden).
-      if (z !== undefined && body.minVisibleZoom !== undefined && body.minVisibleZoom > z) {
-        continue;
-      }
-      byId.set(body._id, body);
     }
 
     // Favorites are pinned visible at **every zoom** (Phase 4 map highlight): a viewer's favorited body
@@ -991,46 +978,40 @@ export const resolveBodyForCoord = query({
 });
 
 /**
- * The listed bodies worth testing a single coord against — the **read-cap-safe** candidate lookup
- * shared by `resolveBodyForCoord` and the Phase 8 track resolver (D44).
+ * Half-width (degrees) of the box searched around a coord, ~1.1 km — comfortably wider than the
+ * `AUTOSELECT_BUFFER_M` parking-approach buffer the caller then measures against, so the ranking
+ * step never has to reject a candidate the lookup should have offered it.
+ */
+const NEAR_COORD_MARGIN_DEG = 0.01;
+
+/**
+ * The listed bodies worth testing a single coord against — the candidate lookup shared by
+ * `resolveBodyForCoord` and the Phase 8 track resolver (D44).
  *
- * Two tiers, matching `listInViewport`'s structure:
- *  - **Tier 1**, a centroid prefilter over a *small* rectangle around the point. Small is what makes
- *    this safe: the geospatial component reads roughly ∝ `maxResults` over an S2 cell covering, so a
- *    wide rectangle is the documented read-cap trap (roadmap Later/deferred) — a ~5 km box around one
- *    coord holds far fewer than the limit, so no pagination is needed.
- *  - **Tier 2**, every `isLarge` body, whose centroid can sit far outside the rectangle even though
- *    the coord is squarely on it (Champlain).
- *
- * Exported rather than copied so a future fix to the geospatial read shape lands in **one** place for
- * both callers; unlisted bodies are refined out here, in JS, for the same reason the viewport query
- * does it (`listed` is derived, and putting it in the geospatial filter halves the safe ceiling).
+ * The degenerate case of the viewport read (N1): one small box, every ladder rung, **no zoom
+ * cutoff** — a body you are standing on must be found however unprominent it is, which is exactly
+ * why this can't reuse the map's prominence filter. Its predecessor needed a second tier scanning
+ * every `isLarge` body for the same reason (Champlain's centroid is nowhere near most of its
+ * shoreline); a bbox-covering index makes size a non-issue, so that scan is gone.
  */
 export async function listedBodiesNearCoord(
   ctx: QueryCtx,
   coord: { lat: number; lng: number },
 ): Promise<Map<Id<'waterBodies'>, Doc<'waterBodies'>>> {
-  const page = await waterBodiesGeo.query(ctx, {
-    shape: {
-      type: 'rectangle',
-      rectangle: {
-        west: coord.lng - VIEWPORT_MARGIN_DEG,
-        east: coord.lng + VIEWPORT_MARGIN_DEG,
-        south: coord.lat - VIEWPORT_MARGIN_DEG,
-        north: coord.lat + VIEWPORT_MARGIN_DEG,
-      },
+  const { byId, truncated } = await bodiesCoveringBox(
+    ctx,
+    {
+      minLat: coord.lat - NEAR_COORD_MARGIN_DEG,
+      maxLat: coord.lat + NEAR_COORD_MARGIN_DEG,
+      minLng: coord.lng - NEAR_COORD_MARGIN_DEG,
+      maxLng: coord.lng + NEAR_COORD_MARGIN_DEG,
     },
-    limit: DEFAULT_VIEWPORT_LIMIT,
-  });
-  const tier1 = await Promise.all(page.results.map(({ key }) => ctx.db.get(key)));
-  const tier2 = await ctx.db
-    .query('waterBodies')
-    .withIndex('by_is_large', (q) => q.eq('isLarge', true))
-    .collect();
-
-  const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
-  for (const body of [...tier1, ...tier2]) {
-    if (body && isListed(body)) byId.set(body._id, body);
+    { limit: MAX_VIEWPORT_LIMIT },
+  );
+  if (truncated) {
+    console.warn(
+      `listedBodiesNearCoord stopped early near ${coord.lat},${coord.lng} with ${byId.size} candidates; a nearer body may have been missed (N1).`,
+    );
   }
   return byId;
 }

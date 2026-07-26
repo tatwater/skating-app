@@ -269,8 +269,40 @@ export default defineSchema({
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
     .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
     .index('by_external_id', ['source', 'externalId']) // idempotent canonical upsert (D14/D48)
-    .index('by_is_large', ['isLarge']) // large-body short list for listInViewport tier 2 (D5)
+    .index('by_is_large', ['isLarge']) // legacy listInViewport tier 2 (D5) — retired by N1's read path
     .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
+
+  // The water-body spatial index (N1) — one row per grid cell a *listed* body's bbox covers, at the
+  // ladder level `indexLevelFor` picks (see `lib/cellIndex` / `@skating/core`'s `spatialCells`).
+  // Replaces `@convex-dev/geospatial`, whose per-row *point* and read-∝-`maxResults` query shape
+  // crashed a wide viewport against Convex's 4,096-read cap. `by_cell`'s trailing `minVisibleZoom`
+  // makes the D49 zoom cutoff a *range* on the index — so a wide zoom reads only the bodies it will
+  // actually draw, in prominence order — rather than a filter applied after the reads are spent.
+  // An unlisted body has no rows at all, which is what makes the listing filter free.
+  waterBodyCells: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    z: v.number(), // ladder level — coarser levels hold bigger / more prominent bodies
+    x: v.number(), // cell column, east from -180°
+    y: v.number(), // cell row, north from -90°
+    minVisibleZoom: v.number(), // denormalized from the body (D49), the in-query zoom cutoff
+  })
+    .index('by_cell', ['z', 'x', 'y', 'minVisibleZoom'])
+    .index('by_body', ['waterBodyId']), // the write-path diff + backfill
+
+  // The admin-boundary spatial index (N1), same shape keyed by boundary `level` instead of zoom.
+  // Retires `findContainingTown`'s ±0.2° centroid rectangle, which was explicitly sized on the
+  // premise that "our towns run well under 0.4° across" — false for the Adirondack towns the
+  // Phase-2.5 corpus added, and its failure was *silent* (the label quietly degraded to
+  // county+state). A bbox covering has no such premise: containment is exact at any size.
+  adminAreaCells: defineTable({
+    adminAreaId: v.id('adminAreas'),
+    z: v.number(),
+    x: v.number(),
+    y: v.number(),
+    level: v.string(), // town | county | state — resolve asks for one level at a time
+  })
+    .index('by_cell', ['z', 'x', 'y', 'level'])
+    .index('by_area', ['adminAreaId']),
 
   // Administrative-boundary polygons for point→place labels (Phase 5). A report's `point` (put-in
   // pin / GPS start) resolves against these to `{ town?, county?, state? }`, stamped onto
