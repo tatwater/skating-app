@@ -17,6 +17,7 @@ import { Button, H1, Paragraph, Separator, Text, XStack, YStack } from 'tamagui'
 import { ProfileEdit } from '../../src/components/ProfileEdit';
 import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
+import { TrackHistory } from '../../src/components/TrackHistory';
 
 /**
  * Profile / settings hub (D28). Who you're signed in as (with a link to your public profile),
@@ -76,8 +77,11 @@ export default function YouScreen() {
 
           <Separator borderColor="$border" />
           {/* Strava push (Phase 8). Sits with the account settings because it IS an account link —
-              your skates going to your Strava — not a map or safety feature. */}
+              your skates going to your Strava — not a map or safety feature. The recorded-skate list
+              sits directly under it because that's where a push that didn't land is retried by hand,
+              and because connecting an account here is the thing that makes those retries work. */}
           <StravaConnect />
+          <TrackHistory />
 
           <Separator borderColor="$border" />
           <Link href="/support" asChild>

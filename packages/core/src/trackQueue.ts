@@ -25,17 +25,42 @@
 import type { DraftStatus, FlushErrorKind } from './draftQueue';
 import { classifyFlushError, PermanentFlushError } from './draftQueue';
 import type { LatLng } from './geometry';
-import { processTrack, type TrackPoint } from './track';
+import { processTrack, type TrackPoint, trackStats } from './track';
 
 /** How far the Strava push has got for this track — `null`/absent when the user didn't ask for one. */
 export type StravaPushState = 'pending' | 'uploaded' | 'skipped' | 'failed';
 
 /**
- * What a push attempt *settled* as. Deliberately narrower than `StravaPushState` (no `pending`), and
- * deliberately not a boolean: "we never tried" (no connection, nothing to send) is a different fact
- * from "we tried and Strava said no", and only the host adapter can tell them apart.
+ * What a push attempt came back as. Deliberately not a boolean: four different things can happen and
+ * only the host adapter can tell them apart.
+ *
+ *  - `uploaded` — it's on Strava (including Strava's *duplicate* rejection: a watch beat us to it).
+ *  - `skipped`  — we never tried, and trying again now wouldn't change that: no connection, nothing
+ *                 to send. Settled, but the user can still ask for it by hand.
+ *  - `failed`   — Strava (or we) said no in a way a retry can't fix: the activity is gone, isn't
+ *                 theirs, has no path.
+ *  - `retry`    — a *temporary* refusal: a 5xx, a rate limit, an upload still processing when we
+ *                 stopped polling, a dropped connection. Nothing is wrong with the skate, so it goes
+ *                 back in the queue for a later drain, up to `MAX_STRAVA_PUSH_ATTEMPTS`.
+ *
+ * `retry` is an outcome, never a stored state: it persists as `pending`, which is what
+ * `isTrackFlushable` reads as "no answer yet".
  */
-export type StravaPushOutcome = 'uploaded' | 'skipped' | 'failed';
+export type StravaPushOutcome = 'uploaded' | 'skipped' | 'failed' | 'retry';
+
+/**
+ * How many times a requested push may be attempted before a temporary failure is treated as a final
+ * one.
+ *
+ * There has to be a ceiling *and* it has to be small. Drains fire on every reconnect and every
+ * foreground, so an uncapped retry would re-hit Strava for the life of the row on behalf of a skate
+ * that is already safely ours — and Strava rate-limits per application, meaning one skater's stuck
+ * track spends everyone's budget. Three attempts covers the failure this is actually for (an outage
+ * or a dead tunnel during the flush) without turning into a background job. Past the cap the state
+ * settles as `failed`, which the history UI offers to retry by hand — an unbounded machine loop and
+ * a person deciding to try again are not the same thing.
+ */
+export const MAX_STRAVA_PUSH_ATTEMPTS = 3;
 
 /** A recorded skate on the device, waiting to become a `gpsActivities` row. */
 export interface QueuedTrack {
@@ -62,6 +87,18 @@ export interface QueuedTrack {
   /** The per-session "also upload to Strava?" choice (v1 default on for phone-only skaters). */
   uploadToStrava: boolean;
   stravaPushState?: StravaPushState;
+  /** Attempts made so far, against `MAX_STRAVA_PUSH_ATTEMPTS`. Reset when a person asks by hand. */
+  stravaPushAttempts?: number;
+  /**
+   * Distance and duration kept when the fixes are dropped (`compactTrack`).
+   *
+   * Everywhere else in this codebase a derivable number is *not* stored — `ingestTrack` deliberately
+   * refuses `distanceMeters` because the server has the path to measure. Here the opposite holds: once
+   * the points are gone this is the only copy left on the device, and the history row would otherwise
+   * have to claim every compacted skate was 0 miles.
+   */
+  distanceMeters?: number;
+  elapsedSeconds?: number;
   startedAt: number;
   createdAt: number;
   updatedAt: number;
@@ -247,20 +284,35 @@ export async function flushTrack(
     // track look unsaved. `isTrackFlushable` is what keeps the unfinished push from being forgotten.
     await save({ activityId, status: 'done' });
 
-    // Only when we have no answer yet — a resumed track whose push already settled must not re-send
-    // (and a settled `failed` is a decision, not a gap: see `pushUnsettled`).
+    // Only when we have no answer yet — a resumed track whose push already settled must not re-send.
     if (pushUnsettled(t)) {
       if (effects.pushToStrava) {
+        // Counted and persisted BEFORE the attempt, so an interruption is legible afterwards and a
+        // phone that dies mid-push every single time still exhausts the cap instead of looping. A
+        // push that in fact reached Strava before the app died is re-sent on the next attempt and
+        // comes back as a *duplicate*, which the adapter reports as `uploaded` — safe by construction.
+        const attempt = (t.stravaPushAttempts ?? 0) + 1;
+        await save({ stravaPushState: 'pending', stravaPushAttempts: attempt });
+
+        let outcome: StravaPushOutcome;
         try {
-          // Written before the attempt so an interruption is legible afterwards. A push that in fact
-          // reached Strava before the app died is re-sent on resume and comes back as a *duplicate*,
-          // which the adapter reports as `uploaded` — the retry is safe by construction.
-          await save({ stravaPushState: 'pending' });
-          await save({ stravaPushState: await effects.pushToStrava({ activityId }) });
+          outcome = await effects.pushToStrava({ activityId });
         } catch {
-          // Deliberately swallowed — see the note above. The skate is safe in our store either way.
-          await save({ stravaPushState: 'failed' });
+          // A throw is the connection dropping, not Strava's verdict — the most retryable thing there
+          // is. Deliberately swallowed either way: the skate is safe in our store (D24).
+          outcome = 'retry';
         }
+        await save({
+          stravaPushState:
+            outcome !== 'retry'
+              ? outcome
+              : // Back to `pending` so a later drain picks it up — until the cap, after which a
+                // temporary failure has to be called something, and `failed` is what the history UI
+                // offers a person the chance to override.
+                attempt >= MAX_STRAVA_PUSH_ATTEMPTS
+                ? 'failed'
+                : 'pending',
+        });
       } else {
         await save({ stravaPushState: 'skipped' });
       }
@@ -276,4 +328,169 @@ export async function flushTrack(
     });
     return { ok: false, track: t, kind, message };
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The manual path
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Ask for a Strava push by hand: clear the settled state and the attempt count so the next drain
+ * treats the track as unpushed.
+ *
+ * This is the counterweight to the attempt cap. An automatic retry has to give up eventually — it's
+ * guessing — but a person tapping "Retry" is new information (they reconnected, the outage ended,
+ * they changed their mind about a skate they'd opted out of), so it also turns `uploadToStrava` on.
+ * Resetting the counter rather than bumping it means the cap bounds *machine* retries only.
+ */
+export function requestStravaPush(track: QueuedTrack, now: number): QueuedTrack {
+  return {
+    ...track,
+    uploadToStrava: true,
+    stravaPushState: undefined,
+    stravaPushAttempts: 0,
+    updatedAt: now,
+  };
+}
+
+/** How a track's Strava push should read in the history list, and what the user can do about it. */
+export interface StravaPushView {
+  label: string;
+  /** `null` when there's nothing for a person to do — it's done, or the queue already has it. */
+  action: 'retry' | 'send' | null;
+}
+
+/**
+ * The push state as a sentence plus an offer. Lives here, not in the screen, because "can this be
+ * retried?" is the same question `isTrackFlushable` answers and the two must not drift: a row that
+ * offers a retry the queue would ignore, or hides one it would honour, is worse than no row at all.
+ */
+export function describeStravaPush(track: QueuedTrack): StravaPushView {
+  // Not ours yet: the skate itself is still queued, and *that* retry is the flush's job, not a
+  // button's. Offering "send to Strava" here would promise something we can't do first.
+  if (track.activityId === undefined) return { label: 'Waiting to sync', action: null };
+  if (!track.uploadToStrava) return { label: 'Not sent to Strava', action: 'send' };
+
+  switch (track.stravaPushState) {
+    case 'uploaded':
+      return { label: 'On Strava', action: null };
+    case 'skipped':
+      return { label: 'Not sent — no Strava connection', action: 'send' };
+    case 'failed':
+      return { label: "Couldn't send to Strava", action: 'retry' };
+    default:
+      // Unsettled: the queue is on it. `pending` after an attempt means a later drain will try again.
+      return {
+        label: (track.stravaPushAttempts ?? 0) > 0 ? 'Will try Strava again' : 'Sending to Strava…',
+        action: null,
+      };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Retention
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How long a finished skate's row survives on the device after it has nothing left to do.
+ *
+ * The row itself is tiny once compacted; the window exists for the *history list*, not for storage —
+ * long enough that "did that skate reach Strava?" is still answerable weeks later, short enough that
+ * a settings screen doesn't slowly become an archive of every skate you have ever taken. A month
+ * covers a cold snap and the conversation that follows it.
+ */
+export const TRACK_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Nothing left for the queue to do: ingested, and any requested Strava push has an answer. */
+function trackSettled(track: QueuedTrack): boolean {
+  return track.finished && track.activityId !== undefined && !pushUnsettled(track);
+}
+
+/**
+ * May this row be dropped?
+ *
+ * One rule, two triggers — a person tapping Remove now, and the retention sweep later — because a
+ * button that deletes something the sweep would have protected (or vice versa) is a bug waiting for
+ * the right week to happen.
+ *
+ * The `referencedIds` guard is the load-bearing part: a report draft written on the ice points at its
+ * track by **local** id, and deleting that row out from under it silently strips the path off a report
+ * the skater is still composing. A permanently-errored recording *is* removable — that's the only way
+ * to dismiss a skate the app has told you it can't save (the same courtesy the hazard queue extends).
+ */
+export function canRemoveTrack(track: QueuedTrack, referencedIds: ReadonlySet<string>): boolean {
+  if (!track.finished || referencedIds.has(track.id)) return false;
+  return track.status === 'error' || trackSettled(track);
+}
+
+/** Settled, and still carrying the fixes it no longer needs. */
+export function isTrackCompactable(track: QueuedTrack): boolean {
+  return trackSettled(track) && track.points.length > 0;
+}
+
+/**
+ * Drop the fixes, keep the row.
+ *
+ * A recorded skate is by far the heaviest thing this queue stores — a three-hour session is thousands
+ * of points, checkpointed to sqlite during recording precisely because it's unrepeatable. Once the
+ * track is ingested, the server holds the path and nothing on the device reads those points again:
+ * both the map and the report detail draw from server queries, and a manual Strava retry skips
+ * straight to the push because the activity already exists. So the payload goes and the row stays —
+ * which is what a report draft still needs (`activityId`) and what the history list renders.
+ */
+export function compactTrack(track: QueuedTrack, now: number): QueuedTrack {
+  const stats = trackStats(track.points);
+  return {
+    ...track,
+    points: [],
+    distanceMeters: stats.distanceMeters,
+    elapsedSeconds: stats.elapsedSeconds,
+    updatedAt: now,
+  };
+}
+
+/** Distance and duration for display, from whichever copy survives. */
+export function trackSummary(track: QueuedTrack): {
+  distanceMeters: number;
+  elapsedSeconds: number;
+} {
+  if (track.points.length > 0) {
+    const stats = trackStats(track.points);
+    return { distanceMeters: stats.distanceMeters, elapsedSeconds: stats.elapsedSeconds };
+  }
+  return {
+    distanceMeters: track.distanceMeters ?? 0,
+    elapsedSeconds: track.elapsedSeconds ?? 0,
+  };
+}
+
+export interface TrackRetention {
+  /** Settled rows to rewrite without their fixes. */
+  compact: QueuedTrack[];
+  /** Rows past the window that nothing references — delete outright. */
+  remove: QueuedTrack[];
+}
+
+/**
+ * What the device should do with its recorded-track rows right now. Pure, so the policy is tested
+ * rather than inferred from a sqlite loop.
+ *
+ * Removal is checked first: a row old enough to delete shouldn't be rewritten on its way out. Age is
+ * measured from when the skate *happened*, not from the last write — otherwise a track that keeps
+ * being retried keeps renewing its own lease.
+ */
+export function trackRetention(
+  tracks: readonly QueuedTrack[],
+  opts: { now: number; referencedIds: ReadonlySet<string>; retentionMs?: number },
+): TrackRetention {
+  const retentionMs = opts.retentionMs ?? TRACK_RETENTION_MS;
+  const retention: TrackRetention = { compact: [], remove: [] };
+  for (const track of tracks) {
+    if (opts.now - track.startedAt >= retentionMs && canRemoveTrack(track, opts.referencedIds)) {
+      retention.remove.push(track);
+    } else if (isTrackCompactable(track)) {
+      retention.compact.push(track);
+    }
+  }
+  return retention;
 }

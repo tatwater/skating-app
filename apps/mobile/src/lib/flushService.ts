@@ -8,6 +8,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  compactTrack,
   type DraftFlushEffects,
   flushableDrafts,
   flushableHazardItems,
@@ -21,6 +22,7 @@ import {
   isTrackFlushable,
   type ReportInput,
   type TrackFlushEffects,
+  trackRetention,
 } from '@skating/core';
 import { uploadToStorage } from '../components/photoPipeline';
 import { convex } from './convex';
@@ -28,6 +30,7 @@ import { deleteDraftPhotoFiles, draftPhotoUris } from './draftPhotos';
 import {
   deleteDraft,
   deleteHazardItem,
+  deleteTrack,
   getDraft,
   getHazardItem,
   getTrack,
@@ -99,12 +102,22 @@ function effects(): DraftFlushEffects {
 }
 
 /**
- * Push outcomes that mean *we never sent anything* — an unconfigured deployment, an unconnected
+ * Push failures that mean *we never sent anything* — an unconfigured deployment, an unconnected
  * account, a recording too short to be a GPX. The "also upload to Strava" toggle defaults on, so for
  * every phone-only skater who never linked an account this is the normal answer; recording it as a
- * failure would manufacture an error out of a feature they simply don't use.
+ * failure would manufacture an error out of a feature they simply don't use. Settled, but the history
+ * list still offers "Send to Strava" — connecting an account later is exactly the case this covers.
  */
 const PUSH_NOT_ATTEMPTED = new Set(['not_configured', 'not_connected', 'too_short']);
+
+/**
+ * Failures a retry cannot fix: the activity is gone, isn't theirs, or has no path to send. Everything
+ * *else* — a 5xx, a rate limit, an upload still processing when we stopped polling, an auth token not
+ * attached yet — is temporary, so it goes back in the queue rather than being written off after one
+ * bad moment. That default matters more than the list: a wrongly-terminal push is silently lost,
+ * while a wrongly-retried one costs three attempts and then settles anyway.
+ */
+const PUSH_TERMINAL = new Set(['not_found', 'not_owner', 'no_path']);
 
 /** The recorded-track adapter (Phase 8) — ingest, then the optional Strava courtesy copy. */
 function trackEffects(): TrackFlushEffects {
@@ -133,7 +146,8 @@ function trackEffects(): TrackFlushEffects {
       // A duplicate is Strava telling us the skate is already on the account (a watch got there
       // first). Nothing to send, nothing to retry — that's an upload, not a failure.
       if (res.ok || res.reason === 'duplicate') return 'uploaded';
-      return res.reason !== undefined && PUSH_NOT_ATTEMPTED.has(res.reason) ? 'skipped' : 'failed';
+      if (res.reason !== undefined && PUSH_NOT_ATTEMPTED.has(res.reason)) return 'skipped';
+      return res.reason !== undefined && PUSH_TERMINAL.has(res.reason) ? 'failed' : 'retry';
     },
     persist: async (track) => {
       saveTrack(track);
@@ -254,9 +268,40 @@ export async function flushDrafts(now: number = Date.now()): Promise<void> {
         flushingIds.delete(id);
       }
     }
+    // Last, deliberately: the drafts that just flushed have released their track references, so a
+    // track finished with weeks ago is free to go on this pass rather than the next one.
+    sweepTracks(now);
   } finally {
     flushing = false;
   }
+}
+
+/**
+ * Apply the retention policy to the recorded-track rows (Phase 8).
+ *
+ * Runs after every drain rather than on a timer: a flush is exactly when rows change state, it's
+ * already off the render path, and a device that never syncs has nothing worth sweeping. The policy
+ * itself — what may be compacted, what may be deleted, and the report-draft reference guard that
+ * stops a still-composing report from losing its path — lives in `@skating/core` where it's tested.
+ */
+function sweepTracks(now: number): void {
+  try {
+    applyTrackRetention(now);
+  } catch {
+    // Housekeeping must never surface as a failed flush. A sweep that can't run today runs next time;
+    // the rows it would have tidied are inert either way.
+  }
+}
+
+function applyTrackRetention(now: number): void {
+  const referencedIds = new Set(
+    listDrafts()
+      .map((d) => d.trackDraftId)
+      .filter((id): id is string => id !== undefined),
+  );
+  const { compact, remove } = trackRetention(listTracks(), { now, referencedIds });
+  for (const track of compact) saveTrack(compactTrack(track, now));
+  for (const track of remove) deleteTrack(track.id);
 }
 
 /**
@@ -287,8 +332,12 @@ async function flushHazardQueue(now: number): Promise<void> {
  * recording still in progress is never sent half-done.
  *
  * A successful track's row is deliberately **not deleted**: a report draft may still reference it by
- * local id, and the row now carries the `activityId` that resolves that reference. Rows are cleaned
- * up by the recorder's own history UI, not by the flush.
+ * local id, the row now carries the `activityId` that resolves that reference, and `TrackHistory`
+ * reads those rows to show what became of each skate's Strava copy. Nothing prunes them yet — the
+ * rows are small (points included) but they do accumulate; a retention pass is still owed.
+ *
+ * A track whose Strava push is still unanswered is re-admitted here even though it's `done` (see
+ * `isTrackFlushable`), which is what makes the bounded push retry happen at all.
  */
 async function flushTrackQueue(now: number): Promise<void> {
   for (const { id } of flushableTracks(listTracks())) {
