@@ -452,8 +452,30 @@ async function notifyCorroboration(
  * emptied by the gate. The blocked-author "Blocked"-chip annotation is layered on in the client.
  */
 export const listByWaterBody = query({
-  args: { waterBodyId: v.id('waterBodies'), paginationOpts: paginationOptsValidator },
-  handler: async (ctx, { waterBodyId, paginationOpts }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /**
+     * Narrow to one named bay (N2 / D60) — the lake page's sub-area filter.
+     *
+     * Served by `by_sub_area_moderation_and_skate_end_time`, the same index the bounty gate uses, so
+     * this is a *narrower* read rather than the same read with rows dropped after: on Champlain,
+     * paginating the whole lake and filtering to Malletts Bay in JS would hand back short pages (or
+     * empty ones) while still paying for every report on 200 km of ice. The moderation gate stays
+     * inside the index for the reason its body-scoped sibling documents.
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, { waterBodyId, subAreaId, paginationOpts }) => {
+    if (subAreaId !== undefined) {
+      return ctx.db
+        .query('reports')
+        .withIndex('by_sub_area_moderation_and_skate_end_time', (q) =>
+          q.eq('subAreaId', subAreaId).eq('moderationStatus', 'visible'),
+        )
+        .order('desc')
+        .paginate(paginationOpts);
+    }
     return ctx.db
       .query('reports')
       .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>

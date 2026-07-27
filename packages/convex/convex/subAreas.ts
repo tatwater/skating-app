@@ -25,6 +25,7 @@ import {
   polygonBBox,
   representativePoint,
   SUB_AREA_CLIP_MESSAGES,
+  SUB_AREA_MIN_RENDER_ZOOM,
   smallestContainingSubArea,
   surfaceAreaSqM,
 } from '@skating/core';
@@ -182,6 +183,8 @@ export async function reclipSubAreasToParent(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
   parent: Doc<'waterBodies'>,
+  /** The human whose action triggered this, when there was one (a merge). Absent for the ETL. */
+  actorId?: Id<'profiles'>,
 ): Promise<{ reclipped: number; delisted: number }> {
   const parentPolygon = parent.polygon as unknown as Polygon | MultiPolygon;
   const parentListed = isListed(parent);
@@ -190,22 +193,17 @@ export async function reclipSubAreasToParent(
 
   for (const subArea of await subAreasForBody(ctx, waterBodyId)) {
     // An already-delisted bay is left as it is: re-clipping it would silently resurrect geometry the
-    // operator retired, and it has no cell rows to be wrong in the meantime.
+    // operator retired, and it has no cell rows to be wrong in the meantime. (`restore` re-clips
+    // before bringing one back, which is what keeps this skip from being a hole in Decision 10.)
     if (subArea.removedAt !== undefined) continue;
     const result = clipSubAreaToParent(
       subArea.polygon as unknown as Polygon | MultiPolygon,
       parentPolygon,
     );
     if (!result.ok) {
-      console.warn(
-        `subAreas: "${subArea.name}" (${subArea._id}) no longer fits ${parent.name} after a geometry change (${result.reason}) — delisted, redraw it in the lake editor (N2/D60).`,
-      );
-      await ctx.db.patch(subArea._id, { removedAt: Date.now(), updatedAt: Date.now() });
-      await syncSubAreaCells(ctx, subArea._id, {
-        bbox: subArea.bbox,
-        minVisibleZoom: subArea.minVisibleZoom,
-        listed: false,
-      });
+      const why = `No longer fits ${parent.name} after its outline changed (${result.reason}). Redraw it.`;
+      console.warn(`subAreas: "${subArea.name}" (${subArea._id}) — ${why} (N2/D60)`);
+      await systemDelist(ctx, subArea, why, actorId);
       delisted++;
       continue;
     }
@@ -242,6 +240,42 @@ export async function reclipSubAreasToParent(
 }
 
 /**
+ * Delist a sub-area the *system* retired — a bay that no longer fits its parent, or one whose name
+ * the merge survivor already uses.
+ *
+ * Two things beyond flipping `removedAt`, both about the operator ever finding out. The reason lands
+ * **on the row**, so `listForBody` carries it into the editor where the redraw happens rather than
+ * into a server log nobody reads; and when a human's action triggered it (a merge is somebody's
+ * click), the audit row names them, because Decision 2 says every write to this table lands one.
+ * The ETL path genuinely has no actor, which is exactly what the on-row reason is for.
+ */
+async function systemDelist(
+  ctx: MutationCtx,
+  subArea: Doc<'waterBodySubAreas'>,
+  reason: string,
+  actorId?: Id<'profiles'>,
+): Promise<void> {
+  const now = Date.now();
+  await ctx.db.patch(subArea._id, {
+    removedAt: now,
+    ...(actorId ? { removedByUserId: actorId } : {}),
+    systemDelistReason: reason,
+    updatedAt: now,
+  });
+  await syncSubAreaCells(ctx, subArea._id, {
+    bbox: subArea.bbox,
+    minVisibleZoom: subArea.minVisibleZoom,
+    listed: false,
+  });
+  if (actorId) {
+    await audit(ctx, actorId, 'remove', subArea._id, `Auto-delisted "${subArea.name}": ${reason}`, {
+      waterBodyId: subArea.waterBodyId,
+      automatic: true,
+    });
+  }
+}
+
+/**
  * Move a merge loser's sub-areas onto the survivor (Decision 11).
  *
  * A dedup loser is by definition the *same water* as the survivor, and `merge` already repoints every
@@ -262,6 +296,8 @@ export async function repointSubAreasOnMerge(
   ctx: MutationCtx,
   loserId: Id<'waterBodies'>,
   survivor: Doc<'waterBodies'>,
+  /** The moderator who ran the merge — a merge is somebody's click, so the audit row names them. */
+  actorId?: Id<'profiles'>,
 ): Promise<{ repointed: number; delisted: number }> {
   const existingNames = new Set(
     (await subAreasForBody(ctx, survivor._id))
@@ -276,22 +312,21 @@ export async function repointSubAreasOnMerge(
     repointed++;
     if (subArea.removedAt !== undefined) continue;
     if (existingNames.has(subArea.name.toLowerCase())) {
-      console.warn(
-        `subAreas: "${subArea.name}" already exists on ${survivor.name}; the merged copy was delisted rather than left to compete for the stamp (N2/D60).`,
-      );
-      await ctx.db.patch(subArea._id, { removedAt: Date.now() });
-      await syncSubAreaCells(ctx, subArea._id, {
-        bbox: subArea.bbox,
-        minVisibleZoom: subArea.minVisibleZoom,
-        listed: false,
-      });
+      const why = `${survivor.name} already has a bay called "${subArea.name}". The merged copy was delisted rather than left to compete for the stamp.`;
+      console.warn(`subAreas: ${why} (N2/D60)`);
+      await systemDelist(ctx, subArea, why, actorId);
       delisted++;
       continue;
     }
     existingNames.add(subArea.name.toLowerCase());
   }
   // Now that they belong to the survivor, hold them to the survivor's outline and listing.
-  const { delisted: reclipDelisted } = await reclipSubAreasToParent(ctx, survivor._id, survivor);
+  const { delisted: reclipDelisted } = await reclipSubAreasToParent(
+    ctx,
+    survivor._id,
+    survivor,
+    actorId,
+  );
   return { repointed, delisted: delisted + reclipDelisted };
 }
 
@@ -470,6 +505,9 @@ export const redraw = mutation({
       centroid: geometry.centroid,
       surfaceAreaSqM: geometry.surfaceAreaSqM,
       ...scores,
+      // A redraw is the fix for an auto-delist, so it clears the note asking for one. (The row stays
+      // delisted — `restore` is the separate, deliberate act of putting it back on the map.)
+      systemDelistReason: undefined,
       updatedAt: Date.now(),
     });
     await syncSubAreaCells(ctx, subAreaId, {
@@ -578,7 +616,17 @@ export const remove = mutation({
   },
 });
 
-/** Moderator: reverse a delist (D60). The parent still has to be listed for it to reach the map. */
+/**
+ * Moderator: reverse a delist (D60). The parent still has to be listed for it to reach the map.
+ *
+ * **It re-clips on the way back in, and that's what closes Decision 10's one loophole.**
+ * `reclipSubAreasToParent` deliberately skips delisted rows — re-clipping a retired bay would
+ * resurrect geometry the operator put away — so a bay delisted *before* a shoreline refinement never
+ * got held to the new outline. Restoring it without re-clipping would put a shape back on the map
+ * that is no longer inside its parent, which is "inside by construction" decaying into "was true when
+ * it was drawn": exactly the failure this phase spent its geometry rules avoiding. So restore is a
+ * write like any other, and it establishes the invariant rather than assuming it survived.
+ */
 export const restore = mutation({
   args: { subAreaId: v.id('waterBodySubAreas') },
   handler: async (ctx, { subAreaId }) => {
@@ -589,14 +637,29 @@ export const restore = mutation({
     const parent = await ctx.db.get(subArea.waterBodyId);
     if (!parent) throw new ConvexError('Water body not found');
 
+    // Held to the parent's *current* outline. A refusal here is informative rather than obstructive:
+    // it means the lake moved under this bay while it was retired, and the answer is a redraw — which
+    // is the paste-GeoJSON / draw path, not a flag someone flips.
+    const geometry = deriveGeometry(subArea.polygon as unknown as Polygon | MultiPolygon, parent);
+    const scores = scoreFields({
+      surfaceAreaSqM: geometry.surfaceAreaSqM,
+      ...(subArea.curatedBoost !== undefined ? { curatedBoost: subArea.curatedBoost } : {}),
+    });
+
     await ctx.db.patch(subAreaId, {
       removedAt: undefined,
       removedByUserId: undefined,
+      systemDelistReason: undefined,
+      polygon: geometry.polygon,
+      bbox: geometry.bbox,
+      centroid: geometry.centroid,
+      surfaceAreaSqM: geometry.surfaceAreaSqM,
+      ...scores,
       updatedAt: Date.now(),
     });
     await syncSubAreaCells(ctx, subAreaId, {
-      bbox: subArea.bbox,
-      minVisibleZoom: subArea.minVisibleZoom,
+      bbox: geometry.bbox,
+      minVisibleZoom: scores.minVisibleZoom,
       // Restoring a bay on a delisted lake leaves it off the map, correctly — Decision 11 is a
       // conjunction, and this mutation isn't a way around it.
       listed: subAreaListed({ removedAt: undefined }, parent),
@@ -739,14 +802,19 @@ const SUB_AREA_CELL_SCAN_BUDGET = 512;
 const SUB_AREA_MIN_ROWS_PER_CELL = 4;
 
 /**
- * The zoom at which bay labels start drawing.
+ * Total polygon vertices one sub-area read may return (N2).
  *
- * D49 already decides *which* bays are prominent enough for a given zoom, so this is not a second
- * prominence rule — it's a floor below which the layer isn't worth querying at all. At z8 you are
- * looking at three states; a bay outline there is noise on top of a lake that is itself two pixels
- * wide, and the query would be pure cost. Opening number, to be checked against the Champlain draw.
+ * The render budget above counts *rows*, and rows are not the thing a phone downloads. A clipped bay
+ * inherits its parent's shoreline detail — measured on the dev corpus, Champlain's nine bays carry
+ * 60–1,108 vertices each (Broad Lake alone is 27 KB), because the clip traces OSM's own coastline.
+ * 250 rows at that density would be several megabytes in one query response, which no read-count
+ * measurement would ever have shown.
+ *
+ * So the payload gets its own ceiling, spent in prominence order like the row budget, and truncation
+ * is logged rather than silent (D5). It is deliberately generous: the measured worst real viewport
+ * uses ~2,300 of it.
  */
-export const SUB_AREA_MIN_RENDER_ZOOM = 10;
+const SUB_AREA_RENDER_VERTEX_BUDGET = 40_000;
 
 /** The shared scan behind `listInViewport` and its read-stats sibling. */
 async function subAreasCoveringBox(
@@ -758,6 +826,8 @@ async function subAreasCoveringBox(
   truncated: boolean;
   rowsRead: number;
   cellsScanned: number;
+  /** Polygon vertices in the returned set — what the client actually downloads. */
+  vertices: number;
 }> {
   const scan = await scanCells<Id<'waterBodySubAreas'>>(
     box,
@@ -786,6 +856,7 @@ async function subAreasCoveringBox(
   // spatially-selected prefix would draw Champlain's bays and none of Lake George's depending on
   // cell arithmetic, which is the round-3 bug wearing a smaller hat.
   let truncated = scan.truncated;
+  let vertices = 0;
   const rows: Doc<'waterBodySubAreas'>[] = [];
   for (const subAreaId of rankCandidates(scan.candidates)) {
     if (rows.length >= opts.limit) {
@@ -797,9 +868,23 @@ async function subAreasCoveringBox(
     // has no cell rows to be found through in the first place (Decision 11).
     if (!subArea || subArea.removedAt !== undefined) continue;
     if (!bboxIntersects(subArea.bbox, box)) continue;
+    // The payload ceiling, spent in the same prominence order as the row budget so a truncation drops
+    // the least prominent bays rather than whichever the walk reached last.
+    const cost = polygonVertexCount(subArea.polygon);
+    if (rows.length > 0 && vertices + cost > SUB_AREA_RENDER_VERTEX_BUDGET) {
+      truncated = true;
+      break;
+    }
+    vertices += cost;
     rows.push(subArea);
   }
-  return { rows, truncated, rowsRead: scan.rowsRead, cellsScanned: scan.cellsScanned };
+  return {
+    rows,
+    truncated,
+    rowsRead: scan.rowsRead,
+    cellsScanned: scan.cellsScanned,
+    vertices,
+  };
 }
 
 /**
@@ -825,13 +910,13 @@ export const listInViewport = query({
         ? Math.min(limit, SUB_AREA_RENDER_LIMIT)
         : SUB_AREA_RENDER_LIMIT;
 
-    const { rows, truncated, rowsRead } = await subAreasCoveringBox(ctx, viewport, {
+    const { rows, truncated, rowsRead, vertices } = await subAreasCoveringBox(ctx, viewport, {
       zoom: z,
       limit: effectiveLimit,
     });
     if (truncated) {
       console.warn(
-        `subAreas.listInViewport stopped early at zoom ${z} with ${rows.length} sub-areas (render budget ${effectiveLimit}, ${rowsRead} cell rows read); the least prominent were omitted (D5/D49/N1).`,
+        `subAreas.listInViewport stopped early at zoom ${z} with ${rows.length} sub-areas (render budget ${effectiveLimit}, vertex budget ${SUB_AREA_RENDER_VERTEX_BUDGET}, ${rowsRead} cell rows read, ${vertices} vertices returned); the least prominent were omitted (D5/D49/N1).`,
       );
     }
     return rows.map((row) => ({
@@ -865,17 +950,24 @@ export const subAreaReadStats = internalQuery({
     names: v.optional(v.boolean()),
   },
   handler: async (ctx, { viewport, zoom, limit, maxRows, names }) => {
-    const { rows, truncated, rowsRead, cellsScanned } = await subAreasCoveringBox(ctx, viewport, {
-      zoom: Math.floor(zoom),
-      limit: Math.min(limit ?? SUB_AREA_RENDER_LIMIT, SUB_AREA_RENDER_LIMIT),
-      ...(maxRows !== undefined ? { maxRows } : {}),
-    });
+    const { rows, truncated, rowsRead, cellsScanned, vertices } = await subAreasCoveringBox(
+      ctx,
+      viewport,
+      {
+        zoom: Math.floor(zoom),
+        limit: Math.min(limit ?? SUB_AREA_RENDER_LIMIT, SUB_AREA_RENDER_LIMIT),
+        ...(maxRows !== undefined ? { maxRows } : {}),
+      },
+    );
     return {
       subAreas: rows.length,
       cellsScanned,
       cellRowsRead: rowsRead,
       // The read the 4,096 cap actually counts: index rows + one hydrating get per distinct row.
       approxDocumentReads: cellsScanned + rowsRead + rows.length,
+      // And what the *client* pays, which the read count says nothing about: a clipped bay inherits
+      // its parent's shoreline, so the payload is vertices, not rows.
+      vertices,
       truncated,
       ...(names ? { names: rows.map((r) => r.name) } : {}),
     };
@@ -1033,6 +1125,21 @@ export const importSeed = internalMutation({
   },
 });
 
+/** Positions across every ring — the render payload's real unit. See the vertex budget above. */
+function polygonVertexCount(geometry: unknown): number {
+  const g = geometry as { type?: string; coordinates?: unknown[] };
+  if (g?.type === 'Polygon') {
+    return (g.coordinates as unknown[][]).reduce((n, ring) => n + ring.length, 0);
+  }
+  if (g?.type === 'MultiPolygon') {
+    return (g.coordinates as unknown[][][]).reduce(
+      (n, poly) => n + poly.reduce((m, ring) => m + ring.length, 0),
+      0,
+    );
+  }
+  return 0;
+}
+
 /** A bbox as a closed GeoJSON rectangle — the seed's input shape before the clip. */
 function boxPolygon(box: {
   minLat: number;
@@ -1075,6 +1182,11 @@ export const listForBody = query({
         minVisibleZoom: row.minVisibleZoom,
         ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),
         removed: row.removedAt !== undefined,
+        // Why the *system* retired it, if it did — the editor renders this next to the row, which is
+        // the whole point of storing it rather than logging it (N2).
+        ...(row.systemDelistReason !== undefined
+          ? { systemDelistReason: row.systemDelistReason }
+          : {}),
       }));
   },
 });

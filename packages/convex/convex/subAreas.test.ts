@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
+import { footprintMoved } from './waterBodies';
 
 const modules = import.meta.glob('./**/*.*s');
 
@@ -515,6 +516,188 @@ describe('subAreas.remove / restore', () => {
         .collect(),
     );
     expect(cells).toHaveLength(0);
+  });
+
+  /**
+   * The one loophole in "inside its parent by construction" (Decision 10). `reclipSubAreasToParent`
+   * skips delisted rows on purpose — re-clipping a retired bay would resurrect geometry the operator
+   * put away — so a bay delisted *before* a shoreline refinement was never held to the new outline.
+   * Restore is the door it comes back through, so restore is where containment gets re-established.
+   */
+  test('restore re-clips against the outline the lake has NOW, not the one it had then', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
+
+    // The lake's eastern shore moves west while the bay is retired, trimming a quarter off it —
+    // enough to matter, not enough to refuse. Nothing re-clips a delisted row, so this sits stale.
+    await t.run((ctx) =>
+      ctx.db.patch(body, {
+        polygon: rect(-73.5, 44.0, -73.05, 45.0),
+        bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -73.05 },
+      }),
+    );
+
+    await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
+
+    const row = await t.run((ctx) => ctx.db.get(id));
+    // Trimmed to the new shoreline on the way back in — not restored as drawn.
+    expect(row?.bbox.maxLng).toBeCloseTo(-73.05, 6);
+    expect(row?.removedAt).toBeUndefined();
+  });
+
+  test('restore refuses a bay the lake no longer contains, and says to redraw', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
+    // This time the shoreline retreats past the bay entirely.
+    await t.run((ctx) =>
+      ctx.db.patch(body, {
+        polygon: rect(-73.5, 44.0, -73.25, 45.0),
+        bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -73.25 },
+      }),
+    );
+
+    await expect(mod.as.mutation(api.subAreas.restore, { subAreaId: id })).rejects.toThrow();
+    const row = await t.run((ctx) => ctx.db.get(id));
+    expect(row?.removedAt).toBeDefined(); // still retired, still there to redraw
+  });
+});
+
+/**
+ * The gate that keeps a no-op ETL run a *cheap* no-op. A clip against Champlain's 10,755-vertex
+ * polygon is comfortable once and blows a mutation's 1s budget at a dozen, and the lake carries nine
+ * bays today with fourteen planned — so re-clipping on every import, changed or not, was a cost that
+ * grew with the curation.
+ */
+describe('footprintMoved', () => {
+  const bbox = { minLat: 44, minLng: -73.5, maxLat: 45, maxLng: -72.5 };
+  const body = { bbox, surfaceAreaSqM: 8.7e9, polygon: LAKE };
+
+  test('identical data is not a move — this is the whole point', () => {
+    expect(footprintMoved(body, { bbox: { ...bbox }, surfaceAreaSqM: 8.7e9, polygon: LAKE })).toBe(
+      false,
+    );
+  });
+
+  test('a shifted bbox, a changed area, or a different vertex count all count as a move', () => {
+    expect(
+      footprintMoved(body, {
+        bbox: { ...bbox, maxLng: -72.4 },
+        surfaceAreaSqM: 8.7e9,
+        polygon: LAKE,
+      }),
+    ).toBe(true);
+    expect(footprintMoved(body, { bbox: { ...bbox }, surfaceAreaSqM: 8.8e9, polygon: LAKE })).toBe(
+      true,
+    );
+    // Same bbox, same area, re-noded shoreline: the vertex count is what catches it.
+    const denser = {
+      type: 'Polygon' as const,
+      coordinates: [[...(LAKE.coordinates[0] ?? []), [-73.5, 44.0] as [number, number]]],
+    };
+    expect(
+      footprintMoved(body, { bbox: { ...bbox }, surfaceAreaSqM: 8.7e9, polygon: denser }),
+    ).toBe(true);
+  });
+});
+
+/**
+ * A system delist is the one write to this table nobody clicked, which makes it the one an operator
+ * is least likely to find out about. A `console.warn` is not a surface.
+ */
+describe('system delists are visible where they get fixed', () => {
+  test('a re-import that guts a bay leaves the reason on the row for the editor', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const body = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Champlain',
+        type: 'lake' as const,
+        source: 'osm' as const,
+        externalId: 'way/9',
+        polygon: LAKE,
+        bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 },
+        centroid: { lat: 44.5, lng: -73.0 },
+        surfaceAreaSqM: 8.7e9,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/9',
+          name: 'Lake Champlain',
+          type: 'lake' as const,
+          polygon: rect(-73.5, 44.0, -73.15, 45.0),
+          bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -73.15 },
+          centroid: { lat: 44.5, lng: -73.3 },
+          surfaceAreaSqM: 3.4e9,
+        },
+      ],
+    });
+
+    const rows = await mod.as.query(api.subAreas.listForBody, { waterBodyId: body });
+    expect(rows[0]?.removed).toBe(true);
+    // The editor gets the reason next to the row, not a line in a server log.
+    expect(rows[0]?.systemDelistReason).toMatch(/no longer fits/i);
+  });
+
+  test('a merge-collision delist names the moderator who ran the merge', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const survivor = await seedBody(t, 'Lake Champlain');
+    const loser = await seedBody(t, 'Champlain Lake');
+    const bay = rect(-73.2, 44.2, -73.0, 44.4);
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: survivor,
+      name: 'Malletts Bay',
+      polygon: bay,
+    });
+    const loserBay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: loser,
+      name: 'Malletts Bay',
+      polygon: bay,
+    });
+
+    await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+    await settle(t);
+
+    const row = await t.run((ctx) => ctx.db.get(loserBay));
+    expect(row?.removedAt).toBeDefined();
+    expect(row?.systemDelistReason).toMatch(/already has a bay called/i);
+    expect(row?.removedByUserId).toBe(mod.id);
+    // Decision 2: every write to this table lands an audit row, including the ones nobody clicked
+    // directly. A merge is somebody's click, so the log can name them.
+    const audits = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'waterBodySubArea').eq('targetId', loserBay),
+        )
+        .collect(),
+    );
+    expect(audits.some((a) => a.action === 'remove' && a.metadata?.automatic === true)).toBe(true);
   });
 });
 

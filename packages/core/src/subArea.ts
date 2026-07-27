@@ -28,9 +28,14 @@ import { type LatLng, pointInPolygon } from './geometry';
  * pasted GeoJSON from somewhere else), and silently saving the sliver that happens to overlap is the
  * silent-wrong-answer class this codebase keeps refusing. So there is a line, and it's here.
  *
- * 0.6 is an opening number to be checked against the real Champlain traces in the curation session,
- * not a derived one. It is deliberately loose: the failure it guards against is gross, and a
- * false refusal costs the operator a redraw of work they did correctly.
+ * **0.6 is measured, not guessed** (N2 curation session, 2026-07-26). Boxes on the right water
+ * retained 0.61–0.92; boxes in the wrong place retained 0.16–0.17. Between them sits the Inland Sea
+ * at 0.42 — a genuine archipelago arm where roughly half of any rectangle is islands — which is why
+ * `subAreas.importSeed` runs a looser 0.35 bar for *box*-shaped input while this stays 0.6 for a
+ * traced outline, where most of what you drew really should be water.
+ *
+ * The bar it has to clear is "is this on the right water", not "is this a good shape": the failure it
+ * guards against is gross, and a false refusal costs the operator a redraw of work they did correctly.
  */
 export const SUB_AREA_MIN_RETAINED_FRACTION = 0.6;
 

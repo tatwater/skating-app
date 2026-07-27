@@ -154,6 +154,46 @@ function zoomSortKey(body: { surfaceAreaSqM?: number; curatedBoost?: number }): 
 }
 
 /**
+ * Did a canonical re-import actually move this body's outline? (N2)
+ *
+ * Cheap on purpose — four bbox floats, an area, and a vertex count, all of which the loader hands us
+ * or the row already stores. It exists to keep `importCanonical` from paying for a polygon clip per
+ * sub-area on every run regardless of whether anything changed; see the call site for why that cost
+ * is the one worth guarding in this mutation.
+ *
+ * It errs toward "moved": any of the three differing runs the re-clip. Two different shorelines with
+ * the same bbox, the same geodesic area **and** the same vertex count is not a thing an OSM extract
+ * produces, and the cost of being wrong in that direction is a redundant clip rather than a stale
+ * invariant.
+ */
+export function footprintMoved(
+  existing: Pick<Doc<'waterBodies'>, 'bbox' | 'surfaceAreaSqM' | 'polygon'>,
+  next: { bbox: Doc<'waterBodies'>['bbox']; surfaceAreaSqM?: number; polygon: unknown },
+): boolean {
+  const a = existing.bbox;
+  const b = next.bbox;
+  if (a.minLat !== b.minLat || a.minLng !== b.minLng) return true;
+  if (a.maxLat !== b.maxLat || a.maxLng !== b.maxLng) return true;
+  if (existing.surfaceAreaSqM !== next.surfaceAreaSqM) return true;
+  return vertexCount(existing.polygon) !== vertexCount(next.polygon);
+}
+
+/** Total positions across every ring — a shape fingerprint that costs no geometry math. */
+function vertexCount(geometry: unknown): number {
+  const g = geometry as { type?: string; coordinates?: unknown[] };
+  if (g?.type === 'Polygon') {
+    return (g.coordinates as unknown[][]).reduce((n, ring) => n + ring.length, 0);
+  }
+  if (g?.type === 'MultiPolygon') {
+    return (g.coordinates as unknown[][][]).reduce(
+      (n, poly) => n + poly.reduce((m, ring) => m + ring.length, 0),
+      0,
+    );
+  }
+  return 0;
+}
+
+/**
  * Internal, never client-callable: idempotently upsert a batch of canonical bodies (D14/D48).
  * Load via `pnpm exec convex run` from the ETL (chunk batches for the mutation size limit).
  * Keyed on `by_external_id` (`(source, externalId)`), so OSM and NHD stay distinct even when a
@@ -212,16 +252,27 @@ export const importCanonical = internalMutation({
         });
         // A re-import can refine a shoreline under a hand-drawn bay, and Decision 10's "inside its
         // parent by construction" has to survive the parent changing shape — otherwise it decays into
-        // "was true when it was drawn." Costs one empty `by_parent` read for the ~116k bodies that
-        // have no sub-areas, and only does real work for the handful that do.
-        const resynced = await reclipSubAreasToParent(ctx, existing._id, {
-          ...existing,
-          polygon: item.polygon,
-        });
-        // Only when a bay actually moved: membership changed, so the stamps did. Gating on this keeps
-        // an ETL batch from scheduling one job per body it touched.
-        if (resynced.reclipped > 0 || resynced.delisted > 0) {
-          await scheduleRestamp(ctx, existing._id);
+        // "was true when it was drawn."
+        //
+        // **Gated on the outline having actually moved, because the clip is the expensive thing in
+        // this mutation.** Champlain's polygon is 10,755 vertices and carries nine bays; a clip
+        // against it is comfortable alone and blows a mutation's 1s budget at a dozen (measured in
+        // the N2 curation session), and the ETL loads Champlain as a near-solo batch precisely
+        // because it's already the heaviest row in the feed. Re-running the loader on unchanged data
+        // is documented as a no-op, and an unconditional re-clip would have made it an increasingly
+        // expensive one — worse with every bay drawn. The check is `footprintMoved`: identical bbox
+        // and identical geodesic area means OSM handed us the same shoreline, and a containment
+        // answer that was true a moment ago is still true.
+        if (footprintMoved(existing, item)) {
+          const resynced = await reclipSubAreasToParent(ctx, existing._id, {
+            ...existing,
+            polygon: item.polygon,
+          });
+          // Only when a bay actually moved: membership changed, so the stamps did. Gating on this
+          // keeps an ETL batch from scheduling one job per body it touched.
+          if (resynced.reclipped > 0 || resynced.delisted > 0) {
+            await scheduleRestamp(ctx, existing._id);
+          }
         }
         updated++;
       } else {
@@ -706,7 +757,7 @@ export const merge = mutation({
     // tombstone whose `isListed` is permanently false — unreachable from the map and the editor, yet
     // still named on every report this merge just moved to the survivor. Re-clipped against the
     // survivor's outline on the way, since near-identical is what made these a duplicate pair.
-    const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor);
+    const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor, actor._id);
 
     const repointed = {
       reports: reports.length,
@@ -1200,8 +1251,21 @@ export async function listedBodiesNearCoord(
  * A <2-char query returns nothing (skip a pointless index scan).
  */
 export const searchByName = query({
-  args: { query: v.string(), limit: v.optional(v.number()) },
-  handler: async (ctx, { query, limit }) => {
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+    /**
+     * Drop the sub-area half of the merge (N2). Default `false` — a skater's box wants both, since
+     * they don't know or care which table their bay lives in.
+     *
+     * It exists for callers whose destination is a *body*: `/admin/water`'s "open a lake" box routes
+     * into the per-lake editor, and a bay has no editor of its own. Without this it would filter the
+     * bay rows out client-side — **after** they had already claimed their reserved slots — so
+     * searching a lake with named bays would silently return fewer lakes than it was asked for.
+     */
+    bodiesOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { query, limit, bodiesOnly }) => {
     const term = query.trim();
     if (term.length < 2) return [];
     const max = Math.min(Math.max(limit ?? 8, 1), 20);
@@ -1219,7 +1283,7 @@ export const searchByName = query({
     // which the live corpus proved immediately: "Inland Sea" returned Dead Sea and Billington Sea
     // and not the arm of Lake Champlain actually named that. Bays are rare, hand-curated and
     // specifically asked for, so they get up to half the page and bodies fill the rest.
-    const subAreaHits = await searchSubAreas(ctx, term, max);
+    const subAreaHits = bodiesOnly ? [] : await searchSubAreas(ctx, term, max);
     const bayShare = Math.min(subAreaHits.length, Math.ceil(max / 2));
     const bodyRoom = Math.max(1, max - bayShare);
 
@@ -1330,6 +1394,15 @@ async function searchSubAreas(ctx: QueryCtx, term: string, max: number): Promise
 
 /** Boosted bodies the curation list shows at once. A curated set in the low hundreds, by design. */
 const CURATED_LIST_CAP = 300;
+/**
+ * How many boosted rows are *read* to fill that list.
+ *
+ * `isListed` is derived, so it can't be an index range — the filter has to run after the read, and a
+ * cap applied before it lets removed/merged/rejected rows eat slots in a list whose whole job is to
+ * show the operator every live boost. Reading two caps' worth and trimming after means the visible
+ * list is short only when there genuinely are more than `CURATED_LIST_CAP` boosted *listed* bodies.
+ */
+const CURATED_SCAN_CAP = CURATED_LIST_CAP * 2;
 
 /**
  * Moderator: every body carrying a `curatedBoost` (N2) — **the surface that makes a mis-match
@@ -1351,14 +1424,16 @@ export const listCurated = query({
     await requireRole(ctx, 'moderator');
     const rows = await takeCapped(
       ctx.db.query('waterBodies').withIndex('by_curated_boost', (q) => q.gt('curatedBoost', 0)),
-      CURATED_LIST_CAP,
+      CURATED_SCAN_CAP,
       'waterBodies.listCurated',
     );
     // Strongest boost first — the most aggressively promoted body is the one a wrong match hurts
-    // most, since it's drawing at a zoom where it displaces real lakes.
+    // most, since it's drawing at a zoom where it displaces real lakes. Trimmed *after* the listing
+    // filter, so a removed body can't take a live one's place in the list (see `CURATED_SCAN_CAP`).
     return rows
       .filter((body) => isListed(body))
       .sort((a, b) => (b.curatedBoost ?? 0) - (a.curatedBoost ?? 0))
+      .slice(0, CURATED_LIST_CAP)
       .map((body) => ({
         _id: body._id,
         name: body.name,

@@ -171,6 +171,57 @@ describe('ratings.rate — unhelpful', () => {
     expect(report?.moderationStatus).toBe('visible'); // never hidden by score (D3)
   });
 
+  test('one rater flipping their vote cannot run up the occurrence count', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const reportId = await seedReport(author, waterBodyId);
+
+    const downvoters = [];
+    // Three crosses the threshold and files the flag; the next two are further people piling on,
+    // which is what an occurrence means here.
+    for (const name of ['d1', 'd2', 'd3', 'd4', 'd5']) {
+      const downvoter = await seedUser(t, name);
+      await downvoter.as.mutation(api.ratings.rate, {
+        targetType: 'report',
+        targetId: reportId,
+        verdict: 'unhelpful',
+      });
+      downvoters.push(downvoter);
+    }
+
+    const autoFlag = async () => {
+      const flags = await t.run((ctx) =>
+        ctx.db
+          .query('contentFlags')
+          .withIndex('by_target', (q) => q.eq('targetType', 'report').eq('targetId', reportId))
+          .collect(),
+      );
+      return flags.filter((f) => f.reason === 'auto_low_quality')[0];
+    };
+    expect((await autoFlag())?.occurrences).toBe(3); // filed at d3, then d4 and d5 each counted once
+
+    // Now one of them changes their mind, twice. An identical re-vote already short-circuits, so the
+    // way back into the auto-flag path is a *flip* — and `occurrences` is what a moderator reads to
+    // decide the D57 lever, so it has to be a fact about the content rather than something a single
+    // rater can author about someone else's report.
+    const flipper = downvoters[0];
+    for (let i = 0; i < 3; i++) {
+      await flipper?.as.mutation(api.ratings.rate, {
+        targetType: 'report',
+        targetId: reportId,
+        verdict: 'helpful',
+      });
+      await flipper?.as.mutation(api.ratings.rate, {
+        targetType: 'report',
+        targetId: reportId,
+        verdict: 'unhelpful',
+      });
+    }
+
+    expect((await autoFlag())?.occurrences).toBe(3); // unmoved by six round trips
+  });
+
   test('discards a thumbs-down across a block relationship, but keeps thumbs-up', async () => {
     const t = harness();
     const author = await seedUser(t, 'author');

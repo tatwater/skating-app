@@ -342,7 +342,15 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     removedAt: v.optional(v.number()), // soft-delist, reversible — never a hard delete (D48 ethos)
-    removedByUserId: v.optional(v.id('profiles')),
+    removedByUserId: v.optional(v.id('profiles')), // absent on a system delist — see below
+    // Why the *system* delisted this bay, when no human did (N2). A canonical re-import that refines
+    // a shoreline, or a merge onto a survivor with a different outline, can leave a hand-drawn bay no
+    // longer inside its parent — Decision 10's "inside by construction" has to survive the parent
+    // changing shape, so the bay is delisted rather than kept as geometry that escaped the invariant.
+    // A `console.warn` was the only trace of that, which is a log nobody reads; this puts the reason
+    // on the row, so `listForBody` carries it into the editor where the redraw actually happens (D5:
+    // never silent). Cleared by any write that re-establishes containment — restore or redraw.
+    systemDelistReason: v.optional(v.string()),
   })
     // Every non-map read is scoped to a parent already in hand — the report being created knows its
     // `waterBodyId`, the search hit carries its parent, the lake editor is one body. Bounded by the
@@ -716,6 +724,17 @@ export default defineSchema({
   })
     .index('by_status', ['status'])
     .index('by_target', ['targetType', 'targetId'])
+    // Auto-flag bundling's lookup (N2): "is there an OPEN flag for this (target, reason), and what
+    // was the most recent terminal one?" `by_target` alone can't answer that under a cap, and why is
+    // worth writing down — it's the `lib/scan.ts` trap in a place where the cap *decides* something.
+    // Terminal rows accumulate forever on a chronically-flagged target, and they pile up on **both
+    // sides** of the open row: scanning ascending buries it under old dispositions, scanning
+    // descending buries it under new ones. Either way the bump silently becomes a duplicate filing at
+    // `occurrences: 1`, resetting the count on exactly the contributor the mechanism exists to track.
+    // `status` and `reason` in the key turn both halves into equality reads, so no cap is involved in
+    // the decision at all — `reason` earns its place because open rows are NOT one-per-target (user
+    // flags dedupe per flagger, so a much-flagged report carries one per reporter).
+    .index('by_target_status_reason', ['targetType', 'targetId', 'status', 'reason'])
     // Analytics (Phase 7b): flags *filed* on a day, and flags *resolved* on a day. The resolution
     // index is keyed by status first so the rollup reads only terminal rows in the day's range —
     // `actioned`/`dismissed` accumulate forever, and a scan of all of them would grow without bound.

@@ -184,6 +184,85 @@ describe('fileOrBumpAutoFlag', () => {
     expect(later.supersededFlagId).toBeUndefined();
   });
 
+  test('finds the open row on a much-flagged target, not the oldest hundred', async () => {
+    const t = harness();
+    const target = await seedUser(t, 'target');
+    const flagger = await seedUser(t, 'flagger');
+
+    // The open row is filed FIRST, then buried under more resolved rows than the scan cap. `by_target`
+    // runs ascending, so a scan that didn't ask for `desc` would keep the oldest hundred, never see
+    // the row it is supposed to bump, and file a duplicate open flag at `occurrences: 1` — resetting
+    // the count on exactly the chronic target bundling exists for.
+    await file(t, { targetId: target, flaggerId: flagger });
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 120; i++) {
+        await ctx.db.insert('contentFlags', {
+          flaggerId: flagger,
+          targetType: 'user' as const,
+          targetId: target,
+          reason: 'unsafe_false_report' as const,
+          status: 'dismissed' as const,
+          createdAt: Date.now(),
+          resolvedAt: Date.now(),
+        });
+      }
+    });
+
+    const next = await file(t, { targetId: target, flaggerId: flagger });
+    expect(next.filed).toBe(false);
+    expect(next.occurrences).toBe(2);
+    const open = (await flagsFor(t, target)).filter((f) => f.status === 'open');
+    expect(open).toHaveLength(1);
+  });
+
+  test('a re-observation that is not a new occurrence leaves the open row untouched', async () => {
+    const t = harness();
+    const target = await seedUser(t, 'target');
+    const flagger = await seedUser(t, 'flagger');
+
+    await file(t, { targetId: target, flaggerId: flagger, now: 1_000 });
+    const again = await t.run((ctx) =>
+      fileOrBumpAutoFlag(ctx, {
+        targetType: 'user',
+        targetId: target,
+        reason: 'unsafe_false_report',
+        flaggerId: flagger,
+        now: 9_999,
+        countsAsOccurrence: false,
+      }),
+    );
+
+    expect(again.filed).toBe(false);
+    expect(again.occurrences).toBe(1);
+    expect(again.alert).toBe(false);
+    const rows = await flagsFor(t, target);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.occurrences).toBe(1);
+    // Not even `lastOccurrenceAt` moves: a re-observation is not an event.
+    expect(rows[0]?.lastOccurrenceAt).toBe(1_000);
+  });
+
+  test('a state-shaped caller still FILES when nothing is tracking the problem yet', async () => {
+    const t = harness();
+    const target = await seedUser(t, 'target');
+    const flagger = await seedUser(t, 'flagger');
+
+    const result = await t.run((ctx) =>
+      fileOrBumpAutoFlag(ctx, {
+        targetType: 'user',
+        targetId: target,
+        reason: 'unsafe_false_report',
+        flaggerId: flagger,
+        countsAsOccurrence: false,
+      }),
+    );
+    // `countsAsOccurrence: false` suppresses the *bump*, never the flag itself — otherwise the first
+    // crossing that happened to arrive as a re-observation would go unrecorded entirely.
+    expect(result.filed).toBe(true);
+    expect(result.occurrences).toBe(1);
+    expect(await flagsFor(t, target)).toHaveLength(1);
+  });
+
   test('a different reason on the same target is a different problem', async () => {
     const t = harness();
     const target = await seedUser(t, 'target');
