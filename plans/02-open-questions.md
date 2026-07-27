@@ -75,10 +75,12 @@ for exactly the spelling problem this entry names. Nine bays are drawn on Champl
 sets (see [`phase-N2-lake-editor-and-subareas.md`](./phase-N2-lake-editor-and-subareas.md) → *The
 curation session*).
 
-**One thing this entry didn't anticipate, still open:** the same problem exists one level up. The
-corpus asks for **"Saranac Lake"** and OSM carries *Upper*, *Lower* and *Middle* — a name for an
-existing **body**, not a region inside one. Sub-areas got `aliases`; water bodies have none. See the
-N2 doc's *Open after this phase*.
+**Checked and closed, not carried forward:** the obvious next worry — that the same problem exists
+one level up, since the corpus says "Saranac Lake" and OSM carries *Upper*, *Lower* and *Middle* —
+turned out not to be a problem. Searching "Saranac Lake" already returns all three, and they are
+genuinely distinct lakes rather than one body under three names, so an alias would have bound the
+name to an arbitrary one of them. What that check *did* find is a real gap: **no rivers in the
+corpus at all** (see the N2 doc's *Open after this phase*).
 
 ---
 

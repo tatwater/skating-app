@@ -549,12 +549,15 @@ boundary below is inference and should be read as one.**
    body at Champlain's southern tip, and "Half Moon Cove" as a 0.05 km² VT body near Burlington. The
    plan filed both as sub-areas OSM lacks; OSM has them.
 
-3. **Saranac Lake is neither of the two things the plan expected.** It isn't missing geometry and it
-   isn't a sub-area: OSM carries **Upper** (19.5 km²), **Lower** (8.5 km²) and **Middle** (5.7 km²)
-   Saranac Lake as three separate bodies, and the corpus's bare "Saranac Lake" almost certainly means
-   Lower, the one by the village. So it's an **alias problem on a body** — and bodies have no alias
-   field. Only sub-areas do. That's a real gap in the model rather than a curation task, and it goes
-   back to the founder rather than getting improvised (see *Open after this phase*).
+3. **Saranac Lake was a false alarm, and the follow-up check is the interesting part.** OSM carries
+   **Upper** (19.5 km²), **Lower** (8.5 km²) and **Middle** (5.7 km²) as three separate bodies — one
+   single-component polygon each, matching how they read on any map. The first read of that was "so
+   it needs a body *alias*"; checking the actual search killed that: **"Saranac Lake" already returns
+   all three**, ranked first. Nothing was broken.
+
+   What the check *did* surface is that the ~900 m of water joining Middle to Lower doesn't exist in
+   our data, and neither does any other river — `type: 'river'` is unused corpus-wide. See *Open
+   after this phase*.
 
 ### What got drawn — nine bays on Lake Champlain
 
@@ -662,11 +665,21 @@ a small fixture can't reproduce.
 
 ## Open after this phase
 
-- **Bodies have no aliases, and Saranac Lake needs one.** The corpus asks for "Saranac Lake"; OSM has
-  Upper, Lower and Middle. That's not a missing body and not a sub-area — it's a name for an existing
-  body that the model has nowhere to put. Sub-areas got `aliases` because the bays needed them; the
-  same argument applies one level up, and the fix is probably `waterBodies.aliases` folded into
-  `search_name`'s denormalized field the same way. **Founder call**, since it touches the body model.
+- **~~Bodies need aliases~~ — no, they don't, and the Saranac case says why.** Checked against the
+  corpus after the fact: searching **"Saranac Lake" already returns Lower, Middle and Upper as the
+  top three hits**, and "Saranac" or "saranac lk" returns exactly those three. There was no broken
+  search. An alias would have been an active mistake — the three are genuinely distinct lakes (three
+  rows, three single-component polygons, ~900 m of unmodelled water between Middle and Lower), so
+  binding "Saranac Lake" to one of them would silently send a skater to a body the corpus never
+  specified. "Saranac Lake" is also the Adirondack **village**, so some of those four mentions may
+  not be about a lake at all. Body aliases may earn their place some day; this isn't the evidence.
+- **Rivers are not in the corpus at all — a real gap, and bigger than Saranac.** `type: 'river'` is
+  **unused**: in a 3,000-body sample it's pond 1410 / other 962 / marsh 386 / reservoir 181 / lake 61
+  / **river 0**, and the Hudson, Mohawk, Beaver and Walloomsac are all typed `other`. The ETL imports
+  `natural=water` polygons and buckets the unclassifiable as `other`; linear `waterway` features never
+  arrive. So D4's rivers-as-named-reaches isn't merely unbuilt — there is **no river data to build it
+  on**, and the connecting channels of a lake chain (the Saranacs) simply don't exist on the map. If
+  river skating matters for alpha, this is an ETL scope question, not a modelling one.
 - **Two bays and one Lake George bay are unplaced** (Dillenbeck, Carry, Northwest) — see the session
   notes. They need local knowledge, not another inference pass.
 - **Weather sample points aren't saved on Champlain** — the grid is computed and recorded, but dev
