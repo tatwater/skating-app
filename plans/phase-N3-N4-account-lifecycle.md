@@ -343,6 +343,30 @@ The default stage argument is now `STAGES[0]` rather than the literal `'erase'` 
 this fix inserted the stage and left the default alone, so `finalizeNow` and the cron both skipped the
 lock. The test caught it, which is the only reason it's worth mentioning.
 
+**The one writer the lock couldn't reach was Strava.** `storeConnection` is an internal mutation whose
+two callers are *actions holding a bare `userId`*: the OAuth callback resolves its user from a nonce
+minted before the lock landed, and `accessTokenFor` reads a connection, refreshes it over the network,
+then writes back. Neither passes through `requireProfile`, so neither could see `deleting` — and
+`activityConnections` gets exactly one erase pass. A redirect arriving a second late leaves **live OAuth
+credentials** for an account that no longer exists; the refresh path can do it with no callback at all,
+by having the table drained underneath it during the token round-trip and inserting a fresh row on the
+way back.
+
+So the check lives on the writer itself, which is the chokepoint both paths share. Two details:
+
+- Reading the profile there is also what puts this path *under* OCC rather than beside it — a
+  concurrent lock now conflicts with this mutation's read set.
+- A refused store is reported, not swallowed: `completeConnect` returns `ok: false` so the app says
+  "couldn't connect" instead of claiming a link that wasn't made, and `accessTokenFor` returns `null`
+  rather than handing back a token it just declined to keep — pushing a track on behalf of an account
+  mid-erasure is the thing being prevented, not a consolation prize.
+
+An audit of every other writer into an erased table came back clean: favorites, blocks, client signals,
+exports, photos and native activities all resolve their user through `requireProfile`, and every
+notification-recipient check is `status !== 'active'`, which excludes a new status by default. The one
+row deliberately left alone is a pending `oauthStates` nonce — 15-minute TTL, no credential in it, no
+`by_user` index to sweep it by, and with `storeConnection` gated it can no longer do anything.
+
 ## Verification
 
 - **Full suite green:** core 862 · convex 683 · web 197 · mobile 79 · design 61 · etl 22 · admin-areas 14.

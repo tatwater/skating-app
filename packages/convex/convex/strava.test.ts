@@ -234,6 +234,61 @@ describe('the connect flow is bound to a user by a single-use nonce', () => {
     expect(connections[0]?.accessToken).toBe('access-new');
   });
 
+  /**
+   * PR #29 review (Greptile P1, security). The `deleting` lock gates `requireProfile`, and this path
+   * never goes through it: the callback resolves its user from a nonce minted before the lock landed.
+   * `activityConnections` gets exactly one erase pass and nothing rescans it, so a redirect arriving a
+   * second late would leave live OAuth credentials behind for an account that no longer exists.
+   */
+  test('a callback that lands mid-deletion stores no credentials', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    await user.as.mutation(api.strava.beginConnect, {});
+    const state = (await t.run((ctx) => ctx.db.query('oauthStates').collect()))[0]?.state as string;
+
+    // The finalize chain locks the account while the user is away at Strava's consent screen.
+    await t.run((ctx) => ctx.db.patch(user.id, { status: 'deleting' as const }));
+
+    stubFetch([
+      {
+        match: /oauth\/token/,
+        body: {
+          access_token: 'access-new',
+          refresh_token: 'refresh-new',
+          expires_at: Math.floor(Date.now() / 1000) + 21_600,
+          athlete: { id: 999 },
+        },
+      },
+    ]);
+
+    const outcome = await t.action(internal.strava.completeConnect, { code: 'abc', state });
+    expect(outcome.ok).toBe(false); // reported as a failed connect, not a silent no-op
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+  });
+
+  /**
+   * The refresh half, which needs no callback at all: the token round-trip happens in an action, so
+   * the erase stage can drain the table underneath it and the write-back — finding nothing to patch —
+   * would insert a brand-new row of live credentials.
+   */
+  test('a token refresh cannot resurrect a connection the erase stage just drained', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    await t.run((ctx) => ctx.db.patch(user.id, { status: 'deleting' as const }));
+
+    const stored = await t.mutation(internal.strava.storeConnection, {
+      userId: user.id,
+      externalUserId: '999',
+      accessToken: 'access-new',
+      refreshToken: 'refresh-new',
+      tokenExpiresAt: Date.now() + 21_600_000,
+      scopes: ['activity:write'],
+    });
+
+    expect(stored).toEqual({ stored: false });
+    expect(await t.run((ctx) => ctx.db.query('activityConnections').collect())).toHaveLength(0);
+  });
+
   test('a callback with an unknown state connects nobody', async () => {
     const t = harness();
     stubFetch([{ match: /oauth\/token/, body: {} }]);

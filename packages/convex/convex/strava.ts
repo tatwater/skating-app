@@ -165,7 +165,24 @@ export const consumeOAuthState = internalMutation({
   },
 });
 
-/** Internal: store (or replace) a user's Strava connection. Tokens are SERVER-ONLY, never returned. */
+/**
+ * Internal: store (or replace) a user's Strava connection. Tokens are SERVER-ONLY, never returned.
+ *
+ * **Carries its own deletion check** (PR #29 review), because it is the one credential writer the
+ * `deleting` lock can't reach. Both of its callers are actions holding a bare `userId`: the OAuth
+ * callback resolves its user from a nonce minted before the lock landed, and `accessTokenFor` reads a
+ * connection, refreshes it over the network, then writes back. Neither passes through
+ * `requireProfile`, so neither would notice that the account was mid-deletion — and `activityConnections`
+ * gets exactly one erase pass, with no later stage rescanning it. A callback arriving a second late
+ * would leave **live OAuth credentials** behind for an account that no longer exists.
+ *
+ * The refresh path can do it without a callback at all: it reads the connection while it exists, the
+ * erase stage drains the table during the token round-trip, and the write back finds nothing to patch
+ * and inserts a fresh row.
+ *
+ * Reading the profile is also what puts this path under the same OCC protection as everything else —
+ * a concurrent lock now conflicts with this mutation's read set rather than passing beside it.
+ */
 export const storeConnection = internalMutation({
   args: {
     userId: v.id('profiles'),
@@ -176,6 +193,14 @@ export const storeConnection = internalMutation({
     scopes: v.array(v.string()),
   },
   handler: async (ctx, args) => {
+    const profile = await ctx.db.get(args.userId);
+    if (profile === null || profile.status === 'deleting' || profile.status === 'deleted') {
+      console.warn(
+        `strava: refusing to store a connection for ${args.userId} (${profile?.status ?? 'no profile'})`,
+      );
+      return { stored: false };
+    }
+
     const existing = (
       await ctx.db
         .query('activityConnections')
@@ -195,6 +220,7 @@ export const storeConnection = internalMutation({
     };
     if (existing) await ctx.db.patch(existing._id, fields);
     else await ctx.db.insert('activityConnections', fields);
+    return { stored: true };
   },
 });
 
@@ -248,7 +274,7 @@ export const completeConnect = internalAction({
       return { ok: false, redirectTo: claim.redirectTo };
     }
 
-    await ctx.runMutation(internal.strava.storeConnection, {
+    const { stored } = await ctx.runMutation(internal.strava.storeConnection, {
       userId: claim.userId,
       externalUserId: String(tokens.athlete?.id ?? ''),
       accessToken: tokens.access_token,
@@ -256,7 +282,10 @@ export const completeConnect = internalAction({
       tokenExpiresAt: tokens.expires_at * 1000,
       scopes: STRAVA_SCOPES.split(','),
     });
-    return { ok: true, redirectTo: claim.redirectTo };
+    // Refused ⇒ the account was deleted between "connect" and this redirect. Report it as a failed
+    // connect rather than a successful one, so the app shows "couldn't connect" instead of claiming a
+    // link that deliberately wasn't made.
+    return { ok: stored, redirectTo: claim.redirectTo };
   },
 });
 
@@ -349,7 +378,7 @@ async function accessTokenFor(ctx: ActionCtx, userId: Id<'profiles'>): Promise<s
     console.warn(tokens.error);
     return null;
   }
-  await ctx.runMutation(internal.strava.storeConnection, {
+  const { stored } = await ctx.runMutation(internal.strava.storeConnection, {
     userId,
     externalUserId: connection.externalUserId,
     accessToken: tokens.access_token,
@@ -357,6 +386,10 @@ async function accessTokenFor(ctx: ActionCtx, userId: Id<'profiles'>): Promise<s
     tokenExpiresAt: tokens.expires_at * 1000,
     scopes: connection.scopes ?? STRAVA_SCOPES.split(','),
   });
+  // Refused ⇒ the account was being deleted while we were at Strava's token endpoint. Returning the
+  // token anyway would push a track on behalf of an account mid-erasure, using a credential we just
+  // declined to keep.
+  if (!stored) return null;
   return tokens.access_token;
 }
 
