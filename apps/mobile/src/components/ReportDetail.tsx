@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   formatConditions,
+  formatLocationLine,
   formatSkateTime,
   formatSkateWindow,
   formatSnowCoverInches,
@@ -109,7 +110,17 @@ export function ReportDetail({ reportId }: { reportId: string }) {
   return (
     <YStack gap="$3">
       <YStack gap="$1">
-        <H4 color="$foreground">{bodyName ?? 'Report'}</H4>
+        {/* Composed through `@skating/core`, never assembled here (N2/D60): the bay name goes ahead
+            of the lake, and this screen is the reason that helper exists — the mobile feed card was
+            already showing "Malletts Bay" while this one still said "Lake Champlain". */}
+        <H4 color="$foreground">
+          {bodyName
+            ? formatLocationLine({
+                ...(report.subAreaName !== undefined ? { subAreaName: report.subAreaName } : {}),
+                bodyName,
+              })
+            : 'Report'}
+        </H4>
         <Text color="$foregroundMuted">
           Off the ice {formatSkateTime(report.skateEndTime)}
           {(() => {

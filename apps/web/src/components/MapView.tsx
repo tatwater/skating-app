@@ -5,6 +5,7 @@ import {
   type BBox,
   draftPlacementCount,
   isDraftSubmittable,
+  SUB_AREA_MIN_RENDER_ZOOM,
   undoDraftPlacement,
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
@@ -138,13 +139,21 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
   }, [bodies]);
 
-  // Named sub-areas in view (N2/D60) — a second layer on its own ladder-grid query, which returns
-  // nothing below its zoom floor, so at wide zooms this costs one skipped query rather than a filter.
-  const subAreas = useQuery(api.subAreas.listInViewport, queryArgs ?? 'skip');
+  // Named sub-areas in view (N2/D60) — a second layer on its own ladder-grid query.
+  //
+  // **Not subscribed below the zoom floor at all.** The server answers `[]` there, but "returns
+  // nothing" is still a query execution and a live subscription per viewport key, and a skater
+  // panning a regional view generates a lot of those for an answer that is known in advance. Both
+  // ends read `SUB_AREA_MIN_RENDER_ZOOM` from `@skating/core` so they can't drift apart.
+  const subAreaArgs =
+    queryArgs && queryArgs.zoom >= SUB_AREA_MIN_RENDER_ZOOM ? queryArgs : ('skip' as const);
+  const subAreas = useQuery(api.subAreas.listInViewport, subAreaArgs);
   const [subAreaFeatures, setSubAreaFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
   useEffect(() => {
-    if (subAreas !== undefined) setSubAreaFeatures(subAreasToFeatureCollection(subAreas));
-  }, [subAreas]);
+    // Zooming back out clears the layer rather than leaving the last bays drawn over a regional view.
+    if (subAreaArgs === 'skip') setSubAreaFeatures(EMPTY_FEATURES);
+    else if (subAreas !== undefined) setSubAreaFeatures(subAreasToFeatureCollection(subAreas));
+  }, [subAreas, subAreaArgs]);
 
   // The viewer's favorited bodies (Phase 4, decision #1) — painted with a distinct outline. Empty
   // when signed out. The id set is stable-memoized so the paint effect only re-runs on a real change.
@@ -620,6 +629,17 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !focus) return;
+    // Bounds win when given: a bay's extent decides its own zoom, where one number can't (N2).
+    if (focus.bounds) {
+      map.fitBounds(
+        [
+          [focus.bounds.minLng, focus.bounds.minLat],
+          [focus.bounds.maxLng, focus.bounds.maxLat],
+        ],
+        { padding: 48 },
+      );
+      return;
+    }
     map.flyTo({ center: [focus.lng, focus.lat], zoom: focus.zoom ?? map.getZoom() });
   }, [focus, loaded, mapRef.current]);
 

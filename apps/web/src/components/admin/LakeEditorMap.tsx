@@ -278,7 +278,21 @@ export function LakeEditorMap({
     // biome-ignore lint/correctness/useExhaustiveDependencies: setData reads mapRef.
   }, [loaded, data.draftPolygon, setData]);
 
-  return <div ref={containerRef} className="h-full w-full" data-testid="lake-editor-map" />;
+  // Labelled as a region rather than left as an anonymous div (D34): this canvas is the primary
+  // content of the route, and a screen reader landing on an unlabelled full-page div has nothing to
+  // announce. The tools beside it are the operable surface; this is the subject they act on.
+  // A labelled `section` rather than an anonymous div (D34): this canvas is the primary content of
+  // the route, and a screen reader landing on an unlabelled full-page div has nothing to announce.
+  // The tools beside it are the operable surface; this is the subject they act on. MapLibre takes any
+  // `HTMLElement` as its container, so the semantic element costs nothing.
+  return (
+    <section
+      ref={containerRef}
+      className="h-full w-full"
+      data-testid="lake-editor-map"
+      aria-label={`Editing map for ${data.body.name}`}
+    />
+  );
 }
 
 /** Re-exported so the route can build a style preview without importing the map lib itself. */

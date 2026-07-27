@@ -48,6 +48,10 @@ function LakeEditor() {
   const [draft, setDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(null);
   const [suggested, setSuggested] = useState<LatLng[]>([]);
   const [banner, setBanner] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
+  // The live map handle, so the lazily-created draw control can attach to the canvas. A ref on the
+  // component rather than a module-level object: a module singleton outlives the route, holding a
+  // removed map that the next visit's draw control would happily attach to.
+  const drawTargetRef = useRef<maplibregl.Map | null>(null);
 
   if (result === undefined) return <AdminEmpty>Loading…</AdminEmpty>;
   if (result === null || !body) {
@@ -143,9 +147,6 @@ function LakeEditor() {
     </div>
   );
 }
-
-/** The live map handle, so the lazily-created draw control can attach to the canvas below. */
-const drawTargetRef: { current: maplibregl.Map | null } = { current: null };
 
 type Banner = { tone: 'ok' | 'error'; text: string } | null;
 type SetBanner = (banner: Banner) => void;
@@ -253,7 +254,13 @@ function SubAreaTool({
   onResult,
 }: {
   waterBodyId: Id<'waterBodies'>;
-  subAreas: readonly { _id: string; name: string; aliases: string[]; removed: boolean }[];
+  subAreas: readonly {
+    _id: string;
+    name: string;
+    aliases: string[];
+    removed: boolean;
+    systemDelistReason?: string;
+  }[];
   draft: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   setDraft: (polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon | null) => void;
   mapRef: { current: maplibregl.Map | null };
@@ -356,6 +363,12 @@ function SubAreaTool({
                 {bay.name}
                 {bay.aliases.length > 0 ? (
                   <span className="text-foreground-muted"> · {bay.aliases.join(', ')}</span>
+                ) : null}
+                {/* Why the *system* retired it, when nobody clicked delist — a re-import that moved
+                    the shoreline out from under the outline, or a merge name collision. It reads
+                    here because here is where the redraw happens; a server log is not a surface. */}
+                {bay.systemDelistReason ? (
+                  <span className="block text-warning text-xs">{bay.systemDelistReason}</span>
                 ) : null}
               </span>
               <span className="flex shrink-0 gap-1">

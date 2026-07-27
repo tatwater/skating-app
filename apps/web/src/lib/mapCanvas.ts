@@ -49,6 +49,17 @@ export interface MapCanvasOptions {
   navigationControl?: boolean;
 }
 
+/**
+ * How many live maps are using the `pmtiles://` protocol handler.
+ *
+ * `addProtocol`/`removeProtocol` are **global** to maplibre-gl, not per-map, so an unmount that
+ * unregisters unconditionally breaks any map still on screen — and the two surfaces that use this
+ * shell (the skater map, kept mounted across the `_map` tree, and the lake editor) will overlap the
+ * moment anything embeds one in the other. Refcounting costs two lines and removes the ordering
+ * hazard entirely.
+ */
+let pmtilesUsers = 0;
+
 export interface MapCanvas {
   containerRef: React.RefObject<HTMLDivElement | null>;
   mapRef: React.RefObject<maplibregl.Map | null>;
@@ -92,22 +103,36 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
   const boundsKey = JSON.stringify(maxBounds);
   const fitKey = JSON.stringify(fitBounds ?? null);
 
+  // **The initial camera is read through a ref and is NOT a dependency**, and that distinction is
+  // load-bearing rather than tidy. These three only matter at construction — MapLibre has consumed
+  // them before `load` fires — so re-creating the map when their *identity* changes buys nothing and
+  // costs everything: `LakeEditorMap` derives `initialCenter` from its body's bbox as a fresh array
+  // literal each render, so with them in the dep array every parent state change (a finished draw,
+  // a saved banner, a Convex query resolving) tore the canvas down and rebuilt it. That is visible
+  // as a flicker and fatal to anything holding the map — the lazily-created terra-draw control keeps
+  // a reference to the instance it attached to, so the editor could draw exactly one shape per page
+  // load and then silently accept clicks that went nowhere.
+  const initialViewRef = useRef({ center: initialCenter, zoom: initialZoom, minZoom });
+  initialViewRef.current = { center: initialCenter, zoom: initialZoom, minZoom };
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: bounds are compared by their serialized key.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const protocol = new Protocol();
-    maplibregl.addProtocol('pmtiles', protocol.tile);
+    if (pmtilesUsers === 0) maplibregl.addProtocol('pmtiles', protocol.tile);
+    pmtilesUsers++;
 
+    const initialView = initialViewRef.current;
     const map = new maplibregl.Map({
       container,
       style: buildMapStyle(pmtilesUrl, flavor),
       // Restore pan/zoom across a theme-driven re-create; else the caller's initial framing.
-      center: lastViewRef.current?.center ?? initialCenter,
-      zoom: lastViewRef.current?.zoom ?? initialZoom,
+      center: lastViewRef.current?.center ?? initialView.center,
+      zoom: lastViewRef.current?.zoom ?? initialView.zoom,
       maxBounds,
-      ...(minZoom !== undefined ? { minZoom } : {}),
+      ...(initialView.minZoom !== undefined ? { minZoom: initialView.minZoom } : {}),
       attributionControl: false, // replaced below with an always-visible (non-compact) control
     });
     mapRef.current = map;
@@ -140,18 +165,11 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
       setLoaded(false);
       map.remove();
       mapRef.current = null;
-      maplibregl.removeProtocol('pmtiles');
+      pmtilesUsers = Math.max(0, pmtilesUsers - 1);
+      if (pmtilesUsers === 0) maplibregl.removeProtocol('pmtiles');
     };
-  }, [
-    pmtilesUrl,
-    flavor,
-    boundsKey,
-    fitKey,
-    initialCenter,
-    initialZoom,
-    minZoom,
-    navigationControl,
-  ]);
+    // `initialCenter` / `initialZoom` / `minZoom` are deliberately absent — see `initialViewRef`.
+  }, [pmtilesUrl, flavor, boundsKey, fitKey, navigationControl]);
 
   return { containerRef, mapRef, loaded };
 }

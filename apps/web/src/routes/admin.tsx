@@ -12,6 +12,10 @@ import { useRole } from '../lib/useRole';
  */
 export const Route = createFileRoute('/admin')({ component: AdminLayout });
 
+// Exported for the gate test. The redirect is a UX nicety over a server-side gate, but it's the
+// nicety that keeps a member from seeing operator chrome flash before the data refuses them.
+export { AdminLayout };
+
 /** Paths only an admin may reach — a moderator is bounced back to the dashboard. */
 const ADMIN_ONLY_PREFIXES = ['/admin/support', '/admin/tuning'];
 

@@ -26,7 +26,14 @@ function AdminWater() {
   const dedup = useQuery(api.waterBodies.listDedupCandidates, {});
   const curated = useQuery(api.waterBodies.listCurated, {});
   const [lookup, setLookup] = useState('');
-  const matches = useQuery(api.waterBodies.searchByName, searchQueryArg(lookup, 8));
+  // `bodiesOnly`: this box routes into a *body's* editor, and a bay has no editor of its own. Asking
+  // the server to skip the sub-area half is not the same as filtering it here — bays claim reserved
+  // slots in the merged page, so filtering client-side would quietly return fewer lakes than eight.
+  const lookupArg = searchQueryArg(lookup, 8);
+  const matches = useQuery(
+    api.waterBodies.searchByName,
+    lookupArg === 'skip' ? 'skip' : { ...lookupArg, bodiesOnly: true },
+  );
   const approve = useMutation(api.waterBodies.approve);
   const reject = useMutation(api.waterBodies.reject);
   const merge = useMutation(api.waterBodies.merge);

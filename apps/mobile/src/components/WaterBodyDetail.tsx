@@ -164,7 +164,10 @@ export function WaterBodyDetail({
             Post a bounty
           </Button>
           <BountyList waterBodyId={result.body._id} />
-          <ReportFeed waterBodyId={result.body._id} />
+          <ReportFeed
+            waterBodyId={result.body._id}
+            {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}
+          />
         </>
       )}
     </YStack>
@@ -174,11 +177,30 @@ export function WaterBodyDetail({
 /** How many per-body reports to fetch per infinite-scroll page. */
 const REPORTS_PAGE_SIZE = 20;
 
-function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+function ReportFeed({
+  waterBodyId,
+  /** The bay a search hit arrived on, pre-selecting the filter — you asked about Malletts, not the lake. */
+  initialSubAreaId,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  initialSubAreaId?: string;
+}) {
   const router = useRouter();
+  // The named bays on this lake (N2/D60). Most lakes have none, and then the control is absent
+  // rather than an empty chip row asking "which part?" of a pond.
+  const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
+  const bays = (subAreas ?? []).filter((s) => !s.removed);
+  const [subAreaId, setSubAreaId] = useState<string>(initialSubAreaId ?? '');
+  // A bay delisted since the link was made falls back to the whole lake, rather than filtering on an
+  // id nothing matches — which would read as "no reports here".
+  const activeBay = bays.some((b) => b._id === subAreaId) ? subAreaId : '';
+
   const { results, status, loadMore } = usePaginatedQuery(
     api.reports.listByWaterBody,
-    { waterBodyId },
+    {
+      waterBodyId,
+      ...(activeBay ? { subAreaId: activeBay as Id<'waterBodySubAreas'> } : {}),
+    },
     { initialNumItems: REPORTS_PAGE_SIZE },
   );
   const authorIds = [...new Set(results.map((r) => r.authorId))];
@@ -187,17 +209,49 @@ function ReportFeed({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
     results.length > 0 ? { profileIds: authorIds } : 'skip',
   );
 
+  // Chips rather than a picker: there are at most a handful of bays, and a tap is cheaper than a
+  // modal on a phone someone is holding in a glove.
+  const bayFilter =
+    bays.length > 0 ? (
+      <XStack gap="$2" flexWrap="wrap">
+        {[{ _id: '', name: 'Anywhere' }, ...bays].map((bay) => (
+          <Text
+            key={bay._id || 'all'}
+            accessibilityRole="button"
+            accessibilityLabel={`Show reports from ${bay.name}`}
+            accessibilityState={{ selected: activeBay === bay._id }}
+            onPress={() => setSubAreaId(bay._id)}
+            paddingHorizontal="$2"
+            paddingVertical="$1"
+            borderRadius="$3"
+            borderWidth={1}
+            borderColor={activeBay === bay._id ? '$primary' : '$border'}
+            color={activeBay === bay._id ? '$primary' : '$foregroundMuted'}
+            fontSize={13}
+          >
+            {bay.name}
+          </Text>
+        ))}
+      </XStack>
+    ) : null;
+
   if (status === 'LoadingFirstPage') return <DetailLoading />;
   if (results.length === 0) {
     return (
-      <Paragraph color="$foregroundMuted">
-        No reports yet — be the first to say how it skates.
-      </Paragraph>
+      <YStack gap="$2">
+        {bayFilter}
+        <Paragraph color="$foregroundMuted">
+          {activeBay
+            ? 'No reports from that part of the lake yet.'
+            : 'No reports yet — be the first to say how it skates.'}
+        </Paragraph>
+      </YStack>
     );
   }
 
   return (
     <YStack gap="$2">
+      {bayFilter}
       <Section label="Reports">
         <YStack gap="$2">
           {results.map((report) => (
