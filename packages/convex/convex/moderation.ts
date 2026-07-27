@@ -267,9 +267,22 @@ interface FlagView {
   createdAt: number;
   flagger: QueueUser | null;
   target: FlagTarget;
+  /**
+   * Auto-flag bundling (N2). `occurrences` is how many times this problem has been recorded — the
+   * count a stream of identical rows was hiding, and the moderator's actual input to the D57 lever.
+   * `priorResolvedAt`/`priorResolution` come from the superseded terminal row, so the queue can say
+   * "4th occurrence · last dismissed 6d ago" rather than making someone go looking.
+   */
+  occurrences: number;
+  lastOccurrenceAt?: number;
+  priorResolvedAt?: number;
+  priorResolution?: Doc<'contentFlags'>['status'];
 }
 
 async function toFlagView(ctx: QueryCtx, flag: Doc<'contentFlags'>): Promise<FlagView> {
+  // One `get` on the superseded row, and only for a flag that actually supersedes one — which is the
+  // rare case, since most flags are somebody's first.
+  const prior = flag.supersedesFlagId ? await ctx.db.get(flag.supersedesFlagId) : null;
   return {
     id: flag._id,
     targetType: flag.targetType,
@@ -280,6 +293,11 @@ async function toFlagView(ctx: QueryCtx, flag: Doc<'contentFlags'>): Promise<Fla
     createdAt: flag.createdAt,
     flagger: await loadQueueUser(ctx, flag.flaggerId),
     target: await resolveFlagTarget(ctx, flag.targetType, flag.targetId),
+    // Absent reads as 1: every flag filed before bundling shipped is its own single occurrence.
+    occurrences: flag.occurrences ?? 1,
+    ...(flag.lastOccurrenceAt !== undefined ? { lastOccurrenceAt: flag.lastOccurrenceAt } : {}),
+    ...(prior?.resolvedAt !== undefined ? { priorResolvedAt: prior.resolvedAt } : {}),
+    ...(prior ? { priorResolution: prior.status } : {}),
   };
 }
 

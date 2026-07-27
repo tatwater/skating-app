@@ -42,6 +42,7 @@ const CLUSTER_REPORT_CAP = 200;
 /** Ledger rows read per clustered report to count corroborations — the N+1 inside the cluster load. */
 const CLUSTER_EVENT_CAP = 100;
 
+import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { bumpMetricCounter } from './lib/metrics';
 import { nearestSamplePoint } from './lib/sampling';
 import { takeCapped } from './lib/scan';
@@ -132,35 +133,37 @@ export const contradictionCluster = internalQuery({
   },
 });
 
-/** Dedup: one open contradiction flag per author at a time (mirrors ratings.ts `maybeAutoFlag`). */
+/**
+ * Record a contributor's contradiction pattern (D56 §7b), bundled (N2).
+ *
+ * This used to carry its own copy of "one open flag per (target, reason)" and said so in its comment
+ * — the duplication is what moved the mechanism into `lib/autoFlag.ts`. The behavioural change is
+ * that a contributor parked above the threshold no longer files a fresh `/admin` row every settle:
+ * the count goes up on the row already tracking them, which is the number a moderator needs to judge
+ * the D57 lever and the thing a stream of identical rows was hiding.
+ */
 async function flagContradictionPattern(
   ctx: MutationCtx,
   authorId: Id<'profiles'>,
   flaggerId: Id<'profiles'>,
 ): Promise<void> {
-  const existing = await ctx.db
-    .query('contentFlags')
-    .withIndex('by_target', (q) => q.eq('targetType', 'user').eq('targetId', authorId))
-    .filter((q) => q.eq(q.field('reason'), 'unsafe_false_report'))
-    .filter((q) => q.eq(q.field('status'), 'open'))
-    .first();
-  if (existing) return;
-  await ctx.db.insert('contentFlags', {
-    flaggerId, // a corroborated opponent — the action that crossed the line; `note` marks it system-generated
+  const result = await fileOrBumpAutoFlag(ctx, {
     targetType: 'user',
     targetId: authorId,
     reason: 'unsafe_false_report',
+    flaggerId, // a corroborated opponent — the action that crossed the line; `note` marks it system-generated
     note: 'Auto: repeated weather-unexplained contradictions against corroborated reports (D56 §7). Review the good-vs-bad trend.',
-    status: 'open',
-    createdAt: Date.now(),
   });
-  // Safety-priority alert (D38): the auto-flag lands in the priority lane; email the founder to review
-  // the good-vs-bad trend and decide the D57 lever. Fire-and-forget; no-ops without Resend keys.
+  // Safety-priority alert (D38) — but no longer on *every* occurrence, which is the noise bundling
+  // exists to remove. It fires on the first and then at widening intervals, so a contributor quietly
+  // accumulating behind an already-open flag still surfaces (see `shouldAlertAt`).
+  if (!result.alert) return;
   await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
     subject: 'Safety flag: contradiction pattern',
-    heading: 'New safety flag · contradiction pattern',
+    heading: `New safety flag · contradiction pattern (occurrence ${result.occurrences})`,
     lines: [
       'A contributor crossed the contradiction threshold (weather-unexplained, un-corroborated).',
+      `This is occurrence ${result.occurrences} on the same open flag.`,
       'Review their tenure-aware good-vs-bad trend before acting.',
     ],
     deepLinkPath: '/admin/flags',

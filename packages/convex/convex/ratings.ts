@@ -23,6 +23,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { fulfillBountyOnHelpful } from './bounties';
 import { getCurrentProfile, requireProfile } from './lib/auth';
+import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs } from './lib/reputation';
 import { literals } from './lib/validators';
 
@@ -100,20 +101,15 @@ async function maybeAutoFlag(
 ): Promise<void> {
   const { helpful, unhelpful } = await tallyThumbs(ctx, targetType, targetId);
   if (unhelpful - helpful < AUTO_LOW_QUALITY_NET_UNHELPFUL) return;
-  const existing = await ctx.db
-    .query('contentFlags')
-    .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
-    .filter((q) => q.eq(q.field('reason'), 'auto_low_quality'))
-    .filter((q) => q.eq(q.field('status'), 'open'))
-    .first();
-  if (existing) return;
-  await ctx.db.insert('contentFlags', {
-    flaggerId: triggeredByRaterId, // the downvote that crossed the line; `reason` marks it system-generated
+  // Bundled (N2): a target that keeps crossing the threshold bumps one row's count rather than
+  // filing an identical flag each time. The dedup used to live here, spelled out a second time in
+  // `contradictions.ts` — see `lib/autoFlag.ts` for why the shared version never reopens a resolved
+  // row.
+  await fileOrBumpAutoFlag(ctx, {
     targetType,
     targetId,
     reason: 'auto_low_quality',
-    status: 'open',
-    createdAt: Date.now(),
+    flaggerId: triggeredByRaterId, // the downvote that crossed the line; `reason` marks it system-generated
   });
 }
 

@@ -40,10 +40,21 @@ function FlagRow({ flag }: { flag: FlagView }) {
           {flag.target.moderationStatus && flag.target.moderationStatus !== 'visible' ? (
             <Badge variant="outline">{flag.target.moderationStatus}</Badge>
           ) : null}
+          {/* Bundled occurrence count (N2). One row per recurring problem, so this number is the
+              thing a stream of identical rows was hiding — and it's the input to the D57 lever. */}
+          {flag.occurrences > 1 ? (
+            <Badge variant="outline">{ordinal(flag.occurrences)} occurrence</Badge>
+          ) : null}
           <span className="text-foreground-muted text-xs">
             flagged by {flag.flagger ? `@${flag.flagger.username}` : 'system'}
           </span>
         </div>
+        {flag.priorResolution && flag.priorResolvedAt ? (
+          <p className="text-foreground-muted text-xs">
+            Last {flag.priorResolution} {relativeDays(flag.priorResolvedAt)} — this is a recurrence
+            of the same problem, filed fresh so the earlier disposition stays on the record.
+          </p>
+        ) : null}
         <p className="text-foreground text-sm">{flag.target.summary}</p>
         {flag.target.author ? (
           <p className="text-foreground-muted text-xs">
@@ -168,4 +179,19 @@ function AdminFlags() {
       )}
     </div>
   );
+}
+
+/** "4th", "2nd" — small enough that a table isn't worth it. */
+function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  const suffix = { 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] ?? 'th';
+  return `${n}${suffix}`;
+}
+
+/** "6d ago" / "today" — the resolution recency a moderator judges a recurrence against. */
+function relativeDays(at: number): string {
+  const days = Math.floor((Date.now() - at) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return 'today';
+  return `${days}d ago`;
 }

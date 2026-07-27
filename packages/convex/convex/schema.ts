@@ -696,6 +696,14 @@ export default defineSchema({
     note: v.optional(v.string()),
     status: literals(FLAG_STATUSES),
     resolvedByUserId: v.optional(v.id('profiles')), // a moderator or admin (D37)
+    // Auto-flag bundling (N2) — see `lib/autoFlag.ts`. A recurring system-generated problem bumps a
+    // count on its open row instead of filing an identical one; a recurrence *after* a resolution
+    // files a NEW row carrying the count forward and pointing back, because flipping a terminal row
+    // open again would retroactively change a past day's flag-resolution count in the 7b rollup that
+    // `by_status_resolved_at` serves. All optional ⇒ migration-free; absent `occurrences` reads as 1.
+    occurrences: v.optional(v.number()),
+    lastOccurrenceAt: v.optional(v.number()),
+    supersedesFlagId: v.optional(v.id('contentFlags')),
     createdAt: v.number(),
     resolvedAt: v.optional(v.number()),
   })
