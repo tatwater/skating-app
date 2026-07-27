@@ -736,6 +736,25 @@ share a shape — **the thing that was measured was not the thing that could go 
 passing unchanged," which was true of the pure helpers and vacuous about the component — nothing
 rendered `MapView` or the shell. See *Testing* for the three files that now do.
 
+### The PR review (Greptile, PR #28)
+
+11. **The sub-area report filter trusted the client to pair the bay with its lake.** Finding 7's whole
+    point was that the bay feed reads an index keyed by `subAreaId` alone — which is also what made
+    the argument pair unvalidated-by-construction: `waterBodyId` does no work in that read, so a
+    request naming Lake Morey and a Champlain bay returned **Champlain's reports under Morey's
+    header**. Both clients only ever offer bays from `listForBody` for the body on screen, and that is
+    exactly the kind of UI courtesy §7c says is not an authority. `listByWaterBody` now resolves the
+    body and refuses a bay that isn't on it.
+
+    Two judgement calls in the check, both different from `bounties.create`'s superficially identical
+    one. It compares against the **survivor** (D36), because a merge repoints the loser's bays onto
+    the survivor — a link still naming the merged-away body is a legitimate pair, not a cross-lake
+    one, and 400ing someone's bookmark would be the fix inventing a second bug. And a **delisted bay
+    stays filterable**, where a bounty on one is refused: a bounty nobody can see the bay to fulfill is
+    dead, whereas a bay's reports are the lake's reports either way — narrowing to them exposes
+    nothing, and erroring a feed out from under someone mid-scroll because a moderator retired the bay
+    is worse than serving it until the client's own bay list catches up and drops the filter.
+
 ---
 
 ## Testing (D40)
@@ -745,7 +764,9 @@ rendered `MapView` or the shell. See *Testing* for the three files that now do.
 - **`convex-test`** — role gates and an audit row per sub-area mutation; a polygon overhanging its
   parent is stored clipped and one mostly outside is refused; a redraw re-stamps affected reports and
   *only* affected reports; **delisting a parent hides its sub-areas, and a merge repoints them**; a
-  report elsewhere on the parent neither attaches to nor fulfills a sub-area bounty; bundling bumps an
+  report elsewhere on the parent neither attaches to nor fulfills a sub-area bounty; **a bay feed
+  refuses a bay belonging to another lake and accepts one on the requested body's merge survivor**;
+  bundling bumps an
   open flag, supersedes a resolved one, and never patches a terminal row; `activeBountyPostLimit`
   overrides the global cap in both directions and `0` blocks. Explicit longer timeouts on the heavy
   suites (CI's 5s default flakes).

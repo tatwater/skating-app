@@ -1,6 +1,7 @@
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -276,6 +277,99 @@ describe('reports.listByWaterBody (all public, D13)', () => {
       paginationOpts: { numItems: 2, cursor: first.continueCursor },
     });
     expect(second.page.map((r) => r._id)).toEqual([ids[2], ids[1]]);
+  });
+
+  // The bay filter reads an index keyed by sub-area alone (N2/D60), so the body in the args does no
+  // work in that read — the pairing has to be enforced, or one lake's page serves another's reports.
+  describe('sub-area filter (N2/D60)', () => {
+    const PAGE = { numItems: 50, cursor: null };
+
+    /** A minimal bay row on `parent` — the query only reads its parent link. */
+    async function seedSubArea(
+      t: ReturnType<typeof convexTest>,
+      parent: Id<'waterBodies'>,
+      name: string,
+    ) {
+      const author = await t.run(async (ctx) => {
+        const profile = await ctx.db.query('profiles').first();
+        if (!profile) throw new Error('seed a profile first — a bay records who drew it');
+        return profile._id;
+      });
+      return t.run((ctx) =>
+        ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: parent,
+          name,
+          searchText: name,
+          polygon: POLYGON,
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          surfaceAreaSqM: 100_000,
+          displayScore: 1,
+          minVisibleZoom: 10,
+          createdByUserId: author,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }),
+      );
+    }
+
+    test('narrows to the named bay, and refuses one belonging to another lake', async () => {
+      const t = convexTestWithGeo();
+      const { id: morey } = await seedBody(t, 'osm/1');
+      const { id: champlain } = await seedBody(t, 'osm/2');
+      const asAuthor = await seedUser(t, 'clerk_author');
+      // Reports first, then the bay, then the stamp by hand: the fixture bay covers the whole fixture
+      // lake, so letting `create` resolve the stamp would put *both* reports in it.
+      const inBay = await asAuthor.mutation(api.reports.create, {
+        waterBodyId: morey,
+        skateEndTime: SKATE_TIME,
+      });
+      await asAuthor.mutation(api.reports.create, {
+        waterBodyId: morey,
+        skateEndTime: SKATE_TIME - 1000,
+      });
+      const bay = await seedSubArea(t, morey, 'Malletts Bay');
+      await t.run((ctx) => ctx.db.patch(inBay, { subAreaId: bay }));
+
+      const narrowed = await t.query(api.reports.listByWaterBody, {
+        waterBodyId: morey,
+        subAreaId: bay,
+        paginationOpts: PAGE,
+      });
+      expect(narrowed.page.map((r) => r._id)).toEqual([inBay]);
+
+      // The cross-lake pair: Champlain's page must not serve Morey's bay.
+      await expect(
+        t.query(api.reports.listByWaterBody, {
+          waterBodyId: champlain,
+          subAreaId: bay,
+          paginationOpts: PAGE,
+        }),
+      ).rejects.toThrow(/not on this water body/i);
+    });
+
+    test('accepts a bay whose parent is the survivor of the requested body (D36)', async () => {
+      const t = convexTestWithGeo();
+      const { id: survivor } = await seedBody(t, 'osm/1');
+      const { id: loser } = await seedBody(t, 'osm/2');
+      const asAuthor = await seedUser(t, 'clerk_author');
+      // A merge repoints the loser's bays onto the survivor, so a stale link naming the loser is a
+      // legitimate pair — it must not be rejected as a cross-lake one.
+      await t.run((ctx) => ctx.db.patch(loser, { mergedIntoId: survivor }));
+      const inBay = await asAuthor.mutation(api.reports.create, {
+        waterBodyId: survivor,
+        skateEndTime: SKATE_TIME,
+      });
+      const bay = await seedSubArea(t, survivor, 'Malletts Bay');
+      await t.run((ctx) => ctx.db.patch(inBay, { subAreaId: bay }));
+
+      const page = await t.query(api.reports.listByWaterBody, {
+        waterBodyId: loser,
+        subAreaId: bay,
+        paginationOpts: PAGE,
+      });
+      expect(page.page.map((r) => r._id)).toEqual([inBay]);
+    });
   });
 });
 

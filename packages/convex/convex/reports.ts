@@ -468,6 +468,26 @@ export const listByWaterBody = query({
   },
   handler: async (ctx, { waterBodyId, subAreaId, paginationOpts }) => {
     if (subAreaId !== undefined) {
+      // The bay index is keyed by sub-area alone, so `waterBodyId` contributes nothing to that read —
+      // which is exactly what makes an unvalidated pair a cross-lake leak: ask for Lake Morey while
+      // naming a Champlain bay and the page hands back Champlain's reports under Morey's header. Both
+      // clients only offer bays that came from `listForBody` for the body on screen, but that's a UI
+      // courtesy, not an authority (§7c) — the pairing is decided here.
+      //
+      // Checked against the **survivor** (D36): a merge repoints the loser's bays onto the survivor
+      // (`repointSubAreasOnMerge`), so a link still naming the merged-away body is a legitimate pair
+      // and shouldn't 400 someone's bookmark.
+      //
+      // A *delisted* bay is deliberately still filterable, unlike `bounties.create`, which rejects
+      // one: a bounty on an invisible bay is unfulfillable, whereas a bay's reports are the lake's
+      // reports either way — nothing is exposed by narrowing to them, and erroring a feed mid-scroll
+      // because a moderator delisted the bay is worse than serving it until the client's own bay list
+      // catches up and drops the filter.
+      const survivor = await resolveSurvivor(ctx, waterBodyId);
+      const subArea = await ctx.db.get(subAreaId);
+      if (!survivor || !subArea || subArea.waterBodyId !== survivor._id) {
+        throw new ConvexError('That sub-area is not on this water body');
+      }
       return ctx.db
         .query('reports')
         .withIndex('by_sub_area_moderation_and_skate_end_time', (q) =>
