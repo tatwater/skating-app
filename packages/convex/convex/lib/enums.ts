@@ -170,6 +170,7 @@ export const MODERATION_ACTIONS = [
   // skater sees on their own report — so each write is attributed. Delisting and restoring reuse the
   // generic `remove` / `restore` verbs, disambiguated by the `waterBodySubArea` target type, exactly
   // as `hide` / `remove` are already shared across content kinds.
+  'set_weather_sample_points', // placed the multi-cell weather sampling grid on a giant (D56 §5)
   'create_sub_area',
   'redraw_sub_area', // geometry changed — schedules a re-stamp of the parent's reports + hazards
   'rename_sub_area', // name or aliases changed — also a re-stamp, since the name is denormalized

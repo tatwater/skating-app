@@ -19,9 +19,11 @@ import {
   isKnownStateCode,
   isMinor,
   KNOWN_STATE_CODES,
+  MAX_SUGGESTED_SAMPLE_POINTS,
   minVisibleZoom,
   nearestBodyForPoint,
   pathToBody,
+  pointInPolygon,
   WATER_BODY_TYPES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -792,6 +794,63 @@ export const setCuratedBoost = mutation({
       targetId: waterBodyId,
       reason: `Set curatedBoost to ${curatedBoost}`,
       metadata: { curatedBoost, minVisibleZoom: scores.minVisibleZoom },
+      createdAt: Date.now(),
+    });
+    return waterBodyId;
+  },
+});
+
+/**
+ * Moderator: set a body's weather **sample points** (D56 §5) — the writer the schema field and
+ * `lib/sampling.ts` have been waiting for since Phase 10 shipped them with no mutation at all.
+ *
+ * Weather doesn't vary below Open-Meteo's grid, so every body samples at its centroid by default and
+ * only the genuinely multi-cell giants need more — Champlain is ~200 km end to end, and one sample
+ * at its middle says nothing useful about the ice at either end. The suggestion grid is computed
+ * client-side in the lake editor from the polygon it already has (`@skating/core`'s
+ * `suggestSamplePoints`); this is the trust boundary that decides what gets stored.
+ *
+ * **Every point is validated to lie on the water, and that is the whole safety argument.** A point on
+ * land returns a real forecast for the wrong surface — the one way this feature can silently produce
+ * a wrong answer rather than no answer, which is exactly the failure mode the app spends its effort
+ * avoiding. An empty array clears back to the centroid default.
+ */
+export const setWeatherSamplePoints = mutation({
+  args: { waterBodyId: v.id('waterBodies'), points: v.array(latLng) },
+  handler: async (ctx, { waterBodyId, points }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+    if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {
+      throw new ConvexError(
+        `A body can carry at most ${MAX_SUGGESTED_SAMPLE_POINTS} sample points — each one is a forecast fetch and a cache row.`,
+      );
+    }
+
+    const polygon = body.polygon as unknown as Polygon | MultiPolygon;
+    const offWater = points.findIndex((point) => !pointInPolygon(point, polygon));
+    if (offWater >= 0) {
+      const bad = points[offWater];
+      throw new ConvexError(
+        `Sample point ${offWater + 1} (${bad?.lat.toFixed(4)}, ${bad?.lng.toFixed(4)}) isn't on ${body.name}. A point on land returns a real forecast for the wrong surface.`,
+      );
+    }
+
+    // Empty clears the field rather than storing `[]`, so `nearestSamplePoint`'s "absent ⇒ centroid"
+    // default is the one code path for "this body doesn't need a grid".
+    await ctx.db.patch(waterBodyId, {
+      weatherSamplePoints: points.length > 0 ? points : undefined,
+    });
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_weather_sample_points',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason:
+        points.length > 0
+          ? `Set ${points.length} weather sample point${points.length === 1 ? '' : 's'}`
+          : 'Cleared weather sample points (back to the centroid default)',
+      metadata: { count: points.length },
       createdAt: Date.now(),
     });
     return waterBodyId;

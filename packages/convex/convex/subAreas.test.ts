@@ -1026,3 +1026,79 @@ describe('subAreas.setCuratedBoost', () => {
     for (const cell of cells) expect(cell.minVisibleZoom).toBe(after);
   });
 });
+
+/**
+ * The Phase-10 escape hatch finally gets a writer (D56 §5). Its schema field and reader have shipped
+ * since Phase 10 with zero mutations behind them.
+ */
+describe('waterBodies.setWeatherSamplePoints', () => {
+  test('a member cannot place them', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const member = await seedUser(t, 'member');
+    await expect(
+      member.as.mutation(api.waterBodies.setWeatherSamplePoints, {
+        waterBodyId: body,
+        points: [{ lat: 44.5, lng: -73.0 }],
+      }),
+    ).rejects.toThrow(/moderator/i);
+  });
+
+  test('stores on-water points and audits the write', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setWeatherSamplePoints, {
+      waterBodyId: body,
+      points: [
+        { lat: 44.2, lng: -73.2 },
+        { lat: 44.8, lng: -72.8 },
+      ],
+    });
+    expect((await t.run((ctx) => ctx.db.get(body)))?.weatherSamplePoints).toHaveLength(2);
+
+    const audits = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'waterbody').eq('targetId', body as string),
+        )
+        .collect(),
+    );
+    expect(audits.map((a) => a.action)).toEqual(['set_weather_sample_points']);
+  });
+
+  test('refuses a point on land, naming which one', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    // The one way this feature produces a *wrong* answer rather than no answer: a point on land
+    // returns a real forecast for the wrong surface.
+    await expect(
+      mod.as.mutation(api.waterBodies.setWeatherSamplePoints, {
+        waterBodyId: body,
+        points: [
+          { lat: 44.2, lng: -73.2 },
+          { lat: 40.0, lng: -70.0 },
+        ],
+      }),
+    ).rejects.toThrow(/point 2/i);
+  });
+
+  test('an empty array clears the field rather than storing []', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setWeatherSamplePoints, {
+      waterBodyId: body,
+      points: [{ lat: 44.2, lng: -73.2 }],
+    });
+    await mod.as.mutation(api.waterBodies.setWeatherSamplePoints, {
+      waterBodyId: body,
+      points: [],
+    });
+    // `nearestSamplePoint`'s "absent ⇒ centroid" default is then the one code path for a body that
+    // doesn't need a grid — `[]` would be a second, silently-equivalent representation.
+    expect((await t.run((ctx) => ctx.db.get(body)))?.weatherSamplePoints).toBeUndefined();
+  });
+});
