@@ -854,7 +854,10 @@ renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggreg
   than hazards and needing **more** corroboration to survive. `ridge_crossing` currently inherits the
   hazard rules whole — including the map opacity floor where stale never means gone — which is
   conservative for a danger and **anti-conservative for a passage**: a marker placed in November still
-  reads "reported crossable" in March. Copy becomes *"suggested crossing"*, never "safe".
+  reads "reported crossable" in March. Copy becomes *"suggested crossing"*, never "safe". A single
+  "closed" vote — **invisible today** — makes a crossing visibly **disputed**; closing still takes two,
+  because removing on one vote lets any single user delete a contribution and destroys the information
+  that a crossing was ever found there.
 
 **Two premises the code check falsified**, both making the phase *more* consequential:
 - **Reports don't draw on the map at all** — there is no report layer. What reaches the map from a

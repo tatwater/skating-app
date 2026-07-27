@@ -120,7 +120,7 @@ So passage markers get their own lifecycle, inverted at every point:
 |---|---|---|
 | Absence of evidence | **keeps it alive** — assume the danger is still there | **kills it** — assume the crossing is gone |
 | Positive votes | optional; refresh the clock | **required to survive**, and more of them |
-| One negative vote | contributes toward a 2-vote archive | **closes it immediately** |
+| One negative vote | counts quietly toward a 2-vote archive | **shows as disputed**; two still needed to close |
 | Past its window | fades to a visible floor, never disappears | **expires — stops rendering** |
 
 The asymmetry falls straight out of D3 rather than being invented for it. Getting a crossing wrong in
@@ -130,6 +130,12 @@ them onto ice nobody has checked. One of those is recoverable.
 Consequences for the build:
 - **Several crossings per ridge** — already expressible (each is its own `ridge_crossing` row); what's
   missing is authoring and rendering them as a set belonging to one ridge.
+- **A third lifecycle state: `disputed`.** One "closed" vote is invisible today — `goneCount` hits 1,
+  `status` stays `active`, and `healingState` only tracks `healing_unsafe` — so a skater saying "you
+  can't cross here" changes nothing. `HAZARD_HEALING_STATES` gains `disputed`, derived from
+  `goneCount >= 1 && goneCount < removalThreshold`, rendered with *"the safety of this crossing has
+  been disputed — be careful."* Two votes still close it. **Passage markers only**: on a hazard the
+  same signal would invite skaters to discount a live warning, which is the unsafe direction.
 - **Copy is "suggested crossing", never "safe crossing"**, and every surface repeats that judging the
   crossing in the moment is the skater's, not ours. The existing verdict relabelling
   (*still crossable / dicey now / ridge closed*) gets tightened in the same pass.

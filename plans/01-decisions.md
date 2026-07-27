@@ -1426,11 +1426,25 @@ So passage markers get an inverted lifecycle:
 |---|---|---|
 | Absence of evidence | **keeps it alive** — assume the danger is still there | **kills it** — assume the crossing is gone |
 | Positive votes | optional; refresh the clock | **required to survive**, and more of them |
-| One negative vote | counts toward a 2-vote archive | **closes it immediately** |
+| One negative vote | counts quietly toward a 2-vote archive | **shows as disputed**; two still needed to close |
 | Past its window | fades to a visible floor, never disappears | **expires — stops rendering** |
 
 - **Several crossings per ridge**, each its own row, authored and rendered as a set belonging to one
-  ridge. Downvoting one closes that crossing, not the ridge.
+  ridge. Downvoting one affects that crossing, not the ridge.
+- **A single "closed" vote makes a crossing visibly disputed rather than removing it** (founder
+  refinement, 2026-07-27). Closing still takes two. The first vote is currently **invisible** —
+  `goneCount` goes to 1, `status` stays `active`, and `healingState` only ever reflects a
+  `healing_unsafe` verdict — so one skater saying "you can't cross here" changes nothing on screen.
+  It now renders a cautionary state: *"the safety of this crossing has been disputed — be careful."*
+  - Removing on one vote, which this decision originally said, was **wrong twice over**: it let any
+    single user delete another's contribution with no threshold — a moderation hole that would have
+    been caught in review had someone else written it — and removal *destroys information*, where the
+    disputed state keeps both facts the skater needs (a crossing was reported here; someone disagrees).
+  - **`disputed` outranks `healing_unsafe`** when both apply: "the ridge is closed" is a stronger claim
+    than "the crossing is dicey".
+  - **Passage markers only.** On a *hazard*, surfacing a below-threshold "gone" vote would invite
+    skaters to discount a live warning — the unsafe direction. Same asymmetry as the inverted decay,
+    and the reason both belong to the same decision.
 - **The copy is "suggested crossing", never "safe crossing"**, and every surface repeats that judging it
   in the moment is the skater's call, not ours — extending the existing verdict relabelling
   (*still crossable / dicey now / ridge closed*) rather than replacing it.
