@@ -145,6 +145,13 @@ export default defineSchema({
     // harassment/spam surface — so a boolean revocation fits, exactly like reports/hazards. Its point
     // is muting a toxic commenter *without* silencing their safety reports. Absent ⇒ allowed.
     canPostComments: v.optional(v.boolean()),
+    /**
+     * Per-user open-bounty cap (D57's deferred bounty lever, built in N2). Absent ⇒ the global
+     * `MAX_OPEN_BOUNTIES_PER_DAY`; `0` ⇒ can't post bounties at all. A *number* rather than a boolean
+     * on purpose: bounties aren't content, they're requests, so the proportionate lever for someone
+     * spamming them is fewer — not none, and certainly not a ban.
+     */
+    activeBountyPostLimit: v.optional(v.number()),
     contradictionCount: v.optional(v.number()),
     role: literals(USER_ROLES), // mod=content; admin ⊇ mod (D37)
     status: literals(USER_STATUSES), // suspend/ban (D37); deleted (D33)
@@ -931,6 +938,13 @@ export default defineSchema({
     trustClass: v.optional(v.string()), // the deciding report author's class; absent ⇒ no class
     /** Did the weather pass clear a report that would otherwise have suppressed this attempt (D56)? */
     weatherReopened: v.boolean(),
+    /**
+     * The open-bounty cap actually applied to this attempt (N2). Recorded so 7b's cap-hit-rate chart
+     * can't confuse "the global cap is too tight" with "this one user is restricted" — without it, a
+     * handful of restricted users would read as evidence to loosen the cap for everyone. Absent on
+     * rows written before the per-user limit existed.
+     */
+    appliedLimit: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_created_at', ['createdAt']) // the charts' bounded window read + the retention prune

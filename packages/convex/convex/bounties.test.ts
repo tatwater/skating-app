@@ -297,7 +297,7 @@ describe('bounties.create', () => {
     }
     const fourth = await seedBody(t);
     await expect(requester.as.action(api.bounties.create, { waterBodyId: fourth })).rejects.toThrow(
-      /maximum number of open bounties/,
+      /you already have 3 open bounties/i,
     );
   });
 
@@ -318,7 +318,7 @@ describe('bounties.create', () => {
     );
     vi.stubGlobal('fetch', fetchSpy);
     await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
-      /maximum number of open bounties/,
+      /you already have 3 open bounties/i,
     );
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -400,7 +400,7 @@ describe('bountyGateEvents', () => {
     const waterBodyId = await seedBody(t);
     await seedReport(reporter, waterBodyId, Date.now() - 2 * HOUR);
     await expect(requester.as.action(api.bounties.create, { waterBodyId })).rejects.toThrow(
-      /maximum number of open bounties/,
+      /you already have 3 open bounties/i,
     );
 
     const events = await gateEvents(t);

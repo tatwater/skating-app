@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { DEFAULT_BOUNTY_REWARD_POINTS, MAX_OPEN_BOUNTIES_PER_DAY } from '@skating/core';
+import { DEFAULT_BOUNTY_REWARD_POINTS } from '@skating/core';
 import { useAction, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useRouter } from 'expo-router';
@@ -32,6 +32,8 @@ export function BountyForm({
   // asking "which part?" of a pond is noise. Rendered as chips rather than a picker: at the handful
   // a lake carries, one tap beats a modal wheel.
   const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
+  // The cap that applies to *this* person (N2) — the global constant would lie to a limited user.
+  const myLimit = useQuery(api.bounties.myBountyLimit, {});
   const bays = (subAreas ?? []).filter((s) => !s.removed);
   const [subAreaId, setSubAreaId] = useState<string | null>(null);
 
@@ -103,7 +105,8 @@ export function BountyForm({
           covered longer, and a big thaw or freeze reopens it sooner.
         </Text>
         <Text color="$foregroundMuted" fontSize={13}>
-          • Up to {MAX_OPEN_BOUNTIES_PER_DAY} open bounties at a time.
+          • Up to {myLimit?.limit ?? '—'} open bount{myLimit?.limit === 1 ? 'y' : 'ies'} at a time
+          {myLimit?.restricted ? ' (a moderator has set this for your account)' : ''}.
         </Text>
       </YStack>
       {error ? (

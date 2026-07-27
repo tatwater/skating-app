@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { DEFAULT_BOUNTY_REWARD_POINTS, MAX_OPEN_BOUNTIES_PER_DAY } from '@skating/core';
+import { DEFAULT_BOUNTY_REWARD_POINTS } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
@@ -32,6 +32,9 @@ export function BountyForm({
   // Named bays on this lake (N2/D60) — the whole lake stays the default, because most lakes have
   // none and asking "which part?" of a pond is noise.
   const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
+  // The cap that applies to *this* person (N2). Hardcoding the global constant here would have made
+  // the form promise three bounties to the one user who's been limited to one.
+  const myLimit = useQuery(api.bounties.myBountyLimit, {});
   const bays = (subAreas ?? []).filter((s) => !s.removed);
   const [subAreaId, setSubAreaId] = useState<string>('');
 
@@ -97,7 +100,10 @@ export function BountyForm({
               Only if the lake doesn’t already have a recent report — a well-confirmed read keeps it
               covered longer, and a big thaw or freeze reopens it sooner.
             </li>
-            <li>Up to {MAX_OPEN_BOUNTIES_PER_DAY} open bounties at a time.</li>
+            <li>
+              Up to {myLimit?.limit ?? '—'} open bount{myLimit?.limit === 1 ? 'y' : 'ies'} at a time
+              {myLimit?.restricted ? ' (a moderator has set this for your account)' : ''}.
+            </li>
           </ul>
           {error ? (
             <p role="alert" className="text-destructive">

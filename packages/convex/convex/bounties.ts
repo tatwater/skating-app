@@ -255,25 +255,49 @@ async function evaluateFreshness(
  */
 async function underOpenBountyCap(
   ctx: QueryCtx,
-  requesterId: Id<'profiles'>,
+  requester: Doc<'profiles'>,
   now: number,
-): Promise<boolean> {
+): Promise<{ ok: boolean; limit: number }> {
+  const limit = effectiveBountyLimit(requester);
   const open = await ctx.db
     .query('bounties')
-    .withIndex('by_requester_status', (q) => q.eq('requesterId', requesterId).eq('status', 'open'))
+    .withIndex('by_requester_status', (q) =>
+      q.eq('requesterId', requester._id).eq('status', 'open'),
+    )
     .collect();
-  return withinDailyBountyLimit(
-    open.map((b) => b.createdAt),
-    now,
-    MAX_OPEN_BOUNTIES_PER_DAY,
-    BOUNTY_DAILY_WINDOW_MS,
-  );
+  return {
+    ok: withinDailyBountyLimit(
+      open.map((b) => b.createdAt),
+      now,
+      limit,
+      BOUNTY_DAILY_WINDOW_MS,
+    ),
+    limit,
+  };
+}
+
+/**
+ * The open-bounty cap that applies to one requester (N2) — their `activeBountyPostLimit` if a
+ * moderator set one, else the global constant.
+ *
+ * Exported because the **clients read it too**: both `BountyForm`s used to hardcode
+ * `MAX_OPEN_BOUNTIES_PER_DAY` into their "Up to 3 open bounties at a time" line, which would have
+ * made the form lie to precisely the one user the limit applies to. A restricted user is being told
+ * a rule; the rule they're told has to be theirs.
+ */
+export function effectiveBountyLimit(profile: Doc<'profiles'>): number {
+  const limit = profile.activeBountyPostLimit;
+  return limit !== undefined && Number.isFinite(limit) && limit >= 0
+    ? limit
+    : MAX_OPEN_BOUNTIES_PER_DAY;
 }
 
 /** The user-facing rejection copy for each gate verdict — one place, so the action and tests agree. */
 const GATE_MESSAGES = {
   suppressed: 'This lake already has fresh eyes — no bounty needed',
-  capped: 'You already have the maximum number of open bounties',
+  capped: (limit: number) =>
+    `You already have ${limit} open ${limit === 1 ? 'bounty' : 'bounties'} — the most you can have at once`,
+  blocked: 'Your account cannot post bounties right now',
 } as const;
 
 /**
@@ -291,6 +315,8 @@ async function logGateEvent(
     decision: 'allowed' | 'suppressed' | 'capped';
     decidingReport: EvaluatedReport | null;
     weatherReopened: boolean;
+    /** The cap this attempt was judged against — see `bountyGateEvents.appliedLimit`. */
+    appliedLimit: number;
     now: number;
   },
 ): Promise<void> {
@@ -300,6 +326,7 @@ async function logGateEvent(
     requesterId: args.requesterId,
     decision: args.decision,
     weatherReopened: args.weatherReopened,
+    appliedLimit: args.appliedLimit,
     ...(r
       ? {
           decidingReportId: r.reportId,
@@ -344,7 +371,7 @@ export const bountyFreshnessInputs = internalQuery({
     // The rolling open-bounty cap, BEFORE the action's weather loop: a capped requester would be
     // rejected by `createChecked` regardless, so don't let repeated capped requests drive per-report
     // Open-Meteo fetches + cache writes first (§7c resource guard).
-    if (!(await underOpenBountyCap(ctx, profile._id, now))) return { status: 'capped' as const };
+    if (!(await underOpenBountyCap(ctx, profile, now)).ok) return { status: 'capped' as const };
     // A sub-area bounty samples weather at the point nearest the *bay*, not the lake's centroid —
     // on a body big enough to need sample points at all, the two can be an hour of driving apart.
     const subArea = subAreaId ? await ctx.db.get(subAreaId) : null;
@@ -498,16 +525,24 @@ export const createChecked = internalMutation({
     // Rolling per-requester cap (decision 7), re-checked transactionally here — the pre-weather gate
     // already short-circuited obviously-capped callers, but a concurrent create could have filled the
     // cap since. Checked before freshness so the recorded decision names the unambiguous reason.
-    if (!(await underOpenBountyCap(ctx, profile._id, now))) {
+    const cap = await underOpenBountyCap(ctx, profile, now);
+    if (!cap.ok) {
       await logGateEvent(ctx, {
         waterBodyId: body._id,
         requesterId: profile._id,
         decision: 'capped',
         decidingReport: null,
         weatherReopened: false,
+        appliedLimit: cap.limit,
         now,
       });
-      return { ok: false, decision: 'capped', message: GATE_MESSAGES.capped };
+      return {
+        ok: false,
+        decision: 'capped',
+        // The message names the number, because "the maximum" is unhelpful to someone whose maximum
+        // isn't everyone else's — and `0` needs saying outright rather than reading as a bug.
+        message: cap.limit === 0 ? GATE_MESSAGES.blocked : GATE_MESSAGES.capped(cap.limit),
+      };
     }
 
     // Freshness gate (decision 8), re-evaluated **transactionally** here (§7c) rather than trusting the
@@ -541,6 +576,7 @@ export const createChecked = internalMutation({
         decision: 'suppressed',
         decidingReport: blocking ?? newest,
         weatherReopened: false,
+        appliedLimit: cap.limit,
         now,
       });
       return { ok: false, decision: 'suppressed', message: GATE_MESSAGES.suppressed };
@@ -553,6 +589,7 @@ export const createChecked = internalMutation({
       waterBodyId: body._id,
       requesterId: profile._id,
       decision: 'allowed',
+      appliedLimit: cap.limit,
       // The report the verdict turned on: the newest suppressor weather cleared, or — when nothing
       // suppressed at all — the freshest report on the body, i.e. the closest this attempt came to
       // being blocked. Either way the row plots a real (age, window) pair below the line.
@@ -927,6 +964,30 @@ export const listOpen = query({
     const cap =
       limit !== undefined && limit > 0 ? Math.min(limit, OPEN_BOUNTY_SCAN_CAP) : rows.length;
     return rows.slice(0, cap);
+  },
+});
+
+/**
+ * The caller's own open-bounty cap and how much of it they've used (N2).
+ *
+ * Exists so the bounty form can state the rule that applies *to this person*. Both clients used to
+ * hardcode `MAX_OPEN_BOUNTIES_PER_DAY` into their copy, which would have made the form promise three
+ * bounties to the one user who's been limited to one — telling someone a rule that isn't theirs is
+ * worse than saying nothing.
+ */
+export const myBountyLimit = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await getCurrentProfile(ctx);
+    if (!viewer) return null;
+    const now = Date.now();
+    const open = await ctx.db
+      .query('bounties')
+      .withIndex('by_requester_status', (q) => q.eq('requesterId', viewer._id).eq('status', 'open'))
+      .collect();
+    const limit = effectiveBountyLimit(viewer);
+    const used = open.filter((b) => now - b.createdAt < BOUNTY_DAILY_WINDOW_MS).length;
+    return { limit, used, restricted: viewer.activeBountyPostLimit !== undefined };
   },
 });
 

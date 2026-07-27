@@ -523,6 +523,42 @@ export const unbanUser = mutation({
   },
 });
 
+/**
+ * Set (or clear) a requester's **open-bounty cap** (D57's deferred bounty lever, built in N2).
+ *
+ * A sibling of `setPostingPermission` rather than an argument on it, and the reason is mechanical:
+ * that mutation's shape is `permission: 'reports' | 'hazards' | 'comments'` × `allowed: boolean`,
+ * patched through a field map. A nullable *int* doesn't fit it. What is reusable gets reused — the
+ * same `loadModeratableUser` guard and the same `set_posting_permission` audit action — so the
+ * moderation log still reads as one story rather than growing a parallel vocabulary for one field.
+ *
+ * `undefined` clears back to the global cap; `0` blocks bounty posting outright while leaving reports
+ * and hazards untouched, which is the proportionality the whole D57 family exists for.
+ */
+export const setBountyPostLimit = mutation({
+  args: {
+    userId: v.id('profiles'),
+    /** Absent ⇒ back to the global cap. */
+    limit: v.optional(v.number()),
+    reason: v.string(),
+  },
+  handler: async (ctx, { userId, limit, reason }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
+      throw new ConvexError('A bounty limit has to be a whole number, zero or more');
+    }
+    await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, { activeBountyPostLimit: limit });
+    await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+      permission: 'bounties',
+      limit: limit ?? null,
+    });
+    return userId;
+  },
+});
+
 /** Which `profiles` boolean each posting surface maps to (D57). */
 const POSTING_PERMISSION_FIELD = {
   reports: 'canPostReports',

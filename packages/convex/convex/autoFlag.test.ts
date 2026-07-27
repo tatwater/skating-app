@@ -1,5 +1,7 @@
+import { MAX_OPEN_BOUNTIES_PER_DAY } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
+import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { AUTO_FLAG_COOLDOWN_MS, fileOrBumpAutoFlag, shouldAlertAt } from './lib/autoFlag';
 import schema from './schema';
@@ -210,5 +212,141 @@ describe('shouldAlertAt', () => {
     expect(shouldAlertAt(10)).toBe(true);
     expect(shouldAlertAt(11)).toBe(false);
     expect(shouldAlertAt(20)).toBe(true);
+  });
+});
+
+/**
+ * `activeBountyPostLimit` (N2) — D57's deferred bounty lever. A number rather than a boolean,
+ * because bounties are requests rather than content: the proportionate answer to someone spamming
+ * them is fewer, not none.
+ */
+describe('activeBountyPostLimit', () => {
+  async function seedLake(t: ReturnType<typeof harness>) {
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Champlain',
+        type: 'lake' as const,
+        source: 'osm' as const,
+        polygon: {
+          type: 'Polygon' as const,
+          coordinates: [
+            [
+              [-73.5, 44],
+              [-72.5, 44],
+              [-72.5, 45],
+              [-73.5, 45],
+              [-73.5, 44],
+            ],
+          ],
+        },
+        bbox: { minLat: 44, minLng: -73.5, maxLat: 45, maxLng: -72.5 },
+        centroid: { lat: 44.5, lng: -73 },
+        surfaceAreaSqM: 8.7e9,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+  }
+
+  test('a per-user limit overrides the global cap downward', async () => {
+    const t = harness();
+    const lake = await seedLake(t);
+    const requester = await seedUser(t, 'requester');
+    await t.run((ctx) => ctx.db.patch(requester, { activeBountyPostLimit: 1 }));
+    const as = t.withIdentity({ subject: 'requester' });
+
+    await as.action(api.bounties.create, { waterBodyId: lake });
+    // The global cap is 3; this user's is 1, and the message says *their* number.
+    await expect(as.action(api.bounties.create, { waterBodyId: lake })).rejects.toThrow(
+      /already have 1 open bounty/i,
+    );
+  });
+
+  test('zero blocks bounty posting outright, and says so rather than reading as a bug', async () => {
+    const t = harness();
+    const lake = await seedLake(t);
+    const requester = await seedUser(t, 'requester');
+    await t.run((ctx) => ctx.db.patch(requester, { activeBountyPostLimit: 0 }));
+
+    await expect(
+      t.withIdentity({ subject: 'requester' }).action(api.bounties.create, { waterBodyId: lake }),
+    ).rejects.toThrow(/cannot post bounties/i);
+  });
+
+  test('the gate event records the applied limit, so the cap chart can tell the two apart', async () => {
+    const t = harness();
+    const lake = await seedLake(t);
+    const requester = await seedUser(t, 'requester');
+    await t.run((ctx) => ctx.db.patch(requester, { activeBountyPostLimit: 1 }));
+    const as = t.withIdentity({ subject: 'requester' });
+    await as.action(api.bounties.create, { waterBodyId: lake });
+    await expect(as.action(api.bounties.create, { waterBodyId: lake })).rejects.toThrow();
+
+    const events = await t.run((ctx) => ctx.db.query('bountyGateEvents').collect());
+    const capped = events.find((e) => e.decision === 'capped');
+    // Without this, a handful of restricted users would read as evidence that the *global* cap is
+    // too tight — the one conclusion the chart must not support by accident.
+    expect(capped?.appliedLimit).toBe(1);
+    expect(events.find((e) => e.decision === 'allowed')?.appliedLimit).toBe(1);
+  });
+
+  test('clearing the limit restores the global cap', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    await t.run((ctx) => ctx.db.patch(requester, { activeBountyPostLimit: 1 }));
+    await t.run((ctx) => ctx.db.patch(requester, { activeBountyPostLimit: undefined }));
+    const mine = await t
+      .withIdentity({ subject: 'requester' })
+      .query(api.bounties.myBountyLimit, {});
+    expect(mine?.limit).toBe(MAX_OPEN_BOUNTIES_PER_DAY);
+    expect(mine?.restricted).toBe(false);
+  });
+
+  test('the form-facing query reports the limit that applies to this person', async () => {
+    const t = harness();
+    const requester = await seedUser(t, 'requester');
+    await t.run((ctx) => ctx.db.patch(requester, { activeBountyPostLimit: 2 }));
+    const mine = await t
+      .withIdentity({ subject: 'requester' })
+      .query(api.bounties.myBountyLimit, {});
+    expect(mine).toMatchObject({ limit: 2, used: 0, restricted: true });
+  });
+
+  test('only a moderator can set it, and a reason is required', async () => {
+    const t = harness();
+    const target = await seedUser(t, 'target');
+    await seedUser(t, 'member');
+    const mod = await seedUser(t, 'mod');
+    await t.run((ctx) => ctx.db.patch(mod, { role: 'moderator' as const }));
+
+    await expect(
+      t
+        .withIdentity({ subject: 'member' })
+        .mutation(api.moderation.setBountyPostLimit, { userId: target, limit: 1, reason: 'spam' }),
+    ).rejects.toThrow(/moderator/i);
+    await expect(
+      t
+        .withIdentity({ subject: 'mod' })
+        .mutation(api.moderation.setBountyPostLimit, { userId: target, limit: 1, reason: '  ' }),
+    ).rejects.toThrow(/reason/i);
+    await expect(
+      t
+        .withIdentity({ subject: 'mod' })
+        .mutation(api.moderation.setBountyPostLimit, { userId: target, limit: -1, reason: 'spam' }),
+    ).rejects.toThrow(/whole number/i);
+
+    await t
+      .withIdentity({ subject: 'mod' })
+      .mutation(api.moderation.setBountyPostLimit, { userId: target, limit: 1, reason: 'spam' });
+    expect((await t.run((ctx) => ctx.db.get(target)))?.activeBountyPostLimit).toBe(1);
+
+    // Reuses the existing audit vocabulary, so the moderation log stays one story.
+    const audits = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) => q.eq('targetType', 'user').eq('targetId', target as string))
+        .collect(),
+    );
+    expect(audits.map((a) => a.action)).toContain('set_posting_permission');
   });
 });
