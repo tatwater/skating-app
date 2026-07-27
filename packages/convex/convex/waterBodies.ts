@@ -11,10 +11,7 @@
  */
 
 import {
-  allLevels,
   bboxIntersects,
-  cellRangeCovering,
-  cellsCovering,
   classifyDedup,
   type DedupClassification,
   type DedupShape,
@@ -25,7 +22,6 @@ import {
   minVisibleZoom,
   nearestBodyForPoint,
   pathToBody,
-  scanLevels,
   WATER_BODY_TYPES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -40,6 +36,7 @@ import {
 } from './_generated/server';
 import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
+import { rankCandidates, scanCells } from './lib/cellScan';
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
 import { isListed } from './lib/listing';
 import { takeCapped } from './lib/scan';
@@ -876,18 +873,10 @@ export const applyCuratedBoostSeed = internalMutation({
  * (Greptile PR #27). Sorting the whole candidate set first makes the answer traversal-independent —
  * the top-`limit` bodies by `minVisibleZoom`, wherever in the box they sit.
  *
- * **Sorting isn't enough on its own, though: the row budget has to be spent fairly too.** If early
- * cells could take the whole budget, the sort would be ranking a *spatially selected* prefix and the
- * bias would survive one level down — whole neighbourhoods of a dense viewport blank while the first
- * cells scanned rendered their every pond. So each cell's `take` is its **fair share of what's left**
- * (`remaining budget / remaining cells`), which means no cell can be starved by the ones ahead of it,
- * and a cell that comes up short passes its slack to the ones behind. When the budget binds, the
- * result is the most prominent bodies from *across* the box rather than everything from one corner.
- *
- * **And the cell budget is spent a whole rung at a time**, for the same reason one level up: a plan
- * cut mid-rung drops a row-major slice of the box, which is a spatial hole no downstream ranking can
- * fill. Skipping the rung drops a *prominence tier* instead, uniformly across the box — see the walk
- * below.
+ * **The walk itself lives in `lib/cellScan.ts`** (extracted in N2, when the sub-area layer needed the
+ * same one over a second cell table): whole-rung admission, the fair-share row budget, and the
+ * probe-one-past truncation flag are all stated there, each with the review correction it came from.
+ * What stays here is what's specific to water bodies — which table, and how a candidate hydrates.
  *
  * The residual is honest and unavoidable: a hard row budget means a dense cell is read only to its
  * share's depth, so a body can be missed if its own cell holds more prominent bodies than that share.
@@ -918,129 +907,34 @@ async function bodiesCoveringBox(
   cellsScanned: number;
 }> {
   const { zoom, limit } = opts;
-  const rowCeiling = Math.min(opts.maxRows ?? CELL_ROW_SCAN_BUDGET, CELL_ROW_SCAN_BUDGET);
-  let rowBudget = rowCeiling;
-  let cellsScanned = 0;
-  let truncated = false;
-
-  // The full cell walk, materialized before any I/O so the row budget can be divided by how many
-  // cells still have to be served. Pure arithmetic on the bbox — no reads — and both cell guards run
-  // here, so a rung that never gets scanned doesn't inflate anyone else's share.
-  //
-  // **Rungs are admitted whole or not at all.** Cutting an over-budget plan at 512 cells was a
-  // truncation with no honest story: cells within a rung are enumerated row-major, so the cut blanked
-  // whichever corner of the box came last, and pass 2 cannot rank a body back in from a cell that was
-  // never looked up (Greptile PR #27, round 7). Dropping the *rung* instead degrades along
-  // prominence, the axis the rest of this query already degrades along: `indexLevelFor` puts a body on
-  // the coarser of "how big it is" and its `minVisibleZoom`, so a body on a fine rung is by
-  // construction one that only draws once you've zoomed in. That makes a short plan still say
-  // something exact — scanning rungs `minZ…K` whole finds **every** body in the box with
-  // `minVisibleZoom ≤ K`, wherever in the box it sits — where the row-major cut could only say "some
-  // of them, from over here".
-  //
-  // Stopping at the first rung that doesn't fit (rather than skipping it and trying the next) loses
-  // nothing: a finer rung's cells are strictly smaller, so its covering of the same box is never
-  // smaller either. Once a rung doesn't fit, none behind it does.
-  const levels =
-    zoom === undefined ? allLevels(WATER_BODY_LADDER) : scanLevels(zoom, WATER_BODY_LADDER);
-  const plan: { z: number; x: number; y: number }[] = [];
-  for (const level of levels) {
-    const range = cellRangeCovering(box, level);
-    // Two ways a rung can fail to fit, worth telling apart in the log. The per-rung guard is an
-    // absurdity check — only a box far wider than its zoom implies (a hand-rolled client, a wrapped
-    // bbox) reaches it. The budget guard is reachable from a real window that is very wide and short,
-    // whose rungs each stay under the per-rung cap but sum past the total. Either way, say what was
-    // dropped rather than materializing a huge covering: the guarantee is worth more stated honestly
-    // than silently half-kept.
-    //
-    // (The `zoom === undefined` containment walk scans every rung, and dropping its *finest* would be
-    // exactly the wrong end — the pond you are standing on is the unprominent one. It never binds:
-    // that caller's box is ~0.02° wide, so each of the ladder's nine rungs contributes at most four
-    // cells.)
-    if (range.count > MAX_CELLS_PER_LEVEL) {
-      console.warn(
-        `waterBodyCells: box covers ${range.count} cells at level ${level} (max ${MAX_CELLS_PER_LEVEL}); rungs ${level}+ skipped, so bodies that first draw at zoom ≥ ${level} are omitted (N1).`,
-      );
-      truncated = true;
-      break;
-    }
-    if (plan.length + range.count > CELL_SCAN_BUDGET) {
-      console.warn(
-        `waterBodyCells: cell budget ${CELL_SCAN_BUDGET} would be exceeded by level ${level} (${plan.length} cells planned + ${range.count}); rungs ${level}+ skipped whole, so the answer is complete for bodies drawing at zoom < ${level} and omits finer-indexed ones (N1).`,
-      );
-      truncated = true;
-      break;
-    }
-    plan.push(...cellsCovering(box, level));
-  }
-
-  // Pass 1 — candidate ids and their prominence, deduped. A body straddling a cell boundary appears
-  // in several cells (and at several rungs when `zoom` is absent); keep the coarsest rung's value,
-  // which is the body's own `minVisibleZoom`, so the rank never depends on which cell found it.
-  const candidates = new Map<Id<'waterBodies'>, number>();
-  for (const [i, cell] of plan.entries()) {
-    if (rowBudget <= 0) {
-      truncated = true;
-      break;
-    }
-    cellsScanned++;
-    // Greedy, but never at the expense of a cell behind this one: take as much as wanted *after*
-    // setting aside a floor for every cell still unserved. Rationing only bites when the budget is
-    // actually scarce — dividing it evenly up front instead would cap an ordinary 39-cell viewport
-    // at 38 rows a cell and truncate reads that comfortably fit, which is a worse answer than the
-    // bias it fixes. `limit + 1` still caps a single cell: rows arrive ascending by
-    // `minVisibleZoom`, so anything past a full render budget's worth from one cell is less
-    // prominent than `limit` bodies already in hand and can never win.
-    const unserved = plan.length - i - 1;
-    // The floor is `MIN_ROWS_PER_CELL`, or an equal split when even that can't be met.
-    const floorPerCell = Math.min(MIN_ROWS_PER_CELL, Math.floor(rowBudget / (unserved + 1)));
-    const take = Math.max(1, Math.min(rowBudget - unserved * floorPerCell, limit + 1));
-    const probe = Math.min(take + 1, rowBudget);
-    const rows = await ctx.db
-      .query('waterBodyCells')
-      .withIndex('by_cell', (q) => {
-        const atCell = q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y);
-        return zoom === undefined ? atCell : atCell.lte('minVisibleZoom', zoom);
-      })
-      // `take + 1`, so "this cell had more" is a fact rather than a guess: stopping at exactly
-      // `take` can't distinguish a cell that holds precisely that many from one that holds
-      // thousands, and reporting the first as a truncation is how a D5 warning becomes noise
-      // (Greptile PR #27 — the same boundary `takeCapped` gets wrong).
-      //
-      // Clamped to `rowBudget` so the probe is *inside* the budget rather than beside it: every row
-      // returned is charged below, and the clamp is what keeps `CELL_ROW_SCAN_BUDGET` an exact
-      // ceiling instead of one-per-cell more than it says.
-      .take(probe);
-    rowBudget -= rows.length;
-    if (rows.length > take) {
-      // Exact: the probe row came back, so this cell holds more than its share. Those rows are the
-      // least prominent in it and can't change the top of the ranking, but the answer is partial.
-      truncated = true;
-    } else if (rows.length === probe && probe < take + 1) {
-      // The budget cut the probe short, so "there was nothing more" was never actually established.
-      // On any cell but the last, the exhausted budget flags this on the next iteration — on the
-      // last one, nothing would have (Greptile PR #27, round 6: an earlier comment here claimed the
-      // next iteration always covers it, which is false precisely at the end of the plan). Report it:
-      // D5 would rather a warning that occasionally fires on a scan that happened to fit exactly than
-      // a truncation that goes out silently.
-      truncated = true;
-    }
-    for (const row of rows) {
-      const best = candidates.get(row.waterBodyId);
-      if (best === undefined || row.minVisibleZoom < best) {
-        candidates.set(row.waterBodyId, row.minVisibleZoom);
-      }
-    }
-  }
-
-  // Pass 2 — hydrate in global prominence order, most prominent first, so the render budget spends
-  // itself on the biggest lakes in the box rather than on whichever cell the walk opened first. Ties
-  // break on id purely so the same viewport returns the same bodies twice running.
-  const ranked = [...candidates].sort(([aId, aZoom], [bId, bZoom]) =>
-    aZoom !== bZoom ? aZoom - bZoom : aId < bId ? -1 : 1,
+  const scan = await scanCells<Id<'waterBodies'>>(
+    box,
+    WATER_BODY_LADDER,
+    {
+      maxCellsPerLevel: MAX_CELLS_PER_LEVEL,
+      cellBudget: CELL_SCAN_BUDGET,
+      rowBudget: Math.min(opts.maxRows ?? CELL_ROW_SCAN_BUDGET, CELL_ROW_SCAN_BUDGET),
+      minRowsPerCell: MIN_ROWS_PER_CELL,
+      limit,
+    },
+    { ...(zoom !== undefined ? { zoom } : {}), label: 'waterBodyCells' },
+    async (cell, probe, atZoom) => {
+      const rows = await ctx.db
+        .query('waterBodyCells')
+        .withIndex('by_cell', (q) => {
+          const atCell = q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y);
+          return atZoom === undefined ? atCell : atCell.lte('minVisibleZoom', atZoom);
+        })
+        .take(probe);
+      return rows.map((row) => ({ ref: row.waterBodyId, minVisibleZoom: row.minVisibleZoom }));
+    },
   );
+
+  // Pass 2 — hydrate in global prominence order, so the render budget spends itself on the biggest
+  // lakes in the box rather than on whichever cell the walk opened first.
+  let truncated = scan.truncated;
   const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
-  for (const [waterBodyId] of ranked) {
+  for (const waterBodyId of rankCandidates(scan.candidates)) {
     if (byId.size >= limit) {
       truncated = true;
       break;
@@ -1052,12 +946,7 @@ async function bodiesCoveringBox(
     byId.set(body._id, body);
   }
 
-  return {
-    byId,
-    truncated,
-    rowsRead: rowCeiling - rowBudget,
-    cellsScanned,
-  };
+  return { byId, truncated, rowsRead: scan.rowsRead, cellsScanned: scan.cellsScanned };
 }
 
 /**

@@ -713,6 +713,116 @@ describe('the parent-listing cascade', () => {
   });
 });
 
+describe('subAreas.listInViewport', () => {
+  const VIEWPORT = { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 };
+
+  async function drawBay(
+    t: ReturnType<typeof harness>,
+    body: Id<'waterBodies'>,
+    name: string,
+    box: [number, number, number, number],
+  ) {
+    const mod = t.withIdentity({ subject: 'mod' });
+    return mod.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name,
+      polygon: rect(...box),
+    });
+  }
+
+  test('returns the bays in view, and nothing below the render-zoom floor', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedUser(t, 'mod', 'moderator');
+    await drawBay(t, body, 'Malletts Bay', [-73.2, 44.2, -73.0, 44.4]);
+
+    expect(
+      await t.query(api.subAreas.listInViewport, { viewport: VIEWPORT, zoom: 12 }),
+    ).toHaveLength(1);
+    // Not a filter — a decision not to run the query. At z8 you're looking at three states and the
+    // lake itself is two pixels wide.
+    expect(await t.query(api.subAreas.listInViewport, { viewport: VIEWPORT, zoom: 8 })).toEqual([]);
+  });
+
+  test('a bay outside the viewport is not returned', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedUser(t, 'mod', 'moderator');
+    await drawBay(t, body, 'Malletts Bay', [-73.2, 44.2, -73.0, 44.4]);
+
+    const elsewhere = { minLat: 44.0, minLng: -72.9, maxLat: 44.1, maxLng: -72.6 };
+    expect(await t.query(api.subAreas.listInViewport, { viewport: elsewhere, zoom: 12 })).toEqual(
+      [],
+    );
+  });
+
+  test('a delisted bay, and a bay on a delisted lake, both drop out of the layer', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const admin = await seedUser(t, 'admin', 'admin');
+    const a = await drawBay(t, body, 'Malletts Bay', [-73.2, 44.2, -73.0, 44.4]);
+    await drawBay(t, body, 'Shelburne Bay', [-73.3, 44.5, -73.15, 44.7]);
+    expect(
+      await t.query(api.subAreas.listInViewport, { viewport: VIEWPORT, zoom: 12 }),
+    ).toHaveLength(2);
+
+    await mod.as.mutation(api.subAreas.remove, { subAreaId: a });
+    expect(
+      await t.query(api.subAreas.listInViewport, { viewport: VIEWPORT, zoom: 12 }),
+    ).toHaveLength(1);
+
+    await admin.as.mutation(api.waterBodies.remove, {
+      waterBodyId: body,
+      reason: 'landowner_request',
+    });
+    expect(await t.query(api.subAreas.listInViewport, { viewport: VIEWPORT, zoom: 12 })).toEqual(
+      [],
+    );
+  });
+
+  test('the read-stats sibling reports what the scan cost', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedUser(t, 'mod', 'moderator');
+    await drawBay(t, body, 'Malletts Bay', [-73.2, 44.2, -73.0, 44.4]);
+
+    // A *realistic* z12 window — about 11 km across. The 1° `VIEWPORT` the other cases use is a
+    // coherence check, not a plausible screen: at z12 it would be ~250 cells of plan, which is what
+    // the per-rung guard exists to notice rather than what a map actually asks for.
+    const stats = await t.query(internal.subAreas.subAreaReadStats, {
+      viewport: { minLat: 44.25, minLng: -73.15, maxLat: 44.35, maxLng: -73.05 },
+      zoom: 12,
+      names: true,
+    });
+    expect(stats.subAreas).toBe(1);
+    expect(stats.names).toEqual(['Malletts Bay']);
+    expect(stats.truncated).toBe(false);
+    // The claim the budgets rest on: a real viewport costs a tiny fraction of a function's 4,096.
+    expect(stats.approxDocumentReads).toBeGreaterThan(0);
+    expect(stats.approxDocumentReads).toBeLessThan(60);
+  });
+
+  test('truncation is reported, and keeps the most prominent bays rather than the first scanned', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    await seedUser(t, 'mod', 'moderator');
+    // A big bay and a small one. With room for exactly one, the big one has to win — wherever in the
+    // box it sits, and whichever cell the walk opened first.
+    await drawBay(t, body, 'Broad Lake', [-73.45, 44.05, -72.6, 44.95]);
+    await drawBay(t, body, 'Little Eagle Bay', [-73.2, 44.2, -73.19, 44.21]);
+
+    const stats = await t.query(internal.subAreas.subAreaReadStats, {
+      viewport: VIEWPORT,
+      zoom: 14,
+      limit: 1,
+      names: true,
+    });
+    expect(stats.names).toEqual(['Broad Lake']);
+    expect(stats.truncated).toBe(true);
+  });
+});
+
 describe('the merged search box', () => {
   test('finds a bay by an alias that shares no token with its name', async () => {
     const t = harness();

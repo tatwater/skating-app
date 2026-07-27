@@ -18,6 +18,7 @@
  */
 
 import {
+  bboxIntersects,
   clipSubAreaToParent,
   displayScore,
   minVisibleZoom,
@@ -33,16 +34,18 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
+  internalQuery,
   type MutationCtx,
   mutation,
   type QueryCtx,
   query,
 } from './_generated/server';
 import { requireRole } from './lib/auth';
-import { syncSubAreaCells } from './lib/cellIndex';
+import { syncSubAreaCells, WATER_BODY_LADDER } from './lib/cellIndex';
+import { rankCandidates, scanCells } from './lib/cellScan';
 import { isListed } from './lib/listing';
 import { hazardCenter } from './lib/sampling';
-import { geoJson } from './lib/validators';
+import { bbox, geoJson } from './lib/validators';
 
 /**
  * Rows re-stamped per scheduled batch. Small on purpose: each row costs a read, a point-in-polygon
@@ -708,6 +711,171 @@ export const restampParent = internalMutation({
     }
     console.log(`subAreas.restampParent(${waterBodyId}): re-stamped ${changed} rows (N2).`);
     return { done: true as const, stamped: changed };
+  },
+});
+
+/**
+ * Sub-area render budgets (N2). **Product numbers, chosen and then measured** — not arithmetic
+ * inherited from N1's table.
+ *
+ * The plan sized these against the headroom N1's viewport read leaves under Convex's 4,096-read cap,
+ * which assumes the two queries share a budget. They don't: the cap is per *function execution*
+ * (`lib/scan.ts` opens by saying so), and `listInViewport` on each table is its own execution with
+ * its own 4,096. What survives that correction is the product argument, which was always the real
+ * one — two layers on one screen is latency and payload a skater feels, and 250 bay outlines is
+ * already more than any real viewport will hold, since the whole corpus is expected to carry a few
+ * dozen. So: a deliberately tight ceiling, logged when it binds, and re-measured against the real
+ * Champlain draw via `subAreaReadStats` rather than trusted.
+ */
+const SUB_AREA_RENDER_LIMIT = 250;
+/** Cell rows one sub-area read may scan. Also bounds hydration — one `get` per distinct candidate. */
+const SUB_AREA_ROW_SCAN_BUDGET = 200;
+/** The same absurdity guards as the body layer: these bound the *plan*, and cells are nearly free. */
+const SUB_AREA_MAX_CELLS_PER_LEVEL = 256;
+const SUB_AREA_CELL_SCAN_BUDGET = 512;
+const SUB_AREA_MIN_ROWS_PER_CELL = 4;
+
+/**
+ * The zoom at which bay labels start drawing.
+ *
+ * D49 already decides *which* bays are prominent enough for a given zoom, so this is not a second
+ * prominence rule — it's a floor below which the layer isn't worth querying at all. At z8 you are
+ * looking at three states; a bay outline there is noise on top of a lake that is itself two pixels
+ * wide, and the query would be pure cost. Opening number, to be checked against the Champlain draw.
+ */
+export const SUB_AREA_MIN_RENDER_ZOOM = 10;
+
+/** The shared scan behind `listInViewport` and its read-stats sibling. */
+async function subAreasCoveringBox(
+  ctx: QueryCtx,
+  box: { minLat: number; minLng: number; maxLat: number; maxLng: number },
+  opts: { zoom: number; limit: number; maxRows?: number },
+): Promise<{
+  rows: Doc<'waterBodySubAreas'>[];
+  truncated: boolean;
+  rowsRead: number;
+  cellsScanned: number;
+}> {
+  const scan = await scanCells<Id<'waterBodySubAreas'>>(
+    box,
+    WATER_BODY_LADDER,
+    {
+      maxCellsPerLevel: SUB_AREA_MAX_CELLS_PER_LEVEL,
+      cellBudget: SUB_AREA_CELL_SCAN_BUDGET,
+      rowBudget: Math.min(opts.maxRows ?? SUB_AREA_ROW_SCAN_BUDGET, SUB_AREA_ROW_SCAN_BUDGET),
+      minRowsPerCell: SUB_AREA_MIN_ROWS_PER_CELL,
+      limit: opts.limit,
+    },
+    { zoom: opts.zoom, label: 'waterBodySubAreaCells' },
+    async (cell, probe, atZoom) => {
+      const cellRows = await ctx.db
+        .query('waterBodySubAreaCells')
+        .withIndex('by_cell', (q) => {
+          const atCell = q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y);
+          return atZoom === undefined ? atCell : atCell.lte('minVisibleZoom', atZoom);
+        })
+        .take(probe);
+      return cellRows.map((row) => ({ ref: row.subAreaId, minVisibleZoom: row.minVisibleZoom }));
+    },
+  );
+
+  // Pass 2 — hydrate in global prominence order. Same reason as the body layer: ranking a
+  // spatially-selected prefix would draw Champlain's bays and none of Lake George's depending on
+  // cell arithmetic, which is the round-3 bug wearing a smaller hat.
+  let truncated = scan.truncated;
+  const rows: Doc<'waterBodySubAreas'>[] = [];
+  for (const subAreaId of rankCandidates(scan.candidates)) {
+    if (rows.length >= opts.limit) {
+      truncated = true;
+      break;
+    }
+    const subArea = await ctx.db.get(subAreaId);
+    // Defense in depth, as on the body layer: a delisted bay — or one whose lake was taken down —
+    // has no cell rows to be found through in the first place (Decision 11).
+    if (!subArea || subArea.removedAt !== undefined) continue;
+    if (!bboxIntersects(subArea.bbox, box)) continue;
+    rows.push(subArea);
+  }
+  return { rows, truncated, rowsRead: scan.rowsRead, cellsScanned: scan.cellsScanned };
+}
+
+/**
+ * Public: named sub-areas whose bbox intersects the viewport (N2 / D60) — the map's bay-label layer,
+ * served off `waterBodySubAreaCells` on N1's shared ladder grid.
+ *
+ * **Why this isn't a fan-out over the bodies already on screen.** The plan's first cut called
+ * `listForBodies(waterBodyIds[])` with the ids `waterBodies.listInViewport` returned — a read whose
+ * input is the *render budget*, now 1,000. "Sub-areas only exist on a handful of giants" is a fact
+ * about today's data, not a bound, and reasoning from today's data is exactly what N1 exists to
+ * retire: `MAX_VIEWPORT_LIMIT = 256` was also fine, against a corpus 11.6× smaller than the one it
+ * was still guarding.
+ *
+ * Returns nothing below `SUB_AREA_MIN_RENDER_ZOOM` — not a filter, a decision not to run the query.
+ */
+export const listInViewport = query({
+  args: { viewport: bbox, limit: v.optional(v.number()), zoom: v.number() },
+  handler: async (ctx, { viewport, limit, zoom }) => {
+    const z = Math.floor(zoom);
+    if (z < SUB_AREA_MIN_RENDER_ZOOM) return [];
+    const effectiveLimit =
+      limit !== undefined && Number.isInteger(limit) && limit > 0
+        ? Math.min(limit, SUB_AREA_RENDER_LIMIT)
+        : SUB_AREA_RENDER_LIMIT;
+
+    const { rows, truncated, rowsRead } = await subAreasCoveringBox(ctx, viewport, {
+      zoom: z,
+      limit: effectiveLimit,
+    });
+    if (truncated) {
+      console.warn(
+        `subAreas.listInViewport stopped early at zoom ${z} with ${rows.length} sub-areas (render budget ${effectiveLimit}, ${rowsRead} cell rows read); the least prominent were omitted (D5/D49/N1).`,
+      );
+    }
+    return rows.map((row) => ({
+      _id: row._id,
+      waterBodyId: row.waterBodyId,
+      name: row.name,
+      polygon: row.polygon,
+      bbox: row.bbox,
+      centroid: row.centroid,
+      minVisibleZoom: row.minVisibleZoom,
+    }));
+  },
+});
+
+/**
+ * Internal: what one sub-area viewport read actually costs — the sibling of
+ * `waterBodies.viewportReadStats`, and the reason the budgets above can be called *measured* rather
+ * than guessed:
+ * `pnpm exec convex run subAreas:subAreaReadStats '{"viewport": {...}, "zoom": 12}'`.
+ *
+ * Run it against the same viewport as the body version and record **both** figures. They don't share
+ * a read cap (see the budget note above), but they do share a screen, and the pair is the number
+ * that says whether the bay layer is worth what it costs.
+ */
+export const subAreaReadStats = internalQuery({
+  args: {
+    viewport: bbox,
+    zoom: v.number(),
+    limit: v.optional(v.number()),
+    maxRows: v.optional(v.number()),
+    names: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { viewport, zoom, limit, maxRows, names }) => {
+    const { rows, truncated, rowsRead, cellsScanned } = await subAreasCoveringBox(ctx, viewport, {
+      zoom: Math.floor(zoom),
+      limit: Math.min(limit ?? SUB_AREA_RENDER_LIMIT, SUB_AREA_RENDER_LIMIT),
+      ...(maxRows !== undefined ? { maxRows } : {}),
+    });
+    return {
+      subAreas: rows.length,
+      cellsScanned,
+      cellRowsRead: rowsRead,
+      // The read the 4,096 cap actually counts: index rows + one hydrating get per distinct row.
+      approxDocumentReads: cellsScanned + rowsRead + rows.length,
+      truncated,
+      ...(names ? { names: rows.map((r) => r.name) } : {}),
+    };
   },
 });
 
