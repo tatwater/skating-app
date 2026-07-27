@@ -61,8 +61,12 @@ export type SubAreaClipResult =
     }
   | { ok: false; reason: SubAreaClipRejection; retainedFraction: number };
 
-/** Below this fractional loss the draw counts as already-inside and is stored as-drawn (0.5%). */
-const CLIP_SIGNIFICANCE = 0.005;
+/**
+ * Float-noise tolerance for "the clipper removed nothing". Not a significance threshold: the
+ * clipper re-nodes coordinates, so an untouched shape's area comes back equal to within ~1e-12
+ * relative rather than bit-identical. Anything above this is a real overhang and gets clipped away.
+ */
+const CLIP_EPSILON = 1e-9;
 
 /**
  * Clip a drawn sub-area to its parent water body (Decision 10): store the intersection, refuse only
@@ -118,9 +122,17 @@ export function clipSubAreaToParent(
     return { ok: false, reason: 'mostly_outside', retainedFraction };
   }
 
-  // Already inside: storing the re-noded copy would only bloat the row and let the stored outline
-  // drift from what the operator drew, for no gain. Same call the hazard clip makes.
-  if (retainedFraction >= 1 - CLIP_SIGNIFICANCE) {
+  // Already inside: nothing was removed, so storing the re-noded copy would only bloat the row and
+  // let the stored outline drift from what the operator drew.
+  //
+  // **The bar here is "nothing measurable was removed", not "not much was removed"** — and the
+  // difference is load-bearing. The hazard clip skips at a 0.5% tolerance, which is fine there
+  // because it's an optimization on a fail-open path. Here the same tolerance would let a shape
+  // overhanging the parent by half a percent of its area be stored *as drawn*, which quietly turns
+  // "inside its parent by construction" (Decision 2's whole argument for moderator drawing) into
+  // "inside its parent nearly always". A property test found exactly that: a tall thin rectangle
+  // whose bottom edge sat three metres past the shoreline, accepted unclipped at 0.995 retained.
+  if (retainedFraction >= 1 - CLIP_EPSILON) {
     return { ok: true, polygon: drawn, retainedFraction, clipped: false };
   }
   return {
