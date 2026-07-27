@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import type { UserStatus } from '@skating/core';
 import { useMutation } from 'convex/react';
 import { useState } from 'react';
 import { Badge } from '../ui/badge';
@@ -14,7 +15,7 @@ import { ReasonDialog } from './ReasonDialog';
 export interface ModeratableUser {
   userId: string;
   username: string;
-  status: 'active' | 'suspended' | 'banned' | 'deleted';
+  status: UserStatus;
   canPostReports: boolean;
   canPostHazards: boolean;
   canPostComments: boolean;

@@ -305,6 +305,44 @@ branch end to end, so the export retry counter *and* its page-once-at-the-thresh
 rather than argued for — and the photo sweep's fixtures were storing id-shaped strings instead of real blobs,
 which meant "the row is gone" had been passing without a byte ever moving.
 
+### The staging bug: an account that could still write while being deleted
+
+The review's last P1 is not a blob bug at all, and it's the one that would have been hardest to find by
+reading any single function. Finalization is a chain of separately scheduled mutations, and the account
+stayed **fully active** across the whole chain — `status` only changed at the tombstone, which is last.
+So a write that landed between two stages went into a table an earlier stage had already drained, and
+nothing rescans: a favorite, a support ticket, a Strava connection or an export request could outlive
+the deletion that was already underway, with no record that it had happened.
+
+The 30-day window makes that unlikely, not impossible. Nobody is locked out during it — that's the
+founder call — so *"asked to be deleted a month ago, forgot, and is using the app right now"* is an
+ordinary state to be in, and finalization fires on a cron tick they can't see coming.
+
+The fix is a new first stage, `lock`, and a new `USER_STATUSES` value, `deleting`, that `requireProfile`
+rejects. Notes:
+
+- **This is the mirror of the file's own idea #1, not a contradiction of it.** A *pending* request must
+  gate nothing, or the person can't sign in to cancel. A *running finalization* must gate everything.
+  "Gates nothing" is right for the 30 days and wrong for the 30 seconds.
+- **Convex's OCC is what makes it airtight rather than merely narrow.** Every write path resolves the
+  caller through `getCurrentProfile`, so every write *reads the profile row*. A mutation that read it as
+  `active` and commits after the lock lands conflicts on that read and, on retry, sees `deleting`.
+- **`support.create` needed its own gate**, because it deliberately doesn't use `requireProfile` — a
+  banned user must still be able to appeal. The exemption is right; it just can't extend to an account
+  with no appeal left to make.
+- **The existing notification gates were already correct**, by luck of idiom: every recipient check is
+  `status !== 'active'`, so a new status is excluded by default rather than by edit.
+- **A `deleting` row is re-driven by the sweep**, unlike a `deleted` one. Locking early would otherwise
+  turn a lost scheduler tick into a permanently half-deleted account; instead the chain restarts, and
+  every stage is idempotent.
+- Finalization is no longer cancellable mid-chain, which closes a hole rather than opening one: the old
+  behavior left a live account whose blocks and support tickets were already erased, under a comment
+  claiming the erased rows "regenerate". Notifications regenerate. Blocks don't.
+
+The default stage argument is now `STAGES[0]` rather than the literal `'erase'` — the first version of
+this fix inserted the stage and left the default alone, so `finalizeNow` and the cron both skipped the
+lock. The test caught it, which is the only reason it's worth mentioning.
+
 ## Verification
 
 - **Full suite green:** core 862 · convex 683 · web 197 · mobile 79 · design 61 · etl 22 · admin-areas 14.

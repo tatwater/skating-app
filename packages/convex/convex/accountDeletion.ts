@@ -9,6 +9,10 @@
  * to undo with. That's also why the pending state is its own field rather than a `status` value:
  * `status` is the security gate `requireProfile` reads, and a pending deletion must gate nothing.
  *
+ * The mirror image of that is the `deleting` status, which gates *everything* (see the `lock` stage):
+ * the moment finalization actually begins, an account that can still write is an account whose private
+ * rows can outlive it. "Gates nothing" is right for the 30 days and wrong for the 30 seconds.
+ *
  * **2. Three buckets, not two (D62).** D33 said "anonymize, don't erase", reasoning that since all
  * reports are public there's nothing private to remove. That premise expired: Phase 4 added a home
  * coordinate and the isochrones derived from it, and Phase 8 added raw GPS traces and live OAuth
@@ -144,6 +148,10 @@ export const finalizeDueDeletions = internalMutation({
       }
       // A row can be due *and* already finalized if a previous tick got through the tombstone but the
       // stamp survived; skip rather than re-run the scrub over a tombstone.
+      //
+      // `deleting` is deliberately **not** skipped: that's an account whose chain started and didn't
+      // finish, and re-queueing it is how a lost scheduler tick heals. Every stage is idempotent, so
+      // the cost of re-driving one that was merely slow is a few wasted reads.
       if (profile.status === 'deleted') continue;
       await ctx.scheduler.runAfter(0, internal.accountDeletion.finalizeAccount, {
         userId: profile._id,
@@ -158,12 +166,20 @@ export const finalizeDueDeletions = internalMutation({
  * The stages, in order. Named rather than numbered so a log line or a resumed job says what it's doing,
  * and so inserting one later doesn't renumber the rest.
  *
- * Order is not arbitrary: **`tombstone` is last**. Every earlier stage is re-runnable and reads the
- * live profile, so a job that dies halfway leaves an account that is partly cleaned and still findable
- * by the sweep. Scrubbing the profile first would strand the remaining private rows behind an identity
- * nobody can look up again.
+ * Order is not arbitrary at either end.
+ *
+ * **`lock` is first** (PR #29 review). Each stage is its own transaction, and until this existed the
+ * account stayed fully usable across all of them — so a person who asked to be deleted 30 days ago,
+ * forgot, and happens to be using the app right now could favorite a lake, file a support ticket or
+ * connect Strava *after* the pass that erased those tables, and the row would outlive their deletion.
+ * No later stage rescans, so nothing would ever catch it. `lock` closes that by making the profile
+ * unable to write before anything is read.
+ *
+ * **`tombstone` is last.** Every stage before it reads the live profile — `erase` needs
+ * `clerkUserId`, which is the only way support tickets can be found — so scrubbing the identity first
+ * would strand the remaining private rows behind a key nobody can look up again.
  */
-const STAGES = ['erase', 'tracks', 'photos', 'tombstone'] as const;
+const STAGES = ['lock', 'erase', 'tracks', 'photos', 'tombstone'] as const;
 type Stage = (typeof STAGES)[number];
 
 /**
@@ -185,7 +201,9 @@ export const finalizeAccount = internalMutation({
     /** See `pageSizeFor` — a test seam for the continuation path, clamped to `PAGE`. */
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, { userId, stage = 'erase', cursor, pageSize }) => {
+  // Defaults to the *first* stage rather than naming one: an entry point that starts at `erase` skips
+  // the lock, which is the whole guarantee.
+  handler: async (ctx, { userId, stage = STAGES[0], cursor, pageSize }) => {
     const profile = await ctx.db.get(userId);
     if (!profile) return { stopped: 'gone' as const };
     // Cancelled mid-flight: the user changed their mind between the sweep and this page. Stop, and
@@ -229,6 +247,9 @@ async function runStage(
   size: number,
 ): Promise<StageResult> {
   switch (stage) {
+    case 'lock':
+      await lockAccount(ctx, profile);
+      return { more: false };
     case 'erase':
       return erasePrivate(ctx, profile, size);
     case 'tracks':
@@ -239,6 +260,38 @@ async function runStage(
       await writeTombstone(ctx, profile);
       return { more: false };
   }
+}
+
+/**
+ * Stage 0 — **stop the account writing**, before a single row is read (PR #29 review).
+ *
+ * The bug this closes is a staging bug rather than a deletion bug, and it's invisible in any single
+ * stage: `erase` drains favorites, blocks, tickets, notifications and OAuth connections, commits, and
+ * schedules the next stage. Until this stage existed, the profile was still `active` for that whole
+ * chain, so a request that arrived in between was accepted normally and its row was never looked at
+ * again — a private record that survived a completed deletion, with nothing in the system aware of it.
+ * The 30-day window makes that unlikely, not impossible: the person is not locked out during it, so
+ * "asked to be deleted a month ago and is using the app right now" is an ordinary state to be in.
+ *
+ * `deleting` is a real `status` and `requireProfile` rejects it, which is what makes this a lock rather
+ * than a note. Convex's OCC is what makes it airtight rather than merely narrow: **every write path
+ * resolves the caller through `getCurrentProfile`, so every write reads this row.** A mutation that
+ * read the profile as `active` and tries to commit after this patch lands conflicts on that read, and
+ * on retry it sees `deleting` and throws.
+ *
+ * Two consequences worth stating:
+ *
+ * - **Finalization is no longer cancellable**, because `cancelDeletion` needs an active profile.
+ *   That's the correct end state, and it also removes a hole: cancelling mid-chain used to leave a
+ *   live account whose favorites, blocks and support tickets had already been erased, described in a
+ *   comment as things that "regenerate". Notifications regenerate. Blocks do not.
+ * - **A crashed job self-heals.** The hourly sweep skips only `deleted`, so an account left in
+ *   `deleting` by a lost scheduler tick is re-queued and the chain restarts from here. Every stage is
+ *   idempotent, so re-driving one that is merely slow costs a little work and breaks nothing.
+ */
+async function lockAccount(ctx: MutationCtx, profile: Doc<'profiles'>): Promise<void> {
+  if (profile.status === 'deleting') return; // re-driven job, already locked
+  await ctx.db.patch(profile._id, { status: 'deleting' });
 }
 
 /**

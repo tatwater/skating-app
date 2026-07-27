@@ -225,6 +225,78 @@ describe('the grace window', () => {
   });
 });
 
+/**
+ * PR #29 review (Greptile P1, security). Finalization is a chain of separately scheduled mutations,
+ * and until the `lock` stage existed the account stayed fully usable across all of them — so a write
+ * that landed between two stages went into a table an earlier stage had already drained, and no later
+ * stage rescans. The 30-day window makes that unlikely rather than impossible: nobody is locked out
+ * during it, so "asked a month ago, forgot, is using the app right now" is an ordinary state.
+ */
+describe('the finalization lock', () => {
+  /** Run only the first stage, leaving the rest of the chain pending — the mid-finalization window. */
+  async function lockOnly(t: ReturnType<typeof convexTest>, userId: Id<'profiles'>) {
+    await t.run((ctx) => ctx.db.patch(userId, { deletionRequestedAt: Date.now() }));
+    await t.mutation(internal.accountDeletion.finalizeAccount, { userId });
+  }
+
+  test('an account being finalized cannot write between stages', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    await lockOnly(t, user.id);
+
+    expect((await t.run((ctx) => ctx.db.get(user.id)))?.status).toBe('deleting');
+    // Every one of these lands in a table `erase` has already drained or is about to.
+    await expect(user.as.mutation(api.dataExport.requestExport, {})).rejects.toThrow(/not active/i);
+    await expect(
+      user.as.mutation(api.support.create, { category: 'other' as const, body: 'wait, come back' }),
+    ).rejects.toThrow(/not active/i);
+    await expect(user.as.mutation(api.accountDeletion.cancelDeletion, {})).rejects.toThrow(
+      /not active/i,
+    );
+  });
+
+  test('the private tables are still empty once the chain finishes', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    await lockOnly(t, user.id);
+
+    // A write attempted mid-chain must not exist to survive it.
+    await expect(user.as.mutation(api.dataExport.requestExport, {})).rejects.toThrow();
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await t.run((ctx) => ctx.db.query('dataExports').collect())).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.get(user.id))).toMatchObject({ status: 'deleted' });
+  });
+
+  /**
+   * The other half of making the lock safe: a `deleting` row is an unfinished job, not a finished one.
+   * If the sweep skipped it the way it skips `deleted`, a chain lost to a dropped scheduler tick would
+   * leave a permanently half-deleted account that nothing ever revisits.
+   */
+  test('a chain that died mid-flight is re-driven by the next sweep', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    await t.run((ctx) =>
+      ctx.db.patch(user.id, {
+        deletionRequestedAt: Date.now() - DELETION_GRACE_MS - 1000,
+        status: 'deleting' as const, // locked, then the chain vanished
+      }),
+    );
+
+    expect(await t.mutation(internal.accountDeletion.finalizeDueDeletions, {})).toMatchObject({
+      started: 1,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect((await t.run((ctx) => ctx.db.get(user.id)))?.status).toBe('deleted');
+
+    // …and a finished one is not re-run: the tombstone is not a job to redo.
+    await t.run((ctx) => ctx.db.patch(user.id, { deletionRequestedAt: Date.now() - 1 }));
+    expect(await t.mutation(internal.accountDeletion.finalizeDueDeletions, {})).toMatchObject({
+      started: 0,
+    });
+  });
+});
+
 describe('the tombstone', () => {
   test('scrubs every PII field and keeps the row', async () => {
     const t = harness();

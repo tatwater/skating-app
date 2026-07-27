@@ -136,6 +136,15 @@ export const create = mutation({
     if (trimmed.length === 0) throw new ConvexError('Please describe the issue');
     if (trimmed.length > MAX_BODY_LENGTH) throw new ConvexError('Message is too long');
     const profile = await getCurrentProfile(ctx);
+    // This mutation gates on *identity*, not on `requireProfile` — deliberately, so a banned or
+    // profile-less user can still write to support (an appeal is exactly what support is for). That
+    // exemption has one edge it must not cover: an account being finalized (PR #29 review). A ticket
+    // is private free text that D62 erases, and `erase` finds tickets by Clerk subject — which the
+    // tombstone is seconds from scrubbing — so one filed now would survive the deletion with nothing
+    // able to find it again. Unlike a ban, there is no appeal left to make: the account is going.
+    if (profile?.status === 'deleting' || profile?.status === 'deleted') {
+      throw new ConvexError('Account is not active');
+    }
 
     const now = Date.now();
     const recent = await ctx.db

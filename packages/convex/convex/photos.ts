@@ -12,6 +12,7 @@ import { requireProfile } from './lib/auth';
 import { resolvePhotoUrls } from './lib/photoAccess';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { getViewableReport } from './lib/reportVisibility';
+import { deleteStoredBlob } from './lib/storageBlobs';
 import { latLng } from './lib/validators';
 
 /** Mint a one-time Convex storage upload URL for the optimized full image / thumb (auth'd). */
@@ -98,15 +99,21 @@ export const remove = mutation({
  * abandoned between `generateUploadUrl` and `create`. Auth-gated; a bare blob carries no owner row so
  * we can't owner-check it, but a storage id is only ever handed back to the uploader (from an upload
  * URL POST) and isn't enumerable. Idempotent — an already-gone / never-finalized id is a no-op.
+ *
+ * **The one blob in the system with no row to keep**, so the review's "never drop the only pointer"
+ * rule has nothing to hold onto here: a blob that was never attached is, by definition, not in
+ * `photos`, and no sweep reads bare storage. What's available instead is honesty about which of the
+ * two outcomes happened — `lib/storageBlobs` separates "already gone", the ordinary case this is
+ * called for, from a delete that actually failed, which is now logged with its id rather than
+ * swallowed indistinguishably. The client still holds that id and its retry is the real backstop.
  */
 export const removeBlob = mutation({
   args: { storageId: v.id('_storage') },
   handler: async (ctx, { storageId }) => {
     await requireProfile(ctx);
-    try {
-      await ctx.storage.delete(storageId);
-    } catch {
-      // Already deleted, or an upload URL that was never finalized — nothing to reclaim.
+    const failure = await deleteStoredBlob(ctx, storageId);
+    if (failure !== null) {
+      console.warn(`photos.removeBlob: could not delete unattached blob ${storageId}: ${failure}`);
     }
   },
 });

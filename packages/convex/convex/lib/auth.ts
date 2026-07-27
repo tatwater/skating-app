@@ -32,7 +32,16 @@ export async function getCurrentProfile(ctx: Ctx): Promise<Doc<'profiles'> | nul
 export async function requireProfile(ctx: Ctx): Promise<Doc<'profiles'>> {
   const profile = await getCurrentProfile(ctx);
   if (!profile) throw new ConvexError('Not authenticated');
-  if (profile.status === 'banned' || profile.status === 'deleted') {
+  // `deleting` sits here rather than with the tombstone because it is a *live* account being taken
+  // apart: the staged finalize job runs in several transactions, and anything this profile writes
+  // between two of them would land in a table an earlier stage already drained and outlive its own
+  // deletion (PR #29 review). Note this is the finalization lock, not the 30-day pending request —
+  // a pending request deliberately gates nothing, so the person can still sign in and cancel.
+  if (
+    profile.status === 'banned' ||
+    profile.status === 'deleting' ||
+    profile.status === 'deleted'
+  ) {
     throw new ConvexError('Account is not active');
   }
   // A suspension blocks until it lapses (D37): an unset or future `suspendedUntil`

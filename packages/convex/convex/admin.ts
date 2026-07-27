@@ -7,7 +7,7 @@
  * here (they're admin-only, D50, and live on `profiles.getAdmin`); this is just the search hit list.
  */
 
-import { normalizeUsername, type TrustClass } from '@skating/core';
+import { normalizeUsername, type TrustClass, type UserStatus } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
@@ -21,7 +21,7 @@ interface UserHit {
   displayName: string;
   profileImageUrl?: string;
   role: 'member' | 'moderator' | 'admin';
-  status: 'active' | 'suspended' | 'banned' | 'deleted';
+  status: UserStatus; // the enum, not a copy of it — see PR #29's `deleting` addition
   trustClass: TrustClass | null;
 }
 
