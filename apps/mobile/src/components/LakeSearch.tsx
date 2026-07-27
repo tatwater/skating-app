@@ -7,17 +7,30 @@ import { Keyboard } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Input, Text, YStack } from 'tamagui';
 
-/** A search result row from `waterBodies.searchByName` (the light fly-to fields). */
+/** A search result row from `waterBodies.searchByName` — a lake, or a named bay inside one (D60). */
 export type LakeHit = {
+  kind: 'body' | 'subArea';
   _id: string;
+  /** The page to open. For a bay this is its **parent** — a sub-area is a name on a lake, not a
+   *  page of its own — framed on the bay's own bbox. */
+  waterBodyId: string;
   name: string;
+  /** Set on a bay hit, so the row can say which lake it's part of. */
+  parentName?: string;
   type: string;
   centroid: { lat: number; lng: number };
+  bbox: { minLat: number; minLng: number; maxLat: number; maxLng: number };
   states: string[];
 };
 
-/** "Lake · NY" — or "Lake · NY, VT" for a border-spanning body; just the type if unknown. */
+/**
+ * The meta line on a result row: "Lake · NY" for a body, "in Lake Champlain" for a bay.
+ *
+ * A bay's own type would be its parent's, which tells you nothing you didn't just read — where it
+ * *is* does, and it's the disambiguation people need when three lakes have a South Bay.
+ */
 function hitMeta(hit: LakeHit): string {
+  if (hit.kind === 'subArea' && hit.parentName) return `in ${hit.parentName}`;
   const type = humanizeEnum(hit.type);
   return hit.states.length ? `${type} · ${hit.states.join(', ')}` : type;
 }
@@ -123,7 +136,12 @@ export function LakeSearch() {
       onSelect={(hit) => {
         setText('');
         Keyboard.dismiss();
-        router.navigate({ pathname: '/water/[id]', params: { id: hit._id } });
+        // A bay opens its parent's page; `sub` says which bay, so the map frames the bay rather
+        // than the whole lake (step 8).
+        router.navigate({
+          pathname: '/water/[id]',
+          params: { id: hit.waterBodyId, ...(hit.kind === 'subArea' ? { sub: hit._id } : {}) },
+        });
       }}
     />
   );

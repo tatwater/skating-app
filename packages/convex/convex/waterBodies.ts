@@ -1260,27 +1260,86 @@ export const searchByName = query({
       .query('waterBodies')
       .withSearchIndex('search_name', (s) => s.search('name', term))
       .take(max * 4);
-    const results: Array<{
-      _id: Id<'waterBodies'>;
-      name: string;
-      type: Doc<'waterBodies'>['type'];
-      centroid: Doc<'waterBodies'>['centroid'];
-      states: string[];
-    }> = [];
+    const results: SearchHit[] = [];
     for (const body of raw) {
       if (!isListed(body)) continue;
       results.push({
+        kind: 'body',
         _id: body._id,
+        waterBodyId: body._id,
         name: body.name,
         type: body.type,
         centroid: body.centroid,
+        bbox: body.bbox,
         states: body.states ?? [],
       });
       if (results.length >= max) break;
     }
-    return results;
+
+    // Sub-areas share the box (N2/D60). Searching a bay must reach it: S2 found Malletts under ten
+    // spellings, and the northeast arm of Champlain is "the Inland Sea" — a name sharing no token
+    // with anything the body index holds. Merged rather than a second box, because a skater typing
+    // "malletts" doesn't know or care which table the answer lives in.
+    const subAreaHits = await searchSubAreas(ctx, term, max);
+    // Bays sort after bodies at equal relevance: "Champlain" should land on the lake, not on
+    // Champlain-something-Bay. Within each group the search index's own ranking is preserved.
+    return [...results, ...subAreaHits].slice(0, max);
   },
 });
+
+/** One row in the merged search box — a lake, or a named bay that tells you which lake it's in. */
+type SearchHit = {
+  kind: 'body' | 'subArea';
+  /** The row's own id — a `waterBodies` id for a body hit, a `waterBodySubAreas` id for a bay. */
+  _id: string;
+  /** Where selecting it navigates: a sub-area hit opens its **parent's** page (D60 — the bay is a
+   *  name on the lake, not a page of its own), framed on the bay's own bbox. */
+  waterBodyId: Id<'waterBodies'>;
+  name: string;
+  /** Set for a sub-area hit only — renders as "Malletts Bay — in Lake Champlain". */
+  parentName?: string;
+  type: Doc<'waterBodies'>['type'];
+  centroid: Doc<'waterBodies'>['centroid'];
+  /** The frame to fly to. **The bay's own**, not the parent's — searching Malletts Bay shouldn't
+   *  frame you on 200 km of Lake Champlain, which is the whole reason the bay is nameable. */
+  bbox: Doc<'waterBodies'>['bbox'];
+  states: string[];
+};
+
+/**
+ * Named-sub-area hits for the merged search box, refined on **both** listings.
+ *
+ * The parent check is the load-bearing half and easy to forget: `isListed` is derived, not stored,
+ * so it can't be a search `filterField` on either table — and a bay whose lake was taken down must
+ * not be reachable through a search box when it isn't reachable through the map (Decision 11). Same
+ * `max * 4` overfetch as the body search, on the same assumption: unlisted rows are a small
+ * fraction of the index.
+ */
+async function searchSubAreas(ctx: QueryCtx, term: string, max: number): Promise<SearchHit[]> {
+  const raw = await ctx.db
+    .query('waterBodySubAreas')
+    .withSearchIndex('search_subarea', (s) => s.search('searchText', term))
+    .take(max * 4);
+  const hits: SearchHit[] = [];
+  for (const subArea of raw) {
+    if (subArea.removedAt !== undefined) continue;
+    const parent = await ctx.db.get(subArea.waterBodyId);
+    if (!parent || !isListed(parent)) continue;
+    hits.push({
+      kind: 'subArea',
+      _id: subArea._id,
+      waterBodyId: parent._id,
+      name: subArea.name,
+      parentName: parent.name,
+      type: parent.type,
+      centroid: subArea.centroid,
+      bbox: subArea.bbox,
+      states: parent.states ?? [],
+    });
+    if (hits.length >= max) break;
+  }
+  return hits;
+}
 
 /** Moderator/admin: the after-the-fact review queue of pending user bodies (D37). */
 export const listPendingReview = query({

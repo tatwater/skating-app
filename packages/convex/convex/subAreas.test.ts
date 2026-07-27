@@ -713,6 +713,71 @@ describe('the parent-listing cascade', () => {
   });
 });
 
+describe('the merged search box', () => {
+  test('finds a bay by an alias that shares no token with its name', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Northeast Arm',
+      aliases: ['Inland Sea'],
+      polygon: rect(-73.2, 44.6, -73.0, 44.8),
+    });
+
+    // The point of aliases: "Inland Sea" is what people call it, and it shares no word with either
+    // the bay's stored name or the lake's.
+    const hits = await t.query(api.waterBodies.searchByName, { query: 'Inland Sea' });
+    expect(hits.map((h) => h.name)).toContain('Northeast Arm');
+    const hit = hits.find((h) => h.name === 'Northeast Arm');
+    expect(hit?.kind).toBe('subArea');
+    expect(hit?.parentName).toBe('Lake Champlain');
+    // Selecting it opens the parent's page — a bay is a name on a lake, not a page of its own.
+    expect(hit?.waterBodyId).toBe(body);
+    // ...framed on the bay, not on 200 km of lake.
+    expect(hit?.bbox.minLat).toBeCloseTo(44.6, 6);
+  });
+
+  test('a bay on a delisted lake is unreachable from search, as it is from the map', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const admin = await seedUser(t, 'admin', 'admin');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    expect(
+      (await t.query(api.waterBodies.searchByName, { query: 'Malletts' })).length,
+    ).toBeGreaterThan(0);
+
+    await admin.as.mutation(api.waterBodies.remove, {
+      waterBodyId: body,
+      reason: 'landowner_request',
+    });
+    // `isListed` is derived, so it can't be a search filterField on either table — the refine has to
+    // happen in JS, and forgetting the *parent* half is the easy miss.
+    expect(await t.query(api.waterBodies.searchByName, { query: 'Malletts' })).toEqual([]);
+  });
+
+  test('a delisted bay drops out of search while its lake stays', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
+    expect(await t.query(api.waterBodies.searchByName, { query: 'Malletts' })).toEqual([]);
+    expect(
+      (await t.query(api.waterBodies.searchByName, { query: 'Champlain' })).map((h) => h.kind),
+    ).toEqual(['body']);
+  });
+});
+
 describe('subAreas.setCuratedBoost', () => {
   test('a boost restamps the cell rows, not just the sub-area (the N1 by_cell-range trap)', async () => {
     const t = harness();
