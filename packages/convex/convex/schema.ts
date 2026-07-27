@@ -37,6 +37,7 @@ import {
   BOUNTY_GATE_DECISIONS,
   BOUNTY_STATUSES,
   COMMENT_SOURCES,
+  DATA_EXPORT_STATUSES,
   DEDUP_STATUSES,
   FLAG_REASONS,
   FLAG_STATUSES,
@@ -158,12 +159,23 @@ export default defineSchema({
     statusReason: v.optional(v.string()),
     suspendedUntil: v.optional(v.number()), // temp suspension; null on ban = indefinite (D37)
     moderatedByUserId: v.optional(v.id('profiles')),
+    /**
+     * When the user asked to be deleted (D62). Distinct from `deletedAt`, which is stamped 30 days
+     * later when the tombstone is actually written — this field is the *pending* state, and while
+     * it's set the account is completely normal: it can sign in, post, and cancel. Deliberately not
+     * a status value, because `status` is the security gate (`requireProfile`) and a pending deletion
+     * must not gate anything. Absent ⇒ no pending request.
+     */
+    deletionRequestedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_clerk_user_id', ['clerkUserId'])
     .index('by_username', ['username'])
     .index('by_status', ['status'])
+    // The finalize cron's window sweep (D62). Sparse in practice — only pending rows carry the field —
+    // so the job reads the handful that are actually due rather than scanning every profile.
+    .index('by_deletion_requested_at', ['deletionRequestedAt'])
     // Signups-per-day for the analytics rollup (Phase 7b). The implicit creation order can't be
     // range-scanned to "just this UTC day", so the daily job reads a bounded slice off this instead.
     .index('by_created_at', ['createdAt'])
@@ -849,6 +861,36 @@ export default defineSchema({
     // today, and the number decides whether the deferred GC cron is worth building.
     .index('by_created_at', ['createdAt']),
 
+  /**
+   * A requested data export (D33/D62, N3) — one row per request, the bundle itself in file storage.
+   *
+   * A **table** rather than a fire-and-forget action because assembling the bundle is asynchronous and
+   * fallible, and the user needs somewhere to look. It's also the only durable record that a bundle
+   * exists at all, which is what lets the hygiene cron find and expire it: a stored blob with no row
+   * pointing at it is precisely the orphan class this phase exists to stop creating.
+   *
+   * `expiresAt` is not a nicety. An export is the densest concentration of one person's data in the
+   * system — every report, every track, every photo, in one downloadable file — so it is deliberately
+   * short-lived rather than sitting in storage forever.
+   */
+  dataExports: defineTable({
+    userId: v.id('profiles'),
+    status: literals(DATA_EXPORT_STATUSES),
+    storageId: v.optional(v.string()), // set once the bundle lands
+    sizeBytes: v.optional(v.number()),
+    photoCount: v.optional(v.number()), // photos whose bytes are embedded
+    // Photos left out because the bundle hit its byte budget. Surfaced, never silent — the Phase 7
+    // "no silent caps" rule applies hardest to a file someone will treat as their complete record.
+    omittedPhotoCount: v.optional(v.number()),
+    error: v.optional(v.string()),
+    emailedAt: v.optional(v.number()), // absent ⇒ never sent (Resend unprovisioned, or it failed)
+    requestedAt: v.number(),
+    readyAt: v.optional(v.number()),
+    expiresAt: v.number(),
+  })
+    .index('by_user', ['userId'])
+    .index('by_expires_at', ['expiresAt']),
+
   notifications: defineTable({
     userId: v.id('profiles'), // recipient
     type: literals(NOTIFICATION_TYPES),
@@ -918,7 +960,11 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_flush', ['flushAfter'])
-    .index('by_coalesce', ['coalesceKey']),
+    .index('by_coalesce', ['coalesceKey'])
+    // Deletion erases a departing user's pending pushes (D62). Without this the finalize job would
+    // have to scan the whole queue to find one person's rows — and it would still be wrong to leave
+    // them, since flushing a queued digest to a tombstone is a notification nobody can read.
+    .index('by_user', ['userId']),
 
   // ───────────────────────────────────────────────────────────────────────────
   // Analytics (Phase 7b / D37). Two tables, shaped to keep every chart's read cost independent of

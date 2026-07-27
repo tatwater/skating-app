@@ -91,3 +91,54 @@ export function isValidTownLabel(normalized: string): boolean {
 export function canSetProfilePublic(dateOfBirthMs: number, nowMs: number): boolean {
   return !isMinor(dateOfBirthMs, nowMs);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The deletion tombstone (D33/D62)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How long a deletion request sits before it's finalized (D62). The account stays **fully
+ * functional** for the whole window — they can sign in, post, and cancel — because the alternative
+ * (locking the account on request) locks someone out of the very sign-in they need to undo with.
+ */
+export const DELETION_GRACE_DAYS = 30;
+export const DELETION_GRACE_MS = DELETION_GRACE_DAYS * 24 * 60 * 60 * 1000;
+
+/** What a deleted author's name reads as, everywhere one is rendered (D33). */
+export const DELETED_DISPLAY_NAME = 'Deleted skater';
+
+/**
+ * The date of birth a tombstone carries. DOB is sensitive PII that gets scrubbed (D41/D33), but the
+ * field is required and everything that reads it derives an *age* — so it has to be a real date
+ * rather than 0 or a NaN. A fixed 1900 epoch reads unambiguously as "not a person's birthday" and
+ * derives to "adult", which is the only safe direction: a tombstone must never be treated as a minor
+ * and handed the minor-protection paths meant for a live account.
+ */
+export const DELETED_DATE_OF_BIRTH = Date.UTC(1900, 0, 1);
+
+/**
+ * Per-row-unique tombstone values for the two fields that are read with `.unique()`.
+ *
+ * This is the sharp edge of the whole feature. `profiles.by_clerk_user_id` and
+ * `profiles.by_username` are both queried with `.unique()`, which **throws when it matches more than
+ * one row** — so scrubbing either to a shared constant like `'deleted'` works perfectly for the
+ * first deleted account and breaks authentication for the entire app on the second. Deriving the
+ * sentinel from the profile id keeps it unique by construction, and keeps it obviously synthetic to
+ * anyone reading the table.
+ *
+ * The two use different separators on purpose: a username has to stay inside the `[a-z0-9_]` handle
+ * charset (`isValidUsername`) so a tombstone can't be mistaken for a malformed row, while
+ * `clerkUserId` is an opaque external string where a colon is the clearer "this is not a Clerk id".
+ */
+export function deletedUsername(profileId: string): string {
+  return `deleted_${profileId.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+}
+
+export function deletedClerkUserId(profileId: string): string {
+  return `deleted:${profileId}`;
+}
+
+/** Whether a `clerkUserId` is a deletion tombstone rather than a real Clerk subject. */
+export function isDeletedClerkUserId(value: string): boolean {
+  return value.startsWith('deleted:');
+}

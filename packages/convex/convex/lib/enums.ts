@@ -191,6 +191,14 @@ export const MODERATION_TARGET_TYPES = [
 export const SUPPORT_CATEGORIES = ['bug', 'account', 'safety', 'other'] as const;
 export const SUPPORT_STATUSES = ['open', 'in_progress', 'resolved'] as const;
 
+/**
+ * Data-export bundle lifecycle (D33/D62, N3). `building` is a real state rather than an
+ * implementation detail: assembling a bundle is an action that can take a while and can fail, and a
+ * user who clicked "export my data" and sees nothing has no way to tell "still working" from
+ * "broken". `failed` carries a reason for the same reason.
+ */
+export const DATA_EXPORT_STATUSES = ['building', 'ready', 'failed'] as const;
+
 /** Bounty lifecycle (D17). */
 export const BOUNTY_STATUSES = ['open', 'fulfilled', 'expired', 'cancelled'] as const;
 
