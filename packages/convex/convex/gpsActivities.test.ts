@@ -350,6 +350,91 @@ describe('gpsActivities.getForReport (the report-detail path render)', () => {
     expect(await stranger.as.query(api.gpsActivities.getForReport, { reportId })).toBeNull();
     expect(await author.as.query(api.gpsActivities.getForReport, { reportId })).not.toBeNull();
   });
+
+  /**
+   * The N3 fix. Before it, `showPutIn === false` was honored by the aggregate layer and by the put-in
+   * pin list, and silently ignored here — so the one query a stranger actually hits from a report page
+   * served the raw path, first and last 150 m included. These four tests are the regression fence.
+   */
+  describe('put-in clipping (D58 §3, fixed in N3)', () => {
+    async function seedWithdrawnPutIn(t: ReturnType<typeof convexTest>) {
+      const author = await seedUser(t, 'author');
+      const bodyId = await seedBody(t);
+      const activityId = await author.as.mutation(api.gpsActivities.ingestTrack, ingestArgs());
+      const reportId = await author.as.mutation(api.reports.create, {
+        waterBodyId: bodyId,
+        activityId,
+        skateEndTime: T0,
+        iceTypes: ['black_ice' as const],
+        surfaceTags: [],
+        showPutIn: false,
+      });
+      const full = await t.run(async (ctx) => (await ctx.db.get(activityId))?.path);
+      return { author, reportId, fullCoords: (full as { coordinates: number[][] }).coordinates };
+    }
+
+    test('a stranger gets the ends trimmed when the author withheld their put-in', async () => {
+      const t = harness();
+      const { reportId, fullCoords } = await seedWithdrawnPutIn(t);
+      const stranger = await seedUser(t, 'stranger');
+
+      const view = await stranger.as.query(api.gpsActivities.getForReport, { reportId });
+      expect(view?.clipped).toBe(true);
+      expect(view?.path.coordinates.length).toBeLessThan(fullCoords.length);
+      // The specific thing being protected: neither real endpoint survives.
+      expect(view?.path.coordinates[0]).not.toEqual(fullCoords[0]);
+      expect(view?.path.coordinates.at(-1)).not.toEqual(fullCoords.at(-1));
+    });
+
+    test('a signed-out viewer is clipped too — the leak was not auth-gated', async () => {
+      const t = harness();
+      const { reportId, fullCoords } = await seedWithdrawnPutIn(t);
+
+      const view = await t.query(api.gpsActivities.getForReport, { reportId });
+      expect(view?.clipped).toBe(true);
+      expect(view?.path.coordinates.length).toBeLessThan(fullCoords.length);
+    });
+
+    test('the author and moderators still get their whole line back', async () => {
+      const t = harness();
+      const { author, reportId, fullCoords } = await seedWithdrawnPutIn(t);
+      const mod = await seedUser(t, 'mod', { role: 'moderator' });
+
+      for (const viewer of [author, mod]) {
+        const view = await viewer.as.query(api.gpsActivities.getForReport, { reportId });
+        expect(view?.clipped).toBe(false);
+        expect(view?.path.coordinates).toEqual(fullCoords);
+      }
+    });
+
+    test('sharing the put-in leaves the path whole for everyone (and so does never being asked)', async () => {
+      const t = harness();
+      const author = await seedUser(t, 'author');
+      const stranger = await seedUser(t, 'stranger');
+      const bodyId = await seedBody(t);
+
+      for (const [key, showPutIn] of [
+        ['shared', true],
+        ['unset', undefined],
+      ] as const) {
+        const activityId = await author.as.mutation(
+          api.gpsActivities.ingestTrack,
+          ingestArgs({ idempotencyKey: `putin-${key}` }),
+        );
+        const reportId = await author.as.mutation(api.reports.create, {
+          waterBodyId: bodyId,
+          activityId,
+          skateEndTime: T0,
+          iceTypes: ['black_ice' as const],
+          surfaceTags: [],
+          ...(showPutIn !== undefined ? { showPutIn } : {}),
+        });
+        const view = await stranger.as.query(api.gpsActivities.getForReport, { reportId });
+        expect(view?.clipped).toBe(false);
+        expect(view?.path.coordinates.length).toBe(trackPath().coordinates.length);
+      }
+    });
+  });
 });
 
 describe('gpsActivities.listMine (owner-scoped by construction)', () => {

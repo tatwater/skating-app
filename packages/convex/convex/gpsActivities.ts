@@ -266,6 +266,12 @@ export async function linkActivityToReport(
 export interface ActivityPathView {
   activityId: Id<'gpsActivities'>;
   path: LineString;
+  /**
+   * Whether the ends were trimmed because this report withheld its put-in — the same flag the
+   * aggregate layer returns, so a client can say "start and end hidden" rather than drawing a
+   * shortened line that reads as the whole skate.
+   */
+  clipped: boolean;
   startTime: number;
   endTime?: number;
   elapsedSeconds?: number;
@@ -278,25 +284,51 @@ export interface ActivityPathView {
  * Visible to anyone who can see the report: publishing a report *is* the consent for its path (D58).
  * Returns `null` when the report has no track, which is the common case (D24 — a report never
  * requires a path).
+ *
+ * **Put-in clipping applies here too (N3, 2026-07-27).** It didn't, and the gap was the kind that hides
+ * in plain sight: `showPutIn === false` was honored by `listTracksForBody` 60 lines below (clipping
+ * `PUT_IN_CLIP_M` off both ends) and by `putIns.listForBody` (hiding the pin), while this query — the
+ * simpler one, sitting right next to them — returned the raw path to *every* viewer. The doc comment on
+ * the aggregate layer even claimed this view showed "its **author** their full path", but there was no
+ * owner check to make that true. So a skater who withheld their put-in still had the first and last
+ * 150 m of their track — the part that starts at a door — drawn on a public page.
+ *
+ * The author and moderators still see the whole line (the author needs their own track back; a
+ * moderator judging a report needs what it actually claims). Everyone else gets what the aggregate
+ * layer would have given them, so the two paths can no longer disagree about the same track.
  */
 export const getForReport = query({
   args: { reportId: v.id('reports') },
   handler: async (ctx, args): Promise<ActivityPathView | null> => {
     const report = await ctx.db.get(args.reportId);
     if (!report || report.activityId === undefined) return null;
+    // Resolved once and reused by both gates below — the moderation check and the clip ask the same
+    // "is this the author or a moderator?" question, and a second `getCurrentProfile` would be a
+    // second read for an answer we already have.
+    const viewer = await getCurrentProfile(ctx);
+    const privileged =
+      (viewer !== null && viewer._id === report.authorId) ||
+      viewer?.role === 'moderator' ||
+      viewer?.role === 'admin';
     // Moderation-hidden reports don't leak their path either.
-    if (report.moderationStatus !== 'visible') {
-      const viewer = await getCurrentProfile(ctx);
-      const isOwner = viewer?._id === report.authorId;
-      const isModerator = viewer?.role === 'moderator' || viewer?.role === 'admin';
-      if (!isOwner && !isModerator) return null;
-    }
+    if (report.moderationStatus !== 'visible' && !privileged) return null;
+
     const activity = await ctx.db.get(report.activityId);
     if (activity === null) return null;
     if (activity.path?.type !== 'LineString') return null;
+
+    const path =
+      report.showPutIn === false && !privileged
+        ? clipPathEnds(activity.path as LineString, PUT_IN_CLIP_M)
+        : (activity.path as LineString);
+    // Entirely-endpoints tracks come back null — the same call `listTracksForBody` makes, for the same
+    // reason: a stub that is only the clipped region points straight at what the clip protects.
+    if (path === null) return null;
+
     return {
       activityId: activity._id,
-      path: activity.path as LineString,
+      path,
+      clipped: path !== activity.path,
       startTime: activity.startTime,
       ...(activity.endTime !== undefined ? { endTime: activity.endTime } : {}),
       ...(activity.elapsedSeconds !== undefined ? { elapsedSeconds: activity.elapsedSeconds } : {}),
