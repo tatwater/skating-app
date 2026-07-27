@@ -555,10 +555,6 @@ boundary below is inference and should be read as one.**
    it needs a body *alias*"; checking the actual search killed that: **"Saranac Lake" already returns
    all three**, ranked first. Nothing was broken.
 
-   What the check *did* surface is that the ~900 m of water joining Middle to Lower doesn't exist in
-   our data, and neither does any other river — `type: 'river'` is unused corpus-wide. See *Open
-   after this phase*.
-
 ### What got drawn — nine bays on Lake Champlain
 
 Each row is a bounding box clipped to the lake's own polygon (see `subAreas.importSeed`), so the
@@ -644,6 +640,104 @@ a small fixture can't reproduce.
 
 ---
 
+## The review pass (2026-07-26, before the PR)
+
+A full read of the branch against this doc. Ten findings; all fixed here, and the three that mattered
+share a shape — **the thing that was measured was not the thing that could go wrong.**
+
+### The three that were real bugs
+
+1. **The lake editor re-created its canvas on every render, so you could draw exactly one bay per
+   page load.** `initialCenter` is an array literal and it sat in `useMapCanvas`'s dependency list —
+   `maxBounds` and `fitBounds` had been carefully serialized into comparison keys, and this one was
+   missed. `LakeEditorMap` derives it from the body's bbox inline, so every parent state change (a
+   finished draw setting `draft`, a saved banner, a Convex query resolving) tore the map down and
+   built a new one. The draft preview still rendered, which is what made it survive a manual test:
+   the *second* draw silently did nothing, because the terra-draw control cached in `SubAreaTool`
+   held the destroyed instance. Fixed by reading the initial camera through a ref — it is only ever
+   consumed at construction — and pinned by a test that fails on the old dependency list.
+
+2. **Auto-flag bundling could file a duplicate and reset the count it exists to keep.** The prior
+   lookup was a 100-row cap over `by_target` filtered in JS. `lib/scan.ts` opens by warning about
+   exactly this — *a cap is only as good as the scan order it caps* — and the first fix, adding
+   `.order('desc')`, was **also wrong**: terminal rows accumulate on *both* sides of the open row, so
+   ascending buries it under old dispositions and descending buries it under new ones. The cap here
+   decides whether to bump or file, so being wrong means a chronic contributor's count silently
+   restarts at 1. Replaced with a `by_target_status_reason` index, which makes both halves equality
+   reads with no cap in the decision at all. (`reason` is in the key because open flags are *not*
+   one-per-target — user flags dedupe per flagger.)
+
+3. **One rater could run up another user's occurrence count.** `ratings.maybeAutoFlag` runs on every
+   verdict change to `unhelpful`; an identical re-vote already short-circuits, but a *flip* doesn't,
+   so helpful↔unhelpful↔helpful bumped the counter each time round. `occurrences` is what a moderator
+   reads to judge the D57 lever, which makes it a number a rater must not be able to author. Now only
+   a rater's **first** vote counts as an occurrence (`countsAsOccurrence`), so the number means "how
+   many people pushed this over the line" — meaningful, and un-inflatable.
+
+### Two holes in invariants this phase is built on
+
+4. **`restore` didn't re-clip, so "inside its parent by construction" had a door.**
+   `reclipSubAreasToParent` skips delisted rows deliberately (re-clipping a retired bay would
+   resurrect geometry the operator put away) — which means a bay delisted *before* a shoreline
+   refinement was never held to the new outline, and restoring it put a shape back on the map that
+   was no longer inside its parent. Restore now derives its geometry like any other write, and
+   refuses with the redraw message when the lake has moved out from under it.
+
+5. **A system delist was a `console.warn` and nothing else.** The two paths that retire a bay without
+   anyone clicking — a re-import that guts it, a merge name collision — left no audit row, no
+   `removedByUserId`, and no way for the operator to find out. `waterBodySubAreas.systemDelistReason`
+   now carries the reason onto the row, `listForBody` carries it into the editor beside the redraw
+   button, and where a human's action triggered it (a merge is somebody's click) the audit row names
+   them. Decision 2 said *every* write lands one; these were the writes least likely to be noticed.
+
+### One cost that grew with the curation
+
+6. **`importCanonical` re-clipped every sub-area on every run, changed or not.** A clip against
+   Champlain's 10,755-vertex polygon is comfortable once and blows a mutation's 1s budget at a dozen
+   (measured above), the lake carries nine bays with fourteen planned, and the ETL loads it as a
+   near-solo batch precisely because it is already the heaviest row in the feed. So a documented
+   "re-running on unchanged data is a no-op" was becoming an increasingly expensive one, on a
+   trajectory to failing the batch outright. Now gated on `footprintMoved` — identical bbox, area and
+   vertex count means OSM handed us the same shoreline and a containment answer that was true a
+   moment ago still is.
+
+### What was promised and hadn't shipped
+
+7. **The lake page's sub-area report filter** (§Targeting, step 9) was missing on both clients, and
+   wasn't in *Left undone* either — so this doc read as though it had shipped. Built: a
+   `subAreaId` argument on `reports.listByWaterBody` served off the sub-area index (a narrower read,
+   not the same read filtered afterwards, which on Champlain would page the whole lake to show one
+   bay), a select on web and filter chips on mobile, pre-selected when you arrive from a bay search.
+
+8. **Mobile report detail never moved onto `formatLocationLine`.** The feed card said "Malletts Bay"
+   while the detail sheet for the same report said "Lake Champlain" — the exact self-disagreement
+   *§What the build found* item 3 created that helper to make impossible, one screen short of done.
+
+### Efficiency, now that the budgets are measured
+
+9. **The render budget counted rows, and rows are not what a phone downloads.** A clipped bay inherits
+   its parent's shoreline: measured on dev, Champlain's nine bays run 60–1,108 vertices each (Broad
+   Lake alone is 27 KB of the 56 KB total). 250 rows at that density is megabytes in one response,
+   and no read-count measurement would ever have shown it. `listInViewport` now spends a **vertex**
+   budget alongside the row budget, in the same prominence order, logged when it binds — and
+   `subAreaReadStats` reports vertices next to reads, so the pair can be measured the way the read
+   costs were.
+10. **Four smaller ones.** The bay layer no longer subscribes at all below `SUB_AREA_MIN_RENDER_ZOOM`
+    (the constant moved to `@skating/core` so both ends read one copy, rather than paying a round trip
+    to be told `[]`); `listCurated` trims to its cap *after* the listing filter, so removed bodies
+    can't take a live one's slot in the list whose whole job is showing every live boost;
+    `searchByName` takes `bodiesOnly`, because `/admin/water`'s "open a lake" box was filtering bay
+    rows out client-side *after* they had claimed their reserved slots and so returned fewer lakes
+    than it asked for; and the editor's map handle is a component ref rather than a module-level
+    singleton that outlived the route holding a removed map. `pmtiles` protocol registration is
+    refcounted, since `addProtocol` is global to maplibre-gl rather than per-map.
+
+**Also corrected in the docs:** D61 claimed the skater path came out identical "evidenced by its suite
+passing unchanged," which was true of the pure helpers and vacuous about the component — nothing
+rendered `MapView` or the shell. See *Testing* for the three files that now do.
+
+---
+
 ## Testing (D40)
 
 - **`@skating/core`** — property tests for clip-to-parent and sample-point suggestion (above); unit
@@ -658,6 +752,16 @@ a small fixture can't reproduce.
 - **Web** — the existing map suite green *unchanged* across the `MapView` shell refactor (Decision 12's
   obligation), then the editor's camera lock (cannot pan past `maxBounds`), a draw→save→render round
   trip, the non-operator redirect, a11y + dark mode on the new canvas (D34).
+  **Landed in the review pass, not the build** — and the gap was load-bearing. "The existing map suite
+  green unchanged" turned out to be a weaker claim than it reads: the suite that passed is
+  `lib/waterMap` + `lib/mapSelection`, pure helpers the refactor never touched, and *nothing* rendered
+  `MapView` or the new shell. Three files now cover what Decision 12 actually put at risk:
+  `lib/mapCanvas.test.tsx` (map created once, **not** re-created when a caller re-renders with fresh
+  array literals, `onLoad` inside `load`, refcounted protocol teardown), `components/admin/
+  LakeEditorMap.test.tsx` (the camera lock's computed bounds, no navigation control, the
+  draft→save→render round trip, dark mode, the a11y label) and `routes/admin.test.tsx` (the
+  non-operator redirect, with no operator chrome rendered on the way out). `maplibre-gl` is faked —
+  these pin how the shell drives the map API, not that MapLibre renders.
 - **Mobile** — sub-area render and label; no operator affordances (Phase 7 rule holds).
 - **Live** — the curation session is itself the acceptance test, and step 14 records what it found.
 
@@ -673,13 +777,6 @@ a small fixture can't reproduce.
   binding "Saranac Lake" to one of them would silently send a skater to a body the corpus never
   specified. "Saranac Lake" is also the Adirondack **village**, so some of those four mentions may
   not be about a lake at all. Body aliases may earn their place some day; this isn't the evidence.
-- **Rivers are not in the corpus at all — a real gap, and bigger than Saranac.** `type: 'river'` is
-  **unused**: in a 3,000-body sample it's pond 1410 / other 962 / marsh 386 / reservoir 181 / lake 61
-  / **river 0**, and the Hudson, Mohawk, Beaver and Walloomsac are all typed `other`. The ETL imports
-  `natural=water` polygons and buckets the unclassifiable as `other`; linear `waterway` features never
-  arrive. So D4's rivers-as-named-reaches isn't merely unbuilt — there is **no river data to build it
-  on**, and the connecting channels of a lake chain (the Saranacs) simply don't exist on the map. If
-  river skating matters for alpha, this is an ETL scope question, not a modelling one.
 - **Two bays and one Lake George bay are unplaced** (Dillenbeck, Carry, Northwest) — see the session
   notes. They need local knowledge, not another inference pass.
 - **Weather sample points aren't saved on Champlain** — the grid is computed and recorded, but dev

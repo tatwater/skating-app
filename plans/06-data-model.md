@@ -258,6 +258,7 @@ curatedBoost?: number
 createdByUserId: ref(profiles) // the moderator who drew it; every write is audited too
 createdAt / updatedAt: timestamp
 removedAt? / removedByUserId?  // soft-delist, reversible — never a hard delete
+systemDelistReason?: string    // why the SYSTEM retired it; cleared by a restore or redraw
 ```
 > **A bay is a name on a lake, not a lake.** Reports, hazards and bounties keep belonging to the
 > **parent**; the sub-area is the finer name they carry, denormalized flat (`subAreaId` /
@@ -265,8 +266,15 @@ removedAt? / removedByUserId?  // soft-delist, reversible — never a hard delet
 > or delisted. Minting bays as bodies would split one sheet of ice's reports, hazards, bounties,
 > favorites and tracks across a dozen rows.
 > **Inside its parent by construction:** the drawn shape is clipped to the parent polygon and the
-> clipped result stored, so the invariant survives the parent changing shape (a re-import re-clips; a
-> bay that no longer fits is delisted with a log). Refuses only when too little of the draw survives.
+> clipped result stored, so the invariant survives the parent changing shape (a re-import re-clips
+> when the outline actually moved; a bay that no longer fits is delisted). Refuses only when too
+> little of the draw survives — **and `restore` re-clips too**, since the re-clip deliberately skips
+> delisted rows, which would otherwise let a bay retired *before* a shoreline refinement come back
+> holding geometry that had escaped the invariant.
+> **A system delist says so on the row.** The two paths that retire a bay with nobody clicking (a
+> re-import that guts it, a merge name collision) write `systemDelistReason`, which `listForBody`
+> carries into the editor beside the redraw button; where a human's action triggered it, the
+> `moderationActions` row names them. A server log is not a surface (D5).
 > **Visible only while its parent is** — cell rows in `waterBodySubAreaCells` exist on the
 > conjunction, so a landowner takedown takes the bays with it and a merge repoints them to the
 > survivor. Same "unlisted means absent" rule N1 established for bodies.
@@ -523,12 +531,22 @@ reason: enum(unsafe_false_report, spam, harassment, inappropriate, other)
 note?: string
 status: enum(open, reviewing, actioned, dismissed)
 resolvedByUserId?: ref(profiles)   // a moderator or admin (users.role in {moderator, admin} — D37)
+occurrences?: number               // N2 bundling — how many times this problem has been recorded
+lastOccurrenceAt?: timestamp       // absent ⇒ reads as 1, so pre-bundling rows need no migration
+supersedesFlagId?: ref(contentFlags)  // this row carries a resolved predecessor's count forward
 createdAt, resolvedAt?: timestamp
 ```
 > `unsafe_false_report` is first-class: a dangerously false "ice is great" claim is
 > a **safety** issue (D3), not mere spam. Moderator action sets the target's
 > `moderationStatus` to `hidden`/`removed`. In the admin flag queue (D37) it sits in a
 > **pinned priority lane**, not the FIFO — it's a safety incident, not spam.
+> **Auto-flag bundling (N2):** a recurring *system-generated* problem bumps `occurrences` on its open
+> row instead of filing an identical one. A recurrence after a resolution files a **new** row pointing
+> back via `supersedesFlagId` — a terminal row is never patched, because `by_status_resolved_at` feeds
+> a day-sliced 7b rollup and reopening one would retroactively change a past day's count. Read through
+> `by_target_status_reason`: the open-row lookup **decides** whether to bump or file, and any capped
+> scan of a target's history gets it wrong in both directions (terminal rows pile up on both sides of
+> the open row), which would silently restart the count on the chronic contributor it exists to track.
 
 ### `moderationActions`  (audit log — who did what, why; D37)
 ```
@@ -536,8 +554,12 @@ _id
 actorId: ref(profiles)          // the moderator/admin who acted
 action: enum(hide, remove, restore, ban, suspend, unban,
              merge_waterbody, approve_waterbody, reject_waterbody, set_curated_boost,
-             resolve_flag, dismiss_flag, grant_role, revoke_role)
-targetType: enum(report, comment, photo, user, waterbody, contentFlag)
+             resolve_flag, dismiss_flag, grant_role, revoke_role,
+             set_posting_permission, promote_body_feature, demote_body_feature,   // D57 / D53
+             create_sub_area, redraw_sub_area, rename_sub_area,                   // N2 / D60
+             set_weather_sample_points)                                           // D56 §5
+targetType: enum(report, comment, photo, user, waterbody, contentFlag, hazard, bodyFeature,
+                 waterBodySubArea)
 targetId: string
 reason: string               // required — accountability for appeals/reversals
 metadata?: { ... }           // e.g. prior/new state, mergedIntoId, suspendedUntil
@@ -862,9 +884,12 @@ profiles 1─* pointEvents
   parent already in hand) plus a `search_subarea` index over a denormalized `searchText` carrying the
   aliases (N2/D60); `waterBodies` by `curatedBoost` (the curation list, N2 — a `> 0` range read costs
   the boosted rows and nothing else); `reports` by `subAreaId + moderationStatus + skateEndTime` (the
-  sub-area-scoped bounty freshness gate — moderation *in* the index, so hidden reports can't eat the
-  cap);
-  `contentFlags` by `status` and by `targetType + targetId`; `reportRatings` by
+  sub-area-scoped bounty freshness gate **and** the lake page's report filter — moderation *in* the
+  index, so hidden reports can't eat the cap, and a bay filter is a narrower read rather than the
+  whole lake paged and then thrown away);
+  `contentFlags` by `status`, by `targetType + targetId`, and by
+  `targetType + targetId + status + reason` (auto-flag bundling's open-row lookup, N2 — see the table
+  note for why a capped scan of the history is wrong in both directions); `reportRatings` by
   `reportId` and a unique `raterId + reportId` (one rating per rater/report, D50); `waterBodies` by
   `dedupStatus` (review queue), by `reviewStatus` (user-body approval queue, D37), and by
   `externalId` (idempotent canonical OSM/NHD upsert, D14/D48 — `by_external_id`);

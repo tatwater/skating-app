@@ -1289,8 +1289,13 @@ curating a lake meant holding it in your head across a queue row, a CSV and an i
 - **One shared map shell**, not a second canvas (founder call over the build's recommendation):
   `lib/mapCanvas.ts` owns creation, theme, bounds, controls, viewport reporting and teardown; callers
   register their own layers. The seam is deliberately low — drawn higher it becomes a shell with a
-  dozen conditional props, which is two components wearing one name. **Price: the skater path comes
-  out behaviourally identical, evidenced by its suite passing unchanged.**
+  dozen conditional props, which is two components wearing one name. **The price is that a bug in the
+  shell is now a bug on both maps, so the shell has its own suite** (`lib/mapCanvas.test.tsx`) rather
+  than resting on the pure-helper tests the refactor never touched. The review pass that established
+  that also found what the absence had already cost: `initialCenter` was an array literal in the
+  effect's dependency list, so the editor re-created its canvas on every parent render and could draw
+  exactly one shape per page load. Two maps sharing one shell is the right call *and* it moves the
+  lifecycle from "read carefully" to "tested".
 - **terra-draw, lazy and admin-only** (MIT, first-class MapLibre adapter, own 270 kB chunk). A skater
   never draws anything, so the engine never enters their bundle. **Paste-GeoJSON sits beside it
   permanently** — the way a shape traced elsewhere gets in, and the break-glass path if the import

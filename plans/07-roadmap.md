@@ -769,13 +769,8 @@ Two things came out that weren't scoped: the **read walk was extracted** from `w
 PR-#27 corrections that a copy would drift from; and **`MapView` became a shared shell** so the editor
 and the skater map are one canvas (founder call, with the skater suite green unchanged as the price).
 
-*Left for later:* **the corpus has no rivers.** `type: 'river'` is unused across it — a 3,000-body
-sample is pond/other/marsh/reservoir/lake and **zero** rivers, with the Hudson and Mohawk typed
-`other`. The ETL imports `natural=water` polygons only, so linear `waterway` features never arrive and
-even the channels joining a lake chain (the Saranacs) are absent. D4's rivers-as-reaches isn't just
-unbuilt; there's no data under it. An ETL scope question if river skating matters for alpha.
-*(A related worry — that bodies need aliases the way sub-areas do — was checked and dismissed:
-"Saranac Lake" already returns Upper, Middle and Lower, and they're genuinely three lakes.)*
+*A worry that bodies need aliases the way sub-areas do was checked and dismissed:
+"Saranac Lake" already returns Upper, Middle and Lower, and they're genuinely three lakes.*
 
 **N3 — Storage-hygiene crons.** *(Tiny — a half-day — and it's pure downside-avoidance: nobody notices
 these until a quota bites mid-alpha.)* Both are the same shape as the three prune crons already
