@@ -848,6 +848,13 @@ renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggreg
   concern). Flat 30 days rather than the D59 curve, because the consequence is irreversible and N3/N4
   already shipped one bug caused by a subtly-wrong predicate on this exact kind of sweep.
 - Folded in from the old entry: **"this never existed" confirmation verdict** and **naming confirmers**.
+- **Suggested crossings decay in the opposite direction from hazards (D64).** Moved here from N5b once
+  the founder's version of "ridge-crossing v2" turned out to be a lifecycle change rather than an
+  authoring one: several *suggested crossings* per ridge, individually downvotable, decaying **faster**
+  than hazards and needing **more** corroboration to survive. `ridge_crossing` currently inherits the
+  hazard rules whole — including the map opacity floor where stale never means gone — which is
+  conservative for a danger and **anti-conservative for a passage**: a marker placed in November still
+  reads "reported crossable" in March. Copy becomes *"suggested crossing"*, never "safe".
 
 **Two premises the code check falsified**, both making the phase *more* consequential:
 - **Reports don't draw on the map at all** — there is no report layer. What reaches the map from a
@@ -863,11 +870,12 @@ renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggreg
   handled **by accident** — the stale pin never leaves, asserting a position nobody has evidence for.
 
 **N5b — Hazard authoring UX.** 📐 *Scoped 2026-07-27* — see
-[`phase-N5b-hazard-authoring.md`](./phase-N5b-hazard-authoring.md). The three geometry/input items split
-out of the old N5: the **freeform-polygon vertex editor** (Phase 9 call 5 — schema + render already
-ship, only the editor is missing), the shore-band **"snap to shoreline"** affordance (research §4,
-deferred from Phase 9 *and* Phase 10), and **ridge-crossing "switch sides" hinting** (§8). All client
-work, no lifecycle or schema changes. Kept separate from N5a on purpose: N5a's risky half is a
+[`phase-N5b-hazard-authoring.md`](./phase-N5b-hazard-authoring.md). The geometry/input items split out of
+the old N5: the **freeform-polygon vertex editor** (Phase 9 call 5 — schema + render already ship, only
+the editor is missing) and the shore-band **"snap to shoreline"** affordance (research §4, deferred from
+Phase 9 *and* Phase 10). All client work, no lifecycle or schema changes. *(A third item, ridge-crossing
+hinting, started here and left for N5a as D64 — the founder's version was a lifecycle inversion, not an
+authoring affordance. The open question that caught it is recorded in the N5b doc.)* Kept separate from N5a on purpose: N5a's risky half is a
 visibility change to safety content, and that review attention shouldn't be split with a vertex editor.
 Its own open question is whether terra-draw's ~270 kB chunk is acceptable on a phone — it's admin-only
 today.

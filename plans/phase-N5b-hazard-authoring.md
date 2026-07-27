@@ -1,7 +1,7 @@
 # N5b — Hazard authoring UX
 
-*Three affordances that make drawing a hazard match how skaters actually describe one. All client
-work; no lifecycle, no schema, no decay.*
+*Two affordances that make drawing a hazard match how skaters actually describe one. All client work;
+no lifecycle, no schema, no decay.*
 
 > **Status:** scoped 2026-07-27, not yet built. Split from the roadmap's old N5 when the seasonal work
 > ([N5a](./phase-N5a-seasons.md)) took over that entry's lifecycle half.
@@ -12,16 +12,18 @@ The old N5 bundled five things under "hazard authoring & confirmation polish". T
 the "this never existed" verdict and naming confirmers — touch `deriveHazardLifecycle` and the
 confirmation loop, which is the same code a seasonal reset touches, so they went with N5a.
 
-The three that remain share nothing with that: they're **geometry and input**, entirely on the client,
-with no server behavior change at all. Keeping them separate isn't tidiness. N5a's risky half is a
-visibility change to safety content, and the review attention that deserves shouldn't be split with a
-vertex-dragging editor.
+What remains shares nothing with that: **geometry and input**, entirely on the client, with no server
+behavior change at all. Keeping them separate isn't tidiness. N5a's risky half is a visibility change to
+safety content, and the review attention that deserves shouldn't be split with a vertex-dragging editor.
 
 They belong together because they're one pass over the same surface — the hazard draw flow on web and
-mobile — and because each is small enough that visiting that surface three separate times would cost
-more than the work.
+mobile — and because each is small enough that visiting that surface twice would cost more than the work.
 
-## The three items
+*A third item started here and left:* ridge-crossing hinting turned out to be a lifecycle change, not an
+authoring one, and moved to N5a. See below — it's recorded rather than deleted because the reason it
+moved is the same rule that keeps this pass small.
+
+## The items
 
 ### 1. Freeform polygon authoring (Phase 9, founder call 5)
 
@@ -52,21 +54,23 @@ tracing a shoreline that the app already knows exactly — `waterBodies.polygon`
 - Deferred from Phase 9 (*"log, don't build in v1"*) and again from Phase 10 (*"it's a geometry/UX
   feature, not a weather one"*). This is the pass it was being deferred to.
 
-### 3. Ridge-crossing "switch sides" hinting (research §8)
+### ~~3. Ridge-crossing "switch sides" hinting~~ → moved to N5a (2026-07-27)
 
-The v2 of the `ridge_crossing` passage marker. v1 ships as a point+radius marker with the three
-verdicts relabelled (*still crossable / dicey now / ridge closed*).
+This was the weakest item here, and the founder's answer dissolved it rather than sharpening it.
 
-The research's insight, from lakeice: **"best prospects are where the overlap switches sides."** A
-pressure ridge is two plates overlapping, and the crossable spots are where which-plate-is-on-top
-flips. v2 would hint at those spots along a drawn `pressure_ridge` rather than making the skater find
-them.
+The research (§8) framed v2 as *hinting* — suggesting where along a drawn ridge a crossing might be,
+from lakeice's "best prospects are where the overlap switches sides". The founder's version is
+different and better: **let skaters mark several suggested crossings per ridge and downvote them when
+they stop working**, with crossings decaying *faster* than hazards and needing *more* corroboration to
+survive.
 
-**This is the least-defined of the three and the one most likely to be wrong.** It needs either
-real drawn ridges to work from, or an explicit heuristic someone can argue with. Treat it as the
-optional third — worth attempting only if the first two land cleanly, and worth dropping to N8 if it
-turns into a research project. Flagged now because "we'll figure it out during the build" is how a
-small pass becomes an open-ended one.
+That's not an authoring affordance. It's a lifecycle inversion — a passage marker where absence of
+evidence must **kill** the pin rather than keep it alive — and it lands in `deriveHazardLifecycle`,
+`HAZARD_DECAY` and the confirm loop. This doc's own rule says anything touching those is in the wrong
+phase, so it goes to [N5a](./phase-N5a-seasons.md) as **D64**.
+
+What's left here is two items, which is a better-shaped pass: both are pure geometry, both are
+finishable, and neither needs a research answer first.
 
 ## What this pass must not do
 
@@ -74,8 +78,8 @@ small pass becomes an open-ended one.
   path all belong to N5a. If something here wants to touch `deriveHazardLifecycle`, it's in the wrong
   phase.
 - **No new hazard types.** The vocabulary is settled (D51/D52); this is about drawing the ones we have.
-- **No safety copy changes.** D3's never-assert-safety framing and the `ridge_crossing` verdict
-  relabelling are already written and tested.
+- **No safety copy changes.** D3's never-assert-safety framing is already written and tested, and the
+  `ridge_crossing` verdict copy is being revised by N5a (D64) — touching it here would collide.
 
 ## Work breakdown
 
@@ -84,7 +88,6 @@ small pass becomes an open-ended one.
    the same lazy chunk boundary.
 3. Snap-to-shoreline: the boundary-substring helper in `@skating/core` (pure, property-testable against
    real body polygons), then the two-tap affordance in both clients.
-4. Ridge hinting — only if 2 and 3 land cleanly; otherwise it moves to N8 with a note.
 
 ## Open questions
 
@@ -97,6 +100,8 @@ small pass becomes an open-ended one.
 - **How is a snapped shore band edited afterwards?** If it's a derived geometry, is it re-derived on
   edit or does it become an ordinary polygon the vertex editor can push around? Leaning the latter —
   one geometry type downstream, snapping is an input convenience, not a stored relationship.
-- **Whether ridge hinting is even the right v2.** The alternative reading of the research is that the
-  useful v2 is *several* passage markers along one ridge rather than a hint about where to put one.
-  Cheaper, and closer to what the corpus actually describes.
+- ~~**Whether ridge hinting is even the right v2.**~~ **Answered 2026-07-27** — it wasn't. The
+  alternative reading (several markers along one ridge, rather than a hint about where to put one) is
+  what the founder wanted, and it turned out to be a lifecycle change rather than an authoring one. The
+  question was worth writing down: it moved an item to a different phase instead of being discovered
+  mid-build.

@@ -103,7 +103,40 @@ earns a longer life — but the consequence is *irreversible deletion*, and a ru
 reading one field beats one that depends on other people's later votes. N3/N4 shipped a bug caused by a
 subtly-wrong predicate on exactly this shape of sweep.
 
-**7. This narrows D33 as well as D62, and that should be explicit.** D33's rationale was that community
+**7. Suggested crossings decay in the opposite direction from hazards** (D64, founder call
+2026-07-27). Moved here from N5b by this phase's own rule — anything that touches
+`deriveHazardLifecycle` belongs with the lifecycle work.
+
+`ridge_crossing` is a **passage marker, not a danger** (D51), and it currently inherits the hazard
+lifecycle wholesale: Tier A\* decay (`freshH: 12`, `agingH: 36`), but archival only on two
+`fully_healed` votes, and a map opacity **floor** so that stale never means gone. For a hazard that
+floor is conservative — it over-warns. For a crossing it is **anti-conservative**: a marker placed in
+November still says "reported crossable" in March, and nobody has looked since. Same rule, opposite
+safety meaning, applied to the one type it doesn't fit.
+
+So passage markers get their own lifecycle, inverted at every point:
+
+| | Hazard | Suggested crossing |
+|---|---|---|
+| Absence of evidence | **keeps it alive** — assume the danger is still there | **kills it** — assume the crossing is gone |
+| Positive votes | optional; refresh the clock | **required to survive**, and more of them |
+| One negative vote | contributes toward a 2-vote archive | **closes it immediately** |
+| Past its window | fades to a visible floor, never disappears | **expires — stops rendering** |
+
+The asymmetry falls straight out of D3 rather than being invented for it. Getting a crossing wrong in
+the *remove* direction costs a skater a longer walk; getting it wrong in the *keep* direction walks
+them onto ice nobody has checked. One of those is recoverable.
+
+Consequences for the build:
+- **Several crossings per ridge** — already expressible (each is its own `ridge_crossing` row); what's
+  missing is authoring and rendering them as a set belonging to one ridge.
+- **Copy is "suggested crossing", never "safe crossing"**, and every surface repeats that judging the
+  crossing in the moment is the skater's, not ours. The existing verdict relabelling
+  (*still crossable / dicey now / ridge closed*) gets tightened in the same pass.
+- The `isHazardVisibleByDefault` floor needs a passage-marker branch — this is the one place a pin is
+  allowed to leave the map on time alone, and it needs to be obvious in the code why.
+
+**8. This narrows D33 as well as D62, and that should be explicit.** D33's rationale was that community
 value lives in report history, so content is anonymized rather than erased. For departed users that no
 longer holds after 30 days. The founder's reasoning is the right one and belongs in the record: *at 30
 days anything still true has fresh reporting behind it, and holding a departed person's data past its
@@ -136,6 +169,17 @@ selector answers *"what did this lake look like last winter?"*. Conflating them 
 one silently mean the second in July.
 
 ### Departed-user erasure
+
+**The governing principle, stated because two rules in this phase look similar and aren't** (founder,
+2026-07-27):
+
+> **Aging never erases anything. An intentional account deletion erases everything that isn't of
+> immediate value to the community.**
+
+Staleness and seasons only ever **hide** — for everyone, reversibly, with a labelled way back. Erasure
+has exactly one trigger, and it's a person deciding to leave. The 30-day window isn't "old content
+expires"; it's the proxy for *immediate value*, which is why it's short and why it doesn't apply to
+anybody who's still here.
 
 A `contentPurgeDueAt` stamped at finalize (newest `skateEndTime` + 30 days), swept off a range
 **bounded on both sides** — because the N3/N4 postmortem is exactly this shape: an index on an optional
@@ -204,6 +248,7 @@ ours to say.
 5. The recurring-hazard promotion list on `/admin/water/$id`, framed as a safety task.
 6. Departed-user erasure: the purge sweep + the report cascade.
 7. The two folded-in lifecycle items — "this never existed" verdict, naming confirmers.
+8. The passage-marker lifecycle inversion (D64) + the "suggested crossing" copy pass.
 
 ## Settled after the design review (2026-07-27)
 

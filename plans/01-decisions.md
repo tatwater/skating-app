@@ -1399,7 +1399,45 @@ them); **put-ins survive** (access is the corpus's most-discussed concern, S1).
 earns a longer life — but the consequence is irreversible deletion, and a rule verifiable by reading
 one field beats one that depends on other people's later votes. N3/N4 shipped a bug caused by a
 subtly-wrong predicate on exactly this kind of sweep.
+**The governing principle, since two rules in N5a look alike and aren't:** *aging never erases
+anything; an intentional account deletion erases everything that isn't of immediate value to the
+community.* Staleness and seasons only ever **hide** — for everyone, reversibly, with a labelled way
+back. Erasure has exactly one trigger, and it's a person deciding to leave. The 30-day window is not
+"old content expires"; it's the proxy for *immediate value*, which is why it's short and why it reaches
+nobody who is still here.
 **Why:** 30 days is long enough that anything still true has fresh reporting behind it, and holding a
 departed person's data past its usefulness is the least respectful option available. Recorded as an
 amendment rather than a silent change, because "we keep your published tracks" and "we keep them for a
 month" are different promises to have made.
+
+## D64 — Suggested crossings decay in the opposite direction from hazards (N5a)
+**Decided (2026-07-27).** `ridge_crossing` is a **passage marker, not a danger** (D51), and it
+currently inherits the hazard lifecycle wholesale: Tier A\* decay (`freshH: 12`, `agingH: 36`), archival
+only on two `fully_healed` votes, and the `hazardLayer` opacity **floor** that means stale never becomes
+gone.
+
+For a hazard that floor is conservative — it over-warns, which is the safe direction. For a crossing it
+is **anti-conservative**: a marker placed in November still reads "reported crossable" in March with
+nobody having looked since. One rule, opposite safety meanings, applied to the one type it doesn't fit.
+
+So passage markers get an inverted lifecycle:
+
+| | Hazard | Suggested crossing |
+|---|---|---|
+| Absence of evidence | **keeps it alive** — assume the danger is still there | **kills it** — assume the crossing is gone |
+| Positive votes | optional; refresh the clock | **required to survive**, and more of them |
+| One negative vote | counts toward a 2-vote archive | **closes it immediately** |
+| Past its window | fades to a visible floor, never disappears | **expires — stops rendering** |
+
+- **Several crossings per ridge**, each its own row, authored and rendered as a set belonging to one
+  ridge. Downvoting one closes that crossing, not the ridge.
+- **The copy is "suggested crossing", never "safe crossing"**, and every surface repeats that judging it
+  in the moment is the skater's call, not ours — extending the existing verdict relabelling
+  (*still crossable / dicey now / ridge closed*) rather than replacing it.
+- `isHazardVisibleByDefault` gains a passage-marker branch: the **one** place a pin may leave the map on
+  time alone, which needs to be conspicuous in the code precisely because it contradicts the rule beside
+  it.
+**Why:** the asymmetry falls out of D3 rather than being invented for it. Getting a crossing wrong in
+the *remove* direction costs a skater a longer walk; getting it wrong in the *keep* direction walks them
+onto ice nobody has checked. Only one of those is recoverable, so the failure has to be biased toward
+the recoverable one — which is the opposite bias from a hazard.
