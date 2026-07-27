@@ -20,6 +20,7 @@ import {
   isMinor,
   KNOWN_STATE_CODES,
   MAX_SUGGESTED_SAMPLE_POINTS,
+  MIN_VISIBLE_ZOOM_FLOOR,
   minVisibleZoom,
   nearestBodyForPoint,
   pathToBody,
@@ -1288,6 +1289,50 @@ async function searchSubAreas(ctx: QueryCtx, term: string, max: number): Promise
   }
   return hits;
 }
+
+/** Boosted bodies the curation list shows at once. A curated set in the low hundreds, by design. */
+const CURATED_LIST_CAP = 300;
+
+/**
+ * Moderator: every body carrying a `curatedBoost` (N2) — **the surface that makes a mis-match
+ * visible**.
+ *
+ * The Phase-2.5 seed matched community favourites by name, and five of them landed on same-named
+ * lakes in the wrong state. That wasn't five separate bugs so much as one missing screen: the boost
+ * is editable per body, and nothing anywhere listed which bodies had one. Four of the five are
+ * Champlain bays whose boost went to a namesake elsewhere, and the fix is one motion — strip the
+ * wrong boost, draw the right sub-area — which only became possible once sub-areas existed.
+ *
+ * Each row carries what you need to *judge* the match without opening it: the states it spans, its
+ * area, and the resulting `minVisibleZoom`. A boosted "South Bay" listed as ME with a 2 km² area is
+ * self-evidently not the arm of Lake Champlain someone meant.
+ */
+export const listCurated = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, 'moderator');
+    const rows = await takeCapped(
+      ctx.db.query('waterBodies').withIndex('by_curated_boost', (q) => q.gt('curatedBoost', 0)),
+      CURATED_LIST_CAP,
+      'waterBodies.listCurated',
+    );
+    // Strongest boost first — the most aggressively promoted body is the one a wrong match hurts
+    // most, since it's drawing at a zoom where it displaces real lakes.
+    return rows
+      .filter((body) => isListed(body))
+      .sort((a, b) => (b.curatedBoost ?? 0) - (a.curatedBoost ?? 0))
+      .map((body) => ({
+        _id: body._id,
+        name: body.name,
+        type: body.type,
+        states: body.states ?? [],
+        surfaceAreaSqM: body.surfaceAreaSqM ?? 0,
+        curatedBoost: body.curatedBoost ?? 0,
+        minVisibleZoom: body.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
+        centroid: body.centroid,
+      }));
+  },
+});
 
 /** Moderator/admin: the after-the-fact review queue of pending user bodies (D37). */
 export const listPendingReview = query({

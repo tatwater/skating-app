@@ -235,6 +235,12 @@ importers:
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+      terra-draw:
+        specifier: ^1.32.2
+        version: 1.32.2
+      terra-draw-maplibre-gl-adapter:
+        specifier: ^1.4.1
+        version: 1.4.1(maplibre-gl@5.24.0)(terra-draw@1.32.2)
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.3.2
@@ -7428,6 +7434,15 @@ packages:
   terminal-link@2.1.1:
     resolution: {integrity: sha512-un0FmiRUQNr5PJqy9kP7c40F5BOfpGlYTrxonDChEZB7pzZxRNp/bt+ymiy9/npwXya9KH99nJ/GXFIiUkYGFQ==}
     engines: {node: '>=8'}
+
+  terra-draw-maplibre-gl-adapter@1.4.1:
+    resolution: {integrity: sha512-qZ/bc9bVPnyt0keLVTofV8xiTPkdkbO6RzqrfNLe9zH/edW5PsjvJw97m1EksPZeXNJtFxsVbhi12cPaoNiWfg==}
+    peerDependencies:
+      maplibre-gl: '>=4'
+      terra-draw: ^1.0.0
+
+  terra-draw@1.32.2:
+    resolution: {integrity: sha512-ysy1EBhvYbMqddv4+LyNmb56DpZLGPP9QO/I5kZoD4PArRJekOBlvXPKjo9w+jikcOEMgHUSw2G7AHLqI2QoiA==}
 
   terser@5.49.0:
     resolution: {integrity: sha512-SNiDnXyHSrxVcIOtVbULzcTmniUiwcV7Nwdyj1twVubeTmbjoa8p69KKDpfkdoOavuM4/GRm1+ykI8qqnavHoA==}
@@ -16522,6 +16537,13 @@ snapshots:
     dependencies:
       ansi-escapes: 4.3.2
       supports-hyperlinks: 2.3.0
+
+  terra-draw-maplibre-gl-adapter@1.4.1(maplibre-gl@5.24.0)(terra-draw@1.32.2):
+    dependencies:
+      maplibre-gl: 5.24.0
+      terra-draw: 1.32.2
+
+  terra-draw@1.32.2: {}
 
   terser@5.49.0:
     dependencies:

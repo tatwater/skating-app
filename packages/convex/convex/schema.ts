@@ -268,6 +268,14 @@ export default defineSchema({
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
     .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
     .index('by_external_id', ['source', 'externalId']) // idempotent canonical upsert (D14/D48)
+    // The curation list (N2). Until now there was NO index on `curatedBoost` and no query listing
+    // boosted bodies — `WaterBodyModeratorControls` edits the boost on a body you already navigated
+    // to, and nothing told you which of 116k carry one. The five known Phase-2.5 mis-matches (South
+    // Bay, Button Bay, Half Moon Cove, Foster Pond, Mill Pond, all boosted onto same-named lakes
+    // elsewhere) were invisible until someone remembered them. A `> 0` range read costs the boosted
+    // rows and nothing else: `undefined` sorts before every number, so unboosted bodies are excluded
+    // by the range rather than filtered after the read.
+    .index('by_curated_boost', ['curatedBoost'])
     .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
 
   // The water-body spatial index (N1) — one row per grid cell a *listed* body's bbox covers, at the

@@ -155,25 +155,3 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
 
   return { containerRef, mapRef, loaded };
 }
-
-/**
- * `maxBounds` for a lake editor: the body's bbox plus a margin (Decision 5).
- *
- * The margin is a fraction of the body's own extent rather than a fixed number of degrees, so a cove
- * and Champlain both get a usable amount of shoreline context instead of one being suffocated and the
- * other framed on nothing. Clamped to a small floor, because a zero-extent bbox (a degenerate row)
- * would otherwise produce bounds MapLibre rejects.
- */
-export function boundsForBody(
-  bbox: BBox,
-  marginFraction = 0.15,
-): [[number, number], [number, number]] {
-  const latSpan = Math.max(bbox.maxLat - bbox.minLat, 0.002);
-  const lngSpan = Math.max(bbox.maxLng - bbox.minLng, 0.002);
-  const latPad = latSpan * marginFraction;
-  const lngPad = lngSpan * marginFraction;
-  return [
-    [bbox.minLng - lngPad, bbox.minLat - latPad],
-    [bbox.maxLng + lngPad, bbox.maxLat + latPad],
-  ];
-}
