@@ -1354,3 +1354,52 @@ and wrong for a private location trace, so the rule is no longer uniform.
   Resend is provisioned, and stops a spam-filtered email being a dead end.
 **Why:** the ice record is the community's, but a GPS trace and a home address are the person's. One
 rule couldn't serve both, and the seam that separates them already existed in D58.
+
+## D63 — A season is July 1 → June 30, and it is derived rather than stored (N5a)
+**Decided (2026-07-27).** Nothing in the app expired: `reportFreshness` (D59) is an *opacity*
+multiplier, not a visibility gate, so a report from two seasons ago still rendered in a lake's drawer
+and its GPS path still drew on the aggregate map — at ~0 opacity, but present. The map should show
+**this** season's ice; everything else is history you go and look at on purpose.
+- **The season boundary is July 1**, labelled `'24/'25` because a skating season spans New Year. July
+  is the deadest point of the year in the Northeast, so the boundary never cuts a live season and the
+  reset lands when nobody is looking at the map.
+- **Season is DERIVED, never stored.** `seasonOf(skateEndTime)`; current season is `seasonOf(now)`.
+  There is no `season` column, no backfill, no cron to advance anything and nothing to drift — the
+  reset isn't an event, it's the derived value changing and the queries following. The mechanical
+  payoff is that `skateEndTime` is already the range field of three existing indexes, so seasonal
+  scoping makes those reads **cheaper**, not more expensive.
+- **Hazards reset on the same boundary**, and recurrence is **D53's `bodyFeatures` promotion** rather
+  than new machinery: a hazard that forms in the same place every winter becomes a persistent body
+  feature, which no seasonal reset touches. That makes the pre-first-ice promotion pass a **safety**
+  task rather than housekeeping, so the admin surface has to present it as one.
+- **Past seasons are browsable per water body**, never globally and never in the map's default state —
+  a curiosity ("what was this bay like in December?"), not a safety surface, so it sits where you're
+  already asking about one lake.
+**Two premises the code check falsified**, both making this decision matter more rather than less:
+**reports don't draw on the map at all** (there is no report layer — what reaches the map from a report
+is its put-in marker, its track and its photo pins), so the map half is *tracks + hazards* while reports
+are scoped in the feed and lake list; and **hazards never age out** —
+`deriveHazardLifecycle` archives on community "fully healed" votes only, with no time-based archival
+anywhere, so an unvisited hazard stays `active` forever at a deliberate map opacity floor. A ridge
+reported in February 2025 is still drawn today. The recurring-hazard case is therefore handled *by
+accident* today, by a stale pin that never leaves and asserts a position nobody has evidence for.
+**Why:** an app that never forgets shows a skater a two-year-old report next to Tuesday's and asks them
+to tell the difference from opacity alone. Hiding is the honest default; a labelled way back is the
+honest exception.
+
+## D62 amendment — a departed user's content is erased at 30 days, not kept indefinitely (N5a)
+**Amended (2026-07-27).** D62 said published GPS tracks are kept, severed from identity. They still
+are — **for 30 days past the skate**, and then only for as long as the report they hang off survives.
+For an author whose profile is a D62 tombstone: the report, its GPS activity and path, the hazards they
+created and their photos are **erased** 30 days after `skateEndTime`; **all** their bounties go
+immediately at finalize, including open ones (a request from someone who left can't be fulfilled *for*
+them); **put-ins survive** (access is the corpus's most-discussed concern, S1).
+
+**Flat 30 days, not the D59 freshness curve.** The curve is more principled — a corroborated report
+earns a longer life — but the consequence is irreversible deletion, and a rule verifiable by reading
+one field beats one that depends on other people's later votes. N3/N4 shipped a bug caused by a
+subtly-wrong predicate on exactly this kind of sweep.
+**Why:** 30 days is long enough that anything still true has fresh reporting behind it, and holding a
+departed person's data past its usefulness is the least respectful option available. Recorded as an
+amendment rather than a silent change, because "we keep your published tracks" and "we keep them for a
+month" are different promises to have made.

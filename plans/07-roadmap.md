@@ -821,17 +821,56 @@ different reason, was the only thing in the way. Every other bare upper-bound ra
 swept and is on a required field. **Tests didn't catch this; running the job against a real deployment
 did**, and the regression test was only trusted after reverting the fix and watching it fail.
 
-**N5 — Hazard authoring & confirmation polish.** *(One coherent pass over the hazard surface on web +
-mobile; these were each deferred alone but reviewing them together is far cheaper than five visits.)*
-- **Freeform polygon authoring** — schema + render already ship; only the vertex-dragging editor is
-  missing (Phase 9 call 5).
-- **Shore-band "snap to shoreline"** affordance for the linear-along-shore types (hazard research §4).
-- **Ridge-crossing "switch sides" hinting** — the v2 of the `ridge_crossing` passage marker (§8).
-- **"This never existed" confirmation verdict** — touches `deriveHazardLifecycle`; polymorphic thumbs
-  cover the need crudely today.
-- **Naming confirmers** — v1 shows a count; `listForHazard` already returns the rows for a
-  tap-to-expand list. Deliberate micro-decision (identities attached to "was on this ice"), so decide
-  before building.
+**N5a — Seasons: seasonal visibility, the season filter, departed-user erasure.** 📐 *Design settled
+2026-07-27* — see [`phase-N5a-seasons.md`](./phase-N5a-seasons.md); decisions **D63** + a **D62
+amendment**. *(Re-scoped: this entry used to be "hazard authoring & confirmation polish". It keeps that
+entry's two **lifecycle** items, because they touch the same `deriveHazardLifecycle` a seasonal reset
+does; the three **authoring-UX** items became **N5b**.)*
+
+The founder ask that started it: **reports and paths from previous seasons should not be visible on the
+map at all** — fully hidden, not deleted — with a deliberate way to browse a past season, and recurring
+hazards easy to bring back.
+
+Worth stating because it surprised the register: **nothing in the app expires today.** `reportFreshness`
+(D59) is an *opacity* multiplier, not a visibility gate, and the only age cutoffs anywhere are the
+offline-cache window and the 48-hour `recommended` strip — so a report from the 2024/25 season still
+renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggregate map.
+
+- **A season is July 1 → June 30**, labelled `'24/'25`. **Derived, never stored** — no column, no
+  backfill, no cron, nothing to drift. `skateEndTime` is already the range field of three existing
+  indexes, so seasonal scoping makes those reads **cheaper**.
+- **Hazards reset on the same boundary**, and recurrence is **D53's `bodyFeatures` promotion** rather
+  than new machinery. That makes the pre-first-ice promotion pass a **safety** task, not housekeeping —
+  the sharp edge of this phase, since hiding hazards means the first skater of the season sees a clean
+  map where last winter there was a ridge.
+- **Departed-user erasure at 30 days** (D62 amendment): report + GPS path + hazards + photos go;
+  bounties go immediately at finalize; **put-ins survive** (S1 — access is the corpus's most-discussed
+  concern). Flat 30 days rather than the D59 curve, because the consequence is irreversible and N3/N4
+  already shipped one bug caused by a subtly-wrong predicate on this exact kind of sweep.
+- Folded in from the old entry: **"this never existed" confirmation verdict** and **naming confirmers**.
+
+**Two premises the code check falsified**, both making the phase *more* consequential:
+- **Reports don't draw on the map at all** — there is no report layer. What reaches the map from a
+  report is its put-in marker, its track and (while open) its photo pins. So the map half of this is
+  **tracks + hazards**; reports are season-scoped in the *feed and lake list*. Put-ins are deliberately
+  exempt, and the trap is that `putIns.listForBody` derives them by reading **reports** — scope that
+  read carelessly and put-ins vanish with it.
+- **Hazards never age out.** `deriveHazardLifecycle` archives on community "fully healed" votes only;
+  there is no time-based archival anywhere. An unvisited hazard stays `active` forever, fading to
+  `stale` — behind a "show older" toggle in the list, but on the map at a deliberate opacity **floor**
+  (D3: decay is confidence, not safety). A ridge reported in Feb 2025 is still on the map today. That
+  makes the hazard half the *most* consequential part, and means the recurring-hazard case is currently
+  handled **by accident** — the stale pin never leaves, asserting a position nobody has evidence for.
+
+**N5b — Hazard authoring UX.** 📐 *Scoped 2026-07-27* — see
+[`phase-N5b-hazard-authoring.md`](./phase-N5b-hazard-authoring.md). The three geometry/input items split
+out of the old N5: the **freeform-polygon vertex editor** (Phase 9 call 5 — schema + render already
+ship, only the editor is missing), the shore-band **"snap to shoreline"** affordance (research §4,
+deferred from Phase 9 *and* Phase 10), and **ridge-crossing "switch sides" hinting** (§8). All client
+work, no lifecycle or schema changes. Kept separate from N5a on purpose: N5a's risky half is a
+visibility change to safety content, and that review attention shouldn't be split with a vertex editor.
+Its own open question is whether terra-draw's ~270 kB chunk is acceptable on a phone — it's admin-only
+today.
 
 **N6 — Lake-depth backfill: HydroLAKES + GLOBathy.** *(Sharpens the D56 decay model with real data
 instead of a manual flag. Was sequenced after N1 so the two shared one reindex; **N1 has now shipped
@@ -898,6 +937,23 @@ Grouped by *what* is blocking, because that's what determines when it moves.
   sending domain (until which operator alerts log-and-skip). TestFlight / Play internal-testing
   distribution to the alpha crew rides on the same accounts. *First step is a founder task, not an
   external wait.*
+- **Hazard memory → automated `bodyFeatures` promotion + "potential hazard" surfacing (founder ask,
+  2026-07-27).** **N5a is what makes this possible**, and the connection is worth spelling out: today a
+  hazard is a single mutable row with no season semantics, so *"which hazards existed on this lake in
+  '24/'25?"* has no answer you can query. Once season is a derived, first-class dimension it does — and
+  across several seasons that becomes *"this lake has had a pressure ridge within ~80 m of this point in
+  3 of the last 4 winters, always between late December and February."* Two things fall out: **ranked
+  promotion suggestions**, so the pre-first-ice operator pass stops being a memory test; and
+  **body-level "potential hazard" advisories** shown before anyone reports anything this season — which
+  is exactly the window where the map is emptiest and a skater is least warned.
+  - **Do this when** there are ~**three seasons** of in-app hazard rows on at least a handful of bodies.
+    With one season, recurrence is noise dressed as insight, which is the D3 trap. Same corpus gate as
+    the decay-magnitude refit and GPS-path hazard deduction below.
+  - **Two constraints to keep the option open:** N5a's departed-user erasure does delete a leaver's
+    hazards, so recurrence is computed over what remains — honest, but worth knowing before anyone
+    treats a count as complete. And any recurrence claim must be phrased as **history, never a
+    prediction** (D3): "ridges usually form here" and "there is a ridge here" are different sentences,
+    and only one of them is ours to say.
 - **Volume + calibration (buildable, but building now is speculative).** Per-body map summary cards
   (needs report density *and* its own denormalized-summary design — sketch below); **GPS-path hazard
   deduction** (Q11 / L9 — the *legal* half cleared with the Phase 8 pivot, so what's left is path volume
