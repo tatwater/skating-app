@@ -48,7 +48,7 @@ export const ADMIN_AREA_LADDER: CellLadder = { minZ: 4, maxZ: 13 };
 
 /** A stored cell row, whichever table it lives in. */
 interface StoredCell {
-  _id: Id<'waterBodyCells'> | Id<'adminAreaCells'>;
+  _id: Id<'waterBodyCells'> | Id<'adminAreaCells'> | Id<'waterBodySubAreaCells'>;
   z: number;
   x: number;
   y: number;
@@ -117,6 +117,59 @@ export async function syncWaterBodyCells(
     if (removed.has(row._id)) continue;
     if (row.minVisibleZoom !== body.minVisibleZoom) {
       await ctx.db.patch(row._id, { minVisibleZoom: body.minVisibleZoom });
+    }
+  }
+}
+
+/**
+ * Reconcile a **named sub-area's** cell rows (N2 / D60) — the third caller of this one mechanism,
+ * and structurally the water-body one with a second listing term.
+ *
+ * **`listed` here is a conjunction, and that's the whole point** (Decision 11). A sub-area is
+ * reachable only while it is itself un-delisted *and* its parent body `isListed`. The plan gave
+ * sub-areas their own `removedAt` and their own cell table and never connected the two, which would
+ * have meant a landowner takedown on Lake Champlain dropping the lake's cell rows while "Malletts
+ * Bay" stayed outlined and labelled on a map that no longer had the lake. N1's invariant is that an
+ * unreachable object has *no rows at all*, so the filter costs nothing; inheriting the mechanism
+ * without inheriting the rule would have quietly reintroduced the filter-you-have-to-remember.
+ *
+ * Callers therefore include every mutation that changes a **parent's** listing — `approve`, `remove`,
+ * `restore`, `reject`, `merge`, `importCanonical` — not just the sub-area's own writes. See
+ * `subAreas.syncCellsForParent`, which walks `by_parent` and calls this for each.
+ */
+export async function syncSubAreaCells(
+  ctx: MutationCtx,
+  subAreaId: Id<'waterBodySubAreas'>,
+  subArea: { bbox: BBox; minVisibleZoom: number; listed: boolean },
+): Promise<void> {
+  const desired = subArea.listed
+    ? cellsCovering(
+        subArea.bbox,
+        indexLevelFor(subArea.bbox, WATER_BODY_LADDER, subArea.minVisibleZoom),
+      )
+    : [];
+  // Bounded to ~4 rows by theorem 2, same as the body path.
+  const stored = await ctx.db
+    .query('waterBodySubAreaCells')
+    .withIndex('by_sub_area', (q) => q.eq('subAreaId', subAreaId))
+    .collect();
+
+  const { insert, remove } = diffCells(desired, stored);
+  for (const row of remove) await ctx.db.delete(row._id);
+  for (const cell of insert) {
+    await ctx.db.insert('waterBodySubAreaCells', {
+      subAreaId,
+      ...cell,
+      minVisibleZoom: subArea.minVisibleZoom,
+    });
+  }
+  // Same restamp as the body path: `minVisibleZoom` is part of `by_cell`'s range, so a boost that
+  // didn't move the shape still has to move its rows or the bay draws at the old zoom.
+  const removed = new Set(remove.map((row) => row._id));
+  for (const row of stored) {
+    if (removed.has(row._id)) continue;
+    if (row.minVisibleZoom !== subArea.minVisibleZoom) {
+      await ctx.db.patch(row._id, { minVisibleZoom: subArea.minVisibleZoom });
     }
   }
 }

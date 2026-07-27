@@ -166,6 +166,13 @@ export const MODERATION_ACTIONS = [
   'set_posting_permission', // restrict/restore a canPost* right — finer than ban/suspend (D57, Phase 7)
   'promote_body_feature', // a recurring hazard graduated to a persistent body feature (D53, Phase 9)
   'demote_body_feature', // reversible: flips `active` off, never hard-deletes (D53)
+  // Named sub-areas (N2/D60). Drawing one is a content lever with real reach — it renames what a
+  // skater sees on their own report — so each write is attributed. Delisting and restoring reuse the
+  // generic `remove` / `restore` verbs, disambiguated by the `waterBodySubArea` target type, exactly
+  // as `hide` / `remove` are already shared across content kinds.
+  'create_sub_area',
+  'redraw_sub_area', // geometry changed — schedules a re-stamp of the parent's reports + hazards
+  'rename_sub_area', // name or aliases changed — also a re-stamp, since the name is denormalized
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
@@ -176,6 +183,7 @@ export const MODERATION_TARGET_TYPES = [
   'contentFlag',
   'hazard', // Phase 9 (D51): mods can hide a bad pin; admins promote/demote body features
   'bodyFeature',
+  'waterBodySubArea', // N2 (D60): a named region inside one body
 ] as const;
 
 /** In-app support inbox (D37). */

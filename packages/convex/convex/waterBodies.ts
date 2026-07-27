@@ -44,6 +44,12 @@ import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
 import { isListed } from './lib/listing';
 import { takeCapped } from './lib/scan';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
+import {
+  reclipSubAreasToParent,
+  repointSubAreasOnMerge,
+  scheduleRestamp,
+  syncCellsForParent,
+} from './subAreas';
 
 /**
  * Viewport read budget (N1). These are **product** numbers now, not safety numbers.
@@ -204,6 +210,19 @@ export const importCanonical = internalMutation({
           minVisibleZoom: scores.minVisibleZoom,
           listed: isListed(existing),
         });
+        // A re-import can refine a shoreline under a hand-drawn bay, and Decision 10's "inside its
+        // parent by construction" has to survive the parent changing shape — otherwise it decays into
+        // "was true when it was drawn." Costs one empty `by_parent` read for the ~116k bodies that
+        // have no sub-areas, and only does real work for the handful that do.
+        const resynced = await reclipSubAreasToParent(ctx, existing._id, {
+          ...existing,
+          polygon: item.polygon,
+        });
+        // Only when a bay actually moved: membership changed, so the stamps did. Gating on this keeps
+        // an ETL batch from scheduling one job per body it touched.
+        if (resynced.reclipped > 0 || resynced.delisted > 0) {
+          await scheduleRestamp(ctx, existing._id);
+        }
         updated++;
       } else {
         const now = Date.now();
@@ -463,6 +482,9 @@ export const approve = mutation({
       minVisibleZoom: zoomSortKey(body),
       listed: isListed({ ...body, reviewStatus: 'approved' }),
     });
+    // Sub-areas inherit the parent's listing (Decision 11), so every mutation that moves it has to
+    // move theirs — a bay is only reachable while the lake it names is.
+    await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'approved' });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'approve_waterbody',
@@ -501,6 +523,9 @@ export const remove = mutation({
       minVisibleZoom: zoomSortKey(body),
       listed: isListed({ ...body, removedAt: now }),
     });
+    // The case this exists for: a landowner takedown must take the lake's named bays off the map
+    // with it, or "Malletts Bay" keeps drawing on a map that no longer has Lake Champlain.
+    await syncCellsForParent(ctx, args.waterBodyId, { ...body, removedAt: now });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'remove',
@@ -533,6 +558,8 @@ export const restore = mutation({
       minVisibleZoom: zoomSortKey(body),
       listed: isListed({ ...body, removedAt: undefined }),
     });
+    // Restoring the lake brings back the bays that weren't delisted in their own right.
+    await syncCellsForParent(ctx, args.waterBodyId, { ...body, removedAt: undefined });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'restore',
@@ -570,6 +597,7 @@ export const reject = mutation({
       minVisibleZoom: zoomSortKey(body),
       listed: isListed({ ...body, reviewStatus: 'rejected' }),
     });
+    await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'rejected' });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'reject_waterbody',
@@ -674,6 +702,12 @@ export const merge = mutation({
       }
     }
 
+    // Named sub-areas move too (Decision 11). Leaving them would strand hand-drawn curation on a
+    // tombstone whose `isListed` is permanently false — unreachable from the map and the editor, yet
+    // still named on every report this merge just moved to the survivor. Re-clipped against the
+    // survivor's outline on the way, since near-identical is what made these a duplicate pair.
+    const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor);
+
     const repointed = {
       reports: reports.length,
       hazards: hazards.length,
@@ -682,6 +716,8 @@ export const merge = mutation({
       putIns: putIns.length,
       favorites: favoritesRepointed,
       favoritesDeduped,
+      subAreas: subAreas.repointed,
+      subAreasDelisted: subAreas.delisted,
     };
 
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
@@ -701,6 +737,9 @@ export const merge = mutation({
       metadata: { survivorId, repointed },
       createdAt: Date.now(),
     });
+    // The loser's reports and hazards now belong to the survivor, so their sub-area stamps have to be
+    // recomputed against the survivor's bays — the old stamps were resolved against a different set.
+    await scheduleRestamp(ctx, survivorId);
     return survivorId;
   },
 });

@@ -287,6 +287,74 @@ export default defineSchema({
     .index('by_cell', ['z', 'x', 'y', 'minVisibleZoom'])
     .index('by_body', ['waterBodyId']), // the write-path diff + backfill
 
+  // Named sub-areas (N2 / D60) — a region *inside* one water body, carrying the name skaters
+  // actually use for it. "Malletts Bay" is part of Lake Champlain, not a lake beside it: reports,
+  // hazards and bounties keep belonging to the **parent**, and the sub-area is the finer name they
+  // carry. Minting each bay as its own `waterBodies` row would split one sheet of ice's reports,
+  // hazards, bounties, favorites and aggregate tracks across a dozen rows, and hand the D36 dedup
+  // queue a permanent stream of parent-vs-child overlap pairs it has no verdict for.
+  //
+  // This is the **D4 model** (deferred since Phase 1 for rivers-as-named-reaches), instantiated for
+  // lakes first, where the corpus evidence is overwhelming: every name the community seed failed to
+  // match is a region inside one existing polygon.
+  //
+  // Two invariants, both enforced at the write boundary rather than assumed:
+  //  - **inside its parent by construction** — the drawn shape is clipped to the parent polygon and
+  //    the clipped result is stored (Decision 10 / `@skating/core`'s `clipSubAreaToParent`). This is
+  //    what keeps moderator drawing consistent with the path-only doctrine: no water body is ever
+  //    minted from a drawn shape, and a sub-area's geometry is constrained by an already-trusted one.
+  //  - **visible only while its parent is** (Decision 11) — see `waterBodySubAreaCells`.
+  waterBodySubAreas: defineTable({
+    waterBodyId: v.id('waterBodies'), // parent — required, always an existing body
+    name: v.string(), // "Malletts Bay"
+    // Corpus spelling variants (S2 found Malletts under ten of them) plus names that share no token
+    // with anything — the northeast arm of Champlain is "the Inland Sea" and nothing else.
+    aliases: v.optional(v.array(v.string())),
+    // `[name, ...aliases]` joined — Convex search indexes ONE field, so the aliases have to be in it
+    // for a search to reach them. Denormalized on every name/alias write; never set by a client.
+    searchText: v.string(),
+    polygon: geoJson, // the CLIPPED shape, inside the parent by construction (Decision 10)
+    bbox, // of the clipped polygon — what the cell index covers
+    centroid: latLng, // on-water representative point, same `pointOnFeature` basis as a body (D48)
+    surfaceAreaSqM: v.number(), // geodesic; also the Decision 9 tie-break (smallest containing wins)
+    // Same D49 curve as a body, off the sub-area's own area + boost — so Malletts Bay can label at a
+    // regional zoom while a small cove waits for z13, with no second curve to tune. Required (not
+    // optional like the body's): this table has no legacy rows, so every write computes them.
+    displayScore: v.number(),
+    minVisibleZoom: v.number(),
+    curatedBoost: v.optional(v.number()),
+    createdByUserId: v.id('profiles'), // the moderator who drew it — every write is audited too
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    removedAt: v.optional(v.number()), // soft-delist, reversible — never a hard delete (D48 ethos)
+    removedByUserId: v.optional(v.id('profiles')),
+  })
+    // Every non-map read is scoped to a parent already in hand — the report being created knows its
+    // `waterBodyId`, the search hit carries its parent, the lake editor is one body. Bounded by the
+    // handful of sub-areas one lake has, not by the corpus.
+    .index('by_parent', ['waterBodyId'])
+    .searchIndex('search_subarea', { searchField: 'searchText' }),
+
+  // The sub-area spatial index (N2) — the third table on N1's shared ladder-grid mechanism, same
+  // shape as `waterBodyCells`. It exists because a viewport is not a parent: the map render is the
+  // one sub-area read that can't be scoped to a body already loaded, and fanning `by_parent` out over
+  // the 1,000 bodies `listInViewport` can return is a read whose input is the render budget. "Sub-
+  // areas only exist on a handful of giants" is a fact about today's data, not a bound — which is the
+  // exact reasoning N1 exists to retire.
+  //
+  // **A row exists only while the sub-area is un-delisted AND its parent is listed** (Decision 11).
+  // N1's "unlisted means absent" rule is what makes the listing filter free, and a sub-area that
+  // outlived its parent's takedown would label a bay on a lake the app no longer has.
+  waterBodySubAreaCells: defineTable({
+    subAreaId: v.id('waterBodySubAreas'),
+    z: v.number(),
+    x: v.number(),
+    y: v.number(),
+    minVisibleZoom: v.number(), // denormalized (D49) — the in-query zoom cutoff, as on body cells
+  })
+    .index('by_cell', ['z', 'x', 'y', 'minVisibleZoom'])
+    .index('by_sub_area', ['subAreaId']),
+
   // The admin-boundary spatial index (N1), same shape keyed by boundary `level` instead of zoom.
   // Retires `findContainingTown`'s ±0.2° centroid rectangle, which was explicitly sized on the
   // premise that "our towns run well under 0.4° across" — false for the Adirondack towns the
@@ -354,6 +422,15 @@ export default defineSchema({
         state: v.optional(v.string()),
       }),
     ),
+    // The named sub-area this report's `point` falls in (N2 / D60), stamped at create by the
+    // smallest-containing rule (Decision 9) and re-stamped by `subAreas.restampParent` whenever the
+    // parent's sub-areas are redrawn, renamed or delisted. **Flat, not a nested object**, so the
+    // bounty gate can index `['subAreaId', 'moderationStatus', 'skateEndTime']` without a dotted
+    // path through an optional. `subAreaName` is denormalized for the feed card — a rename is
+    // therefore a re-stamp, not just a patch on one row. Absent ⇒ this body has no sub-areas, or the
+    // point sits outside all of them (open water on a lake with named bays).
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    subAreaName: v.optional(v.string()),
     reportTime: v.number(), // when submitted (may be later, offline sync)
     source: literals(REPORT_SOURCES),
     activityId: v.optional(v.id('gpsActivities')), // set when source == activity
@@ -474,6 +551,11 @@ export default defineSchema({
     // when set and fall back to the live footprint when absent — so it's migration-safe (existing rows
     // keep working, and are lazily recomputable) and the drawn halo can never drift from the measured one.
     clippedFootprint: v.optional(geoJson),
+    // The named sub-area this hazard's footprint centre falls in (N2 / D60) — same stamp, same
+    // re-stamp job, same flat shape as `reports` above, so the hazard reporter line composes through
+    // the one `formatLocationLine` helper the feed card uses.
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    subAreaName: v.optional(v.string()),
     createdByUserId: v.id('profiles'),
     // Mobile offline queue (Phase 9 offline / F2/D30): one client-generated key carried across every
     // flush retry, so a create whose ack was lost returns the same hazard instead of dropping a
