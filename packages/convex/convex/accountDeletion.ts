@@ -283,6 +283,20 @@ async function erasePrivate(ctx: MutationCtx, profile: Doc<'profiles'>): Promise
       .take(PAGE),
   );
 
+  // Export bundles: the row *and* the blob. An assembled export is every report, every track and every
+  // photo of the person in one file — keeping one for an account that asked to be deleted would undo
+  // the rest of this job in a single artifact.
+  const exports = await ctx.db
+    .query('dataExports')
+    .withIndex('by_user', (q) => q.eq('userId', userId))
+    .take(PAGE);
+  for (const row of exports) {
+    if (row.storageId !== undefined) {
+      await ctx.storage.delete(row.storageId as Id<'_storage'>).catch(() => {});
+    }
+  }
+  await drain(exports);
+
   // Support tickets have no by-user index — they're looked up by status and by Clerk subject — so they
   // come off the Clerk-subject index. That's the identifier the tombstone is about to scrub, which is
   // one concrete reason the stage order isn't arbitrary: `erase` runs first, while it still resolves.
