@@ -54,6 +54,9 @@ import { bbox, geoJson } from './lib/validators';
  */
 const RESTAMP_BATCH = 200;
 
+/** See `importSeed.minRetainedFraction` — a box is a coarser input than a traced outline. */
+const SEED_MIN_RETAINED_FRACTION = 0.35;
+
 /** The tables carrying a denormalized sub-area stamp, re-stamped in this order. */
 const RESTAMP_TABLES = ['reports', 'hazards'] as const;
 type RestampTable = (typeof RESTAMP_TABLES)[number];
@@ -878,6 +881,178 @@ export const subAreaReadStats = internalQuery({
     };
   },
 });
+
+/**
+ * Internal seed (run via `pnpm exec convex run`, no auth) — draw a batch of named sub-areas from
+ * explicit `(parentId, name, box)` rows.
+ *
+ * This is how the curation session runs, and how **prod** gets the same curation later without
+ * anyone re-drawing fourteen bays by hand. Mirrors `waterBodies.applyCuratedBoostSeed`'s shape: an
+ * internal mutation invoked from the CLI, doing exactly what the moderator mutation does minus the
+ * role gate, with an explicit `actorUserId` so the `moderationActions` row still names a human.
+ *
+ * **The input is a bounding box, not a traced outline, and that's the point.** Decision 10 clips
+ * every drawn shape to the parent anyway, so a rectangle over a bay *becomes* the bay's water: the
+ * shoreline comes from OSM's own polygon rather than from anyone's tracing. What a seed row asserts
+ * is only "the water inside this box is called X" — which is a claim about naming, the thing the
+ * corpus actually evidences, rather than a claim about geometry it doesn't.
+ *
+ * Rows are independent: a box that fails the retention threshold is reported and skipped, never
+ * aborting the batch, because a fourteen-bay session shouldn't lose thirteen good draws to one bad
+ * rectangle.
+ */
+export const importSeed = internalMutation({
+  args: {
+    /** Whose name goes on the audit rows — the operator running the session. */
+    actorUserId: v.id('profiles'),
+    seed: v.array(
+      v.object({
+        waterBodyId: v.id('waterBodies'),
+        name: v.string(),
+        aliases: v.optional(v.array(v.string())),
+        /** A rectangle over the bay. The clip turns it into the bay's actual water. */
+        box: bbox,
+        curatedBoost: v.optional(v.number()),
+      }),
+    ),
+    /** Report what each row *would* do without writing anything — run this first. */
+    dryRun: v.optional(v.boolean()),
+    /**
+     * The clip-retention bar for this batch, **looser than the interactive default and
+     * deliberately so** (measured in the N2 curation session, 2026-07-26).
+     *
+     * `SUB_AREA_MIN_RETAINED_FRACTION` = 0.6 is calibrated for a *traced* outline, where most of
+     * what you drew should be water. A seed row is a bounding box, which is coarse by construction:
+     * a bay is enclosed by land, so a rectangle around one always swallows some. The measured
+     * spread over the real Champlain bays was 0.92 / 0.82 / 0.75 / 0.71 / 0.70 / 0.69 / 0.66 / 0.61
+     * for boxes on the right water, against 0.16–0.17 for two that were simply in the wrong place —
+     * and the Inland Sea, a genuine archipelago arm, tops out near 0.42 because roughly half of any
+     * rectangle over it is islands.
+     *
+     * So the bar the threshold has to clear is "is this box on the right water", not "is this box a
+     * good shape", and the gap between 0.42 and 0.17 is where it belongs. What gets *stored* is the
+     * clip either way, so a loose box costs nothing in the data — only the check loosens.
+     */
+    minRetainedFraction: v.optional(v.number()),
+  },
+  handler: async (ctx, { actorUserId, seed, dryRun, minRetainedFraction }) => {
+    const bar = minRetainedFraction ?? SEED_MIN_RETAINED_FRACTION;
+    const results: Array<Record<string, unknown>> = [];
+    const restamp = new Set<Id<'waterBodies'>>();
+
+    for (const row of seed) {
+      const parent = await ctx.db.get(row.waterBodyId);
+      if (!parent || !isListed(parent)) {
+        results.push({ name: row.name, ok: false, reason: 'parent_unavailable' });
+        continue;
+      }
+      const drawn = boxPolygon(row.box);
+      const clip = clipSubAreaToParent(
+        drawn,
+        parent.polygon as unknown as Polygon | MultiPolygon,
+        bar,
+      );
+      if (!clip.ok) {
+        results.push({
+          name: row.name,
+          ok: false,
+          reason: clip.reason,
+          retained: Math.round(clip.retainedFraction * 100) / 100,
+        });
+        continue;
+      }
+      const area = surfaceAreaSqM(clip.polygon);
+      const scores = scoreFields({
+        surfaceAreaSqM: area,
+        ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),
+      });
+      const summary = {
+        name: row.name,
+        ok: true,
+        parent: parent.name,
+        areaKm2: Math.round((area / 1e6) * 100) / 100,
+        retained: Math.round(clip.retainedFraction * 100) / 100,
+        drawsFromZoom: scores.minVisibleZoom,
+      };
+      if (dryRun) {
+        results.push({ ...summary, dryRun: true });
+        continue;
+      }
+
+      const existing = (await subAreasForBody(ctx, row.waterBodyId)).find(
+        (s) => s.removedAt === undefined && s.name.toLowerCase() === row.name.trim().toLowerCase(),
+      );
+      if (existing) {
+        results.push({ ...summary, ok: false, reason: 'name_taken' });
+        continue;
+      }
+
+      const aliases = normalizeAliases(row.aliases);
+      const now = Date.now();
+      const subAreaId = await ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: row.waterBodyId,
+        name: row.name.trim(),
+        ...(aliases.length > 0 ? { aliases } : {}),
+        searchText: subAreaSearchText(row.name.trim(), aliases),
+        polygon: clip.polygon,
+        bbox: polygonBBox(clip.polygon),
+        centroid: representativePoint(clip.polygon),
+        surfaceAreaSqM: area,
+        ...scores,
+        ...(row.curatedBoost !== undefined ? { curatedBoost: row.curatedBoost } : {}),
+        createdByUserId: actorUserId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await syncSubAreaCells(ctx, subAreaId, {
+        bbox: polygonBBox(clip.polygon),
+        minVisibleZoom: scores.minVisibleZoom,
+        listed: true,
+      });
+      await ctx.db.insert('moderationActions', {
+        actorId: actorUserId,
+        action: 'create_sub_area',
+        targetType: 'waterBodySubArea',
+        targetId: subAreaId,
+        reason: `Seeded "${row.name.trim()}" on ${parent.name} (N2 curation session)`,
+        metadata: { waterBodyId: row.waterBodyId, retainedFraction: clip.retainedFraction },
+        createdAt: now,
+      });
+      restamp.add(row.waterBodyId);
+      results.push({ ...summary, subAreaId });
+    }
+
+    // One re-stamp per touched parent, after the whole batch — fourteen bays on Champlain should
+    // schedule one sweep, not fourteen.
+    for (const waterBodyId of restamp) await scheduleRestamp(ctx, waterBodyId);
+    return {
+      drawn: results.filter((r) => r.ok === true && r.dryRun !== true).length,
+      refused: results.filter((r) => r.ok === false).length,
+      results,
+    };
+  },
+});
+
+/** A bbox as a closed GeoJSON rectangle — the seed's input shape before the clip. */
+function boxPolygon(box: {
+  minLat: number;
+  minLng: number;
+  maxLat: number;
+  maxLng: number;
+}): Polygon {
+  return {
+    type: 'Polygon',
+    coordinates: [
+      [
+        [box.minLng, box.minLat],
+        [box.maxLng, box.minLat],
+        [box.maxLng, box.maxLat],
+        [box.minLng, box.maxLat],
+        [box.minLng, box.minLat],
+      ],
+    ],
+  };
+}
 
 /**
  * The sub-areas on one body, for the lake editor and the body detail's filter. Delisted rows are

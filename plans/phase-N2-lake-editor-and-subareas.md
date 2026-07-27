@@ -527,6 +527,118 @@ merged.
 
 ---
 
+## The curation session — what it found (dev, 2026-07-26)
+
+Run against the real 116,070-body dev corpus, per Decision 13: boundaries inferred from OSM geometry
+plus the S2 mention data, recorded here so the founder can correct them in the editor. **Every
+boundary below is inference and should be read as one.**
+
+### Three of the plan's premises were wrong, and the corpus said so
+
+1. **The five "known mis-matches" are not live, and have not been for a while.** `listCurated`
+   returns **16** boosted bodies and none of them is South Bay, Button Bay, Half Moon Cove, Foster
+   Pond or Mill Pond. Better than that: those five carry a stored `curatedBoost: 0` rather than an
+   absent field — which is the fingerprint of `setCuratedBoost(0)`, i.e. someone found and stripped
+   them. The Phase-2.5 note the plan inherited is a stale record of a problem already fixed. Step 2
+   of the curation pass therefore had nothing to strip; what it *did* need was the list, which is why
+   `listCurated` still earns its place.
+
+2. **Two of those names are real bodies, not missing bays.** "South Bay" exists as a 5.3 km² NY/VT
+   body at Champlain's southern tip, and "Half Moon Cove" as a 0.05 km² VT body near Burlington. The
+   plan filed both as sub-areas OSM lacks; OSM has them.
+
+3. **Saranac Lake is neither of the two things the plan expected.** It isn't missing geometry and it
+   isn't a sub-area: OSM carries **Upper** (19.5 km²), **Lower** (8.5 km²) and **Middle** (5.7 km²)
+   Saranac Lake as three separate bodies, and the corpus's bare "Saranac Lake" almost certainly means
+   Lower, the one by the village. So it's an **alias problem on a body** — and bodies have no alias
+   field. Only sub-areas do. That's a real gap in the model rather than a curation task, and it goes
+   back to the founder rather than getting improvised (see *Open after this phase*).
+
+### What got drawn — nine bays on Lake Champlain
+
+Each row is a bounding box clipped to the lake's own polygon (see `subAreas.importSeed`), so the
+*shoreline* is OSM's and only the *naming* is inference. `retained` is the fraction of the box that
+was water — the calibration figure the plan asked this session to produce.
+
+| Bay | Aliases seeded | Area (km²) | Draws from | retained |
+|---|---|---|---|---|
+| Broad Lake | The Broad Lake, Main Lake | 151.4 | z7 | 0.71 |
+| Inland Sea | The Inland Sea, Northeast Arm | 30.8 | z8 | 0.42 |
+| Outer Malletts Bay | Outer Bay, Outer Malletts | 27.7 | z8 | 0.82 |
+| Burlington Bay | Burlington Harbor, Burlington Harbour | 12.0 | z8 | 0.75 |
+| Arnold Bay | — | 11.4 | z8 | 0.92 |
+| Shelburne Bay | Shelburne | 9.4 | z8 | 0.61 |
+| Little Eagle Bay | — | 7.4 | z8 | 0.70 |
+| Malletts Bay | Mallets Bay, Mallett's Bay, Malletts, Mallets, Inner Malletts | 6.4 | z9 | 0.69 |
+| Appletree Bay | Apple Tree Bay | 5.1 | z9 | 0.66 |
+
+**Not drawn, and why.** *Dillenbeck Bay* and *Carry Bay* both bottomed out near 0.16–0.17 retained
+wherever I put a box, which means my coordinates are wrong rather than my rectangle being loose —
+the threshold caught exactly what it exists to catch. *Northwest Bay* (Lake George) reached 0.55 on
+the first guess and got worse when I moved it, so it's close but not confidently placed. All three
+are left for someone who knows the water.
+
+### The threshold: 0.6 is right for a trace and wrong for a box
+
+The measured spread is the useful output. Boxes on the right water retained **0.92 / 0.82 / 0.75 /
+0.71 / 0.70 / 0.69 / 0.66 / 0.61**; boxes in the wrong place retained **0.16–0.17**. Between them
+sits the **Inland Sea at 0.42**, which is neither — it's a genuine archipelago arm where roughly half
+of any rectangle is islands, and no box will ever do better.
+
+So the bar the threshold has to clear is *"is this on the right water"*, not *"is this a good shape"*,
+and the gap between 0.42 and 0.17 is where it belongs. The interactive draw path keeps
+`SUB_AREA_MIN_RETAINED_FRACTION = 0.6` — a **traced** outline really should be mostly water — and
+`importSeed` defaults to **0.35**, because a bounding box is coarse by construction and a bay is
+enclosed by land. What gets stored is the clip either way, so the looser bar costs nothing in the
+data.
+
+### Measured reads — both layers, same viewport
+
+`approxDocumentReads`, from `waterBodies:viewportReadStats` and `subAreas:subAreaReadStats`. Neither
+query truncated at any of these.
+
+| Viewport | zoom | bodies | body reads | bays | bay reads |
+|---|---|---|---|---|---|
+| Malletts Bay close-in | 13 | 4 | 157 | 1 | 24 |
+| Burlington waterfront | 12 | 50 | 208 | 4 | 24 |
+| Champlain basin | 10 | 57 | 261 | 8 | 36 |
+
+The bay layer costs **24–36 reads** where the body layer costs 157–261, and the two are separate
+function executions with a 4,096 cap each (*§What the build found* item 2). The 200/250 budgets are
+therefore nowhere near binding, which is the intended outcome: they're a product ceiling on payload,
+kept small deliberately, and now measured rather than asserted.
+
+### Two bugs the live corpus found that no fixture had
+
+Both in the merged search, both invisible to a two-row test:
+
+1. **Bays were being sliced off the page entirely.** The merge took `max` bodies, appended bays, then
+   `slice(0, max)` — so whenever the body index filled the page, every bay was dropped. Live,
+   "Inland Sea" returned Dead Sea, Billington Sea and Seabreeze Lagoon, and not the arm of Lake
+   Champlain that is actually called that. Bays now get reserved slots.
+2. **Then they ranked eighth.** Convex scores each search index independently, so a merged list
+   ordered by table puts every *fuzzy* body match ahead of an *exact* bay match. The merged set is
+   now tiered by match quality first — exact name or alias, then substring, then fuzzy — with bodies
+   still winning inside a tier, so "Champlain" lands on the lake and "Inland Sea" lands on the bay.
+
+Both are pinned by regression tests that seed a full page of fuzzy bodies, since that's the condition
+a small fixture can't reproduce.
+
+### Left undone
+
+- **Sample points are computed but not saved.** The grid for Lake Champlain proposes **9 points** at
+  the default 11 km spacing; Lake Winnipesaukee proposes **1**, which is the correct answer — at
+  180 km² it isn't actually a multi-cell body, so the plan's instinct to pair it with Champlain was
+  wrong. Saving needs a moderator, and **dev has no moderator account** (both profiles are
+  `member`), so this waits for the founder in the editor rather than being unblocked by promoting a
+  user unasked.
+- **Seeding is one bay per call.** Champlain's polygon carries 116 rings and 10,755 vertices, so a
+  clip against it runs comfortably inside a mutation's 1s budget alone and blows it at a dozen. The
+  interactive path clips once, so it's fine; the batch seeder needs small batches, which is now noted
+  on the function.
+
+---
+
 ## Testing (D40)
 
 - **`@skating/core`** — property tests for clip-to-parent and sample-point suggestion (above); unit
@@ -546,6 +658,18 @@ merged.
 
 ---
 
+## Open after this phase
+
+- **Bodies have no aliases, and Saranac Lake needs one.** The corpus asks for "Saranac Lake"; OSM has
+  Upper, Lower and Middle. That's not a missing body and not a sub-area — it's a name for an existing
+  body that the model has nowhere to put. Sub-areas got `aliases` because the bays needed them; the
+  same argument applies one level up, and the fix is probably `waterBodies.aliases` folded into
+  `search_name`'s denormalized field the same way. **Founder call**, since it touches the body model.
+- **Two bays and one Lake George bay are unplaced** (Dillenbeck, Carry, Northwest) — see the session
+  notes. They need local knowledge, not another inference pass.
+- **Weather sample points aren't saved on Champlain** — the grid is computed and recorded, but dev
+  has no moderator account to save it with.
+
 ## To settle during the build
 
 - **Nesting.** "Inland Sea" plausibly contains other named bays. One level or arbitrary depth? Lean:
@@ -556,11 +680,9 @@ merged.
   and the 200/250 opening numbers. Both get picked against the real Champlain draw and *measured*, not
   guessed — that is the one process commitment N1 earned. Log them next to N1's constants in the
   control room.
-- **The clip-refusal threshold** (Decision 10). How much of a drawn shape may fall outside its parent
-  before the write refuses instead of clipping? Too tight and tracing a shoreline is a fight; too loose
-  and a genuinely misplaced draw saves as a sliver. Opening number is *reject when under 60% of the
-  drawn area survives the clip*, picked against the real Champlain traces in the curation session and
-  recorded there.
+- ~~**The clip-refusal threshold**~~ **settled by the curation session**: 0.6 for an interactive
+  trace, 0.35 for a box-seeded row, on the measured spread recorded above (0.61–0.92 for boxes on the
+  right water, 0.16–0.17 for misplaced ones, and the Inland Sea at 0.42 because it's an archipelago).
 - **Does the sub-area report index earn its keep?** It exists to keep the bounty gate's cap meaningful
   at sub-area scale. If sub-area bounties turn out rare, a body-scoped scan plus the saturation block is
   a correct-but-conservative fallback that costs no index.

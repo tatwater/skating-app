@@ -1209,6 +1209,20 @@ export const searchByName = query({
       .query('waterBodies')
       .withSearchIndex('search_name', (s) => s.search('name', term))
       .take(max * 4);
+    // Sub-areas share the box (N2/D60). Searching a bay must reach it: S2 found Malletts under ten
+    // spellings, and the northeast arm of Champlain is "the Inland Sea" — a name sharing no token
+    // with anything the body index holds. Merged rather than a second box, because a skater typing
+    // "malletts" doesn't know or care which table the answer lives in.
+    //
+    // **Bays are collected first and given reserved slots.** The obvious merge — take `max` bodies,
+    // append bays, slice to `max` — silently drops every bay whenever the body index fills the page,
+    // which the live corpus proved immediately: "Inland Sea" returned Dead Sea and Billington Sea
+    // and not the arm of Lake Champlain actually named that. Bays are rare, hand-curated and
+    // specifically asked for, so they get up to half the page and bodies fill the rest.
+    const subAreaHits = await searchSubAreas(ctx, term, max);
+    const bayShare = Math.min(subAreaHits.length, Math.ceil(max / 2));
+    const bodyRoom = Math.max(1, max - bayShare);
+
     const results: SearchHit[] = [];
     for (const body of raw) {
       if (!isListed(body)) continue;
@@ -1222,19 +1236,40 @@ export const searchByName = query({
         bbox: body.bbox,
         states: body.states ?? [],
       });
-      if (results.length >= max) break;
+      if (results.length >= bodyRoom) break;
     }
 
-    // Sub-areas share the box (N2/D60). Searching a bay must reach it: S2 found Malletts under ten
-    // spellings, and the northeast arm of Champlain is "the Inland Sea" — a name sharing no token
-    // with anything the body index holds. Merged rather than a second box, because a skater typing
-    // "malletts" doesn't know or care which table the answer lives in.
-    const subAreaHits = await searchSubAreas(ctx, term, max);
-    // Bays sort after bodies at equal relevance: "Champlain" should land on the lake, not on
-    // Champlain-something-Bay. Within each group the search index's own ranking is preserved.
-    return [...results, ...subAreaHits].slice(0, max);
+    // **Rank across the two indexes, not within each.** Convex scores each search index on its own,
+    // so a merged list ordered by table puts every fuzzy body match ahead of an exact bay match:
+    // live, "Inland Sea" came back as Dead Sea, Billington Sea, Seabreeze Lagoon… with the arm of
+    // Lake Champlain actually called that sitting eighth. An exact name match is an exact name match
+    // whichever table holds it, so tier the merged set first and keep the index order inside a tier.
+    //
+    // Bodies still win at equal relevance — "Champlain" is a substring match on Lake Champlain and
+    // on nothing else, so the lake lands first, which is the behaviour the merge must not break.
+    const merged = [...results, ...subAreaHits.slice(0, bayShare)];
+    return merged
+      .map((hit, index) => ({ hit, index, tier: matchTier(hit, term) }))
+      .sort((a, b) => (a.tier !== b.tier ? a.tier - b.tier : a.index - b.index))
+      .slice(0, max)
+      .map(({ hit }) => hit);
   },
 });
+
+/**
+ * How closely a hit matches what was typed: `0` exact (name or alias), `1` substring, `2` fuzzy.
+ *
+ * The search indexes are typo-tolerant, which is what makes them useful and also what makes an
+ * unranked merge misleading — "Sea" fuzzily matches a dozen ponds, and without a tier those bury the
+ * one row whose name *is* the query.
+ */
+function matchTier(hit: SearchHit, term: string): number {
+  const needle = term.toLowerCase();
+  const names = [hit.name.toLowerCase(), ...(hit.aliases ?? []).map((a) => a.toLowerCase())];
+  if (names.some((name) => name === needle)) return 0;
+  if (names.some((name) => name.includes(needle))) return 1;
+  return 2;
+}
 
 /** One row in the merged search box — a lake, or a named bay that tells you which lake it's in. */
 type SearchHit = {
@@ -1247,6 +1282,8 @@ type SearchHit = {
   name: string;
   /** Set for a sub-area hit only — renders as "Malletts Bay — in Lake Champlain". */
   parentName?: string;
+  /** A bay's spelling variants, so an alias match can rank as the exact match it is. */
+  aliases?: string[];
   type: Doc<'waterBodies'>['type'];
   centroid: Doc<'waterBodies'>['centroid'];
   /** The frame to fly to. **The bay's own**, not the parent's — searching Malletts Bay shouldn't
@@ -1280,6 +1317,7 @@ async function searchSubAreas(ctx: QueryCtx, term: string, max: number): Promise
       waterBodyId: parent._id,
       name: subArea.name,
       parentName: parent.name,
+      ...(subArea.aliases !== undefined ? { aliases: subArea.aliases } : {}),
       type: parent.type,
       centroid: subArea.centroid,
       bbox: subArea.bbox,

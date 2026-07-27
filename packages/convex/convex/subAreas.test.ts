@@ -961,6 +961,59 @@ describe('the merged search box', () => {
     expect(hit?.bbox.minLat).toBeCloseTo(44.6, 6);
   });
 
+  /**
+   * Both halves of this were found live against the 116k corpus, not in a unit test — a two-row
+   * fixture can't produce a full page of fuzzy body matches, which is exactly the condition that
+   * broke it.
+   */
+  test('an exact bay match outranks fuzzy body matches, and survives a full page of them', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Inland Sea',
+      polygon: rect(-73.2, 44.6, -73.0, 44.8),
+    });
+    // Enough same-token bodies to fill the page on their own. The first cut appended bays *after*
+    // slicing to `max`, so live this returned Dead Sea, Billington Sea, Seabreeze Lagoon… and not
+    // the arm of Lake Champlain actually named Inland Sea.
+    for (const name of ['Dead Sea', 'Billington Sea', 'Seaver Reservoir', 'Searles Pond']) {
+      await t.run((ctx) =>
+        ctx.db.insert('waterBodies', {
+          name,
+          type: 'lake' as const,
+          source: 'osm' as const,
+          polygon: rect(-70, 42, -69.99, 42.01),
+          bbox: { minLat: 42, minLng: -70, maxLat: 42.01, maxLng: -69.99 },
+          centroid: { lat: 42.005, lng: -69.995 },
+          surfaceAreaSqM: 10_000,
+          dedupStatus: 'clean' as const,
+          createdAt: Date.now(),
+        }),
+      );
+    }
+
+    const hits = await t.query(api.waterBodies.searchByName, { query: 'Inland Sea', limit: 4 });
+    // An exact name match is an exact name match whichever table holds it.
+    expect(hits[0]?.name).toBe('Inland Sea');
+    expect(hits[0]?.kind).toBe('subArea');
+  });
+
+  test('a body still wins at equal relevance — the merge must not break that', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Champlain Narrows',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    const hits = await t.query(api.waterBodies.searchByName, { query: 'Champlain' });
+    expect(hits[0]?.name).toBe('Lake Champlain');
+    expect(hits[0]?.kind).toBe('body');
+  });
+
   test('a bay on a delisted lake is unreachable from search, as it is from the map', async () => {
     const t = harness();
     const body = await seedBody(t);
