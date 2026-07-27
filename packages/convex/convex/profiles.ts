@@ -67,20 +67,36 @@ export const publicByIds = query({
         displayName: string;
         profileImageUrl?: string;
         trustClass: TrustClass | null;
+        /**
+         * A deletion tombstone (D33/D62). Returned so clients can render the name without offering a
+         * link — the `username` on a tombstone is a synthetic sentinel, and routing to `/u/<sentinel>`
+         * would be a dead end dressed up as a profile.
+         */
+        deleted?: true;
       }
     > = {};
     for (const profileId of [...new Set(profileIds)]) {
       const profile = await ctx.db.get(profileId);
-      if (profile) {
+      if (!profile) continue;
+      if (profile.status === 'deleted') {
+        // No image (scrubbed at finalize) and no trust ring: a trust class is a claim about someone
+        // whose future reports you might weigh, and there aren't going to be any.
         result[profileId] = {
           username: profile.username,
           displayName: profile.displayName,
-          ...(profile.profileImageUrl !== undefined
-            ? { profileImageUrl: profile.profileImageUrl }
-            : {}),
-          trustClass: trustClassFor(profile, now),
+          trustClass: null,
+          deleted: true,
         };
+        continue;
       }
+      result[profileId] = {
+        username: profile.username,
+        displayName: profile.displayName,
+        ...(profile.profileImageUrl !== undefined
+          ? { profileImageUrl: profile.profileImageUrl }
+          : {}),
+        trustClass: trustClassFor(profile, now),
+      };
     }
     return result;
   },

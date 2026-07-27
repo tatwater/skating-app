@@ -69,4 +69,36 @@ crons.interval(
 // so it gets swept rather than left to sit.
 crons.interval('prune oauth states', { hours: 6 }, internal.strava.pruneOAuthStates, {});
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Account lifecycle + storage hygiene (N3 / D33 / D62)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Finalize accounts whose 30-day grace window has run out. Hourly, not by-the-minute: the window is a
+// month, so an hour of slack is invisible to the user and keeps the sweep cheap. It reads a sparse
+// index bounded by "actually due", then hands each account to its own self-continuing job.
+crons.interval(
+  'finalize account deletions',
+  { hours: 1 },
+  internal.accountDeletion.finalizeDueDeletions,
+  {},
+);
+
+// `weatherCache` retention. Rows are addressable only during their own hour bucket (the cache key
+// contains it), so yesterday's rows are unreachable rather than merely stale — this is reclaiming
+// dead weight, and N2's per-sample-point weather grid multiplied how fast it accrues.
+crons.interval('prune weather cache', { hours: 6 }, internal.storageHygiene.pruneWeatherCache, {});
+
+// Photo-orphan GC — the durable backstop behind the client's best-effort reclaim. Daily, because an
+// orphan costs only storage and the grace window before a photo is even a candidate is 30 days.
+crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.sweepOrphanPhotos, {});
+
+// Expired data-export bundles. Hourly, unlike the other two, because an export is the densest
+// concentration of one person's data in the system and its whole point is being short-lived.
+crons.interval(
+  'sweep expired exports',
+  { hours: 1 },
+  internal.storageHygiene.sweepExpiredExports,
+  {},
+);
+
 export default crons;

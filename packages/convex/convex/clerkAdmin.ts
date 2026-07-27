@@ -107,3 +107,73 @@ export const setBanned = internalAction({
     });
   },
 });
+
+/**
+ * Delete a Clerk user — the last step of account deletion (D33/D62), fired once the Convex tombstone
+ * is written.
+ *
+ * Same posture as `setBanned` above and for the same reason: the Convex row is the security boundary,
+ * `requireProfile` already rejects `status: 'deleted'`, and rolling back a deletion the user explicitly
+ * asked for because a third-party API blipped would be far worse than a lagging Clerk mirror. So it
+ * retries, then pages a human, and never throws.
+ *
+ * **A 404 is success, not failure.** Clerk returns it when the user is already gone — which happens on
+ * a retry that actually landed, and when someone deletes themselves from Clerk's own UI first. Treating
+ * it as terminal would page the operator every time the job worked.
+ */
+export const deleteUser = internalAction({
+  args: {
+    clerkUserId: v.string(),
+    /** Retry counter — 0 (absent) on the first, scheduler-driven attempt. */
+    attempt: v.optional(v.number()),
+  },
+  handler: async (ctx, { clerkUserId, attempt = 0 }) => {
+    const key = process.env.CLERK_SECRET_KEY;
+    if (!key) {
+      console.warn(
+        `CLERK_SECRET_KEY not set — skipping Clerk delete for ${clerkUserId} (the Convex tombstone is written and every function rejects them)`,
+      );
+      return;
+    }
+
+    let failure: string;
+    let retryable: boolean;
+    try {
+      const res = await fetch(`${CLERK_API_BASE}/users/${clerkUserId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${key}` },
+      });
+      if (res.ok || res.status === 404) return;
+      failure = `${res.status} ${res.statusText}`;
+      retryable = isRetryableStatus(res.status);
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+      retryable = true;
+    }
+
+    const delayMs = RETRY_DELAYS_MS[attempt];
+    if (retryable && delayMs !== undefined) {
+      console.warn(
+        `Clerk delete for ${clerkUserId} failed (${failure}); retry ${attempt + 1}/${RETRY_DELAYS_MS.length}`,
+      );
+      await ctx.scheduler.runAfter(delayMs, internal.clerkAdmin.deleteUser, {
+        clerkUserId,
+        attempt: attempt + 1,
+      });
+      return;
+    }
+
+    console.error(
+      `Clerk delete for ${clerkUserId} gave up after ${attempt + 1} attempt(s): ${failure}`,
+    );
+    await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
+      subject: 'Clerk delete failed — manual fix needed',
+      heading: `Clerk delete failed for ${clerkUserId}`,
+      lines: [
+        `Last error: ${failure} (after ${attempt + 1} attempt(s)).`,
+        'The Convex profile is already a tombstone — their content is anonymized and every function rejects them, so this is not a data-exposure gap. What remains is a Clerk auth user that should not exist: delete it in the Clerk dashboard to complete the request.',
+      ],
+      deepLinkPath: '/admin/users',
+    });
+  },
+});

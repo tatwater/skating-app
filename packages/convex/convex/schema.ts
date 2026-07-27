@@ -436,7 +436,12 @@ export default defineSchema({
     windowEndBucketMs: v.number(), // `now` bucketed to the hour — the append-friendly end
     summary: weatherSinceSummary, // the computed reducer output (both consumers read this)
     fetchedAt: v.number(),
-  }).index('by_key', ['samplePointKey', 'windowStartMs', 'windowEndBucketMs']),
+  })
+    .index('by_key', ['samplePointKey', 'windowStartMs', 'windowEndBucketMs'])
+    // Retention sweep (N3). `by_key` is an exact-triple lookup and can't be range-scanned by age, so
+    // the pruner reads this instead. Ordering on the *window end* rather than `fetchedAt` is the
+    // point: the end bucket is what makes a row reachable at all (see `pruneWeatherCache`).
+    .index('by_window_end', ['windowEndBucketMs']),
 
   reports: defineTable({
     authorId: v.id('profiles'),
