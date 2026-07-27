@@ -8,6 +8,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { retainOrphanedBundle } from './lib/exportBundles';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -344,11 +345,141 @@ describe('bundle reclamation (PR #29 review)', () => {
 
     await t.mutation(internal.dataExport.finishExport, {
       exportId,
+      userId: user.id,
       storageId: orphan,
       sizeBytes: 7,
     });
 
     expect(await t.run((ctx) => ctx.storage.getUrl(orphan))).toBeNull();
+    // Reclaimed, so nothing to remember it by — the re-created pointer below is for the case where
+    // the reclaim *fails*, and manufacturing one here would be a pointer to a file that isn't there.
+    expect(await t.run((ctx) => ctx.db.query('dataExports').collect())).toHaveLength(0);
+  });
+
+  /**
+   * The same race where the blob was *already* reclaimed by the deletion that removed the row — which
+   * is the common case, since account finalization deletes the blob and the row together. `storage
+   * .delete` throws on a missing file, so the pre-check is the only thing keeping that throw from
+   * being read as "reclaim failed" and re-inserting a pointer to nothing.
+   */
+  test('a mid-build orphan whose blob is already gone leaves no phantom pointer', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const gone = (await t.run((ctx) => ctx.db.get(exportId)))?.storageId as Id<'_storage'>;
+    await t.run(async (ctx) => {
+      await ctx.storage.delete(gone);
+      await ctx.db.delete(exportId);
+    });
+
+    await t.mutation(internal.dataExport.finishExport, {
+      exportId,
+      userId: user.id,
+      storageId: gone,
+    });
+
+    expect(await t.run((ctx) => ctx.db.query('dataExports').collect())).toHaveLength(0);
+  });
+
+  /**
+   * The branch the coverage note above says convex-test can't force — a `storage.delete` that fails on
+   * a blob that *is* there — reached from its other end. What that branch does is call
+   * `retainOrphanedBundle`, so the thing worth pinning is that its output is a working retry: an
+   * already-expired row the hourly sweep finds, reclaims and drops on its own, with no operator email
+   * in the loop (unconfigured until the prod cutover, which is why a log line wasn't a record).
+   */
+  test('a bundle whose pointer was re-created is reclaimed by the ordinary sweep', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const stranded = await t.run((ctx) =>
+      ctx.storage.store(new Blob(['{"whole":"account"}'], { type: 'application/json' })),
+    );
+
+    await t.run((ctx) =>
+      retainOrphanedBundle(ctx, { userId: user.id, storageId: stranded, error: 'storage said no' }),
+    );
+
+    const [pointer] = await t.run((ctx) => ctx.db.query('dataExports').collect());
+    expect(pointer?.storageId).toBe(stranded);
+    expect(pointer?.status).toBe('failed');
+    expect(pointer?.expiresAt).toBeLessThanOrEqual(Date.now());
+    // Inert as an export: no download is offered for a bundle nobody was promised.
+    expect((await user.as.query(api.dataExport.myExports, {}))[0]?.url).toBeNull();
+
+    vi.setSystemTime(Date.now() + 60 * 60 * 1000); // the next hourly tick
+    expect(await t.mutation(internal.storageHygiene.sweepExpiredExports, {})).toEqual({
+      deleted: 1,
+      retained: 0,
+    });
+    expect(await t.run((ctx) => ctx.storage.getUrl(stranded))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.query('dataExports').collect())).toHaveLength(0);
+  });
+
+  /**
+   * A build that stored its blob and then broke. The `storageId` exists only in the action's own
+   * variable at that moment; if the failure path doesn't hand it over, the row goes `failed` with no
+   * pointer and the bundle sits in storage unreachable.
+   */
+  test('a failure after the blob lands records it and expires it immediately', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    const stored = await t.run((ctx) =>
+      ctx.storage.store(new Blob(['{"a":1}'], { type: 'application/json' })),
+    );
+
+    await t.mutation(internal.dataExport.finishExport, {
+      exportId,
+      userId: user.id,
+      storageId: stored,
+      error: 'mutation failed after the store',
+    });
+
+    const row = await t.run((ctx) => ctx.db.get(exportId));
+    expect(row?.status).toBe('failed');
+    expect(row?.storageId).toBe(stored);
+    expect(row?.expiresAt).toBeLessThanOrEqual(Date.now()); // no reason to hold the bytes for 7 days
+    expect((await user.as.query(api.dataExport.myExports, {}))[0]?.url).toBeNull();
+
+    vi.setSystemTime(Date.now() + 60 * 60 * 1000);
+    await t.mutation(internal.storageHygiene.sweepExpiredExports, {});
+    expect(await t.run((ctx) => ctx.storage.getUrl(stored))).toBeNull();
+  });
+
+  /**
+   * The email race, from the row's side: a late failure — a mail step that threw, an account deleted
+   * mid-send — must not walk a landed bundle back to `failed`. It used to, and the walk-back was the
+   * call that dropped the `storageId`.
+   */
+  test('a late failure cannot unready a bundle that already landed', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const ready = await t.run((ctx) => ctx.db.get(exportId));
+
+    await t.mutation(internal.dataExport.finishExport, {
+      exportId,
+      userId: user.id,
+      error: 'the email blew up',
+    });
+
+    const row = await t.run((ctx) => ctx.db.get(exportId));
+    expect(row?.status).toBe('ready');
+    expect(row?.storageId).toBe(ready?.storageId);
+    expect(row?.error).toBeUndefined();
+  });
+
+  /** Deleted between "ready" and the email bookkeeping — nothing to record, and not an error. */
+  test('markEmailed on a vanished row is a no-op', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await t.run((ctx) => ctx.db.delete(exportId));
+
+    await expect(t.mutation(internal.dataExport.markEmailed, { exportId })).resolves.toBeNull();
   });
 
   test('account deletion leaves no export blob behind', async () => {

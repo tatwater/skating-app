@@ -33,6 +33,7 @@ import {
   query,
 } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
+import { deleteBundleBlob, retainOrphanedBundle } from './lib/exportBundles';
 import { escapeHtml, sendEmail } from './lib/resend';
 
 /** How long a built bundle stays downloadable. */
@@ -91,6 +92,10 @@ export const requestExport = mutation({
  * and a stuck reclaim keeps its row on purpose (`lib/exportBundles`), so without this the UI would go
  * on offering a download for a bundle that is past its stated lifetime. It doesn't revoke a link
  * someone already has — only deleting the blob does that — but it stops us handing out new ones.
+ *
+ * Same reasoning for the `ready` check: a `failed` row can now carry a `storageId` — that's how a build
+ * that stored its blob and then broke keeps the blob findable — and the bytes behind it are a bundle
+ * nobody promised, waiting on the sweep. It's a pointer for cleanup, not an offer.
  */
 export const myExports = query({
   args: {},
@@ -119,7 +124,7 @@ export const myExports = query({
           error: row.error,
           expired: row.expiresAt <= now,
           url:
-            row.storageId !== undefined && row.expiresAt > now
+            row.status === 'ready' && row.storageId !== undefined && row.expiresAt > now
               ? await ctx.storage.getUrl(row.storageId as Id<'_storage'>)
               : null,
         })),
@@ -227,59 +232,87 @@ export const collect = internalQuery({
 /**
  * Mark a bundle ready (or failed) — the only writer of the terminal states.
  *
- * **The missing-row branch is a cleanup path, not a no-op** (PR #29 review). `buildExport` stores the
- * blob *before* calling this, so if the account was deleted in between — finalization erases every
- * `dataExports` row — the bundle is already sitting in storage with nothing pointing at it. Returning
- * early would strand a complete copy of a just-deleted person's data, permanently and invisibly. This
- * is the last moment anything holds its `storageId`, so it gets spent reclaiming it.
+ * Everything unusual about this mutation follows from one invariant, which the PR #29 review pushed on
+ * twice: **a stored bundle always has a row pointing at it, unless the blob is provably gone.** The row
+ * is the only handle we have, and a Convex storage URL can't be revoked except by deleting the file.
+ *
+ * - **The missing-row branch is a cleanup path, not a no-op.** `buildExport` stores the blob *before*
+ *   calling this, so if the account was deleted in between — finalization erases every `dataExports`
+ *   row — the bundle is already in storage with nothing pointing at it. If reclaiming it fails, the
+ *   pointer is *re-created* rather than logged at (`lib/exportBundles`), because a log line is not a
+ *   record and the operator email that used to stand in for one is unconfigured until the prod cutover.
+ * - **A failure carrying a `storageId` records it.** The caller only knows the id while its action is
+ *   still running; dropping it on the way to `status: 'failed'` would strand the blob for the full TTL
+ *   with nothing able to name it. Recording it also pulls `expiresAt` to now, since a failed export is
+ *   never downloadable and there's nothing to keep the bytes for.
+ * - **A `ready` row is never un-readied.** `markEmailed` claims this separation and the ordering in
+ *   `buildExport` now enforces it; this is the belt to that suspenders, so no future caller can undo it.
  */
 export const finishExport = internalMutation({
   args: {
     exportId: v.id('dataExports'),
+    /**
+     * The owner — needed only when the row is gone, which is exactly when it can't be read off the row.
+     * See `retainOrphanedBundle`.
+     */
+    userId: v.id('profiles'),
     storageId: v.optional(v.string()),
     sizeBytes: v.optional(v.number()),
     photoCount: v.optional(v.number()),
     omittedPhotoCount: v.optional(v.number()),
     error: v.optional(v.string()),
   },
-  handler: async (ctx, { exportId, error, ...rest }) => {
+  handler: async (ctx, { exportId, userId, error, ...rest }) => {
     const row = await ctx.db.get(exportId);
     if (!row) {
       if (rest.storageId === undefined) return; // nothing was stored — nothing to reclaim
       const storageId = rest.storageId as Id<'_storage'>;
-      try {
-        await ctx.storage.delete(storageId);
+      const failure = await deleteBundleBlob(ctx, storageId);
+      if (failure === null) {
         console.warn(
           `dataExport: ${exportId} was deleted mid-build; reclaimed its orphaned bundle ${storageId}`,
         );
-      } catch (err) {
-        // No row to keep and no second chance, so hand the id to a human rather than lose it.
-        console.error(`dataExport: could not reclaim orphaned bundle ${storageId}: ${String(err)}`);
-        await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
-          subject: 'Orphaned data-export bundle',
-          heading: `Orphaned export bundle ${storageId}`,
-          lines: [
-            `Storage id: ${storageId}.`,
-            'An export finished building after its account was deleted, and the bundle could not be reclaimed. Nothing in the database points at it any more, so this alert is the only record.',
-            'Delete the file from the Convex dashboard.',
-          ],
-          deepLinkPath: '/admin',
-        });
+        return;
       }
+      console.error(`dataExport: could not reclaim orphaned bundle ${storageId}: ${failure}`);
+      await retainOrphanedBundle(ctx, {
+        userId,
+        storageId,
+        error: `orphaned mid-build; blob could not be reclaimed (${failure})`,
+      });
       return;
     }
     if (error !== undefined) {
-      await ctx.db.patch(exportId, { status: 'failed', error });
+      if (row.status === 'ready') {
+        // A bundle that already landed stays landed — see the header. Nothing to reclaim either: the
+        // row holds the same `storageId`, so the sweep can still find the blob.
+        console.warn(
+          `dataExport: ignoring a late failure on the ready bundle ${exportId}: ${error}`,
+        );
+        return;
+      }
+      await ctx.db.patch(exportId, {
+        status: 'failed',
+        error,
+        ...rest,
+        ...(rest.storageId !== undefined ? { expiresAt: Date.now() } : {}),
+      });
       return;
     }
     await ctx.db.patch(exportId, { status: 'ready', readyAt: Date.now(), ...rest });
   },
 });
 
-/** Record that the email went out. Separate from `finishExport` so a mail failure can't unready a bundle. */
+/**
+ * Record that the email went out. Separate from `finishExport` so a mail failure can't unready a bundle.
+ *
+ * A vanished row is a no-op rather than a throw: the account can be deleted between "ready" and this
+ * write, and bookkeeping for a bundle that no longer exists is not a build failure (PR #29 review).
+ */
 export const markEmailed = internalMutation({
   args: { exportId: v.id('dataExports') },
   handler: async (ctx, { exportId }) => {
+    if ((await ctx.db.get(exportId)) === null) return;
     await ctx.db.patch(exportId, { emailedAt: Date.now() });
   },
 });
@@ -291,6 +324,12 @@ export const markEmailed = internalMutation({
  * A failure is recorded on the row rather than thrown into the void — a user who clicked "export my
  * data" and sees nothing can't tell "still working" from "broken", and `status: 'failed'` with a reason
  * is the difference.
+ *
+ * **The email is outside the try on purpose** (PR #29 review). It used to be inside, which meant a mail
+ * failure ran the *build* failure path — and if the account had been deleted in the meantime, that path
+ * called `finishExport` without the `storageId` the action was still holding, so its missing-row
+ * cleanup had nothing to reclaim and the finished bundle stayed in storage unreferenced. The bundle is
+ * already `ready` and listed in settings by then; an unsent email is not a failed export.
  */
 export const buildExport = internalAction({
   args: { exportId: v.id('dataExports') },
@@ -300,6 +339,9 @@ export const buildExport = internalAction({
     })) as Doc<'dataExports'> | null;
     if (!row) return;
 
+    // Held outside the try so the failure path can hand it on: once the blob exists, this variable is
+    // the only thing that knows about it until a row records it.
+    let storageId: Id<'_storage'> | undefined;
     try {
       const data = await ctx.runQuery(internal.dataExport.collect, { userId: row.userId });
 
@@ -338,22 +380,37 @@ export const buildExport = internalAction({
       };
 
       const json = JSON.stringify(bundle, null, 2);
-      const storageId = await ctx.storage.store(
-        new Blob([json], { type: 'application/json' }) as Blob,
-      );
+      storageId = await ctx.storage.store(new Blob([json], { type: 'application/json' }) as Blob);
 
       await ctx.runMutation(internal.dataExport.finishExport, {
         exportId,
+        userId: row.userId,
         storageId,
         sizeBytes: json.length,
         photoCount: files.length,
         omittedPhotoCount: omitted,
       });
-      await emailBundle(ctx, exportId, row.userId);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error(`dataExport: build failed for ${exportId}: ${message}`);
-      await ctx.runMutation(internal.dataExport.finishExport, { exportId, error: message });
+      await ctx.runMutation(internal.dataExport.finishExport, {
+        exportId,
+        userId: row.userId,
+        error: message,
+        ...(storageId !== undefined ? { storageId } : {}),
+      });
+      return;
+    }
+
+    // Best-effort, and deliberately unable to affect the row's state — see the header.
+    try {
+      await emailBundle(ctx, exportId, row.userId);
+    } catch (err) {
+      console.error(
+        `dataExport: ${exportId} is ready but its email failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
     }
   },
 });
@@ -364,12 +421,12 @@ export const readExport = internalQuery({
   handler: (ctx, { exportId }) => ctx.db.get(exportId),
 });
 
-/** Resolve a ready bundle's download URL from an action. */
+/** Resolve a ready bundle's download URL from an action. Same `ready` gate as `myExports`. */
 export const exportUrl = internalQuery({
   args: { exportId: v.id('dataExports') },
   handler: async (ctx, { exportId }) => {
     const row = await ctx.db.get(exportId);
-    if (!row?.storageId) return null;
+    if (row?.status !== 'ready' || row.storageId === undefined) return null;
     return ctx.storage.getUrl(row.storageId as Id<'_storage'>);
   },
 });

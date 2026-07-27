@@ -251,6 +251,38 @@ others not. Extracted to `lib/authorView`, with a test asserting all three surfa
 `BountyDetail`s also carried a guard reading "a missing/deleted requester has no username", which the
 tombstone falsified: it has a *synthetic* handle that passes an emptiness check and routes nowhere.
 
+### The review's real finding: one invariant, four places that broke it
+
+Greptile's P1s on PR #29 all turned out to be the same rule stated four ways — **a stored bundle always
+has a row pointing at it, unless the blob is provably gone.** The row is the only handle, because a
+Convex storage URL can't be revoked except by deleting the file, and the blob is a complete copy of one
+account. The four breaches, in the order they were found:
+
+1. **The sweep and account deletion** both did `storage.delete(...).catch(() => {})` then `db.delete(row)`
+   unconditionally — a pattern copied from `photos.remove`, where it's right and here inverted. Both now
+   keep the row when the blob is still there (`lib/exportBundles`), and deletion pulls `expiresAt` to now
+   so the hourly sweep retries.
+2. **A build finishing after its account was deleted** left the bundle with no row at all. `finishExport`'s
+   missing-row branch became a cleanup path.
+3. **A failed reclaim in *that* branch** had nowhere to keep the `storageId` — its whole durable record was
+   a log line plus one fire-and-forget operator email, and that email is a **no-op until the prod cutover**
+   (`OPERATOR_ALERT_EMAIL` and the Resend keys ship unset by design). So the fix puts the pointer *back*:
+   `retainOrphanedBundle` re-inserts an already-expired `dataExports` row, which is exactly what
+   `sweepExpiredExports` looks for. No new machinery, and the bundle re-enters the normal retry-and-escalate
+   loop instead of depending on an unconfigured mailbox.
+4. **The email step ran inside the build's `try`**, so a mail failure took the *build* failure path — which
+   called `finishExport` without the `storageId` the action was still holding. `markEmailed`'s own comment
+   claimed a mail failure couldn't unready a bundle; the enclosing `catch` had quietly taken that back.
+   Emailing now sits outside the try, `finishExport` refuses to unready a landed bundle, and a failure that
+   *did* store a blob records the id and expires it immediately — a failed export is never downloadable, so
+   there is nothing to hold the bytes for.
+
+Two consequences worth naming. A `failed` row can now carry a `storageId`, so `myExports` and `exportUrl`
+gate downloads on `status === 'ready'` — that row is a pointer for cleanup, not an offer. And the branch
+where `storage.delete` fails on a blob that *is* present still can't be forced in convex-test; it's now
+covered from the other end instead, by pinning that `retainOrphanedBundle`'s output is a working retry the
+sweep finds, reclaims and drops on its own.
+
 ## Verification
 
 - **Full suite green:** core 862 · convex 683 · web 197 · mobile 79 · design 61 · etl 22 · admin-areas 14.
