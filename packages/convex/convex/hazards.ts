@@ -40,6 +40,7 @@ import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { geoJson, literals } from './lib/validators';
+import { resolveSubAreaForPoint } from './subAreas';
 
 /**
  * The hazard body of an authoring call, minus the water body.
@@ -159,6 +160,14 @@ export async function insertHazard(
   const clippedFootprint = clipFootprintToBody(footprint, body.polygon as Polygon | MultiPolygon);
 
   const lifecycle = initialLifecycleState(now);
+  const bbox = hazardBbox(shape, clippedFootprint);
+  // The named sub-area the footprint sits in (N2/D60), measured at the footprint's bbox centre — the
+  // same representative point `hazardCenter` gives the weather sampler, so "which bay is this hazard
+  // in" and "which weather cell is it in" can't disagree about where the hazard is.
+  const subArea = await resolveSubAreaForPoint(ctx, body._id, {
+    lat: (bbox.minLat + bbox.maxLat) / 2,
+    lng: (bbox.minLng + bbox.maxLng) / 2,
+  });
   return ctx.db.insert('hazards', {
     waterBodyId: body._id, // the resolved survivor, not the (possibly merged) requested id
     type: args.type,
@@ -166,8 +175,9 @@ export async function insertHazard(
     geometry: shape.geometry as Doc<'hazards'>['geometry'],
     ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
     ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
-    bbox: hazardBbox(shape, clippedFootprint),
+    bbox,
     ...(clippedFootprint ? { clippedFootprint } : {}),
+    ...(subArea !== null ? subArea : {}),
     createdByUserId: authorId,
     ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
     ...(originReportId !== undefined ? { originReportId } : {}),

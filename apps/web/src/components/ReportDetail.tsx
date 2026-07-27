@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import type { TrustClass } from '@skating/core';
 import {
   formatConditions,
+  formatLocationLine,
   formatSkateTime,
   formatSkateWindow,
   formatSnowCoverInches,
@@ -33,6 +34,8 @@ import { WeatherStrip } from './WeatherStrip';
 export interface ReportViewData {
   waterBodyId: string;
   bodyName?: string;
+  /** The named sub-area the report sits in (N2/D60) — composed ahead of the lake, never beside it. */
+  subAreaName?: string;
   authorName?: string;
   authorImageUrl?: string;
   /** The author's cosmetic trust class (D50) — the `TrustAvatar` ring color; `null`/absent ⇒ no ring. */
@@ -78,7 +81,14 @@ export function ReportView({
   return (
     <>
       <SheetHeader>
-        <SheetTitle>{data.bodyName ?? 'Report'}</SheetTitle>
+        <SheetTitle>
+          {data.bodyName
+            ? formatLocationLine({
+                ...(data.subAreaName !== undefined ? { subAreaName: data.subAreaName } : {}),
+                bodyName: data.bodyName,
+              })
+            : 'Report'}
+        </SheetTitle>
         <SheetDescription>
           Off the ice {formatSkateTime(data.skateEndTime)}
           {duration ? ` · skated ${duration}` : null}
@@ -309,6 +319,7 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         data={{
           waterBodyId: report.waterBodyId,
           bodyName: body?.available ? body.body.name : undefined,
+          subAreaName: report.subAreaName,
           authorName: authors?.[report.authorId]?.displayName,
           authorImageUrl: authors?.[report.authorId]?.profileImageUrl,
           authorTrustClass: authors?.[report.authorId]?.trustClass,

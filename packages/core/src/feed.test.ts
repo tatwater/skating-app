@@ -8,6 +8,7 @@ import {
   formatPlaceLabel,
   formatRelativeTime,
   groupFeedSections,
+  splitLocationLine,
 } from './feed';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -116,6 +117,25 @@ describe('formatLocationLine', () => {
   });
 });
 
+describe('splitLocationLine', () => {
+  it('shares its segments with formatLocationLine — same order, same omissions', () => {
+    const parts = {
+      subAreaName: 'Malletts Bay',
+      bodyName: 'Lake Champlain',
+      place: { town: 'Colchester', state: 'VT' },
+    };
+    const { primary, secondary } = splitLocationLine(parts);
+    expect([primary, secondary].filter(Boolean).join(' · ')).toBe(formatLocationLine(parts));
+  });
+
+  it('leaves the secondary row null when there is nothing coarser to say', () => {
+    expect(splitLocationLine({ bodyName: 'Lake Morey' })).toEqual({
+      primary: 'Lake Morey',
+      secondary: null,
+    });
+  });
+});
+
 describe('formatRelativeTime', () => {
   const now = Date.UTC(2026, 0, 5, 12, 0);
 
@@ -177,11 +197,16 @@ describe('buildFeedCardView', () => {
     expect(buildFeedCardView({ ...CARD, isFavorite: true }, now).isFavorite).toBe(true);
   });
 
-  it('composes the location line, with and without a sub-area (N2)', () => {
-    expect(buildFeedCardView(CARD, now).locationLine).toBe('Lake Champlain · Burlington, VT');
-    expect(buildFeedCardView({ ...CARD, subAreaName: 'Malletts Bay' }, now).locationLine).toBe(
-      'Malletts Bay · Lake Champlain · Burlington, VT',
-    );
+  it('splits the location into card rows, with and without a sub-area (N2)', () => {
+    const plain = buildFeedCardView(CARD, now);
+    expect(plain.locationPrimary).toBe('Lake Champlain');
+    expect(plain.locationSecondary).toBe('Burlington, VT');
+
+    // On a lake with named bays the bay becomes the heading — it's the name skaters use — and the
+    // lake drops into the sub-line beside the town.
+    const bay = buildFeedCardView({ ...CARD, subAreaName: 'Malletts Bay' }, now);
+    expect(bay.locationPrimary).toBe('Malletts Bay');
+    expect(bay.locationSecondary).toBe('Lake Champlain · Burlington, VT');
   });
 
   it('handles an end-only report with no place, quality, or photos', () => {

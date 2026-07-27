@@ -39,10 +39,12 @@ export function FeedCard({
                 ★
               </span>
             ) : null}
-            <span className="truncate">{card.bodyName}</span>
+            {/* The finest name the report carries — a bay when the lake has one (N2/D60). Composed
+                in `@skating/core`, never assembled here, so web and mobile can't drift. */}
+            <span className="truncate">{card.locationPrimary}</span>
           </h3>
-          {card.placeLabel ? (
-            <p className="truncate text-foreground-muted text-sm">{card.placeLabel}</p>
+          {card.locationSecondary ? (
+            <p className="truncate text-foreground-muted text-sm">{card.locationSecondary}</p>
           ) : null}
         </div>
         <span className="shrink-0 text-foreground-muted text-xs">{card.relativeTime}</span>

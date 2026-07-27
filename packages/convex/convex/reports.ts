@@ -71,6 +71,7 @@ import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
 import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
+import { resolveSubAreaForPoint } from './subAreas';
 import { loadFavoriteBodyIds } from './waterBodyFavorites';
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
@@ -230,6 +231,10 @@ export const create = mutation({
     // directly with no per-read geocode. Absent when the point is outside the imported region.
     const point = n.point ?? body.centroid;
     const place = await resolvePlaceForCoord(ctx, point);
+    // And the named sub-area, if this lake has any (N2/D60) — the same maintain-on-write shape as
+    // `place`, resolved by Decision 9's smallest-containing rule. Costs one `by_parent` read on a
+    // body already in hand, and returns immediately for the ~116k bodies with no sub-areas.
+    const subArea = await resolveSubAreaForPoint(ctx, body._id, point);
 
     const reportId = await ctx.db.insert('reports', {
       authorId: profile._id,
@@ -238,6 +243,7 @@ export const create = mutation({
       skateEndTime: n.skateEndTime,
       ...(n.skateStartTime !== undefined ? { skateStartTime: n.skateStartTime } : {}),
       ...(place !== undefined ? { place } : {}),
+      ...(subArea !== null ? subArea : {}),
       reportTime: now,
       source: args.activityId !== undefined ? 'activity' : 'native',
       ...(args.activityId !== undefined ? { activityId: args.activityId } : {}),
@@ -543,6 +549,9 @@ async function toFeedCard(
     reportId: r._id,
     waterBodyId: r.waterBodyId,
     bodyName: body.name,
+    // The bay name, when the lake has one (N2/D60) — `buildFeedCardView` composes it ahead of the
+    // body and the town through `formatLocationLine`, so the card can't disagree with report detail.
+    ...(r.subAreaName !== undefined ? { subAreaName: r.subAreaName } : {}),
     ...(r.place !== undefined ? { place: r.place } : {}),
     skateEndTime: r.skateEndTime,
     ...(r.skateStartTime !== undefined ? { skateStartTime: r.skateStartTime } : {}),
@@ -840,12 +849,17 @@ export const update = mutation({
     // the location label with it. `place` is cleared to undefined when the new point resolves nowhere.
     const point = n.point ?? existing.point;
     const place = await resolvePlaceForCoord(ctx, point);
+    // Moving the put-in pin can move the report into (or out of) a bay, so the sub-area stamp is
+    // re-resolved alongside `place`. Cleared to undefined when the new point sits in none.
+    const subArea = await resolveSubAreaForPoint(ctx, existing.waterBodyId, point);
 
     await ctx.db.patch(args.reportId, {
       point,
       skateEndTime: n.skateEndTime,
       skateStartTime: n.skateStartTime,
       place,
+      subAreaId: subArea?.subAreaId,
+      subAreaName: subArea?.subAreaName,
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       skateQuality: n.skateQuality,

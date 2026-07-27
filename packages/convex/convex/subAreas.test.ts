@@ -379,8 +379,77 @@ describe('the membership stamp', () => {
       return count;
     });
     expect(stamped).toBe(250);
-  }, // 5s default flakes on legitimately heavy work (see the repo's CI-timeout note). // convex-test replays 250 inserts plus two paged sweeps; CI runs ~8× slower than local, so the
-  30_000);
+  }, 30_000); // 5s default flakes on legitimately heavy work (see the repo's CI-timeout note). // convex-test replays 250 inserts plus two paged sweeps; CI runs ~8× slower than local, so the
+});
+
+describe('the stamp at create', () => {
+  test('a new report lands already carrying its bay name, no re-stamp needed', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      point: { lat: 44.3, lng: -73.1 },
+      iceTypes: ['black_ice'],
+    });
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.subAreaName).toBe('Malletts Bay');
+  });
+
+  test('a report elsewhere on the lake carries no bay name', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      point: { lat: 44.8, lng: -72.8 },
+      iceTypes: ['black_ice'],
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.subAreaId).toBeUndefined();
+  });
+
+  test('moving the put-in pin moves the stamp with it', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      point: { lat: 44.3, lng: -73.1 },
+      iceTypes: ['black_ice'],
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.subAreaName).toBe('Malletts Bay');
+
+    await author.as.mutation(api.reports.update, {
+      reportId,
+      skateEndTime: Date.now(),
+      point: { lat: 44.8, lng: -72.8 },
+      iceTypes: ['black_ice'],
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.subAreaName).toBeUndefined();
+  });
 });
 
 describe('subAreas.rename', () => {
@@ -455,7 +524,7 @@ describe('subAreas.remove / restore', () => {
  * bay labelled on a map that no longer had the lake.
  */
 describe('the parent-listing cascade', () => {
-  async function cellCount(t: ReturnType<typeof convexTest>, id: Id<'waterBodySubAreas'>) {
+  async function cellCount(t: ReturnType<typeof harness>, id: Id<'waterBodySubAreas'>) {
     const cells = await t.run((ctx) =>
       ctx.db
         .query('waterBodySubAreaCells')

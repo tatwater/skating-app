@@ -61,7 +61,7 @@ export interface LocationLineParts {
 const LOCATION_SEPARATOR = ' · ';
 
 /**
- * The full location line, finest name first: **"Malletts Bay · Lake Champlain · Colchester, VT"**.
+ * The location segments, finest name first: `["Malletts Bay", "Lake Champlain", "Colchester, VT"]`.
  *
  * **This is the one place the line is composed, and it has to be** (N2). Before this, the sub-area
  * would have been the third thing a card assembled by hand: `formatPlaceLabel` returned only the
@@ -71,14 +71,38 @@ const LOCATION_SEPARATOR = ' · ';
  * and "the label disagrees with itself depending on which screen you're on" is the kind of bug nobody
  * files and everybody notices.
  *
- * Segments are omitted when absent rather than left as an empty gap, so a body with no sub-area and
- * an unresolved place reads as just its own name.
+ * Absent segments are dropped rather than left as an empty gap, so a body with no sub-area and an
+ * unresolved place reads as just its own name.
  */
+function locationSegments(parts: LocationLineParts): string[] {
+  return [
+    parts.subAreaName?.trim() || null,
+    parts.bodyName.trim() || null,
+    formatPlaceLabel(parts.place),
+  ].filter((segment): segment is string => !!segment);
+}
+
+/** The whole line on one row — report detail's subtitle, the hazard reporter line, a search result. */
 export function formatLocationLine(parts: LocationLineParts): string {
-  const place = formatPlaceLabel(parts.place);
-  return [parts.subAreaName?.trim() || null, parts.bodyName.trim() || null, place]
-    .filter((segment): segment is string => !!segment)
-    .join(LOCATION_SEPARATOR);
+  return locationSegments(parts).join(LOCATION_SEPARATOR);
+}
+
+/**
+ * The same segments split for a two-row card: the finest name as the heading, everything coarser
+ * beneath it. Feed cards have always rendered a bold body name over a muted place line, and a bay is
+ * the name a skater actually uses — so on Malletts Bay the heading becomes "Malletts Bay" and the
+ * lake drops into the sub-line beside the town.
+ *
+ * It shares `locationSegments` with {@link formatLocationLine} rather than re-deriving, which is the
+ * point: the two surfaces can differ in *layout* without being able to differ in what the label says
+ * or what order it says it in.
+ */
+export function splitLocationLine(parts: LocationLineParts): {
+  primary: string;
+  secondary: string | null;
+} {
+  const [primary = '', ...rest] = locationSegments(parts);
+  return { primary, secondary: rest.length > 0 ? rest.join(LOCATION_SEPARATOR) : null };
 }
 
 /** Thresholds for the relative-time label (ms). */
@@ -134,10 +158,12 @@ export interface FeedCardView {
   bodyName: string;
   placeLabel: string | null;
   /**
-   * The composed sub-area · body · place line (N2). Surfaces render **this**, not the three parts —
-   * see {@link formatLocationLine} for why the composition can only live in one place.
+   * The card's two rows, composed (N2): `primary` is the finest name — the bay when there is one,
+   * otherwise the lake — and `secondary` is everything coarser. Cards render **these**, never
+   * `bodyName` + `placeLabel` by hand; see {@link splitLocationLine}.
    */
-  locationLine: string;
+  locationPrimary: string;
+  locationSecondary: string | null;
   skateEndTime: number;
   relativeTime: string;
   durationLabel: string | null;
@@ -206,16 +232,18 @@ export function groupFeedSections<T>(
  */
 export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView {
   const chips = [...data.iceTypes.map(humanizeEnum), ...data.surfaceTags.map(humanizeEnum)];
+  const location = splitLocationLine({
+    ...(data.subAreaName !== undefined ? { subAreaName: data.subAreaName } : {}),
+    bodyName: data.bodyName,
+    ...(data.place !== undefined ? { place: data.place } : {}),
+  });
   return {
     reportId: data.reportId,
     waterBodyId: data.waterBodyId,
     bodyName: data.bodyName,
     placeLabel: formatPlaceLabel(data.place),
-    locationLine: formatLocationLine({
-      ...(data.subAreaName !== undefined ? { subAreaName: data.subAreaName } : {}),
-      bodyName: data.bodyName,
-      ...(data.place !== undefined ? { place: data.place } : {}),
-    }),
+    locationPrimary: location.primary,
+    locationSecondary: location.secondary,
     skateEndTime: data.skateEndTime,
     relativeTime: formatRelativeTime(data.skateEndTime, now),
     durationLabel: formatSkateWindow(data.skateEndTime, data.skateStartTime),
