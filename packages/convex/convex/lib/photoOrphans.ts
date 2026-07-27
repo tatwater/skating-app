@@ -22,6 +22,7 @@
 
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { deleteStoredBlob } from './storageBlobs';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -72,14 +73,42 @@ export async function referencedPhotoIds(
 }
 
 /**
- * Delete a photo row and both of its stored blobs.
+ * Delete a photo row and both of its stored blobs. Returns whether the **row is gone** — `false` means
+ * a blob outlived the attempt and the row was deliberately kept.
  *
- * Blob failures are swallowed, and the row is deleted regardless — the same call order
- * `photos.remove` already uses. A throw here would strand the row *and* leave the blobs, which is
- * strictly worse than the blob leak the next sweep can't even see.
+ * This used to swallow both blob errors and delete the row regardless, reasoning that a throw would
+ * strand the row *and* leave the blobs, "strictly worse than the blob leak the next sweep can't even
+ * see." The premise is right and the conclusion doesn't follow, because those aren't the only two
+ * options (PR #29 review). **The row is the only pointer to those two blobs** — `sweepOrphanPhotos`
+ * finds its work by reading `photos` — so the parenthetical was the whole problem, not an aside: a
+ * leak no sweep can see is a leak nobody will ever clean up, holding someone's private image bytes,
+ * possibly with a GPS coordinate, indefinitely.
+ *
+ * So the third option: don't throw *and* don't drop the pointer. A photo whose blob is provably gone
+ * loses its row; one whose blob is still there keeps it, and the daily sweep tries again — which costs
+ * a row nobody can see and buys a retry that can actually happen. `lib/storageBlobs` is what makes
+ * "provably gone" a real check rather than a swallowed error.
+ *
+ * **No operator alert at a threshold**, unlike the export bundles that share this shape. That's a
+ * proportionality call, not an oversight: a stuck export is a complete copy of one account and worth
+ * paging someone over, while a stuck photo is one image whose retry is free and whose count shows up
+ * in the sweep's `retained` every day.
  */
-export async function deletePhotoAndBlobs(ctx: MutationCtx, photo: Doc<'photos'>): Promise<void> {
-  await ctx.storage.delete(photo.storageId as Id<'_storage'>).catch(() => {});
-  await ctx.storage.delete(photo.thumbStorageId as Id<'_storage'>).catch(() => {});
+export async function deletePhotoAndBlobs(
+  ctx: MutationCtx,
+  photo: Doc<'photos'>,
+): Promise<boolean> {
+  const failures = [
+    await deleteStoredBlob(ctx, photo.storageId as Id<'_storage'>),
+    await deleteStoredBlob(ctx, photo.thumbStorageId as Id<'_storage'>),
+  ].filter((f): f is string => f !== null);
+
+  if (failures.length > 0) {
+    console.warn(
+      `photos: keeping row ${photo._id} — ${failures.length} of its blobs could not be deleted (${failures.join('; ')}). It is the only pointer to them; the orphan sweep retries daily.`,
+    );
+    return false;
+  }
   await ctx.db.delete(photo._id);
+  return true;
 }

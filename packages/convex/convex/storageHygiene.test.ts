@@ -99,20 +99,27 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
   return bodies[0]!._id;
 }
 
+/**
+ * Seeds a photo with **real stored blobs**, not id-shaped strings. The fake ids these used to carry
+ * made the sweep tests silently weaker than they read: `storage.delete` on a nonsense id throws, the
+ * old code swallowed that, and the assertion "the row is gone" passed without a byte ever moving.
+ */
 async function seedPhoto(
   t: ReturnType<typeof convexTest>,
   uploaderId: Id<'profiles'>,
   createdAt: number,
 ) {
-  return (await t.run((ctx) =>
-    ctx.db.insert('photos', {
-      storageId: `blob-${createdAt}-${Math.round(createdAt % 1000)}`,
-      thumbStorageId: `thumb-${createdAt}`,
+  return t.run(async (ctx) => {
+    const storageId = await ctx.storage.store(new Blob([`photo-${createdAt}`]));
+    const thumbStorageId = await ctx.storage.store(new Blob([`thumb-${createdAt}`]));
+    return ctx.db.insert('photos', {
+      storageId,
+      thumbStorageId,
       uploaderId,
       placeOnMap: false,
       createdAt,
-    }),
-  )) as Id<'photos'>;
+    });
+  });
 }
 
 describe('pruneWeatherCache', () => {
@@ -169,14 +176,53 @@ describe('pruneWeatherCache', () => {
 });
 
 describe('sweepOrphanPhotos', () => {
-  test('deletes an abandoned upload past the grace window', async () => {
+  test('deletes an abandoned upload past the grace window — row and both blobs', async () => {
     const t = harness();
     const userId = await seedUser(t, 'uploader');
     const orphan = await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS);
+    const row = await t.run((ctx) => ctx.db.get(orphan));
 
     const result = await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
-    expect(result).toMatchObject({ deleted: 1, skipped: 0 });
+    expect(result).toMatchObject({ deleted: 1, skipped: 0, retained: 0 });
     expect(await t.run((ctx) => ctx.db.get(orphan))).toBeNull();
+    expect(await t.run((ctx) => ctx.storage.getUrl(row?.storageId as Id<'_storage'>))).toBeNull();
+    expect(
+      await t.run((ctx) => ctx.storage.getUrl(row?.thumbStorageId as Id<'_storage'>)),
+    ).toBeNull();
+  });
+
+  /**
+   * PR #29 review (Greptile P1, security): the row is the **only** pointer to those two blobs — this
+   * sweep is what finds them — so deleting it after a failed `storage.delete` leaves private image
+   * bytes that nothing in the system can name again. Not a leak a later job cleans up: a leak no later
+   * job can see.
+   *
+   * The unreclaimable blob here is a storage id that storage refuses to resolve. That's a stand-in for
+   * the general failure and not a perfect one — convex-test can't make a *present* blob undeletable —
+   * but it drives the real branch: `deleteStoredBlob` reports a failure, the row is kept, and the
+   * photo comes back to the front of tomorrow's oldest-first sweep.
+   */
+  test('a photo whose blob cannot be reclaimed keeps its row for the next tick', async () => {
+    const t = harness();
+    const userId = await seedUser(t, 'uploader');
+    const stuck = await seedPhoto(t, userId, Date.now() - PHOTO_ORPHAN_GRACE_MS - HOUR_MS);
+    await t.run((ctx) => ctx.db.patch(stuck, { storageId: 'not-a-storage-id' }));
+
+    expect(await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {})).toMatchObject({
+      deleted: 0,
+      retained: 1,
+    });
+    expect(await t.run((ctx) => ctx.db.get(stuck))).not.toBeNull();
+
+    // And it is retried rather than parked: the next tick tries again, and succeeds once the id resolves.
+    const real = await t.run((ctx) => ctx.storage.store(new Blob(['recovered'])));
+    await t.run((ctx) => ctx.db.patch(stuck, { storageId: real }));
+    expect(await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {})).toMatchObject({
+      deleted: 1,
+      retained: 0,
+    });
+    expect(await t.run((ctx) => ctx.db.get(stuck))).toBeNull();
+    expect(await t.run((ctx) => ctx.storage.getUrl(real))).toBeNull();
   });
 
   test('leaves a photo still inside its grace window alone — it may be mid-submission', async () => {

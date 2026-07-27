@@ -7,10 +7,10 @@
 
 import { isMinor, isValidCoord } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { requireProfile } from './lib/auth';
 import { resolvePhotoUrls } from './lib/photoAccess';
+import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { getViewableReport } from './lib/reportVisibility';
 import { latLng } from './lib/validators';
 
@@ -73,6 +73,13 @@ export const create = mutation({
  * user abandons the form, this reclaims the orphaned row + storage). Owner-gated; a missing row is
  * a no-op so a double-cleanup or a since-deleted photo can't throw. Not a moderation delete —
  * only the uploader may call it, and the client only calls it for still-unattached uploads.
+ *
+ * Shares `lib/photoOrphans`' delete with the two background paths (PR #29 review) rather than
+ * hand-rolling the same three lines a third time — this is where the swallow-and-delete-anyway pattern
+ * the review objected to was originally copied *from*. An already-gone blob still completes the row
+ * cleanup, exactly as before; what changed is that a blob which is genuinely still there keeps its row,
+ * because that row is the only thing the orphan sweep could ever find it by. The caller sees no
+ * difference: the photo is unattached either way, and this mutation is fire-and-forget teardown.
  */
 export const remove = mutation({
   args: { photoId: v.id('photos') },
@@ -81,13 +88,7 @@ export const remove = mutation({
     const photo = await ctx.db.get(photoId);
     if (!photo) return; // already gone — idempotent
     if (photo.uploaderId !== profile._id) throw new ConvexError('Not your photo');
-    // Tolerate an already-gone blob (e.g. a concurrent `removeBlob` during form teardown) so row
-    // cleanup still completes — a throw here would otherwise strand the row.
-    await Promise.all([
-      ctx.storage.delete(photo.storageId as Id<'_storage'>).catch(() => {}),
-      ctx.storage.delete(photo.thumbStorageId as Id<'_storage'>).catch(() => {}),
-    ]);
-    await ctx.db.delete(photoId);
+    await deletePhotoAndBlobs(ctx, photo);
   },
 });
 

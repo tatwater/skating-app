@@ -12,42 +12,15 @@
  *
  * So this is the one place that decision is made, for both callers.
  *
- * **The precise part** is telling "already gone" from "delete failed", which matters because
- * `storage.delete` throws on a missing blob and there's no error type to switch on. `storage.getUrl`
- * answers it directly: it returns `null` for a file that isn't there. That isn't a guess — it's the
- * same behavior `photos.getUrls` already documents and relies on ("a URL is `null` if its stored file
- * is missing").
+ * **The precise part** — telling "already gone" from "delete failed" — is `lib/storageBlobs`, which
+ * the photo paths turned out to need too. What stays here is the *policy* that distinction feeds: an
+ * export row is never dropped on a failed reclaim, it's retried and eventually escalated.
  */
 
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
-
-/**
- * Delete a bundle's blob. Returns `null` when the blob is **provably gone**, or the failure message
- * when it is still there.
- *
- * The precise part is telling "already gone" from "delete failed", because `storage.delete` throws on
- * a missing blob and there's no error type to switch on. `storage.getUrl` answers it directly — it
- * returns `null` for a file that isn't there — which is the same behavior `photos.getUrls` documents.
- *
- * Split out from `reclaimExportBlob` because `dataExport.finishExport` needs the same discrimination
- * without a row to count attempts on: the blob it holds may already have been reclaimed by the very
- * deletion that removed its row, and re-recording *that* as an unreclaimed orphan would manufacture a
- * pointer to nothing.
- */
-export async function deleteBundleBlob(
-  ctx: MutationCtx,
-  storageId: Id<'_storage'>,
-): Promise<string | null> {
-  if ((await ctx.storage.getUrl(storageId)) === null) return null;
-  try {
-    await ctx.storage.delete(storageId);
-    return null;
-  } catch (err) {
-    return err instanceof Error ? err.message : String(err);
-  }
-}
+import { deleteStoredBlob } from './storageBlobs';
 
 /**
  * How many failed reclaims before a human is told. Five hourly attempts is most of a working day —
@@ -72,7 +45,7 @@ export async function reclaimExportBlob(
 
   const storageId = row.storageId as Id<'_storage'>;
   // `null` ⇒ deleted now, or already gone and the row was a dangling pointer. Either way the row may go.
-  const failure = await deleteBundleBlob(ctx, storageId);
+  const failure = await deleteStoredBlob(ctx, storageId);
   if (failure === null) return true;
 
   const attempts = (row.cleanupAttempts ?? 0) + 1;

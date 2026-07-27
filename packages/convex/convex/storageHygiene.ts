@@ -86,6 +86,7 @@ export const sweepOrphanPhotos = internalMutation({
     const byUploader = new Map<string, Set<string> | null>();
     let deleted = 0;
     let skipped = 0;
+    let retained = 0;
 
     for (const photo of candidates) {
       const key = photo.uploaderId;
@@ -97,8 +98,10 @@ export const sweepOrphanPhotos = internalMutation({
         continue;
       }
       if (referenced.has(photo._id)) continue;
-      await deletePhotoAndBlobs(ctx, photo);
-      deleted++;
+      // `false` ⇒ a blob survived, so the row stayed as the only thing that can name it. It comes back
+      // to the front of this sweep tomorrow, since candidates are read oldest-first.
+      if (await deletePhotoAndBlobs(ctx, photo)) deleted++;
+      else retained++;
     }
 
     if (skipped > 0) {
@@ -106,7 +109,7 @@ export const sweepOrphanPhotos = internalMutation({
         `sweepOrphanPhotos: kept ${skipped} photo(s) whose uploader's reference scan hit its cap`,
       );
     }
-    return { scanned: candidates.length, deleted, skipped };
+    return { scanned: candidates.length, deleted, skipped, retained };
   },
 });
 

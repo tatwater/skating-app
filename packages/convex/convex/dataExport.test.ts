@@ -270,11 +270,11 @@ describe('buildExport', () => {
  */
 describe('bundle reclamation (PR #29 review)', () => {
   /**
-   * **Coverage note, stated rather than implied.** The branch where `storage.delete` fails on a blob
-   * that *is* present — the one that keeps the row for a later retry — is not exercised here, because
-   * convex-test offers no way to make a present blob undeletable. What the tests below do cover is the
-   * discrimination the fix rests on: `getUrl` telling an already-gone blob (drop the row) from a live
-   * one (delete it, then drop the row). The untested branch is the `else` of a check those two pin.
+   * **Coverage note, stated rather than implied.** convex-test can't make a *present* blob
+   * undeletable, so the keep-the-row branch is driven by a storage id storage refuses to resolve — a
+   * stand-in for the general failure, not a perfect one, but it runs the real code path end to end
+   * including the attempt counter and the operator alert. The rest of the discrimination is pinned
+   * directly: `getUrl` telling an already-gone blob (drop the row) from a live one (delete, then drop).
    */
   test('the happy path removes the row and the blob together', async () => {
     const t = harness();
@@ -322,6 +322,45 @@ describe('bundle reclamation (PR #29 review)', () => {
     const listed = (await user.as.query(api.dataExport.myExports, {}))[0];
     expect(listed?.expired).toBe(true);
     expect(listed?.url).toBeNull();
+  });
+
+  /**
+   * The branch the whole first pass was built around, now that an unresolvable id can drive it: a
+   * bundle whose blob won't go **keeps its row**, because that row is the only handle anyone — us or
+   * the founder — has on the file. It counts attempts and pages a human exactly once at the threshold,
+   * so a genuinely stuck bundle produces one email rather than one an hour, forever.
+   */
+  test('a bundle that will not delete keeps its row, counts attempts, and pages once', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    await t.run((ctx) =>
+      ctx.db.patch(exportId, { storageId: 'not-a-storage-id', expiresAt: Date.now() - 1000 }),
+    );
+
+    for (let tick = 1; tick <= 5; tick++) {
+      expect(await t.mutation(internal.storageHygiene.sweepExpiredExports, {})).toEqual({
+        deleted: 0,
+        retained: 1,
+      });
+      expect((await t.run((ctx) => ctx.db.get(exportId)))?.cleanupAttempts).toBe(tick);
+    }
+
+    // One page, at the threshold — scheduled, not sent, since Resend is unprovisioned.
+    const alerts = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    const paged = alerts.filter((a) => a.name.includes('operatorAlerts'));
+    expect(paged).toHaveLength(1);
+    expect(JSON.stringify(paged[0]?.args)).toContain('not-a-storage-id');
+
+    // Sixth tick: still kept, still no second page.
+    await t.mutation(internal.storageHygiene.sweepExpiredExports, {});
+    expect(await t.run((ctx) => ctx.db.get(exportId))).not.toBeNull();
+    expect(
+      (await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect())).filter((a) =>
+        a.name.includes('operatorAlerts'),
+      ),
+    ).toHaveLength(1);
   });
 
   /**

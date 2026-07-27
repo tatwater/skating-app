@@ -277,11 +277,33 @@ account. The four breaches, in the order they were found:
    *did* store a blob records the id and expires it immediately — a failed export is never downloadable, so
    there is nothing to hold the bytes for.
 
-Two consequences worth naming. A `failed` row can now carry a `storageId`, so `myExports` and `exportUrl`
-gate downloads on `status === 'ready'` — that row is a pointer for cleanup, not an offer. And the branch
-where `storage.delete` fails on a blob that *is* present still can't be forced in convex-test; it's now
-covered from the other end instead, by pinning that `retainOrphanedBundle`'s output is a working retry the
-sweep finds, reclaims and drops on its own.
+A `failed` row can now carry a `storageId`, so `myExports` and `exportUrl` gate downloads on
+`status === 'ready'` — that row is a pointer for cleanup, not an offer.
+
+**Then the same rule turned out to apply to photos**, which is the finding worth keeping. `deletePhotoAndBlobs`
+swallowed both blob errors and deleted the row regardless, with a comment defending it: a throw would strand
+the row *and* leave the blobs, "strictly worse than the blob leak the next sweep can't even see." The premise
+is right; the conclusion doesn't follow, and the parenthetical was the whole problem. `sweepOrphanPhotos`
+finds its work by reading `photos` — so a leak no sweep can see is a leak nobody ever cleans up, holding
+private image bytes and possibly a GPS coordinate. The third option neither the comment nor its author
+considered: don't throw *and* don't drop the pointer. A photo whose blob is provably gone loses its row; one
+whose blob survives keeps it, and the daily sweep tries again.
+
+Three notes on that:
+
+- The `getUrl`-then-`delete` discrimination moved to **`lib/storageBlobs`**, since exports and photos both
+  need it, and `photos.remove` — the mutation the bad pattern was originally copied *from* — now shares the
+  helper rather than hand-rolling it a third time.
+- **Account deletion scrubs a row it's forced to keep.** The caption, the timestamp and the `coord` come off,
+  leaving two storage ids and the job of reclaiming them. Keeping a departing person's home coordinate alive
+  in a row we only kept for cleanup would have been the quiet version of not deleting them.
+- **No operator alert for a stuck photo**, unlike a stuck bundle: one image versus a complete copy of one
+  account. It shows up in the sweep's new `retained` count instead. Stated so it reads as a call, not a gap.
+
+That pass also settled the coverage note. A storage id storage refuses to resolve drives the keep-the-row
+branch end to end, so the export retry counter *and* its page-once-at-the-threshold behavior are now tested
+rather than argued for — and the photo sweep's fixtures were storing id-shaped strings instead of real blobs,
+which meant "the row is gone" had been passing without a byte ever moving.
 
 ## Verification
 

@@ -416,6 +416,40 @@ describe('bucket 1 — erase (private artifacts)', () => {
       tickets: 0,
     });
   });
+
+  /**
+   * An unattached photo whose blob won't go (PR #29 review). The row has to stay — it's the only
+   * pointer the orphan cron could ever find those bytes by — but it must stop being a record *of a
+   * person*, and the field that matters is `coord`: a photo taken at home, placed on the map, is the
+   * home coordinate D62 goes out of its way to erase everywhere else.
+   */
+  test('a photo that cannot be reclaimed keeps its pointer and loses its identity', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const stuck = await t.run(async (ctx) => {
+      const thumbStorageId = await ctx.storage.store(new Blob(['thumb']));
+      return ctx.db.insert('photos', {
+        storageId: 'not-a-storage-id', // storage refuses to resolve it — the reclaim can't succeed
+        thumbStorageId,
+        uploaderId: user.id,
+        caption: 'the pond behind my house',
+        takenAt: T0,
+        coord: { lat: 44.5, lng: -73.2 },
+        placeOnMap: true,
+        createdAt: T0,
+      });
+    });
+
+    await finalize(t, user.id);
+
+    const row = await t.run((ctx) => ctx.db.get(stuck));
+    expect(row).not.toBeNull(); // kept: nothing else can name that blob
+    expect(row?.storageId).toBe('not-a-storage-id');
+    expect(row?.caption).toBeUndefined();
+    expect(row?.takenAt).toBeUndefined();
+    expect(row?.coord).toBeUndefined();
+    expect(row?.placeOnMap).toBe(false);
+  });
 });
 
 describe('bucket 2 — anonymize (the public ice record)', () => {

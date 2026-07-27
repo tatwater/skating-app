@@ -438,8 +438,20 @@ async function erasePhotos(
   let deleted = 0;
   for (const photo of page.page) {
     if (referenced.has(photo._id)) continue;
-    await deletePhotoAndBlobs(ctx, photo);
-    deleted++;
+    if (await deletePhotoAndBlobs(ctx, photo)) {
+      deleted++;
+      continue;
+    }
+    // The blob outlived the attempt, so the row stays as the only pointer to it (`lib/photoOrphans`)
+    // and the orphan cron retries daily. What it does *not* get to do is stay a record of a person:
+    // the caption, the timestamp and — the one that matters — the GPS coordinate come off now, leaving
+    // a row that is nothing but two storage ids and the job of reclaiming them.
+    await ctx.db.patch(photo._id, {
+      caption: undefined,
+      takenAt: undefined,
+      coord: undefined,
+      placeOnMap: false,
+    });
   }
   return { ...next, deleted };
 }

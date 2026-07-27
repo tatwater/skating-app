@@ -33,8 +33,9 @@ import {
   query,
 } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
-import { deleteBundleBlob, retainOrphanedBundle } from './lib/exportBundles';
+import { retainOrphanedBundle } from './lib/exportBundles';
 import { escapeHtml, sendEmail } from './lib/resend';
+import { deleteStoredBlob } from './lib/storageBlobs';
 
 /** How long a built bundle stays downloadable. */
 const EXPORT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
@@ -267,7 +268,7 @@ export const finishExport = internalMutation({
     if (!row) {
       if (rest.storageId === undefined) return; // nothing was stored — nothing to reclaim
       const storageId = rest.storageId as Id<'_storage'>;
-      const failure = await deleteBundleBlob(ctx, storageId);
+      const failure = await deleteStoredBlob(ctx, storageId);
       if (failure === null) {
         console.warn(
           `dataExport: ${exportId} was deleted mid-build; reclaimed its orphaned bundle ${storageId}`,
