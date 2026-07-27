@@ -710,9 +710,9 @@ with a shared test/verification shape, ordered **highest-impact first** — wher
 skater or the operator feels during the first-ice friends alpha*, not what's most interesting to build.
 Chunks are independent unless noted; sizes are rough.
 
-*Numbering note (2026-07-27): the old **N4** (account lifecycle) absorbed the old **N3** (storage-hygiene
-crons) and took its number — the crons are the lifecycle work's own cleanup path, not a separate chunk.
-**N5–N8 keep their numbers**, so pointers written before today still resolve.*
+*Numbering note (2026-07-27): **N3** (storage-hygiene crons) and **N4** (account lifecycle) merged into
+one phase, filed under both numbers — the crons are the lifecycle work's own cleanup path, not a
+separate chunk. **N5–N8 keep their numbers**, so pointers written before today still resolve.*
 
 ~~**N1 — Read-path durability: the crash class.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
 [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) for the design, the
@@ -776,9 +776,10 @@ and the skater map are one canvas (founder call, with the skater suite green unc
 *A worry that bodies need aliases the way sub-areas do was checked and dismissed:
 "Saranac Lake" already returns Upper, Middle and Lower, and they're genuinely three lakes.*
 
-**N3 / N4 — Account lifecycle + storage hygiene (D33/D62).** 🔨 *In build (2026-07-27)* — see
-[`phase-N3-N4-account-lifecycle.md`](./phase-N3-N4-account-lifecycle.md). **This entry absorbs what used to
-be N4**; the old N3 (two storage-hygiene crons, "tiny — a half-day") is now a workstream inside it,
+~~**N3 / N4 — Account lifecycle + storage hygiene (D33/D62).**~~ **✅ COMPLETE on dev (2026-07-27)** —
+see [`phase-N3-N4-account-lifecycle.md`](./phase-N3-N4-account-lifecycle.md) for the design, the
+corrections to what these entries used to say, and the measured results. **The two entries are one
+phase**; the old N3 (two storage-hygiene crons, "tiny — a half-day") is a workstream inside it,
 because the lifecycle work *creates* the storage problems the crons exist to solve: an export bundle is
 a stored blob needing a TTL sweep, deletion strands a departing user's unattached photo blobs, and the
 grace window needs a finalize cron in the same family. One phase, one review surface, one test pattern.
@@ -801,12 +802,24 @@ the anonymized-author work is **smaller** than "everywhere" implies, since `repo
 *bigger* than stated: `by_clerk_user_id` and `by_username` are read with `.unique()`, so tombstone
 sentinels must be per-row-unique or the second deleted account breaks auth app-wide.
 
-Two things came out that weren't scoped: **`showPutIn` is bypassed on the report-detail map** —
-`gpsActivities.getForReport` returns the raw path to every viewer, so a skater who withheld their put-in
-still has their first/last 150 m drawn publicly today, despite the aggregate layer 60 lines below
-carefully clipping it (fixed here, since deletion can't respect a rule the live product doesn't); and
+Two things came out that weren't scoped: **`showPutIn` was bypassed on the report-detail map** —
+`gpsActivities.getForReport` returned the raw path to every viewer, so a skater who withheld their
+put-in had their first/last 150 m drawn publicly, despite the aggregate layer 60 lines below carefully
+clipping it (fixed here, since deletion can't respect a rule the live product doesn't); and
 **`weatherCache` growth is multiplied by N2**, which shipped the `weatherSamplePoints` writer — rows
-accrue per hour *per sample point*, not per hour per lake.
+accrue per hour *per sample point*, not per hour per lake. Its retention argument also turned out
+stronger than "disk growth": the cache key contains the current hour bucket, so yesterday's rows are
+*unaddressable* rather than merely stale.
+
+**The bug worth carrying forward past this phase.** The finalize cron's first real tick against dev
+returned `due: 2, started: 2` on a deployment where nobody had requested deletion — it would have
+queued **every account in the app**. A Convex index on an **optional** field is *not sparse*: rows
+without the field are in it, and `undefined` sorts before every number, so a bare `lte(cutoff)` range
+matches everything. The schema comment asserting the index was "sparse in practice" was a guess wearing
+documentation's clothes. Nothing was lost — a mid-flight cancel guard, written for an entirely
+different reason, was the only thing in the way. Every other bare upper-bound range in the codebase was
+swept and is on a required field. **Tests didn't catch this; running the job against a real deployment
+did**, and the regression test was only trusted after reverting the fix and watching it fail.
 
 **N5 — Hazard authoring & confirmation polish.** *(One coherent pass over the hazard surface on web +
 mobile; these were each deferred alone but reviewing them together is far cheaper than five visits.)*

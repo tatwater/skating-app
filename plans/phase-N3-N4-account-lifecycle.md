@@ -181,14 +181,91 @@ taking a fourth cron slot.
 
 ## Work breakdown
 
-1. Plans — this doc, D62, the merged roadmap entry. *(← you are here)*
-2. The put-in clip fix (decision 6) — standalone, live behavior, own commit.
-3. Schema + core — `deletionRequestedAt`, `dataExports`, the tombstone vocabulary, `notificationQueue.by_user`.
-4. Deletion machinery + Clerk delete action.
-5. Export machinery.
-6. Author rendering: the tombstone shape, everywhere.
-7. The crons.
-8. Web + mobile settings UI.
+1. ✅ Plans — this doc, D62, the merged roadmap entry.
+2. ✅ The put-in clip fix (decision 6) — standalone, live behavior, own commit.
+3. ✅ Schema + core — `deletionRequestedAt`, `dataExports`, the tombstone vocabulary, `notificationQueue.by_user`.
+4. ✅ Deletion machinery + Clerk delete action.
+5. ✅ Export machinery.
+6. ✅ Author rendering: the tombstone shape, everywhere.
+7. ✅ The crons.
+8. ✅ Web + mobile settings UI.
+
+## What the build found
+
+### The finalize sweep would have deleted every account
+
+The one that matters — and **tests didn't find it, running the cron against dev did.** The first real
+tick of `finalizeDueDeletions` returned `due: 2, started: 2` on a deployment where nobody had requested
+anything.
+
+A Convex index on an **optional** field is *not sparse*. Rows without the field are in it, and
+`undefined` sorts **before every number** — so `lte('deletionRequestedAt', cutoff)` matched every
+profile in the table. The schema comment claiming the index was "sparse in practice — only pending rows
+carry the field" was the assumption, written down and never checked, which is the part worth carrying
+forward: it read as documentation and was actually a guess.
+
+**Nothing was lost.** `finalizeAccount` re-reads the stamp and returns `stopped: 'cancelled'` before any
+stage runs. That guard was written for a user changing their mind mid-flight, and it turned out to be
+the only thing between a query bug and every account in the app. Both dev profiles, the one report and
+N2's nine sub-areas were verified intact afterwards. Two independent guards is now the deliberate
+posture for this job rather than a happy accident.
+
+The regression test was checked the only way worth checking one: revert the fix, confirm it fails with
+the exact dev symptom (`due: 2, skipped: 2`). It does — so **convex-test reproduces the ordering and
+this was always catchable.** The original test only covered two accounts that had *both* requested
+deletion, which is the case that works.
+
+*Swept for siblings:* every other bare upper-bound index range in the codebase (`analyticsRollup`,
+`notifications`, `strava`, and the two new sweeps) is on a **required** field, and the two ranges over
+an optional `resolvedAt` are bounded below by `gte`. The class is contained to the one query.
+
+### The `showPutIn` bypass (decision 6, found while verifying decision 5)
+
+`gpsActivities.getForReport` served the raw path to every viewer, so a skater who withheld their put-in
+had the first and last 150 m of their track drawn on a public page — while the aggregate layer 60 lines
+below carefully clipped exactly that. Fixed, with the author/moderator exemption the aggregate layer's
+own doc comment had already claimed was there.
+
+### `weatherCache` retention is stronger than "stale"
+
+The roadmap said "disk growth, not staleness". It's neither, quite: `resolveWeatherSince` looks the
+cache up **by exact key triple**, and the triple contains `hourBucket(now)`. So a row is reachable only
+during its own hour — the previous hour's rows are *unaddressable*, not merely old. Kept 24h anyway as
+margin against clock skew, with a test asserting the margin so nobody tunes it to 1h and finds out.
+
+### The continuation path was untestable, so it became testable
+
+A stage that keeps some of what it reads can't re-`take()` its first page (it loops on the same kept
+rows), and one that paginates must actually resume from its cursor or a heavy account's deletion stops
+partway through **while reporting success** — leaving private rows behind for precisely the people with
+the most of them. That path was unreachable in a test at `PAGE = 200`, so the page size is a real
+argument now. Verified by sabotaging the cursor threading: the test fails with "too many iterations —
+check for infinitely recursive scheduled functions", which is the failure the design comment predicts.
+
+### One author shape, not four
+
+The feed card, report detail, comment thread and bounty list each built the same three lines by hand.
+Harmless until a tombstone — a profile row that still exists, still carrying `reputationPoints` — made
+every copy render a trust ring for someone with no account, with `publicByIds` fixed by hand and the
+others not. Extracted to `lib/authorView`, with a test asserting all three surfaces agree. Both
+`BountyDetail`s also carried a guard reading "a missing/deleted requester has no username", which the
+tombstone falsified: it has a *synthetic* handle that passes an emptiness check and routes nowhere.
+
+## Verification
+
+- **Full suite green:** core 862 · convex 683 · web 197 · mobile 79 · design 61 · etl 22 · admin-areas 14.
+- **Deployed to dev**, five indexes added (`dataExports.by_user`, `dataExports.by_expires_at`,
+  `notificationQueue.by_user`, `profiles.by_deletion_requested_at`, `weatherCache.by_window_end`).
+- **All four crons run against dev**: `pruneWeatherCache` 0, `sweepOrphanPhotos` 0/0/0,
+  `sweepExpiredExports` 0, `finalizeDueDeletions` **0** (2 before the fix).
+- **`dataExport.collect` run against real dev data** — returns the profile with `clerkUserId` absent
+  and the one real report (Fairlee, VT), so the export read path is exercised against the live corpus
+  and not only fixtures.
+
+**Not verified end-to-end on dev: an actual account deletion.** Dev holds only the two founder admin
+accounts and there was no throwaway to delete. The staged job has 19 convex-test cases including the
+multi-page continuation, but nobody has watched a real account go through it. Worth doing against a
+disposable account before the alpha.
 
 ## Open / accepted residue
 
@@ -199,3 +276,6 @@ taking a fourth cron slot.
   the operator — free text likely to contain a name or email — not community record. The
   `moderationActions` audit trail is a separate table and survives regardless.
 - **Policy copy still waits on Q10/L3.** This phase builds the machinery only, per the roadmap.
+- **A still-valid Clerk session between the tombstone and the Clerk delete** can call `upsertFromClerk`
+  and get a *fresh, empty* profile. Not a leak — it's the same thing signing up again gives them, and
+  the Clerk delete closes the window seconds later — so it's logged rather than guarded.
