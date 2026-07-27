@@ -173,8 +173,13 @@ export default defineSchema({
     .index('by_clerk_user_id', ['clerkUserId'])
     .index('by_username', ['username'])
     .index('by_status', ['status'])
-    // The finalize cron's window sweep (D62). Sparse in practice — only pending rows carry the field —
-    // so the job reads the handful that are actually due rather than scanning every profile.
+    // The finalize cron's window sweep (D62).
+    //
+    // **This index is NOT sparse**, and assuming it was nearly deleted every account on dev. A Convex
+    // index on an optional field contains the rows that don't have it, with `undefined` sorting
+    // *before every number* — so a bare `lte(cutoff)` range matches every profile that never requested
+    // deletion. `finalizeDueDeletions` bounds the range from below for exactly this reason; read its
+    // comment before touching that query.
     .index('by_deletion_requested_at', ['deletionRequestedAt'])
     // Signups-per-day for the analytics rollup (Phase 7b). The implicit creation order can't be
     // range-scanned to "just this UTC day", so the daily job reads a bounded slice off this instead.

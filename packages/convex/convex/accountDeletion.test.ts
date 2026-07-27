@@ -163,7 +163,37 @@ describe('the grace window', () => {
     });
 
     const result = await t.mutation(internal.accountDeletion.finalizeDueDeletions, {});
-    expect(result).toEqual({ due: 1, started: 1 });
+    expect(result).toMatchObject({ due: 1, started: 1 });
+  });
+
+  /**
+   * The bug this suite exists for, caught only by running the cron against dev.
+   *
+   * A Convex index on an *optional* field is **not sparse**: rows without the field are in it, and
+   * `undefined` sorts before every number. So `lte('deletionRequestedAt', cutoff)` matched every
+   * profile that had never asked to be deleted, and the first real tick reported `due: 2, started: 2`
+   * on a deployment where nobody had requested anything. Only `finalizeAccount`'s re-check of the
+   * stamp stopped it from scrubbing both accounts.
+   *
+   * Both guards are asserted here — the range bound *and* the per-account re-check — because the
+   * failure mode is "delete every user", which is not a place to depend on one of them.
+   */
+  test('the sweep never picks up an account that never asked (the undefined-sorts-first trap)', async () => {
+    const t = harness();
+    const untouched = await seedUser(t, 'never_asked');
+    await seedUser(t, 'also_never_asked');
+
+    const result = await t.mutation(internal.accountDeletion.finalizeDueDeletions, {});
+    expect(result).toEqual({ due: 0, started: 0, skipped: 0 });
+
+    // And the second guard, independently: even handed the id directly, finalize declines.
+    const direct = await t.mutation(internal.accountDeletion.finalizeAccount, {
+      userId: untouched.id,
+    });
+    expect(direct).toEqual({ stopped: 'cancelled' });
+    const profile = await t.run((ctx) => ctx.db.get(untouched.id));
+    expect(profile?.status).toBe('active');
+    expect(profile?.displayName).toBe('never_asked');
   });
 
   test('cancelling mid-flight stops the job before anything irreversible happens', async () => {

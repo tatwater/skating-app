@@ -101,9 +101,16 @@ export const cancelDeletion = mutation({
 /**
  * Cron entry: start finalizing every account whose grace window has run out.
  *
- * Reads the sparse `by_deletion_requested_at` index with an upper bound, so the sweep costs the number
- * of accounts actually due rather than the number of accounts that exist. Each due account gets its own
- * self-continuing job — one account's slow deletion can't stall another's.
+ * **The lower bound is not decoration.** An index on an optional field is *not* sparse in Convex: rows
+ * without the field are in it, and `undefined` sorts **before every number**. So the obvious query —
+ * `lte('deletionRequestedAt', cutoff)` — matches every profile that never asked to be deleted, and this
+ * cron would have queued the entire user table for deletion on its first tick. That is exactly what it
+ * did the first time it ran against dev (`due: 2, started: 2`, on a deployment where nobody had
+ * requested anything), and only `finalizeAccount`'s own re-check of the stamp stopped it.
+ *
+ * `gt(0)` excludes `undefined` because it sits below the numbers in that same ordering. The per-row
+ * check below is kept as well: two independent guards for a job whose failure mode is deleting
+ * everyone, which is not the place to rely on one.
  */
 export const finalizeDueDeletions = internalMutation({
   args: {},
@@ -111,12 +118,18 @@ export const finalizeDueDeletions = internalMutation({
     const due = await ctx.db
       .query('profiles')
       .withIndex('by_deletion_requested_at', (q) =>
-        q.lte('deletionRequestedAt', Date.now() - DELETION_GRACE_MS),
+        q.gt('deletionRequestedAt', 0).lte('deletionRequestedAt', Date.now() - DELETION_GRACE_MS),
       )
       .take(FINALIZE_PER_TICK);
 
     let started = 0;
+    let skipped = 0;
     for (const profile of due) {
+      // Belt to the range query's braces — never queue a profile that hasn't actually asked.
+      if (profile.deletionRequestedAt === undefined) {
+        skipped++;
+        continue;
+      }
       // A row can be due *and* already finalized if a previous tick got through the tombstone but the
       // stamp survived; skip rather than re-run the scrub over a tombstone.
       if (profile.status === 'deleted') continue;
@@ -125,7 +138,7 @@ export const finalizeDueDeletions = internalMutation({
       });
       started++;
     }
-    return { due: due.length, started };
+    return { due: due.length, started, skipped };
   },
 });
 
