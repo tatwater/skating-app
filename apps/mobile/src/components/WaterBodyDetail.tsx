@@ -32,8 +32,11 @@ import { ReportForm } from './ReportForm';
 export function WaterBodyDetail({
   waterBodyId,
   trackDraftId,
+  focusSubAreaId,
 }: {
   waterBodyId: string;
+  /** A named bay to frame instead of the whole lake (N2/D60) — set by a sub-area search hit. */
+  focusSubAreaId?: string;
   /**
    * A just-finished recording to file this report against (Phase 8). When present the form opens
    * straight away — the skater tapped "Report this skate", and making them find the button again
@@ -45,6 +48,14 @@ export function WaterBodyDetail({
     waterBodyId: waterBodyId as Id<'waterBodies'>,
   });
   const body = result?.available ? result.body : null;
+  // Only fetched when a bay was actually asked for — a `by_parent` read on a lake already open.
+  const subAreas = useQuery(
+    api.subAreas.listForBody,
+    focusSubAreaId && body ? { waterBodyId: body._id } : 'skip',
+  );
+  const focusSubArea = focusSubAreaId
+    ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
+    : undefined;
   const { setFocus, setHighlightWaterBodyId } = useMapSelection();
   const [formOpen, setFormOpen] = useState(trackDraftId !== undefined);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
@@ -65,7 +76,17 @@ export function WaterBodyDetail({
     if (body) {
       // Pass the lake's bbox so the map zoom-to-fits it into the area above the drawer (falls back to
       // the centroid for anything without bounds).
-      setFocus({ lat: body.centroid.lat, lng: body.centroid.lng, bounds: body.bbox });
+      // A bay frames on its own bounds, not the lake's — Champlain zoom-to-fit is 200 km of ice,
+      // which is exactly the framing that made naming bays worth doing.
+      setFocus(
+        focusSubArea
+          ? {
+              lat: focusSubArea.centroid.lat,
+              lng: focusSubArea.centroid.lng,
+              bounds: focusSubArea.bbox,
+            }
+          : { lat: body.centroid.lat, lng: body.centroid.lng, bounds: body.bbox },
+      );
       setHighlightWaterBodyId(body._id);
       // Cache this viewed lake's reference data on-device (F2 Layer 2) so it can be GPS-resolved
       // offline for a no-signal report. Best-effort; the sqlite write never blocks viewing.
@@ -78,7 +99,7 @@ export function WaterBodyDetail({
         surfaceAreaSqM: body.surfaceAreaSqM,
       });
     }
-  }, [body, setFocus, setHighlightWaterBodyId]);
+  }, [body, focusSubArea, setFocus, setHighlightWaterBodyId]);
 
   if (result === undefined) return <DetailLoading />;
   if (result === null) {

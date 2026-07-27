@@ -32,11 +32,26 @@ import { Skeleton } from './ui/skeleton';
  * gets its own friendly state instead of a blank. Shows the name, type, imperial area (D25), and
  * the report feed newest **skate time** first; the map flies to the lake's centroid on open.
  */
-export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
+export function WaterBodyDetail({
+  waterBodyId,
+  /** A named bay to frame instead of the whole lake (N2/D60) — set by a sub-area search hit. */
+  focusSubAreaId,
+}: {
+  waterBodyId: string;
+  focusSubAreaId?: string;
+}) {
   const result = useQuery(api.waterBodies.get, {
     waterBodyId: waterBodyId as Id<'waterBodies'>,
   });
   const body = result?.available ? result.body : null;
+  // Only fetched when a bay was actually asked for — a `by_parent` read on a lake already open.
+  const subAreas = useQuery(
+    api.subAreas.listForBody,
+    focusSubAreaId && body ? { waterBodyId: body._id } : 'skip',
+  );
+  const focusSubArea = focusSubAreaId
+    ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
+    : undefined;
   const { setFocus, setHighlightWaterBodyId } = useMapSelection();
   const [formOpen, setFormOpen] = useState(false);
   const [hazardFormOpen, setHazardFormOpen] = useState(false);
@@ -46,11 +61,21 @@ export function WaterBodyDetail({ waterBodyId }: { waterBodyId: string }) {
   // resolved `body._id` — the survivor a merged deep link redirects to — which is what the map's
   // features carry, so a `/water/<merged-id>` link still highlights the right polygon.
   useEffect(() => {
-    if (body) {
+    if (!body) return;
+    // A bay frames tighter than its lake, at the zoom its own labels draw from — Champlain at z12 is
+    // still 200 km of ice, which is exactly the framing that made bays worth naming.
+    if (focusSubArea) {
+      setFocus({
+        lat: focusSubArea.centroid.lat,
+        lng: focusSubArea.centroid.lng,
+        zoom: Math.max(12, focusSubArea.minVisibleZoom),
+      });
+    } else if (!focusSubAreaId) {
       setFocus({ lat: body.centroid.lat, lng: body.centroid.lng, zoom: 12 });
-      setHighlightWaterBodyId(body._id);
     }
-  }, [body, setFocus, setHighlightWaterBodyId]);
+    // Highlight the parent either way: the bay is a name on this lake, not a selectable thing.
+    setHighlightWaterBodyId(body._id);
+  }, [body, focusSubArea, focusSubAreaId, setFocus, setHighlightWaterBodyId]);
 
   if (result === undefined) return <DetailSkeleton />;
 

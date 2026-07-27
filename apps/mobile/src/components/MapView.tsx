@@ -44,6 +44,8 @@ import {
   PUT_IN_MARKER_OFFICIAL_COLOR,
   PUT_IN_PIN_COLOR,
   putInsToFeatureCollection,
+  SUB_AREA_PALETTE,
+  subAreasToFeatureCollection,
   TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
@@ -94,6 +96,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const scheme = useColorScheme();
   const flavor = scheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const water = WATER_PALETTE[flavor];
+  const subAreaPalette = SUB_AREA_PALETTE[flavor];
   const router = useRouter();
   const cameraRef = useRef<CameraRef>(null);
   const {
@@ -157,6 +160,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // region event, then `onRegionDidChange` refines it.
   const [queryArgs, setQueryArgs] = useState<{ viewport: BBox; zoom: number }>(INITIAL_QUERY);
   const bodies = useQuery(api.waterBodies.listInViewport, queryArgs);
+  // Named bays (N2/D60) — its own ladder-grid query, which returns nothing below its zoom floor, so
+  // a wide view costs a skipped query rather than a filter. Rendering is not an operator affordance:
+  // mobile draws the label, it just can't edit it (the Phase 7 rule).
+  const subAreas = useQuery(api.subAreas.listInViewport, queryArgs);
 
   // Retain the last loaded features while the next query is in flight (Convex returns `undefined`
   // for a fresh key until it resolves) so bodies never blink off the map between pans.
@@ -164,6 +171,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
   }, [bodies]);
+  const [subAreaFeatures, setSubAreaFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
+  useEffect(() => {
+    if (subAreas !== undefined) setSubAreaFeatures(subAreasToFeatureCollection(subAreas));
+  }, [subAreas]);
 
   // Seed the offline body cache from what's on screen when zoomed in (Phase 9 §Mobile). Until now the
   // cache filled only when a lake's *drawer* was opened, so on-ice detection missed a lake you were
@@ -432,6 +443,40 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           type="line"
           filter={['in', ['get', '_id'], ['literal', favoriteIds]]}
           paint={{ 'line-color': FAVORITE_OUTLINE_COLOR, 'line-width': 2.5 }}
+        />
+      </GeoJSONSource>
+
+      {/* Named bays, over the water fill and under every pin layer. Dashed, so it reads as a name
+          for part of this lake rather than another lake's shoreline. No `onPress`: a tap falls
+          through to the water source beneath and opens the parent, which is the right destination. */}
+      <GeoJSONSource id="sub-areas" data={subAreaFeatures}>
+        <Layer
+          id="sub-area-outline"
+          type="line"
+          filter={['!=', ['get', 'label'], true]}
+          paint={{
+            'line-color': subAreaPalette.outline,
+            'line-width': 1.25,
+            'line-opacity': 0.8,
+            'line-dasharray': [3, 2],
+          }}
+        />
+        <Layer
+          id="sub-area-label"
+          type="symbol"
+          filter={['==', ['get', 'label'], true]}
+          layout={{
+            'text-field': ['get', 'name'],
+            'text-size': 12,
+            // A bay name may never displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
+            'text-allow-overlap': false,
+            'text-optional': true,
+          }}
+          paint={{
+            'text-color': subAreaPalette.label,
+            'text-halo-color': subAreaPalette.halo,
+            'text-halo-width': 1.2,
+          }}
         />
       </GeoJSONSource>
 

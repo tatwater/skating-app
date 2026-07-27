@@ -36,6 +36,8 @@ import {
   NORTHEAST_MAX_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
+  SUB_AREA_PALETTE,
+  subAreasToFeatureCollection,
   TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
@@ -105,6 +107,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const { resolvedTheme } = useTheme();
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const water = WATER_PALETTE[flavor];
+  const subAreaPalette = SUB_AREA_PALETTE[flavor];
   const hazardPalette = HAZARD_PALETTE[flavor];
   const trackColor = TRACK_PALETTE[flavor];
   const lastViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
@@ -141,6 +144,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
   }, [bodies]);
+
+  // Named sub-areas in view (N2/D60) — a second layer on its own ladder-grid query, which returns
+  // nothing below its zoom floor, so at wide zooms this costs one skipped query rather than a filter.
+  const subAreas = useQuery(api.subAreas.listInViewport, queryArgs ?? 'skip');
+  const [subAreaFeatures, setSubAreaFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
+  useEffect(() => {
+    if (subAreas !== undefined) setSubAreaFeatures(subAreasToFeatureCollection(subAreas));
+  }, [subAreas]);
 
   // The viewer's favorited bodies (Phase 4, decision #1) — painted with a distinct outline. Empty
   // when signed out. The id set is stable-memoized so the paint effect only re-runs on a real change.
@@ -287,6 +298,42 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             2.5,
             1,
           ],
+        },
+      });
+      // Named bays (N2/D60), over the water fill and under every pin layer. Dashed, so it reads as
+      // a *name for part of this lake* rather than as another lake's shoreline — the distinction the
+      // whole sub-area model exists to make. No click handler: tapping a bay falls through to
+      // `water-fill` beneath it and opens the parent lake, which is the correct destination.
+      map.addSource('sub-areas', { type: 'geojson', data: EMPTY_FEATURES });
+      map.addLayer({
+        id: 'sub-area-outline',
+        type: 'line',
+        source: 'sub-areas',
+        filter: ['!=', ['get', 'label'], true],
+        paint: {
+          'line-color': subAreaPalette.outline,
+          'line-width': 1.25,
+          'line-opacity': 0.8,
+          'line-dasharray': [3, 2],
+        },
+      });
+      map.addLayer({
+        id: 'sub-area-label',
+        type: 'symbol',
+        source: 'sub-areas',
+        filter: ['==', ['get', 'label'], true],
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 12,
+          'text-font': ['Noto Sans Italic'],
+          // A bay name may not displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
+          'text-allow-overlap': false,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': subAreaPalette.label,
+          'text-halo-color': subAreaPalette.halo,
+          'text-halo-width': 1.2,
         },
       });
       map.addSource('photo-pins', { type: 'geojson', data: EMPTY_FEATURES });
@@ -517,6 +564,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     applyHighlight();
     applyFavorites();
   }, [features, loaded]);
+
+  // Push the bay layer whenever it changes. Its own source, so a pan that changes one collection and
+  // not the other doesn't redraw both.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    (map.getSource('sub-areas') as maplibregl.GeoJSONSource | undefined)?.setData(subAreaFeatures);
+  }, [subAreaFeatures, loaded]);
 
   // Re-apply the highlight when the selected body changes (deep-link or navigating between lakes).
   // biome-ignore lint/correctness/useExhaustiveDependencies: applyHighlight reads refs; re-run on selection.
