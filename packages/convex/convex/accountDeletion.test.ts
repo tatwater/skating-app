@@ -109,6 +109,17 @@ async function finalize(t: ReturnType<typeof convexTest>, userId: Id<'profiles'>
   await t.finishAllScheduledFunctions(vi.runAllTimers);
 }
 
+/** Same, but forcing the continuation path — several pages per stage instead of one. */
+async function finalizePaged(
+  t: ReturnType<typeof convexTest>,
+  userId: Id<'profiles'>,
+  pageSize: number,
+) {
+  await t.run((ctx) => ctx.db.patch(userId, { deletionRequestedAt: Date.now() }));
+  await t.mutation(internal.accountDeletion.finalizeAccount, { userId, pageSize });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+}
+
 describe('the grace window', () => {
   test('requesting deletion changes nothing but the stamp — the account still works', async () => {
     const t = harness();
@@ -515,6 +526,48 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
 
     // Publish-is-consent (D58 gate 1): a hidden report is not a published one.
     expect(await t.run((ctx) => ctx.db.get(activityId))).toBeNull();
+  });
+
+  /**
+   * The continuation path, forced with a tiny page size.
+   *
+   * This is the stage machine's real hazard, and it's silent: a stage that keeps some of what it reads
+   * can't just re-`take()` the first page (it would loop on the same kept rows forever), and one that
+   * paginates has to actually resume from its cursor or a heavy account's deletion stops partway
+   * through — reporting success while leaving private rows behind. Five tracks over pages of two
+   * exercises both, at a size a test can afford.
+   */
+  test('a stage that spans several pages finishes all of them', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'prolific');
+    const bodyId = await seedBody(t);
+
+    // Two published (kept + severed), three unpublished (erased) — so the page boundaries fall across
+    // a mix of both outcomes rather than a run of one.
+    const publishedIds: Id<'gpsActivities'>[] = [];
+    for (let i = 0; i < 5; i++) {
+      const activityId = await seedTrack(t, user, `paged-${i}`);
+      if (i < 2) {
+        await user.as.mutation(api.reports.create, {
+          waterBodyId: bodyId,
+          activityId,
+          skateEndTime: T0 + i,
+          iceTypes: ['black_ice' as const],
+          surfaceTags: [],
+        });
+        publishedIds.push(activityId);
+      }
+    }
+
+    await finalizePaged(t, user.id, 2);
+
+    const remaining = await t.run((ctx) => ctx.db.query('gpsActivities').collect());
+    expect(remaining).toHaveLength(2);
+    expect(new Set(remaining.map((a) => a._id))).toEqual(new Set(publishedIds));
+    // Every survivor severed — not just the ones that happened to land on the first page.
+    for (const a of remaining) expect(a.providerActivityId.startsWith('severed:')).toBe(true);
+    // And the machine still reached its last stage.
+    expect((await t.run((ctx) => ctx.db.get(user.id)))?.status).toBe('deleted');
   });
 
   /**

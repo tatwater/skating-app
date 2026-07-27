@@ -49,6 +49,17 @@ import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
  */
 const PAGE = 200;
 
+/**
+ * Test seam for the page size. Deliberately a real argument rather than a mocked constant: the path
+ * that matters here is the **continuation** — a stage that hits its page limit, re-schedules, and
+ * resumes from a cursor — and its failure mode is a deletion that silently stops halfway, leaving
+ * private rows behind for a heavy account while reporting success. Being able to force a second page
+ * with five rows instead of two hundred is what makes that testable at all.
+ */
+function pageSizeFor(requested: number | undefined): number {
+  return Math.min(Math.max(requested ?? PAGE, 1), PAGE);
+}
+
 /** How many accounts one cron tick may start finalizing. Each becomes its own self-continuing job. */
 const FINALIZE_PER_TICK = 20;
 
@@ -170,8 +181,10 @@ export const finalizeAccount = internalMutation({
     userId: v.id('profiles'),
     stage: v.optional(v.union(...STAGES.map((s) => v.literal(s)))),
     cursor: v.optional(v.string()),
+    /** See `pageSizeFor` — a test seam for the continuation path, clamped to `PAGE`. */
+    pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, { userId, stage = 'erase', cursor }) => {
+  handler: async (ctx, { userId, stage = 'erase', cursor, pageSize }) => {
     const profile = await ctx.db.get(userId);
     if (!profile) return { stopped: 'gone' as const };
     // Cancelled mid-flight: the user changed their mind between the sweep and this page. Stop, and
@@ -180,13 +193,15 @@ export const finalizeAccount = internalMutation({
     if (profile.deletionRequestedAt === undefined) return { stopped: 'cancelled' as const };
     if (profile.status === 'deleted') return { stopped: 'already_deleted' as const };
 
-    const result = await runStage(ctx, profile, stage, cursor);
+    const size = pageSizeFor(pageSize);
+    const result = await runStage(ctx, profile, stage, cursor, size);
     if (result.more) {
       // Same stage again — it hit its page limit.
       await ctx.scheduler.runAfter(0, internal.accountDeletion.finalizeAccount, {
         userId,
         stage,
         ...(result.cursor !== undefined ? { cursor: result.cursor } : {}),
+        ...(pageSize !== undefined ? { pageSize } : {}),
       });
       return { stage, done: false };
     }
@@ -196,6 +211,7 @@ export const finalizeAccount = internalMutation({
       await ctx.scheduler.runAfter(0, internal.accountDeletion.finalizeAccount, {
         userId,
         stage: next,
+        ...(pageSize !== undefined ? { pageSize } : {}),
       });
       return { stage, done: true, next };
     }
@@ -209,14 +225,15 @@ async function runStage(
   profile: Doc<'profiles'>,
   stage: Stage,
   cursor: string | undefined,
+  size: number,
 ): Promise<StageResult> {
   switch (stage) {
     case 'erase':
-      return erasePrivate(ctx, profile);
+      return erasePrivate(ctx, profile, size);
     case 'tracks':
-      return severTracks(ctx, profile._id, cursor);
+      return severTracks(ctx, profile._id, cursor, size);
     case 'photos':
-      return erasePhotos(ctx, profile._id, cursor);
+      return erasePhotos(ctx, profile._id, cursor, size);
     case 'tombstone':
       await writeTombstone(ctx, profile);
       return { more: false };
@@ -238,7 +255,11 @@ async function runStage(
  * These are pure deletes, so the table shrinks under the query: re-running `.take(PAGE)` walks forward
  * on its own and needs no cursor. The stage reports "more" whenever a page came back full.
  */
-async function erasePrivate(ctx: MutationCtx, profile: Doc<'profiles'>): Promise<StageResult> {
+async function erasePrivate(
+  ctx: MutationCtx,
+  profile: Doc<'profiles'>,
+  size: number,
+): Promise<StageResult> {
   const userId = profile._id;
   let deleted = 0;
   let full = false;
@@ -247,32 +268,32 @@ async function erasePrivate(ctx: MutationCtx, profile: Doc<'profiles'>): Promise
   async function drain(rows: { _id: Id<TableNames> }[]): Promise<void> {
     for (const row of rows) await ctx.db.delete(row._id);
     deleted += rows.length;
-    if (rows.length >= PAGE) full = true;
+    if (rows.length >= size) full = true;
   }
 
   await drain(
     await ctx.db
       .query('activityConnections')
       .withIndex('by_user', (q) => q.eq('userId', userId))
-      .take(PAGE),
+      .take(size),
   );
   await drain(
     await ctx.db
       .query('notifications')
       .withIndex('by_user', (q) => q.eq('userId', userId))
-      .take(PAGE),
+      .take(size),
   );
   await drain(
     await ctx.db
       .query('notificationQueue')
       .withIndex('by_user', (q) => q.eq('userId', userId))
-      .take(PAGE),
+      .take(size),
   );
   await drain(
     await ctx.db
       .query('waterBodyFavorites')
       .withIndex('by_user', (q) => q.eq('userId', userId))
-      .take(PAGE),
+      .take(size),
   );
   // Both directions: a block they made, and a block someone made against them. The second one matters
   // more than it looks — leaving it would go on filtering a tombstone's content for the blocker
@@ -281,19 +302,19 @@ async function erasePrivate(ctx: MutationCtx, profile: Doc<'profiles'>): Promise
     await ctx.db
       .query('blocks')
       .withIndex('by_blocker', (q) => q.eq('blockerId', userId))
-      .take(PAGE),
+      .take(size),
   );
   await drain(
     await ctx.db
       .query('blocks')
       .withIndex('by_blocked', (q) => q.eq('blockedId', userId))
-      .take(PAGE),
+      .take(size),
   );
   await drain(
     await ctx.db
       .query('clientSignalEvents')
       .withIndex('by_user_created', (q) => q.eq('userId', userId))
-      .take(PAGE),
+      .take(size),
   );
 
   // Export bundles: the row *and* the blob. An assembled export is every report, every track and every
@@ -302,7 +323,7 @@ async function erasePrivate(ctx: MutationCtx, profile: Doc<'profiles'>): Promise
   const exports = await ctx.db
     .query('dataExports')
     .withIndex('by_user', (q) => q.eq('userId', userId))
-    .take(PAGE);
+    .take(size);
   for (const row of exports) {
     if (row.storageId !== undefined) {
       await ctx.storage.delete(row.storageId as Id<'_storage'>).catch(() => {});
@@ -317,7 +338,7 @@ async function erasePrivate(ctx: MutationCtx, profile: Doc<'profiles'>): Promise
     await ctx.db
       .query('supportTickets')
       .withIndex('by_clerk_user_created', (q) => q.eq('clerkUserId', profile.clerkUserId))
-      .take(PAGE),
+      .take(size),
   );
 
   return { more: full, deleted };
@@ -342,6 +363,7 @@ async function severTracks(
   ctx: MutationCtx,
   userId: Id<'profiles'>,
   cursor: string | undefined,
+  size: number,
 ): Promise<StageResult> {
   // **Paginated, not `.take()`.** This stage keeps some of what it reads, so the query doesn't shrink
   // under it the way the pure-delete stages do — re-taking the first page would re-read the same kept
@@ -349,7 +371,7 @@ async function severTracks(
   const page = await ctx.db
     .query('gpsActivities')
     .withIndex('by_user', (q) => q.eq('userId', userId))
-    .paginate({ cursor: cursor ?? null, numItems: PAGE });
+    .paginate({ cursor: cursor ?? null, numItems: size });
 
   for (const activity of page.page) {
     const report =
@@ -384,13 +406,14 @@ async function erasePhotos(
   ctx: MutationCtx,
   userId: Id<'profiles'>,
   cursor: string | undefined,
+  size: number,
 ): Promise<StageResult> {
   // Paginated rather than re-`take()`n, for the same reason as `severTracks`: referenced photos stay
   // put, so the query doesn't shrink under a repeated first-page read.
   const page = await ctx.db
     .query('photos')
     .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
-    .paginate({ cursor: cursor ?? null, numItems: PAGE });
+    .paginate({ cursor: cursor ?? null, numItems: size });
 
   const next = page.isDone ? { more: false } : { more: true as const, cursor: page.continueCursor };
   if (page.page.length === 0) return next;

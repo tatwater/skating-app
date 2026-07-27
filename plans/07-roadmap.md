@@ -776,8 +776,8 @@ and the skater map are one canvas (founder call, with the skater suite green unc
 *A worry that bodies need aliases the way sub-areas do was checked and dismissed:
 "Saranac Lake" already returns Upper, Middle and Lower, and they're genuinely three lakes.*
 
-**N3 — Account lifecycle + storage hygiene (D33/D62).** 🔨 *In build (2026-07-27)* — see
-[`phase-N3-account-lifecycle.md`](./phase-N3-account-lifecycle.md). **This entry absorbs what used to
+**N3 / N4 — Account lifecycle + storage hygiene (D33/D62).** 🔨 *In build (2026-07-27)* — see
+[`phase-N3-N4-account-lifecycle.md`](./phase-N3-N4-account-lifecycle.md). **This entry absorbs what used to
 be N4**; the old N3 (two storage-hygiene crons, "tiny — a half-day") is now a workstream inside it,
 because the lifecycle work *creates* the storage problems the crons exist to solve: an export bundle is
 a stored blob needing a TTL sweep, deletion strands a departing user's unattached photo blobs, and the
