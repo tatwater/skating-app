@@ -86,6 +86,11 @@ export const requestExport = mutation({
  *
  * URLs are resolved per read rather than stored, so a swept bundle can't leave a dead link behind in a
  * cached row — the row disappears with the blob.
+ *
+ * **An expired row serves no URL**, even while its blob is still being reclaimed. The sweep is hourly
+ * and a stuck reclaim keeps its row on purpose (`lib/exportBundles`), so without this the UI would go
+ * on offering a download for a bundle that is past its stated lifetime. It doesn't revoke a link
+ * someone already has — only deleting the blob does that — but it stops us handing out new ones.
  */
 export const myExports = query({
   args: {},
@@ -97,6 +102,7 @@ export const myExports = query({
       .withIndex('by_user', (q) => q.eq('userId', profile._id))
       .collect();
 
+    const now = Date.now();
     return Promise.all(
       rows
         .sort((a, b) => b.requestedAt - a.requestedAt)
@@ -111,8 +117,9 @@ export const myExports = query({
           omittedPhotoCount: row.omittedPhotoCount,
           emailedAt: row.emailedAt,
           error: row.error,
+          expired: row.expiresAt <= now,
           url:
-            row.storageId !== undefined
+            row.storageId !== undefined && row.expiresAt > now
               ? await ctx.storage.getUrl(row.storageId as Id<'_storage'>)
               : null,
         })),
@@ -217,7 +224,15 @@ export const collect = internalQuery({
   },
 });
 
-/** Mark a bundle ready (or failed) — the only writer of the terminal states. */
+/**
+ * Mark a bundle ready (or failed) — the only writer of the terminal states.
+ *
+ * **The missing-row branch is a cleanup path, not a no-op** (PR #29 review). `buildExport` stores the
+ * blob *before* calling this, so if the account was deleted in between — finalization erases every
+ * `dataExports` row — the bundle is already sitting in storage with nothing pointing at it. Returning
+ * early would strand a complete copy of a just-deleted person's data, permanently and invisibly. This
+ * is the last moment anything holds its `storageId`, so it gets spent reclaiming it.
+ */
 export const finishExport = internalMutation({
   args: {
     exportId: v.id('dataExports'),
@@ -229,7 +244,30 @@ export const finishExport = internalMutation({
   },
   handler: async (ctx, { exportId, error, ...rest }) => {
     const row = await ctx.db.get(exportId);
-    if (!row) return;
+    if (!row) {
+      if (rest.storageId === undefined) return; // nothing was stored — nothing to reclaim
+      const storageId = rest.storageId as Id<'_storage'>;
+      try {
+        await ctx.storage.delete(storageId);
+        console.warn(
+          `dataExport: ${exportId} was deleted mid-build; reclaimed its orphaned bundle ${storageId}`,
+        );
+      } catch (err) {
+        // No row to keep and no second chance, so hand the id to a human rather than lose it.
+        console.error(`dataExport: could not reclaim orphaned bundle ${storageId}: ${String(err)}`);
+        await ctx.scheduler.runAfter(0, internal.operatorAlerts.send, {
+          subject: 'Orphaned data-export bundle',
+          heading: `Orphaned export bundle ${storageId}`,
+          lines: [
+            `Storage id: ${storageId}.`,
+            'An export finished building after its account was deleted, and the bundle could not be reclaimed. Nothing in the database points at it any more, so this alert is the only record.',
+            'Delete the file from the Convex dashboard.',
+          ],
+          deepLinkPath: '/admin',
+        });
+      }
+      return;
+    }
     if (error !== undefined) {
       await ctx.db.patch(exportId, { status: 'failed', error });
       return;

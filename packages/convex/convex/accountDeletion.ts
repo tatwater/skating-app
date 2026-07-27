@@ -39,6 +39,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation } from './_generated/server';
 import { requireProfile } from './lib/auth';
+import { reclaimExportBlob } from './lib/exportBundles';
 import { deletePhotoAndBlobs, referencedPhotoIds } from './lib/photoOrphans';
 
 /**
@@ -320,16 +321,24 @@ async function erasePrivate(
   // Export bundles: the row *and* the blob. An assembled export is every report, every track and every
   // photo of the person in one file — keeping one for an account that asked to be deleted would undo
   // the rest of this job in a single artifact.
+  //
+  // A row whose blob **couldn't** be reclaimed is kept rather than dropped (`lib/exportBundles`): the
+  // row is the only pointer to that bundle, and losing it here would be the worst version of this
+  // failure — a full copy of a deleted person's data, in storage, unfindable. Its `expiresAt` is
+  // pulled to now so the hygiene sweep retries on its next tick instead of waiting out the TTL.
   const exports = await ctx.db
     .query('dataExports')
     .withIndex('by_user', (q) => q.eq('userId', userId))
     .take(size);
+  const reclaimed: Doc<'dataExports'>[] = [];
   for (const row of exports) {
-    if (row.storageId !== undefined) {
-      await ctx.storage.delete(row.storageId as Id<'_storage'>).catch(() => {});
+    if (await reclaimExportBlob(ctx, row)) {
+      reclaimed.push(row);
+    } else if (row.expiresAt > Date.now()) {
+      await ctx.db.patch(row._id, { expiresAt: Date.now() });
     }
   }
-  await drain(exports);
+  await drain(reclaimed);
 
   // Support tickets have no by-user index — they're looked up by status and by Clerk subject — so they
   // come off the Clerk-subject index. That's the identifier the tombstone is about to scrub, which is

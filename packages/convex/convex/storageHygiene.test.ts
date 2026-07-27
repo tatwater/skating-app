@@ -282,6 +282,7 @@ describe('sweepExpiredExports', () => {
 
     expect(await t.mutation(internal.storageHygiene.sweepExpiredExports, {})).toEqual({
       deleted: 1,
+      retained: 0,
     });
     expect(await t.run((ctx) => ctx.db.get(expired))).toBeNull();
     expect(await t.run((ctx) => ctx.db.get(live))).not.toBeNull();

@@ -260,3 +260,108 @@ describe('buildExport', () => {
     expect(row?.emailedAt).toBeUndefined(); // the in-app listing is the path that works today
   });
 });
+
+/**
+ * PR #29 review (Greptile P1, both security-tagged). Two paths could remove the **only** database
+ * pointer to a stored bundle while leaving the blob behind — which is worse than an ordinary orphan,
+ * because a bundle is a complete copy of one account and a Convex storage URL stays valid until the
+ * file is deleted. So these tests are about what happens when reclaiming *fails*.
+ */
+describe('bundle reclamation (PR #29 review)', () => {
+  /**
+   * **Coverage note, stated rather than implied.** The branch where `storage.delete` fails on a blob
+   * that *is* present — the one that keeps the row for a later retry — is not exercised here, because
+   * convex-test offers no way to make a present blob undeletable. What the tests below do cover is the
+   * discrimination the fix rests on: `getUrl` telling an already-gone blob (drop the row) from a live
+   * one (delete it, then drop the row). The untested branch is the `else` of a check those two pin.
+   */
+  test('the happy path removes the row and the blob together', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const storageId = (await t.run((ctx) => ctx.db.get(exportId)))?.storageId as Id<'_storage'>;
+
+    await t.run((ctx) => ctx.db.patch(exportId, { expiresAt: Date.now() - 1000 }));
+    const swept = await t.mutation(internal.storageHygiene.sweepExpiredExports, {});
+
+    expect(swept).toEqual({ deleted: 1, retained: 0 });
+    expect(await t.run((ctx) => ctx.db.get(exportId))).toBeNull();
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toBeNull();
+  });
+
+  test('a row whose blob is already gone is dropped rather than retried forever', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const row = await t.run((ctx) => ctx.db.get(exportId));
+
+    // Blob vanishes independently (a manual dashboard delete, say). `storage.delete` would THROW on
+    // it, so without the getUrl pre-check this row would be retried until the alert threshold.
+    await t.run((ctx) => ctx.storage.delete(row?.storageId as Id<'_storage'>));
+    await t.run((ctx) => ctx.db.patch(exportId, { expiresAt: Date.now() - 1000 }));
+
+    expect(await t.mutation(internal.storageHygiene.sweepExpiredExports, {})).toEqual({
+      deleted: 1,
+      retained: 0,
+    });
+    expect(await t.run((ctx) => ctx.db.get(exportId))).toBeNull();
+  });
+
+  test('an expired row serves no download URL, even before the sweep reaches it', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect((await user.as.query(api.dataExport.myExports, {}))[0]?.url).not.toBeNull();
+    await t.run((ctx) => ctx.db.patch(exportId, { expiresAt: Date.now() - 1000 }));
+
+    const listed = (await user.as.query(api.dataExport.myExports, {}))[0];
+    expect(listed?.expired).toBe(true);
+    expect(listed?.url).toBeNull();
+  });
+
+  /**
+   * The second P1: the account is deleted *while* a bundle is building. `buildExport` stores the blob
+   * before `finishExport` runs, so the row it would have recorded the `storageId` on is already gone —
+   * and returning early would leave a complete copy of a just-deleted person's data in storage with
+   * nothing pointing at it.
+   */
+  test('a build that finishes after its account is deleted reclaims its own blob', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+
+    // Hand `finishExport` a storageId for a row that no longer exists — exactly the race, without
+    // needing to interleave the scheduler by hand.
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const orphan = await t.run((ctx) =>
+      ctx.storage.store(new Blob(['{"a":1}'], { type: 'application/json' })),
+    );
+    await t.run((ctx) => ctx.db.delete(exportId));
+
+    await t.mutation(internal.dataExport.finishExport, {
+      exportId,
+      storageId: orphan,
+      sizeBytes: 7,
+    });
+
+    expect(await t.run((ctx) => ctx.storage.getUrl(orphan))).toBeNull();
+  });
+
+  test('account deletion leaves no export blob behind', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const storageId = (await t.run((ctx) => ctx.db.get(exportId)))?.storageId as Id<'_storage'>;
+
+    await t.mutation(internal.accountDeletion.finalizeNow, { userId: user.id });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await t.run((ctx) => ctx.db.get(exportId))).toBeNull();
+    expect(await t.run((ctx) => ctx.storage.getUrl(storageId))).toBeNull();
+  });
+});

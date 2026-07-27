@@ -894,6 +894,15 @@ export default defineSchema({
     omittedPhotoCount: v.optional(v.number()),
     error: v.optional(v.string()),
     emailedAt: v.optional(v.number()), // absent ⇒ never sent (Resend unprovisioned, or it failed)
+    /**
+     * How many times reclaiming this bundle's blob has failed (PR #29 review).
+     *
+     * Exists because the row is the **only pointer** to a stored bundle: deleting it after a failed
+     * `storage.delete` strands the single densest PII artifact in the system with nothing left to find
+     * it by. So a failed reclaim keeps the row and counts, and crossing the threshold pages a human
+     * with the `storageId` rather than quietly giving up. Absent ⇒ 0.
+     */
+    cleanupAttempts: v.optional(v.number()),
     requestedAt: v.number(),
     readyAt: v.optional(v.number()),
     expiresAt: v.number(),

@@ -15,6 +15,7 @@
 
 import { v } from 'convex/values';
 import { internalMutation } from './_generated/server';
+import { reclaimExportBlob } from './lib/exportBundles';
 import { deletePhotoAndBlobs, PHOTO_ORPHAN_GRACE_MS, referencedPhotoIds } from './lib/photoOrphans';
 
 /** Rows examined per tick. Bounded so a sweep is always one comfortable transaction. */
@@ -118,6 +119,11 @@ export const sweepOrphanPhotos = internalMutation({
  *
  * A `building` row that expired is swept too. That's the crash case — an action that died before
  * writing its `storageId` — and leaving it would show the user a bundle that says "building" forever.
+ *
+ * **The row only goes when the blob is provably gone** (`lib/exportBundles`). This used to swallow a
+ * storage failure and delete the row anyway, which destroyed the one pointer to a full account bundle
+ * that a retry would have needed — see that module for why an export inverts the `photos.remove`
+ * reasoning it was copied from.
  */
 export const sweepExpiredExports = internalMutation({
   args: {},
@@ -127,16 +133,16 @@ export const sweepExpiredExports = internalMutation({
       .withIndex('by_expires_at', (q) => q.lt('expiresAt', Date.now()))
       .take(SWEEP_LIMIT);
 
+    let deleted = 0;
+    let retained = 0;
     for (const row of expired) {
-      if (row.storageId !== undefined) {
-        // Tolerate an already-gone blob so the row still goes: a throw here would leave the row
-        // pointing at nothing, which is the orphan state in the other direction.
-        await ctx.storage
-          .delete(row.storageId as Parameters<typeof ctx.storage.delete>[0])
-          .catch(() => {});
+      if (!(await reclaimExportBlob(ctx, row))) {
+        retained++; // blob still there — keep the row so the next tick can try again
+        continue;
       }
       await ctx.db.delete(row._id);
+      deleted++;
     }
-    return { deleted: expired.length };
+    return { deleted, retained };
   },
 });
