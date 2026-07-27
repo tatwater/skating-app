@@ -15,7 +15,6 @@ const navigate = vi.fn();
 let pathname = '/admin/water/b1';
 
 vi.mock('@tanstack/react-router', () => ({
-  createFileRoute: () => (config: unknown) => config,
   useNavigate: () => navigate,
   useRouterState: ({ select }: { select: (s: unknown) => unknown }) =>
     select({ location: { pathname } }),
@@ -26,10 +25,10 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const role = { isModerator: false, isAdmin: false, isLoading: false };
-vi.mock('../lib/useRole', () => ({ useRole: () => role }));
-vi.mock('../components/Splash', () => ({ Splash: () => <div data-testid="splash" /> }));
+vi.mock('../../lib/useRole', () => ({ useRole: () => role }));
+vi.mock('../Splash', () => ({ Splash: () => <div data-testid="splash" /> }));
 
-const { AdminLayout } = await import('./admin');
+const { AdminLayout } = await import('./AdminLayout');
 
 beforeEach(() => {
   navigate.mockClear();
