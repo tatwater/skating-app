@@ -300,7 +300,18 @@ export const finishExport = internalMutation({
       });
       return;
     }
-    await ctx.db.patch(exportId, { status: 'ready', readyAt: Date.now(), ...rest });
+    // The stated lifetime runs from when the bundle **exists**, not from when it was asked for. The
+    // email promises "this link works for 7 days" and the settings row shows the same date, so a build
+    // that took an hour shouldn't quietly sell 7 days and deliver 6 days 23 hours — and a build slow
+    // enough to outlast the whole window shouldn't land already-expired, which is the edge the guard
+    // in `exportUrl` exists to catch (PR #29 review).
+    const readyAt = Date.now();
+    await ctx.db.patch(exportId, {
+      status: 'ready',
+      readyAt,
+      expiresAt: readyAt + EXPORT_TTL_MS,
+      ...rest,
+    });
   },
 });
 
@@ -422,12 +433,21 @@ export const readExport = internalQuery({
   handler: (ctx, { exportId }) => ctx.db.get(exportId),
 });
 
-/** Resolve a ready bundle's download URL from an action. Same `ready` gate as `myExports`. */
+/**
+ * Resolve a ready bundle's download URL from an action.
+ *
+ * **The same two gates as `myExports`, deliberately duplicated rather than trusted to context.** This
+ * is the resolver behind the *email*, and it had only the `ready` check — so a bundle that finished
+ * after its own expiry would have had a fresh URL minted and mailed out, which is the one way to hand
+ * someone a link to data we've promised is already gone (PR #29 review). The two paths that mint URLs
+ * must agree; a URL is only ever offered for a bundle that is both `ready` and inside its lifetime.
+ */
 export const exportUrl = internalQuery({
   args: { exportId: v.id('dataExports') },
   handler: async (ctx, { exportId }) => {
     const row = await ctx.db.get(exportId);
     if (row?.status !== 'ready' || row.storageId === undefined) return null;
+    if (row.expiresAt <= Date.now()) return null;
     return ctx.storage.getUrl(row.storageId as Id<'_storage'>);
   },
 });

@@ -510,6 +510,43 @@ describe('bundle reclamation (PR #29 review)', () => {
     expect(row?.error).toBeUndefined();
   });
 
+  /**
+   * The email resolver is a *second* place URLs are minted, and it only checked `ready` — so a bundle
+   * that finished after its own expiry would have had a fresh link minted and mailed, which is the one
+   * way to hand someone a download for data we've already told them is gone.
+   *
+   * Both halves of the fix are here: the lifetime is rebased onto `readyAt`, so an ordinary slow build
+   * lands with its full window rather than a shortened one, and `exportUrl` refuses an expired row
+   * regardless, so nothing downstream depends on that rebase having happened.
+   */
+  test('a bundle’s 7 days run from when it exists, not from when it was asked for', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    const requested = (await t.run((ctx) => ctx.db.get(exportId)))?.expiresAt as number;
+
+    vi.setSystemTime(Date.now() + 60 * 60 * 1000); // a build that took an hour
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const row = await t.run((ctx) => ctx.db.get(exportId));
+    expect(row?.expiresAt).toBe((row?.readyAt ?? 0) + 7 * 24 * 60 * 60 * 1000);
+    expect(row?.expiresAt).toBeGreaterThan(requested); // not the shortened window the email would lie about
+  });
+
+  test('the email resolver mints no URL for a bundle past its lifetime', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'exporter');
+    const exportId = await user.as.mutation(api.dataExport.requestExport, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await t.query(internal.dataExport.exportUrl, { exportId })).not.toBeNull();
+    await t.run((ctx) => ctx.db.patch(exportId, { expiresAt: Date.now() - 1000 }));
+
+    // Same answer as `myExports` — the two minting paths must not disagree.
+    expect(await t.query(internal.dataExport.exportUrl, { exportId })).toBeNull();
+    expect((await user.as.query(api.dataExport.myExports, {}))[0]?.url).toBeNull();
+  });
+
   /** Deleted between "ready" and the email bookkeeping — nothing to record, and not an error. */
   test('markEmailed on a vanished row is a no-op', async () => {
     const t = harness();

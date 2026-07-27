@@ -280,6 +280,14 @@ account. The four breaches, in the order they were found:
 A `failed` row can now carry a `storageId`, so `myExports` and `exportUrl` gate downloads on
 `status === 'ready'` — that row is a pointer for cleanup, not an offer.
 
+A last, smaller one from the same family: **the email's URL resolver is a second minting path**, and it
+carried only the `ready` check while `myExports` carried `ready` *and* not-expired. A bundle that
+finished after its own expiry would have had a fresh link minted and mailed — handing someone a
+download for data we'd already told them was gone. Fixed at both ends: `expiresAt` is now rebased onto
+`readyAt`, so the "works for 7 days" in the email is measured from when the bundle exists rather than
+from when it was requested (a slow build used to quietly sell seven days and deliver rather less), and
+`exportUrl` refuses an expired row regardless, so nothing downstream depends on that rebase.
+
 **Then the same rule turned out to apply to photos**, which is the finding worth keeping. `deletePhotoAndBlobs`
 swallowed both blob errors and deleted the row regardless, with a comment defending it: a throw would strand
 the row *and* leave the blobs, "strictly worse than the blob leak the next sweep can't even see." The premise
