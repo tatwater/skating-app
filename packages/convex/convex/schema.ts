@@ -501,6 +501,15 @@ export default defineSchema({
       'moderationStatus',
       'skateEndTime',
     ])
+    // The sub-area-scoped freshness index (N2 / D60). `moderationStatus` sits in the middle for the
+    // same reason as its body-scoped sibling above: the gate's cap has to be spent on rows it will
+    // actually weigh, and a post-read `visible` filter lets hidden reports eat it. Sparse — only
+    // reports on a lake with named bays carry a `subAreaId` at all.
+    .index('by_sub_area_moderation_and_skate_end_time', [
+      'subAreaId',
+      'moderationStatus',
+      'skateEndTime',
+    ])
     .index('by_author', ['authorId'])
     // Newest-first author history for the profile page, bounded by a `.take()` on skate-end time so a
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
@@ -734,6 +743,15 @@ export default defineSchema({
   bounties: defineTable({
     requesterId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
+    // Optionally narrowed to a named sub-area (N2 / D60). "Someone skate Malletts Bay" is a
+    // materially different ask from "someone skate Champlain," and that difference is most of why
+    // bounties on a giant are weak today: a report from the far end fulfilled them.
+    //
+    // **Id only, no denormalized name** — unlike `reports.subAreaName`. The denorm exists on reports
+    // because the global feed would otherwise need a join per card on its hottest read; bounties are
+    // read in sets of at most a couple hundred, so resolving the name costs one `get` and keeps a
+    // rename from needing a third table in the re-stamp job.
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
     windowHours: v.number(), // "skated in last 24/48h" (tunable)
     status: literals(BOUNTY_STATUSES),
     rewardPoints: v.number(), // cosmetic (D17)

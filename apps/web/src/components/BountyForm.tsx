@@ -2,7 +2,7 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { DEFAULT_BOUNTY_REWARD_POINTS, MAX_OPEN_BOUNTIES_PER_DAY } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
-import { useAction } from 'convex/react';
+import { useAction, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useState } from 'react';
 import { Button } from './ui/button';
@@ -29,12 +29,20 @@ export function BountyForm({
   const navigate = useNavigate();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Named bays on this lake (N2/D60) — the whole lake stays the default, because most lakes have
+  // none and asking "which part?" of a pond is noise.
+  const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
+  const bays = (subAreas ?? []).filter((s) => !s.removed);
+  const [subAreaId, setSubAreaId] = useState<string>('');
 
   const submit = async () => {
     setPending(true);
     setError(null);
     try {
-      const id = await create({ waterBodyId });
+      const id = await create({
+        waterBodyId,
+        ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
+      });
       onOpenChange(false);
       navigate({ to: '/bounty/$id', params: { id } });
     } catch (err) {
@@ -63,6 +71,27 @@ export function BountyForm({
             </span>
             .
           </p>
+          {bays.length > 0 ? (
+            <label className="flex flex-col gap-1">
+              <span className="font-medium text-foreground">Which part?</span>
+              <select
+                className="rounded-md border border-border bg-surface px-2 py-1.5"
+                value={subAreaId}
+                onChange={(e) => setSubAreaId(e.target.value)}
+              >
+                <option value="">Anywhere on {bodyName}</option>
+                {bays.map((bay) => (
+                  <option key={bay._id} value={bay._id}>
+                    {bay.name}
+                  </option>
+                ))}
+              </select>
+              <span className="text-foreground-muted text-xs">
+                Narrowing the ask means only a report from that part of the lake will fulfil it —
+                and a recent report somewhere else won’t stop you asking.
+              </span>
+            </label>
+          ) : null}
           <ul className="list-disc pl-5 text-foreground-muted">
             <li>
               Only if the lake doesn’t already have a recent report — a well-confirmed read keeps it

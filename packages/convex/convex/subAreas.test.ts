@@ -713,6 +713,119 @@ describe('the parent-listing cascade', () => {
   });
 });
 
+/**
+ * The half of targeting the plan didn't name. `attachReportToOpenBounties` is where fulfillment
+ * begins — the requester's helpful thumb lands on an *attached* report — so leaving it body-wide
+ * would have made a bay bounty a label with no mechanism behind it.
+ */
+describe('sub-area bounty targeting', () => {
+  async function setup() {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Malletts Bay',
+      polygon: rect(-73.2, 44.2, -73.0, 44.4),
+    });
+    return { t, body, bay, mod };
+  }
+
+  test('a report elsewhere on the lake does not attach to a bay bounty', async () => {
+    const { t, body, bay } = await setup();
+    const requester = await seedUser(t, 'requester');
+    const author = await seedUser(t, 'author');
+
+    const bountyId = await requester.as.action(api.bounties.create, {
+      waterBodyId: body,
+      subAreaId: bay,
+    });
+
+    // Far end of the lake — real ice, wrong ask.
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      point: { lat: 44.9, lng: -72.7 },
+      iceTypes: ['black_ice'],
+    });
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.fulfillingReportIds).toEqual([]);
+
+    // In the bay — the ask, answered.
+    const inBay = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      point: { lat: 44.3, lng: -73.1 },
+      iceTypes: ['black_ice'],
+    });
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.fulfillingReportIds).toEqual([inBay]);
+  });
+
+  test('a body-wide bounty still takes any report on the body', async () => {
+    const { t, body } = await setup();
+    const requester = await seedUser(t, 'requester');
+    const author = await seedUser(t, 'author');
+    const bountyId = await requester.as.action(api.bounties.create, { waterBodyId: body });
+
+    const anywhere = await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      point: { lat: 44.9, lng: -72.7 },
+      iceTypes: ['black_ice'],
+    });
+    expect((await t.run((ctx) => ctx.db.get(bountyId)))?.fulfillingReportIds).toEqual([anywhere]);
+  });
+
+  test('the freshness gate is scoped to the bay, not the lake', async () => {
+    const { t, body, bay } = await setup();
+    const requester = await seedUser(t, 'requester');
+    const author = await seedUser(t, 'author');
+
+    // Fresh eyes on the far end of the lake. That suppresses a *lake* bounty...
+    await author.as.mutation(api.reports.create, {
+      waterBodyId: body,
+      skateEndTime: Date.now(),
+      point: { lat: 44.9, lng: -72.7 },
+      iceTypes: ['black_ice'],
+    });
+    await expect(requester.as.action(api.bounties.create, { waterBodyId: body })).rejects.toThrow(
+      /fresh eyes/i,
+    );
+
+    // ...and says nothing about Malletts Bay, 60 km away, which is the whole point of targeting.
+    await expect(
+      requester.as.action(api.bounties.create, { waterBodyId: body, subAreaId: bay }),
+    ).resolves.toBeTruthy();
+  });
+
+  test('refuses a bay that belongs to a different lake', async () => {
+    const { t, bay } = await setup();
+    const other = await seedBody(t, 'Lake George');
+    const requester = await seedUser(t, 'requester');
+    await expect(
+      requester.as.action(api.bounties.create, { waterBodyId: other, subAreaId: bay }),
+    ).rejects.toThrow();
+  });
+
+  test('the detail read names the bay without denormalizing it onto the bounty', async () => {
+    const { t, body, bay, mod } = await setup();
+    const requester = await seedUser(t, 'requester');
+    const bountyId = await requester.as.action(api.bounties.create, {
+      waterBodyId: body,
+      subAreaId: bay,
+    });
+    expect((await t.query(api.bounties.getDetail, { bountyId }))?.subArea?.name).toBe(
+      'Malletts Bay',
+    );
+
+    // A rename reaches it for free — which is why the name isn't copied onto the bounty row.
+    await mod.as.mutation(api.subAreas.rename, { subAreaId: bay, name: "Mallett's Bay" });
+    await settle(t);
+    expect((await t.query(api.bounties.getDetail, { bountyId }))?.subArea?.name).toBe(
+      "Mallett's Bay",
+    );
+  });
+});
+
 describe('subAreas.listInViewport', () => {
   const VIEWPORT = { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 };
 
