@@ -361,6 +361,26 @@ So the check lives on the writer itself, which is the chokepoint both paths shar
   rather than handing back a token it just declined to keep — pushing a track on behalf of an account
   mid-erasure is the thing being prevented, not a consolation prize.
 
+**Then the gate was moved off Strava**, because the fix as written would have been re-lost by the next
+integration. `activityConnections` is provider-generic (`provider: literals(ACTIVITY_PROVIDERS)`, and
+the enum already names garmin/coros/polar/apple_health/google_health_connect), so a second integration
+writes the same rows from its own file next to its own token exchange — and the rule it needs to know
+isn't about OAuth at all, so there's no reason it would go looking. That's the same
+extracted-not-copied lesson as `photoOrphans` and `storageBlobs`, arriving a third time.
+
+So the write itself lives in **`lib/activityConnections`** (`storeActivityConnection` +
+`canConnectAccount`), `strava.storeConnection` is a four-line caller, and the rule is stated where a new
+integration will actually be standing: a doc block on the `activityConnections` table in `schema.ts`.
+The tests are written against **Garmin**, not Strava, so the gate is pinned as a property of the table
+rather than of one provider. One deliberate non-rule, also a test: suspended and banned accounts still
+connect — moderation is reversible and gated at the surfaces those users reach, while deletion is the
+only state that makes the row itself wrong.
+
+`gpsActivities` gets a note rather than a gate: its only writer today goes through `requireProfile`, but
+a future watch-ingest would hold a bare `userId` and land an *unpublished* recording — D62's erase
+bucket — after the tracks stage had already passed. Cheaper to say so on the table than to build a
+guard for a writer that doesn't exist.
+
 An audit of every other writer into an erased table came back clean: favorites, blocks, client signals,
 exports, photos and native activities all resolve their user through `requireProfile`, and every
 notification-recipient check is `status !== 'active'`, which excludes a new status by default. The one

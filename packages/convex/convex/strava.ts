@@ -38,6 +38,7 @@ import {
   mutation,
   query,
 } from './_generated/server';
+import { storeActivityConnection } from './lib/activityConnections';
 import { requireProfile } from './lib/auth';
 
 const STRAVA_AUTHORIZE_URL = 'https://www.strava.com/oauth/authorize';
@@ -168,20 +169,10 @@ export const consumeOAuthState = internalMutation({
 /**
  * Internal: store (or replace) a user's Strava connection. Tokens are SERVER-ONLY, never returned.
  *
- * **Carries its own deletion check** (PR #29 review), because it is the one credential writer the
- * `deleting` lock can't reach. Both of its callers are actions holding a bare `userId`: the OAuth
- * callback resolves its user from a nonce minted before the lock landed, and `accessTokenFor` reads a
- * connection, refreshes it over the network, then writes back. Neither passes through
- * `requireProfile`, so neither would notice that the account was mid-deletion — and `activityConnections`
- * gets exactly one erase pass, with no later stage rescanning it. A callback arriving a second late
- * would leave **live OAuth credentials** behind for an account that no longer exists.
- *
- * The refresh path can do it without a callback at all: it reads the connection while it exists, the
- * erase stage drains the table during the token round-trip, and the write back finds nothing to patch
- * and inserts a fresh row.
- *
- * Reading the profile is also what puts this path under the same OCC protection as everything else —
- * a concurrent lock now conflicts with this mutation's read set rather than passing beside it.
+ * The write itself — and the account-deletion gate that has to guard it — lives in
+ * `lib/activityConnections`, because `activityConnections` is a provider-generic table and the next
+ * integration would otherwise hand-roll this and re-lose the gate. **`stored: false` means refused,
+ * and callers must treat it as a failure**, not as a write they can shrug at; see that module.
  */
 export const storeConnection = internalMutation({
   args: {
@@ -192,36 +183,7 @@ export const storeConnection = internalMutation({
     tokenExpiresAt: v.number(),
     scopes: v.array(v.string()),
   },
-  handler: async (ctx, args) => {
-    const profile = await ctx.db.get(args.userId);
-    if (profile === null || profile.status === 'deleting' || profile.status === 'deleted') {
-      console.warn(
-        `strava: refusing to store a connection for ${args.userId} (${profile?.status ?? 'no profile'})`,
-      );
-      return { stored: false };
-    }
-
-    const existing = (
-      await ctx.db
-        .query('activityConnections')
-        .withIndex('by_user', (q) => q.eq('userId', args.userId))
-        .collect()
-    ).find((c) => c.provider === 'strava');
-
-    const fields = {
-      userId: args.userId,
-      provider: 'strava' as const,
-      externalUserId: args.externalUserId,
-      accessToken: args.accessToken,
-      refreshToken: args.refreshToken,
-      tokenExpiresAt: args.tokenExpiresAt,
-      scopes: args.scopes,
-      connectedAt: existing?.connectedAt ?? Date.now(),
-    };
-    if (existing) await ctx.db.patch(existing._id, fields);
-    else await ctx.db.insert('activityConnections', fields);
-    return { stored: true };
-  },
+  handler: (ctx, args) => storeActivityConnection(ctx, { ...args, provider: 'strava' }),
 });
 
 /** The shape of Strava's token endpoint response (the fields we use). */

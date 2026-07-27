@@ -5,7 +5,7 @@
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -16,7 +16,7 @@ function harness() {
 }
 
 type Role = 'member' | 'moderator' | 'admin';
-type Status = 'active' | 'suspended' | 'banned' | 'deleted';
+type Status = Doc<'profiles'>['status'];
 
 async function seedProfile(
   t: ReturnType<typeof convexTest>,

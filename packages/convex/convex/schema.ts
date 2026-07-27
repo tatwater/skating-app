@@ -213,6 +213,19 @@ export default defineSchema({
     .index('by_state', ['state'])
     .index('by_expires_at', ['expiresAt']),
 
+  /**
+   * A user's link to a third-party activity provider, tokens included.
+   *
+   * **Write these through `lib/activityConnections`, never with a bare `db.insert` here.** The table is
+   * provider-generic, so the temptation for each new integration is to write it from its own file next
+   * to its own OAuth flow — which is how the deletion gate got lost the first time (PR #29 review). A
+   * connection write is always reached from an action holding a bare `userId` (the user is off at the
+   * provider's consent screen, or the write is on the far side of a token refresh), so `requireProfile`
+   * never sees it, and D62's erase pass over this table happens exactly once with no later rescan. A
+   * redirect landing a second after finalization starts leaves live OAuth credentials for an account
+   * that no longer exists — the worst row in the app to leak, since it grants continuing access to
+   * someone else's service.
+   */
   activityConnections: defineTable({
     userId: v.id('profiles'),
     provider: literals(ACTIVITY_PROVIDERS),
@@ -224,6 +237,17 @@ export default defineSchema({
     connectedAt: v.number(),
   }).index('by_user', ['userId']),
 
+  /**
+   * A recorded skate — ours (`native`) or, one day, a watch adapter's.
+   *
+   * Today's only writer is `gpsActivities.record`, which resolves its user through `requireProfile`
+   * and is therefore covered by the finalization lock for free. **A provider-ingest writer would not
+   * be**, for the same reason `activityConnections` needed its own gate: an ingest holds a bare
+   * `userId` handed to it by a webhook or a poll, so nothing in the request path notices that the
+   * account is mid-deletion, and the tracks stage passes over this table exactly once. An activity
+   * ingested a moment later is an *unpublished* recording — the bucket D62 erases — that would
+   * outlive the deletion. If you add one, gate it (`lib/activityConnections.canConnectAccount`).
+   */
   gpsActivities: defineTable({
     userId: v.id('profiles'),
     provider: literals(ACTIVITY_PROVIDERS),
