@@ -48,6 +48,9 @@ const NOTIF_PREFS = {
 const ADULT_DOB = Date.UTC(1990, 0, 1);
 const T0 = Date.UTC(2026, 0, 15, 14, 0, 0);
 
+/** What `seedUser` hands back: the profile id plus a client bound to that identity. */
+type SeededUser = Awaited<ReturnType<typeof seedUser>>;
+
 async function seedUser(t: ReturnType<typeof convexTest>, subject: string) {
   const id = (await t.run((ctx) =>
     ctx.db.insert('profiles', {
@@ -448,16 +451,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     coordinates: Array.from({ length: 20 }, (_, i) => [0.2 + i * 0.03, 0.5]) as number[][],
   };
 
-  async function seedTrack(
-    t: ReturnType<typeof convexTest>,
-    user: {
-      id: Id<'profiles'>;
-      as: ReturnType<typeof convexTest>['withIdentity'] extends never
-        ? never
-        : ReturnType<ReturnType<typeof convexTest>['withIdentity']>;
-    },
-    key: string,
-  ) {
+  async function seedTrack(user: SeededUser, key: string) {
     return user.as.mutation(api.gpsActivities.ingestTrack, {
       idempotencyKey: key,
       path: trackPath,
@@ -472,7 +466,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     const user = await seedUser(t, 'leaver');
     const viewer = await seedUser(t, 'viewer');
     const bodyId = await seedBody(t);
-    const activityId = await seedTrack(t, user, 'published');
+    const activityId = await seedTrack(user, 'published');
     await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       activityId,
@@ -501,7 +495,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     await seedBody(t);
-    const activityId = await seedTrack(t, user, 'private');
+    const activityId = await seedTrack(user, 'private');
 
     await finalize(t, user.id);
 
@@ -512,7 +506,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
-    const activityId = await seedTrack(t, user, 'hidden');
+    const activityId = await seedTrack(user, 'hidden');
     const reportId = await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       activityId,
@@ -546,7 +540,7 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     // a mix of both outcomes rather than a run of one.
     const publishedIds: Id<'gpsActivities'>[] = [];
     for (let i = 0; i < 5; i++) {
-      const activityId = await seedTrack(t, user, `paged-${i}`);
+      const activityId = await seedTrack(user, `paged-${i}`);
       if (i < 2) {
         await user.as.mutation(api.reports.create, {
           waterBodyId: bodyId,
