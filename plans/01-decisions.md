@@ -1238,3 +1238,69 @@ weather-since" math, extract a shared primitive:
 **Why:** "one copy of the math" for the part that would actually drift (the shared primitives), with
 each consumer keeping the policy its question demands — the report↔path pair provably can't diverge
 because they're one number, and bounties stop carrying a duplicate of the blend.
+
+## D60 — A bay is a named sub-area of one polygon, not a water body (N2)
+**Decided (2026-07-26).** The community corpus names big lakes by *arm*, not by lake — Malletts Bay
+under ten spellings, the northeast arm of Champlain as "the Inland Sea" (S2). Every name the Phase-2.5
+seed failed to match turned out to be a region **inside** an existing polygon. So:
+- **New table `waterBodySubAreas`**, one row per named region, always inside a parent body. Reports,
+  hazards and bounties keep belonging to the **parent**; the sub-area is the finer name they carry,
+  denormalized flat onto each row (`subAreaId` / `subAreaName`) at create. This is the **D4 model**,
+  deferred since Phase 1 for rivers-as-named-reaches, instantiated for lakes where the evidence is
+  overwhelming. *Rejected:* minting each bay as its own body — that splits one sheet of ice's reports,
+  hazards, bounties, favorites and aggregate tracks across a dozen rows and hands the D36 dedup queue
+  a permanent stream of parent-vs-child overlap pairs it has no verdict for.
+- **Moderators draw them, and this does not breach the path-only doctrine.** That doctrine exists
+  because a client-supplied *body* has no proof of presence and no frame of reference. A sub-area has
+  neither problem: its geometry is **clipped to an already-trusted official polygon**, its author is
+  role-gated, and every write is audited. No body is ever minted from a drawn shape.
+- **Clip, don't reject.** A drawn shape is intersected with the parent and the *clipped* result stored,
+  so a stored sub-area is inside its parent **by construction** rather than by assertion — and that
+  survives the parent changing shape (a canonical re-import re-clips; a bay that no longer fits is
+  delisted with a log, never dropped). The write refuses only when too little of the draw survives:
+  **0.6** for an interactive trace, **0.35** for a box-seeded row, measured (see the N2 doc).
+  *Note the inversion from Phase 9.5:* the hazard clip fails **open**, because hiding a real hazard is
+  the direction safety never fails; this one fails **closed**, because failing open would store an
+  unconstrained client shape and retire the argument above.
+- **A point in two overlapping bays takes the smallest containing one.** Most specific name wins, and
+  it's **order-independent** — the answer is a property of the geometry, not of which row an index
+  reached first. (First-match would have been N1's whole correction series happening again.)
+- **A sub-area is visible only while its parent is.** Cell rows exist on the conjunction, so a
+  landowner takedown takes the lake's bays with it; a merge repoints them to the survivor.
+- **Full citizens:** labelled (feed card, report detail, hazard lines, through one composition helper),
+  searchable by alias, rendered on both clients off their own ladder-grid cell table, and targetable by
+  a bounty — narrowed at `attachReportToOpenBounties` and at a sub-area-scoped freshness index, since
+  fulfillment begins at auto-attach and an unnarrowed one makes the targeting cosmetic.
+- **Deliberately not targeted:** favorites and drive-time. Isochrone bands cache per user against a
+  body centroid (D18), and a sub-area centroid sits minutes from its parent's — a multiplied cache for
+  a difference below the model's own resolution.
+**Why:** the corpus was never asking for more bodies; it was asking for names inside one body. This
+gives a skater the name they already use, on their own report, without fragmenting the ice.
+
+## D61 — The operator surface is a per-lake editor, on the same canvas as the map (N2)
+**Decided (2026-07-26).** `/admin` was entirely tables and the map lived only in the skater tree, so
+curating a lake meant holding it in your head across a queue row, a CSV and an internal mutation.
+- **`/admin/water/$id`** — one canvas whose **camera is locked to the body** (`maxBounds` = its bbox
+  plus a proportional margin, `minZoom` = the zoom that fits it), carrying every per-body lever:
+  prominence with a live zoom preview, sub-area draw/rename/delist, put-ins, weather sample points,
+  hazards, aggregate tracks, and this body's review/dedup actions. The lock is the *feature* — the
+  server clips a drawn bay to *this* parent regardless, so without it a mistaken pan is silent
+  confusion rather than a caught error.
+- **One shared map shell**, not a second canvas (founder call over the build's recommendation):
+  `lib/mapCanvas.ts` owns creation, theme, bounds, controls, viewport reporting and teardown; callers
+  register their own layers. The seam is deliberately low — drawn higher it becomes a shell with a
+  dozen conditional props, which is two components wearing one name. **Price: the skater path comes
+  out behaviourally identical, evidenced by its suite passing unchanged.**
+- **terra-draw, lazy and admin-only** (MIT, first-class MapLibre adapter, own 270 kB chunk). A skater
+  never draws anything, so the engine never enters their bundle. **Paste-GeoJSON sits beside it
+  permanently** — the way a shape traced elsewhere gets in, and the break-glass path if the import
+  fails.
+- **Aggregate tracks stay view-only.** The lever on a bad track is hiding the report it belongs to;
+  D58's argument — that a second consent flag would let the two disagree and ask people to consent
+  twice to one thing — stands unamended. An explicit per-activity exclusion is deferred with a written
+  trigger: a real track that is bad on the map but fine as a report.
+- **`waterBodies.listCurated`** off a new `by_curated_boost` index. This is the piece whose absence
+  was the actual bug: `curatedBoost` was editable per body with no index and no list, so nothing
+  anywhere answered "which bodies have I curated?" — which is why five bad matches went unnoticed.
+**Why:** the founder *is* the operator, so the tools they use daily are the cheapest way to make what
+alpha skaters see materially better. One map, one session, every lever.

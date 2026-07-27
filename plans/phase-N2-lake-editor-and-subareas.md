@@ -1,6 +1,8 @@
 # N2 — The lake editor + named sub-areas
 
-> **Status: building (kickoff 2026-07-26; build started 2026-07-26).** The second item in the roadmap's *Next-phase candidates*
+> **Status: ✅ COMPLETE on dev (2026-07-26; prod deferred, as every phase since 2.5).** Decisions
+> **D60** (named sub-areas) and **D61** (the per-lake operator canvas) are written into
+> [`01-decisions.md`](./01-decisions.md). The second item in the roadmap's *Next-phase candidates*
 > register ([`07-roadmap.md`](./07-roadmap.md) → *Later / deferred* → N2), picked second because the
 > founder **is** the operator, and because the corpus models its most-skated destinations worst.
 

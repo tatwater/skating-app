@@ -65,12 +65,20 @@ and D3's safety framing. **Possible future feature:** per-water-body **put-in / 
 (parking, launches) — not scoped to a phase yet, but clearly wanted. *(Also feeds the D18 drive-time
 approximation: testing the actual put-in, not the water-body centroid.)*
 
-### S2 — Big lakes are named by sub-area, spelling varies
+### ~~S2 — Big lakes are named by sub-area, spelling varies~~ → **D60** (N2, 2026-07-26)
 Large lakes are referred to by named arms/bays and nicknames, not the parent name: Lake Champlain's
 **Malletts Bay** appeared under **10 spellings** (Malletts/Mallets/Mallett's + Inner/Outer), and the
-NE arm as **"Inland Sea"** (55). Implication for **D4/D36/D48/D49**: the detector/dedup and the
-zoom-scored display should expect **named sub-areas** of one polygon and **spelling variants** — a
-big lake isn't one label. Relevant when modeling Champlain-scale bodies + seeding `curatedBoost`.
+NE arm as **"Inland Sea"** (55).
+
+**Answered by D60** — `waterBodySubAreas`, a named region *inside* one polygon, carrying `aliases`
+for exactly the spelling problem this entry names. Nine bays are drawn on Champlain with their alias
+sets (see [`phase-N2-lake-editor-and-subareas.md`](./phase-N2-lake-editor-and-subareas.md) → *The
+curation session*).
+
+**One thing this entry didn't anticipate, still open:** the same problem exists one level up. The
+corpus asks for **"Saranac Lake"** and OSM carries *Upper*, *Lower* and *Middle* — a name for an
+existing **body**, not a region inside one. Sub-areas got `aliases`; water bodies have none. See the
+N2 doc's *Open after this phase*.
 
 ---
 
