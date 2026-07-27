@@ -47,6 +47,40 @@ export function formatPlaceLabel(place: PlaceLabelParts | undefined): string | n
   return null;
 }
 
+/** The pieces of a report's / hazard's location line, coarsest last. */
+export interface LocationLineParts {
+  /** The named sub-area stamped at create (N2 / D60) — "Malletts Bay". Absent on most bodies. */
+  subAreaName?: string;
+  /** The parent water body — always present on a report or hazard. */
+  bodyName: string;
+  /** The point-derived admin place (`reports.place`), stamped at create via `adminAreas` (Phase 5). */
+  place?: PlaceLabelParts;
+}
+
+/** Separator between location segments. Middot, not a comma — the town segment already has one. */
+const LOCATION_SEPARATOR = ' · ';
+
+/**
+ * The full location line, finest name first: **"Malletts Bay · Lake Champlain · Colchester, VT"**.
+ *
+ * **This is the one place the line is composed, and it has to be** (N2). Before this, the sub-area
+ * would have been the third thing a card assembled by hand: `formatPlaceLabel` returned only the
+ * `"Colchester, VT"` segment, and `bodyName` was a separate field each surface rendered beside it in
+ * its own JSX. Adding a name to the front of that would have meant editing the feed card, report
+ * detail, hazard lines and both mobile equivalents in parallel and hoping they stayed in agreement —
+ * and "the label disagrees with itself depending on which screen you're on" is the kind of bug nobody
+ * files and everybody notices.
+ *
+ * Segments are omitted when absent rather than left as an empty gap, so a body with no sub-area and
+ * an unresolved place reads as just its own name.
+ */
+export function formatLocationLine(parts: LocationLineParts): string {
+  const place = formatPlaceLabel(parts.place);
+  return [parts.subAreaName?.trim() || null, parts.bodyName.trim() || null, place]
+    .filter((segment): segment is string => !!segment)
+    .join(LOCATION_SEPARATOR);
+}
+
 /** Thresholds for the relative-time label (ms). */
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -78,6 +112,8 @@ export interface FeedCardData {
   reportId: string;
   waterBodyId: string;
   bodyName: string;
+  /** The report's named sub-area (N2 / D60), stamped at create. Absent on all but a few giants. */
+  subAreaName?: string;
   place?: PlaceLabelParts;
   skateEndTime: number;
   skateStartTime?: number;
@@ -97,6 +133,11 @@ export interface FeedCardView {
   waterBodyId: string;
   bodyName: string;
   placeLabel: string | null;
+  /**
+   * The composed sub-area · body · place line (N2). Surfaces render **this**, not the three parts —
+   * see {@link formatLocationLine} for why the composition can only live in one place.
+   */
+  locationLine: string;
   skateEndTime: number;
   relativeTime: string;
   durationLabel: string | null;
@@ -170,6 +211,11 @@ export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView
     waterBodyId: data.waterBodyId,
     bodyName: data.bodyName,
     placeLabel: formatPlaceLabel(data.place),
+    locationLine: formatLocationLine({
+      ...(data.subAreaName !== undefined ? { subAreaName: data.subAreaName } : {}),
+      bodyName: data.bodyName,
+      ...(data.place !== undefined ? { place: data.place } : {}),
+    }),
     skateEndTime: data.skateEndTime,
     relativeTime: formatRelativeTime(data.skateEndTime, now),
     durationLabel: formatSkateWindow(data.skateEndTime, data.skateStartTime),

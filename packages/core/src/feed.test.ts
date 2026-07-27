@@ -4,6 +4,7 @@ import {
   buildFeedCardView,
   type FeedCardData,
   feedSectionForTime,
+  formatLocationLine,
   formatPlaceLabel,
   formatRelativeTime,
   groupFeedSections,
@@ -86,6 +87,35 @@ describe('formatPlaceLabel', () => {
   });
 });
 
+describe('formatLocationLine', () => {
+  const place = { town: 'Colchester', county: 'Chittenden County', state: 'VT' };
+
+  it('puts the sub-area ahead of the body and the town — the N2 headline case', () => {
+    expect(
+      formatLocationLine({ subAreaName: 'Malletts Bay', bodyName: 'Lake Champlain', place }),
+    ).toBe('Malletts Bay · Lake Champlain · Colchester, VT');
+  });
+
+  it('omits the sub-area segment for the overwhelming majority of bodies that have none', () => {
+    expect(
+      formatLocationLine({ bodyName: 'Lake Morey', place: { town: 'Fairlee', state: 'VT' } }),
+    ).toBe('Lake Morey · Fairlee, VT');
+  });
+
+  it('omits the place segment when nothing resolved, without leaving a dangling separator', () => {
+    expect(formatLocationLine({ subAreaName: 'Malletts Bay', bodyName: 'Lake Champlain' })).toBe(
+      'Malletts Bay · Lake Champlain',
+    );
+    expect(formatLocationLine({ bodyName: 'Lake Champlain', place: {} })).toBe('Lake Champlain');
+  });
+
+  it('treats a whitespace-only sub-area name as absent', () => {
+    expect(formatLocationLine({ subAreaName: '   ', bodyName: 'Lake Champlain' })).toBe(
+      'Lake Champlain',
+    );
+  });
+});
+
 describe('formatRelativeTime', () => {
   const now = Date.UTC(2026, 0, 5, 12, 0);
 
@@ -145,6 +175,13 @@ describe('buildFeedCardView', () => {
 
   it('carries the favorite flag through to the view (Phase 4)', () => {
     expect(buildFeedCardView({ ...CARD, isFavorite: true }, now).isFavorite).toBe(true);
+  });
+
+  it('composes the location line, with and without a sub-area (N2)', () => {
+    expect(buildFeedCardView(CARD, now).locationLine).toBe('Lake Champlain · Burlington, VT');
+    expect(buildFeedCardView({ ...CARD, subAreaName: 'Malletts Bay' }, now).locationLine).toBe(
+      'Malletts Bay · Lake Champlain · Burlington, VT',
+    );
   });
 
   it('handles an end-only report with no place, quality, or photos', () => {
