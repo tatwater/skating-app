@@ -77,12 +77,17 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
           trustClass={detail.requester.trustClass}
           size={28}
         />
-        {/* A missing/deleted requester has no username — plain text, no navigation to a dead `/u/` route. */}
+        {/* No link for a requester there's nothing to link to. Two distinct cases: an *unresolvable*
+            one has no username at all, and a **deleted** one now has a synthetic sentinel handle (N3)
+            — which passes an emptiness check while still routing nowhere, so `deleted` has to be
+            checked explicitly. */}
         <Text
           flex={1}
-          color={detail.requester.username ? '$primary' : '$foreground'}
+          color={
+            detail.requester.username && !detail.requester.deleted ? '$primary' : '$foreground'
+          }
           onPress={
-            detail.requester.username
+            detail.requester.username && !detail.requester.deleted
               ? () =>
                   router.navigate({
                     pathname: '/u/[username]',

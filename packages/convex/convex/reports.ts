@@ -63,6 +63,7 @@ import {
   getCurrentProfile,
   requireProfile,
 } from './lib/auth';
+import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { bumpContributionCount } from './lib/contributionCounts';
 import { isListed } from './lib/listing';
@@ -552,17 +553,7 @@ async function authorFor(
 ): Promise<FeedAuthor> {
   const cached = cache.get(authorId);
   if (cached !== undefined) return cached;
-  const profile = await ctx.db.get(authorId);
-  const author: FeedAuthor = profile
-    ? {
-        displayName: profile.displayName,
-        username: profile.username,
-        ...(profile.profileImageUrl !== undefined
-          ? { profileImageUrl: profile.profileImageUrl }
-          : {}),
-        trustClass: trustClassFor(profile, now),
-      }
-    : { displayName: 'Unknown', username: '', trustClass: null };
+  const author = publicAuthor(await ctx.db.get(authorId), now);
   cache.set(authorId, author);
   return author;
 }

@@ -22,6 +22,12 @@ export interface FeedAuthor {
   username: string;
   profileImageUrl?: string;
   trustClass?: TrustClass | null;
+  /**
+   * A deletion tombstone (D33/D62). Present so a client renders the name **without a link**: the
+   * `username` on a tombstone is a synthetic sentinel, and routing to `/u/<sentinel>` would be a dead
+   * end dressed up as a profile. Absent on every live author, so a card that ignores it still works.
+   */
+  deleted?: true;
 }
 
 /** The point-derived admin place (from `reports.place`), stamped at create via `adminAreas` (Phase 5). */

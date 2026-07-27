@@ -232,6 +232,45 @@ describe('the tombstone', () => {
     expect(await user.as.query(api.profiles.current, {})).toBeNull();
   });
 
+  /**
+   * The reason `lib/authorView` exists. A tombstone is a profile row that still has its
+   * `reputationPoints`, so every hand-rolled copy of the author shape happily derived a trust ring for
+   * someone with no account — and `publicByIds` had been fixed by hand while the feed and the comment
+   * thread hadn't. A deleted skater ringed as "trusted" on a card and unringed on their profile is the
+   * kind of inconsistency nobody files and everybody sees.
+   */
+  test('every surface renders the tombstone identically — name, no ring, flagged deleted', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const viewer = await seedUser(t, 'viewer');
+    const bodyId = await seedBody(t);
+    const reportId = await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+      iceTypes: ['black_ice' as const],
+      surfaceTags: [],
+    });
+    await user.as.mutation(api.comments.create, { reportId, body: 'Still good.' });
+    // Enough points that a live author would definitely carry a ring — so "no ring" is a real
+    // assertion rather than an artifact of a fresh account scoring null anyway.
+    await t.run((ctx) => ctx.db.patch(user.id, { reputationPoints: 500 }));
+
+    await finalize(t, user.id);
+
+    const feed = await viewer.as.query(api.reports.listFeed, {
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    const thread = await viewer.as.query(api.comments.listByReport, { reportId });
+    const byIds = await viewer.as.query(api.profiles.publicByIds, { profileIds: [user.id] });
+
+    const surfaces = [feed.page[0]?.author, thread[0]?.comment?.author, byIds[user.id]];
+    for (const author of surfaces) {
+      expect(author?.displayName).toBe(DELETED_DISPLAY_NAME);
+      expect(author?.trustClass ?? null).toBeNull();
+      expect(author?.deleted).toBe(true);
+    }
+  });
+
   test('publicByIds renders a tombstone without a linkable handle or a trust ring', async () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
