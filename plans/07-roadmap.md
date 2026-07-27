@@ -710,6 +710,10 @@ with a shared test/verification shape, ordered **highest-impact first** — wher
 skater or the operator feels during the first-ice friends alpha*, not what's most interesting to build.
 Chunks are independent unless noted; sizes are rough.
 
+*Numbering note (2026-07-27): the old **N4** (account lifecycle) absorbed the old **N3** (storage-hygiene
+crons) and took its number — the crons are the lifecycle work's own cleanup path, not a separate chunk.
+**N5–N8 keep their numbers**, so pointers written before today still resolve.*
+
 ~~**N1 — Read-path durability: the crash class.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
 [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) for the design, the
 corrections to what this entry used to say, and the measured results.
@@ -772,21 +776,37 @@ and the skater map are one canvas (founder call, with the skater suite green unc
 *A worry that bodies need aliases the way sub-areas do was checked and dismissed:
 "Saranac Lake" already returns Upper, Middle and Lower, and they're genuinely three lakes.*
 
-**N3 — Storage-hygiene crons.** *(Tiny — a half-day — and it's pure downside-avoidance: nobody notices
-these until a quota bites mid-alpha.)* Both are the same shape as the three prune crons already
-shipped, so they share a test pattern.
-- **Photo-orphan GC**: sweep unreferenced `photos` rows + orphaned storage blobs past a grace window.
-  The client reclaims best-effort today, but a killed app still strands blobs.
-- **`weatherCache` prune**: no pruner exists; a row accrues per `(samplePoint, windowStart, hourBucket)`
-  as the `now` bucket advances. Disk growth, not staleness.
+**N3 — Account lifecycle + storage hygiene (D33/D62).** 🔨 *In build (2026-07-27)* — see
+[`phase-N3-account-lifecycle.md`](./phase-N3-account-lifecycle.md). **This entry absorbs what used to
+be N4**; the old N3 (two storage-hygiene crons, "tiny — a half-day") is now a workstream inside it,
+because the lifecycle work *creates* the storage problems the crons exist to solve: an export bundle is
+a stored blob needing a TTL sweep, deletion strands a departing user's unattached photo blobs, and the
+grace window needs a finalize cron in the same family. One phase, one review surface, one test pattern.
 
-**N4 — Account lifecycle: deletion, export, anonymization (D33).** *(Here because it's a
-trust-and-launch requirement that touches every surface showing an author — and the longer the corpus
-grows, the more places a late implementation has to reach.)* The **mechanism is fully unblocked**; only
-the *policy wording* is legal-gated (L3), so build the machinery and leave the copy to the Q10 pass.
-Reports/comments are public and **anonymize rather than erase** (preserve the ice record, D33/D13), so
-the real work is making an anonymized author render gracefully **everywhere** — feed cards, report
-detail, comment threads, hazard reporter lines, aggregate track attribution, `/admin`.
+Deletion/export is a trust-and-launch requirement that touches every surface showing an author. The
+**mechanism is unblocked**; only the *policy wording* is legal-gated (L3), so build the machinery and
+leave the copy to the Q10 pass. Public content **anonymizes rather than erases** (D33/D13) — but that
+rule is no longer uniform, and **D62** says why: D33's premise ("all reports are public, so there's no
+private content to selectively remove") predates Phase 4's `homeCoord`/isochrones and Phase 8's raw GPS
+paths + OAuth tokens. Three buckets now — erase the private, anonymize the public record, and
+**keep-but-sever** published GPS tracks (kept iff linked to a visible report, which is D58's own
+publish-is-consent predicate reused).
+
+Two things this pair of entries had wrong, both corrected in the phase doc: the photo-orphan GC's
+**evidence gate already exists and has produced nothing** — Phase 7b built the `photo_orphans` metric
+*and* the `photos.by_created_at` index expressly to decide whether the cron was worth building, and it
+reads 0 on dev because dev holds **0 photos** (and 0 `weatherCache` rows, 1 report, 2 profiles); and
+the anonymized-author work is **smaller** than "everywhere" implies, since `reports`/`bounties`/
+`comments` already funnel a missing author through one `{ displayName: 'Unknown', … }` shape. What's
+*bigger* than stated: `by_clerk_user_id` and `by_username` are read with `.unique()`, so tombstone
+sentinels must be per-row-unique or the second deleted account breaks auth app-wide.
+
+Two things came out that weren't scoped: **`showPutIn` is bypassed on the report-detail map** —
+`gpsActivities.getForReport` returns the raw path to every viewer, so a skater who withheld their put-in
+still has their first/last 150 m drawn publicly today, despite the aggregate layer 60 lines below
+carefully clipping it (fixed here, since deletion can't respect a rule the live product doesn't); and
+**`weatherCache` growth is multiplied by N2**, which shipped the `weatherSamplePoints` writer — rows
+accrue per hour *per sample point*, not per hour per lake.
 
 **N5 — Hazard authoring & confirmation polish.** *(One coherent pass over the hazard surface on web +
 mobile; these were each deferred alone but reviewing them together is far cheaper than five visits.)*
@@ -837,7 +857,7 @@ Grouped by *what* is blocking, because that's what determines when it moves.
 
 - **A lawyer (Q10 / L1 — one engagement clears most of this).** Full ToS + privacy policy +
   assumption-of-risk enforceability; the minor-data posture (L2); deletion/retention wording (L3 — the
-  N4 *mechanism* is unblocked, only the copy waits); the AGPL App Store / Play exception text (L4); the
+  N3 *mechanism* is unblocked, only the copy waits); the AGPL App Store / Play exception text (L4); the
   landowner-takedown wording and any obligation to honor requests (L11). Separately legal-gated:
   **forum / Facebook / Google-Group ingestion + republication** (Q8 / L5 — feasibility *and* consent
   *and* ToS); **AI summarization beyond weather facts** (Q9 / L6 — liability review); **PostHog session
@@ -946,13 +966,20 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   actually blocking each. Not dropped; sorted.)*
 - Satellite imagery layer toggleable in lake detail view. **NOTE: This plan still needs to be explored**
   — and it needs an imagery source whose terms permit the use, which is its own question.
-- **Photo-orphan GC cron (cleanup/polish).** The Phase 2 photo pipeline uploads before
-  `reports.create`, so failed/abandoned/partial submits can strand storage. The client reclaims
-  best-effort (`photos.remove`/`removeBlob`, incl. uploads that resolve after the form unmounts), but
-  a killed app or a failed reclaim call can still leave orphans. Add a scheduled sweep of unreferenced
-  `photos` rows + orphaned storage blobs past a grace window as the durable backstop. See
-  `phase-2-map-and-reports.md` → "Settled during review" (2026-07-15). Low urgency until storage
-  quotas bite.
+- ~~**Photo-orphan GC cron (cleanup/polish).**~~ **→ folded into N3 (2026-07-27).** The Phase 2 photo
+  pipeline uploads before `reports.create`, so failed/abandoned/partial submits can strand storage. The
+  client reclaims best-effort (`photos.remove`/`removeBlob`, incl. uploads that resolve after the form
+  unmounts), but a killed app or a failed reclaim call can still leave orphans. See
+  `phase-2-map-and-reports.md` → "Settled during review" (2026-07-15).
+  - This entry said "low urgency until storage quotas bite", and **the trigger it was waiting for is not
+    the one that fired**: N3's account deletion strands a departing user's unattached blobs and emits
+    export bundles that need a TTL, so the cron became that phase's own cleanup path rather than a
+    quota-driven chore. Worth remembering that a deferred item can be pulled in by a *sibling feature*
+    and not by its own stated trigger.
+  - Worth remembering too: Phase 7b built the `photo_orphans` metric **and** the `photos.by_created_at`
+    index expressly to decide whether this cron was worth building — and neither this sketch nor the
+    N3 entry knew it existed. It reads 0 on dev because dev holds **0 photos**, so the gate never had
+    data to decide with. An evidence gate nobody points at is not a gate.
 
 ## Cross-cutting (every phase)
 - **Tests land with the feature** — Vitest unit/logic + property tests for
@@ -966,5 +993,5 @@ The long-form write-ups the entries above point at — preserved verbatim, since
 - **Sentry** crash/error hygiene; **PostHog** analytics/flags added once there's
   usage to measure (D29) — session replay masked/off where location or minors are
   involved (revisit before enabling).
-- **Account deletion + data export** wired as auth/profile matures (D33) — scoped as **N4** in the
-  register above; the mechanism is unblocked, only the policy wording waits on Q10/L3.
+- **Account deletion + data export** wired as auth/profile matures (D33, amended by **D62**) — scoped
+  as **N3** in the register above; the mechanism is unblocked, only the policy wording waits on Q10/L3.

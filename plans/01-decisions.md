@@ -380,6 +380,13 @@ person's content/profile from me and mine from them" — there is no friendship/
 to also tear down. Block/mute ship in **Phase 3** alongside comments + flagging.
 
 ## D33 — Account lifecycle: deletion, retention, export
+> **Amended by [D62](#d62--account-deletion-a-30-day-grace-window-and-three-buckets-rather-than-two-n3-amends-d33) (2026-07-27, N3).** The *decision* below stands; its **premise** does not.
+> "There's no private content to selectively remove" was true before Phase 4 added `homeCoord` +
+> isochrones and Phase 8 added raw GPS paths + OAuth tokens. Deletion now uses **three buckets**
+> (erase private / anonymize the public record / keep-but-sever published tracks), runs after a
+> **30-day grace window**, and the export **embeds photo bytes** rather than the URLs implied here —
+> a URL into our storage dies at the moment an export-then-delete needs it.
+
 **Decided.** Users can **delete their account** and **export their data**. On
 deletion we **anonymize** their past reports/comments (author replaced with a
 "deleted user" tombstone) rather than hard-deleting the content, preserving the
@@ -1309,3 +1316,41 @@ curating a lake meant holding it in your head across a queue row, a CSV and an i
   anywhere answered "which bodies have I curated?" — which is why five bad matches went unnoticed.
 **Why:** the founder *is* the operator, so the tools they use daily are the cheapest way to make what
 alpha skaters see materially better. One map, one session, every lever.
+
+## D62 — Account deletion: a 30-day grace window, and three buckets rather than two (N3, amends D33)
+**Decided (2026-07-27).** D33 settled *that* users can delete and export, and that public content is
+**anonymized rather than erased**. Both still hold. What D33 could not have known is what the app would
+later store, so this amends its mechanics.
+
+**D33's premise no longer holds.** It reasoned: *"Since all reports are public (D13), there's no private
+content to selectively remove."* **Phase 4** then added `homeCoord` + `cachedIsochrones` (a home address
+and three polygons derived from it) and **Phase 8** added `gpsActivities.path` (raw GPS traces) plus
+`activityConnections` (live OAuth tokens). Anonymize-don't-erase is right for the community ice record
+and wrong for a private location trace, so the rule is no longer uniform.
+
+- **A 30-day grace window, finalized by cron** — not immediate. Reversible-by-default is the posture
+  every other destructive path here already takes (D15 hazard archive, D36 merge tombstone, D53
+  demotion). During the window the account is **fully functional and Clerk is untouched**: banning
+  Clerk on request would lock the user out of the very sign-in they need to undo. Cancelling is an
+  **explicit button**, never an implicit side effect of signing in.
+- **Three buckets, not two.** *Erase* the private artifacts (OAuth tokens, notifications + queue,
+  favorites, blocks, support tickets, home location + isochrones, unattached photos). *Anonymize* the
+  public ice record (reports, comments, hazards, ratings, bounties, flags, point events — author
+  pointer → tombstone, content untouched). And **keep-but-sever** published GPS tracks.
+- **The GPS rule is D58's own predicate, reused: a `gpsActivities` row is kept iff it is linked to a
+  visible report.** An unlinked activity is a recording the person never published — private, no
+  community value, erased. A linked one is *publish-is-consent* (D58 gate 1) and is already drawn on the
+  lake. Provider handles (`providerActivityId`, `photoUrls`) are scrubbed; the path stays.
+- **Finalize must NOT set `excludeTracksFromAggregate`.** Stated as a prohibition because the mistake
+  is attractive: flipping it on looks like the cautious privacy choice, and would silently delete the
+  contribution this decision exists to preserve. D58's four gates all read data that survives deletion,
+  so the heatmap keeps working — including honoring `showPutIn` clipping — with no changes at all.
+- **Per-row-unique tombstone sentinels.** `username → deleted-<id>`, `clerkUserId → deleted:<id>`. Both
+  are read with `.unique()`, so a shared `'deleted'` constant would make the *second* deleted account
+  break authentication for the whole app.
+- **Export embeds photo bytes, not URLs**, and is **emailed plus listed in settings** until it expires.
+  A URL into our storage dies when the account is deleted — worthless at the one moment the export
+  exists for (export-then-delete). The in-settings listing is what makes the feature verifiable before
+  Resend is provisioned, and stops a spam-filtered email being a dead end.
+**Why:** the ice record is the community's, but a GPS trace and a home address are the person's. One
+rule couldn't serve both, and the seam that separates them already existed in D58.
