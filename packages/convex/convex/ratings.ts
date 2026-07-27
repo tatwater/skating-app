@@ -23,6 +23,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { fulfillBountyOnHelpful } from './bounties';
 import { getCurrentProfile, requireProfile } from './lib/auth';
+import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs } from './lib/reputation';
 import { literals } from './lib/validators';
 
@@ -97,23 +98,31 @@ async function maybeAutoFlag(
   targetType: RatingTargetType,
   targetId: string,
   triggeredByRaterId: Id<'profiles'>,
+  /**
+   * True when this rater had no prior vote here — i.e. a *person* newly pushed the target down,
+   * rather than one who already voted changing their mind. See `countsAsOccurrence` below.
+   */
+  isFirstVoteByRater: boolean,
 ): Promise<void> {
   const { helpful, unhelpful } = await tallyThumbs(ctx, targetType, targetId);
   if (unhelpful - helpful < AUTO_LOW_QUALITY_NET_UNHELPFUL) return;
-  const existing = await ctx.db
-    .query('contentFlags')
-    .withIndex('by_target', (q) => q.eq('targetType', targetType).eq('targetId', targetId))
-    .filter((q) => q.eq(q.field('reason'), 'auto_low_quality'))
-    .filter((q) => q.eq(q.field('status'), 'open'))
-    .first();
-  if (existing) return;
-  await ctx.db.insert('contentFlags', {
-    flaggerId: triggeredByRaterId, // the downvote that crossed the line; `reason` marks it system-generated
+  // Bundled (N2): a target that keeps crossing the threshold bumps one row's count rather than
+  // filing an identical flag each time. The dedup used to live here, spelled out a second time in
+  // `contradictions.ts` — see `lib/autoFlag.ts` for why the shared version never reopens a resolved
+  // row.
+  //
+  // **Only a rater's first vote counts as an occurrence.** This function runs on every verdict
+  // *change* to unhelpful, so without that, one person flipping helpful↔unhelpful on someone else's
+  // report could run the count up indefinitely — and `occurrences` is what a moderator reads to
+  // decide the D57 lever, so it has to be a fact about the content rather than something a rater can
+  // author. Counting first votes only makes it "how many people pushed this over the line", which is
+  // both meaningful and un-inflatable. A flag is still *filed* on a flip when none exists yet.
+  await fileOrBumpAutoFlag(ctx, {
     targetType,
     targetId,
     reason: 'auto_low_quality',
-    status: 'open',
-    createdAt: Date.now(),
+    flaggerId: triggeredByRaterId, // the downvote that crossed the line; `reason` marks it system-generated
+    countsAsOccurrence: isFirstVoteByRater,
   });
 }
 
@@ -219,7 +228,7 @@ export const rate = mutation({
         }
       }
     } else {
-      await maybeAutoFlag(ctx, targetType, targetId, rater._id);
+      await maybeAutoFlag(ctx, targetType, targetId, rater._id, existing === null);
     }
     // Recompute the target author's badges from live stats (a thumb feeds Appreciated / Trusted Reporter
     // / Hazard Spotter). Runs on both branches: a retracted helpful can drop a badge back below threshold.

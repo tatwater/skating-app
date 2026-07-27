@@ -10,7 +10,7 @@ import {
 } from '@maplibre/maplibre-react-native';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { applyDraftMapClick, type BBox } from '@skating/core';
+import { applyDraftMapClick, type BBox, SUB_AREA_MIN_RENDER_ZOOM } from '@skating/core';
 import { useQuery } from 'convex/react';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
@@ -44,6 +44,8 @@ import {
   PUT_IN_MARKER_OFFICIAL_COLOR,
   PUT_IN_PIN_COLOR,
   putInsToFeatureCollection,
+  SUB_AREA_PALETTE,
+  subAreasToFeatureCollection,
   TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
@@ -94,6 +96,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const scheme = useColorScheme();
   const flavor = scheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const water = WATER_PALETTE[flavor];
+  const subAreaPalette = SUB_AREA_PALETTE[flavor];
   const router = useRouter();
   const cameraRef = useRef<CameraRef>(null);
   const {
@@ -157,6 +160,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // region event, then `onRegionDidChange` refines it.
   const [queryArgs, setQueryArgs] = useState<{ viewport: BBox; zoom: number }>(INITIAL_QUERY);
   const bodies = useQuery(api.waterBodies.listInViewport, queryArgs);
+  // Named bays (N2/D60) — its own ladder-grid query. Rendering is not an operator affordance: mobile
+  // draws the label, it just can't edit it (the Phase 7 rule).
+  //
+  // **Not subscribed below the zoom floor**: the server answers `[]` there, but that is still a
+  // query execution and a subscription per viewport key, which on a phone is a round trip for an
+  // answer known in advance. `SUB_AREA_MIN_RENDER_ZOOM` is shared with the server via `@skating/core`.
+  const subAreaArgs = queryArgs.zoom >= SUB_AREA_MIN_RENDER_ZOOM ? queryArgs : ('skip' as const);
+  const subAreas = useQuery(api.subAreas.listInViewport, subAreaArgs);
 
   // Retain the last loaded features while the next query is in flight (Convex returns `undefined`
   // for a fresh key until it resolves) so bodies never blink off the map between pans.
@@ -164,6 +175,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
   }, [bodies]);
+  const [subAreaFeatures, setSubAreaFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FC);
+  useEffect(() => {
+    // Zooming back out clears the layer rather than leaving the last bays drawn over a regional view.
+    if (subAreaArgs === 'skip') setSubAreaFeatures(EMPTY_FC);
+    else if (subAreas !== undefined) setSubAreaFeatures(subAreasToFeatureCollection(subAreas));
+  }, [subAreas, subAreaArgs]);
 
   // Seed the offline body cache from what's on screen when zoomed in (Phase 9 §Mobile). Until now the
   // cache filled only when a lake's *drawer* was opened, so on-ice detection missed a lake you were
@@ -432,6 +449,40 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           type="line"
           filter={['in', ['get', '_id'], ['literal', favoriteIds]]}
           paint={{ 'line-color': FAVORITE_OUTLINE_COLOR, 'line-width': 2.5 }}
+        />
+      </GeoJSONSource>
+
+      {/* Named bays, over the water fill and under every pin layer. Dashed, so it reads as a name
+          for part of this lake rather than another lake's shoreline. No `onPress`: a tap falls
+          through to the water source beneath and opens the parent, which is the right destination. */}
+      <GeoJSONSource id="sub-areas" data={subAreaFeatures}>
+        <Layer
+          id="sub-area-outline"
+          type="line"
+          filter={['!=', ['get', 'label'], true]}
+          paint={{
+            'line-color': subAreaPalette.outline,
+            'line-width': 1.25,
+            'line-opacity': 0.8,
+            'line-dasharray': [3, 2],
+          }}
+        />
+        <Layer
+          id="sub-area-label"
+          type="symbol"
+          filter={['==', ['get', 'label'], true]}
+          layout={{
+            'text-field': ['get', 'name'],
+            'text-size': 12,
+            // A bay name may never displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
+            'text-allow-overlap': false,
+            'text-optional': true,
+          }}
+          paint={{
+            'text-color': subAreaPalette.label,
+            'text-halo-color': subAreaPalette.halo,
+            'text-halo-width': 1.2,
+          }}
         />
       </GeoJSONSource>
 

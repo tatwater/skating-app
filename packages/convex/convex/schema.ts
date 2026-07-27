@@ -145,6 +145,13 @@ export default defineSchema({
     // harassment/spam surface — so a boolean revocation fits, exactly like reports/hazards. Its point
     // is muting a toxic commenter *without* silencing their safety reports. Absent ⇒ allowed.
     canPostComments: v.optional(v.boolean()),
+    /**
+     * Per-user open-bounty cap (D57's deferred bounty lever, built in N2). Absent ⇒ the global
+     * `MAX_OPEN_BOUNTIES_PER_DAY`; `0` ⇒ can't post bounties at all. A *number* rather than a boolean
+     * on purpose: bounties aren't content, they're requests, so the proportionate lever for someone
+     * spamming them is fewer — not none, and certainly not a ban.
+     */
+    activeBountyPostLimit: v.optional(v.number()),
     contradictionCount: v.optional(v.number()),
     role: literals(USER_ROLES), // mod=content; admin ⊇ mod (D37)
     status: literals(USER_STATUSES), // suspend/ban (D37); deleted (D33)
@@ -268,6 +275,14 @@ export default defineSchema({
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
     .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
     .index('by_external_id', ['source', 'externalId']) // idempotent canonical upsert (D14/D48)
+    // The curation list (N2). Until now there was NO index on `curatedBoost` and no query listing
+    // boosted bodies — `WaterBodyModeratorControls` edits the boost on a body you already navigated
+    // to, and nothing told you which of 116k carry one. The five known Phase-2.5 mis-matches (South
+    // Bay, Button Bay, Half Moon Cove, Foster Pond, Mill Pond, all boosted onto same-named lakes
+    // elsewhere) were invisible until someone remembered them. A `> 0` range read costs the boosted
+    // rows and nothing else: `undefined` sorts before every number, so unboosted bodies are excluded
+    // by the range rather than filtered after the read.
+    .index('by_curated_boost', ['curatedBoost'])
     .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
 
   // The water-body spatial index (N1) — one row per grid cell a *listed* body's bbox covers, at the
@@ -286,6 +301,82 @@ export default defineSchema({
   })
     .index('by_cell', ['z', 'x', 'y', 'minVisibleZoom'])
     .index('by_body', ['waterBodyId']), // the write-path diff + backfill
+
+  // Named sub-areas (N2 / D60) — a region *inside* one water body, carrying the name skaters
+  // actually use for it. "Malletts Bay" is part of Lake Champlain, not a lake beside it: reports,
+  // hazards and bounties keep belonging to the **parent**, and the sub-area is the finer name they
+  // carry. Minting each bay as its own `waterBodies` row would split one sheet of ice's reports,
+  // hazards, bounties, favorites and aggregate tracks across a dozen rows, and hand the D36 dedup
+  // queue a permanent stream of parent-vs-child overlap pairs it has no verdict for.
+  //
+  // This is the **D4 model** (deferred since Phase 1 for rivers-as-named-reaches), instantiated for
+  // lakes first, where the corpus evidence is overwhelming: every name the community seed failed to
+  // match is a region inside one existing polygon.
+  //
+  // Two invariants, both enforced at the write boundary rather than assumed:
+  //  - **inside its parent by construction** — the drawn shape is clipped to the parent polygon and
+  //    the clipped result is stored (Decision 10 / `@skating/core`'s `clipSubAreaToParent`). This is
+  //    what keeps moderator drawing consistent with the path-only doctrine: no water body is ever
+  //    minted from a drawn shape, and a sub-area's geometry is constrained by an already-trusted one.
+  //  - **visible only while its parent is** (Decision 11) — see `waterBodySubAreaCells`.
+  waterBodySubAreas: defineTable({
+    waterBodyId: v.id('waterBodies'), // parent — required, always an existing body
+    name: v.string(), // "Malletts Bay"
+    // Corpus spelling variants (S2 found Malletts under ten of them) plus names that share no token
+    // with anything — the northeast arm of Champlain is "the Inland Sea" and nothing else.
+    aliases: v.optional(v.array(v.string())),
+    // `[name, ...aliases]` joined — Convex search indexes ONE field, so the aliases have to be in it
+    // for a search to reach them. Denormalized on every name/alias write; never set by a client.
+    searchText: v.string(),
+    polygon: geoJson, // the CLIPPED shape, inside the parent by construction (Decision 10)
+    bbox, // of the clipped polygon — what the cell index covers
+    centroid: latLng, // on-water representative point, same `pointOnFeature` basis as a body (D48)
+    surfaceAreaSqM: v.number(), // geodesic; also the Decision 9 tie-break (smallest containing wins)
+    // Same D49 curve as a body, off the sub-area's own area + boost — so Malletts Bay can label at a
+    // regional zoom while a small cove waits for z13, with no second curve to tune. Required (not
+    // optional like the body's): this table has no legacy rows, so every write computes them.
+    displayScore: v.number(),
+    minVisibleZoom: v.number(),
+    curatedBoost: v.optional(v.number()),
+    createdByUserId: v.id('profiles'), // the moderator who drew it — every write is audited too
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    removedAt: v.optional(v.number()), // soft-delist, reversible — never a hard delete (D48 ethos)
+    removedByUserId: v.optional(v.id('profiles')), // absent on a system delist — see below
+    // Why the *system* delisted this bay, when no human did (N2). A canonical re-import that refines
+    // a shoreline, or a merge onto a survivor with a different outline, can leave a hand-drawn bay no
+    // longer inside its parent — Decision 10's "inside by construction" has to survive the parent
+    // changing shape, so the bay is delisted rather than kept as geometry that escaped the invariant.
+    // A `console.warn` was the only trace of that, which is a log nobody reads; this puts the reason
+    // on the row, so `listForBody` carries it into the editor where the redraw actually happens (D5:
+    // never silent). Cleared by any write that re-establishes containment — restore or redraw.
+    systemDelistReason: v.optional(v.string()),
+  })
+    // Every non-map read is scoped to a parent already in hand — the report being created knows its
+    // `waterBodyId`, the search hit carries its parent, the lake editor is one body. Bounded by the
+    // handful of sub-areas one lake has, not by the corpus.
+    .index('by_parent', ['waterBodyId'])
+    .searchIndex('search_subarea', { searchField: 'searchText' }),
+
+  // The sub-area spatial index (N2) — the third table on N1's shared ladder-grid mechanism, same
+  // shape as `waterBodyCells`. It exists because a viewport is not a parent: the map render is the
+  // one sub-area read that can't be scoped to a body already loaded, and fanning `by_parent` out over
+  // the 1,000 bodies `listInViewport` can return is a read whose input is the render budget. "Sub-
+  // areas only exist on a handful of giants" is a fact about today's data, not a bound — which is the
+  // exact reasoning N1 exists to retire.
+  //
+  // **A row exists only while the sub-area is un-delisted AND its parent is listed** (Decision 11).
+  // N1's "unlisted means absent" rule is what makes the listing filter free, and a sub-area that
+  // outlived its parent's takedown would label a bay on a lake the app no longer has.
+  waterBodySubAreaCells: defineTable({
+    subAreaId: v.id('waterBodySubAreas'),
+    z: v.number(),
+    x: v.number(),
+    y: v.number(),
+    minVisibleZoom: v.number(), // denormalized (D49) — the in-query zoom cutoff, as on body cells
+  })
+    .index('by_cell', ['z', 'x', 'y', 'minVisibleZoom'])
+    .index('by_sub_area', ['subAreaId']),
 
   // The admin-boundary spatial index (N1), same shape keyed by boundary `level` instead of zoom.
   // Retires `findContainingTown`'s ±0.2° centroid rectangle, which was explicitly sized on the
@@ -354,6 +445,15 @@ export default defineSchema({
         state: v.optional(v.string()),
       }),
     ),
+    // The named sub-area this report's `point` falls in (N2 / D60), stamped at create by the
+    // smallest-containing rule (Decision 9) and re-stamped by `subAreas.restampParent` whenever the
+    // parent's sub-areas are redrawn, renamed or delisted. **Flat, not a nested object**, so the
+    // bounty gate can index `['subAreaId', 'moderationStatus', 'skateEndTime']` without a dotted
+    // path through an optional. `subAreaName` is denormalized for the feed card — a rename is
+    // therefore a re-stamp, not just a patch on one row. Absent ⇒ this body has no sub-areas, or the
+    // point sits outside all of them (open water on a lake with named bays).
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    subAreaName: v.optional(v.string()),
     reportTime: v.number(), // when submitted (may be later, offline sync)
     source: literals(REPORT_SOURCES),
     activityId: v.optional(v.id('gpsActivities')), // set when source == activity
@@ -424,6 +524,15 @@ export default defineSchema({
       'moderationStatus',
       'skateEndTime',
     ])
+    // The sub-area-scoped freshness index (N2 / D60). `moderationStatus` sits in the middle for the
+    // same reason as its body-scoped sibling above: the gate's cap has to be spent on rows it will
+    // actually weigh, and a post-read `visible` filter lets hidden reports eat it. Sparse — only
+    // reports on a lake with named bays carry a `subAreaId` at all.
+    .index('by_sub_area_moderation_and_skate_end_time', [
+      'subAreaId',
+      'moderationStatus',
+      'skateEndTime',
+    ])
     .index('by_author', ['authorId'])
     // Newest-first author history for the profile page, bounded by a `.take()` on skate-end time so a
     // prolific reporter's page never `.collect()`s an unbounded set (D13).
@@ -474,6 +583,11 @@ export default defineSchema({
     // when set and fall back to the live footprint when absent — so it's migration-safe (existing rows
     // keep working, and are lazily recomputable) and the drawn halo can never drift from the measured one.
     clippedFootprint: v.optional(geoJson),
+    // The named sub-area this hazard's footprint centre falls in (N2 / D60) — same stamp, same
+    // re-stamp job, same flat shape as `reports` above, so the hazard reporter line composes through
+    // the one `formatLocationLine` helper the feed card uses.
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    subAreaName: v.optional(v.string()),
     createdByUserId: v.id('profiles'),
     // Mobile offline queue (Phase 9 offline / F2/D30): one client-generated key carried across every
     // flush retry, so a create whose ack was lost returns the same hazard instead of dropping a
@@ -597,11 +711,30 @@ export default defineSchema({
     note: v.optional(v.string()),
     status: literals(FLAG_STATUSES),
     resolvedByUserId: v.optional(v.id('profiles')), // a moderator or admin (D37)
+    // Auto-flag bundling (N2) — see `lib/autoFlag.ts`. A recurring system-generated problem bumps a
+    // count on its open row instead of filing an identical one; a recurrence *after* a resolution
+    // files a NEW row carrying the count forward and pointing back, because flipping a terminal row
+    // open again would retroactively change a past day's flag-resolution count in the 7b rollup that
+    // `by_status_resolved_at` serves. All optional ⇒ migration-free; absent `occurrences` reads as 1.
+    occurrences: v.optional(v.number()),
+    lastOccurrenceAt: v.optional(v.number()),
+    supersedesFlagId: v.optional(v.id('contentFlags')),
     createdAt: v.number(),
     resolvedAt: v.optional(v.number()),
   })
     .index('by_status', ['status'])
     .index('by_target', ['targetType', 'targetId'])
+    // Auto-flag bundling's lookup (N2): "is there an OPEN flag for this (target, reason), and what
+    // was the most recent terminal one?" `by_target` alone can't answer that under a cap, and why is
+    // worth writing down — it's the `lib/scan.ts` trap in a place where the cap *decides* something.
+    // Terminal rows accumulate forever on a chronically-flagged target, and they pile up on **both
+    // sides** of the open row: scanning ascending buries it under old dispositions, scanning
+    // descending buries it under new ones. Either way the bump silently becomes a duplicate filing at
+    // `occurrences: 1`, resetting the count on exactly the contributor the mechanism exists to track.
+    // `status` and `reason` in the key turn both halves into equality reads, so no cap is involved in
+    // the decision at all — `reason` earns its place because open rows are NOT one-per-target (user
+    // flags dedupe per flagger, so a much-flagged report carries one per reporter).
+    .index('by_target_status_reason', ['targetType', 'targetId', 'status', 'reason'])
     // Analytics (Phase 7b): flags *filed* on a day, and flags *resolved* on a day. The resolution
     // index is keyed by status first so the rollup reads only terminal rows in the day's range —
     // `actioned`/`dismissed` accumulate forever, and a scan of all of them would grow without bound.
@@ -652,6 +785,15 @@ export default defineSchema({
   bounties: defineTable({
     requesterId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
+    // Optionally narrowed to a named sub-area (N2 / D60). "Someone skate Malletts Bay" is a
+    // materially different ask from "someone skate Champlain," and that difference is most of why
+    // bounties on a giant are weak today: a report from the far end fulfilled them.
+    //
+    // **Id only, no denormalized name** — unlike `reports.subAreaName`. The denorm exists on reports
+    // because the global feed would otherwise need a join per card on its hottest read; bounties are
+    // read in sets of at most a couple hundred, so resolving the name costs one `get` and keeps a
+    // rename from needing a third table in the re-stamp job.
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
     windowHours: v.number(), // "skated in last 24/48h" (tunable)
     status: literals(BOUNTY_STATUSES),
     rewardPoints: v.number(), // cosmetic (D17)
@@ -815,6 +957,13 @@ export default defineSchema({
     trustClass: v.optional(v.string()), // the deciding report author's class; absent ⇒ no class
     /** Did the weather pass clear a report that would otherwise have suppressed this attempt (D56)? */
     weatherReopened: v.boolean(),
+    /**
+     * The open-bounty cap actually applied to this attempt (N2). Recorded so 7b's cap-hit-rate chart
+     * can't confuse "the global cap is too tight" with "this one user is restricted" — without it, a
+     * handful of restricted users would read as evidence to loosen the cap for everyone. Absent on
+     * rows written before the per-user limit existed.
+     */
+    appliedLimit: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_created_at', ['createdAt']) // the charts' bounded window read + the retention prune

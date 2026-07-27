@@ -87,22 +87,42 @@ async function recentReports(
   ctx: QueryCtx,
   waterBodyId: Id<'waterBodies'>,
   cutoff: number,
+  /**
+   * Narrow to one named sub-area (N2 / D60). **This has to happen at the index, not after it.**
+   * Filtering a body-level result down to a bay afterwards would keep the cap at body scale while
+   * shrinking the useful sample: on Champlain the gate could saturate on 200 reports from Burlington
+   * Bay and — since a saturated scan blocks — reject a perfectly good Malletts Bay bounty every
+   * time. Scoped at the index, the cap applies to the set the gate actually judges.
+   */
+  subAreaId?: Id<'waterBodySubAreas'>,
 ): Promise<{ reports: Doc<'reports'>[]; truncated: boolean }> {
+  // The two indexes are the same shape with a different leading key, and both keep `moderationStatus`
+  // *in* the index for the same reason: a post-read `visible` filter lets hidden reports eat the cap.
+  const scan =
+    subAreaId === undefined
+      ? ctx.db
+          .query('reports')
+          .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+            q
+              .eq('waterBodyId', waterBodyId)
+              .eq('moderationStatus', 'visible')
+              .gte('skateEndTime', cutoff),
+          )
+      : ctx.db
+          .query('reports')
+          .withIndex('by_sub_area_moderation_and_skate_end_time', (q) =>
+            q
+              .eq('subAreaId', subAreaId)
+              .eq('moderationStatus', 'visible')
+              .gte('skateEndTime', cutoff),
+          );
   // `takeCappedResult`, not `takeCapped`: the boundary has to be exact here, because `truncated` is
   // what turns into a block. A body with *exactly* the cap's worth of reports is a complete scan,
   // and reading it as a truncation would reject a valid bounty (Greptile PR #27).
   const { rows: reports, truncated } = await takeCappedResult(
-    ctx.db
-      .query('reports')
-      .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
-        q
-          .eq('waterBodyId', waterBodyId)
-          .eq('moderationStatus', 'visible')
-          .gte('skateEndTime', cutoff),
-      )
-      .order('desc'),
+    scan.order('desc'),
     RECENT_REPORT_SCAN_CAP,
-    `bounties.recentReports(${waterBodyId})`,
+    `bounties.recentReports(${subAreaId ?? waterBodyId})`,
   );
   return { reports, truncated };
 }
@@ -175,6 +195,8 @@ async function evaluateFreshness(
   ctx: QueryCtx,
   body: Doc<'waterBodies'>,
   now: number,
+  /** Narrow the gate to a named sub-area (N2 / D60) — see `recentReports`. */
+  subAreaId?: Id<'waterBodySubAreas'>,
 ): Promise<{
   suppressors: EvaluatedReport[];
   newest: EvaluatedReport | null;
@@ -184,7 +206,12 @@ async function evaluateFreshness(
   const maxWindowMs = FRESH_REPORT_HOURS * BOUNTY_FRESH_MAX_MULTIPLIER * HOUR_MS;
   // Already newest-first — `recentReports` scans the index descending, which is also what makes its
   // cap drop the oldest rather than the freshest.
-  const { reports: newestFirst, truncated } = await recentReports(ctx, body._id, now - maxWindowMs);
+  const { reports: newestFirst, truncated } = await recentReports(
+    ctx,
+    body._id,
+    now - maxWindowMs,
+    subAreaId,
+  );
 
   const suppressors: EvaluatedReport[] = [];
   let newest: EvaluatedReport | null = null;
@@ -212,7 +239,7 @@ async function evaluateFreshness(
   }
   if (truncated) {
     console.warn(
-      `bounties.evaluateFreshness(${body._id}): hit the ${RECENT_REPORT_SCAN_CAP}-report scan cap, so an older long-window report may be unweighed — blocking rather than guessing (D5/N1).`,
+      `bounties.evaluateFreshness(${subAreaId ?? body._id}): hit the ${RECENT_REPORT_SCAN_CAP}-report scan cap, so an older long-window report may be unweighed — blocking rather than guessing (D5/N1).`,
     );
   }
   return { suppressors, newest, truncated };
@@ -228,25 +255,49 @@ async function evaluateFreshness(
  */
 async function underOpenBountyCap(
   ctx: QueryCtx,
-  requesterId: Id<'profiles'>,
+  requester: Doc<'profiles'>,
   now: number,
-): Promise<boolean> {
+): Promise<{ ok: boolean; limit: number }> {
+  const limit = effectiveBountyLimit(requester);
   const open = await ctx.db
     .query('bounties')
-    .withIndex('by_requester_status', (q) => q.eq('requesterId', requesterId).eq('status', 'open'))
+    .withIndex('by_requester_status', (q) =>
+      q.eq('requesterId', requester._id).eq('status', 'open'),
+    )
     .collect();
-  return withinDailyBountyLimit(
-    open.map((b) => b.createdAt),
-    now,
-    MAX_OPEN_BOUNTIES_PER_DAY,
-    BOUNTY_DAILY_WINDOW_MS,
-  );
+  return {
+    ok: withinDailyBountyLimit(
+      open.map((b) => b.createdAt),
+      now,
+      limit,
+      BOUNTY_DAILY_WINDOW_MS,
+    ),
+    limit,
+  };
+}
+
+/**
+ * The open-bounty cap that applies to one requester (N2) — their `activeBountyPostLimit` if a
+ * moderator set one, else the global constant.
+ *
+ * Exported because the **clients read it too**: both `BountyForm`s used to hardcode
+ * `MAX_OPEN_BOUNTIES_PER_DAY` into their "Up to 3 open bounties at a time" line, which would have
+ * made the form lie to precisely the one user the limit applies to. A restricted user is being told
+ * a rule; the rule they're told has to be theirs.
+ */
+export function effectiveBountyLimit(profile: Doc<'profiles'>): number {
+  const limit = profile.activeBountyPostLimit;
+  return limit !== undefined && Number.isFinite(limit) && limit >= 0
+    ? limit
+    : MAX_OPEN_BOUNTIES_PER_DAY;
 }
 
 /** The user-facing rejection copy for each gate verdict — one place, so the action and tests agree. */
 const GATE_MESSAGES = {
   suppressed: 'This lake already has fresh eyes — no bounty needed',
-  capped: 'You already have the maximum number of open bounties',
+  capped: (limit: number) =>
+    `You already have ${limit} open ${limit === 1 ? 'bounty' : 'bounties'} — the most you can have at once`,
+  blocked: 'Your account cannot post bounties right now',
 } as const;
 
 /**
@@ -264,6 +315,8 @@ async function logGateEvent(
     decision: 'allowed' | 'suppressed' | 'capped';
     decidingReport: EvaluatedReport | null;
     weatherReopened: boolean;
+    /** The cap this attempt was judged against — see `bountyGateEvents.appliedLimit`. */
+    appliedLimit: number;
     now: number;
   },
 ): Promise<void> {
@@ -273,6 +326,7 @@ async function logGateEvent(
     requesterId: args.requesterId,
     decision: args.decision,
     weatherReopened: args.weatherReopened,
+    appliedLimit: args.appliedLimit,
     ...(r
       ? {
           decidingReportId: r.reportId,
@@ -300,8 +354,8 @@ async function logGateEvent(
  * profile, suspended/banned, minor) still throw: they aren't gate tuning signals, they're rejections.
  */
 export const bountyFreshnessInputs = internalQuery({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  args: { waterBodyId: v.id('waterBodies'), subAreaId: v.optional(v.id('waterBodySubAreas')) },
+  handler: async (ctx, { waterBodyId, subAreaId }) => {
     const now = Date.now();
     // Authorize BEFORE any weather I/O (§7c security). This query is the action's first step, so gating
     // it here means an authenticated-but-ineligible caller — no profile, suspended/banned (`requireProfile`),
@@ -317,9 +371,18 @@ export const bountyFreshnessInputs = internalQuery({
     // The rolling open-bounty cap, BEFORE the action's weather loop: a capped requester would be
     // rejected by `createChecked` regardless, so don't let repeated capped requests drive per-report
     // Open-Meteo fetches + cache writes first (§7c resource guard).
-    if (!(await underOpenBountyCap(ctx, profile._id, now))) return { status: 'capped' as const };
-    const point = nearestSamplePoint(body, body.centroid);
-    const { suppressors, truncated } = await evaluateFreshness(ctx, body, now);
+    if (!(await underOpenBountyCap(ctx, profile, now)).ok) return { status: 'capped' as const };
+    // A sub-area bounty samples weather at the point nearest the *bay*, not the lake's centroid —
+    // on a body big enough to need sample points at all, the two can be an hour of driving apart.
+    const subArea = subAreaId ? await ctx.db.get(subAreaId) : null;
+    if (
+      subAreaId &&
+      (!subArea || subArea.waterBodyId !== body._id || subArea.removedAt !== undefined)
+    ) {
+      return { status: 'unavailable' as const };
+    }
+    const point = nearestSamplePoint(body, subArea?.centroid ?? body.centroid);
+    const { suppressors, truncated } = await evaluateFreshness(ctx, body, now, subAreaId);
     // A truncated scan is going to be blocked by `createChecked` no matter what the weather says, so
     // don't spend Open-Meteo calls establishing it. Same resource-guard reasoning as the cap check
     // above: the transactional authority still re-decides, this just stops the pointless fetch.
@@ -340,15 +403,22 @@ export const bountyFreshnessInputs = internalQuery({
  * `createChecked`, which does the auth/minor/cap checks + insert (a mutation can't fetch, so the two split).
  */
 export const create = action({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }): Promise<Id<'bounties'>> => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /** Narrow the ask to one named bay (N2 / D60) — see `bounties.subAreaId` in the schema. */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+  },
+  handler: async (ctx, { waterBodyId, subAreaId }): Promise<Id<'bounties'>> => {
     // Cheap anonymous-caller reject BEFORE the runQuery round-trip — a fully unauthenticated request never
     // even hits the DB. The full posting eligibility (profile exists, active, adult) is then enforced inside
     // `bountyFreshnessInputs` below, which runs before any Open-Meteo fetch, so an authenticated-but-
     // ineligible caller can't drive external weather I/O either. `createChecked` re-asserts at write time.
     if (!(await ctx.auth.getUserIdentity())) throw new ConvexError('Not signed in');
     const now = Date.now();
-    const inputs = await ctx.runQuery(internal.bounties.bountyFreshnessInputs, { waterBodyId });
+    const inputs = await ctx.runQuery(internal.bounties.bountyFreshnessInputs, {
+      waterBodyId,
+      ...(subAreaId !== undefined ? { subAreaId } : {}),
+    });
 
     // Weather only ever REOPENS a bounty (it shrinks a suppressor's freshness window, D56) — it never
     // *creates* suppression. So the action's only job is to find which baseline suppressors the weather
@@ -388,6 +458,7 @@ export const create = action({
     // after the log has landed.
     const result = await ctx.runMutation(internal.bounties.createChecked, {
       waterBodyId,
+      ...(subAreaId !== undefined ? { subAreaId } : {}),
       weatherReopenedReports,
     });
     if (!result.ok) throw new ConvexError(result.message);
@@ -419,6 +490,7 @@ type CreateOutcome =
 export const createChecked = internalMutation({
   args: {
     waterBodyId: v.id('waterBodies'),
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
     /**
      * Reports the action's weather pass determined are likely reopened (ice changed since), each tagged
      * with the `skateEndTime` its weather window was computed against so the exemption can be revalidated
@@ -428,7 +500,10 @@ export const createChecked = internalMutation({
       v.object({ reportId: v.id('reports'), skateEndTime: v.number() }),
     ),
   },
-  handler: async (ctx, { waterBodyId, weatherReopenedReports }): Promise<CreateOutcome> => {
+  handler: async (
+    ctx,
+    { waterBodyId, subAreaId, weatherReopenedReports },
+  ): Promise<CreateOutcome> => {
     const profile = await requireProfile(ctx);
     const now = Date.now();
     if (isMinor(profile.dateOfBirth, now)) {
@@ -437,20 +512,37 @@ export const createChecked = internalMutation({
 
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || !isListed(body)) throw new ConvexError('Water body not found');
+    // Re-check the bay at write time, not just in the action: a moderator could have delisted it (or
+    // a merge repointed it) during the Open-Meteo round-trip, and a bounty on an unreachable bay is
+    // one nobody can see to fulfill.
+    if (subAreaId !== undefined) {
+      const subArea = await ctx.db.get(subAreaId);
+      if (!subArea || subArea.waterBodyId !== body._id || subArea.removedAt !== undefined) {
+        throw new ConvexError('That sub-area is not available');
+      }
+    }
 
     // Rolling per-requester cap (decision 7), re-checked transactionally here — the pre-weather gate
     // already short-circuited obviously-capped callers, but a concurrent create could have filled the
     // cap since. Checked before freshness so the recorded decision names the unambiguous reason.
-    if (!(await underOpenBountyCap(ctx, profile._id, now))) {
+    const cap = await underOpenBountyCap(ctx, profile, now);
+    if (!cap.ok) {
       await logGateEvent(ctx, {
         waterBodyId: body._id,
         requesterId: profile._id,
         decision: 'capped',
         decidingReport: null,
         weatherReopened: false,
+        appliedLimit: cap.limit,
         now,
       });
-      return { ok: false, decision: 'capped', message: GATE_MESSAGES.capped };
+      return {
+        ok: false,
+        decision: 'capped',
+        // The message names the number, because "the maximum" is unhelpful to someone whose maximum
+        // isn't everyone else's — and `0` needs saying outright rather than reading as a bug.
+        message: cap.limit === 0 ? GATE_MESSAGES.blocked : GATE_MESSAGES.capped(cap.limit),
+      };
     }
 
     // Freshness gate (decision 8), re-evaluated **transactionally** here (§7c) rather than trusting the
@@ -465,7 +557,7 @@ export const createChecked = internalMutation({
     // edited later after the weather verdict was computed, its window is now shorter and may no longer
     // justify the reopen, so the stale exemption is dropped and the (now-fresher) report suppresses again.
     const reopened = new Set(weatherReopenedReports.map((r) => `${r.reportId}:${r.skateEndTime}`));
-    const { suppressors, newest, truncated } = await evaluateFreshness(ctx, body, now);
+    const { suppressors, newest, truncated } = await evaluateFreshness(ctx, body, now, subAreaId);
     const blocking = suppressors.find((c) => !reopened.has(`${c.reportId}:${c.skateEndTime}`));
     // `truncated` means reports in the window went unexamined, so "nothing suppresses" is unproven
     // rather than established — an older high-trust report (up to a 3× window) could sit just past
@@ -484,6 +576,7 @@ export const createChecked = internalMutation({
         decision: 'suppressed',
         decidingReport: blocking ?? newest,
         weatherReopened: false,
+        appliedLimit: cap.limit,
         now,
       });
       return { ok: false, decision: 'suppressed', message: GATE_MESSAGES.suppressed };
@@ -496,6 +589,7 @@ export const createChecked = internalMutation({
       waterBodyId: body._id,
       requesterId: profile._id,
       decision: 'allowed',
+      appliedLimit: cap.limit,
       // The report the verdict turned on: the newest suppressor weather cleared, or — when nothing
       // suppressed at all — the freshest report on the body, i.e. the closest this attempt came to
       // being blocked. Either way the row plots a real (age, window) pair below the line.
@@ -507,6 +601,7 @@ export const createChecked = internalMutation({
     const bountyId = await ctx.db.insert('bounties', {
       requesterId: profile._id,
       waterBodyId: body._id, // the resolved survivor, not the (possibly merged) requested id
+      ...(subAreaId !== undefined ? { subAreaId } : {}),
       windowHours: BOUNTY_ELIGIBILITY_WINDOW_HOURS,
       status: 'open',
       rewardPoints: DEFAULT_BOUNTY_REWARD_POINTS,
@@ -599,6 +694,12 @@ export async function attachReportToOpenBounties(
     )
     .collect();
   for (const bounty of open) {
+    // **This is where sub-area targeting is either real or cosmetic** (N2 / D60). Fulfillment starts
+    // here, not at the create gate: the requester's helpful thumb on an *attached* report is what
+    // flips a bounty, so a Burlington Bay report attaching to a Malletts Bay bounty would let the
+    // wrong ice satisfy the ask. A body-wide bounty still takes any report on the body — narrowing
+    // that would break the ordinary case for no reason.
+    if (bounty.subAreaId !== undefined && report.subAreaId !== bounty.subAreaId) continue;
     if (bounty.fulfillingReportIds.includes(report._id)) continue;
     await ctx.db.patch(bounty._id, {
       fulfillingReportIds: [...bounty.fulfillingReportIds, report._id],
@@ -716,6 +817,10 @@ export const getDetail = query({
       });
     }
 
+    // The bay's name is resolved rather than denormalized onto the bounty (see the schema note): one
+    // `get` on a detail read, and a rename never needs a third table in the re-stamp job.
+    const subArea = bounty.subAreaId ? await ctx.db.get(bounty.subAreaId) : null;
+
     return {
       _id: bounty._id,
       status: bounty.status,
@@ -723,6 +828,7 @@ export const getDetail = query({
       createdAt: bounty.createdAt,
       expiresAt: bounty.expiresAt,
       waterBody: body && isListed(body) ? { _id: body._id, name: body.name } : null,
+      subArea: subArea ? { _id: subArea._id, name: subArea.name } : null,
       requester: requester
         ? {
             userId: requester._id,
@@ -752,8 +858,10 @@ export const listForBody = query({
     return Promise.all(
       open.map(async (b) => {
         const requester = await ctx.db.get(b.requesterId);
+        const subArea = b.subAreaId ? await ctx.db.get(b.subAreaId) : null;
         return {
           _id: b._id,
+          ...(subArea ? { subAreaName: subArea.name } : {}),
           requester: requester
             ? {
                 displayName: requester.displayName,
@@ -823,10 +931,12 @@ export const listOpen = query({
       if (!body || !isListed(body)) continue; // bounty on a since-removed body — skip
       if (viewport && !bboxIntersects(body.bbox, viewport)) continue;
       const requester = await ctx.db.get(b.requesterId);
+      const subArea = b.subAreaId ? await ctx.db.get(b.subAreaId) : null;
       rows.push({
         _id: b._id,
         waterBodyId: body._id,
         waterBodyName: body.name,
+        ...(subArea ? { subAreaName: subArea.name } : {}),
         centroid: body.centroid,
         requester: requester
           ? {
@@ -854,6 +964,30 @@ export const listOpen = query({
     const cap =
       limit !== undefined && limit > 0 ? Math.min(limit, OPEN_BOUNTY_SCAN_CAP) : rows.length;
     return rows.slice(0, cap);
+  },
+});
+
+/**
+ * The caller's own open-bounty cap and how much of it they've used (N2).
+ *
+ * Exists so the bounty form can state the rule that applies *to this person*. Both clients used to
+ * hardcode `MAX_OPEN_BOUNTIES_PER_DAY` into their copy, which would have made the form promise three
+ * bounties to the one user who's been limited to one — telling someone a rule that isn't theirs is
+ * worse than saying nothing.
+ */
+export const myBountyLimit = query({
+  args: {},
+  handler: async (ctx) => {
+    const viewer = await getCurrentProfile(ctx);
+    if (!viewer) return null;
+    const now = Date.now();
+    const open = await ctx.db
+      .query('bounties')
+      .withIndex('by_requester_status', (q) => q.eq('requesterId', viewer._id).eq('status', 'open'))
+      .collect();
+    const limit = effectiveBountyLimit(viewer);
+    const used = open.filter((b) => now - b.createdAt < BOUNTY_DAILY_WINDOW_MS).length;
+    return { limit, used, restricted: viewer.activeBountyPostLimit !== undefined };
   },
 });
 

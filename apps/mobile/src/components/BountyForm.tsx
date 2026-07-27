@@ -1,7 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { DEFAULT_BOUNTY_REWARD_POINTS, MAX_OPEN_BOUNTIES_PER_DAY } from '@skating/core';
-import { useAction } from 'convex/react';
+import { DEFAULT_BOUNTY_REWARD_POINTS } from '@skating/core';
+import { useAction, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
@@ -28,12 +28,23 @@ export function BountyForm({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Named bays on this lake (N2/D60). The whole lake stays the default — most lakes have none, and
+  // asking "which part?" of a pond is noise. Rendered as chips rather than a picker: at the handful
+  // a lake carries, one tap beats a modal wheel.
+  const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
+  // The cap that applies to *this* person (N2) — the global constant would lie to a limited user.
+  const myLimit = useQuery(api.bounties.myBountyLimit, {});
+  const bays = (subAreas ?? []).filter((s) => !s.removed);
+  const [subAreaId, setSubAreaId] = useState<string | null>(null);
 
   const submit = async () => {
     setPending(true);
     setError(null);
     try {
-      const id = await create({ waterBodyId });
+      const id = await create({
+        waterBodyId,
+        ...(subAreaId ? { subAreaId: subAreaId as Id<'waterBodySubAreas'> } : {}),
+      });
       onClose();
       router.navigate({ pathname: '/bounty/[id]', params: { id } });
     } catch (err) {
@@ -54,13 +65,48 @@ export function BountyForm({
         A bounty asks recent skaters to check {bodyName} and post a fresh report. When you mark a
         fulfilling report helpful, its author earns {DEFAULT_BOUNTY_REWARD_POINTS} bounty points.
       </Paragraph>
+      {bays.length > 0 ? (
+        <YStack gap="$2">
+          <Text color="$foreground" fontWeight="600" fontSize={14}>
+            Which part?
+          </Text>
+          <XStack gap="$2" flexWrap="wrap">
+            <Button
+              size="$3"
+              chromeless={subAreaId !== null}
+              backgroundColor={subAreaId === null ? '$primary' : undefined}
+              color={subAreaId === null ? '$primaryForeground' : '$foreground'}
+              onPress={() => setSubAreaId(null)}
+            >
+              Anywhere
+            </Button>
+            {bays.map((bay) => (
+              <Button
+                key={bay._id}
+                size="$3"
+                chromeless={subAreaId !== bay._id}
+                backgroundColor={subAreaId === bay._id ? '$primary' : undefined}
+                color={subAreaId === bay._id ? '$primaryForeground' : '$foreground'}
+                onPress={() => setSubAreaId(bay._id)}
+              >
+                {bay.name}
+              </Button>
+            ))}
+          </XStack>
+          <Text color="$foregroundMuted" fontSize={13}>
+            Narrowing the ask means only a report from that part of the lake will fulfil it — and a
+            recent report somewhere else won't stop you asking.
+          </Text>
+        </YStack>
+      ) : null}
       <YStack gap="$1">
         <Text color="$foregroundMuted" fontSize={13}>
           • Only if the lake doesn't already have a recent report — a well-confirmed read keeps it
           covered longer, and a big thaw or freeze reopens it sooner.
         </Text>
         <Text color="$foregroundMuted" fontSize={13}>
-          • Up to {MAX_OPEN_BOUNTIES_PER_DAY} open bounties at a time.
+          • Up to {myLimit?.limit ?? '—'} open bount{myLimit?.limit === 1 ? 'y' : 'ies'} at a time
+          {myLimit?.restricted ? ' (a moderator has set this for your account)' : ''}.
         </Text>
       </YStack>
       {error ? (

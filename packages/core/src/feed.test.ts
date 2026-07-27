@@ -4,9 +4,11 @@ import {
   buildFeedCardView,
   type FeedCardData,
   feedSectionForTime,
+  formatLocationLine,
   formatPlaceLabel,
   formatRelativeTime,
   groupFeedSections,
+  splitLocationLine,
 } from './feed';
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -86,6 +88,54 @@ describe('formatPlaceLabel', () => {
   });
 });
 
+describe('formatLocationLine', () => {
+  const place = { town: 'Colchester', county: 'Chittenden County', state: 'VT' };
+
+  it('puts the sub-area ahead of the body and the town — the N2 headline case', () => {
+    expect(
+      formatLocationLine({ subAreaName: 'Malletts Bay', bodyName: 'Lake Champlain', place }),
+    ).toBe('Malletts Bay · Lake Champlain · Colchester, VT');
+  });
+
+  it('omits the sub-area segment for the overwhelming majority of bodies that have none', () => {
+    expect(
+      formatLocationLine({ bodyName: 'Lake Morey', place: { town: 'Fairlee', state: 'VT' } }),
+    ).toBe('Lake Morey · Fairlee, VT');
+  });
+
+  it('omits the place segment when nothing resolved, without leaving a dangling separator', () => {
+    expect(formatLocationLine({ subAreaName: 'Malletts Bay', bodyName: 'Lake Champlain' })).toBe(
+      'Malletts Bay · Lake Champlain',
+    );
+    expect(formatLocationLine({ bodyName: 'Lake Champlain', place: {} })).toBe('Lake Champlain');
+  });
+
+  it('treats a whitespace-only sub-area name as absent', () => {
+    expect(formatLocationLine({ subAreaName: '   ', bodyName: 'Lake Champlain' })).toBe(
+      'Lake Champlain',
+    );
+  });
+});
+
+describe('splitLocationLine', () => {
+  it('shares its segments with formatLocationLine — same order, same omissions', () => {
+    const parts = {
+      subAreaName: 'Malletts Bay',
+      bodyName: 'Lake Champlain',
+      place: { town: 'Colchester', state: 'VT' },
+    };
+    const { primary, secondary } = splitLocationLine(parts);
+    expect([primary, secondary].filter(Boolean).join(' · ')).toBe(formatLocationLine(parts));
+  });
+
+  it('leaves the secondary row null when there is nothing coarser to say', () => {
+    expect(splitLocationLine({ bodyName: 'Lake Morey' })).toEqual({
+      primary: 'Lake Morey',
+      secondary: null,
+    });
+  });
+});
+
 describe('formatRelativeTime', () => {
   const now = Date.UTC(2026, 0, 5, 12, 0);
 
@@ -145,6 +195,18 @@ describe('buildFeedCardView', () => {
 
   it('carries the favorite flag through to the view (Phase 4)', () => {
     expect(buildFeedCardView({ ...CARD, isFavorite: true }, now).isFavorite).toBe(true);
+  });
+
+  it('splits the location into card rows, with and without a sub-area (N2)', () => {
+    const plain = buildFeedCardView(CARD, now);
+    expect(plain.locationPrimary).toBe('Lake Champlain');
+    expect(plain.locationSecondary).toBe('Burlington, VT');
+
+    // On a lake with named bays the bay becomes the heading — it's the name skaters use — and the
+    // lake drops into the sub-line beside the town.
+    const bay = buildFeedCardView({ ...CARD, subAreaName: 'Malletts Bay' }, now);
+    expect(bay.locationPrimary).toBe('Malletts Bay');
+    expect(bay.locationSecondary).toBe('Lake Champlain · Burlington, VT');
   });
 
   it('handles an end-only report with no place, quality, or photos', () => {

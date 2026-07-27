@@ -241,6 +241,46 @@ createdAt: timestamp
 > recorded track (`core/pathToBody.ts`: buffer the LineString, fill interior rings, refuse a track with
 > no extent). "No freehand drawing, ever" (D14) is therefore a server contract, not a UI convention.
 
+### `waterBodySubAreas`  (named regions inside one body — N2 / D60)
+```
+_id
+waterBodyId: ref(waterBodies)  // parent — required, always an existing body
+name: string                   // "Malletts Bay"
+aliases?: string[]             // corpus spelling variants; "Inland Sea" shares no token with anything
+searchText: string             // [name, ...aliases].join(' ') — Convex searches ONE field
+polygon: geojson               // the CLIPPED shape, inside the parent by construction
+bbox: { minLat, minLng, maxLat, maxLng }
+centroid: { lat, lng }         // on-water representative point (same pointOnFeature basis as a body)
+surfaceAreaSqM: number         // also the Decision 9 tie-break — smallest containing wins
+displayScore: number           // same D49 curve as a body, off its own area + boost
+minVisibleZoom: number
+curatedBoost?: number
+createdByUserId: ref(profiles) // the moderator who drew it; every write is audited too
+createdAt / updatedAt: timestamp
+removedAt? / removedByUserId?  // soft-delist, reversible — never a hard delete
+systemDelistReason?: string    // why the SYSTEM retired it; cleared by a restore or redraw
+```
+> **A bay is a name on a lake, not a lake.** Reports, hazards and bounties keep belonging to the
+> **parent**; the sub-area is the finer name they carry, denormalized flat (`subAreaId` /
+> `subAreaName`) at create and re-stamped by a self-rescheduling cursor when a bay is redrawn, renamed
+> or delisted. Minting bays as bodies would split one sheet of ice's reports, hazards, bounties,
+> favorites and tracks across a dozen rows.
+> **Inside its parent by construction:** the drawn shape is clipped to the parent polygon and the
+> clipped result stored, so the invariant survives the parent changing shape (a re-import re-clips
+> when the outline actually moved; a bay that no longer fits is delisted). Refuses only when too
+> little of the draw survives — **and `restore` re-clips too**, since the re-clip deliberately skips
+> delisted rows, which would otherwise let a bay retired *before* a shoreline refinement come back
+> holding geometry that had escaped the invariant.
+> **A system delist says so on the row.** The two paths that retire a bay with nobody clicking (a
+> re-import that guts it, a merge name collision) write `systemDelistReason`, which `listForBody`
+> carries into the editor beside the redraw button; where a human's action triggered it, the
+> `moderationActions` row names them. A server log is not a surface (D5).
+> **Visible only while its parent is** — cell rows in `waterBodySubAreaCells` exist on the
+> conjunction, so a landowner takedown takes the bays with it and a merge repoints them to the
+> survivor. Same "unlisted means absent" rule N1 established for bodies.
+> **Overlap is fine; the stamp isn't ambiguous.** A point in two bays takes the **smallest containing**
+> one — most specific name wins, and the answer is order-independent.
+
 ### `adminAreas`  (administrative boundaries for point→place labels — Phase 5)
 ```
 _id
@@ -491,12 +531,22 @@ reason: enum(unsafe_false_report, spam, harassment, inappropriate, other)
 note?: string
 status: enum(open, reviewing, actioned, dismissed)
 resolvedByUserId?: ref(profiles)   // a moderator or admin (users.role in {moderator, admin} — D37)
+occurrences?: number               // N2 bundling — how many times this problem has been recorded
+lastOccurrenceAt?: timestamp       // absent ⇒ reads as 1, so pre-bundling rows need no migration
+supersedesFlagId?: ref(contentFlags)  // this row carries a resolved predecessor's count forward
 createdAt, resolvedAt?: timestamp
 ```
 > `unsafe_false_report` is first-class: a dangerously false "ice is great" claim is
 > a **safety** issue (D3), not mere spam. Moderator action sets the target's
 > `moderationStatus` to `hidden`/`removed`. In the admin flag queue (D37) it sits in a
 > **pinned priority lane**, not the FIFO — it's a safety incident, not spam.
+> **Auto-flag bundling (N2):** a recurring *system-generated* problem bumps `occurrences` on its open
+> row instead of filing an identical one. A recurrence after a resolution files a **new** row pointing
+> back via `supersedesFlagId` — a terminal row is never patched, because `by_status_resolved_at` feeds
+> a day-sliced 7b rollup and reopening one would retroactively change a past day's count. Read through
+> `by_target_status_reason`: the open-row lookup **decides** whether to bump or file, and any capped
+> scan of a target's history gets it wrong in both directions (terminal rows pile up on both sides of
+> the open row), which would silently restart the count on the chronic contributor it exists to track.
 
 ### `moderationActions`  (audit log — who did what, why; D37)
 ```
@@ -504,8 +554,12 @@ _id
 actorId: ref(profiles)          // the moderator/admin who acted
 action: enum(hide, remove, restore, ban, suspend, unban,
              merge_waterbody, approve_waterbody, reject_waterbody, set_curated_boost,
-             resolve_flag, dismiss_flag, grant_role, revoke_role)
-targetType: enum(report, comment, photo, user, waterbody, contentFlag)
+             resolve_flag, dismiss_flag, grant_role, revoke_role,
+             set_posting_permission, promote_body_feature, demote_body_feature,   // D57 / D53
+             create_sub_area, redraw_sub_area, rename_sub_area,                   // N2 / D60
+             set_weather_sample_points)                                           // D56 §5
+targetType: enum(report, comment, photo, user, waterbody, contentFlag, hazard, bodyFeature,
+                 waterBodySubArea)
 targetId: string
 reason: string               // required — accountability for appeals/reversals
 metadata?: { ... }           // e.g. prior/new state, mergedIntoId, suspendedUntil
@@ -782,8 +836,8 @@ profiles 1─* pointEvents
 
 ## Convex notes
 - **Spatial index (D5, rebuilt as N1 2026-07-26): the ladder grid.** An object gets one row per
-  grid cell its **bbox** covers, in a plain Convex table — `waterBodyCells` and `adminAreaCells`,
-  both keyed `by_cell = [z, x, y, …]`. A viewport read scans the cells covering the viewport at every
+  grid cell its **bbox** covers, in a plain Convex table — `waterBodyCells`, `adminAreaCells` and
+  (N2) `waterBodySubAreaCells`, all keyed `by_cell = [z, x, y, …]`. A viewport read scans the cells covering the viewport at every
   rung up to the current zoom; a containment lookup scans one cell per rung. See
   [`phase-N1-read-path-durability.md`](./phase-N1-read-path-durability.md) and
   `packages/core/src/spatialCells.ts`.
@@ -802,6 +856,15 @@ profiles 1─* pointEvents
     Convex components. Its reads scaled with `maxResults` rather than with results returned, which
     crashed a wide viewport against the 4,096-read cap twice (PRs #10/#11), and its one-point-per-key
     write API couldn't express bbox coverage at all.
+  - **The read walk is shared** (`convex/lib/cellScan.ts`, extracted in N2 when the sub-area layer
+    needed the same one): whole-rung admission, the fair-share row budget, and the probe-one-past
+    truncation flag are stated once. Copying them would have drifted from four PR-#27 corrections,
+    each of which fixed a *silent wrong answer* rather than a crash. Ranking and hydration stay with
+    the caller, since those are what differ per table.
+  - **Budgets are per query, not per screen.** Convex's 4,096-read cap is per *function execution*, so
+    the body layer and the bay layer each get their own. The sub-area budgets (200 scanned / 250
+    rendered) are a **product** ceiling on payload, not crash arithmetic — measured at 24–36 document
+    reads against the body layer's 157–261 on the same viewports (see the N2 doc).
   - **Still not spatially indexed, deliberately:** `reports.point` and hazard centers. Hazards are
     only ever read per body (Phase 9 call 6); a reports index waits for a near-me query that needs it.
 - **Polygon tests** (in-isochrone, in-water-body, hazard proximity) = bbox prefilter
@@ -817,7 +880,16 @@ profiles 1─* pointEvents
   `waterBodyId + status`; `blocks` by `blockerId` and by `blockedId`;
   `waterBodyFavorites` by `userId` (my favorites) and by `waterBodyId` (notification fan-out — Phase 4);
   `putIns` by `waterBodyId` (Phase 4);
-  `contentFlags` by `status` and by `targetType + targetId`; `reportRatings` by
+  `waterBodySubAreas` by `waterBodyId` (`by_parent` — every non-map sub-area read is scoped to a
+  parent already in hand) plus a `search_subarea` index over a denormalized `searchText` carrying the
+  aliases (N2/D60); `waterBodies` by `curatedBoost` (the curation list, N2 — a `> 0` range read costs
+  the boosted rows and nothing else); `reports` by `subAreaId + moderationStatus + skateEndTime` (the
+  sub-area-scoped bounty freshness gate **and** the lake page's report filter — moderation *in* the
+  index, so hidden reports can't eat the cap, and a bay filter is a narrower read rather than the
+  whole lake paged and then thrown away);
+  `contentFlags` by `status`, by `targetType + targetId`, and by
+  `targetType + targetId + status + reason` (auto-flag bundling's open-row lookup, N2 — see the table
+  note for why a capped scan of the history is wrong in both directions); `reportRatings` by
   `reportId` and a unique `raterId + reportId` (one rating per rater/report, D50); `waterBodies` by
   `dedupStatus` (review queue), by `reviewStatus` (user-body approval queue, D37), and by
   `externalId` (idempotent canonical OSM/NHD upsert, D14/D48 — `by_external_id`);

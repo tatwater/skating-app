@@ -11,10 +11,7 @@
  */
 
 import {
-  allLevels,
   bboxIntersects,
-  cellRangeCovering,
-  cellsCovering,
   classifyDedup,
   type DedupClassification,
   type DedupShape,
@@ -22,10 +19,12 @@ import {
   isKnownStateCode,
   isMinor,
   KNOWN_STATE_CODES,
+  MAX_SUGGESTED_SAMPLE_POINTS,
+  MIN_VISIBLE_ZOOM_FLOOR,
   minVisibleZoom,
   nearestBodyForPoint,
   pathToBody,
-  scanLevels,
+  pointInPolygon,
   WATER_BODY_TYPES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -40,10 +39,17 @@ import {
 } from './_generated/server';
 import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
+import { rankCandidates, scanCells } from './lib/cellScan';
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
 import { isListed } from './lib/listing';
 import { takeCapped } from './lib/scan';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
+import {
+  reclipSubAreasToParent,
+  repointSubAreasOnMerge,
+  scheduleRestamp,
+  syncCellsForParent,
+} from './subAreas';
 
 /**
  * Viewport read budget (N1). These are **product** numbers now, not safety numbers.
@@ -148,6 +154,46 @@ function zoomSortKey(body: { surfaceAreaSqM?: number; curatedBoost?: number }): 
 }
 
 /**
+ * Did a canonical re-import actually move this body's outline? (N2)
+ *
+ * Cheap on purpose — four bbox floats, an area, and a vertex count, all of which the loader hands us
+ * or the row already stores. It exists to keep `importCanonical` from paying for a polygon clip per
+ * sub-area on every run regardless of whether anything changed; see the call site for why that cost
+ * is the one worth guarding in this mutation.
+ *
+ * It errs toward "moved": any of the three differing runs the re-clip. Two different shorelines with
+ * the same bbox, the same geodesic area **and** the same vertex count is not a thing an OSM extract
+ * produces, and the cost of being wrong in that direction is a redundant clip rather than a stale
+ * invariant.
+ */
+export function footprintMoved(
+  existing: Pick<Doc<'waterBodies'>, 'bbox' | 'surfaceAreaSqM' | 'polygon'>,
+  next: { bbox: Doc<'waterBodies'>['bbox']; surfaceAreaSqM?: number; polygon: unknown },
+): boolean {
+  const a = existing.bbox;
+  const b = next.bbox;
+  if (a.minLat !== b.minLat || a.minLng !== b.minLng) return true;
+  if (a.maxLat !== b.maxLat || a.maxLng !== b.maxLng) return true;
+  if (existing.surfaceAreaSqM !== next.surfaceAreaSqM) return true;
+  return vertexCount(existing.polygon) !== vertexCount(next.polygon);
+}
+
+/** Total positions across every ring — a shape fingerprint that costs no geometry math. */
+function vertexCount(geometry: unknown): number {
+  const g = geometry as { type?: string; coordinates?: unknown[] };
+  if (g?.type === 'Polygon') {
+    return (g.coordinates as unknown[][]).reduce((n, ring) => n + ring.length, 0);
+  }
+  if (g?.type === 'MultiPolygon') {
+    return (g.coordinates as unknown[][][]).reduce(
+      (n, poly) => n + poly.reduce((m, ring) => m + ring.length, 0),
+      0,
+    );
+  }
+  return 0;
+}
+
+/**
  * Internal, never client-callable: idempotently upsert a batch of canonical bodies (D14/D48).
  * Load via `pnpm exec convex run` from the ETL (chunk batches for the mutation size limit).
  * Keyed on `by_external_id` (`(source, externalId)`), so OSM and NHD stay distinct even when a
@@ -204,6 +250,30 @@ export const importCanonical = internalMutation({
           minVisibleZoom: scores.minVisibleZoom,
           listed: isListed(existing),
         });
+        // A re-import can refine a shoreline under a hand-drawn bay, and Decision 10's "inside its
+        // parent by construction" has to survive the parent changing shape — otherwise it decays into
+        // "was true when it was drawn."
+        //
+        // **Gated on the outline having actually moved, because the clip is the expensive thing in
+        // this mutation.** Champlain's polygon is 10,755 vertices and carries nine bays; a clip
+        // against it is comfortable alone and blows a mutation's 1s budget at a dozen (measured in
+        // the N2 curation session), and the ETL loads Champlain as a near-solo batch precisely
+        // because it's already the heaviest row in the feed. Re-running the loader on unchanged data
+        // is documented as a no-op, and an unconditional re-clip would have made it an increasingly
+        // expensive one — worse with every bay drawn. The check is `footprintMoved`: identical bbox
+        // and identical geodesic area means OSM handed us the same shoreline, and a containment
+        // answer that was true a moment ago is still true.
+        if (footprintMoved(existing, item)) {
+          const resynced = await reclipSubAreasToParent(ctx, existing._id, {
+            ...existing,
+            polygon: item.polygon,
+          });
+          // Only when a bay actually moved: membership changed, so the stamps did. Gating on this
+          // keeps an ETL batch from scheduling one job per body it touched.
+          if (resynced.reclipped > 0 || resynced.delisted > 0) {
+            await scheduleRestamp(ctx, existing._id);
+          }
+        }
         updated++;
       } else {
         const now = Date.now();
@@ -463,6 +533,9 @@ export const approve = mutation({
       minVisibleZoom: zoomSortKey(body),
       listed: isListed({ ...body, reviewStatus: 'approved' }),
     });
+    // Sub-areas inherit the parent's listing (Decision 11), so every mutation that moves it has to
+    // move theirs — a bay is only reachable while the lake it names is.
+    await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'approved' });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'approve_waterbody',
@@ -501,6 +574,9 @@ export const remove = mutation({
       minVisibleZoom: zoomSortKey(body),
       listed: isListed({ ...body, removedAt: now }),
     });
+    // The case this exists for: a landowner takedown must take the lake's named bays off the map
+    // with it, or "Malletts Bay" keeps drawing on a map that no longer has Lake Champlain.
+    await syncCellsForParent(ctx, args.waterBodyId, { ...body, removedAt: now });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'remove',
@@ -533,6 +609,8 @@ export const restore = mutation({
       minVisibleZoom: zoomSortKey(body),
       listed: isListed({ ...body, removedAt: undefined }),
     });
+    // Restoring the lake brings back the bays that weren't delisted in their own right.
+    await syncCellsForParent(ctx, args.waterBodyId, { ...body, removedAt: undefined });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'restore',
@@ -570,6 +648,7 @@ export const reject = mutation({
       minVisibleZoom: zoomSortKey(body),
       listed: isListed({ ...body, reviewStatus: 'rejected' }),
     });
+    await syncCellsForParent(ctx, args.waterBodyId, { ...body, reviewStatus: 'rejected' });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'reject_waterbody',
@@ -674,6 +753,12 @@ export const merge = mutation({
       }
     }
 
+    // Named sub-areas move too (Decision 11). Leaving them would strand hand-drawn curation on a
+    // tombstone whose `isListed` is permanently false — unreachable from the map and the editor, yet
+    // still named on every report this merge just moved to the survivor. Re-clipped against the
+    // survivor's outline on the way, since near-identical is what made these a duplicate pair.
+    const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor, actor._id);
+
     const repointed = {
       reports: reports.length,
       hazards: hazards.length,
@@ -682,6 +767,8 @@ export const merge = mutation({
       putIns: putIns.length,
       favorites: favoritesRepointed,
       favoritesDeduped,
+      subAreas: subAreas.repointed,
+      subAreasDelisted: subAreas.delisted,
     };
 
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
@@ -701,6 +788,9 @@ export const merge = mutation({
       metadata: { survivorId, repointed },
       createdAt: Date.now(),
     });
+    // The loser's reports and hazards now belong to the survivor, so their sub-area stamps have to be
+    // recomputed against the survivor's bays — the old stamps were resolved against a different set.
+    await scheduleRestamp(ctx, survivorId);
     return survivorId;
   },
 });
@@ -756,6 +846,63 @@ export const setCuratedBoost = mutation({
       targetId: waterBodyId,
       reason: `Set curatedBoost to ${curatedBoost}`,
       metadata: { curatedBoost, minVisibleZoom: scores.minVisibleZoom },
+      createdAt: Date.now(),
+    });
+    return waterBodyId;
+  },
+});
+
+/**
+ * Moderator: set a body's weather **sample points** (D56 §5) — the writer the schema field and
+ * `lib/sampling.ts` have been waiting for since Phase 10 shipped them with no mutation at all.
+ *
+ * Weather doesn't vary below Open-Meteo's grid, so every body samples at its centroid by default and
+ * only the genuinely multi-cell giants need more — Champlain is ~200 km end to end, and one sample
+ * at its middle says nothing useful about the ice at either end. The suggestion grid is computed
+ * client-side in the lake editor from the polygon it already has (`@skating/core`'s
+ * `suggestSamplePoints`); this is the trust boundary that decides what gets stored.
+ *
+ * **Every point is validated to lie on the water, and that is the whole safety argument.** A point on
+ * land returns a real forecast for the wrong surface — the one way this feature can silently produce
+ * a wrong answer rather than no answer, which is exactly the failure mode the app spends its effort
+ * avoiding. An empty array clears back to the centroid default.
+ */
+export const setWeatherSamplePoints = mutation({
+  args: { waterBodyId: v.id('waterBodies'), points: v.array(latLng) },
+  handler: async (ctx, { waterBodyId, points }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+    if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {
+      throw new ConvexError(
+        `A body can carry at most ${MAX_SUGGESTED_SAMPLE_POINTS} sample points — each one is a forecast fetch and a cache row.`,
+      );
+    }
+
+    const polygon = body.polygon as unknown as Polygon | MultiPolygon;
+    const offWater = points.findIndex((point) => !pointInPolygon(point, polygon));
+    if (offWater >= 0) {
+      const bad = points[offWater];
+      throw new ConvexError(
+        `Sample point ${offWater + 1} (${bad?.lat.toFixed(4)}, ${bad?.lng.toFixed(4)}) isn't on ${body.name}. A point on land returns a real forecast for the wrong surface.`,
+      );
+    }
+
+    // Empty clears the field rather than storing `[]`, so `nearestSamplePoint`'s "absent ⇒ centroid"
+    // default is the one code path for "this body doesn't need a grid".
+    await ctx.db.patch(waterBodyId, {
+      weatherSamplePoints: points.length > 0 ? points : undefined,
+    });
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_weather_sample_points',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason:
+        points.length > 0
+          ? `Set ${points.length} weather sample point${points.length === 1 ? '' : 's'}`
+          : 'Cleared weather sample points (back to the centroid default)',
+      metadata: { count: points.length },
       createdAt: Date.now(),
     });
     return waterBodyId;
@@ -837,18 +984,10 @@ export const applyCuratedBoostSeed = internalMutation({
  * (Greptile PR #27). Sorting the whole candidate set first makes the answer traversal-independent —
  * the top-`limit` bodies by `minVisibleZoom`, wherever in the box they sit.
  *
- * **Sorting isn't enough on its own, though: the row budget has to be spent fairly too.** If early
- * cells could take the whole budget, the sort would be ranking a *spatially selected* prefix and the
- * bias would survive one level down — whole neighbourhoods of a dense viewport blank while the first
- * cells scanned rendered their every pond. So each cell's `take` is its **fair share of what's left**
- * (`remaining budget / remaining cells`), which means no cell can be starved by the ones ahead of it,
- * and a cell that comes up short passes its slack to the ones behind. When the budget binds, the
- * result is the most prominent bodies from *across* the box rather than everything from one corner.
- *
- * **And the cell budget is spent a whole rung at a time**, for the same reason one level up: a plan
- * cut mid-rung drops a row-major slice of the box, which is a spatial hole no downstream ranking can
- * fill. Skipping the rung drops a *prominence tier* instead, uniformly across the box — see the walk
- * below.
+ * **The walk itself lives in `lib/cellScan.ts`** (extracted in N2, when the sub-area layer needed the
+ * same one over a second cell table): whole-rung admission, the fair-share row budget, and the
+ * probe-one-past truncation flag are all stated there, each with the review correction it came from.
+ * What stays here is what's specific to water bodies — which table, and how a candidate hydrates.
  *
  * The residual is honest and unavoidable: a hard row budget means a dense cell is read only to its
  * share's depth, so a body can be missed if its own cell holds more prominent bodies than that share.
@@ -879,129 +1018,34 @@ async function bodiesCoveringBox(
   cellsScanned: number;
 }> {
   const { zoom, limit } = opts;
-  const rowCeiling = Math.min(opts.maxRows ?? CELL_ROW_SCAN_BUDGET, CELL_ROW_SCAN_BUDGET);
-  let rowBudget = rowCeiling;
-  let cellsScanned = 0;
-  let truncated = false;
-
-  // The full cell walk, materialized before any I/O so the row budget can be divided by how many
-  // cells still have to be served. Pure arithmetic on the bbox — no reads — and both cell guards run
-  // here, so a rung that never gets scanned doesn't inflate anyone else's share.
-  //
-  // **Rungs are admitted whole or not at all.** Cutting an over-budget plan at 512 cells was a
-  // truncation with no honest story: cells within a rung are enumerated row-major, so the cut blanked
-  // whichever corner of the box came last, and pass 2 cannot rank a body back in from a cell that was
-  // never looked up (Greptile PR #27, round 7). Dropping the *rung* instead degrades along
-  // prominence, the axis the rest of this query already degrades along: `indexLevelFor` puts a body on
-  // the coarser of "how big it is" and its `minVisibleZoom`, so a body on a fine rung is by
-  // construction one that only draws once you've zoomed in. That makes a short plan still say
-  // something exact — scanning rungs `minZ…K` whole finds **every** body in the box with
-  // `minVisibleZoom ≤ K`, wherever in the box it sits — where the row-major cut could only say "some
-  // of them, from over here".
-  //
-  // Stopping at the first rung that doesn't fit (rather than skipping it and trying the next) loses
-  // nothing: a finer rung's cells are strictly smaller, so its covering of the same box is never
-  // smaller either. Once a rung doesn't fit, none behind it does.
-  const levels =
-    zoom === undefined ? allLevels(WATER_BODY_LADDER) : scanLevels(zoom, WATER_BODY_LADDER);
-  const plan: { z: number; x: number; y: number }[] = [];
-  for (const level of levels) {
-    const range = cellRangeCovering(box, level);
-    // Two ways a rung can fail to fit, worth telling apart in the log. The per-rung guard is an
-    // absurdity check — only a box far wider than its zoom implies (a hand-rolled client, a wrapped
-    // bbox) reaches it. The budget guard is reachable from a real window that is very wide and short,
-    // whose rungs each stay under the per-rung cap but sum past the total. Either way, say what was
-    // dropped rather than materializing a huge covering: the guarantee is worth more stated honestly
-    // than silently half-kept.
-    //
-    // (The `zoom === undefined` containment walk scans every rung, and dropping its *finest* would be
-    // exactly the wrong end — the pond you are standing on is the unprominent one. It never binds:
-    // that caller's box is ~0.02° wide, so each of the ladder's nine rungs contributes at most four
-    // cells.)
-    if (range.count > MAX_CELLS_PER_LEVEL) {
-      console.warn(
-        `waterBodyCells: box covers ${range.count} cells at level ${level} (max ${MAX_CELLS_PER_LEVEL}); rungs ${level}+ skipped, so bodies that first draw at zoom ≥ ${level} are omitted (N1).`,
-      );
-      truncated = true;
-      break;
-    }
-    if (plan.length + range.count > CELL_SCAN_BUDGET) {
-      console.warn(
-        `waterBodyCells: cell budget ${CELL_SCAN_BUDGET} would be exceeded by level ${level} (${plan.length} cells planned + ${range.count}); rungs ${level}+ skipped whole, so the answer is complete for bodies drawing at zoom < ${level} and omits finer-indexed ones (N1).`,
-      );
-      truncated = true;
-      break;
-    }
-    plan.push(...cellsCovering(box, level));
-  }
-
-  // Pass 1 — candidate ids and their prominence, deduped. A body straddling a cell boundary appears
-  // in several cells (and at several rungs when `zoom` is absent); keep the coarsest rung's value,
-  // which is the body's own `minVisibleZoom`, so the rank never depends on which cell found it.
-  const candidates = new Map<Id<'waterBodies'>, number>();
-  for (const [i, cell] of plan.entries()) {
-    if (rowBudget <= 0) {
-      truncated = true;
-      break;
-    }
-    cellsScanned++;
-    // Greedy, but never at the expense of a cell behind this one: take as much as wanted *after*
-    // setting aside a floor for every cell still unserved. Rationing only bites when the budget is
-    // actually scarce — dividing it evenly up front instead would cap an ordinary 39-cell viewport
-    // at 38 rows a cell and truncate reads that comfortably fit, which is a worse answer than the
-    // bias it fixes. `limit + 1` still caps a single cell: rows arrive ascending by
-    // `minVisibleZoom`, so anything past a full render budget's worth from one cell is less
-    // prominent than `limit` bodies already in hand and can never win.
-    const unserved = plan.length - i - 1;
-    // The floor is `MIN_ROWS_PER_CELL`, or an equal split when even that can't be met.
-    const floorPerCell = Math.min(MIN_ROWS_PER_CELL, Math.floor(rowBudget / (unserved + 1)));
-    const take = Math.max(1, Math.min(rowBudget - unserved * floorPerCell, limit + 1));
-    const probe = Math.min(take + 1, rowBudget);
-    const rows = await ctx.db
-      .query('waterBodyCells')
-      .withIndex('by_cell', (q) => {
-        const atCell = q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y);
-        return zoom === undefined ? atCell : atCell.lte('minVisibleZoom', zoom);
-      })
-      // `take + 1`, so "this cell had more" is a fact rather than a guess: stopping at exactly
-      // `take` can't distinguish a cell that holds precisely that many from one that holds
-      // thousands, and reporting the first as a truncation is how a D5 warning becomes noise
-      // (Greptile PR #27 — the same boundary `takeCapped` gets wrong).
-      //
-      // Clamped to `rowBudget` so the probe is *inside* the budget rather than beside it: every row
-      // returned is charged below, and the clamp is what keeps `CELL_ROW_SCAN_BUDGET` an exact
-      // ceiling instead of one-per-cell more than it says.
-      .take(probe);
-    rowBudget -= rows.length;
-    if (rows.length > take) {
-      // Exact: the probe row came back, so this cell holds more than its share. Those rows are the
-      // least prominent in it and can't change the top of the ranking, but the answer is partial.
-      truncated = true;
-    } else if (rows.length === probe && probe < take + 1) {
-      // The budget cut the probe short, so "there was nothing more" was never actually established.
-      // On any cell but the last, the exhausted budget flags this on the next iteration — on the
-      // last one, nothing would have (Greptile PR #27, round 6: an earlier comment here claimed the
-      // next iteration always covers it, which is false precisely at the end of the plan). Report it:
-      // D5 would rather a warning that occasionally fires on a scan that happened to fit exactly than
-      // a truncation that goes out silently.
-      truncated = true;
-    }
-    for (const row of rows) {
-      const best = candidates.get(row.waterBodyId);
-      if (best === undefined || row.minVisibleZoom < best) {
-        candidates.set(row.waterBodyId, row.minVisibleZoom);
-      }
-    }
-  }
-
-  // Pass 2 — hydrate in global prominence order, most prominent first, so the render budget spends
-  // itself on the biggest lakes in the box rather than on whichever cell the walk opened first. Ties
-  // break on id purely so the same viewport returns the same bodies twice running.
-  const ranked = [...candidates].sort(([aId, aZoom], [bId, bZoom]) =>
-    aZoom !== bZoom ? aZoom - bZoom : aId < bId ? -1 : 1,
+  const scan = await scanCells<Id<'waterBodies'>>(
+    box,
+    WATER_BODY_LADDER,
+    {
+      maxCellsPerLevel: MAX_CELLS_PER_LEVEL,
+      cellBudget: CELL_SCAN_BUDGET,
+      rowBudget: Math.min(opts.maxRows ?? CELL_ROW_SCAN_BUDGET, CELL_ROW_SCAN_BUDGET),
+      minRowsPerCell: MIN_ROWS_PER_CELL,
+      limit,
+    },
+    { ...(zoom !== undefined ? { zoom } : {}), label: 'waterBodyCells' },
+    async (cell, probe, atZoom) => {
+      const rows = await ctx.db
+        .query('waterBodyCells')
+        .withIndex('by_cell', (q) => {
+          const atCell = q.eq('z', cell.z).eq('x', cell.x).eq('y', cell.y);
+          return atZoom === undefined ? atCell : atCell.lte('minVisibleZoom', atZoom);
+        })
+        .take(probe);
+      return rows.map((row) => ({ ref: row.waterBodyId, minVisibleZoom: row.minVisibleZoom }));
+    },
   );
+
+  // Pass 2 — hydrate in global prominence order, so the render budget spends itself on the biggest
+  // lakes in the box rather than on whichever cell the walk opened first.
+  let truncated = scan.truncated;
   const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
-  for (const [waterBodyId] of ranked) {
+  for (const waterBodyId of rankCandidates(scan.candidates)) {
     if (byId.size >= limit) {
       truncated = true;
       break;
@@ -1013,12 +1057,7 @@ async function bodiesCoveringBox(
     byId.set(body._id, body);
   }
 
-  return {
-    byId,
-    truncated,
-    rowsRead: rowCeiling - rowBudget,
-    cellsScanned,
-  };
+  return { byId, truncated, rowsRead: scan.rowsRead, cellsScanned: scan.cellsScanned };
 }
 
 /**
@@ -1212,8 +1251,21 @@ export async function listedBodiesNearCoord(
  * A <2-char query returns nothing (skip a pointless index scan).
  */
 export const searchByName = query({
-  args: { query: v.string(), limit: v.optional(v.number()) },
-  handler: async (ctx, { query, limit }) => {
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+    /**
+     * Drop the sub-area half of the merge (N2). Default `false` — a skater's box wants both, since
+     * they don't know or care which table their bay lives in.
+     *
+     * It exists for callers whose destination is a *body*: `/admin/water`'s "open a lake" box routes
+     * into the per-lake editor, and a bay has no editor of its own. Without this it would filter the
+     * bay rows out client-side — **after** they had already claimed their reserved slots — so
+     * searching a lake with named bays would silently return fewer lakes than it was asked for.
+     */
+    bodiesOnly: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { query, limit, bodiesOnly }) => {
     const term = query.trim();
     if (term.length < 2) return [];
     const max = Math.min(Math.max(limit ?? 8, 1), 20);
@@ -1221,25 +1273,177 @@ export const searchByName = query({
       .query('waterBodies')
       .withSearchIndex('search_name', (s) => s.search('name', term))
       .take(max * 4);
-    const results: Array<{
-      _id: Id<'waterBodies'>;
-      name: string;
-      type: Doc<'waterBodies'>['type'];
-      centroid: Doc<'waterBodies'>['centroid'];
-      states: string[];
-    }> = [];
+    // Sub-areas share the box (N2/D60). Searching a bay must reach it: S2 found Malletts under ten
+    // spellings, and the northeast arm of Champlain is "the Inland Sea" — a name sharing no token
+    // with anything the body index holds. Merged rather than a second box, because a skater typing
+    // "malletts" doesn't know or care which table the answer lives in.
+    //
+    // **Bays are collected first and given reserved slots.** The obvious merge — take `max` bodies,
+    // append bays, slice to `max` — silently drops every bay whenever the body index fills the page,
+    // which the live corpus proved immediately: "Inland Sea" returned Dead Sea and Billington Sea
+    // and not the arm of Lake Champlain actually named that. Bays are rare, hand-curated and
+    // specifically asked for, so they get up to half the page and bodies fill the rest.
+    const subAreaHits = bodiesOnly ? [] : await searchSubAreas(ctx, term, max);
+    const bayShare = Math.min(subAreaHits.length, Math.ceil(max / 2));
+    const bodyRoom = Math.max(1, max - bayShare);
+
+    const results: SearchHit[] = [];
     for (const body of raw) {
       if (!isListed(body)) continue;
       results.push({
+        kind: 'body',
         _id: body._id,
+        waterBodyId: body._id,
         name: body.name,
         type: body.type,
         centroid: body.centroid,
+        bbox: body.bbox,
         states: body.states ?? [],
       });
-      if (results.length >= max) break;
+      if (results.length >= bodyRoom) break;
     }
-    return results;
+
+    // **Rank across the two indexes, not within each.** Convex scores each search index on its own,
+    // so a merged list ordered by table puts every fuzzy body match ahead of an exact bay match:
+    // live, "Inland Sea" came back as Dead Sea, Billington Sea, Seabreeze Lagoon… with the arm of
+    // Lake Champlain actually called that sitting eighth. An exact name match is an exact name match
+    // whichever table holds it, so tier the merged set first and keep the index order inside a tier.
+    //
+    // Bodies still win at equal relevance — "Champlain" is a substring match on Lake Champlain and
+    // on nothing else, so the lake lands first, which is the behaviour the merge must not break.
+    const merged = [...results, ...subAreaHits.slice(0, bayShare)];
+    return merged
+      .map((hit, index) => ({ hit, index, tier: matchTier(hit, term) }))
+      .sort((a, b) => (a.tier !== b.tier ? a.tier - b.tier : a.index - b.index))
+      .slice(0, max)
+      .map(({ hit }) => hit);
+  },
+});
+
+/**
+ * How closely a hit matches what was typed: `0` exact (name or alias), `1` substring, `2` fuzzy.
+ *
+ * The search indexes are typo-tolerant, which is what makes them useful and also what makes an
+ * unranked merge misleading — "Sea" fuzzily matches a dozen ponds, and without a tier those bury the
+ * one row whose name *is* the query.
+ */
+function matchTier(hit: SearchHit, term: string): number {
+  const needle = term.toLowerCase();
+  const names = [hit.name.toLowerCase(), ...(hit.aliases ?? []).map((a) => a.toLowerCase())];
+  if (names.some((name) => name === needle)) return 0;
+  if (names.some((name) => name.includes(needle))) return 1;
+  return 2;
+}
+
+/** One row in the merged search box — a lake, or a named bay that tells you which lake it's in. */
+type SearchHit = {
+  kind: 'body' | 'subArea';
+  /** The row's own id — a `waterBodies` id for a body hit, a `waterBodySubAreas` id for a bay. */
+  _id: string;
+  /** Where selecting it navigates: a sub-area hit opens its **parent's** page (D60 — the bay is a
+   *  name on the lake, not a page of its own), framed on the bay's own bbox. */
+  waterBodyId: Id<'waterBodies'>;
+  name: string;
+  /** Set for a sub-area hit only — renders as "Malletts Bay — in Lake Champlain". */
+  parentName?: string;
+  /** A bay's spelling variants, so an alias match can rank as the exact match it is. */
+  aliases?: string[];
+  type: Doc<'waterBodies'>['type'];
+  centroid: Doc<'waterBodies'>['centroid'];
+  /** The frame to fly to. **The bay's own**, not the parent's — searching Malletts Bay shouldn't
+   *  frame you on 200 km of Lake Champlain, which is the whole reason the bay is nameable. */
+  bbox: Doc<'waterBodies'>['bbox'];
+  states: string[];
+};
+
+/**
+ * Named-sub-area hits for the merged search box, refined on **both** listings.
+ *
+ * The parent check is the load-bearing half and easy to forget: `isListed` is derived, not stored,
+ * so it can't be a search `filterField` on either table — and a bay whose lake was taken down must
+ * not be reachable through a search box when it isn't reachable through the map (Decision 11). Same
+ * `max * 4` overfetch as the body search, on the same assumption: unlisted rows are a small
+ * fraction of the index.
+ */
+async function searchSubAreas(ctx: QueryCtx, term: string, max: number): Promise<SearchHit[]> {
+  const raw = await ctx.db
+    .query('waterBodySubAreas')
+    .withSearchIndex('search_subarea', (s) => s.search('searchText', term))
+    .take(max * 4);
+  const hits: SearchHit[] = [];
+  for (const subArea of raw) {
+    if (subArea.removedAt !== undefined) continue;
+    const parent = await ctx.db.get(subArea.waterBodyId);
+    if (!parent || !isListed(parent)) continue;
+    hits.push({
+      kind: 'subArea',
+      _id: subArea._id,
+      waterBodyId: parent._id,
+      name: subArea.name,
+      parentName: parent.name,
+      ...(subArea.aliases !== undefined ? { aliases: subArea.aliases } : {}),
+      type: parent.type,
+      centroid: subArea.centroid,
+      bbox: subArea.bbox,
+      states: parent.states ?? [],
+    });
+    if (hits.length >= max) break;
+  }
+  return hits;
+}
+
+/** Boosted bodies the curation list shows at once. A curated set in the low hundreds, by design. */
+const CURATED_LIST_CAP = 300;
+/**
+ * How many boosted rows are *read* to fill that list.
+ *
+ * `isListed` is derived, so it can't be an index range — the filter has to run after the read, and a
+ * cap applied before it lets removed/merged/rejected rows eat slots in a list whose whole job is to
+ * show the operator every live boost. Reading two caps' worth and trimming after means the visible
+ * list is short only when there genuinely are more than `CURATED_LIST_CAP` boosted *listed* bodies.
+ */
+const CURATED_SCAN_CAP = CURATED_LIST_CAP * 2;
+
+/**
+ * Moderator: every body carrying a `curatedBoost` (N2) — **the surface that makes a mis-match
+ * visible**.
+ *
+ * The Phase-2.5 seed matched community favourites by name, and five of them landed on same-named
+ * lakes in the wrong state. That wasn't five separate bugs so much as one missing screen: the boost
+ * is editable per body, and nothing anywhere listed which bodies had one. Four of the five are
+ * Champlain bays whose boost went to a namesake elsewhere, and the fix is one motion — strip the
+ * wrong boost, draw the right sub-area — which only became possible once sub-areas existed.
+ *
+ * Each row carries what you need to *judge* the match without opening it: the states it spans, its
+ * area, and the resulting `minVisibleZoom`. A boosted "South Bay" listed as ME with a 2 km² area is
+ * self-evidently not the arm of Lake Champlain someone meant.
+ */
+export const listCurated = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, 'moderator');
+    const rows = await takeCapped(
+      ctx.db.query('waterBodies').withIndex('by_curated_boost', (q) => q.gt('curatedBoost', 0)),
+      CURATED_SCAN_CAP,
+      'waterBodies.listCurated',
+    );
+    // Strongest boost first — the most aggressively promoted body is the one a wrong match hurts
+    // most, since it's drawing at a zoom where it displaces real lakes. Trimmed *after* the listing
+    // filter, so a removed body can't take a live one's place in the list (see `CURATED_SCAN_CAP`).
+    return rows
+      .filter((body) => isListed(body))
+      .sort((a, b) => (b.curatedBoost ?? 0) - (a.curatedBoost ?? 0))
+      .slice(0, CURATED_LIST_CAP)
+      .map((body) => ({
+        _id: body._id,
+        name: body.name,
+        type: body.type,
+        states: body.states ?? [],
+        surfaceAreaSqM: body.surfaceAreaSqM ?? 0,
+        curatedBoost: body.curatedBoost ?? 0,
+        minVisibleZoom: body.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
+        centroid: body.centroid,
+      }));
   },
 });
 

@@ -5,14 +5,14 @@ import {
   type BBox,
   draftPlacementCount,
   isDraftSubmittable,
+  SUB_AREA_MIN_RENDER_ZOOM,
   undoDraftPlacement,
 } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import maplibregl from 'maplibre-gl';
+import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
-import { Protocol } from 'pmtiles';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { env } from '../lib/env';
 import {
@@ -23,9 +23,8 @@ import {
   hazardFillOpacityExpression,
   hazardsToFeatureCollection,
 } from '../lib/hazardMap';
+import { useMapCanvas } from '../lib/mapCanvas';
 import {
-  boundsToViewport,
-  buildMapStyle,
   DEMO_PMTILES_URL,
   favoriteFeatureIds,
   featureIdForBody,
@@ -36,10 +35,11 @@ import {
   NORTHEAST_MAX_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
+  SUB_AREA_PALETTE,
+  subAreasToFeatureCollection,
   TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
-  zoomForViewport,
 } from '../lib/waterMap';
 import { useMapSelection } from './MapSelectionContext';
 
@@ -78,8 +78,6 @@ interface QueryArgs {
 }
 
 export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolean }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
   const navigate = useNavigate();
   const {
     highlightWaterBodyId,
@@ -97,7 +95,6 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     setHazardDropMode,
   } = useMapSelection();
 
-  const [loaded, setLoaded] = useState(false);
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
 
   // Basemap flavor + icy water palette follow the app theme (D6/D34). The map re-creates on a theme
@@ -105,9 +102,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const { resolvedTheme } = useTheme();
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const water = WATER_PALETTE[flavor];
+  const subAreaPalette = SUB_AREA_PALETTE[flavor];
   const hazardPalette = HAZARD_PALETTE[flavor];
   const trackColor = TRACK_PALETTE[flavor];
-  const lastViewRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
 
   // The map click handler is registered once (in the create effect) but must read the *current*
   // pin-drop mode + latest setters, so mirror them into refs that the handler closes over.
@@ -141,6 +138,22 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
   }, [bodies]);
+
+  // Named sub-areas in view (N2/D60) — a second layer on its own ladder-grid query.
+  //
+  // **Not subscribed below the zoom floor at all.** The server answers `[]` there, but "returns
+  // nothing" is still a query execution and a live subscription per viewport key, and a skater
+  // panning a regional view generates a lot of those for an answer that is known in advance. Both
+  // ends read `SUB_AREA_MIN_RENDER_ZOOM` from `@skating/core` so they can't drift apart.
+  const subAreaArgs =
+    queryArgs && queryArgs.zoom >= SUB_AREA_MIN_RENDER_ZOOM ? queryArgs : ('skip' as const);
+  const subAreas = useQuery(api.subAreas.listInViewport, subAreaArgs);
+  const [subAreaFeatures, setSubAreaFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
+  useEffect(() => {
+    // Zooming back out clears the layer rather than leaving the last bays drawn over a regional view.
+    if (subAreaArgs === 'skip') setSubAreaFeatures(EMPTY_FEATURES);
+    else if (subAreas !== undefined) setSubAreaFeatures(subAreasToFeatureCollection(subAreas));
+  }, [subAreas, subAreaArgs]);
 
   // The viewer's favorited bodies (Phase 4, decision #1) — painted with a distinct outline. Empty
   // when signed out. The id set is stable-memoized so the paint effect only re-runs on a real change.
@@ -221,36 +234,17 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     favoriteFeaturesRef.current = ids;
   };
 
-  // Create the map once. Register the pmtiles:// protocol so MapLibre can read the basemap.
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const protocol = new Protocol();
-    maplibregl.addProtocol('pmtiles', protocol.tile);
-
-    const map = new maplibregl.Map({
-      container,
-      style: buildMapStyle(pmtilesUrl, flavor),
-      // Restore pan/zoom across a theme-driven re-create; else the initial regional framing.
-      center: lastViewRef.current?.center ?? INITIAL_CENTER,
-      zoom: lastViewRef.current?.zoom ?? INITIAL_ZOOM,
-      maxBounds: NORTHEAST_MAX_BOUNDS,
-      attributionControl: false, // replaced below with an always-visible (non-compact) control
-    });
-    mapRef.current = map;
-    map.addControl(new maplibregl.AttributionControl({ compact: false }));
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-
-    const syncViewport = () => {
-      const c = map.getCenter();
-      lastViewRef.current = { center: [c.lng, c.lat], zoom: map.getZoom() };
-      setQueryArgs({
-        viewport: boundsToViewport(map.getBounds()),
-        zoom: zoomForViewport(map.getZoom()),
-      });
-    };
-    map.on('load', () => {
+  // The canvas itself — creation, theme, bounds, controls, viewport reporting and teardown — is the
+  // shared shell (Decision 12). What stays here is the skater map: its sources, its layers, and the
+  // drawer navigation a tap resolves to.
+  const { containerRef, mapRef, loaded } = useMapCanvas({
+    pmtilesUrl,
+    flavor,
+    maxBounds: NORTHEAST_MAX_BOUNDS,
+    initialCenter: INITIAL_CENTER,
+    initialZoom: INITIAL_ZOOM,
+    onViewport: setQueryArgs,
+    onLoad: (map) => {
       map.addSource('water', {
         type: 'geojson',
         data: EMPTY_FEATURES,
@@ -287,6 +281,42 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             2.5,
             1,
           ],
+        },
+      });
+      // Named bays (N2/D60), over the water fill and under every pin layer. Dashed, so it reads as
+      // a *name for part of this lake* rather than as another lake's shoreline — the distinction the
+      // whole sub-area model exists to make. No click handler: tapping a bay falls through to
+      // `water-fill` beneath it and opens the parent lake, which is the correct destination.
+      map.addSource('sub-areas', { type: 'geojson', data: EMPTY_FEATURES });
+      map.addLayer({
+        id: 'sub-area-outline',
+        type: 'line',
+        source: 'sub-areas',
+        filter: ['!=', ['get', 'label'], true],
+        paint: {
+          'line-color': subAreaPalette.outline,
+          'line-width': 1.25,
+          'line-opacity': 0.8,
+          'line-dasharray': [3, 2],
+        },
+      });
+      map.addLayer({
+        id: 'sub-area-label',
+        type: 'symbol',
+        source: 'sub-areas',
+        filter: ['==', ['get', 'label'], true],
+        layout: {
+          'text-field': ['get', 'name'],
+          'text-size': 12,
+          'text-font': ['Noto Sans Italic'],
+          // A bay name may not displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
+          'text-allow-overlap': false,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': subAreaPalette.label,
+          'text-halo-color': subAreaPalette.halo,
+          'text-halo-width': 1.2,
         },
       });
       map.addSource('photo-pins', { type: 'geojson', data: EMPTY_FEATURES });
@@ -452,56 +482,46 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'circle-stroke-width': 2,
         },
       });
-      setLoaded(true);
-      syncViewport(); // first query, framed on the initial view
-    });
-    map.on('moveend', syncViewport);
 
-    // A single map-click handler: in pin-drop mode (§E) the next tap sets the put-in pin; otherwise
-    // tapping a water body opens its drawer (D47). Reads pin-drop mode via ref (handler is bound once).
-    map.on('click', (e) => {
-      if (pinDropModeRef.current) {
-        setPutInPinRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
-        setPinDropModeRef.current(false);
-        return;
-      }
-      if (hazardDropModeRef.current) {
-        handleHazardClickRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
-        return;
-      }
-      // Hazards sit above water bodies in hit-testing: a hazard footprint always lies *inside* a
-      // lake, so if a click hits both, the more specific (and more safety-relevant) target wins.
-      const hazardId = map.queryRenderedFeatures(e.point, { layers: ['hazard-fill'] })[0]
-        ?.properties?.hazardId;
-      if (typeof hazardId === 'string') {
-        navigate({ to: '/hazard/$id', params: { id: hazardId } });
-        return;
-      }
-      // A bounty pin sits on a lake centroid — a tap on the pin opens the bounty, not the lake.
-      const bountyId = map.queryRenderedFeatures(e.point, { layers: ['bounty-pins'] })[0]
-        ?.properties?.bountyId;
-      if (typeof bountyId === 'string') {
-        navigate({ to: '/bounty/$id', params: { id: bountyId } });
-        return;
-      }
-      const id = map.queryRenderedFeatures(e.point, { layers: ['water-fill'] })[0]?.properties?._id;
-      if (typeof id === 'string') navigate({ to: '/water/$id', params: { id } });
-    });
-    map.on('mouseenter', 'water-fill', () => {
-      if (!pinDropModeRef.current) map.getCanvas().style.cursor = 'pointer';
-    });
-    map.on('mouseleave', 'water-fill', () => {
-      if (!pinDropModeRef.current) map.getCanvas().style.cursor = '';
-    });
-
-    return () => {
-      setLoaded(false);
-      map.remove();
-      mapRef.current = null;
-      maplibregl.removeProtocol('pmtiles');
-    };
-    // `flavor`/`water` re-create the map on a theme change (viewport preserved via lastViewRef).
-  }, [pmtilesUrl, navigate, flavor, water, hazardPalette, trackColor]);
+      // A single map-click handler: in pin-drop mode (§E) the next tap sets the put-in pin; otherwise
+      // tapping a water body opens its drawer (D47). Reads pin-drop mode via ref (handler is bound once).
+      map.on('click', (e) => {
+        if (pinDropModeRef.current) {
+          setPutInPinRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+          setPinDropModeRef.current(false);
+          return;
+        }
+        if (hazardDropModeRef.current) {
+          handleHazardClickRef.current({ lat: e.lngLat.lat, lng: e.lngLat.lng });
+          return;
+        }
+        // Hazards sit above water bodies in hit-testing: a hazard footprint always lies *inside* a
+        // lake, so if a click hits both, the more specific (and more safety-relevant) target wins.
+        const hazardId = map.queryRenderedFeatures(e.point, { layers: ['hazard-fill'] })[0]
+          ?.properties?.hazardId;
+        if (typeof hazardId === 'string') {
+          navigate({ to: '/hazard/$id', params: { id: hazardId } });
+          return;
+        }
+        // A bounty pin sits on a lake centroid — a tap on the pin opens the bounty, not the lake.
+        const bountyId = map.queryRenderedFeatures(e.point, { layers: ['bounty-pins'] })[0]
+          ?.properties?.bountyId;
+        if (typeof bountyId === 'string') {
+          navigate({ to: '/bounty/$id', params: { id: bountyId } });
+          return;
+        }
+        const id = map.queryRenderedFeatures(e.point, { layers: ['water-fill'] })[0]?.properties
+          ?._id;
+        if (typeof id === 'string') navigate({ to: '/water/$id', params: { id } });
+      });
+      map.on('mouseenter', 'water-fill', () => {
+        if (!pinDropModeRef.current) map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'water-fill', () => {
+        if (!pinDropModeRef.current) map.getCanvas().style.cursor = '';
+      });
+    },
+  });
 
   // Push query results into the source once the style has loaded; re-apply the highlight after
   // (setData resets feature-state).
@@ -517,6 +537,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     applyHighlight();
     applyFavorites();
   }, [features, loaded]);
+
+  // Push the bay layer whenever it changes. Its own source, so a pan that changes one collection and
+  // not the other doesn't redraw both.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    (map.getSource('sub-areas') as maplibregl.GeoJSONSource | undefined)?.setData(subAreaFeatures);
+  }, [subAreaFeatures, loaded, mapRef.current]);
 
   // Re-apply the highlight when the selected body changes (deep-link or navigating between lakes).
   // biome-ignore lint/correctness/useExhaustiveDependencies: applyHighlight reads refs; re-run on selection.
@@ -536,7 +564,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     const source = map.getSource('put-in-markers') as maplibregl.GeoJSONSource | undefined;
     source?.setData(putInsToFeatureCollection(putIns ?? []));
-  }, [putIns, loaded]);
+  }, [putIns, loaded, mapRef.current]);
 
   // The recorded path behind the open report (Phase 8) — cleared when the drawer closes. The drawer
   // pushes it up rather than the map fetching it, matching how photo pins already work: the map is
@@ -563,7 +591,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         properties: { opacity: t.opacity },
       })),
     });
-  }, [trackPath, aggregateTracks, loaded]);
+  }, [trackPath, aggregateTracks, loaded, mapRef.current]);
 
   // Hazard footprints for the focused lake (Phase 9) — cleared when no lake is selected.
   useEffect(() => {
@@ -571,14 +599,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     const source = map.getSource('hazards') as maplibregl.GeoJSONSource | undefined;
     source?.setData(hazardsToFeatureCollection(hazards ?? []));
-  }, [hazards, loaded]);
+  }, [hazards, loaded, mapRef.current]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
     const source = map.getSource('body-features') as maplibregl.GeoJSONSource | undefined;
     source?.setData(bodyFeaturesToFeatureCollection(bodyFeatures ?? []));
-  }, [bodyFeatures, loaded]);
+  }, [bodyFeatures, loaded, mapRef.current]);
 
   // Open-bounty pins across the viewport (D10/D17) — refreshed as the map pans + as bounties change.
   useEffect(() => {
@@ -586,7 +614,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     const source = map.getSource('bounty-pins') as maplibregl.GeoJSONSource | undefined;
     source?.setData(bountiesToPins(openBounties ?? []));
-  }, [openBounties, loaded]);
+  }, [openBounties, loaded, mapRef.current]);
 
   // The hazard being authored — a real metric footprint, updated live as vertices land and the size
   // changes, so what you see while drawing is what gets stored.
@@ -595,14 +623,25 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     const source = map.getSource('hazard-draft') as maplibregl.GeoJSONSource | undefined;
     source?.setData(hazardDraftToFeatureCollection(hazardDraft, hazardDraftType));
-  }, [hazardDraft, hazardDraftType, loaded]);
+  }, [hazardDraft, hazardDraftType, loaded, mapRef.current]);
 
   // Fly to a drawer's focus (a lake centroid / report put-in) when it changes.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded || !focus) return;
+    // Bounds win when given: a bay's extent decides its own zoom, where one number can't (N2).
+    if (focus.bounds) {
+      map.fitBounds(
+        [
+          [focus.bounds.minLng, focus.bounds.minLat],
+          [focus.bounds.maxLng, focus.bounds.maxLat],
+        ],
+        { padding: 48 },
+      );
+      return;
+    }
     map.flyTo({ center: [focus.lng, focus.lat], zoom: focus.zoom ?? map.getZoom() });
-  }, [focus, loaded]);
+  }, [focus, loaded, mapRef.current]);
 
   // Report photo pins (D42) — only present when viewing a report whose photos opted into placeOnMap.
   useEffect(() => {
@@ -617,7 +656,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         properties: { photoId: pin.photoId },
       })),
     });
-  }, [photoPins, loaded]);
+  }, [photoPins, loaded, mapRef.current]);
 
   // The put-in pin the report form is placing (§E): render it, and show a crosshair while arming.
   useEffect(() => {
@@ -636,13 +675,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           ]
         : [],
     });
-  }, [putInPin, loaded]);
+  }, [putInPin, loaded, mapRef.current]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !loaded) return;
     map.getCanvas().style.cursor = pinDropMode || hazardDropMode ? 'crosshair' : '';
-  }, [pinDropMode, hazardDropMode, loaded]);
+  }, [pinDropMode, hazardDropMode, loaded, mapRef.current]);
 
   // Home/water framing on open via the browser Geolocation API (D12/D20): a fix inside the pilot
   // region recenters there; otherwise the default Northeast framing stands. Skipped on a deep-linked
@@ -662,7 +701,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     return () => {
       cancelled = true;
     };
-  }, [geolocateOnMount]);
+  }, [geolocateOnMount, mapRef.current]);
 
   return (
     <div className="relative">

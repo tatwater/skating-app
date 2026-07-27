@@ -43,11 +43,11 @@ export function FeedCard({
         <YStack flex={1}>
           <Text color="$foreground" fontWeight="600" numberOfLines={1}>
             {card.isFavorite ? <Text color="$primary">★ </Text> : null}
-            {card.bodyName}
+            {card.locationPrimary}
           </Text>
-          {card.placeLabel ? (
+          {card.locationSecondary ? (
             <Text color="$foregroundMuted" fontSize={13} numberOfLines={1}>
-              {card.placeLabel}
+              {card.locationSecondary}
             </Text>
           ) : null}
         </YStack>

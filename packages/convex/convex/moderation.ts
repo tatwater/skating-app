@@ -267,9 +267,22 @@ interface FlagView {
   createdAt: number;
   flagger: QueueUser | null;
   target: FlagTarget;
+  /**
+   * Auto-flag bundling (N2). `occurrences` is how many times this problem has been recorded — the
+   * count a stream of identical rows was hiding, and the moderator's actual input to the D57 lever.
+   * `priorResolvedAt`/`priorResolution` come from the superseded terminal row, so the queue can say
+   * "4th occurrence · last dismissed 6d ago" rather than making someone go looking.
+   */
+  occurrences: number;
+  lastOccurrenceAt?: number;
+  priorResolvedAt?: number;
+  priorResolution?: Doc<'contentFlags'>['status'];
 }
 
 async function toFlagView(ctx: QueryCtx, flag: Doc<'contentFlags'>): Promise<FlagView> {
+  // One `get` on the superseded row, and only for a flag that actually supersedes one — which is the
+  // rare case, since most flags are somebody's first.
+  const prior = flag.supersedesFlagId ? await ctx.db.get(flag.supersedesFlagId) : null;
   return {
     id: flag._id,
     targetType: flag.targetType,
@@ -280,6 +293,11 @@ async function toFlagView(ctx: QueryCtx, flag: Doc<'contentFlags'>): Promise<Fla
     createdAt: flag.createdAt,
     flagger: await loadQueueUser(ctx, flag.flaggerId),
     target: await resolveFlagTarget(ctx, flag.targetType, flag.targetId),
+    // Absent reads as 1: every flag filed before bundling shipped is its own single occurrence.
+    occurrences: flag.occurrences ?? 1,
+    ...(flag.lastOccurrenceAt !== undefined ? { lastOccurrenceAt: flag.lastOccurrenceAt } : {}),
+    ...(prior?.resolvedAt !== undefined ? { priorResolvedAt: prior.resolvedAt } : {}),
+    ...(prior ? { priorResolution: prior.status } : {}),
   };
 }
 
@@ -500,6 +518,42 @@ export const unbanUser = mutation({
     await ctx.scheduler.runAfter(0, internal.clerkAdmin.setBanned, {
       clerkUserId: target.clerkUserId,
       banned: false,
+    });
+    return userId;
+  },
+});
+
+/**
+ * Set (or clear) a requester's **open-bounty cap** (D57's deferred bounty lever, built in N2).
+ *
+ * A sibling of `setPostingPermission` rather than an argument on it, and the reason is mechanical:
+ * that mutation's shape is `permission: 'reports' | 'hazards' | 'comments'` × `allowed: boolean`,
+ * patched through a field map. A nullable *int* doesn't fit it. What is reusable gets reused — the
+ * same `loadModeratableUser` guard and the same `set_posting_permission` audit action — so the
+ * moderation log still reads as one story rather than growing a parallel vocabulary for one field.
+ *
+ * `undefined` clears back to the global cap; `0` blocks bounty posting outright while leaving reports
+ * and hazards untouched, which is the proportionality the whole D57 family exists for.
+ */
+export const setBountyPostLimit = mutation({
+  args: {
+    userId: v.id('profiles'),
+    /** Absent ⇒ back to the global cap. */
+    limit: v.optional(v.number()),
+    reason: v.string(),
+  },
+  handler: async (ctx, { userId, limit, reason }) => {
+    const actor = await requireRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
+      throw new ConvexError('A bounty limit has to be a whole number, zero or more');
+    }
+    await loadModeratableUser(ctx, actor, userId);
+
+    await ctx.db.patch(userId, { activeBountyPostLimit: limit });
+    await auditUser(ctx, actor._id, 'set_posting_permission', userId, reason, {
+      permission: 'bounties',
+      limit: limit ?? null,
     });
     return userId;
   },

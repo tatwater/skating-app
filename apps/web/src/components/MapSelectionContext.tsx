@@ -22,6 +22,13 @@ export interface MapFocus {
   lat: number;
   lng: number;
   zoom?: number;
+  /**
+   * Frame these bounds instead of picking a zoom (N2). A named bay is the case that needs it: the
+   * right zoom for Malletts Bay and for the Inland Sea differ by several levels, so any single
+   * number fits one and misses the other. Mobile has always framed on bounds; this is web catching
+   * up, so a bay search lands the same way on both.
+   */
+  bounds?: { minLat: number; minLng: number; maxLat: number; maxLng: number };
 }
 
 interface MapSelectionValue {

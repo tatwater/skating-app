@@ -745,19 +745,32 @@ viewport is recorded with its exact bbox so the table can be re-run rather than 
 *Left for later:* the notification **reverse spatial index** — still N7, since N1 only made the
 profile walk bounded, not unnecessary.
 
-**N2 — Operator surface completion + corpus curation.** *(Second because it's the cheapest way to make
-what alpha skaters see materially better — and because the founder IS the operator, so these are the
-tools they'll use daily.)*
-- **Finish Phase 2.5's leftover curation** in `/admin`: fix the few bay mis-matches, **add the
-  Champlain / Lake George bays OSM lacks** (the corpus's most-skated destinations are exactly the ones
-  it models worst — see S2 in `02-open-questions.md`), and extend the `curatedBoost` seed.
-- **`weatherSamplePoints` placement UI** (Phase 10's deferred admin surface). Grouped here on purpose:
-  the bodies needing sample points (Champlain, Winnipesaukee) are the *same giants* you're already
-  curating, so it's one map, one session, two jobs.
-- **Contradiction re-flag bundling** — a user parked above threshold currently files a fresh `/admin`
-  row per contradiction after a mod resolves the last one. Mod-queue UX, not a correctness bug.
-- **`activeBountyPostLimit`** (nullable int, D57's deferred bounty lever) — build it if a real spammer
-  earns it; the shape is already decided, so it's small when needed.
+~~**N2 — Operator surface completion + corpus curation.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
+[`phase-N2-lake-editor-and-subareas.md`](./phase-N2-lake-editor-and-subareas.md) for the design, the
+seven corrections to what this entry and its own plan claimed, and the measured results.
+
+Shipped: **named sub-areas** (D60) — a bay is a region *inside* one polygon, not a lake beside it, so
+one sheet of ice keeps one set of reports, hazards, bounties, favorites and tracks while carrying the
+name skaters actually use. Full citizens: labelled on the feed card and both detail surfaces, searchable
+by alias, drawn on both clients off a third ladder-grid cell table, and targetable by a bounty. Plus the
+**per-lake editor** (D61) at `/admin/water/$id` with the camera locked to the body, the `weatherSamplePoints`
+writer that Phase 10 shipped a reader for and never a mutation, auto-flag bundling, and
+`activeBountyPostLimit`.
+
+Four things this entry had wrong, all corrected in the phase doc: "add the bays OSM lacks" was
+**unbuildable** (`waterBodies.create` is path-only) and asked for the wrong shape anyway; the five
+"bay mis-matches" were **already fixed** and the note was stale (what was actually missing was a screen
+that lists curated bodies at all); Champlain and Winnipesaukee are *not* both multi-cell giants — at
+180 km² Winnipesaukee's grid proposes one point, which is the centroid default; and the bundling fix's
+obvious form would have corrupted a 7b rollup by reopening terminal flags.
+
+Two things came out that weren't scoped: the **read walk was extracted** from `waterBodies` into
+`lib/cellScan.ts` rather than copied for the second layer, because those ~100 lines encode four
+PR-#27 corrections that a copy would drift from; and **`MapView` became a shared shell** so the editor
+and the skater map are one canvas (founder call, with the skater suite green unchanged as the price).
+
+*A worry that bodies need aliases the way sub-areas do was checked and dismissed:
+"Saranac Lake" already returns Upper, Middle and Lower, and they're genuinely three lakes.*
 
 **N3 — Storage-hygiene crons.** *(Tiny — a half-day — and it's pure downside-avoidance: nobody notices
 these until a quota bites mid-alpha.)* Both are the same shape as the three prune crons already

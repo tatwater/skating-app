@@ -5,8 +5,10 @@ import {
   DEMO_PMTILES_URL,
   frameForCoord,
   MAP_FLAVORS,
+  type MappableSubArea,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
+  subAreasToFeatureCollection,
   waterBodiesToFeatureCollection,
   zoomForViewport,
 } from './waterMap';
@@ -96,5 +98,52 @@ describe('frameForCoord', () => {
   it('includes the wider Northeast region (Phase 2.5) that the old VT-only bounds excluded', () => {
     expect(frameForCoord({ lat: 43.66, lng: -70.25 })).not.toBeNull(); // Portland, ME
     expect(frameForCoord({ lat: 42.89, lng: -78.88 })).not.toBeNull(); // Buffalo, NY
+  });
+});
+
+describe('subAreasToFeatureCollection', () => {
+  const subAreas: MappableSubArea[] = [
+    {
+      _id: 'sa_1',
+      waterBodyId: 'body_1',
+      name: 'Malletts Bay',
+      polygon: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [-73.2, 44.2],
+            [-73.0, 44.2],
+            [-73.0, 44.4],
+            [-73.2, 44.4],
+            [-73.2, 44.2],
+          ],
+        ],
+      },
+      centroid: { lat: 44.3, lng: -73.1 },
+    },
+  ];
+
+  it('emits an outline feature and a separate label point per bay', () => {
+    const fc = subAreasToFeatureCollection(subAreas);
+    expect(fc.features).toHaveLength(2);
+    expect(fc.features[0]?.geometry.type).toBe('Polygon');
+    expect(fc.features[0]?.properties?.label).toBeUndefined();
+    // The label rides its own point rather than the polygon, because MapLibre would otherwise place
+    // it at the pole of inaccessibility — which for a crescent bay can land past a headland. The
+    // stored centroid is a guaranteed-on-water representative point (D48).
+    expect(fc.features[1]?.geometry).toEqual({ type: 'Point', coordinates: [-73.1, 44.3] });
+    expect(fc.features[1]?.properties?.label).toBe(true);
+  });
+
+  it('carries the parent id, so a tap resolves to the lake rather than the bay', () => {
+    const fc = subAreasToFeatureCollection(subAreas);
+    for (const feature of fc.features) {
+      expect(feature.properties?.waterBodyId).toBe('body_1');
+      expect(feature.properties?.name).toBe('Malletts Bay');
+    }
+  });
+
+  it('is empty for no sub-areas — the case for all but a handful of lakes', () => {
+    expect(subAreasToFeatureCollection([]).features).toEqual([]);
   });
 });

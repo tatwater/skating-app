@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   BODY_FEATURE_CAVEAT,
   FOOTPRINT_IS_APPROXIMATE,
+  formatLocationLine,
   freshnessLabel,
   type HazardFreshness,
   type HazardType,
@@ -36,6 +37,8 @@ export interface HazardViewData {
   hazardId: string;
   waterBodyId: string;
   bodyName?: string;
+  /** The named sub-area the footprint sits in (N2/D60), composed ahead of the lake. */
+  subAreaName?: string;
   type: HazardType;
   freshness: HazardFreshness;
   provisional: boolean;
@@ -138,7 +141,10 @@ export function HazardView({
               params={{ id: data.waterBodyId }}
               className="underline underline-offset-2"
             >
-              {data.bodyName}
+              {formatLocationLine({
+                ...(data.subAreaName !== undefined ? { subAreaName: data.subAreaName } : {}),
+                bodyName: data.bodyName,
+              })}
             </Link>
           ) : null}
         </SheetDescription>
@@ -342,6 +348,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         hazardId,
         waterBodyId: hazard.waterBodyId,
         bodyName,
+        subAreaName: hazard.subAreaName,
         type: hazard.type,
         freshness: hazard.freshness,
         provisional: hazard.provisional,

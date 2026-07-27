@@ -136,6 +136,65 @@ export function waterBodiesToFeatureCollection(
 }
 
 /**
+ * Named sub-area outlines + labels (N2 / D60), a **second** source over the water layer.
+ *
+ * Deliberately not folded into the water source: a bay is drawn inside its parent, so the two
+ * collections overlap by construction, and MapLibre resolves a tap by layer order. Keeping them
+ * apart is what lets a tap on Malletts Bay still open Lake Champlain — the bay is a name on a lake,
+ * not a thing you can select — while the label draws on top of the fill it sits in.
+ */
+export const SUB_AREA_PALETTE = {
+  white: { outline: '#2f6690', label: '#1f4b6b', halo: '#ffffff' },
+  dark: { outline: '#9ecae1', label: '#cfe6f5', halo: '#0b1622' },
+} as const;
+
+/** The minimal sub-area shape the map consumes from `subAreas.listInViewport`. */
+export interface MappableSubArea {
+  _id: string;
+  waterBodyId: string;
+  name: string;
+  polygon: GeoJSON.Geometry;
+  centroid: { lat: number; lng: number };
+}
+
+/**
+ * Sub-areas → the `sub-areas` source: one **polygon** feature per bay for the dashed outline, plus
+ * one **point** feature at its representative centroid for the label.
+ *
+ * Two geometries rather than a `symbol` layer over the polygon, because MapLibre places a polygon
+ * label at the shape's *pole of inaccessibility*, which for a crescent-shaped bay can land on the
+ * far side of a headland. The stored centroid is already a guaranteed-on-water representative point
+ * (D48's `pointOnFeature`), so using it puts the name on the ice it names.
+ */
+export function subAreasToFeatureCollection(
+  subAreas: readonly MappableSubArea[],
+): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: subAreas.flatMap((subArea) => [
+      {
+        type: 'Feature' as const,
+        geometry: subArea.polygon,
+        properties: { _id: subArea._id, waterBodyId: subArea.waterBodyId, name: subArea.name },
+      },
+      {
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [subArea.centroid.lng, subArea.centroid.lat],
+        },
+        properties: {
+          _id: subArea._id,
+          waterBodyId: subArea.waterBodyId,
+          name: subArea.name,
+          label: true,
+        },
+      },
+    ]),
+  };
+}
+
+/**
  * The numeric feature `id` (see `waterBodiesToFeatureCollection`) for a given water-body `_id`,
  * or `undefined` if that body isn't in the current collection — used to apply the selection
  * feature-state for a deep-linked `/water/$id` where there was no click to read the id from.
@@ -233,4 +292,26 @@ export function frameForCoord(
   const inRegion =
     coord.lng >= minLng && coord.lng <= maxLng && coord.lat >= minLat && coord.lat <= maxLat;
   return inRegion ? { center: [coord.lng, coord.lat], zoom } : null;
+}
+
+/**
+ * `maxBounds` for a lake editor: the body's bbox plus a margin (Decision 5).
+ *
+ * The margin is a fraction of the body's own extent rather than a fixed number of degrees, so a cove
+ * and Champlain both get a usable amount of shoreline context instead of one being suffocated and the
+ * other framed on nothing. Clamped to a small floor, because a zero-extent bbox (a degenerate row)
+ * would otherwise produce bounds MapLibre rejects.
+ */
+export function boundsForBody(
+  bbox: BBox,
+  marginFraction = 0.15,
+): [[number, number], [number, number]] {
+  const latSpan = Math.max(bbox.maxLat - bbox.minLat, 0.002);
+  const lngSpan = Math.max(bbox.maxLng - bbox.minLng, 0.002);
+  const latPad = latSpan * marginFraction;
+  const lngPad = lngSpan * marginFraction;
+  return [
+    [bbox.minLng - lngPad, bbox.minLat - latPad],
+    [bbox.maxLng + lngPad, bbox.maxLat + latPad],
+  ];
 }

@@ -96,6 +96,63 @@ export function buildMapStyle(pmtilesUrl: string, flavor: MapFlavor = 'white'): 
 }
 
 /**
+ * Named sub-area outlines + labels (N2 / D60) — a **second** source over the water layer.
+ *
+ * Deliberately not folded into the water source: a bay is drawn inside its parent, so the two
+ * collections overlap by construction. Keeping them apart is what lets a tap on Malletts Bay still
+ * open Lake Champlain — the bay is a name on a lake, not a thing you can select.
+ */
+export const SUB_AREA_PALETTE = {
+  white: { outline: '#2f6690', label: '#1f4b6b', halo: '#ffffff' },
+  dark: { outline: '#9ecae1', label: '#cfe6f5', halo: '#0b1622' },
+} as const;
+
+/** The minimal sub-area shape the map consumes from `subAreas.listInViewport`. */
+export interface MappableSubArea {
+  _id: string;
+  waterBodyId: string;
+  name: string;
+  polygon: GeoJSON.Geometry;
+  centroid: { lat: number; lng: number };
+}
+
+/**
+ * Sub-areas → one **polygon** feature per bay for the dashed outline, plus one **point** feature at
+ * its stored centroid for the label.
+ *
+ * Two geometries rather than a symbol layer over the polygon: MapLibre places a polygon label at the
+ * pole of inaccessibility, which for a crescent-shaped bay can land past a headland. The stored
+ * centroid is a guaranteed-on-water representative point (D48), so the name sits on the ice it names.
+ */
+export function subAreasToFeatureCollection(
+  subAreas: readonly MappableSubArea[],
+): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: subAreas.flatMap((subArea) => [
+      {
+        type: 'Feature' as const,
+        geometry: subArea.polygon,
+        properties: { _id: subArea._id, waterBodyId: subArea.waterBodyId, name: subArea.name },
+      },
+      {
+        type: 'Feature' as const,
+        geometry: {
+          type: 'Point' as const,
+          coordinates: [subArea.centroid.lng, subArea.centroid.lat],
+        },
+        properties: {
+          _id: subArea._id,
+          waterBodyId: subArea.waterBodyId,
+          name: subArea.name,
+          label: true,
+        },
+      },
+    ]),
+  };
+}
+
+/**
  * The minimal water-body shape the map consumes from `waterBodies.listInViewport`. `polygon` is the
  * stored GeoJSON geometry; water bodies are Polygon/MultiPolygon in practice.
  */

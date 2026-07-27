@@ -47,6 +47,64 @@ export function formatPlaceLabel(place: PlaceLabelParts | undefined): string | n
   return null;
 }
 
+/** The pieces of a report's / hazard's location line, coarsest last. */
+export interface LocationLineParts {
+  /** The named sub-area stamped at create (N2 / D60) — "Malletts Bay". Absent on most bodies. */
+  subAreaName?: string;
+  /** The parent water body — always present on a report or hazard. */
+  bodyName: string;
+  /** The point-derived admin place (`reports.place`), stamped at create via `adminAreas` (Phase 5). */
+  place?: PlaceLabelParts;
+}
+
+/** Separator between location segments. Middot, not a comma — the town segment already has one. */
+const LOCATION_SEPARATOR = ' · ';
+
+/**
+ * The location segments, finest name first: `["Malletts Bay", "Lake Champlain", "Colchester, VT"]`.
+ *
+ * **This is the one place the line is composed, and it has to be** (N2). Before this, the sub-area
+ * would have been the third thing a card assembled by hand: `formatPlaceLabel` returned only the
+ * `"Colchester, VT"` segment, and `bodyName` was a separate field each surface rendered beside it in
+ * its own JSX. Adding a name to the front of that would have meant editing the feed card, report
+ * detail, hazard lines and both mobile equivalents in parallel and hoping they stayed in agreement —
+ * and "the label disagrees with itself depending on which screen you're on" is the kind of bug nobody
+ * files and everybody notices.
+ *
+ * Absent segments are dropped rather than left as an empty gap, so a body with no sub-area and an
+ * unresolved place reads as just its own name.
+ */
+function locationSegments(parts: LocationLineParts): string[] {
+  return [
+    parts.subAreaName?.trim() || null,
+    parts.bodyName.trim() || null,
+    formatPlaceLabel(parts.place),
+  ].filter((segment): segment is string => !!segment);
+}
+
+/** The whole line on one row — report detail's subtitle, the hazard reporter line, a search result. */
+export function formatLocationLine(parts: LocationLineParts): string {
+  return locationSegments(parts).join(LOCATION_SEPARATOR);
+}
+
+/**
+ * The same segments split for a two-row card: the finest name as the heading, everything coarser
+ * beneath it. Feed cards have always rendered a bold body name over a muted place line, and a bay is
+ * the name a skater actually uses — so on Malletts Bay the heading becomes "Malletts Bay" and the
+ * lake drops into the sub-line beside the town.
+ *
+ * It shares `locationSegments` with {@link formatLocationLine} rather than re-deriving, which is the
+ * point: the two surfaces can differ in *layout* without being able to differ in what the label says
+ * or what order it says it in.
+ */
+export function splitLocationLine(parts: LocationLineParts): {
+  primary: string;
+  secondary: string | null;
+} {
+  const [primary = '', ...rest] = locationSegments(parts);
+  return { primary, secondary: rest.length > 0 ? rest.join(LOCATION_SEPARATOR) : null };
+}
+
 /** Thresholds for the relative-time label (ms). */
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -78,6 +136,8 @@ export interface FeedCardData {
   reportId: string;
   waterBodyId: string;
   bodyName: string;
+  /** The report's named sub-area (N2 / D60), stamped at create. Absent on all but a few giants. */
+  subAreaName?: string;
   place?: PlaceLabelParts;
   skateEndTime: number;
   skateStartTime?: number;
@@ -97,6 +157,13 @@ export interface FeedCardView {
   waterBodyId: string;
   bodyName: string;
   placeLabel: string | null;
+  /**
+   * The card's two rows, composed (N2): `primary` is the finest name — the bay when there is one,
+   * otherwise the lake — and `secondary` is everything coarser. Cards render **these**, never
+   * `bodyName` + `placeLabel` by hand; see {@link splitLocationLine}.
+   */
+  locationPrimary: string;
+  locationSecondary: string | null;
   skateEndTime: number;
   relativeTime: string;
   durationLabel: string | null;
@@ -165,11 +232,18 @@ export function groupFeedSections<T>(
  */
 export function buildFeedCardView(data: FeedCardData, now: number): FeedCardView {
   const chips = [...data.iceTypes.map(humanizeEnum), ...data.surfaceTags.map(humanizeEnum)];
+  const location = splitLocationLine({
+    ...(data.subAreaName !== undefined ? { subAreaName: data.subAreaName } : {}),
+    bodyName: data.bodyName,
+    ...(data.place !== undefined ? { place: data.place } : {}),
+  });
   return {
     reportId: data.reportId,
     waterBodyId: data.waterBodyId,
     bodyName: data.bodyName,
     placeLabel: formatPlaceLabel(data.place),
+    locationPrimary: location.primary,
+    locationSecondary: location.secondary,
     skateEndTime: data.skateEndTime,
     relativeTime: formatRelativeTime(data.skateEndTime, now),
     durationLabel: formatSkateWindow(data.skateEndTime, data.skateStartTime),

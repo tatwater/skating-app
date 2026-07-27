@@ -71,6 +71,7 @@ import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility'
 import { awardPointEvent, checkAndAwardBadges, trustClassFor } from './lib/reputation';
 import { latLng, literals } from './lib/validators';
 import { enqueueReportNotifications } from './notifications';
+import { resolveSubAreaForPoint } from './subAreas';
 import { loadFavoriteBodyIds } from './waterBodyFavorites';
 
 /** Editable report content, shared by `create` and `update` args (the schema mirrors these). */
@@ -230,6 +231,10 @@ export const create = mutation({
     // directly with no per-read geocode. Absent when the point is outside the imported region.
     const point = n.point ?? body.centroid;
     const place = await resolvePlaceForCoord(ctx, point);
+    // And the named sub-area, if this lake has any (N2/D60) — the same maintain-on-write shape as
+    // `place`, resolved by Decision 9's smallest-containing rule. Costs one `by_parent` read on a
+    // body already in hand, and returns immediately for the ~116k bodies with no sub-areas.
+    const subArea = await resolveSubAreaForPoint(ctx, body._id, point);
 
     const reportId = await ctx.db.insert('reports', {
       authorId: profile._id,
@@ -238,6 +243,7 @@ export const create = mutation({
       skateEndTime: n.skateEndTime,
       ...(n.skateStartTime !== undefined ? { skateStartTime: n.skateStartTime } : {}),
       ...(place !== undefined ? { place } : {}),
+      ...(subArea !== null ? subArea : {}),
       reportTime: now,
       source: args.activityId !== undefined ? 'activity' : 'native',
       ...(args.activityId !== undefined ? { activityId: args.activityId } : {}),
@@ -446,8 +452,50 @@ async function notifyCorroboration(
  * emptied by the gate. The blocked-author "Blocked"-chip annotation is layered on in the client.
  */
 export const listByWaterBody = query({
-  args: { waterBodyId: v.id('waterBodies'), paginationOpts: paginationOptsValidator },
-  handler: async (ctx, { waterBodyId, paginationOpts }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /**
+     * Narrow to one named bay (N2 / D60) — the lake page's sub-area filter.
+     *
+     * Served by `by_sub_area_moderation_and_skate_end_time`, the same index the bounty gate uses, so
+     * this is a *narrower* read rather than the same read with rows dropped after: on Champlain,
+     * paginating the whole lake and filtering to Malletts Bay in JS would hand back short pages (or
+     * empty ones) while still paying for every report on 200 km of ice. The moderation gate stays
+     * inside the index for the reason its body-scoped sibling documents.
+     */
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    paginationOpts: paginationOptsValidator,
+  },
+  handler: async (ctx, { waterBodyId, subAreaId, paginationOpts }) => {
+    if (subAreaId !== undefined) {
+      // The bay index is keyed by sub-area alone, so `waterBodyId` contributes nothing to that read —
+      // which is exactly what makes an unvalidated pair a cross-lake leak: ask for Lake Morey while
+      // naming a Champlain bay and the page hands back Champlain's reports under Morey's header. Both
+      // clients only offer bays that came from `listForBody` for the body on screen, but that's a UI
+      // courtesy, not an authority (§7c) — the pairing is decided here.
+      //
+      // Checked against the **survivor** (D36): a merge repoints the loser's bays onto the survivor
+      // (`repointSubAreasOnMerge`), so a link still naming the merged-away body is a legitimate pair
+      // and shouldn't 400 someone's bookmark.
+      //
+      // A *delisted* bay is deliberately still filterable, unlike `bounties.create`, which rejects
+      // one: a bounty on an invisible bay is unfulfillable, whereas a bay's reports are the lake's
+      // reports either way — nothing is exposed by narrowing to them, and erroring a feed mid-scroll
+      // because a moderator delisted the bay is worse than serving it until the client's own bay list
+      // catches up and drops the filter.
+      const survivor = await resolveSurvivor(ctx, waterBodyId);
+      const subArea = await ctx.db.get(subAreaId);
+      if (!survivor || !subArea || subArea.waterBodyId !== survivor._id) {
+        throw new ConvexError('That sub-area is not on this water body');
+      }
+      return ctx.db
+        .query('reports')
+        .withIndex('by_sub_area_moderation_and_skate_end_time', (q) =>
+          q.eq('subAreaId', subAreaId).eq('moderationStatus', 'visible'),
+        )
+        .order('desc')
+        .paginate(paginationOpts);
+    }
     return ctx.db
       .query('reports')
       .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
@@ -543,6 +591,9 @@ async function toFeedCard(
     reportId: r._id,
     waterBodyId: r.waterBodyId,
     bodyName: body.name,
+    // The bay name, when the lake has one (N2/D60) — `buildFeedCardView` composes it ahead of the
+    // body and the town through `formatLocationLine`, so the card can't disagree with report detail.
+    ...(r.subAreaName !== undefined ? { subAreaName: r.subAreaName } : {}),
     ...(r.place !== undefined ? { place: r.place } : {}),
     skateEndTime: r.skateEndTime,
     ...(r.skateStartTime !== undefined ? { skateStartTime: r.skateStartTime } : {}),
@@ -840,12 +891,17 @@ export const update = mutation({
     // the location label with it. `place` is cleared to undefined when the new point resolves nowhere.
     const point = n.point ?? existing.point;
     const place = await resolvePlaceForCoord(ctx, point);
+    // Moving the put-in pin can move the report into (or out of) a bay, so the sub-area stamp is
+    // re-resolved alongside `place`. Cleared to undefined when the new point sits in none.
+    const subArea = await resolveSubAreaForPoint(ctx, existing.waterBodyId, point);
 
     await ctx.db.patch(args.reportId, {
       point,
       skateEndTime: n.skateEndTime,
       skateStartTime: n.skateStartTime,
       place,
+      subAreaId: subArea?.subAreaId,
+      subAreaName: subArea?.subAreaName,
       iceTypes: n.iceTypes,
       surfaceTags: n.surfaceTags,
       skateQuality: n.skateQuality,

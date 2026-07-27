@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
+import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ReasonDialog } from './ReasonDialog';
@@ -17,6 +18,8 @@ export interface ModeratableUser {
   canPostReports: boolean;
   canPostHazards: boolean;
   canPostComments: boolean;
+  /** Per-user open-bounty cap (N2 / D57). Absent ⇒ the global cap; `0` ⇒ can't post bounties. */
+  activeBountyPostLimit?: number;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -26,6 +29,60 @@ const SUSPEND_OPTIONS = [
   { label: '7 days', days: 7 },
   { label: '30 days', days: 30 },
 ];
+
+/**
+ * The bounty lever is a **number**, not a switch (N2 / D57).
+ *
+ * Bounties aren't content — they're requests — so the proportionate answer to someone spamming them
+ * is fewer rather than none, and a boolean couldn't express that. `0` is still available and still
+ * means none, but it's a point on the scale rather than the only alternative to unrestricted.
+ */
+function BountyLimitRow({ userId, limit }: { userId: string; limit?: number }) {
+  const setLimit = useMutation(api.moderation.setBountyPostLimit);
+  const [value, setValue] = useState(limit === undefined ? '' : String(limit));
+
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <span className="text-foreground text-sm">
+        Open bounties
+        {limit !== undefined ? (
+          <Badge variant={limit === 0 ? 'destructive' : 'secondary'} className="ml-2">
+            {limit === 0 ? 'blocked' : `limit ${limit}`}
+          </Badge>
+        ) : null}
+      </span>
+      <span className="flex items-center gap-2">
+        <Input
+          type="number"
+          min="0"
+          step="1"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="global"
+          className="w-24"
+          aria-label="Open-bounty limit"
+        />
+        <ReasonDialog
+          trigger={
+            <Button variant="outline" size="sm">
+              {value === '' ? 'Clear limit' : 'Set limit'}
+            </Button>
+          }
+          title="Set the open-bounty limit"
+          description="Blank restores the global cap. Zero blocks bounties while leaving reports and hazards alone."
+          confirmLabel="Save"
+          onConfirm={(reason) =>
+            setLimit({
+              userId: userId as Id<'profiles'>,
+              ...(value === '' ? {} : { limit: Number(value) }),
+              reason,
+            })
+          }
+        />
+      </span>
+    </div>
+  );
+}
 
 function PostingPermissionRow({
   userId,
@@ -114,6 +171,7 @@ export function UserModerationControls({ user }: { user: ModeratableUser }) {
             permission="comments"
             allowed={user.canPostComments}
           />
+          <BountyLimitRow userId={userId} limit={user.activeBountyPostLimit} />
         </CardContent>
       </Card>
 

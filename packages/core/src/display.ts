@@ -27,6 +27,21 @@ export const MIN_VISIBLE_ZOOM_WIDEST = 6;
  */
 export const MIN_VISIBLE_ZOOM_FLOOR = 14;
 
+/**
+ * The zoom at which named sub-area (bay) labels start drawing (N2 / D60).
+ *
+ * D49 already decides *which* bays are prominent enough for a given zoom, so this is not a second
+ * prominence rule — it's a floor below which the layer isn't worth asking for at all. At z8 you are
+ * looking at three states, and a bay outline there is noise on top of a lake that is itself two
+ * pixels wide.
+ *
+ * It lives in `@skating/core` rather than beside the query because **both ends have to agree**: the
+ * server returns nothing below it, and the clients skip the subscription entirely rather than paying
+ * a round trip to be told so. Two copies of that number would eventually disagree, and the failure
+ * would be a layer that quietly stops drawing at some zooms.
+ */
+export const SUB_AREA_MIN_RENDER_ZOOM = 10;
+
 const LOG_AREA_MIN = Math.log(DISPLAY_AREA_MIN_SQM);
 const LOG_AREA_SPAN = Math.log(DISPLAY_AREA_MAX_SQM) - LOG_AREA_MIN;
 

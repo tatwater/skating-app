@@ -575,6 +575,11 @@ export const getAdmin = query({
       canPostReports: target.canPostReports ?? true,
       canPostHazards: target.canPostHazards ?? true,
       canPostComments: target.canPostComments ?? true,
+      // The bounty lever is a number, not a switch (N2) — absent means "the global cap applies",
+      // which the control renders as an empty field rather than as a value someone set.
+      ...(target.activeBountyPostLimit !== undefined
+        ? { activeBountyPostLimit: target.activeBountyPostLimit }
+        : {}),
       // Moderator-visible (their lever input); the raw trust score below is admin-gated separately.
       contradictionCount: target.contradictionCount ?? 0,
       reportCount: target.reportCount ?? 0,
