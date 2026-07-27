@@ -104,7 +104,7 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
 
   it('roles and statuses match the account model (D37/D33)', () => {
     expect([...USER_ROLES]).toEqual(['member', 'moderator', 'admin']);
-    expect([...USER_STATUSES]).toEqual(['active', 'suspended', 'banned', 'deleted']);
+    expect([...USER_STATUSES]).toEqual(['active', 'suspended', 'banned', 'deleting', 'deleted']);
     expect([...SKATE_QUALITIES]).toEqual(['great', 'good', 'fair', 'poor']);
   });
 });

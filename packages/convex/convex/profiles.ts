@@ -31,6 +31,7 @@ import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
 import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
+import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
@@ -66,21 +67,21 @@ export const publicByIds = query({
         username: string;
         displayName: string;
         profileImageUrl?: string;
-        trustClass: TrustClass | null;
+        trustClass?: TrustClass | null;
+        /**
+         * A deletion tombstone (D33/D62). Returned so clients can render the name without offering a
+         * link — the `username` on a tombstone is a synthetic sentinel, and routing to `/u/<sentinel>`
+         * would be a dead end dressed up as a profile.
+         */
+        deleted?: true;
       }
     > = {};
     for (const profileId of [...new Set(profileIds)]) {
       const profile = await ctx.db.get(profileId);
-      if (profile) {
-        result[profileId] = {
-          username: profile.username,
-          displayName: profile.displayName,
-          ...(profile.profileImageUrl !== undefined
-            ? { profileImageUrl: profile.profileImageUrl }
-            : {}),
-          trustClass: trustClassFor(profile, now),
-        };
-      }
+      // A missing id is simply absent from the map (the documented contract). A *deleted* one is
+      // present, as a tombstone — `lib/authorView` is the single place that distinction is made.
+      if (!profile) continue;
+      result[profileId] = publicAuthor(profile, now);
     }
     return result;
   },

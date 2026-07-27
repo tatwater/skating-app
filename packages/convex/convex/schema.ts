@@ -37,6 +37,7 @@ import {
   BOUNTY_GATE_DECISIONS,
   BOUNTY_STATUSES,
   COMMENT_SOURCES,
+  DATA_EXPORT_STATUSES,
   DEDUP_STATUSES,
   FLAG_REASONS,
   FLAG_STATUSES,
@@ -158,12 +159,28 @@ export default defineSchema({
     statusReason: v.optional(v.string()),
     suspendedUntil: v.optional(v.number()), // temp suspension; null on ban = indefinite (D37)
     moderatedByUserId: v.optional(v.id('profiles')),
+    /**
+     * When the user asked to be deleted (D62). Distinct from `deletedAt`, which is stamped 30 days
+     * later when the tombstone is actually written — this field is the *pending* state, and while
+     * it's set the account is completely normal: it can sign in, post, and cancel. Deliberately not
+     * a status value, because `status` is the security gate (`requireProfile`) and a pending deletion
+     * must not gate anything. Absent ⇒ no pending request.
+     */
+    deletionRequestedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_clerk_user_id', ['clerkUserId'])
     .index('by_username', ['username'])
     .index('by_status', ['status'])
+    // The finalize cron's window sweep (D62).
+    //
+    // **This index is NOT sparse**, and assuming it was nearly deleted every account on dev. A Convex
+    // index on an optional field contains the rows that don't have it, with `undefined` sorting
+    // *before every number* — so a bare `lte(cutoff)` range matches every profile that never requested
+    // deletion. `finalizeDueDeletions` bounds the range from below for exactly this reason; read its
+    // comment before touching that query.
+    .index('by_deletion_requested_at', ['deletionRequestedAt'])
     // Signups-per-day for the analytics rollup (Phase 7b). The implicit creation order can't be
     // range-scanned to "just this UTC day", so the daily job reads a bounded slice off this instead.
     .index('by_created_at', ['createdAt'])
@@ -196,6 +213,19 @@ export default defineSchema({
     .index('by_state', ['state'])
     .index('by_expires_at', ['expiresAt']),
 
+  /**
+   * A user's link to a third-party activity provider, tokens included.
+   *
+   * **Write these through `lib/activityConnections`, never with a bare `db.insert` here.** The table is
+   * provider-generic, so the temptation for each new integration is to write it from its own file next
+   * to its own OAuth flow — which is how the deletion gate got lost the first time (PR #29 review). A
+   * connection write is always reached from an action holding a bare `userId` (the user is off at the
+   * provider's consent screen, or the write is on the far side of a token refresh), so `requireProfile`
+   * never sees it, and D62's erase pass over this table happens exactly once with no later rescan. A
+   * redirect landing a second after finalization starts leaves live OAuth credentials for an account
+   * that no longer exists — the worst row in the app to leak, since it grants continuing access to
+   * someone else's service.
+   */
   activityConnections: defineTable({
     userId: v.id('profiles'),
     provider: literals(ACTIVITY_PROVIDERS),
@@ -207,6 +237,17 @@ export default defineSchema({
     connectedAt: v.number(),
   }).index('by_user', ['userId']),
 
+  /**
+   * A recorded skate — ours (`native`) or, one day, a watch adapter's.
+   *
+   * Today's only writer is `gpsActivities.record`, which resolves its user through `requireProfile`
+   * and is therefore covered by the finalization lock for free. **A provider-ingest writer would not
+   * be**, for the same reason `activityConnections` needed its own gate: an ingest holds a bare
+   * `userId` handed to it by a webhook or a poll, so nothing in the request path notices that the
+   * account is mid-deletion, and the tracks stage passes over this table exactly once. An activity
+   * ingested a moment later is an *unpublished* recording — the bucket D62 erases — that would
+   * outlive the deletion. If you add one, gate it (`lib/activityConnections.canConnectAccount`).
+   */
   gpsActivities: defineTable({
     userId: v.id('profiles'),
     provider: literals(ACTIVITY_PROVIDERS),
@@ -424,7 +465,12 @@ export default defineSchema({
     windowEndBucketMs: v.number(), // `now` bucketed to the hour — the append-friendly end
     summary: weatherSinceSummary, // the computed reducer output (both consumers read this)
     fetchedAt: v.number(),
-  }).index('by_key', ['samplePointKey', 'windowStartMs', 'windowEndBucketMs']),
+  })
+    .index('by_key', ['samplePointKey', 'windowStartMs', 'windowEndBucketMs'])
+    // Retention sweep (N3). `by_key` is an exact-triple lookup and can't be range-scanned by age, so
+    // the pruner reads this instead. Ordering on the *window end* rather than `fetchedAt` is the
+    // point: the end bucket is what makes a row reachable at all (see `pruneWeatherCache`).
+    .index('by_window_end', ['windowEndBucketMs']),
 
   reports: defineTable({
     authorId: v.id('profiles'),
@@ -849,6 +895,45 @@ export default defineSchema({
     // today, and the number decides whether the deferred GC cron is worth building.
     .index('by_created_at', ['createdAt']),
 
+  /**
+   * A requested data export (D33/D62, N3) — one row per request, the bundle itself in file storage.
+   *
+   * A **table** rather than a fire-and-forget action because assembling the bundle is asynchronous and
+   * fallible, and the user needs somewhere to look. It's also the only durable record that a bundle
+   * exists at all, which is what lets the hygiene cron find and expire it: a stored blob with no row
+   * pointing at it is precisely the orphan class this phase exists to stop creating.
+   *
+   * `expiresAt` is not a nicety. An export is the densest concentration of one person's data in the
+   * system — every report, every track, every photo, in one downloadable file — so it is deliberately
+   * short-lived rather than sitting in storage forever.
+   */
+  dataExports: defineTable({
+    userId: v.id('profiles'),
+    status: literals(DATA_EXPORT_STATUSES),
+    storageId: v.optional(v.string()), // set once the bundle lands
+    sizeBytes: v.optional(v.number()),
+    photoCount: v.optional(v.number()), // photos whose bytes are embedded
+    // Photos left out because the bundle hit its byte budget. Surfaced, never silent — the Phase 7
+    // "no silent caps" rule applies hardest to a file someone will treat as their complete record.
+    omittedPhotoCount: v.optional(v.number()),
+    error: v.optional(v.string()),
+    emailedAt: v.optional(v.number()), // absent ⇒ never sent (Resend unprovisioned, or it failed)
+    /**
+     * How many times reclaiming this bundle's blob has failed (PR #29 review).
+     *
+     * Exists because the row is the **only pointer** to a stored bundle: deleting it after a failed
+     * `storage.delete` strands the single densest PII artifact in the system with nothing left to find
+     * it by. So a failed reclaim keeps the row and counts, and crossing the threshold pages a human
+     * with the `storageId` rather than quietly giving up. Absent ⇒ 0.
+     */
+    cleanupAttempts: v.optional(v.number()),
+    requestedAt: v.number(),
+    readyAt: v.optional(v.number()),
+    expiresAt: v.number(),
+  })
+    .index('by_user', ['userId'])
+    .index('by_expires_at', ['expiresAt']),
+
   notifications: defineTable({
     userId: v.id('profiles'), // recipient
     type: literals(NOTIFICATION_TYPES),
@@ -918,7 +1003,11 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_flush', ['flushAfter'])
-    .index('by_coalesce', ['coalesceKey']),
+    .index('by_coalesce', ['coalesceKey'])
+    // Deletion erases a departing user's pending pushes (D62). Without this the finalize job would
+    // have to scan the whole queue to find one person's rows — and it would still be wrong to leave
+    // them, since flushing a queued digest to a tombstone is a notification nobody can read.
+    .index('by_user', ['userId']),
 
   // ───────────────────────────────────────────────────────────────────────────
   // Analytics (Phase 7b / D37). Two tables, shaped to keep every chart's read cost independent of

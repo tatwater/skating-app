@@ -15,8 +15,17 @@ export type ProfileVisibility = (typeof PROFILE_VISIBILITIES)[number];
 export const USER_ROLES = ['member', 'moderator', 'admin'] as const;
 export type UserRole = (typeof USER_ROLES)[number];
 
-/** Account lifecycle state (D33/D37). */
-export const USER_STATUSES = ['active', 'suspended', 'banned', 'deleted'] as const;
+/**
+ * Account lifecycle state (D33/D37).
+ *
+ * `deleting` is the finalization lock (PR #29 review), and it is **not** the same thing as "has
+ * requested deletion". A pending request gates nothing — that's the whole point of the 30-day window,
+ * and it's why the request is its own timestamp field rather than a status. `deleting` is set when the
+ * staged job actually starts, and it gates everything: the stages run in separate transactions, so
+ * without it a still-active account can write a favorite or connect Strava *after* the pass that
+ * erased those tables and have the row outlive its own deletion.
+ */
+export const USER_STATUSES = ['active', 'suspended', 'banned', 'deleting', 'deleted'] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
 
 /** Water body kinds (D4/D14). */

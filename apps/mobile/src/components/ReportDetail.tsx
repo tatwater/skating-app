@@ -250,6 +250,15 @@ export function ReportDetail({ reportId }: { reportId: string }) {
         View the lake
       </Text>
 
+      {/* The drawn line stops short of where the skater got on and off the ice, because this report
+          withheld its put-in (D58 §3). Said out loud rather than left to look like the whole skate —
+          a silently shortened track is the same quiet lie as a silently truncated list. */}
+      {track?.clipped ? (
+        <Text color="$foregroundMuted" fontSize={12}>
+          Start and end of this track are hidden — the skater didn’t share their put-in.
+        </Text>
+      ) : null}
+
       {/* Thumbs (D50): counts visible to all; rating enabled for a signed-in non-author. */}
       <Separator />
       <ThumbControl targetType="report" targetId={report._id} canRate={!!me && !isOwn} />

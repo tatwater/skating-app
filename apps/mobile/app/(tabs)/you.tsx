@@ -14,6 +14,7 @@ import { useState } from 'react';
 import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H1, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
+import { AccountLifecycle } from '../../src/components/AccountLifecycle';
 import { ProfileEdit } from '../../src/components/ProfileEdit';
 import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
@@ -21,8 +22,8 @@ import { TrackHistory } from '../../src/components/TrackHistory';
 
 /**
  * Profile / settings hub (D28). Who you're signed in as (with a link to your public profile),
- * profile editing (bio / town / public↔private, D13), your blocked-users list (D32), the
- * license/about link (D43), and sign-out. GPS connections + notification toggles come later.
+ * profile editing (bio / town / public↔private, D13), your blocked-users list (D32), data export +
+ * account deletion (D33/D62), the license/about link (D43), and sign-out.
  */
 export default function YouScreen() {
   const { signOut } = useAuth();
@@ -82,6 +83,8 @@ export default function YouScreen() {
               and because connecting an account here is the thing that makes those retries work. */}
           <StravaConnect />
           <TrackHistory />
+
+          <AccountLifecycle />
 
           <Separator borderColor="$border" />
           <Link href="/support" asChild>

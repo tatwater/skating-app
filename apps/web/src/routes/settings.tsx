@@ -5,6 +5,7 @@ import { DRIVE_TIME_BANDS } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
+import { AccountLifecycle } from '../components/AccountLifecycle';
 import { AggregateTracksSetting } from '../components/AggregateTracksSetting';
 import { ContactSupport } from '../components/ContactSupport';
 import { ProfileEdit } from '../components/ProfileEdit';
@@ -24,8 +25,8 @@ import {
 /**
  * Account hub — the web analog of mobile's "You" tab (D28). Who you're signed in as, profile
  * editing (bio / town / public↔private, D13), home + drive time, notification toggles, the D58
- * aggregate-tracks opt-out, your blocked-users list (D32), the about/license link (D43), and
- * sign-out. **Connecting Strava lives in the mobile app** — it's an adjunct to recording, which is
+ * aggregate-tracks opt-out, your blocked-users list (D32), data export + account deletion (D33/D62),
+ * the about/license link (D43), and sign-out. **Connecting Strava lives in the mobile app** — it's an adjunct to recording, which is
  * phone-only — but the aggregate opt-out is here too, because it governs data already collected and
  * must be withdrawable from wherever you signed in.
  */
@@ -78,6 +79,8 @@ function SettingsPage() {
         </h2>
         <ContactSupport />
       </section>
+
+      <AccountLifecycle />
 
       <p className="text-foreground-muted text-sm">
         Recording a skate and connecting Strava live in the mobile app.

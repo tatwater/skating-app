@@ -1,7 +1,7 @@
 import { convexTest } from 'convex-test';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -17,7 +17,7 @@ const VIEWPORT_CONTAINING = { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 };
 const VIEWPORT_ELSEWHERE = { minLat: 40, minLng: -80, maxLat: 41, maxLng: -79 };
 
 type Role = 'member' | 'moderator' | 'admin';
-type Status = 'active' | 'suspended' | 'banned' | 'deleted';
+type Status = Doc<'profiles'>['status'];
 
 const SAMPLE_BODY = {
   name: 'Lake Morey',

@@ -38,6 +38,7 @@ import {
   mutation,
   query,
 } from './_generated/server';
+import { storeActivityConnection } from './lib/activityConnections';
 import { requireProfile } from './lib/auth';
 
 const STRAVA_AUTHORIZE_URL = 'https://www.strava.com/oauth/authorize';
@@ -165,7 +166,14 @@ export const consumeOAuthState = internalMutation({
   },
 });
 
-/** Internal: store (or replace) a user's Strava connection. Tokens are SERVER-ONLY, never returned. */
+/**
+ * Internal: store (or replace) a user's Strava connection. Tokens are SERVER-ONLY, never returned.
+ *
+ * The write itself — and the account-deletion gate that has to guard it — lives in
+ * `lib/activityConnections`, because `activityConnections` is a provider-generic table and the next
+ * integration would otherwise hand-roll this and re-lose the gate. **`stored: false` means refused,
+ * and callers must treat it as a failure**, not as a write they can shrug at; see that module.
+ */
 export const storeConnection = internalMutation({
   args: {
     userId: v.id('profiles'),
@@ -175,27 +183,7 @@ export const storeConnection = internalMutation({
     tokenExpiresAt: v.number(),
     scopes: v.array(v.string()),
   },
-  handler: async (ctx, args) => {
-    const existing = (
-      await ctx.db
-        .query('activityConnections')
-        .withIndex('by_user', (q) => q.eq('userId', args.userId))
-        .collect()
-    ).find((c) => c.provider === 'strava');
-
-    const fields = {
-      userId: args.userId,
-      provider: 'strava' as const,
-      externalUserId: args.externalUserId,
-      accessToken: args.accessToken,
-      refreshToken: args.refreshToken,
-      tokenExpiresAt: args.tokenExpiresAt,
-      scopes: args.scopes,
-      connectedAt: existing?.connectedAt ?? Date.now(),
-    };
-    if (existing) await ctx.db.patch(existing._id, fields);
-    else await ctx.db.insert('activityConnections', fields);
-  },
+  handler: (ctx, args) => storeActivityConnection(ctx, { ...args, provider: 'strava' }),
 });
 
 /** The shape of Strava's token endpoint response (the fields we use). */
@@ -248,7 +236,7 @@ export const completeConnect = internalAction({
       return { ok: false, redirectTo: claim.redirectTo };
     }
 
-    await ctx.runMutation(internal.strava.storeConnection, {
+    const { stored } = await ctx.runMutation(internal.strava.storeConnection, {
       userId: claim.userId,
       externalUserId: String(tokens.athlete?.id ?? ''),
       accessToken: tokens.access_token,
@@ -256,7 +244,10 @@ export const completeConnect = internalAction({
       tokenExpiresAt: tokens.expires_at * 1000,
       scopes: STRAVA_SCOPES.split(','),
     });
-    return { ok: true, redirectTo: claim.redirectTo };
+    // Refused ⇒ the account was deleted between "connect" and this redirect. Report it as a failed
+    // connect rather than a successful one, so the app shows "couldn't connect" instead of claiming a
+    // link that deliberately wasn't made.
+    return { ok: stored, redirectTo: claim.redirectTo };
   },
 });
 
@@ -349,7 +340,7 @@ async function accessTokenFor(ctx: ActionCtx, userId: Id<'profiles'>): Promise<s
     console.warn(tokens.error);
     return null;
   }
-  await ctx.runMutation(internal.strava.storeConnection, {
+  const { stored } = await ctx.runMutation(internal.strava.storeConnection, {
     userId,
     externalUserId: connection.externalUserId,
     accessToken: tokens.access_token,
@@ -357,6 +348,10 @@ async function accessTokenFor(ctx: ActionCtx, userId: Id<'profiles'>): Promise<s
     tokenExpiresAt: tokens.expires_at * 1000,
     scopes: connection.scopes ?? STRAVA_SCOPES.split(','),
   });
+  // Refused ⇒ the account was being deleted while we were at Strava's token endpoint. Returning the
+  // token anyway would push a track on behalf of an account mid-erasure, using a credential we just
+  // declined to keep.
+  if (!stored) return null;
   return tokens.access_token;
 }
 

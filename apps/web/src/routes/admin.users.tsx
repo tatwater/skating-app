@@ -17,7 +17,9 @@ export const Route = createFileRoute('/admin/users')({ component: AdminUsers });
 
 function statusTone(status: string): 'secondary' | 'destructive' | 'outline' {
   if (status === 'banned' || status === 'suspended') return 'destructive';
-  if (status === 'deleted') return 'outline';
+  // `deleting` is a finalization in flight (usually seconds; longer only if a stage crashed and is
+  // waiting on the hourly sweep to re-drive it), so it reads as the same muted state as `deleted`.
+  if (status === 'deleted' || status === 'deleting') return 'outline';
   return 'secondary';
 }
 

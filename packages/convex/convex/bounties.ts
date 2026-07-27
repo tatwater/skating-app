@@ -45,6 +45,7 @@ import {
   query,
 } from './_generated/server';
 import { getCurrentProfile, requireProfile } from './lib/auth';
+import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs, trustClassFor } from './lib/reputation';
@@ -811,8 +812,8 @@ export const getDetail = query({
         _id: report._id,
         skateEndTime: report.skateEndTime,
         ...(report.skateQuality !== undefined ? { skateQuality: report.skateQuality } : {}),
-        authorName: author?.displayName ?? 'Unknown',
-        authorTrustClass: author ? trustClassFor(author, now) : null,
+        authorName: publicAuthor(author, now).displayName,
+        authorTrustClass: publicAuthor(author, now).trustClass ?? null,
         isOwn: viewer?._id === report.authorId,
       });
     }
@@ -829,14 +830,7 @@ export const getDetail = query({
       expiresAt: bounty.expiresAt,
       waterBody: body && isListed(body) ? { _id: body._id, name: body.name } : null,
       subArea: subArea ? { _id: subArea._id, name: subArea.name } : null,
-      requester: requester
-        ? {
-            userId: requester._id,
-            displayName: requester.displayName,
-            username: requester.username,
-            trustClass: trustClassFor(requester, now),
-          }
-        : { userId: bounty.requesterId, displayName: 'Unknown', username: '', trustClass: null },
+      requester: { userId: bounty.requesterId, ...publicAuthor(requester, now) },
       isRequester: !!viewer && viewer._id === bounty.requesterId,
       fulfillingReports,
     };
@@ -862,13 +856,7 @@ export const listForBody = query({
         return {
           _id: b._id,
           ...(subArea ? { subAreaName: subArea.name } : {}),
-          requester: requester
-            ? {
-                displayName: requester.displayName,
-                username: requester.username,
-                trustClass: trustClassFor(requester, now),
-              }
-            : { displayName: 'Unknown', username: '', trustClass: null },
+          requester: publicAuthor(requester, now),
           rewardPoints: b.rewardPoints,
           fulfillingCount: b.fulfillingReportIds.length,
           createdAt: b.createdAt,
@@ -938,13 +926,7 @@ export const listOpen = query({
         waterBodyName: body.name,
         ...(subArea ? { subAreaName: subArea.name } : {}),
         centroid: body.centroid,
-        requester: requester
-          ? {
-              displayName: requester.displayName,
-              username: requester.username,
-              trustClass: trustClassFor(requester, now),
-            }
-          : { displayName: 'Unknown', username: '', trustClass: null },
+        requester: publicAuthor(requester, now),
         rewardPoints: b.rewardPoints,
         fulfillingCount: b.fulfillingReportIds.length,
         createdAt: b.createdAt,

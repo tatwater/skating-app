@@ -12,20 +12,20 @@
 import {
   buildCommentThread,
   canViewComment,
+  type FeedAuthor,
   isMinor,
   isValidCommentBody,
   normalizeCommentBody,
   type ThreadComment,
   type ThreadNode,
-  type TrustClass,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { assertCanPostComments, getCurrentProfile, requireProfile } from './lib/auth';
+import { publicAuthor } from './lib/authorView';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
-import { trustClassFor } from './lib/reputation';
 
 /**
  * Add a comment to a report (D21). `requireProfile`; **reject minors** (read-only, D41); the target
@@ -89,14 +89,12 @@ export const create = mutation({
   },
 });
 
-/** Public author attribution for a comment (never the private profile — no coord/DOB). */
-interface CommentAuthor {
-  username: string;
-  displayName: string;
-  profileImageUrl?: string;
-  /** Cosmetic trust class (D50) — the `TrustAvatar` ring color; never the raw score. */
-  trustClass: TrustClass | null;
-}
+/**
+ * Public author attribution for a comment (never the private profile — no coord/DOB). Aliased to the
+ * feed's shape rather than redeclared: this was a near-identical copy, and the copy is precisely how a
+ * deleted author ended up rendering differently here than on the card next to it (N3).
+ */
+type CommentAuthor = FeedAuthor;
 
 /** A comment as the thread returns it. `comment` is `null` for a `[hidden]` placeholder (D25). */
 interface CommentNodeView {
@@ -154,16 +152,9 @@ export const listByReport = query({
       const cached = authorCache.get(authorId);
       if (cached !== undefined) return cached;
       const author = await ctx.db.get(authorId as Doc<'comments'>['authorId']);
-      const view: CommentAuthor | null = author
-        ? {
-            username: author.username,
-            displayName: author.displayName,
-            ...(author.profileImageUrl !== undefined
-              ? { profileImageUrl: author.profileImageUrl }
-              : {}),
-            trustClass: trustClassFor(author, now),
-          }
-        : null;
+      // `null` when the row is genuinely gone — the thread omits the byline entirely rather than
+      // printing 'Unknown'. A *deleted* author is not that case: they get a tombstone byline.
+      const view: CommentAuthor | null = author ? publicAuthor(author, now) : null;
       authorCache.set(authorId, view);
       return view;
     };
