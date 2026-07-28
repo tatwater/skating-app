@@ -1,5 +1,10 @@
 import { api } from '@skating/convex/api';
-import { DELETION_GRACE_DAYS, DELETION_GRACE_MS } from '@skating/core';
+import {
+  DATA_EXPORT_TTL_DAYS,
+  DELETION_GRACE_DAYS,
+  DELETION_GRACE_MS,
+  DEPARTED_CONTENT_MAX_AGE_DAYS,
+} from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Button } from './ui/button';
@@ -72,7 +77,8 @@ export function DataExportView({
         <p className="text-foreground-muted text-sm">
           Download everything we hold about you as a JSON file — your profile, reports, comments,
           hazards, recorded tracks and your photos. We'll email you a link when it's ready, and list
-          it here too. Links expire after 7 days.
+          it here too. Links expire after {DATA_EXPORT_TTL_DAYS} days — including if you delete your
+          account in the meantime.
         </p>
         <div>
           <Button variant="outline" size="sm" onClick={onRequest} disabled={building}>
@@ -135,6 +141,12 @@ function DataExport() {
  * I wrote", and that isn't what happens: reports and comments stay as part of the community's ice
  * record with the author replaced by a tombstone (D33/D13). Someone deserves to know that before
  * confirming, not after — which is why it's in the body text and not a footnote.
+ *
+ * **The copy carried the most weight when the model changed under it** (D62 amendment). It used to
+ * say "nothing happens for 30 days", which stopped being true: the request now clears the profile and
+ * erases aged content immediately, and cancelling recovers neither. Copy that promises reversibility
+ * for an irreversible action is worse than no copy, so the confirm screen leads with what can't be
+ * undone and the tests assert that sentence specifically.
  */
 export function DeleteAccountView({
   deletionRequestedAt,
@@ -152,12 +164,19 @@ export function DeleteAccountView({
       <Card>
         <CardContent className="flex flex-col gap-3">
           <p className="text-foreground">
-            Your account is scheduled for deletion on{' '}
+            Your account will be deleted on{' '}
             <strong>{formatDate(deletionRequestedAt + DELETION_GRACE_MS)}</strong>.
           </p>
           <p className="text-foreground-muted text-sm">
-            Until then nothing has changed — you can keep using the app normally, and you can stop
-            this at any time.
+            Your profile has been cleared and nobody can find you on here any more. Your reports and
+            hazards are still helping other skaters, under "Deleted skater" — but anything you wrote
+            alongside them is deleted for good once it's {DEPARTED_CONTENT_MAX_AGE_DAYS} days old:
+            your notes, your comments, your photo captions. You can browse, but not post.
+          </p>
+          <p className="text-foreground-muted text-sm">
+            Cancelling keeps the account and stops the deletion. It <strong>can't</strong> bring
+            back your profile or the words already deleted — you'd set your profile up again from
+            scratch.
           </p>
           <div>
             <Button variant="outline" size="sm" onClick={onCancel}>
@@ -173,14 +192,21 @@ export function DeleteAccountView({
     <Card>
       <CardContent className="flex flex-col gap-3">
         <p className="text-foreground-muted text-sm">
-          Deleting your account removes your profile, your home location, your saved lakes and any
-          recording you never published. Your <strong>reports and comments stay</strong>, with your
-          name replaced — they're part of the ice record other skaters rely on. Tracks you published
-          with a report stay on the lake's map the same way, no longer attached to you.
+          <strong>This happens straight away, and most of it can't be undone.</strong> Your profile
+          — name, photo, bio, town, home location — is cleared immediately, and nobody will be able
+          to find you on here.
         </p>
         <p className="text-foreground-muted text-sm">
-          Nothing happens for {DELETION_GRACE_DAYS} days, and you can cancel any time during them.
-          Export your data first if you want a copy.
+          What you <strong>saw</strong> stays: your reports and hazards keep helping other skaters,
+          under "Deleted skater", with no way back to you. What you <strong>wrote</strong> goes —
+          your notes, comments and photo captions are deleted for good once they're{' '}
+          {DEPARTED_CONTENT_MAX_AGE_DAYS} days old. The account itself goes in {DELETION_GRACE_DAYS}{' '}
+          days.
+        </p>
+        <p className="text-foreground-muted text-sm">
+          During those {DELETION_GRACE_DAYS} days you can still sign in, and cancelling keeps the
+          account — but your profile stays empty and you'd set it up again from scratch. Export your
+          data first if you want a copy.
         </p>
         {confirming ? (
           <div className="flex flex-wrap gap-2">

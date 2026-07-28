@@ -5,6 +5,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { ScrollView } from 'react-native';
 import { Text, XStack, YStack } from 'tamagui';
 import { Badge, DetailLoading, Unavailable } from '../../src/components/detailUi';
+import { useIsLeaving } from '../../src/components/LeavingNotice';
 import { useIsModerator } from '../../src/components/ModeratorActions';
 import { ProfileView } from '../../src/components/ProfileView';
 import { BlockButton, FlagControl } from '../../src/components/SafetyControls';
@@ -15,6 +16,7 @@ export default function ProfileRoute() {
   const router = useRouter();
   const profile = useQuery(api.profiles.getPublicProfile, { username });
   const isModerator = useIsModerator();
+  const leaving = useIsLeaving();
 
   if (profile === undefined) return <DetailLoading />;
   if (profile === null) {
@@ -42,6 +44,8 @@ export default function ProfileRoute() {
           profileImageUrl: profile.profileImageUrl,
           isSelf: profile.isSelf,
           isPrivate: profile.private,
+          // Owner-only: nobody else learns this person is leaving until it's irreversible.
+          isLeaving: profile.isSelf && leaving,
           trustClass: profile.trustClass,
           // The raw number is admin-only (D50) — pass it through solely for a moderator/admin viewer.
           adminReputationPoints:

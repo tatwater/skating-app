@@ -26,6 +26,7 @@ import { Image, Modal } from 'react-native';
 import { Button, H4, Paragraph, ScrollView, Text, XStack, YStack } from 'tamagui';
 import { deleteDraftPhotoFiles, persistDraftPhoto } from '../lib/draftPhotos';
 import { saveHazardItem } from '../lib/draftStore';
+import { useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
 
@@ -52,6 +53,9 @@ import { pickPhotos, processPhoto, uploadToStorage } from './photoPipeline';
 
 /** Steppers, not a slider. Sliders are miserable with gloves on. */
 export function HazardCapture() {
+  // A pending deletion closes hazard authoring (D62 amendment). Checked before anything else so the
+  // button never appears — being handed a draw tool and refused at submit is the failure this avoids.
+  const leaving = useIsLeaving();
   const createHazard = useMutation(api.hazards.create);
   const generateUploadUrl = useMutation(api.photos.generateUploadUrl);
   const createPhoto = useMutation(api.photos.create);
@@ -375,6 +379,11 @@ export function HazardCapture() {
   const otherTypes = HAZARD_TYPES.filter(
     (t) => !(HAZARD_TYPE_PRESETS as readonly string[]).includes(t),
   );
+
+  // Nothing here can land while a deletion is pending (D62 amendment), so the FAB, the type picker
+  // and the adjust bar all go together — offering the draw tool and refusing the submit is precisely
+  // the sequence the read-only rule exists to prevent.
+  if (leaving) return null;
 
   return (
     <>

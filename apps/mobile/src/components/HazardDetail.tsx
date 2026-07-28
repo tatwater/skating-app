@@ -8,6 +8,7 @@ import {
   type HazardVerdict,
   hazardTypeLabel,
   healingNote,
+  isLeaving,
   isPassageMarker,
   stalenessCaveat,
   verdictHelp,
@@ -283,7 +284,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         <Paragraph color="$foreground">
           Thanks — recorded as “{verdictLabel(done, hazard.type)}”.
         </Paragraph>
-      ) : archived ? null : (
+      ) : archived || isLeaving(me) ? null : (
         <View
           onLayout={(e) => {
             if (action === 'confirm' && confirmScrolledForRef.current !== hazardId) {
@@ -366,7 +367,11 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       ) : null}
 
       {/* Thumbs (D50): counts visible to all; rating enabled for a signed-in non-reporter. */}
-      <ThumbControl targetType="hazard" targetId={hazardId} canRate={!!me && !isOwn} />
+      <ThumbControl
+        targetType="hazard"
+        targetId={hazardId}
+        canRate={!!me && !isOwn && !isLeaving(me)}
+      />
 
       {/* Flagging a hazard (D3/D32) — a dangerously false pin is a safety problem, so the same
           `unsafe_false_report` reason that leads the report/comment picker is reachable here too.

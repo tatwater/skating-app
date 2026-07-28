@@ -7,6 +7,7 @@ import { ConvexError } from 'convex/values';
 import { useState } from 'react';
 import { expiryLabel } from './BountyList';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
+import { useIsLeaving } from './LeavingNotice';
 import { ThumbControl } from './ThumbControl';
 import { TrustAvatar } from './TrustDisplay';
 import { Badge } from './ui/badge';
@@ -29,6 +30,7 @@ const STATUS_LABEL: Record<string, string> = {
  */
 export function BountyDetail({ bountyId }: { bountyId: string }) {
   const detail = useQuery(api.bounties.getDetail, { bountyId: bountyId as Id<'bounties'> });
+  const leaving = useIsLeaving();
   const cancel = useMutation(api.bounties.cancel);
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,8 +145,10 @@ export function BountyDetail({ bountyId }: { bountyId: string }) {
                     <Badge variant="secondary">{SKATE_QUALITY_LABELS[report.skateQuality]}</Badge>
                   ) : null}
                 </div>
-                {/* Requester-only: a helpful thumb here fulfills the bounty + pays the author. */}
-                {detail.isRequester && isOpen && !report.isOwn ? (
+                {/* Requester-only: a helpful thumb here fulfills the bounty + pays the author.
+                    Closed while the requester's own deletion is pending (D62 amendment) — the thumb
+                    is a rating, and a rating is a contribution. */}
+                {detail.isRequester && isOpen && !report.isOwn && !leaving ? (
                   <ThumbControl
                     targetType="report"
                     targetId={report._id}

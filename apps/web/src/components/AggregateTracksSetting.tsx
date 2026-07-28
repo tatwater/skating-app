@@ -53,16 +53,22 @@ export function AggregateTracksSettingView({
   );
 }
 
-/** Container: reads the caller's own flag and writes it through `profiles.updateProfile`. */
+/**
+ * Container: reads the caller's own flag and writes it through `profiles.setAggregateTracksOptOut`.
+ *
+ * Its own mutation rather than `updateProfile` because this is the one setting that stays reachable
+ * after a deletion request (D62 second amendment) — it governs the tracks that survive the account,
+ * so a person on their way out is exactly who most needs it.
+ */
 export function AggregateTracksSetting() {
   const profile = useQuery(api.profiles.current, {});
-  const updateProfile = useMutation(api.profiles.updateProfile);
+  const setOptOut = useMutation(api.profiles.setAggregateTracksOptOut);
   if (!profile) return null;
 
   return (
     <AggregateTracksSettingView
       excluded={profile.excludeTracksFromAggregate === true}
-      onToggle={(next) => void updateProfile({ excludeTracksFromAggregate: next })}
+      onToggle={(next) => void setOptOut({ excludeTracksFromAggregate: next })}
     />
   );
 }

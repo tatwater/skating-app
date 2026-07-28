@@ -1,5 +1,9 @@
 import { api } from '@skating/convex/api';
-import { DELETION_GRACE_DAYS } from '@skating/core';
+import {
+  DATA_EXPORT_TTL_DAYS,
+  DELETION_GRACE_DAYS,
+  DEPARTED_CONTENT_MAX_AGE_DAYS,
+} from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Linking } from 'react-native';
@@ -47,7 +51,8 @@ function DataExport() {
       <Paragraph color="$foregroundMuted" fontSize={13}>
         Download everything we hold about you as a JSON file — your profile, reports, comments,
         hazards, recorded tracks and your photos. We'll email you a link when it's ready, and list
-        it here too. Links expire after 7 days.
+        it here too. Links expire after {DATA_EXPORT_TTL_DAYS} days — including if you delete your
+        account in the meantime.
       </Paragraph>
       <Button size="$3" onPress={() => void request({})} disabled={building}>
         {building ? 'Preparing your export…' : 'Export my data'}
@@ -99,6 +104,10 @@ function DataExport() {
  * The copy names what *survives*, because "delete my account" reasonably reads as "delete everything
  * I wrote", and that isn't what happens: reports and comments stay as part of the ice record with the
  * author replaced by a tombstone (D33/D13). Someone deserves to know that before confirming.
+ *
+ * It also names the **read-only** consequence before the tap rather than after (D62 amendment): the
+ * request is what closes posting, so discovering it at the moment you try to file a hazard would be
+ * the app keeping a condition to itself until it bit.
  */
 function DeleteAccount() {
   const profile = useQuery(api.profiles.current, {});
@@ -113,11 +122,17 @@ function DeleteAccount() {
     return (
       <YStack gap="$2">
         <Paragraph color="$foreground">
-          Your account is scheduled for deletion on {formatDate(scheduled)}.
+          Your account will be deleted on {formatDate(scheduled)}.
         </Paragraph>
         <Paragraph color="$foregroundMuted" fontSize={13}>
-          Until then nothing has changed — you can keep using the app normally, and you can stop
-          this at any time.
+          Your profile has been cleared and nobody can find you on here any more. Your reports and
+          hazards are still helping other skaters, under “Deleted skater” — but anything you wrote
+          alongside them is deleted for good once it's {DEPARTED_CONTENT_MAX_AGE_DAYS} days old:
+          your notes, your comments, your photo captions. You can browse, but not post.
+        </Paragraph>
+        <Paragraph color="$foregroundMuted" fontSize={13}>
+          Cancelling keeps the account and stops the deletion. It can't bring back your profile or
+          the words already deleted — you'd set your profile up again from scratch.
         </Paragraph>
         <Button size="$3" onPress={() => void cancel({})}>
           Cancel deletion
@@ -129,14 +144,20 @@ function DeleteAccount() {
   return (
     <YStack gap="$2">
       <Paragraph color="$foregroundMuted" fontSize={13}>
-        Deleting your account removes your profile, your home location, your saved lakes and any
-        recording you never published. Your reports and comments stay, with your name replaced —
-        they're part of the ice record other skaters rely on. Tracks you published with a report
-        stay on the lake's map the same way, no longer attached to you.
+        This happens straight away, and most of it can't be undone. Your profile — name, photo, bio,
+        town, home location — is cleared immediately, and nobody will be able to find you on here.
       </Paragraph>
       <Paragraph color="$foregroundMuted" fontSize={13}>
-        Nothing happens for {DELETION_GRACE_DAYS} days, and you can cancel any time during them.
-        Export your data first if you want a copy.
+        What you <Text fontWeight="700">saw</Text> stays: your reports and hazards keep helping
+        other skaters, under “Deleted skater”, with no way back to you. What you{' '}
+        <Text fontWeight="700">wrote</Text> goes — your notes, comments and photo captions are
+        deleted for good once they're {DEPARTED_CONTENT_MAX_AGE_DAYS} days old. The account itself
+        goes in {DELETION_GRACE_DAYS} days.
+      </Paragraph>
+      <Paragraph color="$foregroundMuted" fontSize={13}>
+        During those {DELETION_GRACE_DAYS} days you can still sign in, and cancelling keeps the
+        account — but your profile stays empty and you'd set it up again from scratch. Export your
+        data first if you want a copy.
       </Paragraph>
       {confirming ? (
         <XStack gap="$2" flexWrap="wrap">

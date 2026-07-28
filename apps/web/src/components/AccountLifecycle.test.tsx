@@ -33,16 +33,40 @@ describe('DeleteAccountView', () => {
     return { onRequest, onCancel };
   }
 
-  it('says that reports and comments survive, before anything is confirmed', () => {
+  /**
+   * The single most important sentence on the screen, and the one the old copy got wrong: it used to
+   * promise "nothing happens for 30 days" of an action that clears your profile and erases your older
+   * reports the instant you tap. Copy that promises reversibility for something irreversible is worse
+   * than no copy at all.
+   */
+  it('leads with what cannot be undone', () => {
     renderDelete(undefined);
-    expect(screen.getByText(/reports and comments stay/i)).toBeInTheDocument();
-    expect(screen.getByText(/no longer attached to you/i)).toBeInTheDocument();
+    expect(screen.getByText(/happens straight away/i)).toBeInTheDocument();
+    expect(screen.getByText(/can't be undone/i)).toBeInTheDocument();
+    expect(screen.getByText(/deleted for good/i)).toBeInTheDocument();
   });
 
-  it('says nothing happens for 30 days and that it can be cancelled', () => {
+  /**
+   * The seam the D62 second amendment draws, asserted as copy: **what you saw stays, what you wrote
+   * goes.** Someone deserves to know both halves before confirming — "delete my account" reasonably
+   * reads as "delete everything I wrote", and only one of those two words is true.
+   */
+  it('draws the line between the observation that stays and the words that go', () => {
     renderDelete(undefined);
-    expect(screen.getByText(/Nothing happens for 30 days/i)).toBeInTheDocument();
-    expect(screen.getByText(/cancel any time/i)).toBeInTheDocument();
+    expect(screen.getByText(/reports and hazards keep helping other skaters/i)).toBeInTheDocument();
+    expect(screen.getByText(/notes, comments and photo captions/i)).toBeInTheDocument();
+    expect(screen.getByText(/no way back to you/i)).toBeInTheDocument();
+  });
+
+  it('is honest that cancelling is not a restore', () => {
+    renderDelete(undefined);
+    expect(screen.getByText(/set it up again from scratch/i)).toBeInTheDocument();
+  });
+
+  it('names the 30 days as what the account gets, not what the content gets', () => {
+    renderDelete(undefined);
+    expect(screen.getByText(/the account itself goes in 30 days/i)).toBeInTheDocument();
+    expect(screen.getByText(/you can still sign in/i)).toBeInTheDocument();
   });
 
   it('points at the export first — the moment after confirming is too late to mention it', () => {
@@ -76,8 +100,12 @@ describe('DeleteAccountView', () => {
       day: 'numeric',
     });
     expect(screen.getByText(expected)).toBeInTheDocument();
-    // The reassurance matters as much as the date: a pending deletion changes nothing yet.
-    expect(screen.getByText(/nothing has changed/i)).toBeInTheDocument();
+    // The date is the least of it. A ghost is told what has already happened — profile cleared,
+    // unfindable, older content gone — and what cancelling can and can't get back.
+    expect(screen.getByText(/profile has been cleared/i)).toBeInTheDocument();
+    expect(screen.getByText(/nobody can find you/i)).toBeInTheDocument();
+    expect(screen.getByText(/deleted for good once it's 30 days old/i)).toBeInTheDocument();
+    expect(screen.getByText(/set your profile up again from scratch/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /cancel deletion/i })).toBeInTheDocument();
   });
 

@@ -3,8 +3,10 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   COMMENT_BODY_MAX_LENGTH,
   formatSkateTime,
+  isLeaving,
   isMinor,
   isValidCommentBody,
+  REDACTED_COMMENT_NOTICE,
   type TrustClass,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
@@ -31,6 +33,8 @@ export interface CommentNodeData {
   hidden: boolean;
   comment: {
     body: string;
+    /** Author left; `body` is empty and the standing-in line renders instead (D62 2nd amendment). */
+    redacted?: boolean;
     authorId: string;
     author: CommentAuthor | null;
     isOwn: boolean;
@@ -146,7 +150,15 @@ function CommentNode({
                 }}
               />
             ) : (
-              <p className="whitespace-pre-wrap text-foreground text-sm">{node.comment.body}</p>
+              <p
+                className={
+                  node.comment.redacted
+                    ? 'text-foreground-muted text-sm italic'
+                    : 'whitespace-pre-wrap text-foreground text-sm'
+                }
+              >
+                {node.comment.redacted ? REDACTED_COMMENT_NOTICE : node.comment.body}
+              </p>
             )}
             <div className="flex flex-wrap items-center gap-1">
               {canComment && depth === 0 ? (
@@ -269,8 +281,10 @@ export function Comments({ reportId }: { reportId: string }) {
   const remove = useMutation(api.comments.remove);
 
   // Signed-in, active adults may comment; minors are read-only (D41) so we hide the compose box (the
-  // server also rejects them at the trust boundary).
-  const canComment = me != null && me.status === 'active' && !isMinor(me.dateOfBirth, Date.now());
+  // server also rejects them at the trust boundary). A pending deletion is read-only for the same
+  // reason and by the same mechanism (D62 amendment) — the thread stays fully readable either way.
+  const canComment =
+    me != null && me.status === 'active' && !isMinor(me.dateOfBirth, Date.now()) && !isLeaving(me);
 
   return (
     <div className="flex flex-col gap-3 px-4 pb-4">

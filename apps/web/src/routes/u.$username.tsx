@@ -4,6 +4,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { ProfileModeratorPanel } from '../components/admin/ProfileModeratorPanel';
 import { UnavailableState } from '../components/DrawerStates';
+import { useIsLeaving } from '../components/LeavingNotice';
 import { useIsModerator } from '../components/ModeratorActions';
 import { ProfileView } from '../components/ProfileView';
 import { BlockButton, FlagDialog } from '../components/SafetyControls';
@@ -17,6 +18,7 @@ export const Route = createFileRoute('/u/$username')({ component: ProfilePage })
 function ProfilePage() {
   const { username } = Route.useParams();
   const profile = useQuery(api.profiles.getPublicProfile, { username });
+  const leaving = useIsLeaving();
   const isModerator = useIsModerator();
 
   if (profile === undefined) {
@@ -33,9 +35,11 @@ function ProfilePage() {
     );
   }
 
+  // On your own ghosted profile there is nothing to edit — the row is empty — so the one action worth
+  // offering is the way back.
   const actions = profile.isSelf ? (
     <Link to="/settings" className={buttonVariants({ variant: 'outline', size: 'sm' })}>
-      Edit profile
+      {leaving ? 'Cancel deletion' : 'Edit profile'}
     </Link>
   ) : (
     <>
@@ -53,6 +57,8 @@ function ProfilePage() {
           profileImageUrl: profile.profileImageUrl,
           isSelf: profile.isSelf,
           isPrivate: profile.private,
+          // Owner-only: nobody else learns that this person is leaving until it's irreversible.
+          isLeaving: profile.isSelf && leaving,
           trustClass: profile.trustClass,
           homeTownLabel: profile.private ? undefined : profile.homeTownLabel,
           bio: profile.private ? undefined : profile.bio,

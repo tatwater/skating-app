@@ -9,6 +9,7 @@ import {
   formatSnowCoverInches,
   formatThicknessReading,
   humanizeEnum,
+  isLeaving,
   type ReportConditions,
   reportStripState,
   SKATE_QUALITY_LABELS,
@@ -347,7 +348,11 @@ export function ReportDetail({ reportId }: { reportId: string }) {
       ) : null}
       {/* Thumbs (D50): counts visible to all; rating enabled for a signed-in non-author. */}
       <div className="px-4 pb-2">
-        <ThumbControl targetType="report" targetId={report._id} canRate={!!me && !isOwn} />
+        <ThumbControl
+          targetType="report"
+          targetId={report._id}
+          canRate={!!me && !isOwn && !isLeaving(me)}
+        />
       </div>
       {/* Safety tools on the report (D32): flag for anyone but the author; moderator takedown. */}
       {me && !isOwn ? (

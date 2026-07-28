@@ -3,8 +3,10 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   COMMENT_BODY_MAX_LENGTH,
   formatSkateTime,
+  isLeaving,
   isMinor,
   isValidCommentBody,
+  REDACTED_COMMENT_NOTICE,
   type TrustClass,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
@@ -29,6 +31,8 @@ export interface CommentNodeData {
   hidden: boolean;
   comment: {
     body: string;
+    /** Author left; `body` is empty and the standing-in line renders instead (D62 2nd amendment). */
+    redacted?: boolean;
     authorId: string;
     author: CommentAuthor | null;
     isOwn: boolean;
@@ -148,6 +152,10 @@ function CommentNode({
                   setEditing(false);
                 }}
               />
+            ) : node.comment.redacted ? (
+              <Paragraph color="$foregroundMuted" fontStyle="italic">
+                {REDACTED_COMMENT_NOTICE}
+              </Paragraph>
             ) : (
               <Paragraph color="$foreground">{node.comment.body}</Paragraph>
             )}
@@ -266,8 +274,10 @@ export function Comments({ reportId }: { reportId: string }) {
   const edit = useMutation(api.comments.update);
   const remove = useMutation(api.comments.remove);
 
-  // Signed-in, active adults may comment; minors are read-only (D41) — hide the compose box.
-  const canComment = me != null && me.status === 'active' && !isMinor(me.dateOfBirth, Date.now());
+  // Signed-in, active adults may comment; minors are read-only (D41) — hide the compose box. A
+  // pending deletion is read-only for the same reason and by the same mechanism (D62 amendment).
+  const canComment =
+    me != null && me.status === 'active' && !isMinor(me.dateOfBirth, Date.now()) && !isLeaving(me);
 
   return (
     <YStack gap="$3">
