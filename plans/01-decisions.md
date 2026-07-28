@@ -1387,28 +1387,174 @@ accident* today, by a stale pin that never leaves and asserts a position nobody 
 to tell the difference from opacity alone. Hiding is the honest default; a labelled way back is the
 honest exception.
 
-## D62 amendment — a departed user's content is erased at 30 days, not kept indefinitely (N5a)
-**Amended (2026-07-27).** D62 said published GPS tracks are kept, severed from identity. They still
-are — **for 30 days past the skate**, and then only for as long as the report they hang off survives.
-For an author whose profile is a D62 tombstone: the report, its GPS activity and path, the hazards they
-created and their photos are **erased** 30 days after `skateEndTime`; **all** their bounties go
-immediately at finalize, including open ones (a request from someone who left can't be fulfilled *for*
-them); **put-ins survive** (access is the corpus's most-discussed concern, S1).
+## D62 amendment — the request *is* the deletion; only the login waits 30 days (N5a)
+**Amended (2026-07-27), twice in one day, and the second correction reversed the first's premise.**
+
+> **Round one is superseded by the [D62 second amendment](#d62-second-amendment--erase-the-person-keep-the-observation-n5a) (same day, later).** Everything below about the *person* — the
+> immediate profile scrub, the read gates, read-only, the reserved handle, the DOB carve-out — stands
+> unchanged and is the load-bearing half. What does not stand is "erased": a departed skater's
+> published content is **kept and redacted**, not deleted. Read this section for the ghost; read the
+> next one for what happens to what they wrote.
+
+**Round one: a departed user's content is erased at 30 days.** D62 said published GPS tracks are kept,
+severed from identity. They still are — **for 30 days past the skate**, and then only for as long as
+the report they hang off survives. The report, its GPS activity and path, the hazards they created and
+their photos are erased 30 days after `skateEndTime`; **all** their bounties go immediately, including
+open ones (a request from someone who left can't be fulfilled *for* them); **put-ins survive** (access
+is the corpus's most-discussed concern, S1).
+
+**Round two: a pending deletion is read-only, and the person is already gone** (founder call). D62 said
+the account stays "fully functional" for 30 days, reasoning from the *sign-in* problem — banning the
+Clerk user would lock someone out of the login they need to cancel with. That reasoning was sound and
+its conclusion overshot in both directions.
+
+*Too permissive about content.* A report posted in hour 719 of the window is erased hours later while
+it is still the freshest thing on the lake — the window preserving nothing and costing someone the
+effort of writing it. Contributing and leaving are contradictory acts; the app should make you pick.
+
+*Too slow about the person.* Someone who asks to be deleted should stop existing on the platform then
+and there, not in a month. So **`requestDeletion` really deletes**:
+
+| At the request | At finalization (day 30) |
+|---|---|
+| profile **scrubbed** — name, avatar, bio, town, `homeCoord`, isochrones | the private side-tables (tokens, favorites, blocks, tickets, notifications) |
+| public profile + profile search return **not-found** to everyone but them | `clerkUserId`, `username` and `dateOfBirth` scrubbed; the Clerk user deleted |
+| surviving content reads as **"Deleted skater"**, no handle, no trust ring | whatever crossed the 30-day line since |
+| everything past 30 days past its skate **erased**, plus every bounty | |
+
+- **Cancelling stops the deletion; it does not restore the person.** The profile stays empty and they
+  are routed back through onboarding (`needsProfileSetup`); the purged content is gone. That isn't an
+  implementation limit — the data was deleted, and a cancel that pretended otherwise would be the one
+  dishonest thing in the flow.
+- **The handle is reserved, not released** (founder call). Invisibility comes from the read gates, not
+  from mutating the field, so releasing it buys nothing and could cost someone their name to a
+  squatter in a window they may well cancel in.
+- **`dateOfBirth` is the one PII field that waits for finalization**, and the reason is safety, not
+  convenience: scrubbing it means restoring it as the 1900 sentinel, which derives to *adult*, so a
+  minor who cancelled would come back with an adult's posting rights.
+- **The purge keeps running while the account is pending**, not once at the request: content three
+  days old when they left is thirty-three days old three weeks later, and "your old reports are gone"
+  has to keep being true rather than describing one instant.
+- **Blocked** (`requireContributor`, distinct from `requireProfile` because that one gates *queries*
+  too, and reading is most of what "you can still change your mind" means): reports, comments,
+  hazards, hazard confirmations, thumbs, bounties, photo uploads, native track ingest, new provider
+  connections, skater-created water bodies.
+- **Open**: flagging (a hazard is no less dangerous because the person who spotted it is leaving),
+  blocking (self-protection outlives the account), support, export, private preferences — including
+  `excludeTracksFromAggregate`, a privacy control that must not be collateral damage — and the
+  load-bearing one, **cancelling**.
+- **The clients hide the affordances, they don't just fail the call.** The point is not to refuse a
+  report — it's to never invite one. Both apps drop every closed control and put one line in its
+  place, because a button that silently vanishes reads as a broken build. **The rule keeping client
+  and server honest: hide exactly what `requireContributor` blocks, no more and no less.** Three
+  deliberate exceptions: the mobile draft queue (their own unsent work, and the only screen that can
+  delete it), an existing Strava connection (only *connecting* closes — unlinking on the way out is
+  what this window is for), and profile editing (its mutation carries the aggregate opt-out).
+- **The copy had to be rewritten, not adjusted.** It said "nothing is deleted for 30 days" of an
+  action that now clears your profile and erases your older reports on the tap. Copy that promises
+  reversibility for an irreversible action is worse than no copy, so the confirm screen leads with
+  what can't be undone.
+- **The mechanical payoff.** With posting closed, a ghost's newest `skateEndTime` can't postdate their
+  request, so everything they hold has aged out by finalization. The purge needs no `contentPurgeDueAt`
+  stamp, no second index and no deferred sweep — it's a stage of the existing chain. The grace window
+  and the relevance window are the same 30 days *by construction*, a coupling to keep deliberate if
+  either number moves.
+- **The cost, accepted:** a skater on bad ice during their window can't file the hazard. Cancelling is
+  one tap and the error says so, but it's a real trade rather than a free win.
+
+**What the build found:** the decision *"put-ins survive"* was **false in the code**, and invisibly so.
+Derived put-in markers aren't stored — `putIns.listForBody` recomputes them from a body's live reports
+on every read — so erasing a departed skater's reports silently erases the access points they revealed,
+and nothing named `putIn` appears in a purge that only touches `reports`. The purge now materializes
+the access point before its report goes (a stored `derived` row, snapped to shore, deduped), and
+`listForBody` had to learn to read those rows: they were a row class nothing had ever written, so
+nothing read them either.
 
 **Flat 30 days, not the D59 freshness curve.** The curve is more principled — a corroborated report
 earns a longer life — but the consequence is irreversible deletion, and a rule verifiable by reading
 one field beats one that depends on other people's later votes. N3/N4 shipped a bug caused by a
 subtly-wrong predicate on exactly this kind of sweep.
+
 **The governing principle, since two rules in N5a look alike and aren't:** *aging never erases
 anything; an intentional account deletion erases everything that isn't of immediate value to the
 community.* Staleness and seasons only ever **hide** — for everyone, reversibly, with a labelled way
-back. Erasure has exactly one trigger, and it's a person deciding to leave. The 30-day window is not
-"old content expires"; it's the proxy for *immediate value*, which is why it's short and why it reaches
-nobody who is still here.
-**Why:** 30 days is long enough that anything still true has fresh reporting behind it, and holding a
-departed person's data past its usefulness is the least respectful option available. Recorded as an
-amendment rather than a silent change, because "we keep your published tracks" and "we keep them for a
-month" are different promises to have made.
+back. Erasure has exactly one trigger, and it's a person deciding to leave.
+**Why:** the ice record belongs to the community and the person doesn't. Their reports keep someone
+off bad ice for as long as they're current, and everything that says *who* left goes immediately —
+because 30 days is long enough that anything still true has fresher reporting behind it, and holding a
+departed person's data past its usefulness is the least respectful option available.
+
+## D62 second amendment — erase the person, keep the observation (N5a)
+**Decided (2026-07-27, founder call, later the same day.)** The first amendment erased a departed
+skater's content 30 days past its skate. Following that through exposed a seam it had drawn in the
+wrong place, and the rule that replaces it:
+
+> **A departed skater's private artifacts are erased. Their published observations are kept,
+> anonymized, with every free-text field cleared at 30 days.**
+
+**The distinction the erasure rule missed is between what a person *typed* and what they *observed*.**
+A name, a home coordinate, a bio, report notes, a hazard description, a photo caption, a raw
+unpublished trace — those are theirs, and erasing them is the respectful default. A coordinate, an ice
+type, a thickness reading, a hazard geometry and a date are not facts about anybody once the author
+pointer is a tombstone. They are the ice record, and deleting them takes something from the next
+skater without giving anything back to the person who left.
+
+| Bucket | What | When |
+|---|---|---|
+| **Erased** | OAuth tokens, notifications + queue, favorites, blocks (both directions), support tickets, client signal events, unpublished recordings, unattached photos | finalization |
+| **Erased** | **every bounty**, open ones included — a standing ask nobody is making any more | **the request** |
+| **Redacted** | `reports.notes`, the `note` on each thickness reading, `hazards.description`, photo captions, comment bodies | 30 days past the skate (`createdAt` for comments) |
+| **Anonymized** | everything else on the public record — reports, hazards, ratings, confirmations, flags, put-ins, point events, bodies and sub-areas | finalization, by one write |
+| **Kept, severed** | GPS tracks linked to a visible report | finalization |
+
+**Three things this fixes that the erasure rule had broken:**
+
+- **Bucket 3 was unreachable.** D62's "kept, severed from identity" existed only on paper: the purge
+  deleted every report first — all of a ghost's reports are >30 days old by finalization, by
+  construction — and each deletion took its linked activity with it, so `severTracks` could never keep
+  anything. The aggregate-map contribution D62 exists to preserve was silently deleted. Every test
+  missed it because they all reached finalization through `finalizeNow`, which stamps and finalizes in
+  the same instant and therefore never lets content age. There is now a test that advances the clock
+  30 days and goes in through the cron.
+- **Hazards were aged on the wrong field.** `firstReportedAt`, so a ridge first seen forty days ago
+  and confirmed by six other skaters yesterday — the most current thing on that shore — was deleted.
+  Now `lastConfirmedAt`, and hazards are never erased at all: a hazard row is a point, a type and two
+  dates, and it is exactly the multi-season record N5a's recurrence detection and `bodyFeatures`
+  promotion are built on.
+- **Comments survived verbatim, forever.** The weakest position in the design: reports were erased at
+  30 days as no longer of immediate value while free text a person typed was kept indefinitely. The
+  row now survives as a marked shell — the thread is keyed by `reportId`, so deleting it would leave a
+  hole in somebody else's conversation — rendered as *"This comment was deleted"* under the tombstone.
+
+**Consequences worth carrying forward:**
+
+- **Put-in preservation is no longer needed, and its removal is the fix rather than a regression.** The
+  first amendment discovered that *"put-ins survive"* was false in the code — derived markers are
+  recomputed from live reports, so erasing the reports erased the access points — and compensated by
+  materializing a `putIns` row before each delete. With reports kept, the report *is* the preservation.
+  The stored-row reader in `putIns` stays; rows written by the old path exist on dev.
+- **Put-in markers now carry `lastUsedAt`** (founder call). Put-ins are exempt from every ageing rule
+  in the app, which is right and has a cost: an access point from three winters ago rendered
+  identically to one used last week, while being the kind of fact that *does* go stale — land changes
+  hands, a gate goes up, a pull-off gets posted. Saying when it was last used lets the exemption stand
+  without the marker overclaiming (D3).
+- **A ghost can no longer edit any field** (founder call). `updateProfile`, `setHome`,
+  `setFeedFilterPrefs` and `setNotificationPrefs` moved to `requireContributor`: the request *clears*
+  those exact fields, and a ghost could type them straight back in, making the wipe read as a
+  suggestion. `excludeTracksFromAggregate` split into its own open mutation — it governs the tracks
+  that survive the account, so it is the one setting a departing skater must not lose.
+- **An emailed export outlives the account.** The TTL moves 7 → 30 days and runs from *ready*; a bundle
+  still inside it survives finalization, because export-then-delete is the commonest reason to ask for
+  one and `myExports` needs a sign-in there won't be. Only if it was actually **emailed** — otherwise
+  nothing can reach it and retaining it is pure cost.
+- **The governing principle needs restating**, since the first amendment's version is now wrong:
+  *aging never erases anything; an intentional account deletion erases what is private and redacts what
+  is personal, and keeps the observation either way.* Staleness and seasons only ever **hide**.
+
+**Why:** the ice record belongs to the community and the person doesn't — and the first amendment
+conflated the two. What is disrespectful is holding *their* data: their name, their home, their traces,
+their words. A depersonalized observation of what ice was doing on a Tuesday isn't theirs any more, and
+erasing it moves a cost onto skaters who had no say. Revisit if the community objects.
 
 ## D64 — Suggested crossings decay in the opposite direction from hazards (N5a)
 **Decided (2026-07-27).** `ridge_crossing` is a **passage marker, not a danger** (D51), and it
