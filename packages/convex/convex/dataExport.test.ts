@@ -4,6 +4,7 @@
  * expensive way: photo bytes travel inside the file, so the export still works after the account it
  * describes is gone.
  */
+import { DATA_EXPORT_TTL_MS } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -519,7 +520,7 @@ describe('bundle reclamation (PR #29 review)', () => {
    * lands with its full window rather than a shortened one, and `exportUrl` refuses an expired row
    * regardless, so nothing downstream depends on that rebase having happened.
    */
-  test('a bundle’s 7 days run from when it exists, not from when it was asked for', async () => {
+  test('a bundle’s lifetime runs from when it exists, not from when it was asked for', async () => {
     const t = harness();
     const user = await seedUser(t, 'exporter');
     const exportId = await user.as.mutation(api.dataExport.requestExport, {});
@@ -529,7 +530,7 @@ describe('bundle reclamation (PR #29 review)', () => {
     await t.finishAllScheduledFunctions(vi.runAllTimers);
 
     const row = await t.run((ctx) => ctx.db.get(exportId));
-    expect(row?.expiresAt).toBe((row?.readyAt ?? 0) + 7 * 24 * 60 * 60 * 1000);
+    expect(row?.expiresAt).toBe((row?.readyAt ?? 0) + DATA_EXPORT_TTL_MS);
     expect(row?.expiresAt).toBeGreaterThan(requested); // not the shortened window the email would lie about
   });
 

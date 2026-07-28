@@ -17,6 +17,7 @@ import { BountyForm } from './BountyForm';
 import { BountyList } from './BountyList';
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
 import { DirectionsButton, FavoriteButton } from './FavoriteButton';
+import { LeavingNotice, useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { ReportForm } from './ReportForm';
 
@@ -59,6 +60,7 @@ export function WaterBodyDetail({
   const { setFocus, setHighlightWaterBodyId } = useMapSelection();
   const [formOpen, setFormOpen] = useState(trackDraftId !== undefined);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
+  const leaving = useIsLeaving();
 
   // Offline read-cache (decision #8): stash this opened lake's freshest reports as feed cards so they
   // read back on the ice with no signal. Skips until the (merge-resolved) body id is known.
@@ -152,17 +154,24 @@ export function WaterBodyDetail({
         />
       ) : (
         <>
-          {/* Report creation + bounty posting surfaced in place (D47). */}
-          <Button
-            backgroundColor="$primary"
-            color="$primaryForeground"
-            onPress={() => setFormOpen(true)}
-          >
-            Add a report
-          </Button>
-          <Button variant="outlined" onPress={() => setBountyFormOpen(true)}>
-            Post a bounty
-          </Button>
+          {/* Report creation + bounty posting surfaced in place (D47). Both close while a
+              deletion is pending (D62 amendment); the feed below stays fully readable. */}
+          {leaving ? (
+            <LeavingNotice />
+          ) : (
+            <>
+              <Button
+                backgroundColor="$primary"
+                color="$primaryForeground"
+                onPress={() => setFormOpen(true)}
+              >
+                Add a report
+              </Button>
+              <Button variant="outlined" onPress={() => setBountyFormOpen(true)}>
+                Post a bounty
+              </Button>
+            </>
+          )}
           <BountyList waterBodyId={result.body._id} />
           <ReportFeed
             waterBodyId={result.body._id}

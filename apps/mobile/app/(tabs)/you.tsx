@@ -237,7 +237,9 @@ function RadiusRow({
  */
 function AggregateTracksSetting() {
   const profile = useQuery(api.profiles.current, {});
-  const updateProfile = useMutation(api.profiles.updateProfile);
+  // `setAggregateTracksOptOut`, not `updateProfile`: this is the one profile setting a ghost keeps
+  // (D62 second amendment) — it governs the tracks that outlive the account.
+  const setOptOut = useMutation(api.profiles.setAggregateTracksOptOut);
   if (!profile) return null;
 
   return (
@@ -248,7 +250,7 @@ function AggregateTracksSetting() {
       <ToggleRow
         label={AGGREGATE_OPT_OUT_LABEL}
         value={profile.excludeTracksFromAggregate === true}
-        onToggle={(v) => void updateProfile({ excludeTracksFromAggregate: v })}
+        onToggle={(v) => void setOptOut({ excludeTracksFromAggregate: v })}
       />
       <Paragraph color="$foregroundMuted" fontSize={11}>
         {AGGREGATE_OPT_OUT_EXPLAINER}

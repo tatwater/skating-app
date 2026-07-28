@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   BIO_MAX_LENGTH,
   canSetProfilePublic,
+  DATA_EXPORT_TTL_DAYS,
+  DELETION_GRACE_DAYS,
+  DEPARTED_CONTENT_MAX_AGE_DAYS,
   DISPLAY_NAME_MAX_LENGTH,
   isValidBio,
   isValidDisplayName,
@@ -103,5 +106,28 @@ describe('canSetProfilePublic (minors forced private, D13/D41)', () => {
   it('forbids a minor going public', () => {
     expect(canSetProfilePublic(yearsAgo(16), now)).toBe(false);
     expect(canSetProfilePublic(yearsAgo(17), now)).toBe(false);
+  });
+});
+
+/**
+ * Three deletion windows that all read "30 days" in the copy and are three independent numbers in the
+ * code. These assertions exist so that changing one is a deliberate act with a failing test attached,
+ * rather than a quiet behavior change nobody notices — which is precisely how the shipped bugs in this
+ * area happened.
+ */
+describe('deletion window invariants (D62)', () => {
+  it('keeps the ghost-window sweep reachable: content age <= grace', () => {
+    // Above the grace period no sweep tick ever finds anything due, so every account would reach
+    // finalization with its prose intact and the promise in LEAVING_PROFILE_NOTICE — "deleted once
+    // they're 30 days old" — would only be kept at the very end. Finalization itself is unconditional
+    // (`lib/contentPurge`'s `final` mode), so this bounds *when*, never *whether*.
+    expect(DEPARTED_CONTENT_MAX_AGE_DAYS).toBeLessThanOrEqual(DELETION_GRACE_DAYS);
+  });
+
+  it('keeps an export fetchable for as long as the account that could fetch it', () => {
+    // A bundle whose TTL expired before finalization is one the person can no longer reach by any
+    // route: `myExports` needs a sign-in, and after day 30 there isn't one. Founder call 2026-07-27,
+    // and the reason the TTL moved from 7 days to 30.
+    expect(DATA_EXPORT_TTL_DAYS).toBeGreaterThanOrEqual(DELETION_GRACE_DAYS);
   });
 });

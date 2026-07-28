@@ -33,7 +33,12 @@ import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { assertCanPostHazards, getCurrentProfile, requireProfile } from './lib/auth';
+import {
+  assertCanPostHazards,
+  getCurrentProfile,
+  requireContributor,
+  requireProfile,
+} from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { isListed } from './lib/listing';
@@ -207,7 +212,7 @@ export async function insertHazard(
 export const create = mutation({
   args: hazardCreateArgs,
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const now = Date.now();
 
     // Idempotency short-circuit: if this key already produced a hazard, return it — the flush is a

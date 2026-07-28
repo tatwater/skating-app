@@ -4,6 +4,7 @@ import {
   formatAreaAcres,
   formatSkateTime,
   humanizeEnum,
+  isLeaving,
   SKATE_QUALITY_LABELS,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
@@ -17,6 +18,7 @@ import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { FavoriteButton } from './FavoriteButton';
 import { HazardForm } from './HazardForm';
 import { HazardList } from './HazardList';
+import { LeavingNotice } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { ReportForm } from './ReportForm';
 import { Badge } from './ui/badge';
@@ -53,6 +55,8 @@ export function WaterBodyDetail({
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
     : undefined;
   const { setFocus, setHighlightWaterBodyId } = useMapSelection();
+  // Mirrors the server's `requireContributor` — see `LeavingNotice`.
+  const leaving = isLeaving(useQuery(api.profiles.current, {}));
   const [formOpen, setFormOpen] = useState(false);
   const [hazardFormOpen, setHazardFormOpen] = useState(false);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
@@ -116,17 +120,24 @@ export function WaterBodyDetail({
         </SheetDescription>
       </SheetHeader>
       <div className="flex flex-col gap-4 px-4 pb-4">
-        {/* Report creation + directions to a put-in (never the on-water centroid, D#7). */}
+        {/* Report creation + directions to a put-in (never the on-water centroid, D#7).
+            A pending deletion removes all three composers (D62 amendment) and keeps directions:
+            getting to the lake isn't a contribution, and this drawer is still worth reading. */}
         <div className="flex flex-wrap gap-2">
-          <Button onClick={() => setFormOpen(true)}>Add a report</Button>
-          <Button variant="outline" onClick={() => setHazardFormOpen(true)}>
-            Report a hazard
-          </Button>
-          <Button variant="outline" onClick={() => setBountyFormOpen(true)}>
-            Post a bounty
-          </Button>
+          {leaving ? null : (
+            <>
+              <Button onClick={() => setFormOpen(true)}>Add a report</Button>
+              <Button variant="outline" onClick={() => setHazardFormOpen(true)}>
+                Report a hazard
+              </Button>
+              <Button variant="outline" onClick={() => setBountyFormOpen(true)}>
+                Post a bounty
+              </Button>
+            </>
+          )}
           <DirectionsButton waterBodyId={result.body._id} />
         </div>
+        {leaving ? <LeavingNotice /> : null}
         <WaterBodyModeratorControls body={result.body} />
         <BountyList waterBodyId={result.body._id} />
         <HazardList waterBodyId={result.body._id} />

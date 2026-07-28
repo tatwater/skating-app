@@ -60,8 +60,9 @@ import {
 import {
   assertCanPostHazards,
   assertCanPostReports,
+  canReceiveNotifications,
   getCurrentProfile,
-  requireProfile,
+  requireContributor,
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
@@ -149,7 +150,7 @@ function toReportInput(
 }
 
 /**
- * Create a report (D3/D13/D41). `requireProfile`; **reject minors** (all reports are public, so a
+ * Create a report (D3/D13/D41). `requireContributor`; **reject minors** (all reports are public, so a
  * minor can't post — D41); re-validate via `@skating/core`; resolve a merged target body to its
  * survivor; set `point` from the put-in pin else the body centroid; server-stamp `reportTime`;
  * insert as a `native`, `visible` report.
@@ -175,7 +176,7 @@ export const create = mutation({
     ...reportContent,
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const now = Date.now();
 
     // Idempotency short-circuit (F2/D30): if this key already produced a report, return it — the
@@ -436,7 +437,7 @@ async function notifyCorroboration(
 ): Promise<void> {
   const author = await ctx.db.get(priorReport.authorId);
   if (!author) return;
-  if (author.status !== 'active' || !author.notificationPrefs.reportRated) return;
+  if (!canReceiveNotifications(author) || !author.notificationPrefs.reportRated) return;
   await ctx.db.insert('notifications', {
     userId: priorReport.authorId,
     type: 'report_rated',
@@ -855,7 +856,7 @@ export const recommended = query({
 export const update = mutation({
   args: { reportId: v.id('reports'), ...reportContent },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const existing = await ctx.db.get(args.reportId);
     if (!existing) throw new ConvexError('Report not found');
     if (existing.authorId !== profile._id)

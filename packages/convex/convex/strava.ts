@@ -39,7 +39,7 @@ import {
   query,
 } from './_generated/server';
 import { storeActivityConnection } from './lib/activityConnections';
-import { requireProfile } from './lib/auth';
+import { requireContributor, requireProfile } from './lib/auth';
 
 const STRAVA_AUTHORIZE_URL = 'https://www.strava.com/oauth/authorize';
 const STRAVA_TOKEN_URL = 'https://www.strava.com/oauth/token';
@@ -83,7 +83,7 @@ function stravaConfigured(): boolean {
 export const beginConnect = mutation({
   args: { redirectTo: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     if (!stravaConfigured()) {
       throw new ConvexError('Strava is not configured on this deployment');
     }

@@ -28,6 +28,47 @@ describe('ProfileView', () => {
     expect(screen.getByText('history')).toBeInTheDocument();
   });
 
+  /**
+   * The ghost card (D62 amendment). What's asserted is *absence* — and the sharpest check is the
+   * stats, because a "3 Reports" counter next to "Deleted skater" would read as data that survived a
+   * scrub that has, in fact, already happened. The fixture deliberately keeps every field populated:
+   * a real ghost's row is empty, so passing a *full* one proves the card ignores its data rather than
+   * happening to render blanks.
+   */
+  describe('once the owner has asked to be deleted', () => {
+    const GHOST: ProfileViewData = { ...PUBLIC, isSelf: true, isLeaving: true };
+
+    it('renders the tombstone in place of the profile card', () => {
+      render(<ProfileView data={GHOST} reportHistory={<div>history</div>} />);
+      expect(screen.getByText('Deleted skater')).toBeInTheDocument();
+      expect(screen.getByText(/your profile has been cleared/i)).toBeInTheDocument();
+    });
+
+    it('shows none of what finalization scrubs', () => {
+      render(<ProfileView data={GHOST} />);
+      expect(screen.queryByText('Ada Lovelace')).not.toBeInTheDocument();
+      expect(screen.queryByText('@ada')).not.toBeInTheDocument();
+      expect(screen.queryByText('Norwich, VT')).not.toBeInTheDocument();
+      expect(screen.queryByText('Loves black ice')).not.toBeInTheDocument();
+      expect(screen.queryByText('Trusted')).not.toBeInTheDocument();
+      expect(screen.queryByText('Trusted Reporter')).not.toBeInTheDocument();
+      expect(screen.queryByText('Reports')).not.toBeInTheDocument();
+    });
+
+    it('keeps the actions slot — the way back is the one thing still worth offering', () => {
+      render(<ProfileView data={GHOST} actions={<button type="button">Cancel deletion</button>} />);
+      expect(screen.getByRole('button', { name: /cancel deletion/i })).toBeInTheDocument();
+    });
+
+    // Owner-only by construction: the flag is set by the container solely when `isSelf`, and a
+    // reversible decision is not news the rest of the app gets told.
+    it('is not what a visitor sees', () => {
+      render(<ProfileView data={{ ...PUBLIC, isLeaving: false }} />);
+      expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+      expect(screen.queryByText('Deleted skater')).not.toBeInTheDocument();
+    });
+  });
+
   it('never shows the raw trust number to an ordinary viewer (D50)', () => {
     render(<ProfileView data={PUBLIC} />);
     expect(screen.queryByText(/trust score:/)).not.toBeInTheDocument();

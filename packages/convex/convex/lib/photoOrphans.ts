@@ -43,12 +43,23 @@ export const PHOTO_ORPHAN_GRACE_MS = 30 * DAY_MS;
 export const REFERENCE_SCAN_CAP = 4000;
 
 /**
- * Every photo id referenced by one uploader's own reports and hazards.
+ * Every photo id referenced by one uploader's own reports and hazards — the **fast path**, answered in
+ * a single transaction.
  *
  * Returns **`null`** when the scan hit its cap, meaning "couldn't determine" rather than "nothing is
  * referenced". Callers must treat that as *keep the photo*: the two ways of being wrong here are not
  * symmetric, and an orphan that survives another sweep costs storage while a deleted reference costs a
  * public report its evidence.
+ *
+ * **A `null` is not an answer to be retried, it's a method to be escalated from** (PR #30 review). The
+ * cap is a property of the *uploader* — how many reports and hazards they have — not of the photo or
+ * of the moment, so re-running this tomorrow returns `null` again, and every day after that. Treating
+ * it as a transient failure is what made a prolific uploader's abandoned images permanent, including
+ * after their account was deleted.
+ *
+ * So `storageHygiene.sweepOrphanPhotos` hands the uploader to `photoReconcile`, which answers the same
+ * question completely by spreading it over as many transactions as it needs. This function stays the
+ * cheap common case; that job is the one that always terminates.
  */
 export async function referencedPhotoIds(
   ctx: QueryCtx | MutationCtx,

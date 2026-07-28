@@ -24,13 +24,13 @@ export function WaterBodyModeratorControls({
     curatedBoost?: number;
   };
 }) {
-  const { isModerator } = useRole();
+  const { canModerate } = useRole();
   const setCuratedBoost = useMutation(api.waterBodies.setCuratedBoost);
   const approve = useMutation(api.waterBodies.approve);
   const reject = useMutation(api.waterBodies.reject);
   const [boost, setBoost] = useState(String(body.curatedBoost ?? 0));
 
-  if (!isModerator) return null;
+  if (!canModerate) return null;
 
   const waterBodyId = body._id as Id<'waterBodies'>;
   const isPendingUserBody = body.source === 'user' && body.reviewStatus === 'pending';

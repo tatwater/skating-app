@@ -3,13 +3,16 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   COMMENT_BODY_MAX_LENGTH,
   formatSkateTime,
+  isLeaving,
   isMinor,
   isValidCommentBody,
+  REDACTED_COMMENT_NOTICE,
   type TrustClass,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
-import { ModeratorActions, useIsModerator } from './ModeratorActions';
+import { useRole } from '@/lib/useRole';
+import { ModeratorActions } from './ModeratorActions';
 import { FlagDialog } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
 import { Button } from './ui/button';
@@ -31,6 +34,8 @@ export interface CommentNodeData {
   hidden: boolean;
   comment: {
     body: string;
+    /** Author left; `body` is empty and the standing-in line renders instead (D62 2nd amendment). */
+    redacted?: boolean;
     authorId: string;
     author: CommentAuthor | null;
     isOwn: boolean;
@@ -146,7 +151,15 @@ function CommentNode({
                 }}
               />
             ) : (
-              <p className="whitespace-pre-wrap text-foreground text-sm">{node.comment.body}</p>
+              <p
+                className={
+                  node.comment.redacted
+                    ? 'text-foreground-muted text-sm italic'
+                    : 'whitespace-pre-wrap text-foreground text-sm'
+                }
+              >
+                {node.comment.redacted ? REDACTED_COMMENT_NOTICE : node.comment.body}
+              </p>
             )}
             <div className="flex flex-wrap items-center gap-1">
               {canComment && depth === 0 ? (
@@ -263,14 +276,16 @@ export function Comments({ reportId }: { reportId: string }) {
   const rid = reportId as Id<'reports'>;
   const nodes = useQuery(api.comments.listByReport, { reportId: rid });
   const me = useQuery(api.profiles.current, {});
-  const isModerator = useIsModerator();
+  const { canModerate } = useRole();
   const create = useMutation(api.comments.create);
   const edit = useMutation(api.comments.update);
   const remove = useMutation(api.comments.remove);
 
   // Signed-in, active adults may comment; minors are read-only (D41) so we hide the compose box (the
-  // server also rejects them at the trust boundary).
-  const canComment = me != null && me.status === 'active' && !isMinor(me.dateOfBirth, Date.now());
+  // server also rejects them at the trust boundary). A pending deletion is read-only for the same
+  // reason and by the same mechanism (D62 amendment) — the thread stays fully readable either way.
+  const canComment =
+    me != null && me.status === 'active' && !isMinor(me.dateOfBirth, Date.now()) && !isLeaving(me);
 
   return (
     <div className="flex flex-col gap-3 px-4 pb-4">
@@ -298,7 +313,7 @@ export function Comments({ reportId }: { reportId: string }) {
           node.comment && !node.comment.isOwn ? (
             <>
               <FlagDialog targetType="comment" targetId={node.id} label="Flag" />
-              {isModerator ? <ModeratorActions targetType="comment" targetId={node.id} /> : null}
+              {canModerate ? <ModeratorActions targetType="comment" targetId={node.id} /> : null}
             </>
           ) : null
         }

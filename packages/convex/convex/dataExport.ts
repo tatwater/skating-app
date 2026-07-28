@@ -16,11 +16,14 @@
  * dead end. The recipient address comes from **Clerk**, not from us: we deliberately never stored an
  * email address, so the action asks Clerk for it at send time.
  *
- * The bundle is deliberately short-lived (`dataExports.expiresAt`, swept by `storageHygiene`). It is
+ * The bundle is deliberately time-limited (`dataExports.expiresAt`, swept by `storageHygiene`). It is
  * the densest concentration of one person's data anywhere in the system, and leaving it in storage
- * forever would quietly undo the care taken everywhere else.
+ * forever would quietly undo the care taken everywhere else. The TTL runs from when the bundle is
+ * **ready** rather than requested, and — since export-then-delete is the commonest reason to ask for
+ * one — an emailed bundle inside its TTL outlives the account (`accountDeletion.erasePrivate`).
  */
 
+import { DATA_EXPORT_TTL_DAYS, DATA_EXPORT_TTL_MS } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -37,8 +40,11 @@ import { retainOrphanedBundle } from './lib/exportBundles';
 import { escapeHtml, sendEmail } from './lib/resend';
 import { deleteStoredBlob } from './lib/storageBlobs';
 
-/** How long a built bundle stays downloadable. */
-const EXPORT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * How long a built bundle stays downloadable — single-sourced in `@skating/core` because both clients
+ * state the number in copy, and a promise that disagrees with the sweep is worse than no promise.
+ */
+const EXPORT_TTL_MS = DATA_EXPORT_TTL_MS;
 
 /**
  * Total embedded-photo budget. Actions have room for far more, but a bundle is also something a person
@@ -301,8 +307,8 @@ export const finishExport = internalMutation({
       return;
     }
     // The stated lifetime runs from when the bundle **exists**, not from when it was asked for. The
-    // email promises "this link works for 7 days" and the settings row shows the same date, so a build
-    // that took an hour shouldn't quietly sell 7 days and deliver 6 days 23 hours — and a build slow
+    // email promises the TTL and the settings row shows the same date, so a build that took an hour
+    // shouldn't quietly sell the full window and deliver an hour less — and a build slow
     // enough to outlast the whole window shouldn't land already-expired, which is the edge the guard
     // in `exportUrl` exists to catch (PR #29 review).
     const readyAt = Date.now();
@@ -487,10 +493,10 @@ async function emailBundle(
     subject: 'Your skating data export is ready',
     html: `<div style="font-family:system-ui,sans-serif;max-width:520px">
       <h2 style="margin:0 0 12px">Your data export is ready</h2>
-      <p style="margin:0 0 8px">This link works for 7 days, after which the bundle is deleted from our storage.</p>
+      <p style="margin:0 0 8px">This link works for ${DATA_EXPORT_TTL_DAYS} days, after which the bundle is deleted from our storage.</p>
       <p style="margin:16px 0 0"><a href="${escapeHtml(url)}" style="color:#0b69ff">Download your data →</a></p>
     </div>`,
-    text: `Your data export is ready. This link works for 7 days, after which the bundle is deleted.\n\n${url}`,
+    text: `Your data export is ready. This link works for ${DATA_EXPORT_TTL_DAYS} days, after which the bundle is deleted.\n\n${url}`,
     context: 'data export',
   });
   if (sent) await ctx.runMutation(internal.dataExport.markEmailed, { exportId });

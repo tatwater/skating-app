@@ -16,7 +16,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { requireRole } from './lib/auth';
+import { requireContributorRole, requireRole } from './lib/auth';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { bumpMetricMetaCounter } from './lib/metrics';
@@ -48,7 +48,7 @@ export const setModerationStatus = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
 
     const targetId = ctx.db.normalizeId(MODERATION_TABLE[args.targetType], args.targetId);
@@ -99,7 +99,7 @@ export const resolveFlag = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
 
     const flag = await ctx.db.get(args.flagId);
@@ -449,7 +449,7 @@ async function auditUser(
 export const banUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
 
@@ -478,7 +478,7 @@ export const banUser = mutation({
 export const suspendUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string(), suspendedUntil: v.number() },
   handler: async (ctx, { userId, reason, suspendedUntil }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (suspendedUntil <= Date.now()) {
       throw new ConvexError('Suspension must end in the future');
@@ -504,7 +504,7 @@ export const suspendUser = mutation({
 export const unbanUser = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const target = await loadModeratableUser(ctx, actor, userId);
 
@@ -543,7 +543,7 @@ export const setBountyPostLimit = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { userId, limit, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (limit !== undefined && (!Number.isInteger(limit) || limit < 0)) {
       throw new ConvexError('A bounty limit has to be a whole number, zero or more');
@@ -580,7 +580,7 @@ export const setPostingPermission = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { userId, permission, allowed, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     await loadModeratableUser(ctx, actor, userId);
 

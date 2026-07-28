@@ -20,7 +20,7 @@ import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
-import { requireRole } from './lib/auth';
+import { requireContributorRole } from './lib/auth';
 import { latLng } from './lib/validators';
 
 /** How many recent reports feed the derived-cluster read — bounds the per-body scan (read-cap). */
@@ -33,17 +33,48 @@ export interface PutInMarker {
   coord: LatLng;
   source: 'derived' | 'official';
   reportCount?: number;
+  /**
+   * When somebody was last known to get on the ice here — the newest `skateEndTime` among the reports
+   * that formed the cluster, or the write time for a stored row.
+   *
+   * Put-ins are the one thing on the map deliberately exempt from every ageing rule in the app (N5a
+   * correction 1: access is the corpus's single most-discussed concern, so a marker outlives its
+   * season and its author). That exemption is right, and it has a cost this field pays: an access
+   * point from three winters ago renders identically to one used last week, while being the kind of
+   * fact that *does* go stale — land changes hands, a gate goes up, a pull-off gets posted. Saying
+   * when it was last used lets the exemption stand without the marker overclaiming (D3).
+   *
+   * Absent for `official` markers, which an operator set deliberately and which carry their own
+   * authority rather than a date.
+   */
+  lastUsedAt?: number;
 }
 
-/** Split a body's stored `putIns` rows into the official (visible) markers and the hidden coords. */
+/**
+ * Split a body's stored `putIns` rows into official markers, **persisted derived** markers, and the
+ * hidden coords.
+ *
+ * The middle bucket has a **history worth knowing before deleting it as dead code**, because it looks
+ * like dead code and briefly wasn't. Rows are normally only written by an admin setting an `official`
+ * marker, so anything stored as `derived` was ignored on read and the derived markers you actually saw
+ * were recomputed from live reports every time. Then account deletion erased a departed skater's
+ * reports, which silently erased the access points they revealed — so the purge started materializing
+ * the marker before deleting its report, and this bucket is what made those rows visible.
+ *
+ * The D62 second amendment removed the need by removing the erasure: reports are kept and redacted, so
+ * `listForBody` derives a departed skater's put-in exactly as it does everyone else's, and nothing
+ * writes a `derived` row any more. The reader stays because rows written by the old path exist on dev
+ * and a marker vanishing is precisely the outcome all of this was trying to prevent.
+ */
 async function loadPutInRows(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
   const rows = await ctx.db
     .query('putIns')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
     .collect();
   const official = rows.filter((r) => r.source === 'official' && r.status === 'visible');
+  const persisted = rows.filter((r) => r.source === 'derived' && r.status === 'visible');
   const hidden = rows.filter((r) => r.status === 'hidden');
-  return { official, hidden };
+  return { official, persisted, hidden };
 }
 
 /** Is `coord` within the suppression radius of any moderator-hidden coord? */
@@ -62,7 +93,7 @@ export const listForBody = query({
   handler: async (ctx, { waterBodyId }): Promise<PutInMarker[]> => {
     const body = await ctx.db.get(waterBodyId);
     if (!body) return [];
-    const { official, hidden } = await loadPutInRows(ctx, waterBodyId);
+    const { official, persisted, hidden } = await loadPutInRows(ctx, waterBodyId);
 
     // Derived clusters from the visible reports that didn't opt out of showing a put-in (decision #7).
     const reports = await ctx.db
@@ -72,7 +103,10 @@ export const listForBody = query({
       .take(PUTIN_REPORT_SCAN_LIMIT);
     const points = reports
       .filter((r) => r.moderationStatus === 'visible' && r.showPutIn !== false)
-      .map((r) => r.point);
+      // Carry the skate time along so each cluster can say when its access point was last used. A
+      // departed skater's report still counts here — it is kept and redacted (D62 second amendment),
+      // so their put-in survives by the ordinary derivation rather than by a special case.
+      .map((r) => ({ ...r.point, at: r.skateEndTime }));
 
     const polygon = body.polygon as unknown as Polygon | MultiPolygon;
     const markers: PutInMarker[] = [];
@@ -84,18 +118,31 @@ export const listForBody = query({
       }
     }
 
+    // Then persisted derived markers — access points whose source report has been erased (a departed
+    // skater's, `lib/contentPurge`). Same suppression and same official-wins rule as a live cluster;
+    // they simply have no report left to be recomputed from.
+    for (const row of persisted) {
+      if (isSuppressed(row.coord, hidden)) continue;
+      if (markers.some((m) => haversineMeters(m.coord, row.coord) <= HIDE_SUPPRESS_METERS))
+        continue;
+      // `createdAt` is the honest answer for a stored row: it's when the marker was written down, and
+      // for the legacy preservation rows that's the sweep that wrote them rather than the skate. It
+      // overstates the age by less than it would understate it by claiming nothing.
+      markers.push({ coord: row.coord, source: 'derived', lastUsedAt: row.createdAt });
+    }
+
     // Then derived clusters, snapped to shore, dropping suppressed ones and any that coincide with an
-    // official marker (the accurate one wins).
+    // official marker or a persisted one (the accurate one wins; a duplicate is noise).
     for (const cluster of clusterPutIns(points)) {
       const coord = snapToEdge(cluster.coord, polygon);
       if (isSuppressed(coord, hidden)) continue;
-      if (
-        markers.some(
-          (m) => m.source === 'official' && haversineMeters(m.coord, coord) <= HIDE_SUPPRESS_METERS,
-        )
-      )
-        continue;
-      markers.push({ coord, source: 'derived', reportCount: cluster.reportCount });
+      if (markers.some((m) => haversineMeters(m.coord, coord) <= HIDE_SUPPRESS_METERS)) continue;
+      markers.push({
+        coord,
+        source: 'derived',
+        reportCount: cluster.reportCount,
+        ...(cluster.lastUsedAt !== undefined ? { lastUsedAt: cluster.lastUsedAt } : {}),
+      });
     }
 
     return markers;
@@ -109,7 +156,7 @@ export const listForBody = query({
 export const setOfficial = mutation({
   args: { waterBodyId: v.id('waterBodies'), coord: latLng, reason: v.optional(v.string()) },
   handler: async (ctx, { waterBodyId, coord, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     const id = await ctx.db.insert('putIns', {
@@ -141,7 +188,7 @@ export const setOfficial = mutation({
 export const hide = mutation({
   args: { waterBodyId: v.id('waterBodies'), coord: latLng, reason: v.string() },
   handler: async (ctx, { waterBodyId, coord, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');

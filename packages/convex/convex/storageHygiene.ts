@@ -14,6 +14,7 @@
  */
 
 import { v } from 'convex/values';
+import { internal } from './_generated/api';
 import { internalMutation } from './_generated/server';
 import { reclaimExportBlob } from './lib/exportBundles';
 import { deletePhotoAndBlobs, PHOTO_ORPHAN_GRACE_MS, referencedPhotoIds } from './lib/photoOrphans';
@@ -84,6 +85,8 @@ export const sweepOrphanPhotos = internalMutation({
     // abandoned uploads, and re-deriving the same author's set 200 times would be the read cost that
     // makes an otherwise-cheap cron expensive.
     const byUploader = new Map<string, Set<string> | null>();
+    /** Uploaders already escalated this tick — one job each, however many of their photos are here. */
+    const escalated = new Set<string>();
     let deleted = 0;
     let skipped = 0;
     let retained = 0;
@@ -94,7 +97,24 @@ export const sweepOrphanPhotos = internalMutation({
         byUploader.set(key, await referencedPhotoIds(ctx, photo.uploaderId));
       const referenced = byUploader.get(key);
       if (referenced === null || referenced === undefined) {
-        skipped++; // couldn't determine — keep (see `referencedPhotoIds`)
+        // Couldn't determine — keep the photo (see `referencedPhotoIds`) and **hand the uploader to
+        // the determinate job** (PR #30 review).
+        //
+        // Keeping alone used to be the whole response, which quietly made this permanent: the scan
+        // caps on a property of the *uploader*, not of the photo, so every subsequent tick re-derived
+        // the same `null` and skipped again. Nothing ever reclaimed those blobs, including after the
+        // account was deleted — reports survive a deletion, so a departed uploader stays exactly as
+        // capped as they were in life.
+        //
+        // `photoReconcile` answers the same question across as many transactions as it needs, so this
+        // is an escalation to a complete method rather than a retry of the one that just failed.
+        skipped++;
+        if (!escalated.has(key)) {
+          escalated.add(key);
+          await ctx.scheduler.runAfter(0, internal.photoReconcile.reconcileUploaderPhotos, {
+            uploaderId: photo.uploaderId,
+          });
+        }
         continue;
       }
       if (referenced.has(photo._id)) continue;
@@ -106,10 +126,10 @@ export const sweepOrphanPhotos = internalMutation({
 
     if (skipped > 0) {
       console.warn(
-        `sweepOrphanPhotos: kept ${skipped} photo(s) whose uploader's reference scan hit its cap`,
+        `sweepOrphanPhotos: kept ${skipped} photo(s) whose uploader's reference scan hit its cap — handed ${escalated.size} uploader(s) to photoReconcile for a complete pass`,
       );
     }
-    return { scanned: candidates.length, deleted, skipped, retained };
+    return { scanned: candidates.length, deleted, skipped, retained, escalated: escalated.size };
   },
 });
 

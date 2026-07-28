@@ -8,7 +8,7 @@
 import { isMinor, isValidCoord } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import { mutation, query } from './_generated/server';
-import { requireProfile } from './lib/auth';
+import { requireContributor, requireProfile } from './lib/auth';
 import { resolvePhotoUrls } from './lib/photoAccess';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { getViewableReport } from './lib/reportVisibility';
@@ -19,7 +19,7 @@ import { latLng } from './lib/validators';
 export const generateUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     // Minors are read-only (D41): don't even hand a minor an upload URL (they can't create the row).
     if (isMinor(profile.dateOfBirth, Date.now())) {
       throw new ConvexError('Minors cannot post');
@@ -43,7 +43,7 @@ export const create = mutation({
     placeOnMap: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     // Minors are read-only (D41): photos only exist to back a report a minor can't post, so gate
     // the upload surface too — a minor never mints photo rows or storage blobs.
     if (isMinor(profile.dateOfBirth, Date.now())) {

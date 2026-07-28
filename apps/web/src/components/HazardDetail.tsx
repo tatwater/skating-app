@@ -10,6 +10,7 @@ import {
   type HazardVerdict,
   hazardTypeLabel,
   healingNote,
+  isLeaving,
   isPassageMarker,
   stalenessCaveat,
   type TrustClass,
@@ -342,6 +343,31 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
   const reporter = reporters?.[hazard.createdByUserId];
   const isOwn = me?._id === hazard.createdByUserId;
 
+  const handleConfirm = async (verdict: HazardVerdict) => {
+    setConfirming(true);
+    setConfirmError(null);
+    try {
+      await confirm({
+        hazardId: hazardId as Id<'hazards'>,
+        verdict,
+        via: 'app_open_nearby',
+      });
+    } catch (err) {
+      // A vote that didn't land has to say so. Web has no offline queue (that's the mobile flush
+      // service), so the only honest thing here is to tell the skater it didn't send — silence would
+      // let them walk away believing they'd warned the next person.
+      setConfirmError(
+        err instanceof ConvexError
+          ? String(err.data)
+          : err instanceof Error
+            ? err.message
+            : 'Could not record that — check your connection and try again.',
+      );
+    } finally {
+      setConfirming(false);
+    }
+  };
+
   return (
     <HazardView
       data={{
@@ -387,32 +413,16 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         </div>
       }
       thumbControl={
-        <ThumbControl targetType="hazard" targetId={hazardId} canRate={!!me && !isOwn} />
+        <ThumbControl
+          targetType="hazard"
+          targetId={hazardId}
+          canRate={!!me && !isOwn && !isLeaving(me)}
+        />
       }
-      onConfirm={async (verdict) => {
-        setConfirming(true);
-        setConfirmError(null);
-        try {
-          await confirm({
-            hazardId: hazardId as Id<'hazards'>,
-            verdict,
-            via: 'app_open_nearby',
-          });
-        } catch (err) {
-          // A vote that didn't land has to say so. Web has no offline queue (that's the mobile
-          // flush service), so the only honest thing here is to tell the skater it didn't send —
-          // silence would let them walk away believing they'd warned the next person.
-          setConfirmError(
-            err instanceof ConvexError
-              ? String(err.data)
-              : err instanceof Error
-                ? err.message
-                : 'Could not record that — check your connection and try again.',
-          );
-        } finally {
-          setConfirming(false);
-        }
-      }}
+      // A pending deletion closes the confirm loop entirely (D62 amendment): `hazardConfirmations.confirm`
+      // is a contribution, and withholding the *handler* is what removes the three-tier control rather
+      // than leaving it there to be pressed and refused.
+      {...(isLeaving(me) ? {} : { onConfirm: handleConfirm })}
     />
   );
 }

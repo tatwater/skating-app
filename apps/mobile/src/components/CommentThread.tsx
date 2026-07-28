@@ -3,14 +3,16 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   COMMENT_BODY_MAX_LENGTH,
   formatSkateTime,
+  isLeaving,
   isMinor,
   isValidCommentBody,
+  REDACTED_COMMENT_NOTICE,
   type TrustClass,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
 import { Button, Paragraph, Separator, Text, TextArea, XStack, YStack } from 'tamagui';
-import { ModeratorActions, useIsModerator } from './ModeratorActions';
+import { ModeratorActions, useCanModerate } from './ModeratorActions';
 import { FlagControl } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
 
@@ -29,6 +31,8 @@ export interface CommentNodeData {
   hidden: boolean;
   comment: {
     body: string;
+    /** Author left; `body` is empty and the standing-in line renders instead (D62 2nd amendment). */
+    redacted?: boolean;
     authorId: string;
     author: CommentAuthor | null;
     isOwn: boolean;
@@ -148,6 +152,10 @@ function CommentNode({
                   setEditing(false);
                 }}
               />
+            ) : node.comment.redacted ? (
+              <Paragraph color="$foregroundMuted" fontStyle="italic">
+                {REDACTED_COMMENT_NOTICE}
+              </Paragraph>
             ) : (
               <Paragraph color="$foreground">{node.comment.body}</Paragraph>
             )}
@@ -261,13 +269,15 @@ export function Comments({ reportId }: { reportId: string }) {
   const rid = reportId as Id<'reports'>;
   const nodes = useQuery(api.comments.listByReport, { reportId: rid });
   const me = useQuery(api.profiles.current, {});
-  const isModerator = useIsModerator();
+  const canModerate = useCanModerate();
   const create = useMutation(api.comments.create);
   const edit = useMutation(api.comments.update);
   const remove = useMutation(api.comments.remove);
 
-  // Signed-in, active adults may comment; minors are read-only (D41) — hide the compose box.
-  const canComment = me != null && me.status === 'active' && !isMinor(me.dateOfBirth, Date.now());
+  // Signed-in, active adults may comment; minors are read-only (D41) — hide the compose box. A
+  // pending deletion is read-only for the same reason and by the same mechanism (D62 amendment).
+  const canComment =
+    me != null && me.status === 'active' && !isMinor(me.dateOfBirth, Date.now()) && !isLeaving(me);
 
   return (
     <YStack gap="$3">
@@ -295,7 +305,7 @@ export function Comments({ reportId }: { reportId: string }) {
           node.comment && !node.comment.isOwn ? (
             <>
               <FlagControl targetType="comment" targetId={node.id} />
-              {isModerator ? <ModeratorActions targetType="comment" targetId={node.id} /> : null}
+              {canModerate ? <ModeratorActions targetType="comment" targetId={node.id} /> : null}
             </>
           ) : null
         }

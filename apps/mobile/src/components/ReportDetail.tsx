@@ -7,6 +7,7 @@ import {
   formatSkateWindow,
   formatSnowCoverInches,
   formatThicknessReading,
+  isLeaving,
   type ReportConditions,
   reportStripState,
   SKATE_QUALITY_LABELS,
@@ -261,7 +262,11 @@ export function ReportDetail({ reportId }: { reportId: string }) {
 
       {/* Thumbs (D50): counts visible to all; rating enabled for a signed-in non-author. */}
       <Separator />
-      <ThumbControl targetType="report" targetId={report._id} canRate={!!me && !isOwn} />
+      <ThumbControl
+        targetType="report"
+        targetId={report._id}
+        canRate={!!me && !isOwn && !isLeaving(me)}
+      />
 
       {/* Safety tools on the report (D32): flag for anyone but the author; moderator takedown. */}
       {me && !isOwn ? (

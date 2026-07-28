@@ -1,4 +1,9 @@
-import { badgeLabel, type TrustClass } from '@skating/core';
+import {
+  badgeLabel,
+  DELETED_DISPLAY_NAME,
+  LEAVING_PROFILE_NOTICE,
+  type TrustClass,
+} from '@skating/core';
 import type { ReactNode } from 'react';
 import { Avatar } from './Avatar';
 import { TrustAvatar, TrustClassChip } from './TrustDisplay';
@@ -17,6 +22,13 @@ export interface ProfileViewData {
   profileImageUrl?: string;
   isSelf: boolean;
   isPrivate: boolean;
+  /**
+   * A deletion is pending on **your own** account (D62 amendment) — so the fields above are already
+   * empty, because the request scrubbed them. Swaps in the ghost card, which explains that rather
+   * than rendering a profile made of blanks. Only ever set for the owner: a ghost is not-found to
+   * everyone else, so no other viewer reaches this component at all.
+   */
+  isLeaving?: boolean;
   homeTownLabel?: string;
   bio?: string;
   /** Cosmetic trust class (D50) — the profile chip + avatar ring; `null` ⇒ no chip/ring. */
@@ -28,6 +40,42 @@ export interface ProfileViewData {
   bountyPoints?: number;
   reportCount?: number;
   commentCount?: number;
+}
+
+/**
+ * Your own profile once you've asked to be deleted (D62 amendment).
+ *
+ * **Not a preview — the row really is empty.** The avatar, name, bio, town and home location were
+ * scrubbed by the request itself, and cancelling doesn't bring them back. So this card isn't hiding
+ * anything: it's the honest rendering of what's left, which is nothing.
+ *
+ * Nobody else can reach this page at all — `getPublicProfile` returns not-found for a ghost — so the
+ * only person this component ever renders for is its owner, standing in the space where they used to
+ * be. That's the intended feeling: your reports are still out there keeping people off bad ice, and
+ * you aren't.
+ */
+function GhostProfile({ actions }: { actions?: ReactNode }) {
+  return (
+    <div className="mx-auto flex max-w-2xl flex-col gap-6 py-8">
+      <Card>
+        <CardContent className="flex flex-col gap-4">
+          <div className="flex items-start gap-4">
+            <div
+              aria-hidden
+              className="size-16 shrink-0 rounded-full border border-border border-dashed"
+            />
+            <div className="flex flex-1 flex-col gap-0.5">
+              <h1 className="font-semibold text-foreground-muted text-xl italic">
+                {DELETED_DISPLAY_NAME}
+              </h1>
+            </div>
+            {actions ? <div className="flex flex-col gap-2">{actions}</div> : null}
+          </div>
+          <p className="text-foreground-muted text-sm">{LEAVING_PROFILE_NOTICE}</p>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function Stat({ value, label }: { value: number; label: string }) {
@@ -56,6 +104,8 @@ export function ProfileView({
   actions?: ReactNode;
   reportHistory?: ReactNode;
 }) {
+  if (data.isLeaving) return <GhostProfile actions={actions} />;
+
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6 py-8">
       <Card>

@@ -1,4 +1,9 @@
-import { badgeLabel, type TrustClass } from '@skating/core';
+import {
+  badgeLabel,
+  DELETED_DISPLAY_NAME,
+  LEAVING_PROFILE_NOTICE,
+  type TrustClass,
+} from '@skating/core';
 import type { ReactNode } from 'react';
 import { H4, Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
 import { Avatar } from './Avatar';
@@ -16,6 +21,12 @@ export interface ProfileViewData {
   profileImageUrl?: string;
   isSelf: boolean;
   isPrivate: boolean;
+  /**
+   * A deletion is pending on **your own** account (D62 amendment) — the fields above are already
+   * empty, so this swaps in the ghost card rather than rendering a profile made of blanks.
+   * Owner-only; a ghost is not-found to every other viewer.
+   */
+  isLeaving?: boolean;
   homeTownLabel?: string;
   bio?: string;
   /** Cosmetic trust class (D50) — the profile chip + avatar ring; `null` ⇒ no chip/ring. */
@@ -51,6 +62,38 @@ function Stat({ value, label }: { value: number; label: string }) {
  * moderator/admin viewer, and it renders below the handle only then — never for an ordinary viewer.
  * `actions` + `reportHistory` are slots so the container owns the live wiring.
  */
+/**
+ * Your own profile once you've asked to be deleted (D62 amendment). **Not a preview** — the request
+ * really scrubbed these fields, and cancelling doesn't restore them.
+ *
+ * Nobody else can reach this page: a ghost is not-found to every other viewer. The only person who
+ * sees it is its owner, in the space where they used to be — which is the intended feeling rather
+ * than a side effect.
+ */
+function GhostProfile({ actions }: { actions?: ReactNode }) {
+  return (
+    <YStack gap="$4" padding="$4" backgroundColor="$background">
+      <XStack gap="$3" alignItems="flex-start">
+        <YStack
+          width={64}
+          height={64}
+          borderRadius={32}
+          borderWidth={1}
+          borderColor="$border"
+          borderStyle="dashed"
+        />
+        <YStack flex={1} gap="$1">
+          <H4 color="$foregroundMuted" fontStyle="italic">
+            {DELETED_DISPLAY_NAME}
+          </H4>
+        </YStack>
+        {actions}
+      </XStack>
+      <Paragraph color="$foregroundMuted">{LEAVING_PROFILE_NOTICE}</Paragraph>
+    </YStack>
+  );
+}
+
 export function ProfileView({
   data,
   actions,
@@ -60,6 +103,8 @@ export function ProfileView({
   actions?: ReactNode;
   reportHistory?: ReactNode;
 }) {
+  if (data.isLeaving) return <GhostProfile actions={actions} />;
+
   return (
     <YStack gap="$4" padding="$4" backgroundColor="$background">
       <XStack gap="$3" alignItems="flex-start">

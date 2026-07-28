@@ -162,9 +162,14 @@ export default defineSchema({
     /**
      * When the user asked to be deleted (D62). Distinct from `deletedAt`, which is stamped 30 days
      * later when the tombstone is actually written — this field is the *pending* state, and while
-     * it's set the account is completely normal: it can sign in, post, and cancel. Deliberately not
-     * a status value, because `status` is the security gate (`requireProfile`) and a pending deletion
-     * must not gate anything. Absent ⇒ no pending request.
+     * it's set the account is **read-only**: it can sign in, read, and cancel, but not contribute
+     * (`requireContributor`, D62 amendment). Deliberately not a status value, because `status` is the
+     * security gate `requireProfile` applies to **queries** as well, and someone in their grace window
+     * has to be able to read the app to change their mind. Absent ⇒ no pending request.
+     *
+     * The consequence downstream is load-bearing: because nothing new can be posted, a departed user's
+     * newest `skateEndTime` can never postdate this stamp, so N5a's erasure sweep is a stage of the
+     * finalize chain rather than a deferred per-row schedule.
      */
     deletionRequestedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
@@ -603,6 +608,20 @@ export default defineSchema({
     source: literals(COMMENT_SOURCES),
     moderationStatus: literals(MODERATION_STATUSES),
     editedAt: v.optional(v.number()),
+    /**
+     * When this comment's text was cleared because its author left (D62 second amendment).
+     *
+     * The row survives and `body` becomes empty: deleting it would leave a hole in a conversation
+     * that isn't the departed author's — the thread is keyed by `reportId` and a reply whose parent
+     * vanished is unreachable. So the shell stays, rendered as "this comment was deleted" under the
+     * tombstone, which says *why* it is empty rather than leaving a blank row that reads as a bug.
+     *
+     * A **timestamp rather than a boolean**, and not merely for the audit: `body: ''` is also what an
+     * empty draft would produce, and the two must stay distinguishable. Absent ⇒ ordinary comment.
+     * Deliberately distinct from `moderationStatus: 'removed'` — a moderator judged that content, and
+     * this is nobody judging anything.
+     */
+    redactedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_report', ['reportId'])
@@ -770,6 +789,11 @@ export default defineSchema({
   })
     .index('by_status', ['status'])
     .index('by_target', ['targetType', 'targetId'])
+    // Departed-user redaction (`lib/contentPurge`): clear the free-text `note` on every flag this
+    // person filed. Nothing else needs to look a flag up by its filer — the queue reads by status and
+    // by target — so this index exists solely so that sweep can be a bounded equality read instead of
+    // a scan of a table that grows forever.
+    .index('by_flagger', ['flaggerId'])
     // Auto-flag bundling's lookup (N2): "is there an OPEN flag for this (target, reason), and what
     // was the most recent terminal one?" `by_target` alone can't answer that under a cap, and why is
     // worth writing down — it's the `lib/scan.ts` trap in a place where the cap *decides* something.
@@ -889,6 +913,16 @@ export default defineSchema({
     coord: v.optional(latLng), // preserved only if placeOnMap == true (D42)
     placeOnMap: v.boolean(), // opt-in: pin at coord vs. report-only (D42)
     createdAt: v.number(),
+    /**
+     * Scratch mark for `photoReconcile` — the determinate orphan check for an uploader too prolific
+     * for the one-shot scan (`REFERENCE_SCAN_CAP`). Set on every candidate, cleared by anything that
+     * references it, and whatever is still marked at the end is provably unreferenced.
+     *
+     * Transient by design: it is meaningful only between the phases of one reconcile run, and every
+     * run sets it fresh. Absent ⇒ not currently under consideration, which is why it needs no
+     * migration and no index — the sweep pages `by_uploader` and reads the flag in memory.
+     */
+    orphanCandidate: v.optional(v.boolean()),
   })
     .index('by_uploader', ['uploaderId'])
     // Day-sliced orphan sweep (Phase 7b): a photo abandoned between upload and attach is invisible

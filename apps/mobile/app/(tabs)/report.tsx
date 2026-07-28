@@ -12,6 +12,7 @@ import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H4, Paragraph, Text, XStack, YStack } from 'tamagui';
 import { Badge } from '../../src/components/detailUi';
+import { LeavingNotice, useIsLeaving } from '../../src/components/LeavingNotice';
 import { useOfflineDrafts } from '../../src/components/OfflineDraftsContext';
 
 /**
@@ -20,11 +21,17 @@ import { useOfflineDrafts } from '../../src/components/OfflineDraftsContext';
  * "Capture a report" uses your GPS to bind to the nearest cached lake (or resolves it at sync), and
  * this screen lists your queued drafts (pending / errored) with sync + edit + delete. Drafts flush
  * automatically on reconnect (D12); "Sync now" forces it.
+ *
+ * While a deletion is pending the capture entry point goes (D62 amendment) but **the queue stays**:
+ * those drafts are the skater's own unsent work, and this is the only screen that can show or delete
+ * them. A draft that flushes now fails at the server gate and says so on its row, which is the honest
+ * outcome — the alternative is a queue nobody can reach quietly failing forever.
  */
 export default function ReportScreen() {
   const router = useRouter();
   const { drafts, hazardItems, pendingCount, refresh, flushNow, removeDraft, removeHazardItem } =
     useOfflineDrafts();
+  const leaving = useIsLeaving();
 
   // Refresh from sqlite whenever the tab regains focus (e.g. after saving a draft in the modal).
   useFocusEffect(
@@ -39,20 +46,26 @@ export default function ReportScreen() {
         <YStack gap="$4">
           <YStack gap="$2">
             <H4 color="$foreground">Add a report</H4>
-            <Paragraph color="$foregroundMuted">
-              Online, open the map and tap the lake you skated. Off the grid, capture it here — it
-              posts automatically when you're back online.
-            </Paragraph>
+            {leaving ? (
+              <LeavingNotice />
+            ) : (
+              <Paragraph color="$foregroundMuted">
+                Online, open the map and tap the lake you skated. Off the grid, capture it here — it
+                posts automatically when you're back online.
+              </Paragraph>
+            )}
           </YStack>
 
           <YStack gap="$2">
-            <Button
-              backgroundColor="$primary"
-              color="$primaryForeground"
-              onPress={() => router.navigate('/draft/new')}
-            >
-              Capture a report (offline-ready)
-            </Button>
+            {leaving ? null : (
+              <Button
+                backgroundColor="$primary"
+                color="$primaryForeground"
+                onPress={() => router.navigate('/draft/new')}
+              >
+                Capture a report (offline-ready)
+              </Button>
+            )}
             <Button chromeless onPress={() => router.navigate('/')}>
               Go to the map
             </Button>

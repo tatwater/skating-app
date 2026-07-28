@@ -10,6 +10,7 @@ import {
   stopRecording,
   useRecorder,
 } from '../lib/recorder';
+import { useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 
 /**
@@ -29,6 +30,7 @@ import { useMapSelection } from './MapSelectionContext';
  */
 export function RecorderControl() {
   const { onIceWaterBodyId, hazardDraft } = useMapSelection();
+  const leaving = useIsLeaving();
   const recorder = useRecorder();
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -38,6 +40,9 @@ export function RecorderControl() {
 
   // Stay out of the way while a hazard is being captured — the adjust bar owns the bottom then.
   if (hazardDraft) return null;
+  // A recording exists to become a report, and a pending deletion can't post one (D62 amendment) —
+  // `gpsActivities.ingestTrack` would refuse the finished track. Better not to start the skate.
+  if (leaving) return null;
   // Off the ice there's nothing to record, unless a session is already running (in which case the
   // control must stay reachable however far the skater has wandered from a mapped lake).
   if (!onIceWaterBodyId && recorder.status === 'idle') return null;

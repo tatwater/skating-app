@@ -16,7 +16,7 @@ import { type HazardShape, hazardBbox, isValidHazardShape } from '@skating/core'
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
-import { requireRole } from './lib/auth';
+import { requireContributorRole, requireRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
 import { HAZARD_GEOMETRY_KINDS } from './lib/hazardValidators';
@@ -77,7 +77,7 @@ export const create = mutation({
     reason: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (args.reason.trim().length === 0) throw new ConvexError('A reason is required');
     const body = await resolveSurvivor(ctx, args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
@@ -122,7 +122,7 @@ export const promote = mutation({
     reason: v.string(),
   },
   handler: async (ctx, { hazardId, type, note, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const hazard = await ctx.db.get(hazardId);
     if (!hazard) throw new ConvexError('Hazard not found');
@@ -163,7 +163,7 @@ export const promote = mutation({
 export const demote = mutation({
   args: { bodyFeatureId: v.id('bodyFeatures'), reason: v.string() },
   handler: async (ctx, { bodyFeatureId, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     const feature = await ctx.db.get(bodyFeatureId);
     if (!feature) throw new ConvexError('Body feature not found');

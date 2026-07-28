@@ -31,11 +31,11 @@ const FEATURE_TYPES = [
 ] as const;
 
 export function HazardModeratorControls({ hazardId }: { hazardId: string }) {
-  const { isModerator } = useRole();
+  const { canModerate } = useRole();
   const promote = useMutation(api.bodyFeatures.promote);
   const [type, setType] = useState<(typeof FEATURE_TYPES)[number]['value']>('spring_current');
 
-  if (!isModerator) return null;
+  if (!canModerate) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-2">

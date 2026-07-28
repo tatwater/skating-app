@@ -1,12 +1,27 @@
 import { api } from '@skating/convex/api';
+import { isLeaving } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Button, Text, TextArea, XStack, YStack } from 'tamagui';
 
-/** Whether the current user is at least a moderator (D37). */
+/** Whether the current user is at least a moderator (D37). Read-only chrome only — see below. */
 export function useIsModerator(): boolean {
   const profile = useQuery(api.profiles.current, {});
   return profile?.role === 'moderator' || profile?.role === 'admin';
+}
+
+/**
+ * Whether the current user may take a moderator **action** — the role, and not being mid-deletion.
+ *
+ * Mirrors the server's `requireRole` / `requireContributorRole` split: a departing operator keeps
+ * privileged *reads* and loses every privileged *write*, so a control that submits has to ask this
+ * rather than {@link useIsModerator}. Otherwise the app offers a takedown button that the server now
+ * refuses, which is the failure the "hide exactly what the server blocks" rule exists to prevent.
+ */
+export function useCanModerate(): boolean {
+  const profile = useQuery(api.profiles.current, {});
+  const hasRole = profile?.role === 'moderator' || profile?.role === 'admin';
+  return hasRole && !isLeaving(profile);
 }
 
 /**
@@ -21,12 +36,13 @@ export function ModeratorActions({
   targetType: 'report' | 'comment';
   targetId: string;
 }) {
-  const isModerator = useIsModerator();
+  const canModerate = useCanModerate();
   const setStatus = useMutation(api.moderation.setModerationStatus);
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState('');
 
-  if (!isModerator) return null;
+  // The action gate, not the chrome gate — see `useCanModerate`.
+  if (!canModerate) return null;
 
   if (!open) {
     return (

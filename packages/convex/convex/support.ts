@@ -13,7 +13,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
-import { getCurrentProfile, requireRole } from './lib/auth';
+import { getCurrentProfile, requireContributorRole, requireRole } from './lib/auth';
 import { SUPPORT_CATEGORIES, SUPPORT_STATUSES } from './lib/enums';
 import { literals } from './lib/validators';
 
@@ -188,7 +188,7 @@ export const create = mutation({
 export const assign = mutation({
   args: { ticketId: v.id('supportTickets'), assigneeId: v.optional(v.id('profiles')) },
   handler: async (ctx, { ticketId, assigneeId }) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireContributorRole(ctx, 'admin');
     const ticket = await ctx.db.get(ticketId);
     if (!ticket) throw new ConvexError('Ticket not found');
     await ctx.db.patch(ticketId, {
@@ -203,7 +203,7 @@ export const assign = mutation({
 export const resolve = mutation({
   args: { ticketId: v.id('supportTickets') },
   handler: async (ctx, { ticketId }) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireContributorRole(ctx, 'admin');
     const ticket = await ctx.db.get(ticketId);
     if (!ticket) throw new ConvexError('Ticket not found');
     await ctx.db.patch(ticketId, {

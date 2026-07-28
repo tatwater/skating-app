@@ -37,7 +37,7 @@ import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
-import { getCurrentProfile, requireProfile } from './lib/auth';
+import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { ACTIVITY_PROMPT_STATES } from './lib/enums';
 import { isListed } from './lib/listing';
@@ -168,7 +168,7 @@ export const ingestTrack = mutation({
     waterBodyId: v.optional(v.id('waterBodies')),
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const now = Date.now();
 
     // Idempotency short-circuit, before any work: a re-flushed skate returns its original row.

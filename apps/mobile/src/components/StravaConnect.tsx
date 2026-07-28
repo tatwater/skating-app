@@ -13,6 +13,7 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { useIsLeaving } from './LeavingNotice';
 
 /**
  * The Strava connect control (Phase 8 / L7 brand kit).
@@ -31,8 +32,13 @@ export function StravaConnect() {
   const beginConnect = useMutation(api.strava.beginConnect);
   const disconnect = useMutation(api.strava.disconnect);
   const [busy, setBusy] = useState(false);
+  const leaving = useIsLeaving();
 
   if (status === undefined) return null;
+  // Connecting is a contribution path (it exists to push skates); `strava.beginConnect` refuses while
+  // a deletion is pending. An *existing* connection still renders, because disconnecting stays open —
+  // unlinking your Strava on the way out is exactly the kind of thing this window is for.
+  if (leaving && !status.connected) return null;
 
   if (!status.configured) {
     return (
