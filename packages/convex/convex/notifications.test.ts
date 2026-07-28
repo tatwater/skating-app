@@ -207,7 +207,12 @@ describe('notifications — nearby digest (X₁)', () => {
     const queue = await t.run((ctx) => ctx.db.query('notificationQueue').collect());
     expect(queue).toHaveLength(1);
     expect(queue[0]?.kind).toBe('digest');
-    expect(queue[0]?.flushAfter).toBeGreaterThan(Date.now() + 60 * 60 * 1000); // batched to next 8pm
+    // Batched to the next 8pm rather than sent now. The margin used to be `now + 1 hour`, which was a
+    // proxy for "batched" that quietly depended on the wall clock: the next 8pm is less than an hour
+    // away for the whole 7–8pm window in `DIGEST_TIMEZONE`, so the suite failed for one hour a day and
+    // passed the other twenty-three. What the test actually means is asserted here and on the two lines
+    // below — it isn't due yet, and the immediate flush doesn't deliver it.
+    expect(queue[0]?.flushAfter).toBeGreaterThan(Date.now());
 
     // The immediate cron flush does NOT deliver it (not due yet).
     await t.mutation(internal.notifications.flushNotificationQueue, {});

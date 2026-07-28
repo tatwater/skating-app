@@ -427,6 +427,7 @@ most likely to want their record — and the moment after confirming is too late
 | The **words** on them | 30 days past the skate, and unconditionally at finalization | the ghost sweep (hourly while pending), then the finalize `redact` stage |
 | Your comments | the row indefinitely, the text on the same clock | the same sweep |
 | **Photo images attached to a report or hazard** | indefinitely — only the caption is cleared | — (see [known gaps](#known-gaps)) |
+| An abandoned upload from a very prolific uploader | 30-day grace, like any other | daily photo sweep, via `photoReconcile` |
 | Your bounties | not at all — erased at the request | the same sweep |
 | Unpublished recordings, abandoned uploads | to the redaction clock, and at finalization at the latest | the same sweep |
 | The account and login | 30 days | hourly finalize cron |
@@ -462,6 +463,13 @@ rows look right, and something is quietly wrong for a person who can no longer c
 - **The tombstone's `username` and `clerkUserId` sentinels must be per-row unique.** Both indexes are
   read with `.unique()`, so a shared constant would break authentication app-wide on the *second*
   deleted account.
+- **"Couldn't determine" is a method to escalate from, not an answer to retry.** The one-shot photo
+  reference scan gives up past `REFERENCE_SCAN_CAP`, and callers correctly keep the photo — but the cap
+  is a property of the *uploader*, not of the moment, so re-running it tomorrow fails identically. The
+  orphan cron therefore hands that uploader to `photoReconcile`, which answers the same question
+  completely by spreading it across transactions: mark every candidate, page through every possible
+  referrer clearing marks, delete what is still marked. Anything that ever *skips* on indeterminacy
+  needs a path that terminates, or the skip is permanent.
 - **The UI hides exactly what the server blocks, no more and no less.** Hiding something still allowed
   strips a safety tool for nothing; leaving a blocked one visible invites someone to write a report and
   only then refuses it. This has two sides for operators: the clients gate navigation and read-only
@@ -491,8 +499,9 @@ rows look right, and something is quietly wrong for a person who can no longer c
   is Clerk-banned and can't sign in at all, so that half has to be an operator-run export and deletion
   from `/admin/users` plus a documented contact address. In the N5a deferred register.
 - **Photo *images* survive indefinitely, and only the caption comes off.** The largest unresolved
-  question in the design. A photo attached to a surviving report or hazard is kept whole: the bytes,
-  the timestamp and the coordinate. The coordinate is defensible — it's where on the lake the picture
+  question in the design — a *policy* one, now that the mechanical hole underneath it is closed (see
+  the note on reclaiming below). A photo attached to a surviving report or hazard is kept whole: the
+  bytes, the timestamp and the coordinate. The coordinate is defensible — it's where on the lake the picture
   was taken, and it's what places the pin — but the *image* can carry faces, a licence plate, a house
   behind the put-in, or the departed skater themselves. It's a far larger identifiability surface than
   any text field on this page, and nothing currently removes it.

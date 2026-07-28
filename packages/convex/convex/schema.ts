@@ -913,6 +913,16 @@ export default defineSchema({
     coord: v.optional(latLng), // preserved only if placeOnMap == true (D42)
     placeOnMap: v.boolean(), // opt-in: pin at coord vs. report-only (D42)
     createdAt: v.number(),
+    /**
+     * Scratch mark for `photoReconcile` — the determinate orphan check for an uploader too prolific
+     * for the one-shot scan (`REFERENCE_SCAN_CAP`). Set on every candidate, cleared by anything that
+     * references it, and whatever is still marked at the end is provably unreferenced.
+     *
+     * Transient by design: it is meaningful only between the phases of one reconcile run, and every
+     * run sets it fresh. Absent ⇒ not currently under consideration, which is why it needs no
+     * migration and no index — the sweep pages `by_uploader` and reads the flag in memory.
+     */
+    orphanCandidate: v.optional(v.boolean()),
   })
     .index('by_uploader', ['uploaderId'])
     // Day-sliced orphan sweep (Phase 7b): a photo abandoned between upload and attach is invisible

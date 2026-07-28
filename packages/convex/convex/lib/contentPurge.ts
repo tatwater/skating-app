@@ -352,9 +352,9 @@ export async function redactAgedContent(
   // whether its caption is the departed person's prose. Only the **delete** decision needs the scan.
   //
   // So a capped scan now degrades to the same treatment a referenced photo gets — caption cleared, row
-  // kept — which is the strictest outcome that is certainly safe. What's lost is that a genuinely
-  // abandoned upload keeps its blob; that is storage and the known photo-images gap, not free text
-  // outliving its author.
+  // kept — which is the strictest outcome that is certainly safe. The blob of a genuinely abandoned
+  // upload is not abandoned in turn: the orphan cron escalates that uploader to `photoReconcile`, whose
+  // whole job is answering this completely (see `lib/photoOrphans`).
   //
   // `coord` stays in both branches: where on the lake a photo was taken is ice record, and it's what
   // places the pin. Stripping it on the capped path would break a pin on a photo that may well be
