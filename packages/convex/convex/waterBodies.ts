@@ -37,7 +37,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
+import { getCurrentProfile, requireContributor, requireProfile, requireRole } from './lib/auth';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
@@ -358,7 +358,7 @@ export const create = mutation({
     confirmedNew: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const now = Date.now();
     // Minors are read-only (D41) — mirror `reports.create`, so a minor can't push a public map
     // contribution attributed to them.

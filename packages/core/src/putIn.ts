@@ -15,10 +15,28 @@ import { haversineMeters, type LatLng } from './geometry';
 /** Reports within this crow-flies distance collapse into one put-in marker (same access point). */
 export const DEFAULT_PUTIN_MERGE_METERS = 150;
 
-/** A derived put-in candidate: a representative coord and how many report points fed it. */
+/**
+ * A report point feeding the clusterer, optionally carrying when that skate ended.
+ *
+ * `at` is optional so every existing caller passing bare coords still type-checks, and so the one
+ * consumer that needs dates doesn't force them on the ones that don't.
+ */
+export type PutInPoint = LatLng & { at?: number };
+
+/** A derived put-in candidate: a representative coord, how many report points fed it, and its age. */
 export interface PutInCluster {
   coord: LatLng;
   reportCount: number;
+  /**
+   * The **newest** `at` among the member points — "when somebody last got on the ice here".
+   *
+   * Newest rather than oldest, and surfaced rather than kept internal, because a put-in is a claim
+   * that people access the lake at this spot, and an access point can go stale in ways ice never
+   * does: land changes hands, a gate appears, a pull-off is posted. A marker derived from one 2023
+   * report should not render with the same confidence as one skaters used last week, and the only way
+   * a viewer can tell is if we say. Absent when no member point carried a date.
+   */
+  lastUsedAt?: number;
 }
 
 /**
@@ -28,10 +46,10 @@ export interface PutInCluster {
  * and an admin can override with an `official` pin. Returns clusters in first-seen order.
  */
 export function clusterPutIns(
-  points: readonly LatLng[],
+  points: readonly PutInPoint[],
   mergeMeters: number = DEFAULT_PUTIN_MERGE_METERS,
 ): PutInCluster[] {
-  const clusters: { coord: LatLng; count: number }[] = [];
+  const clusters: { coord: LatLng; count: number; lastUsedAt?: number }[] = [];
   for (const point of points) {
     const hit = clusters.find((c) => haversineMeters(c.coord, point) <= mergeMeters);
     if (hit) {
@@ -42,11 +60,22 @@ export function clusterPutIns(
         lng: (hit.coord.lng * hit.count + point.lng) / n,
       };
       hit.count = n;
+      if (point.at !== undefined && (hit.lastUsedAt === undefined || point.at > hit.lastUsedAt)) {
+        hit.lastUsedAt = point.at;
+      }
     } else {
-      clusters.push({ coord: { ...point }, count: 1 });
+      clusters.push({
+        coord: { lat: point.lat, lng: point.lng },
+        count: 1,
+        ...(point.at !== undefined ? { lastUsedAt: point.at } : {}),
+      });
     }
   }
-  return clusters.map((c) => ({ coord: c.coord, reportCount: c.count }));
+  return clusters.map((c) => ({
+    coord: c.coord,
+    reportCount: c.count,
+    ...(c.lastUsedAt !== undefined ? { lastUsedAt: c.lastUsedAt } : {}),
+  }));
 }
 
 /** Mean Earth radius in metres (matches `geometry.ts` / Turf's WGS84 mean radius). */

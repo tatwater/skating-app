@@ -56,6 +56,50 @@ export async function requireProfile(ctx: Ctx): Promise<Doc<'profiles'>> {
   return profile;
 }
 
+/**
+ * The message a pending-deletion account gets when it tries to contribute. Exported so both clients
+ * and the tests can match on it rather than on a duplicated literal.
+ */
+export const DELETION_PENDING_MESSAGE =
+  'Your account is scheduled for deletion — cancel the deletion to post again';
+
+/**
+ * The caller's profile, or throw if they've asked to be deleted (D62 amendment, N5a).
+ *
+ * **Why a pending request is read-only, when the whole point of the 30 days is that the account still
+ * works.** The window exists to keep *useful* content around while its author reconsiders — but a
+ * report posted in hour 719 of that window is erased hours later while it's still the freshest thing
+ * on the lake. Contributing and leaving are contradictory acts, and the app should make you pick one
+ * rather than accept work it has already decided to throw away.
+ *
+ * The rule that falls out of it is worth stating, because it's what makes the deletion sweep simple:
+ * **a departed user's newest `skateEndTime` can never be later than their deletion request**, so
+ * everything they hold is already past the 30-day relevance window by the time finalization runs.
+ * The grace window and the relevance window are the same 30 days *by construction*, not by
+ * coincidence — see `accountDeletion.ts`.
+ *
+ * **This is not `requireProfile`, deliberately, and the seam is two-sided:**
+ *
+ * - It can't live *in* `requireProfile`, because that helper gates **queries** too. Someone in their
+ *   grace window has to be able to read the app — that's most of what "you can still sign in and
+ *   change your mind" means.
+ * - It can't be the only gate either. What stays open is everything that isn't a contribution to the
+ *   public record: **flagging** (a hazard is no less dangerous because the person who spotted it is
+ *   leaving), **blocking** (self-protection outlives the account), **support**, **export**, private
+ *   preferences, and — the load-bearing one — **cancelling the deletion**.
+ *
+ * Contrast the `deleting` status handled by `requireProfile`: that's the finalization lock, it gates
+ * everything including the exemptions above, and it isn't reversible. This one is a fork in the road,
+ * and the way back is a single button.
+ */
+export async function requireContributor(ctx: Ctx): Promise<Doc<'profiles'>> {
+  const profile = await requireProfile(ctx);
+  if (profile.deletionRequestedAt !== undefined) {
+    throw new ConvexError(DELETION_PENDING_MESSAGE);
+  }
+  return profile;
+}
+
 /** The caller's profile, or throw unless they hold at least `minRole` (D37). */
 export async function requireRole(ctx: Ctx, minRole: UserRole): Promise<Doc<'profiles'>> {
   const profile = await requireProfile(ctx);

@@ -11,6 +11,7 @@ import {
   canSetProfilePublic,
   isCurrentRiskAckVersion,
   isDriveTimeBand,
+  isLeaving,
   isMinor,
   isValidBio,
   isValidCoord,
@@ -30,7 +31,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
-import { getCurrentProfile, requireProfile, requireRole } from './lib/auth';
+import { getCurrentProfile, requireContributor, requireProfile, requireRole } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
@@ -149,6 +150,20 @@ export const upsertFromClerk = mutation({
       return existing._id;
     }
 
+    // **A ghost is the same case wearing a different field** (D62 amendment). A pending deletion
+    // scrubs the profile while leaving `status: 'active'` — deliberately, since `status` is the gate
+    // that would also close reads — so without this branch the next app launch would helpfully
+    // re-sync `displayName` and the avatar back out of Clerk and quietly un-delete the person's
+    // identity. This mutation runs on every cold start, so that isn't a corner case; it's the first
+    // thing that would happen.
+    //
+    // Cancelling clears the stamp, and *then* this sync is exactly the re-onboarding path
+    // (`needsProfileSetup` routes them here): same code, no special restore, and the name they type
+    // is the name they get.
+    if (existing && existing.deletionRequestedAt !== undefined) {
+      return existing._id;
+    }
+
     // `username` is unique (06-data-model.md). Convex has no unique constraint, so
     // check the index and reject a name already held by a *different* profile. (Only
     // reached for new or active profiles — i.e. only when we're about to write it.)
@@ -231,26 +246,32 @@ export const acceptCurrentRiskAck = mutation({
 
 /**
  * Edit the caller's own profile (D13) — bio, town label, and public↔private visibility. Each field
- * is optional (patch semantics: omit = leave unchanged); an empty bio/town clears it. `requireProfile`
- * gates the account; a **minor cannot set `public`** (D41), re-enforced from the stored DOB. All
- * normalization/validation is single-sourced in `@skating/core`.
+ * is optional (patch semantics: omit = leave unchanged); an empty bio/town clears it. A **minor cannot
+ * set `public`** (D41), re-enforced from the stored DOB. All normalization/validation is
+ * single-sourced in `@skating/core`.
+ *
+ * **`requireContributor`, not `requireProfile`** (D62 second amendment). A deletion request *clears*
+ * these exact fields, and until this gate moved a ghost could type them straight back in — a scrubbed
+ * profile that quietly re-collected a bio and a town for thirty days, with the wipe reading as a
+ * suggestion rather than a deletion. The founder's rule is the blunt one and it's the right one:
+ * becoming a ghost stops you editing any field.
+ *
+ * The one setting that had to survive that is `excludeTracksFromAggregate`, which used to ride along
+ * on this mutation — see `setAggregateTracksOptOut` for why it now has its own.
  */
 export const updateProfile = mutation({
   args: {
     bio: v.optional(v.string()),
     homeTownLabel: v.optional(v.string()),
     profileVisibility: v.optional(literals(PROFILE_VISIBILITIES)),
-    /** D58 global opt-out from the aggregate tracks layer. Retroactive by design (see the schema). */
-    excludeTracksFromAggregate: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const now = Date.now();
     const patch: {
       bio?: string;
       homeTownLabel?: string;
       profileVisibility?: (typeof PROFILE_VISIBILITIES)[number];
-      excludeTracksFromAggregate?: boolean;
     } = {};
 
     if (args.bio !== undefined) {
@@ -270,11 +291,30 @@ export const updateProfile = mutation({
       }
       patch.profileVisibility = args.profileVisibility;
     }
-    if (args.excludeTracksFromAggregate !== undefined) {
-      patch.excludeTracksFromAggregate = args.excludeTracksFromAggregate;
-    }
 
     await ctx.db.patch(profile._id, patch);
+    return profile._id;
+  },
+});
+
+/**
+ * The D58 global opt-out from the aggregate tracks layer. Retroactive by design (see the schema).
+ *
+ * **Its own mutation solely so it can outlive the account** (D62 second amendment). This is the one
+ * setting a departing skater must not lose: it governs the tracks that *survive* their deletion, and
+ * a person on their way out is exactly the person most likely to want them off the map. So it takes
+ * `requireProfile` while every other profile edit takes `requireContributor` — the gate difference
+ * *is* the reason the split exists, and folding this back into `updateProfile` to save a function
+ * would silently re-close the door.
+ *
+ * `requireProfile` still rejects `deleting`: once finalization starts the answer is whatever they last
+ * chose, and `writeTombstone` deliberately never touches this field.
+ */
+export const setAggregateTracksOptOut = mutation({
+  args: { excludeTracksFromAggregate: v.boolean() },
+  handler: async (ctx, { excludeTracksFromAggregate }) => {
+    const profile = await requireProfile(ctx);
+    await ctx.db.patch(profile._id, { excludeTracksFromAggregate });
     return profile._id;
   },
 });
@@ -289,7 +329,10 @@ export const updateProfile = mutation({
 export const setHome = mutation({
   args: { homeCoord: v.optional(latLng) },
   handler: async (ctx, { homeCoord }) => {
-    const profile = await requireProfile(ctx);
+    // `requireContributor`: the deletion request clears `homeCoord` and its derived bands, and a ghost
+    // re-setting them would re-collect the most sensitive coordinate we hold from an account that has
+    // asked to be deleted (D62 second amendment).
+    const profile = await requireContributor(ctx);
     if (homeCoord !== undefined && !isValidCoord(homeCoord)) {
       throw new ConvexError('Home coordinate is not valid');
     }
@@ -308,7 +351,7 @@ export const setHome = mutation({
 export const setFeedFilterPrefs = mutation({
   args: { filters: v.any() },
   handler: async (ctx, { filters }) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const clean = sanitizeFeedFilters(filters);
     await ctx.db.patch(profile._id, {
       feedFilterPrefs: Object.keys(clean).length > 0 ? clean : undefined,
@@ -330,7 +373,12 @@ export const setNotificationPrefs = mutation({
     greatRadiusMinutes: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    // `requireContributor`, with a consequence worth naming rather than discovering: a ghost's
+    // reports are *kept* under the second amendment, so people go on commenting on them and the
+    // notifications go on arriving — and this is the switch that would have turned them off. The
+    // right fix is to stop generating them for a departed account rather than to leave the switch
+    // reachable on a profile that is otherwise frozen; it's logged as a follow-up in the N5a plan.
+    const profile = await requireContributor(ctx);
 
     for (const [label, value] of [
       ['allRadiusMinutes', args.allRadiusMinutes],
@@ -438,6 +486,11 @@ export const getPublicProfile = query({
     const viewer = await getCurrentProfile(ctx);
     const viewerId = viewer?._id ?? '';
     const isSelf = viewerId !== '' && viewerId === target._id;
+    // A ghost (D62 amendment) is unreachable to everyone but themselves — not "empty", *not found*.
+    // Their reports stay on the ice record under `Deleted skater`; the person behind them stops
+    // existing the moment they ask to leave. The row is still here, and so is the handle, which is
+    // why this is a read gate rather than a scrub: cancelling has to be able to give the name back.
+    if (isLeaving(target) && !isSelf) return null;
     // The raw trust number is admin-only (D50). Gate it server-side on the *viewer's* role so it never
     // leaves the deployment for an ordinary viewer — the client-side chrome that hides it is only
     // defense-in-depth. Own profile does not unlock it; a member never sees their own raw score.
@@ -522,15 +575,19 @@ export const searchProfiles = query({
       )
       .take(20);
 
-    return matches
-      .filter((p) => p.status !== 'deleted' && !blocked.has(p._id))
-      .map((p) => ({
-        userId: p._id,
-        username: p.username,
-        displayName: p.displayName,
-        ...(p.profileImageUrl !== undefined ? { profileImageUrl: p.profileImageUrl } : {}),
-        ...(p.homeTownLabel !== undefined ? { homeTownLabel: p.homeTownLabel } : {}),
-      }));
+    return (
+      matches
+        // `isLeaving` alongside `deleted`: a ghost is gone from discovery the moment they ask, not when
+        // the cron finally runs.
+        .filter((p) => p.status !== 'deleted' && !isLeaving(p) && !blocked.has(p._id))
+        .map((p) => ({
+          userId: p._id,
+          username: p.username,
+          displayName: p.displayName,
+          ...(p.profileImageUrl !== undefined ? { profileImageUrl: p.profileImageUrl } : {}),
+          ...(p.homeTownLabel !== undefined ? { homeTownLabel: p.homeTownLabel } : {}),
+        }))
+    );
   },
 });
 

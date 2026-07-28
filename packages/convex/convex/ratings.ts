@@ -22,7 +22,7 @@ import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { fulfillBountyOnHelpful } from './bounties';
-import { getCurrentProfile, requireProfile } from './lib/auth';
+import { getCurrentProfile, requireContributor } from './lib/auth';
 import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs } from './lib/reputation';
 import { literals } from './lib/validators';
@@ -160,7 +160,7 @@ export const rate = mutation({
     bountyId: v.optional(v.id('bounties')),
   },
   handler: async (ctx, { targetType, targetId, verdict, bountyId }) => {
-    const rater = await requireProfile(ctx);
+    const rater = await requireContributor(ctx);
 
     const target = await loadRatingTarget(ctx, targetType, targetId);
     if (!target) throw new ConvexError('Rating target not found');

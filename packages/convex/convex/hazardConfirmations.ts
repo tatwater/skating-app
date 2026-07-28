@@ -27,7 +27,7 @@ import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
 import { loadVisibleHazard } from './hazards';
-import { requireProfile } from './lib/auth';
+import { requireContributor } from './lib/auth';
 import { HAZARD_CONFIRM_VERDICTS, HAZARD_CONFIRM_VIA } from './lib/enums';
 import { awardPointEvent, checkAndAwardBadges } from './lib/reputation';
 import { latLng, literals } from './lib/validators';
@@ -64,7 +64,7 @@ export const confirm = mutation({
     observedAt: v.optional(v.number()),
   },
   handler: async (ctx, { hazardId, verdict, atCoord, via, observedAt }) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const now = Date.now();
     // TODO(16+): fold into the uniform 16+ pass with legal (D41). A confirmation is public safety
     // content that moves a hazard's lifecycle, so minors are read-only here too.

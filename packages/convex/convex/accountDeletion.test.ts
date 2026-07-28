@@ -8,6 +8,8 @@ import {
   DELETION_GRACE_MS,
   deletedClerkUserId,
   deletedUsername,
+  needsProfileSetup,
+  RISK_ACK_VERSION,
 } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -25,6 +27,12 @@ const modules = import.meta.glob('./**/*.*s');
  */
 function harness() {
   vi.useFakeTimers();
+  // **Pinned, not merely faked** (D62 amendment). Content now has a lifetime — anything more than 30
+  // days past its skate is erased the moment its author asks to be deleted — so a fixture dated
+  // `T0` against a real wall clock silently becomes "six months old" and gets purged by tests that
+  // meant to assert it survives. Pinning `now` to `T0` makes every fixture fresh by default and makes
+  // aging an explicit act: `T0 - LONG_AGO`.
+  vi.setSystemTime(T0);
   return convexTest(schema, modules);
 }
 
@@ -47,6 +55,8 @@ const NOTIF_PREFS = {
 
 const ADULT_DOB = Date.UTC(1990, 0, 1);
 const T0 = Date.UTC(2026, 0, 15, 14, 0, 0);
+/** Comfortably past the 30-day purge line, for content a test wants erased. */
+const LONG_AGO = 60 * 24 * 3600_000;
 
 /** What `seedUser` hands back: the profile id plus a client bound to that identity. */
 type SeededUser = Awaited<ReturnType<typeof seedUser>>;
@@ -124,20 +134,273 @@ async function finalizePaged(
 }
 
 describe('the grace window', () => {
-  test('requesting deletion changes nothing but the stamp — the account still works', async () => {
+  /**
+   * The founder's correction to this whole flow, asserted as one test: **the request is the
+   * deletion**, and the 30 days keep only the login and the still-useful content.
+   *
+   * The `status` assertion is the subtle one. It stays `active` on purpose — `status` is what
+   * `requireProfile` reads, and reads have to keep working or the person can't get back in to
+   * cancel. So "already mostly deleted" is expressed by the scrubbed fields and the read gates, not
+   * by the security status, and this test pins that pair together.
+   */
+  test('requesting deletion wipes the profile immediately — the login is all that is kept', async () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
 
     const { scheduledFor } = await user.as.mutation(api.accountDeletion.requestDeletion, {});
     const profile = await t.run((ctx) => ctx.db.get(user.id));
 
-    expect(profile?.status).toBe('active'); // NOT 'deleted' — status is the security gate
-    expect(profile?.displayName).toBe('leaver');
-    expect(profile?.deletionRequestedAt).toBeDefined();
+    // Gone now, not in 30 days.
+    expect(profile?.displayName).toBe(DELETED_DISPLAY_NAME);
+    expect(profile?.bio).toBeUndefined();
+    expect(profile?.profileImageUrl).toBeUndefined();
+    expect(profile?.homeCoord).toBeUndefined();
+    expect(profile?.homeTownLabel).toBeUndefined();
+
+    // Kept, each for a reason the code comments spell out: the sign-in, the reserved handle, and the
+    // date of birth — scrubbing which would let a minor come back from a cancel as an adult.
+    expect(profile?.clerkUserId).toBe('leaver');
+    expect(profile?.username).toBe('leaver');
+    expect(profile?.dateOfBirth).toBe(ADULT_DOB);
+    expect(profile?.status).toBe('active');
     expect(scheduledFor).toBe((profile?.deletionRequestedAt ?? 0) + DELETION_GRACE_MS);
-    // The whole point of the window: they can still call authenticated functions, which is how they
-    // get back in to cancel.
+    // Still able to call authenticated functions — that's how they get back in to cancel.
     expect(await user.as.query(api.profiles.current, {})).not.toBeNull();
+  });
+
+  test('a ghost stops existing for everyone else — no profile, no search result', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const viewer = await seedUser(t, 'viewer');
+
+    expect(await viewer.as.query(api.profiles.getPublicProfile, { username: 'leaver' })).not.toBe(
+      null,
+    );
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+
+    expect(await viewer.as.query(api.profiles.getPublicProfile, { username: 'leaver' })).toBeNull();
+    expect(await viewer.as.query(api.profiles.searchProfiles, { query: 'leaver' })).toEqual([]);
+    // But not to themselves: they have to be able to see where they are and how to get back.
+    expect(await user.as.query(api.profiles.getPublicProfile, { username: 'leaver' })).not.toBe(
+      null,
+    );
+  });
+
+  test('their surviving content reads as the tombstone from the moment they ask', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const viewer = await seedUser(t, 'viewer');
+    const bodyId = await seedBody(t);
+    await user.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 });
+    await t.run((ctx) => ctx.db.patch(user.id, { reputationPoints: 500 }));
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+
+    const feed = await viewer.as.query(api.reports.listFeed, {
+      paginationOpts: { numItems: 10, cursor: null },
+    });
+    // The report is still there — it's recent, and it's the community's now.
+    expect(feed.page).toHaveLength(1);
+    // The author isn't. No name, no ring, and no handle to click through to a page that 404s.
+    expect(feed.page[0]?.author?.displayName).toBe(DELETED_DISPLAY_NAME);
+    expect(feed.page[0]?.author?.username).toBe('');
+    expect(feed.page[0]?.author?.trustClass ?? null).toBeNull();
+  });
+
+  /**
+   * The other half of the founder's rule, and the irreversible one — restated by the D62 **second**
+   * amendment, which is what this test now pins.
+   *
+   * The first amendment erased aged content outright. The correction draws the line between what a
+   * person *typed* and what they *observed*: the observation is the community's and stays, the prose
+   * is theirs and goes. So the assertion pair below is the whole posture in six lines — the row
+   * survives, the words don't, and cancelling brings back neither.
+   */
+  test('aged words are redacted at the request, and cancelling does not bring them back', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+    const old = await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 - LONG_AGO,
+      notes: 'Ridge across the north bay, water in the crack.',
+    });
+    const recent = await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 - 24 * 3600_000,
+      notes: 'Glass all the way out.',
+    });
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // The report is still on the lake. What they wrote about it is not.
+    const aged = await t.run((ctx) => ctx.db.get(old));
+    expect(aged).not.toBeNull();
+    expect(aged?.notes).toBeUndefined();
+    expect(aged?.skateEndTime).toBe(T0 - LONG_AGO); // the observation is untouched
+    // Inside the window, the prose is untouched — this is a 30-day clock, not a flag on the account.
+    expect((await t.run((ctx) => ctx.db.get(recent)))?.notes).toBe('Glass all the way out.');
+
+    await user.as.mutation(api.accountDeletion.cancelDeletion, {});
+    expect((await t.run((ctx) => ctx.db.get(old)))?.notes).toBeUndefined(); // still gone. The point.
+    expect((await t.run((ctx) => ctx.db.get(recent)))?.notes).toBe('Glass all the way out.');
+  });
+
+  /**
+   * Every free-text field, not just the obvious one. `iceThickness.readings[].note` is prose in a
+   * nested array rather than a column, which is exactly the shape a redaction pass forgets — and the
+   * readings themselves have to survive it, since a measurement is the most valuable thing a report
+   * carries.
+   */
+  test('redaction reaches the notes nested inside thickness readings, and spares the readings', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+    const reportId = await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 - LONG_AGO,
+      iceThickness: {
+        readings: [
+          { valueCm: 12, method: 'measured' as const, note: 'by the boat launch, my usual spot' },
+          { valueCm: 9, method: 'estimated' as const },
+        ],
+      },
+    });
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.iceThickness?.readings).toHaveLength(2);
+    expect(report?.iceThickness?.readings[0]?.valueCm).toBe(12);
+    expect(report?.iceThickness?.readings[0]?.note).toBeUndefined();
+    expect(report?.iceThickness?.readings[1]?.method).toBe('estimated');
+  });
+
+  /**
+   * Comments keep their shell so the thread keeps its shape (D62 second amendment). A reply whose
+   * parent vanished is unreachable — the thread is keyed by `reportId` — so the row survives, marked,
+   * and the client renders the standing-in line instead of a blank bubble.
+   */
+  test('an aged comment keeps its place in the thread and loses its text', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const other = await seedUser(t, 'stayer');
+    const bodyId = await seedBody(t);
+    const reportId = await other.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 - 24 * 3600_000,
+    });
+    const commentId = await user.as.mutation(api.comments.create, {
+      reportId,
+      body: 'I was out here last week too.',
+    });
+    // Age the comment past the line — `createdAt` is its clock, since a comment has no skate.
+    await t.run((ctx) => ctx.db.patch(commentId, { createdAt: T0 - LONG_AGO }));
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const row = await t.run((ctx) => ctx.db.get(commentId));
+    expect(row).not.toBeNull(); // the hole this avoids is in somebody else's conversation
+    expect(row?.body).toBe('');
+    expect(row?.redactedAt).toBeDefined();
+
+    const thread = await other.as.query(api.comments.listByReport, { reportId });
+    expect(thread).toHaveLength(1);
+    expect(thread[0]?.comment?.redacted).toBe(true);
+    expect(thread[0]?.comment?.author?.displayName).toBe(DELETED_DISPLAY_NAME);
+  });
+
+  /**
+   * D62 amendment: *"put-ins survive — access is the corpus's single most-discussed concern."*
+   *
+   * Worth a test even though nothing in the deletion path mentions put-ins any more, because the
+   * *reason* it now holds is indirect and a future change could break it without touching anything
+   * named `putIn`. Derived markers aren't stored — `listForBody` recomputes them from a body's live
+   * reports on every read — so the marker survives precisely because the report does. Under the first
+   * amendment it didn't, and the purge had to materialize a row to compensate.
+   *
+   * It also pins `lastUsedAt`: put-ins are exempt from every ageing rule in the app, so the date is
+   * how a three-winters-old access point avoids reading as current (D3).
+   */
+  test("a departed skater's put-in survives, dated by the skate that revealed it", async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+    await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 - LONG_AGO,
+      point: { lat: 0.5, lng: 0.02 },
+    });
+
+    const before = await user.as.query(api.putIns.listForBody, { waterBodyId: bodyId });
+    expect(before).toHaveLength(1);
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // The report is still there — redacted, not erased — and so is the way onto the ice.
+    const reports = await t.run((ctx) => ctx.db.query('reports').collect());
+    expect(reports).toHaveLength(1);
+    const after = await user.as.query(api.putIns.listForBody, { waterBodyId: bodyId });
+    expect(after).toHaveLength(1);
+    expect(after[0]?.coord.lat).toBeCloseTo(before[0]?.coord.lat ?? 0, 4);
+    // Dated by the skate, so the marker can say how old the access claim is.
+    expect(after[0]?.lastUsedAt).toBe(T0 - LONG_AGO);
+  });
+
+  test('a withheld put-in stays withheld — leaving is not the moment to publish it', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+    await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 - LONG_AGO,
+      point: { lat: 0.5, lng: 0.02 },
+      showPutIn: false,
+    });
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    expect(await user.as.query(api.putIns.listForBody, { waterBodyId: bodyId })).toEqual([]);
+  });
+
+  test('cancelling leaves the profile empty, so the app sends them back through onboarding', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await user.as.mutation(api.accountDeletion.cancelDeletion, {});
+
+    const profile = await t.run((ctx) => ctx.db.get(user.id));
+    expect(profile?.deletionRequestedAt).toBeUndefined();
+    expect(profile?.displayName).toBe(DELETED_DISPLAY_NAME); // NOT restored — it was really deleted
+    expect(needsProfileSetup(profile)).toBe(true);
+    // And the handle they reserved is still theirs to take back.
+    expect(profile?.username).toBe('leaver');
+  });
+
+  /**
+   * The launch sync runs on every cold start and writes `displayName` straight out of Clerk. Without
+   * its ghost branch it would un-delete the person's identity the next time they opened the app,
+   * which is not a corner case — it's the first thing that happens.
+   */
+  test('the Clerk launch sync cannot un-wipe a ghost', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+
+    await user.as.mutation(api.profiles.upsertFromClerk, {
+      displayName: 'Leaver Again',
+      username: 'leaver',
+      dateOfBirth: ADULT_DOB,
+      riskAckVersion: RISK_ACK_VERSION,
+    });
+
+    const profile = await t.run((ctx) => ctx.db.get(user.id));
+    expect(profile?.displayName).toBe(DELETED_DISPLAY_NAME);
   });
 
   test('asking twice does not restart the clock', async () => {
@@ -198,7 +461,7 @@ describe('the grace window', () => {
     await seedUser(t, 'also_never_asked');
 
     const result = await t.mutation(internal.accountDeletion.finalizeDueDeletions, {});
-    expect(result).toEqual({ due: 0, started: 0, skipped: 0 });
+    expect(result).toEqual({ due: 0, started: 0, skipped: 0, redacting: 0 });
 
     // And the second guard, independently: even handed the id directly, finalize declines.
     const direct = await t.mutation(internal.accountDeletion.finalizeAccount, {
@@ -222,6 +485,135 @@ describe('the grace window', () => {
     const profile = await t.run((ctx) => ctx.db.get(user.id));
     expect(profile?.status).toBe('active');
     expect(profile?.displayName).toBe('waverer');
+  });
+});
+
+/**
+ * Read-only while a deletion is pending (D62 amendment, N5a).
+ *
+ * The window exists to keep *useful* content around while its author reconsiders, so accepting new
+ * content into it is self-defeating: a report posted in hour 719 is erased hours later while it's
+ * still the freshest thing on the lake. Contributing and leaving are contradictory acts, and the app
+ * makes you pick one.
+ *
+ * The property that matters most is the second suite below — **what stays open**. A gate that also
+ * blocked flagging or blocking would trade a tidy rule for a real safety cost, and it's the kind of
+ * over-reach that reads as caution.
+ */
+describe('read-only while a deletion is pending', () => {
+  async function pendingUser(t: ReturnType<typeof convexTest>, subject = 'leaver') {
+    const user = await seedUser(t, subject);
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    return user;
+  }
+
+  test('contributions are refused, with a message that names the way back', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const user = await pendingUser(t);
+
+    await expect(
+      user.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 }),
+    ).rejects.toThrow(/scheduled for deletion/i);
+  });
+
+  test('every contribution surface is gated, not just reports', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const author = await seedUser(t, 'author');
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+    });
+    const user = await pendingUser(t);
+
+    await expect(user.as.mutation(api.comments.create, { reportId, body: 'nice' })).rejects.toThrow(
+      /scheduled for deletion/i,
+    );
+    await expect(
+      user.as.mutation(api.ratings.rate, {
+        targetType: 'report' as const,
+        targetId: reportId,
+        verdict: 'helpful' as const,
+      }),
+    ).rejects.toThrow(/scheduled for deletion/i);
+    await expect(user.as.mutation(api.photos.generateUploadUrl, {})).rejects.toThrow(
+      /scheduled for deletion/i,
+    );
+    await expect(user.as.mutation(api.strava.beginConnect, {})).rejects.toThrow(
+      /scheduled for deletion/i,
+    );
+  });
+
+  /**
+   * The exemptions, asserted as a set. Each is here for its own reason: a hazard is no less dangerous
+   * because the person who spotted it is leaving; self-protection outlives the account; and the last
+   * two are the door out — an export to take with you, and the button that undoes all of this.
+   */
+  test('protective and account-management actions stay open', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const author = await seedUser(t, 'author');
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+    });
+    const user = await pendingUser(t);
+
+    await expect(
+      user.as.mutation(api.contentFlags.flag, {
+        targetType: 'report' as const,
+        targetId: reportId,
+        reason: 'unsafe_false_report' as const,
+      }),
+    ).resolves.toBeDefined();
+    await expect(
+      user.as.mutation(api.blocks.block, { targetUserId: author.id }),
+    ).resolves.toBeDefined();
+    await expect(
+      user.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: bodyId }),
+    ).resolves.toBeDefined();
+    await expect(user.as.mutation(api.dataExport.requestExport, {})).resolves.toBeDefined();
+    await expect(user.as.mutation(api.accountDeletion.cancelDeletion, {})).resolves.toEqual({
+      cancelled: true,
+    });
+  });
+
+  test('cancelling restores posting — the gate is the stamp, nothing else', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const user = await pendingUser(t);
+
+    await user.as.mutation(api.accountDeletion.cancelDeletion, {});
+
+    await expect(
+      user.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 }),
+    ).resolves.toBeDefined();
+  });
+
+  /**
+   * The reason the gate exists, stated as a property rather than a message check: with contributions
+   * closed, a departed user's newest `skateEndTime` can never be later than their request — so
+   * everything they hold is already past the 30-day relevance window when finalization runs, and the
+   * N5a purge needs no deferred second sweep.
+   */
+  test('a pending account cannot produce content newer than its own request', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const user = await pendingUser(t);
+    const requestedAt = (await t.run((ctx) => ctx.db.get(user.id)))?.deletionRequestedAt ?? 0;
+
+    await expect(
+      user.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: requestedAt + 1 }),
+    ).rejects.toThrow(/scheduled for deletion/i);
+
+    const reports = await t.run((ctx) =>
+      ctx.db
+        .query('reports')
+        .filter((q) => q.eq(q.field('authorId'), user.id))
+        .collect(),
+    );
+    expect(reports).toHaveLength(0);
   });
 });
 
@@ -316,6 +708,32 @@ describe('the tombstone', () => {
     expect(profile?.bio).toBeUndefined();
     expect(profile?.profileImageUrl).toBeUndefined();
     expect(profile?.outerRadiusMeters).toBeUndefined();
+  });
+
+  /**
+   * `statusReason` is the one PII field on `profiles` that the **operator** wrote rather than the user,
+   * which is exactly why the scrub missed it: every other field here is something the person typed
+   * about themselves. It is a moderator's free-text account of a suspension or ban, and it routinely
+   * names a second person ("repeatedly abusive to @someone"), so leaving it on a tombstone retained
+   * prose about a deleted user *and* about somebody still here.
+   *
+   * Nothing is lost by clearing it — `moderationActions` carries a required `reason` and that audit
+   * trail deliberately survives deletion, so accountability for a past action is unaffected.
+   */
+  test('clears the moderator-written status reason', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    await t.run((ctx) =>
+      ctx.db.patch(user.id, {
+        status: 'suspended' as const,
+        statusReason: 'harassing @author in comments; see ticket 41',
+        suspendedUntil: T0 - 1, // lapsed, so the account can still act on its own deletion
+      }),
+    );
+
+    await finalize(t, user.id);
+
+    expect((await t.run((ctx) => ctx.db.get(user.id)))?.statusReason).toBeUndefined();
   });
 
   /**
@@ -525,7 +943,18 @@ describe('bucket 1 — erase (private artifacts)', () => {
 });
 
 describe('bucket 2 — anonymize (the public ice record)', () => {
-  test('reports and comments survive intact, now authored by the tombstone', async () => {
+  /**
+   * The observation survives and the prose doesn't — the D62 second-amendment seam, checked on the one
+   * path where it used to fail silently.
+   *
+   * **This test asserted the bug until 2026-07-27.** It went in through `finalize` (i.e. `finalizeNow`,
+   * which stamps and finalizes in the same instant), so the `redact` stage's age cutoff sat 30 days in
+   * the past and nothing was due — and the test read the resulting un-redacted prose as proof that
+   * "content survives intact". It did prove the row survived. It also froze in place the behavior where
+   * the operator's remove-me-immediately path redacted the *least* of any route, permanently, because
+   * no sweep can reach a tombstone. The finalize stage ignores the cutoff now.
+   */
+  test('reports and comments survive as observations, with the words cleared', async () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     const bodyId = await seedBody(t);
@@ -542,12 +971,166 @@ describe('bucket 2 — anonymize (the public ice record)', () => {
     await finalize(t, user.id);
 
     const report = await t.run((ctx) => ctx.db.get(reportId));
-    expect(report).not.toBeNull();
-    expect(report?.notes).toBe('Glass from shore to shore.');
+    expect(report).not.toBeNull(); // the row stays — this is the ice record
     expect(report?.authorId).toBe(user.id); // the pointer stands; it just names nobody now
+    expect(report?.iceTypes).toEqual(['black_ice']); // the observation is untouched
+    expect(report?.skateEndTime).toBe(T0);
+    expect(report?.notes).toBeUndefined(); // ...and the words are gone, even at zero age
+
+    // The comment keeps its shape so the thread doesn't lose a parent, marked rather than emptied by
+    // accident — `redactedAt` is what both clients render "This comment was deleted" from.
     const comments = await t.run((ctx) => ctx.db.query('comments').collect());
     expect(comments).toHaveLength(1);
-    expect(comments[0]?.body).toBe('Still good this morning.');
+    expect(comments[0]?.body).toBe('');
+    expect(comments[0]?.redactedAt).toBeDefined();
+  });
+});
+
+/**
+ * **Finalization ignores the age cutoff**, and the three ways it bit before it did (2026-07-27).
+ *
+ * One shared cause: the finalize `redact` stage used the same age gate as the ghost-window sweep, and
+ * it is the *last pass that will ever run* — `writeTombstone` clears `deletionRequestedAt`, the row
+ * leaves `by_deletion_requested_at`, and no cron can reach it again. So every row the gate skipped there
+ * kept its free text permanently, on an account whose owner had asked to be erased.
+ *
+ * Each of these fails against the old code, and each was invisible: the suite was green, the sweep
+ * reported nothing left to do, and the surviving rows all looked correct because the *observation* was
+ * meant to survive. Only the prose wasn't.
+ */
+describe('finalize redacts unconditionally (the age cutoff is a ghost-window rule)', () => {
+  test("a hazard the community kept confirming still loses its description — other people's clock cannot outlive the account", async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+
+    // The realistic shape, not a corner: a ridge this person reported months ago that other skaters
+    // have been confirming ever since. `lastConfirmedAt` is the clock, and it is the one clock the
+    // author does not control — so it kept getting pushed forward past the cutoff, and the description
+    // survived the tombstone forever. A hazard the community actively maintains is *precisely* the one
+    // this used to leak.
+    const hazardId = await t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId: bodyId,
+        type: 'pressure_ridge' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+        radiusMeters: 30,
+        bbox: { minLat: 0.4, minLng: 0.4, maxLat: 0.6, maxLng: 0.6 },
+        createdByUserId: user.id,
+        description: 'Runs the whole north bay — I went through here last winter.',
+        photoIds: [],
+        status: 'active' as const,
+        moderationStatus: 'visible' as const,
+        firstReportedAt: T0 - LONG_AGO,
+        lastConfirmedAt: T0, // somebody else confirmed it today
+        confirmCount: 6,
+        goneCount: 0,
+        createdAt: T0 - LONG_AGO,
+      }),
+    );
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // Still there during the window — the promise is "kept while the community maintains it", and that
+    // promise is real for as long as cancelling is.
+    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.description).toBeDefined();
+
+    // ...but finalization is the end of it, because nothing can come back for this row afterwards.
+    vi.setSystemTime(T0 + DELETION_GRACE_MS + 3600_000);
+    await t.mutation(internal.accountDeletion.finalizeDueDeletions, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(hazard).not.toBeNull(); // the pin stays: it is a warning, and D62 keeps the observation
+    expect(hazard?.type).toBe('pressure_ridge');
+    expect(hazard?.confirmCount).toBe(6);
+    expect(hazard?.description).toBeUndefined(); // the words go
+  });
+
+  test('a report skated slightly in the future is still redacted', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+
+    // `SKATE_TIME_FUTURE_TOLERANCE_MS` allows an hour of clock skew, so "a ghost's newest skateEndTime
+    // can't postdate their request" was only true ±1h — and the overhang was never due, on any pass.
+    const reportId = await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0 + 30 * 60_000,
+      iceTypes: ['black_ice' as const],
+      surfaceTags: [],
+      notes: 'Filed from the ice with a fast watch clock.',
+    });
+
+    await finalize(t, user.id);
+
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report).not.toBeNull();
+    expect(report?.notes).toBeUndefined();
+  });
+
+  test('the note on a thickness reading goes too — prose nested in an array is still prose', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const bodyId = await seedBody(t);
+
+    const reportId = await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+      iceTypes: ['black_ice' as const],
+      surfaceTags: [],
+      iceThickness: {
+        readings: [
+          {
+            valueCm: 10,
+            method: 'measured' as const,
+            note: 'through the ridge, water in the hole',
+          },
+        ],
+      },
+    });
+
+    await finalize(t, user.id);
+
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    // The measurement is the most valuable thing in a report and is not free text — it stays, and so
+    // does how it was taken, which is what decides how much to trust it.
+    expect(report?.iceThickness?.readings).toHaveLength(1);
+    expect(report?.iceThickness?.readings?.[0]?.valueCm).toBe(10);
+    expect(report?.iceThickness?.readings?.[0]?.method).toBe('measured');
+    expect(report?.iceThickness?.readings?.[0]?.note).toBeUndefined();
+  });
+});
+
+describe('flags: the row is about content and survives, the note is prose and does not', () => {
+  test('a departing flagger loses their note, and the moderator keeps everything structured', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const author = await seedUser(t, 'author');
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: T0,
+    });
+    const user = await seedUser(t, 'leaver');
+
+    // The field most likely in the whole schema to hold one user's prose *about another user* — which
+    // is what made keeping it after its author left the worst version of the oversight.
+    const flagId = await user.as.mutation(api.contentFlags.flag, {
+      targetType: 'report' as const,
+      targetId: reportId,
+      reason: 'unsafe_false_report' as const,
+      note: 'third time @author has posted a reading I know is fake',
+    });
+
+    await finalize(t, user.id);
+
+    const flag = await t.run((ctx) => ctx.db.get(flagId as Id<'contentFlags'>));
+    expect(flag).not.toBeNull(); // a flag is about content, and the content is still there
+    expect(flag?.reason).toBe('unsafe_false_report'); // the structured verdict the queue sorts on
+    expect(flag?.targetId).toBe(reportId);
+    expect(flag?.note).toBeUndefined(); // the words the person typed
   });
 });
 
@@ -591,6 +1174,65 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     expect(activity?.photoUrls).toBeUndefined();
 
     // The contribution the founder asked to preserve: it still draws.
+    const { tracks } = await viewer.as.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+    });
+    expect(tracks).toHaveLength(1);
+  });
+
+  /**
+   * **The test this suite was missing, and the reason a whole bucket was dead code for a release.**
+   *
+   * Every other test here reaches finalization through `finalizeNow`, which stamps the request and
+   * runs the chain in the same instant — so the content it sees is *fresh*. The real path is the
+   * opposite: request, thirty days of clock, then the cron. Under the first D62 amendment those two
+   * diverged completely. The purge stage erased every report older than 30 days, which by definition
+   * meant every report a ghost had, and each deletion took its linked activity with it — so
+   * `severTracks` could never keep anything, the aggregate-map contribution D62 exists to preserve was
+   * silently deleted, and the suite reported green because no test ever let 30 days pass.
+   *
+   * So this one advances the clock and goes in through `finalizeDueDeletions`, asserting the three
+   * things the shortcut can't see: the report survives its own ageing, the track survives with it, and
+   * the map still draws it.
+   */
+  test('the real path — request, thirty days, cron — keeps the published track drawing', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'leaver');
+    const viewer = await seedUser(t, 'viewer');
+    const bodyId = await seedBody(t);
+    const activityId = await seedTrack(user, 'published');
+    const reportId = await user.as.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      activityId,
+      skateEndTime: T0,
+      iceTypes: ['black_ice' as const],
+      surfaceTags: [],
+      notes: 'Skated the whole north shore, glass.',
+    });
+
+    await user.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // Thirty days and change: the grace window lapses and the report ages past the redaction line at
+    // the same moment, which is the coincidence the read-only rule engineers on purpose.
+    vi.setSystemTime(T0 + DELETION_GRACE_MS + 3600_000);
+    const swept = await t.mutation(internal.accountDeletion.finalizeDueDeletions, {});
+    expect(swept.started).toBe(1);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const profile = await t.run((ctx) => ctx.db.get(user.id));
+    expect(profile?.status).toBe('deleted');
+
+    // The observation outlives the account; the prose does not.
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report).not.toBeNull();
+    expect(report?.notes).toBeUndefined();
+    expect(report?.authorId).toBe(user.id); // still pointing at the row, which is now a tombstone
+
+    // And the bucket that used to be unreachable: kept, severed, still on the map.
+    const activity = await t.run((ctx) => ctx.db.get(activityId));
+    expect(activity?.path).toBeDefined();
+    expect(activity?.providerActivityId.startsWith('severed:')).toBe(true);
     const { tracks } = await viewer.as.query(api.gpsActivities.listTracksForBody, {
       waterBodyId: bodyId,
     });

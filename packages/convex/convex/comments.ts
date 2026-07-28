@@ -22,7 +22,12 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
-import { assertCanPostComments, getCurrentProfile, requireProfile } from './lib/auth';
+import {
+  assertCanPostComments,
+  getCurrentProfile,
+  requireContributor,
+  requireProfile,
+} from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { loadBlockedAuthorIds } from './lib/reportVisibility';
@@ -41,7 +46,7 @@ export const create = mutation({
     body: v.string(),
   },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const now = Date.now();
 
     // Minors are read-only (D41) — they can't comment, same as they can't post reports.
@@ -107,6 +112,16 @@ interface CommentNodeView {
     isOwn: boolean;
     createdAt: number;
     editedAt?: number;
+    /**
+     * The author left and this comment's text was cleared (D62 second amendment). `body` is empty and
+     * the client renders the standing-in line rather than a blank row.
+     *
+     * A **third** state alongside `hidden`, not a reuse of it. `hidden` means a moderator judged the
+     * content or the viewer blocked its author, and both of those are about *this* comment; this one
+     * is about a person who is no longer here, and it happened to every comment they ever wrote.
+     * Collapsing them would make a departure look like a moderation action.
+     */
+    redacted?: true;
   } | null;
   replies: CommentNodeView[];
 }
@@ -172,6 +187,7 @@ export const listByReport = query({
         hidden: false,
         comment: {
           body: doc.body,
+          ...(doc.redactedAt !== undefined ? { redacted: true as const } : {}),
           authorId: doc.authorId,
           author: await loadAuthor(doc.authorId),
           isOwn: viewerId !== '' && doc.authorId === viewerId,
@@ -193,7 +209,7 @@ export const listByReport = query({
 export const update = mutation({
   args: { commentId: v.id('comments'), body: v.string() },
   handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const existing = await ctx.db.get(args.commentId);
     if (!existing) throw new ConvexError('Comment not found');
     if (existing.authorId !== profile._id) {

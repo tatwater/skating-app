@@ -13,9 +13,20 @@ any recording you never published are erased outright.
 > same thing, and the section on [the two rules that look alike](#the-two-rules-that-look-alike)
 > exists because confusing them is the easy mistake.
 
-Decisions behind this: **D33** (deletion, export, anonymize-don't-erase), **D62** (the 30-day
-window and the three buckets), the **D62 amendment** (departed content is erased at 30 days past
-the skate — not built yet, see [Seasons](#what-changes-when-seasons-ship-n5a)), **D58**
+**And your reports don't go anywhere.** What you *saw* stays — the coordinate, the ice type, the
+thickness, the date — under "Deleted skater", with nothing behind the name. What you *wrote* goes:
+your notes, your comments, your photo captions, permanently, once they're 30 days old.
+
+> **Who this is for.** Anyone reasoning about deletion, retention, or why a departed skater's hazard
+> is still on the map. If you're looking for how *content* ages, that's a different mechanism —
+> see [report lifecycle](./report-lifecycle.md) and
+> [hazard decay](./hazard-decay-and-lifecycle.md). Aging and deletion are deliberately not the same
+> thing, and the section on [the two rules that look alike](#the-two-rules-that-look-alike) exists
+> because confusing them is the easy mistake.
+
+Decisions behind this: **D33** (deletion, export, anonymize-don't-erase), **D62** (the 30-day window
+and the three buckets), the **D62 amendment** (read-only, and the immediate wipe), the **D62 second
+amendment** (redact-don't-erase — what a person typed goes, what they observed stays), **D58**
 (publish-is-consent), **D13** (all reports public), **D3** (never assert safety).
 
 ---

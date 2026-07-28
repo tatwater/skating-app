@@ -44,7 +44,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { getCurrentProfile, requireProfile } from './lib/auth';
+import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
@@ -360,10 +360,11 @@ export const bountyFreshnessInputs = internalQuery({
     const now = Date.now();
     // Authorize BEFORE any weather I/O (§7c security). This query is the action's first step, so gating
     // it here means an authenticated-but-ineligible caller — no profile, suspended/banned (`requireProfile`),
-    // or a minor — is rejected before we drive any per-report Open-Meteo fetch + cache write on the app's
-    // shared free-tier quota. `createChecked` re-asserts the same gate at write time as the transactional
-    // authority (defense in depth); this pre-gate just stops rejected callers from burning external I/O.
-    const profile = await requireProfile(ctx);
+    // a minor, or an account pending deletion (`requireContributor`) — is rejected before we drive any
+    // per-report Open-Meteo fetch + cache write on the app's shared free-tier quota. `createChecked`
+    // re-asserts the same gate at write time as the transactional authority (defense in depth); this
+    // pre-gate just stops rejected callers from burning external I/O.
+    const profile = await requireContributor(ctx);
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post bounties');
     }
@@ -505,7 +506,7 @@ export const createChecked = internalMutation({
     ctx,
     { waterBodyId, subAreaId, weatherReopenedReports },
   ): Promise<CreateOutcome> => {
-    const profile = await requireProfile(ctx);
+    const profile = await requireContributor(ctx);
     const now = Date.now();
     if (isMinor(profile.dateOfBirth, now)) {
       throw new ConvexError('Users under 18 cannot post bounties');

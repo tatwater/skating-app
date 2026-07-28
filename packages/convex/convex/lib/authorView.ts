@@ -28,10 +28,19 @@ import { trustClassFor } from './reputation';
  */
 export function publicAuthor(profile: Doc<'profiles'> | null, now: number): FeedAuthor {
   if (profile === null) return { displayName: 'Unknown', username: '', trustClass: null };
-  if (profile.status === 'deleted') {
+  // A **ghost** — deletion requested, not yet finalized — is presented exactly like a tombstone
+  // (D62 amendment). Their row still holds a reserved handle and a trust score, and rendering either
+  // one would put a live-looking author on content whose author has already gone: a name that links
+  // to a 404, next to a ring that says "weigh this person's future reports".
+  if (profile.status === 'deleted' || profile.deletionRequestedAt !== undefined) {
     return {
+      // Already scrubbed to `DELETED_DISPLAY_NAME` by the request (or by the tombstone), so this is
+      // the stored value rather than a substitution — one place decides what a departed author reads
+      // as, and it isn't this function.
       displayName: profile.displayName,
-      username: profile.username,
+      // Emptied, not passed through: the handle is *reserved* during the ghost window, and a link to
+      // a profile that deliberately 404s is worse than no link.
+      username: '',
       trustClass: null,
       deleted: true,
     };
