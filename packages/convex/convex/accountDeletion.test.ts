@@ -1336,3 +1336,133 @@ describe('bucket 3 — keep, severed from identity (D62)', () => {
     expect(profile?.excludeTracksFromAggregate).toBe(true);
   });
 });
+
+/**
+ * The three findings from the PR #30 review, each of which let a ghost keep something the design says
+ * they lose. They share a shape worth naming: **`status` stays `active` for a ghost on purpose**, so
+ * every gate that asked about `status` — and every gate composed from `requireProfile` rather than
+ * `requireContributor` — silently treated a departing account as an ordinary one.
+ */
+describe('a ghost is a ghost everywhere (PR #30 review)', () => {
+  test('no notification is generated for a departing account', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const author = await seedUser(t, 'author');
+    const leaver = await seedUser(t, 'leaver');
+
+    // Favorite the lake first — this is deliberately still open during the window, so it's a real
+    // subscription rather than a contrived one.
+    await leaver.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: bodyId });
+    await leaver.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    await author.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // Their reports are kept, so people go on posting about lakes they follow — but a person who no
+    // longer exists on the platform shouldn't be hearing about it, and they can no longer reach the
+    // preference that would have turned it off.
+    const queued = await t.run((ctx) =>
+      ctx.db
+        .query('notificationQueue')
+        .withIndex('by_user', (q) => q.eq('userId', leaver.id))
+        .collect(),
+    );
+    expect(queued).toHaveLength(0);
+  });
+
+  test('a notification queued BEFORE the request is dropped rather than delivered', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const author = await seedUser(t, 'author');
+    const leaver = await seedUser(t, 'leaver');
+
+    await leaver.as.mutation(api.waterBodyFavorites.toggle, { waterBodyId: bodyId });
+    await author.as.mutation(api.reports.create, { waterBodyId: bodyId, skateEndTime: T0 });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // Queued while they were an ordinary user — the row outlives the state it was queued against.
+    expect(
+      await t.run((ctx) =>
+        ctx.db
+          .query('notificationQueue')
+          .withIndex('by_user', (q) => q.eq('userId', leaver.id))
+          .collect(),
+      ),
+    ).toHaveLength(1);
+
+    await leaver.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // Past the debounce, so the row is due.
+    vi.setSystemTime(T0 + 5 * 60_000);
+    const flushed = await t.mutation(internal.notifications.flushNotificationQueue, {});
+
+    expect(flushed).toMatchObject({ delivered: 0, dropped: 1 });
+    expect(
+      await t.run((ctx) =>
+        ctx.db
+          .query('notifications')
+          .withIndex('by_user', (q) => q.eq('userId', leaver.id))
+          .collect(),
+      ),
+    ).toHaveLength(0);
+  });
+
+  /**
+   * The gate that was beside `requireContributor` rather than inside it. Ordinary members were
+   * read-only during the window; the accounts with the most reach were not.
+   */
+  test('a departing moderator loses privileged writes but keeps privileged reads', async () => {
+    const t = harness();
+    const bodyId = await seedBody(t);
+    const mod = await seedUser(t, 'mod');
+    await t.run((ctx) => ctx.db.patch(mod.id, { role: 'moderator' as const }));
+
+    // Still a moderator, still active: the write works.
+    await expect(
+      mod.as.mutation(api.waterBodies.setCuratedBoost, { waterBodyId: bodyId, curatedBoost: 2 }),
+    ).resolves.not.toThrow();
+
+    await mod.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // The write is now refused with the member-facing message — same gate, same way back.
+    await expect(
+      mod.as.mutation(api.waterBodies.setCuratedBoost, { waterBodyId: bodyId, curatedBoost: 5 }),
+    ).rejects.toThrow(/scheduled for deletion/i);
+
+    // ...but the read still works. Blocking it would be the same mistake as putting the ghost gate in
+    // `requireProfile`: reviewing the state of things on the way out is reasonable.
+    await expect(mod.as.query(api.waterBodies.listCurated, {})).resolves.toBeDefined();
+  });
+
+  /**
+   * The caption is the departed person's prose; whether the photo is *referenced* is a different
+   * question, about whether deleting the row would tear a hole in a public report. Deciding the second
+   * one first meant the first went unanswered whenever the second couldn't be — here because the blob
+   * refuses to delete, and at `REFERENCE_SCAN_CAP` for a prolific enough contributor.
+   */
+  test('a photo that cannot be deleted still loses its caption', async () => {
+    const t = harness();
+    const leaver = await seedUser(t, 'leaver');
+    const photoId = await t.run((ctx) =>
+      ctx.db.insert('photos', {
+        storageId: 'not-a-storage-id', // the delete will fail, and the row is kept as its only pointer
+        thumbStorageId: 'not-a-storage-id',
+        uploaderId: leaver.id,
+        caption: 'the pond behind my house',
+        placeOnMap: false,
+        createdAt: T0 - LONG_AGO, // aged past the line, so the ghost sweep acts on it
+      }),
+    );
+
+    // The ghost-window sweep alone — no finalization.
+    await leaver.as.mutation(api.accountDeletion.requestDeletion, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const photo = await t.run((ctx) => ctx.db.get(photoId));
+    expect(photo).not.toBeNull(); // kept: it is the only pointer to the blobs
+    expect(photo?.caption).toBeUndefined(); // but the words came off anyway
+  });
+});

@@ -11,7 +11,7 @@ import { normalizeUsername, type TrustClass, type UserStatus } from '@skating/co
 import { ConvexError, v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
-import { requireRole } from './lib/auth';
+import { requireContributorRole, requireRole } from './lib/auth';
 import { trustClassFor } from './lib/reputation';
 import { literals } from './lib/validators';
 
@@ -83,7 +83,7 @@ export const userSearch = query({
 export const grantRole = mutation({
   args: { userId: v.id('profiles'), role: literals(['moderator', 'admin']), reason: v.string() },
   handler: async (ctx, { userId, role, reason }) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireContributorRole(ctx, 'admin');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (userId === actor._id) throw new ConvexError('You cannot change your own role');
     const target = await ctx.db.get(userId);
@@ -110,7 +110,7 @@ export const grantRole = mutation({
 export const revokeRole = mutation({
   args: { userId: v.id('profiles'), reason: v.string() },
   handler: async (ctx, { userId, reason }) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireContributorRole(ctx, 'admin');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');
     if (userId === actor._id) throw new ConvexError('You cannot revoke your own role');
     const target = await ctx.db.get(userId);

@@ -133,11 +133,35 @@ The line is **contributions to the public record**, not writes in general.
 | Thumbs (helpful / not helpful), bounties | **Blocking** another user |
 | Photo uploads, recorded-track ingest | Support tickets, data export |
 | New Strava (or other provider) connections | The **aggregate-tracks opt-out** |
-| Creating a water body from a track | **Cancelling the deletion** |
-| **Every profile field** — name, bio, town, home location, saved lakes, notification and filter preferences | |
+| Creating a water body from a track | **Saving a lake** (favorites) |
+| **Every profile field** — name, bio, town, home location, notification and filter preferences | **Cancelling the deletion** |
+| **Every moderator and admin *action*** — see below | Every moderator and admin **read** |
 
 Each exemption has its own reason: a hazard is no less dangerous because the person who spotted it is
-leaving, self-protection outlives the account, and the last one is the door back.
+leaving, self-protection outlives the account, a favorite is a private bookmark rather than a
+contribution (and is erased at finalization anyway), and the last one is the door back.
+
+**Operators are not exempt, and that needed its own gate.** The member gate composes onto
+`requireProfile`, and so did the role gate — they sat *beside* each other rather than one inside the
+other, so a moderator or admin who had asked to be deleted kept every privileged write while ordinary
+members were read-only. Drawing a sub-area, promoting a body feature, curating a put-in, resolving a
+flag, banning someone: all still worked.
+
+It matters for the content reason everyone else's gate exists for — a sub-area authored in the window
+goes up attributed to an account about to become a tombstone — and for a sharper one:
+`moderationActions` is an audit trail, and a ban recorded against a moderator who is deleted three days
+later points at a row with no person behind it.
+
+Privileged **reads** stay open — the admin tree, the moderation queues, the analytics — for the same
+reason a ghost can still read the app at all. An operator reviewing the state of things on their way
+out is a reasonable thing to be doing.
+
+**Notifications stop, rather than the switch reopening.** A ghost's reports are kept, so people go on
+commenting on them and rating them — and `setNotificationPrefs` closes with every other profile field,
+so they cannot turn any of it off. Every notification path therefore asks whether the recipient is
+leaving, and that is re-checked at *delivery* as well as at generation: queued rows outlive the state
+they were queued against, so a debounced or 8pm-digest row enqueued before the request is dropped
+rather than sent.
 
 **Every profile field is closed, including the ones the request just cleared.** Leaving those editable
 would let a ghost type their name, bio and town straight back in, and the wipe would read as a
@@ -209,7 +233,8 @@ the request; the private side-tables wait for finalization.
 
 - **OAuth tokens** (Strava and any future watch provider)
 - **Home location and drive-time bands** *(at request, with the profile)*
-- **Saved lakes**, **feed filter preferences**, **risk acknowledgements**
+- **Saved lakes** (still editable during the window — a private bookmark, not a contribution),
+  **feed filter preferences**, **risk acknowledgements**
 - **Notifications** and the pending queue — flushing a digest to a tombstone is a push nobody reads
 - **Blocks, in both directions** — leaving the second kind would filter a tombstone's content for the
   blocker forever, over a person who no longer exists
@@ -439,7 +464,13 @@ rows look right, and something is quietly wrong for a person who can no longer c
   deleted account.
 - **The UI hides exactly what the server blocks, no more and no less.** Hiding something still allowed
   strips a safety tool for nothing; leaving a blocked one visible invites someone to write a report and
-  only then refuses it.
+  only then refuses it. This has two sides for operators: the clients gate navigation and read-only
+  operator chrome on holding the role, and every control that *submits* on holding the role **and** not
+  leaving — mirroring `requireRole` vs `requireContributorRole` exactly.
+- **A gate that asks about `status` is asking the wrong question about a ghost.** `status` stays
+  `active` for the whole window on purpose, because it is what `requireProfile` reads and a departing
+  person has to keep being able to sign in and cancel. Anything that means "is this account really
+  here?" — notification eligibility, for one — must ask about `deletionRequestedAt`.
 
 ---
 
@@ -471,11 +502,6 @@ rows look right, and something is quietly wrong for a person who can no longer c
   consideration splits on that — **hazard-documenting photos kept, the rest expiring at the season
   boundary** — which trades the beautiful-morning shots and some put-in documentation for keeping the
   danger evidence. Not decided, not built; in the N5a deferred register with the alternatives.
-- **A ghost keeps receiving notifications and can no longer mute them.** Closing every profile field
-  closed the notification preferences with them, and a ghost's reports are kept, so people go on
-  commenting and the rows go on landing. The fix is to stop *generating* them for a departed account
-  rather than to reopen the switch — in-app rows only today, which is why it's a gap rather than a bug.
-  In the N5a deferred register.
 - **Email delivery is unprovisioned.** Resend keys and a verified sending domain are prod-cutover work,
   so an export lands in the settings list and no mail goes out. Designed degradation, not a failure
   path — but note it also means the "an emailed bundle outlives the account" carve-out never fires

@@ -37,7 +37,13 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { getCurrentProfile, requireContributor, requireProfile, requireRole } from './lib/auth';
+import {
+  getCurrentProfile,
+  requireContributor,
+  requireContributorRole,
+  requireProfile,
+  requireRole,
+} from './lib/auth';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
@@ -512,7 +518,7 @@ export const findMatchCandidates = query({
 export const approve = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     // Only user-created bodies enter the review queue; approving canonical (OSM/NHD)
@@ -556,7 +562,7 @@ export const approve = mutation({
 export const remove = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: literals(REMOVAL_REASONS) },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireContributorRole(ctx, 'admin');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     // Idempotency + no duplicate audit rows: only an on-map body can be removed.
@@ -594,7 +600,7 @@ export const remove = mutation({
 export const restore = mutation({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'admin');
+    const actor = await requireContributorRole(ctx, 'admin');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (body.removedAt === undefined) throw new ConvexError('Water body is not removed');
@@ -632,7 +638,7 @@ export const restore = mutation({
 export const reject = mutation({
   args: { waterBodyId: v.id('waterBodies'), reason: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(args.waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (body.source !== 'user') {
@@ -685,7 +691,7 @@ export const merge = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, { survivorId, loserId, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     if (survivorId === loserId) throw new ConvexError('Cannot merge a water body into itself');
     const survivor = await ctx.db.get(survivorId);
     const loser = await ctx.db.get(loserId);
@@ -826,7 +832,7 @@ export const get = query({
 export const setCuratedBoost = mutation({
   args: { waterBodyId: v.id('waterBodies'), curatedBoost: v.number() },
   handler: async (ctx, { waterBodyId, curatedBoost }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
 
@@ -870,7 +876,7 @@ export const setCuratedBoost = mutation({
 export const setWeatherSamplePoints = mutation({
   args: { waterBodyId: v.id('waterBodies'), points: v.array(latLng) },
   handler: async (ctx, { waterBodyId, points }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (points.length > MAX_SUGGESTED_SAMPLE_POINTS) {

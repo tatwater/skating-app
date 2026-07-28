@@ -13,13 +13,13 @@ import { UserModerationControls } from './UserModerationControls';
  * your own profile. The raw trust number stays on the detail page (admin-only, D50).
  */
 export function ProfileModeratorPanel({ userId, isSelf }: { userId: string; isSelf: boolean }) {
-  const { isModerator } = useRole();
+  const { canModerate } = useRole();
   const user = useQuery(
     api.profiles.getAdmin,
-    isModerator && !isSelf ? { userId: userId as Id<'profiles'> } : 'skip',
+    canModerate && !isSelf ? { userId: userId as Id<'profiles'> } : 'skip',
   );
 
-  if (!isModerator || isSelf || !user) return null;
+  if (!canModerate || isSelf || !user) return null;
 
   return (
     <section className="mx-auto flex w-full max-w-2xl flex-col gap-2 py-4">

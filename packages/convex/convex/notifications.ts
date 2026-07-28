@@ -29,6 +29,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
+import { canReceiveNotifications } from './lib/auth';
 import { takeCapped } from './lib/scan';
 
 /** The digest rolls up to 8pm in this zone (single-timezone pilot; per-user timing deferred). */
@@ -118,7 +119,7 @@ export async function enqueueReportNotifications(
     if (fav.userId === report.authorId) continue;
     const user = await ctx.db.get(fav.userId);
     if (!user) continue;
-    if (user.status !== 'active' || !user.notificationPrefs.favoriteReport) continue;
+    if (!canReceiveNotifications(user) || !user.notificationPrefs.favoriteReport) continue;
     await enqueue(ctx, {
       userId: fav.userId,
       waterBodyId: report.waterBodyId,
@@ -165,7 +166,7 @@ export const fanOutNearbyNotifications = internalMutation({
 
     let enqueued = 0;
     for (const p of page.page) {
-      if (p._id === report.authorId || p.status !== 'active') continue;
+      if (p._id === report.authorId || !canReceiveNotifications(p)) continue;
       const bands: DriveTimeBands = {
         band30: p.cachedIsochrones?.band30 as DriveTimeBands['band30'],
         band60: p.cachedIsochrones?.band60 as DriveTimeBands['band60'],
@@ -255,7 +256,34 @@ export const flushNotificationQueue = internalMutation({
     // Digest rows accumulate per user into a single consolidated notification; fav/great deliver 1:1.
     const digestByUser = new Map<Id<'profiles'>, Doc<'notificationQueue'>[]>();
     let delivered = 0;
+    let dropped = 0;
+
+    // **Eligibility is re-checked at delivery, not only at enqueue** (PR #30 review). Rows survive in
+    // this table across a debounce window or until 8pm, so the state they were queued against is not
+    // the state they are delivered into: a person can request deletion — or be suspended or banned —
+    // in between, and the row would land anyway. Gating only where notifications are *generated* would
+    // have left exactly the backlog a departing user can no longer mute.
+    //
+    // Memoized per tick because a batch is many rows over few users (that's what coalescing is for), so
+    // this costs a handful of reads rather than one per row. An ineligible row is deleted rather than
+    // left: it will never become deliverable again by sitting here, and a ghost's rows are erased by
+    // finalization regardless.
+    const eligibility = new Map<Id<'profiles'>, boolean>();
+    async function deliverable(userId: Id<'profiles'>): Promise<boolean> {
+      const memo = eligibility.get(userId);
+      if (memo !== undefined) return memo;
+      const profile = await ctx.db.get(userId);
+      const ok = profile !== null && canReceiveNotifications(profile);
+      eligibility.set(userId, ok);
+      return ok;
+    }
+
     for (const row of due) {
+      if (!(await deliverable(row.userId))) {
+        await ctx.db.delete(row._id);
+        dropped++;
+        continue;
+      }
       if (row.kind === 'digest') {
         const rows = digestByUser.get(row.userId);
         if (rows) rows.push(row);
@@ -295,6 +323,6 @@ export const flushNotificationQueue = internalMutation({
       for (const r of rows) await ctx.db.delete(r._id);
       delivered++;
     }
-    return { delivered };
+    return { delivered, dropped };
   },
 });

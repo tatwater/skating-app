@@ -12,7 +12,7 @@ import {
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
 import { Button, Paragraph, Separator, Text, TextArea, XStack, YStack } from 'tamagui';
-import { ModeratorActions, useIsModerator } from './ModeratorActions';
+import { ModeratorActions, useCanModerate } from './ModeratorActions';
 import { FlagControl } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
 
@@ -269,7 +269,7 @@ export function Comments({ reportId }: { reportId: string }) {
   const rid = reportId as Id<'reports'>;
   const nodes = useQuery(api.comments.listByReport, { reportId: rid });
   const me = useQuery(api.profiles.current, {});
-  const isModerator = useIsModerator();
+  const canModerate = useCanModerate();
   const create = useMutation(api.comments.create);
   const edit = useMutation(api.comments.update);
   const remove = useMutation(api.comments.remove);
@@ -305,7 +305,7 @@ export function Comments({ reportId }: { reportId: string }) {
           node.comment && !node.comment.isOwn ? (
             <>
               <FlagControl targetType="comment" targetId={node.id} />
-              {isModerator ? <ModeratorActions targetType="comment" targetId={node.id} /> : null}
+              {canModerate ? <ModeratorActions targetType="comment" targetId={node.id} /> : null}
             </>
           ) : null
         }

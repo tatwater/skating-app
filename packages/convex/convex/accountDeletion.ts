@@ -696,8 +696,17 @@ async function erasePhotos(
 
   const referenced = await referencedPhotoIds(ctx, userId);
   if (referenced === null) {
-    console.warn(
-      `accountDeletion: reference scan for ${userId} hit its cap — keeping this page of photos for the orphan GC cron rather than guessing`,
+    // Keeping the page is the safe direction and stays the answer: "couldn't determine" must never
+    // become "delete it", because a photo torn out of a surviving public report is unrecoverable.
+    //
+    // What this is *not* allowed to mean is that the person's prose survives with it. The `redact`
+    // stage runs before this one and clears captions independently of the reference scan (see
+    // `lib/contentPurge`'s `sweepPhotos`), so a capped scan here costs storage — the blobs of uploads
+    // that may have been abandoned — and nothing else. Logged at error level because, unlike the
+    // orphan cron's daily retry, this pass is terminal for the account: the tombstone is two stages
+    // away and no sweep will re-derive this answer.
+    console.error(
+      `accountDeletion: reference scan for ${userId} hit its cap at finalization — keeping this page of photos rather than guessing. Captions are already cleared by the redact stage; the blobs need an operator to reconcile.`,
     );
     return next;
   }

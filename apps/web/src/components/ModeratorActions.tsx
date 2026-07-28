@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api';
 import { useMutation, useQuery } from 'convex/react';
 import { ShieldIcon } from 'lucide-react';
 import { useState } from 'react';
+import { useRole } from '@/lib/useRole';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -35,12 +36,14 @@ export function ModeratorActions({
   targetType: 'report' | 'comment' | 'hazard';
   targetId: string;
 }) {
-  const isModerator = useIsModerator();
+  const { canModerate } = useRole();
   const setStatus = useMutation(api.moderation.setModerationStatus);
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  if (!isModerator) return null;
+  // `canModerate`, not `isModerator`: a departing operator's takedown mutations are refused by
+  // `requireContributorRole`, so showing the control would offer a button that throws.
+  if (!canModerate) return null;
 
   const act = async (status: 'hidden' | 'removed') => {
     if (!reason.trim()) {

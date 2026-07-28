@@ -44,7 +44,12 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
+import {
+  canReceiveNotifications,
+  getCurrentProfile,
+  requireContributor,
+  requireProfile,
+} from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { isListed } from './lib/listing';
@@ -653,7 +658,7 @@ async function fanOutEligibility(
     notified.add(report.authorId);
     const author = await ctx.db.get(report.authorId);
     if (!author) continue;
-    if (author.status !== 'active' || !author.notificationPrefs.bountyRequest) continue;
+    if (!canReceiveNotifications(author) || !author.notificationPrefs.bountyRequest) continue;
     await ctx.db.insert('notifications', {
       userId: report.authorId,
       type: 'bounty_request',
@@ -751,7 +756,7 @@ export async function fulfillBountyOnHelpful(
 
   const author = await ctx.db.get(report.authorId);
   if (!author) return;
-  if (author.status !== 'active' || !author.notificationPrefs.bountyFulfilled) return;
+  if (!canReceiveNotifications(author) || !author.notificationPrefs.bountyFulfilled) return;
   await ctx.db.insert('notifications', {
     userId: report.authorId,
     type: 'bounty_fulfilled',

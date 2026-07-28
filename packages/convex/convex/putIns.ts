@@ -20,7 +20,7 @@ import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
 import { mutation, type QueryCtx, query } from './_generated/server';
-import { requireRole } from './lib/auth';
+import { requireContributorRole } from './lib/auth';
 import { latLng } from './lib/validators';
 
 /** How many recent reports feed the derived-cluster read — bounds the per-body scan (read-cap). */
@@ -156,7 +156,7 @@ export const listForBody = query({
 export const setOfficial = mutation({
   args: { waterBodyId: v.id('waterBodies'), coord: latLng, reason: v.optional(v.string()) },
   handler: async (ctx, { waterBodyId, coord, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     const id = await ctx.db.insert('putIns', {
@@ -188,7 +188,7 @@ export const setOfficial = mutation({
 export const hide = mutation({
   args: { waterBodyId: v.id('waterBodies'), coord: latLng, reason: v.string() },
   handler: async (ctx, { waterBodyId, coord, reason }) => {
-    const actor = await requireRole(ctx, 'moderator');
+    const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
     if (reason.trim().length === 0) throw new ConvexError('A reason is required');

@@ -11,7 +11,8 @@ import {
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useState } from 'react';
-import { ModeratorActions, useIsModerator } from './ModeratorActions';
+import { useRole } from '@/lib/useRole';
+import { ModeratorActions } from './ModeratorActions';
 import { FlagDialog } from './SafetyControls';
 import { TrustAvatar } from './TrustDisplay';
 import { Button } from './ui/button';
@@ -275,7 +276,7 @@ export function Comments({ reportId }: { reportId: string }) {
   const rid = reportId as Id<'reports'>;
   const nodes = useQuery(api.comments.listByReport, { reportId: rid });
   const me = useQuery(api.profiles.current, {});
-  const isModerator = useIsModerator();
+  const { canModerate } = useRole();
   const create = useMutation(api.comments.create);
   const edit = useMutation(api.comments.update);
   const remove = useMutation(api.comments.remove);
@@ -312,7 +313,7 @@ export function Comments({ reportId }: { reportId: string }) {
           node.comment && !node.comment.isOwn ? (
             <>
               <FlagDialog targetType="comment" targetId={node.id} label="Flag" />
-              {isModerator ? <ModeratorActions targetType="comment" targetId={node.id} /> : null}
+              {canModerate ? <ModeratorActions targetType="comment" targetId={node.id} /> : null}
             </>
           ) : null
         }

@@ -100,13 +100,76 @@ export async function requireContributor(ctx: Ctx): Promise<Doc<'profiles'>> {
   return profile;
 }
 
-/** The caller's profile, or throw unless they hold at least `minRole` (D37). */
+/**
+ * The caller's profile, or throw unless they hold at least `minRole` (D37).
+ *
+ * **Reads only.** This deliberately builds on `requireProfile`, so a departing operator can still
+ * *see* the admin surfaces during their window — same reason the ghost gate isn't in `requireProfile`
+ * at all. Every role-gated **mutation** takes {@link requireContributorRole} instead; see there for why
+ * the split has to be explicit rather than implied.
+ */
 export async function requireRole(ctx: Ctx, minRole: UserRole): Promise<Doc<'profiles'>> {
   const profile = await requireProfile(ctx);
+  assertRole(profile, minRole);
+  return profile;
+}
+
+/**
+ * The caller's profile, or throw unless they hold at least `minRole` **and** are not on their way out
+ * (PR #30 review).
+ *
+ * **The hole this closes.** `requireContributor` is composed from `requireProfile`, and so was
+ * `requireRole` — so the two gates sat *beside* each other rather than one inside the other, and a
+ * moderator or admin who had asked to be deleted kept every privileged write: drawing a sub-area,
+ * promoting a body feature, curating a put-in, resolving a flag, banning someone. Ordinary members
+ * were read-only; the accounts with the most reach were not, which is exactly backwards.
+ *
+ * It matters for the same reason the member gate does, and one more besides. The content reason: a
+ * sub-area or body feature authored in the window goes up attributed to an account that is about to
+ * become a tombstone. The accountability reason, which is sharper: `moderationActions` is an audit
+ * trail, and an action recorded against a moderator who is deleted three days later points at a row
+ * with no person behind it. A ban is not a thing to be issued by someone who has already left.
+ *
+ * **Why this is a separate helper rather than a fix inside `requireRole`.** Fourteen role-gated
+ * *queries* — the admin dashboards, the moderation queues, the analytics — must keep working, for the
+ * same reason a ghost can still read the app: reading is most of what "you can still change your mind"
+ * means, and an operator reviewing the damage before they go is a reasonable thing to be doing.
+ */
+export async function requireContributorRole(
+  ctx: Ctx,
+  minRole: UserRole,
+): Promise<Doc<'profiles'>> {
+  const profile = await requireContributor(ctx);
+  assertRole(profile, minRole);
+  return profile;
+}
+
+/** The rank comparison itself, shared so the two role gates can't drift on what "at least" means. */
+function assertRole(profile: Doc<'profiles'>, minRole: UserRole): void {
   if (ROLE_RANK[profile.role] < ROLE_RANK[minRole]) {
     throw new ConvexError(`Requires ${minRole} role`);
   }
-  return profile;
+}
+
+/**
+ * Whether this profile should be *sent* anything (PR #30 review).
+ *
+ * Six call sites used to ask `status === 'active'`, which is the wrong question for a ghost by
+ * construction: `status` stays `active` through the whole window on purpose, because it is what
+ * `requireProfile` reads and a departing person has to keep being able to sign in and cancel. So every
+ * notification path treated someone who had asked to be deleted as an ordinary recipient.
+ *
+ * That combined badly with two other correct decisions. Their reports are **kept**, so people go on
+ * commenting on them and rating them; and `setNotificationPrefs` moved behind `requireContributor` with
+ * every other profile field, so they could not turn any of it off. The app went quiet everywhere except
+ * the one channel that reaches out and taps them.
+ *
+ * The fix is here rather than at the switch: a person who no longer exists on the platform shouldn't be
+ * receiving mail about it, and reopening the preference would have let a ghost edit a profile field the
+ * request had just cleared.
+ */
+export function canReceiveNotifications(profile: Doc<'profiles'>): boolean {
+  return profile.status === 'active' && profile.deletionRequestedAt === undefined;
 }
 
 /**

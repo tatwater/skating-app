@@ -22,7 +22,7 @@ import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { fulfillBountyOnHelpful } from './bounties';
-import { getCurrentProfile, requireContributor } from './lib/auth';
+import { canReceiveNotifications, getCurrentProfile, requireContributor } from './lib/auth';
 import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { awardPointEvent, checkAndAwardBadges, tallyThumbs } from './lib/reputation';
 import { literals } from './lib/validators';
@@ -136,7 +136,7 @@ async function notifyHelpful(
 ): Promise<void> {
   const author = await ctx.db.get(authorId);
   if (!author) return;
-  if (author.status !== 'active' || !author.notificationPrefs.reportRated) return;
+  if (!canReceiveNotifications(author) || !author.notificationPrefs.reportRated) return;
   await ctx.db.insert('notifications', {
     userId: authorId,
     type: 'report_rated',

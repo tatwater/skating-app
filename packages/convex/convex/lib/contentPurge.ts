@@ -340,32 +340,49 @@ export async function redactAgedContent(
   // ── Photos: published ones lose their caption, abandoned ones go ───────────────────────────────
   //
   // Whether a photo is referenced is decided by `lib/photoOrphans`, shared with the orphan-GC cron so
-  // the two destructive paths can't drift apart on the definition — which they had, until this pass:
-  // this sweep used to delete by age alone, so a photo uploaded before the 30-day line but attached to
-  // a report inside it left a permanent hole in a public report. A `null` answer means the reference
-  // scan hit its cap, and the page is kept whole: an orphan the cron sweeps later is cheaper than a
-  // hole in the record.
+  // the two destructive paths can't drift apart on the definition. A `null` answer means the reference
+  // scan hit its cap — "couldn't determine", not "nothing is referenced" — and the photo is kept,
+  // because an orphan the cron sweeps later is cheaper than a hole in a public report.
   //
-  // The caption is the only thing cleared. `coord` stays — where on the lake a photo was taken is ice
-  // record, and it's what places the pin.
+  // **The caption comes off either way, and separating the two questions is the point** (PR #30
+  // review). This used to bail on the whole page the moment the scan capped, *and then advance the
+  // cursor* — so for a contributor prolific enough to hit `REFERENCE_SCAN_CAP` the page was never
+  // revisited, and at finalization that is permanent: captions left standing on a tombstone's photos,
+  // with no later pass able to reach them. But whether a photo is *referenced* has nothing to do with
+  // whether its caption is the departed person's prose. Only the **delete** decision needs the scan.
+  //
+  // So a capped scan now degrades to the same treatment a referenced photo gets — caption cleared, row
+  // kept — which is the strictest outcome that is certainly safe. What's lost is that a genuinely
+  // abandoned upload keeps its blob; that is storage and the known photo-images gap, not free text
+  // outliving its author.
+  //
+  // `coord` stays in both branches: where on the lake a photo was taken is ice record, and it's what
+  // places the pin. Stripping it on the capped path would break a pin on a photo that may well be
+  // referenced.
   async function sweepPhotos(): Promise<string | null> {
     const page = await ctx.db
       .query('photos')
       .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
       .paginate({ cursor, numItems: pageSize });
-    const referenced =
-      page.page.length > 0 ? await referencedPhotoIds(ctx, userId) : new Set<string>();
+    if (page.page.length === 0) return nextCursor(page);
+
+    const referenced = await referencedPhotoIds(ctx, userId);
     if (referenced === null) {
       console.warn(
-        `contentPurge: reference scan for ${userId} hit its cap — keeping this page of photos for the orphan GC cron rather than guessing`,
+        `contentPurge: reference scan for ${userId} hit its cap — captions on this page are still being cleared; the delete decision is deferred to the orphan GC cron rather than guessed`,
       );
-      return nextCursor(page);
     }
+
     for (const photo of page.page) {
       if (!isDue(photo.createdAt)) continue;
-      if (!referenced.has(photo._id)) {
-        if (await deletePhotoAndBlobs(ctx, photo)) result.erased.photos++;
-        continue;
+      // Provably unreferenced: an upload they never published, so it goes whole.
+      if (referenced !== null && !referenced.has(photo._id)) {
+        if (await deletePhotoAndBlobs(ctx, photo)) {
+          result.erased.photos++;
+          continue;
+        }
+        // The blob outlived the attempt and `deletePhotoAndBlobs` kept the row as its only pointer.
+        // Fall through: the caption still has to come off the row that survived.
       }
       if (photo.caption === undefined) continue;
       await ctx.db.patch(photo._id, { caption: undefined });

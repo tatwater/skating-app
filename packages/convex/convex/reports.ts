@@ -60,6 +60,7 @@ import {
 import {
   assertCanPostHazards,
   assertCanPostReports,
+  canReceiveNotifications,
   getCurrentProfile,
   requireContributor,
 } from './lib/auth';
@@ -436,7 +437,7 @@ async function notifyCorroboration(
 ): Promise<void> {
   const author = await ctx.db.get(priorReport.authorId);
   if (!author) return;
-  if (author.status !== 'active' || !author.notificationPrefs.reportRated) return;
+  if (!canReceiveNotifications(author) || !author.notificationPrefs.reportRated) return;
   await ctx.db.insert('notifications', {
     userId: priorReport.authorId,
     type: 'report_rated',
