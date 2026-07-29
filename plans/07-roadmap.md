@@ -822,8 +822,7 @@ swept and is on a required field. **Tests didn't catch this; running the job aga
 did**, and the regression test was only trusted after reverting the fix and watching it fail.
 
 ~~**N5a — Seasons: seasonal visibility, the season filter, departed-user redaction.**~~ **✅ COMPLETE
-2026-07-28** (built, all suites green, **not yet deployed to dev** — the aggregate-tracks index has to
-land there before the app reads it) — see
+2026-07-28** (built, all suites green, **deployed to dev**; not device-tested, prod deferred) — see
 [`phase-N5a-seasons.md`](./phase-N5a-seasons.md); decisions **D63**, **D64**, **D65**, **D66** + the
 **D62 amendment** and its **second amendment**. *(Re-scoped: this entry used to be "hazard authoring &
 confirmation polish". It keeps that entry's two **lifecycle** items, because they touch the same
@@ -977,11 +976,15 @@ Grouped by *what* is blocking, because that's what determines when it moves.
   - **Do this when** there are ~**three seasons** of in-app hazard rows on at least a handful of bodies.
     With one season, recurrence is noise dressed as insight, which is the D3 trap. Same corpus gate as
     the decay-magnitude refit and GPS-path hazard deduction below.
-  - **Two constraints to keep the option open:** N5a's departed-user erasure does delete a leaver's
-    hazards, so recurrence is computed over what remains — honest, but worth knowing before anyone
-    treats a count as complete. And any recurrence claim must be phrased as **history, never a
-    prediction** (D3): "ridges usually form here" and "there is a ridge here" are different sentences,
-    and only one of them is ours to say.
+  - **Two constraints to keep the option open.** The first was **removed by the D62 second amendment
+    and is recorded here because the version it replaced would have quietly corrupted this feature**:
+    under round one a departed user's hazards were *deleted*, so recurrence would have been computed
+    over a corpus silently missing rows — a count that looks complete and isn't. Under
+    redact-don't-erase, **hazards are kept and anonymized**; only their descriptions go, and the
+    multi-season record this depends on survives a departure intact. That is the main reason the second
+    amendment matters to the roadmap and not only to the deletion flow. The second constraint stands:
+    any recurrence claim must be phrased as **history, never a prediction** (D3) — "ridges usually form
+    here" and "there is a ridge here" are different sentences, and only one of them is ours to say.
 - **Volume + calibration (buildable, but building now is speculative).** Per-body map summary cards
   (needs report density *and* its own denormalized-summary design — sketch below); **GPS-path hazard
   deduction** (Q11 / L9 — the *legal* half cleared with the Phase 8 pivot, so what's left is path volume

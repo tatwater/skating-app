@@ -1,10 +1,10 @@
 # Phase 9 — Hazard decay calibration & behavior research
 
 > **What this is.** The evidence-backed calibration promised in
-> [`phase-9-hazards.md`](./phase-9-hazards.md) → "Research follow-up." A separate session
+> [`phase-9-hazards.md`](../phase-9-hazards.md) → "Research follow-up." A separate session
 > (2026-07-21) mined two sources for **how each ice hazard behaves over time and weather**, then fed the
-> results back into **D52** ([`01-decisions.md`](./01-decisions.md)) and the schema
-> ([`06-data-model.md`](./06-data-model.md)). This doc is the durable record: the calibrated
+> results back into **D52** ([`01-decisions.md`](../01-decisions.md)) and the schema
+> ([`06-data-model.md`](../06-data-model.md)). This doc is the durable record: the calibrated
 > `HAZARD_DECAY` table, the per-type evidence, and the notes we want to keep for Phase 10.
 >
 > **Sources.**

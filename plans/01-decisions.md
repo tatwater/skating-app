@@ -918,7 +918,7 @@ therefore **per hazard type**, grouped into tiers (all **tunable defaults**, adm
 per D49):
 **Constants are stored in HOURS** (admin-tunable integers, Phase 7), converted to ms only at the
 comparison boundary (`hoursToMs` helper) — so tuning is human-legible and the math stays trivial. Full
-calibrated table + evidence in [`phase-9-hazard-research.md`](../plans/phase-9-hazard-research.md).
+calibrated table + evidence in [`research/hazard-decay-calibration-and-behavior.md`](../plans/research/hazard-decay-calibration-and-behavior.md).
 - **Tier A — Volatile** (`open_water`/`lead`, `thin_ice`, `overflow_slush`, and the new volatile holes
   `drain_hole` / `wind_hole` / `slush_hole`): **fresh <24h / aging 24–72h / stale >72h** (the D15
   default). A cold snap can flip these in a day; refreeze is often overnight.
@@ -1635,6 +1635,18 @@ the numbers, and both of them are safety numbers:
   resets the 72h clock — one person *can* keep a crossing alive — but it takes two before the marker
   reads as corroborated rather than as one skater's suggestion.
 
+**Two things the build had to be told twice** (review pass, 2026-07-28), both because `disputed` and
+`expired` were *added* to shapes that existing code already read correctly:
+
+- **The offline optimistic path also has to know about passage markers.** `applyConfirmation` — the
+  single-vote model the mobile queue applies before a flush — had no `isPassage` option, so it could
+  never produce `disputed`. A skater casting "ridge closed here" saw the pin not change and learned it
+  had registered only after the next sync, on the one verdict a crossing most needs shown.
+- **An expired marker still has to say so.** Expiry is the one place a pin leaves the map on time
+  alone, which makes a permalink the only route to it — and the permalink rendered it as an ordinary
+  live pin. It now says it aged out, in wording that does **not** claim the ridge closed: silence
+  retired it, nobody reported it, and a confirmation revives it.
+
 ## D65 — The confirmation loop gains a "never existed" verdict and named confirmers (N5a)
 **Decided (2026-07-28).** Two items folded into N5a from the old N5 entry, both in the confirmation
 loop, neither previously designed anywhere.
@@ -1663,6 +1675,20 @@ specific point at a specific time. So the drawer names the confirmers whose `pro
 the user has already given beats inventing a per-confirmation one, and minors are forced private (D41),
 so they are never named by construction.
 
+Two amendments from the review pass (2026-07-28), both about *who* the list may contain and *how* it
+renders:
+
+- **The hazard's own author is never among the confirmers.** Their vote refreshes the decay clock but
+  counts toward no threshold (D54), so naming them printed more names than the count they sat under —
+  and printed the reporter as their own corroborator one line below "reported by" them. The vote is
+  flagged rather than dropped: a moderator reading the history should still see it.
+- **The names must survive the sentence they're rendered into.** Both drawers show this mid-clause
+  ("reported 3 days ago by Alex · confirmed by …"), and the obvious way to fit it —
+  `confirmerSummary(...).toLowerCase()` — was correct for the old bare-count string and *lowercases the
+  names* in the new one. That is the entire feature undone by a call site that never changed. There is
+  now a `confirmerClause` that lowers only the leading word, so the fit isn't a convention anyone has
+  to remember.
+
 **Why:** the first item closes the only gap in the verdict vocabulary — there was no way to say a pin
 was wrong rather than stale — and does it without opening a cheaper removal path than the one D3's
 asymmetry sets. The second makes corroboration legible without making it a location-disclosure surface
@@ -1680,7 +1706,7 @@ hold.
 
 - **A photo attached to a hazard is kept**, indefinitely and whole. A picture of an open lead is worth
   more than any sentence describing one, and it is precisely what the next skater on that shore needs.
-- **Every other photo of a departed skater's expires at the end of the season it was taken in** —
+- **Every other photo a departed skater uploaded expires at the end of the season it was taken in** —
   report photos, the beautiful-morning shots, and (a real cost, accepted) the put-in documentation that
   S1 calls the corpus's most-discussed concern.
 - **The clock is this phase's season boundary, not a fourth deletion timer.** That is the argument for
@@ -1698,3 +1724,14 @@ choice at delete time (a consent record we would then owe forever, asked at the 
 **Why:** the loss falls only on people who chose to leave, and it falls on the photos with the least
 evidential value. Holding a departed person's photographs of themselves and their neighbours forever,
 because the coordinate attached to them is ice record, is the retention this rule exists to prevent.
+
+**The sweep needs a completion marker, which is not an optimization** (review pass, 2026-07-28). As
+first built, the daily cron fanned out to every tombstone the app had ever had and re-paginated its
+whole photo table, forever — the cost growing with every departure, and nothing in the result looking
+wrong. A `profiles.photosExpiredForSeason` stamp makes it one pass per account per season. Two details
+worth carrying: the season is resolved **once by the sweeper** and threaded through each account's
+continuations, so a July 1 rollover can't mark a pass complete for a boundary its earlier pages weren't
+judged against; and a pass whose hazard scan hit its cap deliberately **doesn't** mark the account, so
+the next tick retries rather than accepting an unanswered question as finished. The index it reads is
+the one place a Convex index on an optional field being **non-sparse** is the behaviour we want —
+never-swept accounts have no value, `undefined` sorts before every number, so the range *is* the queue.

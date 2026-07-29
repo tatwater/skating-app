@@ -101,7 +101,7 @@ into the skater's later report**.
   `inlet_outlet_current` and `spring`). Full table in [`06-data-model.md`](./06-data-model.md). This is
   what makes `Record<HazardType, HazardDecay>` typecheck against the research table. `types.test.ts`'s
   enum snapshot lock is updated deliberately as part of the change.
-- **Expanded `hazards.type` (2026-07-21 research → [`phase-9-hazard-research.md`](./phase-9-hazard-research.md)).**
+- **Expanded `hazards.type` (2026-07-21 research → [`research/hazard-decay-calibration-and-behavior.md`](./research/hazard-decay-calibration-and-behavior.md)).**
   Added volatile holes `drain_hole` / `wind_hole` / `slush_hole` (Tier A), the `thawed_rotten` zone
   (Tier A\*, the #1 fatality cause), persistent natural holes `gas_hole` / `reef_hole` (Tier D →
   bodyFeatures), and the **`ridge_crossing`** passage marker (Tier A\*, positive-but-cautious render,
@@ -151,7 +151,7 @@ The modules:
   A\* very-volatile sub-case; **stored in HOURS**, converted via `hoursToMs` at compare time so the
   Phase-7 admin surface tweaks human-legible integers) + `deriveHazardFreshness(type, lastConfirmedAt,
   now) → 'fresh' | 'aging' | 'stale'`. **Calibrated table + evidence:**
-  [`phase-9-hazard-research.md`](./phase-9-hazard-research.md) §1. Property tests: monotonic in elapsed
+  [`research/hazard-decay-calibration-and-behavior.md`](./research/hazard-decay-calibration-and-behavior.md) §1. Property tests: monotonic in elapsed
   time; tier boundaries; a "still here" reset returns to fresh. Also exports **`isHazardVisibleByDefault(
   freshness)`** (the fresh/aging-vs-stale split that decides what shows without "show older") and
   **`hazardTypesInTier(tier)`** (the inverse lookup, used by tests and any tier-scoped copy). **Invariant
@@ -596,7 +596,7 @@ evidence rather than re-deriving it:
 ## Research follow-up — ✅ DONE (2026-07-21)
 
 Completed in a dedicated session. Full writeup + calibrated `HAZARD_DECAY` table + per-type evidence +
-Phase-10 notes: **[`phase-9-hazard-research.md`](./phase-9-hazard-research.md)**. Corrections fed back
+Phase-10 notes: **[`research/hazard-decay-calibration-and-behavior.md`](./research/hazard-decay-calibration-and-behavior.md)**. Corrections fed back
 into **D52** ([`01-decisions.md`](./01-decisions.md)) and the schema
 ([`06-data-model.md`](./06-data-model.md)). Sources: the regional corpus (`training_data/google_group/`,
 1,197 posts) + **lakeice.info** (Bob Dill's ice-safety reference).

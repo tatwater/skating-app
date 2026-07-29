@@ -3,10 +3,11 @@
 *The map should show **this** season's ice. Everything else is history you go and look at on purpose,
 not something that quietly shares the screen with a report from Tuesday.*
 
-> **Status:** ✅ **built 2026-07-28** (all nine work items; the departure half shipped a day earlier as
-> PR #30). Every suite green — core 917 / convex 772 / web 206 / mobile 79 — lint clean; **not deployed
-> to dev and not device-tested**. Splits from the roadmap's old N5, keeping its two **lifecycle** items;
-> the three **authoring-UX** items become [N5b](./phase-N5b-hazard-authoring.md).
+> **Status:** ✅ **built 2026-07-28**, **deployed to dev the same day** (all nine work items; the
+> departure half shipped a day earlier as PR #30). Every suite green — core 934 / convex 779 / web 206 /
+> mobile 79 — lint clean; **not device-tested, not on prod**. Splits from the roadmap's old N5, keeping
+> its two **lifecycle** items; the three **authoring-UX** items become
+> [N5b](./phase-N5b-hazard-authoring.md).
 
 ## What checking the code changed about the plan
 
@@ -443,9 +444,8 @@ sentences and only one of them is ours to say.
 
 ## What the build found (2026-07-28)
 
-**Everything above is built** — core 917 / convex 772 / web 206 / mobile 79 green, lint clean. Not
-deployed to dev, and the new index means it has to be before the app runs against it. Six things came
-out of the build that the design hadn't reached.
+**Everything above is built and on dev** — core 934 / convex 779 / web 206 / mobile 79 green, lint
+clean. Six things came out of the build that the design hadn't reached.
 
 **1. Tracks needed an index, and the reason is the N1 bug class.** The design says the aggregate layer
 is scoped "via the linked report's `skateEndTime`". `gpsActivities` has no time index at all —
@@ -487,6 +487,66 @@ running the suite at 00:49 UTC; fixed in its own commit, since it predates this 
 `fully_healed` toward the archive was settled at kickoff (it does), but the *flag* shouldn't fire on a
 mixed pair — two people who disagree about whether a hazard ever existed are not the pattern a
 moderator needs to see. So the archive pools and the flag counts `never_existed` alone.
+
+## What the review pass found (2026-07-28, after the dev deploy)
+
+Six defects, every one of them green in the suite and none of them visible in a diff read. Recorded
+because five of the six share a shape worth naming: **a call site that was correct until the value it
+handled changed meaning.**
+
+**1. The names D65 added were rendered lowercase.** Both drawers wrote
+`confirmerSummary(...).toLowerCase()`, which was exactly right while the string read *"confirmed by 3
+other skaters"* and became wrong the instant it carried names: *"confirmed by alex r. and 3 others"*.
+The lowercasing was there to fit the clause mid-sentence, so the fix is a `confirmerClause` that lowers
+the leading word and nothing else — a shared function rather than a convention, because the convention
+is what failed. The same file already reasons carefully about a name ending in a full stop; the call
+site three lines away then lowercased it.
+
+**2. `HazardView.expired` was read by nobody.** It was computed, and its docstring said it existed *"so
+a permalink can say the marker aged out rather than 404"* — a promise no client kept. An expired
+suggested crossing opened by link rendered as an ordinary live pin with the confirm buttons offered.
+Both apps now show it, and the same pass added the **season label on a hazard permalink** that reports
+already had: a past-season hazard is off the map entirely, so the link is the only way anyone reaches
+it, and it should say which winter it is from. *A field with no reader is a design document, not a
+feature* — and this one read as done.
+
+**3. `sweepDepartedPhotos` never finished.** It fanned out to every `status: 'deleted'` profile daily
+with nothing marking an account complete, so a 2026 tombstone had its whole photo table re-paginated
+every day forever and the cost grew with every departure the app had ever had. A
+`photosExpiredForSeason` marker makes it one pass per account per season. The index it reads,
+`by_status_photos_expired`, is **the non-sparse-optional-field behaviour being useful for once** —
+never-swept accounts have no value, `undefined` sorts before every number, so `lt(currentSeason)`
+returns exactly the work queue with no backfill. That is worth saying beside the warning two lines up
+in the same file, where the same behaviour nearly deleted every account on dev.
+
+The season is resolved **once by the sweeper** and threaded through each account's continuations, so a
+July 1 rollover can't land mid-account and mark a pass done for a boundary its earlier pages weren't
+judged against. And a capped hazard scan deliberately *doesn't* mark the account, so the next tick
+retries rather than accepting an unanswered question as finished.
+
+**4. A hazard's author could be named among its own confirmers.** `confirmCount` excludes the author by
+construction (D54 — vouching for your own report isn't independent evidence), but the clients named
+every public `still_there` voter, so the drawer could print more names than the count above them, and
+print the reporter as their own corroborator one line under *"reported by"* them. The vote is real and
+a moderator should see it, so `listForHazard` flags it as `isAuthor` rather than dropping it.
+
+**5. `listPromotionCandidates` collected a lake's entire hazard history.** `by_water_body` has no status
+or time key, so this was an unbounded read — on the one table this phase's own design note points out
+*never ages out*. Bounded to the newest 500, which is where last season's rows are, and it logs when the
+cap bites so it can't be the silent kind.
+
+**6. Two smaller ones.** `season` arrives as a bare `v.number()`, so `NaN` or `1e15` became index bounds
+matching nothing and rendered an empty lake — which reads as *"nobody skated here that winter"* rather
+than as a malformed request; `resolveSeason` lands those on the same default as no argument at all.
+And `applyConfirmation`, the offline optimistic path, had no `isPassage` option, so it could never
+reach `disputed`: a skater casting *"ridge closed here"* saw nothing change until the next sync, on the
+one verdict a crossing most needs shown.
+
+> **The pattern to carry.** Four of these six are a *widening* — a verdict added to an enum, a name
+> added to a string, a field added to a view, an account state that now persists — landing on code that
+> was right about the narrower version. None of them break a type. The lesson isn't "write more tests",
+> it's that the diff to review after widening a value is **every existing reader of it**, not just the
+> new ones.
 
 ## Settled after the design review (2026-07-27)
 
