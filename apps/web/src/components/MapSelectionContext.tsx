@@ -71,6 +71,19 @@ interface MapSelectionValue {
    */
   hazardDropMode: boolean;
   setHazardDropMode: (on: boolean) => void;
+  /**
+   * The past season being browsed (D63), or `null` for **this** season — which is the map's only
+   * default state and the only state it returns to when the drawer closes.
+   *
+   * It lives here, beside the highlight, because the season selector sits in the lake drawer while
+   * two of the three things it governs (hazards, aggregate tracks) are drawn by the map. A drawer-local
+   * `useState` would have moved the list back to December and left the ice on screen showing this
+   * winter — two seasons on one screen, which is the exact confusion the season filter exists to end.
+   *
+   * Put-ins are deliberately absent from that list: they are exempt from the reset entirely.
+   */
+  browseSeason: number | null;
+  setBrowseSeason: (season: number | null) => void;
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null);
@@ -85,6 +98,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null);
   const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null);
   const [hazardDropMode, setHazardDropMode] = useState(false);
+  const [browseSeason, setBrowseSeason] = useState<number | null>(null);
 
   const value = useMemo(
     () => ({
@@ -106,6 +120,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setHazardDraftType,
       hazardDropMode,
       setHazardDropMode,
+      browseSeason,
+      setBrowseSeason,
     }),
     [
       highlightWaterBodyId,
@@ -117,6 +133,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       hazardDraft,
       hazardDraftType,
       hazardDropMode,
+      browseSeason,
     ],
   );
 

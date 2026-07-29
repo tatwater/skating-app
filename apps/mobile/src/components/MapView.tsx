@@ -114,6 +114,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     hazardDraftType,
     hazardDropMode,
     setHazardDropMode,
+    browseSeason,
   } = useMapSelection();
   const { height: windowHeight } = useWindowDimensions();
   const hazardPalette = HAZARD_PALETTE[flavor];
@@ -250,9 +251,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // not the viewport — hazards are only ever queried per body, which is what keeps this off the
   // path `listInViewport` needed two PRs to fix before N1 bounded it. A subscribed client gets new
   // hazards live; that reactive query *is* the sync layer.
+  // `browseSeason` is how the sheet's season selector reaches the layers behind it (D63): the list
+  // and the pins have to belong to the same winter. Put-ins above are exempt from the reset entirely,
+  // and the on-ice banner deliberately never reads this — see `HazardBanner`.
+  const seasonArg = browseSeason === null ? {} : { season: browseSeason };
   const hazards = useQuery(
     api.hazards.listForBody,
-    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+    highlightWaterBodyId
+      ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'>, ...seasonArg }
+      : 'skip',
   );
   const bodyFeatures = useQuery(
     api.bodyFeatures.listForBody,
@@ -264,7 +271,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // you're reading one report, that report's line is the subject, at full strength.
   const aggregateTracks = useQuery(
     api.gpsActivities.listTracksForBody,
-    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+    highlightWaterBodyId
+      ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'>, ...seasonArg }
+      : 'skip',
   );
   const tracksFC = useMemo<GeoJSON.FeatureCollection>(
     () => ({

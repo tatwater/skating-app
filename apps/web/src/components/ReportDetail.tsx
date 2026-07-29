@@ -4,6 +4,7 @@ import type { TrustClass } from '@skating/core';
 import {
   formatConditions,
   formatLocationLine,
+  formatSeason,
   formatSkateTime,
   formatSkateWindow,
   formatSnowCoverInches,
@@ -12,6 +13,7 @@ import {
   isLeaving,
   type ReportConditions,
   reportStripState,
+  seasonOf,
   SKATE_QUALITY_LABELS,
   type SkateQuality,
   type ThicknessReading,
@@ -93,6 +95,12 @@ export function ReportView({
         <SheetDescription>
           Off the ice {formatSkateTime(data.skateEndTime)}
           {duration ? ` · skated ${duration}` : null}
+          {/* A past season still resolves by permalink — a link, a bookmark or an old notification
+              must not 404 (D63) — but it says which winter it is from, because an old report
+              rendering exactly like Tuesday's is the thing seasons exist to stop. */}
+          {seasonOf(data.skateEndTime) === seasonOf(Date.now())
+            ? null
+            : ` · from the ${formatSeason(seasonOf(data.skateEndTime))} season`}
         </SheetDescription>
       </SheetHeader>
       {data.authorName ? (

@@ -14,6 +14,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useState } from 'react';
+import { useMapSelection } from './MapSelectionContext';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -113,9 +114,23 @@ export function HazardListView({
   );
 }
 
-/** Container: hazards + known seasonal features for one lake. */
+/**
+ * Container: hazards + known seasonal features for one lake.
+ *
+ * **Two axes of hiding, kept apart** (D63). This list follows the season selector, so it shows the
+ * winter the rest of the drawer is showing; inside that winter, "show older" still answers the
+ * separate question of whether anyone has checked lately. Collapsing them into one control would make
+ * "show older" silently mean "show last season" every July.
+ *
+ * `bodyFeatures` are **not** season-scoped: a spring hole is there every winter by definition (D53),
+ * and that persistence is the whole point of promoting a recurring hazard into one.
+ */
 export function HazardList({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
-  const hazards = useQuery(api.hazards.listForBody, { waterBodyId });
+  const { browseSeason } = useMapSelection();
+  const hazards = useQuery(api.hazards.listForBody, {
+    waterBodyId,
+    ...(browseSeason === null ? {} : { season: browseSeason }),
+  });
   const knownFeatures = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
 
   if (hazards === undefined) return <Skeleton className="h-12 w-full" />;

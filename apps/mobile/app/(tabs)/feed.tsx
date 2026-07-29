@@ -1,6 +1,12 @@
 import BottomSheet, { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { api } from '@skating/convex/api';
-import { type FeedCardData, type FeedFilters, groupFeedSections } from '@skating/core';
+import {
+  type FeedCardData,
+  type FeedFilters,
+  formatSeason,
+  groupFeedSections,
+  seasonOf,
+} from '@skating/core';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FlatList, RefreshControl } from 'react-native';
@@ -149,6 +155,7 @@ export default function NewsfeedScreen() {
               </Text>
               <ProfileSearch />
             </YStack>
+            <PastSeasonNotice results={feedData} now={now} />
             <FeedFilterBar filters={filters.value} onChange={filters.set} />
           </YStack>
         }
@@ -247,4 +254,34 @@ function useFeedFilters(): { value: FeedFilters; set: (next: FeedFilters) => voi
   };
 
   return { value, set };
+}
+
+/**
+ * The labelled fallback (D63) — web's `PastSeasonNotice`, same words, same reason.
+ *
+ * Season-scoping the feed empties it on July 1 and leaves it empty until first ice, so the server
+ * falls back to the newest season that has anything. What it must never do is fall back *silently*:
+ * a February report under today's date, unlabelled, is the "tell the difference from opacity alone"
+ * problem this phase exists to end.
+ *
+ * Derived from the cards because `usePaginatedQuery` flattens the pages and drops what else the page
+ * carried. One season is served per read, so the first card answers for all of them.
+ */
+function PastSeasonNotice({
+  results,
+  now,
+}: {
+  results: readonly { skateEndTime: number }[];
+  now: number;
+}) {
+  const first = results[0];
+  if (!first) return null;
+  const season = seasonOf(first.skateEndTime);
+  if (season === seasonOf(now)) return null;
+  return (
+    <Text color="$foregroundMuted" fontSize={13}>
+      Nothing reported yet this season — showing the {formatSeason(season)} season, the last one
+      anybody skated.
+    </Text>
+  );
 }

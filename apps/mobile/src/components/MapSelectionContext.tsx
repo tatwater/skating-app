@@ -87,6 +87,19 @@ interface MapSelectionValue {
    */
   onIceCoord: { lat: number; lng: number } | null;
   setOnIceCoord: (coord: { lat: number; lng: number } | null) => void;
+  /**
+   * The past season being browsed on the open lake (D63), or `null` for **this** season — the map's
+   * only default state, and the one it snaps back to when the sheet closes.
+   *
+   * Shared rather than sheet-local because the selector sits in the lake sheet while two of the three
+   * things it governs (hazard pins, aggregate tracks) are drawn by the map behind it. Split state
+   * would show last December in the list over this winter's ice on the map.
+   *
+   * ⚠ **The on-ice surfaces must ignore this.** `HazardBanner` and the proximity alerts answer "what
+   * is near me *right now*", which is never a browsing question — see the note there.
+   */
+  browseSeason: number | null;
+  setBrowseSeason: (season: number | null) => void;
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null);
@@ -98,6 +111,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [trackPath, setTrackPath] = useState<LineString | null>(null);
   const [putInPin, setPutInPin] = useState<{ lat: number; lng: number } | null>(null);
   const [pinDropMode, setPinDropMode] = useState(false);
+  const [browseSeason, setBrowseSeason] = useState<number | null>(null);
   const [drawerCoveredFraction, setDrawerCoveredFraction] = useState(0);
   const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null);
   const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null);
@@ -131,6 +145,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setOnIceWaterBodyId,
       onIceCoord,
       setOnIceCoord,
+      browseSeason,
+      setBrowseSeason,
     }),
     [
       highlightWaterBodyId,
@@ -145,6 +161,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       hazardDropMode,
       onIceWaterBodyId,
       onIceCoord,
+      browseSeason,
     ],
   );
 
