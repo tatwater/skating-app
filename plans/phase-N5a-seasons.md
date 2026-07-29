@@ -578,6 +578,31 @@ flag, so the two daily crons can't clear each other's marks; a tombstone re-chec
 cancelled deletion abandons the run; and its last phase writes the completion marker, which is the
 only point at which the account has genuinely been answered.
 
+**1b. And the fix for it marked the work done before doing it** (Greptile's second pass, P1). The
+escalating caller stamped `photosExpiredForSeason` at the moment it *scheduled* the reconcile job —
+saying the photos had been answered when the work hadn't begun. A run that died then left the account
+excluded from every later sweep with its eligible photos undeleted, silently, until the next season
+boundary at best. I made that trade knowingly, reasoning that an unmarked account would be
+re-escalated daily and spawn duplicate jobs; the answer was a **lease**, not a lie about completion.
+`photoReconcileStartedAt` says *someone is on it*, the run refreshes it each call, and its final phase
+releases it and writes the marker together. A dead run stops refreshing, the lease goes stale after a
+day, and the next tick takes it over.
+
+Two things worth recording beyond the fix:
+
+- **The duplicate-job worry I traded against was real, and worse than I thought.** Overlapping runs
+  could interleave one's `sweep` with another's `mark` and delete a photo the second had marked but
+  not yet cleared — a *referenced* photo. That risk predates this phase (`sweepOrphanPhotos`
+  re-escalates a capped uploader every day, and its de-dup set is per-tick), so the lease closes a
+  latent bug in PR #30's design too. One lease per uploader across both modes, because they mutate the
+  same rows.
+- **Half of the original finding didn't survive checking.** Greptile's first report said a capped
+  account would "consume the bounded queue and delay profiles ordered after it", and I agreed without
+  verifying. `sweepDepartedPhotos` self-continues through the *entire* range each tick, so the cursor
+  advances past a stuck account and nothing behind it is delayed. The retry was still wrong — permanent
+  retention, and daily wasted work — but not for the reason given, and agreeing too readily is its own
+  failure mode in a review.
+
 **2. The new verdict had no test coverage, because the test hand-listed the vocabulary.**
 `hazardCopy.test.ts` iterated `['still_there', 'healing_unsafe', 'fully_healed']` under headings
 claiming to cover *every* verdict, so D65's `never_existed` label and help text shipped unchecked.

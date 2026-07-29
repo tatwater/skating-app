@@ -113,6 +113,41 @@ interface ReconcileMode {
 
 type ModeName = keyof typeof MODES;
 
+/**
+ * How long a staged run may go unheard-from before another may take it over.
+ *
+ * Generous, because the run is *supposed* to take many transactions and a slow one must not be
+ * stolen mid-flight — every call refreshes the lease, so this bounds the gap between phases rather
+ * than the whole run. A day without a single phase completing means the chain is dead, not slow.
+ */
+export const PHOTO_RECONCILE_LEASE_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Take ownership of an uploader's photo reconciliation, or decline because someone already has it.
+ *
+ * **The escalating caller claims; only the finishing run releases.** That ordering is the whole point:
+ * an escalation that marked the account complete would be claiming the work was *done* at the moment
+ * it was merely *scheduled*, so a job that died left the account excluded from every later sweep with
+ * its photos undeleted — permanently, since nothing would look at it again until the next season
+ * boundary at best. Now a dead run simply stops refreshing, the lease goes stale, and the next daily
+ * tick picks it up.
+ *
+ * A stale lease is taken over rather than respected, because the alternative to a wrong retry here is
+ * no retry at all.
+ */
+export async function claimPhotoReconcile(
+  ctx: MutationCtx,
+  uploaderId: Id<'profiles'>,
+  now: number,
+): Promise<boolean> {
+  const owner = await ctx.db.get(uploaderId);
+  if (!owner) return false;
+  const held = owner.photoReconcileStartedAt;
+  if (held !== undefined && now - held < PHOTO_RECONCILE_LEASE_MS) return false;
+  await ctx.db.patch(uploaderId, { photoReconcileStartedAt: now });
+  return true;
+}
+
 /** Photos touched per page. */
 const PHOTO_PAGE = 100;
 
@@ -160,9 +195,17 @@ export const reconcileUploaderPhotos = internalMutation({
     if (mode === 'season_expiry') {
       const owner = await ctx.db.get(uploaderId);
       if (owner?.status !== 'deleted') {
+        // Release on the way out: an abandoned run holding a lease would block the *next* legitimate
+        // one for a day, for no reason.
+        if (owner) await ctx.db.patch(uploaderId, { photoReconcileStartedAt: undefined });
         return { phase: current, mode, done: true, next: null, touched: 0, abandoned: true };
       }
     }
+
+    // Refresh the lease on every call, so a long but healthy run is never mistaken for a dead one.
+    // The lease bounds the gap *between phases*, not the run — a chain that hasn't completed a single
+    // transaction in a day has stopped, however much work it had left.
+    await ctx.db.patch(uploaderId, { photoReconcileStartedAt: Date.now() });
 
     const result = await runPhase(ctx, uploaderId, current, cursor, pageSize, config);
 
@@ -188,12 +231,13 @@ export const reconcileUploaderPhotos = internalMutation({
       return { phase: current, mode, done: true, next, touched: result.touched ?? 0 };
     }
 
-    // The last phase of a season-expiry run is the only place this account's photos have been
-    // answered *completely*, so it is the only honest place to stamp the marker that takes it out of
-    // the daily queue. The fast path stamps its own; this is the escalated path's equivalent.
-    if (mode === 'season_expiry') {
-      await ctx.db.patch(uploaderId, { photosExpiredForSeason: seasonOf(Date.now()) });
-    }
+    // **Finished — the only honest place for the marker, and the only place that releases the lease.**
+    // Everything before this point is work in progress; stamping "expired for this season" at the
+    // moment the job was merely *scheduled* is what made a failed run into permanent retention.
+    await ctx.db.patch(uploaderId, {
+      photoReconcileStartedAt: undefined,
+      ...(mode === 'season_expiry' ? { photosExpiredForSeason: seasonOf(Date.now()) } : {}),
+    });
     return { phase: current, mode, done: true, next: null, touched: result.touched ?? 0 };
   },
 });

@@ -523,8 +523,9 @@ rows look right, and something is quietly wrong for a person who can no longer c
   completion marker, without which the daily cron re-walked every departure the app had ever had. And
   when the one-shot hazard scan caps on a prolific uploader, the account is handed to
   `photoReconcile`'s `season_expiry` mode for a complete answer rather than retried: the cap is a
-  property of the uploader, so retrying keeps their images forever *and* starves the queue behind
-  them.
+  property of the uploader, so retrying keeps their images forever. The handoff takes a **lease**, and
+  only the finishing run writes the completion marker — marking at handoff time would mean a job that
+  died left the photos undeleted with nothing scheduled to look again.
 - **Email delivery is unprovisioned.** Resend keys and a verified sending domain are prod-cutover work,
   so an export lands in the settings list and no mail goes out. Designed degradation, not a failure
   path — but note it also means the "an emailed bundle outlives the account" carve-out never fires

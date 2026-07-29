@@ -24,6 +24,7 @@ import {
   PHOTO_ORPHAN_GRACE_MS,
   referencedPhotoIds,
 } from './lib/photoOrphans';
+import { claimPhotoReconcile } from './photoReconcile';
 
 /** Rows examined per tick. Bounded so a sweep is always one comfortable transaction. */
 const SWEEP_LIMIT = 500;
@@ -115,7 +116,11 @@ export const sweepOrphanPhotos = internalMutation({
         // `photoReconcile` answers the same question across as many transactions as it needs, so this
         // is an escalation to a complete method rather than a retry of the one that just failed.
         skipped++;
-        if (!escalated.has(key)) {
+        // The `escalated` set only de-duplicates within *this* tick. Across ticks the lease is what
+        // stops a second run being scheduled on top of one still working — which matters more now
+        // that a second mode exists: two runs interleaving mark and sweep over the same photo rows
+        // could delete one that the other had marked but not yet cleared.
+        if (!escalated.has(key) && (await claimPhotoReconcile(ctx, photo.uploaderId, Date.now()))) {
           escalated.add(key);
           await ctx.scheduler.runAfter(0, internal.photoReconcile.reconcileUploaderPhotos, {
             uploaderId: photo.uploaderId,
@@ -310,15 +315,25 @@ export const expireDepartedPhotos = internalMutation({
     //
     // So: hand it to the determinate pass, and mark it, because that job now owns the account.
     if (keep === null) {
-      await ctx.scheduler.runAfter(0, internal.photoReconcile.reconcileUploaderPhotos, {
-        uploaderId: userId,
-        mode: 'season_expiry',
-      });
-      await ctx.db.patch(userId, { photosExpiredForSeason: target });
+      // **Claim, don't mark.** `photosExpiredForSeason` means *this account's photos have been
+      // answered*, and at this point they haven't — the job that will answer them hasn't run. Writing
+      // it here excluded the account from every later sweep, so a reconcile run that died left the
+      // eligible photos undeleted with nothing scheduled to look again. The lease says "someone is on
+      // it" instead, and the finishing run writes the marker; a run that dies stops refreshing, the
+      // lease goes stale, and tomorrow's tick re-escalates.
+      const claimed = await claimPhotoReconcile(ctx, userId, Date.now());
+      if (claimed) {
+        await ctx.scheduler.runAfter(0, internal.photoReconcile.reconcileUploaderPhotos, {
+          uploaderId: userId,
+          mode: 'season_expiry',
+        });
+      }
       console.warn(
-        `expireDepartedPhotos: hazard scan for ${userId} hit its cap — escalated to photoReconcile (season_expiry) for a complete pass and marked so it stops occupying the daily queue`,
+        claimed
+          ? `expireDepartedPhotos: hazard scan for ${userId} hit its cap — escalated to photoReconcile (season_expiry) for a complete pass`
+          : `expireDepartedPhotos: hazard scan for ${userId} hit its cap — a reconcile run already holds the lease, so this tick defers to it`,
       );
-      return { deleted, kept, done: true, escalated: true };
+      return { deleted, kept, done: true, escalated: claimed };
     }
 
     if (!page.isDone) {

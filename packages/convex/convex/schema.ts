@@ -186,6 +186,23 @@ export default defineSchema({
      * first; see the index for why that falls out for free rather than needing a backfill.
      */
     photosExpiredForSeason: v.optional(v.number()),
+    /**
+     * **A lease on `photoReconcile` for this uploader** — when the current staged run started, absent
+     * when none is running.
+     *
+     * Two jobs need it. It stops a completion marker being written before the work is done: the
+     * escalating cron claims the lease, and only the run's *final phase* stamps
+     * `photosExpiredForSeason` and releases. A run that dies leaves a lease that goes stale after
+     * `PHOTO_RECONCILE_LEASE_MS`, and the next daily tick re-escalates — so a failure costs a day, not
+     * a season, and never permanent retention.
+     *
+     * And it serializes the two reconcile *modes* against each other, which is the sharper reason.
+     * Both mutate the same photo rows through a mark → clear → sweep cycle, and both are escalated by
+     * daily crons that had no idea whether a previous run was still going. Overlap could interleave
+     * one run's `sweep` with another's `mark` and delete a photo the second run had marked but not yet
+     * cleared — a *referenced* photo, which is the one mistake this whole area exists to prevent.
+     */
+    photoReconcileStartedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_clerk_user_id', ['clerkUserId'])

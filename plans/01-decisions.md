@@ -1739,10 +1739,22 @@ escalated from"* (PR #30). It now runs in two modes: the original `orphan` check
 mode that asks the D66 question — *is this photo named by a **hazard*** — completely, across as many
 transactions as it needs. A mode rather than a second file, because two destructive passes over the
 same rows must agree exactly on the paging and the fail-safe. **Its phase list omits `reports`, and
-that omission is the policy**: a surviving report must not protect a departed skater's photo. The
-escalating caller marks the account and hands over ownership; the reconcile job's last phase writes the
-marker, which is the only point at which the account has genuinely been answered. Its own scratch flag,
-not the orphan job's, so two daily crons can't clear each other's marks.
+that omission is the policy**: a surviving report must not protect a departed skater's photo. Its own
+scratch flag, not the orphan job's, so two daily crons can't clear each other's marks.
+
+**The escalating caller claims a lease; only the finishing run writes the marker** (Greptile, second
+pass). The first version had the caller stamp `photosExpiredForSeason` at the moment it *scheduled*
+the job — claiming the photos had been answered when the work hadn't started — so a reconcile run that
+died left the account excluded from every later sweep with its eligible photos undeleted, silently and
+permanently. A `photoReconcileStartedAt` lease says *someone is on it* instead; the run refreshes it
+each call, and its final phase releases it and writes the marker together. A dead run stops refreshing,
+the lease goes stale after a day, and the next tick takes it over — a failure costs a day, not a season.
+
+The lease also closed a hazard that predates this phase: both modes are escalated by daily crons that
+had no idea whether a previous run was still going, and two overlapping runs could interleave one's
+`sweep` with another's `mark` and delete a photo the second had marked but not yet cleared — a
+*referenced* photo, the one mistake this area exists to prevent. One lease per uploader across both
+modes, because they mutate the same rows and serializing them is the point.
 
 **The sweep needs a completion marker, which is not an optimization** (review pass, 2026-07-28). As
 first built, the daily cron fanned out to every tombstone the app had ever had and re-paginated its
