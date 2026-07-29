@@ -38,6 +38,17 @@ import { HAZARD_MAX_VERTICES } from './hazardGeometry';
  */
 export const SHORE_BAND_MAX_TAP_DISTANCE_M = 500;
 
+/**
+ * Starting half-width of a shore band, in metres — how far out from the shoreline the ice is
+ * affected.
+ *
+ * Not the type's `HAZARD_DEFAULT_BUFFER_M`, which is a *linear hazard's* uncertainty half-width
+ * (10 m for both shore types) and describes how sure you are about where a line is. A shore band's
+ * width is a claim about the ice itself: rotten shore ice runs tens of metres out, not ten. Stepped
+ * on the same `HAZARD_BUFFER_STEPS_M` ladder, so the control is the same pair of −/+ buttons.
+ */
+export const SHORE_BAND_DEFAULT_HALF_WIDTH_M = 25;
+
 /** Why a snap was refused. Each maps to a sentence a skater can act on. */
 export type ShoreBandRefusal =
   /** The body has no usable boundary ring — bad geometry, not a bad tap. */
@@ -250,4 +261,27 @@ export const SHORE_BAND_TYPES = ['thin_ice', 'open_water'] as const;
 /** Does this hazard type offer the snap-to-shoreline affordance? */
 export function offersShoreBand(type: string): boolean {
   return (SHORE_BAND_TYPES as readonly string[]).includes(type);
+}
+
+/**
+ * What to tell a skater when a snap is refused.
+ *
+ * Here rather than in each client because both have to say the same thing, and because every line
+ * has to name **the next move**. A refusal that only reports a failure at someone standing on ice
+ * with a hazard to file is worse than no affordance: the other two primitives always work, and each
+ * message says so where it's the right answer.
+ */
+export function shoreBandRefusalText(reason: ShoreBandRefusal): string {
+  switch (reason) {
+    case 'no_boundary':
+      return 'This lake’s outline isn’t detailed enough to snap to. Trace the hazard as a line instead.';
+    case 'tap_off_shore':
+      return 'That wasn’t close enough to the shore. Click nearer the edge of the lake — anywhere within a few hundred metres of it.';
+    case 'different_rings':
+      return 'Those two points are on different shorelines — an island and the main shore, or two separate parts of this lake. Pick two ends of the same stretch.';
+    case 'degenerate_arc':
+      return 'Both points landed on the same bit of shore. Pick two ends further apart.';
+    case 'unusable_band':
+      return 'Couldn’t make a clean band along that stretch of shore. Try a shorter section, or trace it as a line.';
+  }
 }

@@ -21,7 +21,7 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
-import { createSubAreaDraw, parsePastedPolygon, type SubAreaDrawControl } from '../lib/subAreaDraw';
+import { createPolygonDraw, type PolygonDrawControl, parsePastedPolygon } from '../lib/polygonDraw';
 
 /**
  * The per-lake editor (N2 / D61) — **one lake, one canvas, every per-body lever**.
@@ -282,7 +282,7 @@ function SubAreaTool({
   const [drawing, setDrawing] = useState(false);
   /** Set when the next save should *replace* an existing bay's outline rather than mint a new one. */
   const [redrawTarget, setRedrawTarget] = useState<string | null>(null);
-  const controlRef = useRef<SubAreaDrawControl | null>(null);
+  const controlRef = useRef<PolygonDrawControl | null>(null);
 
   useEffect(() => {
     return () => {
@@ -296,9 +296,11 @@ function SubAreaTool({
     if (!map) return;
     try {
       if (!controlRef.current) {
-        controlRef.current = await createSubAreaDraw(map, (polygon) => {
-          setDraft(polygon);
-          setDrawing(false);
+        controlRef.current = await createPolygonDraw(map, {
+          onFinish: (polygon) => {
+            setDraft(polygon);
+            setDrawing(false);
+          },
         });
       }
       controlRef.current.startDrawing();

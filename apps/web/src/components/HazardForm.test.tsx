@@ -5,14 +5,17 @@ import {
   HAZARD_DEFAULT_RADIUS_M,
   type HazardDraft,
   type HazardType,
+  resizeDraft,
+  switchDraftKind,
 } from '@skating/core';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { HazardFormFields } from './HazardForm';
+import { HazardFormFields, type ShoreBandState } from './HazardForm';
 
 const A = { lat: 44.4759, lng: -73.2121 };
 const B = { lat: 44.481, lng: -73.204 };
+const C = { lat: 44.486, lng: -73.199 };
 
 /**
  * Renders the authoring fields with live draft state, so a test can drive the real transitions the
@@ -24,6 +27,7 @@ function renderFields(
     type?: HazardType | null;
     draft?: HazardDraft | null;
     photos?: { id: string; previewUrl: string; placeOnMap: boolean }[];
+    shore?: Partial<ShoreBandState>;
   } = {},
 ) {
   const spies = {
@@ -32,6 +36,8 @@ function renderFields(
     onCancel: vi.fn(),
     onAddFiles: vi.fn(),
     onRemovePhoto: vi.fn(),
+    onStartSnap: vi.fn(),
+    onFlipSnap: vi.fn(),
   };
   let latest: { type: HazardType | null; draft: HazardDraft | null };
   function Wrapper() {
@@ -46,13 +52,33 @@ function renderFields(
         error={null}
         submitting={false}
         photos={initial.photos ?? []}
+        shore={{
+          offered: false,
+          active: false,
+          halfWidthMeters: 25,
+          arcLengthMeters: null,
+          error: null,
+          onStart: spies.onStartSnap,
+          onFlip: spies.onFlipSnap,
+          ...initial.shore,
+        }}
         onChooseType={(next) => {
           setType(next);
           setDraft(draftForType(next));
         }}
+        onChooseKind={(kind) => {
+          if (draft && type) setDraft(switchDraftKind(draft, kind, type));
+        }}
         onDraftChange={setDraft}
+        onResize={(direction) => {
+          if (draft) setDraft(resizeDraft(draft, direction));
+        }}
         onDescriptionChange={() => {}}
-        {...spies}
+        onRequestPlace={spies.onRequestPlace}
+        onSubmit={spies.onSubmit}
+        onCancel={spies.onCancel}
+        onAddFiles={spies.onAddFiles}
+        onRemovePhoto={spies.onRemovePhoto}
       />
     );
   }
@@ -78,19 +104,29 @@ describe('primitive selection (D51)', () => {
     expect(screen.getByRole('button', { name: 'Place on map' })).toBeInTheDocument();
   });
 
-  it('offers the other primitive either way — both mistakes are real', () => {
+  it('offers every other primitive either way — all the mistakes are real', () => {
     const { get } = renderFields({
       type: 'open_water',
       draft: applyDraftMapClick(draftForType('open_water'), A),
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Draw it as a line instead' }));
+    fireEvent.click(screen.getByRole('button', { name: 'A line' }));
     expect(get().draft).toEqual({
       geometryKind: 'line',
       vertices: [A], // the spot you already knew is kept, not thrown away
       bufferMeters: HAZARD_DEFAULT_BUFFER_M.open_water,
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Mark a single spot instead' }));
+    fireEvent.click(screen.getByRole('button', { name: 'A spot' }));
     expect(get().draft?.geometryKind).toBe('point_radius');
+  });
+
+  // N5b: the primitive D51 always called opt-in and advanced. No type starts as one — reaching it is
+  // always a deliberate choice, which is why `retypeDraft` refuses to take it away again.
+  it('never starts a type as an area, and lets one be chosen', () => {
+    const { get } = renderFields();
+    fireEvent.click(screen.getByRole('button', { name: /Open water/ }));
+    expect(get().draft?.geometryKind).not.toBe('polygon');
+    fireEvent.click(screen.getByRole('button', { name: 'An area' }));
+    expect(get().draft?.geometryKind).toBe('polygon');
   });
 
   it('adopts the new type’s default size when the type changes mid-draft', () => {
@@ -215,5 +251,107 @@ describe('photos', () => {
       photos: [{ id: 'p1', previewUrl: 'blob:one', placeOnMap: false }],
     });
     expect(screen.queryByText(/Place this photo/)).not.toBeInTheDocument();
+  });
+});
+
+describe('freeform area authoring (N5b)', () => {
+  function areaFields(corners: (typeof A)[]) {
+    let draft = switchDraftKind(draftForType('thawed_rotten'), 'polygon', 'thawed_rotten');
+    for (const c of corners) draft = applyDraftMapClick(draft, c);
+    return renderFields({ type: 'thawed_rotten', draft });
+  }
+
+  it('will not post an area with two corners, and says why', () => {
+    areaFields([A, B]);
+    expect(screen.getByText(/an area needs at least three/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Post hazard' })).toBeDisabled();
+  });
+
+  it('becomes postable at three', () => {
+    areaFields([A, B, C]);
+    expect(screen.getByText(/Drawn with 3 corners/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Post hazard' })).toBeEnabled();
+  });
+
+  // Corners are dragged on the map by terra-draw, not popped from a list — offering "undo" here
+  // would be a second, disagreeing way to edit the same ring.
+  it('sends you back to the map to adjust rather than offering an undo', () => {
+    const { spies } = areaFields([A, B, C]);
+    expect(screen.queryByRole('button', { name: 'Undo last point' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust corners' }));
+    expect(spies.onRequestPlace).toHaveBeenCalled();
+  });
+
+  it('describes the width as give around the edge, never a surveyed one', () => {
+    areaFields([A, B, C]);
+    expect(screen.getByText(/of give around the edge/)).toBeInTheDocument();
+    expect(screen.getByText(/not an exact edge/)).toBeInTheDocument();
+  });
+});
+
+describe('snap to shoreline (N5b)', () => {
+  it('is offered for a shore-shaped type', () => {
+    renderFields({
+      type: 'thin_ice',
+      draft: draftForType('thin_ice'),
+      shore: { offered: true },
+    });
+    expect(screen.getByRole('button', { name: 'Along the shore' })).toBeInTheDocument();
+    expect(screen.getByText(/follows the lake’s own outline/)).toBeInTheDocument();
+  });
+
+  it('is absent for a type that isn’t shore-shaped', () => {
+    // A ridge is linear but not shore-*shaped*; snapping one to a shoreline would be offering the
+    // wrong geometry, confidently.
+    renderFields({
+      type: 'pressure_ridge',
+      draft: draftForType('pressure_ridge'),
+      shore: { offered: false },
+    });
+    expect(screen.queryByRole('button', { name: 'Along the shore' })).not.toBeInTheDocument();
+  });
+
+  it('shows how much shoreline the band covers, and offers the other way round', () => {
+    let draft = switchDraftKind(draftForType('thin_ice'), 'polygon', 'thin_ice');
+    for (const c of [A, B, C]) draft = applyDraftMapClick(draft, c);
+    const { spies } = renderFields({
+      type: 'thin_ice',
+      draft,
+      shore: { offered: true, active: true, arcLengthMeters: 1240, halfWidthMeters: 25 },
+    });
+    expect(screen.getByText(/Following 1240 m of shoreline/)).toBeInTheDocument();
+    // Decision 4: shorter is right almost always and silently wrong on a small pond, so the flip is
+    // a control rather than an inference.
+    fireEvent.click(screen.getByRole('button', { name: 'Go the other way round' }));
+    expect(spies.onFlipSnap).toHaveBeenCalled();
+  });
+
+  // Decision 3's "one stepper, two meanings": on a snapped band it is the distance out from shore,
+  // not a halo around a shape someone drew.
+  it('labels the stepper as distance out from shore while snapped', () => {
+    let draft = switchDraftKind(draftForType('thin_ice'), 'polygon', 'thin_ice');
+    for (const c of [A, B, C]) draft = applyDraftMapClick(draft, c);
+    renderFields({
+      type: 'thin_ice',
+      draft,
+      shore: { offered: true, active: true, arcLengthMeters: 800, halfWidthMeters: 25 },
+    });
+    expect(screen.getByText('about 25 m out from the shoreline')).toBeInTheDocument();
+    expect(screen.getByText(/part that falls on land is trimmed off/)).toBeInTheDocument();
+  });
+
+  it('surfaces a refusal where the affordance is, and names the way out', () => {
+    renderFields({
+      type: 'thin_ice',
+      draft: draftForType('thin_ice'),
+      shore: {
+        offered: true,
+        error: 'Those two points are on different shorelines — an island and the main shore.',
+      },
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(/different shorelines/);
+    // The other two primitives are still right there, which is what makes a refusal survivable for
+    // someone standing on ice with a hazard to file.
+    expect(screen.getByRole('button', { name: 'A line' })).toBeInTheDocument();
   });
 });

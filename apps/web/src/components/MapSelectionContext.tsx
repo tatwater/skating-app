@@ -72,6 +72,16 @@ interface MapSelectionValue {
   hazardDropMode: boolean;
   setHazardDropMode: (on: boolean) => void;
   /**
+   * The two taps that become a shore band (N5b), or `null` when not snapping.
+   *
+   * `[]` means "armed, waiting for the first tap" — a state the map has to be able to hold, because
+   * the affordance is two taps and the form is hidden for both of them. It lives here rather than in
+   * the form for the same reason `hazardDraft` does: the map collects them, and the form (which holds
+   * the body polygon) turns them into geometry. Neither half can do the other's job.
+   */
+  hazardShoreTaps: { lat: number; lng: number }[] | null;
+  setHazardShoreTaps: (taps: { lat: number; lng: number }[] | null) => void;
+  /**
    * The past season being browsed (D63), or `null` for **this** season — which is the map's only
    * default state and the only state it returns to when the drawer closes.
    *
@@ -98,6 +108,9 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null);
   const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null);
   const [hazardDropMode, setHazardDropMode] = useState(false);
+  const [hazardShoreTaps, setHazardShoreTaps] = useState<{ lat: number; lng: number }[] | null>(
+    null,
+  );
   const [browseSeason, setBrowseSeason] = useState<number | null>(null);
 
   const value = useMemo(
@@ -120,6 +133,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setHazardDraftType,
       hazardDropMode,
       setHazardDropMode,
+      hazardShoreTaps,
+      setHazardShoreTaps,
       browseSeason,
       setBrowseSeason,
     }),
@@ -133,6 +148,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       hazardDraft,
       hazardDraftType,
       hazardDropMode,
+      hazardShoreTaps,
       browseSeason,
     ],
   );

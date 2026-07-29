@@ -5,6 +5,8 @@ import {
   type BBox,
   draftPlacementCount,
   isDraftSubmittable,
+  type LatLng,
+  polygonShape,
   SUB_AREA_MIN_RENDER_ZOOM,
   undoDraftPlacement,
 } from '@skating/core';
@@ -24,6 +26,7 @@ import {
   hazardsToFeatureCollection,
 } from '../lib/hazardMap';
 import { useMapCanvas } from '../lib/mapCanvas';
+import { createPolygonDraw, type PolygonDrawControl } from '../lib/polygonDraw';
 import {
   DEMO_PMTILES_URL,
   favoriteFeatureIds,
@@ -57,6 +60,17 @@ import { useMapSelection } from './MapSelectionContext';
  * (the drawers push them up, since they're siblings of this persistent map).
  */
 const EMPTY_FEATURES: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+/**
+ * A terra-draw ring → the corners a `HazardDraft` holds.
+ *
+ * The closing position is dropped: a draft holds corners and `polygonShape` closes them again, so
+ * carrying the duplicate through would make "undo the last corner" pop a position nobody placed.
+ */
+function polygonRingToVertices(polygon: GeoJSON.Polygon | null): LatLng[] {
+  const ring = polygon?.coordinates[0] ?? [];
+  return ring.slice(0, -1).map(([lng = 0, lat = 0]) => ({ lat, lng }));
+}
 
 /** Open bounties → a point per body centroid, carrying the `bountyId` for the tap → `/bounty/$id`. */
 function bountiesToPins(
@@ -93,6 +107,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     hazardDraftType,
     hazardDropMode,
     setHazardDropMode,
+    hazardShoreTaps,
+    setHazardShoreTaps,
     browseSeason,
   } = useMapSelection();
 
@@ -117,13 +133,32 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   setPinDropModeRef.current = setPinDropMode;
   const hazardDropModeRef = useRef(hazardDropMode);
   hazardDropModeRef.current = hazardDropMode;
+  // The polygon draw control is created once per arming and lives across every vertex drag, so it
+  // reads the draft and its setter through refs — a dependency on either would tear the engine down
+  // and rebuild it on the change it just emitted.
+  const hazardDraftRef = useRef(hazardDraft);
+  hazardDraftRef.current = hazardDraft;
+  const setHazardDraftRef = useRef(setHazardDraft);
+  setHazardDraftRef.current = setHazardDraft;
   // A map click in hazard-drop mode. The two primitives differ only in what happens *after*: a
   // circle is placed by one click and disarms, a polyline takes one vertex per click and stays armed
   // until Done — so the map keeps the click and the form isn't in the way for the whole draw.
   // All the state math is `@skating/core`'s, shared with mobile; this only wires it to the canvas.
   const handleHazardClickRef = useRef((_coord: { lat: number; lng: number }) => {});
   handleHazardClickRef.current = (coord) => {
+    // Snap-to-shoreline (N5b) takes the click first: it's a two-tap affordance, and the form is
+    // hidden for both taps, so the map is the only thing that can count them. It never touches the
+    // draft — the form owns the body polygon and turns the pair into geometry.
+    if (hazardShoreTaps !== null) {
+      const next = [...hazardShoreTaps, coord].slice(-2);
+      setHazardShoreTaps(next);
+      if (next.length === 2) setHazardDropMode(false);
+      return;
+    }
     if (!hazardDraft) return;
+    // A polygon is drawn by terra-draw, not collected a tap at a time — the map click would add a
+    // vertex behind the draw engine's back and the two would disagree about the ring.
+    if (hazardDraft.geometryKind === 'polygon') return;
     setHazardDraft(applyDraftMapClick(hazardDraft, coord));
     if (hazardDraft.geometryKind === 'point_radius') setHazardDropMode(false);
   };
@@ -646,6 +681,63 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     source?.setData(hazardDraftToFeatureCollection(hazardDraft, hazardDraftType));
   }, [hazardDraft, hazardDraftType, loaded, mapRef.current]);
 
+  // Freeform polygon authoring (N5b) — the one skater-facing surface that loads terra-draw.
+  //
+  // It arms only while a *polygon* draft is in drop mode, so the ~218 kB chunk is fetched by the
+  // person who asked for the tool and nobody else. Everything it produces goes back through the same
+  // `@skating/core` draft the other two primitives use, which is what keeps the preview, the stored
+  // row and the proximity footprint one shape whichever way the ring was made.
+  const polygonArmed = hazardDropMode && hazardDraft?.geometryKind === 'polygon';
+  const polygonDrawRef = useRef<PolygonDrawControl | null>(null);
+  const [drawUnavailable, setDrawUnavailable] = useState(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded || !polygonArmed) return;
+    let cancelled = false;
+    setDrawUnavailable(false);
+    void (async () => {
+      try {
+        const control = await createPolygonDraw(map, {
+          onChange: (polygon) => {
+            const draft = hazardDraftRef.current;
+            if (draft?.geometryKind !== 'polygon') return;
+            setHazardDraftRef.current({ ...draft, vertices: polygonRingToVertices(polygon) });
+          },
+          // Straight from drawing into vertex editing: the ring is closed, and the next thing anyone
+          // wants is to nudge a corner that landed in the wrong place.
+          onFinish: () => polygonDrawRef.current?.startEditing(),
+        });
+        if (cancelled) {
+          control.destroy();
+          return;
+        }
+        polygonDrawRef.current = control;
+        // A band that arrived by snapping is an ordinary polygon draft (N5b Decision 3) — hand it to
+        // the editor rather than making the skater redraw it to adjust one corner.
+        const existing = hazardDraftRef.current;
+        const seed =
+          existing?.geometryKind === 'polygon' && existing.vertices.length >= 3
+            ? (polygonShape(existing.vertices, existing.bufferMeters).geometry as GeoJSON.Polygon)
+            : null;
+        if (seed) {
+          control.setPolygon(seed);
+          control.startEditing();
+        } else {
+          control.startDrawing();
+        }
+      } catch {
+        // The chunk didn't load. Say so rather than leaving a dead "draw" mode on screen — the other
+        // two primitives still work, and for a safety report that beats nothing being postable.
+        if (!cancelled) setDrawUnavailable(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      polygonDrawRef.current?.destroy();
+      polygonDrawRef.current = null;
+    };
+  }, [polygonArmed, loaded, mapRef.current]);
+
   // Fly to a drawer's focus (a lake centroid / report put-in) when it changes.
   useEffect(() => {
     const map = mapRef.current;
@@ -742,7 +834,43 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           aria-live="polite"
           className="absolute inset-x-0 top-0 z-10 flex flex-wrap items-center justify-center gap-3 rounded-t-lg bg-destructive px-4 py-2 text-destructive-foreground text-sm shadow"
         >
-          {hazardDraft?.geometryKind === 'line' ? (
+          {hazardShoreTaps !== null ? (
+            <>
+              <span>
+                {hazardShoreTaps.length === 0
+                  ? 'Click one end of the affected shore.'
+                  : 'Now click the other end.'}{' '}
+                The band follows the lake’s own shoreline between them.
+              </span>
+              <button
+                type="button"
+                className="rounded-md bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30"
+                onClick={() => {
+                  setHazardShoreTaps(null);
+                  setHazardDropMode(false);
+                }}
+              >
+                Cancel
+              </button>
+            </>
+          ) : hazardDraft?.geometryKind === 'polygon' ? (
+            <>
+              <span>
+                {drawUnavailable
+                  ? 'The area tool couldn’t load. Mark it as a spot or a line instead — both work fine.'
+                  : draftPlacementCount(hazardDraft) === 0
+                    ? 'Click each corner of the area, then click the first one again to close it.'
+                    : `${draftPlacementCount(hazardDraft)} corners — drag any of them to adjust.`}
+              </span>
+              <button
+                type="button"
+                className="rounded-md bg-white/20 px-2 py-0.5 font-medium hover:bg-white/30"
+                onClick={() => setHazardDropMode(false)}
+              >
+                Done
+              </button>
+            </>
+          ) : hazardDraft?.geometryKind === 'line' ? (
             <>
               <span>
                 Click along the hazard to trace it. {draftPlacementCount(hazardDraft)}{' '}
