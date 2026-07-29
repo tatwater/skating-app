@@ -274,7 +274,23 @@ export default defineSchema({
   })
     .index('by_user', ['userId'])
     .index('by_provider_activity', ['provider', 'providerActivityId']) // unique dedup (D24)
-    .index('by_water_body', ['waterBodyId']), // per-lake skate history + bounty eligibility (D44)
+    .index('by_water_body', ['waterBodyId']) // per-lake skate history + bounty eligibility (D44)
+    /**
+     * The aggregate-tracks layer, season-scoped (N5a/D63).
+     *
+     * `by_water_body` orders by creation, so bounding the season after a `.take()` would be a filter
+     * over the newest 200 *rows* rather than the newest 200 in-season ones: on a lake with more than
+     * that in lifetime tracks, last season's would fill the window and this season's would silently
+     * not draw. That is the shape of bug N1 spent a phase removing, and the fix is the same one —
+     * bound it in the index.
+     *
+     * `startTime` rather than the linked report's `skateEndTime`, which is what the design says the
+     * season is measured by. They differ by the length of one skate, and the boundary is July 1 — the
+     * one week of the year no skate spans. Reading the report's field instead would mean fetching
+     * every report in the window before knowing which to keep, which is the read this index exists to
+     * avoid.
+     */
+    .index('by_water_body_start_time', ['waterBodyId', 'startTime']),
 
   waterBodies: defineTable({
     name: v.string(),

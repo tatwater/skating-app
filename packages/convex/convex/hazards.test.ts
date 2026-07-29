@@ -1,3 +1,4 @@
+import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
@@ -329,6 +330,55 @@ describe('hazards.listForBody', () => {
     expect(
       await user.as.query(api.hazards.listForBody, { waterBodyId, includeArchived: true }),
     ).toHaveLength(1);
+  });
+
+  // The hardest call in N5a, and the one most likely to be "fixed" back: a hazard's season is the
+  // clock **nobody can move**, so a single confirmation can't carry last winter's ridge into this one.
+  describe('seasonal scoping (N5a/D63)', () => {
+    /** Backdate a hazard's first sighting past the July boundary, leaving its confirmation fresh. */
+    const lastSeasonStart = () => seasonStartMs(seasonOf(Date.now())) - 1;
+
+    test('a hazard first reported last season is hidden, however recently it was confirmed', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'author');
+      const waterBodyId = await seedBody(t);
+      const hazardId = await user.as.mutation(api.hazards.create, createArgs(waterBodyId));
+      // Six other skaters confirmed it yesterday — the most current thing on that shore, and still
+      // last season's ridge. `lastConfirmedAt` is what the redaction sweep and the decay curve read;
+      // the season reads `firstReportedAt` precisely so the community can't move it.
+      await t.run((ctx) =>
+        ctx.db.patch(hazardId, { firstReportedAt: lastSeasonStart(), lastConfirmedAt: Date.now() }),
+      );
+
+      expect(await user.as.query(api.hazards.listForBody, { waterBodyId })).toHaveLength(0);
+    });
+
+    test('and is right there under last season, still fresh', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'author');
+      const waterBodyId = await seedBody(t);
+      const hazardId = await user.as.mutation(api.hazards.create, createArgs(waterBodyId));
+      await t.run((ctx) =>
+        ctx.db.patch(hazardId, { firstReportedAt: lastSeasonStart(), lastConfirmedAt: Date.now() }),
+      );
+
+      const past = await user.as.query(api.hazards.listForBody, {
+        waterBodyId,
+        season: seasonOf(Date.now()) - 1,
+      });
+      expect(past).toHaveLength(1);
+      // Hidden, not deleted, and not degraded on the way out: the pin browses exactly as it was.
+      expect(past[0]?.freshness).toBe('fresh');
+    });
+
+    test('this season’s hazards are untouched by the bound', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'author');
+      const waterBodyId = await seedBody(t);
+      await user.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+      expect(await user.as.query(api.hazards.listForBody, { waterBodyId })).toHaveLength(1);
+    });
   });
 });
 

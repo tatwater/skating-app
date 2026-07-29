@@ -1,10 +1,32 @@
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
+
+/**
+ * **The clock is pinned, because a report now has a season** (N5a/D63).
+ *
+ * Every read here defaults to `seasonOf(now)`, so a fixture dated January 2026 is in this season when
+ * the suite runs in February and in a *hidden* one when it runs in August — a test that passes for
+ * seven months and then fails, on a real behavior change, reading as a flake. Pinning `now` inside the
+ * same season as `SKATE_TIME` makes these tests about what they are about (pagination, moderation,
+ * sub-areas) and leaves the seasonal behavior to the tests that assert it deliberately.
+ *
+ * Same convention and the same reason as `accountDeletion.test.ts`: once time is semantic, a fixture
+ * against a real wall clock is a slow-moving assertion about the day you happened to run it.
+ */
+const NOW = Date.UTC(2026, 0, 15, 12, 0, 0);
+
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOW);
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function convexTestWithGeo() {
   const t = convexTest(schema, modules);
@@ -369,6 +391,217 @@ describe('reports.listByWaterBody (all public, D13)', () => {
         paginationOpts: PAGE,
       });
       expect(page.page.map((r) => r._id)).toEqual([inBay]);
+    });
+  });
+
+  // The founder ask this phase started from: the map and the lists show **this** season's ice, and
+  // everything else is history you go and look at on purpose. Hidden, never deleted, never unreachable.
+  describe('seasonal scoping (N5a/D63)', () => {
+    const PAGE = { numItems: 50, cursor: null };
+    /** Last season, backdated past the boundary — a genuine `'24/'25` report on the same lake. */
+    const LAST_SEASON = Date.UTC(2025, 1, 10);
+
+    /** `create` refuses a skate this far in the past? No — but it stamps `reportTime`, so backdate. */
+    async function seedLastSeason(
+      t: ReturnType<typeof convexTest>,
+      author: Id<'profiles'>,
+      waterBodyId: Id<'waterBodies'>,
+    ) {
+      return t.run((ctx) =>
+        ctx.db.insert('reports', {
+          authorId: author,
+          waterBodyId,
+          point: { lat: 0.5, lng: 0.5 },
+          skateEndTime: LAST_SEASON,
+          reportTime: LAST_SEASON,
+          source: 'native' as const,
+          iceTypes: [],
+          surfaceTags: [],
+          photoIds: [],
+          moderationStatus: 'visible' as const,
+          hazardIdsCreated: [],
+          createdAt: LAST_SEASON,
+          updatedAt: LAST_SEASON,
+        }),
+      );
+    }
+
+    test('a lake lists this season only, and the season arg is the way back', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      const asAuthor = await seedUser(t, 'clerk_author');
+      const authorId = await t.run(async (ctx) => {
+        const p = await ctx.db.query('profiles').first();
+        if (!p) throw new Error('seed failed');
+        return p._id;
+      });
+      const thisSeason = await asAuthor.mutation(api.reports.create, {
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+      });
+      const lastSeason = await seedLastSeason(t, authorId, id);
+
+      const current = await t.query(api.reports.listByWaterBody, {
+        waterBodyId: id,
+        paginationOpts: PAGE,
+      });
+      expect(current.page.map((r) => r._id)).toEqual([thisSeason]);
+
+      const past = await t.query(api.reports.listByWaterBody, {
+        waterBodyId: id,
+        season: 2024,
+        paginationOpts: PAGE,
+      });
+      expect(past.page.map((r) => r._id)).toEqual([lastSeason]);
+    });
+
+    test('a hidden season still resolves by permalink — hiding is not a 404', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      await seedUser(t, 'clerk_author');
+      const authorId = await t.run(async (ctx) => {
+        const p = await ctx.db.query('profiles').first();
+        if (!p) throw new Error('seed failed');
+        return p._id;
+      });
+      const lastSeason = await seedLastSeason(t, authorId, id);
+
+      // Someone holds a link, a bookmark or an old notification. A URL that used to work must not lie.
+      const report = await t.query(api.reports.get, { reportId: lastSeason });
+      expect(report?._id).toBe(lastSeason);
+    });
+
+    test('the feed falls back to the newest season that has anything, and says which', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      await seedUser(t, 'clerk_author');
+      const authorId = await t.run(async (ctx) => {
+        const p = await ctx.db.query('profiles').first();
+        if (!p) throw new Error('seed failed');
+        return p._id;
+      });
+      const lastSeason = await seedLastSeason(t, authorId, id);
+
+      // Nothing has been skated this season — which, from July until first ice, is every year.
+      const feed = await t.query(api.reports.listFeed, { paginationOpts: PAGE });
+      expect(feed.page.map((c) => c.reportId)).toEqual([lastSeason]);
+      expect(feed.season).toBe(2024);
+      expect(feed.isPastSeason).toBe(true);
+    });
+
+    test('an app with no reports at all serves this season, not a fallback to nowhere', async () => {
+      const t = convexTestWithGeo();
+      await seedBody(t);
+      const feed = await t.query(api.reports.listFeed, { paginationOpts: PAGE });
+      expect(feed.page).toEqual([]);
+      expect(feed.season).toBe(2025);
+      expect(feed.isPastSeason).toBe(false);
+    });
+
+    test('one report from this season ends the fallback', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      const asAuthor = await seedUser(t, 'clerk_author');
+      const authorId = await t.run(async (ctx) => {
+        const p = await ctx.db.query('profiles').first();
+        if (!p) throw new Error('seed failed');
+        return p._id;
+      });
+      await seedLastSeason(t, authorId, id);
+      const thisSeason = await asAuthor.mutation(api.reports.create, {
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+      });
+
+      const feed = await t.query(api.reports.listFeed, { paginationOpts: PAGE });
+      expect(feed.page.map((c) => c.reportId)).toEqual([thisSeason]);
+      expect(feed.season).toBe(2025);
+      expect(feed.isPastSeason).toBe(false);
+    });
+
+    test('the selector offers every season from the first report to now, newest first', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      await seedUser(t, 'clerk_author');
+      const authorId = await t.run(async (ctx) => {
+        const p = await ctx.db.query('profiles').first();
+        if (!p) throw new Error('seed failed');
+        return p._id;
+      });
+      await seedLastSeason(t, authorId, id);
+
+      const { seasons, current } = await t.query(api.reports.seasonsForBody, { waterBodyId: id });
+      expect(seasons).toEqual([2025, 2024]);
+      expect(current).toBe(2025);
+    });
+
+    test('a lake with no reports at all still offers the season it is showing', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      const { seasons, current } = await t.query(api.reports.seasonsForBody, { waterBodyId: id });
+      expect(seasons).toEqual([2025]);
+      expect(current).toBe(2025);
+    });
+
+    test('a body that no longer exists offers the current season rather than throwing', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      await t.run((ctx) => ctx.db.delete(id));
+      // A stale bookmark shouldn't blow up a control that renders before its page's data arrives.
+      const { seasons, current } = await t.query(api.reports.seasonsForBody, { waterBodyId: id });
+      expect(seasons).toEqual([2025]);
+      expect(current).toBe(2025);
+    });
+
+    test('the bay filter narrows to a season too, in the index', async () => {
+      const t = convexTestWithGeo();
+      const { id } = await seedBody(t);
+      const asAuthor = await seedUser(t, 'clerk_author');
+      const authorId = await t.run(async (ctx) => {
+        const p = await ctx.db.query('profiles').first();
+        if (!p) throw new Error('seed failed');
+        return p._id;
+      });
+      const bay = await t.run((ctx) =>
+        ctx.db.insert('waterBodySubAreas', {
+          waterBodyId: id,
+          name: 'Malletts Bay',
+          searchText: 'malletts bay',
+          polygon: POLYGON,
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          surfaceAreaSqM: 100_000,
+          displayScore: 1,
+          minVisibleZoom: 10,
+          createdByUserId: authorId,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        }),
+      );
+      const thisSeason = await asAuthor.mutation(api.reports.create, {
+        waterBodyId: id,
+        skateEndTime: SKATE_TIME,
+      });
+      const lastSeason = await seedLastSeason(t, authorId, id);
+      await t.run(async (ctx) => {
+        await ctx.db.patch(thisSeason, { subAreaId: bay });
+        await ctx.db.patch(lastSeason, { subAreaId: bay });
+      });
+
+      const current = await t.query(api.reports.listByWaterBody, {
+        waterBodyId: id,
+        subAreaId: bay,
+        paginationOpts: PAGE,
+      });
+      expect(current.page.map((r) => r._id)).toEqual([thisSeason]);
+
+      const past = await t.query(api.reports.listByWaterBody, {
+        waterBodyId: id,
+        subAreaId: bay,
+        season: 2024,
+        paginationOpts: PAGE,
+      });
+      expect(past.page.map((r) => r._id)).toEqual([lastSeason]);
     });
   });
 });

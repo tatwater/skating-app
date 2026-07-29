@@ -28,6 +28,11 @@ import {
   type RecommendableReport,
   type ReportInput,
   reportsAgree,
+  type Season,
+  seasonEndMs,
+  seasonOf,
+  seasonsBetween,
+  seasonStartMs,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
@@ -452,6 +457,11 @@ async function notifyCorroboration(
  * (D13) and a block never hides a report (D3), so the filter is moderation-only (excludes
  * hidden/removed, D32) — applied *in* the index (`moderationStatus: 'visible'`) so a page is never
  * emptied by the gate. The blocked-author "Blocked"-chip annotation is layered on in the client.
+ *
+ * **Scoped to one season (D63/N5a), defaulting to this one.** The bound rides the index's own range
+ * field, so this is a *narrower* read than it used to be rather than the same read with rows dropped —
+ * seasonal visibility costs nothing and refunds something. Hiding is not unreachability: a report from
+ * a past season still resolves by permalink through `get`, labelled with the season it belongs to.
  */
 export const listByWaterBody = query({
   args: {
@@ -466,9 +476,22 @@ export const listByWaterBody = query({
      * inside the index for the reason its body-scoped sibling documents.
      */
     subAreaId: v.optional(v.id('waterBodySubAreas')),
+    /**
+     * Which season to list (D63) — the calendar year it starts in, `2024` being `'24/'25`. Absent ⇒
+     * **this** season, which is the map's and the list's only default state.
+     *
+     * Bounded on **both** sides even for the current season. `SKATE_TIME_FUTURE_TOLERANCE_MS` lets a
+     * report be filed up to an hour ahead, so within an hour of the boundary a report can legitimately
+     * carry next season's `skateEndTime` — and it belongs to next season, by the only definition of
+     * season there is. A lower-bound-only range would show it in June.
+     */
+    season: v.optional(v.number()),
     paginationOpts: paginationOptsValidator,
   },
-  handler: async (ctx, { waterBodyId, subAreaId, paginationOpts }) => {
+  handler: async (ctx, { waterBodyId, subAreaId, season, paginationOpts }) => {
+    const target: Season = season ?? seasonOf(Date.now());
+    const from = seasonStartMs(target);
+    const to = seasonEndMs(target);
     if (subAreaId !== undefined) {
       // The bay index is keyed by sub-area alone, so `waterBodyId` contributes nothing to that read —
       // which is exactly what makes an unvalidated pair a cross-lake leak: ask for Lake Morey while
@@ -493,7 +516,11 @@ export const listByWaterBody = query({
       return ctx.db
         .query('reports')
         .withIndex('by_sub_area_moderation_and_skate_end_time', (q) =>
-          q.eq('subAreaId', subAreaId).eq('moderationStatus', 'visible'),
+          q
+            .eq('subAreaId', subAreaId)
+            .eq('moderationStatus', 'visible')
+            .gte('skateEndTime', from)
+            .lt('skateEndTime', to),
         )
         .order('desc')
         .paginate(paginationOpts);
@@ -501,17 +528,62 @@ export const listByWaterBody = query({
     return ctx.db
       .query('reports')
       .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
-        q.eq('waterBodyId', waterBodyId).eq('moderationStatus', 'visible'),
+        q
+          .eq('waterBodyId', waterBodyId)
+          .eq('moderationStatus', 'visible')
+          .gte('skateEndTime', from)
+          .lt('skateEndTime', to),
       )
       .order('desc')
       .paginate(paginationOpts);
   },
 });
 
-/** A single report for its detail view — moderation-checked (hidden/removed excluded, D32). */
+/**
+ * A single report for its detail view — moderation-checked (hidden/removed excluded, D32).
+ *
+ * **Deliberately not season-scoped** (N5a design review). Hiding governs the default view, not
+ * reachability: someone may hold a link, a bookmark or an old notification, and a 404 on a URL that
+ * used to work is a worse lie than an old report clearly marked old. The client derives the label from
+ * `skateEndTime` with `seasonOf`, so there is nothing to keep in sync here.
+ */
 export const get = query({
   args: { reportId: v.id('reports') },
   handler: (ctx, { reportId }) => getViewableReport(ctx, reportId),
+});
+
+/**
+ * The seasons a water body has anything to show — the season selector's option list, newest first.
+ *
+ * **One read.** The oldest visible report on the body, taken *ascending* off the index the lake page
+ * already uses, and every season from there to now. A "which seasons actually have data" query would
+ * be a scan of the body's whole history for a control that has to render instantly, and the answer
+ * would be barely different: a season with nothing in it lands on the same empty state as a lake that
+ * was quiet that winter, which is the honest thing to show either way.
+ *
+ * Reports, not hazards, because reports are what a lake overwhelmingly has more of — a body whose only
+ * '23/'24 artifact is a hazard offers one season too few, which is a missing menu entry rather than
+ * missing data (the hazard is still reachable from a season that *is* offered, by permalink, and from
+ * the admin promotion list).
+ */
+export const seasonsForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }): Promise<{ seasons: Season[]; current: Season }> => {
+    const now = Date.now();
+    const current = seasonOf(now);
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return { seasons: [current], current };
+    const oldest = await ctx.db
+      .query('reports')
+      .withIndex('by_water_body_moderation_and_skate_end_time', (q) =>
+        q.eq('waterBodyId', body._id).eq('moderationStatus', 'visible'),
+      )
+      .order('asc')
+      .first();
+    // Clamped to `now` for the same reason `servedFeedSeason` clamps: an hour of allowed future skate
+    // time must never put a season that hasn't started into the menu.
+    return { seasons: seasonsBetween(Math.min(oldest?.skateEndTime ?? now, now), now), current };
+  },
 });
 
 /** A resolved survivor body's feed-relevant fields: display name + on-water centroid (for band calc). */
@@ -636,8 +708,13 @@ async function thumbUrlsFor(
  * the cursor still advances through visible reports.)
  */
 export const listFeed = query({
-  args: { paginationOpts: paginationOptsValidator, filters: v.optional(v.any()) },
-  handler: async (ctx, { paginationOpts, filters: rawFilters }) => {
+  args: {
+    paginationOpts: paginationOptsValidator,
+    filters: v.optional(v.any()),
+    /** Browse one season explicitly. Absent ⇒ {@link servedFeedSeason} decides — see its note. */
+    season: v.optional(v.number()),
+  },
+  handler: async (ctx, { paginationOpts, filters: rawFilters, season }) => {
     const viewer = await getCurrentProfile(ctx);
     const viewerId = viewer?._id ?? '';
     const [blocked, favorites] = await Promise.all([
@@ -655,11 +732,23 @@ export const listFeed = query({
     const home = viewer?.homeCoord;
     const now = Date.now();
 
+    // Which season this page is actually serving (D63) — either the one asked for or the newest one
+    // that has anything in it. Resolved before the read so every page of a scroll agrees.
+    const current = seasonOf(now);
+    const served = season ?? (await servedFeedSeason(ctx, current));
+
     // Moderation-only gate (D32), applied *in* the index (`moderationStatus: 'visible'`) rather than
     // after `paginate`. A blocked author's report still comes through (D3), de-emphasized via `blocked`.
+    // The season bound rides the same index's range field, so it narrows the read rather than filtering
+    // its output — the one gate that could empty every page stays in-index for the documented reason.
     const result = await ctx.db
       .query('reports')
-      .withIndex('by_moderation_and_skate_end_time', (q) => q.eq('moderationStatus', 'visible'))
+      .withIndex('by_moderation_and_skate_end_time', (q) =>
+        q
+          .eq('moderationStatus', 'visible')
+          .gte('skateEndTime', seasonStartMs(served))
+          .lt('skateEndTime', seasonEndMs(served)),
+      )
       .order('desc')
       .paginate(paginationOpts);
 
@@ -689,9 +778,40 @@ export const listFeed = query({
     }
     // Boost favorites to the top of THIS page (stable sort keeps skate-end order within each group).
     page.sort((a, b) => Number(b.isFavorite ?? false) - Number(a.isFavorite ?? false));
-    return { ...result, page };
+    // `season` + `isPastSeason` are what let the client label the fallback instead of silently mixing
+    // two winters. Sent on every page so a client that started mid-scroll still knows what it's showing.
+    return { ...result, page, season: served, isPastSeason: served !== current };
   },
 });
+
+/**
+ * Which season the feed serves when nobody asked for one: **this season, or the newest one that has a
+ * report in it** (D63, kickoff decision 3).
+ *
+ * Season-scoping the feed the way the lake list is scoped would empty the home screen on July 1 and
+ * leave it empty until first ice — five months, not a July curiosity. The plain fix ("if the current
+ * season is empty, show the previous one") is subtly wrong for a longer gap and needs a probe read to
+ * decide. This is one read that answers both: the newest visible report in the app. If it's from this
+ * season, that's what we serve; if the app has been asleep since March, we serve March's season rather
+ * than an empty one behind it.
+ *
+ * **Stable across a paginated scroll**, which is what makes this safe to compute per page: it depends
+ * only on the newest report in the app, not on the page being read. The one thing that changes it is
+ * the *first* report of a new season landing mid-scroll, which reactively re-answers the feed to the
+ * live season — the correct outcome for the one moment a year it can happen.
+ */
+async function servedFeedSeason(ctx: QueryCtx, current: Season): Promise<Season> {
+  const newest = await ctx.db
+    .query('reports')
+    .withIndex('by_moderation_and_skate_end_time', (q) => q.eq('moderationStatus', 'visible'))
+    .order('desc')
+    .first();
+  if (!newest) return current;
+  // Clamped to the current season because `SKATE_TIME_FUTURE_TOLERANCE_MS` allows an hour of overhang:
+  // within an hour of July 1 the newest report can legitimately be *next* season's, and serving a
+  // season that hasn't started would hide everything anyone skated in the one that has.
+  return Math.min(seasonOf(newest.skateEndTime), current);
+}
 
 /** Offline read-cache bounds (decision #8): the freshest few reports per body, within a recent window. */
 const OFFLINE_CACHE_MAX_PER_BODY = 5;
@@ -713,7 +833,10 @@ export const recentCardsForBodies = query({
       loadFavoriteBodyIds(ctx, viewerId),
     ]);
     const now = Date.now();
-    const cutoff = now - OFFLINE_CACHE_WINDOW_MS;
+    // The season bound only ever *tightens* the 72h window, and only for the few days after July 1 —
+    // but on exactly those days it's the difference between a phone that went offline in June coming
+    // back with last season's ice on it and coming back honest. Whichever bound is later wins.
+    const cutoff = Math.max(now - OFFLINE_CACHE_WINDOW_MS, seasonStartMs(seasonOf(now)));
     const caches: FeedCardCaches = { bodyInfo: new Map(), authors: new Map() };
     const cards: FeedCardData[] = [];
     for (const waterBodyId of [...new Set(waterBodyIds)]) {

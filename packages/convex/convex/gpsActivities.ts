@@ -32,6 +32,9 @@ import {
   pathOpacity,
   pointInPolygon,
   reportFreshness,
+  seasonEndMs,
+  seasonOf,
+  seasonStartMs,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
@@ -417,15 +420,26 @@ export interface AggregateTrackView {
  * read-cap-fragile path `listInViewport` has already had to be fixed for twice.
  */
 export const listTracksForBody = query({
-  args: { waterBodyId: v.id('waterBodies'), limit: v.optional(v.number()) },
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    limit: v.optional(v.number()),
+    /** Which season's paths (D63) — absent ⇒ this one. See `by_water_body_start_time` for the field. */
+    season: v.optional(v.number()),
+  },
   handler: async (ctx, args): Promise<{ tracks: AggregateTrackView[]; truncated: number }> => {
     const body = await resolveSurvivor(ctx, args.waterBodyId);
     if (!body || !isListed(body)) return { tracks: [], truncated: 0 };
 
     const limit = Math.min(Math.max(args.limit ?? MAX_TRACKS_PER_BODY, 1), MAX_TRACKS_PER_BODY);
+    const season = args.season ?? seasonOf(Date.now());
     const activities = await ctx.db
       .query('gpsActivities')
-      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .withIndex('by_water_body_start_time', (q) =>
+        q
+          .eq('waterBodyId', body._id)
+          .gte('startTime', seasonStartMs(season))
+          .lt('startTime', seasonEndMs(season)),
+      )
       .order('desc')
       .take(limit + 1);
     const truncated = Math.max(0, activities.length - limit);

@@ -25,9 +25,12 @@ import {
   hazardBbox,
   hazardFootprint,
   initialLifecycleState,
+  isInSeason,
   isMinor,
   isProvisional,
   isValidHazardShape,
+  type Season,
+  seasonOf,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -289,8 +292,21 @@ export const listForBody = query({
     waterBodyId: v.id('waterBodies'),
     /** Include community-archived ("fully healed") hazards — off by default. */
     includeArchived: v.optional(v.boolean()),
+    /**
+     * Which season's hazards (D63) — absent ⇒ this one.
+     *
+     * **A hazard's season is its `firstReportedAt`** (kickoff decision 1), which is the *opposite*
+     * field from the one everything else about a hazard reads. Freshness, the redaction sweep and the
+     * confirm loop all use `lastConfirmedAt`, because they ask "is anyone still maintaining this?".
+     * A season asks "when was this first seen?", and it has to be a clock **nobody can move**: aged on
+     * `lastConfirmedAt`, one skater confirming a March ridge in November would carry it across the
+     * boundary with no operator in the loop, quietly re-answering the question the pre-first-ice
+     * promotion pass exists to ask. The boundary is hard on purpose; `bodyFeatures` promotion (D53) is
+     * the way across, and it is a decision somebody makes.
+     */
+    season: v.optional(v.number()),
   },
-  handler: async (ctx, { waterBodyId, includeArchived }) => {
+  handler: async (ctx, { waterBodyId, includeArchived, season }) => {
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
     const now = Date.now();
@@ -309,11 +325,17 @@ export const listForBody = query({
             q.eq('waterBodyId', body._id).eq('status', 'active'),
           )
           .collect();
+    // Filtered in memory rather than in the index: the two hazard indexes are keyed by body and status,
+    // and `firstReportedAt` isn't in either. That costs nothing here and is worth being explicit about,
+    // because it's the opposite of the report path — this query is already bounded by *body* (Phase 9
+    // call 6, deliberately never a viewport scan), so the read it would narrow is bounded already.
+    const target: Season = season ?? seasonOf(now);
     return (
       rows
         .filter((h) => h.moderationStatus === 'visible')
         // A hazard promoted to a persistent body feature (D53) is rendered by the feature now, not here.
         .filter((h) => h.promotedToFeatureId === undefined)
+        .filter((h) => isInSeason(h.firstReportedAt, target))
         .map((h) => toView(h, now))
         .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
     );
