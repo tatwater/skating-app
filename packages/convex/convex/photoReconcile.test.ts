@@ -6,6 +6,8 @@
  * to 1 so the multi-transaction continuation — the whole reason this job exists — is what's exercised,
  * rather than a single page that happens to fit.
  */
+
+import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
@@ -18,6 +20,8 @@ const modules = import.meta.glob('./**/*.*s');
 const T0 = Date.UTC(2026, 0, 15, 14, 0, 0);
 /** Comfortably past the orphan grace, so a photo is a deletion candidate. */
 const OLD = T0 - PHOTO_ORPHAN_GRACE_MS - 24 * 3600_000;
+/** An instant in the season before the one containing T0 — due under D66, unlike this season's. */
+const lastSeason = () => seasonStartMs(seasonOf(T0)) - 3600_000;
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -263,5 +267,182 @@ describe('sweepOrphanPhotos escalates instead of skipping forever', () => {
     const swept = await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
 
     expect(swept).toMatchObject({ scanned: 1, deleted: 1, skipped: 0, escalated: 0 });
+  });
+});
+
+/**
+ * D66's determinate path: the same machine, asking whether a **hazard** names the photo rather than
+ * whether anything does. Reached when `expireDepartedPhotos`' one-shot hazard scan caps.
+ */
+describe('photoReconcile — season_expiry mode (D66)', () => {
+  /** A tombstoned account with one photo on a report and one on a hazard, both from last season. */
+  async function seedDeparted(t: ReturnType<typeof convexTest>) {
+    const uploader = await seedUploader(t, 'departed');
+    await t.run((ctx) => ctx.db.patch(uploader, { status: 'deleted' as const, deletedAt: T0 }));
+    const bodyId = await seedBody(t);
+    const onReport = await seedPhoto(t, uploader, 'on-report', lastSeason());
+    const onHazard = await seedPhoto(t, uploader, 'on-hazard', lastSeason());
+    const loose = await seedPhoto(t, uploader, 'loose', lastSeason());
+
+    await t.run((ctx) =>
+      ctx.db.insert('reports', {
+        waterBodyId: bodyId,
+        authorId: uploader,
+        point: { lat: 0.5, lng: 0.5 },
+        skateEndTime: lastSeason(),
+        reportTime: lastSeason(),
+        source: 'native' as const,
+        iceTypes: ['black_ice' as const],
+        surfaceTags: [],
+        photoIds: [onReport],
+        moderationStatus: 'visible' as const,
+        hazardIdsCreated: [],
+        createdAt: lastSeason(),
+        updatedAt: lastSeason(),
+      }),
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId: bodyId,
+        type: 'pressure_ridge' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+        bbox: { minLat: 0.4, minLng: 0.4, maxLat: 0.6, maxLng: 0.6 },
+        createdByUserId: uploader,
+        photoIds: [onHazard],
+        status: 'active' as const,
+        moderationStatus: 'visible' as const,
+        firstReportedAt: lastSeason(),
+        lastConfirmedAt: lastSeason(),
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: lastSeason(),
+      }),
+    );
+    return { uploader, onReport, onHazard, loose };
+  }
+
+  async function runSeasonExpiry(
+    t: ReturnType<typeof convexTest>,
+    uploaderId: Id<'profiles'>,
+    pageSize = 1,
+  ) {
+    await t.mutation(internal.photoReconcile.reconcileUploaderPhotos, {
+      uploaderId,
+      mode: 'season_expiry' as const,
+      pageSize,
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+  }
+
+  test('keeps the hazard photo and expires the rest — a report does not protect one', async () => {
+    const t = harness();
+    const { uploader, onReport, onHazard, loose } = await seedDeparted(t);
+
+    await runSeasonExpiry(t, uploader);
+
+    // The whole content of D66: a picture of an open lead is what the next skater on that shore needs.
+    expect(await t.run((ctx) => ctx.db.get(onHazard))).not.toBeNull();
+    // And the half that distinguishes this mode from the orphan check — the `reports` phase is absent
+    // on purpose, so a surviving report is no defence.
+    expect(await t.run((ctx) => ctx.db.get(onReport))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get(loose))).toBeNull();
+  });
+
+  test('does not touch this season, whatever else is true', async () => {
+    const t = harness();
+    const { uploader } = await seedDeparted(t);
+    const current = await seedPhoto(t, uploader, 'current', T0 - 60_000);
+
+    await runSeasonExpiry(t, uploader);
+    expect(await t.run((ctx) => ctx.db.get(current))).not.toBeNull();
+  });
+
+  test('stamps the completion marker, so the daily queue lets the account go', async () => {
+    const t = harness();
+    const { uploader } = await seedDeparted(t);
+
+    await runSeasonExpiry(t, uploader);
+    const profile = await t.run((ctx) => ctx.db.get(uploader));
+    expect(profile?.photosExpiredForSeason).toBe(seasonOf(T0));
+  });
+
+  test('abandons the run if the deletion was cancelled underneath it', async () => {
+    const t = harness();
+    const { uploader, loose } = await seedDeparted(t);
+    // Between the escalation and the run, they changed their mind. An ordinary account's photos are
+    // on no clock at all.
+    await t.run((ctx) =>
+      ctx.db.patch(uploader, { status: 'active' as const, deletedAt: undefined }),
+    );
+
+    await runSeasonExpiry(t, uploader);
+    expect(await t.run((ctx) => ctx.db.get(loose))).not.toBeNull();
+    expect((await t.run((ctx) => ctx.db.get(uploader)))?.photosExpiredForSeason).toBeUndefined();
+  });
+
+  test('leaves no marks behind, and never sets the orphan job’s flag', async () => {
+    const t = harness();
+    const { uploader } = await seedDeparted(t);
+
+    await runSeasonExpiry(t, uploader);
+    const photos = await t.run((ctx) => ctx.db.query('photos').collect());
+    // Separate scratch fields are why the two daily crons can't clear each other's marks.
+    expect(photos.every((p) => p.seasonExpiryCandidate === undefined)).toBe(true);
+    expect(photos.every((p) => p.orphanCandidate === undefined)).toBe(true);
+  });
+});
+
+/**
+ * The starvation this replaced. A capped account that is merely *retried* is never marked, so it sits
+ * at the front of `by_status_photos_expired` forever, occupying a slot in a bounded page — enough of
+ * them and no other tombstone is ever reached. That is the shape N3/N4's pending sweep shipped and had
+ * to fix, and it arrived here by the same route: treating "couldn't determine" as "try again".
+ */
+describe('expireDepartedPhotos escalates a capped account instead of retrying it', () => {
+  test('hands off, marks, and stops occupying the daily queue', async () => {
+    const t = harness();
+    const uploader = await seedUploader(t, 'departed-prolific');
+    await t.run((ctx) => ctx.db.patch(uploader, { status: 'deleted' as const, deletedAt: T0 }));
+    const bodyId = await seedBody(t);
+    const loose = await seedPhoto(t, uploader, 'loose', lastSeason());
+    await t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId: bodyId,
+        type: 'pressure_ridge' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+        bbox: { minLat: 0.4, minLng: 0.4, maxLat: 0.6, maxLng: 0.6 },
+        createdByUserId: uploader,
+        photoIds: [],
+        status: 'active' as const,
+        moderationStatus: 'visible' as const,
+        firstReportedAt: lastSeason(),
+        lastConfirmedAt: lastSeason(),
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: lastSeason(),
+      }),
+    );
+
+    const result = await t.mutation(internal.storageHygiene.expireDepartedPhotos, {
+      userId: uploader,
+      // One hazard against a cap of 1 is the cheapest way to reach a `null`, which otherwise needs
+      // REFERENCE_SCAN_CAP rows to provoke — which is precisely why this path went untested.
+      scanCap: 1,
+    });
+
+    expect(result).toMatchObject({ escalated: true, deleted: 0 });
+    // Nothing deleted on an unanswered question — that half was always right.
+    expect(await t.run((ctx) => ctx.db.get(loose))).not.toBeNull();
+    // Marked despite not having deleted anything: the reconcile job owns the account now, and an
+    // unmarked account is one the sweeper offers again tomorrow and every day after.
+    expect((await t.run((ctx) => ctx.db.get(uploader)))?.photosExpiredForSeason).toBe(seasonOf(T0));
+    const queued = await t.mutation(internal.storageHygiene.sweepDepartedPhotos, {});
+    expect(queued.accounts).toBe(0);
+
+    // And the handoff actually finishes the job the fast path couldn't.
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run((ctx) => ctx.db.get(loose))).toBeNull();
   });
 });

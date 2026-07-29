@@ -514,10 +514,17 @@ rows look right, and something is quietly wrong for a person who can no longer c
 
   The clock is **N5a's season boundary rather than a fourth deletion timer**, which is the argument for
   building it there. One consequence worth knowing: finalization lands 30 days after the request and
-  therefore mid-season, so the sweep has to **outlive the tombstone** — it runs off `profiles.by_status`
-  rather than the pending index, which `writeTombstone` drops the row out of. A photo's own season is
+  therefore mid-season, so the sweep has to **outlive the tombstone** — it runs off a `by_status` index
+  rather than the pending one, which `writeTombstone` drops the row out of. A photo's own season is
   read from `takenAt` where the skater kept EXIF (D42) and the upload time otherwise: a picture taken in
   February and uploaded in July belongs to the winter it shows.
+
+  Each tombstone is swept **once per season**, marked by `profiles.photosExpiredForSeason` — a
+  completion marker, without which the daily cron re-walked every departure the app had ever had. And
+  when the one-shot hazard scan caps on a prolific uploader, the account is handed to
+  `photoReconcile`'s `season_expiry` mode for a complete answer rather than retried: the cap is a
+  property of the uploader, so retrying keeps their images forever *and* starves the queue behind
+  them.
 - **Email delivery is unprovisioned.** Resend keys and a verified sending domain are prod-cutover work,
   so an export lands in the settings list and no mail goes out. Designed degradation, not a failure
   path — but note it also means the "an emailed bundle outlives the account" carve-out never fires

@@ -16,11 +16,17 @@ import {
   warningHeadline,
 } from './hazardCopy';
 import type { HazardFreshness } from './hazardDecay';
-import type { HazardVerdict } from './hazardLifecycle';
+import { HAZARD_VERDICTS, type HazardVerdict } from './hazardLifecycle';
 import { HAZARD_TYPES } from './types';
 
 const FRESHNESSES: HazardFreshness[] = ['fresh', 'aging', 'stale'];
-const VERDICTS: HazardVerdict[] = ['still_there', 'healing_unsafe', 'fully_healed'];
+/**
+ * **Iterated from the vocabulary, never hand-listed.** This array used to be a hand-written copy that
+ * stopped at three while `HazardVerdict` grew a fourth, so the tests below claimed to cover "every
+ * verdict" and covered all but the newest one — the one that most needed checking. Reading
+ * `HAZARD_VERDICTS` means the next addition is covered the day it lands.
+ */
+const VERDICTS: readonly HazardVerdict[] = HAZARD_VERDICTS;
 
 describe('coverage', () => {
   it('labels every hazard type without falling back to the raw key', () => {

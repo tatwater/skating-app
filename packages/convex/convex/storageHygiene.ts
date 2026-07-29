@@ -254,9 +254,10 @@ export const sweepDepartedPhotos = internalMutation({
  *   which is exactly the intended outcome. Patching every report to prune ids would be a write per
  *   report for a display that is already correct.
  * - **It doesn't guess when the hazard scan caps.** A `null` answer keeps the photo, because an image
- *   deleted on an unanswered question is the one thing here that can't be undone. `photoReconcile` is
- *   the determinate path if that ever becomes common. A capped pass also **doesn't mark the account
- *   done**, so it is retried on the next tick rather than silently accepted as finished.
+ *   deleted on an unanswered question is the one thing here that can't be undone — and it hands the
+ *   account to `photoReconcile`'s `season_expiry` mode, which answers the same question completely
+ *   across as many transactions as it needs. See the escalation below for why *retrying* the capped
+ *   scan was the wrong instinct in two separate ways.
  */
 export const expireDepartedPhotos = internalMutation({
   args: {
@@ -264,8 +265,10 @@ export const expireDepartedPhotos = internalMutation({
     cursor: v.optional(v.string()),
     /** The season this pass is expiring *through*, fixed by the sweeper — see its note on rollover. */
     season: v.optional(v.number()),
+    /** Test seam: force the hazard scan to cap, so the escalation path is reachable in a test. */
+    scanCap: v.optional(v.number()),
   },
-  handler: async (ctx, { userId, cursor, season }) => {
+  handler: async (ctx, { userId, cursor, season, scanCap }) => {
     const owner = await ctx.db.get(userId);
     // Only tombstones. A cancelled deletion restores an ordinary account, and an ordinary account's
     // photos are not on any clock at all — aging never removes anything (D62 second amendment).
@@ -273,7 +276,7 @@ export const expireDepartedPhotos = internalMutation({
 
     const target = season ?? seasonOf(Date.now());
     const seasonStart = seasonStartMs(target);
-    const keep = await hazardPhotoIds(ctx, userId);
+    const keep = await hazardPhotoIds(ctx, userId, scanCap);
     const page = await ctx.db
       .query('photos')
       .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
@@ -297,21 +300,37 @@ export const expireDepartedPhotos = internalMutation({
       if (await deletePhotoAndBlobs(ctx, photo)) deleted++;
     }
 
+    // **A `null` is a method to escalate from, not an answer to retry** (PR #30's lesson, re-learned
+    // here). The cap is a property of the *uploader* — how many hazards they hold — so re-running
+    // tomorrow returns `null` again, and every day after that. Retrying was doubly wrong: the photos
+    // were retained forever with no automated path, which is exactly the problem `photoReconcile` was
+    // built to end; and because a retried account is never marked, it sat at the front of the
+    // sweeper's range permanently occupying a slot in a bounded page. Enough of them and no other
+    // tombstone is ever reached — the same starvation N3/N4's pending sweep shipped and had to fix.
+    //
+    // So: hand it to the determinate pass, and mark it, because that job now owns the account.
+    if (keep === null) {
+      await ctx.scheduler.runAfter(0, internal.photoReconcile.reconcileUploaderPhotos, {
+        uploaderId: userId,
+        mode: 'season_expiry',
+      });
+      await ctx.db.patch(userId, { photosExpiredForSeason: target });
+      console.warn(
+        `expireDepartedPhotos: hazard scan for ${userId} hit its cap — escalated to photoReconcile (season_expiry) for a complete pass and marked so it stops occupying the daily queue`,
+      );
+      return { deleted, kept, done: true, escalated: true };
+    }
+
     if (!page.isDone) {
       await ctx.scheduler.runAfter(0, internal.storageHygiene.expireDepartedPhotos, {
         userId,
         cursor: page.continueCursor,
         season: target,
       });
-    } else if (keep !== null) {
-      // The last page of a pass that could actually answer the hazard question: this account is done
-      // for this season and drops out of the sweeper's range until the boundary turns over.
+    } else {
+      // The last page of a pass that could answer the hazard question: this account is done for the
+      // season and drops out of the sweeper's range until the boundary turns over.
       await ctx.db.patch(userId, { photosExpiredForSeason: target });
-    }
-    if (keep === null) {
-      console.warn(
-        `expireDepartedPhotos: hazard scan for ${userId} hit its cap — keeping this page rather than deleting images on an unanswered question, and leaving the account unmarked so the next tick retries it`,
-      );
     }
     return { deleted, kept, done: page.isDone };
   },

@@ -26,7 +26,24 @@
  * record and, once N5a's recurrence detection reads across seasons, becomes evidence that a hazard
  * formed somewhere it never did.
  */
-export type HazardVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed' | 'never_existed';
+export const HAZARD_VERDICTS = [
+  'still_there',
+  'healing_unsafe',
+  'fully_healed',
+  'never_existed',
+] as const;
+
+/**
+ * ⚠ **This array is the single source, and the type is derived from it — keep it that way.**
+ *
+ * `never_existed` was added as a fourth member of a hand-written union, and the vocabulary turned out
+ * to be written down in four places: this type, the backend's `HAZARD_CONFIRM_VERDICTS` validator,
+ * `hazardQueue`'s deliberate wire-shape re-declaration, and a test array that claimed to cover "every
+ * verdict" and silently went on covering three. Nothing failed to compile, so the new verdict's label
+ * and help text shipped untested. An array that the type is derived from means the next addition
+ * reaches every exhaustive `switch` *and* every loop that iterates the vocabulary.
+ */
+export type HazardVerdict = (typeof HAZARD_VERDICTS)[number];
 
 /**
  * The annotation on a pin, derived from the votes.

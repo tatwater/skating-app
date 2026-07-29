@@ -548,6 +548,51 @@ one verdict a crossing most needs shown.
 > it's that the diff to review after widening a value is **every existing reader of it**, not just the
 > new ones.
 
+## What Greptile found (2026-07-28, on PR #31)
+
+Two P2s, both real, and the first one is the more interesting because it is a lesson this repo had
+**already learned and written down** — in the very file the fix was read out of.
+
+**1. A capped account never finished, and starved the queue behind it.** Fixing the daily re-walk
+above introduced a subtler version of the same fault. When the one-shot hazard scan caps, the pass
+keeps every photo — correct, never in question — but then deliberately left the account *unmarked* so
+the next tick would retry it. Two things follow, and I had thought about neither:
+
+- The cap is a property of the **uploader**, not of the moment. Tomorrow returns the same `null`, and
+  every day after that: the photos are retained forever with no automated path. That is precisely the
+  failure PR #30 called out and built `photoReconcile` to end, and `lib/photoOrphans` says so in as
+  many words — *"a `null` is not an answer to be retried, it's a method to be escalated from"*. I read
+  that file, quoted its cap constant, and then wrote a retry.
+- Unmarked accounts sort **first** in the sweeper's range, so a permanently-capped one permanently
+  occupies a slot in a bounded page. Enough of them and no other tombstone is ever reached — N3/N4's
+  starved pending sweep, arriving by a different road, in the phase whose own notes brag about having
+  fixed it.
+
+`photoReconcile` now runs in two modes: the original `orphan` check and a `season_expiry` mode that
+answers the D66 question completely across as many transactions as it needs. A mode rather than a
+second file, for the reason `lib/photoOrphans` gives for existing at all — two destructive passes over
+the same rows must agree exactly on the paging and the fail-safe, and a copy would drift. **The
+`season_expiry` phase list omits `reports`, and that omission *is* the policy**: a surviving report
+must not protect a departed skater's photo, so deleting the phase is how you say so. Its own scratch
+flag, so the two daily crons can't clear each other's marks; a tombstone re-check every call, so a
+cancelled deletion abandons the run; and its last phase writes the completion marker, which is the
+only point at which the account has genuinely been answered.
+
+**2. The new verdict had no test coverage, because the test hand-listed the vocabulary.**
+`hazardCopy.test.ts` iterated `['still_there', 'healing_unsafe', 'fully_healed']` under headings
+claiming to cover *every* verdict, so D65's `never_existed` label and help text shipped unchecked.
+Nothing failed to compile, because a `HazardVerdict[]` of three is a perfectly good array of four's
+type.
+
+Following it found the vocabulary written down in **four** places: core's union, the backend's
+`HAZARD_CONFIRM_VERDICTS` validator, `hazardQueue`'s wire-shape re-declaration, and that test array.
+Only the first three were updated for D65. So the union is now derived from a `HAZARD_VERDICTS` array
+that the validator re-exports and the test iterates, and `hazardQueue`'s deliberate duplicate — which
+is deliberate, it's the shape of rows already sitting in a phone's SQLite queue — carries a two-line
+type assertion that fails to compile if the two ever disagree in either direction. The copy itself
+turned out to be correct; it was the *coverage* that was missing, which is exactly the kind of finding
+that is worth more than a bug.
+
 ## Settled after the design review (2026-07-27)
 
 **Hidden reports still resolve by permalink**, labelled *"from the '24/'25 season"*. Hiding governs the

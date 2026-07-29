@@ -966,6 +966,22 @@ export default defineSchema({
      * migration and no index — the sweep pages `by_uploader` and reads the flag in memory.
      */
     orphanCandidate: v.optional(v.boolean()),
+    /**
+     * The same scratch mark for `photoReconcile`'s **season-expiry** mode (D66/N5a) — a departed
+     * skater's photos, where the question is "is this named by a *hazard*" rather than "is this named
+     * by anything".
+     *
+     * Its own field rather than sharing `orphanCandidate`, because the two runs answer different
+     * questions over the same rows and both crons fire daily: a shared flag would let the orphan
+     * pass's `reports` phase clear a mark the season pass set, and a photo on a surviving report is
+     * exactly the one the season rule expires. Interleaving would fail toward *keeping* rather than
+     * deleting, which is the safe direction — but "safe by accident, in a delete path" is not a
+     * property worth relying on when a second optional boolean removes the interleaving entirely.
+     *
+     * Transient in the same way: meaningful only between the phases of one run, absent otherwise, no
+     * migration and no index.
+     */
+    seasonExpiryCandidate: v.optional(v.boolean()),
   })
     .index('by_uploader', ['uploaderId'])
     // Day-sliced orphan sweep (Phase 7b): a photo abandoned between upload and attach is invisible

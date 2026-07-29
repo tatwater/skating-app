@@ -99,12 +99,18 @@ export async function referencedPhotoIds(
 export async function hazardPhotoIds(
   ctx: QueryCtx | MutationCtx,
   uploaderId: Id<'profiles'>,
+  /**
+   * Test seam, clamped to the real cap — the escalation path is otherwise reachable only by seeding
+   * thousands of hazards, which is exactly why it went untested and shipped as a retry loop.
+   */
+  scanCap = REFERENCE_SCAN_CAP,
 ): Promise<Set<string> | null> {
+  const cap = Math.min(Math.max(scanCap, 1), REFERENCE_SCAN_CAP);
   const hazards = await ctx.db
     .query('hazards')
     .withIndex('by_author_and_water_body', (q) => q.eq('createdByUserId', uploaderId))
-    .take(REFERENCE_SCAN_CAP);
-  if (hazards.length >= REFERENCE_SCAN_CAP) return null;
+    .take(cap);
+  if (hazards.length >= cap) return null;
   const referenced = new Set<string>();
   for (const h of hazards) for (const id of h.photoIds) referenced.add(id);
   return referenced;

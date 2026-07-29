@@ -7,6 +7,8 @@
  * These are the backend-centric enums the apps rarely need to enumerate.
  */
 
+import { HAZARD_VERDICTS } from '@skating/core';
+
 /**
  * Where a GPS activity came *in* from — the A-inputs of the Phase 8 pipeline (D24).
  *
@@ -89,21 +91,19 @@ export const COMMENT_SOURCES = ['native', 'imported'] as const;
 export const HAZARD_STATUSES = ['active', 'archived'] as const;
 
 /**
- * The three-tier hazard confirmation vote (D52) + its trigger (D12/D15).
+ * The hazard confirmation vote — **re-exported from `@skating/core`, not redefined here.**
  *
- * Replaces the old binary `still_there | gone` (Phase 9): "gone" conflated *healed* with *safe*, but a
- * refrozen lead is thin ice and a healed ridge is a line of refrozen blocks. Only `fully_healed` counts
- * toward removal; `healing_unsafe` keeps the pin up so the next skater can read the healing ice.
+ * Three tiers of "is it still there" (D52), replacing the old binary `still_there | gone`: "gone"
+ * conflated *healed* with *safe*, but a refrozen lead is thin ice and a healed ridge is a line of
+ * refrozen blocks. Plus `never_existed` (D65), which is a claim about the *report* rather than the
+ * ice — it pools with `fully_healed` toward the same 2-vote archive and additionally files a
+ * moderation flag, because two people calling a pin bogus is a pattern somebody should see.
+ *
+ * It used to be a second hand-written copy of core's union, which is how D65's addition reached the
+ * validator and the schema while a test that iterated "every verdict" went on iterating three. The
+ * file header already says shared vocabulary is single-sourced in core; this one now is.
  */
-export const HAZARD_CONFIRM_VERDICTS = [
-  'still_there',
-  'healing_unsafe',
-  'fully_healed',
-  // D65: "there was never anything here" — a claim about the *report*, where the three above are
-  // claims about the *ice*. Pools with `fully_healed` toward the same 2-vote archive and additionally
-  // files a moderation flag, because two people calling a pin bogus is a pattern somebody should see.
-  'never_existed',
-] as const;
+export const HAZARD_CONFIRM_VERDICTS = HAZARD_VERDICTS;
 /**
  * What triggered a confirmation (D12). Kept distinct because the trigger is evidence about the
  * confirmation's quality: `proximity_alert` means the skater was standing within alert range of the

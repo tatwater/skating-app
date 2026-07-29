@@ -1725,6 +1725,25 @@ choice at delete time (a consent record we would then owe forever, asked at the 
 evidential value. Holding a departed person's photographs of themselves and their neighbours forever,
 because the coordinate attached to them is ice record, is the retention this rule exists to prevent.
 
+**A capped scan escalates; it must never be retried** (Greptile, 2026-07-28). The completion marker
+below created a second, subtler starvation, and the fix for it was already written down in this repo.
+When the one-shot hazard scan caps, the pass keeps every photo — right, and never in question — but the
+first version then left the account *unmarked* so it would be retried. The cap is a property of the
+**uploader**, not of the moment, so tomorrow returns the same `null`, and every day after: the photos
+are retained forever with no automated path, and — because unmarked accounts sort first — the account
+permanently occupies a slot in a bounded page, so enough of them and no other tombstone is ever
+reached. That is N3/N4's starved pending sweep arriving by a different road.
+
+`photoReconcile` exists precisely because *"a `null` is not an answer to be retried, it's a method to be
+escalated from"* (PR #30). It now runs in two modes: the original `orphan` check, and a `season_expiry`
+mode that asks the D66 question — *is this photo named by a **hazard*** — completely, across as many
+transactions as it needs. A mode rather than a second file, because two destructive passes over the
+same rows must agree exactly on the paging and the fail-safe. **Its phase list omits `reports`, and
+that omission is the policy**: a surviving report must not protect a departed skater's photo. The
+escalating caller marks the account and hands over ownership; the reconcile job's last phase writes the
+marker, which is the only point at which the account has genuinely been answered. Its own scratch flag,
+not the orphan job's, so two daily crons can't clear each other's marks.
+
 **The sweep needs a completion marker, which is not an optimization** (review pass, 2026-07-28). As
 first built, the daily cron fanned out to every tombstone the app had ever had and re-paginated its
 whole photo table, forever — the cost growing with every departure, and nothing in the result looking
