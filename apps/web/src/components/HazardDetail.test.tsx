@@ -50,6 +50,7 @@ function data(overrides: Partial<HazardViewData> = {}): HazardViewData {
     freshness: 'fresh',
     provisional: false,
     healing: false,
+    disputed: false,
     archived: false,
     firstReportedAt: Date.now() - 2 * 3_600_000,
     lastConfirmedAt: Date.now() - 2 * 3_600_000,

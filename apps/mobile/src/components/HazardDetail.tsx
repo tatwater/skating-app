@@ -7,6 +7,8 @@ import {
   freshnessLabel,
   type HazardVerdict,
   hazardTypeLabel,
+  confirmerSummary,
+  disputedNote,
   healingNote,
   isLeaving,
   isPassageMarker,
@@ -48,8 +50,17 @@ import { WeatherStrip } from './WeatherStrip';
  * closed* for a `ridge_crossing`.
  */
 
-/** The three verdicts, in the order they're offered — destructive last, and visually last. */
-const VERDICTS: HazardVerdict[] = ['still_there', 'healing_unsafe', 'fully_healed'];
+/**
+ * The verdicts, in the order they're offered — destructive last, and `never_existed` last of all: it
+ * is the only one that is a claim about the *report* rather than the ice (D65), and the only one that
+ * puts the pin in front of a moderator.
+ */
+const VERDICTS: HazardVerdict[] = [
+  'still_there',
+  'healing_unsafe',
+  'fully_healed',
+  'never_existed',
+];
 
 function formatWhen(at: number): string {
   const hours = (Date.now() - at) / 3_600_000;
@@ -69,6 +80,14 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
     hazard ? { profileIds: [hazard.createdByUserId] } : 'skip',
   );
   const me = useQuery(api.profiles.current, {});
+  // Who has confirmed it (D65) — named where the profile is public, counted where it isn't, so the
+  // list can be shorter than the count without the count ever being wrong.
+  const confirmations = useQuery(api.hazardConfirmations.listForHazard, {
+    hazardId: hazardId as Id<'hazards'>,
+  });
+  const confirmerNames = (confirmations ?? [])
+    .filter((c) => c.verdict === 'still_there' && c.displayName !== undefined)
+    .map((c) => c.displayName as string);
   const { setHighlightWaterBodyId, setFocus } = useMapSelection();
   const { scrollToY } = useDrawerScroll();
 
@@ -202,6 +221,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
           {freshnessLabel(hazard.freshness)}
         </Badge>
         {hazard.provisional ? <Badge>Unconfirmed</Badge> : null}
+        {hazard.healingState === 'disputed' ? <Badge>Disputed</Badge> : null}
         {hazard.healingState === 'healing_unsafe' ? <Badge>Reported healing</Badge> : null}
         {passage ? <Badge>Crossing point</Badge> : null}
         {archived ? <Badge>Retired</Badge> : null}
@@ -226,7 +246,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
             Phase 9.5's plain `hazard.reporterName` here, so this line only carries when + confirms. */}
         Reported {formatWhen(hazard.firstReportedAt)}
         {hazard.confirmCount > 0
-          ? ` · confirmed by ${hazard.confirmCount} other skater${hazard.confirmCount === 1 ? '' : 's'}`
+          ? ` · ${confirmerSummary(confirmerNames, hazard.confirmCount)?.toLowerCase()}`
           : ' · nobody else has confirmed it yet'}
         .
       </Paragraph>
@@ -236,7 +256,13 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         {stalenessCaveat(hazard.type)}
       </Paragraph>
 
-      {hazard.healingState === 'healing_unsafe' ? (
+      {/* A disputed crossing outranks a healing note — "the ridge is closed here" is the stronger
+          claim, and the one to read first (D64). */}
+      {hazard.healingState === 'disputed' ? (
+        <Paragraph color="$foregroundMuted" fontSize={13}>
+          {disputedNote()}
+        </Paragraph>
+      ) : hazard.healingState === 'healing_unsafe' ? (
         <Paragraph color="$foregroundMuted" fontSize={13}>
           {healingNote(hazard.type)}
         </Paragraph>

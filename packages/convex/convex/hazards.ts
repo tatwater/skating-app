@@ -24,8 +24,11 @@ import {
   type HazardShape,
   hazardBbox,
   hazardFootprint,
+  confirmThresholdFor,
   initialLifecycleState,
   isInSeason,
+  isPassageExpired,
+  isPassageMarker,
   isMinor,
   isProvisional,
   isValidHazardShape,
@@ -251,6 +254,12 @@ export interface HazardView extends Doc<'hazards'> {
   freshness: ReturnType<typeof deriveHazardFreshness>;
   provisional: boolean;
   /**
+   * A **suggested crossing** past its own window (D64) — expired, and so dropped from `listForBody`.
+   * Always `false` for a hazard: absence of evidence keeps a danger alive, and only a passage marker
+   * inverts that. Kept on the view so a permalink can say the marker aged out rather than 404.
+   */
+  expired: boolean;
+  /**
    * The reporter's display name, for the drawer's "reported by <name>" line. Only the single-hazard
    * `get` resolves it (an extra profile read per hazard — not worth paying on the map's `listForBody`,
    * which never shows a name), so it's absent on the list path and **withheld when the author is
@@ -272,7 +281,20 @@ function toView(hazard: Doc<'hazards'>, now: number): HazardView {
       now,
       hazard.decayMultiplier ?? 1,
     ),
-    provisional: isProvisional(hazard.confirmCount),
+    // A suggested crossing needs **two** independent confirmations to stop reading as one skater's
+    // suggestion (D64) — double every hazard's bar, which is what "more corroboration" means for the
+    // one pin type that says you can go this way.
+    provisional: isProvisional(
+      hazard.confirmCount,
+      confirmThresholdFor(isPassageMarker(hazard.type)),
+    ),
+    /**
+     * Past its own 72-hour window a passage marker is **expired**: it stops rendering (D64). Carried
+     * on the view rather than filtered out here, so `hazards.get` can tell a permalink holder that
+     * the crossing aged out instead of 404-ing a link that used to work — the same courtesy a past
+     * season's report gets. `listForBody` is where the drop happens.
+     */
+    expired: isPassageExpired(hazard.type, hazard.lastConfirmedAt, now),
   };
 }
 
@@ -337,6 +359,13 @@ export const listForBody = query({
         .filter((h) => h.promotedToFeatureId === undefined)
         .filter((h) => isInSeason(h.firstReportedAt, target))
         .map((h) => toView(h, now))
+        // **The one place a pin leaves the map on time alone** (D64). A hazard fades to a floor and
+        // never disappears, because assuming a danger is still there is the recoverable mistake. A
+        // suggested crossing is the opposite: "reported crossable" with nobody having looked in three
+        // days walks a skater onto ice no one has checked, and the recoverable mistake is the longer
+        // walk. Dropped here rather than in the client so the map, the list and the on-ice proximity
+        // evaluator — which all read this one query — cannot disagree about it.
+        .filter((h) => !h.expired)
         .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
     );
   },

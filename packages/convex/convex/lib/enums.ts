@@ -95,7 +95,15 @@ export const HAZARD_STATUSES = ['active', 'archived'] as const;
  * refrozen lead is thin ice and a healed ridge is a line of refrozen blocks. Only `fully_healed` counts
  * toward removal; `healing_unsafe` keeps the pin up so the next skater can read the healing ice.
  */
-export const HAZARD_CONFIRM_VERDICTS = ['still_there', 'healing_unsafe', 'fully_healed'] as const;
+export const HAZARD_CONFIRM_VERDICTS = [
+  'still_there',
+  'healing_unsafe',
+  'fully_healed',
+  // D65: "there was never anything here" — a claim about the *report*, where the three above are
+  // claims about the *ice*. Pools with `fully_healed` toward the same 2-vote archive and additionally
+  // files a moderation flag, because two people calling a pin bogus is a pattern somebody should see.
+  'never_existed',
+] as const;
 /**
  * What triggered a confirmation (D12). Kept distinct because the trigger is evidence about the
  * confirmation's quality: `proximity_alert` means the skater was standing within alert range of the
@@ -112,8 +120,13 @@ export const HAZARD_CONFIRM_VIA = [
 /** The authoring primitive a hazard was drawn with (D51). */
 export const HAZARD_GEOMETRY_KINDS = ['point_radius', 'line', 'polygon'] as const;
 
-/** Latest "healing but unsafe" annotation on a hazard (D52). */
-export const HAZARD_HEALING_STATES = ['none', 'healing_unsafe'] as const;
+/**
+ * The annotation on a hazard, derived from its votes (D52) — plus `disputed` (D64), which is
+ * **passage markers only**: one skater reporting a crossing closed is one vote short of retiring it,
+ * and until D64 that first vote changed nothing on screen. On a danger the same disclosure would
+ * invite skaters to discount a live warning, which is why it is not allowed to reach one.
+ */
+export const HAZARD_HEALING_STATES = ['none', 'healing_unsafe', 'disputed'] as const;
 
 /**
  * Persistent, non-decaying known features of a water body (D53) — always shown, never re-marked,

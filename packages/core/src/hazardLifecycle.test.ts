@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   applyConfirmation,
+  confirmThresholdFor,
   DEFAULT_CONFIRM_THRESHOLD,
   DEFAULT_REMOVAL_THRESHOLD,
   deriveHazardLifecycle,
@@ -10,6 +11,7 @@ import {
   type HazardVoteRecord,
   initialLifecycleState,
   isProvisional,
+  PASSAGE_CONFIRM_THRESHOLD,
   shouldArchive,
 } from './hazardLifecycle';
 
@@ -20,13 +22,14 @@ const arbVerdict: fc.Arbitrary<HazardVerdict> = fc.constantFrom(
   'still_there',
   'healing_unsafe',
   'fully_healed',
+  'never_existed',
 );
 
 const arbState: fc.Arbitrary<HazardLifecycleState> = fc.record({
   lastConfirmedAt: fc.integer({ min: T0 - 1000 * HOUR, max: T0 }),
   confirmCount: fc.integer({ min: 0, max: 10 }),
   goneCount: fc.integer({ min: 0, max: 10 }),
-  healingState: fc.constantFrom('none' as const, 'healing_unsafe' as const),
+  healingState: fc.constantFrom('none' as const, 'healing_unsafe' as const, 'disputed' as const),
   status: fc.constantFrom('active' as const, 'archived' as const),
 });
 
@@ -85,11 +88,13 @@ describe('applyConfirmation — healing_unsafe', () => {
 });
 
 describe('applyConfirmation — fully_healed', () => {
-  it('is the only verdict that increments goneCount', () => {
+  // D65 made this two verdicts rather than one. The invariant it was protecting is unchanged: nothing
+  // *except* a "there is nothing there" verdict can move a hazard toward removal.
+  it('is one of only two verdicts that increment goneCount', () => {
     fc.assert(
       fc.property(arbState, arbVerdict, (state, verdict) => {
         const next = applyConfirmation(state, verdict, T0);
-        if (verdict === 'fully_healed') {
+        if (verdict === 'fully_healed' || verdict === 'never_existed') {
           expect(next.goneCount).toBe(state.goneCount + 1);
         } else {
           expect(next.goneCount).toBe(state.goneCount);
@@ -185,7 +190,8 @@ describe('lifecycle invariants (property)', () => {
         const next = applyConfirmation(state, verdict, T0);
         if (next.status === 'archived' && state.status !== 'archived') {
           expect(next.goneCount).toBeGreaterThanOrEqual(DEFAULT_REMOVAL_THRESHOLD);
-          expect(verdict).toBe('fully_healed');
+          // "It healed" or "it was never here" — pooled (D65), and still nothing else.
+          expect(['fully_healed', 'never_existed']).toContain(verdict);
         }
       }),
     );
@@ -312,5 +318,108 @@ describe('shouldArchive / isProvisional', () => {
   // "all clear" can kill someone (D3).
   it('keeps removal strictly harder than confirmation', () => {
     expect(DEFAULT_REMOVAL_THRESHOLD).toBeGreaterThan(DEFAULT_CONFIRM_THRESHOLD);
+  });
+});
+
+/**
+ * D64 — a suggested crossing decays in the opposite direction from a hazard, and D65's fourth verdict.
+ * Both land in this reducer, and both are about the *removal* side of the asymmetry, which is the side
+ * that costs someone something when it's wrong.
+ */
+describe('never_existed (D65) pools with fully_healed', () => {
+  const vote = (userId: string, verdict: HazardVerdict, at: number): HazardVoteRecord => ({
+    userId,
+    verdict,
+    at,
+  });
+  const opts = { authorId: 'author', createdAt: T0, priorStatus: 'active' as const };
+
+  it('counts toward the same threshold — two people saying "nothing there" is two votes', () => {
+    const state = deriveHazardLifecycle(
+      [vote('a', 'fully_healed', T0 + HOUR), vote('b', 'never_existed', T0 + 2 * HOUR)],
+      opts,
+    );
+    // They disagree about history and agree about now. The map shows now.
+    expect(state.goneCount).toBe(2);
+    expect(state.status).toBe('archived');
+  });
+
+  it('does not make removal cheaper — one vote still leaves the pin up', () => {
+    const state = deriveHazardLifecycle([vote('a', 'never_existed', T0 + HOUR)], opts);
+    expect(state.goneCount).toBe(1);
+    expect(state.status).toBe('active');
+  });
+
+  it('still ignores the author, who cannot clear their own pin alone', () => {
+    const state = deriveHazardLifecycle(
+      [vote('author', 'never_existed', T0 + HOUR), vote('author', 'fully_healed', T0 + 2 * HOUR)],
+      opts,
+    );
+    expect(state.goneCount).toBe(0);
+    expect(state.status).toBe('active');
+  });
+});
+
+describe('disputed (D64) — passage markers only', () => {
+  const vote = (userId: string, verdict: HazardVerdict, at: number): HazardVoteRecord => ({
+    userId,
+    verdict,
+    at,
+  });
+  const base = { authorId: 'author', createdAt: T0, priorStatus: 'active' as const };
+
+  it('one "gone" vote on a crossing is visible instead of silent', () => {
+    const state = deriveHazardLifecycle([vote('a', 'fully_healed', T0 + HOUR)], {
+      ...base,
+      isPassage: true,
+    });
+    expect(state.healingState).toBe('disputed');
+    expect(state.status).toBe('active'); // closing still takes two
+  });
+
+  it('the same vote on a hazard changes nothing on screen — the unsafe direction', () => {
+    const state = deriveHazardLifecycle([vote('a', 'fully_healed', T0 + HOUR)], base);
+    expect(state.healingState).toBe('none');
+  });
+
+  it('outranks healing_unsafe when both apply', () => {
+    const state = deriveHazardLifecycle(
+      [vote('a', 'fully_healed', T0 + HOUR), vote('b', 'healing_unsafe', T0 + 2 * HOUR)],
+      { ...base, isPassage: true },
+    );
+    // "The ridge is closed here" is a stronger claim than "the crossing is dicey".
+    expect(state.healingState).toBe('disputed');
+  });
+
+  it('stops being disputed once the second vote closes it', () => {
+    const state = deriveHazardLifecycle(
+      [vote('a', 'fully_healed', T0 + HOUR), vote('b', 'never_existed', T0 + 2 * HOUR)],
+      { ...base, isPassage: true },
+    );
+    expect(state.status).toBe('archived');
+    expect(state.healingState).not.toBe('disputed');
+  });
+
+  it('a crossing nobody has disputed reads normally', () => {
+    const state = deriveHazardLifecycle([vote('a', 'still_there', T0 + HOUR)], {
+      ...base,
+      isPassage: true,
+    });
+    expect(state.healingState).toBe('none');
+    expect(state.confirmCount).toBe(1);
+  });
+});
+
+describe('confirmThresholdFor (D64)', () => {
+  it('asks twice as much of a pin that says you can go this way', () => {
+    expect(confirmThresholdFor(true)).toBe(PASSAGE_CONFIRM_THRESHOLD);
+    expect(confirmThresholdFor(false)).toBe(DEFAULT_CONFIRM_THRESHOLD);
+    expect(PASSAGE_CONFIRM_THRESHOLD).toBeGreaterThan(DEFAULT_CONFIRM_THRESHOLD);
+  });
+
+  it('leaves a one-confirm crossing provisional, where a hazard would be confirmed', () => {
+    expect(isProvisional(1, confirmThresholdFor(true))).toBe(true);
+    expect(isProvisional(1, confirmThresholdFor(false))).toBe(false);
+    expect(isProvisional(2, confirmThresholdFor(true))).toBe(false);
   });
 });

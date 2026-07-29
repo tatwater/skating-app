@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BODY_FEATURE_CAVEAT,
+  confirmerSummary,
   confirmRequestPrompt,
   FOOTPRINT_IS_APPROXIMATE,
   freshnessLabel,
@@ -209,5 +210,34 @@ describe('NO_ALERT_IS_NOT_ALL_CLEAR', () => {
   it('states plainly that silence is not safety', () => {
     expect(NO_ALERT_IS_NOT_ALL_CLEAR).toMatch(/does not mean/i);
     expect(NO_ALERT_IS_NOT_ALL_CLEAR).toMatch(/reported/i);
+  });
+});
+
+/**
+ * D65 — a confirmation from someone you can look up carries weight a bare count doesn't, but it is a
+ * sharper disclosure than a report: a named person, at a point, at a time. So the name follows the
+ * privacy flag the skater already set, and the count stays honest either way.
+ */
+describe('confirmerSummary', () => {
+  it('names everyone when everyone is public', () => {
+    expect(confirmerSummary(['Alex R.', 'Sam K.'], 2)).toBe('Confirmed by Alex R. and Sam K.');
+    // No trailing full stop: a display name can end in one, and "Sam K.." looks broken.
+  });
+
+  it('counts the private confirmers without naming them', () => {
+    expect(confirmerSummary(['Alex R.'], 4)).toBe('Confirmed by Alex R. and 3 others');
+  });
+
+  it('says one other, not 1 others', () => {
+    expect(confirmerSummary(['Alex R.'], 2)).toBe('Confirmed by Alex R. and 1 other');
+  });
+
+  it('falls back to a bare count when nobody is public', () => {
+    expect(confirmerSummary([], 3)).toBe('Confirmed by 3 skaters');
+    expect(confirmerSummary([], 1)).toBe('Confirmed by 1 skater');
+  });
+
+  it('says nothing at all when nobody has confirmed — silence is not an all-clear (D3)', () => {
+    expect(confirmerSummary([], 0)).toBeNull();
   });
 });

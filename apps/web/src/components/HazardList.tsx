@@ -26,7 +26,7 @@ export interface HazardListItem {
   type: HazardType;
   freshness: HazardFreshness;
   provisional: boolean;
-  healingState?: 'none' | 'healing_unsafe';
+  healingState?: 'none' | 'healing_unsafe' | 'disputed';
 }
 
 /**
@@ -76,6 +76,9 @@ export function HazardListView({
               <span className="text-sm">{hazardTypeLabel(hazard.type)}</span>
               <div className="flex flex-wrap gap-1">
                 {isPassageMarker(hazard.type) ? <Badge variant="outline">Crossing</Badge> : null}
+                {hazard.healingState === 'disputed' ? (
+                  <Badge variant="secondary">Disputed</Badge>
+                ) : null}
                 {hazard.healingState === 'healing_unsafe' ? (
                   <Badge variant="secondary">Healing</Badge>
                 ) : null}

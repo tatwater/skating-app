@@ -20,7 +20,7 @@
  * real hazard rows exist.
  */
 
-import { HAZARD_TYPES, type HazardType } from './types';
+import { HAZARD_TYPES, type HazardType, isPassageMarker } from './types';
 
 /** Freshness tiers: full strength · lighter · faded-behind-a-toggle. */
 export type HazardFreshness = 'fresh' | 'aging' | 'stale';
@@ -119,9 +119,45 @@ export function deriveHazardFreshness(
 /**
  * Stale hazards are hidden behind a "show older" toggle — **hidden, never removed** (D3). The pin still
  * exists and still renders once the toggle is on; this only governs the default view.
+ *
+ * ⚠ For a **passage marker** this is only half the answer — see {@link isPassageExpired}, the one
+ * place in the app where a pin leaves the map on time alone.
  */
 export function isHazardVisibleByDefault(freshness: HazardFreshness): boolean {
   return freshness !== 'stale';
+}
+
+/**
+ * How long a **suggested crossing** survives without anyone saying they got across (D64). Hours.
+ *
+ * Its own constant rather than the `agingH: 36` above, and the difference is the decision: reusing the
+ * freshness tier would make "faded" and "gone" the same instant, so a crossing marked on Saturday
+ * morning would stop rendering on Monday evening whether or not a soul had been near the lake. Longer
+ * than `agingH` so the marker fades first and expires later; far shorter than any hazard's life,
+ * because it is the pin that says *you can go this way*.
+ */
+export const PASSAGE_EXPIRY_H = 72;
+
+/**
+ * **The one place a pin leaves the map on time alone** (D64), and it needs to be conspicuous precisely
+ * because it contradicts the rule beside it.
+ *
+ * A hazard fades to a visible floor and never disappears: absence of evidence *keeps it alive*, because
+ * assuming a danger is still there is the recoverable mistake. A `ridge_crossing` is not a danger, it is
+ * a **passage marker** — "reported crossable" — and there the same rule points the other way. A marker
+ * placed in November still saying "you can get across here" in March, with nobody having looked since,
+ * walks a skater onto ice no one has checked. So for passage markers, and only for them, absence of
+ * evidence **kills the pin**.
+ *
+ * Getting a crossing wrong in the *remove* direction costs a longer walk. Getting it wrong in the *keep*
+ * direction can cost a life. The bias has to fall toward the recoverable one, which is the opposite bias
+ * from every other pin in the app.
+ *
+ * Returns `false` for anything that isn't a passage marker — a hazard never expires.
+ */
+export function isPassageExpired(type: HazardType, lastConfirmedAt: number, now: number): boolean {
+  if (!isPassageMarker(type)) return false;
+  return now - lastConfirmedAt >= hoursToMs(PASSAGE_EXPIRY_H);
 }
 
 /** All hazard types in a decay tier — for the Phase 7 admin surface and for grouped UI. */

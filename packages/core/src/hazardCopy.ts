@@ -95,6 +95,8 @@ export function verdictLabel(verdict: HazardVerdict, type: HazardType): string {
         return 'Crossing looks dicey now';
       case 'fully_healed':
         return 'Ridge closed / healed';
+      case 'never_existed':
+        return 'No crossing here';
     }
   }
   switch (verdict) {
@@ -104,6 +106,8 @@ export function verdictLabel(verdict: HazardVerdict, type: HazardType): string {
       return 'Healing — still unsafe';
     case 'fully_healed':
       return 'Fully healed & safe';
+    case 'never_existed':
+      return 'Nothing here — never was';
   }
 }
 
@@ -128,6 +132,8 @@ export function verdictHelp(verdict: HazardVerdict, type: HazardType): string {
         return 'The crossing has gotten worse. The marker stays up, now flagged as dicey.';
       case 'fully_healed':
         return 'The ridge has closed here — this is no longer a way across. Two of these retire the marker.';
+      case 'never_existed':
+        return 'There is no crossing at this spot and there never was — the marker is in the wrong place. A moderator is told.';
     }
   }
   switch (verdict) {
@@ -137,7 +143,22 @@ export function verdictHelp(verdict: HazardVerdict, type: HazardType): string {
       return 'It has changed but is still dangerous. The marker stays up so the next skater can read it.';
     case 'fully_healed':
       return 'Only if the ice here is genuinely sound. Two of these retire the marker for everyone.';
+    case 'never_existed':
+      return "Not that it cleared — that there was never anything here. Use this for a pin in the wrong place, not for ice that changed. A moderator is told.";
   }
+}
+
+/**
+ * The annotation on a **disputed** suggested crossing (D64) — one skater has said the ridge is closed
+ * here, which is one vote short of retiring the marker.
+ *
+ * It never says the crossing is unusable, because one report isn't that; it says the thing a skater
+ * standing at the ridge needs to know, which is that the last person to look disagreed with the pin.
+ * Passage markers only: the same disclosure on a hazard would invite skaters to discount a live
+ * warning, and one below-threshold "it's gone" vote must never do that.
+ */
+export function disputedNote(): string {
+  return 'The safety of this crossing has been disputed — someone reported the ridge closed here. Judge it yourself before you rely on it.';
 }
 
 /** The annotation shown on a pin whose latest verdict was "healing but unsafe". */
@@ -146,6 +167,33 @@ export function healingNote(type: HazardType): string {
     return 'Reported healing — likely refrozen blocks ("ice sharks"). Still a fall hazard.';
   }
   return 'Reported healing, but still called unsafe by the last skater who looked.';
+}
+
+/**
+ * "Confirmed by Alex R., Sam K. and 3 others" (D65).
+ *
+ * `named` are the confirmers whose profiles are public; `total` is everyone who said the pin is still
+ * there, named or not. A private profile is **counted, never named** — the name follows the consent
+ * the skater already gave, rather than a new one this feature invents — so the count is always the
+ * honest number even when the list is short.
+ *
+ * Returns `null` when nobody has confirmed: "confirmed by nobody" is a sentence that reads as an
+ * all-clear, and D3 forbids exactly that.
+ *
+ * No trailing full stop, unlike the rest of this file — a display name can perfectly well end in one
+ * ("Alex R."), and "Alex R.." is the kind of detail that makes a safety surface look unmaintained.
+ */
+export function confirmerSummary(named: readonly string[], total: number): string | null {
+  if (total <= 0) return null;
+  const others = Math.max(0, total - named.length);
+  const otherLabel = `${others} ${others === 1 ? 'other' : 'others'}`;
+  if (named.length === 0) {
+    return `Confirmed by ${total} ${total === 1 ? 'skater' : 'skaters'}`;
+  }
+  const parts = others > 0 ? [...named, otherLabel] : [...named];
+  if (parts.length === 1) return `Confirmed by ${parts[0]}`;
+  const last = parts[parts.length - 1];
+  return `Confirmed by ${parts.slice(0, -1).join(', ')} and ${last}`;
 }
 
 /** The on-ice soft prompt for an unconfirmed hazard. Its answer *is* the confirmation (D54). */

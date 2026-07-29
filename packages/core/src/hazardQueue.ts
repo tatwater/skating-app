@@ -25,8 +25,16 @@ import type { LatLng } from './geometry';
 import { type HazardShape, isValidHazardShape } from './hazardGeometry';
 import type { HazardType } from './types';
 
-/** The three-tier verdict, as the confirm mutation takes it (D52). */
-export type QueuedVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed';
+/**
+ * The verdict, as the confirm mutation takes it (D52 + D65's `never_existed`).
+ *
+ * Deliberately a re-declaration rather than an import of `HazardVerdict`: this is the wire shape of a
+ * row already sitting in a phone's SQLite queue, so widening it is a decision about what an *older*
+ * build may have written, not just about what the server accepts today. Adding a verdict is safe in
+ * that direction — an old client never wrote one — and it keeps the offline path able to carry the
+ * new one the moment the drawer offers it.
+ */
+export type QueuedVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed' | 'never_existed';
 
 /**
  * How a queued confirmation was triggered — mirrors the backend `HAZARD_CONFIRM_VIA` enum. Carried on
