@@ -1,3 +1,4 @@
+import type { HazardType } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
@@ -76,7 +77,7 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
 async function seedHazard(
   author: { as: ReturnType<ReturnType<typeof convexTest>['withIdentity']> },
   waterBodyId: Id<'waterBodies'>,
-  type = 'open_water' as const,
+  type: HazardType = 'open_water',
 ) {
   return author.as.mutation(api.hazards.create, {
     waterBodyId,

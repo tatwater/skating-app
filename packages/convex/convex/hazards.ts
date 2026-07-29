@@ -29,6 +29,8 @@ import {
   isInSeason,
   isPassageExpired,
   isPassageMarker,
+  promotionTargetFor,
+  rankPromotionCandidates,
   isMinor,
   isProvisional,
   isValidHazardShape,
@@ -43,6 +45,7 @@ import {
   assertCanPostHazards,
   getCurrentProfile,
   requireContributor,
+  requireContributorRole,
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
@@ -367,6 +370,62 @@ export const listForBody = query({
         // evaluator — which all read this one query — cannot disagree about it.
         .filter((h) => !h.expired)
         .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
+    );
+  },
+});
+
+/**
+ * **The pre-first-ice safety pass** (N5a): last season's hazards on one lake, ranked by how likely
+ * they are to be back, for the operator surface at `/admin/water/$id`.
+ *
+ * This is the cover for the seasonal reset, and the reason it is a safety task rather than
+ * housekeeping. Hiding last winter's hazards means the first skater in November sees a clean map where
+ * there was a ridge; what makes that honest is somebody walking this list beforehand and promoting the
+ * ones that come back every year into `bodyFeatures` (D53), which no reset touches.
+ *
+ * Ranked by `@skating/core`'s `rankPromotionCandidates` — decay tier first, because that is the only
+ * input that is about physics rather than about attention. It is **not** a prediction that a hazard
+ * will recur (D3); it is a queue for a human decision, and everything it drops is a type with nowhere
+ * to be promoted *to*.
+ *
+ * Moderator-gated, like every other operator read: this is a management view of hidden content.
+ */
+export const listPromotionCandidates = query({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /** Which season to look back at — absent ⇒ the one that just ended. */
+    season: v.optional(v.number()),
+  },
+  handler: async (ctx, { waterBodyId, season }) => {
+    await requireContributorRole(ctx, 'moderator');
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return [];
+    const now = Date.now();
+    const target: Season = season ?? seasonOf(now) - 1;
+    const rows = await ctx.db
+      .query('hazards')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .collect();
+    return rankPromotionCandidates(
+      rows
+        // Archived rows count. A ridge the community voted healed in March is *exactly* the kind that
+        // comes back in December — "it healed" is a fact about last winter, not about this one.
+        .filter((h) => h.moderationStatus === 'visible')
+        // Already promoted: the feature is carrying the warning, so there is nothing to decide.
+        .filter((h) => h.promotedToFeatureId === undefined)
+        .filter((h) => isInSeason(h.firstReportedAt, target))
+        .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
+        .map((h) => ({
+          hazardId: h._id,
+          type: h.type,
+          confirmCount: h.confirmCount,
+          goneCount: h.goneCount,
+          firstReportedAt: h.firstReportedAt,
+          lastConfirmedAt: h.lastConfirmedAt,
+          archived: h.status === 'archived',
+          promotesTo: promotionTargetFor(h.type),
+          ...(h.description !== undefined ? { description: h.description } : {}),
+        })),
     );
   },
 });

@@ -753,3 +753,81 @@ describe('photos.getHazardUrls', () => {
     expect(await author.as.query(api.photos.getHazardUrls, { hazardId })).toEqual([]);
   });
 });
+
+/**
+ * The pre-first-ice pass (N5a). This list is the safety cover for hiding last winter's hazards, so
+ * what it *omits* matters as much as what it ranks.
+ */
+describe('hazards.listPromotionCandidates', () => {
+  const lastSeasonStart = () => seasonStartMs(seasonOf(Date.now()) - 1) + 1;
+
+  test('offers last season’s recurring types, ranked, and never this season’s', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const spring = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'spring_current' }),
+    );
+    const ridge = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'pressure_ridge' }),
+    );
+    const thisSeason = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'spring_current' }),
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.patch(spring, { firstReportedAt: lastSeasonStart() });
+      await ctx.db.patch(ridge, { firstReportedAt: lastSeasonStart() });
+    });
+
+    const candidates = await mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId });
+    // Permanent behavior ahead of structural; this season's hazard isn't a question for this pass.
+    expect(candidates.map((c) => c.hazardId)).toEqual([spring, ridge]);
+    expect(candidates.map((c) => c.hazardId)).not.toContain(thisSeason);
+    expect(candidates[0]?.promotesTo).toBe('spring_current');
+  });
+
+  test('leaves out the volatile types — an event has nothing to be promoted to', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const lead = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'open_water' }),
+    );
+    await t.run((ctx) => ctx.db.patch(lead, { firstReportedAt: lastSeasonStart() }));
+
+    expect(await mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId })).toEqual([]);
+  });
+
+  test('keeps a hazard the community voted healed — that is a fact about last winter', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const ridge = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'pressure_ridge' }),
+    );
+    await t.run((ctx) =>
+      ctx.db.patch(ridge, { firstReportedAt: lastSeasonStart(), status: 'archived' }),
+    );
+
+    const candidates = await mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId });
+    expect(candidates.map((c) => c.hazardId)).toEqual([ridge]);
+    expect(candidates[0]?.archived).toBe(true);
+  });
+
+  test('is a moderator surface — it lists content ordinary users can no longer see', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'member');
+    const waterBodyId = await seedBody(t);
+    await expect(
+      user.as.query(api.hazards.listPromotionCandidates, { waterBodyId }),
+    ).rejects.toThrow(/moderator/i);
+  });
+});

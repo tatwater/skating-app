@@ -20,6 +20,7 @@ export * from './hazardDraft';
 export * from './hazardGeometry';
 export * from './hazardLayer';
 export * from './hazardLifecycle';
+export * from './hazardPromotion';
 export * from './hazardProjection';
 export * from './hazardProximity';
 export * from './hazardQueue';
