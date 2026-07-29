@@ -2,9 +2,12 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   currentSeason,
+  EARLIEST_BROWSABLE_SEASON,
   formatSeason,
+  isBrowsableSeason,
   isInSeason,
   previousSeason,
+  resolveSeason,
   SEASON_START_MONTH,
   type Season,
   seasonEndMs,
@@ -159,6 +162,46 @@ describe('seasonsBetween — the selector’s option list', () => {
         for (let i = 1; i < seasons.length; i++) {
           expect(seasons[i]).toBe(previousSeason(seasons[i - 1] as Season));
         }
+      }),
+    );
+  });
+});
+
+/**
+ * The wire is not a friend. `season` reaches every scoped read as a bare optional number, so a client
+ * bug or a hand-rolled request can hand it `NaN`, `2024.5` or `1e15` — none of which throw, and all of
+ * which become index bounds matching nothing. The failure mode is the bad one: the lake renders empty
+ * and reads as "nobody skated here that winter".
+ */
+describe('isBrowsableSeason / resolveSeason', () => {
+  it('accepts a season anyone could plausibly be browsing', () => {
+    expect(isBrowsableSeason(2024)).toBe(true);
+    expect(isBrowsableSeason(EARLIEST_BROWSABLE_SEASON)).toBe(true);
+  });
+
+  it('rejects the values that would silently empty a lake instead of erroring', () => {
+    expect(isBrowsableSeason(Number.NaN)).toBe(false);
+    expect(isBrowsableSeason(Number.POSITIVE_INFINITY)).toBe(false);
+    expect(isBrowsableSeason(2024.5)).toBe(false);
+    expect(isBrowsableSeason(1e15)).toBe(false);
+    expect(isBrowsableSeason(-1)).toBe(false);
+    expect(isBrowsableSeason(EARLIEST_BROWSABLE_SEASON - 1)).toBe(false);
+  });
+
+  it('lands a nonsense argument on the same default as no argument at all', () => {
+    expect(resolveSeason(undefined, 2025)).toBe(2025);
+    expect(resolveSeason(Number.NaN, 2025)).toBe(2025);
+    expect(resolveSeason(1e15, 2025)).toBe(2025);
+  });
+
+  it('passes a real request straight through', () => {
+    expect(resolveSeason(2019, 2025)).toBe(2019);
+  });
+
+  it('accepts every season the selector can actually offer', () => {
+    fc.assert(
+      fc.property(anyInstant, (ms) => {
+        expect(isBrowsableSeason(seasonOf(ms))).toBe(true);
       }),
     );
   });

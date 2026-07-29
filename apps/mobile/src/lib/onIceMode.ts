@@ -122,9 +122,15 @@ export function ingestOnIceFix(fix: DirectionalFix): void {
 }
 
 /**
- * Replace the cached hazards (the lake's `listForBody` result, pushed by the map UI) and re-evaluate
- * against the last fix — so a stationary skater whose lake just finished syncing, or near whom a hazard
- * was freshly posted, still gets the alert without waiting for a new GPS fix.
+ * Replace the cached hazards and re-evaluate against the last fix — so a stationary skater whose lake
+ * just finished syncing, or near whom a hazard was freshly posted, still gets the alert without waiting
+ * for a new GPS fix.
+ *
+ * **The only caller is `HazardBanner`, and that matters** (N5a/D63). Its `hazards.listForBody` call is
+ * textually the map's minus one argument: the map passes the season the sheet is browsing, the banner
+ * passes none and takes the server default. Feeding this from the map instead would let a sheet someone
+ * opened an hour ago decide which winter's ridges they get warned about while standing on the ice —
+ * both directions of that are wrong. Alerting is never a browsing question.
  */
 export function setOnIceHazards(next: readonly ProximityHazard[]): void {
   hazards = next;

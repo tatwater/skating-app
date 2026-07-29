@@ -196,6 +196,34 @@ export function confirmerSummary(named: readonly string[], total: number): strin
   return `Confirmed by ${parts.slice(0, -1).join(', ')} and ${last}`;
 }
 
+/**
+ * The same summary as a **mid-sentence clause** — "reported 3 days ago by Alex · confirmed by Sam K.
+ * and 2 others" — which is the only way either app actually uses it.
+ *
+ * It exists because the obvious way to write that call site is `confirmerSummary(...).toLowerCase()`,
+ * and that is exactly wrong now that the string contains names: it renders *"confirmed by alex r. and
+ * 3 others"*, quietly mangling the one thing D65 added. Lowering the leading word and nothing else is
+ * a single-character edit that no call site should be trusted to remember, so it lives here with the
+ * reason attached.
+ */
+export function confirmerClause(named: readonly string[], total: number): string | null {
+  const summary = confirmerSummary(named, total);
+  return summary === null ? null : summary.charAt(0).toLowerCase() + summary.slice(1);
+}
+
+/**
+ * The note on a **suggested crossing that has aged out** (D64) — past its 72-hour window, so it has
+ * already left the map and only a permalink can still reach it.
+ *
+ * Says the marker is old rather than that the crossing is closed, because nobody has reported either:
+ * the whole point of passage-marker expiry is that *silence* retires the pin. The confirm buttons stay
+ * offered under this note on purpose — a skater who just got across is precisely the evidence that
+ * revives it.
+ */
+export function expiredCrossingNote(): string {
+  return 'Nobody has reported getting across here in over three days, so this suggested crossing has aged off the map. It is not a report that the ridge has closed — just that nobody has looked. If you cross here, say so and it comes back.';
+}
+
 /** The on-ice soft prompt for an unconfirmed hazard. Its answer *is* the confirmation (D54). */
 export function confirmRequestPrompt(type: HazardType): string {
   return `Someone flagged ${hazardTypeLabel(type).toLowerCase()} near here — can you see it?`;

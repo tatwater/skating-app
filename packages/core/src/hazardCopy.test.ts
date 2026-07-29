@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   BODY_FEATURE_CAVEAT,
+  confirmerClause,
   confirmerSummary,
   confirmRequestPrompt,
+  expiredCrossingNote,
   FOOTPRINT_IS_APPROXIMATE,
   freshnessLabel,
   hazardTypeLabel,
@@ -239,5 +241,48 @@ describe('confirmerSummary', () => {
 
   it('says nothing at all when nobody has confirmed — silence is not an all-clear (D3)', () => {
     expect(confirmerSummary([], 0)).toBeNull();
+  });
+});
+
+/**
+ * The mid-sentence form, and the regression it exists for: both drawers render this inside
+ * "reported 3 days ago by Alex · …", and the obvious way to write that is
+ * `confirmerSummary(...).toLowerCase()` — which was shipped, and which lowercases the *names*.
+ */
+describe('confirmerClause', () => {
+  it('lowers only the leading word, leaving the names alone', () => {
+    expect(confirmerClause(['Alex R.', 'Sam K.'], 2)).toBe('confirmed by Alex R. and Sam K.');
+  });
+
+  it('never mangles a name — the whole point of D65 is that the names are readable', () => {
+    const clause = confirmerClause(['Alex R.', 'McTavish', 'Ó Briain'], 3);
+    expect(clause).toContain('Alex R.');
+    expect(clause).toContain('McTavish');
+    expect(clause).toContain('Ó Briain');
+  });
+
+  it('lowers the count fallback too', () => {
+    expect(confirmerClause([], 3)).toBe('confirmed by 3 skaters');
+  });
+
+  it('is null exactly when the summary is', () => {
+    expect(confirmerClause([], 0)).toBeNull();
+  });
+});
+
+/**
+ * The one pin allowed to leave the map on time alone (D64) needs to say so when a permalink reaches
+ * it — and must not overclaim, because *nobody* reported the crossing closed. Silence retired it.
+ */
+describe('expiredCrossingNote', () => {
+  it('says nobody has looked, and explicitly disclaims that the ridge has closed', () => {
+    const note = expiredCrossingNote();
+    expect(note).toMatch(/nobody has (reported|looked)/i);
+    // The distinction the whole D64 inversion rests on: silence retired this pin, not a report.
+    expect(note).toMatch(/not a report/i);
+  });
+
+  it('tells the skater how to bring it back — a crossing revives on evidence', () => {
+    expect(expiredCrossingNote()).toMatch(/comes back/i);
   });
 });

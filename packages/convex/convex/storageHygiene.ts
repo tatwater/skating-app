@@ -208,14 +208,26 @@ const DEPARTED_PAGE = 25;
 export const sweepDepartedPhotos = internalMutation({
   args: { cursor: v.optional(v.string()) },
   handler: async (ctx, { cursor }) => {
+    // The season is resolved **here**, once, and carried down into every continuation of every
+    // account's paging. Re-reading the clock per page would let a July 1 rollover land mid-account:
+    // earlier pages judged against the old boundary, the completion marker written for the new one,
+    // and the just-ended season's photos on those pages never swept by anybody.
+    const season = seasonOf(Date.now());
+    // **Only accounts that haven't been swept for this season.** `photosExpiredForSeason` is absent
+    // until an account's first complete pass and `undefined` sorts before every number, so this range
+    // returns never-swept tombstones first and stops returning an account once it's marked — turning a
+    // daily re-walk of every departure the app has ever had into one pass per account per season.
     const page = await ctx.db
       .query('profiles')
-      .withIndex('by_status', (q) => q.eq('status', 'deleted'))
+      .withIndex('by_status_photos_expired', (q) =>
+        q.eq('status', 'deleted').lt('photosExpiredForSeason', season),
+      )
       .paginate({ cursor: cursor ?? null, numItems: DEPARTED_PAGE });
 
     for (const profile of page.page) {
       await ctx.scheduler.runAfter(0, internal.storageHygiene.expireDepartedPhotos, {
         userId: profile._id,
+        season,
       });
     }
     // Self-continuing rather than looping: a page of accounts is a bounded transaction, and the
@@ -225,7 +237,7 @@ export const sweepDepartedPhotos = internalMutation({
         cursor: page.continueCursor,
       });
     }
-    return { accounts: page.page.length, done: page.isDone };
+    return { accounts: page.page.length, done: page.isDone, season };
   },
 });
 
@@ -243,17 +255,24 @@ export const sweepDepartedPhotos = internalMutation({
  *   report for a display that is already correct.
  * - **It doesn't guess when the hazard scan caps.** A `null` answer keeps the photo, because an image
  *   deleted on an unanswered question is the one thing here that can't be undone. `photoReconcile` is
- *   the determinate path if that ever becomes common.
+ *   the determinate path if that ever becomes common. A capped pass also **doesn't mark the account
+ *   done**, so it is retried on the next tick rather than silently accepted as finished.
  */
 export const expireDepartedPhotos = internalMutation({
-  args: { userId: v.id('profiles'), cursor: v.optional(v.string()) },
-  handler: async (ctx, { userId, cursor }) => {
+  args: {
+    userId: v.id('profiles'),
+    cursor: v.optional(v.string()),
+    /** The season this pass is expiring *through*, fixed by the sweeper — see its note on rollover. */
+    season: v.optional(v.number()),
+  },
+  handler: async (ctx, { userId, cursor, season }) => {
     const owner = await ctx.db.get(userId);
     // Only tombstones. A cancelled deletion restores an ordinary account, and an ordinary account's
     // photos are not on any clock at all — aging never removes anything (D62 second amendment).
     if (owner?.status !== 'deleted') return { deleted: 0, done: true, kept: 0 };
 
-    const seasonStart = seasonStartMs(seasonOf(Date.now()));
+    const target = season ?? seasonOf(Date.now());
+    const seasonStart = seasonStartMs(target);
     const keep = await hazardPhotoIds(ctx, userId);
     const page = await ctx.db
       .query('photos')
@@ -282,11 +301,16 @@ export const expireDepartedPhotos = internalMutation({
       await ctx.scheduler.runAfter(0, internal.storageHygiene.expireDepartedPhotos, {
         userId,
         cursor: page.continueCursor,
+        season: target,
       });
+    } else if (keep !== null) {
+      // The last page of a pass that could actually answer the hazard question: this account is done
+      // for this season and drops out of the sweeper's range until the boundary turns over.
+      await ctx.db.patch(userId, { photosExpiredForSeason: target });
     }
     if (keep === null) {
       console.warn(
-        `expireDepartedPhotos: hazard scan for ${userId} hit its cap — keeping this page rather than deleting images on an unanswered question`,
+        `expireDepartedPhotos: hazard scan for ${userId} hit its cap — keeping this page rather than deleting images on an unanswered question, and leaving the account unmarked so the next tick retries it`,
       );
     }
     return { deleted, kept, done: page.isDone };

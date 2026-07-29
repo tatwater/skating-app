@@ -830,4 +830,61 @@ describe('hazards.listPromotionCandidates', () => {
       user.as.query(api.hazards.listPromotionCandidates, { waterBodyId }),
     ).rejects.toThrow(/moderator/i);
   });
+
+  /**
+   * `by_water_body` has no status or time key, so this read was a `.collect()` over every hazard a
+   * lake had ever held — on a table seasons make permanent. Bounded now, newest-created first, which
+   * is where last season's rows are relative to older ones.
+   */
+  test('reads the newest hazards rather than the whole lifetime of a lake', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const recent = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'spring_current' }),
+    );
+    await t.run((ctx) => ctx.db.patch(recent, { firstReportedAt: lastSeasonStart() }));
+
+    const candidates = await mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId });
+    expect(candidates.map((c) => c.hazardId)).toEqual([recent]);
+  });
+});
+
+/**
+ * `season` arrives as a bare optional number, so it can be `NaN` or `1e15`. Neither throws — both
+ * become index bounds matching nothing — and the resulting empty lake reads as "quiet winter" rather
+ * than as a malformed request.
+ */
+describe('a nonsense season argument falls back rather than emptying the lake', () => {
+  test('hazards.listForBody ignores a NaN season', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const asked = await author.as.query(api.hazards.listForBody, {
+      waterBodyId,
+      season: Number.NaN,
+    });
+    const bare = await author.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(asked).toHaveLength(1);
+    expect(asked.map((h) => h._id)).toEqual(bare.map((h) => h._id));
+  });
+
+  test('a season nobody could be browsing is treated as no argument at all', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    expect(
+      await author.as.query(api.hazards.listForBody, { waterBodyId, season: 1e15 }),
+    ).toHaveLength(1);
+    // A real past season still hides it — the fallback must not mean "ignore the argument".
+    expect(
+      await author.as.query(api.hazards.listForBody, { waterBodyId, season: 2000 }),
+    ).toHaveLength(0);
+  });
 });

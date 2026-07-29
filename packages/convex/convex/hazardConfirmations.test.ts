@@ -736,4 +736,36 @@ describe('named confirmers (D65)', () => {
     expect(named).toHaveLength(1);
     expect(named[0]?.displayName).toBe('open');
   });
+
+  /**
+   * The author's own vote is real — it refreshed the clock and a moderator should see it — but it is
+   * *not* a confirmation: `confirmCount` excludes it by construction (D54). A client that names every
+   * `still_there` voter would otherwise print more names than the count above them, and print the
+   * reporter as their own corroborator one line under "reported by" them.
+   */
+  test('flags the author’s own vote so the drawer can leave them out of the confirmers', async () => {
+    const { t, author, hazardId } = await setup();
+    const skater = await seedUser(t, 'skater');
+
+    for (const who of [author, skater]) {
+      await who.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId,
+        verdict: 'still_there',
+        ...VIA,
+      });
+    }
+
+    const rows = await t.query(api.hazardConfirmations.listForHazard, { hazardId });
+    expect(rows.filter((r) => r.isAuthor)).toHaveLength(1);
+    expect(rows.find((r) => r.isAuthor)?.displayName).toBe('author');
+
+    // What the drawer actually renders from: never more names than the count they sit under.
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+    const confirmerNames = rows
+      .filter((r) => r.verdict === 'still_there' && !r.isAuthor && r.displayName !== undefined)
+      .map((r) => r.displayName);
+    expect(hazard?.confirmCount).toBe(1);
+    expect(confirmerNames).toEqual(['skater']);
+    expect(confirmerNames.length).toBeLessThanOrEqual(hazard?.confirmCount ?? 0);
+  });
 });

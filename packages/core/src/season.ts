@@ -56,6 +56,39 @@ export function currentSeason(now: number): Season {
 }
 
 /**
+ * The earliest season anyone may ask for. Nordic skating predates it by centuries; what this bounds is
+ * the *argument*, and no report in this app can be older than the app.
+ */
+export const EARLIEST_BROWSABLE_SEASON = 1900;
+
+/**
+ * Is this a season a client is allowed to name?
+ *
+ * Every seasonal read takes `season` as a bare optional number off the wire, which means it can arrive
+ * as `NaN`, a fraction, or `1e15`. None of those throw: they turn into index bounds that match nothing,
+ * so the screen goes empty and says a lake had a quiet winter. Callers pair this with "absent ⇒ this
+ * season" so a nonsense argument lands on the same honest default as no argument at all, rather than on
+ * a silent lie about the lake.
+ */
+export function isBrowsableSeason(value: number): boolean {
+  return (
+    Number.isInteger(value) &&
+    value >= EARLIEST_BROWSABLE_SEASON &&
+    value <= EARLIEST_BROWSABLE_SEASON + 500
+  );
+}
+
+/**
+ * The season a read should actually use: the one asked for if it is nameable, otherwise `fallback`.
+ *
+ * The single place the wire value is sanitized, so a new seasonal read gets the behaviour by calling
+ * one function rather than by remembering the argument is unvalidated.
+ */
+export function resolveSeason(requested: number | undefined, fallback: Season): Season {
+  return requested !== undefined && isBrowsableSeason(requested) ? requested : fallback;
+}
+
+/**
  * The first instant of a season (inclusive) — the lower bound handed to an index range.
  *
  * `seasonStartMs(seasonOf(t)) <= t` for every `t`, which is the property every scoped read leans on.

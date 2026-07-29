@@ -173,11 +173,38 @@ export default defineSchema({
      */
     deletionRequestedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
+    /**
+     * The season through which this tombstoned account's photos have been expired (D66/N5a) — a
+     * **completion marker**, and the thing that makes `sweepDepartedPhotos` terminate.
+     *
+     * Without it the cron re-paginated every tombstone's whole photo table every day forever, and the
+     * cost grew with every departure the app ever had. A tombstone can't gain photos (posting closed
+     * at the request), so once a sweep has run for season *S* there is nothing further to do until the
+     * boundary turns over — one pass per account per season, not one per account per day.
+     *
+     * Absent on every account that has never been swept, which is exactly the set the sweep wants
+     * first; see the index for why that falls out for free rather than needing a backfill.
+     */
+    photosExpiredForSeason: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_clerk_user_id', ['clerkUserId'])
     .index('by_username', ['username'])
     .index('by_status', ['status'])
+    /**
+     * The departed-photo sweep's work queue (D66/N5a): tombstones that haven't been swept for the
+     * current season yet.
+     *
+     * **This is the one place the non-sparse-index behaviour above is what we want**, and it's worth
+     * saying so beside the warning that it's usually a trap. `photosExpiredForSeason` is absent on
+     * every account that has never been swept, `undefined` sorts before every number, so a
+     * `lt('photosExpiredForSeason', currentSeason)` range returns the never-swept accounts *first* and
+     * then the ones last swept in an earlier season. That is precisely the queue, with no backfill and
+     * no migration. The sibling index two lines down is the same shape being wrong; the difference is
+     * that there the missing rows are ones the sweep must not touch, and here they're the ones it
+     * exists to find.
+     */
+    .index('by_status_photos_expired', ['status', 'photosExpiredForSeason'])
     // The finalize cron's window sweep (D62).
     //
     // **This index is NOT sparse**, and assuming it was nearly deleted every account on dev. A Convex

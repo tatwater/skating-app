@@ -32,6 +32,7 @@ import {
   pathOpacity,
   pointInPolygon,
   reportFreshness,
+  resolveSeason,
   seasonEndMs,
   seasonOf,
   seasonStartMs,
@@ -431,7 +432,9 @@ export const listTracksForBody = query({
     if (!body || !isListed(body)) return { tracks: [], truncated: 0 };
 
     const limit = Math.min(Math.max(args.limit ?? MAX_TRACKS_PER_BODY, 1), MAX_TRACKS_PER_BODY);
-    const season = args.season ?? seasonOf(Date.now());
+    // Sanitized, not trusted: a `NaN` off the wire is an index bound that matches nothing, which would
+    // draw an empty lake rather than refusing the question.
+    const season = resolveSeason(args.season, seasonOf(Date.now()));
     const activities = await ctx.db
       .query('gpsActivities')
       .withIndex('by_water_body_start_time', (q) =>

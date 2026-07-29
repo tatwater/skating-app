@@ -19,6 +19,7 @@ import {
   type FeedCardData,
   hasMeasuredThickness,
   ICE_TYPES,
+  isBrowsableSeason,
   isMinor,
   type LatLng,
   matchesFilters,
@@ -28,6 +29,7 @@ import {
   type RecommendableReport,
   type ReportInput,
   reportsAgree,
+  resolveSeason,
   type Season,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
@@ -489,7 +491,10 @@ export const listByWaterBody = query({
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, { waterBodyId, subAreaId, season, paginationOpts }) => {
-    const target: Season = season ?? seasonOf(Date.now());
+    // `v.number()` admits `NaN` and `1e15`; both become index bounds that match nothing, so an empty
+    // lake would be the answer to a malformed question. `resolveSeason` lands those on the same
+    // default as no argument at all.
+    const target: Season = resolveSeason(season, seasonOf(Date.now()));
     const from = seasonStartMs(target);
     const to = seasonEndMs(target);
     if (subAreaId !== undefined) {
@@ -735,7 +740,10 @@ export const listFeed = query({
     // Which season this page is actually serving (D63) — either the one asked for or the newest one
     // that has anything in it. Resolved before the read so every page of a scroll agrees.
     const current = seasonOf(now);
-    const served = season ?? (await servedFeedSeason(ctx, current));
+    const served =
+      season !== undefined && isBrowsableSeason(season)
+        ? season
+        : await servedFeedSeason(ctx, current);
 
     // Moderation-only gate (D32), applied *in* the index (`moderationStatus: 'visible'`) rather than
     // after `paginate`. A blocked author's report still comes through (D3), de-emphasized via `blocked`.

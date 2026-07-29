@@ -34,6 +34,7 @@ import {
   isValidHazardShape,
   promotionTargetFor,
   rankPromotionCandidates,
+  resolveSeason,
   type Season,
   seasonOf,
 } from '@skating/core';
@@ -354,7 +355,7 @@ export const listForBody = query({
     // and `firstReportedAt` isn't in either. That costs nothing here and is worth being explicit about,
     // because it's the opposite of the report path — this query is already bounded by *body* (Phase 9
     // call 6, deliberately never a viewport scan), so the read it would narrow is bounded already.
-    const target: Season = season ?? seasonOf(now);
+    const target: Season = resolveSeason(season, seasonOf(now));
     return (
       rows
         .filter((h) => h.moderationStatus === 'visible')
@@ -373,6 +374,12 @@ export const listForBody = query({
     );
   },
 });
+
+/**
+ * Hazards read per promotion pass. Far above any real lake's lifetime count — a busy body carries
+ * tens — so its job is to make the read bounded rather than to be reached.
+ */
+const PROMOTION_SCAN_CAP = 500;
 
 /**
  * **The pre-first-ice safety pass** (N5a): last season's hazards on one lake, ranked by how likely
@@ -401,11 +408,22 @@ export const listPromotionCandidates = query({
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
     const now = Date.now();
-    const target: Season = season ?? seasonOf(now) - 1;
+    const target: Season = resolveSeason(season, seasonOf(now) - 1);
+    // **Bounded, unlike its first draft.** `by_water_body` has no status or time key, so a `.collect()`
+    // here read every hazard the lake has ever held — on a table this phase's own design note points
+    // out never ages out. Newest-created first, because last season's rows are the newest ones that
+    // aren't this season's; an older row past the cap is a hazard from two winters ago, which the pass
+    // isn't asking about. Logged when it bites so the cap can't be the silent kind.
     const rows = await ctx.db
       .query('hazards')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
-      .collect();
+      .order('desc')
+      .take(PROMOTION_SCAN_CAP);
+    if (rows.length >= PROMOTION_SCAN_CAP) {
+      console.warn(
+        `listPromotionCandidates: ${body._id} has at least ${PROMOTION_SCAN_CAP} hazards — ranking the newest ${PROMOTION_SCAN_CAP} only`,
+      );
+    }
     return rankPromotionCandidates(
       rows
         // Archived rows count. A ridge the community voted healed in March is *exactly* the kind that

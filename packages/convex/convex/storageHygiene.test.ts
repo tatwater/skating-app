@@ -462,4 +462,44 @@ describe('expireDepartedPhotos (D66)', () => {
 
     expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull();
   });
+
+  /**
+   * The completion marker, and why it isn't an optimization. Without it the daily cron re-paginated
+   * every tombstone's whole photo table forever, so the cost grew with every departure the app had
+   * ever had — and nothing in the result would have looked wrong.
+   */
+  test('marks an account done for the season and stops offering it to the sweep', async () => {
+    const t = harness();
+    const userId = await seedTombstone(t, 'departed');
+    await seedPhoto(t, userId, lastSeason());
+
+    await t.mutation(internal.storageHygiene.expireDepartedPhotos, { userId });
+    const marked = await t.run((ctx) => ctx.db.get(userId));
+    expect(marked?.photosExpiredForSeason).toBe(seasonOf(Date.now()));
+
+    // The second tick's range excludes it — the whole point.
+    const second = await t.mutation(internal.storageHygiene.sweepDepartedPhotos, {});
+    expect(second.accounts).toBe(0);
+  });
+
+  test('an unmarked tombstone is what the sweep queue actually contains', async () => {
+    const t = harness();
+    await seedTombstone(t, 'never-swept');
+    const first = await t.mutation(internal.storageHygiene.sweepDepartedPhotos, {});
+    // `photosExpiredForSeason` is absent until the first pass, and a Convex index is not sparse —
+    // `undefined` sorts before every number, so the never-swept accounts are exactly what a
+    // `lt(currentSeason)` range returns. No backfill, no migration.
+    expect(first.accounts).toBe(1);
+  });
+
+  test('a stale marker comes back round when the boundary turns over', async () => {
+    const t = harness();
+    const userId = await seedTombstone(t, 'departed');
+    // Swept last season; this season's boundary has since passed, so there is new work.
+    await t.run((ctx) =>
+      ctx.db.patch(userId, { photosExpiredForSeason: seasonOf(Date.now()) - 1 }),
+    );
+    const result = await t.mutation(internal.storageHygiene.sweepDepartedPhotos, {});
+    expect(result.accounts).toBe(1);
+  });
 });

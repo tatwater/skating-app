@@ -282,6 +282,13 @@ async function maybeFlagNeverExisted(
  * A blocked author's name is *not* specially suppressed here: blocks hide profiles and comments, never
  * safety content (D3), and a confirmation is safety content. The count is what the pin is judged on
  * either way.
+ *
+ * **The hazard's own author is named but flagged `isAuthor`**, because the drawer must not list them
+ * among the confirmers: `confirmCount` excludes the author by construction (D54 — vouching for your
+ * own report isn't independent evidence), so a client that names every `still_there` voter can print
+ * more names than the count it prints them under, and print the reporter as their own corroborator one
+ * line below "reported by" them. Flagged rather than dropped: the vote is real, it refreshed the
+ * clock, and a moderator reading the history should see it.
  */
 export const listForHazard = query({
   args: { hazardId: v.id('hazards') },
@@ -307,7 +314,11 @@ export const listForHazard = query({
             );
           }
           const displayName = names.get(vote.userId);
-          return { ...vote, ...(displayName !== undefined ? { displayName } : {}) };
+          return {
+            ...vote,
+            isAuthor: vote.userId === hazard.createdByUserId,
+            ...(displayName !== undefined ? { displayName } : {}),
+          };
         }),
     );
     return named;

@@ -90,6 +90,14 @@ export interface ApplyConfirmationOptions {
   /** Confirmations by the hazard's own author don't count toward either threshold (D54). */
   isAuthor?: boolean;
   removalThreshold?: number;
+  /**
+   * Is this a passage marker (`ridge_crossing`)? Mirrors the same option on
+   * {@link DeriveHazardLifecycleOptions}, and for the same reason: only a passage marker can reach
+   * `disputed` (D64). Without it the offline optimistic state disagrees with what the server derives
+   * for the *one* verdict a crossing most needs shown — a skater casts "ridge closed here", sees
+   * nothing change, and only finds out it registered after the next sync.
+   */
+  isPassage?: boolean;
 }
 
 /**
@@ -113,7 +121,18 @@ export function applyConfirmation(
   at: number,
   options: ApplyConfirmationOptions = {},
 ): HazardLifecycleState {
-  const { isAuthor = false, removalThreshold = DEFAULT_REMOVAL_THRESHOLD } = options;
+  const {
+    isAuthor = false,
+    removalThreshold = DEFAULT_REMOVAL_THRESHOLD,
+    isPassage = false,
+  } = options;
+  /**
+   * `disputed` on a passage marker outranks whatever this vote would otherwise have annotated (D64) —
+   * the same precedence `deriveHazardLifecycle` applies, restated here rather than shared because the
+   * two functions maintain their counts differently and a shared helper would imply they don't.
+   */
+  const annotate = (goneCount: number, otherwise: HazardHealingState): HazardHealingState =>
+    isPassage && goneCount >= 1 && goneCount < removalThreshold ? 'disputed' : otherwise;
   // The author vouching for their own report is not independent evidence (D54). It still refreshes the
   // decay clock — they were genuinely there and looked — it just can't promote or remove the pin.
   const counts = !isAuthor;
@@ -128,8 +147,10 @@ export function applyConfirmation(
         ...state,
         lastConfirmedAt,
         confirmCount: state.confirmCount + (counts ? 1 : 0),
-        // Seeing it still there supersedes an earlier "healing" note.
-        healingState: 'none',
+        // Seeing it still there supersedes an earlier "healing" note — but not a standing dispute on
+        // a crossing: one skater finding the ridge closed and another getting across is exactly the
+        // disagreement `disputed` exists to show, and the newer vote doesn't erase the older one.
+        healingState: annotate(state.goneCount, 'none'),
       };
 
     case 'healing_unsafe':
@@ -139,7 +160,7 @@ export function applyConfirmation(
         // moves neither counter. The pin stays, now annotated, because a healing spot is exactly the
         // thing a future skater needs to be able to read.
         lastConfirmedAt,
-        healingState: 'healing_unsafe',
+        healingState: annotate(state.goneCount, 'healing_unsafe'),
       };
 
     // Both verdicts assert the same thing about the *present* — there is nothing there — and the map
@@ -154,7 +175,7 @@ export function applyConfirmation(
         ...state,
         lastConfirmedAt,
         goneCount,
-        healingState: 'none',
+        healingState: annotate(goneCount, 'none'),
         status: shouldArchive(goneCount, removalThreshold) ? 'archived' : state.status,
       };
     }

@@ -19,6 +19,21 @@ import { HAZARD_DECAY } from './hazardDecay';
 import type { HazardType } from './types';
 
 /**
+ * The `bodyFeatures` types a hazard can be promoted into — a **subset** of the backend's
+ * `BODY_FEATURE_TYPES`, narrow on purpose.
+ *
+ * Typed rather than left as `string` because the value's whole job is to be handed to
+ * `bodyFeatures.promote`, whose argument is a literal union. A `string` return forced the operator
+ * surface to write `promotesTo as 'spring_current'` — a cast that is a lie about three of the four
+ * values and that would go on compiling if this table and the backend enum ever drifted apart.
+ */
+export type PromotionTarget =
+  | 'spring_current'
+  | 'gas_hole'
+  | 'reef_hole'
+  | 'recurring_pressure_ridge';
+
+/**
  * The `bodyFeatures` type a hazard type promotes into (D53), or `null` when it has no permanent
  * equivalent.
  *
@@ -27,7 +42,7 @@ import type { HazardType } from './types';
  * nobody can clear. Only the types whose cause is a fixed feature of the lake bed or its flow have
  * somewhere to be promoted to.
  */
-export function promotionTargetFor(type: HazardType): string | null {
+export function promotionTargetFor(type: HazardType): PromotionTarget | null {
   switch (type) {
     // Moving water at a spring, and gas or reef holes: the cause is the lake, not the winter.
     case 'spring_current':

@@ -423,3 +423,68 @@ describe('confirmThresholdFor (D64)', () => {
     expect(isProvisional(2, confirmThresholdFor(true))).toBe(false);
   });
 });
+
+/**
+ * The optimistic single-vote path has to reach the same annotation the server derives, or the offline
+ * queue shows a skater nothing for the one verdict a crossing most needs shown: they cast "ridge closed
+ * here", the pin doesn't change, and they learn it registered only after the next sync.
+ */
+describe('applyConfirmation — disputed on the offline path (D64)', () => {
+  const state = (over: Partial<HazardLifecycleState> = {}): HazardLifecycleState => ({
+    confirmCount: 0,
+    goneCount: 0,
+    healingState: 'none',
+    lastConfirmedAt: T0,
+    status: 'active',
+    ...over,
+  });
+
+  it('marks a crossing disputed on the first "gone" vote, like the derivation does', () => {
+    const next = applyConfirmation(state(), 'fully_healed', T0 + HOUR, { isPassage: true });
+    expect(next.healingState).toBe('disputed');
+    expect(next.status).toBe('active');
+  });
+
+  it('pools never_existed the same way', () => {
+    const next = applyConfirmation(state(), 'never_existed', T0 + HOUR, { isPassage: true });
+    expect(next.healingState).toBe('disputed');
+  });
+
+  it('leaves a hazard alone — the same signal there invites discounting a live warning', () => {
+    const next = applyConfirmation(state(), 'fully_healed', T0 + HOUR);
+    expect(next.healingState).toBe('none');
+  });
+
+  it('keeps a standing dispute visible when someone later gets across', () => {
+    // Two skaters disagreeing is exactly what `disputed` is for; the newer vote doesn't erase it.
+    const next = applyConfirmation(state({ goneCount: 1 }), 'still_there', T0 + 2 * HOUR, {
+      isPassage: true,
+    });
+    expect(next.healingState).toBe('disputed');
+    expect(next.confirmCount).toBe(1);
+  });
+
+  it('drops the dispute once the second vote archives the marker', () => {
+    const next = applyConfirmation(state({ goneCount: 1 }), 'fully_healed', T0 + 2 * HOUR, {
+      isPassage: true,
+    });
+    expect(next.status).toBe('archived');
+    expect(next.healingState).not.toBe('disputed');
+  });
+
+  it('agrees with deriveHazardLifecycle on the case that matters', () => {
+    const optimistic = applyConfirmation(state(), 'fully_healed', T0 + HOUR, { isPassage: true });
+    const derived = deriveHazardLifecycle(
+      [{ userId: 'a', verdict: 'fully_healed', at: T0 + HOUR }],
+      {
+        authorId: 'author',
+        createdAt: T0,
+        priorStatus: 'active',
+        isPassage: true,
+      },
+    );
+    expect(optimistic.healingState).toBe(derived.healingState);
+    expect(optimistic.goneCount).toBe(derived.goneCount);
+    expect(optimistic.status).toBe(derived.status);
+  });
+});

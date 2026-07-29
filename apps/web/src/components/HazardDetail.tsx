@@ -2,10 +2,12 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   BODY_FEATURE_CAVEAT,
-  confirmerSummary,
+  confirmerClause,
   disputedNote,
+  expiredCrossingNote,
   FOOTPRINT_IS_APPROXIMATE,
   formatLocationLine,
+  formatSeason,
   freshnessLabel,
   type HazardFreshness,
   type HazardType,
@@ -14,6 +16,7 @@ import {
   healingNote,
   isLeaving,
   isPassageMarker,
+  seasonOf,
   stalenessCaveat,
   type TrustClass,
   verdictHelp,
@@ -48,6 +51,11 @@ export interface HazardViewData {
   healing: boolean;
   /** A suggested crossing somebody has reported closed — one vote short of retiring it (D64). */
   disputed: boolean;
+  /**
+   * A suggested crossing past its 72-hour window (D64) — already gone from the map, so a permalink is
+   * the only way anyone is seeing this. Says so rather than rendering as a live pin.
+   */
+  expired: boolean;
   archived: boolean;
   description?: string;
   /**
@@ -175,6 +183,7 @@ export function HazardView({
           {data.disputed ? <Badge variant="secondary">Disputed</Badge> : null}
           {data.healing ? <Badge variant="secondary">Reported healing</Badge> : null}
           {passage ? <Badge variant="outline">Crossing point</Badge> : null}
+          {data.expired ? <Badge variant="outline">Aged off the map</Badge> : null}
           {data.archived ? <Badge variant="outline">Retired</Badge> : null}
         </div>
 
@@ -194,12 +203,29 @@ export function HazardView({
               ? // Named where the skater's profile is public, counted where it isn't (D65): a
                 // confirmation from someone you can look up carries weight a bare number doesn't, and
                 // it discloses more than a report does, so it follows the consent already given.
-                ` · ${confirmerSummary(data.confirmerNames ?? [], data.confirmCount)?.toLowerCase()}`
+                // `confirmerClause`, never `confirmerSummary(...).toLowerCase()` — the string now
+                // carries names, and lowercasing it renders "confirmed by alex r. and 3 others".
+                ` · ${confirmerClause(data.confirmerNames ?? [], data.confirmCount)}`
               : ' · nobody else has confirmed it yet'}
             .
           </span>
         </div>
 
+        {/* Whichever season this pin belongs to, said out loud. A hazard's season is its
+            `firstReportedAt` (N5a) and a past-season pin is off the map entirely, so a permalink is
+            the only way anyone reaches this — the same courtesy a past-season report gets, for the
+            same reason: a link that used to work must not 404, and must not lie about its age. */}
+        {seasonOf(data.firstReportedAt) === seasonOf(Date.now()) ? null : (
+          <p className="rounded-md bg-surface-muted p-3 text-sm">
+            From the {formatSeason(seasonOf(data.firstReportedAt))} season — it is not on the map
+            this winter. Open the lake and pick that season to see it in place.
+          </p>
+        )}
+        {/* An expired suggested crossing (D64). Read before the staleness caveat because it is the
+            stronger statement: this pin is not merely faded, it has left the map. */}
+        {data.expired ? (
+          <p className="rounded-md bg-surface-muted p-3 text-sm">{expiredCrossingNote()}</p>
+        ) : null}
         {/* The sentence that has to do the work of not sounding like an all-clear. */}
         {data.freshness !== 'fresh' ? (
           <p className="rounded-md bg-surface-muted p-3 text-sm">{stalenessCaveat(data.type)}</p>
@@ -340,8 +366,11 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
   const confirmations = useQuery(api.hazardConfirmations.listForHazard, {
     hazardId: hazardId as Id<'hazards'>,
   });
+  // The author's own vote is excluded: `confirmCount` never counts it (D54), so naming them here
+  // would print more names than the count they sit under — and print the reporter as their own
+  // corroborator, one line below "reported by" them.
   const confirmerNames = (confirmations ?? [])
-    .filter((c) => c.verdict === 'still_there' && c.displayName !== undefined)
+    .filter((c) => c.verdict === 'still_there' && !c.isAuthor && c.displayName !== undefined)
     .map((c) => c.displayName as string);
   const me = useQuery(api.profiles.current, {});
   const confirm = useMutation(api.hazardConfirmations.confirm);
@@ -412,6 +441,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         provisional: hazard.provisional,
         healing: hazard.healingState === 'healing_unsafe',
         disputed: hazard.healingState === 'disputed',
+        expired: hazard.expired,
         // Any non-active status is "retired" for display (unified with mobile): a new status defaults to
         // hidden strip / no-confirm rather than silently rendering as active.
         archived: hazard.status !== 'active',

@@ -6,6 +6,7 @@ import {
   formatSeason,
   type LatLng,
   minVisibleZoom,
+  type PromotionTarget,
   seasonOf,
   suggestSamplePoints,
 } from '@skating/core';
@@ -714,15 +715,16 @@ function PromotionTool({
   const onPromote = async (candidate: {
     hazardId: string;
     type: string;
-    promotesTo: string | null;
+    promotesTo: PromotionTarget | null;
   }) => {
     if (!candidate.promotesTo) return;
     setBusyId(candidate.hazardId);
     try {
       await promote({
         hazardId: candidate.hazardId as Id<'hazards'>,
-        // The mutation's own union; the query only ever offers a type that has one.
-        type: candidate.promotesTo as 'spring_current',
+        // No cast: `PromotionTarget` is a subset of the mutation's own union, so the two stay honest
+        // about each other and a drift between the promotion table and the backend enum won't compile.
+        type: candidate.promotesTo,
         reason: `Recurring ${candidate.type.replace(/_/g, ' ')} — promoted in the pre-season pass.`,
       });
       onResult({ tone: 'ok', text: 'Promoted to a permanent body feature.' });
