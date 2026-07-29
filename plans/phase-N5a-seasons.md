@@ -3,7 +3,8 @@
 *The map should show **this** season's ice. Everything else is history you go and look at on purpose,
 not something that quietly shares the screen with a report from Tuesday.*
 
-> **Status:** design settled 2026-07-27, not yet built. Splits from the roadmap's old N5, keeping its
+> **Status:** design settled 2026-07-27; the **departure half shipped the same day** (PR #30, items
+> 0/0b/6), the **seasonal half in build from 2026-07-28**. Splits from the roadmap's old N5, keeping its
 > two **lifecycle** items; the three **authoring-UX** items become [N5b](./phase-N5b-hazard-authoring.md).
 
 ## What checking the code changed about the plan
@@ -202,6 +203,56 @@ Three notes that matter to the rest of this phase:
 - **The accepted cost:** a skater on bad ice during their window can't file the hazard. Cancelling is
   one tap and the error says so, but it's a real trade, not a free win.
 
+## Settled at build kickoff (2026-07-28)
+
+Eight questions the design left open, all of them answerable only by someone who knows what the app is
+for. Recorded here in the order they were asked, with the reasoning that decided each.
+
+**1. A hazard's season is its `firstReportedAt`.** The alternative — `lastConfirmedAt`, the clock the
+app judges a hazard by everywhere else — would have made the boundary **soft**: one skater confirming a
+March ridge in November carries it into the new season with no operator in the loop, which quietly
+re-answers the question the promotion pass exists to ask. Hard boundary instead: last season's hazards
+are reachable only through the season selector and the admin promotion list.
+
+> ⚠ **This is the opposite field from the one `lib/contentPurge` ages hazards on**, and both are
+> correct. Redaction asks *"is the community still maintaining this?"* — a clock other people move.
+> Seasons ask *"when was this first seen?"* — a clock nobody can move. Two questions, two fields; the
+> code has to say so at both sites or someone will "fix" one to match the other.
+
+**2. The season selector governs the whole lake view** — list, hazards *and* tracks, map included. A
+re-listed sidebar over a current-season map would put two seasons on screen at once, which is precisely
+the confusion this phase exists to end.
+
+**3. The global feed falls back to last season, labelled.** Season-scoping the feed empties it on
+July 1 and it *stays* empty until first ice — five months of a dead home screen, which the design
+hadn't followed through. When the current season has nothing, the feed shows the previous season under
+a divider that says so. Labelled is what keeps it honest; silently mixing is what D63 forbids.
+
+**4. A profile's report list is never season-scoped.** A person's contribution history is not a claim
+about the state of the ice. It's also the index `lib/contentPurge` sweeps — see the build note.
+
+**5. The two D64 constants.** Expiry gets its **own 72-hour window** rather than reusing `agingH: 36`,
+so "faded" and "gone" aren't the same instant and a weekday-quiet lake doesn't lose its Sunday
+crossing by Monday night. **Two** independent confirmations to stop being provisional, against every
+hazard's one — that's what "more corroboration" is, literally double.
+
+**6. `never_existed` pools with `fully_healed` toward the same 2-vote archive, and files a moderation
+flag** (D65). The two verdicts disagree about history and agree about the present, and the map shows
+the present — requiring two of a kind would leave a genuinely-clear hazard up because its witnesses
+explained it differently. The flag is the half `fully_healed` doesn't get: "there was never anything
+here" is a claim about the *report*, and two of them is a pattern a moderator should see rather than
+an archive that happens quietly.
+
+**7. Confirmers are named, subject to `profileVisibility`** (D65). Public profiles are named, private
+ones counted. A confirmation is sharper than a report — it says a named person stood at a *point* at a
+*time* — so it reuses the consent signal the user already gave rather than inventing a new one. Minors
+are forced private (D41), so they're never named by construction.
+
+**8. The departed-skater photo split is in this phase** (D66), promoted out of the deferred register.
+Hazard photos kept, everything else expiring at the end of its season. The argument that moved it: the
+clock it needs *is* this phase's boundary, so deferring it means inventing a per-photo TTL later and
+then reconciling the two.
+
 ## The design
 
 ### Seasonal scoping
@@ -384,8 +435,10 @@ sentences and only one of them is ours to say.
 6. ✅ Departed-user redaction — shipped with items 0/0b (`lib/contentPurge`): free text cleared at 30
    days, private leftovers erased, the observation kept, running at request / while pending / at
    finalize.
-7. The two folded-in lifecycle items — "this never existed" verdict, naming confirmers.
+7. The two folded-in lifecycle items — the `never_existed` verdict and named confirmers, designed at
+   kickoff as **D65**.
 8. The passage-marker lifecycle inversion (D64) + the "suggested crossing" copy pass.
+9. The departed-skater photo split (**D66**), moved up from the deferred register at kickoff.
 
 ## Settled after the design review (2026-07-27)
 
@@ -458,9 +511,12 @@ redacted comment renders as *"This comment was deleted"* in both apps. Not yet a
 moderation queue shows for one, and whether `commentCount` should follow a redaction (it currently
 doesn't — the comment still exists, which is arguably correct and worth confirming).
 
-**5. What to do about a departed skater's photo *images*.** The one open question with no decided
-answer, raised in the 2026-07-27 walkthrough. Everything else on this page is a build-time or
-dependency problem; this is a genuine design call.
+**5. ~~What to do about a departed skater's photo *images*.~~ → decided at kickoff as [D66](./01-decisions.md#d66--a-departed-skaters-photos-split-on-evidential-value-and-expire-at-the-season-boundary-n5a),
+and built in this phase as work item 9.** The founder's shape below is what was taken, with one
+implementation consequence the write-up hadn't reached: because finalization lands 30 days after the
+request and therefore mid-season, the expiry sweep has to **outlive the tombstone** — it runs off
+`profiles.by_status` (`deleted`) rather than the pending index, which `writeTombstone` drops the row out
+of. The original framing is kept below, since the alternatives it weighs are the record of why.
 
 Today a photo attached to a surviving report or hazard is kept whole — bytes, timestamp, coordinate —
 and only the caption is redacted. The coordinate is ice record and earns its place. The **image** is
@@ -505,9 +561,11 @@ the empty state needs no special caveat — noted so the next person doesn't red
 
 ## Open questions
 
-- **Whether the reset needs an announcement.** On July 1 a skater's favourite lake goes blank. That's
-  correct and it will read as a bug unless the empty state says "no reports yet this season" and points
-  at the season filter.
+- ~~**Whether the reset needs an announcement.**~~ **Answered at kickoff, and the answer was bigger
+  than the question.** No announcement: the empty state carries it, on the lake ("no reports yet this
+  season" plus the season selector) and in the feed — where the honest empty state turned out to be a
+  **labelled fallback to last season**, because the feed doesn't go blank for a day in July, it goes
+  blank until first ice. See kickoff decision 3.
 - **What the map does with a body whose only hazards are last season's.** Probably nothing — but
   prominence scoring (D49) partly reflects activity, and a reset changes its inputs.
 - **Whether `'24/'25` is the right label** for a region where ice spans one calendar year. Fine for the

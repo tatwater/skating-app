@@ -821,11 +821,12 @@ different reason, was the only thing in the way. Every other bare upper-bound ra
 swept and is on a required field. **Tests didn't catch this; running the job against a real deployment
 did**, and the regression test was only trusted after reverting the fix and watching it fail.
 
-**N5a — Seasons: seasonal visibility, the season filter, departed-user erasure.** 📐 *Design settled
-2026-07-27* — see [`phase-N5a-seasons.md`](./phase-N5a-seasons.md); decisions **D63** + a **D62
-amendment**. *(Re-scoped: this entry used to be "hazard authoring & confirmation polish". It keeps that
-entry's two **lifecycle** items, because they touch the same `deriveHazardLifecycle` a seasonal reset
-does; the three **authoring-UX** items became **N5b**.)*
+**N5a — Seasons: seasonal visibility, the season filter, departed-user redaction.** 🔨 *Design settled
+2026-07-27; the departure half **shipped 2026-07-27** (PR #30), the seasonal half in build* — see
+[`phase-N5a-seasons.md`](./phase-N5a-seasons.md); decisions **D63**, **D64**, **D65**, **D66** + the
+**D62 amendment** and its **second amendment**. *(Re-scoped: this entry used to be "hazard authoring &
+confirmation polish". It keeps that entry's two **lifecycle** items, because they touch the same
+`deriveHazardLifecycle` a seasonal reset does; the three **authoring-UX** items became **N5b**.)*
 
 The founder ask that started it: **reports and paths from previous seasons should not be visible on the
 map at all** — fully hidden, not deleted — with a deliberate way to browse a past season, and recurring
@@ -843,11 +844,24 @@ renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggreg
   than new machinery. That makes the pre-first-ice promotion pass a **safety** task, not housekeeping —
   the sharp edge of this phase, since hiding hazards means the first skater of the season sees a clean
   map where last winter there was a ridge.
-- **Departed-user erasure at 30 days** (D62 amendment): report + GPS path + hazards + photos go;
-  bounties go immediately at finalize; **put-ins survive** (S1 — access is the corpus's most-discussed
-  concern). Flat 30 days rather than the D59 curve, because the consequence is irreversible and N3/N4
-  already shipped one bug caused by a subtly-wrong predicate on this exact kind of sweep.
-- Folded in from the old entry: **"this never existed" confirmation verdict** and **naming confirmers**.
+- ~~**Departed-user erasure at 30 days**~~ → **redaction**, and **✅ shipped 2026-07-27 (PR #30)**.
+  This bullet described round one of the D62 amendment and is kept struck rather than deleted, because
+  every clause of it was reversed later the same day by the **second amendment** and the superseded
+  version is the one someone reading the register would otherwise act on. What actually shipped:
+  a deletion **request** makes you a ghost immediately (profile scrubbed, unreachable to everyone else,
+  posting closed — only the *login* waits 30 days, so the decision is reversible); published content is
+  **kept and anonymized**, with every free-text field cleared at 30 days (`reports.notes`, reading
+  notes, `hazards.description`, photo captions, comment bodies, `contentFlags.note`); **hazards are
+  never erased** — they are the multi-season record recurrence detection is built on; **bounties go at
+  the request**, not at finalize; and **put-ins survive by ordinary derivation**, since the report they
+  derive from is kept. Flat 30 days rather than the D59 curve — and the terminal pass ignores the clock
+  entirely, which is the correction three walkthrough bugs shared.
+- Folded in from the old entry: **"this never existed" confirmation verdict** and **naming confirmers**
+  — designed at build kickoff as **D65** (pools with `fully_healed` toward the same 2-vote archive *and*
+  files a moderation flag; confirmers named subject to `profileVisibility`).
+- **A departed skater's photos split on evidential value (D66)** — hazard photos kept, everything else
+  expires at the end of the season it was taken in. Promoted out of the deferred register at kickoff
+  because its clock *is* this phase's boundary; deferring it means inventing a per-photo TTL later.
 - **Suggested crossings decay in the opposite direction from hazards (D64).** Moved here from N5b once
   the founder's version of "ridge-crossing v2" turned out to be a lifecycle change rather than an
   authoring one: several *suggested crossings* per ridge, individually downvotable, decaying **faster**
@@ -857,7 +871,9 @@ renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggreg
   reads "reported crossable" in March. Copy becomes *"suggested crossing"*, never "safe". A single
   "closed" vote — **invisible today** — makes a crossing visibly **disputed**; closing still takes two,
   because removing on one vote lets any single user delete a contribution and destroys the information
-  that a crossing was ever found there.
+  that a crossing was ever found there. The two constants, settled at kickoff: expiry is its **own**
+  72-hour window (not the existing `agingH: 36`, which would make "faded" and "gone" the same instant),
+  and it takes **two** independent confirmations to stop being provisional against every hazard's one.
 
 **Two premises the code check falsified**, both making the phase *more* consequential:
 - **Reports don't draw on the map at all** — there is no report layer. What reaches the map from a
