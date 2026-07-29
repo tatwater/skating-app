@@ -270,6 +270,91 @@ export function polygonIoU(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon)
 }
 
 /**
+ * Does a closed ring cross itself?
+ *
+ * Written for hazard polygon authoring (N5b): a ring tapped out on a phone can easily come back as a
+ * bowtie, and a bowtie's buffered footprint is not a statement about where the hazard is — it is two
+ * lobes joined at a point nobody stood on. terra-draw prevents this on web; the tap-to-place path on
+ * mobile has no such engine, and the server has no client at all it can trust, so the predicate has to
+ * live somewhere both can call.
+ *
+ * Tested in raw lng/lat rather than a local projection on purpose: self-intersection is a
+ * **topological** property, and at lake scale the planar approximation cannot flip a crossing into a
+ * non-crossing. Projecting first would cost accuracy nowhere and a dependency somewhere.
+ *
+ * Adjacent segments share an endpoint by construction — including the closing pair — so they are
+ * skipped rather than reported as touching. Collinear overlap *is* reported: a ring that doubles back
+ * along its own edge encloses no area there and is the same lie as a crossing.
+ */
+export function ringSelfIntersects(ring: readonly Position[]): boolean {
+  // A ring is closed, so its last position repeats its first; the segment list is one shorter.
+  const n = ring.length - 1;
+  if (n < 3) return false;
+  for (let i = 0; i < n; i++) {
+    // Start at i+2: segment i and i+1 share a vertex legitimately.
+    for (let j = i + 2; j < n; j++) {
+      // The first and last segments also share a vertex (the ring's closure point).
+      if (i === 0 && j === n - 1) continue;
+      if (
+        segmentsIntersect(
+          ring[i] as [number, number],
+          ring[i + 1] as [number, number],
+          ring[j] as [number, number],
+          ring[j + 1] as [number, number],
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/** Twice the signed area of triangle `o→a→b`; sign gives which side of `o→a` the point `b` is on. */
+function orient(
+  [ox, oy]: readonly [number, number],
+  [ax, ay]: readonly [number, number],
+  [bx, by]: readonly [number, number],
+): number {
+  return (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
+}
+
+/** Is collinear point `q` within the bounding box of segment `p–r`? */
+function withinSegmentBox(
+  [px, py]: readonly [number, number],
+  [qx, qy]: readonly [number, number],
+  [rx, ry]: readonly [number, number],
+): boolean {
+  return (
+    qx >= Math.min(px, rx) &&
+    qx <= Math.max(px, rx) &&
+    qy >= Math.min(py, ry) &&
+    qy <= Math.max(py, ry)
+  );
+}
+
+/** Do segments `p1–p2` and `p3–p4` share any point? (CLRS, including the collinear-touch cases.) */
+function segmentsIntersect(
+  p1: readonly [number, number],
+  p2: readonly [number, number],
+  p3: readonly [number, number],
+  p4: readonly [number, number],
+): boolean {
+  const d1 = orient(p3, p4, p1);
+  const d2 = orient(p3, p4, p2);
+  const d3 = orient(p1, p2, p3);
+  const d4 = orient(p1, p2, p4);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+    return true;
+  }
+  if (d1 === 0 && withinSegmentBox(p3, p1, p4)) return true;
+  if (d2 === 0 && withinSegmentBox(p3, p2, p4)) return true;
+  if (d3 === 0 && withinSegmentBox(p1, p3, p2)) return true;
+  if (d4 === 0 && withinSegmentBox(p1, p4, p2)) return true;
+  return false;
+}
+
+/**
  * Similarity of two lines by buffering each to `bufferMeters` and taking the IoU of the
  * resulting ribbons. Rivers/reaches are compared this way rather than by raw IoU (D36):
  * two stretches of the same river overlap as buffered corridors even though the

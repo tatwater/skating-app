@@ -24,21 +24,33 @@ import {
   isValidHazardShape,
   lineShape,
   pointRadiusShape,
+  polygonShape,
 } from './hazardGeometry';
 import type { HazardType } from './types';
 
 /**
- * The primitives a person can actually *draw* in v1 (D51 build staging, call 5).
+ * The primitives a person can actually *draw*.
  *
- * Freeform polygon is missing on purpose: it renders and it stores, but authoring it needs vertex
- * dragging and self-intersection handling, and D51 already calls it the opt-in/advanced primitive.
+ * `polygon` joined the other two in N5b. D51 deferred it past Phase 9 because authoring one needs
+ * vertex dragging and self-intersection handling — both of which now exist: dragging from terra-draw
+ * on web (N5b Decision 2), self-intersection from `isValidHazardShape`, which every path already went
+ * through. It remains the **opt-in/advanced** primitive D51 describes: no type defaults to it
+ * (`HAZARD_DEFAULT_GEOMETRY_KIND` has no `polygon` entry), so it is only ever reached by switching a
+ * draft that started as something else.
  */
-export type HazardAuthorableKind = 'point_radius' | 'line';
+export type HazardAuthorableKind = 'point_radius' | 'line' | 'polygon';
 
-/** A hazard mid-capture. `coord: null` / `vertices: []` are the legitimate "not placed yet" states. */
+/**
+ * A hazard mid-capture. `coord: null` / `vertices: []` are the legitimate "not placed yet" states.
+ *
+ * A polygon draft holds its **distinct corners**, not a closed ring — the closing position is added by
+ * `polygonShape` at conversion. That's what makes "undo the last point" mean the same thing on a
+ * polygon as it does on a line, rather than popping the duplicate that closes the ring.
+ */
 export type HazardDraft =
   | { geometryKind: 'point_radius'; coord: LatLng | null; radiusMeters: number }
-  | { geometryKind: 'line'; vertices: LatLng[]; bufferMeters: number };
+  | { geometryKind: 'line'; vertices: LatLng[]; bufferMeters: number }
+  | { geometryKind: 'polygon'; vertices: LatLng[]; bufferMeters: number };
 
 /**
  * The size ladders, in metres. Coarse and non-linear on purpose: this is an eyeball estimate of
@@ -91,11 +103,15 @@ export function pointDraftForType(type: HazardType): HazardDraft {
 /**
  * Switch primitive without losing the work already done.
  *
- * Both directions stay open regardless of the type's default, because both real cases happen: you
- * see a ridge but only know the one spot you're standing at (line → point), or you started marking
- * open water and realise it's a lead running across the bay (point → line). Converting keeps the
- * placement and swaps in the type's default size for the new primitive, since a 400 m radius and a
- * 400 m half-width mean very different things.
+ * Every direction stays open regardless of the type's default, because all of these cases happen: you
+ * see a ridge but only know the one spot you're standing at (line → point), you started marking open
+ * water and realise it's a lead running across the bay (point → line), or the lead turns out to be a
+ * rotten patch you've now walked the edge of (line → polygon).
+ *
+ * Converting to or from a **circle** swaps in the type's default size, since a 400 m radius and a
+ * 400 m half-width mean very different things. Converting **between line and polygon** carries the
+ * width across untouched: both size on `bufferMeters`, so resetting it would throw away a width the
+ * skater had already tuned in order to give them the identical number back under a different name.
  */
 export function switchDraftKind(
   draft: HazardDraft,
@@ -103,24 +119,40 @@ export function switchDraftKind(
   type: HazardType,
 ): HazardDraft {
   if (draft.geometryKind === kind) return draft;
-  if (draft.geometryKind === 'point_radius') {
+  if (kind === 'point_radius') {
     return {
-      geometryKind: 'line',
-      vertices: draft.coord ? [draft.coord] : [],
-      bufferMeters: HAZARD_DEFAULT_BUFFER_M[type],
+      geometryKind: 'point_radius',
+      // The first vertex, not the last: it's where the person started describing the hazard, and it
+      // survives an undo of everything after it.
+      coord: draft.geometryKind === 'point_radius' ? draft.coord : (draft.vertices[0] ?? null),
+      radiusMeters: HAZARD_DEFAULT_RADIUS_M[type],
     };
   }
-  return {
-    geometryKind: 'point_radius',
-    // The first vertex, not the last: it's where the person started describing the hazard, and it
-    // survives an undo of everything after it.
-    coord: draft.vertices[0] ?? null,
-    radiusMeters: HAZARD_DEFAULT_RADIUS_M[type],
-  };
+  // Line ⇄ polygon keeps the whole placement list: the vertices a skater tapped along a lead are the
+  // same vertices that bound it as a zone, and re-tapping them would be the tool arguing with them.
+  // The size follows the destination's default only when there wasn't one to carry — both linear and
+  // areal drafts size on `bufferMeters`, so switching between them must not silently reset a width the
+  // skater already tuned.
+  const vertices =
+    draft.geometryKind === 'point_radius' ? (draft.coord ? [draft.coord] : []) : draft.vertices;
+  const bufferMeters =
+    draft.geometryKind === 'point_radius' ? HAZARD_DEFAULT_BUFFER_M[type] : draft.bufferMeters;
+  return { geometryKind: kind, vertices, bufferMeters };
 }
 
-/** Re-type an in-progress draft: keep the placement, adopt the new type's default size. */
+/**
+ * Re-type an in-progress draft: keep the placement, adopt the new type's default size.
+ *
+ * **A polygon survives a re-type**, where a line does not. Re-typing means "I picked the wrong type",
+ * and dragging the primitive back to the new type's default is the right call for the two that cost a
+ * tap or two to redo. A polygon costs neither: no type defaults to one, so reaching it took a
+ * deliberate opt-in plus at least three placements, and a type picker that silently destroyed that
+ * would punish the only primitive a skater has to go out of their way to use.
+ */
 export function retypeDraft(draft: HazardDraft, type: HazardType): HazardDraft {
+  if (draft.geometryKind === 'polygon') {
+    return { ...draft, bufferMeters: HAZARD_DEFAULT_BUFFER_M[type] };
+  }
   const kind: HazardAuthorableKind =
     HAZARD_DEFAULT_GEOMETRY_KIND[type] === 'line' ? 'line' : 'point_radius';
   // `switchDraftKind` handles the size swap when the primitive changes; when it doesn't, the size
@@ -186,7 +218,9 @@ export function draftToShape(draft: HazardDraft): HazardShape | null {
       ? draft.coord
         ? pointRadiusShape(draft.coord, draft.radiusMeters)
         : null
-      : lineShape(draft.vertices, draft.bufferMeters);
+      : draft.geometryKind === 'line'
+        ? lineShape(draft.vertices, draft.bufferMeters)
+        : polygonShape(draft.vertices, draft.bufferMeters);
   if (!shape || !isValidHazardShape(shape)) return null;
   return shape;
 }

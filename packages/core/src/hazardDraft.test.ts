@@ -24,7 +24,7 @@ import {
   HAZARD_DEFAULT_RADIUS_M,
   isValidHazardShape,
 } from './hazardGeometry';
-import { HAZARD_TYPES } from './types';
+import { HAZARD_TYPES, type HazardType } from './types';
 
 const A: LatLng = { lat: 44.4759, lng: -73.2121 };
 const B: LatLng = { lat: 44.481, lng: -73.208 };
@@ -303,10 +303,12 @@ describe('retypeDraft', () => {
         expect(retyped.geometryKind).toBe(
           HAZARD_DEFAULT_GEOMETRY_KIND[to] === 'line' ? 'line' : 'point_radius',
         );
-        expect(retyped.geometryKind === 'line' ? retyped.bufferMeters : retyped.radiusMeters).toBe(
-          retyped.geometryKind === 'line'
-            ? HAZARD_DEFAULT_BUFFER_M[to]
-            : HAZARD_DEFAULT_RADIUS_M[to],
+        expect(
+          retyped.geometryKind === 'point_radius' ? retyped.radiusMeters : retyped.bufferMeters,
+        ).toBe(
+          retyped.geometryKind === 'point_radius'
+            ? HAZARD_DEFAULT_RADIUS_M[to]
+            : HAZARD_DEFAULT_BUFFER_M[to],
         );
       }),
     );
@@ -343,7 +345,8 @@ describe('stepSize / resizeDraft', () => {
         (type, presses) => {
           let draft = applyDraftMapClick(applyDraftMapClick(draftForType(type), A), B);
           for (const press of presses) draft = resizeDraft(draft, press);
-          const size = draft.geometryKind === 'line' ? draft.bufferMeters : draft.radiusMeters;
+          const size =
+            draft.geometryKind === 'point_radius' ? draft.radiusMeters : draft.bufferMeters;
           expect(size).toBeGreaterThan(0);
           expect(isDraftSubmittable(draft)).toBe(true);
         },
@@ -366,5 +369,97 @@ describe('stepSize / resizeDraft', () => {
   it('returns the input unchanged for an empty ladder', () => {
     expect(stepSize(12, [], 1)).toBe(12);
     expect(stepSize(12, [], -1)).toBe(12);
+  });
+});
+
+describe('polygon drafts (N5b)', () => {
+  /** A polygon draft with `n` corners tapped, reached the only way one can be: by switching. */
+  function polygonDraft(n: number, type: HazardType = 'thawed_rotten'): HazardDraft {
+    let draft = switchDraftKind(draftForType(type), 'polygon', type);
+    for (const coord of [A, B, C].slice(0, n)) draft = applyDraftMapClick(draft, coord);
+    return draft;
+  }
+
+  it('is never a type’s default primitive — it is only ever opted into (D51/N5b Decision 5)', () => {
+    for (const type of HAZARD_TYPES) {
+      expect(HAZARD_DEFAULT_GEOMETRY_KIND[type]).not.toBe('polygon');
+      expect(draftForType(type).geometryKind).not.toBe('polygon');
+    }
+  });
+
+  it('needs three corners before it is postable', () => {
+    expect(isDraftSubmittable(polygonDraft(2))).toBe(false);
+    expect(isDraftSubmittable(polygonDraft(3))).toBe(true);
+  });
+
+  it('takes taps and undoes them exactly as a line does', () => {
+    const three = polygonDraft(3);
+    expect(draftPlacementCount(three)).toBe(3);
+    expect(draftVertices(three)).toEqual([A, B, C]);
+    // An undo pops a corner the skater placed, never the position that closes the ring.
+    expect(draftVertices(undoDraftPlacement(three))).toEqual([A, B]);
+  });
+
+  it('carries the width across a line ⇄ polygon switch instead of resetting it', () => {
+    // Both primitives size on `bufferMeters`, so resetting would hand back a different number for
+    // the same intent — a width the skater already tuned, silently thrown away.
+    let line = draftForType('pressure_ridge');
+    line = applyDraftMapClick(applyDraftMapClick(line, A), B);
+    const widened = resizeDraft(resizeDraft(line, 1), 1);
+    const width = widened.geometryKind === 'point_radius' ? 0 : widened.bufferMeters;
+    const asPolygon = switchDraftKind(widened, 'polygon', 'pressure_ridge');
+    expect(asPolygon).toEqual({ geometryKind: 'polygon', vertices: [A, B], bufferMeters: width });
+    expect(switchDraftKind(asPolygon, 'line', 'pressure_ridge')).toEqual(widened);
+  });
+
+  it('collapses to the first corner when switched back to a circle', () => {
+    expect(switchDraftKind(polygonDraft(3), 'point_radius', 'thawed_rotten')).toEqual({
+      geometryKind: 'point_radius',
+      coord: A,
+      radiusMeters: HAZARD_DEFAULT_RADIUS_M.thawed_rotten,
+    });
+  });
+
+  // A polygon is the one primitive nobody reaches by accident: no type defaults to it, so getting
+  // there took an opt-in plus at least three placements. Dragging it back to the new type's default
+  // would punish exactly the skater who took the most care.
+  it('survives a re-type, adopting only the new type’s width', () => {
+    const retyped = retypeDraft(polygonDraft(3), 'open_water');
+    expect(retyped).toEqual({
+      geometryKind: 'polygon',
+      vertices: [A, B, C],
+      bufferMeters: HAZARD_DEFAULT_BUFFER_M.open_water,
+    });
+  });
+
+  it('resizes the halo, and stays postable through any sequence of presses (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.constantFrom(1 as const, -1 as const), { maxLength: 12 }),
+        (presses) => {
+          let draft = polygonDraft(3);
+          for (const press of presses) draft = resizeDraft(draft, press);
+          const size =
+            draft.geometryKind === 'point_radius' ? draft.radiusMeters : draft.bufferMeters;
+          expect(size).toBeGreaterThan(0);
+          expect(isDraftSubmittable(draft)).toBe(true);
+        },
+      ),
+    );
+  });
+
+  it('refuses a ring the skater crossed over itself', () => {
+    // Tap-to-place has no engine stopping this (terra-draw does, on web) — four corners in the wrong
+    // order is one mis-tap away, and a bowtie footprint is not a claim about where anything is.
+    let draft = switchDraftKind(draftForType('thin_ice'), 'polygon', 'thin_ice');
+    for (const coord of [
+      { lat: 44.47, lng: -73.22 },
+      { lat: 44.48, lng: -73.21 },
+      { lat: 44.47, lng: -73.21 },
+      { lat: 44.48, lng: -73.22 },
+    ]) {
+      draft = applyDraftMapClick(draft, coord);
+    }
+    expect(isDraftSubmittable(draft)).toBe(false);
   });
 });

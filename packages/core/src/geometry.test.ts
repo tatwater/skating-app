@@ -16,6 +16,7 @@ import {
   polygonBBox,
   polygonIoU,
   representativePoint,
+  ringSelfIntersects,
   surfaceAreaSqM,
 } from './geometry';
 
@@ -449,5 +450,66 @@ describe('destinationPoint (Phase 9.5 directional projection)', () => {
     const out = destinationPoint(origin, 42, 800);
     const back = destinationPoint(out, 42 + 180, 800);
     expect(haversineMeters(origin, back)).toBeLessThan(5);
+  });
+});
+
+describe('ringSelfIntersects', () => {
+  /** A closed ring from distinct `[lng, lat]` corners. */
+  function ring(...corners: [number, number][]): [number, number][] {
+    const first = corners[0] as [number, number];
+    return [...corners, first];
+  }
+
+  it('accepts a simple convex ring', () => {
+    expect(ringSelfIntersects(ring([0, 0], [1, 0], [1, 1], [0, 1]))).toBe(false);
+  });
+
+  it('accepts a concave ring — a hazard zone is rarely convex', () => {
+    // An L, whose reflex corner is the whole point: refusing concave shapes would refuse the
+    // shore-hugging zones this primitive exists for.
+    expect(ringSelfIntersects(ring([0, 0], [2, 0], [2, 1], [1, 1], [1, 2], [0, 2]))).toBe(false);
+  });
+
+  it('catches a bowtie', () => {
+    // The classic four-tap mistake: corners entered in the wrong order cross the ring over itself.
+    expect(ringSelfIntersects(ring([0, 0], [1, 1], [1, 0], [0, 1]))).toBe(true);
+  });
+
+  it('catches a ring that doubles back along its own edge', () => {
+    // Collinear overlap encloses no area where it happens, which is the same lie as a crossing.
+    expect(ringSelfIntersects(ring([0, 0], [2, 0], [1, 0], [1, 1]))).toBe(true);
+  });
+
+  it('does not mistake the shared endpoints of adjacent segments for a crossing', () => {
+    // Every ring has n shared vertices by construction, including the one that closes it — a naive
+    // all-pairs test reports every ring as self-intersecting.
+    expect(ringSelfIntersects(ring([0, 0], [1, 0], [1, 1]))).toBe(false);
+  });
+
+  it('is false for degenerate rings rather than throwing', () => {
+    expect(ringSelfIntersects([])).toBe(false);
+    expect(
+      ringSelfIntersects([
+        [0, 0],
+        [0, 0],
+      ]),
+    ).toBe(false);
+  });
+
+  it('never reports a convex ring as self-intersecting, at any size (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 3, max: 40 }),
+        fc.double({ min: 0.01, max: 5, noNaN: true }),
+        (n, r) => {
+          // Points on a circle in angular order are convex, hence simple, for any n.
+          const corners = Array.from({ length: n }, (_, i): [number, number] => {
+            const a = (2 * Math.PI * i) / n;
+            return [r * Math.cos(a), r * Math.sin(a)];
+          });
+          expect(ringSelfIntersects(ring(...corners))).toBe(false);
+        },
+      ),
+    );
   });
 });
