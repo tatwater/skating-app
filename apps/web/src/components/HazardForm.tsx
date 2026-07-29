@@ -86,7 +86,7 @@ export interface ShoreBandState {
   arcLengthMeters: number | null;
   /** Why the last attempt was refused, if it was. */
   error: string | null;
-  /** Arm the two-click shore pick. */
+  /** Arm (or re-arm) the two-click shore pick. */
   onStart: () => void;
   /** Take the other way round the lake (Decision 4). */
   onFlip: () => void;
@@ -238,12 +238,17 @@ export function HazardFormFields({
                 {isLine ? 'Undo last point' : 'Clear'}
               </Button>
             ) : null}
-            {/* Two ways round a lake, and "shorter" is right almost always and silently wrong on a
-                small pond where the band you mean is most of the perimeter (Decision 4). */}
             {snapped ? (
-              <Button variant="ghost" size="sm" onClick={() => shore?.onFlip()}>
-                Go the other way round
-              </Button>
+              <>
+                {/* Two ways round a lake, and "shorter" is right almost always and silently wrong
+                    on a small pond where the band you mean is most of the perimeter (Decision 4). */}
+                <Button variant="ghost" size="sm" onClick={() => shore?.onFlip()}>
+                  Go the other way round
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => shore?.onStart()}>
+                  Pick a different stretch
+                </Button>
+              </>
             ) : null}
           </div>
 
@@ -280,6 +285,12 @@ export function HazardFormFields({
             {shore?.offered && !snapped ? (
               <p className="text-foreground-muted text-xs">
                 “Along the shore” follows the lake’s own outline between two clicks — no tracing.
+              </p>
+            ) : null}
+            {snapped ? (
+              <p className="text-foreground-muted text-xs">
+                Adjusting the corners by hand takes it off the shoreline — after that it’s an
+                ordinary area, and the width below becomes a margin around it.
               </p>
             ) : null}
             {shore?.error ? (
@@ -524,6 +535,23 @@ export function HazardForm({
     if (kind === 'polygon' && draftPlacementCount(next) < 3) setHazardDropMode(true);
   }
 
+  /**
+   * Arm the map for whatever the draft needs next.
+   *
+   * A snapped band handed to the vertex editor **stops being a snapped band** — which is Decision 3
+   * taken seriously rather than only stated: snapping is an input convenience, not a stored
+   * relationship, so the moment someone drags a corner the shoreline is no longer what defines the
+   * shape. Clearing the taps here is also what keeps the map's click handler from treating the next
+   * click as a third shore pick, which is what it would otherwise do.
+   */
+  function requestPlace() {
+    if (snapped) {
+      setHazardShoreTaps(null);
+      setShoreArcLength(null);
+    }
+    setHazardDropMode(true);
+  }
+
   function startSnap() {
     if (!type) return;
     setShoreError(null);
@@ -634,7 +662,7 @@ export function HazardForm({
           onChooseKind={chooseKind}
           onDraftChange={setHazardDraft}
           onResize={resize}
-          onRequestPlace={() => setHazardDropMode(true)}
+          onRequestPlace={requestPlace}
           onDescriptionChange={setDescription}
           onSubmit={submit}
           onCancel={onClose}

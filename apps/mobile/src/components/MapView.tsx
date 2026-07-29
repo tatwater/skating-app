@@ -114,6 +114,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     hazardDraftType,
     hazardDropMode,
     setHazardDropMode,
+    hazardShoreTaps,
+    setHazardShoreTaps,
     browseSeason,
   } = useMapSelection();
   const { height: windowHeight } = useWindowDimensions();
@@ -362,8 +364,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       setPinDropMode(false);
       return;
     }
-    // Hazard placement (Phase 9). A circle disarms on the tap that moves it; a polyline stays armed
-    // and takes one vertex per tap, so tracing a ridge doesn't require re-arming between points.
+    // Snap-to-shoreline (N5b) takes the tap first: it's a two-tap affordance and the adjust bar
+    // can't count them, so the map does. It never touches the draft — capture owns the body polygon
+    // and turns the pair into geometry.
+    if (hazardShoreTaps !== null) {
+      const next = [...hazardShoreTaps, { lat, lng }].slice(-2);
+      setHazardShoreTaps(next);
+      if (next.length === 2) setHazardDropMode(false);
+      return;
+    }
+    // Hazard placement (Phase 9). A circle disarms on the tap that moves it; a polyline and an area
+    // stay armed and take one vertex per tap, so tracing a ridge or walking the edge of a rotten
+    // patch doesn't require re-arming between points.
     if (hazardDropMode && hazardDraft) {
       setHazardDraft(applyDraftMapClick(hazardDraft, { lat, lng }));
       if (hazardDraft.geometryKind === 'point_radius') setHazardDropMode(false);

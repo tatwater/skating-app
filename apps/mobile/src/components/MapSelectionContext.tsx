@@ -72,6 +72,15 @@ interface MapSelectionValue {
   hazardDropMode: boolean;
   setHazardDropMode: (on: boolean) => void;
   /**
+   * The two taps that become a shore band (N5b), or `null` when not snapping.
+   *
+   * `[]` means "armed, waiting for the first tap" — a state the map must be able to hold, since the
+   * affordance is two taps and the adjust bar can't count them. Same split as web: the map collects
+   * them, and capture (which holds the body polygon) turns them into geometry.
+   */
+  hazardShoreTaps: { lat: number; lng: number }[] | null;
+  setHazardShoreTaps: (taps: { lat: number; lng: number }[] | null) => void;
+  /**
    * The lake the skater's own GPS resolved to, if any (§Mobile "the on-ice state"). Resolved through
    * the offline body cache, so it works with no signal. On app-open it auto-selects that lake (the
    * layout navigates to its detail); thereafter it drives the flag affordance and the proximity
@@ -116,6 +125,9 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
   const [hazardDraft, setHazardDraft] = useState<HazardDraft | null>(null);
   const [hazardDraftType, setHazardDraftType] = useState<HazardType | null>(null);
   const [hazardDropMode, setHazardDropMode] = useState(false);
+  const [hazardShoreTaps, setHazardShoreTaps] = useState<{ lat: number; lng: number }[] | null>(
+    null,
+  );
   const [onIceWaterBodyId, setOnIceWaterBodyId] = useState<string | null>(null);
   const [onIceCoord, setOnIceCoord] = useState<{ lat: number; lng: number } | null>(null);
 
@@ -141,6 +153,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setHazardDraftType,
       hazardDropMode,
       setHazardDropMode,
+      hazardShoreTaps,
+      setHazardShoreTaps,
       onIceWaterBodyId,
       setOnIceWaterBodyId,
       onIceCoord,
@@ -159,6 +173,7 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       hazardDraft,
       hazardDraftType,
       hazardDropMode,
+      hazardShoreTaps,
       onIceWaterBodyId,
       onIceCoord,
       browseSeason,

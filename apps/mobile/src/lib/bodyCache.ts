@@ -108,6 +108,27 @@ function loadAll(): CachedBody[] {
 }
 
 /**
+ * The cached polygon for one body, or `null` if it isn't in the cache.
+ *
+ * Snap-to-shoreline (N5b) reads through here rather than through `waterBodies.get`, because the
+ * skater it's for is standing on the ice: the affordance needs the lake's outline, and on the ice
+ * there is frequently no signal to fetch one with. The cache already holds exactly this — a body's
+ * polygon is written on every detail view — so the shore band works offline for any lake the skater
+ * has looked at, which is every lake they are standing on (the layout opens its detail on arrival).
+ */
+export function cachedBodyPolygon(waterBodyId: string): Polygon | MultiPolygon | null {
+  try {
+    const row = getDb().getFirstSync<Pick<CachedBodyRow, 'polygon'>>(
+      'SELECT polygon FROM cached_bodies WHERE waterBodyId = ?',
+      [waterBodyId],
+    );
+    return row ? (JSON.parse(row.polygon) as Polygon | MultiPolygon) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve a GPS coord to a recently-viewed body — the offline auto-select entry point (delegates to
  * the pure `nearestCachedBody`). Returns null if the cache is empty / nothing is within the buffer.
  */
