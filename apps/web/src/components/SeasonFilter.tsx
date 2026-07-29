@@ -28,6 +28,9 @@ export function SeasonFilter({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }
   // Reset to this season whenever the lake changes or the drawer closes. Carrying a past season
   // across lakes would silently answer a question nobody asked on the next lake — and worse, the map
   // is shared, so it would still be showing '24/'25 hazards under a lake you just opened.
+  // `waterBodyId` is the point of this effect rather than an input to its body: the reset has to
+  // re-run when the lake changes, and dropping it carries a past season onto the next lake you open.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on the lake, not on the body's reads.
   useEffect(() => {
     setBrowseSeason(null);
     return () => setBrowseSeason(null);

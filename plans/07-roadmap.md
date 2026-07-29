@@ -821,8 +821,9 @@ different reason, was the only thing in the way. Every other bare upper-bound ra
 swept and is on a required field. **Tests didn't catch this; running the job against a real deployment
 did**, and the regression test was only trusted after reverting the fix and watching it fail.
 
-**N5a — Seasons: seasonal visibility, the season filter, departed-user redaction.** 🔨 *Design settled
-2026-07-27; the departure half **shipped 2026-07-27** (PR #30), the seasonal half in build* — see
+~~**N5a — Seasons: seasonal visibility, the season filter, departed-user redaction.**~~ **✅ COMPLETE
+2026-07-28** (built, all suites green, **not yet deployed to dev** — the aggregate-tracks index has to
+land there before the app reads it) — see
 [`phase-N5a-seasons.md`](./phase-N5a-seasons.md); decisions **D63**, **D64**, **D65**, **D66** + the
 **D62 amendment** and its **second amendment**. *(Re-scoped: this entry used to be "hazard authoring &
 confirmation polish". It keeps that entry's two **lifecycle** items, because they touch the same

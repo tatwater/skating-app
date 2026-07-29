@@ -3,9 +3,10 @@
 *The map should show **this** season's ice. Everything else is history you go and look at on purpose,
 not something that quietly shares the screen with a report from Tuesday.*
 
-> **Status:** design settled 2026-07-27; the **departure half shipped the same day** (PR #30, items
-> 0/0b/6), the **seasonal half in build from 2026-07-28**. Splits from the roadmap's old N5, keeping its
-> two **lifecycle** items; the three **authoring-UX** items become [N5b](./phase-N5b-hazard-authoring.md).
+> **Status:** ✅ **built 2026-07-28** (all nine work items; the departure half shipped a day earlier as
+> PR #30). Every suite green — core 917 / convex 772 / web 206 / mobile 79 — lint clean; **not deployed
+> to dev and not device-tested**. Splits from the roadmap's old N5, keeping its two **lifecycle** items;
+> the three **authoring-UX** items become [N5b](./phase-N5b-hazard-authoring.md).
 
 ## What checking the code changed about the plan
 
@@ -435,10 +436,57 @@ sentences and only one of them is ours to say.
 6. ✅ Departed-user redaction — shipped with items 0/0b (`lib/contentPurge`): free text cleared at 30
    days, private leftovers erased, the observation kept, running at request / while pending / at
    finalize.
-7. The two folded-in lifecycle items — the `never_existed` verdict and named confirmers, designed at
+7. ✅ The two folded-in lifecycle items — the `never_existed` verdict and named confirmers, designed at
    kickoff as **D65**.
-8. The passage-marker lifecycle inversion (D64) + the "suggested crossing" copy pass.
-9. The departed-skater photo split (**D66**), moved up from the deferred register at kickoff.
+8. ✅ The passage-marker lifecycle inversion (D64) + the "suggested crossing" copy pass.
+9. ✅ The departed-skater photo split (**D66**), moved up from the deferred register at kickoff.
+
+## What the build found (2026-07-28)
+
+**Everything above is built** — core 917 / convex 772 / web 206 / mobile 79 green, lint clean. Not
+deployed to dev, and the new index means it has to be before the app runs against it. Six things came
+out of the build that the design hadn't reached.
+
+**1. Tracks needed an index, and the reason is the N1 bug class.** The design says the aggregate layer
+is scoped "via the linked report's `skateEndTime`". `gpsActivities` has no time index at all —
+`by_water_body` orders by creation — so that could only have been a filter over the newest 200 *rows*,
+and on a lake with more than that in lifetime tracks last season's would fill the window while this
+season's silently didn't draw. `by_water_body_start_time` bounds it in the index instead, on the
+activity's own `startTime`: it differs from the linked report's `skateEndTime` by the length of one
+skate, and the boundary is the one week of the year no skate spans.
+
+**2. `usePaginatedQuery` drops everything but the page.** The feed's fallback returns `season` and
+`isPastSeason` from the server, and no client can read them — the hook hands back flattened pages. The
+label is derived from the cards instead, which works because the server bounds *one* season per read,
+so the first card answers for all of them. The server fields stay: they're what the tests assert, and
+they're the only way to know the served season when the page is empty.
+
+**3. The season had to be shared state, not drawer state.** The selector lives in the lake drawer; two
+of the three things it governs (hazard pins, aggregate tracks) are drawn by the map behind it. A local
+`useState` would have moved the list to last December and left this winter's ice on screen — two
+seasons on one screen, which is the confusion this phase exists to end. It goes through
+`MapSelectionContext` on both clients, and resets on lake change *and* on unmount, because the map
+outlives the drawer.
+
+**4. The on-ice banner reads the same query and must never be told about browsing.** `HazardBanner`'s
+call to `hazards.listForBody` is now textually identical to the map's minus one argument, which makes
+it exactly the line a future reader will "fix". A skater standing on ice must not be alerted about last
+winter's ridge because a sheet they opened an hour ago was reading '24/'25 — nor stop being alerted
+about this winter's. It carries the loudest comment in the file for that reason.
+
+**5. Two test files had to pin their clock, and one pre-existing test was already time-dependent.**
+Once a report has a season, a fixture dated January is in *this* season for half the year and hidden
+for the other half — a test that passes for seven months and then fails on a real behavior change,
+reading as a flake. `reports.test.ts` and `gpsActivities.test.ts` pin `now` inside their fixtures'
+season, the same convention `accountDeletion.test.ts` already documents. Separately, two
+`analyticsRollup` tests seeded a report "an hour ago" and asserted against `metricDay(now)`: between
+00:00 and 01:00 UTC those are different days, so they failed for one hour in twenty-four. Found by
+running the suite at 00:49 UTC; fixed in its own commit, since it predates this phase.
+
+**6. `never_existed` needed one more decision than D65 wrote down.** Whether it pools with
+`fully_healed` toward the archive was settled at kickoff (it does), but the *flag* shouldn't fire on a
+mixed pair — two people who disagree about whether a hazard ever existed are not the pattern a
+moderator needs to see. So the archive pools and the flag counts `never_existed` alone.
 
 ## Settled after the design review (2026-07-27)
 

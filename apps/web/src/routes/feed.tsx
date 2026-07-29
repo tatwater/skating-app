@@ -204,8 +204,8 @@ function PastSeasonNotice({
   return (
     <Panel title={`From the ${formatSeason(season)} season`}>
       <p>
-        Nothing has been reported yet this season, so this is the last one anybody skated. Open a lake
-        to see what it looked like, or post the first report of the winter.
+        Nothing has been reported yet this season, so this is the last one anybody skated. Open a
+        lake to see what it looked like, or post the first report of the winter.
       </p>
     </Panel>
   );

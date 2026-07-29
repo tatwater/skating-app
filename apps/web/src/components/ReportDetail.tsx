@@ -13,9 +13,9 @@ import {
   isLeaving,
   type ReportConditions,
   reportStripState,
-  seasonOf,
   SKATE_QUALITY_LABELS,
   type SkateQuality,
+  seasonOf,
   type ThicknessReading,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';

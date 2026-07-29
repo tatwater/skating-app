@@ -200,7 +200,9 @@ describe('isPassageExpired', () => {
     // Fades first, expires later — the gap is the decision. Reusing agingH would make them one event.
     expect(PASSAGE_EXPIRY_H).toBeGreaterThan(crossing.agingH);
 
-    expect(isPassageExpired('ridge_crossing', NOW - (PASSAGE_EXPIRY_H - 1) * HOUR, NOW)).toBe(false);
+    expect(isPassageExpired('ridge_crossing', NOW - (PASSAGE_EXPIRY_H - 1) * HOUR, NOW)).toBe(
+      false,
+    );
     expect(isPassageExpired('ridge_crossing', NOW - PASSAGE_EXPIRY_H * HOUR, NOW)).toBe(true);
   });
 

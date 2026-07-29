@@ -2,6 +2,8 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   BODY_FEATURE_CAVEAT,
+  confirmerSummary,
+  disputedNote,
   FOOTPRINT_IS_APPROXIMATE,
   formatLocationLine,
   freshnessLabel,
@@ -9,8 +11,6 @@ import {
   type HazardType,
   type HazardVerdict,
   hazardTypeLabel,
-  confirmerSummary,
-  disputedNote,
   healingNote,
   isLeaving,
   isPassageMarker,

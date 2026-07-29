@@ -251,7 +251,7 @@ export const expireDepartedPhotos = internalMutation({
     const owner = await ctx.db.get(userId);
     // Only tombstones. A cancelled deletion restores an ordinary account, and an ordinary account's
     // photos are not on any clock at all — aging never removes anything (D62 second amendment).
-    if (!owner || owner.status !== 'deleted') return { deleted: 0, done: true, kept: 0 };
+    if (owner?.status !== 'deleted') return { deleted: 0, done: true, kept: 0 };
 
     const seasonStart = seasonStartMs(seasonOf(Date.now()));
     const keep = await hazardPhotoIds(ctx, userId);
@@ -292,4 +292,3 @@ export const expireDepartedPhotos = internalMutation({
     return { deleted, kept, done: page.isDone };
   },
 });
-

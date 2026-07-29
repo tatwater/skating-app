@@ -257,9 +257,7 @@ function ReportFeed({
       <YStack gap="$2">
         {bayFilter}
         {activeBay ? (
-          <Paragraph color="$foregroundMuted">
-            No reports from that part of the lake yet.
-          </Paragraph>
+          <Paragraph color="$foregroundMuted">No reports from that part of the lake yet.</Paragraph>
         ) : (
           <SeasonEmptyState browseSeason={browseSeason} currentSeason={seasons?.current} />
         )}

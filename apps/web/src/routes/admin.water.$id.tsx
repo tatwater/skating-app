@@ -745,9 +745,9 @@ function PromotionTool({
         <p className="text-foreground-muted text-sm">Loading…</p>
       ) : candidates.length === 0 ? (
         <p className="text-foreground-muted text-sm">
-          Nothing from {formatSeason(lastSeason)} that could be a permanent feature. Volatile hazards
-          — open water, thin ice, slush — are deliberately not listed: they happen where the weather
-          puts them, and a permanent marker would be a warning nobody can clear.
+          Nothing from {formatSeason(lastSeason)} that could be a permanent feature. Volatile
+          hazards — open water, thin ice, slush — are deliberately not listed: they happen where the
+          weather puts them, and a permanent marker would be a warning nobody can clear.
         </p>
       ) : (
         <ul className="flex flex-col gap-2 text-sm">
@@ -785,8 +785,8 @@ function PromotionTool({
         </ul>
       )}
       <p className="text-foreground-muted text-xs">
-        Ranked by how the type behaves and how many people confirmed it — a queue for your judgement,
-        not a prediction that any of them will be back.
+        Ranked by how the type behaves and how many people confirmed it — a queue for your
+        judgement, not a prediction that any of them will be back.
       </p>
     </ToolCard>
   );

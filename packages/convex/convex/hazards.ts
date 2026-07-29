@@ -17,6 +17,7 @@
 
 import {
   clipFootprintToBody,
+  confirmThresholdFor,
   type deriveHazardFreshness,
   freshnessWithMultiplier,
   HAZARD_DEFAULT_BUFFER_M,
@@ -24,16 +25,15 @@ import {
   type HazardShape,
   hazardBbox,
   hazardFootprint,
-  confirmThresholdFor,
   initialLifecycleState,
   isInSeason,
+  isMinor,
   isPassageExpired,
   isPassageMarker,
-  promotionTargetFor,
-  rankPromotionCandidates,
-  isMinor,
   isProvisional,
   isValidHazardShape,
+  promotionTargetFor,
+  rankPromotionCandidates,
   type Season,
   seasonOf,
 } from '@skating/core';

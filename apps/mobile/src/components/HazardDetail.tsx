@@ -2,13 +2,13 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   classifyFlushError,
+  confirmerSummary,
   createQueuedConfirmation,
+  disputedNote,
   FOOTPRINT_IS_APPROXIMATE,
   freshnessLabel,
   type HazardVerdict,
   hazardTypeLabel,
-  confirmerSummary,
-  disputedNote,
   healingNote,
   isLeaving,
   isPassageMarker,

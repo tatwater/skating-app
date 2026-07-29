@@ -11,8 +11,8 @@ import {
   isLeaving,
   type ReportConditions,
   reportStripState,
-  seasonOf,
   SKATE_QUALITY_LABELS,
+  seasonOf,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';

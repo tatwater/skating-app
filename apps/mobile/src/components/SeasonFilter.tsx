@@ -25,6 +25,9 @@ export function SeasonFilter({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }
 
   // Back to this season whenever the lake changes or the sheet closes — the map is shared, so a
   // carried-over season would leave last winter's hazards under a lake you just opened.
+  // `waterBodyId` is the point of this effect rather than an input to its body: the reset has to
+  // re-run when the lake changes, and dropping it carries a past season onto the next lake you open.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-run on the lake, not on the body's reads.
   useEffect(() => {
     setBrowseSeason(null);
     return () => setBrowseSeason(null);

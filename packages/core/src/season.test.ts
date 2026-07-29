@@ -9,8 +9,8 @@ import {
   type Season,
   seasonEndMs,
   seasonOf,
-  seasonsBetween,
   seasonStartMs,
+  seasonsBetween,
 } from './season';
 
 /** Seasons the app could plausibly ever be asked about — wide enough to catch century wrap. */

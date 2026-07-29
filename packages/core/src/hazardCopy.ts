@@ -144,7 +144,7 @@ export function verdictHelp(verdict: HazardVerdict, type: HazardType): string {
     case 'fully_healed':
       return 'Only if the ice here is genuinely sound. Two of these retire the marker for everyone.';
     case 'never_existed':
-      return "Not that it cleared — that there was never anything here. Use this for a pin in the wrong place, not for ice that changed. A moderator is told.";
+      return 'Not that it cleared — that there was never anything here. Use this for a pin in the wrong place, not for ice that changed. A moderator is told.';
   }
 }
 
