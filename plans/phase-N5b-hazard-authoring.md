@@ -3,12 +3,15 @@
 *Two affordances that make drawing a hazard match how skaters actually describe one. All client work;
 no lifecycle, no schema, no decay.*
 
-> **Status:** scoped 2026-07-27; build kickoff 2026-07-28. Split from the roadmap's old N5 when the
-> seasonal work ([N5a](./phase-N5a-seasons.md)) took over that entry's lifecycle half.
+> **Status: ✅ COMPLETE 2026-07-29** — built, every suite green (core 978 · convex 787 · web 219 ·
+> mobile 79). **Not deployed and not device-tested**; prod deferred, as every phase since 2.5.
+> Decision **D67** is written into [`01-decisions.md`](./01-decisions.md). Split from the roadmap's
+> old N5 when the seasonal work ([N5a](./phase-N5a-seasons.md)) took over that entry's lifecycle half.
 >
 > Four of this doc's premises were checked against code at kickoff and **two of them were false** —
-> see *§What the build found in the plan*, and the five founder calls in *§Decisions taken at kickoff*
-> that replaced this doc's open questions.
+> see *§What the build found in the plan*, the five founder calls in *§Decisions taken at kickoff*
+> that replaced this doc's open questions, and *§What the build found in itself* for the one bug the
+> build introduced and caught.
 
 ## Why this is its own pass
 
@@ -242,3 +245,56 @@ Committed in this order; one PR at the end (per the phase convention).
   what the founder wanted, and it turned out to be a lifecycle change rather than an authoring one. The
   question was worth writing down: it moved an item to a different phase instead of being discovered
   mid-build.
+
+---
+
+## What the build found in itself (2026-07-29)
+
+**"Adjust corners" on a snapped band was collecting a third shore tap.** Both clients route map
+clicks through one handler, and snap-to-shoreline has to take them first — it's a two-tap affordance
+and the form is hidden for both taps, so nothing else can count them. Which meant the button that says
+*adjust the ring* was, on both platforms, quietly re-picking the shore instead.
+
+The fix is different per client, and the difference is the honest one:
+
+- **Web** hands the band to the vertex editor and **clears the snap**. That is Decision 3 taken
+  seriously rather than only stated — snapping is an input convenience, not a stored relationship, so
+  the moment a corner moves the shoreline is no longer what defines the shape. The copy says so, and
+  the width control changes meaning with it (band half-width → margin around an ordinary area).
+- **Mobile** offers **Re-pick** instead. Adjusting corners means vertex dragging, vertex dragging
+  means terra-draw, and terra-draw cannot run on a native map — so "adjust" there would have meant
+  re-tapping the entire ring. Two ends is the cheap version, and the label had to stop promising the
+  other thing.
+
+**Two smaller calls worth recording.** A snapped band's polygon comes from the **offline body cache**
+on mobile, not `waterBodies.get` — the skater this is for is standing on the lake, and on the lake
+there is frequently no signal; the cache already writes every viewed body's polygon, which on arrival
+is the one under their feet. And the shore arc is **simplified** before buffering, with a tolerance
+starting at half the band's own half-width: a real shoreline is arbitrarily detailed, and detail
+finer than the uncertainty a hazard has already declared is precision it doesn't have, paid for out of
+`HAZARD_MAX_VERTICES`.
+
+## Testing (D40)
+
+- **`@skating/core`** — property tests for the shore band (any two taps on a real ring either refuse
+  or produce a shape `isValidHazardShape` accepts; the two arcs partition the ring; a dense shoreline
+  simplifies until the band fits the vertex cap) and for `ringSelfIntersects` (a convex ring of any
+  size is never self-intersecting) and `simplifyPath` (endpoints always kept, never grows). Unit tests
+  for every refusal, for the polygon draft's transitions, and — the one that would have caught this
+  plan's opening mistake — that `SHORE_BAND_TYPES` names only values that exist in `HAZARD_TYPES`.
+- **Web** — the three-way primitive picker, an area's postability at three corners, the snapped band's
+  shoreline length and "other way round" control, that the stepper reads as *distance out from shore*
+  while snapped, and that a refusal renders where the affordance is with the other two primitives
+  still offered beside it.
+- **Mobile** — no component tests, per the existing suite's lib-only pattern; the shared authoring
+  rules are covered once in `@skating/core`, which is why they live there.
+- **Not covered, deliberately:** terra-draw itself. The wrapper pins how this app drives the engine;
+  that MapLibre renders a draggable vertex is the library's own test suite's job.
+
+## Left undone
+
+- **Neither client has been run.** Built and green, not deployed to dev and not device-tested — the
+  mobile half in particular has an on-ice flow that only a device can judge.
+- **The chunk cost is asserted, not measured in situ.** 218 kB is the built asset on disk; what a
+  phone on lake ice actually pays for it over a marginal connection is the thing the founder call
+  accepted on reasoning, and it is worth measuring once there's a real session to measure.

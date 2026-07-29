@@ -182,7 +182,7 @@ function bandRing(arc: readonly LatLng[], halfWidthMeters: number): LatLng[] | n
     // One simple ring or nothing. A band that buffered into two lobes or grew a hole is a shape the
     // skater did not ask for, and Decision 3's "one geometry kind downstream" is only true if the
     // odd cases are refused rather than stored.
-    if (!band?.geometry || band.geometry.type !== 'Polygon') return null;
+    if (band?.geometry?.type !== 'Polygon') return null;
     const ring = band.geometry.coordinates;
     if (ring.length !== 1) return null;
     const positions = ring[0] as Position[];
