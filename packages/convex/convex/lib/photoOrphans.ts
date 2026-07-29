@@ -84,6 +84,33 @@ export async function referencedPhotoIds(
 }
 
 /**
+ * The subset of an uploader's photos that are attached to a **hazard** (D66).
+ *
+ * The seam the seasonal photo expiry rests on: a picture of an open lead is worth more than any
+ * sentence describing one, and it is exactly what the next skater on that shore needs — so a departed
+ * skater's hazard photos are kept whole and everything else expires with its season. `null` means the
+ * scan hit its cap, which is "couldn't determine" and never "nothing is attached": the caller keeps
+ * the photo, because deleting an image on an unanswered question is the one mistake here that can't
+ * be undone.
+ *
+ * Deliberately *not* expressed as a filter over {@link referencedPhotoIds}: that set unions reports
+ * and hazards, and the whole point of this one is that those two answers are now different.
+ */
+export async function hazardPhotoIds(
+  ctx: QueryCtx | MutationCtx,
+  uploaderId: Id<'profiles'>,
+): Promise<Set<string> | null> {
+  const hazards = await ctx.db
+    .query('hazards')
+    .withIndex('by_author_and_water_body', (q) => q.eq('createdByUserId', uploaderId))
+    .take(REFERENCE_SCAN_CAP);
+  if (hazards.length >= REFERENCE_SCAN_CAP) return null;
+  const referenced = new Set<string>();
+  for (const h of hazards) for (const id of h.photoIds) referenced.add(id);
+  return referenced;
+}
+
+/**
  * Delete a photo row and both of its stored blobs. Returns whether the **row is gone** — `false` means
  * a blob outlived the attempt and the row was deliberately kept.
  *

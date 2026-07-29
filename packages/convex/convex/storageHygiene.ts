@@ -13,11 +13,17 @@
  * which settles the question a different way.
  */
 
+import { seasonOf, seasonStartMs } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalMutation } from './_generated/server';
 import { reclaimExportBlob } from './lib/exportBundles';
-import { deletePhotoAndBlobs, PHOTO_ORPHAN_GRACE_MS, referencedPhotoIds } from './lib/photoOrphans';
+import {
+  deletePhotoAndBlobs,
+  hazardPhotoIds,
+  PHOTO_ORPHAN_GRACE_MS,
+  referencedPhotoIds,
+} from './lib/photoOrphans';
 
 /** Rows examined per tick. Bounded so a sweep is always one comfortable transaction. */
 const SWEEP_LIMIT = 500;
@@ -169,3 +175,121 @@ export const sweepExpiredExports = internalMutation({
     return { deleted, retained };
   },
 });
+
+/** Tombstoned accounts examined per tick, and photos examined per account per tick. */
+const DEPARTED_PAGE = 25;
+
+/**
+ * **A departed skater's photos, split on evidential value and expired with their season** (D66).
+ *
+ * The last place D62's "what a person typed vs what they observed" seam doesn't cut cleanly. Under the
+ * second amendment a photo on a surviving report is kept whole — bytes, timestamp, coordinate — and
+ * only its caption is redacted. But the image is the largest identifiability surface in the system:
+ * faces, a licence plate, a house behind the put-in, the departed skater themselves. It is
+ * *observation*, which is why no bucket ever questioned it, and it is also the richest personal data
+ * we hold.
+ *
+ * So: **a photo attached to a hazard is kept**, indefinitely and whole — a picture of an open lead is
+ * worth more than any sentence describing one, and it is what the next skater on that shore needs.
+ * **Everything else expires at the end of the season it was taken in**, including (a real cost,
+ * accepted) the put-in documentation S1 calls the corpus's most-discussed concern. The loss falls only
+ * on people who chose to leave, and only on the images with the least evidential value.
+ *
+ * **Why this is a cron and not a finalize stage.** Finalization lands 30 days after the request, which
+ * is mid-season by construction, so the season this person left in has not ended yet. The clock is
+ * N5a's season boundary rather than a fourth deletion timer — that is the argument for building it
+ * here at all — and it therefore has to outlive the tombstone. `writeTombstone` clears
+ * `deletionRequestedAt`, dropping the row out of the pending index no cron can reach again, so this
+ * one reads `by_status` instead.
+ *
+ * Two transactions on purpose: Convex allows one `.paginate()` per function execution, and both the
+ * account list and each account's photos need paging. This one walks accounts and fans out.
+ */
+export const sweepDepartedPhotos = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    const page = await ctx.db
+      .query('profiles')
+      .withIndex('by_status', (q) => q.eq('status', 'deleted'))
+      .paginate({ cursor: cursor ?? null, numItems: DEPARTED_PAGE });
+
+    for (const profile of page.page) {
+      await ctx.scheduler.runAfter(0, internal.storageHygiene.expireDepartedPhotos, {
+        userId: profile._id,
+      });
+    }
+    // Self-continuing rather than looping: a page of accounts is a bounded transaction, and the
+    // number of them only ever grows.
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.storageHygiene.sweepDepartedPhotos, {
+        cursor: page.continueCursor,
+      });
+    }
+    return { accounts: page.page.length, done: page.isDone };
+  },
+});
+
+/**
+ * One departed account's photos, one page per call (D66). See {@link sweepDepartedPhotos} for the rule.
+ *
+ * Three things this deliberately does **not** do:
+ *
+ * - **It doesn't touch this season's photos.** A skater who left in January keeps their January
+ *   pictures until July, because the expiry clock is the season boundary and not the deletion. That is
+ *   the whole reason this can't be a finalize stage.
+ * - **It doesn't rewrite `reports.photoIds`.** The read paths already skip a photo id that resolves to
+ *   nothing (`thumbUrlsFor`, `photos.getHazardUrls`), so a dangling id renders as one fewer photo,
+ *   which is exactly the intended outcome. Patching every report to prune ids would be a write per
+ *   report for a display that is already correct.
+ * - **It doesn't guess when the hazard scan caps.** A `null` answer keeps the photo, because an image
+ *   deleted on an unanswered question is the one thing here that can't be undone. `photoReconcile` is
+ *   the determinate path if that ever becomes common.
+ */
+export const expireDepartedPhotos = internalMutation({
+  args: { userId: v.id('profiles'), cursor: v.optional(v.string()) },
+  handler: async (ctx, { userId, cursor }) => {
+    const owner = await ctx.db.get(userId);
+    // Only tombstones. A cancelled deletion restores an ordinary account, and an ordinary account's
+    // photos are not on any clock at all — aging never removes anything (D62 second amendment).
+    if (!owner || owner.status !== 'deleted') return { deleted: 0, done: true, kept: 0 };
+
+    const seasonStart = seasonStartMs(seasonOf(Date.now()));
+    const keep = await hazardPhotoIds(ctx, userId);
+    const page = await ctx.db
+      .query('photos')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
+      .paginate({ cursor: cursor ?? null, numItems: DEPARTED_PAGE });
+
+    let deleted = 0;
+    let kept = 0;
+    for (const photo of page.page) {
+      // `takenAt` when the skater opted into keeping EXIF (D42), else the upload. The photo's own
+      // season is the honest one: a picture taken in February and uploaded in July belongs to the
+      // winter it shows.
+      const takenAt = photo.takenAt ?? photo.createdAt;
+      if (takenAt >= seasonStart) {
+        kept++;
+        continue;
+      }
+      if (keep === null || keep.has(photo._id)) {
+        kept++;
+        continue;
+      }
+      if (await deletePhotoAndBlobs(ctx, photo)) deleted++;
+    }
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.storageHygiene.expireDepartedPhotos, {
+        userId,
+        cursor: page.continueCursor,
+      });
+    }
+    if (keep === null) {
+      console.warn(
+        `expireDepartedPhotos: hazard scan for ${userId} hit its cap — keeping this page rather than deleting images on an unanswered question`,
+      );
+    }
+    return { deleted, kept, done: page.isDone };
+  },
+});
+
