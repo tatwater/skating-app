@@ -270,6 +270,53 @@ export function polygonIoU(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon)
 }
 
 /**
+ * Ramer–Douglas–Peucker: drop the points of a path that lie within `toleranceMeters` of the line
+ * their neighbours already describe. Endpoints are always kept.
+ *
+ * Written for the N5b shore band, where the input is a section of an OSM shoreline — arbitrarily
+ * detailed, and detail is exactly what a hazard footprint must not claim to have. The tolerance is
+ * chosen by the caller against the uncertainty it is already declaring: keeping shoreline vertices
+ * finer than the band's own half-width is storing precision the hazard does not have, and paying
+ * `HAZARD_MAX_VERTICES` for it.
+ *
+ * Projected once around the first point (see `toLocalMetres`) rather than per recursion — at the scale
+ * of one lake's shoreline the flat-earth error is far below any tolerance worth simplifying to.
+ */
+export function simplifyPath(points: readonly LatLng[], toleranceMeters: number): LatLng[] {
+  if (points.length < 3 || toleranceMeters <= 0) return [...points];
+  const origin = points[0] as LatLng;
+  const local = points.map((p) => toLocalMetres([p.lng, p.lat], origin));
+  const keep = new Array<boolean>(points.length).fill(false);
+  keep[0] = true;
+  keep[points.length - 1] = true;
+  // Explicit stack rather than recursion: a shoreline arc can be thousands of points, and the
+  // worst-case recursion depth of RDP is its length.
+  const stack: [number, number][] = [[0, points.length - 1]];
+  while (stack.length > 0) {
+    const [start, end] = stack.pop() as [number, number];
+    let farthest = -1;
+    let farthestDistance = toleranceMeters;
+    for (let i = start + 1; i < end; i++) {
+      const [px, py] = local[i] as [number, number];
+      const d = segmentDistanceMetres(
+        px,
+        py,
+        local[start] as [number, number],
+        local[end] as [number, number],
+      );
+      if (d > farthestDistance) {
+        farthestDistance = d;
+        farthest = i;
+      }
+    }
+    if (farthest === -1) continue;
+    keep[farthest] = true;
+    stack.push([start, farthest], [farthest, end]);
+  }
+  return points.filter((_, i) => keep[i]);
+}
+
+/**
  * Does a closed ring cross itself?
  *
  * Written for hazard polygon authoring (N5b): a ring tapped out on a phone can easily come back as a
