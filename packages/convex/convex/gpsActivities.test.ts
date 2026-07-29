@@ -1,5 +1,6 @@
+import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
@@ -10,6 +11,20 @@ function harness() {
   const t = convexTest(schema, modules);
   return t;
 }
+
+/**
+ * **Pinned inside `T0`'s season** (N5a/D63): the aggregate layer now reads one season at a time, off
+ * the activity's `startTime`. Un-pinned, a fixture skated in January is in the current season for half
+ * the year and in a hidden one for the other half — and the failure would look like a privacy-chain
+ * regression rather than the calendar moving. See the note in `reports.test.ts`.
+ */
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(T0 + 2 * 60 * 60 * 1000);
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -501,8 +516,8 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     const reportId = await user.as.mutation(api.reports.create, {
       waterBodyId: bodyId,
       activityId,
-      // Defaults to "just now" so the freshness assertions read a live value — T0 is a fixed
-      // January instant, which is genuinely months stale and correctly renders at the floor.
+      // Defaults to "just now" — a minute before the pinned clock, two hours after the track it
+      // belongs to — so the freshness assertions read a live value rather than the D59 floor.
       skateEndTime: over.skateEndTime ?? Date.now() - 60_000,
       iceTypes: ['black_ice' as const],
       surfaceTags: [],
@@ -526,6 +541,26 @@ describe('gpsActivities.listTracksForBody — the D58 privacy chain', () => {
     // Freshly skated ⇒ near-full opacity, and never above 1.
     expect(tracks[0]?.opacity).toBeGreaterThan(0.5);
     expect(tracks[0]?.opacity).toBeLessThanOrEqual(1);
+  });
+
+  test('last season’s paths stop drawing, and come back under last season (N5a/D63)', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'skater');
+    const bodyId = await seedBody(t);
+    const { activityId } = await skateAndReport(user, bodyId);
+    // Backdate the skate past the July boundary. The bound is in the index, not a post-filter, so a
+    // busy lake's newest 200 rows can't crowd this season's tracks out of the window.
+    const lastSeason = seasonStartMs(seasonOf(Date.now())) - 1;
+    await t.run((ctx) => ctx.db.patch(activityId, { startTime: lastSeason }));
+
+    const current = await t.query(api.gpsActivities.listTracksForBody, { waterBodyId: bodyId });
+    expect(current.tracks).toEqual([]);
+
+    const past = await t.query(api.gpsActivities.listTracksForBody, {
+      waterBodyId: bodyId,
+      season: seasonOf(Date.now()) - 1,
+    });
+    expect(past.tracks).toHaveLength(1);
   });
 
   test('an UNLINKED recording never aggregates — publishing the report IS the consent', async () => {

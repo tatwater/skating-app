@@ -23,10 +23,32 @@ import type { DraftPhoto, DraftStatus, FlushErrorKind } from './draftQueue';
 import { classifyFlushError, PermanentFlushError } from './draftQueue';
 import type { LatLng } from './geometry';
 import { type HazardShape, isValidHazardShape } from './hazardGeometry';
+import type { HazardVerdict } from './hazardLifecycle';
 import type { HazardType } from './types';
 
-/** The three-tier verdict, as the confirm mutation takes it (D52). */
-export type QueuedVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed';
+/**
+ * The verdict, as the confirm mutation takes it (D52 + D65's `never_existed`).
+ *
+ * Deliberately a re-declaration rather than an import of `HazardVerdict`: this is the wire shape of a
+ * row already sitting in a phone's SQLite queue, so widening it is a decision about what an *older*
+ * build may have written, not just about what the server accepts today. Adding a verdict is safe in
+ * that direction — an old client never wrote one — and it keeps the offline path able to carry the
+ * new one the moment the drawer offers it.
+ */
+export type QueuedVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed' | 'never_existed';
+
+/**
+ * The re-declaration is deliberate; **drifting from it is not.** These two lines fail to compile if
+ * the wire shape and the live vocabulary stop agreeing in either direction — a verdict the server
+ * accepts that the queue can't carry, or one the queue can write that the server would reject.
+ *
+ * That is the whole value of writing it twice: the duplication is a *statement* that an old build's
+ * rows are still readable, and an assertion is what stops it decaying into an oversight. Widening
+ * stays safe (an old client never wrote the new value); if a verdict is ever *removed*, the second
+ * line breaks here and the decision about already-queued rows gets made deliberately.
+ */
+type _QueuedVerdictCoversLive = HazardVerdict extends QueuedVerdict ? true : never;
+type _LiveCoversQueuedVerdict = QueuedVerdict extends HazardVerdict ? true : never;
 
 /**
  * How a queued confirmation was triggered — mirrors the backend `HAZARD_CONFIRM_VIA` enum. Carried on

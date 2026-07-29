@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   BODY_FEATURE_CAVEAT,
+  confirmerClause,
+  confirmerSummary,
   confirmRequestPrompt,
+  expiredCrossingNote,
   FOOTPRINT_IS_APPROXIMATE,
   freshnessLabel,
   hazardTypeLabel,
@@ -13,11 +16,17 @@ import {
   warningHeadline,
 } from './hazardCopy';
 import type { HazardFreshness } from './hazardDecay';
-import type { HazardVerdict } from './hazardLifecycle';
+import { HAZARD_VERDICTS, type HazardVerdict } from './hazardLifecycle';
 import { HAZARD_TYPES } from './types';
 
 const FRESHNESSES: HazardFreshness[] = ['fresh', 'aging', 'stale'];
-const VERDICTS: HazardVerdict[] = ['still_there', 'healing_unsafe', 'fully_healed'];
+/**
+ * **Iterated from the vocabulary, never hand-listed.** This array used to be a hand-written copy that
+ * stopped at three while `HazardVerdict` grew a fourth, so the tests below claimed to cover "every
+ * verdict" and covered all but the newest one — the one that most needed checking. Reading
+ * `HAZARD_VERDICTS` means the next addition is covered the day it lands.
+ */
+const VERDICTS: readonly HazardVerdict[] = HAZARD_VERDICTS;
 
 describe('coverage', () => {
   it('labels every hazard type without falling back to the raw key', () => {
@@ -209,5 +218,77 @@ describe('NO_ALERT_IS_NOT_ALL_CLEAR', () => {
   it('states plainly that silence is not safety', () => {
     expect(NO_ALERT_IS_NOT_ALL_CLEAR).toMatch(/does not mean/i);
     expect(NO_ALERT_IS_NOT_ALL_CLEAR).toMatch(/reported/i);
+  });
+});
+
+/**
+ * D65 — a confirmation from someone you can look up carries weight a bare count doesn't, but it is a
+ * sharper disclosure than a report: a named person, at a point, at a time. So the name follows the
+ * privacy flag the skater already set, and the count stays honest either way.
+ */
+describe('confirmerSummary', () => {
+  it('names everyone when everyone is public', () => {
+    expect(confirmerSummary(['Alex R.', 'Sam K.'], 2)).toBe('Confirmed by Alex R. and Sam K.');
+    // No trailing full stop: a display name can end in one, and "Sam K.." looks broken.
+  });
+
+  it('counts the private confirmers without naming them', () => {
+    expect(confirmerSummary(['Alex R.'], 4)).toBe('Confirmed by Alex R. and 3 others');
+  });
+
+  it('says one other, not 1 others', () => {
+    expect(confirmerSummary(['Alex R.'], 2)).toBe('Confirmed by Alex R. and 1 other');
+  });
+
+  it('falls back to a bare count when nobody is public', () => {
+    expect(confirmerSummary([], 3)).toBe('Confirmed by 3 skaters');
+    expect(confirmerSummary([], 1)).toBe('Confirmed by 1 skater');
+  });
+
+  it('says nothing at all when nobody has confirmed — silence is not an all-clear (D3)', () => {
+    expect(confirmerSummary([], 0)).toBeNull();
+  });
+});
+
+/**
+ * The mid-sentence form, and the regression it exists for: both drawers render this inside
+ * "reported 3 days ago by Alex · …", and the obvious way to write that is
+ * `confirmerSummary(...).toLowerCase()` — which was shipped, and which lowercases the *names*.
+ */
+describe('confirmerClause', () => {
+  it('lowers only the leading word, leaving the names alone', () => {
+    expect(confirmerClause(['Alex R.', 'Sam K.'], 2)).toBe('confirmed by Alex R. and Sam K.');
+  });
+
+  it('never mangles a name — the whole point of D65 is that the names are readable', () => {
+    const clause = confirmerClause(['Alex R.', 'McTavish', 'Ó Briain'], 3);
+    expect(clause).toContain('Alex R.');
+    expect(clause).toContain('McTavish');
+    expect(clause).toContain('Ó Briain');
+  });
+
+  it('lowers the count fallback too', () => {
+    expect(confirmerClause([], 3)).toBe('confirmed by 3 skaters');
+  });
+
+  it('is null exactly when the summary is', () => {
+    expect(confirmerClause([], 0)).toBeNull();
+  });
+});
+
+/**
+ * The one pin allowed to leave the map on time alone (D64) needs to say so when a permalink reaches
+ * it — and must not overclaim, because *nobody* reported the crossing closed. Silence retired it.
+ */
+describe('expiredCrossingNote', () => {
+  it('says nobody has looked, and explicitly disclaims that the ridge has closed', () => {
+    const note = expiredCrossingNote();
+    expect(note).toMatch(/nobody has (reported|looked)/i);
+    // The distinction the whole D64 inversion rests on: silence retired this pin, not a report.
+    expect(note).toMatch(/not a report/i);
+  });
+
+  it('tells the skater how to bring it back — a crossing revives on evidence', () => {
+    expect(expiredCrossingNote()).toMatch(/comes back/i);
   });
 });

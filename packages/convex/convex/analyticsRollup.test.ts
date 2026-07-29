@@ -194,28 +194,36 @@ describe('runRollup — idempotence', () => {
     const t = harness();
     const author = await seedProfile(t, 'a');
     const body = await seedBody(t);
-    await seedReport(t, author, body, Date.now() - HOUR);
+    // A metric day is a **UTC** day, so "an hour ago" is not always today: run this suite between
+    // 00:00 and 01:00 UTC and the report lands on yesterday's snapshot while the assertion reads
+    // today's. `doRollup` covers both days, so the count was right and the question was wrong — it
+    // failed for one hour out of every twenty-four, which is exactly long enough to look like a flake.
+    // Each fixture is now asserted against the day it actually falls in.
+    const skate = Date.now() - HOUR;
+    await seedReport(t, author, body, skate);
 
     await doRollup(t);
     await doRollup(t);
     await doRollup(t);
 
-    const today = metricDay(Date.now());
-    expect((await snapshot(t, 'reports_created', today))?.scalar).toBe(1);
+    expect((await snapshot(t, 'reports_created', metricDay(skate)))?.scalar).toBe(1);
+    // The profile is seeded with `createdAt: Date.now()`, so signups belong to today either way.
     // `.unique()` above would have thrown on a duplicate row for the (metric, date) pair.
-    expect((await snapshot(t, 'signups', today))?.scalar).toBe(1);
+    expect((await snapshot(t, 'signups', metricDay(Date.now())))?.scalar).toBe(1);
   });
 
   test('the backfill and the live job agree on a day they both cover', async () => {
     const t = harness();
     const author = await seedProfile(t, 'a');
     const body = await seedBody(t);
-    await seedReport(t, author, body, Date.now() - HOUR);
+    // Same UTC-day care as the test above — read the day the fixture is in, not the day it is now.
+    const skate = Date.now() - HOUR;
+    await seedReport(t, author, body, skate);
 
     await doRollup(t);
-    const live = (await snapshot(t, 'reports_created', metricDay(Date.now())))?.scalar;
+    const live = (await snapshot(t, 'reports_created', metricDay(skate)))?.scalar;
     await doBackfill(t, 7);
-    const replayed = (await snapshot(t, 'reports_created', metricDay(Date.now())))?.scalar;
+    const replayed = (await snapshot(t, 'reports_created', metricDay(skate)))?.scalar;
 
     expect(replayed).toBe(live);
   });

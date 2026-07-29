@@ -20,6 +20,7 @@ import { DirectionsButton, FavoriteButton } from './FavoriteButton';
 import { LeavingNotice, useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { ReportForm } from './ReportForm';
+import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
 
 /**
  * Water-body detail drawer (§F, D47) for `/water/[id]`, the mobile mirror of web's `WaterBodyDetail`.
@@ -172,6 +173,7 @@ export function WaterBodyDetail({
               </Button>
             </>
           )}
+          <SeasonFilter waterBodyId={result.body._id} />
           <BountyList waterBodyId={result.body._id} />
           <ReportFeed
             waterBodyId={result.body._id}
@@ -204,11 +206,16 @@ function ReportFeed({
   // id nothing matches — which would read as "no reports here".
   const activeBay = bays.some((b) => b._id === subAreaId) ? subAreaId : '';
 
+  // The season on screen (D63), shared with the map so the pins behind this sheet belong to the same
+  // winter as the list in it. `null` — this season — is the default the sheet always opens in.
+  const { browseSeason } = useMapSelection();
+  const seasons = useQuery(api.reports.seasonsForBody, { waterBodyId });
   const { results, status, loadMore } = usePaginatedQuery(
     api.reports.listByWaterBody,
     {
       waterBodyId,
       ...(activeBay ? { subAreaId: activeBay as Id<'waterBodySubAreas'> } : {}),
+      ...(browseSeason === null ? {} : { season: browseSeason }),
     },
     { initialNumItems: REPORTS_PAGE_SIZE },
   );
@@ -249,11 +256,11 @@ function ReportFeed({
     return (
       <YStack gap="$2">
         {bayFilter}
-        <Paragraph color="$foregroundMuted">
-          {activeBay
-            ? 'No reports from that part of the lake yet.'
-            : 'No reports yet — be the first to say how it skates.'}
-        </Paragraph>
+        {activeBay ? (
+          <Paragraph color="$foregroundMuted">No reports from that part of the lake yet.</Paragraph>
+        ) : (
+          <SeasonEmptyState browseSeason={browseSeason} currentSeason={seasons?.current} />
+        )}
       </YStack>
     );
   }

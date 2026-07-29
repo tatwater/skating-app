@@ -19,14 +19,17 @@ I saw." That fact doesn't get *less true* as time passes — a two-week-old repo
 accurate a record of that day as it was the day it was posted. So reports are:
 
 - **Always public** — there is no visibility field (D13).
-- **Never hidden or archived** by age, score, or anything else (contrast a hazard, which fades
-  and can be archived).
+- **Never archived, and never hidden by age, score or anything else *within a season*** — the
+  one exception is the seasonal boundary, which is a change of *default view* rather than of
+  the report, and which is described [below](#age-framing-3--the-season-boundary-n5ad63). Contrast a
+  hazard, which genuinely fades and can be archived.
 - **Sorted, not decayed** — everything orders by `skateEndTime`, "when the skater left the ice,"
   the freshest read of the ice.
 
 What *does* change with age is **how the report is framed**: which section of the feed it lands
-in, and whether it shows a weather-since strip. Neither is a decay of the report itself — both
-are just "how old is this, and what's happened since." That's the whole lifecycle.
+in, whether it shows a weather-since strip, and — once it's a season old — whether it's in the
+default view or behind the season selector. None of the three is a decay of the report itself.
+That's the whole lifecycle.
 
 Why the distinction matters: a hazard's decay expresses *waning confidence that the danger is
 still there*. A report makes no such forward claim — it never says "the ice is still good," only
@@ -77,6 +80,45 @@ So the strip *appears* as a report ages past a few hours and *retires* once the 
 enough to be stale on its own terms — but note the report itself is still fully visible at every
 stage. The strip is descriptive only; it never asserts the ice is safe (D3). See
 [weather-since](./weather-since.md) for the copy format and the shared reducer.
+
+---
+
+## Age framing #3 — the season boundary (N5a/D63)
+
+The one place a report *does* leave a default view. **A season runs July 1 → June 30**, labelled
+by the two calendar years it spans (`'24/'25`), and the lake's report list and the global feed
+both show **this** season only.
+
+This is still framing, not decay, and the distinction is worth being precise about because it's
+the one that looks like an exception:
+
+- **It hides, it never removes.** A past-season report resolves by permalink exactly as it always
+  did — someone may hold a link, a bookmark or an old notification, and a 404 on a URL that used
+  to work is a worse lie than an old report clearly marked old. It renders with a *"from the
+  '24/'25 season"* line so it can't be mistaken for Tuesday's.
+- **It's reversible and labelled**, by a per-lake season selector. Browsing a past season is a
+  curiosity ("what was this bay like in December?"), not a safety surface, so the control lives on
+  one lake and nowhere near the map's default state — and it governs the *whole* lake view (list,
+  hazard pins, aggregate tracks), because two seasons on one screen is exactly the confusion this
+  exists to end.
+- **It applies to everyone equally, forever.** Contrast [account deletion](./account-deletion.md),
+  which erases and redacts: *aging never removes anything.*
+
+**The season is derived, never stored** — `seasonOf(skateEndTime)`, with no column, no backfill
+and no cron to advance anything. The reset isn't an event; it's the derived value changing and
+the queries following. Because `skateEndTime` is already the range field of the indexes these
+reads use, a season bound makes them **cheaper**.
+
+Three reads are deliberately **exempt**, each for its own reason:
+
+- **A profile's own report list** — a person's contribution history is not a claim about the state
+  of the ice.
+- **Put-in markers**, which derive from reports — where you can get on the ice doesn't change
+  because the calendar did, and access is the corpus's single most-discussed concern.
+- **The global feed's fallback.** Scoping the feed strictly would blank the home screen on July 1
+  and leave it blank until first ice — five months, not a day — so when this season has nothing
+  the feed serves the newest season that does, **under a divider that says so**. Labelled is what
+  keeps it honest; silently mixing two winters is the thing D63 forbids.
 
 ---
 

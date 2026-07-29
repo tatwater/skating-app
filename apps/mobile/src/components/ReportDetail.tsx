@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   formatConditions,
   formatLocationLine,
+  formatSeason,
   formatSkateTime,
   formatSkateWindow,
   formatSnowCoverInches,
@@ -11,6 +12,7 @@ import {
   type ReportConditions,
   reportStripState,
   SKATE_QUALITY_LABELS,
+  seasonOf,
 } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
@@ -128,6 +130,12 @@ export function ReportDetail({ reportId }: { reportId: string }) {
             const duration = formatSkateWindow(report.skateEndTime, report.skateStartTime);
             return duration ? ` · skated ${duration}` : '';
           })()}
+          {/* A past season still resolves by permalink — a link or an old notification must not 404
+              (D63) — and says which winter it is from, because an old report rendering exactly like
+              Tuesday's is the thing seasons exist to stop. */}
+          {seasonOf(report.skateEndTime) === seasonOf(Date.now())
+            ? ''
+            : ` · from the ${formatSeason(seasonOf(report.skateEndTime))} season`}
         </Text>
         {authorName ? (
           <XStack gap="$1.5" alignItems="center" flexWrap="wrap">

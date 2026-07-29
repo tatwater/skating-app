@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { type FeedFilters, groupFeedSections } from '@skating/core';
+import { type FeedFilters, formatSeason, groupFeedSections, seasonOf } from '@skating/core';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useMutation, usePaginatedQuery, useQuery } from 'convex/react';
 import { useEffect, useRef, useState } from 'react';
@@ -99,6 +99,7 @@ function FeedPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-3">
+          <PastSeasonNotice results={results} now={now} />
           {/* Recency scroll-divider headers (Phase 4, decision #5): "Today / Yesterday / …". */}
           {groupFeedSections(
             results.filter((d) => !recommendedIds.has(d.reportId)),
@@ -175,4 +176,37 @@ function useFeedFilters(): { value: FeedFilters; set: (next: FeedFilters) => voi
   };
 
   return { value, set };
+}
+
+/**
+ * The labelled fallback (D63, kickoff decision 3).
+ *
+ * Season-scoping the feed empties it on July 1 and leaves it empty until first ice — five months, not
+ * a July curiosity — so the server serves the newest season that has anything in it. What it must
+ * never do is serve last winter *silently*: a report from February under today's date, with nothing
+ * saying so, is exactly the "tell the difference from opacity alone" problem this phase exists to fix.
+ *
+ * Derived from the cards rather than read off the query, because `usePaginatedQuery` hands back the
+ * flattened pages and drops everything else the page carried. Every card in a fallback feed is from
+ * the same season (the server bounds one season per read), so the first one answers it.
+ */
+function PastSeasonNotice({
+  results,
+  now,
+}: {
+  results: readonly { skateEndTime: number }[];
+  now: number;
+}) {
+  const first = results[0];
+  if (!first) return null;
+  const season = seasonOf(first.skateEndTime);
+  if (season === seasonOf(now)) return null;
+  return (
+    <Panel title={`From the ${formatSeason(season)} season`}>
+      <p>
+        Nothing has been reported yet this season, so this is the last one anybody skated. Open a
+        lake to see what it looked like, or post the first report of the winter.
+      </p>
+    </Panel>
+  );
 }

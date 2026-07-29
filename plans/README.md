@@ -1,7 +1,8 @@
 # Planning docs
 
-> **Where things stand (2026-07-26): every roadmap phase — 0 through 10 — is built**, and the first
-> next-phase candidate (**N1**, read-path durability) has shipped on dev. Phase 8 was the last
+> **Where things stand (2026-07-28): every roadmap phase — 0 through 10 — is built**, and the
+> post-roadmap run **N1 → N2 → N3/N4 → N5a** has shipped on dev (read-path durability, sub-areas +
+> the lake editor, account lifecycle, seasons). **N5b** is scoped and unbuilt. Phase 8 was the last
 > numbered phase. Everything still unbuilt is *explicitly* deferred and registered in
 > [`07-roadmap.md`](./07-roadmap.md) → *Later / deferred*, each phase doc's *Out of scope / deferred*
 > section, [`02-open-questions.md`](./02-open-questions.md), and
@@ -56,7 +57,7 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   deployed to dev, Android-emulator smoke-tested; prod deferred.** Decisions **D51–D55** locked
   (D51/D54 amended + D55 added at build kickoff). The Layer-3 offline basemap tile-pack was **dropped**
   (native spike; findings in the phase doc).
-  - [Phase 9 — Hazard research](./phase-9-hazard-research.md) — calibrated `HAZARD_DECAY` table +
+  - [Phase 9 — Hazard research](./research/hazard-decay-calibration-and-behavior.md) — calibrated `HAZARD_DECAY` table +
     per-type behavior evidence (corpus + lakeice.info), expanded taxonomy, corrected Phase-10 weather
     signs. **✅ Research done 2026-07-21.**
   - [Phase 9.5 — On-ice live alerting](./phase-9.5-on-ice-alerting.md) — the deferred **D54 Layer 2**
@@ -100,6 +101,20 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   full `.collect()` triage including moving the notification fan-out off the report-create write
   path. **✅ Complete on dev (2026-07-26); prod deferred.** Measured against the real 116k-body
   corpus — the numbers live in the doc.
+- [N2 — Lake editor + sub-areas](./phase-N2-lake-editor-and-subareas.md) — named bays and reaches as
+  first-class sub-areas with alias search, plus the operator lake editor. Decisions **D60**/**D61**.
+  **✅ Complete on dev (2026-07-26); prod deferred.**
+- [N3/N4 — Account lifecycle](./phase-N3-N4-account-lifecycle.md) — the three-bucket deletion model
+  (**D62**), data export, and the hygiene crons that keep both honest. **✅ Complete on dev
+  (2026-07-27, PR #29); prod deferred.**
+- [N5a — Seasons](./phase-N5a-seasons.md) — seasonal visibility and the per-lake season filter
+  (**D63**), the passage-marker lifecycle inversion (**D64**), the `never_existed` verdict and named
+  confirmers (**D65**), a departed skater's photos split on evidential value (**D66**), and the
+  departed-user redaction that the D62 *second* amendment turned from erasure into redaction.
+  **✅ Complete on dev (2026-07-28); prod deferred** — still **device-unverified**.
+- [N5b — Hazard authoring UX](./phase-N5b-hazard-authoring.md) — the geometry/input half of the old
+  N5 entry, kept separate from N5a on purpose: N5a's risky half is a visibility change, N5b's is an
+  authoring change. 📐 *Scoped 2026-07-27, not built.*
 
 
 ## How these fit together

@@ -3,8 +3,11 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   DEFAULT_SAMPLE_SPACING_KM,
   displayScore,
+  formatSeason,
   type LatLng,
   minVisibleZoom,
+  type PromotionTarget,
+  seasonOf,
   suggestSamplePoints,
 } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
@@ -141,6 +144,7 @@ function LakeEditor() {
           />
           <PutInTool waterBodyId={waterBodyId} putIns={putIns ?? []} />
           <HazardTool hazards={hazards ?? []} />
+          <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
           <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
         </div>
       </div>
@@ -678,6 +682,113 @@ function TrackTool({ tracks }: { tracks: readonly unknown[] }) {
       <p className="text-foreground-muted text-xs">
         A track is dropped by hiding the report it belongs to — there’s deliberately no second
         consent flag for the aggregate layer (D58).
+      </p>
+    </ToolCard>
+  );
+}
+
+/**
+ * **The pre-first-ice pass** (N5a/D63) — last season's hazards, ranked by how likely they are to be
+ * back, each one promotion away from becoming a permanent body feature (D53).
+ *
+ * Framed as a safety task because it is one. Seasonal scoping hides last winter's hazards, so the
+ * first skater in November sees a clean map where there was a ridge; this list is what covers that,
+ * and an operator who reads it as housekeeping will skip it in a busy week. The copy says so.
+ *
+ * What it must never say is that a hazard *will* be there (D3). The ranking orders candidates for a
+ * human decision — decay tier, corroboration, type — and the promotion it offers is the operator's
+ * judgement, recorded with their reason like every other moderation action.
+ */
+function PromotionTool({
+  waterBodyId,
+  onResult,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  onResult: (banner: { tone: 'ok' | 'error'; text: string }) => void;
+}) {
+  const candidates = useQuery(api.hazards.listPromotionCandidates, { waterBodyId });
+  const promote = useMutation(api.bodyFeatures.promote);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const lastSeason = seasonOf(Date.now()) - 1;
+
+  const onPromote = async (candidate: {
+    hazardId: string;
+    type: string;
+    promotesTo: PromotionTarget | null;
+  }) => {
+    if (!candidate.promotesTo) return;
+    setBusyId(candidate.hazardId);
+    try {
+      await promote({
+        hazardId: candidate.hazardId as Id<'hazards'>,
+        // No cast: `PromotionTarget` is a subset of the mutation's own union, so the two stay honest
+        // about each other and a drift between the promotion table and the backend enum won't compile.
+        type: candidate.promotesTo,
+        reason: `Recurring ${candidate.type.replace(/_/g, ' ')} — promoted in the pre-season pass.`,
+      });
+      onResult({ tone: 'ok', text: 'Promoted to a permanent body feature.' });
+    } catch (err) {
+      onResult({ tone: 'error', text: errorText(err) });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  return (
+    <ToolCard title="Before first ice — recurring hazards">
+      <p className="text-foreground-muted text-sm">
+        Last season’s hazards are hidden from the map now. Anything that forms here every winter
+        should be promoted to a permanent feature, which no seasonal reset touches —{' '}
+        <strong className="text-foreground">this is a safety pass, not tidying up</strong>: a skater
+        in November sees a clean map otherwise.
+      </p>
+      {candidates === undefined ? (
+        <p className="text-foreground-muted text-sm">Loading…</p>
+      ) : candidates.length === 0 ? (
+        <p className="text-foreground-muted text-sm">
+          Nothing from {formatSeason(lastSeason)} that could be a permanent feature. Volatile
+          hazards — open water, thin ice, slush — are deliberately not listed: they happen where the
+          weather puts them, and a permanent marker would be a warning nobody can clear.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2 text-sm">
+          {candidates.map((candidate) => (
+            <li
+              key={candidate.hazardId}
+              className="flex flex-wrap items-center justify-between gap-2"
+            >
+              <span className="flex flex-col">
+                <Link
+                  to="/hazard/$id"
+                  params={{ id: candidate.hazardId }}
+                  className="text-foreground underline underline-offset-2"
+                >
+                  {candidate.type.replace(/_/g, ' ')}
+                </Link>
+                <span className="text-foreground-muted text-xs">
+                  {candidate.confirmCount} confirmation
+                  {candidate.confirmCount === 1 ? '' : 's'}
+                  {candidate.archived ? ' · community marked it healed' : ''}
+                  {' · '}
+                  becomes {candidate.promotesTo?.replace(/_/g, ' ')}
+                </span>
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busyId === candidate.hazardId}
+                onClick={() => onPromote(candidate)}
+              >
+                {busyId === candidate.hazardId ? 'Promoting…' : 'Promote'}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-foreground-muted text-xs">
+        Ranked by how the type behaves and how many people confirmed it — a queue for your
+        judgement, not a prediction that any of them will be back.
       </p>
     </ToolCard>
   );

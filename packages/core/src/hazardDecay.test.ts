@@ -7,6 +7,8 @@ import {
   hazardTypesInTier,
   hoursToMs,
   isHazardVisibleByDefault,
+  isPassageExpired,
+  PASSAGE_EXPIRY_H,
 } from './hazardDecay';
 import { HAZARD_TYPES, type HazardType } from './types';
 
@@ -176,5 +178,45 @@ describe('isHazardVisibleByDefault', () => {
     expect(isHazardVisibleByDefault('fresh')).toBe(true);
     expect(isHazardVisibleByDefault('aging')).toBe(true);
     expect(isHazardVisibleByDefault('stale')).toBe(false);
+  });
+});
+
+/**
+ * The one place a pin leaves the map on time alone (D64). Worth its own block because every other
+ * test in this file asserts the opposite rule for everything else.
+ */
+describe('isPassageExpired', () => {
+  it('never expires a danger, however long nobody has looked', () => {
+    fc.assert(
+      fc.property(arbType, fc.integer({ min: 0, max: 100_000 }), (type, elapsedHours) => {
+        if (type === 'ridge_crossing') return;
+        expect(isPassageExpired(type, NOW - elapsedHours * HOUR, NOW)).toBe(false);
+      }),
+    );
+  });
+
+  it('expires a suggested crossing at its own window, not at the freshness tier', () => {
+    const crossing = HAZARD_DECAY.ridge_crossing;
+    // Fades first, expires later — the gap is the decision. Reusing agingH would make them one event.
+    expect(PASSAGE_EXPIRY_H).toBeGreaterThan(crossing.agingH);
+
+    expect(isPassageExpired('ridge_crossing', NOW - (PASSAGE_EXPIRY_H - 1) * HOUR, NOW)).toBe(
+      false,
+    );
+    expect(isPassageExpired('ridge_crossing', NOW - PASSAGE_EXPIRY_H * HOUR, NOW)).toBe(true);
+  });
+
+  it('goes stale before it expires, so a fading marker is still readable', () => {
+    const justStale = NOW - (HAZARD_DECAY.ridge_crossing.agingH + 1) * HOUR;
+    expect(deriveHazardFreshness('ridge_crossing', justStale, NOW)).toBe('stale');
+    expect(isPassageExpired('ridge_crossing', justStale, NOW)).toBe(false);
+  });
+
+  it('a confirmation brings an about-to-expire crossing all the way back', () => {
+    expect(isPassageExpired('ridge_crossing', NOW, NOW)).toBe(false);
+  });
+
+  it('a clock-skewed future confirmation never expires a marker', () => {
+    expect(isPassageExpired('ridge_crossing', NOW + 10 * HOUR, NOW)).toBe(false);
   });
 });

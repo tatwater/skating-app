@@ -46,7 +46,7 @@ export interface MappableHazard {
   clippedFootprint?: GeoJSON.Geometry;
   freshness: HazardFreshness;
   provisional: boolean;
-  healingState?: 'none' | 'healing_unsafe';
+  healingState?: 'none' | 'healing_unsafe' | 'disputed';
 }
 
 /** A persistent known feature (D53) — no freshness, because it never decays. */
@@ -99,6 +99,10 @@ export function hazardsToFeatureCollection(
             provisional: h.provisional,
             passage: isPassageMarker(h.type),
             healing: h.healingState === 'healing_unsafe',
+            // A suggested crossing somebody has reported closed (D64). Carried onto the feature so
+            // the map can mark it without a second query; one vote short of retiring the marker, so
+            // it is a caution on the pin rather than the pin's removal.
+            disputed: h.healingState === 'disputed',
           },
         },
       ];

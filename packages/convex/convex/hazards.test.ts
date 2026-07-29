@@ -1,3 +1,4 @@
+import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
@@ -329,6 +330,55 @@ describe('hazards.listForBody', () => {
     expect(
       await user.as.query(api.hazards.listForBody, { waterBodyId, includeArchived: true }),
     ).toHaveLength(1);
+  });
+
+  // The hardest call in N5a, and the one most likely to be "fixed" back: a hazard's season is the
+  // clock **nobody can move**, so a single confirmation can't carry last winter's ridge into this one.
+  describe('seasonal scoping (N5a/D63)', () => {
+    /** Backdate a hazard's first sighting past the July boundary, leaving its confirmation fresh. */
+    const lastSeasonStart = () => seasonStartMs(seasonOf(Date.now())) - 1;
+
+    test('a hazard first reported last season is hidden, however recently it was confirmed', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'author');
+      const waterBodyId = await seedBody(t);
+      const hazardId = await user.as.mutation(api.hazards.create, createArgs(waterBodyId));
+      // Six other skaters confirmed it yesterday — the most current thing on that shore, and still
+      // last season's ridge. `lastConfirmedAt` is what the redaction sweep and the decay curve read;
+      // the season reads `firstReportedAt` precisely so the community can't move it.
+      await t.run((ctx) =>
+        ctx.db.patch(hazardId, { firstReportedAt: lastSeasonStart(), lastConfirmedAt: Date.now() }),
+      );
+
+      expect(await user.as.query(api.hazards.listForBody, { waterBodyId })).toHaveLength(0);
+    });
+
+    test('and is right there under last season, still fresh', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'author');
+      const waterBodyId = await seedBody(t);
+      const hazardId = await user.as.mutation(api.hazards.create, createArgs(waterBodyId));
+      await t.run((ctx) =>
+        ctx.db.patch(hazardId, { firstReportedAt: lastSeasonStart(), lastConfirmedAt: Date.now() }),
+      );
+
+      const past = await user.as.query(api.hazards.listForBody, {
+        waterBodyId,
+        season: seasonOf(Date.now()) - 1,
+      });
+      expect(past).toHaveLength(1);
+      // Hidden, not deleted, and not degraded on the way out: the pin browses exactly as it was.
+      expect(past[0]?.freshness).toBe('fresh');
+    });
+
+    test('this season’s hazards are untouched by the bound', async () => {
+      const t = harness();
+      const user = await seedUser(t, 'author');
+      const waterBodyId = await seedBody(t);
+      await user.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+      expect(await user.as.query(api.hazards.listForBody, { waterBodyId })).toHaveLength(1);
+    });
   });
 });
 
@@ -701,5 +751,140 @@ describe('photos.getHazardUrls', () => {
     await t.run((ctx) => ctx.db.patch(hazardId, { moderationStatus: 'hidden' }));
 
     expect(await author.as.query(api.photos.getHazardUrls, { hazardId })).toEqual([]);
+  });
+});
+
+/**
+ * The pre-first-ice pass (N5a). This list is the safety cover for hiding last winter's hazards, so
+ * what it *omits* matters as much as what it ranks.
+ */
+describe('hazards.listPromotionCandidates', () => {
+  const lastSeasonStart = () => seasonStartMs(seasonOf(Date.now()) - 1) + 1;
+
+  test('offers last season’s recurring types, ranked, and never this season’s', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const spring = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'spring_current' }),
+    );
+    const ridge = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'pressure_ridge' }),
+    );
+    const thisSeason = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'spring_current' }),
+    );
+    await t.run(async (ctx) => {
+      await ctx.db.patch(spring, { firstReportedAt: lastSeasonStart() });
+      await ctx.db.patch(ridge, { firstReportedAt: lastSeasonStart() });
+    });
+
+    const candidates = await mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId });
+    // Permanent behavior ahead of structural; this season's hazard isn't a question for this pass.
+    expect(candidates.map((c) => c.hazardId)).toEqual([spring, ridge]);
+    expect(candidates.map((c) => c.hazardId)).not.toContain(thisSeason);
+    expect(candidates[0]?.promotesTo).toBe('spring_current');
+  });
+
+  test('leaves out the volatile types — an event has nothing to be promoted to', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const lead = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'open_water' }),
+    );
+    await t.run((ctx) => ctx.db.patch(lead, { firstReportedAt: lastSeasonStart() }));
+
+    expect(await mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId })).toEqual([]);
+  });
+
+  test('keeps a hazard the community voted healed — that is a fact about last winter', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const ridge = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'pressure_ridge' }),
+    );
+    await t.run((ctx) =>
+      ctx.db.patch(ridge, { firstReportedAt: lastSeasonStart(), status: 'archived' }),
+    );
+
+    const candidates = await mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId });
+    expect(candidates.map((c) => c.hazardId)).toEqual([ridge]);
+    expect(candidates[0]?.archived).toBe(true);
+  });
+
+  test('is a moderator surface — it lists content ordinary users can no longer see', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'member');
+    const waterBodyId = await seedBody(t);
+    await expect(
+      user.as.query(api.hazards.listPromotionCandidates, { waterBodyId }),
+    ).rejects.toThrow(/moderator/i);
+  });
+
+  /**
+   * `by_water_body` has no status or time key, so this read was a `.collect()` over every hazard a
+   * lake had ever held — on a table seasons make permanent. Bounded now, newest-created first, which
+   * is where last season's rows are relative to older ones.
+   */
+  test('reads the newest hazards rather than the whole lifetime of a lake', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const recent = await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'spring_current' }),
+    );
+    await t.run((ctx) => ctx.db.patch(recent, { firstReportedAt: lastSeasonStart() }));
+
+    const candidates = await mod.as.query(api.hazards.listPromotionCandidates, { waterBodyId });
+    expect(candidates.map((c) => c.hazardId)).toEqual([recent]);
+  });
+});
+
+/**
+ * `season` arrives as a bare optional number, so it can be `NaN` or `1e15`. Neither throws — both
+ * become index bounds matching nothing — and the resulting empty lake reads as "quiet winter" rather
+ * than as a malformed request.
+ */
+describe('a nonsense season argument falls back rather than emptying the lake', () => {
+  test('hazards.listForBody ignores a NaN season', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const asked = await author.as.query(api.hazards.listForBody, {
+      waterBodyId,
+      season: Number.NaN,
+    });
+    const bare = await author.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(asked).toHaveLength(1);
+    expect(asked.map((h) => h._id)).toEqual(bare.map((h) => h._id));
+  });
+
+  test('a season nobody could be browsing is treated as no argument at all', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    expect(
+      await author.as.query(api.hazards.listForBody, { waterBodyId, season: 1e15 }),
+    ).toHaveLength(1);
+    // A real past season still hides it — the fallback must not mean "ignore the argument".
+    expect(
+      await author.as.query(api.hazards.listForBody, { waterBodyId, season: 2000 }),
+    ).toHaveLength(0);
   });
 });

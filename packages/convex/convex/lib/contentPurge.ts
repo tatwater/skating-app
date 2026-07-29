@@ -241,6 +241,12 @@ export async function redactAgedContent(
   // either way, and "every row this author holds" is exactly what a finalization means. Widening the
   // range with a far-future number would be the version to worry about, because it would read like an
   // age bound while being none.
+  //
+  // ⚠ **This query must never grow a season bound** (N5a build note). `by_author_skate_end_time` is the
+  // same index the seasonal work bounds elsewhere, and the bound is the wrong shape here twice over:
+  // the age gate looks at everything *older* than the cutoff where a season looks at a window, and a
+  // departed skater's pre-season prose would silently stop being redacted. Nothing visible would look
+  // wrong, which is what makes it worth a warning rather than a test.
   async function redactReports(): Promise<string | null> {
     const page = await ctx.db
       .query('reports')

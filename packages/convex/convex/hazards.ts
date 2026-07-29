@@ -17,6 +17,7 @@
 
 import {
   clipFootprintToBody,
+  confirmThresholdFor,
   type deriveHazardFreshness,
   freshnessWithMultiplier,
   HAZARD_DEFAULT_BUFFER_M,
@@ -25,9 +26,17 @@ import {
   hazardBbox,
   hazardFootprint,
   initialLifecycleState,
+  isInSeason,
   isMinor,
+  isPassageExpired,
+  isPassageMarker,
   isProvisional,
   isValidHazardShape,
+  promotionTargetFor,
+  rankPromotionCandidates,
+  resolveSeason,
+  type Season,
+  seasonOf,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -37,6 +46,7 @@ import {
   assertCanPostHazards,
   getCurrentProfile,
   requireContributor,
+  requireContributorRole,
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
@@ -248,6 +258,12 @@ export interface HazardView extends Doc<'hazards'> {
   freshness: ReturnType<typeof deriveHazardFreshness>;
   provisional: boolean;
   /**
+   * A **suggested crossing** past its own window (D64) — expired, and so dropped from `listForBody`.
+   * Always `false` for a hazard: absence of evidence keeps a danger alive, and only a passage marker
+   * inverts that. Kept on the view so a permalink can say the marker aged out rather than 404.
+   */
+  expired: boolean;
+  /**
    * The reporter's display name, for the drawer's "reported by <name>" line. Only the single-hazard
    * `get` resolves it (an extra profile read per hazard — not worth paying on the map's `listForBody`,
    * which never shows a name), so it's absent on the list path and **withheld when the author is
@@ -269,7 +285,20 @@ function toView(hazard: Doc<'hazards'>, now: number): HazardView {
       now,
       hazard.decayMultiplier ?? 1,
     ),
-    provisional: isProvisional(hazard.confirmCount),
+    // A suggested crossing needs **two** independent confirmations to stop reading as one skater's
+    // suggestion (D64) — double every hazard's bar, which is what "more corroboration" means for the
+    // one pin type that says you can go this way.
+    provisional: isProvisional(
+      hazard.confirmCount,
+      confirmThresholdFor(isPassageMarker(hazard.type)),
+    ),
+    /**
+     * Past its own 72-hour window a passage marker is **expired**: it stops rendering (D64). Carried
+     * on the view rather than filtered out here, so `hazards.get` can tell a permalink holder that
+     * the crossing aged out instead of 404-ing a link that used to work — the same courtesy a past
+     * season's report gets. `listForBody` is where the drop happens.
+     */
+    expired: isPassageExpired(hazard.type, hazard.lastConfirmedAt, now),
   };
 }
 
@@ -289,8 +318,21 @@ export const listForBody = query({
     waterBodyId: v.id('waterBodies'),
     /** Include community-archived ("fully healed") hazards — off by default. */
     includeArchived: v.optional(v.boolean()),
+    /**
+     * Which season's hazards (D63) — absent ⇒ this one.
+     *
+     * **A hazard's season is its `firstReportedAt`** (kickoff decision 1), which is the *opposite*
+     * field from the one everything else about a hazard reads. Freshness, the redaction sweep and the
+     * confirm loop all use `lastConfirmedAt`, because they ask "is anyone still maintaining this?".
+     * A season asks "when was this first seen?", and it has to be a clock **nobody can move**: aged on
+     * `lastConfirmedAt`, one skater confirming a March ridge in November would carry it across the
+     * boundary with no operator in the loop, quietly re-answering the question the pre-first-ice
+     * promotion pass exists to ask. The boundary is hard on purpose; `bodyFeatures` promotion (D53) is
+     * the way across, and it is a decision somebody makes.
+     */
+    season: v.optional(v.number()),
   },
-  handler: async (ctx, { waterBodyId, includeArchived }) => {
+  handler: async (ctx, { waterBodyId, includeArchived, season }) => {
     const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body) return [];
     const now = Date.now();
@@ -309,13 +351,99 @@ export const listForBody = query({
             q.eq('waterBodyId', body._id).eq('status', 'active'),
           )
           .collect();
+    // Filtered in memory rather than in the index: the two hazard indexes are keyed by body and status,
+    // and `firstReportedAt` isn't in either. That costs nothing here and is worth being explicit about,
+    // because it's the opposite of the report path — this query is already bounded by *body* (Phase 9
+    // call 6, deliberately never a viewport scan), so the read it would narrow is bounded already.
+    const target: Season = resolveSeason(season, seasonOf(now));
     return (
       rows
         .filter((h) => h.moderationStatus === 'visible')
         // A hazard promoted to a persistent body feature (D53) is rendered by the feature now, not here.
         .filter((h) => h.promotedToFeatureId === undefined)
+        .filter((h) => isInSeason(h.firstReportedAt, target))
         .map((h) => toView(h, now))
+        // **The one place a pin leaves the map on time alone** (D64). A hazard fades to a floor and
+        // never disappears, because assuming a danger is still there is the recoverable mistake. A
+        // suggested crossing is the opposite: "reported crossable" with nobody having looked in three
+        // days walks a skater onto ice no one has checked, and the recoverable mistake is the longer
+        // walk. Dropped here rather than in the client so the map, the list and the on-ice proximity
+        // evaluator — which all read this one query — cannot disagree about it.
+        .filter((h) => !h.expired)
         .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
+    );
+  },
+});
+
+/**
+ * Hazards read per promotion pass. Far above any real lake's lifetime count — a busy body carries
+ * tens — so its job is to make the read bounded rather than to be reached.
+ */
+const PROMOTION_SCAN_CAP = 500;
+
+/**
+ * **The pre-first-ice safety pass** (N5a): last season's hazards on one lake, ranked by how likely
+ * they are to be back, for the operator surface at `/admin/water/$id`.
+ *
+ * This is the cover for the seasonal reset, and the reason it is a safety task rather than
+ * housekeeping. Hiding last winter's hazards means the first skater in November sees a clean map where
+ * there was a ridge; what makes that honest is somebody walking this list beforehand and promoting the
+ * ones that come back every year into `bodyFeatures` (D53), which no reset touches.
+ *
+ * Ranked by `@skating/core`'s `rankPromotionCandidates` — decay tier first, because that is the only
+ * input that is about physics rather than about attention. It is **not** a prediction that a hazard
+ * will recur (D3); it is a queue for a human decision, and everything it drops is a type with nowhere
+ * to be promoted *to*.
+ *
+ * Moderator-gated, like every other operator read: this is a management view of hidden content.
+ */
+export const listPromotionCandidates = query({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /** Which season to look back at — absent ⇒ the one that just ended. */
+    season: v.optional(v.number()),
+  },
+  handler: async (ctx, { waterBodyId, season }) => {
+    await requireContributorRole(ctx, 'moderator');
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return [];
+    const now = Date.now();
+    const target: Season = resolveSeason(season, seasonOf(now) - 1);
+    // **Bounded, unlike its first draft.** `by_water_body` has no status or time key, so a `.collect()`
+    // here read every hazard the lake has ever held — on a table this phase's own design note points
+    // out never ages out. Newest-created first, because last season's rows are the newest ones that
+    // aren't this season's; an older row past the cap is a hazard from two winters ago, which the pass
+    // isn't asking about. Logged when it bites so the cap can't be the silent kind.
+    const rows = await ctx.db
+      .query('hazards')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .order('desc')
+      .take(PROMOTION_SCAN_CAP);
+    if (rows.length >= PROMOTION_SCAN_CAP) {
+      console.warn(
+        `listPromotionCandidates: ${body._id} has at least ${PROMOTION_SCAN_CAP} hazards — ranking the newest ${PROMOTION_SCAN_CAP} only`,
+      );
+    }
+    return rankPromotionCandidates(
+      rows
+        // Archived rows count. A ridge the community voted healed in March is *exactly* the kind that
+        // comes back in December — "it healed" is a fact about last winter, not about this one.
+        .filter((h) => h.moderationStatus === 'visible')
+        // Already promoted: the feature is carrying the warning, so there is nothing to decide.
+        .filter((h) => h.promotedToFeatureId === undefined)
+        .filter((h) => isInSeason(h.firstReportedAt, target))
+        .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
+        .map((h) => ({
+          hazardId: h._id,
+          type: h.type,
+          confirmCount: h.confirmCount,
+          goneCount: h.goneCount,
+          firstReportedAt: h.firstReportedAt,
+          lastConfirmedAt: h.lastConfirmedAt,
+          archived: h.status === 'archived',
+          promotesTo: promotionTargetFor(h.type),
+          ...(h.description !== undefined ? { description: h.description } : {}),
+        })),
     );
   },
 });

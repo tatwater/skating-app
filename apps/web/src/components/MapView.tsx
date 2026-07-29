@@ -93,6 +93,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     hazardDraftType,
     hazardDropMode,
     setHazardDropMode,
+    browseSeason,
   } = useMapSelection();
 
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
@@ -175,9 +176,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // Hazards + known features for the focused lake (Phase 9). Deliberately scoped to the open body,
   // not the viewport: hazards are only ever queried per body, which is what keeps this off the
   // path `listInViewport` had to be fixed for twice (PRs #10/#11) before N1 made it bounded.
+  // `browseSeason` is what makes the season selector govern the *lake*, not just its report list:
+  // the selector lives in the drawer, these two layers are drawn here, and they have to agree or the
+  // screen shows two winters at once. Put-ins above are deliberately left out of it (D63).
+  const seasonArg = browseSeason === null ? {} : { season: browseSeason };
   const hazards = useQuery(
     api.hazards.listForBody,
-    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+    highlightWaterBodyId
+      ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'>, ...seasonArg }
+      : 'skip',
   );
   const bodyFeatures = useQuery(
     api.bodyFeatures.listForBody,
@@ -187,7 +194,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // body like hazards, deliberately NOT a viewport scan — per-body is the Phase 9 design call.
   const aggregateTracks = useQuery(
     api.gpsActivities.listTracksForBody,
-    highlightWaterBodyId ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'> } : 'skip',
+    highlightWaterBodyId
+      ? { waterBodyId: highlightWaterBodyId as Id<'waterBodies'>, ...seasonArg }
+      : 'skip',
   );
 
   // Open bounties across the viewport (D10/D17 browse). Unlike hazards, this is safe to query per

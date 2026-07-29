@@ -92,6 +92,20 @@ crons.interval('prune weather cache', { hours: 6 }, internal.storageHygiene.prun
 // orphan costs only storage and the grace window before a photo is even a candidate is 30 days.
 crons.interval('sweep orphan photos', { hours: 24 }, internal.storageHygiene.sweepOrphanPhotos, {});
 
+/**
+ * A departed skater's photos, expired with the season they were taken in (D66/N5a).
+ *
+ * Daily rather than annually, even though the clock it enforces turns over once a year: accounts are
+ * tombstoned continuously, and a skater who leaves in August has photos from a season that ended in
+ * June. Waiting for the next boundary would hold those for eleven months for no reason.
+ */
+crons.interval(
+  'expire departed skaters photos',
+  { hours: 24 },
+  internal.storageHygiene.sweepDepartedPhotos,
+  {},
+);
+
 // Expired data-export bundles. Hourly, unlike the other two, because an export is the densest
 // concentration of one person's data in the system and its whole point is being short-lived.
 crons.interval(

@@ -363,10 +363,10 @@ Two mechanisms in this codebase both take something off the screen, and they are
 | Who it applies to | everyone | only someone who chose to leave |
 | Reversible | yes, with a labelled way back | no |
 
-Seasonal scoping (N5a, designed but not built) will hide last season's reports and hazards from the
-default view — reachable by permalink, browsable by a per-lake season selector. That is not this. The
-30-day clock isn't "old content expires"; it's how long a departing skater's own words stay up, and it
-reaches nobody who's still here.
+Seasonal scoping (N5a, built 2026-07-28) hides last season's reports and hazards from the default
+view — reachable by permalink, browsable by a per-lake season selector. That is not this. The 30-day
+clock isn't "old content expires"; it's how long a departing skater's own words stay up, and it reaches
+nobody who's still here.
 
 ---
 
@@ -498,19 +498,34 @@ rows look right, and something is quietly wrong for a person who can no longer c
   access rights don't depend on good standing. Suspended users need only a gate change; a *banned* user
   is Clerk-banned and can't sign in at all, so that half has to be an operator-run export and deletion
   from `/admin/users` plus a documented contact address. In the N5a deferred register.
-- **Photo *images* survive indefinitely, and only the caption comes off.** The largest unresolved
-  question in the design — a *policy* one, now that the mechanical hole underneath it is closed (see
-  the note on reclaiming below). A photo attached to a surviving report or hazard is kept whole: the
-  bytes, the timestamp and the coordinate. The coordinate is defensible — it's where on the lake the picture
-  was taken, and it's what places the pin — but the *image* can carry faces, a licence plate, a house
-  behind the put-in, or the departed skater themselves. It's a far larger identifiability surface than
-  any text field on this page, and nothing currently removes it.
+- ~~**Photo *images* survive indefinitely, and only the caption comes off.**~~ **Decided as
+  [D66](../plans/01-decisions.md#d66--a-departed-skaters-photos-split-on-evidential-value-and-expire-at-the-season-boundary-n5a)
+  and built in N5a (2026-07-28).** This was the largest unresolved question in the design: a photo on a
+  surviving report or hazard was kept whole — bytes, timestamp, coordinate — and the *image* is a far
+  larger identifiability surface than any text field on this page. Faces, a licence plate, a house
+  behind the put-in, the departed skater themselves.
 
-  It isn't simply "erase them" because photos are also the most *evidential* thing in a hazard report:
-  a picture of an open lead is worth more than any sentence describing one. The shape under
-  consideration splits on that — **hazard-documenting photos kept, the rest expiring at the season
-  boundary** — which trades the beautiful-morning shots and some put-in documentation for keeping the
-  danger evidence. Not decided, not built; in the N5a deferred register with the alternatives.
+  It was never simply "erase them", because a photo is also the most *evidential* thing in a hazard
+  report: a picture of an open lead is worth more than any sentence describing one. So the rule splits
+  on exactly that. **A photo attached to a hazard is kept**, indefinitely and whole. **Everything else
+  expires at the end of the season it was taken in** — the beautiful-morning shots and, a real cost
+  accepted knowingly, the put-in documentation S1 calls the corpus's most-discussed concern. The loss
+  falls only on people who chose to leave, and only on the images with the least evidential value.
+
+  The clock is **N5a's season boundary rather than a fourth deletion timer**, which is the argument for
+  building it there. One consequence worth knowing: finalization lands 30 days after the request and
+  therefore mid-season, so the sweep has to **outlive the tombstone** — it runs off a `by_status` index
+  rather than the pending one, which `writeTombstone` drops the row out of. A photo's own season is
+  read from `takenAt` where the skater kept EXIF (D42) and the upload time otherwise: a picture taken in
+  February and uploaded in July belongs to the winter it shows.
+
+  Each tombstone is swept **once per season**, marked by `profiles.photosExpiredForSeason` — a
+  completion marker, without which the daily cron re-walked every departure the app had ever had. And
+  when the one-shot hazard scan caps on a prolific uploader, the account is handed to
+  `photoReconcile`'s `season_expiry` mode for a complete answer rather than retried: the cap is a
+  property of the uploader, so retrying keeps their images forever. The handoff takes a **lease**, and
+  only the finishing run writes the completion marker — marking at handoff time would mean a job that
+  died left the photos undeleted with nothing scheduled to look again.
 - **Email delivery is unprovisioned.** Resend keys and a verified sending domain are prod-cutover work,
   so an export lands in the settings list and no mail goes out. Designed degradation, not a failure
   path — but note it also means the "an emailed bundle outlives the account" carve-out never fires

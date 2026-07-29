@@ -38,6 +38,12 @@ export function HazardBanner() {
   const confirm = useMutation(api.hazardConfirmations.confirm);
   const { banner } = useOnIceMode();
 
+  // **No `season` argument, ever** (D63). This query looks identical to the map's, and the difference
+  // is the whole point: the map answers "what did this lake look like when I choose to look", the
+  // banner answers "what is near me right now". A skater standing on ice must never be alerted about
+  // last winter's ridge because a sheet they opened an hour ago was browsing '24/'25 — and must never
+  // *stop* being alerted about this winter's for the same reason. The server default, this season, is
+  // the only correct value here, which is why `browseSeason` is deliberately not read.
   const hazards = useQuery(
     api.hazards.listForBody,
     onIceWaterBodyId ? { waterBodyId: onIceWaterBodyId as Id<'waterBodies'> } : 'skip',

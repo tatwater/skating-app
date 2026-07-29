@@ -21,6 +21,7 @@ import { HazardList } from './HazardList';
 import { LeavingNotice } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { ReportForm } from './ReportForm';
+import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Card, CardContent } from './ui/card';
@@ -139,6 +140,7 @@ export function WaterBodyDetail({
         </div>
         {leaving ? <LeavingNotice /> : null}
         <WaterBodyModeratorControls body={result.body} />
+        <SeasonFilter waterBodyId={result.body._id} />
         <BountyList waterBodyId={result.body._id} />
         <HazardList waterBodyId={result.body._id} />
         <ReportFeed
@@ -189,11 +191,17 @@ function ReportFeed({
   // filtering on an id nothing matches, which would read as "no reports here".
   const activeBay = bays.some((b) => b._id === subAreaId) ? subAreaId : '';
 
+  // The season being browsed (D63), shared with the map so the pins and the paths on screen belong to
+  // the same winter as this list. `null` — this season — is the default and the only state the drawer
+  // opens in.
+  const { browseSeason } = useMapSelection();
+  const seasons = useQuery(api.reports.seasonsForBody, { waterBodyId });
   const { results, status, loadMore } = usePaginatedQuery(
     api.reports.listByWaterBody,
     {
       waterBodyId,
       ...(activeBay ? { subAreaId: activeBay as Id<'waterBodySubAreas'> } : {}),
+      ...(browseSeason === null ? {} : { season: browseSeason }),
     },
     { initialNumItems: REPORTS_PAGE_SIZE },
   );
@@ -228,11 +236,13 @@ function ReportFeed({
     return (
       <div className="flex flex-col gap-2">
         {bayFilter}
-        <p className="text-foreground-muted text-sm">
-          {activeBay
-            ? 'No reports from that part of the lake yet.'
-            : 'No reports yet — be the first to say how it skates.'}
-        </p>
+        {activeBay ? (
+          <p className="text-foreground-muted text-sm">
+            No reports from that part of the lake yet.
+          </p>
+        ) : (
+          <SeasonEmptyState browseSeason={browseSeason} currentSeason={seasons?.current} />
+        )}
       </div>
     );
   }

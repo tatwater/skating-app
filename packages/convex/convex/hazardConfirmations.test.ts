@@ -1,3 +1,4 @@
+import type { HazardType } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
@@ -76,7 +77,7 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
 async function seedHazard(
   author: { as: ReturnType<ReturnType<typeof convexTest>['withIdentity']> },
   waterBodyId: Id<'waterBodies'>,
-  type = 'open_water' as const,
+  type: HazardType = 'open_water',
 ) {
   return author.as.mutation(api.hazards.create, {
     waterBodyId,
@@ -528,5 +529,243 @@ describe('side effects', () => {
 
     const votes = await a.as.query(api.hazardConfirmations.listForHazard, { hazardId });
     expect(votes.map((v) => v.verdict)).toEqual(['healing_unsafe', 'still_there']);
+  });
+});
+
+/**
+ * D64 — the passage-marker inversion, end to end through the mutation. The unit rules are property-
+ * tested in core; these are the ones that only exist once a real vote row hits a real hazard.
+ */
+describe('suggested crossings (D64)', () => {
+  test('one "ridge closed" vote shows as disputed instead of changing nothing', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const hazardId = await seedHazard(author, waterBodyId, 'ridge_crossing');
+    const skater = await seedUser(t, 'skater');
+
+    await skater.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'fully_healed',
+      ...VIA,
+    });
+
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+    // Closing still takes two — removing on one vote would let any single skater delete a
+    // contribution — but the first vote is no longer invisible to the next person standing there.
+    expect(hazard?.healingState).toBe('disputed');
+    expect(hazard?.status).toBe('active');
+  });
+
+  test('the same vote on a danger stays silent — discounting a live warning is the unsafe direction', async () => {
+    const { t, hazardId } = await setup();
+    const skater = await seedUser(t, 'skater');
+
+    await skater.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'fully_healed',
+      ...VIA,
+    });
+
+    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.healingState).toBe('none');
+  });
+
+  test('a crossing stays provisional on one confirmation, where a hazard would not', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const crossingId = await seedHazard(author, waterBodyId, 'ridge_crossing');
+    const hazardId = await seedHazard(author, waterBodyId, 'open_water');
+    const skater = await seedUser(t, 'skater');
+
+    for (const id of [crossingId, hazardId]) {
+      await skater.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId: id,
+        verdict: 'still_there',
+        ...VIA,
+      });
+    }
+
+    const views = await skater.as.query(api.hazards.listForBody, { waterBodyId });
+    const crossing = views.find((v) => v._id === crossingId);
+    const hazard = views.find((v) => v._id === hazardId);
+    expect(crossing?.provisional).toBe(true); // needs two
+    expect(hazard?.provisional).toBe(false); // needs one
+  });
+
+  test('expires off the map after its own window, while a hazard of the same age still draws', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const crossingId = await seedHazard(author, waterBodyId, 'ridge_crossing');
+    const hazardId = await seedHazard(author, waterBodyId, 'open_water');
+    const longAgo = Date.now() - 100 * 60 * 60 * 1000; // past 72h either way
+    await t.run(async (ctx) => {
+      await ctx.db.patch(crossingId, { lastConfirmedAt: longAgo });
+      await ctx.db.patch(hazardId, { lastConfirmedAt: longAgo });
+    });
+
+    const views = await t.query(api.hazards.listForBody, { waterBodyId });
+    // The crossing is gone from the layer the map, the list and the on-ice evaluator all read; the
+    // danger is still there, stale, behind "show older" — which is the whole asymmetry.
+    expect(views.map((v) => v._id)).toEqual([hazardId]);
+
+    // Hidden, not deleted: a permalink still resolves and can say why it aged out.
+    const permalink = await t.query(api.hazards.get, { hazardId: crossingId });
+    expect(permalink?.expired).toBe(true);
+  });
+
+  test('a confirmation brings an expiring crossing back', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const crossingId = await seedHazard(author, waterBodyId, 'ridge_crossing');
+    await t.run((ctx) =>
+      ctx.db.patch(crossingId, { lastConfirmedAt: Date.now() - 100 * 60 * 60 * 1000 }),
+    );
+    const skater = await seedUser(t, 'skater');
+
+    await skater.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId: crossingId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+
+    const views = await t.query(api.hazards.listForBody, { waterBodyId });
+    expect(views.map((v) => v._id)).toEqual([crossingId]);
+  });
+});
+
+/** D65 — the verdict for "this pin was never real", and what it tells a moderator. */
+describe('never_existed (D65)', () => {
+  test('two of them archive the pin and file one moderation flag', async () => {
+    const { t, hazardId } = await setup();
+    const a = await seedUser(t, 'a');
+    const b = await seedUser(t, 'b');
+
+    await a.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'never_existed',
+      ...VIA,
+    });
+    // One vote is not a pattern, and not a removal.
+    expect((await t.run((ctx) => ctx.db.query('contentFlags').collect())).length).toBe(0);
+    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.status).toBe('active');
+
+    await b.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'never_existed',
+      ...VIA,
+    });
+
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(hazard?.status).toBe('archived'); // never a hard delete (D15)
+    const flags = await t.run((ctx) => ctx.db.query('contentFlags').collect());
+    expect(flags).toHaveLength(1);
+    expect(flags[0]?.targetType).toBe('hazard');
+    expect(flags[0]?.reason).toBe('unsafe_false_report');
+  });
+
+  test('pools with fully_healed — two people agreeing nothing is there is two votes', async () => {
+    const { t, hazardId } = await setup();
+    const a = await seedUser(t, 'a');
+    const b = await seedUser(t, 'b');
+
+    await a.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'fully_healed',
+      ...VIA,
+    });
+    await b.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'never_existed',
+      ...VIA,
+    });
+
+    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.status).toBe('archived');
+    // …but only one of them is a claim about the report, and a mixed pair is not the pattern the
+    // flag exists to surface.
+    expect((await t.run((ctx) => ctx.db.query('contentFlags').collect())).length).toBe(0);
+  });
+
+  test('one skater voting twice reaches neither the archive nor the flag', async () => {
+    const { t, hazardId } = await setup();
+    const a = await seedUser(t, 'a');
+
+    await a.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'never_existed',
+      ...VIA,
+    });
+    await a.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'never_existed',
+      ...VIA,
+    });
+
+    expect((await t.run((ctx) => ctx.db.get(hazardId)))?.status).toBe('active');
+    expect((await t.run((ctx) => ctx.db.query('contentFlags').collect())).length).toBe(0);
+  });
+});
+
+/** D65 — a confirmation names the person, unless they asked not to be findable. */
+describe('named confirmers (D65)', () => {
+  test('names a public confirmer and counts a private one without naming them', async () => {
+    const { t, hazardId } = await setup();
+    const open = await seedUser(t, 'open');
+    const shy = await seedUser(t, 'shy');
+    await t.run(async (ctx) => {
+      const profile = await ctx.db
+        .query('profiles')
+        .filter((q) => q.eq(q.field('clerkUserId'), 'shy'))
+        .unique();
+      if (profile) await ctx.db.patch(profile._id, { profileVisibility: 'private' });
+    });
+
+    for (const who of [open, shy]) {
+      await who.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId,
+        verdict: 'still_there',
+        ...VIA,
+      });
+    }
+
+    const rows = await t.query(api.hazardConfirmations.listForHazard, { hazardId });
+    expect(rows).toHaveLength(2);
+    const named = rows.filter((r) => r.displayName !== undefined);
+    expect(named).toHaveLength(1);
+    expect(named[0]?.displayName).toBe('open');
+  });
+
+  /**
+   * The author's own vote is real — it refreshed the clock and a moderator should see it — but it is
+   * *not* a confirmation: `confirmCount` excludes it by construction (D54). A client that names every
+   * `still_there` voter would otherwise print more names than the count above them, and print the
+   * reporter as their own corroborator one line under "reported by" them.
+   */
+  test('flags the author’s own vote so the drawer can leave them out of the confirmers', async () => {
+    const { t, author, hazardId } = await setup();
+    const skater = await seedUser(t, 'skater');
+
+    for (const who of [author, skater]) {
+      await who.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId,
+        verdict: 'still_there',
+        ...VIA,
+      });
+    }
+
+    const rows = await t.query(api.hazardConfirmations.listForHazard, { hazardId });
+    expect(rows.filter((r) => r.isAuthor)).toHaveLength(1);
+    expect(rows.find((r) => r.isAuthor)?.displayName).toBe('author');
+
+    // What the drawer actually renders from: never more names than the count they sit under.
+    const hazard = await t.run((ctx) => ctx.db.get(hazardId));
+    const confirmerNames = rows
+      .filter((r) => r.verdict === 'still_there' && !r.isAuthor && r.displayName !== undefined)
+      .map((r) => r.displayName);
+    expect(hazard?.confirmCount).toBe(1);
+    expect(confirmerNames).toEqual(['skater']);
+    expect(confirmerNames.length).toBeLessThanOrEqual(hazard?.confirmCount ?? 0);
   });
 });

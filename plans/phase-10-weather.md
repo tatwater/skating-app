@@ -99,7 +99,7 @@ weather-since **reducer already exists** (Phase 10 only adds the fetch + the dis
 
 The original strip (peak temp · hours near/above freezing · hours of sun · precip · max wind) is a fine
 *descriptive* strip but misses most of what the **decay model** needs. The 2026-07-21 research pass
-(`phase-9-hazard-research.md` §5, lakeice.info + regional corpus) points to a richer set. Two kinds:
+(`research/hazard-decay-calibration-and-behavior.md` §5, lakeice.info + regional corpus) points to a richer set. Two kinds:
 **derived integrals** the model consumes, and **raw variables we were flattening away**.
 
 ### The biggest miss — degree-*hours*, not hour-*counts*

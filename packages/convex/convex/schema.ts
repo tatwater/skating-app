@@ -173,11 +173,55 @@ export default defineSchema({
      */
     deletionRequestedAt: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
+    /**
+     * The season through which this tombstoned account's photos have been expired (D66/N5a) — a
+     * **completion marker**, and the thing that makes `sweepDepartedPhotos` terminate.
+     *
+     * Without it the cron re-paginated every tombstone's whole photo table every day forever, and the
+     * cost grew with every departure the app ever had. A tombstone can't gain photos (posting closed
+     * at the request), so once a sweep has run for season *S* there is nothing further to do until the
+     * boundary turns over — one pass per account per season, not one per account per day.
+     *
+     * Absent on every account that has never been swept, which is exactly the set the sweep wants
+     * first; see the index for why that falls out for free rather than needing a backfill.
+     */
+    photosExpiredForSeason: v.optional(v.number()),
+    /**
+     * **A lease on `photoReconcile` for this uploader** — when the current staged run started, absent
+     * when none is running.
+     *
+     * Two jobs need it. It stops a completion marker being written before the work is done: the
+     * escalating cron claims the lease, and only the run's *final phase* stamps
+     * `photosExpiredForSeason` and releases. A run that dies leaves a lease that goes stale after
+     * `PHOTO_RECONCILE_LEASE_MS`, and the next daily tick re-escalates — so a failure costs a day, not
+     * a season, and never permanent retention.
+     *
+     * And it serializes the two reconcile *modes* against each other, which is the sharper reason.
+     * Both mutate the same photo rows through a mark → clear → sweep cycle, and both are escalated by
+     * daily crons that had no idea whether a previous run was still going. Overlap could interleave
+     * one run's `sweep` with another's `mark` and delete a photo the second run had marked but not yet
+     * cleared — a *referenced* photo, which is the one mistake this whole area exists to prevent.
+     */
+    photoReconcileStartedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     .index('by_clerk_user_id', ['clerkUserId'])
     .index('by_username', ['username'])
     .index('by_status', ['status'])
+    /**
+     * The departed-photo sweep's work queue (D66/N5a): tombstones that haven't been swept for the
+     * current season yet.
+     *
+     * **This is the one place the non-sparse-index behaviour above is what we want**, and it's worth
+     * saying so beside the warning that it's usually a trap. `photosExpiredForSeason` is absent on
+     * every account that has never been swept, `undefined` sorts before every number, so a
+     * `lt('photosExpiredForSeason', currentSeason)` range returns the never-swept accounts *first* and
+     * then the ones last swept in an earlier season. That is precisely the queue, with no backfill and
+     * no migration. The sibling index two lines down is the same shape being wrong; the difference is
+     * that there the missing rows are ones the sweep must not touch, and here they're the ones it
+     * exists to find.
+     */
+    .index('by_status_photos_expired', ['status', 'photosExpiredForSeason'])
     // The finalize cron's window sweep (D62).
     //
     // **This index is NOT sparse**, and assuming it was nearly deleted every account on dev. A Convex
@@ -274,7 +318,23 @@ export default defineSchema({
   })
     .index('by_user', ['userId'])
     .index('by_provider_activity', ['provider', 'providerActivityId']) // unique dedup (D24)
-    .index('by_water_body', ['waterBodyId']), // per-lake skate history + bounty eligibility (D44)
+    .index('by_water_body', ['waterBodyId']) // per-lake skate history + bounty eligibility (D44)
+    /**
+     * The aggregate-tracks layer, season-scoped (N5a/D63).
+     *
+     * `by_water_body` orders by creation, so bounding the season after a `.take()` would be a filter
+     * over the newest 200 *rows* rather than the newest 200 in-season ones: on a lake with more than
+     * that in lifetime tracks, last season's would fill the window and this season's would silently
+     * not draw. That is the shape of bug N1 spent a phase removing, and the fix is the same one —
+     * bound it in the index.
+     *
+     * `startTime` rather than the linked report's `skateEndTime`, which is what the design says the
+     * season is measured by. They differ by the length of one skate, and the boundary is July 1 — the
+     * one week of the year no skate spans. Reading the report's field instead would mean fetching
+     * every report in the window before knowing which to keep, which is the read this index exists to
+     * avoid.
+     */
+    .index('by_water_body_start_time', ['waterBodyId', 'startTime']),
 
   waterBodies: defineTable({
     name: v.string(),
@@ -923,6 +983,22 @@ export default defineSchema({
      * migration and no index — the sweep pages `by_uploader` and reads the flag in memory.
      */
     orphanCandidate: v.optional(v.boolean()),
+    /**
+     * The same scratch mark for `photoReconcile`'s **season-expiry** mode (D66/N5a) — a departed
+     * skater's photos, where the question is "is this named by a *hazard*" rather than "is this named
+     * by anything".
+     *
+     * Its own field rather than sharing `orphanCandidate`, because the two runs answer different
+     * questions over the same rows and both crons fire daily: a shared flag would let the orphan
+     * pass's `reports` phase clear a mark the season pass set, and a photo on a surviving report is
+     * exactly the one the season rule expires. Interleaving would fail toward *keeping* rather than
+     * deleting, which is the safe direction — but "safe by accident, in a delete path" is not a
+     * property worth relying on when a second optional boolean removes the interleaving entirely.
+     *
+     * Transient in the same way: meaningful only between the phases of one run, absent otherwise, no
+     * migration and no index.
+     */
+    seasonExpiryCandidate: v.optional(v.boolean()),
   })
     .index('by_uploader', ['uploaderId'])
     // Day-sliced orphan sweep (Phase 7b): a photo abandoned between upload and attach is invisible

@@ -16,11 +16,46 @@
  * mobile offline queue — one implementation, one set of property tests (D40).
  */
 
-/** The three-tier confirmation vote (D52). Replaces the old binary still_there|gone. */
-export type HazardVerdict = 'still_there' | 'healing_unsafe' | 'fully_healed';
+/**
+ * The confirmation vote. Three tiers of "is it still there" (D52), plus a fourth that answers a
+ * different question entirely (D65).
+ *
+ * `never_existed` is not a fourth degree of gone. `fully_healed` says *the ice changed*; this says
+ * *the report was wrong* — a mis-tapped location, a shadow read as a lead, or a troll. Without it, the
+ * only way to clear a bogus pin was to record that it "healed", which writes a false entry into the ice
+ * record and, once N5a's recurrence detection reads across seasons, becomes evidence that a hazard
+ * formed somewhere it never did.
+ */
+export const HAZARD_VERDICTS = [
+  'still_there',
+  'healing_unsafe',
+  'fully_healed',
+  'never_existed',
+] as const;
 
-/** Whether the latest verdict marked the hazard as healing-but-still-dangerous. */
-export type HazardHealingState = 'none' | 'healing_unsafe';
+/**
+ * ⚠ **This array is the single source, and the type is derived from it — keep it that way.**
+ *
+ * `never_existed` was added as a fourth member of a hand-written union, and the vocabulary turned out
+ * to be written down in four places: this type, the backend's `HAZARD_CONFIRM_VERDICTS` validator,
+ * `hazardQueue`'s deliberate wire-shape re-declaration, and a test array that claimed to cover "every
+ * verdict" and silently went on covering three. Nothing failed to compile, so the new verdict's label
+ * and help text shipped untested. An array that the type is derived from means the next addition
+ * reaches every exhaustive `switch` *and* every loop that iterates the vocabulary.
+ */
+export type HazardVerdict = (typeof HAZARD_VERDICTS)[number];
+
+/**
+ * The annotation on a pin, derived from the votes.
+ *
+ * `disputed` is **passage markers only** (D64). One skater saying "you can't cross here" is currently
+ * invisible — `goneCount` goes to 1, `status` stays `active`, nothing renders — so the first person to
+ * find a closed crossing changes nothing on screen for the next. On a *hazard* the same signal would
+ * invite skaters to discount a live warning, which is the unsafe direction; on a passage marker it is
+ * the conservative one, and it keeps both facts the skater needs: a crossing was reported here, and
+ * somebody disagrees.
+ */
+export type HazardHealingState = 'none' | 'healing_unsafe' | 'disputed';
 
 /** Lifecycle status. Separate from moderation status — see the note on `HazardLifecycleState`. */
 export type HazardStatus = 'active' | 'archived';
@@ -47,6 +82,21 @@ export interface HazardLifecycleState {
 export const DEFAULT_CONFIRM_THRESHOLD = 1;
 
 /**
+ * How many independent confirmations a **suggested crossing** needs before it stops reading as one
+ * skater's suggestion (D64) — double the bar above, which is what "more corroboration" means.
+ *
+ * Any `still_there` vote still resets the clock, so one person *can* keep a crossing alive; two are
+ * needed before the marker is corroborated. The asymmetry is the same one as the expiry: this is the
+ * only pin in the app that says *you can go this way*.
+ */
+export const PASSAGE_CONFIRM_THRESHOLD = 2;
+
+/** The confirm bar for a type: passage markers need two, everything else one. */
+export function confirmThresholdFor(isPassage: boolean): number {
+  return isPassage ? PASSAGE_CONFIRM_THRESHOLD : DEFAULT_CONFIRM_THRESHOLD;
+}
+
+/**
  * How many independent `fully_healed` verdicts archive a hazard. Higher than the confirm threshold on
  * purpose: the asymmetry is the safety margin. Believing a hazard is present when it isn't costs a
  * detour; believing it's gone when it isn't can kill someone (D3).
@@ -57,6 +107,14 @@ export interface ApplyConfirmationOptions {
   /** Confirmations by the hazard's own author don't count toward either threshold (D54). */
   isAuthor?: boolean;
   removalThreshold?: number;
+  /**
+   * Is this a passage marker (`ridge_crossing`)? Mirrors the same option on
+   * {@link DeriveHazardLifecycleOptions}, and for the same reason: only a passage marker can reach
+   * `disputed` (D64). Without it the offline optimistic state disagrees with what the server derives
+   * for the *one* verdict a crossing most needs shown — a skater casts "ridge closed here", sees
+   * nothing change, and only finds out it registered after the next sync.
+   */
+  isPassage?: boolean;
 }
 
 /**
@@ -80,7 +138,18 @@ export function applyConfirmation(
   at: number,
   options: ApplyConfirmationOptions = {},
 ): HazardLifecycleState {
-  const { isAuthor = false, removalThreshold = DEFAULT_REMOVAL_THRESHOLD } = options;
+  const {
+    isAuthor = false,
+    removalThreshold = DEFAULT_REMOVAL_THRESHOLD,
+    isPassage = false,
+  } = options;
+  /**
+   * `disputed` on a passage marker outranks whatever this vote would otherwise have annotated (D64) —
+   * the same precedence `deriveHazardLifecycle` applies, restated here rather than shared because the
+   * two functions maintain their counts differently and a shared helper would imply they don't.
+   */
+  const annotate = (goneCount: number, otherwise: HazardHealingState): HazardHealingState =>
+    isPassage && goneCount >= 1 && goneCount < removalThreshold ? 'disputed' : otherwise;
   // The author vouching for their own report is not independent evidence (D54). It still refreshes the
   // decay clock — they were genuinely there and looked — it just can't promote or remove the pin.
   const counts = !isAuthor;
@@ -95,8 +164,10 @@ export function applyConfirmation(
         ...state,
         lastConfirmedAt,
         confirmCount: state.confirmCount + (counts ? 1 : 0),
-        // Seeing it still there supersedes an earlier "healing" note.
-        healingState: 'none',
+        // Seeing it still there supersedes an earlier "healing" note — but not a standing dispute on
+        // a crossing: one skater finding the ridge closed and another getting across is exactly the
+        // disagreement `disputed` exists to show, and the newer vote doesn't erase the older one.
+        healingState: annotate(state.goneCount, 'none'),
       };
 
     case 'healing_unsafe':
@@ -106,16 +177,22 @@ export function applyConfirmation(
         // moves neither counter. The pin stays, now annotated, because a healing spot is exactly the
         // thing a future skater needs to be able to read.
         lastConfirmedAt,
-        healingState: 'healing_unsafe',
+        healingState: annotate(state.goneCount, 'healing_unsafe'),
       };
 
-    case 'fully_healed': {
+    // Both verdicts assert the same thing about the *present* — there is nothing there — and the map
+    // shows the present, so they pool toward one threshold (D65). They disagree about history, and
+    // that disagreement is recorded on the vote rows, where the moderation signal reads it. Requiring
+    // two of a *kind* would leave a genuinely-clear hazard standing because its two witnesses
+    // explained it differently, which is over-warning for no gain.
+    case 'fully_healed':
+    case 'never_existed': {
       const goneCount = state.goneCount + (counts ? 1 : 0);
       return {
         ...state,
         lastConfirmedAt,
         goneCount,
-        healingState: 'none',
+        healingState: annotate(goneCount, 'none'),
         status: shouldArchive(goneCount, removalThreshold) ? 'archived' : state.status,
       };
     }
@@ -142,6 +219,11 @@ export interface DeriveHazardLifecycleOptions {
    */
   priorStatus: HazardStatus;
   removalThreshold?: number;
+  /**
+   * Is this a passage marker (`ridge_crossing`)? Only they can reach `disputed` (D64) — on a hazard,
+   * surfacing a below-threshold "gone" vote would invite skaters to discount a live warning.
+   */
+  isPassage?: boolean;
 }
 
 /**
@@ -160,7 +242,8 @@ export interface DeriveHazardLifecycleOptions {
  *  - `confirmCount` / `goneCount` count **distinct non-author users** whose current verdict is
  *    `still_there` / `fully_healed`.
  *  - `healingState` reflects the single most recent vote *overall* (author included — a healing note is
- *    information, not a threshold).
+ *    information, not a threshold) — **except** on a passage marker below the removal threshold, where
+ *    a standing "gone" vote makes it `disputed` regardless of what was said most recently (D64).
  *  - `lastConfirmedAt` is the max of creation time and every vote's `at` — monotonic, author included.
  *  - `status` archives at the threshold and never un-archives (see `priorStatus`).
  */
@@ -173,6 +256,7 @@ export function deriveHazardLifecycle(
     createdAt,
     priorStatus,
     removalThreshold = DEFAULT_REMOVAL_THRESHOLD,
+    isPassage = false,
   } = options;
 
   // Reduce to each user's most recent vote.
@@ -193,11 +277,18 @@ export function deriveHazardLifecycle(
     // moves neither threshold.
     if (vote.userId === authorId) continue;
     if (vote.verdict === 'still_there') confirmCount += 1;
-    else if (vote.verdict === 'fully_healed') goneCount += 1;
+    // Pooled, as in `applyConfirmation`: "it healed" and "it was never here" agree about now (D65).
+    else if (vote.verdict === 'fully_healed' || vote.verdict === 'never_existed') goneCount += 1;
   }
 
-  const healingState: HazardHealingState =
-    mostRecent?.verdict === 'healing_unsafe' ? 'healing_unsafe' : 'none';
+  // `disputed` outranks `healing_unsafe` when both apply: "the ridge is closed here" is a stronger
+  // claim than "the crossing is dicey", and the stronger one is what a skater needs to read first.
+  const disputed = isPassage && goneCount >= 1 && goneCount < removalThreshold;
+  const healingState: HazardHealingState = disputed
+    ? 'disputed'
+    : mostRecent?.verdict === 'healing_unsafe'
+      ? 'healing_unsafe'
+      : 'none';
   const status: HazardStatus =
     priorStatus === 'archived' || shouldArchive(goneCount, removalThreshold)
       ? 'archived'
@@ -221,6 +312,9 @@ export function shouldArchive(
  * This drives two things: provisional hazards render softer, and on-ice they surface as the soft
  * "can you confirm?" prompt rather than a hard warning — which is what keeps a troll's fake pin from
  * ever becoming a scary alert for anyone but the people physically on that ice.
+ *
+ * Pass {@link confirmThresholdFor} rather than the default when the type may be a passage marker: a
+ * suggested crossing needs two confirmations to stop being provisional (D64).
  */
 export function isProvisional(
   confirmCount: number,

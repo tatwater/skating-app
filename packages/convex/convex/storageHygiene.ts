@@ -13,11 +13,18 @@
  * which settles the question a different way.
  */
 
+import { seasonOf, seasonStartMs } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalMutation } from './_generated/server';
 import { reclaimExportBlob } from './lib/exportBundles';
-import { deletePhotoAndBlobs, PHOTO_ORPHAN_GRACE_MS, referencedPhotoIds } from './lib/photoOrphans';
+import {
+  deletePhotoAndBlobs,
+  hazardPhotoIds,
+  PHOTO_ORPHAN_GRACE_MS,
+  referencedPhotoIds,
+} from './lib/photoOrphans';
+import { claimPhotoReconcile } from './photoReconcile';
 
 /** Rows examined per tick. Bounded so a sweep is always one comfortable transaction. */
 const SWEEP_LIMIT = 500;
@@ -109,7 +116,11 @@ export const sweepOrphanPhotos = internalMutation({
         // `photoReconcile` answers the same question across as many transactions as it needs, so this
         // is an escalation to a complete method rather than a retry of the one that just failed.
         skipped++;
-        if (!escalated.has(key)) {
+        // The `escalated` set only de-duplicates within *this* tick. Across ticks the lease is what
+        // stops a second run being scheduled on top of one still working — which matters more now
+        // that a second mode exists: two runs interleaving mark and sweep over the same photo rows
+        // could delete one that the other had marked but not yet cleared.
+        if (!escalated.has(key) && (await claimPhotoReconcile(ctx, photo.uploaderId, Date.now()))) {
           escalated.add(key);
           await ctx.scheduler.runAfter(0, internal.photoReconcile.reconcileUploaderPhotos, {
             uploaderId: photo.uploaderId,
@@ -167,5 +178,175 @@ export const sweepExpiredExports = internalMutation({
       deleted++;
     }
     return { deleted, retained };
+  },
+});
+
+/** Tombstoned accounts examined per tick, and photos examined per account per tick. */
+const DEPARTED_PAGE = 25;
+
+/**
+ * **A departed skater's photos, split on evidential value and expired with their season** (D66).
+ *
+ * The last place D62's "what a person typed vs what they observed" seam doesn't cut cleanly. Under the
+ * second amendment a photo on a surviving report is kept whole — bytes, timestamp, coordinate — and
+ * only its caption is redacted. But the image is the largest identifiability surface in the system:
+ * faces, a licence plate, a house behind the put-in, the departed skater themselves. It is
+ * *observation*, which is why no bucket ever questioned it, and it is also the richest personal data
+ * we hold.
+ *
+ * So: **a photo attached to a hazard is kept**, indefinitely and whole — a picture of an open lead is
+ * worth more than any sentence describing one, and it is what the next skater on that shore needs.
+ * **Everything else expires at the end of the season it was taken in**, including (a real cost,
+ * accepted) the put-in documentation S1 calls the corpus's most-discussed concern. The loss falls only
+ * on people who chose to leave, and only on the images with the least evidential value.
+ *
+ * **Why this is a cron and not a finalize stage.** Finalization lands 30 days after the request, which
+ * is mid-season by construction, so the season this person left in has not ended yet. The clock is
+ * N5a's season boundary rather than a fourth deletion timer — that is the argument for building it
+ * here at all — and it therefore has to outlive the tombstone. `writeTombstone` clears
+ * `deletionRequestedAt`, dropping the row out of the pending index no cron can reach again, so this
+ * one reads `by_status` instead.
+ *
+ * Two transactions on purpose: Convex allows one `.paginate()` per function execution, and both the
+ * account list and each account's photos need paging. This one walks accounts and fans out.
+ */
+export const sweepDepartedPhotos = internalMutation({
+  args: { cursor: v.optional(v.string()) },
+  handler: async (ctx, { cursor }) => {
+    // The season is resolved **here**, once, and carried down into every continuation of every
+    // account's paging. Re-reading the clock per page would let a July 1 rollover land mid-account:
+    // earlier pages judged against the old boundary, the completion marker written for the new one,
+    // and the just-ended season's photos on those pages never swept by anybody.
+    const season = seasonOf(Date.now());
+    // **Only accounts that haven't been swept for this season.** `photosExpiredForSeason` is absent
+    // until an account's first complete pass and `undefined` sorts before every number, so this range
+    // returns never-swept tombstones first and stops returning an account once it's marked — turning a
+    // daily re-walk of every departure the app has ever had into one pass per account per season.
+    const page = await ctx.db
+      .query('profiles')
+      .withIndex('by_status_photos_expired', (q) =>
+        q.eq('status', 'deleted').lt('photosExpiredForSeason', season),
+      )
+      .paginate({ cursor: cursor ?? null, numItems: DEPARTED_PAGE });
+
+    for (const profile of page.page) {
+      await ctx.scheduler.runAfter(0, internal.storageHygiene.expireDepartedPhotos, {
+        userId: profile._id,
+        season,
+      });
+    }
+    // Self-continuing rather than looping: a page of accounts is a bounded transaction, and the
+    // number of them only ever grows.
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.storageHygiene.sweepDepartedPhotos, {
+        cursor: page.continueCursor,
+      });
+    }
+    return { accounts: page.page.length, done: page.isDone, season };
+  },
+});
+
+/**
+ * One departed account's photos, one page per call (D66). See {@link sweepDepartedPhotos} for the rule.
+ *
+ * Three things this deliberately does **not** do:
+ *
+ * - **It doesn't touch this season's photos.** A skater who left in January keeps their January
+ *   pictures until July, because the expiry clock is the season boundary and not the deletion. That is
+ *   the whole reason this can't be a finalize stage.
+ * - **It doesn't rewrite `reports.photoIds`.** The read paths already skip a photo id that resolves to
+ *   nothing (`thumbUrlsFor`, `photos.getHazardUrls`), so a dangling id renders as one fewer photo,
+ *   which is exactly the intended outcome. Patching every report to prune ids would be a write per
+ *   report for a display that is already correct.
+ * - **It doesn't guess when the hazard scan caps.** A `null` answer keeps the photo, because an image
+ *   deleted on an unanswered question is the one thing here that can't be undone — and it hands the
+ *   account to `photoReconcile`'s `season_expiry` mode, which answers the same question completely
+ *   across as many transactions as it needs. See the escalation below for why *retrying* the capped
+ *   scan was the wrong instinct in two separate ways.
+ */
+export const expireDepartedPhotos = internalMutation({
+  args: {
+    userId: v.id('profiles'),
+    cursor: v.optional(v.string()),
+    /** The season this pass is expiring *through*, fixed by the sweeper — see its note on rollover. */
+    season: v.optional(v.number()),
+    /** Test seam: force the hazard scan to cap, so the escalation path is reachable in a test. */
+    scanCap: v.optional(v.number()),
+  },
+  handler: async (ctx, { userId, cursor, season, scanCap }) => {
+    const owner = await ctx.db.get(userId);
+    // Only tombstones. A cancelled deletion restores an ordinary account, and an ordinary account's
+    // photos are not on any clock at all — aging never removes anything (D62 second amendment).
+    if (owner?.status !== 'deleted') return { deleted: 0, done: true, kept: 0 };
+
+    const target = season ?? seasonOf(Date.now());
+    const seasonStart = seasonStartMs(target);
+    const keep = await hazardPhotoIds(ctx, userId, scanCap);
+    const page = await ctx.db
+      .query('photos')
+      .withIndex('by_uploader', (q) => q.eq('uploaderId', userId))
+      .paginate({ cursor: cursor ?? null, numItems: DEPARTED_PAGE });
+
+    let deleted = 0;
+    let kept = 0;
+    for (const photo of page.page) {
+      // `takenAt` when the skater opted into keeping EXIF (D42), else the upload. The photo's own
+      // season is the honest one: a picture taken in February and uploaded in July belongs to the
+      // winter it shows.
+      const takenAt = photo.takenAt ?? photo.createdAt;
+      if (takenAt >= seasonStart) {
+        kept++;
+        continue;
+      }
+      if (keep === null || keep.has(photo._id)) {
+        kept++;
+        continue;
+      }
+      if (await deletePhotoAndBlobs(ctx, photo)) deleted++;
+    }
+
+    // **A `null` is a method to escalate from, not an answer to retry** (PR #30's lesson, re-learned
+    // here). The cap is a property of the *uploader* — how many hazards they hold — so re-running
+    // tomorrow returns `null` again, and every day after that. Retrying was doubly wrong: the photos
+    // were retained forever with no automated path, which is exactly the problem `photoReconcile` was
+    // built to end; and because a retried account is never marked, it sat at the front of the
+    // sweeper's range permanently occupying a slot in a bounded page. Enough of them and no other
+    // tombstone is ever reached — the same starvation N3/N4's pending sweep shipped and had to fix.
+    //
+    // So: hand it to the determinate pass, and mark it, because that job now owns the account.
+    if (keep === null) {
+      // **Claim, don't mark.** `photosExpiredForSeason` means *this account's photos have been
+      // answered*, and at this point they haven't — the job that will answer them hasn't run. Writing
+      // it here excluded the account from every later sweep, so a reconcile run that died left the
+      // eligible photos undeleted with nothing scheduled to look again. The lease says "someone is on
+      // it" instead, and the finishing run writes the marker; a run that dies stops refreshing, the
+      // lease goes stale, and tomorrow's tick re-escalates.
+      const claimed = await claimPhotoReconcile(ctx, userId, Date.now());
+      if (claimed) {
+        await ctx.scheduler.runAfter(0, internal.photoReconcile.reconcileUploaderPhotos, {
+          uploaderId: userId,
+          mode: 'season_expiry',
+        });
+      }
+      console.warn(
+        claimed
+          ? `expireDepartedPhotos: hazard scan for ${userId} hit its cap — escalated to photoReconcile (season_expiry) for a complete pass`
+          : `expireDepartedPhotos: hazard scan for ${userId} hit its cap — a reconcile run already holds the lease, so this tick defers to it`,
+      );
+      return { deleted, kept, done: true, escalated: claimed };
+    }
+
+    if (!page.isDone) {
+      await ctx.scheduler.runAfter(0, internal.storageHygiene.expireDepartedPhotos, {
+        userId,
+        cursor: page.continueCursor,
+        season: target,
+      });
+    } else {
+      // The last page of a pass that could answer the hazard question: this account is done for the
+      // season and drops out of the sweeper's range until the boundary turns over.
+      await ctx.db.patch(userId, { photosExpiredForSeason: target });
+    }
+    return { deleted, kept, done: page.isDone };
   },
 });

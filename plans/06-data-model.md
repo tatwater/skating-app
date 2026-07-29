@@ -90,6 +90,13 @@ contradictionCount?: number     // D56/D57: private, non-scoring tally of weathe
                                 // corroborated contradictions. NOT trust (D50 stays boost-only) — a
                                 // moderation input; the Phase-7 panel charts it tenure-aware. Absent ⇒ 0.
 deletedAt?: timestamp
+photosExpiredForSeason?: number  // N5a/D66: the season a tombstone's photo expiry last completed
+                                 // through. A completion marker, not a clock — without it the daily
+                                 // sweep re-walked every departure the app had ever had, forever.
+                                 // Absent = never swept, which is exactly the queue: an index on an
+                                 // optional field is not sparse, so `undefined` sorts first and a
+                                 // `lt(currentSeason)` range returns the unswept accounts ahead of
+                                 // the stale ones. (That non-sparseness is a trap elsewhere — see the schema note on `by_deletion_requested_at`.)
 createdAt: timestamp
 ```
 > **Renamed `users` → `profiles` in implementation (D26).** Clerk owns the auth user;
@@ -696,7 +703,7 @@ createdAt: timestamp
 - `frozen_chop` (froze while wavy) · `windswept`
 
 **`hazards.type`** (localized dangers — drive the lifecycle; per-type decay in `HAZARD_DECAY`,
-[`phase-9-hazard-research.md`](./phase-9-hazard-research.md)). **Exactly one per hazard.**
+[`research/hazard-decay-calibration-and-behavior.md`](./research/hazard-decay-calibration-and-behavior.md)). **Exactly one per hazard.**
 
 > **Canonicalized 2026-07-21 (Phase 9 kickoff).** The pre-Phase-9 enum stored slash-pairs as *separate*
 > keys (`open_water` **and** `lead`; `ice_heave` **and** `buckling`; `inlet_outlet_current` **and**
@@ -874,8 +881,11 @@ profiles 1─* pointEvents
   them in: the cell scan prefilters, `bboxIntersects` / `pointInPolygon` refine.
 - **Suggested indexes:** `reports` by `waterBodyId + skateTime`, by `authorId`;
   `hazards` by `waterBodyId + status`;
-  `gpsActivities` by `provider + providerActivityId` (unique, dedup) and by
-  `waterBodyId` (per-lake skate history + bounty eligibility, D44); `comments`
+  `gpsActivities` by `provider + providerActivityId` (unique, dedup), by
+  `waterBodyId` (per-lake skate history + bounty eligibility, D44) and by
+  `waterBodyId + startTime` (the season-scoped aggregate-tracks layer, N5a — `by_water_body` orders
+  by creation, so a season filter after a `.take()` would be a filter over the newest *rows* and last
+  season's would fill the window while this season's silently didn't draw); `comments`
   by `reportId`; `activityConnections` by `userId`; `bounties` by
   `waterBodyId + status`; `blocks` by `blockerId` and by `blockedId`;
   `waterBodyFavorites` by `userId` (my favorites) and by `waterBodyId` (notification fan-out — Phase 4);

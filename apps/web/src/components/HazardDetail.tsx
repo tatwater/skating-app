@@ -2,8 +2,12 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   BODY_FEATURE_CAVEAT,
+  confirmerClause,
+  disputedNote,
+  expiredCrossingNote,
   FOOTPRINT_IS_APPROXIMATE,
   formatLocationLine,
+  formatSeason,
   freshnessLabel,
   type HazardFreshness,
   type HazardType,
@@ -12,6 +16,7 @@ import {
   healingNote,
   isLeaving,
   isPassageMarker,
+  seasonOf,
   stalenessCaveat,
   type TrustClass,
   verdictHelp,
@@ -44,6 +49,13 @@ export interface HazardViewData {
   freshness: HazardFreshness;
   provisional: boolean;
   healing: boolean;
+  /** A suggested crossing somebody has reported closed — one vote short of retiring it (D64). */
+  disputed: boolean;
+  /**
+   * A suggested crossing past its 72-hour window (D64) — already gone from the map, so a permalink is
+   * the only way anyone is seeing this. Says so rather than rendering as a live pin.
+   */
+  expired: boolean;
   archived: boolean;
   description?: string;
   /**
@@ -57,11 +69,22 @@ export interface HazardViewData {
   firstReportedAt: number;
   lastConfirmedAt: number;
   confirmCount: number;
+  /** Public confirmers, in vote order — private profiles are counted in `confirmCount`, never named. */
+  confirmerNames?: string[];
   photos: { photoId: string; url: string | null; thumbUrl: string | null; caption?: string }[];
 }
 
-/** The three verdicts, in the order they're offered. */
-const VERDICTS: HazardVerdict[] = ['still_there', 'healing_unsafe', 'fully_healed'];
+/**
+ * The verdicts, in the order they're offered — destructive last, and `never_existed` last of all: it
+ * is the only one that is a claim about the *report* rather than about the ice (D65), and the only one
+ * that puts the pin in front of a moderator.
+ */
+const VERDICTS: HazardVerdict[] = [
+  'still_there',
+  'healing_unsafe',
+  'fully_healed',
+  'never_existed',
+];
 
 function formatWhen(at: number): string {
   const hours = (Date.now() - at) / 3_600_000;
@@ -157,8 +180,10 @@ export function HazardView({
             {freshnessLabel(data.freshness)}
           </Badge>
           {data.provisional ? <Badge variant="outline">Unconfirmed</Badge> : null}
+          {data.disputed ? <Badge variant="secondary">Disputed</Badge> : null}
           {data.healing ? <Badge variant="secondary">Reported healing</Badge> : null}
           {passage ? <Badge variant="outline">Crossing point</Badge> : null}
+          {data.expired ? <Badge variant="outline">Aged off the map</Badge> : null}
           {data.archived ? <Badge variant="outline">Retired</Badge> : null}
         </div>
 
@@ -175,17 +200,41 @@ export function HazardView({
             Reported {formatWhen(data.firstReportedAt)}
             {data.reporterName ? ` by ${data.reporterName}` : ''}
             {data.confirmCount > 0
-              ? ` · confirmed by ${data.confirmCount} other skater${data.confirmCount === 1 ? '' : 's'}`
+              ? // Named where the skater's profile is public, counted where it isn't (D65): a
+                // confirmation from someone you can look up carries weight a bare number doesn't, and
+                // it discloses more than a report does, so it follows the consent already given.
+                // `confirmerClause`, never `confirmerSummary(...).toLowerCase()` — the string now
+                // carries names, and lowercasing it renders "confirmed by alex r. and 3 others".
+                ` · ${confirmerClause(data.confirmerNames ?? [], data.confirmCount)}`
               : ' · nobody else has confirmed it yet'}
             .
           </span>
         </div>
 
+        {/* Whichever season this pin belongs to, said out loud. A hazard's season is its
+            `firstReportedAt` (N5a) and a past-season pin is off the map entirely, so a permalink is
+            the only way anyone reaches this — the same courtesy a past-season report gets, for the
+            same reason: a link that used to work must not 404, and must not lie about its age. */}
+        {seasonOf(data.firstReportedAt) === seasonOf(Date.now()) ? null : (
+          <p className="rounded-md bg-surface-muted p-3 text-sm">
+            From the {formatSeason(seasonOf(data.firstReportedAt))} season — it is not on the map
+            this winter. Open the lake and pick that season to see it in place.
+          </p>
+        )}
+        {/* An expired suggested crossing (D64). Read before the staleness caveat because it is the
+            stronger statement: this pin is not merely faded, it has left the map. */}
+        {data.expired ? (
+          <p className="rounded-md bg-surface-muted p-3 text-sm">{expiredCrossingNote()}</p>
+        ) : null}
         {/* The sentence that has to do the work of not sounding like an all-clear. */}
         {data.freshness !== 'fresh' ? (
           <p className="rounded-md bg-surface-muted p-3 text-sm">{stalenessCaveat(data.type)}</p>
         ) : null}
-        {data.healing ? (
+        {/* A disputed crossing outranks a healing note: "the ridge is closed here" is a stronger
+            claim than "the crossing is dicey", and it is the one to read first (D64). */}
+        {data.disputed ? (
+          <p className="rounded-md bg-surface-muted p-3 text-sm">{disputedNote()}</p>
+        ) : data.healing ? (
           <p className="rounded-md bg-surface-muted p-3 text-sm">{healingNote(data.type)}</p>
         ) : null}
 
@@ -311,6 +360,18 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
     api.profiles.publicByIds,
     hazard ? { profileIds: [hazard.createdByUserId] } : 'skip',
   );
+  // Who has confirmed it (D65). Only names that came back — a private profile confirms without being
+  // named, and `confirmCount` is what keeps that honest rather than a shorter list quietly meaning
+  // fewer people looked.
+  const confirmations = useQuery(api.hazardConfirmations.listForHazard, {
+    hazardId: hazardId as Id<'hazards'>,
+  });
+  // The author's own vote is excluded: `confirmCount` never counts it (D54), so naming them here
+  // would print more names than the count they sit under — and print the reporter as their own
+  // corroborator, one line below "reported by" them.
+  const confirmerNames = (confirmations ?? [])
+    .filter((c) => c.verdict === 'still_there' && !c.isAuthor && c.displayName !== undefined)
+    .map((c) => c.displayName as string);
   const me = useQuery(api.profiles.current, {});
   const confirm = useMutation(api.hazardConfirmations.confirm);
   const [confirming, setConfirming] = useState(false);
@@ -379,6 +440,8 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         freshness: hazard.freshness,
         provisional: hazard.provisional,
         healing: hazard.healingState === 'healing_unsafe',
+        disputed: hazard.healingState === 'disputed',
+        expired: hazard.expired,
         // Any non-active status is "retired" for display (unified with mobile): a new status defaults to
         // hidden strip / no-confirm rather than silently rendering as active.
         archived: hazard.status !== 'active',
@@ -391,6 +454,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         firstReportedAt: hazard.firstReportedAt,
         lastConfirmedAt: hazard.lastConfirmedAt,
         confirmCount: hazard.confirmCount,
+        confirmerNames,
         photos: photos ?? [],
       }}
       weatherStrip={

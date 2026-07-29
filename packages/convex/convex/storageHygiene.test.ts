@@ -3,8 +3,9 @@
  * where the sweep must decline to act: a photo it can't prove is unreferenced, and a photo still inside
  * its grace window.
  */
+import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { PHOTO_ORPHAN_GRACE_MS } from './lib/photoOrphans';
@@ -349,5 +350,156 @@ describe('sweepExpiredExports', () => {
 
     await t.mutation(internal.storageHygiene.sweepExpiredExports, {});
     expect(await t.run((ctx) => ctx.db.get(stuck))).toBeNull();
+  });
+});
+
+/**
+ * D66 — a departed skater's photos split on evidential value, expiring with their season. Every one of
+ * these is about an irreversible deletion, so they are written as "what survives" rather than "what
+ * goes".
+ */
+describe('expireDepartedPhotos (D66)', () => {
+  const lastSeason = () => seasonStartMs(seasonOf(Date.now())) - HOUR_MS;
+
+  /** A tombstoned account — the only state this sweep touches. */
+  async function seedTombstone(t: ReturnType<typeof convexTest>, subject: string) {
+    const userId = await seedUser(t, subject);
+    await t.run((ctx) => ctx.db.patch(userId, { status: 'deleted', deletedAt: Date.now() }));
+    return userId;
+  }
+
+  /** A hazard carrying one photo — the evidential case the split exists to protect. */
+  async function attachToHazard(
+    t: ReturnType<typeof convexTest>,
+    userId: Id<'profiles'>,
+    photoId: Id<'photos'>,
+  ) {
+    const waterBodyId = await seedBody(t);
+    return t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId,
+        type: 'open_water' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+        radiusMeters: 40,
+        bbox: { minLat: 0.4, minLng: 0.4, maxLat: 0.6, maxLng: 0.6 },
+        createdByUserId: userId,
+        photoIds: [photoId],
+        status: 'active' as const,
+        moderationStatus: 'visible' as const,
+        firstReportedAt: lastSeason(),
+        lastConfirmedAt: lastSeason(),
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: lastSeason(),
+      }),
+    );
+  }
+
+  test('keeps a hazard photo and expires everything else from a past season', async () => {
+    const t = harness();
+    const userId = await seedTombstone(t, 'departed');
+    const evidence = await seedPhoto(t, userId, lastSeason());
+    const morningShot = await seedPhoto(t, userId, lastSeason());
+    await attachToHazard(t, userId, evidence);
+
+    const result = await t.mutation(internal.storageHygiene.expireDepartedPhotos, { userId });
+
+    // A picture of an open lead is worth more than any sentence describing one.
+    expect(await t.run((ctx) => ctx.db.get(evidence))).not.toBeNull();
+    expect(await t.run((ctx) => ctx.db.get(morningShot))).toBeNull();
+    expect(result).toMatchObject({ deleted: 1, kept: 1, done: true });
+  });
+
+  test('leaves this season alone — the clock is the season boundary, not the deletion', async () => {
+    const t = harness();
+    const userId = await seedTombstone(t, 'departed');
+    // Somebody who left in January keeps their January pictures until July. This is exactly why the
+    // rule cannot be a finalize stage: finalization lands mid-season by construction.
+    const thisSeason = await seedPhoto(t, userId, Date.now() - HOUR_MS);
+
+    await t.mutation(internal.storageHygiene.expireDepartedPhotos, { userId });
+    expect(await t.run((ctx) => ctx.db.get(thisSeason))).not.toBeNull();
+  });
+
+  test('never touches a living account, however old the photo', async () => {
+    const t = harness();
+    const userId = await seedUser(t, 'still-here');
+    const old = await seedPhoto(t, userId, lastSeason());
+
+    const result = await t.mutation(internal.storageHygiene.expireDepartedPhotos, { userId });
+    // Aging never removes anything. Erasure has exactly one trigger, and it is a person leaving.
+    expect(await t.run((ctx) => ctx.db.get(old))).not.toBeNull();
+    expect(result).toMatchObject({ deleted: 0 });
+  });
+
+  test('a cancelled deletion restores an account whose photos are on no clock at all', async () => {
+    const t = harness();
+    const userId = await seedTombstone(t, 'departed');
+    const photoId = await seedPhoto(t, userId, lastSeason());
+    await t.run((ctx) => ctx.db.patch(userId, { status: 'active', deletedAt: undefined }));
+
+    await t.mutation(internal.storageHygiene.expireDepartedPhotos, { userId });
+    expect(await t.run((ctx) => ctx.db.get(photoId))).not.toBeNull();
+  });
+
+  test('the account sweep hands every tombstone to the per-account job', async () => {
+    const t = harness();
+    const departed = await seedTombstone(t, 'departed');
+    await seedUser(t, 'still-here');
+    const photoId = await seedPhoto(t, departed, lastSeason());
+
+    // Fake timers only for this test: the fan-out is `scheduler.runAfter(0)`, which convex-test leaves
+    // pending until a timer fires — without them `finishAllScheduledFunctions` drains nothing and the
+    // assertion reads a photo the job never reached, failing as a plausible-looking "it didn't work".
+    vi.useFakeTimers();
+    try {
+      await t.mutation(internal.storageHygiene.sweepDepartedPhotos, {});
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull();
+  });
+
+  /**
+   * The completion marker, and why it isn't an optimization. Without it the daily cron re-paginated
+   * every tombstone's whole photo table forever, so the cost grew with every departure the app had
+   * ever had — and nothing in the result would have looked wrong.
+   */
+  test('marks an account done for the season and stops offering it to the sweep', async () => {
+    const t = harness();
+    const userId = await seedTombstone(t, 'departed');
+    await seedPhoto(t, userId, lastSeason());
+
+    await t.mutation(internal.storageHygiene.expireDepartedPhotos, { userId });
+    const marked = await t.run((ctx) => ctx.db.get(userId));
+    expect(marked?.photosExpiredForSeason).toBe(seasonOf(Date.now()));
+
+    // The second tick's range excludes it — the whole point.
+    const second = await t.mutation(internal.storageHygiene.sweepDepartedPhotos, {});
+    expect(second.accounts).toBe(0);
+  });
+
+  test('an unmarked tombstone is what the sweep queue actually contains', async () => {
+    const t = harness();
+    await seedTombstone(t, 'never-swept');
+    const first = await t.mutation(internal.storageHygiene.sweepDepartedPhotos, {});
+    // `photosExpiredForSeason` is absent until the first pass, and a Convex index is not sparse —
+    // `undefined` sorts before every number, so the never-swept accounts are exactly what a
+    // `lt(currentSeason)` range returns. No backfill, no migration.
+    expect(first.accounts).toBe(1);
+  });
+
+  test('a stale marker comes back round when the boundary turns over', async () => {
+    const t = harness();
+    const userId = await seedTombstone(t, 'departed');
+    // Swept last season; this season's boundary has since passed, so there is new work.
+    await t.run((ctx) =>
+      ctx.db.patch(userId, { photosExpiredForSeason: seasonOf(Date.now()) - 1 }),
+    );
+    const result = await t.mutation(internal.storageHygiene.sweepDepartedPhotos, {});
+    expect(result.accounts).toBe(1);
   });
 });

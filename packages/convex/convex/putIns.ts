@@ -96,6 +96,15 @@ export const listForBody = query({
     const { official, persisted, hidden } = await loadPutInRows(ctx, waterBodyId);
 
     // Derived clusters from the visible reports that didn't opt out of showing a put-in (decision #7).
+    //
+    // ⚠ **This read is deliberately NOT season-scoped, and it is the trap of N5a** (D63, correction 1).
+    // Put-ins are exempt from the seasonal reset by founder call — where you can get on the ice doesn't
+    // change because the calendar did, and S1 says access is the corpus's single most-discussed
+    // concern. But the markers are *derived from reports*, and reports are the most thoroughly
+    // season-scoped read in the app. Add a season bound here to match `listByWaterBody` and put-ins
+    // silently narrow to this winter's, losing exactly the thing the exemption exists to keep — with
+    // no error, no empty state and nothing in a test to notice. The marker's `lastUsedAt` is what keeps
+    // an old access point honest instead (D62 second amendment); age is disclosed, never hidden.
     const reports = await ctx.db
       .query('reports')
       .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))

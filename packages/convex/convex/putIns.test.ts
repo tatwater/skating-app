@@ -1,3 +1,4 @@
+import { seasonOf, seasonStartMs } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -108,6 +109,28 @@ describe('putIns.listForBody', () => {
     const coord = markers[0]?.coord ?? { lat: 0.5, lng: 0.5 };
     const onEdge = [coord.lat, coord.lng].some((c) => Math.abs(c) < 1e-6 || Math.abs(c - 1) < 1e-6);
     expect(onEdge).toBe(true);
+  });
+
+  // The N5a trap, asserted rather than commented: put-ins derive from reports, and reports are the
+  // most thoroughly season-scoped read in the app. A bound added here would narrow access points to
+  // this winter's with no error and no empty state — losing exactly what the exemption protects.
+  test('survives the seasonal reset — where you get on the ice is not a seasonal fact (D63)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const asUser = await seedUser(t, 'clerk_a');
+    const reportId = await asUser.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: SKATE_TIME,
+    });
+    // Drag the report two seasons back. The lake's list and the feed stop showing it; the access
+    // point it revealed does not stop being where you park.
+    const twoSeasonsAgo = seasonStartMs(seasonOf(Date.now()) - 2) + 1;
+    await t.run((ctx) => ctx.db.patch(reportId, { skateEndTime: twoSeasonsAgo }));
+
+    const markers = await t.query(api.putIns.listForBody, { waterBodyId: id });
+    expect(markers).toHaveLength(1);
+    // …and it says how old it is instead of pretending to be last week (D62 second amendment).
+    expect(markers[0]?.lastUsedAt).toBe(twoSeasonsAgo);
   });
 
   test('excludes reports that opted out of showPutIn (private property)', async () => {

@@ -2,14 +2,19 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   classifyFlushError,
+  confirmerClause,
   createQueuedConfirmation,
+  disputedNote,
+  expiredCrossingNote,
   FOOTPRINT_IS_APPROXIMATE,
+  formatSeason,
   freshnessLabel,
   type HazardVerdict,
   hazardTypeLabel,
   healingNote,
   isLeaving,
   isPassageMarker,
+  seasonOf,
   stalenessCaveat,
   verdictHelp,
   verdictLabel,
@@ -48,8 +53,17 @@ import { WeatherStrip } from './WeatherStrip';
  * closed* for a `ridge_crossing`.
  */
 
-/** The three verdicts, in the order they're offered — destructive last, and visually last. */
-const VERDICTS: HazardVerdict[] = ['still_there', 'healing_unsafe', 'fully_healed'];
+/**
+ * The verdicts, in the order they're offered — destructive last, and `never_existed` last of all: it
+ * is the only one that is a claim about the *report* rather than the ice (D65), and the only one that
+ * puts the pin in front of a moderator.
+ */
+const VERDICTS: HazardVerdict[] = [
+  'still_there',
+  'healing_unsafe',
+  'fully_healed',
+  'never_existed',
+];
 
 function formatWhen(at: number): string {
   const hours = (Date.now() - at) / 3_600_000;
@@ -69,6 +83,17 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
     hazard ? { profileIds: [hazard.createdByUserId] } : 'skip',
   );
   const me = useQuery(api.profiles.current, {});
+  // Who has confirmed it (D65) — named where the profile is public, counted where it isn't, so the
+  // list can be shorter than the count without the count ever being wrong.
+  const confirmations = useQuery(api.hazardConfirmations.listForHazard, {
+    hazardId: hazardId as Id<'hazards'>,
+  });
+  // The author's own vote is excluded: `confirmCount` never counts it (D54), so naming them here
+  // would print more names than the count they sit under, and print the reporter as their own
+  // corroborator.
+  const confirmerNames = (confirmations ?? [])
+    .filter((c) => c.verdict === 'still_there' && !c.isAuthor && c.displayName !== undefined)
+    .map((c) => c.displayName as string);
   const { setHighlightWaterBodyId, setFocus } = useMapSelection();
   const { scrollToY } = useDrawerScroll();
 
@@ -202,8 +227,10 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
           {freshnessLabel(hazard.freshness)}
         </Badge>
         {hazard.provisional ? <Badge>Unconfirmed</Badge> : null}
+        {hazard.healingState === 'disputed' ? <Badge>Disputed</Badge> : null}
         {hazard.healingState === 'healing_unsafe' ? <Badge>Reported healing</Badge> : null}
         {passage ? <Badge>Crossing point</Badge> : null}
+        {hazard.expired ? <Badge>Aged off the map</Badge> : null}
         {archived ? <Badge>Retired</Badge> : null}
       </XStack>
 
@@ -225,18 +252,44 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         {/* Attribution (name + TrustAvatar) is the row above — Phase 6's richer treatment supersedes
             Phase 9.5's plain `hazard.reporterName` here, so this line only carries when + confirms. */}
         Reported {formatWhen(hazard.firstReportedAt)}
+        {/* `confirmerClause`, never `confirmerSummary(...).toLowerCase()` — the string carries names
+            now, and lowercasing it renders "confirmed by alex r. and 3 others" (D65). */}
         {hazard.confirmCount > 0
-          ? ` · confirmed by ${hazard.confirmCount} other skater${hazard.confirmCount === 1 ? '' : 's'}`
+          ? ` · ${confirmerClause(confirmerNames, hazard.confirmCount)}`
           : ' · nobody else has confirmed it yet'}
         .
       </Paragraph>
+
+      {/* Which season this pin belongs to, said out loud. A hazard's season is its `firstReportedAt`
+          (N5a) and a past-season pin is off the map entirely, so a deep link is the only way anyone
+          reaches this — the same courtesy a past-season report gets. */}
+      {seasonOf(hazard.firstReportedAt) === seasonOf(Date.now()) ? null : (
+        <Paragraph color="$foregroundMuted" fontSize={13}>
+          From the {formatSeason(seasonOf(hazard.firstReportedAt))} season — it is not on the map
+          this winter. Open the lake and pick that season to see it in place.
+        </Paragraph>
+      )}
+
+      {/* An expired suggested crossing (D64) — read before the staleness caveat, because it is the
+          stronger statement: this pin is not merely faded, it has left the map. */}
+      {hazard.expired ? (
+        <Paragraph color="$foregroundMuted" fontSize={13}>
+          {expiredCrossingNote()}
+        </Paragraph>
+      ) : null}
 
       {/* Freshness is confidence, never safety — a stale pin still says "unverified", not "clear". */}
       <Paragraph color="$foregroundMuted" fontSize={13}>
         {stalenessCaveat(hazard.type)}
       </Paragraph>
 
-      {hazard.healingState === 'healing_unsafe' ? (
+      {/* A disputed crossing outranks a healing note — "the ridge is closed here" is the stronger
+          claim, and the one to read first (D64). */}
+      {hazard.healingState === 'disputed' ? (
+        <Paragraph color="$foregroundMuted" fontSize={13}>
+          {disputedNote()}
+        </Paragraph>
+      ) : hazard.healingState === 'healing_unsafe' ? (
         <Paragraph color="$foregroundMuted" fontSize={13}>
           {healingNote(hazard.type)}
         </Paragraph>
