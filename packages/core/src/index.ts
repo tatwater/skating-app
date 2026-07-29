@@ -44,6 +44,7 @@ export * from './reputationConfig';
 export * from './riskAck';
 export * from './samplePoints';
 export * from './schedule';
+export * from './season';
 export * from './spatialCells';
 export * from './strava';
 export * from './subArea';
