@@ -13,7 +13,7 @@ import { Input } from '../components/ui/input';
  * open the detail page to act. Unlike the member-facing search, this drops the public-only filter
  * (server-gated to moderators).
  */
-export const Route = createFileRoute('/admin/users')({ component: AdminUsers });
+export const Route = createFileRoute('/admin/users/')({ component: AdminUsers });
 
 function statusTone(status: string): 'secondary' | 'destructive' | 'outline' {
   if (status === 'banned' || status === 'suspended') return 'destructive';

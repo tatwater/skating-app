@@ -532,16 +532,28 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     },
   });
 
-  // Push query results into the source once the style has loaded; re-apply the highlight after
-  // (setData resets feature-state).
+  // Push query results into the source once the style has loaded, then re-apply both paints.
+  //
+  // `setData` does **not** clear feature-state — MapLibre keeps it on the source cache, keyed by id,
+  // and our ids are array indices (`waterBodiesToFeatureCollection`). So a pan silently rebinds every
+  // painted id to whatever lake now sits at that index: favorite one lake, pan twice, and unrelated
+  // bodies come back gold while their sheets correctly say they aren't favorited. MapLibre documents
+  // this exact hazard for index-based ids ("you may need to re-apply state taking into account
+  // updated `id` values").
+  //
+  // Clearing the whole source is what makes that safe. Removing only the ids we remember to track is
+  // the narrower fix, but it re-introduces the same bug the moment a third paint is added and its
+  // bookkeeping drifts — and stale state here is invisible until someone reports gold on the wrong lake.
   // biome-ignore lint/correctness/useExhaustiveDependencies: applyHighlight/applyFavorites read refs; run on data change.
   useEffect(() => {
     featuresRef.current = features;
     const map = mapRef.current;
     if (!map || !loaded) return;
     const source = map.getSource('water') as maplibregl.GeoJSONSource | undefined;
-    source?.setData(features);
-    // setData resets all feature-state — re-apply both the tap highlight and the favorite paint.
+    if (!source) return;
+    source.setData(features);
+    map.removeFeatureState({ source: 'water' });
+    highlightedFeatureRef.current = null;
     favoriteFeaturesRef.current = [];
     applyHighlight();
     applyFavorites();

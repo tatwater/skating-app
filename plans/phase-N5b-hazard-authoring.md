@@ -3,8 +3,12 @@
 *Two affordances that make drawing a hazard match how skaters actually describe one. All client work;
 no lifecycle, no schema, no decay.*
 
-> **Status:** scoped 2026-07-27, not yet built. Split from the roadmap's old N5 when the seasonal work
-> ([N5a](./phase-N5a-seasons.md)) took over that entry's lifecycle half.
+> **Status:** scoped 2026-07-27; build kickoff 2026-07-28. Split from the roadmap's old N5 when the
+> seasonal work ([N5a](./phase-N5a-seasons.md)) took over that entry's lifecycle half.
+>
+> Four of this doc's premises were checked against code at kickoff and **two of them were false** —
+> see *§What the build found in the plan*, and the five founder calls in *§Decisions taken at kickoff*
+> that replaced this doc's open questions.
 
 ## Why this is its own pass
 
@@ -23,6 +27,120 @@ mobile — and because each is small enough that visiting that surface twice wou
 authoring one, and moved to N5a. See below — it's recorded rather than deleted because the reason it
 moved is the same rule that keeps this pass small.
 
+---
+
+## What the build found in the plan
+
+Checked against code at kickoff (2026-07-28), same discipline N1/N2/N3 applied to their roadmap
+entries. Four corrections, each verified against a file.
+
+1. **`thin_ice_shore` and `ice_edge` are not hazard types.** Item 2 opens by naming them.
+   `HAZARD_TYPES` (`packages/core/src/types.ts:110`) has sixteen values and neither is among them —
+   research §4 uses *"thin ice along the shore"* and *"ice edge"* as English descriptions of a
+   **shape**, and this plan read prose as identifiers. It matters because this doc's own rule is *"No
+   new hazard types. The vocabulary is settled (D51/D52)"*, so as written the snap affordance had
+   nothing to attach to. Settled by **Decision 1**.
+
+2. **terra-draw cannot run on mobile at all**, which makes the work breakdown's *"web + mobile,
+   behind the same lazy chunk boundary"* unbuildable and the headline open question unanswerable as
+   posed. Mobile's map is `@maplibre/maplibre-react-native` — a native module; every terra-draw
+   adapter, including the `terra-draw-maplibre-gl-adapter` we already depend on, targets
+   `maplibre-gl`, the DOM/WebGL library. There is no React Native adapter. *"Is a 270 kB draw chunk
+   acceptable on a phone?"* has no answer because the chunk can never reach a phone. The real
+   question was **web-vs-mobile mechanism**, and separately whether the skater path needs vertex
+   dragging at all. Settled by **Decision 2**.
+
+3. **The "lighter mobile-only path" this doc lists as a *fallback* already ships, on both clients.**
+   *"Tap-to-place vertices without the full engine"* is a precise description of the polyline trace
+   built in Phase 9: `hazardDropMode` + `applyDraftMapClick` + an Undo/Done bar
+   (`MapView.tsx:503` web, `MapView.tsx:367` mobile). Polygon authoring on that path is the same
+   flow plus a close-the-ring step. So the fallback was never a fallback — it's the mobile plan of
+   record, and the only thing terra-draw adds over it is vertex *dragging*, which is the specific
+   reason D51 deferred polygons in the first place.
+
+4. **"All client work, no lifecycle or schema changes" is right about schema and wrong about
+   scope.** No table or column changes — `HAZARD_GEOMETRY_KINDS` already carries `polygon`
+   (`lib/enums.ts:121`) and the server already accepts it. But two non-client pieces are
+   unavoidable:
+   - `HazardDraft` is a **two-variant union** (`'point_radius' | 'line'`), and every transition —
+     `switchDraftKind`, `retypeDraft`, `resizeDraft`, `undoDraftPlacement`, `draftVertices`,
+     `draftToShape` — is written against exactly those two. A third kind is `@skating/core` work,
+     and it is the larger half of item 1.
+   - `isValidHazardShape`'s `polygon` branch (`hazardGeometry.ts:362`) validates **only the first
+     ring** — and for a MultiPolygon, only the first polygon's first ring. `HAZARD_MAX_VERTICES` is
+     applied per-ring rather than in total, and nothing checks self-intersection. That gate is dead
+     code today because no client can author a polygon; this pass makes it the thing standing
+     between a scripted client and a footprint the on-ice evaluator buffers on every GPS fix.
+     Hardening it belongs in the same commit that makes polygons reachable.
+
+*Two things this doc got right that are worth recording as confirmed rather than assumed:* snap
+does **not** need the N1 cell index (`waterBodies.get` returns the full doc including `polygon`, and
+both clients' viewport sources already ship polygons), and there is **no hazard edit mutation** —
+`hazards.ts` exposes `create`, `listForBody`, `get`, `listPromotionCandidates`, `listBundleCandidates`
+and nothing that mutates geometry. So *"how is a snapped shore band edited afterwards?"* was only ever
+a question about editing the **draft**, before it is posted.
+
+---
+
+## Decisions taken at kickoff (2026-07-28)
+
+**Decision 1 — Snap-to-shoreline is offered for `thin_ice` and `open_water`.**
+The two existing types that are genuinely linear-along-shore: rotten shore ice, and a lead running
+along the ice edge. This is the vocabulary research §4 was describing when it wrote "thin ice along
+the shore" and "ice edge" — no new type is minted, per this doc's own rule. *Considered and
+rejected:* offering it for every line-capable type (shore-snapping a mid-lake pressure ridge is
+meaningless), and adding `wet_crack` / `overflow_slush` / `shell_area` (all *occur* near shore, but
+none is shore-*shaped* the way these two are — the affordance would be offering the wrong geometry).
+
+**Decision 2 — terra-draw on web, tap-to-place-a-ring on mobile.**
+Web skaters get real vertex dragging and terra-draw's self-intersection handling, which is what D51
+said polygon authoring needs; mobile gets close-the-ring on the trace flow that already ships. The
+price is explicit and accepted: **two authoring UXs for one primitive**, and the ~270 kB draw chunk
+now loads on a skater-facing web route rather than an admin one. It stays lazy — nothing is added to
+the main bundle, and the chunk is fetched only when a skater actually arms polygon drawing, which is
+the opt-in/advanced path D51 always described. *Considered and rejected:* tap-to-place on both (one
+code path, but web then has no dragging either, which is most of what makes a freeform polygon worth
+authoring); web-only (the skater standing on the ice is the person best placed to describe a zone).
+
+**Decision 3 — A snapped shore band is stored as a `polygon`, with `bufferMeters` meaning exactly
+what it means on any other polygon.**
+The geometry is the shore arc buffered by the band half-width; `bufferMeters` is then the type-aware
+uncertainty halo, applied by `hazardFootprint` the same way it is for a hand-drawn zone. One rule for
+all polygons, no special case downstream — which is what *"snapping is an input convenience, not a
+stored relationship"* has to mean if it means anything.
+
+The obvious objection — a halo around a shore band spills onto land — **is already solved and needed
+no new code.** Phase 9.5's `clipFootprintToBody` runs at insert (`hazards.ts:181`), intersects the
+buffered footprint with the body polygon, and stores the clipped result; the map layer draws it and
+`distanceToHazard` measures against it. A shore band is the exact case that clip was written for, so
+the landward half of the band and the landward half of its halo are both confined to the ice
+automatically. Buffering the arc symmetrically and letting the clip cut it is deliberately simpler
+than a one-sided offset, and reuses proven code rather than inventing a second way to be near a
+shoreline. *Considered and rejected:* storing it as a `line` with `bufferMeters` doing all the
+widening (the plan's original wording — it reuses more machinery and ships independently of polygon
+authoring, but leaves two geometry kinds downstream for one affordance).
+
+**Only one size stepper is ever on screen.** While snapping it tunes the **band half-width** and
+re-derives the ring live; on a hand-drawn polygon it tunes `bufferMeters`. Two widths exist in the
+model, never in the UI at the same time.
+
+**Decision 4 — The shorter arc is the default, with a "go the other way" control.**
+Two taps on a ring define two arcs, and "shorter" is right almost always and silently wrong on a
+small pond or a narrow bay where the band a skater means is most of the perimeter. One explicit
+control beats inferring intent — and inferring it from the map centre, the tempting alternative, is
+unpredictable in precisely the cases that need predicting. **Taps landing on different rings are
+refused rather than guessed** (islands, MultiPolygon bodies), in the same spirit as N2's
+clip-refusal threshold.
+
+**Decision 5 — Polygon stays opt-in and no type defaults to it.**
+`HAZARD_DEFAULT_GEOMETRY_KIND` gains no `polygon` entry. A polygon is reached only by switching an
+existing draft to it, exactly as D51 specified ("opt-in, de-emphasized advanced affordance, not
+offered by default"). On mobile this also preserves D51's governing on-ice rule — **the hazard is
+committable after two taps** — since a polygon needs at least three taps plus a close, and every type
+still starts as a circle at the skater's GPS.
+
+---
+
 ## The items
 
 ### 1. Freeform polygon authoring (Phase 9, founder call 5)
@@ -34,23 +152,29 @@ polygon can exist but a skater can't draw one.
 
 - **terra-draw is already in the tree** (N2/D61) — MIT, first-class MapLibre adapter, lazy-loaded in
   its own ~270 kB chunk, currently admin-only for sub-area drawing. This extends it to a skater-facing
-  surface, which is the first time a non-admin loads that chunk. **That's the main open question**: the
-  chunk is justified for an operator on a laptop and is a real cost on a phone on lake ice.
+  surface, which is the first time a non-admin loads that chunk. **Accepted at kickoff** (Decision 2),
+  *web only* — the chunk cannot reach mobile at all, because terra-draw has no React Native adapter
+  (*§What the build found* item 2). Mobile closes a ring on the tap-to-place flow that already ships.
 - **Paste-GeoJSON is the admin break-glass** and stays admin-only; a skater never sees it.
 - Type-aware `bufferMeters` defaults already exist (research §4) and shouldn't be re-derived here.
+- No type *defaults* to polygon (Decision 5) — it is reached only by switching a draft to it.
 
 ### 2. Shore-band "snap to shoreline" (research §4, deferred twice)
 
-`thin_ice_shore` and `ice_edge` hazards are **linear along the shore**. Drawing one by hand means
-tracing a shoreline that the app already knows exactly — `waterBodies.polygon` *is* that line.
+`thin_ice` and `open_water` hazards along a shore are **linear along the shore** — rotten shore ice,
+and a lead running along the ice edge. (This doc originally named `thin_ice_shore` and `ice_edge`,
+which are not hazard types; see *§What the build found* item 1 and Decision 1.) Drawing one by hand
+means tracing a shoreline that the app already knows exactly — `waterBodies.polygon` *is* that line.
 
 - The affordance: pick two points near the shore, and the hazard's geometry becomes the **section of
-  the body's boundary ring between them**, buffered by the type-aware `bufferMeters`.
+  the body's boundary ring between them**, buffered by the band half-width, stored as a `polygon`
+  whose `bufferMeters` is the ordinary type-aware halo (Decision 3).
 - Geometrically this is a boundary-substring extraction — find the nearest vertex on the ring to each
-  tap, take the shorter arc between them. Turf has the pieces; the fiddly part is multi-ring polygons
-  (islands) and MultiPolygon bodies, where "the boundary" is several rings and the two taps might land
-  on different ones. **Refuse rather than guess** when they do, in the same spirit as N2's clip-refusal
-  threshold.
+  tap, take the shorter arc between them, with an explicit **"go the other way"** control for when
+  shorter is the wrong answer (Decision 4). Turf has the pieces; the fiddly part is multi-ring
+  polygons (islands) and MultiPolygon bodies, where "the boundary" is several rings and the two taps
+  might land on different ones. **Refuse rather than guess** when they do, in the same spirit as N2's
+  clip-refusal threshold.
 - Deferred from Phase 9 (*"log, don't build in v1"*) and again from Phase 10 (*"it's a geometry/UX
   feature, not a weather one"*). This is the pass it was being deferred to.
 
@@ -83,23 +207,36 @@ finishable, and neither needs a research answer first.
 
 ## Work breakdown
 
-1. Plans — this doc.
-2. Polygon vertex editor: extend the terra-draw wrapper to the skater hazard form, web + mobile, behind
-   the same lazy chunk boundary.
-3. Snap-to-shoreline: the boundary-substring helper in `@skating/core` (pure, property-testable against
-   real body polygons), then the two-tap affordance in both clients.
+Committed in this order; one PR at the end (per the phase convention).
+
+1. **Plans** — this doc: the four corrections and the five kickoff decisions, on record before the code.
+2. **`@skating/core` — the polygon draft.** A third `HazardDraft` variant and every transition
+   extended to it (`switchDraftKind`, `retypeDraft`, `resizeDraft`, `undoDraftPlacement`,
+   `draftVertices`, `draftToShape`), plus the `isValidHazardShape` polygon hardening *§What the build
+   found* item 4 names: every ring on every part, a total vertex cap, and a self-intersection check.
+3. **`@skating/core` — the shore band.** `shoreBand.ts`: nearest-vertex-on-ring resolution, the
+   boundary-substring extraction with both arcs, the multi-ring refusal, and the band derivation.
+   Property-tested against real body polygons.
+4. **Web — polygon authoring.** terra-draw on the skater hazard form, lazily, reusing the N2 control
+   shape rather than a second wrapper.
+5. **Web — snap-to-shoreline**, the two-tap affordance plus the "go the other way" control.
+6. **Mobile — polygon authoring and snap**, both on the existing tap-to-place flow.
+7. **Docs** — roadmap N5b struck with a pointer; the decision-log entry; `06-data-model.md` if
+   anything about the stored shape needs saying.
 
 ## Open questions
 
-- **Is a 270 kB draw chunk acceptable on a phone?** It's the one real cost here. Options if not:
-  a lighter mobile-only path (tap-to-place vertices without the full engine), or polygon authoring
-  staying web-only at first. Worth deciding before building rather than after measuring.
-- **Does snap-to-shoreline need the N1 cell index?** The two taps are already inside a known body — the
-  hazard form knows its `waterBodyId` — so probably not; the ring comes straight off that body's
-  polygon. Confirm at first use.
-- **How is a snapped shore band edited afterwards?** If it's a derived geometry, is it re-derived on
-  edit or does it become an ordinary polygon the vertex editor can push around? Leaning the latter —
-  one geometry type downstream, snapping is an input convenience, not a stored relationship.
+- ~~**Is a 270 kB draw chunk acceptable on a phone?**~~ **Dissolved 2026-07-28.** The question had no
+  answer: terra-draw has no React Native adapter, so the chunk cannot reach a phone at all
+  (*§What the build found* item 2). What was really being asked — which mechanism on which client —
+  is Decision 2: terra-draw on web (chunk accepted, still lazy), tap-to-place on mobile.
+- ~~**Does snap-to-shoreline need the N1 cell index?**~~ **No, confirmed at kickoff.**
+  `waterBodies.get` returns the full document including `polygon`, and both clients' viewport sources
+  already carry polygons for rendering. The ring comes straight off the body the form already knows.
+- ~~**How is a snapped shore band edited afterwards?**~~ **Answered by Decision 3, and the question
+  was narrower than it looked**: there is no hazard edit mutation, so "afterwards" only ever meant
+  *before posting*. A snapped band is an ordinary polygon draft from the moment it is derived — the
+  vertex editor can push it around on web, and re-snapping replaces it on mobile.
 - ~~**Whether ridge hinting is even the right v2.**~~ **Answered 2026-07-27** — it wasn't. The
   alternative reading (several markers along one ridge, rather than a hint about where to put one) is
   what the founder wanted, and it turned out to be a lifecycle change rather than an authoring one. The

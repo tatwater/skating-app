@@ -19,7 +19,7 @@ import { Input } from '../components/ui/input';
  * no index and no list, so the five Phase-2.5 seed mis-matches — four Champlain bays whose boost
  * landed on same-named lakes elsewhere — were invisible until someone happened to remember them.
  */
-export const Route = createFileRoute('/admin/water')({ component: AdminWater });
+export const Route = createFileRoute('/admin/water/')({ component: AdminWater });
 
 function AdminWater() {
   const pending = useQuery(api.waterBodies.listPendingReview, {});
