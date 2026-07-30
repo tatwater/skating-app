@@ -2,8 +2,12 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   DEFAULT_SAMPLE_SPACING_KM,
+  DEPTH_SOURCE_LABELS,
+  type DepthSource,
   displayScore,
+  formatDepthFeet,
   formatSeason,
+  isShallowDepth,
   type LatLng,
   minVisibleZoom,
   type PromotionTarget,
@@ -136,6 +140,7 @@ function LakeEditor() {
             mapRef={drawTargetRef}
             onResult={setBanner}
           />
+          <DepthTool body={body} onResult={setBanner} />
           <SamplePointTool
             body={body}
             suggested={suggested}
@@ -236,6 +241,123 @@ function ProminenceTool({
           </>
         ) : null}
         .
+      </p>
+    </ToolCard>
+  );
+}
+
+/**
+ * Lake depth (N6a / D68) — rung 1 of the ladder, and the only rung a human writes.
+ *
+ * Two things this card does that a plain number field wouldn't. It **shows the current provenance**, so
+ * an operator can see they're about to overwrite a modelled estimate rather than a survey (and that
+ * doing so is durable — the ETL will never overwrite them back). And it **echoes each value in feet**
+ * live, because the entry field is metric and every state bathymetry chart in our region is in feet:
+ * that echo is the actual units guard, not the 400 m ceiling the mutation enforces.
+ *
+ * Empty clears the value *and* its source, which is how "I know the max and not the mean" is expressed —
+ * inventing a mean from a max is the inference D68 exists to stop.
+ */
+function DepthTool({
+  body,
+  onResult,
+}: {
+  body: {
+    _id: string;
+    meanDepthM?: number;
+    maxDepthM?: number;
+    meanDepthSource?: DepthSource;
+    maxDepthSource?: DepthSource;
+  };
+  onResult: SetBanner;
+}) {
+  const setDepth = useMutation(api.waterBodies.setDepth);
+  const [mean, setMean] = useState(body.meanDepthM === undefined ? '' : String(body.meanDepthM));
+  const [max, setMax] = useState(body.maxDepthM === undefined ? '' : String(body.maxDepthM));
+
+  const parse = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '') return undefined;
+    const value = Number(trimmed);
+    return Number.isFinite(value) ? value : Number.NaN;
+  };
+  const parsedMean = parse(mean);
+  const parsedMax = parse(max);
+  const invalid = Number.isNaN(parsedMean) || Number.isNaN(parsedMax);
+  const echo = (value: number | undefined) =>
+    value === undefined || Number.isNaN(value) ? null : ` (${formatDepthFeet(value)})`;
+
+  const shallow = isShallowDepth({
+    ...(parsedMean !== undefined && !Number.isNaN(parsedMean) ? { meanDepthM: parsedMean } : {}),
+    ...(parsedMax !== undefined && !Number.isNaN(parsedMax) ? { maxDepthM: parsedMax } : {}),
+  });
+
+  return (
+    <ToolCard title="Depth">
+      <div className="flex items-end gap-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="mean-depth">Mean (m)</Label>
+          <Input
+            id="mean-depth"
+            type="number"
+            step="0.1"
+            value={mean}
+            onChange={(e) => setMean(e.target.value)}
+            className="w-24"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="max-depth">Max (m)</Label>
+          <Input
+            id="max-depth"
+            type="number"
+            step="0.1"
+            value={max}
+            onChange={(e) => setMax(e.target.value)}
+            className="w-24"
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={invalid}
+          onClick={async () => {
+            try {
+              await setDepth({
+                waterBodyId: body._id as Id<'waterBodies'>,
+                ...(parsedMean !== undefined ? { meanDepthM: parsedMean } : {}),
+                ...(parsedMax !== undefined ? { maxDepthM: parsedMax } : {}),
+              });
+              onResult({ tone: 'ok', text: 'Depth saved as a survey reading.' });
+            } catch (err) {
+              onResult({ tone: 'error', text: errorText(err) });
+            }
+          }}
+        >
+          Save
+        </Button>
+      </div>
+      <p className="text-foreground-muted text-sm">
+        Mean
+        <span className="text-foreground">{echo(parsedMean) ?? ' —'}</span> · max
+        <span className="text-foreground">{echo(parsedMax) ?? ' —'}</span>. Charts are usually in
+        feet; divide by 3.28.
+      </p>
+      <p className="text-foreground-muted text-sm">
+        {body.meanDepthSource === undefined && body.maxDepthSource === undefined
+          ? 'No depth on record.'
+          : `On record from ${[body.meanDepthSource, body.maxDepthSource]
+              .filter((s, i, all): s is DepthSource => s !== undefined && all.indexOf(s) === i)
+              .map((s) => DEPTH_SOURCE_LABELS[s])
+              .join(', ')}.`}{' '}
+        Saving here outranks every automated source and survives a re-import.
+      </p>
+      <p className="text-foreground-muted text-sm">
+        Decay treats this lake as{' '}
+        <span className="text-foreground">{shallow ? 'shallow' : 'not shallow'}</span> — a shallow
+        lake holds a thaw-driven hazard warning longer (D69). A{' '}
+        <span className="text-foreground">shallow bay (early thaw)</span> feature does the same for
+        a body with no depth on record.
       </p>
     </ToolCard>
   );

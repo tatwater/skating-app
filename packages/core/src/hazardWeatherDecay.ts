@@ -145,6 +145,13 @@ export interface WeatherDecaySignal {
   snowHidden: boolean;
 }
 
+/**
+ * The shallow thaw amplifier's default (D69), exported because the Phase 7b tuning page shows the value
+ * that is actually running — every other magnitude in `DEFAULTS` is only ever read through the options
+ * object, but this one has a card. One constant, referenced by `DEFAULTS` below, so they can't diverge.
+ */
+export const SHALLOW_THAW_K = 1.5;
+
 const DEFAULTS: Required<WeatherDecayOptions> = {
   fdhScaleHours: 120,
   tdhScaleHours: 90,
@@ -160,7 +167,7 @@ const DEFAULTS: Required<WeatherDecayOptions> = {
   multiplierFloor: 0.5,
   multiplierCap: 2.0,
   rottenMultiplierCap: 1.5,
-  shallowThawK: 1.5,
+  shallowThawK: SHALLOW_THAW_K,
 };
 
 function clamp(x: number, lo: number, hi: number): number {

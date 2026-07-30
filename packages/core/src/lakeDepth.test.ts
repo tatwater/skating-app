@@ -6,6 +6,7 @@ import {
   DEPTH_SOURCES,
   type DepthCandidate,
   type DepthSource,
+  describeLakeDepth,
   isMeasuredDepthSource,
   isShallowDepth,
   resolveDepth,
@@ -170,6 +171,112 @@ describe('isShallowDepth (D69)', () => {
           if (isShallowDepth({ meanDepthM: mean + extra })) {
             expect(isShallowDepth({ meanDepthM: mean })).toBe(true);
           }
+        },
+      ),
+    );
+  });
+});
+
+describe('describeLakeDepth (the D3 display framing)', () => {
+  it('renders nothing when there is no depth — not "unknown"', () => {
+    // Most of the corpus. A depth we don't have is not a fact about the lake.
+    expect(describeLakeDepth({})).toBeNull();
+    expect(describeLakeDepth({ meanDepthM: 4 })).toBeNull(); // no source ⇒ not displayable
+    expect(describeLakeDepth({ meanDepthSource: 'lagos_us' })).toBeNull(); // no number
+  });
+
+  it('a measured depth reads plainly and names its source', () => {
+    const d = describeLakeDepth({
+      meanDepthM: 4,
+      meanDepthSource: 'state_agency',
+      maxDepthM: 18,
+      maxDepthSource: 'state_agency',
+    });
+    expect(d?.text).toBe('mean 13 ft · max 59 ft');
+    expect(d?.hasEstimate).toBe(false);
+    expect(d?.caption).toBe('Depth: state survey.');
+    expect(d?.caption).not.toContain('~');
+  });
+
+  it('a modeled depth is marked, and the mark is PER VALUE', () => {
+    // The case that forced per-measurement provenance: LAGOS-US holds ~3× more maxima than means, so a
+    // measured max beside a modeled mean is the normal shape, not an edge case.
+    const d = describeLakeDepth({
+      meanDepthM: 4,
+      meanDepthSource: 'hydrolakes_modeled',
+      maxDepthM: 18,
+      maxDepthSource: 'lagos_us',
+    });
+    expect(d?.text).toBe('mean ~13 ft · max 59 ft');
+    expect(d?.hasEstimate).toBe(true);
+    expect(d?.caption).toContain('~ is a modeled estimate');
+    expect(d?.caption).toContain('LAGOS-US DEPTH');
+    expect(d?.caption).toContain('HydroLAKES (modeled)');
+  });
+
+  it('names sources in ladder order and dedupes them', () => {
+    const d = describeLakeDepth({
+      meanDepthM: 4,
+      meanDepthSource: 'globathy',
+      maxDepthM: 18,
+      maxDepthSource: 'operator',
+    });
+    expect(d?.caption.indexOf('moderator')).toBeLessThan(d?.caption.indexOf('GLOBathy') as number);
+
+    const same = describeLakeDepth({
+      meanDepthM: 4,
+      meanDepthSource: 'lagos_us',
+      maxDepthM: 18,
+      maxDepthSource: 'lagos_us',
+    });
+    expect(same?.caption).toBe('Depth: LAGOS-US DEPTH.');
+  });
+
+  it('shows a max alone without inventing a mean', () => {
+    const d = describeLakeDepth({ maxDepthM: 18, maxDepthSource: 'globathy' });
+    expect(d?.text).toBe('max ~59 ft');
+  });
+
+  it('drops a garbage value rather than rendering it', () => {
+    expect(
+      describeLakeDepth({
+        meanDepthM: 0,
+        meanDepthSource: 'lagos_us',
+        maxDepthM: 18,
+        maxDepthSource: 'lagos_us',
+      })?.text,
+    ).toBe('max 59 ft');
+    expect(describeLakeDepth({ meanDepthM: Number.NaN, meanDepthSource: 'lagos_us' })).toBeNull();
+  });
+
+  it('property: a measured-only body never renders a tilde or an estimate caveat', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('operator' as const, 'state_agency' as const, 'lagos_us' as const),
+        fc.double({ min: 0.5, max: 300, noNaN: true }),
+        (source, depth) => {
+          const d = describeLakeDepth({ maxDepthM: depth, maxDepthSource: source });
+          expect(d?.text).not.toContain('~');
+          expect(d?.hasEstimate).toBe(false);
+        },
+      ),
+    );
+  });
+
+  it('property: any modeled value always yields a tilde and the caveat', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(
+          'hydrolakes_reported' as const,
+          'hydrolakes_modeled' as const,
+          'globathy' as const,
+        ),
+        fc.double({ min: 0.5, max: 300, noNaN: true }),
+        (source, depth) => {
+          const d = describeLakeDepth({ meanDepthM: depth, meanDepthSource: source });
+          expect(d?.text).toContain('~');
+          expect(d?.hasEstimate).toBe(true);
+          expect(d?.caption).toContain('modeled estimate');
         },
       ),
     );

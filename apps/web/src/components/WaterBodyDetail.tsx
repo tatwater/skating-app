@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  describeLakeDepth,
   formatAreaAcres,
   formatSkateTime,
   humanizeEnum,
@@ -106,6 +107,8 @@ export function WaterBodyDetail({
     );
   }
 
+  const depth = describeLakeDepth(result.body);
+
   return (
     <>
       <SheetHeader>
@@ -118,7 +121,16 @@ export function WaterBodyDetail({
           {result.body.surfaceAreaSqM !== undefined
             ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
             : ''}
+          {depth ? ` · ${depth.text}` : ''}
         </SheetDescription>
+        {/* Provenance sits under the numbers rather than beside them: most bodies have no depth at all
+            (73% of the corpus is below every source's area floor), so this line is absent far more often
+            than present, and a caveat inline in the description would read as clutter when it IS there. */}
+        {depth ? (
+          <p className="text-muted-foreground text-xs" title={depth.caption}>
+            {depth.caption}
+          </p>
+        ) : null}
       </SheetHeader>
       <div className="flex flex-col gap-4 px-4 pb-4">
         {/* Report creation + directions to a put-in (never the on-water centroid, D#7).

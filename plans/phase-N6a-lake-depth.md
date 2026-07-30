@@ -3,16 +3,22 @@
 *The body-level depth attribute the D56 decay model was designed around and never got, plus the
 consumer that makes it mean something. One ETL, one core change, one display surface.*
 
-> **Status: 📋 Planned (kickoff 2026-07-29).** Split from the register's single **N6** entry at kickoff:
-> the founder's ask for **real bathymetric contour lines inside the lake polygons** turned out to be
-> both feasible and phase-sized, so it became [**N6b**](./phase-N6b-bathymetry-layer.md) and this doc
-> keeps the scalar depth attribute + its decay consumer. New decisions **D68** (the precedence ladder)
-> and **D69** (shallow amplifies thaw only).
+> **Status: ✅ BUILT 2026-07-30** — every suite green (core 1,024 · convex 810 · web 222 · mobile 79 ·
+> etl 22 · lake-depth 20 · admin-areas 14 · design 61). **The ETL has not been run yet**: it needs three
+> third-party downloads and a licence/column confirmation on the first pass (see *§Open questions*), so
+> the code path is tested but no real depth is loaded. Not device-tested; prod deferred, as every phase
+> since 2.5.
+>
+> Split from the register's single **N6** entry at kickoff: the founder's ask for **real bathymetric
+> contour lines inside the lake polygons** turned out to be both feasible and phase-sized, so it became
+> [**N6b**](./phase-N6b-bathymetry-layer.md) and this doc keeps the scalar depth attribute + its decay
+> consumer. New decisions **D68** (the precedence ladder) and **D69** (shallow amplifies thaw only).
 >
 > **Four of the register's premises about this work were false**, all checked against code — see
 > *§What the kickoff found in the register*. The largest: the `isShallow` scalar this entry says it is
 > "replacing" **has never existed**, so N6a is not sharpening a stand-in, it is building the signal for
-> the first time.
+> the first time. And **one of this plan's own claims was false**, caught by a property test in seconds —
+> see *§What the build found in the plan*.
 
 ## Why this is its own pass
 
@@ -264,10 +270,48 @@ infrastructure, not a stand-in — which is a straight reversal of what the regi
 
 ---
 
+## What the build found in the plan
+
+**This doc's stated D69 invariant was too strong, and a property test refuted it in about two seconds.**
+The plan said shallowness "always moves the multiplier further from 1 in whatever direction the type
+already went." False in **mixed** weather: with cold and thaw both present and cold winning narrowly, a
+deep body reads just above 1 while a shallow one reads just below — closer to 1, and on the other side of
+it. The crossing is **correct** rather than a bug, because the same period genuinely nets "refreezing" for
+a deep lake and "thawing" for a shallow one, which is the entire content of D69. What holds absolutely is
+directional per response class: shallow `structural` ≥ deep, shallow `refreeze_healed`/`rotten` ≤ deep,
+`weather_insensitive` identical, and with no thaw nothing changes for any type. Corrected in D69, in the
+module doc, and above. Worth recording because a test asserting the plan's version would have been a test
+asserting a misunderstanding — and it would have passed, since a single-signal fixture never reaches the
+mixed case.
+
+**A second thing the tests documented rather than fixed:** at a large thaw the existing `multiplierFloor`
+is already reached, so the amplifier has nowhere left to go. D69 works strictly inside the D56 clamps and
+does not widen them, which confines its effect to the mid-range where confidence is genuinely in question.
+That is the intended behavior, so it is pinned by a test rather than tuned away.
+
+**The plan under-specified the ETL's join, and the honest shape is different from the other two ETLs.**
+"A one-time spatial join" reads as something the transform does. It can't: every source is keyed to its
+own lake ids (`Hylak_id`, `lagoslakeid`) and none knows anything about OSM, so there is no join key, and
+matching locally would mean exporting all 116,070 bodies **with their polygons** first. The join therefore
+runs **server-side** (`waterBodies.matchAndImportDepths`), where ~8k source lakes cost ~8k small indexed
+lookups against the N1 cell index. A side benefit worth having: it reuses `listedBodiesNearCoord`, so the
+depth join and the app's own "you're at Lake X" resolution agree by construction about which body a point
+is on.
+
+**One guard the plan didn't ask for and the work demanded.** A geometric join has exactly one failure mode
+that produces a *wrong* answer instead of no answer: a big lake's representative point landing inside the
+small pond next door, stamping 40 m of depth onto it and quietly telling the decay model that pond is deep.
+So the match carries an **area gate** — reject if the two areas disagree by more than 4×, and name the body
+it declined. Deliberately loose, because the three sources each draw a shoreline from a different water
+mask at a different date: a false reject costs one lake its depth, a false accept corrupts a safety input.
+
 ## Open questions
 
 1. **LAGOS-US DEPTH's licence and its coverage in our five states** — both need confirming at download
-   from the EDI package's Intellectual Rights statement and by counting matches per state. New England is
+   from the EDI package's Intellectual Rights statement and by counting matches per state. **This is what
+   blocks the first real run**, along with confirming the CSV column names: the transform matches headers
+   case-insensitively against a candidate list and raises a *named error listing the headers it did find*
+   rather than reading zero depths and reporting success, so guessing is safe but unverified. New England is
    LAGOS' home region (LAGOS-NE preceded LAGOS-US), so coverage should be comparatively good here, but
    "should be" is not a number. If the licence turns out to require attribution, it joins the
    Open-Meteo / OSM attribution set, which is a solved pattern.

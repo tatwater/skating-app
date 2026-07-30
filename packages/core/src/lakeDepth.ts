@@ -19,6 +19,8 @@
  * physics, the numbers are defaults to refit. Surfaced read-only on the Phase 7b tuning page.
  */
 
+import { formatDepthFeet } from './units';
+
 /**
  * Where a stored depth came from, best first. The order **is** the precedence ladder (D68) — see
  * `DEPTH_SOURCE_RANK`, which derives from this array so the two can never disagree.
@@ -165,3 +167,59 @@ export const DEPTH_SOURCE_LABELS: Record<DepthSource, string> = {
   globathy: 'GLOBathy (modeled)',
   osm_tag: 'OpenStreetMap',
 };
+
+/** A body's depth, ready to render: the numbers, their attribution, and whether any is an estimate. */
+export interface DepthDisplay {
+  /** e.g. `"mean ~13 ft · max 59 ft"` — a `~` marks a modelled value. */
+  text: string;
+  /** Sources named, deduped, in ladder order. */
+  caption: string;
+  /** Whether any shown value is modelled (so the caller can style the caption as a caveat). */
+  hasEstimate: boolean;
+}
+
+export interface LakeDepthRecord extends LakeDepths {
+  meanDepthSource?: DepthSource;
+  maxDepthSource?: DepthSource;
+}
+
+/**
+ * Render a body's depth for a skater, **framed by where each number came from** (D68, founder call).
+ *
+ * The framing rule is the whole point and it is one line of logic: a measured depth reads plainly, a
+ * modelled one carries a `~` and the caption says the sources. A 90 m-DEM estimate and a depth-sounder
+ * transect are both useful and are not the same claim (D3), and since mean and max routinely arrive from
+ * different rungs, the mark has to be **per value** rather than per lake.
+ *
+ * Returns `null` when there is nothing to show — which is most of the corpus, and the caller should
+ * render nothing rather than "unknown". A depth we don't have is not a fact about the lake.
+ *
+ * A value with no source is treated as absent: provenance is what makes it displayable at all.
+ */
+export function describeLakeDepth(body: LakeDepthRecord): DepthDisplay | null {
+  const parts: string[] = [];
+  const sources: DepthSource[] = [];
+  let hasEstimate = false;
+
+  const add = (label: string, value?: number, source?: DepthSource) => {
+    if (value === undefined || !Number.isFinite(value) || value <= 0 || source === undefined)
+      return;
+    const estimated = !isMeasuredDepthSource(source);
+    if (estimated) hasEstimate = true;
+    parts.push(`${label} ${estimated ? '~' : ''}${formatDepthFeet(value)}`);
+    if (!sources.includes(source)) sources.push(source);
+  };
+  add('mean', body.meanDepthM, body.meanDepthSource);
+  add('max', body.maxDepthM, body.maxDepthSource);
+  if (parts.length === 0) return null;
+
+  sources.sort((a, b) => DEPTH_SOURCE_RANK[a] - DEPTH_SOURCE_RANK[b]);
+  const attribution = sources.map((s) => DEPTH_SOURCE_LABELS[s]).join(', ');
+  return {
+    text: parts.join(' · '),
+    caption: hasEstimate
+      ? `Depth: ${attribution}. ~ is a modeled estimate.`
+      : `Depth: ${attribution}.`,
+    hasEstimate,
+  };
+}
