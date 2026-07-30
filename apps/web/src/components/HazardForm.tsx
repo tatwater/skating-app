@@ -89,6 +89,17 @@ export interface ShoreBandState {
    * that ring, not a property of it, and putting it on the draft would give a polygon two widths.
    */
   halfWidthMeters: number;
+  /**
+   * The type's uncertainty halo, in metres — what `hazardFootprint` adds *outside* the derived ring.
+   *
+   * Here so the UI can say `halfWidthMeters + haloMeters` out loud. A band is the one primitive where
+   * the number under the stepper is **not** the whole footprint: on a line the buffer *is* the
+   * footprint, on a hand-drawn area the number is explicitly "give around the edge", but a band's
+   * half-width is a claim about the ice with the type's margin still to come. Left implicit, that reads
+   * as a footprint 10 m bigger than the skater was told — and a reviewer read it as a double-buffer bug,
+   * which is a fair thing to conclude from copy that doesn't mention it.
+   */
+  haloMeters: number;
   /** Metres of shoreline the band covers, once derived. */
   arcLengthMeters: number | null;
   /** Why the last attempt was refused, if it was. */
@@ -338,7 +349,9 @@ export function HazardFormFields({
                   draft a circle, and the number under the stepper has to be the one the stepper is
                   actually moving. */}
               {banding
-                ? `about ${shore?.halfWidthMeters ?? 0} m out from the shoreline`
+                ? `about ${shore?.halfWidthMeters ?? 0} m out from the shoreline — warned to ${
+                    (shore?.halfWidthMeters ?? 0) + (shore?.haloMeters ?? 0)
+                  } m`
                 : draft.geometryKind === 'point_radius'
                   ? `about ${draft.radiusMeters} m across the radius`
                   : draft.geometryKind === 'line'
@@ -356,7 +369,7 @@ export function HazardFormFields({
           </div>
           <p className="text-foreground-muted text-xs">
             {banding
-              ? 'An estimate is fine — the band shows roughly how far out the ice is affected, not an exact edge. The part that falls on land is trimmed off.'
+              ? `An estimate is fine — the band shows roughly how far out the ice is affected, not an exact edge. Warnings start ${shore?.haloMeters ?? 0} m further out than that, the same margin every hazard of this type gets for being an estimate rather than a survey. The part that falls on land is trimmed off.`
               : isLine
                 ? 'An estimate is fine — the band shows roughly how far the hazard reaches, not an exact edge. A folded pressure ridge is far wider than a hairline crack.'
                 : 'An estimate is fine — the marker is drawn as an approximate area, not an exact edge.'}
@@ -695,6 +708,9 @@ export function HazardForm({
             offered: offersShore,
             deriving,
             halfWidthMeters: shoreHalfWidth,
+            // The same value the derive effect stores as the band's `bufferMeters`, so what the copy
+            // promises and what `hazardFootprint` adds can't drift apart.
+            haloMeters: type ? HAZARD_DEFAULT_BUFFER_M[type] : 0,
             arcLengthMeters: shoreArcLength,
             error: shoreError,
             onStart: startSnap,

@@ -610,8 +610,9 @@ export function HazardCapture() {
             </Paragraph>
           ) : snapped ? (
             <Paragraph color="$foregroundMuted" fontSize={13}>
-              Following {Math.round(shoreArcLength ?? 0)} m of shoreline. The part that falls on
-              land is trimmed off.
+              Following {Math.round(shoreArcLength ?? 0)} m of shoreline. The extra margin is the
+              usual one for this type — an estimate, not a survey. The part that falls on land is
+              trimmed off.
             </Paragraph>
           ) : banding ? (
             // Two taps in, nothing back yet — the cache read and derive are synchronous, so this is
@@ -663,8 +664,11 @@ export function HazardCapture() {
             <Text color="$foreground" fontSize={13} flex={1}>
               {/* `banding` before the primitive: a refused snap can leave the draft a circle, and the
                   number under the stepper has to be the one the stepper is moving. */}
+              {/* Both numbers, because the half-width isn't the whole footprint: `hazardFootprint`
+                  adds the type's margin outside the derived ring (D67), so a bare "25 m out" would
+                  under-report what actually warns by 10 m. */}
               {banding
-                ? `about ${shoreHalfWidth} m out from shore`
+                ? `about ${shoreHalfWidth} m out from shore — warns to ${shoreHalfWidth + HAZARD_DEFAULT_BUFFER_M[hazardDraftType]} m`
                 : hazardDraft.geometryKind === 'point_radius'
                   ? `about ${hazardDraft.radiusMeters} m across`
                   : hazardDraft.geometryKind === 'line'

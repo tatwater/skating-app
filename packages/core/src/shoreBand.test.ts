@@ -1,8 +1,14 @@
 import fc from 'fast-check';
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import type { LatLng } from './geometry';
-import { HAZARD_MAX_VERTICES, isValidHazardShape, polygonShape } from './hazardGeometry';
+import { type LatLng, pointInPolygon } from './geometry';
+import {
+  HAZARD_DEFAULT_BUFFER_M,
+  HAZARD_MAX_VERTICES,
+  hazardFootprint,
+  isValidHazardShape,
+  polygonShape,
+} from './hazardGeometry';
 import {
   deriveShoreBand,
   offersShoreBand,
@@ -183,6 +189,80 @@ describe('deriveShoreBand', () => {
         },
       ),
     );
+  });
+});
+
+/**
+ * **How far out from shore the warned footprint actually reaches** — the arithmetic a reviewer read as
+ * a double-buffer bug, asserted here so it is a decision rather than an accident.
+ *
+ * A band derived at half-width `H` and stored with halo `B` warns from `H + B` out. That is two
+ * *different* quantities, not one applied twice (D67): `H` is a claim about the **ice** — rotten shore
+ * ice runs tens of metres out — and `B` is the type's uncertainty about **where any hazard's edge is**,
+ * which every other hazard in the app also gets. Dropping `B` would make a shore band the one hazard
+ * whose footprint is exactly its author's eyeball estimate, which is D3's "never assert safety" read
+ * backwards: the fail-safe direction for a hazard footprint is *out*, not in.
+ *
+ * What that costs is disclosure, and the clients pay it — both name `H + B` next to the stepper rather
+ * than letting `H` imply the whole footprint.
+ */
+describe('the warned footprint vs the selected half-width (D67)', () => {
+  // A ~2.2 km-radius lake, so the shore is locally near-straight and "distance out from shore" at the
+  // arc's midpoint is a clean measurement rather than a curvature artefact.
+  const BIG_RING = circleRing(180, 0.02);
+  const BIG_LAKE: Polygon = { type: 'Polygon', coordinates: [BIG_RING] };
+
+  /** How far inward from `from`, toward `CENTRE`, the geometry still contains a point (metres). */
+  function reachInland(geom: Polygon | MultiPolygon, from: LatLng): number {
+    const dLat = CENTRE.lat - from.lat;
+    const dLng = CENTRE.lng - from.lng;
+    const norm = Math.hypot(dLat, dLng);
+    const degPerM = 1 / 111_320;
+    let last = 0;
+    for (let m = 0; m <= 120; m += 0.25) {
+      const point = {
+        lat: from.lat + (dLat / norm) * m * degPerM,
+        lng: from.lng + (dLng / norm) * m * degPerM * (1 / Math.cos((from.lat * Math.PI) / 180)),
+      };
+      if (pointInPolygon(point, geom)) last = m;
+    }
+    return last;
+  }
+
+  it('reaches the half-width alone when the halo is zero, and half-width + halo with it', () => {
+    const halfWidthMeters = 25; // SHORE_BAND_DEFAULT_HALF_WIDTH_M
+    const halo = HAZARD_DEFAULT_BUFFER_M.thin_ice; // 10
+    const result = deriveShoreBand(BIG_LAKE, ringPoint(BIG_RING, 0), ringPoint(BIG_RING, 10), {
+      halfWidthMeters,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const midpoint = result.band.arc[Math.floor(result.band.arc.length / 2)] as LatLng;
+    const ringOnly = hazardFootprint(polygonShape(result.band.vertices, 0));
+    const warned = hazardFootprint(polygonShape(result.band.vertices, halo));
+
+    // The stored ring is exactly what the skater asked for.
+    expect(reachInland(ringOnly, midpoint)).toBeCloseTo(halfWidthMeters, 0);
+    // The warned footprint is that plus the type's uncertainty margin — 35 m, not 25.
+    expect(reachInland(warned, midpoint)).toBeCloseTo(halfWidthMeters + halo, 0);
+  });
+
+  it('never warns *less* far than the band the skater drew', () => {
+    // The direction that matters for D3. Whatever the halo is, the footprint can only grow.
+    for (const halfWidthMeters of [8, 15, 25, 40]) {
+      const result = deriveShoreBand(BIG_LAKE, ringPoint(BIG_RING, 0), ringPoint(BIG_RING, 10), {
+        halfWidthMeters,
+      });
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      const midpoint = result.band.arc[Math.floor(result.band.arc.length / 2)] as LatLng;
+      const warned = reachInland(
+        hazardFootprint(polygonShape(result.band.vertices, HAZARD_DEFAULT_BUFFER_M.open_water)),
+        midpoint,
+      );
+      expect(warned).toBeGreaterThanOrEqual(halfWidthMeters);
+    }
   });
 });
 

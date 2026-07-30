@@ -56,6 +56,7 @@ function renderFields(
           offered: false,
           deriving: false,
           halfWidthMeters: 25,
+          haloMeters: 10,
           arcLengthMeters: null,
           error: null,
           onStart: spies.onStartSnap,
@@ -334,10 +335,42 @@ describe('snap to shoreline (N5b)', () => {
     renderFields({
       type: 'thin_ice',
       draft,
-      shore: { offered: true, deriving: true, arcLengthMeters: 800, halfWidthMeters: 25 },
+      shore: {
+        offered: true,
+        deriving: true,
+        arcLengthMeters: 800,
+        halfWidthMeters: 25,
+        haloMeters: HAZARD_DEFAULT_BUFFER_M.thin_ice,
+      },
     });
-    expect(screen.getByText('about 25 m out from the shoreline')).toBeInTheDocument();
+    expect(screen.getByText(/about 25 m out from the shoreline/)).toBeInTheDocument();
     expect(screen.getByText(/part that falls on land is trimmed off/)).toBeInTheDocument();
+  });
+
+  /**
+   * The band is the one primitive whose stepper number is **not** the whole footprint: `hazardFootprint`
+   * adds the type's uncertainty margin outside the derived ring (D67), so 25 m out warns from 35 m. That
+   * is two quantities rather than one applied twice — a claim about the ice, plus the margin every
+   * hazard gets — but left unsaid it reads as a footprint bigger than the skater was told, and a
+   * reviewer read exactly that as a double-buffer bug. So the total is on screen.
+   */
+  it('names the distance that actually warns, not just the band half-width', () => {
+    renderFields({
+      type: 'thin_ice',
+      draft: switchDraftKind(draftForType('thin_ice'), 'polygon', 'thin_ice'),
+      shore: {
+        offered: true,
+        deriving: true,
+        halfWidthMeters: 25,
+        haloMeters: 10,
+        arcLengthMeters: 400,
+      },
+    });
+    expect(
+      screen.getByText('about 25 m out from the shoreline — warned to 35 m'),
+    ).toBeInTheDocument();
+    // And says why the two differ, in the same breath as "an estimate is fine".
+    expect(screen.getByText(/estimate rather than a survey/)).toBeInTheDocument();
   });
 
   it('surfaces a refusal where the affordance is, and names the way out', () => {
@@ -379,7 +412,7 @@ describe('snap to shoreline (N5b)', () => {
       },
     });
     expect(screen.getByRole('alert')).toHaveTextContent(/closes on itself/);
-    expect(screen.getByText('about 25 m out from the shoreline')).toBeInTheDocument();
+    expect(screen.getByText(/about 25 m out from the shoreline/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Narrower' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Go the other way round' }));
     expect(spies.onFlipSnap).toHaveBeenCalled();

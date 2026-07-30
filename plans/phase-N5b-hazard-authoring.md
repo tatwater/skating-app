@@ -352,6 +352,24 @@ person made, covering the band they were meant to clarify. `DRAFT_VERTEX_DOT_LIM
 gloved hand-tapped ring) now suppresses them above that, which costs nothing: a ring that large is long
 past storable, so its **footprint** — the shape that would actually be saved — is already drawn.
 
+## What the PR review found (2026-07-30)
+
+Greptile raised one P1 on [PR #32](https://github.com/tatwater/skating-app/pull/32): **shore bands are
+buffered twice.** The arithmetic is right — a band derived at 25 m warns from 35 m, measured — and the
+conclusion isn't. Those are two different quantities: the half-width is a claim about the **ice** (rotten
+shore ice runs tens of metres out, which is exactly why `SHORE_BAND_DEFAULT_HALF_WIDTH_M` is 25 and not
+the type's 10 m), and `bufferMeters` is the type's uncertainty about **where any hazard's edge is**, which
+every other hazard carries too. Removing it would leave a shore band as the only hazard whose footprint is
+exactly its author's eyeball estimate — D3 backwards, since the fail-safe direction for a footprint is
+*out*.
+
+Kept, and the review's real finding acted on: **a band was the one primitive whose stepper number wasn't
+the whole footprint**, so the copy under-reported what warns by the halo. Both clients now name the total
+("about 25 m out from the shoreline — warned to 35 m") and say why the two differ, and a geometric test
+asserts the relationship instead of leaving it to be re-derived. Recorded as a D67 amendment, with the two
+rejected alternatives (derive at `H − B`; store with `bufferMeters: 0`) written down so it doesn't get
+re-litigated.
+
 ## Testing (D40)
 
 - **`@skating/core`** — property tests for the shore band (any two taps on a ring either refuse
@@ -362,7 +380,9 @@ past storable, so its **footprint** — the shape that would actually be saved �
   plan's opening mistake — that `SHORE_BAND_TYPES` names only values that exist in `HAZARD_TYPES`.
   Added by the review: the near-full-perimeter pond that refuses at the default half-width **and is
   rescued by one press of −**, which is the test that pins why the width stepper must survive a
-  refusal; and the `DRAFT_VERTEX_DOT_LIMIT` boundary.
+  refusal; the `DRAFT_VERTEX_DOT_LIMIT` boundary; and — from the PR review — the measured reach of a
+  band's footprint (ring alone reaches the half-width, footprint reaches half-width + halo, and never
+  less far than the band itself).
 - **Web** — the three-way primitive picker, an area's postability at three corners, the snapped band's
   shoreline length and "other way round" control, that the stepper reads as *distance out from shore*
   while snapped, and that a refusal renders where the affordance is with the other two primitives

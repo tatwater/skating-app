@@ -1812,7 +1812,27 @@ which is the only thing that makes *"snapping is an input convenience, not a sto
 true rather than merely said. Taken seriously in the UI too: the moment someone drags a corner on web,
 the band stops being snapped and becomes an ordinary area, and the copy says so.
 
-The obvious objection — a halo around a shore band spills onto land — **needed no new code**. Phase
+**The halo is a second quantity, not the same one twice** *(amended 2026-07-30, from Greptile's review
+of PR #32)*. A band derived at half-width `H` and stored with halo `B` warns from `H + B` out: at the
+default 25 m with `thin_ice`'s 10 m margin, a skater who said "25 m out" gets a footprint reaching 35 m.
+Read cold that looks like the buffer being applied twice, and it isn't. `H` is a claim about the **ice**
+— rotten shore ice runs tens of metres out, which is why `SHORE_BAND_DEFAULT_HALF_WIDTH_M` is 25 and not
+the type's 10 — and `B` is the type's uncertainty about **where any hazard's edge is**, which every other
+hazard in the app also carries. Dropping `B` would make a shore band the only hazard whose footprint is
+exactly its author's eyeball estimate, which is D3 read backwards: for a hazard footprint the fail-safe
+direction is *out*, and warning 10 m early is the error worth having. *Considered and rejected:* deriving
+the band at `H − B` so the total lands on `H` (breaks whenever `B ≥ H`, and quietly makes the number the
+skater set not the number the ring uses), and storing the band with `bufferMeters: 0` (no downstream
+special case — `hazardFootprint` handles a zero halo — but it strips the one hazard that most needs an
+uncertainty allowance of the only one it had).
+
+What the objection *did* land is **disclosure**. A band was the one primitive whose stepper number wasn't
+the whole footprint — on a line the buffer *is* the footprint, on a hand-drawn area the number is
+explicitly "give around the edge" — and both clients now name `H + B` next to the stepper and say why the
+two differ. A geometric test pins the relationship (ring alone reaches `H`, footprint reaches `H + B`, and
+the footprint can never reach *less* far than the band) rather than leaving it to be re-derived.
+
+The other obvious objection — a halo around a shore band spills onto land — **needed no new code**. Phase
 9.5's `clipFootprintToBody` already intersects a hazard's buffered footprint with the body polygon at
 insert, stores the clipped result, and is what the map draws and `distanceToHazard` measures. A shore
 band is the exact case it was written for, so the landward half of the band *and* of its halo are
