@@ -5,15 +5,22 @@ import {
   classifyFlushError,
   createQueuedHazard,
   type DraftPhoto,
+  deriveShoreBand,
   draftPlacementCount,
   draftToShape,
+  HAZARD_BUFFER_STEPS_M,
+  HAZARD_DEFAULT_BUFFER_M,
   HAZARD_TYPE_LABELS,
   HAZARD_TYPE_PRESETS,
   HAZARD_TYPES,
   type HazardType,
   isPassageMarker,
+  offersShoreBand,
   pointDraftForType,
   resizeDraft,
+  SHORE_BAND_DEFAULT_HALF_WIDTH_M,
+  shoreBandRefusalText,
+  stepSize,
   switchDraftKind,
   undoDraftPlacement,
 } from '@skating/core';
@@ -21,9 +28,10 @@ import { useMutation } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { randomUUID } from 'expo-crypto';
 import * as Location from 'expo-location';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Image, Modal } from 'react-native';
 import { Button, H4, Paragraph, ScrollView, Text, XStack, YStack } from 'tamagui';
+import { cachedBodyPolygon } from '../lib/bodyCache';
 import { deleteDraftPhotoFiles, persistDraftPhoto } from '../lib/draftPhotos';
 import { saveHazardItem } from '../lib/draftStore';
 import { useIsLeaving } from './LeavingNotice';
@@ -70,6 +78,8 @@ export function HazardCapture() {
     setHazardDraftType,
     hazardDropMode,
     setHazardDropMode,
+    hazardShoreTaps,
+    setHazardShoreTaps,
   } = useMapSelection();
 
   const [picking, setPicking] = useState(false);
@@ -95,6 +105,15 @@ export function HazardCapture() {
    * for hours must not have its images evicted by the OS before it sends. It also means one shape
    * feeds both paths: upload these uris now, or hand the same records to the queue.
    */
+  /**
+   * Snap-to-shoreline state (N5b), held here rather than on the draft: Decision 3 stores a snapped
+   * band as an **ordinary polygon**, so the band half-width is an input to deriving that ring, not a
+   * property of it. Putting it on the draft would give one shape two widths that could disagree.
+   */
+  const [shoreHalfWidth, setShoreHalfWidth] = useState(SHORE_BAND_DEFAULT_HALF_WIDTH_M);
+  const [shoreOtherWay, setShoreOtherWay] = useState(false);
+  const [shoreError, setShoreError] = useState<string | null>(null);
+  const [shoreArcLength, setShoreArcLength] = useState<number | null>(null);
   const [photos, setPhotos] = useState<DraftPhoto[]>([]);
   /**
    * The live photo list, mirrored into a ref so `post()`'s failure branches read the *checkpoints*
@@ -117,6 +136,11 @@ export function HazardCapture() {
   function resetDraftState() {
     setPhotos([]);
     setCapturedBodyId(null);
+    setHazardShoreTaps(null);
+    setShoreError(null);
+    setShoreArcLength(null);
+    setShoreOtherWay(false);
+    setShoreHalfWidth(SHORE_BAND_DEFAULT_HALF_WIDTH_M);
     setHazardDraft(null);
     setHazardDraftType(null);
     setHazardDropMode(false);
@@ -160,12 +184,61 @@ export function HazardCapture() {
     return null;
   }
 
+  /**
+   * Two taps in hand ⇒ derive the band. Re-runs on width and direction, which is what makes both of
+   * those live controls rather than a re-pick — on the ice, "start over" is the expensive option.
+   *
+   * The polygon comes from the **offline body cache**, not a query: the skater this is for is
+   * standing on the lake, and on the lake there is frequently no signal. The cache holds every body
+   * whose detail has been opened, which on arrival is the one under their feet.
+   */
+  useEffect(() => {
+    if (!hazardDraftType || !hazardShoreTaps || hazardShoreTaps.length < 2 || !capturedBodyId) {
+      return;
+    }
+    const polygon = cachedBodyPolygon(capturedBodyId);
+    if (!polygon) {
+      setShoreError('This lake’s outline isn’t on the phone yet. Trace it as a line instead.');
+      setShoreArcLength(null);
+      return;
+    }
+    const [a, b] = hazardShoreTaps as [{ lat: number; lng: number }, { lat: number; lng: number }];
+    const result = deriveShoreBand(polygon, a, b, {
+      halfWidthMeters: shoreHalfWidth,
+      theOtherWay: shoreOtherWay,
+    });
+    if (!result.ok) {
+      setShoreError(shoreBandRefusalText(result.reason));
+      setShoreArcLength(null);
+      return;
+    }
+    setShoreError(null);
+    setShoreArcLength(result.band.arcLengthMeters);
+    setHazardDraft({
+      geometryKind: 'polygon',
+      vertices: result.band.vertices,
+      bufferMeters: HAZARD_DEFAULT_BUFFER_M[hazardDraftType],
+    });
+  }, [
+    hazardDraftType,
+    hazardShoreTaps,
+    capturedBodyId,
+    shoreHalfWidth,
+    shoreOtherWay,
+    setHazardDraft,
+  ]);
+
   async function chooseType(type: HazardType) {
     // Freeze the lake now, while we still have it — see `capturedBodyId`.
     setCapturedBodyId(targetBodyId);
     setHazardDraftType(type);
     setPicking(false);
     setError(null);
+    // A type change abandons a snap: the band was derived for the old type, and the new one may not
+    // offer snapping at all. Keeping the ring would leave a ridge shaped exactly like a shoreline.
+    setHazardShoreTaps(null);
+    setShoreError(null);
+    setShoreArcLength(null);
     // Show the pin's adjust bar *immediately*, armed for a map tap, so tap 2 is never a dead tap while
     // a cold GPS receiver spins up: the sheet has closed and without this the screen would show only
     // the reappeared FAB, reading as "nothing happened" — and a gloved re-tap restarts the whole flow.
@@ -371,6 +444,19 @@ export function HazardCapture() {
   }
 
   const isLine = hazardDraft?.geometryKind === 'line';
+  const isArea = hazardDraft?.geometryKind === 'polygon';
+  const snapping = hazardShoreTaps !== null;
+  /**
+   * Two taps in hand, so the ± stepper is on the band's half-width — **including after a refusal**.
+   * Narrowing is the way out of the commonest refusal (a band wide enough to close on itself), so a
+   * flag that went false on an error would hand that button back to the draft's own size and leave the
+   * skater with no way through except starting over. Not gated on `isArea` either: a first refused snap
+   * leaves the draft the circle it started as.
+   */
+  const banding = snapping && hazardShoreTaps.length === 2;
+  /** A band actually came back — the only state that can honestly quote a length of shoreline. */
+  const snapped = banding && shoreError === null && shoreArcLength !== null;
+  const offersShore = hazardDraftType !== null && offersShoreBand(hazardDraftType);
   const placements = hazardDraft ? draftPlacementCount(hazardDraft) : 0;
   // `capturedBodyId` is part of this so Done can never be enabled when `post()` would bail on a
   // missing lake — the button being tappable must guarantee the tap actually files something.
@@ -511,6 +597,35 @@ export function HazardCapture() {
               Finding you… you can tap the map to drop the pin yourself if you already know where it
               is.
             </Paragraph>
+          ) : shoreError ? (
+            <Paragraph color="$danger" fontSize={13} accessibilityRole="alert">
+              {shoreError}
+            </Paragraph>
+          ) : snapping && hazardShoreTaps.length < 2 ? (
+            <Paragraph color="$foregroundMuted" fontSize={13}>
+              {hazardShoreTaps.length === 0
+                ? 'Tap one end of the affected shore.'
+                : 'Now tap the other end.'}{' '}
+              The band follows the lake’s own shoreline between them.
+            </Paragraph>
+          ) : snapped ? (
+            <Paragraph color="$foregroundMuted" fontSize={13}>
+              Following {Math.round(shoreArcLength ?? 0)} m of shoreline. The extra margin is the
+              usual one for this type — an estimate, not a survey. The part that falls on land is
+              trimmed off.
+            </Paragraph>
+          ) : banding ? (
+            // Two taps in, nothing back yet — the cache read and derive are synchronous, so this is
+            // the frame between them. Never "N corners": nobody tapped those.
+            <Paragraph color="$foregroundMuted" fontSize={13}>
+              Picking a stretch of shore…
+            </Paragraph>
+          ) : isArea && !postable ? (
+            <Paragraph color="$foregroundMuted" fontSize={13}>
+              {placements} {placements === 1 ? 'corner' : 'corners'} — tap Draw and add
+              {placements >= 2 ? ' another' : ' more'}; an area needs at least three that don’t
+              cross over each other.
+            </Paragraph>
           ) : isLine && !postable ? (
             <Paragraph color="$foregroundMuted" fontSize={13}>
               {placements} {placements === 1 ? 'point' : 'points'} — tap Trace and add at least one
@@ -520,7 +635,9 @@ export function HazardCapture() {
             <Paragraph color="$foregroundMuted" fontSize={13}>
               {isLine
                 ? `Tap the map along the hazard. ${placements} ${placements === 1 ? 'point' : 'points'}.`
-                : 'Tap the map where the hazard is.'}
+                : isArea
+                  ? `Tap each corner of the area. ${placements} ${placements === 1 ? 'corner' : 'corners'}.`
+                  : 'Tap the map where the hazard is.'}
             </Paragraph>
           ) : (
             <Paragraph color="$foregroundMuted" fontSize={13}>
@@ -529,23 +646,43 @@ export function HazardCapture() {
             </Paragraph>
           )}
 
+          {/* One stepper, two meanings, never both on screen (N5b Decision 3): on a snapped band it
+              tunes the band half-width and the ring re-derives; otherwise it steps the draft's own
+              size. Steppers, not a slider — sliders are miserable with gloves on. */}
           <XStack gap="$2" alignItems="center" flexWrap="wrap">
             <Button
               size="$5"
-              accessibilityLabel={isLine ? 'Narrower' : 'Smaller'}
-              onPress={() => setHazardDraft(resizeDraft(hazardDraft, -1))}
+              accessibilityLabel={isLine || banding ? 'Narrower' : 'Smaller'}
+              onPress={() =>
+                banding
+                  ? setShoreHalfWidth((w) => stepSize(w, HAZARD_BUFFER_STEPS_M, -1))
+                  : setHazardDraft(resizeDraft(hazardDraft, -1))
+              }
             >
               −
             </Button>
             <Text color="$foreground" fontSize={13} flex={1}>
-              {hazardDraft.geometryKind === 'line'
-                ? `about ${hazardDraft.bufferMeters} m either side`
-                : `about ${hazardDraft.radiusMeters} m across`}
+              {/* `banding` before the primitive: a refused snap can leave the draft a circle, and the
+                  number under the stepper has to be the one the stepper is moving. */}
+              {/* Both numbers, because the half-width isn't the whole footprint: `hazardFootprint`
+                  adds the type's margin outside the derived ring (D67), so a bare "25 m out" would
+                  under-report what actually warns by 10 m. */}
+              {banding
+                ? `about ${shoreHalfWidth} m out from shore — warns to ${shoreHalfWidth + HAZARD_DEFAULT_BUFFER_M[hazardDraftType]} m`
+                : hazardDraft.geometryKind === 'point_radius'
+                  ? `about ${hazardDraft.radiusMeters} m across`
+                  : hazardDraft.geometryKind === 'line'
+                    ? `about ${hazardDraft.bufferMeters} m either side`
+                    : `about ${hazardDraft.bufferMeters} m of give around the edge`}
             </Text>
             <Button
               size="$5"
-              accessibilityLabel={isLine ? 'Wider' : 'Bigger'}
-              onPress={() => setHazardDraft(resizeDraft(hazardDraft, 1))}
+              accessibilityLabel={isLine || banding ? 'Wider' : 'Bigger'}
+              onPress={() =>
+                banding
+                  ? setShoreHalfWidth((w) => stepSize(w, HAZARD_BUFFER_STEPS_M, 1))
+                  : setHazardDraft(resizeDraft(hazardDraft, 1))
+              }
             >
               +
             </Button>
@@ -572,30 +709,103 @@ export function HazardCapture() {
           ) : null}
 
           <XStack gap="$2" flexWrap="wrap">
-            <Button size="$4" onPress={() => setHazardDropMode(true)}>
-              {isLine ? 'Trace' : 'Move'}
+            {/* A snapped band is re-picked, never hand-adjusted: tap-to-place has no vertex
+                dragging (that's terra-draw, and terra-draw can't run here), so "adjust" would mean
+                re-tapping the whole ring. Re-picking two ends is the cheap, honest version. */}
+            <Button
+              size="$4"
+              onPress={() => {
+                // `banding`, not "banded": after a *refused* snap the taps are still armed, so leaving
+                // them would feed the next tap in as a third shore pick instead of a fresh first one.
+                if (banding) {
+                  setShoreArcLength(null);
+                  setShoreError(null);
+                  setHazardShoreTaps([]);
+                }
+                setHazardDropMode(true);
+              }}
+            >
+              {banding ? 'Re-pick' : isLine ? 'Trace' : isArea ? 'Draw' : 'Move'}
             </Button>
             <Button size="$4" disabled={addingPhotos} onPress={addPhotos}>
               {addingPhotos ? 'Adding…' : photos.length > 0 ? '📷 Add another' : '📷 Photo'}
             </Button>
-            {isLine && placements > 0 ? (
+            {(isLine || (isArea && !banding)) && placements > 0 ? (
               <Button size="$4" onPress={() => setHazardDraft(undoDraftPlacement(hazardDraft))}>
-                Undo point
+                {isLine ? 'Undo point' : 'Undo corner'}
               </Button>
             ) : null}
-            {/* Upgrading to a polyline is opt-in, and only worth offering for the things that are
-                actually lines on the ice. The pin stays valid throughout. */}
-            <Button
-              size="$4"
-              chromeless
-              onPress={() =>
-                setHazardDraft(
-                  switchDraftKind(hazardDraft, isLine ? 'point_radius' : 'line', hazardDraftType),
-                )
-              }
-            >
-              {isLine ? 'Just a spot' : 'It’s a line'}
-            </Button>
+            {/* Two ways round a lake, and "shorter" is right almost always and silently wrong on a
+                small pond where the band you mean is most of the perimeter (Decision 4). Offered
+                through a refusal too — it and the − stepper are two of the three ways out of one. */}
+            {banding ? (
+              <Button size="$4" onPress={() => setShoreOtherWay((other) => !other)}>
+                Other way
+              </Button>
+            ) : null}
+          </XStack>
+
+          {/* Changing primitive is opt-in and always reversible; the pin stays valid throughout.
+              An area is the advanced one (D51) and no type starts as one, which on the ice also
+              protects the two-tap guarantee — three taps and a close is not a mitten-fumble away. */}
+          <XStack gap="$2" flexWrap="wrap">
+            {!isArea ? (
+              <Button
+                size="$3"
+                chromeless
+                onPress={() =>
+                  setHazardDraft(
+                    switchDraftKind(hazardDraft, isLine ? 'point_radius' : 'line', hazardDraftType),
+                  )
+                }
+              >
+                {isLine ? 'Just a spot' : 'It’s a line'}
+              </Button>
+            ) : (
+              <Button
+                size="$3"
+                chromeless
+                onPress={() => {
+                  setHazardShoreTaps(null);
+                  setShoreError(null);
+                  setShoreArcLength(null);
+                  setHazardDraft(switchDraftKind(hazardDraft, 'point_radius', hazardDraftType));
+                }}
+              >
+                Just a spot
+              </Button>
+            )}
+            {!isArea ? (
+              <Button
+                size="$3"
+                chromeless
+                onPress={() => {
+                  const next = switchDraftKind(hazardDraft, 'polygon', hazardDraftType);
+                  setHazardDraft(next);
+                  if (draftPlacementCount(next) < 3) setHazardDropMode(true);
+                }}
+              >
+                It’s an area
+              </Button>
+            ) : null}
+            {/* Snapping is only offered for the two types that are genuinely shore-shaped
+                (Decision 1) — a ridge is linear but not *shore*-linear. */}
+            {offersShore && !banding ? (
+              <Button
+                size="$3"
+                chromeless
+                onPress={() => {
+                  setShoreError(null);
+                  setShoreArcLength(null);
+                  setShoreOtherWay(false);
+                  setShoreHalfWidth(SHORE_BAND_DEFAULT_HALF_WIDTH_M);
+                  setHazardShoreTaps([]);
+                  setHazardDropMode(true);
+                }}
+              >
+                Along the shore
+              </Button>
+            ) : null}
           </XStack>
 
           {error ? (

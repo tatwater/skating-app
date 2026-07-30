@@ -16,6 +16,7 @@ import {
   isValidHazardShape,
   lineShape,
   pointRadiusShape,
+  polygonShape,
 } from './hazardGeometry';
 import { HAZARD_TYPES } from './types';
 
@@ -268,7 +269,7 @@ describe('isValidHazardShape', () => {
     ).toBe(false);
   });
 
-  it('validates a MultiPolygon by its first ring', () => {
+  it('accepts a single-part MultiPolygon and refuses one with no parts at all', () => {
     const ring = [
       [-73.22, 44.47],
       [-73.2, 44.48],
@@ -510,5 +511,146 @@ describe('clipFootprintToBody (Phase 9.5)', () => {
     // The land (eastern) edge of the bbox is pulled back to the shoreline instead of bulging past it.
     expect(hazardBbox(shape, clipped).maxLng).toBeLessThanOrEqual(hazardBbox(shape).maxLng);
     expect(hazardBbox(shape, clipped).maxLng).toBeCloseTo(0, 4);
+  });
+});
+
+describe('polygonShape + the hardened polygon gate (N5b)', () => {
+  /** Four corners of a small square near Burlington, as draft vertices. */
+  const SQUARE: LatLng[] = [
+    { lat: 44.47, lng: -73.22 },
+    { lat: 44.47, lng: -73.21 },
+    { lat: 44.48, lng: -73.21 },
+    { lat: 44.48, lng: -73.22 },
+  ];
+
+  it('closes the ring, so what leaves the draft is spec-valid GeoJSON', () => {
+    const shape = polygonShape(SQUARE, 10);
+    const ring = (shape.geometry as Polygon).coordinates[0] as number[][];
+    expect(ring).toHaveLength(SQUARE.length + 1);
+    expect(ring[0]).toEqual(ring[ring.length - 1]);
+    expect(isValidHazardShape(shape)).toBe(true);
+  });
+
+  it('holds the half-drawn states rather than throwing on them', () => {
+    // A ring is tapped out one corner at a time, so "two corners so far" is normal — it must be
+    // representable and then refused by the gate, exactly as a one-vertex line is.
+    for (const n of [0, 1, 2]) {
+      const shape = polygonShape(SQUARE.slice(0, n), 10);
+      expect(isValidHazardShape(shape)).toBe(false);
+    }
+    expect(isValidHazardShape(polygonShape(SQUARE.slice(0, 3), 10))).toBe(true);
+  });
+
+  it('refuses a self-intersecting ring', () => {
+    const bowtie: LatLng[] = [
+      { lat: 44.47, lng: -73.22 },
+      { lat: 44.48, lng: -73.21 },
+      { lat: 44.47, lng: -73.21 },
+      { lat: 44.48, lng: -73.22 },
+    ];
+    expect(isValidHazardShape(polygonShape(bowtie, 10))).toBe(false);
+  });
+
+  it('refuses an unclosed ring', () => {
+    expect(
+      isValidHazardShape({
+        geometryKind: 'polygon',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [SQUARE.map((v) => [v.lng, v.lat])],
+        },
+        bufferMeters: 10,
+      }),
+    ).toBe(false);
+  });
+
+  // The four cases the pre-N5b gate let through: it read `coordinates[0]` and nothing else, so
+  // anything past the first ring of the first part was unvalidated. Unreachable until a client could
+  // author a polygon, which is what this phase changed.
+  it('validates every ring, not just the first', () => {
+    const outer = [...SQUARE.map((v) => [v.lng, v.lat]), [SQUARE[0]?.lng, SQUARE[0]?.lat]];
+    const badHole = [
+      [Number.NaN, 44.475],
+      [-73.214, 44.475],
+      [-73.214, 44.476],
+      [Number.NaN, 44.475],
+    ];
+    expect(
+      isValidHazardShape({
+        geometryKind: 'polygon',
+        geometry: { type: 'Polygon', coordinates: [outer, badHole] as number[][][] },
+        bufferMeters: 10,
+      }),
+    ).toBe(false);
+  });
+
+  it('validates every part of a MultiPolygon, not just the first', () => {
+    const good = (polygonShape(SQUARE, 10).geometry as Polygon).coordinates;
+    const bad = [
+      [
+        [-73.2, 999],
+        [-73.19, 999],
+        [-73.19, 44.48],
+        [-73.2, 999],
+      ],
+    ];
+    expect(
+      isValidHazardShape({
+        geometryKind: 'polygon',
+        geometry: { type: 'MultiPolygon', coordinates: [good, bad] as number[][][][] },
+        bufferMeters: 10,
+      }),
+    ).toBe(false);
+  });
+
+  it('caps vertices across the whole geometry, not per ring', () => {
+    // The cost this bounds is buffering the row on every GPS fix in the on-ice watcher, and forty
+    // holes of forty vertices each costs what one 1,600-vertex ring does.
+    const smallRing = (offset: number): number[][] => {
+      const r = Array.from({ length: 60 }, (_, i) => {
+        const a = (2 * Math.PI * i) / 60;
+        return [-73.22 + offset + 0.0005 * Math.cos(a), 44.475 + 0.0005 * Math.sin(a)];
+      });
+      return [...r, r[0] as number[]];
+    };
+    const parts = Array.from({ length: 10 }, (_, i) => [smallRing(i * 0.002)]);
+    const total = parts.reduce((n, p) => n + (p[0]?.length ?? 0), 0);
+    expect(total).toBeGreaterThan(HAZARD_MAX_VERTICES);
+    expect(
+      isValidHazardShape({
+        geometryKind: 'polygon',
+        geometry: { type: 'MultiPolygon', coordinates: parts as number[][][][] },
+        bufferMeters: 10,
+      }),
+    ).toBe(false);
+  });
+
+  it('refuses an empty geometry rather than treating "no rings" as valid', () => {
+    expect(
+      isValidHazardShape({
+        geometryKind: 'polygon',
+        geometry: { type: 'Polygon', coordinates: [] },
+        bufferMeters: 10,
+      }),
+    ).toBe(false);
+    expect(
+      isValidHazardShape({
+        geometryKind: 'polygon',
+        geometry: { type: 'MultiPolygon', coordinates: [] },
+        bufferMeters: 10,
+      }),
+    ).toBe(false);
+  });
+
+  it('buffers a polygon outward by its halo, so the footprint contains the drawn ring', () => {
+    const shape = polygonShape(SQUARE, 25);
+    expect(surfaceAreaSqM(hazardFootprint(shape))).toBeGreaterThan(
+      surfaceAreaSqM(shape.geometry as Polygon),
+    );
+  });
+
+  it('draws the ring itself when the halo is zero', () => {
+    const shape = polygonShape(SQUARE, 0);
+    expect(hazardFootprint(shape)).toBe(shape.geometry);
   });
 });

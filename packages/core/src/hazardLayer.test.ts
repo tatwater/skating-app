@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { applyDraftMapClick, draftForType, resizeDraft } from './hazardDraft';
+import { applyDraftMapClick, draftForType, type HazardDraft, resizeDraft } from './hazardDraft';
 import {
   bodyFeaturesToFeatureCollection,
+  DRAFT_VERTEX_DOT_LIMIT,
   FRESHNESS_FILL_OPACITY,
   hazardColorExpression,
   hazardDraftToFeatureCollection,
@@ -235,6 +236,54 @@ describe('hazardDraftToFeatureCollection', () => {
     for (const f of hazardDraftToFeatureCollection(danger, 'open_water').features) {
       expect(f.properties).toMatchObject({ passage: false });
     }
+  });
+
+  /**
+   * Vertex dots are feedback for taps a person made. A snapped shore band (N5b) is a buffered,
+   * simplified shoreline arc — routinely 130+ corners nobody placed — and a dot on each one covers the
+   * band it is supposed to be clarifying.
+   */
+  describe(`the ${DRAFT_VERTEX_DOT_LIMIT}-corner dot limit (N5b)`, () => {
+    /** A ring of `n` corners around A, as a polygon draft. */
+    function ringDraft(n: number): HazardDraft {
+      return {
+        geometryKind: 'polygon',
+        vertices: Array.from({ length: n }, (_, i) => {
+          const a = (2 * Math.PI * i) / n;
+          return { lat: A.lat + 0.01 * Math.sin(a), lng: A.lng + 0.01 * Math.cos(a) };
+        }),
+        bufferMeters: 10,
+      };
+    }
+
+    it('dots every corner of a hand-tapped ring', () => {
+      const fc = hazardDraftToFeatureCollection(ringDraft(5), 'thawed_rotten');
+      expect(fc.features.filter((f) => f.properties?.role === 'vertex')).toHaveLength(5);
+    });
+
+    it('drops the dots on a derived ring, keeping the footprint that is the honest preview', () => {
+      const fc = hazardDraftToFeatureCollection(ringDraft(DRAFT_VERTEX_DOT_LIMIT + 1), 'thin_ice');
+      // Nothing is lost: a ring this size is long past storable, so the footprint — the shape that
+      // would actually be saved — is already on the map.
+      expect(fc.features.map((f) => f.properties?.role)).toEqual(['footprint']);
+    });
+
+    it('keeps dotting right up to the limit', () => {
+      const fc = hazardDraftToFeatureCollection(ringDraft(DRAFT_VERTEX_DOT_LIMIT), 'thin_ice');
+      expect(fc.features.filter((f) => f.properties?.role === 'vertex')).toHaveLength(
+        DRAFT_VERTEX_DOT_LIMIT,
+      );
+    });
+
+    // The affordance the dots exist for is the one that must never be traded away: a single tap with
+    // no shape yet has nothing but its dot.
+    it('still shows the first tap of a line, which has no footprint yet', () => {
+      const fc = hazardDraftToFeatureCollection(
+        applyDraftMapClick(draftForType('pressure_ridge'), A),
+        'pressure_ridge',
+      );
+      expect(fc.features.map((f) => f.properties?.role)).toEqual(['vertex']);
+    });
   });
 });
 

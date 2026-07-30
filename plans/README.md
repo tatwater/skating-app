@@ -1,8 +1,8 @@
 # Planning docs
 
-> **Where things stand (2026-07-28): every roadmap phase — 0 through 10 — is built**, and the
-> post-roadmap run **N1 → N2 → N3/N4 → N5a** has shipped on dev (read-path durability, sub-areas +
-> the lake editor, account lifecycle, seasons). **N5b** is scoped and unbuilt. Phase 8 was the last
+> **Where things stand (2026-07-29): every roadmap phase — 0 through 10 — is built**, and the
+> post-roadmap run **N1 → N2 → N3/N4 → N5a → N5b** has shipped on dev (read-path durability, sub-areas
+> + the lake editor, account lifecycle, seasons, hazard authoring). Phase 8 was the last
 > numbered phase. Everything still unbuilt is *explicitly* deferred and registered in
 > [`07-roadmap.md`](./07-roadmap.md) → *Later / deferred*, each phase doc's *Out of scope / deferred*
 > section, [`02-open-questions.md`](./02-open-questions.md), and
@@ -114,7 +114,8 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   **✅ Complete on dev (2026-07-28); prod deferred** — still **device-unverified**.
 - [N5b — Hazard authoring UX](./phase-N5b-hazard-authoring.md) — the geometry/input half of the old
   N5 entry, kept separate from N5a on purpose: N5a's risky half is a visibility change, N5b's is an
-  authoring change. 📐 *Scoped 2026-07-27, not built.*
+  authoring change. Freeform areas (the last of D51's three primitives) and snap-to-shoreline
+  (**D67**). **✅ Complete on dev (2026-07-29); prod deferred** — still **device-unverified**.
 
 
 ## How these fit together

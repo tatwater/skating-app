@@ -16,6 +16,8 @@ import {
   polygonBBox,
   polygonIoU,
   representativePoint,
+  ringSelfIntersects,
+  simplifyPath,
   surfaceAreaSqM,
 } from './geometry';
 
@@ -449,5 +451,120 @@ describe('destinationPoint (Phase 9.5 directional projection)', () => {
     const out = destinationPoint(origin, 42, 800);
     const back = destinationPoint(out, 42 + 180, 800);
     expect(haversineMeters(origin, back)).toBeLessThan(5);
+  });
+});
+
+describe('ringSelfIntersects', () => {
+  /** A closed ring from distinct `[lng, lat]` corners. */
+  function ring(...corners: [number, number][]): [number, number][] {
+    const first = corners[0] as [number, number];
+    return [...corners, first];
+  }
+
+  it('accepts a simple convex ring', () => {
+    expect(ringSelfIntersects(ring([0, 0], [1, 0], [1, 1], [0, 1]))).toBe(false);
+  });
+
+  it('accepts a concave ring — a hazard zone is rarely convex', () => {
+    // An L, whose reflex corner is the whole point: refusing concave shapes would refuse the
+    // shore-hugging zones this primitive exists for.
+    expect(ringSelfIntersects(ring([0, 0], [2, 0], [2, 1], [1, 1], [1, 2], [0, 2]))).toBe(false);
+  });
+
+  it('catches a bowtie', () => {
+    // The classic four-tap mistake: corners entered in the wrong order cross the ring over itself.
+    expect(ringSelfIntersects(ring([0, 0], [1, 1], [1, 0], [0, 1]))).toBe(true);
+  });
+
+  it('catches a ring that doubles back along its own edge', () => {
+    // Collinear overlap encloses no area where it happens, which is the same lie as a crossing.
+    expect(ringSelfIntersects(ring([0, 0], [2, 0], [1, 0], [1, 1]))).toBe(true);
+  });
+
+  it('does not mistake the shared endpoints of adjacent segments for a crossing', () => {
+    // Every ring has n shared vertices by construction, including the one that closes it — a naive
+    // all-pairs test reports every ring as self-intersecting.
+    expect(ringSelfIntersects(ring([0, 0], [1, 0], [1, 1]))).toBe(false);
+  });
+
+  it('is false for degenerate rings rather than throwing', () => {
+    expect(ringSelfIntersects([])).toBe(false);
+    expect(
+      ringSelfIntersects([
+        [0, 0],
+        [0, 0],
+      ]),
+    ).toBe(false);
+  });
+
+  it('never reports a convex ring as self-intersecting, at any size (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 3, max: 40 }),
+        fc.double({ min: 0.01, max: 5, noNaN: true }),
+        (n, r) => {
+          // Points on a circle in angular order are convex, hence simple, for any n.
+          const corners = Array.from({ length: n }, (_, i): [number, number] => {
+            const a = (2 * Math.PI * i) / n;
+            return [r * Math.cos(a), r * Math.sin(a)];
+          });
+          expect(ringSelfIntersects(ring(...corners))).toBe(false);
+        },
+      ),
+    );
+  });
+});
+
+describe('simplifyPath', () => {
+  /** A due-east path of `n` points spaced ~`stepDeg` apart, with an optional bulge at the middle. */
+  function path(n: number, bulgeDeg = 0): LatLng[] {
+    return Array.from({ length: n }, (_, i) => ({
+      lat: 44.5 + (i === Math.floor(n / 2) ? bulgeDeg : 0),
+      lng: -73.2 + i * 0.001,
+    }));
+  }
+
+  it('collapses a straight run to its endpoints', () => {
+    expect(simplifyPath(path(20), 10)).toEqual([path(20)[0], path(20)[19]]);
+  });
+
+  it('keeps a deviation larger than the tolerance', () => {
+    // ~0.005° of latitude is ~550 m; a 100 m tolerance must not throw that away.
+    const simplified = simplifyPath(path(21, 0.005), 100);
+    expect(simplified.map((p) => p.lat)).toContain(44.505);
+    expect(simplified.length).toBeLessThan(21);
+  });
+
+  it('drops a deviation smaller than the tolerance', () => {
+    // ~0.00005° is ~5.5 m — finer than a hazard band's own uncertainty, so keeping it would be
+    // storing precision the footprint doesn't have.
+    expect(simplifyPath(path(21, 0.00005), 100)).toHaveLength(2);
+  });
+
+  it('is a pass-through for short paths and non-positive tolerances', () => {
+    expect(simplifyPath(path(2), 100)).toEqual(path(2));
+    expect(simplifyPath(path(20), 0)).toEqual(path(20));
+  });
+
+  it('always keeps both endpoints and never grows the path (property)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.record({
+            lat: fc.double({ min: 44.4, max: 44.6, noNaN: true }),
+            lng: fc.double({ min: -73.3, max: -73.1, noNaN: true }),
+          }),
+          { minLength: 2, maxLength: 60 },
+        ),
+        fc.double({ min: 1, max: 500, noNaN: true }),
+        (points, tolerance) => {
+          const simplified = simplifyPath(points, tolerance);
+          expect(simplified.length).toBeGreaterThanOrEqual(2);
+          expect(simplified.length).toBeLessThanOrEqual(points.length);
+          expect(simplified[0]).toEqual(points[0]);
+          expect(simplified[simplified.length - 1]).toEqual(points[points.length - 1]);
+        },
+      ),
+    );
   });
 });

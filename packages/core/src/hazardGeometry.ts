@@ -25,6 +25,7 @@ import {
   haversineMeters,
   type LatLng,
   polygonBBox,
+  ringSelfIntersects,
 } from './geometry';
 import type { HazardType } from './types';
 
@@ -287,6 +288,29 @@ export function lineShape(vertices: readonly LatLng[], bufferMeters: number): Ha
 }
 
 /**
+ * Build a `polygon` shape from captured vertices (the freeform primitive, N5b).
+ *
+ * Constructed literally rather than via Turf's `polygon`, for the same reason `lineShape` is: Turf
+ * *throws* on a ring with fewer than four positions or one that isn't closed, and a ring is tapped out
+ * one vertex at a time — "two corners so far" is a normal intermediate the capture UI has to hold and
+ * render. The ring is closed here (the first position repeated last) so that everything downstream
+ * receives spec-valid GeoJSON, and `isValidHazardShape` remains the single gate on whether it's
+ * *storable*.
+ *
+ * `vertices` are the distinct corners, **without** the repeated closing position — that is what the
+ * draft holds and what an undo pops.
+ */
+export function polygonShape(vertices: readonly LatLng[], bufferMeters: number): HazardShape {
+  const ring = vertices.map((v) => [v.lng, v.lat] as [number, number]);
+  const first = ring[0];
+  return {
+    geometryKind: 'polygon',
+    geometry: { type: 'Polygon', coordinates: [first ? [...ring, first] : ring] },
+    bufferMeters,
+  };
+}
+
+/**
  * Hard ceiling on a hazard's radius / uncertainty half-width, in metres.
  *
  * A hazard is a *localized* danger within one water body — the largest default is a 60 m thaw-rotten
@@ -365,13 +389,37 @@ export function isValidHazardShape(shape: HazardShape): boolean {
       // but if present it still has to be a sane number.
       if (shape.bufferMeters !== undefined && !isSaneSize(shape.bufferMeters, { min: 0 }))
         return false;
-      const ring =
+      const parts =
         shape.geometry.type === 'Polygon'
-          ? shape.geometry.coordinates[0]
-          : shape.geometry.coordinates[0]?.[0];
-      // A closed ring repeats its first position, so a triangle is 4 positions.
-      if ((ring?.length ?? 0) < 4 || (ring?.length ?? 0) > HAZARD_MAX_VERTICES) return false;
-      return (ring ?? []).every(isSaneCoord);
+          ? [shape.geometry.coordinates]
+          : shape.geometry.coordinates;
+      if (parts.length === 0) return false;
+      // Every ring of every part, not just the first (N5b). This branch was unreachable until N5b
+      // gave a client a way to author a polygon; until then a hole or a second part could carry
+      // anything — a NaN in ring 2 reaches `hazardFootprint` exactly as readily as one in ring 1, and
+      // takes out the buffer for the whole row.
+      let positions = 0;
+      for (const rings of parts) {
+        if (rings.length === 0) return false;
+        for (const ring of rings) {
+          // A closed ring repeats its first position, so a triangle is 4 positions.
+          if (ring.length < 4) return false;
+          if (!ring.every(isSaneCoord)) return false;
+          const first = ring[0] as [number, number];
+          const last = ring[ring.length - 1] as [number, number];
+          if (first[0] !== last[0] || first[1] !== last[1]) return false;
+          // A bowtie is not a statement about where a hazard is. Checked on the *outer* ring only:
+          // an interior ring crossing itself is the same defect, so it is checked too — what is not
+          // checked is ring-against-ring containment, which Turf's buffer tolerates and no authoring
+          // path can produce.
+          if (ringSelfIntersects(ring)) return false;
+          positions += ring.length;
+        }
+      }
+      // The cap is on the whole geometry, not per ring: the thing it bounds is how expensive this row
+      // is to buffer on every GPS fix in the on-ice watcher, and forty holes of forty vertices each
+      // costs exactly what one 1,600-vertex ring does.
+      return positions <= HAZARD_MAX_VERTICES;
     }
   }
 }

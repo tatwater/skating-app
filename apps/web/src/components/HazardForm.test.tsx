@@ -5,14 +5,17 @@ import {
   HAZARD_DEFAULT_RADIUS_M,
   type HazardDraft,
   type HazardType,
+  resizeDraft,
+  switchDraftKind,
 } from '@skating/core';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import { HazardFormFields } from './HazardForm';
+import { HazardFormFields, type ShoreBandState } from './HazardForm';
 
 const A = { lat: 44.4759, lng: -73.2121 };
 const B = { lat: 44.481, lng: -73.204 };
+const C = { lat: 44.486, lng: -73.199 };
 
 /**
  * Renders the authoring fields with live draft state, so a test can drive the real transitions the
@@ -24,6 +27,7 @@ function renderFields(
     type?: HazardType | null;
     draft?: HazardDraft | null;
     photos?: { id: string; previewUrl: string; placeOnMap: boolean }[];
+    shore?: Partial<ShoreBandState>;
   } = {},
 ) {
   const spies = {
@@ -32,6 +36,8 @@ function renderFields(
     onCancel: vi.fn(),
     onAddFiles: vi.fn(),
     onRemovePhoto: vi.fn(),
+    onStartSnap: vi.fn(),
+    onFlipSnap: vi.fn(),
   };
   let latest: { type: HazardType | null; draft: HazardDraft | null };
   function Wrapper() {
@@ -46,13 +52,34 @@ function renderFields(
         error={null}
         submitting={false}
         photos={initial.photos ?? []}
+        shore={{
+          offered: false,
+          deriving: false,
+          halfWidthMeters: 25,
+          haloMeters: 10,
+          arcLengthMeters: null,
+          error: null,
+          onStart: spies.onStartSnap,
+          onFlip: spies.onFlipSnap,
+          ...initial.shore,
+        }}
         onChooseType={(next) => {
           setType(next);
           setDraft(draftForType(next));
         }}
+        onChooseKind={(kind) => {
+          if (draft && type) setDraft(switchDraftKind(draft, kind, type));
+        }}
         onDraftChange={setDraft}
+        onResize={(direction) => {
+          if (draft) setDraft(resizeDraft(draft, direction));
+        }}
         onDescriptionChange={() => {}}
-        {...spies}
+        onRequestPlace={spies.onRequestPlace}
+        onSubmit={spies.onSubmit}
+        onCancel={spies.onCancel}
+        onAddFiles={spies.onAddFiles}
+        onRemovePhoto={spies.onRemovePhoto}
       />
     );
   }
@@ -78,19 +105,29 @@ describe('primitive selection (D51)', () => {
     expect(screen.getByRole('button', { name: 'Place on map' })).toBeInTheDocument();
   });
 
-  it('offers the other primitive either way — both mistakes are real', () => {
+  it('offers every other primitive either way — all the mistakes are real', () => {
     const { get } = renderFields({
       type: 'open_water',
       draft: applyDraftMapClick(draftForType('open_water'), A),
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Draw it as a line instead' }));
+    fireEvent.click(screen.getByRole('button', { name: 'A line' }));
     expect(get().draft).toEqual({
       geometryKind: 'line',
       vertices: [A], // the spot you already knew is kept, not thrown away
       bufferMeters: HAZARD_DEFAULT_BUFFER_M.open_water,
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Mark a single spot instead' }));
+    fireEvent.click(screen.getByRole('button', { name: 'A spot' }));
     expect(get().draft?.geometryKind).toBe('point_radius');
+  });
+
+  // N5b: the primitive D51 always called opt-in and advanced. No type starts as one — reaching it is
+  // always a deliberate choice, which is why `retypeDraft` refuses to take it away again.
+  it('never starts a type as an area, and lets one be chosen', () => {
+    const { get } = renderFields();
+    fireEvent.click(screen.getByRole('button', { name: /Open water/ }));
+    expect(get().draft?.geometryKind).not.toBe('polygon');
+    fireEvent.click(screen.getByRole('button', { name: 'An area' }));
+    expect(get().draft?.geometryKind).toBe('polygon');
   });
 
   it('adopts the new type’s default size when the type changes mid-draft', () => {
@@ -215,5 +252,184 @@ describe('photos', () => {
       photos: [{ id: 'p1', previewUrl: 'blob:one', placeOnMap: false }],
     });
     expect(screen.queryByText(/Place this photo/)).not.toBeInTheDocument();
+  });
+});
+
+describe('freeform area authoring (N5b)', () => {
+  function areaFields(corners: (typeof A)[]) {
+    let draft = switchDraftKind(draftForType('thawed_rotten'), 'polygon', 'thawed_rotten');
+    for (const c of corners) draft = applyDraftMapClick(draft, c);
+    return renderFields({ type: 'thawed_rotten', draft });
+  }
+
+  it('will not post an area with two corners, and says why', () => {
+    areaFields([A, B]);
+    expect(screen.getByText(/an area needs at least three/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Post hazard' })).toBeDisabled();
+  });
+
+  it('becomes postable at three', () => {
+    areaFields([A, B, C]);
+    expect(screen.getByText(/Drawn with 3 corners/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Post hazard' })).toBeEnabled();
+  });
+
+  // Corners are dragged on the map by terra-draw, not popped from a list — offering "undo" here
+  // would be a second, disagreeing way to edit the same ring.
+  it('sends you back to the map to adjust rather than offering an undo', () => {
+    const { spies } = areaFields([A, B, C]);
+    expect(screen.queryByRole('button', { name: 'Undo last point' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Adjust corners' }));
+    expect(spies.onRequestPlace).toHaveBeenCalled();
+  });
+
+  it('describes the width as give around the edge, never a surveyed one', () => {
+    areaFields([A, B, C]);
+    expect(screen.getByText(/of give around the edge/)).toBeInTheDocument();
+    expect(screen.getByText(/not an exact edge/)).toBeInTheDocument();
+  });
+});
+
+describe('snap to shoreline (N5b)', () => {
+  it('is offered for a shore-shaped type', () => {
+    renderFields({
+      type: 'thin_ice',
+      draft: draftForType('thin_ice'),
+      shore: { offered: true },
+    });
+    expect(screen.getByRole('button', { name: 'Along the shore' })).toBeInTheDocument();
+    expect(screen.getByText(/follows the lake’s own outline/)).toBeInTheDocument();
+  });
+
+  it('is absent for a type that isn’t shore-shaped', () => {
+    // A ridge is linear but not shore-*shaped*; snapping one to a shoreline would be offering the
+    // wrong geometry, confidently.
+    renderFields({
+      type: 'pressure_ridge',
+      draft: draftForType('pressure_ridge'),
+      shore: { offered: false },
+    });
+    expect(screen.queryByRole('button', { name: 'Along the shore' })).not.toBeInTheDocument();
+  });
+
+  it('shows how much shoreline the band covers, and offers the other way round', () => {
+    let draft = switchDraftKind(draftForType('thin_ice'), 'polygon', 'thin_ice');
+    for (const c of [A, B, C]) draft = applyDraftMapClick(draft, c);
+    const { spies } = renderFields({
+      type: 'thin_ice',
+      draft,
+      shore: { offered: true, deriving: true, arcLengthMeters: 1240, halfWidthMeters: 25 },
+    });
+    expect(screen.getByText(/Following 1240 m of shoreline/)).toBeInTheDocument();
+    // Decision 4: shorter is right almost always and silently wrong on a small pond, so the flip is
+    // a control rather than an inference.
+    fireEvent.click(screen.getByRole('button', { name: 'Go the other way round' }));
+    expect(spies.onFlipSnap).toHaveBeenCalled();
+  });
+
+  // Decision 3's "one stepper, two meanings": on a snapped band it is the distance out from shore,
+  // not a halo around a shape someone drew.
+  it('labels the stepper as distance out from shore while snapped', () => {
+    let draft = switchDraftKind(draftForType('thin_ice'), 'polygon', 'thin_ice');
+    for (const c of [A, B, C]) draft = applyDraftMapClick(draft, c);
+    renderFields({
+      type: 'thin_ice',
+      draft,
+      shore: {
+        offered: true,
+        deriving: true,
+        arcLengthMeters: 800,
+        halfWidthMeters: 25,
+        haloMeters: HAZARD_DEFAULT_BUFFER_M.thin_ice,
+      },
+    });
+    expect(screen.getByText(/about 25 m out from the shoreline/)).toBeInTheDocument();
+    expect(screen.getByText(/part that falls on land is trimmed off/)).toBeInTheDocument();
+  });
+
+  /**
+   * The band is the one primitive whose stepper number is **not** the whole footprint: `hazardFootprint`
+   * adds the type's uncertainty margin outside the derived ring (D67), so 25 m out warns from 35 m. That
+   * is two quantities rather than one applied twice — a claim about the ice, plus the margin every
+   * hazard gets — but left unsaid it reads as a footprint bigger than the skater was told, and a
+   * reviewer read exactly that as a double-buffer bug. So the total is on screen.
+   */
+  it('names the distance that actually warns, not just the band half-width', () => {
+    renderFields({
+      type: 'thin_ice',
+      draft: switchDraftKind(draftForType('thin_ice'), 'polygon', 'thin_ice'),
+      shore: {
+        offered: true,
+        deriving: true,
+        halfWidthMeters: 25,
+        haloMeters: 10,
+        arcLengthMeters: 400,
+      },
+    });
+    expect(
+      screen.getByText('about 25 m out from the shoreline — warned to 35 m'),
+    ).toBeInTheDocument();
+    // And says why the two differ, in the same breath as "an estimate is fine".
+    expect(screen.getByText(/estimate rather than a survey/)).toBeInTheDocument();
+  });
+
+  it('surfaces a refusal where the affordance is, and names the way out', () => {
+    renderFields({
+      type: 'thin_ice',
+      draft: draftForType('thin_ice'),
+      shore: {
+        offered: true,
+        error: 'Those two points are on different shorelines — an island and the main shore.',
+      },
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(/different shorelines/);
+    // The other two primitives are still right there, which is what makes a refusal survivable for
+    // someone standing on ice with a hazard to file.
+    expect(screen.getByRole('button', { name: 'A line' })).toBeInTheDocument();
+  });
+
+  /**
+   * The review fix: a refused band must keep every control that could rescue it.
+   *
+   * The commonest refusal is a band wide enough to close on itself — two ends nearly all the way round
+   * a small pond, which is exactly the case Decision 4's "go the other way" exists for. Narrowing fixes
+   * it at the same two ends. So the stepper has to still be the band's half-width while the refusal is
+   * on screen, and the flip has to still be offered: a refusal with no way through is worse than no
+   * affordance, for someone standing on ice with a hazard to file.
+   */
+  it('keeps the width stepper on the band, and the flip offered, through a refusal', () => {
+    const { spies } = renderFields({
+      type: 'thin_ice',
+      // A first refused snap leaves the draft the circle it started as — so this must not key off the
+      // draft being a polygon.
+      draft: draftForType('thin_ice'),
+      shore: {
+        offered: true,
+        deriving: true,
+        halfWidthMeters: 25,
+        arcLengthMeters: null,
+        error: 'Couldn’t make a clean band along that stretch of shore — it closes on itself.',
+      },
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(/closes on itself/);
+    expect(screen.getByText(/about 25 m out from the shoreline/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Narrower' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Go the other way round' }));
+    expect(spies.onFlipSnap).toHaveBeenCalled();
+  });
+
+  // A ring nobody tapped has no corner count worth reporting — and quoting one would imply the stepper
+  // and the undo apply to it.
+  it('describes a band being derived as a stretch of shore, never as corners', () => {
+    renderFields({
+      type: 'open_water',
+      draft: switchDraftKind(draftForType('open_water'), 'polygon', 'open_water'),
+      shore: { offered: true, deriving: true, halfWidthMeters: 25, arcLengthMeters: null },
+    });
+    expect(screen.getByText(/Picking a stretch of shore/)).toBeInTheDocument();
+    // No corner *count*. The "adjusting the corners takes it off the shoreline" hint stays — that one
+    // is about what happens next, not a claim about placements someone made.
+    expect(screen.queryByText(/Drawn with \d+ corner/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo last point' })).not.toBeInTheDocument();
   });
 });

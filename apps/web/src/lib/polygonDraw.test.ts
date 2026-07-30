@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parsePastedPolygon } from './subAreaDraw';
+import { parsePastedPolygon } from './polygonDraw';
 import { boundsForBody } from './waterMap';
 
 /** A ring the parser should accept in any of the three wrappers people actually paste. */

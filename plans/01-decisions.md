@@ -1766,3 +1766,108 @@ judged against; and a pass whose hazard scan hit its cap deliberately **doesn't*
 the next tick retries rather than accepting an unanswered question as finished. The index it reads is
 the one place a Convex index on an optional field being **non-sparse** is the behaviour we want —
 never-swept accounts have no value, `undefined` sorts before every number, so the range *is* the queue.
+
+## D67 — Freeform hazard areas, and shore bands that come off the lake's own outline (N5b)
+**Decided (2026-07-28; built in N5b.)** Completes the third of D51's three primitives, and instantiates
+the "snap to shoreline" affordance research §4 logged and Phases 9 and 10 each deferred. Both are
+authoring — no lifecycle, no new hazard type, no schema change.
+
+**Snapping is offered for `thin_ice` and `open_water`, and no others.** The N5b plan opened by naming
+`thin_ice_shore` and `ice_edge`, which are **not hazard types** — research §4 used them as English
+descriptions of a *shape*, and the plan read prose as identifiers. These two are the existing
+vocabulary's shore-shaped members: rotten shore ice, and a lead running along the ice edge. *Considered
+and rejected:* every line-capable type (snapping a mid-lake pressure ridge to a shoreline is offering
+the wrong geometry, confidently), and adding `wet_crack` / `overflow_slush` / `shell_area` — all of
+which frequently *occur* near shore without being shore-shaped.
+
+**Areas are drawn with terra-draw on web and tap-to-place on mobile — two UXs for one primitive, on
+purpose.** terra-draw has **no React Native adapter**; every adapter it ships targets `maplibre-gl`,
+the DOM library, and mobile's map is a native module. So the question the plan asked — *is a ~218 kB
+draw chunk acceptable on a phone?* — had no answer, because the chunk can never reach one. What was
+really being chosen is per-client mechanism. Web gets real vertex dragging, which is the specific
+capability D51 named when it deferred polygons in the first place; mobile gets the close-the-ring step
+on the tap-to-place trace that has shipped since Phase 9. The chunk stays **lazy** and is fetched only
+by the person who arms the tool.
+
+**No type defaults to a polygon.** `HAZARD_DEFAULT_GEOMETRY_KIND` gains no `polygon` entry, so the
+primitive is reached only by switching a draft to it — exactly the "opt-in, de-emphasized advanced
+affordance" D51 specified. On the ice this also protects the **two-tap guarantee**: an area needs
+three taps and a close, so every type still starts as a circle at the skater's GPS and a mitten-fumble
+that hits Done early still files something useful. A **hand-drawn** polygon correspondingly **survives
+a re-type** where a line does not: reaching one took a deliberate opt-in plus three placements, and the
+type picker must not silently destroy the primitive that costs the most care.
+
+**A snapped band is the exception to that, and only that one** *(amended 2026-07-29, from the review)*.
+Re-typing away from a shore band **drops the ring**. The two rules read as contradictory and aren't:
+what "survives a re-type" protects is *effort*, and a band cost two clicks, not three placements plus an
+opt-in. What it would carry across is worse than nothing — a `pressure_ridge` shaped exactly like a
+shoreline, a footprint the on-ice watcher measures against, asserting a geometry derived for a different
+type's shape. Web was doing this silently, directly beneath a comment claiming it didn't; mobile already
+reset to a circle. The rule is now the same on both.
+
+**A snapped band is stored as an ordinary `polygon`, and `bufferMeters` means what it means
+everywhere else.** The geometry is the shore arc buffered by the band half-width; `bufferMeters` is
+then the type-aware uncertainty halo `hazardFootprint` applies to any polygon. One rule downstream —
+which is the only thing that makes *"snapping is an input convenience, not a stored relationship"*
+true rather than merely said. Taken seriously in the UI too: the moment someone drags a corner on web,
+the band stops being snapped and becomes an ordinary area, and the copy says so.
+
+**The halo is a second quantity, not the same one twice** *(amended 2026-07-30, from Greptile's review
+of PR #32)*. A band derived at half-width `H` and stored with halo `B` warns from `H + B` out: at the
+default 25 m with `thin_ice`'s 10 m margin, a skater who said "25 m out" gets a footprint reaching 35 m.
+Read cold that looks like the buffer being applied twice, and it isn't. `H` is a claim about the **ice**
+— rotten shore ice runs tens of metres out, which is why `SHORE_BAND_DEFAULT_HALF_WIDTH_M` is 25 and not
+the type's 10 — and `B` is the type's uncertainty about **where any hazard's edge is**, which every other
+hazard in the app also carries. Dropping `B` would make a shore band the only hazard whose footprint is
+exactly its author's eyeball estimate, which is D3 read backwards: for a hazard footprint the fail-safe
+direction is *out*, and warning 10 m early is the error worth having. *Considered and rejected:* deriving
+the band at `H − B` so the total lands on `H` (breaks whenever `B ≥ H`, and quietly makes the number the
+skater set not the number the ring uses), and storing the band with `bufferMeters: 0` (no downstream
+special case — `hazardFootprint` handles a zero halo — but it strips the one hazard that most needs an
+uncertainty allowance of the only one it had).
+
+What the objection *did* land is **disclosure**. A band was the one primitive whose stepper number wasn't
+the whole footprint — on a line the buffer *is* the footprint, on a hand-drawn area the number is
+explicitly "give around the edge" — and both clients now name `H + B` next to the stepper and say why the
+two differ. A geometric test pins the relationship (ring alone reaches `H`, footprint reaches `H + B`, and
+the footprint can never reach *less* far than the band) rather than leaving it to be re-derived.
+
+The other obvious objection — a halo around a shore band spills onto land — **needed no new code**. Phase
+9.5's `clipFootprintToBody` already intersects a hazard's buffered footprint with the body polygon at
+insert, stores the clipped result, and is what the map draws and `distanceToHazard` measures. A shore
+band is the exact case it was written for, so the landward half of the band *and* of its halo are
+confined to the ice automatically. The band is therefore buffered **symmetrically** and left to that
+clip rather than offset one-sidedly here: two places deciding where the ice ends is how they come to
+disagree. *Considered and rejected:* storing the band as a `line` whose `bufferMeters` does all the
+widening — it reuses more machinery and would have shipped independently of polygon authoring, at the
+cost of two geometry kinds downstream for one affordance.
+
+**Only one size stepper is ever on screen.** Two widths exist in the model — the band half-width that
+derives the ring, and the halo around it — and never at the same moment. While snapping, ± tunes the
+half-width and the ring re-derives live; on a hand-drawn area it tunes the halo.
+
+**"While snapping" means while two shore taps are in hand — including while the band is refused**
+*(amended 2026-07-29, from the review)*. Both clients originally keyed the stepper on the band having
+come back *valid*, which took the width away at exactly the moment it was the fix. The commonest refusal
+is a band wide enough to seal into itself: measured on a ~100 m-radius pond going the long way round, the
+default 25 m half-width refuses where 15 m succeeds **at the same two taps**. A refusal is a state of the
+band, not the end of snapping, so it keeps every control that could rescue it — narrower, the other way
+round, or a different stretch — and the refusal copy names the width first. A safety affordance that
+dead-ends someone standing on ice with a hazard to file is worse than one that was never offered.
+
+**The shorter arc is the default, with an explicit "go the other way".** Two taps on a ring define two
+arcs; shorter is right almost always and silently wrong on a small pond or a narrow bay, where the band
+a skater means is most of the perimeter. A control, not an inference — and specifically not inferred
+from the map centre, which is unpredictable in exactly the cases that need predicting. **Taps that
+resolve to different rings are refused rather than guessed** (an island's shore and the mainland's, or
+two parts of a MultiPolygon), in the same spirit as N2's clip-refusal threshold, as is a tap more than
+500 m from any shoreline and a buffer that comes back as two lobes.
+
+**The polygon validator stopped being decorative.** `isValidHazardShape`'s `polygon` branch read
+`coordinates[0]` and nothing else — first ring of first part — capped vertices per-ring rather than in
+total, never required closure and never checked self-intersection. It was unreachable while no client
+could author a polygon; this decision makes it the thing standing between a scripted client and a
+footprint the on-ice watcher buffers on every GPS fix. Now every ring of every part, closure required,
+one cap across the whole geometry (forty holes of forty vertices cost what one 1,600-vertex ring does),
+and `ringSelfIntersects` on each ring. terra-draw refuses a crossing ring on web as a courtesy; the
+server refuses it because a client's manners are not evidence.
