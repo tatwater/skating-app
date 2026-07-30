@@ -1,14 +1,14 @@
 # Planning docs
 
-> **Where things stand (2026-07-29): every roadmap phase — 0 through 10 — is built**, and the
+> **Where things stand (2026-07-30): every roadmap phase — 0 through 10 — is built**, and the
 > post-roadmap run **N1 → N2 → N3/N4 → N5a → N5b** has shipped on dev (read-path durability, sub-areas
 > + the lake editor, account lifecycle, seasons, hazard authoring, lake depth).
 > Phase 8 was the last numbered phase. Everything still unbuilt is *explicitly* deferred and registered in
 > [`07-roadmap.md`](./07-roadmap.md) → *Later / deferred*, each phase doc's *Out of scope / deferred*
 > section, [`02-open-questions.md`](./02-open-questions.md), and
 > [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md). Non-feature work still
-> outstanding: the **prod cutover** (Convex prod uninitialized) and **device verification** of the
-> native surfaces.
+> outstanding: the **prod cutover** (Convex prod uninitialized), **device verification** of the native
+> surfaces, and the **N6a depth ETL run** (written and tested; needs three third-party downloads).
 
 This directory is the design record for the app: the vision, the decisions (with their
 *why*), the open questions, and the build sequence. It's meant to be read top-to-bottom
