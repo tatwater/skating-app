@@ -950,7 +950,7 @@ real topographic lines inside the lake polygons. The answer is yes, from measure
 and that turned out to be phase-sized on its own. Was sequenced after N1 so the two shared one reindex;
 **N1 has now shipped and its backfill is run**, so both are unblocked.)*
 
-**N6a — Lake depth: the precedence ladder and the shallow signal.** 📋 Planned — see
+**N6a — Lake depth: the precedence ladder and the shallow signal.** ✅ **BUILT + on dev 2026-07-30** (ETL written and tested but **not yet run** — it needs three third-party downloads plus a licence/column confirmation; not device-tested; prod deferred) — see
 [`phase-N6a-lake-depth.md`](./phase-N6a-lake-depth.md); decisions **D68** (provenance-carrying depth) and
 **D69** (shallow amplifies thaw only). **Four of this entry's own premises were false**, all corrected in
 the phase doc, and the first one reshaped the work:

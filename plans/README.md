@@ -2,7 +2,7 @@
 
 > **Where things stand (2026-07-29): every roadmap phase — 0 through 10 — is built**, and the
 > post-roadmap run **N1 → N2 → N3/N4 → N5a → N5b** has shipped on dev (read-path durability, sub-areas
-> + the lake editor, account lifecycle, seasons, hazard authoring), with **N6a** (lake depth) underway.
+> + the lake editor, account lifecycle, seasons, hazard authoring, lake depth).
 > Phase 8 was the last numbered phase. Everything still unbuilt is *explicitly* deferred and registered in
 > [`07-roadmap.md`](./07-roadmap.md) → *Later / deferred*, each phase doc's *Out of scope / deferred*
 > section, [`02-open-questions.md`](./02-open-questions.md), and
@@ -119,7 +119,8 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
 - [N6a — Lake depth](./phase-N6a-lake-depth.md) — the body-level depth attribute D56 was designed around
   and never got, as a provenance-carrying precedence ladder (**D68**: operator → LAGOS-US → HydroLAKES →
   GLOBathy), plus the shallow decay consumer that makes it mean something (**D69**: shallowness amplifies
-  the thaw response only, never the cold one). **📋 Planned (2026-07-29).**
+  the thaw response only, never the cold one). **✅ Built + on dev (2026-07-30); prod deferred** — the ETL
+  itself is written and tested but **not yet run**.
 - [N6b — The bathymetry layer](./phase-N6b-bathymetry-layer.md) — measured state-agency isobaths as a
   toggleable PMTiles overlay, VT + NH first. **📋 Designed, deliberately unbuilt.** Split from N6 at N6a's
   kickoff; carries the finding that GLOBathy's rasters are a distance transform and must never be drawn.
