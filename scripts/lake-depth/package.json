@@ -1,0 +1,24 @@
+{
+  "name": "@skating/lake-depth",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Manual lake-depth ETL (N6a): LAGOS-US DEPTH + HydroLAKES + GLOBathy → Convex. Not built or deployed.",
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "transform": "tsx src/cli.ts",
+    "load": "tsx src/load.ts"
+  },
+  "dependencies": {
+    "@skating/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "tsx": "^4.19.0",
+    "vitest": "^3.2.7"
+  }
+}

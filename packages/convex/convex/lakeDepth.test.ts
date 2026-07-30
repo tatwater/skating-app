@@ -323,3 +323,151 @@ describe('waterBodies.importDepths (the D68 ladder, enforced at the write bounda
     expect(row?.meanDepthSource).toBe('operator');
   });
 });
+
+describe('waterBodies.matchAndImportDepths (the geometric join)', () => {
+  /**
+   * A body at (44, -72) spanning `half` degrees. Inserted, then run **through `importCanonical`** on the
+   * same `externalId` — the insert is what gives us a typed id to assert on, and the import is what
+   * builds the N1 cell rows. Those rows are what `listedBodiesNearCoord` reads, so a body without them
+   * is unreachable from any spatial lookup (the same property that keeps an unlisted body invisible);
+   * hand-inserting one guesses at the ladder rung and gets it wrong.
+   */
+  async function seedSquareBody(
+    t: ReturnType<typeof convexTest>,
+    half: number,
+    areaSqM: number,
+    name = 'Test Lake',
+  ) {
+    const externalId = `way/${name}`;
+    const polygon = {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [-72 - half, 44 - half],
+          [-72 + half, 44 - half],
+          [-72 + half, 44 + half],
+          [-72 - half, 44 + half],
+          [-72 - half, 44 - half],
+        ],
+      ],
+    };
+    const bbox = { minLat: 44 - half, minLng: -72 - half, maxLat: 44 + half, maxLng: -72 + half };
+    const id = await seedBody(t, externalId, {
+      name,
+      polygon,
+      bbox,
+      centroid: { lat: 44, lng: -72 },
+      surfaceAreaSqM: areaSqM,
+    });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          name,
+          type: 'lake' as const,
+          source: 'osm' as const,
+          externalId,
+          polygon,
+          bbox,
+          centroid: { lat: 44, lng: -72 },
+          surfaceAreaSqM: areaSqM,
+        },
+      ],
+    });
+    return id;
+  }
+
+  test('stamps depth on the body the source lake’s point falls inside', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t, 0.05, 1e7);
+    const result = await t.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [
+        {
+          key: 'hylak/1',
+          point: { lat: 44, lng: -72 },
+          areaSqM: 1.2e7,
+          meanDepthM: 6,
+          meanDepthSource: 'hydrolakes_modeled' as const,
+        },
+      ],
+    });
+    expect(result.updated).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(body)))?.meanDepthM).toBe(6);
+  });
+
+  test('rejects an order-of-magnitude area mismatch, naming the body it declined', async () => {
+    // The one failure mode of a spatial join that produces a WRONG answer rather than no answer:
+    // a big lake's representative point landing inside the small pond next door.
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t, 0.005, 1e5, 'Little Pond');
+    const result = await t.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [
+        {
+          key: 'hylak/9',
+          point: { lat: 44, lng: -72 },
+          areaSqM: 8e7, // 800× our pond
+          maxDepthM: 60,
+          maxDepthSource: 'globathy' as const,
+        },
+      ],
+    });
+    expect(result).toMatchObject({ updated: 0, areaRejected: 1 });
+    expect(result.rejects[0]?.reason).toContain('Little Pond');
+    expect((await t.run((ctx) => ctx.db.get(body)))?.maxDepthM).toBeUndefined();
+  });
+
+  test('counts a point that lands on no body, and does not fall back to the nearest', async () => {
+    const t = convexTest(schema, modules);
+    await seedSquareBody(t, 0.005, 1e5);
+    const result = await t.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [
+        {
+          key: 'hylak/7',
+          // The polygon spans 43.995–44.005 (0.005° ≈ 555 m), so this sits ~330 m off its north
+          // shore — outside the body, but well inside the 0.01° box the lookup searches.
+          point: { lat: 44.008, lng: -72 },
+          areaSqM: 1e5,
+          maxDepthM: 9,
+          maxDepthSource: 'globathy' as const,
+        },
+      ],
+    });
+    expect(result).toMatchObject({ updated: 0, unmatched: 1 });
+    expect(result.rejects[0]?.reason).toMatch(/no listed body/);
+  });
+
+  test('skips the area gate when either side has no area (and still stamps)', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t, 0.05, 0);
+    const result = await t.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [
+        {
+          key: 'lagos/3',
+          point: { lat: 44, lng: -72 },
+          maxDepthM: 14,
+          maxDepthSource: 'lagos_us' as const,
+        },
+      ],
+    });
+    expect(result.updated).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(body)))?.maxDepthM).toBe(14);
+  });
+
+  test('honors the ladder — an operator value survives a geometric match too', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t, 0.05, 1e7);
+    await t.run((ctx) => ctx.db.patch(body, { maxDepthM: 3, maxDepthSource: 'operator' as const }));
+    const result = await t.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [
+        {
+          key: 'hylak/1',
+          point: { lat: 44, lng: -72 },
+          areaSqM: 1e7,
+          maxDepthM: 40,
+          maxDepthSource: 'globathy' as const,
+        },
+      ],
+    });
+    expect(result.skipped).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(body)))?.maxDepthM).toBe(3);
+  });
+});

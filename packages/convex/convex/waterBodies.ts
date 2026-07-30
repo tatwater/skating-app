@@ -37,6 +37,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
   internalQuery,
+  type MutationCtx,
   mutation,
   type QueryCtx,
   query,
@@ -1028,34 +1029,53 @@ export const importDepths = internalMutation({
         unmatched++;
         continue;
       }
-
-      const patch: Partial<Doc<'waterBodies'>> = {};
-      if (
-        item.meanDepthM !== undefined &&
-        item.meanDepthSource !== undefined &&
-        winsLadder(item.meanDepthSource, body.meanDepthSource)
-      ) {
-        patch.meanDepthM = item.meanDepthM;
-        patch.meanDepthSource = item.meanDepthSource;
-      }
-      if (
-        item.maxDepthM !== undefined &&
-        item.maxDepthSource !== undefined &&
-        winsLadder(item.maxDepthSource, body.maxDepthSource)
-      ) {
-        patch.maxDepthM = item.maxDepthM;
-        patch.maxDepthSource = item.maxDepthSource;
-      }
-      if (Object.keys(patch).length === 0) {
-        skipped++;
-        continue;
-      }
-      await ctx.db.patch(body._id, patch);
-      updated++;
+      if (await applyDepthLadder(ctx, body, item)) updated++;
+      else skipped++;
     }
     return { updated, unmatched, skipped };
   },
 });
+
+/** An offered depth pair with its provenance, as either depth entry point hands it to the ladder. */
+interface OfferedDepths {
+  meanDepthM?: number;
+  meanDepthSource?: DepthSource;
+  maxDepthM?: number;
+  maxDepthSource?: DepthSource;
+}
+
+/**
+ * Apply the D68 ladder to one body and return whether anything changed. **The single place the ladder
+ * is enforced** — both depth entry points (`by_external_id` and the spatial match) go through here, so
+ * "an operator value is never overwritten" is one rule in one function rather than a convention two
+ * mutations each have to remember.
+ */
+async function applyDepthLadder(
+  ctx: MutationCtx,
+  body: Doc<'waterBodies'>,
+  offered: OfferedDepths,
+): Promise<boolean> {
+  const patch: Partial<Doc<'waterBodies'>> = {};
+  if (
+    offered.meanDepthM !== undefined &&
+    offered.meanDepthSource !== undefined &&
+    winsLadder(offered.meanDepthSource, body.meanDepthSource)
+  ) {
+    patch.meanDepthM = offered.meanDepthM;
+    patch.meanDepthSource = offered.meanDepthSource;
+  }
+  if (
+    offered.maxDepthM !== undefined &&
+    offered.maxDepthSource !== undefined &&
+    winsLadder(offered.maxDepthSource, body.maxDepthSource)
+  ) {
+    patch.maxDepthM = offered.maxDepthM;
+    patch.maxDepthSource = offered.maxDepthSource;
+  }
+  if (Object.keys(patch).length === 0) return false;
+  await ctx.db.patch(body._id, patch);
+  return true;
+}
 
 /**
  * Whether an incoming source may replace the one already stored. A better *or equal* rank wins, so
@@ -1067,6 +1087,93 @@ function winsLadder(incoming: DepthSource, existing?: DepthSource): boolean {
   if (existing === 'operator') return incoming === 'operator';
   return DEPTH_SOURCE_RANK[incoming] <= DEPTH_SOURCE_RANK[existing];
 }
+
+/**
+ * How far apart two areas may be and still be believed to describe the same lake. HydroLAKES, LAGOS-US
+ * and OSM each draw a shoreline from a different water mask at a different date, so exact agreement is
+ * not on offer — but an order-of-magnitude disagreement means the point landed on the wrong body, which
+ * is the one failure mode of a spatial join that produces a *wrong* answer instead of no answer. 4× is
+ * deliberately loose: a false reject costs one lake its depth, a false accept stamps a 40 m lake's
+ * depth onto the pond next door and quietly tells the decay model that pond is deep.
+ */
+const DEPTH_MATCH_AREA_RATIO = 4;
+
+/**
+ * Spatially match a batch of source lakes to our bodies and stamp their depths (internal; the N6a ETL's
+ * load stage). The global sources are keyed to their **own** lake ids — `Hylak_id`, `lagoslakeid` — so
+ * there is no join key to our OSM corpus and the join has to be geometric.
+ *
+ * The match runs **here rather than in the ETL** because the spatial index lives here: resolving ~8k
+ * source lakes against the cell index costs ~8k small indexed lookups, where doing it locally would
+ * mean exporting all 116,070 bodies with their polygons first. It reuses `listedBodiesNearCoord` — the
+ * degenerate one-box viewport read N1 built for coord→lake resolution — so the depth join and the "you
+ * are at Lake X" hint agree by construction about which body a point is on.
+ *
+ * **Every rejection is counted and named**, because an ETL that silently matches 60% of its input looks
+ * exactly like one that matched all of it.
+ */
+export const matchAndImportDepths = internalMutation({
+  args: {
+    lakes: v.array(
+      v.object({
+        // The source's own id, echoed back in the per-lake outcome so a run can be diffed/resumed.
+        key: v.string(),
+        point: latLng,
+        areaSqM: v.optional(v.number()),
+        meanDepthM: v.optional(v.number()),
+        meanDepthSource: v.optional(literals(DEPTH_SOURCES)),
+        maxDepthM: v.optional(v.number()),
+        maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
+      }),
+    ),
+  },
+  handler: async (ctx, { lakes }) => {
+    let updated = 0;
+    let unmatched = 0;
+    let areaRejected = 0;
+    let skipped = 0;
+    const rejects: { key: string; reason: string }[] = [];
+
+    for (const lake of lakes) {
+      const byId = await listedBodiesNearCoord(ctx, lake.point);
+      // No approach buffer: a lake's representative point must be *on* our polygon to be that lake.
+      // The 300 m parking buffer `resolveBodyForCoord` uses exists so a skater in the car resolves the
+      // lake; here it would let a point just off one shoreline claim the body across the road.
+      const matchId = nearestBodyForPoint(
+        lake.point,
+        [...byId.values()].map((b) => ({
+          ref: b._id,
+          polygon: b.polygon as unknown as Polygon | MultiPolygon,
+          surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
+        })),
+        0,
+      );
+      const body = matchId ? byId.get(matchId) : undefined;
+      if (!body) {
+        unmatched++;
+        rejects.push({ key: lake.key, reason: 'no listed body at this point' });
+        continue;
+      }
+
+      const ours = body.surfaceAreaSqM;
+      if (ours !== undefined && ours > 0 && lake.areaSqM !== undefined && lake.areaSqM > 0) {
+        const ratio = Math.max(ours / lake.areaSqM, lake.areaSqM / ours);
+        if (ratio > DEPTH_MATCH_AREA_RATIO) {
+          areaRejected++;
+          rejects.push({
+            key: lake.key,
+            reason: `area mismatch with "${body.name}": ${Math.round(ours)} m² vs ${Math.round(lake.areaSqM)} m² (${ratio.toFixed(1)}×)`,
+          });
+          continue;
+        }
+      }
+
+      if (await applyDepthLadder(ctx, body, lake)) updated++;
+      else skipped++;
+    }
+    return { updated, unmatched, areaRejected, skipped, rejects };
+  },
+});
 
 /**
  * Internal seed (run via `pnpm exec convex run`, no auth) — the Phase 2.5 re-seed of the community
