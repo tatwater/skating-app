@@ -13,12 +13,16 @@
 import {
   bboxIntersects,
   classifyDedup,
+  DEPTH_SOURCE_RANK,
+  DEPTH_SOURCES,
   type DedupClassification,
   type DedupShape,
+  type DepthSource,
   displayScore,
   isKnownStateCode,
   isMinor,
   KNOWN_STATE_CODES,
+  MAX_PLAUSIBLE_DEPTH_M,
   MAX_SUGGESTED_SAMPLE_POINTS,
   MIN_VISIBLE_ZOOM_FLOOR,
   minVisibleZoom,
@@ -46,7 +50,7 @@ import {
 } from './lib/auth';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
-import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
+import { CANONICAL_SOURCES, REMOVAL_REASONS, WATER_BODY_SOURCES } from './lib/enums';
 import { isListed } from './lib/listing';
 import { takeCapped } from './lib/scan';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
@@ -914,6 +918,155 @@ export const setWeatherSamplePoints = mutation({
     return waterBodyId;
   },
 });
+
+/**
+ * Moderator: type in a body's depth — rung 1 of the D68 ladder (N6a).
+ *
+ * This is the path for a state-agency survey read off a chart (NH Fish & Game, VT ANR) or firsthand local
+ * knowledge, and it **outranks every automated source**: the depth ETL refuses to overwrite an
+ * `operator`-sourced value, so a correction here is durable across re-imports and re-runs.
+ *
+ * Both numbers are independently clearable, because a moderator will often know one and not the other —
+ * "this pond is about 8 ft at its deepest" is a max with no mean, and inventing a mean from it is the
+ * inference D68 exists to stop. `undefined` clears the value *and* its source together, so a body can
+ * never carry provenance for a number it doesn't have.
+ */
+export const setDepth = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    meanDepthM: v.optional(v.number()),
+    maxDepthM: v.optional(v.number()),
+  },
+  handler: async (ctx, { waterBodyId, meanDepthM, maxDepthM }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+
+    for (const [label, value] of [
+      ['Mean', meanDepthM],
+      ['Max', maxDepthM],
+    ] as const) {
+      if (value === undefined) continue;
+      if (!Number.isFinite(value) || value <= 0) {
+        throw new ConvexError(`${label} depth must be a positive number of metres.`);
+      }
+      if (value > MAX_PLAUSIBLE_DEPTH_M) {
+        throw new ConvexError(
+          `${label} depth of ${value} m is deeper than any lake in the region (Seneca, the deepest, is ~188 m) — if you're reading a chart in feet, divide by 3.28.`,
+        );
+      }
+    }
+    // The one cross-field check worth making: a mean deeper than the max is a transposition, and it
+    // would flip `isShallowDepth` (which prefers the mean) to the wrong answer on a real lake.
+    if (meanDepthM !== undefined && maxDepthM !== undefined && meanDepthM > maxDepthM) {
+      throw new ConvexError(
+        `Mean depth (${meanDepthM} m) can't exceed max depth (${maxDepthM} m) — the two look transposed.`,
+      );
+    }
+
+    await ctx.db.patch(waterBodyId, {
+      meanDepthM,
+      meanDepthSource: meanDepthM === undefined ? undefined : 'operator',
+      maxDepthM,
+      maxDepthSource: maxDepthM === undefined ? undefined : 'operator',
+    });
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_lake_depth',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason: describeDepthChange(meanDepthM, maxDepthM),
+      metadata: { meanDepthM, maxDepthM },
+      createdAt: Date.now(),
+    });
+    return waterBodyId;
+  },
+});
+
+function describeDepthChange(meanDepthM?: number, maxDepthM?: number): string {
+  const parts: string[] = [];
+  if (meanDepthM !== undefined) parts.push(`mean ${meanDepthM} m`);
+  if (maxDepthM !== undefined) parts.push(`max ${maxDepthM} m`);
+  return parts.length > 0 ? `Set depth: ${parts.join(', ')}` : 'Cleared depth';
+}
+
+/**
+ * Idempotently stamp depths from the N6a ETL, honoring the D68 ladder (internal, never client-callable).
+ *
+ * Two rules the loader enforces rather than trusting its input for:
+ *  - **an `operator` value is never overwritten.** A moderator typed a survey in; a re-run of a global
+ *    modelled join must not quietly undo that. This is the durability half of D68's top rung.
+ *  - **a worse rung never displaces a better one**, per measurement. So the pipeline can be re-run with
+ *    sources in any order, or with one source added later, and converges on the same answer — the same
+ *    property `importCanonical` has and for the same reason (these runs get interrupted and resumed).
+ */
+export const importDepths = internalMutation({
+  args: {
+    depths: v.array(
+      v.object({
+        source: literals(WATER_BODY_SOURCES),
+        externalId: v.string(),
+        meanDepthM: v.optional(v.number()),
+        meanDepthSource: v.optional(literals(DEPTH_SOURCES)),
+        maxDepthM: v.optional(v.number()),
+        maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
+      }),
+    ),
+  },
+  handler: async (ctx, { depths }) => {
+    let updated = 0;
+    let unmatched = 0;
+    let skipped = 0;
+    for (const item of depths) {
+      const body = await ctx.db
+        .query('waterBodies')
+        .withIndex('by_external_id', (q) =>
+          q.eq('source', item.source).eq('externalId', item.externalId),
+        )
+        .unique();
+      if (!body) {
+        unmatched++;
+        continue;
+      }
+
+      const patch: Partial<Doc<'waterBodies'>> = {};
+      if (
+        item.meanDepthM !== undefined &&
+        item.meanDepthSource !== undefined &&
+        winsLadder(item.meanDepthSource, body.meanDepthSource)
+      ) {
+        patch.meanDepthM = item.meanDepthM;
+        patch.meanDepthSource = item.meanDepthSource;
+      }
+      if (
+        item.maxDepthM !== undefined &&
+        item.maxDepthSource !== undefined &&
+        winsLadder(item.maxDepthSource, body.maxDepthSource)
+      ) {
+        patch.maxDepthM = item.maxDepthM;
+        patch.maxDepthSource = item.maxDepthSource;
+      }
+      if (Object.keys(patch).length === 0) {
+        skipped++;
+        continue;
+      }
+      await ctx.db.patch(body._id, patch);
+      updated++;
+    }
+    return { updated, unmatched, skipped };
+  },
+});
+
+/**
+ * Whether an incoming source may replace the one already stored. A better *or equal* rank wins, so
+ * re-running the same source with a corrected value updates rather than silently no-ops — which is the
+ * behavior you want when a source republishes, and the reason this isn't a strict `<`.
+ */
+function winsLadder(incoming: DepthSource, existing?: DepthSource): boolean {
+  if (existing === undefined) return true;
+  if (existing === 'operator') return incoming === 'operator';
+  return DEPTH_SOURCE_RANK[incoming] <= DEPTH_SOURCE_RANK[existing];
+}
 
 /**
  * Internal seed (run via `pnpm exec convex run`, no auth) — the Phase 2.5 re-seed of the community

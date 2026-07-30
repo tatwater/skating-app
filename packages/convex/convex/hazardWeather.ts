@@ -25,6 +25,7 @@ import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { isShallowBody } from './lib/depth';
 import { hazardCenter, nearestSamplePoint } from './lib/sampling';
 import { takeCapped } from './lib/scan';
 import { resolveWeatherSince } from './weather';
@@ -49,6 +50,8 @@ interface HazardWeatherJob {
   weatherAdjustedAt?: number;
   lat: number;
   lng: number;
+  /** Whether the hazard's body is shallow — amplifies the thaw response only (N6a / D69). */
+  isShallow: boolean;
 }
 
 /**
@@ -88,7 +91,13 @@ export const listActiveHazardsForWeather = internalQuery({
       'hazardWeather.listActiveHazardsForWeather',
     );
 
-    const bodyCache = new Map<string, Doc<'waterBodies'> | null>();
+    // One entry per body, holding both the row and its shallowness (N6a). Cached together because the
+    // shallow check costs an indexed read of the body's features and many hazards share a body — the
+    // same reason the body row itself is cached. Bounded by hazard-carrying bodies, not the corpus.
+    const bodyCache = new Map<
+      string,
+      { body: Doc<'waterBodies'> | null; isShallow: boolean } | undefined
+    >();
     const jobs: HazardWeatherJob[] = [];
     const deferred: Id<'hazards'>[] = [];
     for (const h of hazards) {
@@ -97,16 +106,19 @@ export const listActiveHazardsForWeather = internalQuery({
         continue;
       }
       const key = h.waterBodyId;
-      let body = bodyCache.get(key);
-      if (body === undefined) {
-        body = await ctx.db.get(h.waterBodyId);
-        bodyCache.set(key, body);
+      let entry = bodyCache.get(key);
+      if (entry === undefined) {
+        const body = await ctx.db.get(h.waterBodyId);
+        // Skip the feature read entirely for a body we're about to defer anyway.
+        const isShallow = body && !body.removedAt ? await isShallowBody(ctx, body) : false;
+        entry = { body, isShallow };
+        bodyCache.set(key, entry);
       }
-      if (!body || body.removedAt) {
+      if (!entry.body || entry.body.removedAt) {
         deferred.push(h._id);
         continue;
       }
-      const point = nearestSamplePoint(body, hazardCenter(h));
+      const point = nearestSamplePoint(entry.body, hazardCenter(h));
       jobs.push({
         hazardId: h._id,
         type: h.type,
@@ -114,6 +126,7 @@ export const listActiveHazardsForWeather = internalQuery({
         weatherAdjustedAt: h.weatherAdjustedAt,
         lat: point.lat,
         lng: point.lng,
+        isShallow: entry.isShallow,
       });
     }
     return { jobs, deferred };
@@ -211,7 +224,9 @@ export const refreshHazardWeather = internalAction({
         if (summary === null) continue;
         await ctx.runMutation(internal.hazardWeather.storeHazardWeather, {
           hazardId: job.hazardId,
-          decayMultiplier: decayMultiplier(job.type, summary),
+          // The shallow bit rides in the body context, not the options object: it's a fact about the
+          // lake, not one of the tunable magnitudes (N6a / D69).
+          decayMultiplier: decayMultiplier(job.type, summary, {}, { isShallow: job.isShallow }),
           snowHidden: isSnowHidden(summary),
           weatherAdjustedAt: now,
           // The epoch the window (and thus this multiplier) was computed against — the CAS guard's key.

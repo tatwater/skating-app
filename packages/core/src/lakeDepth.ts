@@ -91,6 +91,18 @@ export const SHALLOW_MEAN_DEPTH_M = 3;
  */
 export const SHALLOW_MAX_DEPTH_M = 7;
 
+/**
+ * Upper sanity bound on a stored depth, in metres. The deepest lake in our five states is Seneca at
+ * ~188 m, so 400 m is roughly double anything real here.
+ *
+ * **A backstop, not a unit detector** — and worth being precise about, because it is tempting to claim
+ * more. A chart in feet reads ~3.3× too deep, which this only catches on genuinely deep lakes: 618 ft
+ * typed for Seneca sails through, while 200 ft typed for a 60 m lake is indistinguishable from a real
+ * number. It stops the transcription slip that turns a pond into a trench; it cannot stop a units mistake
+ * in general, which is why the operator UI labels its field in both units instead of relying on this.
+ */
+export const MAX_PLAUSIBLE_DEPTH_M = 400;
+
 export interface LakeDepths {
   meanDepthM?: number;
   maxDepthM?: number;

@@ -14,6 +14,7 @@
 
 import {
   CONDITION_SOURCES,
+  DEPTH_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
   PRECIP_TYPES,
@@ -349,10 +350,6 @@ export default defineSchema({
     polygon: geoJson, // Polygon / MultiPolygon (rivers: the reach/segment)
     bbox, // prefilter index
     centroid: latLng, // on-water representative point (D48); display + distance, not lookup
-    // Outlier flag for the two-tier `listInViewport` (D5): a body whose bbox spans more than the
-    // centroid prefilter's margin can have its centroid off-screen while its bbox fills the view,
-    // so it's queried by a direct short-list scan instead of the centroid index. Derived from
-    // bbox extent at import/create; see `waterBodies.listInViewport`.
     // Weather sampling escape hatch (Phase 10 / D56 §5). Weather doesn't vary below Open-Meteo's grid
     // (~2–25 km), so **every body samples at its centroid by default** — town/county is the wrong
     // abstraction. Only the few genuinely multi-cell giants (Champlain ~200 km) need more: an admin sets
@@ -360,6 +357,25 @@ export default defineSchema({
     // empty ⇒ `[centroid]`. Populated via the Phase 7 admin surface; no auto-population in v1.
     weatherSamplePoints: v.optional(v.array(latLng)),
     surfaceAreaSqM: v.optional(v.number()),
+    // Lake depth (N6a / D68). Best-available value plus **per-measurement** provenance: mean and max
+    // routinely come from different rungs of the ladder (LAGOS-US holds 17,675 maxima against 6,137
+    // means), so one `depthSource` could not honestly describe both. The ladder itself lives in
+    // `@skating/core`'s `lakeDepth.ts` — `operator` beats every automated source and the depth loader
+    // refuses to overwrite it; the rest is `state_agency` → `lagos_us` → HydroLAKES (split on `Vol_src`,
+    // reported above modelled) → `globathy` → `osm_tag`.
+    //
+    // No index: depth is only ever read with a body already in hand (the decay cron has the row, so does
+    // the drawer and the editor), and nothing selects *by* depth.
+    //
+    // Two consumers. The decay model reads shallowness as one bit (D69, via `isShallowBody` — depth OR a
+    // `shallow_bay_early_thaw` `bodyFeature`), and the clients show both numbers to skaters framed by
+    // their source: measured reads plainly, modelled reads as an estimate (D3 — a 90 m-DEM guess must not
+    // look like a depth-sounder transect). All optional ⇒ migration-free, and because `importCanonical`
+    // patches an explicit field list, depth survives a canonical re-import untouched.
+    meanDepthM: v.optional(v.number()),
+    maxDepthM: v.optional(v.number()),
+    meanDepthSource: v.optional(literals(DEPTH_SOURCES)),
+    maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
     // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
     // `minVisibleZoom` is its integer bucket, ALSO denormalized onto `waterBodyCells` so
     // `listInViewport` filters `minVisibleZoom <= zoom` in-query. All optional ⇒ migration-free;
