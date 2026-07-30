@@ -162,6 +162,34 @@ Worth checking a lake you know: Shelburne Pond should come back **shallow** desp
 mean over 194 ha), and Willoughby should not. That pair is the whole reason depth beats surface area as a
 proxy.
 
+### 6. Calibrate `SHALLOW_MAX_DEPTH_M` — do this on the first real run
+
+**This step is the point of the first load, not an optional extra.** `SHALLOW_MAX_DEPTH_M = 7` is the
+middle of a defensible 5–9 m band, not a derived number — it exists because most bodies have a max and no
+mean, and it leans generous on purpose (a false positive makes a hazard warning linger; a false negative
+loses the signal). It was always meant to be settled with data, and **the data arrives with this ETL**.
+
+LAGOS-US DEPTH carries roughly **6,137 lakes with both a mean and a max**. That is a labelled validation
+set: for each one, `mean ≤ 3 m` is the ground-truth answer and `max ≤ X` is the prediction. So after the
+load, over the *matched* bodies in our five states:
+
+1. Compute the mean:max ratio distribution. If our lakes cluster well above 0.4, the 7 m cutoff is
+   over-classifying and should come down; well below, it should go up.
+2. Sweep `X` from 4 to 10 m and report false-positive / false-negative counts against `mean ≤ 3 m`. Pick
+   the `X` that minimizes **false negatives** first — the asymmetry above is the tie-break, not accuracy.
+3. Test **relative depth** (max as a fraction of basin width, from the area every source already carries)
+   on the same set. It should separate "broad shallow sheet" from "small deep hole" — the exact case a
+   bare max threshold gets wrong. Adopt it only if it beats the flat cutoff by enough to justify a
+   two-input rule that's harder to explain.
+
+Write the numbers into [`plans/phase-N6a-lake-depth.md`](../../plans/phase-N6a-lake-depth.md) whichever way
+they come out — including "7 m was fine", which is a result and not a non-event.
+
+> **Why this is a runbook step and not a note in a plan doc.** Phase 7b built the `photo_orphans` metric
+> *and* an index expressly to decide whether a cron was worth writing, and nobody pointed at either for
+> months (see the N3 phase doc). An evidence gate nobody points at is not a gate. This one sits in the
+> procedure that produces the evidence.
+
 ---
 
 ## What this ETL deliberately does not do

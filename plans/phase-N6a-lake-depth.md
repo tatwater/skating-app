@@ -334,9 +334,42 @@ pin. Worth knowing before anyone looks for its effect in the wrong month and con
    LAGOS' home region (LAGOS-NE preceded LAGOS-US), so coverage should be comparatively good here, but
    "should be" is not a number. If the licence turns out to require attribution, it joins the
    Open-Meteo / OSM attribution set, which is a solved pattern.
-2. **Whether `maxDepthM` alone should set `isShallow`** when a body has a max but no mean. The plan says
-   yes at ≤ 7 m via the ~0.4 ratio, which is the common case rather than the edge case — worth a look at
-   the real distribution once loaded, since a deep hole in an otherwise shallow pond is precisely the
-   shape that ratio mishandles.
-3. **Whether the operator override should accept a source note** (which agency, which survey year) rather
-   than just `state_agency`. Leaning yes if it is one text field.
+2. ~~**Whether `maxDepthM` alone should set `isShallow`**~~ → **settled as provisional, with a named
+   settlement plan (founder call, 2026-07-30).** Yes at ≤ 7 m, and **explicitly not because 7 is right**.
+
+   The derivation is `SHALLOW_MEAN_DEPTH_M / 0.4`, using a typical basin mean:max ratio — but Hutchinson's
+   volume development runs ~0.33 (a cone) to ~0.6 (a flat basin), so the honest range is **5–9 m** and 7 is
+   its middle. The ratio also varies *with the thing being classified*: flat shallow ponds sit at the high
+   end, so a genuinely shallow pond often has a max nearer 5–6 m, which makes 7 m over-inclusive.
+
+   **The asymmetry is what decides it.** Under D69 shallowness only amplifies the *thaw* term, so a false
+   positive makes a `refreeze_healed`/`rotten` warning linger and prompts a ridge recheck sooner — bounded
+   by the never-hide rule and the map's opacity floor. A false negative loses the signal outright. Cheap
+   error, expensive error ⇒ lean generous, which turns the over-inclusiveness objection into the argument
+   *for* 7 m. (Founder confirmed the cheap-false-positive premise, which is the load-bearing half: it rests
+   on `structural`'s faster fade being acceptable on a shallow lake.)
+
+   The false negative keeps its named shape: a broad shallow sheet with one deep hole — mean 2 m, max 9 m —
+   reads as not shallow, and that is the class where a sheet goes out earliest. Mitigated, not solved, by
+   two existing rules: a mean **always wins** when present, and the `shallow_bay_early_thaw` flag overrides
+   the number entirely.
+
+   **Settlement: LAGOS-US DEPTH carries ~6,137 lakes with both a mean and a max — a labelled validation
+   set.** `mean ≤ 3 m` is ground truth, `max ≤ X` is the prediction. **Step 6 of the ETL runbook** sweeps X
+   over 4–10 m against our region's own matched lakes, minimizing false negatives first, and tests
+   *relative depth* (max as a fraction of basin width, from the area every source carries) on the same set
+   to see whether it separates "broad shallow sheet" from "small deep hole" well enough to earn a two-input
+   rule. That check lives in the runbook rather than here **on purpose** — Phase 7b built the
+   `photo_orphans` metric *and* an index to decide whether a cron was worth writing and nobody pointed at
+   either for months. An evidence gate nobody points at is not a gate.
+
+   *`SHALLOW_MEAN_DEPTH_M = 3` stays at the limnological convention* (founder call, same conversation): it
+   is the one number here with outside support, and since the max cutoff is derived *from* it, moving it by
+   taste would move both. Real data changes it or nothing does.
+3. ~~**Whether the operator override should accept a source note**~~ → **yes, shipped 2026-07-30** as the
+   **D68 amendment**. One public text field that *replaces* the `operator` rung's own label in the caption
+   skaters read — "NH Fish & Game bathymetry, 1998" instead of "entered by a moderator", which was
+   attribution in name only. Optional (a moderator who simply knows the pond has nothing to cite, and
+   forcing it yields "local knowledge" typed by rote); cleared when no depth remains; attached only to the
+   `operator` rung, so a leftover note never reads as a citation for a model's number; and carried into the
+   `moderationActions` reason, since the log is where you ask on what basis a claim was made.

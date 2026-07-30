@@ -75,21 +75,43 @@ export function isMeasuredDepthSource(source: DepthSource): boolean {
 }
 
 /**
- * A depth is *shallow* at or below this mean depth. 3 m is the conventional shallow/polymictic boundary:
- * such a basin mixes to the bottom, so it sheds heat fast enough to take first ice and warms fast enough
- * to go out first. Tunable default (D69).
+ * A depth is *shallow* at or below this mean depth. 3 m is the **conventional** shallow/polymictic
+ * boundary in limnology: such a basin mixes to the bottom, so it sheds heat fast enough to take first ice
+ * and warms fast enough to go out first.
+ *
+ * Left at the convention deliberately (founder call, 2026-07-30) rather than tuned by taste — it is the
+ * one number here with outside support, and moving it drags `SHALLOW_MAX_DEPTH_M` with it, since that is
+ * derived *from* this. Change it when real data says to, not before.
  */
 export const SHALLOW_MEAN_DEPTH_M = 3;
 
 /**
  * The max-depth fallback, used only when a body has no mean depth — **the common case**, since LAGOS-US
- * carries roughly three times more maxima than means. 7 m ≈ `SHALLOW_MEAN_DEPTH_M / 0.4`, the usual
- * mean:max ratio for a lake basin.
+ * carries roughly three times more maxima than means and GLOBathy gives *only* a max.
  *
- * The known weakness, recorded rather than hidden: a shallow pond with one deep hole has a max that
- * misrepresents the sheet. That errs toward *not* calling a body shallow, which under D69 means not
- * amplifying a thaw response — the conservative direction is the other one, so this is a real limitation
- * and the reason a mean depth always wins when we have one.
+ * **7 m is the middle of a wide band, not a derived number, and it is deliberately on the generous side.**
+ * It comes from `SHALLOW_MEAN_DEPTH_M / 0.4`, using a typical basin mean:max ratio — but that ratio
+ * (Hutchinson's volume development, `Dv = 3 × mean/max`) runs from ~0.33 for a cone to ~0.6 for a
+ * flat-bottomed basin, which puts the honest range at **5–9 m**. Worse, it varies *with the thing being
+ * classified*: flat shallow ponds sit at the high end, so a genuinely shallow pond often has a max nearer
+ * 5–6 m. On that alone 7 m over-classifies.
+ *
+ * **The errors are asymmetric, and that is why it stays high.** Under D69 being shallow only amplifies the
+ * *thaw* term, so a false positive makes a `refreeze_healed`/`rotten` warning linger and prompts a ridge
+ * recheck sooner — costs bounded by the never-hide rule and the map's opacity floor. A false negative
+ * loses the signal outright on a lake that deserved it. Cheap error, expensive error: lean generous.
+ *
+ * The false negative has a named shape worth remembering: a broad shallow sheet with one deep hole or a
+ * dredged channel — mean 2 m, max 9 m — reads as not shallow. Two things already catch it, and they are
+ * the reason this is a limitation rather than a hole: a mean **always wins** when we have one, and a
+ * moderator's `shallow_bay_early_thaw` flag overrides the number entirely.
+ *
+ * **How this gets settled, rather than argued (founder call, 2026-07-30).** LAGOS-US DEPTH holds ~6,137
+ * lakes with *both* a mean and a max — a labelled validation set. Once the ETL has run, fit the max cutoff
+ * that best reproduces the `mean ≤ 3 m` classification on our region's own lakes, and test whether
+ * *relative depth* (max as a fraction of basin width, computable from the area every source carries)
+ * separates "broad shallow sheet" from "small deep hole" well enough to earn its complexity. Step 6 of
+ * `scripts/lake-depth/README.md` is where that check actually happens.
  */
 export const SHALLOW_MAX_DEPTH_M = 7;
 

@@ -1950,6 +1950,27 @@ family, surfaced read-only on the Phase 7b tuning page.
 the classic Ashton-style estimate, and "this pond usually takes first ice" is a prediction, not history
 (D3). Same three-seasons corpus gate as hazard-recurrence promotion.
 
+**Both thresholds are provisional, and the max one is provisional in a specific way** *(founder call,
+2026-07-30)*. `SHALLOW_MEAN_DEPTH_M = 3` stays at the limnological convention — the one number here with
+outside support — and moves only on real data. `SHALLOW_MAX_DEPTH_M = 7` is the **middle of a defensible
+5–9 m band**, not a derived value: Hutchinson's volume development puts mean:max anywhere from ~0.33 to
+~0.6, and flat shallow ponds sit at the *high* end, which makes 7 m mildly over-inclusive on its own terms.
+
+It stays high because **the errors are asymmetric**. Shallowness only amplifies the thaw term, so a false
+positive makes a `refreeze_healed`/`rotten` warning linger and prompts a ridge recheck sooner — bounded by
+never-hide and the map's opacity floor — while a false negative loses the signal outright on a lake that
+deserved it. Cheap error against expensive error, so the objection to over-inclusiveness becomes the
+argument for it. The remaining false negative has a named shape: a broad shallow sheet with one deep hole
+(mean 2 m, max 9 m) reads as not shallow, mitigated by a mean always winning when present and by the
+`shallow_bay_early_thaw` flag overriding the number entirely.
+
+**And it gets settled with data rather than argument.** LAGOS-US DEPTH carries ~6,137 lakes with *both* a
+mean and a max — a labelled set where `mean ≤ 3 m` is ground truth. **Step 6 of `scripts/lake-depth`'s
+runbook** sweeps the cutoff against our own region's matched lakes, minimizing false negatives first, and
+tests relative depth on the same set. That check lives in the procedure that produces the evidence, not in
+a plan doc, because Phase 7b built a metric *and* an index to decide whether a cron was worth writing and
+nobody pointed at either for months.
+
 ## D68 amendment — an operator depth carries its evidence, publicly (N6a)
 **Decided (2026-07-30; founder call.)** The `operator` rung's public label was *"entered by a moderator"*,
 which is attribution in name only — it says a human is responsible without saying what they were reading.
