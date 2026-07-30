@@ -376,6 +376,16 @@ export default defineSchema({
     maxDepthM: v.optional(v.number()),
     meanDepthSource: v.optional(literals(DEPTH_SOURCES)),
     maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
+    // Free-text evidence behind an `operator` depth (D68 amendment, founder call): which agency, which
+    // chart, which year. **Public** — it replaces the `operator` rung's own label in the skater-facing
+    // caption, because "entered by a moderator" is attribution in name only and "NH Fish & Game, 1998
+    // chart" is the thing that makes a hand-entered number checkable.
+    //
+    // One note per body rather than per measurement, unlike the sources themselves: a moderator reading a
+    // chart gets both numbers off the same one, and free text absorbs the rare split ("mean from the 1998
+    // chart, max from the 2015 DEC survey") without a second field nobody fills. Cleared when no
+    // operator-sourced depth remains, so a note can never outlive the claim it substantiates.
+    depthSourceNote: v.optional(v.string()),
     // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
     // `minVisibleZoom` is its integer bucket, ALSO denormalized onto `waterBodyCells` so
     // `listInViewport` filters `minVisibleZoom <= zoom` in-query. All optional ⇒ migration-free;

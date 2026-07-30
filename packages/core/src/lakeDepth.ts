@@ -181,6 +181,8 @@ export interface DepthDisplay {
 export interface LakeDepthRecord extends LakeDepths {
   meanDepthSource?: DepthSource;
   maxDepthSource?: DepthSource;
+  /** Evidence behind an `operator` depth — a citation, shown in place of the rung's generic label. */
+  depthSourceNote?: string;
 }
 
 /**
@@ -214,7 +216,13 @@ export function describeLakeDepth(body: LakeDepthRecord): DepthDisplay | null {
   if (parts.length === 0) return null;
 
   sources.sort((a, b) => DEPTH_SOURCE_RANK[a] - DEPTH_SOURCE_RANK[b]);
-  const attribution = sources.map((s) => DEPTH_SOURCE_LABELS[s]).join(', ');
+  // A moderator's note replaces the `operator` rung's own label, which is the point of collecting it:
+  // "NH Fish & Game, 1998 chart" is checkable and "entered by a moderator" is attribution in name only.
+  // Absent, the generic label stands — which is honest, since we then genuinely don't know the basis.
+  const note = body.depthSourceNote?.trim();
+  const attribution = sources
+    .map((s) => (s === 'operator' && note ? note : DEPTH_SOURCE_LABELS[s]))
+    .join(', ');
   return {
     text: parts.join(' · '),
     caption: hasEstimate

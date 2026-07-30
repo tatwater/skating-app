@@ -1949,3 +1949,27 @@ family, surfaced read-only on the Phase 7b tuning page.
 `bodyFeature` can't express it); and a depth-derived **freeze-up prediction** — depth plus degree-days is
 the classic Ashton-style estimate, and "this pond usually takes first ice" is a prediction, not history
 (D3). Same three-seasons corpus gate as hazard-recurrence promotion.
+
+## D68 amendment — an operator depth carries its evidence, publicly (N6a)
+**Decided (2026-07-30; founder call.)** The `operator` rung's public label was *"entered by a moderator"*,
+which is attribution in name only — it says a human is responsible without saying what they were reading.
+`setDepth` now takes an optional **`sourceNote`**, stored on the body and **shown to skaters in place of
+that label**: *"Depth: NH Fish & Game bathymetry, 1998."* rather than *"Depth: entered by a moderator."*
+That is the difference between a hand-entered number being trusted and being checkable, and it costs one
+text field.
+
+**Optional, not required.** A moderator who simply knows the pond has nothing to cite, and forcing the
+field would produce "local knowledge" typed by rote — a citation-shaped string with no citation in it. An
+absent note falls back to the generic label, which is honest: it correctly says we don't know the basis.
+
+**One note per body, unlike the sources themselves.** Provenance is per *measurement* (D68 proper) because
+mean and max routinely arrive from different datasets; a moderator reading a chart, by contrast, gets both
+numbers off the same one. Free text absorbs the rare split — *"mean from the 1998 chart, max from the 2015
+DEC survey"* — without a second field nobody fills.
+
+**Two rules that keep it from lying.** The note is **cleared when no depth remains**, so a body can never
+assert a 1998 chart beside numbers a global model supplied; and it is attached **only to the `operator`
+rung** in the caption, so a note left behind next to a modelled value never reads as a citation for the
+model's number. It also goes into the `moderationActions` reason, because the moderation log is where you
+ask *"who claimed this, and on what basis"*, and a reason that omits the basis makes you go and diff the
+row.

@@ -471,3 +471,66 @@ describe('waterBodies.matchAndImportDepths (the geometric join)', () => {
     expect((await t.run((ctx) => ctx.db.get(body)))?.maxDepthM).toBe(3);
   });
 });
+
+describe('waterBodies.setDepth — the source note (D68 amendment)', () => {
+  test('stores a trimmed note and carries it into the audit reason', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setDepth, {
+      waterBodyId: body,
+      maxDepthM: 18,
+      sourceNote: '  NH Fish & Game bathymetry, 1998  ',
+    });
+    expect((await t.run((ctx) => ctx.db.get(body)))?.depthSourceNote).toBe(
+      'NH Fish & Game bathymetry, 1998',
+    );
+    // The moderation log is where you ask "who claimed this, on what basis" — so the basis is in it.
+    const audits = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'waterbody').eq('targetId', body as string),
+        )
+        .collect(),
+    );
+    expect(audits[0]?.reason).toContain('NH Fish & Game bathymetry, 1998');
+  });
+
+  test('clearing both depths clears the note — it can never outlive the claim', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/1', {
+      maxDepthM: 18,
+      maxDepthSource: 'operator' as const,
+      depthSourceNote: 'VT DEC chart, 2012',
+    });
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: body });
+    expect((await t.run((ctx) => ctx.db.get(body)))?.depthSourceNote).toBeUndefined();
+  });
+
+  test('a whitespace-only note stores as absent, not as an empty citation', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setDepth, {
+      waterBodyId: body,
+      maxDepthM: 9,
+      sourceNote: '   ',
+    });
+    expect((await t.run((ctx) => ctx.db.get(body)))?.depthSourceNote).toBeUndefined();
+  });
+
+  test('refuses a note long enough to be a paragraph (it renders inline)', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await expect(
+      mod.as.mutation(api.waterBodies.setDepth, {
+        waterBodyId: body,
+        maxDepthM: 9,
+        sourceNote: 'x'.repeat(200),
+      }),
+    ).rejects.toThrow(/keep it under/i);
+  });
+});

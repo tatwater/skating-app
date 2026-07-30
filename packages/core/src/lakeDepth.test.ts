@@ -282,3 +282,53 @@ describe('describeLakeDepth (the D3 display framing)', () => {
     );
   });
 });
+
+describe('describeLakeDepth — the operator source note (D68 amendment)', () => {
+  it('shows the note in place of the generic operator label', () => {
+    const d = describeLakeDepth({
+      maxDepthM: 18,
+      maxDepthSource: 'operator',
+      depthSourceNote: 'NH Fish & Game bathymetry, 1998',
+    });
+    expect(d?.caption).toBe('Depth: NH Fish & Game bathymetry, 1998.');
+    expect(d?.caption).not.toContain('moderator');
+  });
+
+  it('falls back to the generic label when there is no note — honest, not blank', () => {
+    const d = describeLakeDepth({ maxDepthM: 18, maxDepthSource: 'operator' });
+    expect(d?.caption).toBe('Depth: entered by a moderator.');
+  });
+
+  it('ignores a whitespace-only note', () => {
+    const d = describeLakeDepth({
+      maxDepthM: 18,
+      maxDepthSource: 'operator',
+      depthSourceNote: '   ',
+    });
+    expect(d?.caption).toBe('Depth: entered by a moderator.');
+  });
+
+  it('does NOT attach the note to a non-operator source', () => {
+    // A stray note next to a modelled value must not read as a citation for the model's number.
+    const d = describeLakeDepth({
+      maxDepthM: 18,
+      maxDepthSource: 'globathy',
+      depthSourceNote: 'NH Fish & Game, 1998',
+    });
+    expect(d?.caption).toContain('GLOBathy (modeled)');
+    expect(d?.caption).not.toContain('Fish & Game');
+  });
+
+  it('substitutes only the operator rung when sources are mixed', () => {
+    const d = describeLakeDepth({
+      meanDepthM: 4,
+      meanDepthSource: 'operator',
+      maxDepthM: 18,
+      maxDepthSource: 'globathy',
+      depthSourceNote: 'VT DEC chart, 2012',
+    });
+    expect(d?.caption).toContain('VT DEC chart, 2012');
+    expect(d?.caption).toContain('GLOBathy (modeled)');
+    expect(d?.caption).not.toContain('moderator');
+  });
+});

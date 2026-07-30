@@ -268,12 +268,14 @@ function DepthTool({
     maxDepthM?: number;
     meanDepthSource?: DepthSource;
     maxDepthSource?: DepthSource;
+    depthSourceNote?: string;
   };
   onResult: SetBanner;
 }) {
   const setDepth = useMutation(api.waterBodies.setDepth);
   const [mean, setMean] = useState(body.meanDepthM === undefined ? '' : String(body.meanDepthM));
   const [max, setMax] = useState(body.maxDepthM === undefined ? '' : String(body.maxDepthM));
+  const [note, setNote] = useState(body.depthSourceNote ?? '');
 
   const parse = (raw: string) => {
     const trimmed = raw.trim();
@@ -327,6 +329,7 @@ function DepthTool({
                 waterBodyId: body._id as Id<'waterBodies'>,
                 ...(parsedMean !== undefined ? { meanDepthM: parsedMean } : {}),
                 ...(parsedMax !== undefined ? { maxDepthM: parsedMax } : {}),
+                ...(note.trim() ? { sourceNote: note.trim() } : {}),
               });
               onResult({ tone: 'ok', text: 'Depth saved as a survey reading.' });
             } catch (err) {
@@ -343,6 +346,19 @@ function DepthTool({
         <span className="text-foreground">{echo(parsedMax) ?? ' —'}</span>. Charts are usually in
         feet; divide by 3.28.
       </p>
+      {/* The note is PUBLIC: it replaces "entered by a moderator" in the caption skaters read, which is
+          the whole reason to collect it. Optional — someone who simply knows the pond has nothing to
+          cite, and the generic fallback honestly says we don't know the basis. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="depth-note">Source (shown publicly)</Label>
+        <Input
+          id="depth-note"
+          value={note}
+          maxLength={160}
+          placeholder="NH Fish &amp; Game bathymetry, 1998"
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
       <p className="text-foreground-muted text-sm">
         {body.meanDepthSource === undefined && body.maxDepthSource === undefined
           ? 'No depth on record.'

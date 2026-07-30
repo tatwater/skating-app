@@ -931,14 +931,22 @@ export const setWeatherSamplePoints = mutation({
  * "this pond is about 8 ft at its deepest" is a max with no mean, and inventing a mean from it is the
  * inference D68 exists to stop. `undefined` clears the value *and* its source together, so a body can
  * never carry provenance for a number it doesn't have.
+ *
+ * `sourceNote` is the **evidence** behind the claim (D68 amendment, founder call) and it is **public** —
+ * it replaces the `operator` rung's own label in the skater-facing caption, because "entered by a
+ * moderator" is attribution in name only. Optional rather than required: a moderator who simply knows the
+ * pond has nothing to cite, and forcing the field would only produce "local knowledge" typed by rote —
+ * whereas an absent note falls back to the honest "entered by a moderator", which correctly says we don't
+ * know where the number came from.
  */
 export const setDepth = mutation({
   args: {
     waterBodyId: v.id('waterBodies'),
     meanDepthM: v.optional(v.number()),
     maxDepthM: v.optional(v.number()),
+    sourceNote: v.optional(v.string()),
   },
-  handler: async (ctx, { waterBodyId, meanDepthM, maxDepthM }) => {
+  handler: async (ctx, { waterBodyId, meanDepthM, maxDepthM, sourceNote }) => {
     const actor = await requireContributorRole(ctx, 'moderator');
     const body = await ctx.db.get(waterBodyId);
     if (!body) throw new ConvexError('Water body not found');
@@ -965,18 +973,29 @@ export const setDepth = mutation({
       );
     }
 
+    const trimmedNote = sourceNote?.trim();
+    if (trimmedNote !== undefined && trimmedNote.length > MAX_DEPTH_NOTE_LENGTH) {
+      throw new ConvexError(
+        `Source note is ${trimmedNote.length} characters; keep it under ${MAX_DEPTH_NOTE_LENGTH} — it renders inline on the lake, so it wants to be a citation, not a paragraph.`,
+      );
+    }
+    // A note can never outlive the claim it substantiates: clearing both depths clears it too. Otherwise
+    // a body would keep asserting "NH Fish & Game, 1998" next to numbers from a global model.
+    const keepNote = meanDepthM !== undefined || maxDepthM !== undefined;
+
     await ctx.db.patch(waterBodyId, {
       meanDepthM,
       meanDepthSource: meanDepthM === undefined ? undefined : 'operator',
       maxDepthM,
       maxDepthSource: maxDepthM === undefined ? undefined : 'operator',
+      depthSourceNote: keepNote && trimmedNote ? trimmedNote : undefined,
     });
     await ctx.db.insert('moderationActions', {
       actorId: actor._id,
       action: 'set_lake_depth',
       targetType: 'waterbody',
       targetId: waterBodyId,
-      reason: describeDepthChange(meanDepthM, maxDepthM),
+      reason: describeDepthChange(meanDepthM, maxDepthM, keepNote ? trimmedNote : undefined),
       metadata: { meanDepthM, maxDepthM },
       createdAt: Date.now(),
     });
@@ -984,11 +1003,17 @@ export const setDepth = mutation({
   },
 });
 
-function describeDepthChange(meanDepthM?: number, maxDepthM?: number): string {
+/** A citation, not a paragraph — it renders inline under the depth on the lake drawer. */
+const MAX_DEPTH_NOTE_LENGTH = 160;
+
+function describeDepthChange(meanDepthM?: number, maxDepthM?: number, sourceNote?: string): string {
   const parts: string[] = [];
   if (meanDepthM !== undefined) parts.push(`mean ${meanDepthM} m`);
   if (maxDepthM !== undefined) parts.push(`max ${maxDepthM} m`);
-  return parts.length > 0 ? `Set depth: ${parts.join(', ')}` : 'Cleared depth';
+  if (parts.length === 0) return 'Cleared depth';
+  // The note goes in the audit reason as well as on the row: the moderation log is where you look to ask
+  // "who claimed this and on what basis", and a reason that omits the basis makes you go and diff the row.
+  return `Set depth: ${parts.join(', ')}${sourceNote ? ` (${sourceNote})` : ''}`;
 }
 
 /**
