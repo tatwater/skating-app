@@ -1871,3 +1871,71 @@ footprint the on-ice watcher buffers on every GPS fix. Now every ring of every p
 one cap across the whole geometry (forty holes of forty vertices cost what one 1,600-vertex ring does),
 and `ringSelfIntersects` on each ring. terra-draw refuses a crossing ring on web as a courtesy; the
 server refuses it because a client's manners are not evidence.
+
+## D68 — Depth is a best-available number that carries its provenance (N6a)
+**Decided (2026-07-29; N6a kickoff.)** No single source gives us lake depth, and the sources differ in
+kind — some measured, some modelled — so depth is stored as a **best-available value plus a record of
+which rung produced it**. Four rungs, highest first: an **operator override** (a state-agency survey or
+local knowledge, typed into the N2 per-lake editor); **LAGOS-US DEPTH** (observed, ~65 compiled agency /
+university / monitoring sources, lakes > 1 ha); **HydroLAKES `Depth_avg`** (`Vol_total / Lake_area`);
+and **GLOBathy `Dmax`** (random forest over shoreline length / area / volume / elevation / watershed
+area).
+
+**Provenance is per measurement, not per body.** The register's N6 entry proposed a single
+`depthSource`, which cannot be honest: LAGOS-US holds 17,675 maximum depths and only 6,137 means, so a
+body will routinely carry a measured max next to a modelled mean. `meanDepthSource` and `maxDepthSource`
+are separate fields.
+
+**HydroLAKES splits into two rungs on `Vol_src`.** `Vol_src` 1 or 2 means `Depth_avg` derives from a
+*reported* volume rather than the geostatistical model, so those rows rank above `Vol_src = 3` —
+`hydrolakes_reported` and `hydrolakes_modeled` are distinct enum values. Free to honour, and treating all
+of HydroLAKES as one modelled rung would discard real measurements.
+
+**The ladder exists because the display depends on it (D3).** Mean and max depth are shown to skaters
+(founder call), and a 90 m-DEM-derived estimate must not render like a depth-sounder transect: a measured
+depth reads plainly and names its source, a modelled one reads as an estimate. Without per-measurement
+provenance that distinction cannot be drawn, and the honest fallback would have been to show nothing —
+which would have left ~93% of the corpus blank *and* thrown away the modelled numbers that are perfectly
+adequate as a decay input. Provenance is what lets one number serve both purposes at different
+confidence.
+
+**The operator rung is never overwritten by an import.** `waterBodies.importCanonical` patches an
+explicit field list, so depth already survives a canonical re-import; the depth loader additionally
+refuses to write over an `operator`-sourced value. *Considered and rejected:* a single `depthSource`
+(dishonest, above); storing every source's value and resolving at read time (a join table for a number
+almost nobody will disagree about, and it puts ladder logic on the read path); and inferring shallowness
+from surface area alone (Shelburne Pond is 194 ha and about 1.5 m deep — the inference this decision
+exists to stop being necessary).
+
+## D69 — Shallowness amplifies the thaw response only, never the cold one (N6a)
+**Decided (2026-07-29; founder call at N6a kickoff.)** Shallow water melts from the bottom and goes out
+early, which is why D56 wanted a body-level shallow signal — but it *also* freezes earlier, because there
+is less stored heat to give up. The physics points both ways, so "shallow ⇒ more weather-volatile" was a
+real candidate: scale the multiplier's deviation from 1 in whichever direction it already points.
+
+**Rejected, because its cold half is the unsafe half.** A symmetric amplifier would make cold-side
+*healing* faster on small ponds — the class of body where a skater is least protected and where the
+consolation "D56's never-hide bound caps it at `aging`" is doing more work than it should have to. The
+conservative reading is taken instead: **shallowness scales the `thawTerm` in `weatherDecaySignal` and
+never touches the `coldTerm`.**
+
+That lands correctly in every response class without changing a sign. `refreeze_healed` subtracts its
+thaw term (a thaw keeps a lead open → persist), so shallow persists harder. `structural` adds its thaw
+term (a thaw can melt a ridge out → fade to prompt a recheck), so shallow prompts the recheck sooner.
+`rotten` subtracts (a thaw worsens rot), so shallow keeps the warning up longer. `weather_insensitive`
+is untouched at m ≡ 1. **With no thaw, shallow changes nothing; with a thaw, shallow moves the multiplier
+further from 1 in the direction the type already went.** So all three of D52 §5's locked sign-flips
+survive by construction rather than by test, and the never-hide bound is unmodified.
+
+**Shallowness is a boolean, and it has to be.** The manual `shallow_bay_early_thaw` `bodyFeature` carries
+no number, and it must feed the same input — a body is shallow if its depth says so **or** a local flagged
+it. That flag is *permanent infrastructure*, not the stand-in the register called it: 73% of our corpus is
+under 1 ha, below the floor of every global depth source, and small ponds are exactly where the shallow
+signal is most predictive. Threshold: mean depth ≤ 3 m, or max depth ≤ 7 m when mean is absent (the common
+case; ~0.4 is the usual mean/max ratio). Tunable numbers in the "signs locked, magnitudes refittable"
+family, surfaced read-only on the Phase 7b tuning page.
+
+*Considered and rejected:* a continuous depth curve (wants the decay-magnitude refit's corpus, and the
+`bodyFeature` can't express it); and a depth-derived **freeze-up prediction** — depth plus degree-days is
+the classic Ashton-style estimate, and "this pond usually takes first ice" is a prediction, not history
+(D3). Same three-seasons corpus gate as hazard-recurrence promotion.

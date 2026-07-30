@@ -397,6 +397,16 @@ No backfill needed anywhere.
 
 ## Later / deferred
 
+- ~~**Lake depth / bathymetry data source (the shallow-water decay signal).**~~ **→ scoped as
+  [N6a](./phase-N6a-lake-depth.md) + [N6b](./phase-N6b-bathymetry-layer.md) (2026-07-29).** Kept in full
+  below because two of its claims are load-bearing and **wrong**, and someone reading this entry would act
+  on them: (a) *"v1 ships the signal without the data, manually"* — **it didn't.** The `bodyFeature` was
+  added to the enum and the admin dropdown and wired to no decay at all, so there is no `isShallow` scalar
+  and nothing reads shallowness anywhere. N6a builds the signal for the first time. (b) *"the decay model
+  reads a simple `isShallow` scalar and doesn't care where it came from"* describes an intention, not code.
+  Also superseded: **LAGOS-US DEPTH** (observed depths, lakes > 1 ha) is a better first source than either
+  named here, and the manual flag is **permanent** rather than a stand-in — 73% of the corpus sits below
+  every global source's area floor, and small ponds are where the shallow signal matters most.
 - **Lake depth / bathymetry data source (the shallow-water decay signal).** The research (§5, §8) wants a
   body-level **shallow/pond** signal — shallow water melts from the bottom first and goes out early — but
   we have **no depth data source today**. What we learned scoping this (2026-07-22):
