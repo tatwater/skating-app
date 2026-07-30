@@ -367,7 +367,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     // Snap-to-shoreline (N5b) takes the tap first: it's a two-tap affordance and the adjust bar
     // can't count them, so the map does. It never touches the draft — capture owns the body polygon
     // and turns the pair into geometry.
-    if (hazardShoreTaps !== null) {
+    //
+    // **Gated on drop mode**, which web gets for free by only calling its hazard handler while armed.
+    // The taps stay non-null after the band is derived (they're what the width and "Other way" controls
+    // re-derive from), so without this any later tap on the map slid the pair along — dropping the
+    // first end, keeping the second, and silently re-deriving the band from somewhere the skater
+    // wasn't pointing at a shore.
+    if (hazardDropMode && hazardShoreTaps !== null) {
       const next = [...hazardShoreTaps, { lat, lng }].slice(-2);
       setHazardShoreTaps(next);
       if (next.length === 2) setHazardDropMode(false);

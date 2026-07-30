@@ -199,6 +199,7 @@ export function HazardCapture() {
     const polygon = cachedBodyPolygon(capturedBodyId);
     if (!polygon) {
       setShoreError('This lake’s outline isn’t on the phone yet. Trace it as a line instead.');
+      setShoreArcLength(null);
       return;
     }
     const [a, b] = hazardShoreTaps as [{ lat: number; lng: number }, { lat: number; lng: number }];
@@ -445,7 +446,16 @@ export function HazardCapture() {
   const isLine = hazardDraft?.geometryKind === 'line';
   const isArea = hazardDraft?.geometryKind === 'polygon';
   const snapping = hazardShoreTaps !== null;
-  const snapped = isArea && snapping && hazardShoreTaps.length === 2 && shoreError === null;
+  /**
+   * Two taps in hand, so the ± stepper is on the band's half-width — **including after a refusal**.
+   * Narrowing is the way out of the commonest refusal (a band wide enough to close on itself), so a
+   * flag that went false on an error would hand that button back to the draft's own size and leave the
+   * skater with no way through except starting over. Not gated on `isArea` either: a first refused snap
+   * leaves the draft the circle it started as.
+   */
+  const banding = snapping && hazardShoreTaps.length === 2;
+  /** A band actually came back — the only state that can honestly quote a length of shoreline. */
+  const snapped = banding && shoreError === null && shoreArcLength !== null;
   const offersShore = hazardDraftType !== null && offersShoreBand(hazardDraftType);
   const placements = hazardDraft ? draftPlacementCount(hazardDraft) : 0;
   // `capturedBodyId` is part of this so Done can never be enabled when `post()` would bail on a
@@ -603,6 +613,12 @@ export function HazardCapture() {
               Following {Math.round(shoreArcLength ?? 0)} m of shoreline. The part that falls on
               land is trimmed off.
             </Paragraph>
+          ) : banding ? (
+            // Two taps in, nothing back yet — the cache read and derive are synchronous, so this is
+            // the frame between them. Never "N corners": nobody tapped those.
+            <Paragraph color="$foregroundMuted" fontSize={13}>
+              Picking a stretch of shore…
+            </Paragraph>
           ) : isArea && !postable ? (
             <Paragraph color="$foregroundMuted" fontSize={13}>
               {placements} {placements === 1 ? 'corner' : 'corners'} — tap Draw and add
@@ -635,9 +651,9 @@ export function HazardCapture() {
           <XStack gap="$2" alignItems="center" flexWrap="wrap">
             <Button
               size="$5"
-              accessibilityLabel={isLine || snapped ? 'Narrower' : 'Smaller'}
+              accessibilityLabel={isLine || banding ? 'Narrower' : 'Smaller'}
               onPress={() =>
-                snapped
+                banding
                   ? setShoreHalfWidth((w) => stepSize(w, HAZARD_BUFFER_STEPS_M, -1))
                   : setHazardDraft(resizeDraft(hazardDraft, -1))
               }
@@ -645,7 +661,9 @@ export function HazardCapture() {
               −
             </Button>
             <Text color="$foreground" fontSize={13} flex={1}>
-              {snapped
+              {/* `banding` before the primitive: a refused snap can leave the draft a circle, and the
+                  number under the stepper has to be the one the stepper is moving. */}
+              {banding
                 ? `about ${shoreHalfWidth} m out from shore`
                 : hazardDraft.geometryKind === 'point_radius'
                   ? `about ${hazardDraft.radiusMeters} m across`
@@ -655,9 +673,9 @@ export function HazardCapture() {
             </Text>
             <Button
               size="$5"
-              accessibilityLabel={isLine || snapped ? 'Wider' : 'Bigger'}
+              accessibilityLabel={isLine || banding ? 'Wider' : 'Bigger'}
               onPress={() =>
-                snapped
+                banding
                   ? setShoreHalfWidth((w) => stepSize(w, HAZARD_BUFFER_STEPS_M, 1))
                   : setHazardDraft(resizeDraft(hazardDraft, 1))
               }
@@ -693,26 +711,30 @@ export function HazardCapture() {
             <Button
               size="$4"
               onPress={() => {
-                if (snapped) {
+                // `banding`, not "banded": after a *refused* snap the taps are still armed, so leaving
+                // them would feed the next tap in as a third shore pick instead of a fresh first one.
+                if (banding) {
                   setShoreArcLength(null);
+                  setShoreError(null);
                   setHazardShoreTaps([]);
                 }
                 setHazardDropMode(true);
               }}
             >
-              {snapped ? 'Re-pick' : isLine ? 'Trace' : isArea ? 'Draw' : 'Move'}
+              {banding ? 'Re-pick' : isLine ? 'Trace' : isArea ? 'Draw' : 'Move'}
             </Button>
             <Button size="$4" disabled={addingPhotos} onPress={addPhotos}>
               {addingPhotos ? 'Adding…' : photos.length > 0 ? '📷 Add another' : '📷 Photo'}
             </Button>
-            {(isLine || (isArea && !snapped)) && placements > 0 ? (
+            {(isLine || (isArea && !banding)) && placements > 0 ? (
               <Button size="$4" onPress={() => setHazardDraft(undoDraftPlacement(hazardDraft))}>
                 {isLine ? 'Undo point' : 'Undo corner'}
               </Button>
             ) : null}
             {/* Two ways round a lake, and "shorter" is right almost always and silently wrong on a
-                small pond where the band you mean is most of the perimeter (Decision 4). */}
-            {snapped ? (
+                small pond where the band you mean is most of the perimeter (Decision 4). Offered
+                through a refusal too — it and the − stepper are two of the three ways out of one. */}
+            {banding ? (
               <Button size="$4" onPress={() => setShoreOtherWay((other) => !other)}>
                 Other way
               </Button>
@@ -764,7 +786,7 @@ export function HazardCapture() {
             ) : null}
             {/* Snapping is only offered for the two types that are genuinely shore-shaped
                 (Decision 1) — a ridge is linear but not *shore*-linear. */}
-            {offersShore && !snapped ? (
+            {offersShore && !banding ? (
               <Button
                 size="$3"
                 chromeless
