@@ -82,6 +82,7 @@ packages/
   convex/     # Convex schema, functions, client
   core/       # shared logic, types, validators (visibility, dedup, geo, units)
 plans/        # design documentation (start here today)
+docs/         # public documentation (how important systems work after they're built, and why)
 ```
 
 ## Contributing
