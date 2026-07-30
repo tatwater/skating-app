@@ -269,7 +269,7 @@ describe('isValidHazardShape', () => {
     ).toBe(false);
   });
 
-  it('validates a MultiPolygon by its first ring', () => {
+  it('accepts a single-part MultiPolygon and refuses one with no parts at all', () => {
     const ring = [
       [-73.22, 44.47],
       [-73.2, 44.48],

@@ -139,6 +139,22 @@ export function bodyFeaturesToFeatureCollection(
 }
 
 /**
+ * Above this many corners, a draft's vertex dots stop being drawn.
+ *
+ * The dots are feedback for placements a **person made one at a time** — that is the only thing they
+ * are for. A snapped shore band (N5b) arrives as a ring nobody tapped: a buffered, simplified
+ * shoreline arc, routinely 130–150 corners and capped at `HAZARD_MAX_VERTICES` (500). Drawing a dot
+ * on each one covers the band it is supposed to be clarifying, on the smallest screen, for the skater
+ * standing on the ice.
+ *
+ * Nothing is lost by suppressing them: a draft with this many corners is long past storable, so its
+ * **footprint** is already on the map, and the footprint is the honest preview — it is the shape that
+ * would be saved. The limit is deliberately far above any hand-tapped ring (two dozen taps with
+ * gloves on is not a thing that happens) so the affordance the dots exist for is untouched.
+ */
+export const DRAFT_VERTEX_DOT_LIMIT = 24;
+
+/**
  * The hazard being authored → the draft source.
  *
  * Two kinds of feature come out, because a polyline is drawn one placement at a time and the
@@ -147,8 +163,8 @@ export function bodyFeaturesToFeatureCollection(
  * - a **footprint** polygon, but only once `draftToShape` says the draft is storable — so the preview
  *   is the buffered band that would actually be saved, at the same width, computed by the same math.
  *   A one-vertex line has no honest footprint, so it doesn't get a fake one.
- * - a **vertex** point per placement, always. Without these, the first tap on a line would land with
- *   no feedback at all and the second would appear to come from nowhere.
+ * - a **vertex** point per placement, up to `DRAFT_VERTEX_DOT_LIMIT`. Without these, the first tap on
+ *   a line would land with no feedback at all and the second would appear to come from nowhere.
  *
  * `passage` rides along so a `ridge_crossing` draft previews in its own positive-but-cautious green
  * rather than danger red — you should not watch yourself draw a warning while marking a way across.
@@ -169,11 +185,12 @@ export function hazardDraftToFeatureCollection(
         },
       ]
     : [];
+  const vertices = draftVertices(draft);
   return {
     type: 'FeatureCollection',
     features: [
       ...footprint,
-      ...draftVertices(draft).map((v) => ({
+      ...(vertices.length > DRAFT_VERTEX_DOT_LIMIT ? [] : vertices).map((v) => ({
         type: 'Feature' as const,
         geometry: { type: 'Point' as const, coordinates: [v.lng, v.lat] },
         properties: { role: 'vertex', passage, healing: false },

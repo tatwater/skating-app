@@ -156,10 +156,10 @@ function pathLengthMeters(path: readonly LatLng[]): number {
 /**
  * Buffer an arc into the band's ring, simplifying until it fits under `HAZARD_MAX_VERTICES`.
  *
- * The tolerance starts at half the band's half-width — keeping shoreline detail finer than the
- * uncertainty the band already declares is storing precision the hazard doesn't have — and doubles
- * until the buffered ring fits. It always converges: each doubling strictly loses vertices until only
- * the two endpoints remain.
+ * The first attempt buffers the arc **as it came off the shoreline**; only if that overruns the cap
+ * does simplification start, at the band's own half-width and doubling from there — keeping shoreline
+ * detail finer than the uncertainty the band already declares is storing precision the hazard doesn't
+ * have. It always converges: each doubling strictly loses vertices until only the two endpoints remain.
  */
 function bandRing(arc: readonly LatLng[], halfWidthMeters: number): LatLng[] | null {
   let tolerance = Math.max(halfWidthMeters / 2, 1);
@@ -282,6 +282,10 @@ export function shoreBandRefusalText(reason: ShoreBandRefusal): string {
     case 'degenerate_arc':
       return 'Both points landed on the same bit of shore. Pick two ends further apart.';
     case 'unusable_band':
-      return 'Couldn’t make a clean band along that stretch of shore. Try a shorter section, or trace it as a line.';
+      // Names the two escapes that actually work, because the common cause is a band wide enough to
+      // close on itself: two ends nearly all the way round a small pond, buffered until the gap
+      // between them seals and the ring grows a hole. Narrowing fixes it at the same two ends, which
+      // is why the width is named first — and it stays adjustable while this message is on screen.
+      return 'Couldn’t make a clean band along that stretch of shore — it closes on itself. Make it narrower with −, or pick two ends with more shore between them.';
   }
 }

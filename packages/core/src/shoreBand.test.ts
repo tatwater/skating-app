@@ -8,6 +8,7 @@ import {
   offersShoreBand,
   SHORE_BAND_MAX_TAP_DISTANCE_M,
   SHORE_BAND_TYPES,
+  shoreBandRefusalText,
 } from './shoreBand';
 import { HAZARD_TYPES } from './types';
 
@@ -182,6 +183,48 @@ describe('deriveShoreBand', () => {
         },
       ),
     );
+  });
+});
+
+/**
+ * The refusal a skater is most likely to hit, and the two escapes its copy has to name.
+ *
+ * Decision 4's "go the other way" exists for the small pond where the band you mean is most of the
+ * perimeter — which is the same case where a default-width band closes on itself and gets refused. So
+ * the wording matters: "try a shorter section" alone sends someone away from what they meant, when
+ * narrowing keeps the two ends they picked.
+ */
+describe('a band that closes on itself (the near-full-perimeter case)', () => {
+  // ~100 m radius, so the perimeter is ~630 m — a real pond, not a pathological one.
+  const POND_RING = circleRing(40, 0.0009);
+  const POND: Polygon = { type: 'Polygon', coordinates: [POND_RING] };
+  /** Two ends ~31 m apart the short way round, so "the other way" is ~600 m of the perimeter. */
+  const ENDS = [ringPoint(POND_RING, 0), ringPoint(POND_RING, 38)] as const;
+
+  it('refuses at the default half-width, and is rescued by narrowing rather than re-picking', () => {
+    const wide = deriveShoreBand(POND, ENDS[0], ENDS[1], {
+      halfWidthMeters: 25, // SHORE_BAND_DEFAULT_HALF_WIDTH_M
+      theOtherWay: true,
+    });
+    expect(wide.ok).toBe(false);
+    if (wide.ok) return;
+    expect(wide.reason).toBe('unusable_band');
+
+    // Same two ends, one press of −. This is why the width stepper must stay on the band while a
+    // refusal is on screen — on both clients.
+    const narrow = deriveShoreBand(POND, ENDS[0], ENDS[1], {
+      halfWidthMeters: 15,
+      theOtherWay: true,
+    });
+    expect(narrow.ok).toBe(true);
+    if (!narrow.ok) return;
+    expect(isValidHazardShape(polygonShape(narrow.band.vertices, 15))).toBe(true);
+  });
+
+  it('names narrowing in its refusal text, not only a shorter stretch', () => {
+    const text = shoreBandRefusalText('unusable_band');
+    expect(text).toMatch(/narrower/i);
+    expect(text).toMatch(/more shore between them/i);
   });
 });
 
