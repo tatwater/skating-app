@@ -101,6 +101,41 @@ export interface WeatherDecayOptions {
   multiplierCap?: number;
   /** Upper clamp for rotten — milder, so only lots of extended cold ages it. Default 1.5. */
   rottenMultiplierCap?: number;
+  /**
+   * How much a **shallow** body amplifies the thaw term (D69). 1 = no effect; default 1.5 = a thaw
+   * counts half again as much on a shallow sheet. Never applied to a cold term — see `BodyDecayContext`.
+   */
+  shallowThawK?: number;
+}
+
+/**
+ * Facts about the **body** the hazard sits on, as distinct from the tuning knobs in
+ * `WeatherDecayOptions`. Kept a separate parameter on purpose: `WeatherDecayOptions` is the set the
+ * Phase 7b tuning page enumerates as "the magnitudes we might refit", and a fact about a lake is not a
+ * magnitude. All fields optional ⇒ every existing call site is unchanged and reads as "not shallow".
+ */
+export interface BodyDecayContext {
+  /**
+   * Whether this body is shallow — its depth says so (`isShallowDepth`) **or** a moderator flagged it
+   * with the `shallow_bay_early_thaw` `bodyFeature`. Shallow water melts from the bottom and goes out
+   * early, so a thaw counts for more here.
+   *
+   * **It amplifies the thaw term only, never the cold term (D69).** Shallow water also *freezes* earlier,
+   * so a symmetric "more volatile" amplifier was the obvious model — and its cold half would have sped
+   * confidence loss toward `stale` on exactly the small ponds where a skater is least protected.
+   *
+   * What the one-sided version guarantees, stated per response class because that is the honest form: a
+   * shallow `structural` multiplier is **≥** its deep counterpart (thaw is added — prompt the recheck
+   * sooner), a shallow `refreeze_healed`/`rotten` multiplier is **≤** its deep counterpart (thaw is
+   * subtracted — persist the warning longer), `weather_insensitive` is identical, and with no thaw at all
+   * nothing changes for any type. It therefore cannot flip any of the three locked sign-flips.
+   *
+   * *Not* guaranteed: that the multiplier only moves further from 1. In mixed weather where cold wins
+   * narrowly, a deep body can read just above 1 while a shallow one reads just below — and that crossing
+   * is the correct answer, since the same period nets "refreezing" for a deep lake and "thawing" for a
+   * shallow one. Recorded because the plan claimed the stronger invariant and a property test refuted it.
+   */
+  isShallow?: boolean;
 }
 
 export interface WeatherDecaySignal {
@@ -125,6 +160,7 @@ const DEFAULTS: Required<WeatherDecayOptions> = {
   multiplierFloor: 0.5,
   multiplierCap: 2.0,
   rottenMultiplierCap: 1.5,
+  shallowThawK: 1.5,
 };
 
 function clamp(x: number, lo: number, hi: number): number {
@@ -153,6 +189,7 @@ export function weatherDecaySignal(
   type: HazardType,
   weather: WeatherSinceSummary,
   opts: WeatherDecayOptions = {},
+  body: BodyDecayContext = {},
 ): WeatherDecaySignal {
   if (weather.hours === 0) return { multiplier: 1, snowHidden: false };
 
@@ -172,17 +209,23 @@ export function weatherDecaySignal(
   // This is the ONLY thing snow does to the multiplier, and it can only *reduce* cold's acceleration.
   const snowDamp = clamp(1 - snow / o.snowDampFullCm, o.snowDampMin, 1);
 
+  // A shallow body's thaw counts for more — and ONLY its thaw (D69). Applied as a factor on each
+  // branch's `thawTerm` rather than on the finished multiplier, which is what makes it structurally
+  // impossible for shallowness to touch a cold term or to change any sign: whatever direction the
+  // type's thaw response already pointed, this scales the distance travelled in it.
+  const shallowK = body.isShallow ? Math.max(0, o.shallowThawK) : 1;
+
   let multiplier: number;
   switch (response) {
     case 'refreeze_healed': {
       const coldTerm = o.refreezeColdK * (fdh / o.fdhScaleHours) * snowDamp; // ≥ 0 → fade faster
-      const thawTerm = o.refreezeThawK * (tdh / o.tdhScaleHours); // ≥ 0 → persist
+      const thawTerm = o.refreezeThawK * (tdh / o.tdhScaleHours) * shallowK; // ≥ 0 → persist
       multiplier = clamp(1 + coldTerm - thawTerm, o.multiplierFloor, o.multiplierCap);
       break;
     }
     case 'structural': {
       // Thaw escalates (fade to recheck); cold just persists → floored at 1, never a discount.
-      const thawTerm = o.structuralThawK * (tdh / o.tdhScaleHours);
+      const thawTerm = o.structuralThawK * (tdh / o.tdhScaleHours) * shallowK;
       multiplier = clamp(1 + thawTerm, 1, o.multiplierCap);
       break;
     }
@@ -191,7 +234,7 @@ export function weatherDecaySignal(
       // the warning persists (thawTerm can pull it below 1). Cold acceleration is MILD and needs a lot of
       // freezing to matter (bigger scale) — so it ages on its short base clock, not on a cold snap.
       const coldTerm = o.rottenColdK * (fdh / (o.fdhScaleHours * o.rottenColdScaleMult)) * snowDamp;
-      const thawTerm = o.rottenThawK * (tdh / o.tdhScaleHours);
+      const thawTerm = o.rottenThawK * (tdh / o.tdhScaleHours) * shallowK;
       multiplier = clamp(1 + coldTerm - thawTerm, o.multiplierFloor, o.rottenMultiplierCap);
       break;
     }
@@ -208,8 +251,9 @@ export function decayMultiplier(
   type: HazardType,
   weather: WeatherSinceSummary,
   opts: WeatherDecayOptions = {},
+  body: BodyDecayContext = {},
 ): number {
-  return weatherDecaySignal(type, weather, opts).multiplier;
+  return weatherDecaySignal(type, weather, opts, body).multiplier;
 }
 
 /** `effectiveAge = elapsed × multiplier`, floored at 0 (clock skew reads as fresh). */
@@ -234,8 +278,9 @@ export function weatherAdjustedFreshness(
   now: number,
   weather: WeatherSinceSummary,
   opts: WeatherDecayOptions = {},
+  body: BodyDecayContext = {},
 ): WeatherAdjustedFreshness {
-  const { multiplier, snowHidden } = weatherDecaySignal(type, weather, opts);
+  const { multiplier, snowHidden } = weatherDecaySignal(type, weather, opts, body);
   return {
     freshness: freshnessWithMultiplier(type, lastConfirmedAt, now, multiplier),
     multiplier,

@@ -1923,9 +1923,19 @@ That lands correctly in every response class without changing a sign. `refreeze_
 thaw term (a thaw keeps a lead open → persist), so shallow persists harder. `structural` adds its thaw
 term (a thaw can melt a ridge out → fade to prompt a recheck), so shallow prompts the recheck sooner.
 `rotten` subtracts (a thaw worsens rot), so shallow keeps the warning up longer. `weather_insensitive`
-is untouched at m ≡ 1. **With no thaw, shallow changes nothing; with a thaw, shallow moves the multiplier
-further from 1 in the direction the type already went.** So all three of D52 §5's locked sign-flips
-survive by construction rather than by test, and the never-hide bound is unmodified.
+is untouched at m ≡ 1. So all three of D52 §5's locked sign-flips survive by construction rather than by
+test, and the never-hide bound is unmodified.
+
+**The guarantee is directional per response class, not "further from 1"** *(corrected during the build,
+2026-07-30)*. The plan stated the stronger invariant — shallowness always moves the multiplier further
+from 1 — and a property test refuted it in about two seconds: in **mixed** weather where cold wins
+narrowly, a deep body reads just above 1 and a shallow one just below, so the shallow multiplier lands
+*closer* to 1 and on the other side of it. That crossing is **correct**, not a bug — the same period
+genuinely nets "refreezing" for a deep lake and "thawing" for a shallow one, which is the entire content
+of the decision. What holds absolutely is per-class: shallow `structural` ≥ deep, shallow
+`refreeze_healed`/`rotten` ≤ deep, `weather_insensitive` identical, and with no thaw nothing changes for
+any type. Worth recording because the weaker-sounding invariant is the one that is actually true, and a
+test asserting the stronger one would have been a test asserting a misunderstanding.
 
 **Shallowness is a boolean, and it has to be.** The manual `shallow_bay_early_thaw` `bodyFeature` carries
 no number, and it must feed the same input — a body is shallow if its depth says so **or** a local flagged

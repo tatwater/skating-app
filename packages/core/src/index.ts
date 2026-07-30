@@ -25,6 +25,7 @@ export * from './hazardPromotion';
 export * from './hazardProximity';
 export * from './hazardQueue';
 export * from './hazardWeatherDecay';
+export * from './lakeDepth';
 export * from './lakeSearch';
 export * from './metrics';
 export * from './oauthRedirect';

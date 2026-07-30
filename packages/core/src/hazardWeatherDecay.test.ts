@@ -262,3 +262,173 @@ describe('weatherAdjustedFreshness (D56) — the never-hide invariant', () => {
     expect(r.snowHidden).toBe(true);
   });
 });
+
+describe('shallow bodies (D69) — the thaw response only', () => {
+  const SHALLOW = { isShallow: true };
+
+  it('with no thaw, shallowness changes nothing at all — for every type', () => {
+    fc.assert(
+      fc.property(
+        arbType,
+        fc.double({ min: 0, max: 2000, noNaN: true }),
+        fc.double({ min: 0, max: 60, noNaN: true }),
+        (type, fdh, snow) => {
+          const w = wx({ freezingDegreeHours: fdh, thawDegreeHours: 0, snowfallCm: snow });
+          expect(decayMultiplier(type, w, {}, SHALLOW)).toBeCloseTo(decayMultiplier(type, w), 12);
+        },
+      ),
+    );
+  });
+
+  it('shallowness moves the multiplier in the direction that type’s thaw term pushes', () => {
+    // The invariant D69 actually guarantees, and it is per-response-class rather than "further from 1".
+    // "Further from 1" is FALSE in mixed weather: with cold and thaw both present and cold winning
+    // narrowly, a deep body reads m slightly above 1 while a shallow one reads slightly below — and
+    // that crossing is *correct*, since the same period nets "refreezing" for a deep lake and
+    // "thawing" for a shallow one. The real guarantee is directional per class.
+    fc.assert(
+      fc.property(arbType, arbWeather, (type, w) => {
+        const deep = decayMultiplier(type, w);
+        const shallow = decayMultiplier(type, w, {}, SHALLOW);
+        const response = HAZARD_WEATHER_RESPONSE[type];
+        if (response === 'structural') {
+          // Thaw is ADDED (escalate → prompt a recheck sooner).
+          expect(shallow).toBeGreaterThanOrEqual(deep - 1e-9);
+        } else if (response === 'weather_insensitive') {
+          expect(shallow).toBe(deep);
+        } else {
+          // Thaw is SUBTRACTED (persist the warning longer).
+          expect(shallow).toBeLessThanOrEqual(deep + 1e-9);
+        }
+      }),
+    );
+  });
+
+  it('all three locked sign-flips survive with isShallow set', () => {
+    fc.assert(
+      fc.property(
+        arbType,
+        arbWeather,
+        fc.double({ min: 0, max: 200, noNaN: true }),
+        (type, w, extraSnow) => {
+          // 1: rotten never gets a cold persistence discount.
+          expect(
+            decayMultiplier('thawed_rotten', wx({ ...w, thawDegreeHours: 0 }), {}, SHALLOW),
+          ).toBeGreaterThanOrEqual(1);
+          // 2: structural is floored at 1 — a shallow ridge still never earns a discount from cold.
+          for (const structural of STRUCTURAL_TYPES) {
+            expect(decayMultiplier(structural, w, {}, SHALLOW)).toBeGreaterThanOrEqual(1);
+          }
+          // 3: snow still never raises the multiplier.
+          const before = decayMultiplier(type, w, {}, SHALLOW);
+          const after = decayMultiplier(
+            type,
+            wx({ ...w, snowfallCm: w.snowfallCm + extraSnow }),
+            {},
+            SHALLOW,
+          );
+          expect(after).toBeLessThanOrEqual(before + 1e-9);
+        },
+      ),
+    );
+  });
+
+  it('stays inside the same clamps as a deep body (the caps are not widened)', () => {
+    fc.assert(
+      fc.property(arbType, arbWeather, (type, w) => {
+        const m = decayMultiplier(type, w, {}, SHALLOW);
+        expect(Number.isFinite(m)).toBe(true);
+        expect(m).toBeGreaterThanOrEqual(0.5);
+        expect(m).toBeLessThanOrEqual(2.0);
+      }),
+    );
+  });
+
+  it('a shallow body cannot accelerate cold-side healing — the reason D69 is one-sided', () => {
+    // The rejected symmetric model would have made this pond's hazard fade faster in a cold snap.
+    const cold = wx({ freezingDegreeHours: 400 });
+    for (const type of REFREEZE_TYPES) {
+      expect(decayMultiplier(type, cold, {}, SHALLOW)).toBe(decayMultiplier(type, cold));
+    }
+  });
+
+  it('concrete: a shallow lake persists a thin-ice warning longer than a deep one', () => {
+    const thaw = wx({ thawDegreeHours: 45 });
+    const deep = decayMultiplier('thin_ice', thaw);
+    const shallow = decayMultiplier('thin_ice', thaw, {}, SHALLOW);
+    expect(shallow).toBeLessThan(deep);
+    expect(shallow).toBeLessThan(1);
+  });
+
+  it('at the clamp, shallowness makes no difference — the caps bound it, as intended', () => {
+    // A big thaw already pins `refreeze_healed` to `multiplierFloor`, so the amplifier has nowhere to
+    // go. Recorded rather than worked around: D69 amplifies within the existing bounds and does not
+    // widen them, so its effect is confined to the mid-range where confidence is actually in question.
+    const bigThaw = wx({ thawDegreeHours: 900 });
+    expect(decayMultiplier('thin_ice', bigThaw, {}, SHALLOW)).toBe(
+      decayMultiplier('thin_ice', bigThaw),
+    );
+  });
+
+  it('concrete: a shallow lake prompts a ridge recheck sooner than a deep one', () => {
+    const thaw = wx({ thawDegreeHours: 60 });
+    expect(decayMultiplier('pressure_ridge', thaw, {}, SHALLOW)).toBeGreaterThan(
+      decayMultiplier('pressure_ridge', thaw),
+    );
+  });
+
+  it('weather-insensitive types ignore shallowness entirely', () => {
+    const w = wx({ thawDegreeHours: 500, freezingDegreeHours: 500 });
+    for (const type of ['spring_current', 'gas_hole', 'reef_hole'] as const) {
+      expect(decayMultiplier(type, w, {}, SHALLOW)).toBe(1);
+    }
+  });
+
+  it('shallowThawK: 1 is exactly the deep case (the knob can be turned off)', () => {
+    fc.assert(
+      fc.property(arbType, arbWeather, (type, w) => {
+        expect(decayMultiplier(type, w, { shallowThawK: 1 }, SHALLOW)).toBeCloseTo(
+          decayMultiplier(type, w),
+          12,
+        );
+      }),
+    );
+  });
+
+  it('weatherAdjustedFreshness threads the body context through', () => {
+    const thaw = wx({ thawDegreeHours: 45 });
+    const lastConfirmedAt = NOW - 20 * HOUR_MS;
+    const deep = weatherAdjustedFreshness('thin_ice', lastConfirmedAt, NOW, thaw);
+    const shallow = weatherAdjustedFreshness(
+      'thin_ice',
+      lastConfirmedAt,
+      NOW,
+      thaw,
+      {},
+      {
+        isShallow: true,
+      },
+    );
+    expect(shallow.multiplier).toBeLessThan(deep.multiplier);
+  });
+
+  it('the never-hide bound still holds for a shallow body', () => {
+    fc.assert(
+      fc.property(arbType, fc.integer({ min: 0, max: 2000 }), arbWeather, (type, hours, w) => {
+        const lastConfirmedAt = NOW - hours * HOUR_MS;
+        const baseline = deriveHazardFreshness(type, lastConfirmedAt, NOW);
+        const adjusted = weatherAdjustedFreshness(
+          type,
+          lastConfirmedAt,
+          NOW,
+          w,
+          {},
+          {
+            isShallow: true,
+          },
+        );
+        if (baseline !== 'stale') expect(adjusted.freshness).not.toBe('stale');
+      }),
+    );
+  });
+});

@@ -158,10 +158,16 @@ That lands correctly in all four branches without a single sign change:
 | `rotten` | subtracted (a thaw worsens rot → keep the warning up) | persists harder |
 | `weather_insensitive` | none (m ≡ 1) | unchanged |
 
-The invariant this buys, and the one to property-test: **with no thaw, shallow changes nothing; with a
-thaw, shallow moves the multiplier further from 1 in whatever direction the type already went.** It can
-never flip a sign, so all three of D52 §5's locked sign-flips survive by construction, and D56's
-never-hide bound continues to do its job unmodified.
+The invariant this buys is **directional per response class**: shallow `structural` ≥ deep, shallow
+`refreeze_healed`/`rotten` ≤ deep, `weather_insensitive` identical, and with no thaw nothing changes for
+any type. It can never flip a sign, so all three of D52 §5's locked sign-flips survive by construction,
+and D56's never-hide bound continues to do its job unmodified.
+
+*This doc first claimed the stronger form — "always moves the multiplier further from 1" — and the
+property test refuted it during the build. In mixed weather where cold wins narrowly, a deep body reads
+just above 1 and a shallow one just below; the crossing is the correct answer rather than a bug, since the
+same period nets "refreezing" for a deep lake and "thawing" for a shallow one. See the correction appended
+to D69.*
 
 **Shallowness is a boolean, not a curve.** It has to be, because the manual
 `shallow_bay_early_thaw` `bodyFeature` carries no number and must OR into the same input — a body is
