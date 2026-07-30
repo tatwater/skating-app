@@ -888,8 +888,8 @@ renders in a lake's drawer, at ~0 opacity, with its GPS path still on the aggreg
   makes the hazard half the *most* consequential part, and means the recurring-hazard case is currently
   handled **by accident** — the stale pin never leaves, asserting a position nobody has evidence for.
 
-~~**N5b — Hazard authoring UX.**~~ **✅ COMPLETE 2026-07-29** (built, all suites green; not
-deployed, not device-tested) — see [`phase-N5b-hazard-authoring.md`](./phase-N5b-hazard-authoring.md)
+~~**N5b — Hazard authoring UX.**~~ **✅ COMPLETE 2026-07-29** (built, deployed to dev, all suites green;
+**not device-tested**) — see [`phase-N5b-hazard-authoring.md`](./phase-N5b-hazard-authoring.md)
 for the design, the four corrections to what this entry and its own plan claimed, and decision
 **D67**.
 
@@ -917,7 +917,27 @@ takes shore taps first. Web now hands the band to the vertex editor — which ta
 shoreline, exactly as D67 says it should — and mobile offers Re-pick instead, since without terra-draw
 "adjust" would have meant re-tapping the whole ring.
 
-*Left for later:* nothing from this pass. Paste-GeoJSON stays admin-only, as scoped.
+**And six the review found after the suites were green** (all fixed; *§What the review found* in the
+phase doc has the detail). The load-bearing one: a **refused band was a dead end**, because both clients
+keyed the ± stepper on the band coming back *valid* — so a refusal took away the narrowing that fixes the
+commonest one. Measured: on a ~100 m pond going the long way round, the default 25 m half-width refuses
+where 15 m succeeds at the same two taps, which is exactly the small-pond case Decision 4 exists for. The
+others: a stray map tap on mobile silently re-picked the band (its shore-tap branch had no drop-mode
+gate, which web gets structurally); "pick a different stretch" armed terra-draw and shore-picking on one
+canvas; a snapped band re-typed onto a non-shore type kept its shoreline (now a D67 amendment — hand-drawn
+areas survive a re-type, bands don't); the draw banner read *"1 corners"*; and `waterBodies.get` fired on
+type selection rather than on arming the snap.
+
+**Two pre-existing bugs also got fixed here, outside this pass's scope.** Every admin *detail* page was a
+dead link — TanStack made `admin.water.$id.tsx` a child of an outlet-less leaf, so `/admin/water/:id` and
+`/admin/users/:id` (Phase 7's whole ban / suspend / grant-role surface) matched the URL and rendered the
+parent's queue table instead, with every test passing in isolation. Guarded now by a test on the route
+*file layout*. And favourite paint drifted onto the wrong lakes, because `setData` doesn't clear MapLibre
+feature-state and our ids are array indices, so panning rebound them.
+
+*Left for later:* nothing from this pass. Paste-GeoJSON stays admin-only, as scoped. The one thing the
+review deliberately didn't settle: whether 25 m is the right default band half-width for a small pond, or
+whether the derivation should try narrowing itself before refusing.
 
 **N6 — Lake-depth backfill: HydroLAKES + GLOBathy.** *(Sharpens the D56 decay model with real data
 instead of a manual flag. Was sequenced after N1 so the two shared one reindex; **N1 has now shipped

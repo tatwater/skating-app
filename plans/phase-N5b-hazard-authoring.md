@@ -3,15 +3,16 @@
 *Two affordances that make drawing a hazard match how skaters actually describe one. All client work;
 no lifecycle, no schema, no decay.*
 
-> **Status: ✅ COMPLETE 2026-07-29** — built, every suite green (core 978 · convex 787 · web 219 ·
-> mobile 79). **Not deployed and not device-tested**; prod deferred, as every phase since 2.5.
-> Decision **D67** is written into [`01-decisions.md`](./01-decisions.md). Split from the roadmap's
-> old N5 when the seasonal work ([N5a](./phase-N5a-seasons.md)) took over that entry's lifecycle half.
+> **Status: ✅ COMPLETE 2026-07-29** — built, **deployed to dev** (`agile-bee-397`), every suite green
+> (core 984 · convex 787 · web 221 · mobile 79). **Still not device-tested**; prod deferred, as every
+> phase since 2.5. Decision **D67** is written into [`01-decisions.md`](./01-decisions.md). Split from
+> the roadmap's old N5 when the seasonal work ([N5a](./phase-N5a-seasons.md)) took over that entry's
+> lifecycle half.
 >
 > Four of this doc's premises were checked against code at kickoff and **two of them were false** —
 > see *§What the build found in the plan*, the five founder calls in *§Decisions taken at kickoff*
-> that replaced this doc's open questions, and *§What the build found in itself* for the one bug the
-> build introduced and caught.
+> that replaced this doc's open questions, *§What the build found in itself* for the one bug the
+> build introduced and caught, and *§What the review found* for the ones it didn't.
 
 ## Why this is its own pass
 
@@ -219,7 +220,10 @@ Committed in this order; one PR at the end (per the phase convention).
    found* item 4 names: every ring on every part, a total vertex cap, and a self-intersection check.
 3. **`@skating/core` — the shore band.** `shoreBand.ts`: nearest-vertex-on-ring resolution, the
    boundary-substring extraction with both arcs, the multi-ring refusal, and the band derivation.
-   Property-tested against real body polygons.
+   Property-tested against **synthetic rings** — circles, a circle with an island, a two-lobed
+   MultiPolygon — not against corpus polygons, which this doc originally claimed. The properties under
+   test are about walking a ring, and a circle exercises those exactly as well; what a real shoreline
+   adds is vertex density, which the dense-ring simplification test covers directly.
 4. **Web — polygon authoring.** terra-draw on the skater hazard form, lazily, reusing the N2 control
    shape rather than a second wrapper.
 5. **Web — snap-to-shoreline**, the two-tap affordance plus the "go the other way" control.
@@ -274,18 +278,96 @@ starting at half the band's own half-width: a real shoreline is arbitrarily deta
 finer than the uncertainty a hazard has already declared is precision it doesn't have, paid for out of
 `HAZARD_MAX_VERTICES`.
 
+## Two fixes this pass made outside its own scope (2026-07-29)
+
+Both were found while wiring N5b, both were pre-existing, and both are the kind of bug that is
+invisible until someone reports the symptom rather than the cause. Recorded here because they shipped
+in this branch and belong to no other phase's doc.
+
+- **Every admin detail page was a dead link.** TanStack derives nesting from filenames, so
+  `admin.water.$id.tsx` was silently a *child* of `admin.water.tsx` — a leaf page with no `<Outlet/>`.
+  The router matched, the params resolved, and React rendered the parent's queue table instead, so
+  `/admin/water/:id` and `/admin/users/:id` (the whole ban / suspend / grant-role surface from Phase 7)
+  looked exactly like broken links while every one of their tests passed in isolation. Both parents were
+  renamed to `.index.tsx` to make them siblings, and the guard is a test on the **file layout** rather
+  than on any component, because that is where the bug lives: `routeNesting.test.ts` fails if any parent
+  route gains a child without rendering an outlet.
+- **Favourite paint drifted onto the wrong lakes.** `setData` does *not* clear MapLibre feature-state,
+  and our feature ids are array indices — so panning rebound every painted id to whatever body now sat
+  at that index, and unrelated lakes came back gold while their own sheets correctly said they weren't
+  favorited. Fixed by clearing the whole source's state on every data change rather than tracking which
+  ids to un-paint, because the bookkeeping version re-breaks the moment a third paint is added.
+
+## What the review found (2026-07-29)
+
+A read of the finished branch, after the suites were green. Two were bugs, three were the UI lying
+quietly, and one was a query doing more work than its own comment claimed.
+
+**The refused band was a dead end, on both clients — the worst of the six.** The commonest refusal is
+`unusable_band`: a band wide enough that its two ends seal into each other and the ring grows a hole.
+Reproduced against a ~100 m-radius pond, going "the other way" round: at the **default** 25 m
+half-width it refuses unless the two taps leave ~60 m of shore between them, and one press of − to
+15 m fixes it at the same two ends. But both clients keyed the ± stepper on the band having come back
+*valid* — so the instant it was refused, − went back to tuning the draft's own halo and the one control
+that fixes the refusal became unreachable. The refusal text made it worse by naming only "try a shorter
+section", which sends someone away from the stretch they meant.
+
+Fixed by splitting *snapping is in progress* from *a band came back*: the stepper, the flip and the
+re-pick now follow the former (`deriving` on web, `banding` on mobile), and only the "following N m of
+shoreline" copy follows the latter. The refusal text names narrowing first. And the property that
+proves it — refuses at 25 m, succeeds at 15 m with the same taps — is now a test, because this is
+precisely the case Decision 4 was written for and it was the case that failed.
+
+**A stray map tap on mobile silently re-picked the band.** `onMapPress` claimed shore taps whenever
+`hazardShoreTaps !== null`, with no drop-mode condition — and the taps stay non-null after the band is
+derived, because the width and direction controls re-derive from them. So any later tap slid the pair
+along: first end dropped, second kept, new one appended, band re-derived from somewhere nobody was
+pointing at a shore. Web never had it, and not by care — its handler is only *called* while armed. Now
+gated on `hazardDropMode`.
+
+**"Pick a different stretch" armed two tools on one canvas.** Re-picking leaves the previous band as
+the draft, so `polygonArmed` went true and terra-draw loaded into vertex-editing on the old ring at the
+same moment the banner asked for a shore click. `polygonArmed` now also requires that no shore taps are
+armed.
+
+**A snapped band re-typed onto a non-shore type kept its shoreline.** The web `chooseType` comment said
+clearing the snap prevented "a `pressure_ridge` shaped exactly like a shoreline" — and then called
+`retypeDraft`, which by D67 deliberately *preserves* polygons. So the ring survived and only the label
+went away; the comment described behaviour the code didn't have. Resolved in favour of the comment, with
+the distinction written into D67: a **hand-drawn** area survives a re-type, because reaching one costs
+an opt-in plus three placements; a **snapped band** does not, because it cost two clicks and was derived
+for a shore-shaped type. Mobile already did the right thing here — it resets to a circle — which is why
+the same comment was true there and false on web.
+
+**Two smaller ones.** The web draw banner interpolated a raw count, so switching a placed circle to an
+area — which carries the centre over as a lone corner — read *"1 corners — drag any of them to adjust"*,
+ungrammatical and wrong about what the next click did; the instruction now stands until there are three.
+And `waterBodies.get` was fetched on *type selection* rather than on arming the snap, despite a comment
+worrying about exactly its cost (Champlain's polygon is 116 rings) — most `thin_ice` reports are an
+ordinary circle and never needed it.
+
+**One thing the review found that was not a bug but was under-thought:** a snapped band is 130–150
+corners, and the draft layer drew a vertex dot on every one — dots that exist as feedback for taps a
+person made, covering the band they were meant to clarify. `DRAFT_VERTEX_DOT_LIMIT` (24, far above any
+gloved hand-tapped ring) now suppresses them above that, which costs nothing: a ring that large is long
+past storable, so its **footprint** — the shape that would actually be saved — is already drawn.
+
 ## Testing (D40)
 
-- **`@skating/core`** — property tests for the shore band (any two taps on a real ring either refuse
+- **`@skating/core`** — property tests for the shore band (any two taps on a ring either refuse
   or produce a shape `isValidHazardShape` accepts; the two arcs partition the ring; a dense shoreline
   simplifies until the band fits the vertex cap) and for `ringSelfIntersects` (a convex ring of any
   size is never self-intersecting) and `simplifyPath` (endpoints always kept, never grows). Unit tests
   for every refusal, for the polygon draft's transitions, and — the one that would have caught this
   plan's opening mistake — that `SHORE_BAND_TYPES` names only values that exist in `HAZARD_TYPES`.
+  Added by the review: the near-full-perimeter pond that refuses at the default half-width **and is
+  rescued by one press of −**, which is the test that pins why the width stepper must survive a
+  refusal; and the `DRAFT_VERTEX_DOT_LIMIT` boundary.
 - **Web** — the three-way primitive picker, an area's postability at three corners, the snapped band's
   shoreline length and "other way round" control, that the stepper reads as *distance out from shore*
   while snapped, and that a refusal renders where the affordance is with the other two primitives
-  still offered beside it.
+  still offered beside it. Added by the review: that a refused band keeps both the half-width stepper
+  and the flip, and that a band being derived is never described as a corner count.
 - **Mobile** — no component tests, per the existing suite's lib-only pattern; the shared authoring
   rules are covered once in `@skating/core`, which is why they live there.
 - **Not covered, deliberately:** terra-draw itself. The wrapper pins how this app drives the engine;
@@ -293,8 +375,13 @@ finer than the uncertainty a hazard has already declared is precision it doesn't
 
 ## Left undone
 
-- **Neither client has been run.** Built and green, not deployed to dev and not device-tested — the
-  mobile half in particular has an on-ice flow that only a device can judge.
+- **Neither client has been run.** Green and deployed to dev, but not device-tested — the mobile half in
+  particular has an on-ice flow that only a device can judge, and the review's fixes are reasoned and
+  unit-tested rather than watched.
+- **The `unusable_band` threshold is untuned.** The review established that a default-width band refuses
+  on a small pond and that narrowing rescues it, and made that path survivable. It did *not* ask whether
+  25 m is the right default half-width for a pond, or whether the derivation should try narrowing on the
+  skater's behalf before refusing. Worth a look once a real snap has been made on real ice.
 - **The chunk cost is asserted, not measured in situ.** 218 kB is the built asset on disk; what a
   phone on lake ice actually pays for it over a marginal connection is the thing the founder call
   accepted on reasoning, and it is worth measuring once there's a real session to measure.

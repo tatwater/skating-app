@@ -1793,9 +1793,17 @@ by the person who arms the tool.
 primitive is reached only by switching a draft to it — exactly the "opt-in, de-emphasized advanced
 affordance" D51 specified. On the ice this also protects the **two-tap guarantee**: an area needs
 three taps and a close, so every type still starts as a circle at the skater's GPS and a mitten-fumble
-that hits Done early still files something useful. A polygon correspondingly **survives a re-type**
-where a line does not: reaching one took a deliberate opt-in plus three placements, and the type
-picker must not silently destroy the primitive that costs the most care.
+that hits Done early still files something useful. A **hand-drawn** polygon correspondingly **survives
+a re-type** where a line does not: reaching one took a deliberate opt-in plus three placements, and the
+type picker must not silently destroy the primitive that costs the most care.
+
+**A snapped band is the exception to that, and only that one** *(amended 2026-07-29, from the review)*.
+Re-typing away from a shore band **drops the ring**. The two rules read as contradictory and aren't:
+what "survives a re-type" protects is *effort*, and a band cost two clicks, not three placements plus an
+opt-in. What it would carry across is worse than nothing — a `pressure_ridge` shaped exactly like a
+shoreline, a footprint the on-ice watcher measures against, asserting a geometry derived for a different
+type's shape. Web was doing this silently, directly beneath a comment claiming it didn't; mobile already
+reset to a circle. The rule is now the same on both.
 
 **A snapped band is stored as an ordinary `polygon`, and `bufferMeters` means what it means
 everywhere else.** The geometry is the shore arc buffered by the band half-width; `bufferMeters` is
@@ -1817,6 +1825,15 @@ cost of two geometry kinds downstream for one affordance.
 **Only one size stepper is ever on screen.** Two widths exist in the model — the band half-width that
 derives the ring, and the halo around it — and never at the same moment. While snapping, ± tunes the
 half-width and the ring re-derives live; on a hand-drawn area it tunes the halo.
+
+**"While snapping" means while two shore taps are in hand — including while the band is refused**
+*(amended 2026-07-29, from the review)*. Both clients originally keyed the stepper on the band having
+come back *valid*, which took the width away at exactly the moment it was the fix. The commonest refusal
+is a band wide enough to seal into itself: measured on a ~100 m-radius pond going the long way round, the
+default 25 m half-width refuses where 15 m succeeds **at the same two taps**. A refusal is a state of the
+band, not the end of snapping, so it keeps every control that could rescue it — narrower, the other way
+round, or a different stretch — and the refusal copy names the width first. A safety affordance that
+dead-ends someone standing on ice with a hazard to file is worse than one that was never offered.
 
 **The shorter arc is the default, with an explicit "go the other way".** Two taps on a ring define two
 arcs; shorter is right almost always and silently wrong on a small pond or a narrow bay, where the band
