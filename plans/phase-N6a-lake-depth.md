@@ -305,6 +305,25 @@ So the match carries an **area gate** — reject if the two areas disagree by mo
 it declined. Deliberately loose, because the three sources each draw a shoreline from a different water
 mask at a different date: a false reject costs one lake its depth, a false accept corrupts a safety input.
 
+## Verified against dev
+
+Deployed to dev (`agile-bee-397`) 2026-07-30 and exercised there, on the N3/N4 principle that running the
+job is what finds the bug tests don't.
+
+- `listActiveHazardsForWeather` now returns `isShallow` per job against the real 116,070-body corpus —
+  `false` for dev's one live hazard, which is right: its body has no depth on record and no
+  `shallow_bay_early_thaw` feature. The extra indexed feature read is per *distinct body*, not per hazard,
+  and the query returned well inside budget.
+- `refreshHazardWeather` ran clean end to end with the new body context threaded through.
+- Depth reads 0 on every sampled body, as expected — **the ETL has not been run**, only tested.
+
+**One observation from the live data worth keeping.** Dev's single `open_water` hazard sits at
+`decayMultiplier: 0.5` — the `multiplierFloor` — because it is July and the thaw signal saturates. So the
+D69 amplifier would change nothing for it, which is the clamp behavior a test already pins. The practical
+consequence: **the shallow signal is invisible in high summer and does its work in the shoulder season and
+in mid-winter thaws**, which is exactly the window where a skater is deciding whether to trust a fading
+pin. Worth knowing before anyone looks for its effect in the wrong month and concludes it isn't wired.
+
 ## Open questions
 
 1. **LAGOS-US DEPTH's licence and its coverage in our five states** — both need confirming at download
