@@ -687,7 +687,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // person who asked for the tool and nobody else. Everything it produces goes back through the same
   // `@skating/core` draft the other two primitives use, which is what keeps the preview, the stored
   // row and the proximity footprint one shape whichever way the ring was made.
-  const polygonArmed = hazardDropMode && hazardDraft?.geometryKind === 'polygon';
+  //
+  // Never while shore clicks are being collected. Re-picking a stretch leaves the *previous* band as
+  // the draft, so without that condition "Pick a different stretch" would arm this editor on the old
+  // ring at the same moment the banner asks for a shore click — two tools live on one canvas, each
+  // claiming the next click, over a shape the skater is in the middle of replacing.
+  const polygonArmed =
+    hazardDropMode && hazardDraft?.geometryKind === 'polygon' && hazardShoreTaps === null;
   const polygonDrawRef = useRef<PolygonDrawControl | null>(null);
   const [drawUnavailable, setDrawUnavailable] = useState(false);
   useEffect(() => {
@@ -856,9 +862,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           ) : hazardDraft?.geometryKind === 'polygon' ? (
             <>
               <span>
+                {/* The instruction stands until there are three corners, not just at zero: switching
+                    a placed circle to an area carries its centre over as a lone corner, and terra-draw
+                    starts a fresh ring regardless — so "1 corners, drag any of them" would be both
+                    ungrammatical and a lie about what the next click does. */}
                 {drawUnavailable
                   ? 'The area tool couldn’t load. Mark it as a spot or a line instead — both work fine.'
-                  : draftPlacementCount(hazardDraft) === 0
+                  : draftPlacementCount(hazardDraft) < 3
                     ? 'Click each corner of the area, then click the first one again to close it.'
                     : `${draftPlacementCount(hazardDraft)} corners — drag any of them to adjust.`}
               </span>

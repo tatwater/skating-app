@@ -54,7 +54,7 @@ function renderFields(
         photos={initial.photos ?? []}
         shore={{
           offered: false,
-          active: false,
+          deriving: false,
           halfWidthMeters: 25,
           arcLengthMeters: null,
           error: null,
@@ -317,7 +317,7 @@ describe('snap to shoreline (N5b)', () => {
     const { spies } = renderFields({
       type: 'thin_ice',
       draft,
-      shore: { offered: true, active: true, arcLengthMeters: 1240, halfWidthMeters: 25 },
+      shore: { offered: true, deriving: true, arcLengthMeters: 1240, halfWidthMeters: 25 },
     });
     expect(screen.getByText(/Following 1240 m of shoreline/)).toBeInTheDocument();
     // Decision 4: shorter is right almost always and silently wrong on a small pond, so the flip is
@@ -334,7 +334,7 @@ describe('snap to shoreline (N5b)', () => {
     renderFields({
       type: 'thin_ice',
       draft,
-      shore: { offered: true, active: true, arcLengthMeters: 800, halfWidthMeters: 25 },
+      shore: { offered: true, deriving: true, arcLengthMeters: 800, halfWidthMeters: 25 },
     });
     expect(screen.getByText('about 25 m out from the shoreline')).toBeInTheDocument();
     expect(screen.getByText(/part that falls on land is trimmed off/)).toBeInTheDocument();
@@ -353,5 +353,50 @@ describe('snap to shoreline (N5b)', () => {
     // The other two primitives are still right there, which is what makes a refusal survivable for
     // someone standing on ice with a hazard to file.
     expect(screen.getByRole('button', { name: 'A line' })).toBeInTheDocument();
+  });
+
+  /**
+   * The review fix: a refused band must keep every control that could rescue it.
+   *
+   * The commonest refusal is a band wide enough to close on itself — two ends nearly all the way round
+   * a small pond, which is exactly the case Decision 4's "go the other way" exists for. Narrowing fixes
+   * it at the same two ends. So the stepper has to still be the band's half-width while the refusal is
+   * on screen, and the flip has to still be offered: a refusal with no way through is worse than no
+   * affordance, for someone standing on ice with a hazard to file.
+   */
+  it('keeps the width stepper on the band, and the flip offered, through a refusal', () => {
+    const { spies } = renderFields({
+      type: 'thin_ice',
+      // A first refused snap leaves the draft the circle it started as — so this must not key off the
+      // draft being a polygon.
+      draft: draftForType('thin_ice'),
+      shore: {
+        offered: true,
+        deriving: true,
+        halfWidthMeters: 25,
+        arcLengthMeters: null,
+        error: 'Couldn’t make a clean band along that stretch of shore — it closes on itself.',
+      },
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(/closes on itself/);
+    expect(screen.getByText('about 25 m out from the shoreline')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Narrower' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Go the other way round' }));
+    expect(spies.onFlipSnap).toHaveBeenCalled();
+  });
+
+  // A ring nobody tapped has no corner count worth reporting — and quoting one would imply the stepper
+  // and the undo apply to it.
+  it('describes a band being derived as a stretch of shore, never as corners', () => {
+    renderFields({
+      type: 'open_water',
+      draft: switchDraftKind(draftForType('open_water'), 'polygon', 'open_water'),
+      shore: { offered: true, deriving: true, halfWidthMeters: 25, arcLengthMeters: null },
+    });
+    expect(screen.getByText(/Picking a stretch of shore/)).toBeInTheDocument();
+    // No corner *count*. The "adjusting the corners takes it off the shoreline" hint stays — that one
+    // is about what happens next, not a claim about placements someone made.
+    expect(screen.queryByText(/Drawn with \d+ corner/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Undo last point' })).not.toBeInTheDocument();
   });
 });
