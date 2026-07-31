@@ -1,20 +1,18 @@
 {
-  "name": "@skating/etl",
+  "name": "@skating/lake-depth",
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual OSM → Convex water-body ETL (Phase 1). Not built or deployed.",
+  "description": "Manual lake-depth ETL (N6a): LAGOS-US DEPTH + HydroLAKES + GLOBathy → Convex. Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "transform": "tsx src/cli.ts",
-    "load": "tsx src/load.ts",
-    "load-depths": "tsx src/loadDepths.ts"
+    "load": "tsx src/load.ts"
   },
   "dependencies": {
-    "@skating/core": "workspace:*",
-    "@turf/simplify": "^7.3.0"
+    "@skating/core": "workspace:*"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

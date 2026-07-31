@@ -281,3 +281,28 @@ export function hazardColorExpression(palette: HazardPalette): unknown[] {
     palette.danger,
   ];
 }
+
+/**
+ * The dash pattern for a *provisional* hazard outline — one unverified report, drawn soft (D54).
+ *
+ * **A constant, and it has to be.** `line-dasharray` is the one paint property in our style that
+ * takes no feature-driven expression: MapLibre's native renderer rejects one outright (*"line-dasharray
+ * data expressions not supported"*) and drops the property, and the web renderer's style validation
+ * refuses it just as quietly — so a `['case', ['get', 'provisional'], …]` here silently loses the
+ * provisional/confirmed distinction on both clients rather than failing loudly on either.
+ *
+ * The shape both renderers do agree on is **two layers with complementary filters**: a dashed one and
+ * a solid one over the same source. See `PROVISIONAL_HAZARD_FILTER` / `CONFIRMED_HAZARD_FILTER`.
+ */
+export const PROVISIONAL_DASH_ARRAY: readonly [number, number] = [2, 2];
+
+/**
+ * The filters those two layers carry. They partition the source exactly — every hazard is drawn once,
+ * which is what keeps this a rendering change and not a visibility one.
+ *
+ * **A missing `provisional` property reads as provisional**, deliberately. A solid outline is a claim
+ * of independent confirmation; the absence of a property is not evidence of one, and the conservative
+ * direction for a safety layer is the softer line (D3).
+ */
+export const PROVISIONAL_HAZARD_FILTER: unknown[] = ['!=', ['get', 'provisional'], false];
+export const CONFIRMED_HAZARD_FILTER: unknown[] = ['==', ['get', 'provisional'], false];

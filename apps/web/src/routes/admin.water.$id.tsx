@@ -2,8 +2,12 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
   DEFAULT_SAMPLE_SPACING_KM,
+  DEPTH_SOURCE_LABELS,
+  type DepthSource,
   displayScore,
+  formatDepthFeet,
   formatSeason,
+  isShallowDepth,
   type LatLng,
   minVisibleZoom,
   type PromotionTarget,
@@ -136,6 +140,7 @@ function LakeEditor() {
             mapRef={drawTargetRef}
             onResult={setBanner}
           />
+          <DepthTool body={body} onResult={setBanner} />
           <SamplePointTool
             body={body}
             suggested={suggested}
@@ -236,6 +241,249 @@ function ProminenceTool({
           </>
         ) : null}
         .
+      </p>
+    </ToolCard>
+  );
+}
+
+interface DepthBody {
+  _id: string;
+  meanDepthM?: number;
+  maxDepthM?: number;
+  meanDepthSource?: DepthSource;
+  maxDepthSource?: DepthSource;
+  depthSourceNote?: string;
+}
+
+/**
+ * Lake depth (N6a / D68) — rung 1 of the ladder, and the only rung a human writes.
+ *
+ * **The editable fields hold operator values only, and that is a correctness rule rather than a
+ * styling one** (review fix, 2026-07-31). The first cut pre-filled them from whatever the row held,
+ * and `setDepth` stamped `operator` on everything it was sent — so saving a max you *did* know
+ * relabelled the HydroLAKES mean sitting in the other box as a survey reading, dropped the `~` from
+ * the public caption, and locked a modelled number against every future import. An automated value is
+ * therefore shown as text, never as a pre-filled input, and a blank box means "no operator reading",
+ * not "delete whatever is there".
+ *
+ * Acting on an automated value is explicit, and there are exactly two ways to do it: type your own
+ * number over it, or **Reject** it — which keeps the `operator` rung as a tombstone so the import
+ * can't quietly put it back, and is undone by **Restore**.
+ *
+ * The card also echoes each value in feet live, because the entry field is metric and every state
+ * bathymetry chart in our region is in feet: that echo is the real units guard, not the 400 m ceiling.
+ */
+function DepthTool({ body, onResult }: { body: DepthBody; onResult: SetBanner }) {
+  const setDepth = useMutation(api.waterBodies.setDepth);
+  const clearOverride = useMutation(api.waterBodies.clearDepthOverride);
+
+  // Only an `operator` value belongs in an editable box — see the note above.
+  const operatorValue = (source: DepthSource | undefined, value: number | undefined) =>
+    source === 'operator' && value !== undefined ? String(value) : '';
+  const serverMean = operatorValue(body.meanDepthSource, body.meanDepthM);
+  const serverMax = operatorValue(body.maxDepthSource, body.maxDepthM);
+  const serverNote = body.depthSourceNote ?? '';
+
+  const [mean, setMean] = useState(serverMean);
+  const [max, setMax] = useState(serverMax);
+  const [note, setNote] = useState(serverNote);
+  // Re-sync when the server value changes under us — a `useState` initializer runs once, so without
+  // this the card would keep showing what the row held when the page loaded (an ETL run, or another
+  // moderator, and you are editing a stale number). Tracking the server value we last adopted keeps
+  // in-progress typing intact: only a genuine server-side change resets the boxes.
+  const [synced, setSynced] = useState({ mean: serverMean, max: serverMax, note: serverNote });
+  if (synced.mean !== serverMean || synced.max !== serverMax || synced.note !== serverNote) {
+    setSynced({ mean: serverMean, max: serverMax, note: serverNote });
+    setMean(serverMean);
+    setMax(serverMax);
+    setNote(serverNote);
+  }
+
+  const parse = (raw: string) => {
+    const trimmed = raw.trim();
+    if (trimmed === '') return undefined;
+    const value = Number(trimmed);
+    return Number.isFinite(value) ? value : Number.NaN;
+  };
+  const parsedMean = parse(mean);
+  const parsedMax = parse(max);
+  const invalid = Number.isNaN(parsedMean) || Number.isNaN(parsedMax);
+  const echo = (value: number | undefined) =>
+    value === undefined || Number.isNaN(value) ? null : ` (${formatDepthFeet(value)})`;
+
+  /**
+   * What to send for one measurement. `undefined` (omitted) leaves the stored value and its rung
+   * exactly as they are, which is what an untouched box has to mean; `null` clears an operator value
+   * the moderator emptied. An automated value is never touched from here — Reject does that.
+   */
+  const fieldArg = (parsed: number | undefined, serverValue: string) =>
+    parsed !== undefined ? parsed : serverValue === '' ? undefined : null;
+
+  // The classification the decay model will actually apply: the moderator's edits where they made
+  // any, the stored value where they didn't.
+  const effective = {
+    ...(parsedMean !== undefined && !Number.isNaN(parsedMean)
+      ? { meanDepthM: parsedMean }
+      : body.meanDepthSource !== 'operator' && body.meanDepthM !== undefined
+        ? { meanDepthM: body.meanDepthM }
+        : {}),
+    ...(parsedMax !== undefined && !Number.isNaN(parsedMax)
+      ? { maxDepthM: parsedMax }
+      : body.maxDepthSource !== 'operator' && body.maxDepthM !== undefined
+        ? { maxDepthM: body.maxDepthM }
+        : {}),
+  };
+  const shallow = isShallowDepth(effective);
+
+  const measurements = [
+    {
+      key: 'mean' as const,
+      label: 'Mean',
+      value: body.meanDepthM,
+      source: body.meanDepthSource,
+    },
+    { key: 'max' as const, label: 'Max', value: body.maxDepthM, source: body.maxDepthSource },
+  ];
+
+  const act = async (run: () => Promise<unknown>, text: string) => {
+    try {
+      await run();
+      onResult({ tone: 'ok', text });
+    } catch (err) {
+      onResult({ tone: 'error', text: errorText(err) });
+    }
+  };
+
+  return (
+    <ToolCard title="Depth">
+      <div className="flex items-end gap-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="mean-depth">Mean (m)</Label>
+          <Input
+            id="mean-depth"
+            type="number"
+            step="0.1"
+            value={mean}
+            onChange={(e) => setMean(e.target.value)}
+            className="w-24"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor="max-depth">Max (m)</Label>
+          <Input
+            id="max-depth"
+            type="number"
+            step="0.1"
+            value={max}
+            onChange={(e) => setMax(e.target.value)}
+            className="w-24"
+          />
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={invalid}
+          onClick={() =>
+            act(
+              () =>
+                setDepth({
+                  waterBodyId: body._id as Id<'waterBodies'>,
+                  meanDepthM: fieldArg(parsedMean, serverMean),
+                  maxDepthM: fieldArg(parsedMax, serverMax),
+                  sourceNote: note.trim() || null,
+                }),
+              'Depth saved as a survey reading.',
+            )
+          }
+        >
+          Save
+        </Button>
+      </div>
+      <p className="text-foreground-muted text-sm">
+        Mean
+        <span className="text-foreground">{echo(parsedMean) ?? ' —'}</span> · max
+        <span className="text-foreground">{echo(parsedMax) ?? ' —'}</span>. Charts are usually in
+        feet; divide by 3.28. Empty means <em>no reading of your own</em> — it never deletes an
+        imported value.
+      </p>
+      {/* The note is PUBLIC: it replaces "entered by a moderator" in the caption skaters read, which is
+          the whole reason to collect it. Optional — someone who simply knows the pond has nothing to
+          cite, and the generic fallback honestly says we don't know the basis. */}
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="depth-note">Source (shown publicly)</Label>
+        <Input
+          id="depth-note"
+          value={note}
+          maxLength={160}
+          placeholder="NH Fish &amp; Game bathymetry, 1998"
+          onChange={(e) => setNote(e.target.value)}
+        />
+      </div>
+
+      {/* Each stored measurement with its rung, and the one action that rung allows. An operator
+          measurement with no number is a *rejection* — the tombstone that keeps the import out. */}
+      <div className="flex flex-col gap-1">
+        {measurements.map((m) => (
+          <p key={m.key} className="text-foreground-muted text-sm">
+            <span className="text-foreground">{m.label}:</span>{' '}
+            {m.source === undefined ? (
+              'nothing on record — the next import may fill it.'
+            ) : m.value === undefined ? (
+              <>
+                rejected by a moderator; the import will not refill it.{' '}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    act(
+                      () =>
+                        clearOverride({
+                          waterBodyId: body._id as Id<'waterBodies'>,
+                          measurements: [m.key],
+                        }),
+                      `Restored the ${m.key} depth to the import.`,
+                    )
+                  }
+                >
+                  Restore
+                </Button>
+              </>
+            ) : (
+              <>
+                {formatDepthFeet(m.value)} ({m.value} m) from {DEPTH_SOURCE_LABELS[m.source]}.
+                {m.source !== 'operator' ? (
+                  <>
+                    {' '}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        act(
+                          () =>
+                            setDepth({
+                              waterBodyId: body._id as Id<'waterBodies'>,
+                              ...(m.key === 'mean' ? { meanDepthM: null } : { maxDepthM: null }),
+                            }),
+                          `Rejected the imported ${m.key} depth — it will not come back on a re-run.`,
+                        )
+                      }
+                    >
+                      Reject
+                    </Button>
+                  </>
+                ) : null}
+              </>
+            )}
+          </p>
+        ))}
+      </div>
+
+      <p className="text-foreground-muted text-sm">
+        Decay treats this lake as{' '}
+        <span className="text-foreground">{shallow ? 'shallow' : 'not shallow'}</span> — a shallow
+        lake holds a thaw-driven hazard warning longer (D69). A{' '}
+        <span className="text-foreground">shallow bay (early thaw)</span> feature does the same for
+        a body with no depth on record.
       </p>
     </ToolCard>
   );

@@ -24,6 +24,9 @@ import {
   REPORT_FRESHNESS_PER_CORROBORATION,
   REPORT_FRESHNESS_PER_THUMB,
   REPORT_FRESHNESS_WEATHER_MULTIPLIER,
+  SHALLOW_MAX_DEPTH_M,
+  SHALLOW_MEAN_DEPTH_M,
+  SHALLOW_THAW_K,
   TRUST_CLASS_THRESHOLDS,
 } from '@skating/core';
 import { createFileRoute } from '@tanstack/react-router';
@@ -274,6 +277,29 @@ function AdminTuning() {
         <div className="grid gap-3 lg:grid-cols-2">
           <MetricComposition metricKey="hazard_confirm_outcomes" catalogue={catalogue} semantic />
           <MetricHistogram metricKey="hazard_age_at_confirm_h" catalogue={catalogue} />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <ConstantCard
+            name="SHALLOW_MEAN_DEPTH_M"
+            value={`${SHALLOW_MEAN_DEPTH_M} m`}
+            file="lakeDepth.ts"
+          >
+            At or below this mean depth a lake counts as shallow (D69) — the conventional
+            shallow/polymictic boundary, where a basin mixes to the bottom.
+          </ConstantCard>
+          <ConstantCard
+            name="SHALLOW_MAX_DEPTH_M"
+            value={`${SHALLOW_MAX_DEPTH_M} m`}
+            file="lakeDepth.ts"
+          >
+            The max-depth fallback, used when a lake has no mean — the common case, since observed
+            maxima outnumber means about 3:1. Roughly the mean threshold ÷ 0.4.
+          </ConstantCard>
+          <ConstantCard name="shallowThawK" value={SHALLOW_THAW_K} file="hazardWeatherDecay.ts">
+            How much a shallow lake amplifies the <em>thaw</em> term. Never the cold term: shallow
+            water also freezes early, and speeding cold-side healing on a small pond is the
+            direction D69 exists to refuse. 1 turns it off.
+          </ConstantCard>
         </div>
       </TuningSection>
 

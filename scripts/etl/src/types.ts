@@ -37,3 +37,21 @@ export interface CanonicalBody {
   centroid: LatLng;
   surfaceAreaSqM: number;
 }
+
+/**
+ * A depth carried opportunistically off an OSM `depth` / `maxdepth` tag (N6a rung 7), shaped for
+ * `waterBodies.importDepths` — which keys on `source` + `externalId`, exactly what we have here.
+ *
+ * Kept **separate from `CanonicalBody`** rather than folded into it, because the two have different
+ * ladders: `importCanonical` overwrites its field list every run (upstream OSM is authoritative for a
+ * name and a shoreline), while a depth must go through the D68 ladder and lose to every better source.
+ * Two streams, two mutations, one pass over the same input.
+ */
+export interface OsmDepthRecord {
+  source: 'osm';
+  externalId: string;
+  meanDepthM?: number;
+  meanDepthSource?: 'osm_tag';
+  maxDepthM?: number;
+  maxDepthSource?: 'osm_tag';
+}

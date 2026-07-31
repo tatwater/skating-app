@@ -13,6 +13,7 @@ import { themes } from '@skating/design';
 
 export {
   bodyFeaturesToFeatureCollection,
+  CONFIRMED_HAZARD_FILTER,
   FRESHNESS_FILL_OPACITY,
   hazardColorExpression,
   hazardDraftToFeatureCollection,
@@ -20,6 +21,8 @@ export {
   hazardsToFeatureCollection,
   type MappableBodyFeature,
   type MappableHazard,
+  PROVISIONAL_DASH_ARRAY,
+  PROVISIONAL_HAZARD_FILTER,
   PROVISIONAL_OPACITY_SCALE,
 } from '@skating/core';
 

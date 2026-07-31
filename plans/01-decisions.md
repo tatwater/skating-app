@@ -1995,6 +1995,31 @@ model's number. It also goes into the `moderationActions` reason, because the mo
 ask *"who claimed this, and on what basis"*, and a reason that omits the basis makes you go and diff the
 row.
 
+## D68 amendment 2 — an operator edits one measurement, and a rejection is durable (N6a)
+**Decided (2026-07-31; N6a review, founder call.)** Two rules about *writing* rung 1, both found by
+reviewing the build against D68 rather than by anything failing.
+
+**A moderator's save touches only what they touched.** `setDepth` originally took a plain number per
+measurement and stamped `operator` on everything it received, while the editor pre-filled both fields
+from the row — so saving a max you knew relabelled the HydroLAKES mean beside it as a survey reading. The
+skater-facing caption lost its `~`, and the value became immune to correction by any future import. The
+value of provenance is entirely in its being *true*, so a write path that can silently falsify it is worse
+than no provenance field at all. Each measurement is now three-state: **absent** leaves the value and its
+rung alone, **a number** is the moderator's reading, and **`null`** is a rejection.
+
+**A rejection keeps the rung.** When a moderator clears an imported depth, the number goes and the
+`operator` rung **stays** as a tombstone, which is what stops the next ETL run from putting it back.
+*"A human read HydroLAKES' 14 m and says it's wrong"* is a durable claim about the lake; if it evaporates
+on the next run it was never worth making. This inverts D68's original *never provenance without a
+number*, deliberately — that rule was protecting the **caption**, and it still does, because
+`describeLakeDepth` renders nothing without a number. A tombstone is therefore invisible to skaters and
+legible to the ladder, which is the split we want. It is reversible (`clearDepthOverride`), and the
+loader reports it separately from "already had a better source" so the person running an import sees the
+collision rather than inferring it from a count.
+
+**Related:** [D68](#d68--depth-is-a-best-available-number-that-carries-its-provenance-n6a), [D3](#d3),
+[`phase-N6a`](./phase-N6a-lake-depth.md).
+
 ## D70 — Lake-profile content is derived or third-party, never hand-maintained (N6c/N6d)
 
 **Decided (2026-07-30; founder call at N6c scoping.)** Every field in the expanded lake profile must come

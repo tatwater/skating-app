@@ -13,12 +13,16 @@
 import {
   bboxIntersects,
   classifyDedup,
+  DEPTH_SOURCE_RANK,
+  DEPTH_SOURCES,
   type DedupClassification,
   type DedupShape,
+  type DepthSource,
   displayScore,
   isKnownStateCode,
   isMinor,
   KNOWN_STATE_CODES,
+  MAX_PLAUSIBLE_DEPTH_M,
   MAX_SUGGESTED_SAMPLE_POINTS,
   MIN_VISIBLE_ZOOM_FLOOR,
   minVisibleZoom,
@@ -33,6 +37,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
   internalQuery,
+  type MutationCtx,
   mutation,
   type QueryCtx,
   query,
@@ -46,7 +51,7 @@ import {
 } from './lib/auth';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
-import { CANONICAL_SOURCES, REMOVAL_REASONS } from './lib/enums';
+import { CANONICAL_SOURCES, REMOVAL_REASONS, WATER_BODY_SOURCES } from './lib/enums';
 import { isListed } from './lib/listing';
 import { takeCapped } from './lib/scan';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
@@ -912,6 +917,573 @@ export const setWeatherSamplePoints = mutation({
       createdAt: Date.now(),
     });
     return waterBodyId;
+  },
+});
+
+/**
+ * Moderator: type in a body's depth — rung 1 of the D68 ladder (N6a).
+ *
+ * This is the path for a state-agency survey read off a chart (NH Fish & Game, VT ANR) or firsthand local
+ * knowledge, and it **outranks every automated source**: the depth ETL refuses to overwrite an
+ * `operator`-sourced value, so a correction here is durable across re-imports and re-runs.
+ *
+ * **Each measurement is three-state, and that is the whole design of this mutation** (review fix,
+ * 2026-07-31). A field the moderator did not touch must arrive as `undefined` and be left *exactly* as it
+ * was, rung included. The first cut took a plain `v.number()` per field and stamped `operator` on
+ * everything it received — so a form that pre-filled a HydroLAKES mean and saved a max the moderator did
+ * know relabelled a 90 m-DEM estimate as a survey reading: the public caption lost its `~`, and the value
+ * became permanently immune to ETL correction. Provenance you can launder by accident is not provenance.
+ *
+ *  - **absent** — leave the measurement and its rung untouched, whatever they are.
+ *  - **a number** — the moderator's own reading. Stored at rung `operator`.
+ *  - **`null`** — an explicit *rejection*: the number goes, the `operator` rung **stays** as a tombstone,
+ *    and `winsLadder` therefore refuses to let any import refill it. "A human looked at HydroLAKES' 14 m
+ *    and says it is wrong" is a durable claim about the lake, and it has to outlive the next ETL run or
+ *    it isn't worth making. Reversible via `clearDepthOverride`, which drops the tombstone and lets the
+ *    import back in.
+ *
+ * The invariant this replaces — *never provenance without a number* — was protecting the caption, not the
+ * row, and it still holds where it matters: `describeLakeDepth` renders nothing without a number, so a
+ * tombstone is invisible to skaters and legible to the ladder, which is exactly the split we want.
+ *
+ * `sourceNote` is the **evidence** behind the claim (D68 amendment, founder call) and it is **public** —
+ * it replaces the `operator` rung's own label in the skater-facing caption, because "entered by a
+ * moderator" is attribution in name only. Optional rather than required: a moderator who simply knows the
+ * pond has nothing to cite, and forcing the field would only produce "local knowledge" typed by rote —
+ * whereas an absent note falls back to the honest "entered by a moderator", which correctly says we don't
+ * know where the number came from. `null` clears it; absent leaves it alone, like the depths.
+ */
+export const setDepth = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    meanDepthM: v.optional(v.union(v.number(), v.null())),
+    maxDepthM: v.optional(v.union(v.number(), v.null())),
+    sourceNote: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, { waterBodyId, meanDepthM, maxDepthM, sourceNote }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+
+    for (const [label, value] of [
+      ['Mean', meanDepthM],
+      ['Max', maxDepthM],
+    ] as const) {
+      if (value === undefined || value === null) continue;
+      if (!Number.isFinite(value) || value <= 0) {
+        throw new ConvexError(`${label} depth must be a positive number of metres.`);
+      }
+      if (value > MAX_PLAUSIBLE_DEPTH_M) {
+        throw new ConvexError(
+          `${label} depth of ${value} m is deeper than any lake in the region (Seneca, the deepest, is ~188 m) — if you're reading a chart in feet, divide by 3.28.`,
+        );
+      }
+    }
+
+    // The resulting pair, which is what the cross-field check has to run against: an untouched field
+    // keeps whatever the row already held, so "mean 30 typed against an existing max of 6" is caught
+    // just as a single save of both would be.
+    const nextMean = meanDepthM === undefined ? body.meanDepthM : (meanDepthM ?? undefined);
+    const nextMax = maxDepthM === undefined ? body.maxDepthM : (maxDepthM ?? undefined);
+    // The one cross-field check worth making: a mean deeper than the max is a transposition, and it
+    // would flip `isShallowDepth` (which prefers the mean) to the wrong answer on a real lake.
+    if (nextMean !== undefined && nextMax !== undefined && nextMean > nextMax) {
+      throw new ConvexError(
+        `Mean depth (${nextMean} m) can't exceed max depth (${nextMax} m) — the two look transposed.`,
+      );
+    }
+
+    const trimmedNote = sourceNote === null ? null : sourceNote?.trim();
+    if (typeof trimmedNote === 'string' && trimmedNote.length > MAX_DEPTH_NOTE_LENGTH) {
+      throw new ConvexError(
+        `Source note is ${trimmedNote.length} characters; keep it under ${MAX_DEPTH_NOTE_LENGTH} — it renders inline on the lake, so it wants to be a citation, not a paragraph.`,
+      );
+    }
+
+    const patch: Partial<Doc<'waterBodies'>> = {};
+    if (meanDepthM !== undefined) {
+      patch.meanDepthM = meanDepthM ?? undefined;
+      patch.meanDepthSource = 'operator'; // number ⇒ the reading; null ⇒ the tombstone
+    }
+    if (maxDepthM !== undefined) {
+      patch.maxDepthM = maxDepthM ?? undefined;
+      patch.maxDepthSource = 'operator';
+    }
+
+    // A note can never outlive the claim it substantiates: once no operator *number* remains, it goes.
+    // Otherwise a body would keep asserting "NH Fish & Game, 1998" beside numbers from a global model.
+    const nextMeanSource = patch.meanDepthSource ?? body.meanDepthSource;
+    const nextMaxSource = patch.maxDepthSource ?? body.maxDepthSource;
+    const hasOperatorNumber =
+      (nextMean !== undefined && nextMeanSource === 'operator') ||
+      (nextMax !== undefined && nextMaxSource === 'operator');
+    const nextNote = !hasOperatorNumber
+      ? undefined
+      : trimmedNote === undefined
+        ? body.depthSourceNote
+        : trimmedNote || undefined;
+    if (nextNote !== body.depthSourceNote) patch.depthSourceNote = nextNote;
+
+    if (Object.keys(patch).length === 0) return waterBodyId; // a save that touched nothing
+
+    await ctx.db.patch(waterBodyId, patch);
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_lake_depth',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason: describeDepthChange(meanDepthM, maxDepthM, nextNote),
+      // Before *and* after. The audit row is the only place a prior value survives a patch, so a log
+      // that records just the new number can answer "who changed this" and never "changed it from what".
+      metadata: {
+        meanDepthM: nextMean,
+        maxDepthM: nextMax,
+        prev: {
+          meanDepthM: body.meanDepthM,
+          meanDepthSource: body.meanDepthSource,
+          maxDepthM: body.maxDepthM,
+          maxDepthSource: body.maxDepthSource,
+          depthSourceNote: body.depthSourceNote,
+        },
+      },
+      createdAt: Date.now(),
+    });
+    return waterBodyId;
+  },
+});
+
+/**
+ * Moderator: drop an `operator` rung entirely, handing the measurement back to the import (N6a).
+ *
+ * The counterpart to `setDepth`'s tombstone, and the reason a rejection is safe to make: rung 1 is
+ * durable *by design*, so without a release there would be no way back short of a database edit. Clears
+ * the value **and** its source for the named measurements, so the next ETL run fills them normally.
+ *
+ * Only ever touches `operator`-sourced measurements — asking to release a HydroLAKES value is a no-op
+ * rather than an error, since the thing being released is the override, not the number.
+ */
+export const clearDepthOverride = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    measurements: v.array(literals(['mean', 'max'] as const)),
+  },
+  handler: async (ctx, { waterBodyId, measurements }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+
+    const patch: Partial<Doc<'waterBodies'>> = {};
+    const released: string[] = [];
+    if (measurements.includes('mean') && body.meanDepthSource === 'operator') {
+      patch.meanDepthM = undefined;
+      patch.meanDepthSource = undefined;
+      released.push('mean');
+    }
+    if (measurements.includes('max') && body.maxDepthSource === 'operator') {
+      patch.maxDepthM = undefined;
+      patch.maxDepthSource = undefined;
+      released.push('max');
+    }
+    if (released.length === 0) return waterBodyId;
+    // Nothing operator-sourced is left to cite, so the citation goes with it.
+    patch.depthSourceNote = undefined;
+
+    await ctx.db.patch(waterBodyId, patch);
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_lake_depth',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason: `Released the operator override on ${released.join(' and ')} depth — the import may refill it`,
+      metadata: {
+        released,
+        prev: {
+          meanDepthM: body.meanDepthM,
+          meanDepthSource: body.meanDepthSource,
+          maxDepthM: body.maxDepthM,
+          maxDepthSource: body.maxDepthSource,
+          depthSourceNote: body.depthSourceNote,
+        },
+      },
+      createdAt: Date.now(),
+    });
+    return waterBodyId;
+  },
+});
+
+/** A citation, not a paragraph — it renders inline under the depth on the lake drawer. */
+const MAX_DEPTH_NOTE_LENGTH = 160;
+
+function describeDepthChange(
+  meanDepthM: number | null | undefined,
+  maxDepthM: number | null | undefined,
+  sourceNote?: string,
+): string {
+  const parts: string[] = [];
+  const describe = (label: string, value: number | null | undefined) => {
+    if (value === undefined) return; // untouched — saying nothing about it is the honest log line
+    parts.push(value === null ? `rejected the ${label} depth` : `${label} ${value} m`);
+  };
+  describe('mean', meanDepthM);
+  describe('max', maxDepthM);
+  if (parts.length === 0) return 'Cleared depth';
+  // The note goes in the audit reason as well as on the row: the moderation log is where you look to ask
+  // "who claimed this and on what basis", and a reason that omits the basis makes you go and diff the row.
+  return `Set depth: ${parts.join(', ')}${sourceNote ? ` (${sourceNote})` : ''}`;
+}
+
+/**
+ * Idempotently stamp depths from the N6a ETL, honoring the D68 ladder (internal, never client-callable).
+ *
+ * Two rules the loader enforces rather than trusting its input for:
+ *  - **an `operator` value is never overwritten.** A moderator typed a survey in; a re-run of a global
+ *    modelled join must not quietly undo that. This is the durability half of D68's top rung.
+ *  - **a worse rung never displaces a better one**, per measurement. So the pipeline can be re-run with
+ *    sources in any order, or with one source added later, and converges on the same answer — the same
+ *    property `importCanonical` has and for the same reason (these runs get interrupted and resumed).
+ */
+export const importDepths = internalMutation({
+  args: {
+    depths: v.array(
+      v.object({
+        source: literals(WATER_BODY_SOURCES),
+        externalId: v.string(),
+        meanDepthM: v.optional(v.number()),
+        meanDepthSource: v.optional(literals(DEPTH_SOURCES)),
+        maxDepthM: v.optional(v.number()),
+        maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
+      }),
+    ),
+  },
+  handler: async (ctx, { depths }) => {
+    let updated = 0;
+    let unmatched = 0;
+    let skipped = 0;
+    let operatorHeld = 0;
+    let inverted = 0;
+    const rejects: { key: string; reason: string }[] = [];
+    for (const item of depths) {
+      const body = await ctx.db
+        .query('waterBodies')
+        .withIndex('by_external_id', (q) =>
+          q.eq('source', item.source).eq('externalId', item.externalId),
+        )
+        .unique();
+      if (!body) {
+        unmatched++;
+        continue;
+      }
+      const outcome = await applyDepthLadder(ctx, body, item);
+      if (outcome.changed) updated++;
+      else skipped++;
+      if (outcome.operatorHeld) {
+        operatorHeld++;
+        rejects.push({
+          key: item.externalId,
+          reason: `a moderator owns this depth on "${body.name}" — released via the lake editor`,
+        });
+      }
+      for (const bad of outcome.rejectedValues) {
+        rejects.push({ key: item.externalId, reason: `implausible depth (${bad} m), not stored` });
+      }
+      for (const clash of outcome.inversions) {
+        inverted++;
+        rejects.push({ key: item.externalId, reason: `contradictory pair on ${clash}` });
+      }
+    }
+    return { updated, unmatched, skipped, operatorHeld, inverted, rejects };
+  },
+});
+
+/** An offered depth pair with its provenance, as either depth entry point hands it to the ladder. */
+interface OfferedDepths {
+  meanDepthM?: number;
+  meanDepthSource?: DepthSource;
+  maxDepthM?: number;
+  maxDepthSource?: DepthSource;
+}
+
+/** What the ladder did with one body's offer — enough for the loader to itemize its run. */
+interface LadderOutcome {
+  changed: boolean;
+  /** A measurement an operator owns (a reading *or* a rejection) refused this offer. */
+  operatorHeld: boolean;
+  /** An offered number that wasn't a plausible depth, per measurement, with the value that failed. */
+  rejectedValues: string[];
+  /** A mean-over-max contradiction the ladder resolved, described for the run log. */
+  inversions: string[];
+}
+
+/**
+ * Apply the D68 ladder to one body. **The single place the ladder is enforced** — both depth entry
+ * points (`by_external_id` and the spatial match) go through here, so "an operator value is never
+ * overwritten" is one rule in one function rather than a convention two mutations each have to remember.
+ *
+ * It is also where an offered *number* is sanity-checked, for the same reason (review fix, 2026-07-31).
+ * The transform drops non-positive values and the `-9999` sentinel, but the transform is not the write
+ * boundary and a third-party column with a different fill value (`-999`, `9999`) is a version bump away.
+ * `setDepth` has refused implausible depths since day one; the automated path had nothing, which put the
+ * weaker guard on the input nobody reads before it lands.
+ *
+ * **And it is where the pair is kept consistent** (Greptile, PR #33). The ladder resolves each
+ * measurement independently — that is D68 working as designed, since mean and max routinely come from
+ * different rungs — but *independently resolved* is not the same as *jointly valid*. Two sources that
+ * matched slightly different lakes, or two models that disagree, can each win their own slot and leave
+ * `mean 30 m` beside `max 6 m`: impossible for one basin, displayed to skaters as fact, and worse than
+ * cosmetic because `isShallowDepth` prefers the mean, so the contradicted number is the one that decides
+ * the safety classification. See `resolveInversion`.
+ */
+async function applyDepthLadder(
+  ctx: MutationCtx,
+  body: Doc<'waterBodies'>,
+  offered: OfferedDepths,
+): Promise<LadderOutcome> {
+  const patch: Partial<Doc<'waterBodies'>> = {};
+  const rejectedValues: string[] = [];
+  const inversions: string[] = [];
+  let operatorHeld = false;
+
+  const consider = (
+    label: 'mean' | 'max',
+    value: number | undefined,
+    source: DepthSource | undefined,
+    existing: DepthSource | undefined,
+  ): { valueM: number; source: DepthSource } | undefined => {
+    if (value === undefined || source === undefined) return undefined;
+    if (!winsLadder(source, existing)) {
+      if (existing === 'operator') operatorHeld = true;
+      return undefined;
+    }
+    if (!Number.isFinite(value) || value <= 0 || value > MAX_PLAUSIBLE_DEPTH_M) {
+      rejectedValues.push(`${label} ${value}`);
+      return undefined;
+    }
+    return { valueM: value, source };
+  };
+
+  const mean = consider('mean', offered.meanDepthM, offered.meanDepthSource, body.meanDepthSource);
+  if (mean) {
+    patch.meanDepthM = mean.valueM;
+    patch.meanDepthSource = mean.source;
+  }
+  const max = consider('max', offered.maxDepthM, offered.maxDepthSource, body.maxDepthSource);
+  if (max) {
+    patch.maxDepthM = max.valueM;
+    patch.maxDepthSource = max.source;
+  }
+
+  // The pair this write would leave behind, incumbents included — an inversion is just as reachable by
+  // one measurement landing beside an older one as by a record carrying both.
+  const drop = resolveInversion(
+    { applied: mean, storedM: body.meanDepthM, storedSource: body.meanDepthSource },
+    { applied: max, storedM: body.maxDepthM, storedSource: body.maxDepthSource },
+    body.name,
+    inversions,
+  );
+  // Dropping is the same write whether the loser arrived in this offer or was already stored: clear the
+  // value *and* its rung. For an incumbent that is a retraction rather than a refusal — deliberate,
+  // since leaving it keeps an impossible pair on display and in the classifier, and clearing the rung
+  // lets a later run refill it once the sources agree. `winsLadder` guarantees it is never an operator's.
+  if (drop === 'mean') {
+    patch.meanDepthM = undefined;
+    patch.meanDepthSource = undefined;
+  } else if (drop === 'max') {
+    patch.maxDepthM = undefined;
+    patch.maxDepthSource = undefined;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return { changed: false, operatorHeld, rejectedValues, inversions };
+  }
+  await ctx.db.patch(body._id, patch);
+  return { changed: true, operatorHeld, rejectedValues, inversions };
+}
+
+/** One measurement as the pair check sees it: what would be written, or what is already there. */
+interface PairSide {
+  applied?: { valueM: number; source: DepthSource };
+  storedM?: number;
+  storedSource?: DepthSource;
+}
+
+/**
+ * Decide which half of a contradictory depth pair to drop, or `null` when the pair is fine.
+ *
+ * A mean can never exceed a max **in one basin**, so an inverted pair is not a rounding disagreement —
+ * it is proof that one of the two numbers describes something else: a different lake the geometric join
+ * landed on, or a model whose shoreline differs enough to change the answer. One of them is wrong and we
+ * cannot tell which from the numbers alone, so the ladder decides it the way it decides everything else.
+ *
+ * **The better-ranked measurement wins**, because that is what the ladder means: a measured LAGOS-US max
+ * beats a modelled HydroLAKES mean that contradicts it, in either direction of arrival. When the loser is
+ * an incumbent it is *retracted* — deliberately, since leaving it would keep the impossible pair on
+ * display and feeding the classifier, and clearing its rung lets a later run refill it once the sources
+ * agree. An `operator` value can never be the loser: `winsLadder` has already refused any offer that
+ * would contradict one.
+ *
+ * **On a tie the mean goes**, which is the conservative half of the choice rather than an arbitrary one.
+ * The mean *wins* the shallow classification when present (`isShallowDepth`), so dropping it routes the
+ * body through the generous `SHALLOW_MAX_DEPTH_M` fallback instead — the direction that keeps a shallow
+ * lake classified shallow when we are least sure (D69's asymmetry: a false positive makes a warning
+ * linger, a false negative loses the signal outright).
+ */
+function resolveInversion(
+  meanSide: PairSide,
+  maxSide: PairSide,
+  bodyName: string,
+  inversions: string[],
+): 'mean' | 'max' | null {
+  const resolve = (side: PairSide) =>
+    side.applied ??
+    (side.storedM !== undefined ? { valueM: side.storedM, source: side.storedSource } : undefined);
+  const nextMean = resolve(meanSide);
+  const nextMax = resolve(maxSide);
+  if (!nextMean || !nextMax || nextMean.valueM <= nextMax.valueM) return null;
+
+  // A measurement carrying no source at all ranks worst — it has nothing to argue with.
+  const rank = (source?: DepthSource) =>
+    source === undefined ? Number.MAX_SAFE_INTEGER : DEPTH_SOURCE_RANK[source];
+  const dropped = rank(nextMean.source) < rank(nextMax.source) ? 'max' : 'mean';
+  inversions.push(
+    `"${bodyName}": mean ${nextMean.valueM} m (${nextMean.source ?? 'no source'}) exceeds max ` +
+      `${nextMax.valueM} m (${nextMax.source ?? 'no source'}) — dropped the ${dropped}`,
+  );
+  return dropped;
+}
+
+/**
+ * Whether an incoming source may replace the one already stored. A better *or equal* rank wins, so
+ * re-running the same source with a corrected value updates rather than silently no-ops — which is the
+ * behavior you want when a source republishes, and the reason this isn't a strict `<`.
+ *
+ * An `operator` rung blocks every import **whether or not it carries a number**: a measurement cleared
+ * through `setDepth` keeps its rung as a tombstone, which is how "a human read HydroLAKES' 14 m and says
+ * it's wrong" survives the next run. `clearDepthOverride` is the way back.
+ */
+function winsLadder(incoming: DepthSource, existing?: DepthSource): boolean {
+  if (existing === undefined) return true;
+  if (existing === 'operator') return incoming === 'operator';
+  return DEPTH_SOURCE_RANK[incoming] <= DEPTH_SOURCE_RANK[existing];
+}
+
+/**
+ * How far apart two areas may be and still be believed to describe the same lake. HydroLAKES, LAGOS-US
+ * and OSM each draw a shoreline from a different water mask at a different date, so exact agreement is
+ * not on offer — but an order-of-magnitude disagreement means the point landed on the wrong body, which
+ * is the one failure mode of a spatial join that produces a *wrong* answer instead of no answer. 4× is
+ * deliberately loose: a false reject costs one lake its depth, a false accept stamps a 40 m lake's
+ * depth onto the pond next door and quietly tells the decay model that pond is deep.
+ */
+const DEPTH_MATCH_AREA_RATIO = 4;
+
+/**
+ * Spatially match a batch of source lakes to our bodies and stamp their depths (internal; the N6a ETL's
+ * load stage). The global sources are keyed to their **own** lake ids — `Hylak_id`, `lagoslakeid` — so
+ * there is no join key to our OSM corpus and the join has to be geometric.
+ *
+ * The match runs **here rather than in the ETL** because the spatial index lives here: resolving ~8k
+ * source lakes against the cell index costs ~8k small indexed lookups, where doing it locally would
+ * mean exporting all 116,070 bodies with their polygons first. It reuses `listedBodiesNearCoord` — the
+ * degenerate one-box viewport read N1 built for coord→lake resolution — so the depth join and the "you
+ * are at Lake X" hint agree by construction about which body a point is on.
+ *
+ * **Every rejection is counted and named**, because an ETL that silently matches 60% of its input looks
+ * exactly like one that matched all of it.
+ */
+export const matchAndImportDepths = internalMutation({
+  args: {
+    lakes: v.array(
+      v.object({
+        // The source's own id, echoed back in the per-lake outcome so a run can be diffed/resumed.
+        key: v.string(),
+        point: latLng,
+        areaSqM: v.optional(v.number()),
+        meanDepthM: v.optional(v.number()),
+        meanDepthSource: v.optional(literals(DEPTH_SOURCES)),
+        maxDepthM: v.optional(v.number()),
+        maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
+      }),
+    ),
+  },
+  handler: async (ctx, { lakes }) => {
+    let updated = 0;
+    let unmatched = 0;
+    let areaRejected = 0;
+    let skipped = 0;
+    let noAreaGate = 0;
+    let operatorHeld = 0;
+    let inverted = 0;
+    const rejects: { key: string; reason: string }[] = [];
+
+    for (const lake of lakes) {
+      const byId = await listedBodiesNearCoord(ctx, lake.point);
+      // No approach buffer: a lake's representative point must be *on* our polygon to be that lake.
+      // The 300 m parking buffer `resolveBodyForCoord` uses exists so a skater in the car resolves the
+      // lake; here it would let a point just off one shoreline claim the body across the road.
+      const matchId = nearestBodyForPoint(
+        lake.point,
+        [...byId.values()].map((b) => ({
+          ref: b._id,
+          polygon: b.polygon as unknown as Polygon | MultiPolygon,
+          surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
+        })),
+        0,
+      );
+      const body = matchId ? byId.get(matchId) : undefined;
+      if (!body) {
+        unmatched++;
+        rejects.push({ key: lake.key, reason: 'no listed body at this point' });
+        continue;
+      }
+
+      const ours = body.surfaceAreaSqM;
+      if (ours !== undefined && ours > 0 && lake.areaSqM !== undefined && lake.areaSqM > 0) {
+        const ratio = Math.max(ours / lake.areaSqM, lake.areaSqM / ours);
+        if (ratio > DEPTH_MATCH_AREA_RATIO) {
+          areaRejected++;
+          rejects.push({
+            key: lake.key,
+            reason: `area mismatch with "${body.name}": ${Math.round(ours)} m² vs ${Math.round(lake.areaSqM)} m² (${ratio.toFixed(1)}×)`,
+          });
+          continue;
+        }
+      } else {
+        // Counted, not silent: with an area missing on either side the guard against "the pond next
+        // door" simply doesn't run, and a run needs to say how much of its output went un-gated.
+        noAreaGate++;
+      }
+
+      const outcome = await applyDepthLadder(ctx, body, lake);
+      if (outcome.changed) updated++;
+      else skipped++;
+      if (outcome.operatorHeld) {
+        operatorHeld++;
+        rejects.push({
+          key: lake.key,
+          reason: `a moderator owns this depth on "${body.name}" — released via the lake editor`,
+        });
+      }
+      for (const bad of outcome.rejectedValues) {
+        rejects.push({
+          key: lake.key,
+          reason: `implausible depth (${bad} m) for "${body.name}", not stored`,
+        });
+      }
+      for (const clash of outcome.inversions) {
+        inverted++;
+        rejects.push({ key: lake.key, reason: `contradictory pair on ${clash}` });
+      }
+    }
+    return {
+      updated,
+      unmatched,
+      areaRejected,
+      skipped,
+      noAreaGate,
+      operatorHeld,
+      inverted,
+      rejects,
+    };
   },
 });
 

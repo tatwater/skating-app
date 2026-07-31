@@ -21,11 +21,14 @@ import { cacheBody } from '../lib/bodyCache';
 import { env } from '../lib/env';
 import {
   bodyFeaturesToFeatureCollection,
+  CONFIRMED_HAZARD_FILTER,
   HAZARD_PALETTE,
   hazardColorExpression,
   hazardDraftToFeatureCollection,
   hazardFillOpacityExpression,
   hazardsToFeatureCollection,
+  PROVISIONAL_DASH_ARRAY,
+  PROVISIONAL_HAZARD_FILTER,
 } from '../lib/hazardMap';
 import { ensureForegroundPermission } from '../lib/location';
 import { ensureOfflineBasemap, resolveBasemapSource } from '../lib/offlineBasemap';
@@ -608,20 +611,28 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
             'fill-opacity': hazardFillOpacityExpression() as never,
           }}
         />
+        {/* Dashed while provisional (one unverified report), solid once independently confirmed —
+            the same soft/hard distinction the on-ice banner makes (D54). **Two layers, not one
+            expression:** `line-dasharray` takes no data expression, and the native renderer says so
+            out loud ("line-dasharray data expressions not supported") before dropping the property.
+            The filters partition the source, so every hazard is still drawn exactly once. */}
         <Layer
-          id="hazard-outline"
+          id="hazard-outline-provisional"
           type="line"
+          filter={PROVISIONAL_HAZARD_FILTER as never}
           paint={{
             'line-color': hazardColorExpression(hazardPalette) as never,
             'line-width': 1.5,
-            // Dashed while provisional (one unverified report), solid once independently confirmed —
-            // the same soft/hard distinction the on-ice banner makes (D54).
-            'line-dasharray': [
-              'case',
-              ['get', 'provisional'],
-              ['literal', [2, 2]],
-              ['literal', [1, 0]],
-            ] as never,
+            'line-dasharray': [...PROVISIONAL_DASH_ARRAY],
+          }}
+        />
+        <Layer
+          id="hazard-outline-confirmed"
+          type="line"
+          filter={CONFIRMED_HAZARD_FILTER as never}
+          paint={{
+            'line-color': hazardColorExpression(hazardPalette) as never,
+            'line-width': 1.5,
           }}
         />
       </GeoJSONSource>

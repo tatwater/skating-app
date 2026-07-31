@@ -10,7 +10,13 @@ export default defineConfig({
       // glue (untestable shells; all real work is in the covered transform + `@skating/core`),
       // and `types.ts` is type-only. Excluding the glue is not coverage-gaming — the gate
       // still bites on every line of transform logic (settled note, phase-1 plan).
-      exclude: ['src/**/*.test.ts', 'src/cli.ts', 'src/load.ts', 'src/types.ts'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/cli.ts',
+        'src/load.ts',
+        'src/loadDepths.ts',
+        'src/types.ts',
+      ],
       // Matches @skating/core + @skating/convex; ratchet upward over time (D40).
       thresholds: {
         lines: 90,

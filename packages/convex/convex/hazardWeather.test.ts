@@ -353,3 +353,131 @@ describe('hazardWeather.refreshHazardWeather', () => {
     expect(h?.weatherAdjustedAt).toBe(now);
   });
 });
+
+/** Open-Meteo response: 6 recent hours well above freezing (thaw ⇒ open_water persists, m < 1). */
+function warmResponse(nowMs: number) {
+  const s = (hoursAgo: number) => Math.floor((nowMs - hoursAgo * HOUR_MS) / 1000);
+  const n = 6;
+  return {
+    utc_offset_seconds: -18000,
+    hourly: {
+      time: Array.from({ length: n }, (_, i) => s(n - i)),
+      temperature_2m: Array.from({ length: n }, () => 5),
+      precipitation: Array.from({ length: n }, () => 0),
+      rain: Array.from({ length: n }, () => 0),
+      snowfall: Array.from({ length: n }, () => 0),
+      snow_depth: Array.from({ length: n }, () => 0),
+      wind_speed_10m: Array.from({ length: n }, () => 8),
+      wind_gusts_10m: Array.from({ length: n }, () => 15),
+      cloud_cover: Array.from({ length: n }, () => 20),
+      sunshine_duration: Array.from({ length: n }, () => 1800),
+      shortwave_radiation: Array.from({ length: n }, () => 200),
+    },
+  };
+}
+
+/** Run one sweep against a body seeded with `extra`, returning the stored multiplier. */
+async function multiplierFor(bodyExtra: Record<string, unknown>, response: 'warm' | 'cold') {
+  const t = convexTestWithGeo();
+  const waterBodyId = await seedBody(t, bodyExtra);
+  const authorId = await seedProfile(t);
+  const hazardId = await seedHazard(t, waterBodyId, authorId);
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify(
+            response === 'warm' ? warmResponse(Date.now()) : coldSnowyResponse(Date.now()),
+          ),
+          { status: 200 },
+        ),
+    ),
+  );
+  await t.action(internal.hazardWeather.refreshHazardWeather, {});
+  const h = await t.run((ctx) => ctx.db.get(hazardId));
+  return { t, waterBodyId, multiplier: h?.decayMultiplier };
+}
+
+describe('hazardWeather — shallow bodies (N6a / D69)', () => {
+  test('a shallow lake persists an open-water warning longer than a deep one', async () => {
+    const deep = await multiplierFor({ meanDepthM: 25, meanDepthSource: 'lagos_us' }, 'warm');
+    const shallow = await multiplierFor({ meanDepthM: 2, meanDepthSource: 'lagos_us' }, 'warm');
+    expect(deep.multiplier).toBeLessThan(1); // thaw ⇒ persist (D56)
+    expect(shallow.multiplier).toBeLessThan(deep.multiplier as number); // …and more so when shallow
+  });
+
+  test('the max-depth fallback classifies a body with no mean depth', async () => {
+    const deep = await multiplierFor({ maxDepthM: 40, maxDepthSource: 'globathy' }, 'warm');
+    const shallow = await multiplierFor({ maxDepthM: 4, maxDepthSource: 'globathy' }, 'warm');
+    expect(shallow.multiplier).toBeLessThan(deep.multiplier as number);
+  });
+
+  test('a `shallow_bay_early_thaw` bodyFeature counts even with no depth at all', async () => {
+    // The path for the 73% of the corpus below every global source's area floor — and the whole reason
+    // shallowness is a boolean rather than a curve. Before N6a this feature was wired to nothing.
+    const plain = await multiplierFor({}, 'warm');
+
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    const hazardId = await seedHazard(t, waterBodyId, authorId);
+    await t.run((ctx) =>
+      ctx.db.insert('bodyFeatures', {
+        waterBodyId,
+        type: 'shallow_bay_early_thaw' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point', coordinates: [-72.0, 44.0] },
+        radiusMeters: 100,
+        bbox: { minLat: 43.999, minLng: -72.001, maxLat: 44.001, maxLng: -71.999 },
+        addedByUserId: authorId,
+        active: true,
+        createdAt: Date.now(),
+      }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(warmResponse(Date.now())), { status: 200 })),
+    );
+    await t.action(internal.hazardWeather.refreshHazardWeather, {});
+    const h = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(h?.decayMultiplier).toBeLessThan(plain.multiplier as number);
+  });
+
+  test('an INACTIVE shallow feature does not count (demotion is reversible, D53)', async () => {
+    const plain = await multiplierFor({}, 'warm');
+
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    const hazardId = await seedHazard(t, waterBodyId, authorId);
+    await t.run((ctx) =>
+      ctx.db.insert('bodyFeatures', {
+        waterBodyId,
+        type: 'shallow_bay_early_thaw' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point', coordinates: [-72.0, 44.0] },
+        radiusMeters: 100,
+        bbox: { minLat: 43.999, minLng: -72.001, maxLat: 44.001, maxLng: -71.999 },
+        addedByUserId: authorId,
+        active: false,
+        createdAt: Date.now(),
+      }),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify(warmResponse(Date.now())), { status: 200 })),
+    );
+    await t.action(internal.hazardWeather.refreshHazardWeather, {});
+    const h = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(h?.decayMultiplier).toBe(plain.multiplier);
+  });
+
+  test('in COLD weather a shallow body is treated exactly like a deep one (D69 is one-sided)', async () => {
+    // The invariant the decision turns on: shallowness must never speed cold-side healing.
+    const deep = await multiplierFor({ meanDepthM: 25, meanDepthSource: 'lagos_us' }, 'cold');
+    const shallow = await multiplierFor({ meanDepthM: 2, meanDepthSource: 'lagos_us' }, 'cold');
+    expect(deep.multiplier).toBeGreaterThan(1);
+    expect(shallow.multiplier).toBe(deep.multiplier);
+  });
+});

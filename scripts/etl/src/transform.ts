@@ -10,6 +10,7 @@
  */
 
 import {
+  MAX_PLAUSIBLE_DEPTH_M,
   type OsmTags,
   polygonBBox,
   representativePoint,
@@ -18,7 +19,7 @@ import {
 } from '@skating/core';
 import simplify from '@turf/simplify';
 import type { MultiPolygon, Polygon } from 'geojson';
-import type { CanonicalBody, OsmWaterFeature, OsmWaterProperties } from './types';
+import type { CanonicalBody, OsmDepthRecord, OsmWaterFeature, OsmWaterProperties } from './types';
 
 /**
  * Douglas–Peucker tolerance in degrees ≈ 5 m at Vermont's latitude (~0.00005° of latitude).
@@ -164,6 +165,70 @@ export function featureToCanonicalBody(feature: OsmWaterFeature): CanonicalBody 
   };
 }
 
+// ── OSM depth tags (N6a rung 7) ──────────────────────────────────────────────────────────────
+//
+// The roadmap filed this as "the ETL update carrying OSM `depth`/`maxdepth` tags where they exist",
+// folded into N6a — and the N6a review found it had never been written, leaving `osm_tag` an enum value
+// with no producer. It rides *this* pass rather than the depth ETL's, because the tags arrive with the
+// OSM export and the depth pipeline never sees an OSM feature.
+
+/** Feet → metres, for a tag that spells its unit. */
+const M_PER_FOOT = 0.3048;
+
+/**
+ * Parse an OSM depth tag value to metres, or `undefined` if it isn't an unambiguous single depth.
+ *
+ * **Deliberately strict**, because this is the bottom rung and a wrong number here is worse than no
+ * number: a bare value is metres (the OSM default unit), an explicit `m` / `ft` / `'` is converted, and
+ * everything else — ranges (`2-3`), approximations (`~5`), comparisons (`>10`), unparseable junk — is
+ * refused rather than guessed at. There is no unit *detection* here and there can't be: `10` might be a
+ * chart in feet, which is precisely why this rung sits below every model in the ladder.
+ */
+export function parseOsmDepthMeters(raw: unknown): number | undefined {
+  if (typeof raw !== 'string' && typeof raw !== 'number') return undefined;
+  const text = String(raw).trim().toLowerCase();
+  const match = /^(\d+(?:\.\d+)?)\s*(m|metre|metres|meter|meters|ft|feet|foot|')?$/.exec(text);
+  if (!match) return undefined;
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  const unit = match[2];
+  const meters =
+    unit === 'ft' || unit === 'feet' || unit === 'foot' || unit === "'"
+      ? value * M_PER_FOOT
+      : value;
+  // Same backstop the operator field and the depth loader carry — a lake in our region is not 400 m deep.
+  return meters > MAX_PLAUSIBLE_DEPTH_M ? undefined : meters;
+}
+
+/**
+ * A depth record from one feature's tags, or `null` when it has none we can use.
+ *
+ * **`depth` maps to the *max*, never the mean, and that asymmetry is the safety-relevant call.** OSM's
+ * `depth` is documented loosely — mappers use it for a typical, a mean and a maximum — so mapping it to
+ * `meanDepthM` would put an unsupported claim in the field that *wins* the shallow classification
+ * (`isShallowDepth` prefers a mean whenever one exists). Read as a max it enters through the generous
+ * 7 m fallback instead, which is the direction that keeps a shallow lake classified shallow. Only the
+ * explicit `depth:mean` — rare, and unambiguous when present — is trusted as a mean.
+ */
+export function depthFromOsmTags(
+  props: OsmWaterProperties,
+  externalId: string,
+): OsmDepthRecord | null {
+  const meanDepthM = parseOsmDepthMeters(props['depth:mean']);
+  // `maxdepth` is the better claim; a bare `depth` fills in only when it's the one on offer.
+  const maxDepthM = parseOsmDepthMeters(props.maxdepth) ?? parseOsmDepthMeters(props.depth);
+  if (meanDepthM === undefined && maxDepthM === undefined) return null;
+  if (meanDepthM !== undefined && maxDepthM !== undefined && meanDepthM > maxDepthM) {
+    return null; // transposed or mismatched tags — the same refusal `setDepth` makes
+  }
+  return {
+    source: 'osm',
+    externalId,
+    ...(meanDepthM !== undefined ? { meanDepthM, meanDepthSource: 'osm_tag' as const } : {}),
+    ...(maxDepthM !== undefined ? { maxDepthM, maxDepthSource: 'osm_tag' as const } : {}),
+  };
+}
+
 /** Per-feature outcome tally for the run summary. */
 export interface TransformSummary {
   /** Features seen. */
@@ -174,6 +239,8 @@ export interface TransformSummary {
   droppedByType: number;
   /** Skipped because the feature threw (bad geometry / missing id) — see `errors`. */
   skipped: number;
+  /** Bodies carrying a usable OSM depth tag (N6a rung 7). Expect a handful: inland coverage is ~nil. */
+  depthsTagged: number;
 }
 
 /** A feature that threw during transform, kept for the run summary rather than aborting. */
@@ -184,6 +251,8 @@ export interface TransformError {
 
 export interface TransformOutput {
   bodies: CanonicalBody[];
+  /** Depths tagged on the bodies above — a separate stream for a separate mutation (N6a rung 7). */
+  depths: OsmDepthRecord[];
   summary: TransformSummary;
   errors: TransformError[];
 }
@@ -195,6 +264,7 @@ export interface TransformOutput {
  */
 export function transformFeatures(features: Iterable<OsmWaterFeature>): TransformOutput {
   const bodies: CanonicalBody[] = [];
+  const depths: OsmDepthRecord[] = [];
   const errors: TransformError[] = [];
   let total = 0;
   let droppedByType = 0;
@@ -208,6 +278,10 @@ export function transformFeatures(features: Iterable<OsmWaterFeature>): Transfor
         continue;
       }
       bodies.push(body);
+      // Only for a body we're actually storing: a depth keyed to an `externalId` no row carries would
+      // count as `unmatched` in the loader forever, which is noise, not a finding.
+      const depth = depthFromOsmTags(feature.properties ?? {}, body.externalId);
+      if (depth) depths.push(depth);
     } catch (err) {
       errors.push({
         externalId:
@@ -219,7 +293,14 @@ export function transformFeatures(features: Iterable<OsmWaterFeature>): Transfor
 
   return {
     bodies,
-    summary: { total, imported: bodies.length, droppedByType, skipped: errors.length },
+    depths,
+    summary: {
+      total,
+      imported: bodies.length,
+      droppedByType,
+      skipped: errors.length,
+      depthsTagged: depths.length,
+    },
     errors,
   };
 }

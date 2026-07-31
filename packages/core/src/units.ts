@@ -106,3 +106,11 @@ export function formatAreaAcres(sqm: number, decimals = 1): string {
   const acres = roundTo(sqMetersToAcres(sqm), decimals);
   return `${acres} ${acres === 1 ? 'acre' : 'acres'}`;
 }
+
+/**
+ * Lake depth in feet (N6a). Whole feet by default: every source we have is either a survey read off a
+ * contour interval or a model, so a decimal would be false precision on both.
+ */
+export function formatDepthFeet(meters: number, decimals = 0): string {
+  return `${roundTo(metersToFeet(meters), decimals)} ft`;
+}

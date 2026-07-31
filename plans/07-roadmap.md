@@ -1006,6 +1006,11 @@ built. Two findings worth carrying:
   belong at the bottom of the lake drawer with the depth provenance.
 
 *Also folded into N6a:* the ETL update carrying OSM `depth`/`maxdepth` tags where they exist (rare).
+**Built 2026-07-31, in the review pass, having been asserted here and missed in the build** — this line
+claimed the work was folded in while `osm_tag` sat in the enum with no producer, which is the same
+described-as-wired failure N6a opened by cataloguing. It rides the **water** ETL (`scripts/etl`,
+`--depths` → `load-depths`), not the depth ETL, since only that pass ever sees an OSM feature, and it
+therefore ships with the canonical re-import rather than the depth run.
 *Also folded into N6b:* bulk state-agency bathymetry (NH GRANIT, VT ANR, MassGIS, NYSDEC), since those
 datasets are being fetched there anyway — an operator override covers specific lakes until then.
 

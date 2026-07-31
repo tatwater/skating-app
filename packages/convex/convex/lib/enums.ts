@@ -184,6 +184,7 @@ export const MODERATION_ACTIONS = [
   // generic `remove` / `restore` verbs, disambiguated by the `waterBodySubArea` target type, exactly
   // as `hide` / `remove` are already shared across content kinds.
   'set_weather_sample_points', // placed the multi-cell weather sampling grid on a giant (D56 §5)
+  'set_lake_depth', // typed a surveyed depth in, the top rung of the D68 ladder (N6a)
   'create_sub_area',
   'redraw_sub_area', // geometry changed — schedules a re-stamp of the parent's reports + hazards
   'rename_sub_area', // name or aliases changed — also a re-stamp, since the name is denormalized

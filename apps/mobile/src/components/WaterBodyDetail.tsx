@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  describeLakeDepth,
   formatAreaAcres,
   formatSkateTime,
   humanizeEnum,
@@ -122,6 +123,8 @@ export function WaterBodyDetail({
     );
   }
 
+  const depth = describeLakeDepth(result.body);
+
   return (
     <YStack gap="$3">
       <YStack gap="$1">
@@ -136,7 +139,15 @@ export function WaterBodyDetail({
           {result.body.surfaceAreaSqM !== undefined
             ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
             : ''}
+          {depth ? ` · ${depth.text}` : ''}
         </Text>
+        {/* Provenance under the numbers, same as web: absent for most bodies, and a caveat inline in
+            the type/area line would read as clutter on the minority that do have a depth. */}
+        {depth ? (
+          <Text color="$foregroundMuted" fontSize="$1">
+            {depth.caption}
+          </Text>
+        ) : null}
         <DirectionsButton waterBodyId={result.body._id} />
       </YStack>
 
