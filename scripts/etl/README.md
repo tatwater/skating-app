@@ -130,7 +130,8 @@ osmium export water.osm.pbf \
 
 ```bash
 cd ..                                   # back to scripts/etl
-pnpm --filter @skating/etl transform .scratch/water.geojsonseq .scratch/bodies.ndjson
+pnpm --filter @skating/etl transform .scratch/water.geojsonseq .scratch/bodies.ndjson \
+  --depths=.scratch/depths.ndjson       # optional second stream, see step 5
 ```
 
 Classifies each feature, simplifies to ~5 m (D48), computes `bbox` / on-water `centroid` /
@@ -139,6 +140,16 @@ and skipped (never aborts the batch); the run summary prints imported / dropped 
 counts and the **densest ring** (so any adaptive coarsening is visible). *(Reference: the
 2026-07-12 Vermont extract yields ~9,970 bodies from ~12,700 polygon features — the remainder
 are deferred rivers/wetland. Total NDJSON ≈ 6 MB.)*
+
+**`--depths` — OSM depth tags (N6a rung 7).** A second, much smaller NDJSON: the bodies carrying a
+`depth` / `maxdepth` / `depth:mean` tag we can read. The parse is deliberately strict — a bare value is
+metres, an explicit `m`/`ft`/`'` converts, and a range (`2-3`), an approximation (`~5`) or anything else
+is refused rather than guessed at, because this is the bottom rung of the D68 ladder and a wrong number
+here feeds a safety signal. **A bare `depth` becomes a `max`, never a mean**: OSM documents the tag
+loosely enough that mappers use it for all three, and the mean is the field that *wins* the shallow
+classification, so reading it as a max routes it through the generous 7 m fallback instead. Expect very
+few — inland coverage is near-nil and the real ones are usually nautical. The count is printed either
+way, because "no lake in five states tags its depth" is a finding and a silent absence isn't.
 
 **Adaptive coarsening (D48 hard-limit escape hatch).** Every body gets the uniform ~5 m pass.
 Convex additionally rejects any **array over 8,192 elements**, which includes a polygon ring's
@@ -177,6 +188,18 @@ Batches are bounded by two limits (see `src/load.ts`):
 - **ARG_MAX (now the binding one):** `convex run` takes args only as an inline JSON string, so each
   batch's serialized args are kept under a byte budget (Champlain, ~0.3 MiB, is the only near-solo
   batch).
+
+### 5. Load the OSM depth tags (optional, N6a)
+
+```bash
+pnpm --filter @skating/etl load-depths .scratch/depths.ndjson
+```
+
+Sends them to `waterBodies.importDepths`, which keys on `source` + `externalId` — no spatial join needed,
+since these depths came off the very features the bodies were built from. (The *global* depth sources
+need a geometric join and live in [`scripts/lake-depth`](../lake-depth/README.md).) The D68 ladder runs
+inside the mutation and `osm_tag` is its bottom rung, so a re-run can only fill a measurement nothing
+better has claimed, and it can never overwrite a moderator's reading or rejection.
 
 ### Repairing the spatial index without a re-import
 

@@ -9,7 +9,8 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "transform": "tsx src/cli.ts",
-    "load": "tsx src/load.ts"
+    "load": "tsx src/load.ts",
+    "load-depths": "tsx src/loadDepths.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

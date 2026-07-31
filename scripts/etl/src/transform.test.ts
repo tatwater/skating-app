@@ -4,11 +4,13 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
   CONVEX_ARRAY_LIMIT,
+  depthFromOsmTags,
   externalIdFromProperties,
   featureToCanonicalBody,
   largestRingSize,
   MAX_RING_VERTICES,
   maxArrayLength,
+  parseOsmDepthMeters,
   SIMPLIFY_TOLERANCE_DEG,
   transformFeatures,
 } from './transform';
@@ -267,7 +269,13 @@ describe('featureToCanonicalBody', () => {
 describe('transformFeatures (batch resilience)', () => {
   it('transforms the real Vermont fixture: classifies, drops rivers/subtag-less wetland', () => {
     const { bodies, summary, errors } = transformFeatures(loadFixture());
-    expect(summary).toEqual({ total: 10, imported: 8, droppedByType: 2, skipped: 0 });
+    expect(summary).toEqual({
+      total: 10,
+      imported: 8,
+      droppedByType: 2,
+      skipped: 0,
+      depthsTagged: 0,
+    });
     expect(errors).toEqual([]);
 
     const byId = new Map(bodies.map((body) => [body.externalId, body]));
@@ -298,7 +306,13 @@ describe('transformFeatures (batch resilience)', () => {
     const good = waterFeature({ '@id': 100, name: 'Good Pond' });
     const degenerate = waterFeature({ '@id': 101 }, [[]]); // empty ring → throws
     const { bodies, summary, errors } = transformFeatures([good, degenerate]);
-    expect(summary).toEqual({ total: 2, imported: 1, droppedByType: 0, skipped: 1 });
+    expect(summary).toEqual({
+      total: 2,
+      imported: 1,
+      droppedByType: 0,
+      skipped: 1,
+      depthsTagged: 0,
+    });
     expect(bodies).toHaveLength(1);
     expect(bodies[0]?.externalId).toBe('way/100');
     expect(errors).toHaveLength(1);
@@ -350,8 +364,96 @@ describe('transformFeatures (batch resilience)', () => {
   it('returns an empty result for no features', () => {
     expect(transformFeatures([])).toEqual({
       bodies: [],
-      summary: { total: 0, imported: 0, droppedByType: 0, skipped: 0 },
+      depths: [],
+      summary: { total: 0, imported: 0, droppedByType: 0, skipped: 0, depthsTagged: 0 },
       errors: [],
     });
+  });
+});
+
+/**
+ * OSM depth tags (N6a rung 7). The roadmap said this rode the water ETL and it never did — `osm_tag`
+ * was an enum value with no producer until the N6a review, so these tests pin the parse rules that
+ * make the bottom rung safe to trust at all.
+ */
+describe('parseOsmDepthMeters', () => {
+  it('reads a bare number as metres (the OSM default unit)', () => {
+    expect(parseOsmDepthMeters('4')).toBe(4);
+    expect(parseOsmDepthMeters('3.5')).toBe(3.5);
+    expect(parseOsmDepthMeters(6)).toBe(6);
+  });
+
+  it('converts an explicit unit', () => {
+    expect(parseOsmDepthMeters('3 m')).toBe(3);
+    expect(parseOsmDepthMeters('10 ft')).toBeCloseTo(3.048, 6);
+    expect(parseOsmDepthMeters("12'")).toBeCloseTo(3.6576, 6);
+    expect(parseOsmDepthMeters('2 metres')).toBe(2);
+  });
+
+  it('refuses anything that is not one unambiguous depth', () => {
+    // Guessing here is the failure: a range or an approximation is a mapper telling us they don't
+    // know, and the bottom rung of a safety input is the wrong place to fill that in.
+    for (const value of ['2-3', '~5', '>10', 'deep', '', 'NaN', '3 fathoms', '-4', '0']) {
+      expect(parseOsmDepthMeters(value)).toBeUndefined();
+    }
+    expect(parseOsmDepthMeters(undefined)).toBeUndefined();
+    expect(parseOsmDepthMeters({ depth: 4 })).toBeUndefined();
+  });
+
+  it('refuses a depth deeper than any lake in the region', () => {
+    expect(parseOsmDepthMeters('500')).toBeUndefined();
+  });
+});
+
+describe('depthFromOsmTags', () => {
+  it('maps `maxdepth` to the max', () => {
+    expect(depthFromOsmTags({ maxdepth: '9' }, 'way/1')).toEqual({
+      source: 'osm',
+      externalId: 'way/1',
+      maxDepthM: 9,
+      maxDepthSource: 'osm_tag',
+    });
+  });
+
+  it('maps a bare `depth` to the MAX, never the mean', () => {
+    // The safety-relevant call: `isShallowDepth` prefers a mean whenever one exists, so putting an
+    // ambiguous tag there would let one loose value overrule the generous max fallback and lose the
+    // shallow signal on a lake that deserved it.
+    expect(depthFromOsmTags({ depth: '5' }, 'way/1')).toEqual({
+      source: 'osm',
+      externalId: 'way/1',
+      maxDepthM: 5,
+      maxDepthSource: 'osm_tag',
+    });
+  });
+
+  it('prefers `maxdepth` over `depth` when a feature carries both', () => {
+    expect(depthFromOsmTags({ depth: '5', maxdepth: '11' }, 'way/1')?.maxDepthM).toBe(11);
+  });
+
+  it('trusts only the explicit `depth:mean` as a mean', () => {
+    const record = depthFromOsmTags({ 'depth:mean': '2', maxdepth: '9' }, 'way/1');
+    expect(record).toMatchObject({ meanDepthM: 2, meanDepthSource: 'osm_tag', maxDepthM: 9 });
+  });
+
+  it('refuses a transposed pair, like the operator field does', () => {
+    expect(depthFromOsmTags({ 'depth:mean': '30', maxdepth: '6' }, 'way/1')).toBeNull();
+  });
+
+  it('is null for a feature with no usable depth tag', () => {
+    expect(depthFromOsmTags({}, 'way/1')).toBeNull();
+    expect(depthFromOsmTags({ depth: 'about 4' }, 'way/1')).toBeNull();
+  });
+
+  it('rides transformFeatures, keyed to the body it came from', () => {
+    const { bodies, depths, summary } = transformFeatures([
+      waterFeature({ '@id': 7, name: 'Tagged Pond', maxdepth: '4' }),
+      waterFeature({ '@id': 8, name: 'Untagged Pond' }),
+    ]);
+    expect(bodies).toHaveLength(2);
+    expect(summary.depthsTagged).toBe(1);
+    expect(depths).toEqual([
+      { source: 'osm', externalId: 'way/7', maxDepthM: 4, maxDepthSource: 'osm_tag' },
+    ]);
   });
 });
