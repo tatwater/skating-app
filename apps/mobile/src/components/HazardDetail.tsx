@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  ALSO_A_KNOWN_FEATURE,
   classifyFlushError,
   confirmerClause,
   createQueuedConfirmation,
@@ -275,6 +276,15 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
       {hazard.expired ? (
         <Paragraph color="$foregroundMuted" fontSize={13}>
           {expiredCrossingNote()}
+        </Paragraph>
+      ) : null}
+
+      {/* Promotion stopped hiding the pin (D53 amendment), so for the season in which it happened both
+          the sighting and the standing feature are on the map. This line is what makes them one story
+          rather than two independent warnings about the same ice. */}
+      {hazard.promotedFeatureType !== undefined ? (
+        <Paragraph color="$foregroundMuted" fontSize={13}>
+          {ALSO_A_KNOWN_FEATURE}
         </Paragraph>
       ) : null}
 

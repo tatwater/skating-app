@@ -265,11 +265,11 @@ export const resolveStripAnchor = internalQuery({
     } else if (hazardId !== undefined) {
       const hazard = await ctx.db.get(hazardId);
       if (!hazard) return null;
-      // Same visibility gate the hazard drawer uses — a moderator-hidden or feature-promoted pin has no
-      // strip (it doesn't render), so it can't drive a fetch either.
-      if (hazard.moderationStatus !== 'visible' || hazard.promotedToFeatureId !== undefined) {
-        return null;
-      }
+      // Same visibility gate the hazard drawer uses — a moderator-hidden pin has no strip (it doesn't
+      // render), so it can't drive a fetch either. **Supersession is no longer part of that gate**
+      // (D53 amendment, N5c): a promoted pin still renders, still opens, and still shows how the
+      // weather has moved since it was last confirmed, because it is still a sighting on a date.
+      if (hazard.moderationStatus !== 'visible') return null;
       waterBodyId = hazard.waterBodyId;
       startMs = Math.max(hazard.lastConfirmedAt, now - HAZARD_WEATHER_LOOKBACK_DAYS * DAY_MS);
       near = hazardCenter(hazard);

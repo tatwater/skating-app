@@ -756,10 +756,18 @@ export default defineSchema({
     // archive, abuse would be indistinguishable from a safety verdict (D3).
     moderationStatus: literals(MODERATION_STATUSES),
     healingState: v.optional(literals(HAZARD_HEALING_STATES)), // latest "healing but unsafe" (D52)
-    // SUPERSESSION — a third axis, distinct from both `status` and `moderationStatus` (D53). Set when
-    // an admin promotes this hazard into a persistent `bodyFeatures` row: the feature now carries the
-    // warning, so the hazard stops rendering, but this must NOT be done by setting `status: archived`,
-    // which reads as "the community cleared it" (D3). Cleared on demote, so the hazard resurfaces.
+    // PROVENANCE — set when a moderator promotes this hazard into a persistent `bodyFeatures` row
+    // (D53). It records where the feature came from and **nothing else**.
+    //
+    // It used to be a visibility axis, and the D53 amendment (N5c) is that it stopped being one: a
+    // `bodyFeature` is a standing statement about the lake, a hazard is a sighting by a person on a
+    // date, and promotion adds the first without deleting the second — in any season, before or after.
+    // Hiding on this field rewrote past winters as winters in which nobody reported anything, blocked
+    // the permalink, and blocked confirmation of the one claim that *is* confirmable ("it's here right
+    // now", as opposed to "it forms here"). The only reader still filtering on it is
+    // `listPromotionCandidates`, where an already-promoted hazard is finished as a *suggestion*.
+    // Cleared on demote. Never set `status: archived` for a promotion — that reads as "the community
+    // cleared it" (D3).
     promotedToFeatureId: v.optional(v.id('bodyFeatures')),
     firstReportedAt: v.number(),
     lastConfirmedAt: v.number(), // drives the per-type freshness decay (D15/D52)

@@ -107,12 +107,18 @@ export const create = mutation({
 /**
  * Graduate a recurring hazard into a permanent body feature (D53).
  *
- * The source hazard is **superseded, not archived** — `promotedToFeatureId` is set so it stops
- * rendering (the feature carries the warning now), but its lifecycle `status` is left untouched. This
- * distinction is load-bearing: setting `status: archived` here would make an admin's promotion
- * indistinguishable from the community voting the hazard healed, laundering a moderation action into a
- * safety verdict (D3). The `promotedFromHazardId` backlink records where the feature came from, and
- * `demote` clears the supersession so the hazard resurfaces intact.
+ * **The source hazard is left alone.** `promotedToFeatureId` is set as a backlink and that is all it
+ * does (D53 amendment, N5c): the pin goes on rendering, goes on taking confirmations, and goes on
+ * resolving by permalink, because a feature is a *pattern* and a hazard is a *sighting*, and users
+ * keep filing sightings of a thing the map already knows about. Its lifecycle `status` is likewise
+ * untouched — setting `status: archived` here would make a moderator's promotion indistinguishable
+ * from the community voting the hazard healed, laundering a moderation action into a safety verdict
+ * (D3). `promotedFromHazardId` records the other direction, and `demote` clears both.
+ *
+ * Double-rendering is confined to the season of promotion, since the pass that promotes runs
+ * pre-first-ice when last season's sightings are already season-hidden (D63) — and within that season
+ * the drawer carries one line saying the spot is also marked as a recurring feature, so the two read
+ * as one story.
  */
 export const promote = mutation({
   args: {
@@ -147,8 +153,7 @@ export const promote = mutation({
       addedByUserId: actor._id,
       promotedFromHazardId: hazardId,
     });
-    // The feature carries the warning now, permanently and without decay — so hide the source hazard
-    // via the supersession axis, NOT by archiving it (which would read as a community all-clear, D3).
+    // Provenance only — this hides nothing (D53 amendment). See the docstring.
     await ctx.db.patch(hazardId, { promotedToFeatureId: id });
     await audit(ctx, actor._id, 'promote_body_feature', id, reason, { hazardId });
     return id;
@@ -157,8 +162,10 @@ export const promote = mutation({
 
 /**
  * Reversible demotion — flips `active` off, never hard-deletes (D53). If the feature was promoted from
- * a hazard, the source hazard is un-superseded so it returns to the map in whatever lifecycle state it
- * was in — the promotion round-trips with no data loss and no laundered safety verdict.
+ * a hazard, the backlink is cleared, so the promotion round-trips with no data loss and no laundered
+ * safety verdict. Since the D53 amendment the hazard never left the map to return to; what clearing
+ * the backlink restores is its place in `listPromotionCandidates`, which is the one reader that still
+ * treats a promoted pin as finished.
  */
 export const demote = mutation({
   args: { bodyFeatureId: v.id('bodyFeatures'), reason: v.string() },

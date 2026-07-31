@@ -257,3 +257,17 @@ export const FOOTPRINT_IS_APPROXIMATE =
 /** Explains why a permanent body feature has no age and no confirm loop (D53). */
 export const BODY_FEATURE_CAVEAT =
   'A known seasonal feature of this water body — weak every season regardless of recent cold.';
+
+/**
+ * The one line a promoted pin carries in its drawer (D53 amendment, N5c).
+ *
+ * Promotion no longer hides the sighting it came from, so for the rest of that season the map shows
+ * both: a hazard somebody reported on a date, and a permanent feature saying this is a thing the lake
+ * does. Without a line joining them, that reads as two independent warnings about the same ice, which
+ * over-counts the evidence — precisely the error the amendment exists to avoid in the other direction.
+ *
+ * Written to keep the two claims distinct rather than to merge them: *this* is a sighting, and the
+ * spot is *also* marked as a standing feature. Neither sentence is a prediction (D3).
+ */
+export const ALSO_A_KNOWN_FEATURE =
+  'This spot is also marked as a known feature of the lake — a standing note about what forms here, separate from this sighting.';

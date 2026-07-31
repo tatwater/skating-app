@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  ALSO_A_KNOWN_FEATURE,
   BODY_FEATURE_CAVEAT,
   confirmerClause,
   disputedNote,
@@ -64,6 +65,12 @@ export interface HazardViewData {
    */
   reporterName?: string;
   reporterImageUrl?: string;
+  /**
+   * Set when this pin has been promoted into a still-active `bodyFeatures` row (D53 amendment). Draws
+   * one reconciling line, because promotion no longer hides the sighting and the two would otherwise
+   * read as two separate warnings about the same ice.
+   */
+  alsoAKnownFeature?: boolean;
   /** The reporter's cosmetic trust class (D50) — the `TrustAvatar` ring color; `null`/absent ⇒ no ring. */
   reporterTrustClass?: TrustClass | null;
   firstReportedAt: number;
@@ -225,6 +232,12 @@ export function HazardView({
             stronger statement: this pin is not merely faded, it has left the map. */}
         {data.expired ? (
           <p className="rounded-md bg-surface-muted p-3 text-sm">{expiredCrossingNote()}</p>
+        ) : null}
+        {/* Promotion stopped hiding the pin (D53 amendment), so for the season in which it happened
+            both the sighting and the standing feature are on the map. This line is what makes them one
+            story rather than two independent warnings. */}
+        {data.alsoAKnownFeature ? (
+          <p className="rounded-md bg-surface-muted p-3 text-sm">{ALSO_A_KNOWN_FEATURE}</p>
         ) : null}
         {/* The sentence that has to do the work of not sounding like an all-clear. */}
         {data.freshness !== 'fresh' ? (
@@ -448,6 +461,7 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         description: hazard.description,
         // Phase 6 wires the reporter through `publicByIds` so the author line carries the TrustAvatar
         // ring + avatar (superseding Phase 9.5's plain `hazard.reporterName`).
+        alsoAKnownFeature: hazard.promotedFeatureType !== undefined,
         reporterName: reporter?.displayName,
         reporterImageUrl: reporter?.profileImageUrl,
         reporterTrustClass: reporter?.trustClass,

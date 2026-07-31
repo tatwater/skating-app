@@ -101,10 +101,10 @@ export const listActiveHazardsForWeather = internalQuery({
     const jobs: HazardWeatherJob[] = [];
     const deferred: Id<'hazards'>[] = [];
     for (const h of hazards) {
-      if (h.promotedToFeatureId !== undefined) {
-        deferred.push(h._id);
-        continue;
-      }
+      // A promoted pin used to be deferred here, on the reasoning that it no longer renders. Since the
+      // D53 amendment (N5c) it does — supersession is provenance, not a hiding mechanism — so it
+      // decays like every other sighting and needs its weather multiplier kept current. Deferring it
+      // would have left a visible pin reading its freshness off a stale window.
       const key = h.waterBodyId;
       let entry = bodyCache.get(key);
       if (entry === undefined) {

@@ -235,18 +235,21 @@ describe('hazardWeather.refreshHazardWeather', () => {
         createdAt: Date.now(),
       }),
     );
-    // Three ineligible-but-active hazards, all never refreshed, so all ahead of the real one.
+    // Two ineligible-but-active hazards, both never refreshed, so both ahead of the real one.
     const hidden = await seedHazard(t, waterBodyId, authorId, { moderationStatus: 'hidden' });
+    const onRemovedBody = await seedHazard(t, removedBodyId, authorId);
+    // A promoted pin is **eligible** since the D53 amendment (N5c): supersession is provenance, not a
+    // hiding mechanism, so the pin still renders and still needs its decay window kept current.
+    // Deferring it would leave a visible hazard reading freshness off a stale window.
     const promoted = await seedHazard(t, waterBodyId, authorId, {
       promotedToFeatureId: featureId,
     });
-    const onRemovedBody = await seedHazard(t, removedBodyId, authorId);
     const real = await seedHazard(t, waterBodyId, authorId);
 
     const listed = await t.query(internal.hazardWeather.listActiveHazardsForWeather, {});
     // Hidden never even enters the scan — the index excludes it, so it can't hold a slot.
-    expect(listed.jobs.map((j) => j.hazardId)).toEqual([real]);
-    expect(listed.deferred.sort()).toEqual([promoted, onRemovedBody].sort());
+    expect(listed.jobs.map((j) => j.hazardId).sort()).toEqual([promoted, real].sort());
+    expect(listed.deferred).toEqual([onRemovedBody]);
 
     vi.stubGlobal(
       'fetch',
@@ -267,12 +270,12 @@ describe('hazardWeather.refreshHazardWeather', () => {
     expect(stamps.onRemovedBody).toBeGreaterThan(0);
     expect(stamps.real).toBeGreaterThan(0);
     expect(stamps.hidden).toBeUndefined(); // never read, so nothing to rotate
-    // A promoted pin gets no invented decay — only its place in the queue moves.
+    // The promoted pin was refreshed for real, not merely rotated — it is a rendering hazard.
     const promotedDoc = await t.run((ctx) => ctx.db.get(promoted));
-    expect(promotedDoc?.decayMultiplier).toBeUndefined();
+    expect(promotedDoc?.decayMultiplier).toBeGreaterThan(0);
   });
 
-  test('skips moderator-hidden and feature-promoted hazards', async () => {
+  test('skips moderator-hidden hazards', async () => {
     const t = convexTestWithGeo();
     const waterBodyId = await seedBody(t);
     const authorId = await seedProfile(t);

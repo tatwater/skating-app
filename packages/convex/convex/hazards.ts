@@ -271,6 +271,13 @@ export interface HazardView extends Doc<'hazards'> {
    * never hides the hazard itself, though — a safety observation stays on the map regardless (D3).
    */
   reporterName?: string;
+  /**
+   * The `bodyFeatures` type this pin was promoted into, when it was and the feature is still active
+   * (D53 amendment). Drives one drawer line — *"this spot is also marked as a recurring feature"* —
+   * so a sighting and the standing statement it produced read as one story rather than as two
+   * warnings about the same ice. Only the single-hazard `get` resolves it.
+   */
+  promotedFeatureType?: string;
 }
 
 function toView(hazard: Doc<'hazards'>, now: number): HazardView {
@@ -359,8 +366,15 @@ export const listForBody = query({
     return (
       rows
         .filter((h) => h.moderationStatus === 'visible')
-        // A hazard promoted to a persistent body feature (D53) is rendered by the feature now, not here.
-        .filter((h) => h.promotedToFeatureId === undefined)
+        // **Promotion no longer hides anything** (D53 amendment, N5c). A `bodyFeature` is a standing
+        // statement about the lake; a hazard is a sighting by a person on a date. Promotion adds the
+        // first and must not delete the second — filtering here rewrote February 2027 as a month in
+        // which nobody reported a ridge, and under cluster promotion it would erase the whole evidence
+        // trail the pattern rests on, one click after an operator agreed the pattern was real. Skaters
+        // go on filing sightings after a promotion, those sightings go on counting, and the feature and
+        // the pin never race: after the season boundary the sighting is hidden by the **season** axis
+        // (D63) and the feature remains, which is the desired end state reached by machinery N5a
+        // already built.
         .filter((h) => isInSeason(h.firstReportedAt, target))
         .map((h) => toView(h, now))
         // **The one place a pin leaves the map on time alone** (D64). A hazard fades to a floor and
@@ -429,7 +443,10 @@ export const listPromotionCandidates = query({
         // Archived rows count. A ridge the community voted healed in March is *exactly* the kind that
         // comes back in December — "it healed" is a fact about last winter, not about this one.
         .filter((h) => h.moderationStatus === 'visible')
-        // Already promoted: the feature is carrying the warning, so there is nothing to decide.
+        // **The one reader that keeps filtering on supersession** (D53 amendment). Everywhere else
+        // `promotedToFeatureId` is now pure provenance and hides nothing — but this list is a queue of
+        // *decisions*, and an already-promoted hazard is genuinely finished as a suggestion. It is
+        // still visible, still confirmable, still counted; it just has nothing left to ask an operator.
         .filter((h) => h.promotedToFeatureId === undefined)
         .filter((h) => isInSeason(h.firstReportedAt, target))
         .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
@@ -449,26 +466,36 @@ export const listPromotionCandidates = query({
 });
 
 /**
- * A hazard is visible to ordinary users when a moderator hasn't hidden it AND it hasn't been promoted
- * into a persistent body feature (which now carries the warning). The two are separate axes but both
- * take a hazard off every user-facing surface — a deep link to a promoted or hidden pin resolves to
- * nothing, and it can't be confirmed. `null`/missing rows are also not visible.
+ * A hazard is visible to ordinary users when a moderator hasn't hidden it. `null`/missing rows are
+ * not visible.
+ *
+ * **Supersession used to be a second condition here, and its removal is the D53 amendment** (N5c). A
+ * promoted hazard was unreachable by permalink and unconfirmable, which said the wrong thing twice:
+ * confirming *"the ridge is here right now"* is a different statement from *"ridges form here"*, and
+ * only the first is confirmable at all — so the pin is exactly the thing that should still take votes
+ * once a feature exists beside it. Moderation stays the only visibility axis, which is what it always
+ * should have been: one is a judgement about a *report*, the other is provenance about a *feature*.
  */
 function isUserVisibleHazard(hazard: Doc<'hazards'> | null): hazard is Doc<'hazards'> {
-  return (
-    hazard !== null &&
-    hazard.moderationStatus === 'visible' &&
-    hazard.promotedToFeatureId === undefined
-  );
+  return hazard !== null && hazard.moderationStatus === 'visible';
 }
 
-/** A single hazard for its detail drawer. `null` when missing, moderator-hidden, or promoted. */
+/** A single hazard for its detail drawer. `null` when missing or moderator-hidden. */
 export const get = query({
   args: { hazardId: v.id('hazards') },
   handler: async (ctx, { hazardId }): Promise<HazardView | null> => {
     const hazard = await ctx.db.get(hazardId);
     if (!isUserVisibleHazard(hazard)) return null;
     const view = toView(hazard, Date.now());
+
+    // The drawer's one-line reconciliation (D53 amendment): a pin the operator has already promoted
+    // renders beside a permanent feature of the same shape, and without this the two read as a
+    // duplicate warning rather than as one story. Resolved only on the single-hazard path — the map's
+    // `listForBody` never shows it, and it must not pay a feature read per pin for a line it won't draw.
+    if (hazard.promotedToFeatureId !== undefined) {
+      const feature = await ctx.db.get(hazard.promotedToFeatureId);
+      if (feature?.active) view.promotedFeatureType = feature.type;
+    }
 
     // Resolve "reported by <name>", withheld when the viewer and the author have blocked each other
     // (D32) — the drawer just omits the line then, exactly as a blocked comment's author is withheld.
@@ -512,13 +539,16 @@ export const listBundleCandidates = query({
         q.eq('createdByUserId', profile._id).eq('waterBodyId', body._id),
       )
       .collect();
-    return rows
-      .filter((h) => h.originReportId === undefined)
-      .filter((h) => h.moderationStatus === 'visible')
-      .filter((h) => h.promotedToFeatureId === undefined)
-      .filter((h) => h.firstReportedAt >= from && h.firstReportedAt <= skateEndTime)
-      .map((h) => toView(h, now))
-      .sort((a, b) => a.firstReportedAt - b.firstReportedAt);
+    return (
+      rows
+        .filter((h) => h.originReportId === undefined)
+        .filter((h) => h.moderationStatus === 'visible')
+        // No supersession filter (D53 amendment): a promoted pin is still a sighting this author made on
+        // this skate, and attaching it to the report they are writing about that skate is exactly right.
+        .filter((h) => h.firstReportedAt >= from && h.firstReportedAt <= skateEndTime)
+        .map((h) => toView(h, now))
+        .sort((a, b) => a.firstReportedAt - b.firstReportedAt)
+    );
   },
 });
 
@@ -544,8 +574,9 @@ export async function attachHazardsToReport(
     if (hazard.createdByUserId !== authorId) continue;
     if (hazard.waterBodyId !== waterBodyId) continue;
     if (hazard.originReportId !== undefined) continue;
-    // A moderator-hidden or already-promoted pin must not be launderable back into visibility by
-    // bundling it into a report (D3) — skip anything not currently user-visible.
+    // A moderator-hidden pin must not be launderable back into visibility by bundling it into a
+    // report (D3) — skip anything not currently user-visible. Since the D53 amendment that gate is
+    // moderation and nothing else, which is precisely what this guard was always for.
     if (!isUserVisibleHazard(hazard)) continue;
     await ctx.db.patch(hazardId, { originReportId: reportId });
     attached.push(hazardId);
