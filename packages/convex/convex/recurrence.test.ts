@@ -3,6 +3,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { RECURRENCE_LEASE_MS } from './recurrence';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -675,5 +676,274 @@ describe('the operator surface', () => {
     const suppression = actions.find((a) => a.action === 'suppress_recurrence');
     expect(suppression?.reason).toBe('Not a pattern.');
     expect(suppression?.targetType).toBe('hazardRecurrence');
+  });
+});
+
+describe('the job’s own machinery', () => {
+  test('the July gate lets the rollover through in the first week and not otherwise', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+
+    // January — nothing happens, which is 358 days of the year.
+    await t.mutation(internal.recurrence.maybeRunRollover, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(0);
+
+    // July 3rd of the following season: the pass runs.
+    vi.setSystemTime(Date.UTC(2030, 6, 3, 12));
+    await t.mutation(internal.recurrence.maybeRunRollover, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(1);
+  });
+
+  test('the daily tick is a no-op once the season has been computed', async () => {
+    // What makes a *retryable* rollover safe: it fires every day in the window, and only the first one
+    // that finds nothing computed does any work.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+    vi.setSystemTime(Date.UTC(2030, 6, 2, 12));
+
+    await t.mutation(internal.recurrence.maybeRunRollover, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const first = await t.run((ctx) => ctx.db.query('hazardRecurrence').first());
+
+    await t.mutation(internal.recurrence.maybeRunRollover, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    const rows = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.computedAt).toBe(first?.computedAt); // untouched, not recomputed
+  });
+
+  test('queues each body once however many of its hazards the scan sees', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    for (let i = 0; i < 5; i++) {
+      await seedHazard(t, waterBodyId, author.id, {
+        season: CURRENT_SEASON,
+        metersEast: i * 500, // far apart, so they are five clusters rather than one
+      });
+    }
+    await t.mutation(internal.recurrence.startRecurrenceRun, { season: CURRENT_SEASON });
+    // Mid-run: discovery has queued, nothing has drained yet.
+    const queued = await t.run((ctx) => ctx.db.query('recurrenceQueue').collect());
+    expect(queued.length).toBeLessThanOrEqual(1);
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(5);
+  });
+
+  test('a fresh claim is respected, so two runs do not do the same body twice', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+    await t.run((ctx) =>
+      ctx.db.insert('recurrenceQueue', {
+        waterBodyId,
+        runForSeason: CURRENT_SEASON,
+        claimedAt: Date.now(), // another run has it, and has it recently
+        createdAt: Date.now(),
+      }),
+    );
+
+    await t.mutation(internal.recurrence.processNextBody, { runForSeason: CURRENT_SEASON });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    // Left alone: the other run owns it, and the chain stops rather than duplicating the work.
+    expect(await t.run((ctx) => ctx.db.query('recurrenceQueue').collect())).toHaveLength(1);
+  });
+
+  test('a stale claim is taken over — the alternative is a body never recomputed at all', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+    await t.run((ctx) =>
+      ctx.db.insert('recurrenceQueue', {
+        waterBodyId,
+        runForSeason: CURRENT_SEASON,
+        claimedAt: Date.now() - 2 * RECURRENCE_LEASE_MS,
+        createdAt: Date.now(),
+      }),
+    );
+
+    await t.mutation(internal.recurrence.processNextBody, { runForSeason: CURRENT_SEASON });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await t.run((ctx) => ctx.db.query('recurrenceQueue').collect())).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(1);
+  });
+
+  test('a run clears an abandoned earlier season’s queue', async () => {
+    const t = harness();
+    const waterBodyId = await seedBody(t);
+    await t.run((ctx) =>
+      ctx.db.insert('recurrenceQueue', {
+        waterBodyId,
+        runForSeason: CURRENT_SEASON - 1,
+        createdAt: Date.now(),
+      }),
+    );
+    await runPass(t);
+    // Leftovers would make a later phase-two think there is work it has already done.
+    expect(await t.run((ctx) => ctx.db.query('recurrenceQueue').collect())).toHaveLength(0);
+  });
+
+  test('a queue row for a deleted body is dropped rather than stalling the run', async () => {
+    const t = harness();
+    const waterBodyId = await seedBody(t);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('recurrenceQueue', {
+        waterBodyId,
+        runForSeason: CURRENT_SEASON,
+        createdAt: Date.now(),
+      });
+      await ctx.db.delete(waterBodyId);
+    });
+    await t.mutation(internal.recurrence.processNextBody, { runForSeason: CURRENT_SEASON });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    // Work that can never complete, left in place, would stall every later run on the same season.
+    expect(await t.run((ctx) => ctx.db.query('recurrenceQueue').collect())).toHaveLength(0);
+  });
+
+  test('one "never existed" vote is not enough to drop a sighting', async () => {
+    // The same two-vote bar archival uses. One person disagreeing is not the community saying a pin
+    // was bogus, and treating it as such would let a single account erase a winter of evidence.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const hazard = await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+    await t.run((ctx) =>
+      ctx.db.insert('hazardConfirmations', {
+        hazardId: hazard,
+        userId: sam.id,
+        verdict: 'never_existed' as const,
+        via: 'app_open_nearby' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    await runPass(t);
+    expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(1);
+  });
+
+  test('carries a line hazard’s own buffer onto the record', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await t.run((ctx) =>
+      ctx.db.insert('hazards', {
+        waterBodyId,
+        type: 'pressure_ridge' as const,
+        geometryKind: 'line' as const,
+        geometry: {
+          type: 'LineString' as const,
+          coordinates: [
+            [0.5, 0.5],
+            [0.502, 0.5],
+          ],
+        },
+        bufferMeters: 15,
+        bbox: { minLat: 0.4995, minLng: 0.4995, maxLat: 0.5005, maxLng: 0.5025 },
+        createdByUserId: author.id,
+        photoIds: [],
+        status: 'active' as const,
+        moderationStatus: 'visible' as const,
+        firstReportedAt: inSeason(CURRENT_SEASON, 190),
+        lastConfirmedAt: inSeason(CURRENT_SEASON, 190),
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: inSeason(CURRENT_SEASON, 190),
+      }),
+    );
+    await runPass(t);
+    const row = await t.run((ctx) => ctx.db.query('hazardRecurrence').first());
+    // A promoted ridge has to keep its real width — a hairline is a lie about a folded ridge.
+    expect(row?.geometryKind).toBe('line');
+    expect(row?.bufferMeters).toBe(15);
+    expect(row?.radiusMeters).toBeUndefined();
+  });
+});
+
+describe('listQueue’s filters, and the advisory yielding', () => {
+  test('filters by family, by minimum seasons, and by what a human has decided', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    // A three-winter ridge and a one-winter spring, far enough apart to be separate clusters.
+    for (const season of [CURRENT_SEASON - 2, CURRENT_SEASON - 1, CURRENT_SEASON]) {
+      await seedHazard(t, waterBodyId, author.id, { season, metersEast: 10 });
+    }
+    await seedHazard(t, waterBodyId, author.id, {
+      season: CURRENT_SEASON,
+      type: 'spring_current',
+      metersEast: 900,
+    });
+    await runPass(t);
+
+    expect(await mod.as.query(api.recurrence.listQueue, {})).toHaveLength(2);
+    expect(await mod.as.query(api.recurrence.listQueue, { family: 'spring' })).toHaveLength(1);
+    expect(await mod.as.query(api.recurrence.listQueue, { minSeasons: 2 })).toHaveLength(1);
+
+    const ridge = (await mod.as.query(api.recurrence.listQueue, { family: 'ridge' }))[0];
+    await mod.as.mutation(api.recurrence.promoteFromRecurrence, {
+      recurrenceId: ridge?._id as Id<'hazardRecurrence'>,
+      type: 'recurring_pressure_ridge',
+      reason: 'Reforms here.',
+    });
+    // A promoted cluster is finished as a *suggestion* — but an operator can still ask to see it.
+    expect(await mod.as.query(api.recurrence.listQueue, {})).toHaveLength(1);
+    expect(await mod.as.query(api.recurrence.listQueue, { includePromoted: true })).toHaveLength(2);
+  });
+
+  test('an unknown lake returns nothing rather than throwing', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const waterBodyId = await seedBody(t);
+    await t.run((ctx) => ctx.db.delete(waterBodyId));
+    expect(await mod.as.query(api.recurrence.listForBodyAdmin, { waterBodyId })).toEqual([]);
+    expect(await mod.as.query(api.recurrence.listForBody, { waterBodyId })).toEqual([]);
+  });
+
+  test('the recompute button refuses a lake that is not there', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const waterBodyId = await seedBody(t);
+    await t.run((ctx) => ctx.db.delete(waterBodyId));
+    await expect(mod.as.mutation(api.recurrence.recomputeForBody, { waterBodyId })).rejects.toThrow(
+      /not found/i,
+    );
+  });
+
+  test('the advisory stands down where a pin has been reported this season', async () => {
+    // §9.3, asserted against the public read directly since the master switch keeps it dark: a pin has
+    // a date, a reporter and a confirm loop, and is better than history in every respect.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const skater = await seedUser(t, 'skater');
+    const waterBodyId = await seedBody(t);
+    for (const season of [CURRENT_SEASON - 2, CURRENT_SEASON - 1, CURRENT_SEASON]) {
+      await seedHazard(t, waterBodyId, author.id, { season, metersEast: 10 });
+    }
+    await runPass(t);
+    // Force the row public, standing in for the flag being on — the yield rule is separate from the bar.
+    await t.run(async (ctx) => {
+      const row = await ctx.db.query('hazardRecurrence').first();
+      if (row) await ctx.db.patch(row._id, { publiclyVisible: true });
+    });
+
+    // A member from this season is live, so the cluster yields.
+    expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(0);
+
+    // Take this season's sighting away and the history speaks again.
+    await t.run(async (ctx) => {
+      const rows = await ctx.db.query('hazards').collect();
+      const thisSeason = rows.find((h) => h.firstReportedAt >= inSeason(CURRENT_SEASON, 0));
+      if (thisSeason) await ctx.db.patch(thisSeason._id, { moderationStatus: 'hidden' });
+    });
+    expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toHaveLength(1);
   });
 });
