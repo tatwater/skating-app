@@ -7,7 +7,7 @@
  * These are the backend-centric enums the apps rarely need to enumerate.
  */
 
-import { HAZARD_VERDICTS } from '@skating/core';
+import { BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES, HAZARD_VERDICTS } from '@skating/core';
 
 /**
  * Where a GPS activity came *in* from — the A-inputs of the Phase 8 pipeline (D24).
@@ -134,25 +134,12 @@ export const HAZARD_GEOMETRY_KINDS = ['point_radius', 'line', 'polygon'] as cons
 export const HAZARD_HEALING_STATES = ['none', 'healing_unsafe', 'disputed'] as const;
 
 /**
- * Persistent, non-decaying known features of a water body (D53) — always shown, never re-marked,
- * no confirmation loop. Moving water at springs/constrictions/bridges is weaker *every* season
- * regardless of cold, and some ridges reform in the same place annually.
+ * Persistent, non-decaying known features of a water body (D53) — **re-exported from `@skating/core`,
+ * not redefined here**, for the same reason `HAZARD_CONFIRM_VERDICTS` is: a second hand-written copy
+ * is how D65's new verdict reached the validator while a test iterating "every verdict" went on
+ * iterating three. D79's authoring form made this the third reader of the list.
  */
-export const BODY_FEATURE_TYPES = [
-  'spring_current',
-  'constriction',
-  'bridge_narrows',
-  'recurring_pressure_ridge',
-  'gas_hole',
-  'reef_hole',
-  'delta',
-  // Renamed from `shallow_bay_early_thaw` (D53 amendment, N5c). There is no guarantee the spot is a
-  // bay — it may be an island's lee, a sandbar, a reef or a shallow delta — and the old name narrowed
-  // the type to one of its cases. Done as a plain find-and-replace because dev held **zero**
-  // `bodyFeatures` rows: free at N5c, a migration at any point after.
-  'shallow_early_thaw',
-  'other',
-] as const;
+export const BODY_FEATURE_TYPES = CORE_BODY_FEATURE_TYPES;
 
 /** Abuse/safety flag targets, reasons, and lifecycle (D32/D37). `hazard` added Phase 9 (D51). */
 export const FLAG_TARGET_TYPES = ['report', 'comment', 'photo', 'user', 'hazard'] as const;

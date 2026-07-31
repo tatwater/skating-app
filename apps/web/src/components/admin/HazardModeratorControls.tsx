@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import { BODY_FEATURE_TYPE_LABELS, BODY_FEATURE_TYPES } from '@skating/core';
 import { useMutation } from 'convex/react';
 import { useState } from 'react';
 import { useRole } from '../../lib/useRole';
@@ -15,22 +16,14 @@ import { ReasonDialog } from './ReasonDialog';
  * body feature** right from where it is, so a permanent risk stops needing user re-marking. Renders
  * nothing for non-moderators.
  *
- * The feature-type list mirrors `BODY_FEATURE_TYPES` (server-re-validated); kept here as a small
- * UI-only list since the enum isn't exported to the web bundle.
+ * The feature-type list comes from `@skating/core` (N5c) rather than being a hand-kept copy — D79's
+ * authoring form on the lake page made it the third reader, and a third copy is how a new type
+ * reaches the schema while one surface goes on offering eight.
  */
-const FEATURE_TYPES = [
-  { value: 'spring_current', label: 'Spring / current' },
-  { value: 'constriction', label: 'Constriction' },
-  { value: 'bridge_narrows', label: 'Bridge narrows' },
-  { value: 'recurring_pressure_ridge', label: 'Recurring pressure ridge' },
-  { value: 'gas_hole', label: 'Gas hole' },
-  { value: 'reef_hole', label: 'Reef hole' },
-  { value: 'delta', label: 'Delta' },
-  // Not "shallow bay" — a spot that goes out early may be an island's lee, a sandbar, a reef or a
-  // shallow delta, and the old name narrowed the type to one of its cases (D53 amendment).
-  { value: 'shallow_early_thaw', label: 'Shallow water (early thaw)' },
-  { value: 'other', label: 'Other' },
-] as const;
+const FEATURE_TYPES = BODY_FEATURE_TYPES.map((value) => ({
+  value,
+  label: BODY_FEATURE_TYPE_LABELS[value],
+}));
 
 export function HazardModeratorControls({ hazardId }: { hazardId: string }) {
   const { canModerate } = useRole();

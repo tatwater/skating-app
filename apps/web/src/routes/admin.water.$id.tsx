@@ -1,6 +1,9 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  BODY_FEATURE_TYPE_LABELS,
+  BODY_FEATURE_TYPES,
+  type BodyFeatureType,
   DEFAULT_SAMPLE_SPACING_KM,
   DEPTH_SOURCE_LABELS,
   type DepthSource,
@@ -21,6 +24,7 @@ import type maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
+import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -50,6 +54,7 @@ function LakeEditor() {
   const subAreas = useQuery(api.subAreas.listForBody, { waterBodyId });
   const putIns = useQuery(api.putIns.listForBody, { waterBodyId });
   const hazards = useQuery(api.hazards.listForBody, { waterBodyId });
+  const features = useQuery(api.bodyFeatures.listForBody, { waterBodyId });
   const tracks = useQuery(api.gpsActivities.listTracksForBody, { waterBodyId });
 
   const [draft, setDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(null);
@@ -59,6 +64,15 @@ function LakeEditor() {
   // component rather than a module-level object: a module singleton outlives the route, holding a
   // removed map that the next visit's draw control would happily attach to.
   const drawTargetRef = useRef<maplibregl.Map | null>(null);
+  /**
+   * The by-hand body feature being authored (D79). A point and a polygon are mutually exclusive —
+   * arming one clears the other — so that "Add feature" can never be ambiguous about what it will save.
+   */
+  const [featurePoint, setFeaturePoint] = useState<LatLng | null>(null);
+  const [featureDraft, setFeatureDraft] = useState<GeoJSON.Polygon | GeoJSON.MultiPolygon | null>(
+    null,
+  );
+  const [placingFeature, setPlacingFeature] = useState(false);
 
   if (result === undefined) return <AdminEmpty>Loading…</AdminEmpty>;
   if (result === null || !body) {
@@ -121,8 +135,16 @@ function LakeEditor() {
                 })),
               putIns: putIns ?? [],
               samplePoints: body.weatherSamplePoints ?? [],
-              suggestedPoints: suggested,
-              draftPolygon: draft,
+              // One draft slot on the map, shared by the two tools that produce a shape. They can't
+              // both be armed — arming either clears the other — so there is never a shape on screen
+              // whose owner is ambiguous.
+              draftPolygon: draft ?? featureDraft,
+              suggestedPoints: featurePoint ? [...suggested, featurePoint] : suggested,
+            }}
+            onMapClick={(coord) => {
+              if (!placingFeature) return;
+              setFeaturePoint(coord);
+              setPlacingFeature(false);
             }}
             onReady={(map) => {
               drawTargetRef.current = map;
@@ -148,6 +170,18 @@ function LakeEditor() {
             onResult={setBanner}
           />
           <PutInTool waterBodyId={waterBodyId} putIns={putIns ?? []} />
+          <BodyFeatureTool
+            waterBodyId={waterBodyId}
+            features={features ?? []}
+            draft={featureDraft}
+            setDraft={setFeatureDraft}
+            point={featurePoint}
+            setPoint={setFeaturePoint}
+            arming={placingFeature}
+            setArming={setPlacingFeature}
+            mapRef={drawTargetRef}
+            onResult={setBanner}
+          />
           <HazardTool hazards={hazards ?? []} />
           <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
           <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
@@ -890,6 +924,249 @@ function PutInTool({
 }
 
 /** Hazards and crossings on this body — listed here, moderated through their own detail. */
+
+/**
+ * Author a persistent body feature by hand (D79).
+ *
+ * **A bigger gap than it sounds.** `bodyFeatures.create` has existed since Phase 9 with no UI
+ * anywhere, so the only way to hand-make a permanent feature was the Convex dashboard or the CLI —
+ * which left four of the nine types (`constriction`, `bridge_narrows`, `delta`, `shallow_early_thaw`)
+ * unreachable in the product entirely: no hazard promotes into them, and no form created them.
+ *
+ * It is also the answer to *"what covers the first three winters"*. The recurrence engine needs
+ * seasons of evidence before it can propose anything; an operator who **knows** a lake has a spring at
+ * the outlet shouldn't have to wait for the corpus to prove it. The engine is for the lakes nobody on
+ * the team skates.
+ *
+ * Three primitives, matching the hazard authoring they sit beside (D51): a point with a radius (a
+ * click on the map — the commonest case by far, since a spring or a gas hole *is* a spot), a drawn
+ * polygon (the shared terra-draw control, still lazy-loaded), and pasted GeoJSON, which is how a line
+ * traced elsewhere gets in and the break-glass path if the draw engine fails to load.
+ */
+function BodyFeatureTool({
+  waterBodyId,
+  features,
+  draft,
+  setDraft,
+  point,
+  setPoint,
+  arming,
+  setArming,
+  mapRef,
+  onResult,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  features: readonly { _id: string; type: string; note?: string }[];
+  draft: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  setDraft: (polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon | null) => void;
+  point: LatLng | null;
+  setPoint: (coord: LatLng | null) => void;
+  arming: boolean;
+  setArming: (armed: boolean) => void;
+  mapRef: { current: maplibregl.Map | null };
+  onResult: SetBanner;
+}) {
+  const create = useMutation(api.bodyFeatures.create);
+  const demote = useMutation(api.bodyFeatures.demote);
+  const [type, setType] = useState<BodyFeatureType>('spring_current');
+  const [radius, setRadius] = useState(30);
+  const [note, setNote] = useState('');
+  const [paste, setPaste] = useState('');
+  const [drawing, setDrawing] = useState(false);
+  const controlRef = useRef<PolygonDrawControl | null>(null);
+
+  useEffect(() => {
+    return () => {
+      controlRef.current?.destroy();
+      controlRef.current = null;
+    };
+  }, []);
+
+  const armDraw = async () => {
+    const map = mapRef.current;
+    if (!map) return;
+    setArming(false);
+    setPoint(null);
+    try {
+      if (!controlRef.current) {
+        controlRef.current = await createPolygonDraw(map, {
+          onFinish: (polygon) => {
+            setDraft(polygon);
+            setDrawing(false);
+          },
+        });
+      }
+      controlRef.current.startDrawing();
+      setDrawing(true);
+    } catch {
+      onResult({
+        tone: 'error',
+        text: "Couldn't load the draw tool. Paste the outline as GeoJSON instead — it does the same thing.",
+      });
+    }
+  };
+
+  const save = async () => {
+    // A point with a radius wins when one is placed: it is the primitive that needed no engine, and
+    // the one the commonest features (a spring, a gas hole, a reef) actually are.
+    const shape = point
+      ? {
+          geometryKind: 'point_radius' as const,
+          geometry: { type: 'Point' as const, coordinates: [point.lng, point.lat] },
+          radiusMeters: radius,
+        }
+      : draft
+        ? { geometryKind: 'polygon' as const, geometry: draft }
+        : null;
+    if (!shape) {
+      onResult({ tone: 'error', text: 'Place a point or draw an outline first.' });
+      return;
+    }
+    try {
+      await create({
+        waterBodyId,
+        type,
+        ...shape,
+        ...(note.trim() ? { note: note.trim() } : {}),
+        reason: `Authored by hand: ${BODY_FEATURE_TYPE_LABELS[type]}.`,
+      });
+      onResult({ tone: 'ok', text: `Added ${BODY_FEATURE_TYPE_LABELS[type].toLowerCase()}.` });
+      setDraft(null);
+      setPoint(null);
+      setNote('');
+      setArming(false);
+      controlRef.current?.clear();
+    } catch (err) {
+      onResult({ tone: 'error', text: errorText(err) });
+    }
+  };
+
+  return (
+    <ToolCard title="Known features">
+      <p className="text-foreground-muted text-sm">
+        Permanent properties of this lake — always shown, never decayed, no confirm loop. Add one
+        when you know it, rather than waiting for enough winters of reports to prove it.
+      </p>
+
+      {features.length > 0 ? (
+        <ul className="flex flex-col gap-1 text-sm">
+          {features.map((f) => (
+            <li key={f._id} className="flex items-center justify-between gap-2">
+              <span className="text-foreground">
+                {BODY_FEATURE_TYPE_LABELS[f.type as BodyFeatureType] ?? f.type}
+                {f.note ? <span className="text-foreground-muted"> — {f.note}</span> : null}
+              </span>
+              <ReasonDialog
+                trigger={
+                  <Button variant="outline" size="sm">
+                    Remove
+                  </Button>
+                }
+                title="Remove this feature"
+                description="It stops rendering. Nothing is deleted, and it can be added again."
+                confirmLabel="Remove"
+                onConfirm={(reason) =>
+                  demote({ bodyFeatureId: f._id as Id<'bodyFeatures'>, reason }).then(
+                    () => undefined,
+                  )
+                }
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-foreground-muted">What is it?</span>
+        <select
+          className="rounded-md border border-border bg-surface px-2 py-1 text-foreground text-sm"
+          value={type}
+          onChange={(e) => setType(e.target.value as BodyFeatureType)}
+        >
+          {BODY_FEATURE_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {BODY_FEATURE_TYPE_LABELS[t]}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant={arming ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => {
+            setArming(!arming);
+            setDraft(null);
+          }}
+        >
+          {arming ? 'Click the map…' : 'Place a point'}
+        </Button>
+        <Button variant={drawing ? 'default' : 'outline'} size="sm" onClick={armDraw}>
+          {drawing ? 'Drawing…' : 'Draw an outline'}
+        </Button>
+      </div>
+
+      {point ? (
+        <label className="flex items-center gap-2 text-sm">
+          <span className="text-foreground-muted">Radius</span>
+          <input
+            type="number"
+            min={1}
+            max={5000}
+            className="w-24 rounded-md border border-border bg-surface px-2 py-1 text-foreground text-sm"
+            value={radius}
+            onChange={(e) => setRadius(Number(e.target.value))}
+          />
+          <span className="text-foreground-muted">m</span>
+        </label>
+      ) : null}
+
+      <label className="flex flex-col gap-1 text-sm">
+        <span className="text-foreground-muted">Note (optional)</span>
+        <input
+          className="rounded-md border border-border bg-surface px-2 py-1 text-foreground text-sm"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Outlet current — never freezes here"
+        />
+      </label>
+
+      <details>
+        <summary className="cursor-pointer text-foreground-muted text-xs">
+          Paste GeoJSON instead
+        </summary>
+        <textarea
+          className="mt-1 h-20 w-full rounded-md border border-border bg-surface px-2 py-1 font-mono text-foreground text-xs"
+          value={paste}
+          onChange={(e) => setPaste(e.target.value)}
+          placeholder='{"type":"Polygon","coordinates":[[…]]}'
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            const parsed = parsePastedPolygon(paste);
+            if (!parsed.ok) {
+              onResult({ tone: 'error', text: parsed.error });
+              return;
+            }
+            setPoint(null);
+            setArming(false);
+            setDraft(parsed.polygon);
+          }}
+        >
+          Use it
+        </Button>
+      </details>
+
+      <Button size="sm" disabled={!point && !draft} onClick={save}>
+        Add feature
+      </Button>
+    </ToolCard>
+  );
+}
+
 function HazardTool({ hazards }: { hazards: readonly { _id: string; type: string }[] }) {
   return (
     <ToolCard title="Hazards & crossings">
