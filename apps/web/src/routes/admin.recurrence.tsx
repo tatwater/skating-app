@@ -1,8 +1,9 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { hazardTypeLabel, relativeWhen } from '@skating/core';
+import { hazardTypeLabel, relativeWhen, timingWindowLabel } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
+import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { Badge } from '../components/ui/badge';
@@ -10,31 +11,113 @@ import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 
 /**
- * Hazard identity, from the operator's side (N5c).
+ * Hazard identity, from the operator's side (N5c) — two lists that answer the same question at two
+ * time scales.
  *
- * **Today this page is the auto-merge audit, and that is the whole reason auto-merge could ship.** A
- * mechanism that folds one safety pin into another without a human, and leaves nowhere to look at what
- * it did, is a mechanism nobody can check. The bar it merges at (`AUTOMERGE_MIN_FOOTPRINT_IOU`) is a
- * guess until somebody watches it work — so every merge writes a row, this page lists them newest
- * first, and Unmerge is one click. A rising unmerge rate means the bar is too low, and the chart on
- * `/admin/tuning` is where that shows up as a number.
+ * **The recurrence queue** is where an operator spends an hour in October and covers the whole corpus,
+ * which is the difference between the feature existing and the feature working. Ranked across every
+ * lake, bounded by construction — it reads the precomputed table and never touches `hazards` or
+ * `waterBodies` in bulk (the Phase 7b rule).
  *
- * The cross-lake **recurrence queue** lands here too, in the second half of the phase. It is named for
- * where it is going rather than for what it holds today, because moving a page an operator has learned
- * is a worse cost than a page that grows into its name.
+ * **The merges panel** is why auto-merge could ship at all. A mechanism that folds one safety pin into
+ * another without a human, and leaves nowhere to look at what it did, is a mechanism nobody can check.
+ * The bar it merges at is a guess until somebody watches it work — so every merge writes a row, they
+ * are listed newest first, and Unmerge is one click. A rising unmerge rate means the bar is too low,
+ * and the chart on `/admin/tuning` is where that shows up as a number.
  */
 export const Route = createFileRoute('/admin/recurrence')({ component: AdminRecurrence });
 
 function AdminRecurrence() {
   const merges = useQuery(api.hazards.listRecentMerges, {});
   const unmerge = useMutation(api.hazards.unmerge);
+  const [minSeasons, setMinSeasons] = useState(1);
+  const queue = useQuery(api.recurrence.listQueue, { minSeasons });
+  const suppress = useMutation(api.recurrence.suppress);
 
   return (
     <div className="flex flex-col gap-4">
       <AdminPageHeader
         title="Hazard identity"
-        subtitle="Duplicate pins the app has folded into one. A merge never shrinks the warned area and never pools clearance votes — but it can still be wrong, so it is always reversible."
+        subtitle="What came back across winters, and what the app folded together within one. Neither list is a prediction — both are what was reported, and how often."
       />
+
+      <section className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold text-foreground text-lg">Before first ice</h2>
+          {/* The bar an operator reads at, not the bar a skater sees. Thin patterns are on this page
+              deliberately — that is the whole point of watching them form (D78). */}
+          <label className="flex items-center gap-2 text-foreground-muted text-sm">
+            Seen in at least
+            <select
+              className="rounded-md border border-border bg-surface px-2 py-1 text-foreground text-sm"
+              value={minSeasons}
+              onChange={(e) => setMinSeasons(Number(e.target.value))}
+            >
+              {[1, 2, 3, 4].map((n) => (
+                <option key={n} value={n}>
+                  {n} winter{n === 1 ? '' : 's'}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {queue === undefined ? (
+          <AdminEmpty>Loading…</AdminEmpty>
+        ) : queue.length === 0 ? (
+          <AdminEmpty>
+            Nothing at that bar. A pattern needs the same spot reported in more than one winter, so
+            an empty list this early is the corpus being young rather than anything being wrong.
+          </AdminEmpty>
+        ) : (
+          queue.map((cluster) => (
+            <Card key={cluster._id}>
+              <CardContent className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline">{cluster.family}</Badge>
+                    <Link
+                      to="/admin/water/$id"
+                      params={{ id: cluster.waterBodyId }}
+                      className="text-sm underline underline-offset-2"
+                    >
+                      {cluster.waterBodyName}
+                    </Link>
+                    {cluster.subAreaName ? (
+                      <span className="text-foreground-muted text-sm">{cluster.subAreaName}</span>
+                    ) : null}
+                  </div>
+                  <p className="text-foreground-muted text-xs">
+                    {/* Both numbers, on the operator surface too. */}
+                    Seen in {cluster.seasonsObserved.length} of the last {cluster.windowSeasons}{' '}
+                    winters ·{' '}
+                    {timingWindowLabel(
+                      cluster.firstReportedDayOfSeasonP25,
+                      cluster.firstReportedDayOfSeasonP75,
+                    ) ?? 'timing unclear'}{' '}
+                    · {cluster.distinctAuthorCount} reporter
+                    {cluster.distinctAuthorCount === 1 ? '' : 's'}
+                  </p>
+                </div>
+                <ReasonDialog
+                  trigger={
+                    <Button variant="outline" size="sm">
+                      Suppress
+                    </Button>
+                  }
+                  title="Suppress this pattern"
+                  description="It stops being suggested and stops being publicly advisable, across every recompute. Reversible, and nothing is deleted."
+                  confirmLabel="Suppress"
+                  onConfirm={(reason) =>
+                    suppress({ recurrenceId: cluster._id, reason }).then(() => undefined)
+                  }
+                />
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </section>
+
+      <h2 className="font-semibold text-foreground text-lg">Recent automatic merges</h2>
       {merges === undefined ? (
         <AdminEmpty>Loading…</AdminEmpty>
       ) : merges.length === 0 ? (

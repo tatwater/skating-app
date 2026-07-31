@@ -16,6 +16,7 @@ import {
   type PromotionTarget,
   seasonOf,
   suggestSamplePoints,
+  timingWindowLabel,
 } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
@@ -183,6 +184,7 @@ function LakeEditor() {
             onResult={setBanner}
           />
           <HazardTool hazards={hazards ?? []} />
+          <RecurrenceTool waterBodyId={waterBodyId} onResult={setBanner} />
           <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
           <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
         </div>
@@ -1226,6 +1228,167 @@ function TrackTool({ tracks }: { tracks: readonly unknown[] }) {
  * human decision — decay tier, corroboration, type — and the promotion it offers is the operator's
  * judgement, recorded with their reason like every other moderation action.
  */
+
+/**
+ * **Recurring** — the cross-season half of the pre-first-ice pass (N5c / §7.1).
+ *
+ * The section below this one ranks *last season's* hazards, which is all the single-season list can
+ * see and all it will be able to see on most lakes for years. This one ranks **patterns**: what came
+ * back, in how many of the last four winters, when in the winter, and how many different people saw
+ * it. Where a pattern exists it outranks a single sighting, because it is the only signal here that is
+ * about recurrence rather than about a row.
+ *
+ * **Nothing on this card is a prediction.** It is what was reported and how often — the same line
+ * `hazardPromotion` already holds, one window out. The card states its own provenance with a recompute
+ * button beside it, because a stale answer that looks live is the failure mode of every precomputed
+ * surface.
+ */
+function RecurrenceTool({
+  waterBodyId,
+  onResult,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  onResult: SetBanner;
+}) {
+  const clusters = useQuery(api.recurrence.listForBodyAdmin, { waterBodyId });
+  const promote = useMutation(api.recurrence.promoteFromRecurrence);
+  const suppress = useMutation(api.recurrence.suppress);
+  const recompute = useMutation(api.recurrence.recomputeForBody);
+  const [busy, setBusy] = useState(false);
+
+  const onRecompute = async () => {
+    setBusy(true);
+    try {
+      await recompute({ waterBodyId });
+      onResult({ tone: 'ok', text: 'Recomputed from this lake’s hazards.' });
+    } catch (err) {
+      onResult({ tone: 'error', text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ToolCard title="Before first ice — what came back">
+      <p className="text-foreground-muted text-sm">
+        Patterns across winters, computed at the season rollover.{' '}
+        <strong className="text-foreground">Nothing here is a prediction</strong> — it is what was
+        reported, and how often.
+      </p>
+      {clusters === undefined ? (
+        <p className="text-foreground-muted text-sm">Loading…</p>
+      ) : clusters.length === 0 ? (
+        <p className="text-foreground-muted text-sm">
+          No cross-season patterns on this lake yet. A pattern needs the same spot reported in more
+          than one winter, so a lake in its first season has none by construction.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-3 text-sm">
+          {clusters.map((cluster) => (
+            <li key={cluster._id} className="flex flex-col gap-1">
+              <span className="text-foreground">
+                {/* Both numbers, always — the denominator is what stops a reader inflating it, and an
+                    operator surface is not exempt from that. */}
+                Seen in <strong>{cluster.seasonsObserved.length}</strong> of the last{' '}
+                {cluster.windowSeasons} winters
+                {cluster.subAreaName ? ` near ${cluster.subAreaName}` : ''}
+              </span>
+              <span className="text-foreground-muted text-xs">
+                {cluster.seasonsObserved.map((s) => formatSeason(s)).join(', ')}
+                {' · '}
+                {timingWindowLabel(
+                  cluster.firstReportedDayOfSeasonP25,
+                  cluster.firstReportedDayOfSeasonP75,
+                ) ?? 'timing unclear'}
+                {' · '}
+                {cluster.distinctAuthorCount} reporter
+                {cluster.distinctAuthorCount === 1 ? '' : 's'}
+                {' · '}
+                {cluster.memberHazardIds.length} pin
+                {cluster.memberHazardIds.length === 1 ? '' : 's'}
+              </span>
+              {/* One reporter across several winters is not a red flag, and is deliberately not a gate
+                  (answered at scoping): a pond nobody else visits is exactly where the feature matters
+                  most. It is shown so a false pattern from a single account is visible. */}
+              {cluster.distinctAuthorCount === 1 ? (
+                <span className="text-foreground-muted text-xs">
+                  One reporter — worth a second look before promoting.
+                </span>
+              ) : null}
+              {cluster.staleSince !== undefined ? (
+                <span className="text-foreground-muted text-xs">
+                  No longer matches anything visible — kept because a decision was made about it.
+                </span>
+              ) : null}
+              <span className="flex flex-wrap gap-2">
+                {cluster.promotedToFeatureId ? (
+                  <span className="text-foreground-muted text-xs">
+                    Already a permanent feature. Sightings keep counting.
+                  </span>
+                ) : cluster.suppressedAt !== undefined ? (
+                  <span className="text-foreground-muted text-xs">
+                    Suppressed — {cluster.suppressReason}
+                  </span>
+                ) : (
+                  <>
+                    {cluster.suggestedFeatureType ? (
+                      <ReasonDialog
+                        trigger={
+                          <Button size="sm" variant="outline">
+                            Promote to {BODY_FEATURE_TYPE_LABELS[cluster.suggestedFeatureType]}
+                          </Button>
+                        }
+                        title="Promote this pattern"
+                        description="It becomes a permanent feature of the lake, which no seasonal reset touches. Every sighting behind it stays on the map and keeps counting."
+                        confirmLabel="Promote"
+                        onConfirm={(reason) =>
+                          promote({
+                            recurrenceId: cluster._id,
+                            type: cluster.suggestedFeatureType as BodyFeatureType,
+                            reason,
+                          }).then(() => undefined)
+                        }
+                      />
+                    ) : (
+                      <span className="text-foreground-muted text-xs">
+                        Nothing to promote it to — the depth on this lake disagrees, or the family
+                        has no permanent equivalent.
+                      </span>
+                    )}
+                    <ReasonDialog
+                      trigger={
+                        <Button size="sm" variant="outline">
+                          Suppress
+                        </Button>
+                      }
+                      title="Suppress this pattern"
+                      description="It stops being suggested and stops being publicly advisable, across every recompute. Reversible, and nothing is deleted."
+                      confirmLabel="Suppress"
+                      onConfirm={(reason) =>
+                        suppress({ recurrenceId: cluster._id, reason }).then(() => undefined)
+                      }
+                    />
+                  </>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <span className="flex flex-wrap items-center gap-2">
+        <span className="text-foreground-muted text-xs">
+          {clusters && clusters.length > 0 && clusters[0]
+            ? `Computed ${new Date(clusters[0].computedAt).toLocaleDateString()} for ${formatSeason(clusters[0].computedForSeason)}.`
+            : 'Not computed yet.'}
+        </span>
+        <Button size="sm" variant="outline" disabled={busy} onClick={onRecompute}>
+          {busy ? 'Recomputing…' : 'Recompute now'}
+        </Button>
+      </span>
+    </ToolCard>
+  );
+}
+
 function PromotionTool({
   waterBodyId,
   onResult,
@@ -1263,12 +1426,13 @@ function PromotionTool({
   };
 
   return (
-    <ToolCard title="Before first ice — recurring hazards">
+    <ToolCard title="Before first ice — last season, single sighting">
       <p className="text-foreground-muted text-sm">
         Last season’s hazards are hidden from the map now. Anything that forms here every winter
         should be promoted to a permanent feature, which no seasonal reset touches —{' '}
         <strong className="text-foreground">this is a safety pass, not tidying up</strong>: a skater
-        in November sees a clean map otherwise.
+        in November sees a clean map otherwise. These have somewhere to be promoted <em>to</em> but
+        no history behind them yet — the card above is where a pattern would show.
       </p>
       {candidates === undefined ? (
         <p className="text-foreground-muted text-sm">Loading…</p>

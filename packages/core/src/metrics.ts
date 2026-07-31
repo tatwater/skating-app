@@ -270,6 +270,13 @@ export const METRICS = {
     edges: HOUR_BUCKETS,
   },
 
+  recurrence_clusters_by_seasons: {
+    label: 'Patterns by winters observed',
+    description:
+      'Stored cross-season clusters by how many distinct winters each was reported in (N5c / D78). This is what turns "how many patterns go public if I raise RECURRENCE_PUBLIC_MIN_SEASONS" from a guess into a number — the bar is the one constant a skater ever feels, and it should be moved against a distribution rather than a hunch. A pile at 1 is a young corpus, not a broken engine.',
+    kind: 'rollup',
+    shape: 'meta',
+  },
   hazard_merges: {
     label: 'Automatic merges and unmerges',
     description:

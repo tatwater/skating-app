@@ -38,6 +38,7 @@ import {
   REPUTATION_POINT_BUCKETS,
   rate,
   reportStripState,
+  seasonOf,
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
@@ -207,6 +208,30 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
     merges[key] = (merges[key] ?? 0) + 1;
   }
   await writeMetricSnapshot(ctx, 'hazard_merges', date, { meta: merges });
+
+  // --- Cross-season recurrence (N5c / D78) --------------------------------
+  // A distribution rather than a count, because the number an operator actually needs is "how many
+  // patterns would go public if I moved the bar", and that is only answerable as a histogram. Read off
+  // the precomputed table for the current season — bounded by clusters, never by the hazard corpus.
+  const clusters = await capped(
+    ctx.db
+      .query('hazardRecurrence')
+      .withIndex('by_computed_season_and_priority', (q) =>
+        q.eq('computedForSeason', seasonOf(to - 1)),
+      )
+      .take(DAY_SCAN_CAP),
+    DAY_SCAN_CAP,
+    `recurrence clusters on ${date}`,
+  );
+  const bySeasons: Record<string, number> = {};
+  for (const cluster of clusters) {
+    // Suppressed and promoted rows are excluded: neither can ever go public, so counting them would
+    // inflate the very number this chart exists to make honest.
+    if (cluster.suppressedAt !== undefined || cluster.promotedToFeatureId !== undefined) continue;
+    const key = `${Math.min(cluster.seasonsObserved.length, cluster.windowSeasons)} of ${cluster.windowSeasons}`;
+    bySeasons[key] = (bySeasons[key] ?? 0) + 1;
+  }
+  await writeMetricSnapshot(ctx, 'recurrence_clusters_by_seasons', date, { meta: bySeasons });
 
   // --- Operational latency --------------------------------------------------
   // Read off `by_status_resolved_at` per terminal status, so the scan touches only the flags resolved
