@@ -23,6 +23,11 @@ import {
   NEW_ACCOUNT_WINDOW_MS,
   PATH_MIN_OPACITY,
   POINT_WEIGHTS,
+  RECURRENCE_ADVISORIES_PUBLIC,
+  RECURRENCE_MATCH_METERS,
+  RECURRENCE_MAX_CLUSTER_SPREAD_M,
+  RECURRENCE_PUBLIC_MIN_SEASONS,
+  RECURRENCE_WINDOW_SEASONS,
   REPORT_FRESHNESS_HALF_LIFE_HOURS,
   REPORT_FRESHNESS_MAX_EXTENSION,
   REPORT_FRESHNESS_PER_CORROBORATION,
@@ -32,6 +37,7 @@ import {
   SHALLOW_MEAN_DEPTH_M,
   SHALLOW_THAW_K,
   TRUST_CLASS_THRESHOLDS,
+  VOLATILE_MIN_SEASONS,
 } from '@skating/core';
 import { createFileRoute } from '@tanstack/react-router';
 import { AdminPageHeader } from '../components/admin/adminUi';
@@ -356,6 +362,78 @@ function AdminTuning() {
           </ConstantCard>
         </div>
         <MetricComposition metricKey="hazard_merges" catalogue={catalogue} semantic />
+      </TuningSection>
+
+      {/* ── Cross-season recurrence ──────────────────────────────────────── */}
+      <TuningSection
+        title="Cross-season recurrence"
+        blurb="What several winters said about one spot (N5c / D78). Everything here ships dark: until the master switch is on, the whole engine feeds this dashboard and nothing a skater can see. Flip it when the queue has been read across two rollovers and the patterns at the current bar look real — a judgement from the chart below, not a date."
+      >
+        <MetricComposition metricKey="recurrence_clusters_by_seasons" catalogue={catalogue} />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <ConstantCard
+            name="RECURRENCE_ADVISORIES_PUBLIC"
+            value={RECURRENCE_ADVISORIES_PUBLIC ? 'true' : 'false'}
+            file="hazardRecurrence.ts"
+          >
+            <strong>The master switch.</strong> While it is off, no skater sees a recurrence claim
+            at all — the public read returns an empty list whatever the corpus holds. The engine
+            still runs, so patterns can be watched forming and the bar below set from evidence
+            rather than from a guess.
+          </ConstantCard>
+          <ConstantCard
+            name="RECURRENCE_PUBLIC_MIN_SEASONS"
+            value={`${RECURRENCE_PUBLIC_MIN_SEASONS} of ${RECURRENCE_WINDOW_SEASONS}`}
+            file="hazardRecurrence.ts"
+          >
+            How many distinct winters before a skater sees it. It gates the <em>timing window</em>{' '}
+            too, deliberately: one constant governs both claims, so raising it makes them more
+            conservative together and they can never be set to disagree. Start at 2 of 4; raise to 3
+            if it reads noisy once public. The chart above says how many patterns each setting would
+            release.
+          </ConstantCard>
+          <ConstantCard
+            name="RECURRENCE_WINDOW_SEASONS"
+            value={`${RECURRENCE_WINDOW_SEASONS} winters`}
+            file="hazardRecurrence.ts"
+          >
+            The <strong>denominator</strong> — the number that stops a reader inflating "3 winters"
+            into "always". Shorter and a feature that skips a mild winter reads as having stopped;
+            longer and a lake that genuinely changed goes on being described by ice from before it
+            changed.
+          </ConstantCard>
+          <ConstantCard
+            name="VOLATILE_MIN_SEASONS"
+            value={`${VOLATILE_MIN_SEASONS} winters`}
+            file="hazardRecurrence.ts"
+          >
+            The raised bar for thin ice, open water and thawed ice, which are the only recurrence
+            claims that can propose a <em>permanent</em> feature. Two ridges in a row is a pattern;
+            two thin patches in a row is a plausible accident. Depth checks the proposal separately
+            — a measured deep lake withholds the suggestion while keeping the history.
+          </ConstantCard>
+          <ConstantCard
+            name="RECURRENCE_MATCH_METERS"
+            value={`${RECURRENCE_MATCH_METERS} m`}
+            file="hazardCluster.ts"
+          >
+            When two winters' hazards are the same feature.{' '}
+            <strong>Looser than the within-season tolerance, on purpose</strong>: ice does not
+            reassemble to the metre, so a ridge re-forming within 80 m is the same ridge — while two
+            pins that far apart on one afternoon may well be two different leads. Tight for
+            identity, loose for recurrence.
+          </ConstantCard>
+          <ConstantCard
+            name="RECURRENCE_MAX_CLUSTER_SPREAD_M"
+            value={`${RECURRENCE_MAX_CLUSTER_SPREAD_M} m`}
+            file="hazardCluster.ts"
+          >
+            The chaining guard across seasons — how far a pattern may reach beyond its largest
+            single member. Wider than the within-season one because the tolerance feeding it is
+            wider and a feature re-forming over four winters wanders further than one winter's
+            duplicates do.
+          </ConstantCard>
+        </div>
       </TuningSection>
 
       {/* ── Display / map ────────────────────────────────────────────────── */}

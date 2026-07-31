@@ -4,12 +4,14 @@
 this the ridge that forms here every year?" Same question, same function, two windows — and building it
 once is the only way the two can't disagree.*
 
-> **Status:** 🚧 **Half built, 2026-07-31.** The within-season half — workstreams **A** and **B**, plus
-> **E** (manual authoring), the **D53 amendment** (§8.2) and the `shallow_early_thaw` rename — is built
-> on `phase-n5c-hazard-memory` and green across every suite; **unpushed, undeployed, not device-tested.**
-> Workstreams **C**, **D** and **F** (the cross-season engine, the recurrence queue and the dark
-> advisory) are **unbuilt**, and ship as a second PR. See *§15 — What the build changed about the plan*
-> and *§16 — What the review pass found*.
+> **Status:** ✅ **Built, 2026-07-31 — both halves.** The within-season half (workstreams **A**, **B**,
+> **E**, the **D53 amendment** and the `shallow_early_thaw` rename) shipped as **PR #34**. The
+> cross-season half (**C**, **D**, **F**) is built on `phase-n5c-recurrence` and green across every
+> suite — **unpushed, undeployed, not device-tested**, and the skater-facing advisory ships **dark**
+> behind `RECURRENCE_ADVISORIES_PUBLIC = false`, which is the intended shipped state rather than an
+> unfinished one. See *§15 — What the build changed about the plan*, *§16 — What the review pass
+> found*, *§18 — What the cross-season half changed*, *§19 — What the second review pass found* and
+> *§20 — What Greptile found*.
 > Founder asks 2026-07-27 (hazard memory) and 2026-07-30 (duplicate corroboration), merged into one
 > phase by the founder call in [§4](#4-workstream-a--the-clustering-primitive-d77).
 > **Depends on:** [N5a](./phase-N5a-seasons.md) — seasons as a derived first-class dimension, the
@@ -389,7 +391,12 @@ or hidden three bogus pins should not wait a year.
    the season-scoped reads N5a currently filters in memory) and collect distinct `waterBodyId`s into a
    scratch queue. There is no "bodies with hazards" index, and adding a counter to `waterBodies` would be
    a write-path change for a once-a-year read.
-2. **Process one body per call, fully — never capped.** This is the pass whose whole job is completeness;
+2. ⚠ **Superseded by [§20](#20-what-greptile-found-2026-07-31--never-capped-was-right-about-the-wrong-risk).**
+   *"Never capped"* held against silent truncation and missed that an unbounded per-body read on a table
+   that never ages out is a mutation users can eventually stop from committing — which costs the *whole
+   corpus* its recompute, not one lake's completeness. The window bound now rides the index, there is a
+   loud ceiling above it, and a body that still fails is stepped over. Original text follows.
+   **Process one body per call, fully — never capped.** This is the pass whose whole job is completeness;
    a cap here is the `listPromotionCandidates` finding one level up. Continue on a cursor rather than
    truncate.
 3. **Diff, don't replace.** Preserve `suppressedAt` and `promotedToFeatureId` by matching new clusters to
@@ -1205,3 +1212,361 @@ once merging exists**. `dismissedDuplicateOf`, `hazardIdsCreated`, `attachHazard
 list were all written before auto-merge and all meant "this row" in a world where a row was a hazard.
 Every one of them needed re-reading as "this *hazard*", and the second PR adds `memberHazardIds` to
 that list before it adds anything else.
+
+---
+
+## 18. What the cross-season half changed about the plan (2026-07-31)
+
+Same discipline as §15: the places the plan was wrong are worth more than the places it was right.
+
+### 18.1 §C4's own matching threshold could not do what §C4 said it would
+
+The plan asks for two things in the same paragraph, and they contradict each other:
+
+> Preserve `suppressedAt` and `promotedToFeatureId` by matching new clusters to existing rows on
+> **member overlap** (Jaccard > 0.5)… A cluster that grew by one member is the same cluster.
+
+One member growing to two is a **Jaccard of exactly 0.5** — not greater — so the row a moderator had
+suppressed would be abandoned the first winter anyone added a sighting. Two growing to four is 0.5 as
+well. Small clusters are the *only* clusters for years, so the symmetric measure fails across the whole
+corpus before it ever succeeds.
+
+The match is the **overlap coefficient**, `shared / min(|old|, |new|)`, which says what the second
+sentence meant: most of the smaller set survived. It matches a cluster that grew, matches one that
+shrank because pins were hidden, and still refuses two that merely brush past each other. A split still
+lets only one half inherit, because a claimed row is out of the running for the rest of the pass.
+
+### 18.2 The rollover is a daily tick with a month gate, not a `crons.cron`
+
+§C4 notes this would be the repo's first cron expression. It still isn't one, and the reason is better
+than uniformity: a `0 8 2 7 *` expression that fails on July 2 **waits a year**. A daily interval that
+does nothing outside the first week of July, and nothing again once `computedForSeason` is stamped,
+makes the once-a-year job retryable for the price of one indexed read on 358 days. Both halves of that
+gate are tests.
+
+### 18.3 The advisory's timing clause reads "first reported", not "between"
+
+§9.2's example is *"first seen between late December and February"*. But the window label collapses a
+fully-covered month to its bare name — which is what makes *"late December to February"* come out right
+— and *"between January"* is not a sentence. `first reported <label>` works for every shape the label
+can take, and keeps the clause in the same past tense as the rest of the sentence.
+
+### 18.4 The advisory describes a **family**, not a hazard type
+
+§9.2 says *"Type from `HAZARD_TYPE_LABELS`"*. A cluster can hold a `pressure_ridge` and an `ice_heave`,
+so naming one of them would report a detail the record does not carry. The copy names the family, and
+`RECURRENCE_FAMILY_PHRASES` has no `crack` entry — the *type* refuses one, since `RecurrenceFamily`
+excludes it, so the compiler holds that line rather than a comment.
+
+### 18.5 Decisions taken in the build
+
+- **A scratch queue table**, because the two phases cannot share a `.paginate()` and an array threaded
+  through scheduler arguments grows without bound in exactly the corpus this pass was built for.
+- **`representativeHazardId` is stored**, so a promotion records itself against the same pin whose
+  shape the feature carries. Re-deriving the medoid at promote time could pick a different one.
+- **`demote` had to grow.** It cleared `promotedFromHazardId` and nothing else, which after a *cluster*
+  promotion leaves every other member naming a standing statement that has been withdrawn. It clears
+  every backlink now and returns the pattern to the queue.
+- **`promote_recurrence` is its own audit verb.** Promoting one sighting and promoting a pattern across
+  winters are different claims, and an audit that could not tell them apart would lose the reason the
+  second one can be trusted.
+- **The tuning chart is a distribution.** "How many patterns go public if I raise the bar" is only
+  answerable as a histogram, and that constant is the one thing in this half a skater ever feels.
+- **The test file pins the clock**, and it is load-bearing: almost everything defaults to
+  `seasonOf(Date.now())`, so fixtures dated in one season against a real wall clock produce empty
+  results that look exactly like a broken query. Five tests failed that way before the pin.
+
+### 18.6 What is deliberately not built
+
+- **The `?action=` deep link and any notification path for advisories.** §9.4's no-list holds: no
+  notification, no bounty, no feed row, no `displayScore`, no trust or points, and nothing confirmable.
+- **A durable offline cache for advisories.** §9.5 was corrected in the first half — no such cache
+  exists for hazards either — and matching hazards' behaviour is the consistent choice. A per-body
+  hazard cache is a real, unbuilt thing if the on-ice path is ever to survive a cold start with no
+  signal, and it should be designed for hazards first.
+- **Impression tracking on the advisory**, and any measurement of whether skaters read it. There is
+  nothing to measure while it ships dark, and the honest time to decide what to count is when somebody
+  proposes flipping the flag.
+
+### 18.7 The trigger, restated now that it is real
+
+`RECURRENCE_ADVISORIES_PUBLIC` flips when the operator queue has been read across at least **two**
+rollovers and the clusters at the current bar look like real patterns — realistically the `'28/'29`
+rollover, possibly `'27/'28` if the corpus is dense. That is a judgement from `/admin/recurrence` and
+the *Patterns by winters observed* chart, not a date. Raising `RECURRENCE_PUBLIC_MIN_SEASONS` to 3 is
+one edit, and it moves the advisory and its timing clause together by construction.
+
+---
+
+## 19. What the second review pass found (2026-07-31, before the PR)
+
+Every suite was green before this pass too, which is the recurring lesson of §16: the things worth
+finding here were **claims the plan made that the code did not keep**, and a test cannot fail on a
+sentence nobody translated into an assertion. Four of the six below are of exactly that shape.
+
+### 19.1 The advisory's yield rule could not fire in the season it is for
+
+**The worst of them, and it was asserted as working.** §9.3 says an advisory stands down when a hazard
+has been reported this season *"inside the cluster footprint"*. The code tested **membership** —
+whether a live pin's id appears in `memberHazardIds` — and those are the same test only if membership
+is current. It is not: the rollover runs in the **first week of July**, when the season it computes
+for is days old and holds no hazards at all. So a ridge pinned the following January is *never* a
+member of the cluster that describes it, and the advisory would have gone on talking over a live pin
+for the entire winter — the one season it exists to stand down in.
+
+It ships dark, so nothing reached a skater. What makes it worth writing down is how it passed review
+twice: the test seeded its "live" pin **before** running the pass, which made the pin a member and the
+assertion vacuous. A fixture that pre-dates the job is a fixture that cannot see a staleness bug, and
+this phase's whole subject is a table that is computed once a year.
+
+`hasLiveSighting` now measures geometry — same family, within `RECURRENCE_MATCH_METERS` of the stored
+representative footprint, on the same fallback ladder render and proximity use. The tolerance is the
+one the cluster was built at, so a pin that would have joined this cluster in July is the pin that
+silences it in January. Two tests replace the old one: a sighting filed *after* the pass (asserting
+explicitly that it is **not** a member and yields anyway), and the other direction — a pin a kilometre
+away, or of another family, does not silence a history it is not about.
+
+### 19.2 A query that ships dark should not read the lake
+
+`recurrence.listForBody` collected every active hazard on the body before deciding what to yield —
+including when the public read had returned **zero** rows, which while `RECURRENCE_ADVISORIES_PUBLIC`
+is off is *every single call*. Both clients mount `IceHistory` on every lake drawer open, so the
+shipped-dark state was paying a full per-body hazard read for a query that returns `[]` by
+construction. One early return. Worth naming because it is the failure mode of anything gated by a
+constant: the gate makes the feature invisible, not free.
+
+### 19.3 A partial rollover waited a year, which is what the interval was chosen to avoid
+
+§18.2 argues for a daily tick over a `crons.cron` because *"a run that fails on July 2 is picked up on
+July 3"*. `maybeRunRollover` gated on "does any row exist for this season" — which is true after the
+**first** body commits. A chain dying at body 1 of 200 therefore set the stamp, left 199 rows queued,
+and made every remaining tick in the window a no-op. The retryability held only for the failure that
+happens before any work lands, which is the least likely one.
+
+The queue is now checked first and outranks the stamp. Restarted from the top rather than resumed,
+because a run can also die *during* discovery and a half-built queue cannot be told apart from a
+finished one — and restarting is safe precisely because the pass is idempotent, which was already a
+test. One redundant pass in a failure year is the right price for a pass that finishes.
+
+### 19.4 A reversible decision with nowhere to reverse it
+
+`unsuppress` had a mutation, an audit verb and a test, and **no caller**. The per-lake card printed
+*"Suppressed — {reason}"* as dead text and the cross-lake queue filtered suppressed rows out without a
+way to ask for them, so §7.3's *"Reversible; never a delete"* was true of the server and false of the
+product. Both surfaces now carry Unsuppress, and the queue a *Show suppressed* toggle.
+
+This is §8's own finding — `bodyFeatures.create` shipped with no UI, which is why D79 existed —
+repeating inside the phase that recorded it. The generalisation worth keeping: **a mutation without a
+surface is not a feature, and the reversibility argument for a destructive-looking action is only as
+good as the button.**
+
+### 19.5 `listQueue` was capped, and the plan said paginated
+
+`.take(min(limit, 300))` followed by in-memory filters for family, minimum seasons, promoted and
+suppressed. That is §16.3's finding from the other end: the read is bounded, but the *filters* are not
+in the index, so on a corpus whose top-ranked clusters are mostly promoted the cap fills with rows the
+operator asked not to see and the queue reads **empty** while unpromoted patterns sit just below it.
+Now genuinely paginated on the repo's existing `paginationOpts` / `usePaginatedQuery` idiom, with the
+same note `listFeed` carries: a page filtered to nothing is how a filtered scroll makes progress, not
+the end of the list.
+
+### 19.6 Two sections numbered 17
+
+The cross-season write-up was numbered `17`, as was *What Greptile found* — colliding headings and
+colliding `17.x` anchors, in a repo whose docs suite already has a note about GitHub slug collisions,
+and with the status block linking to the section by number. Renumbered to **18**, and this pass is 19.
+
+### 19.7 Left as-is, deliberately
+
+- **A body that fails to recompute blocks the ones behind it.** `processNextBody` takes the first
+  unclaimed row in index order, so a lake that throws is retried at the head of the queue on each of
+  the July ticks and nothing after it runs that day. Bounded (the window is a week) and visible in the
+  logs, and the alternative — a failure counter per row — is machinery for a failure nobody has seen
+  yet. Worth remembering rather than pre-solving.
+- **`describeCluster` double-counts a mixed archive.** A hazard archived on one `fully_healed` plus
+  one `never_existed` vote lands in both `healedSeasons` and `neverExistedCount`. It needs a hazard
+  with exactly one of each and no third vote, and both penalties point the same way, so the ranking
+  errs conservative. Not worth a special case in the one function whose sign errors are hardest to see.
+- **`enqueueBody` recomputes inline rather than enqueuing.** The name is wrong and the behaviour is
+  right — a body merge should not wait for July. Renaming it touches the merge path in `waterBodies`,
+  which is not where this PR should be making incidental edits.
+
+---
+
+## 20. What Greptile found (2026-07-31) — *"never capped" was right about the wrong risk*
+
+One finding, no line comments, and it overturns a sentence this plan asserts in **three** places
+(§C4.2, §11's work item 8, and the module docstring in `lib/recurrence.ts`): *"process one body per
+call, fully — never capped."*
+
+### 20.1 The finding
+
+> The rollover processes each body in one mutation that collects its complete hazard history and
+> repeatedly collects confirmations; once that transaction exceeds backend limits, the queue row is not
+> deleted and subsequent bodies are not scheduled.
+
+It is right, and §19.7 had walked past the same ground while looking at the wrong half of it. That note
+observed that *"a body that fails to recompute blocks the ones behind it"* and judged it bounded and
+acceptable — because it assumed failures would be rare and incidental. What it did not ask is **what
+makes a body fail**, and the answer is: accumulated user-created rows. `hazards` never ages out, and
+`computeClustersForBody` was reading a body's *entire* history off the creation-ordered
+`by_water_body` and dropping the out-of-window rows in memory, then reading every member's
+confirmations **twice**. So the read set grew for the life of the app, fastest on the lakes people use
+most — and when it finally could not commit, the rollback took the queue row's claim with it, so every
+later run picked that lake first and died identically. **One popular lake, stopping the annual pass for
+the whole corpus, permanently.**
+
+### 20.2 Why the plan's own argument does not survive contact with this
+
+§C4.2's case against a cap is genuinely good: *"a cap here is the `listPromotionCandidates` finding one
+level up"*, and a recurrence record computed over a corpus missing rows is a count that looks complete
+and isn't. That argument is about **silent** truncation, and it still holds.
+
+What the plan weighed against it was the cost of a partial answer. What it never weighed was the cost
+of **no answer at all, for every lake**. An unbounded read defending completeness buys nothing the
+first time it fails — it does not degrade, it stops the corpus. Bounded, the worst case is one lake's
+oldest sightings missing from one denominator. Between "one lake's history starts a season late, and
+the card says so" and "no lake is recomputed this year", the plan picked the second by accident.
+
+### 20.3 What changed
+
+- **The window bound moved into the index.** New `hazards.by_water_body_first_reported`, so a
+  recompute reads *four winters of one lake* rather than one lake's entire history. This is the actual
+  fix; everything below is defence in depth. It is the same lesson as N1's `listInViewport` and
+  `listPromotionCandidates` — **the bound has to be in the index, not after it**, which this repo has
+  now learned three times.
+- **One confirmation read per hazard, not two.** `never_existed` decides both eligibility and ranking;
+  reading the votes separately for each doubled the largest read in the pass, on the table users add to
+  most freely. `describeCluster` is now pure and takes the counts in.
+- **A ceiling, said out loud.** `MAX_BODY_HAZARDS = 4000`, read **newest first** so what it drops is
+  the oldest end of the window. Every affected row carries `computedFromPartialHistory`, the operator
+  card prints *"computed from this lake's most recent sightings only — the winter count may be low"*,
+  and the job logs it. That is §11's no-silent-caps rule doing exactly the job it exists for.
+- **Claiming and computing are now two transactions**, which is the structural half. The attempt
+  counter has to commit *before* the work is attempted or a rollback erases the evidence that anything
+  was tried — a counter incremented inside the failing transaction is not a counter. After
+  `MAX_BODY_ATTEMPTS = 3` the body is marked `skippedAt` and the queue drains past it. The row is kept,
+  never deleted: a lake the pass cannot compute should be findable, and a silently dropped one presents
+  as *"this lake has no patterns"*.
+- `maybeRunRollover` treats only **unskipped** rows as work left, so one stepped-over body cannot make
+  every remaining July tick restart a run with nothing to do.
+
+### 20.4 The lesson, which is the same one twice
+
+§17.5 named this phase's recurring blind spot as *"the phase asked carefully about **readers** of a
+field and never about **writers**"*. This is the third variation: it asked what a read **returns** and
+never what a read **costs as the corpus ages**. Every bound in this phase was justified against
+*today's* corpus — one hazard on dev — and "bounded by body" quietly meant "bounded by how much one
+lake accumulates forever".
+
+The rule worth keeping: **"bounded by X" is only a bound if X cannot grow without limit.** A per-body
+read is not bounded on a table that never ages out; a per-season read is. And a mutation whose read set
+is a function of user-created rows is a mutation users can eventually stop from committing, which makes
+it an availability question rather than only a performance one.
+
+### 20.5 The second pass: bounding a product one factor at a time
+
+Greptile again, on the fix rather than the original code, and right for the second time:
+
+> The current worker still collects every confirmation for each of up to 4,000 selected hazards in one
+> transaction. The retry split prevents a permanent queue deadlock, but repeated transaction failures
+> cause the affected body to be skipped with stale or missing recurrence data.
+
+The transaction was `hazards × votes-per-hazard`, and §20.3 had put a ceiling on the **first factor
+only** — then set it at 4,000, which is roughly the whole document budget before a single vote is read.
+Votes are the cheapest thing a user can add and they pile up on exactly the pins people argue about, so
+the term left unbounded was the one that actually grows. And the second half of the note is the sharper
+half: **a skip is not a computation.** A body that reliably fails is a body whose recurrence data is
+permanently stale, and §20.3's retry/skip path was quietly load-bearing rather than being the backstop
+it was written as.
+
+**The fix is an exact short-circuit, not a smaller cap.** `goneCount` is not an approximation of the
+vote set — it *is* the same computation, stored: `deriveHazardLifecycle` counts distinct non-author
+users whose latest verdict is `fully_healed` **or** `never_existed`, and `hazards.confirm` writes it on
+every vote. The pooling is why §C2 says the job must read the votes to *split* the two verdicts. But it
+is decisive in the other direction: **`goneCount === 0` proves no user's current verdict is
+`never_existed`**, and no read can change that answer. So the confirmation read is skipped outright for
+very nearly every pin — the gone verdicts need two independent users before they do anything, so most
+hazards never see one.
+
+On top of that, so the bound holds whatever shape a corpus takes rather than only the expected one:
+`MAX_BODY_HAZARDS` down to 2,000; a per-body `MAX_CONFIRMATION_READS` budget of 2,000 documents;
+`MAX_VOTES_PER_HAZARD` at 200 so one wildly-argued pin cannot starve everything behind it; and the
+stored-cluster read bounded too. Exhausting the vote budget admits the sighting **unverified** rather
+than excluding it — excluding on data we did not read would silently drop real evidence — and sets
+`computedFromPartialHistory`, the same flag the hazard ceiling sets.
+
+**The invariant is now a test**, driven through the real `hazardConfirmations.confirm` mutation rather
+than a fixture, because the short-circuit is only as good as the claim that there is a single writer and
+it always recomputes the column. Two existing fixtures had been inserting vote rows and leaving
+`goneCount` at zero — building a state the app cannot produce, which under the new code would have
+"proved" the short-circuit broken. They go through a helper that maintains it now.
+
+### 20.6 What both passes have in common
+
+§20.4 said the phase asked what a read *returns* and never what it *costs as the corpus ages*. The
+second pass narrows that further: when a read cost is a **product**, bounding one factor feels like
+solving it and isn't. The honest check is not "is there a cap" but "what is the largest number of
+documents this transaction can touch, and which of those numbers can a user increase?"
+
+Worth noting what did **not** change: `recurrence.listForBody` still collects a body's active hazards.
+That is a *query*, so a failure costs one drawer render rather than the corpus's annual recompute, and
+it matches the bound `hazards.listForBody` has had since Phase 9 (call 6). Changing it here would be
+fixing a different function's contract inside a hazard-identity PR.
+
+### 20.7 The third pass: two P1s, and both were caps standing in for indexes
+
+Greptile's first inline comments on this PR, and both of them are the *previous fix* being wrong rather
+than the original code.
+
+**A fixed page is not a queue.** `processNextBody` read `.take(200)` off `by_season` and `.find()` an
+eligible row inside that slice. That is only "the next body" if no 200-row prefix is ineligible — and
+§20.3 had just created the conditions for exactly such a prefix, by **retaining skipped rows on
+purpose**. Past 200 stepped-over lakes the scan found nothing, scheduled nothing, and every body behind
+them went unrecomputed for the year: the same permanent stall §20.3 set out to remove, rebuilt by its
+own fix. `maybeRunRollover` had the identical shape one function over, and `startRecurrenceRun`'s stale
+sweep a cousin of it (one page of deletes, leftovers abandoned forever).
+
+Both exclusions now ride a key. `by_season_skipped_claimed` uses an **equality on an unset optional
+field** — indexes over optionals are not sparse, so "unset" is a real indexed value, the lesson this
+repo already had written down — and orders `claimedAt` ascending so unclaimed rows come first and the
+oldest lease next. The *first* row is therefore either eligible or proof that nothing is: if the oldest
+claim is still inside its lease, every remaining claim is newer. One read, no slice, no starvation.
+
+**A cap on the input to a calculation whose answer depends on the dropped rows is not a bound.**
+§20.5's `.take(200)` on a hazard's confirmations was worse than the unbounded read it replaced.
+`hazardConfirmations.confirm` finds a user's row through `by_hazard_and_user` and **patches it in
+place**, so there is exactly one row per (hazard, user) and its `verdict` *is* that user's current
+verdict. A truncated prefix therefore does not return a slightly stale count — it returns a **wrong**
+one, with the decisive `never_existed` votes simply absent, admitting a hazard the community rejected
+and corrupting membership, season counts and ranking together.
+
+The fix is `by_hazard_and_verdict`: read only the rows that can change the answer, capped at 8, which
+is far above where the answer stops changing (two votes disqualify the sighting, `CORROBORATION_CAP`
+flattens the ranking at three). The latest-vote reduction is gone because there was never anything to
+reduce. And exhausting the body's vote budget now **excludes** the disputed sighting rather than
+admitting it unverified — §20.5 had that the other way round, which was right when the alternative was
+dropping evidence on an unread `.take()` and wrong once reaching the branch means a pin *known* to
+carry gone verdicts would enter a pattern with its rejection unread. D3's asymmetry decides it: never
+inflate a claim about recurrence.
+
+Swept the same two shapes across the rest of the PR rather than only the two flagged lines: the three
+remaining per-body `hazardRecurrence` collects (`listForBody`, `listForBodyAdmin`, `bodyFeatures.demote`)
+now share `MAX_BODY_CLUSTERS`. *"A handful of rows"* was the comment justifying each of them, and it is
+the same sentence the per-body hazard read carried until a table that never ages out made it false.
+
+### 20.8 What three passes of this have in common
+
+Each round fixed the named thing and left the *class* alive one level over:
+
+| Pass | Fixed | Missed |
+|---|---|---|
+| §20.3 | the unbounded hazard read | the confirmations multiplying it |
+| §20.5 | the confirmation volume | that capping it made the answer wrong, not just partial |
+| §20.7 | both, at the index | — and the retained-skip prefix its own fix introduced |
+
+The through-line: **every one of these was a predicate the index could have expressed, solved with a
+number instead.** `.take(n)` then filter, `.take(n)` then find, `.take(n)` then reduce — three
+variations on doing in memory what the key could have done exactly. A cap is the right tool only when
+the rows past it cannot change the answer; when they can, the cap is a wrong answer with a ceiling on
+it, and the honest fix is always to make the predicate part of the key.

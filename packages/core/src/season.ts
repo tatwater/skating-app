@@ -147,3 +147,14 @@ export function seasonsBetween(fromMs: number, toMs: number): Season[] {
   for (let s = last; s >= first; s--) seasons.push(s);
   return seasons;
 }
+
+/**
+ * How many whole days into its season a moment falls — 0 on July 1 (N5c / §C6).
+ *
+ * The unit the timing window is computed in, and it has to be *relative to the season* rather than a
+ * calendar day-of-year: a window that straddles the new year is the normal case here, and day-of-year
+ * would put late December at 360 and early January at 5, which no percentile can read as adjacent.
+ */
+export function dayOfSeason(ms: number, season: Season = seasonOf(ms)): number {
+  return Math.floor((ms - seasonStartMs(season)) / 86_400_000);
+}

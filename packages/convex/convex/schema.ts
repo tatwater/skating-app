@@ -20,6 +20,7 @@ import {
   PRECIP_TYPES,
   PROFILE_VISIBILITIES,
   RATING_TARGET_TYPES,
+  RECURRENCE_FAMILIES,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
@@ -793,7 +794,13 @@ export default defineSchema({
     firstReportedAt: v.number(),
     lastConfirmedAt: v.number(), // drives the per-type freshness decay (D15/D52)
     confirmCount: v.number(), // "still here" confirms; excludes the author's own (D54 confirm-gate)
-    goneCount: v.number(), // "fully healed & safe" verdicts ONLY — never "healing but unsafe" (D52)
+    // "It's gone" verdicts: `fully_healed` **and** `never_existed`, which pool because they agree
+    // about the present and the map shows the present (D65). This comment said `fully_healed` only,
+    // and had been wrong since D65 shipped — a stale comment with a real consequence, because the
+    // recurrence job needs `never_existed` counted *separately* (a claim the report was bogus is the
+    // opposite of corroboration, where "it healed in March" is a fact about last winter). That job
+    // reads `hazardConfirmations` for the split rather than this number.
+    goneCount: v.number(),
     // Weather-driven decay (Phase 10 / D56). The decay cron (§6) stores the **time-independent**
     // `decayMultiplier` (NOT a frozen freshness bucket, which would drift between ticks) so the online
     // `toView` recomputes the live bucket, and the offline on-ice payload carries a snapshot. Absent ⇒ 1
@@ -825,6 +832,21 @@ export default defineSchema({
       'weatherAdjustedAt',
     ])
     .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 7b)
+    // The recurrence job's corpus walk (N5c / D77). `by_water_body` is creation-ordered and
+    // `by_water_body_status` is per body, so neither can answer "every hazard first reported inside
+    // this four-season window" — which is the read the once-a-year pass is built on. Keyed on
+    // `firstReportedAt` because that is the season clock (D63), the field nobody can move, and the
+    // one a cross-season record has to agree with.
+    .index('by_first_reported', ['firstReportedAt'])
+    // The same pass's **per-body** read, and the reason it is a second index rather than a filter on
+    // `by_water_body`: that one is creation-ordered, so bounding the four-season window meant reading
+    // *every hazard the lake has ever held* and dropping the old ones in memory. `hazards` never ages
+    // out, so that read grows for the life of the app on the busiest lakes — a mutation whose read set
+    // is a function of accumulated user-created rows, which is a transaction that eventually cannot
+    // commit. With the range on the index the recompute is bounded by *four winters of one lake*
+    // instead. (Greptile, PR #35 — the same shape as N1's `listInViewport` and `listPromotionCandidates`
+    // before it: the bound has to be in the index, not after it.)
+    .index('by_water_body_first_reported', ['waterBodyId', 'firstReportedAt'])
     .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 9 offline)
     // The merge chain (N5c / D80): every pin folded into one survivor, which is what the union
     // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every
@@ -848,12 +870,178 @@ export default defineSchema({
     .index('by_hazard', ['hazardId'])
     // One confirmation per user per hazard per window — re-confirming updates rather than stacking.
     .index('by_hazard_and_user', ['hazardId', 'userId'])
+    // **One verdict's holders, without reading the pin's whole argument** (N5c, Greptile PR #35).
+    // The recurrence pass needs "how many distinct users currently say this was never real", and read
+    // it by collecting every vote on the hazard and reducing — which on a contested pin is a large,
+    // unbounded read to answer a question about a handful of rows. Capping that read was worse than
+    // the read: because the row above is patched in place rather than stacked, a row's `verdict` *is*
+    // its user's current verdict, so a truncated slice does not give a stale answer, it gives a
+    // **wrong** one — decisive votes simply outside the prefix, silently admitting a hazard the
+    // community rejected. Keyed on the verdict, the read is a handful of rows and exact.
+    .index('by_hazard_and_verdict', ['hazardId', 'verdict'])
     // A user's confirmations across all hazards — the `Watchdog` badge counts distinct *others'*
     // hazards this user has acted on (D50, Phase 6).
     .index('by_user', ['userId'])
     // Per-day confirmation outcomes + age-at-confirmation, the empirical check on the D52 decay
     // table (Phase 7b). Day-sliced so the rollup never re-reads the whole confirmation history.
     .index('by_created_at', ['createdAt']),
+
+  /**
+   * Cross-season hazard recurrence (N5c / D77, D78) — *this is what was reported here, and in how many
+   * of the last N winters.*
+   *
+   * **Precomputed, and the asymmetry with within-season clustering is about read bounds rather than
+   * taste.** `listForBody` already collects a body's active hazards in one bounded read (Phase 9 call
+   * 6), so duplicate clustering is free there and can never go stale. The cross-season read is the
+   * opposite: `hazards` never ages out, so "every hazard on this lake across four winters" is a query
+   * that grows forever — which is exactly why `listPromotionCandidates` had to be capped at 500 rows
+   * mid-review. So recurrence is computed once a year at the rollover and stored here.
+   *
+   * **Every row is history, never a forecast (D3/D78).** What a row may say is *what was reported, in
+   * how many distinct winters, out of how many, and where.* It may not say a hazard is there, will be
+   * there, or is likely — and nothing derived from this table ever enters the on-ice payload, feeds
+   * `displayScore`, or touches trust, points or the bounty gate.
+   */
+  hazardRecurrence: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    // Five families, not the four promotable ones: `volatile` earns a row precisely so D78's raised
+    // bar has something to be raised *about*. `crack` is the one family with no cross-season record —
+    // a recurring working crack is not a permanent feature of a lake, so there is nothing to be about.
+    family: literals(RECURRENCE_FAMILIES),
+    // The **representative footprint**: the medoid member's own shape, carried across whole. Not a
+    // synthesised average — a promoted cluster should keep the shape of a ridge somebody actually drew,
+    // and an averaged line can bend through ice nobody ever marked.
+    geometryKind: literals(HAZARD_GEOMETRY_KINDS),
+    geometry: geoJson,
+    radiusMeters: v.optional(v.number()),
+    bufferMeters: v.optional(v.number()),
+    bbox,
+    // Every contributing hazard — survivors only, since a merge tombstone is represented by the pin it
+    // was folded into (D80). This is the diff key: a recompute matches new clusters to existing rows on
+    // member overlap rather than on identity, so a cluster that grew by one member is the same cluster
+    // and keeps its suppression and its promotion.
+    memberHazardIds: v.array(v.id('hazards')),
+    // The medoid — the member whose shape the row carries, and the one a promotion records itself
+    // against so `demote` has a source hazard to point back at. Stored rather than re-derived, because
+    // re-deriving it at promote time could pick a different pin than the one whose geometry is here.
+    representativeHazardId: v.id('hazards'),
+    // **A season contributes at most one.** Three skaters pinning the same ridge in one January is one
+    // winter of evidence; without that rule an enthusiastic week becomes "a pattern". Ascending, deduped,
+    // keyed on `seasonOf(firstReportedAt)` — the clock nobody can move (D63).
+    seasonsObserved: v.array(v.number()),
+    // The denominator, stored rather than derived so a row always renders the fraction it was computed
+    // under even after the constant moves. "3 of the last 4 winters" is only honest if both halves came
+    // from the same pass.
+    windowSeasons: v.number(),
+    // The timing window (§C6), as days since July 1 — the interquartile range of members' day-of-season,
+    // so one anomalous November sighting can't stretch it across the winter. Rendered widened to whole
+    // half-months and never narrower than about three weeks, because a narrow window implies the rest of
+    // the season is clear and that is a claim we do not have.
+    firstReportedDayOfSeasonP25: v.number(),
+    firstReportedDayOfSeasonP75: v.number(),
+    // Operator-visible, and deliberately NOT a gate (answered at scoping, question 2): one skater
+    // reporting the same ridge every winter on a pond nobody else visits would never promote under a
+    // distinct-author requirement — and that is precisely the lake with the least other coverage, so
+    // the rule would fail hardest where the feature matters most. Shown, so a false pattern from a
+    // single reporter is visible; tunable into a gate later, with data.
+    distinctAuthorCount: v.number(),
+    suggestedFeatureType: v.optional(literals(BODY_FEATURE_TYPES)),
+    priority: v.number(), // the ranking score (§C4) — a queue order for a human, never a probability
+    // The place phrase, from the medoid (N2/D60). Absent when the medoid sits in no named sub-area,
+    // and then the advisory omits the phrase entirely rather than inventing geography.
+    subAreaId: v.optional(v.id('waterBodySubAreas')),
+    subAreaName: v.optional(v.string()),
+    /**
+     * **Stored, not derived** (D78). The alternative ships 1-of-1 clusters over the wire and asks the
+     * client not to render them, which is "admin-only if you don't open the network tab". The public
+     * read filters on this at the index, so a thin pattern never leaves the server.
+     */
+    publiclyVisible: v.boolean(),
+    computedAt: v.number(),
+    computedForSeason: v.number(),
+    // Suppression (§7.3): three pins in one cove across three winters that are three people misreading
+    // the same shadow. Stops being suggested and stops being publicly advisable, permanently, across
+    // recomputes. Reversible; never a delete.
+    suppressedAt: v.optional(v.number()),
+    suppressedByUserId: v.optional(v.id('profiles')),
+    suppressReason: v.optional(v.string()),
+    // Set when an operator promoted this cluster into a `bodyFeatures` row. The cluster leaves the
+    // suggestion queue but **keeps accumulating members**, because the D53 amendment means skaters go
+    // on filing sightings after a promotion and the denominator has to go on meaning something.
+    promotedToFeatureId: v.optional(v.id('bodyFeatures')),
+    // Set when a recompute could not match this row to any current cluster but had to keep it anyway
+    // (it is promoted or suppressed — a human decision that a recomputation must not silently drop).
+    staleSince: v.optional(v.number()),
+    // Set when the body held more hazards in the window than one recompute will read, so this row's
+    // history starts later than the window does. **The denominator is still printed as "of 4 winters"
+    // and could now be an undercount**, which is exactly the kind of thing §11 forbids a surface to
+    // swallow — so it is stored, shown on the operator card, and warned about in the logs rather than
+    // left to look like a complete answer (Greptile, PR #35).
+    computedFromPartialHistory: v.optional(v.boolean()),
+  })
+    .index('by_water_body', ['waterBodyId'])
+    // The ranked cross-lake queue (§7.2) — bounded by construction, since it reads this precomputed
+    // table and never touches `hazards` or `waterBodies` in bulk (the Phase 7b rule).
+    .index('by_computed_season_and_priority', ['computedForSeason', 'priority'])
+    // The skater-facing read. `publiclyVisible` sits in the key so the bar is applied *at the index*
+    // rather than after the read — the difference between "admin-only" and "admin-only unless you look".
+    .index('by_water_body_public', ['waterBodyId', 'publiclyVisible']),
+
+  /**
+   * The recurrence job's scratch queue (N5c / §C4).
+   *
+   * The job has two phases and Convex allows **one `.paginate()` per function execution**, which makes
+   * "discover the bodies, then process them" a hard structural requirement rather than a style choice.
+   * Phase one pages `hazards.by_first_reported` across the window and drops one row here per distinct
+   * body; phase two takes one row per call, recomputes that body **completely**, and deletes the row.
+   *
+   * A table rather than an array threaded through scheduler arguments, because the array is unbounded
+   * in exactly the case that matters: a corpus where lots of lakes have hazards is the corpus this pass
+   * was built for, and an argument that grows with it would fail at the worst time.
+   *
+   * `claimedAt` is the **lease**. It bounds overlap between runs rather than protecting a single body's
+   * recompute — that is one transaction and therefore atomic — and a stale lease is taken over rather
+   * than respected, since the alternative to a wrong retry here is a body that is never recomputed at
+   * all. The lesson Greptile taught this repo twice on PR #31: a marker written at schedule time is a
+   * lie about completion.
+   */
+  recurrenceQueue: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    runForSeason: v.number(),
+    claimedAt: v.optional(v.number()),
+    // **How many times this body has been handed to a recompute**, and it is counted in a *different*
+    // transaction from the one that does the work — which is the whole point of it. A recompute that
+    // exceeds a backend limit rolls its transaction back, taking any counter incremented inside it with
+    // it, so the same body would be picked first on every subsequent run and the annual queue would
+    // stall there permanently. Claiming and computing are therefore two mutations: the claim commits
+    // whatever the compute then does.
+    attempts: v.optional(v.number()),
+    // Set when a body has failed `MAX_BODY_ATTEMPTS` times and is being stepped over so the rest of the
+    // corpus can drain. Never deleted — a lake the pass cannot compute is a thing an operator should be
+    // able to find, and a silently dropped row would present as "this lake has no patterns".
+    skippedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    // The dedup on insert: one row per body per run, however many pages the body's hazards span.
+    .index('by_season_and_body', ['runForSeason', 'waterBodyId'])
+    // The sweep that clears an abandoned run's leftovers.
+    .index('by_season', ['runForSeason'])
+    // **Phase two's "what is left", answered by the index rather than scanned for** (Greptile, PR #35).
+    //
+    // It used to `.take(200)` and `.find()` an eligible row in that slice — which is only "the next
+    // body" if no 200-row prefix is ineligible. Skipped rows are *retained on purpose*, and claimed
+    // rows stay until their lease expires, so a prefix of exactly that kind is the expected end state
+    // of a bad run: past 200 of them the scan found nothing, scheduled nothing, and every body behind
+    // them went unrecomputed for the year. The same shape as `listRecentMerges` (§16.3) and
+    // `by_status_moderation_weather_adjusted` — a predicate applied *after* a fixed read is a
+    // starvation bug, not a filter.
+    //
+    // Both exclusions ride the key instead. `skippedAt` is an equality on `undefined` — indexes over
+    // optional fields are not sparse, so "unset" is a real indexed value — and `claimedAt` ascending
+    // puts unclaimed rows (`undefined` sorts first) ahead of claimed ones, oldest claim next. So the
+    // *first* row is either eligible or proof that nothing is: if the oldest claim is still inside its
+    // lease, every remaining claim is too.
+    .index('by_season_skipped_claimed', ['runForSeason', 'skippedAt', 'claimedAt']),
 
   // Known seasonal water-body hazards — persistent, NOT decayed, no confirmation loop (D53).
   // Springs/current, constrictions and bridges/narrows are weaker every season regardless of cold, and

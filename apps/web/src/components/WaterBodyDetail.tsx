@@ -19,6 +19,7 @@ import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { FavoriteButton } from './FavoriteButton';
 import { HazardForm } from './HazardForm';
 import { HazardList } from './HazardList';
+import { IceHistory } from './IceHistory';
 import { LeavingNotice } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { ReportForm } from './ReportForm';
@@ -154,6 +155,10 @@ export function WaterBodyDetail({
         <WaterBodyModeratorControls body={result.body} />
         <SeasonFilter waterBodyId={result.body._id} />
         <BountyList waterBodyId={result.body._id} />
+        {/* Above the hazard list, and nowhere else — not the map, the feed, notifications, the
+            recommended strip or search. The map is where a mark means somebody reported this, and an
+            advisory has no reporter this season (§9.1). */}
+        <IceHistory waterBodyId={result.body._id} />
         <HazardList waterBodyId={result.body._id} />
         <ReportFeed
           waterBodyId={result.body._id}

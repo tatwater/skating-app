@@ -12,7 +12,7 @@
  * promote/demote mutations; the operator UI lands in Phase 7 (D49-style).
  */
 
-import { type HazardShape, hazardBbox, isValidHazardShape } from '@skating/core';
+import { type HazardShape, hazardBbox, isPubliclyVisible, isValidHazardShape } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
@@ -20,6 +20,7 @@ import { requireContributorRole, requireRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
 import { HAZARD_GEOMETRY_KINDS } from './lib/hazardValidators';
+import { MAX_BODY_CLUSTERS } from './lib/recurrence';
 import { geoJson, literals } from './lib/validators';
 
 /** Active known features for a body — rendered alongside hazards with distinct styling. */
@@ -89,7 +90,7 @@ export const create = mutation({
     }
     const geometryKind =
       args.geometryKind ?? (args.radiusMeters !== undefined ? 'point_radius' : 'polygon');
-    const id = await insertFeature(ctx, {
+    const id = await insertBodyFeature(ctx, {
       waterBodyId: body._id,
       type: args.type,
       geometryKind,
@@ -140,7 +141,7 @@ export const promote = mutation({
       throw new ConvexError('Hazard is already promoted to a body feature');
     }
 
-    const id = await insertFeature(ctx, {
+    const id = await insertBodyFeature(ctx, {
       waterBodyId: hazard.waterBodyId,
       type,
       // Carry the hazard's own primitive across — a promoted line stays a line with its buffer, so the
@@ -178,11 +179,41 @@ export const demote = mutation({
     await ctx.db.patch(bodyFeatureId, { active: false });
     if (feature.promotedFromHazardId) {
       const source = await ctx.db.get(feature.promotedFromHazardId);
-      // Only clear supersession if this feature is still the one superseding it — a hazard promoted,
-      // demoted, then re-promoted elsewhere must not be resurfaced by the stale demotion.
+      // Only clear the backlink if this feature is still the one it points at — a hazard promoted,
+      // demoted, then re-promoted elsewhere must not have the stale demotion clear the new link.
       if (source?.promotedToFeatureId === bodyFeatureId) {
         await ctx.db.patch(feature.promotedFromHazardId, { promotedToFeatureId: undefined });
       }
+    }
+    // **A cluster promotion set the backlink on every member, so a demotion has to clear every one**
+    // (N5c / §8.2). Clearing only `promotedFromHazardId` would leave the rest of the cluster pointing
+    // at a feature nobody can see any more — a provenance line in the drawer naming a standing
+    // statement about the lake that has been withdrawn, which is worse than no line at all.
+    //
+    // Found by walking back from the promotion rather than by an index on the field: a body's clusters
+    // are a handful of rows. Bounded anyway, at the shared ceiling — "a handful" is a fact about
+    // today's corpus, and this phase has now twice been wrong about which of those stay true (§20).
+    const clusters = await ctx.db
+      .query('hazardRecurrence')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', feature.waterBodyId))
+      .take(MAX_BODY_CLUSTERS);
+    for (const cluster of clusters) {
+      if (cluster.promotedToFeatureId !== bodyFeatureId) continue;
+      for (const memberId of cluster.memberHazardIds) {
+        const member = await ctx.db.get(memberId);
+        if (member?.promotedToFeatureId !== bodyFeatureId) continue;
+        await ctx.db.patch(memberId, { promotedToFeatureId: undefined });
+      }
+      // The cluster returns to the suggestion queue — the promotion round-trips, and an operator who
+      // demoted by mistake finds the pattern where they left it rather than having to wait for July.
+      await ctx.db.patch(cluster._id, {
+        promotedToFeatureId: undefined,
+        publiclyVisible: isPubliclyVisible({
+          family: cluster.family,
+          seasonsObserved: cluster.seasonsObserved,
+          ...(cluster.suppressedAt !== undefined ? { suppressedAt: cluster.suppressedAt } : {}),
+        }),
+      });
     }
     await audit(ctx, actor._id, 'demote_body_feature', bodyFeatureId, reason, {
       priorActive: feature.active,
@@ -190,7 +221,7 @@ export const demote = mutation({
   },
 });
 
-async function insertFeature(
+export async function insertBodyFeature(
   ctx: MutationCtx,
   args: Omit<Doc<'bodyFeatures'>, '_id' | '_creationTime' | 'bbox' | 'active' | 'createdAt'>,
 ): Promise<Id<'bodyFeatures'>> {

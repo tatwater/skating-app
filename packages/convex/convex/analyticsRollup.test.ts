@@ -11,7 +11,7 @@
  *    time-to-fulfillment histogram, not guessed at.
  *  - **honest windows** — a photo uploaded minutes ago is mid-submission, not an orphan.
  */
-import { HOUR_BUCKETS, metricDay } from '@skating/core';
+import { HOUR_BUCKETS, metricDay, seasonOf } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { internal } from './_generated/api';
@@ -514,3 +514,132 @@ describe('pruneClientSignals', () => {
     expect(left).toHaveLength(1);
   });
 });
+
+/**
+ * The distribution behind the one constant a skater ever feels (N5c / D78).
+ *
+ * `RECURRENCE_PUBLIC_MIN_SEASONS` decides whether a pattern is shown or stays on the dashboard, and
+ * "how many go public if I raise it" is only answerable as a histogram. If this miscounts, the bar
+ * gets moved against a wrong picture.
+ */
+describe('runRollup — recurrence clusters', () => {
+  const seedCluster = (
+    t: ReturnType<typeof harness>,
+    waterBodyId: Id<'waterBodies'>,
+    hazardId: Id<'hazards'>,
+    seasons: number[],
+    extra: Record<string, unknown> = {},
+  ) =>
+    t.run((ctx) =>
+      ctx.db.insert('hazardRecurrence', {
+        waterBodyId,
+        family: 'ridge' as const,
+        geometryKind: 'point_radius' as const,
+        geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+        radiusMeters: 30,
+        bbox: { minLat: 0.49, minLng: 0.49, maxLat: 0.51, maxLng: 0.51 },
+        memberHazardIds: [hazardId],
+        representativeHazardId: hazardId,
+        seasonsObserved: seasons,
+        windowSeasons: 4,
+        firstReportedDayOfSeasonP25: 180,
+        firstReportedDayOfSeasonP75: 200,
+        distinctAuthorCount: 1,
+        priority: 0.5,
+        publiclyVisible: false,
+        computedAt: Date.now(),
+        computedForSeason: seasonOf(Date.now()),
+        ...extra,
+      }),
+    );
+
+  test('buckets patterns by how many winters each was seen in, with the denominator', async () => {
+    const t = harness();
+    const { waterBodyId, hazardId } = await seedBodyAndHazard(t);
+    await seedCluster(t, waterBodyId, hazardId, [2026]);
+    await seedCluster(t, waterBodyId, hazardId, [2026, 2027]);
+    await seedCluster(t, waterBodyId, hazardId, [2026, 2027, 2028]);
+
+    await doRollup(t);
+    // Keyed with the denominator rather than a bare count: a bucket that lost its window would be the
+    // same "3 winters" ambiguity the advisory copy exists to prevent, one surface over.
+    expect(
+      (await snapshot(t, 'recurrence_clusters_by_seasons', metricDay(Date.now())))?.meta,
+    ).toEqual({ '1 of 4': 1, '2 of 4': 1, '3 of 4': 1 });
+  });
+
+  test('leaves out what can never go public', async () => {
+    // A suppressed or promoted pattern is not a candidate for the bar, so counting it would inflate
+    // the very number this chart exists to make honest.
+    const t = harness();
+    const mod = await seedProfile(t, 'mod');
+    const { waterBodyId, hazardId } = await seedBodyAndHazard(t);
+    await seedCluster(t, waterBodyId, hazardId, [2026, 2027]);
+    await seedCluster(t, waterBodyId, hazardId, [2026, 2027], {
+      suppressedAt: Date.now(),
+      suppressedByUserId: mod,
+      suppressReason: 'Not a pattern.',
+    });
+
+    await doRollup(t);
+    expect(
+      (await snapshot(t, 'recurrence_clusters_by_seasons', metricDay(Date.now())))?.meta,
+    ).toEqual({ '2 of 4': 1 });
+  });
+
+  test('writes a zero rather than a hole when nothing has been computed', async () => {
+    const t = harness();
+    await doRollup(t);
+    expect(
+      (await snapshot(t, 'recurrence_clusters_by_seasons', metricDay(Date.now())))?.meta,
+    ).toEqual({});
+  });
+});
+
+/** A body and one hazard on it — the minimum a recurrence row needs to point at. */
+async function seedBodyAndHazard(t: ReturnType<typeof harness>) {
+  const author = await seedProfile(t, 'recurrence-author');
+  const waterBodyId = await t.run((ctx) =>
+    ctx.db.insert('waterBodies', {
+      name: 'Shelburne Pond',
+      type: 'lake' as const,
+      source: 'osm' as const,
+      polygon: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [0, 0],
+            [0, 1],
+            [1, 1],
+            [1, 0],
+            [0, 0],
+          ],
+        ],
+      },
+      bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+      centroid: { lat: 0.5, lng: 0.5 },
+      dedupStatus: 'clean' as const,
+      createdAt: Date.now(),
+    }),
+  );
+  const hazardId = await t.run((ctx) =>
+    ctx.db.insert('hazards', {
+      waterBodyId,
+      type: 'pressure_ridge' as const,
+      geometryKind: 'point_radius' as const,
+      geometry: { type: 'Point' as const, coordinates: [0.5, 0.5] },
+      radiusMeters: 30,
+      bbox: { minLat: 0.49, minLng: 0.49, maxLat: 0.51, maxLng: 0.51 },
+      createdByUserId: author,
+      photoIds: [],
+      status: 'active' as const,
+      moderationStatus: 'visible' as const,
+      firstReportedAt: Date.now(),
+      lastConfirmedAt: Date.now(),
+      confirmCount: 0,
+      goneCount: 0,
+      createdAt: Date.now(),
+    }),
+  );
+  return { waterBodyId, hazardId };
+}

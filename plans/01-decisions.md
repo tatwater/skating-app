@@ -2262,6 +2262,14 @@ nobody can move (D63). Without this, one enthusiastic week becomes "a pattern".
 means — this repo already has that scar, in the hazard verdict vocabulary written down in four places
 where only three were updated for D65.
 
+> **Built 2026-07-31.** One `clusterHazards`, four callers — the map read, the draw-time nudge, the
+> auto-merge bar and the recurrence job — so the primitive earned its keep beyond the two windows this
+> decision names. Two guards had to be rebuilt during the build and the corrections are recorded in
+> N5c §15.1: the chaining guard is **relative to the largest member** rather than an absolute span (any
+> absolute cap tight enough to stop chaining refuses to merge two pins of one 600 m ridge), and it is
+> compared **per axis** rather than on a diagonal (two crossing ridges overlap, and a diagonal measure
+> refuses them purely because they point different ways).
+
 ## D78 — A recurrence claim is history with its denominator attached, and it is admin-only until it clears a tunable bar (N5c)
 
 **Decided (2026-07-30; founder call.)** The corpus gate the roadmap set — three seasons of in-app hazard
@@ -2292,6 +2300,14 @@ flag finally gets *proposed* from observation; depth is how the proposal gets *c
 **Why:** the D3 trap is showing a skater a one-winter coincidence dressed as a pattern — which the gate
 prevents. Deferring the machinery would instead mean three winters of rows nobody ever looked at as a
 series, and a matching radius tuned from scratch in 2029.
+
+> **Built 2026-07-31, shipped dark.** `RECURRENCE_ADVISORIES_PUBLIC` is `false`, so the public read
+> returns an empty list whatever the corpus holds and the whole engine feeds `/admin/recurrence` and
+> nothing else — the intended state, not an unfinished one. Two build-time corrections worth carrying
+> here: the advisory names a **family** rather than a hazard type (a cluster can hold a `pressure_ridge`
+> and an `ice_heave`, so naming one would report a detail the record does not carry), and the timing
+> clause reads *"first reported late December to February"* rather than *"between…"*, because the label
+> collapses a fully-covered month to its bare name and "between January" is not a sentence.
 
 ## D79 — A moderator can author a body feature directly, not only promote a hazard into one (N5c)
 
