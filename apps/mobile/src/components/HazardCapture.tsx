@@ -194,6 +194,26 @@ export function HazardCapture() {
   }
 
   /**
+   * Authoring closes while a deletion is pending (D62 amendment), and the render below returns `null`
+   * for it — but **returning `null` is not unmounting**, so every `useState` above survives, and a
+   * pending deletion can be cancelled, which makes this a round trip rather than an exit.
+   *
+   * The nudge state is what must not survive it. A dismissal that outlived the read-only window would
+   * be inherited by the next capture, which would then skip duplicate detection entirely and send an
+   * unrelated exclusion to the server — the same leak as carrying one across a completed post, reached
+   * by a door that never runs `resetDraftState`.
+   *
+   * Only the nudge state is cleared here, deliberately. Freeing the draft and its photo files on a
+   * pending deletion is arguably right too, but that is a D62 behaviour question rather than this
+   * phase's, and guessing at it in a hazard-identity change is how unrelated things break.
+   */
+  useEffect(() => {
+    if (!leaving) return;
+    setNudge(null);
+    setDismissedDuplicateOf(null);
+  }, [leaving]);
+
+  /**
    * Get a fix fast, or `null`. Prefers the last known fix — it returns *instantly* on a cold receiver,
    * and a pin you can nudge beats a spinner you can't dismiss — then falls back to a fresh fix under a
    * hard timeout so the bar never hangs on a receiver that won't lock (tree cover, a true cold start).

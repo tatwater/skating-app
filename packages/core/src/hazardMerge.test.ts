@@ -30,8 +30,8 @@ function pin(
 }
 
 /** The refusal reason, or `'merged'` when it went through — reads better in a table of cases. */
-function verdict(a: MergeCandidate, b: MergeCandidate): string {
-  const result = shouldAutoMerge(a, b);
+function verdict(a: MergeCandidate, b: MergeCandidate, dismissedIds?: Set<string>): string {
+  const result = shouldAutoMerge(a, b, dismissedIds ? { dismissedIds } : {});
   return result.merge ? 'merged' : result.reason;
 }
 
@@ -106,6 +106,44 @@ describe('shouldAutoMerge', () => {
     expect(verdict(pin('a'), pin('b', { metersEast: 5, dismissedDuplicateOf: 'a' }))).toBe(
       'skater_said_different',
     );
+  });
+
+  // A dismissal names a row; a skater declines a *hazard*. The pin they were shown may since have been
+  // folded into a survivor — on the offline path hours pass between the nudge and the flush — and a
+  // sibling overlapping the same ice is, by this phase's own definition, the same hazard. Either would
+  // absorb the new pin into the very thing they rejected, through a door the exact-id check leaves open.
+  it('honours the dismissal against the survivor the shown pin was folded into', () => {
+    // 'a' is what the skater declined; 'survivor' is what carries that hazard now.
+    expect(
+      verdict(pin('mine', { dismissedDuplicateOf: 'a' }), pin('survivor', { metersEast: 5 })),
+    ).toBe('merged');
+    expect(
+      verdict(
+        pin('mine', { dismissedDuplicateOf: 'a' }),
+        pin('survivor', { metersEast: 5 }),
+        new Set(['a', 'survivor']),
+      ),
+    ).toBe('skater_said_different');
+  });
+
+  it('honours it against a cluster sibling of the pin that was shown', () => {
+    expect(
+      verdict(
+        pin('mine', { dismissedDuplicateOf: 'a' }),
+        pin('sibling', { metersEast: 5 }),
+        new Set(['a', 'sibling']),
+      ),
+    ).toBe('skater_said_different');
+  });
+
+  it('leaves an unrelated pin mergeable — the refusal is scoped to one hazard, not to the lake', () => {
+    expect(
+      verdict(
+        pin('mine', { dismissedDuplicateOf: 'a' }),
+        pin('elsewhere', { metersEast: 5 }),
+        new Set(['a', 'sibling']),
+      ),
+    ).toBe('merged');
   });
 
   it('refuses a row whose geometry cannot be buffered rather than throwing', () => {

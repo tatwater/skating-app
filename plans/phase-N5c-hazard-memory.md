@@ -1162,3 +1162,46 @@ hazard form to match would have reintroduced the bug silently. Both exits now go
 lift the nudge's state into a pure reducer in `@skating/core` that both clients drive, the way
 `hazardDraft` already works. Not done here: it is a refactor of shipped authoring flows, and the second
 PR is a better place for it than the tail of this one.
+
+### 17.7 A dismissal names a row; a skater declines a hazard
+
+Third pass, and the sharpest of them: `dismissedDuplicateOf` was compared by **row id**, and this phase
+spent its whole length establishing that a hazard is not a row. Two doors around the check, both of the
+app's own making:
+
+- **The merge chain.** The pin a skater was shown may since have been folded into a survivor — and on
+  the offline path that is not a rare race, it is the expected case, since hours pass between the nudge
+  on the ice and the flush in signal. Refusing only the dismissed id let the *survivor* — the pin now
+  carrying exactly that hazard's warning — absorb the new one.
+- **The cluster.** A sibling overlapping the same ice is, by §A1's own definition, the same hazard.
+  Folding into it put the pin in precisely the cluster the skater rejected, through a different door.
+
+`shouldAutoMerge` now takes a `dismissedIds` set and the server resolves it: the dismissed row, its
+survivor, everything folded into that survivor, and the cluster the dismissed hazard belongs to.
+Computed only when a dismissal exists — rare — so an ordinary create pays nothing. The new pin is
+excluded from that clustering pass on purpose: what the skater declined is a fact about the *existing*
+pins, and letting the draft influence which cluster that is would make the answer depend on the thing
+being judged.
+
+Erring wide is right here. Over-refusing leaves two pins a moderator can merge by hand; under-refusing
+overrules a person who was standing on the ice looking at it. But the refusal stays scoped to **one
+hazard, not the lake** — a dismissal must not switch off deduplication for everything else that
+session, and that is its own test.
+
+### 17.8 Returning `null` is not unmounting
+
+The other half of §17.6, by a path the fix didn't cover. `HazardCapture` renders `null` while a deletion
+is pending (D62), and a pending deletion **can be cancelled** — so it is a round trip, not an exit, and
+every `useState` survives it. A dismissal made before the read-only window was inherited by the first
+capture after it, which then skipped duplicate detection and sent an unrelated exclusion.
+
+Cleared on the transition now. Only the nudge state: freeing the draft and its photo files when a
+deletion goes pending is arguably right too, but that is a D62 question rather than this phase's, and
+guessing at it inside a hazard-identity change is how unrelated things break.
+
+**Three passes, three variations on one root.** §17.5 named it as "the phase never asked who all the
+*writers* are". §17.6 through §17.8 sharpen it: the phase also never asked **what a stored id refers to
+once merging exists**. `dismissedDuplicateOf`, `hazardIdsCreated`, `attachHazardIds` and the bundle
+list were all written before auto-merge and all meant "this row" in a world where a row was a hazard.
+Every one of them needed re-reading as "this *hazard*", and the second PR adds `memberHazardIds` to
+that list before it adds anything else.

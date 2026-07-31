@@ -73,6 +73,18 @@ export type MergeRefusal =
 
 export type MergeVerdict = { merge: true } | { merge: false; reason: MergeRefusal };
 
+export interface ShouldAutoMergeOptions {
+  /**
+   * Every row id that stands for a hazard one of these two skaters has already declined — the
+   * dismissed pin, whatever now carries its warning through the merge chain, and its cluster siblings.
+   *
+   * Resolved by the caller because neither answer is available to a pairwise function: the chain needs
+   * the database and the cluster needs the whole body. Absent ⇒ only the exact dismissed row is
+   * refused, which is the weaker guarantee and the one that let a sibling absorb the pin.
+   */
+  dismissedIds?: ReadonlySet<string>;
+}
+
 /**
  * May these two pins be merged without a human looking? Every condition is required.
  *
@@ -82,7 +94,11 @@ export type MergeVerdict = { merge: true } | { merge: false; reason: MergeRefusa
  * What *is* required is the same **season**: across the boundary is recurrence's question, not this
  * one, and it has a different tolerance and a different answer.
  */
-export function shouldAutoMerge(a: MergeCandidate, b: MergeCandidate): MergeVerdict {
+export function shouldAutoMerge(
+  a: MergeCandidate,
+  b: MergeCandidate,
+  { dismissedIds }: ShouldAutoMergeOptions = {},
+): MergeVerdict {
   if (a.id === b.id) return { merge: false, reason: 'same_row' };
 
   const family = hazardFamilyFor(a.type);
@@ -113,9 +129,22 @@ export function shouldAutoMerge(a: MergeCandidate, b: MergeCandidate): MergeVerd
     // button that undoes nothing.
     return { merge: false, reason: 'previously_unmerged' };
   }
-  if (a.dismissedDuplicateOf === b.id || b.dismissedDuplicateOf === a.id) {
-    // The skater was shown this exact pin and said theirs was different. The nudge promised not to
-    // argue; merging anyway is the same argument, held quietly.
+  if (
+    a.dismissedDuplicateOf === b.id ||
+    b.dismissedDuplicateOf === a.id ||
+    dismissedIds?.has(a.id) ||
+    dismissedIds?.has(b.id)
+  ) {
+    // The skater was shown a pin and said theirs was different. The nudge promised not to argue;
+    // merging anyway is the same argument, held quietly.
+    //
+    // **The row-id comparison alone is not enough**, which is why `dismissedIds` exists. A skater
+    // declines a *hazard*, and this codebase has two answers to "which rows are that hazard" that the
+    // exact-id check misses entirely: the merge chain (the pin they were shown may since have been
+    // folded into a survivor — likely on the offline path, where hours pass between the nudge and the
+    // flush) and the cluster (a sibling that overlaps the same ice). Either would absorb the new pin
+    // into the very hazard they rejected, and it would look like a clean merge on the way past. The
+    // caller resolves both and hands the identity in.
     return { merge: false, reason: 'skater_said_different' };
   }
 

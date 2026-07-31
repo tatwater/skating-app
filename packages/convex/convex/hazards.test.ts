@@ -1383,6 +1383,87 @@ describe('hazards auto-merge', () => {
     expect(listed).toHaveLength(2);
   });
 
+  // A dismissal names a row, but a skater declines a *hazard* — and there are two ways for the app's
+  // own notion of "the same hazard" to route around an exact-id check.
+  test('never merges into the survivor the dismissed pin was folded into', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+
+    // What the skater will be shown, and what it gets folded into a moment later. The earlier
+    // `capturedAt` wins the survivor race, so `shown` becomes a tombstone pointing at `survivor`.
+    const shown = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const survivor = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, {
+        geometry: eastOf(5),
+        capturedAt: Date.now() - 60 * 60 * 1000,
+      }),
+    );
+    expect(await t.run(async (ctx) => (await ctx.db.get(shown))?.mergedIntoHazardId)).toBe(
+      survivor,
+    );
+
+    // Kim declined `shown` on the ice; by the time their pin flushes it is a tombstone. Refusing only
+    // that id would hand the pin to the survivor — the very hazard they rejected, one hop away.
+    const mine = await kim.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(5), dismissedDuplicateOf: shown }),
+    );
+    expect(mine).not.toBe(survivor);
+    expect(await t.run(async (ctx) => (await ctx.db.get(mine))?.mergedIntoHazardId)).toBeFalsy();
+  });
+
+  test('never merges into a cluster sibling of the pin that was dismissed', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+
+    // 30 m apart: one cluster (their footprints overlap), two rows (under the merge bar).
+    const shown = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const sibling = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    expect(sibling).not.toBe(shown);
+
+    // Kim declined `shown`, and draws right on top of its sibling. Folding into the sibling would put
+    // the pin in exactly the cluster they rejected, by a different door.
+    const mine = await kim.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30), dismissedDuplicateOf: shown }),
+    );
+    expect(mine).not.toBe(sibling);
+    const listed = await kim.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(3);
+  });
+
+  // The refusal is scoped to one hazard, not to the lake: a dismissal must not turn off deduplication
+  // for everything else the skater draws that session.
+  test('still merges a pin that has nothing to do with what was dismissed', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const shown = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    // Far enough east to be a different hazard entirely — its own cluster, its own identity.
+    const elsewhere = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(400) }),
+    );
+
+    const mine = await kim.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(400), dismissedDuplicateOf: shown }),
+    );
+    expect(mine).toBe(elsewhere);
+  });
+
   test('unmerge puts both pins back, and nothing re-merges them', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', { role: 'moderator' });

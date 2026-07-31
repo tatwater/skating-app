@@ -9,6 +9,9 @@
 
 import {
   clipFootprintToBody,
+  clusterHazards,
+  DUPLICATE_MATCH_METERS,
+  DUPLICATE_MAX_CLUSTER_SPREAD_M,
   type HazardShape,
   hazardBbox,
   hazardFootprintOf,
@@ -225,6 +228,63 @@ export async function unmergeHazard(
 }
 
 /**
+ * Every row that stands for the hazard this skater declined at draw time (D80, layer 1).
+ *
+ * **A dismissal names a row, but a skater declines a hazard**, and this codebase has two answers to
+ * "which rows are that hazard" that a row-id comparison misses:
+ *
+ * 1. **The merge chain.** The pin they were shown may since have been folded into a survivor. That is
+ *    not a rare race: on the offline path hours pass between the nudge on the ice and the flush in
+ *    signal, and the dismissed id can be a tombstone by the time it arrives. Refusing only that id
+ *    would let the survivor — the very pin now carrying that hazard's warning — absorb the new one.
+ * 2. **The cluster.** A sibling that overlaps the same ice is, by this phase's own definition, the same
+ *    hazard. Folding into it puts the pin in exactly the cluster the skater rejected, by a different
+ *    door.
+ *
+ * Computed only when a dismissal exists, which is rare, so the common create pays nothing. Erring wide
+ * is the right direction here: over-refusing leaves two pins a moderator can merge by hand, while
+ * under-refusing overrules a person who was standing on the ice looking at the thing.
+ */
+async function dismissedIdentity(
+  ctx: MutationCtx,
+  fresh: Doc<'hazards'>,
+  siblings: readonly Doc<'hazards'>[],
+  season: number,
+): Promise<ReadonlySet<string>> {
+  const dismissed = fresh.dismissedDuplicateOf;
+  if (dismissed === undefined) return new Set();
+  const ids = new Set<string>([dismissed]);
+
+  // 1. Follow the chain to whatever carries that hazard's warning now, and back down to every pin
+  //    already folded into it.
+  const survivor = await resolveHazardSurvivor(ctx, dismissed);
+  if (survivor) {
+    ids.add(survivor._id);
+    const folded = await ctx.db
+      .query('hazards')
+      .withIndex('by_merged_into', (q) => q.eq('mergedIntoHazardId', survivor._id))
+      .collect();
+    for (const row of folded) ids.add(row._id);
+  }
+
+  // 2. Add the cluster the dismissed hazard already belongs to. `fresh` is excluded from the input on
+  //    purpose: what the skater declined is a fact about the *existing* pins, and letting the new draft
+  //    influence which cluster that is would make the answer depend on the thing being judged.
+  const clusterable = siblings
+    .filter((h) => h._id !== fresh._id)
+    .filter((h) => h.moderationStatus === 'visible')
+    .filter((h) => seasonOf(h.firstReportedAt) === season)
+    .map((h) => ({ ...toCandidate(h), id: h._id as string }));
+  const cluster = clusterHazards(clusterable, {
+    matchMeters: DUPLICATE_MATCH_METERS,
+    maxSpreadMeters: DUPLICATE_MAX_CLUSTER_SPREAD_M,
+  }).find((c) => c.members.some((m) => ids.has(m.id)));
+  if (cluster) for (const member of cluster.members) ids.add(member.id);
+
+  return ids;
+}
+
+/**
  * Try to fold a freshly-created hazard into an existing one (D80, layer 4).
  *
  * **Runs at create**, in the same mutation, which is the moment the duplicate actually appears and the
@@ -250,10 +310,11 @@ export async function tryAutoMerge(
     .collect();
 
   const candidate = toCandidate(fresh);
+  const dismissedIds = await dismissedIdentity(ctx, fresh, siblings, season);
   for (const other of siblings) {
     if (other._id === fresh._id) continue;
     if (seasonOf(other.firstReportedAt) !== season) continue;
-    if (shouldAutoMerge(candidate, toCandidate(other)).merge !== true) continue;
+    if (shouldAutoMerge(candidate, toCandidate(other), { dismissedIds }).merge !== true) continue;
 
     // The earliest sighting survives — the honest first-seen date, and the one recurrence keys on.
     const survivorIsOther = mergeSurvivorOf(candidate, toCandidate(other)).id === other._id;
