@@ -18,6 +18,7 @@ import { BountyForm } from './BountyForm';
 import { BountyList } from './BountyList';
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
 import { DirectionsButton, FavoriteButton } from './FavoriteButton';
+import { IceHistory } from './IceHistory';
 import { LeavingNotice, useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
 import { ReportForm } from './ReportForm';
@@ -186,6 +187,10 @@ export function WaterBodyDetail({
           )}
           <SeasonFilter waterBodyId={result.body._id} />
           <BountyList waterBodyId={result.body._id} />
+          {/* The lake page and nowhere else (§9.1) — not the map, the feed, notifications or the
+              recommended strip. A mark on the map means somebody reported this; an advisory has no
+              reporter this season. */}
+          <IceHistory waterBodyId={result.body._id} />
           <ReportFeed
             waterBodyId={result.body._id}
             {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}

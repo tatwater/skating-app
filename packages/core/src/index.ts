@@ -13,6 +13,7 @@ export * from './driveTime';
 export * from './feed';
 export * from './feedFilters';
 export * from './geometry';
+export * from './hazardAdvisory';
 export * from './hazardBundle';
 export * from './hazardCluster';
 export * from './hazardConsensus';
