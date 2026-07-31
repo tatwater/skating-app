@@ -67,7 +67,33 @@ const NOISY_BODY_HAZARD_COUNT = 400;
  * Read **newest first**, so what a ceiling drops is the oldest end of the window — the seasons furthest
  * from the one being computed for, which are also the ones contributing least to a recurrence claim.
  */
-const MAX_BODY_HAZARDS = 4_000;
+const MAX_BODY_HAZARDS = 2_000;
+
+/**
+ * Documents this recompute will read from `hazardConfirmations`, across the whole body.
+ *
+ * **The second half of the same finding** (Greptile, PR #35, second pass). Bounding the *hazards*
+ * bounded one factor of a product: each of them still read its confirmations with an unbounded
+ * `.collect()`, so the transaction was `hazards × votes-per-hazard` and only the first term had a
+ * ceiling. On a contested lake that is the term that grows — votes are the cheapest thing a user can
+ * add, and they accumulate on the pins people argue about.
+ *
+ * With {@link MAX_BODY_HAZARDS} above and this, one body's recompute reads at most ~4k documents
+ * against a backend limit several times that, whatever shape the corpus takes. That is what turns the
+ * retry/skip path from the *expected* outcome on a busy lake into a genuine backstop for something
+ * nobody predicted — which was the rest of Greptile's point: a body that only ever fails is a body
+ * whose recurrence data is permanently stale, and skipping it politely is not the same as computing it.
+ */
+const MAX_CONFIRMATION_READS = 2_000;
+
+/**
+ * Votes read for any single hazard.
+ *
+ * So one wildly-argued pin cannot eat the whole body's confirmation budget on its own and starve every
+ * hazard behind it — the same starvation shape as the `by_status_moderation_weather_adjusted` note in
+ * `schema.ts`, one level in.
+ */
+const MAX_VOTES_PER_HAZARD = 200;
 
 /** What one computed cluster carries into the stored row. */
 export interface ComputedCluster {
@@ -88,7 +114,12 @@ export interface ComputedCluster {
   priority: number;
   subAreaId?: Id<'waterBodySubAreas'>;
   subAreaName?: string;
-  /** The body hit {@link MAX_BODY_HAZARDS}, so this cluster's history starts later than the window. */
+  /**
+   * The recompute hit a read ceiling on this body, so the record is not the whole window: either
+   * {@link MAX_BODY_HAZARDS} (history starts later than the window does) or
+   * {@link MAX_CONFIRMATION_READS} (some sightings counted without their verdicts checked). Either way
+   * the denominator may be off, and the surfaces say so rather than printing it as a complete answer.
+   */
   computedFromPartialHistory?: boolean;
 }
 
@@ -111,8 +142,10 @@ export function windowStartMs(currentSeason: Season): number {
  * - **Merge tombstones**, which are represented by the pin they were folded into (D80) — counting both
  *   would let one merge inflate a season's corroboration.
  * - **Hazards the community said never existed.** A claim the report was bogus is the opposite of
- *   corroboration. This has to read `hazardConfirmations` rather than `goneCount`, because that column
- *   pools `never_existed` with `fully_healed` (D65) and the two mean opposite things here.
+ *   corroboration. Splitting that verdict from `fully_healed` has to read `hazardConfirmations`,
+ *   because `goneCount` pools the two (D65) and they mean opposite things here — but the pooling cuts
+ *   the other way too, and that is what keeps this transaction small: `goneCount === 0` proves neither
+ *   verdict was cast, so the read is skipped entirely for very nearly every pin (`hasGoneVotes`).
  *
  * **Deliberately included:** archived rows. A ridge the community voted healed in March is exactly the
  * kind that comes back in December — "it healed" is a fact about last winter, not about this one. And
@@ -151,15 +184,37 @@ export async function computeClustersForBody(
     );
   }
 
-  // **One confirmation read per hazard, not two.** `never_existed` decides both whether a sighting is
-  // evidence at all and how hard the cluster is ranked down, and reading the votes twice for those two
-  // questions doubled the largest read in the pass — on the table users add to most freely.
+  // **One confirmation read per hazard, not two — and for almost every hazard, none at all.**
+  // `never_existed` decides both whether a sighting is evidence and how hard the cluster is ranked
+  // down; reading the votes twice for those two questions doubled the largest read in the pass, and
+  // reading them at all for a pin nobody has voted "gone" on was never necessary (see `hasGoneVotes`).
   const eligible: Doc<'hazards'>[] = [];
   const neverExistedByHazard = new Map<string, number>();
+  let voteBudget = MAX_CONFIRMATION_READS;
+  let budgetExhausted = false;
   for (const hazard of rows) {
     if (hazard.moderationStatus !== 'visible') continue;
     if (hazard.mergedIntoHazardId !== undefined) continue;
-    const bogus = await countNeverExisted(ctx, hazard);
+
+    let bogus = 0;
+    if (hasGoneVotes(hazard)) {
+      if (voteBudget <= 0) {
+        // Out of budget: admit the sighting unverified rather than exclude it on data we did not read.
+        // Excluding would silently drop real evidence, which is the direction §11 forbids; admitting
+        // can at worst let a disputed pin count toward a pattern, and the row says so via
+        // `computedFromPartialHistory`. Only reachable on a lake with thousands of contested pins.
+        budgetExhausted = true;
+      } else {
+        const read = await readNeverExisted(
+          ctx,
+          hazard,
+          Math.min(voteBudget, MAX_VOTES_PER_HAZARD),
+        );
+        voteBudget -= read.votesRead;
+        if (read.truncated) budgetExhausted = true;
+        bogus = read.neverExisted;
+      }
+    }
     // Two distinct non-author users saying it was never real — the same distinct-user, latest-vote
     // rule `deriveHazardLifecycle` archives under. A claim the report was bogus is the opposite of
     // corroboration, so the sighting is not evidence.
@@ -167,6 +222,12 @@ export async function computeClustersForBody(
     neverExistedByHazard.set(hazard._id, bogus);
     eligible.push(hazard);
   }
+  if (budgetExhausted) {
+    console.warn(
+      `recurrence: ${body._id} exhausted its ${MAX_CONFIRMATION_READS}-vote budget — some sightings counted without checking their verdicts`,
+    );
+  }
+  const partial = truncated || budgetExhausted;
   if (eligible.length === 0) return [];
 
   const clusters = clusterHazards(
@@ -204,7 +265,7 @@ export async function computeClustersForBody(
         members,
         currentSeason,
         neverExistedByHazard,
-        truncated,
+        partial,
       ),
     );
   }
@@ -214,18 +275,46 @@ export async function computeClustersForBody(
 }
 
 /**
- * How many distinct non-author users currently say this pin was never real.
+ * Could this pin possibly carry a `never_existed` verdict? — answered **without reading anything.**
+ *
+ * `goneCount` is not an approximation here, it is the same computation already done. `hazards.confirm`
+ * stores it straight off `deriveHazardLifecycle`, which counts **distinct non-author users whose latest
+ * vote** is `fully_healed` **or** `never_existed` — pooled because those two agree about the present
+ * (D65). The pooling is exactly what makes the column useless for *splitting* the two verdicts, which
+ * is why §C2 says the job must read `hazardConfirmations` for the split and why the schema comment had
+ * to be corrected. But it is decisive in one direction: **`goneCount === 0` means no distinct
+ * non-author user's current verdict is `fully_healed` or `never_existed`, so none of them is
+ * `never_existed`.** No read can change that answer.
+ *
+ * That is the whole ballgame for the transaction's size. Every pin nobody has voted "gone" on — which
+ * is very nearly all of them, since the gone verdicts are the ones that need two independent users to
+ * do anything — costs zero confirmation reads instead of one unbounded `.collect()`.
+ */
+function hasGoneVotes(hazard: Doc<'hazards'>): boolean {
+  return hazard.goneCount > 0;
+}
+
+/**
+ * How many distinct non-author users currently say this pin was never real, within a read budget.
  *
  * The same distinct-user, latest-vote rule `deriveHazardLifecycle` archives under, applied to the one
  * verdict that is a claim about the *report* rather than about the ice. Two of them and the sighting
  * stops being evidence; below that the count still ranks the cluster down, which is why this returns a
  * number rather than a boolean — one read answering both questions.
+ *
+ * `limit` is a hard ceiling rather than a hint. A truncated read is reported so the caller can flag the
+ * body, because a `never_existed` count computed from some of the votes is a number that looks like all
+ * of them.
  */
-async function countNeverExisted(ctx: MutationCtx, hazard: Doc<'hazards'>): Promise<number> {
+async function readNeverExisted(
+  ctx: MutationCtx,
+  hazard: Doc<'hazards'>,
+  limit: number,
+): Promise<{ neverExisted: number; votesRead: number; truncated: boolean }> {
   const votes = await ctx.db
     .query('hazardConfirmations')
     .withIndex('by_hazard', (q) => q.eq('hazardId', hazard._id))
-    .collect();
+    .take(limit);
   const latest = new Map<string, (typeof votes)[number]>();
   for (const vote of votes) {
     const prior = latest.get(vote.userId);
@@ -236,7 +325,7 @@ async function countNeverExisted(ctx: MutationCtx, hazard: Doc<'hazards'>): Prom
     if (vote.userId === hazard.createdByUserId) continue;
     if (vote.verdict === 'never_existed') bogus += 1;
   }
-  return bogus;
+  return { neverExisted: bogus, votesRead: votes.length, truncated: votes.length === limit };
 }
 
 /** The bbox centre of a hazard's stored footprint — what the medoid is measured on. */

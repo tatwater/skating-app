@@ -169,6 +169,39 @@ async function queuePage(as: AsUser, filters: QueueFilters = {}) {
   return page;
 }
 
+/**
+ * Cast `never_existed` verdicts **the way the app does** — the vote rows *and* the `goneCount` the
+ * confirm path recomputes alongside them.
+ *
+ * Not bookkeeping. The recompute skips reading a hazard's confirmations entirely when `goneCount` is
+ * `0`, which is exact only because `hazardConfirmations.confirm` is the single writer and always
+ * follows an insert with `recomputeLifecycle`. A fixture that inserted votes and left `goneCount` at
+ * zero would be building a state the app cannot produce, and would then "prove" the short-circuit
+ * broken. If a second writer of `hazardConfirmations` ever appears without maintaining `goneCount`,
+ * the test below this helper is the one that should fail.
+ */
+async function seedNeverExisted(
+  t: ReturnType<typeof convexTest>,
+  hazardId: Id<'hazards'>,
+  userIds: readonly Id<'profiles'>[],
+) {
+  await t.run(async (ctx) => {
+    for (const userId of userIds) {
+      await ctx.db.insert('hazardConfirmations', {
+        hazardId,
+        userId,
+        verdict: 'never_existed' as const,
+        via: 'app_open_nearby' as const,
+        createdAt: Date.now(),
+      });
+    }
+    const hazard = await ctx.db.get(hazardId);
+    // Pooled with `fully_healed` (D65) — which is why the job still has to read the votes for the
+    // split, and why `goneCount` can only ever answer "could there be any".
+    if (hazard) await ctx.db.patch(hazardId, { goneCount: hazard.goneCount + userIds.length });
+  });
+}
+
 describe('the recurrence pass', () => {
   test('records a cluster seen in three winters, with its denominator', async () => {
     const t = harness();
@@ -255,20 +288,10 @@ describe('the recurrence pass', () => {
     });
     await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 10 });
 
-    await t.run(async (ctx) => {
-      await ctx.db.patch(hidden, { moderationStatus: 'hidden' });
-      // Two distinct non-author "never existed" verdicts: a claim the *report* was bogus, which is the
-      // opposite of corroboration. `goneCount` can't answer this — it pools the two verdicts (D65).
-      for (const userId of [sam.id, kim.id]) {
-        await ctx.db.insert('hazardConfirmations', {
-          hazardId: bogus,
-          userId,
-          verdict: 'never_existed' as const,
-          via: 'app_open_nearby' as const,
-          createdAt: Date.now(),
-        });
-      }
-    });
+    await t.run((ctx) => ctx.db.patch(hidden, { moderationStatus: 'hidden' }));
+    // Two distinct non-author "never existed" verdicts: a claim the *report* was bogus, which is the
+    // opposite of corroboration. `goneCount` can't answer this — it pools the two verdicts (D65).
+    await seedNeverExisted(t, bogus, [sam.id, kim.id]);
     await runPass(t);
 
     const rows = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
@@ -962,17 +985,43 @@ describe('the job’s own machinery', () => {
     const sam = await seedUser(t, 'sam');
     const waterBodyId = await seedBody(t);
     const hazard = await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
-    await t.run((ctx) =>
-      ctx.db.insert('hazardConfirmations', {
-        hazardId: hazard,
-        userId: sam.id,
-        verdict: 'never_existed' as const,
-        via: 'app_open_nearby' as const,
-        createdAt: Date.now(),
-      }),
-    );
+    await seedNeverExisted(t, hazard, [sam.id]);
     await runPass(t);
     expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(1);
+  });
+
+  test('the confirm path keeps goneCount in step, which is what lets the recompute skip the read', async () => {
+    // **The invariant the pass's read budget rests on** (Greptile, PR #35, second pass). Bounding the
+    // hazards left the transaction as `hazards × votes-per-hazard`, and votes are the cheapest thing a
+    // user can add. The fix is that `goneCount === 0` *proves* there is no `never_existed` verdict —
+    // `deriveHazardLifecycle` counts distinct non-author users whose latest vote is `fully_healed` or
+    // `never_existed`, so zero of the pool means zero of either. No read can change that answer, and
+    // nearly every pin is in that case.
+    //
+    // Driven through the real mutation rather than a fixture, because the proof is only as good as the
+    // claim that `hazardConfirmations.confirm` is the single writer and always recomputes the column.
+    // A second writer that forgot to should fail here.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const hazardId = await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+
+    const before = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(before?.goneCount).toBe(0);
+
+    await sam.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'never_existed',
+      via: 'app_open_nearby',
+    });
+
+    const after = await t.run((ctx) => ctx.db.get(hazardId));
+    const votes = await t.run((ctx) => ctx.db.query('hazardConfirmations').collect());
+    expect(votes).toHaveLength(1);
+    // The vote landed *and* the column moved with it. If these ever disagree, the recompute starts
+    // silently skipping pins that do carry a bogus verdict.
+    expect(after?.goneCount).toBe(1);
   });
 
   test('carries a line hazard’s own buffer onto the record', async () => {

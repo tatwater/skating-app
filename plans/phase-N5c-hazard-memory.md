@@ -1462,4 +1462,54 @@ lake accumulates forever".
 The rule worth keeping: **"bounded by X" is only a bound if X cannot grow without limit.** A per-body
 read is not bounded on a table that never ages out; a per-season read is. And a mutation whose read set
 is a function of user-created rows is a mutation users can eventually stop from committing, which makes
-it a availability question rather than only a performance one.
+it an availability question rather than only a performance one.
+
+### 20.5 The second pass: bounding a product one factor at a time
+
+Greptile again, on the fix rather than the original code, and right for the second time:
+
+> The current worker still collects every confirmation for each of up to 4,000 selected hazards in one
+> transaction. The retry split prevents a permanent queue deadlock, but repeated transaction failures
+> cause the affected body to be skipped with stale or missing recurrence data.
+
+The transaction was `hazards × votes-per-hazard`, and §20.3 had put a ceiling on the **first factor
+only** — then set it at 4,000, which is roughly the whole document budget before a single vote is read.
+Votes are the cheapest thing a user can add and they pile up on exactly the pins people argue about, so
+the term left unbounded was the one that actually grows. And the second half of the note is the sharper
+half: **a skip is not a computation.** A body that reliably fails is a body whose recurrence data is
+permanently stale, and §20.3's retry/skip path was quietly load-bearing rather than being the backstop
+it was written as.
+
+**The fix is an exact short-circuit, not a smaller cap.** `goneCount` is not an approximation of the
+vote set — it *is* the same computation, stored: `deriveHazardLifecycle` counts distinct non-author
+users whose latest verdict is `fully_healed` **or** `never_existed`, and `hazards.confirm` writes it on
+every vote. The pooling is why §C2 says the job must read the votes to *split* the two verdicts. But it
+is decisive in the other direction: **`goneCount === 0` proves no user's current verdict is
+`never_existed`**, and no read can change that answer. So the confirmation read is skipped outright for
+very nearly every pin — the gone verdicts need two independent users before they do anything, so most
+hazards never see one.
+
+On top of that, so the bound holds whatever shape a corpus takes rather than only the expected one:
+`MAX_BODY_HAZARDS` down to 2,000; a per-body `MAX_CONFIRMATION_READS` budget of 2,000 documents;
+`MAX_VOTES_PER_HAZARD` at 200 so one wildly-argued pin cannot starve everything behind it; and the
+stored-cluster read bounded too. Exhausting the vote budget admits the sighting **unverified** rather
+than excluding it — excluding on data we did not read would silently drop real evidence — and sets
+`computedFromPartialHistory`, the same flag the hazard ceiling sets.
+
+**The invariant is now a test**, driven through the real `hazardConfirmations.confirm` mutation rather
+than a fixture, because the short-circuit is only as good as the claim that there is a single writer and
+it always recomputes the column. Two existing fixtures had been inserting vote rows and leaving
+`goneCount` at zero — building a state the app cannot produce, which under the new code would have
+"proved" the short-circuit broken. They go through a helper that maintains it now.
+
+### 20.6 What both passes have in common
+
+§20.4 said the phase asked what a read *returns* and never what it *costs as the corpus ages*. The
+second pass narrows that further: when a read cost is a **product**, bounding one factor feels like
+solving it and isn't. The honest check is not "is there a cap" but "what is the largest number of
+documents this transaction can touch, and which of those numbers can a user increase?"
+
+Worth noting what did **not** change: `recurrence.listForBody` still collects a body's active hazards.
+That is a *query*, so a failure costs one drawer render rather than the corpus's annual recompute, and
+it matches the bound `hazards.listForBody` has had since Phase 9 (call 6). Changing it here would be
+fixing a different function's contract inside a hazard-identity PR.

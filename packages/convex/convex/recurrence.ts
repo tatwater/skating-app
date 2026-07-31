@@ -147,6 +147,9 @@ export const discoverBodies = internalMutation({
  */
 export const MAX_BODY_ATTEMPTS = 3;
 
+/** Stored clusters read per body when diffing a recompute. Far above any real lake; see the call site. */
+const MAX_BODY_CLUSTERS = 1_000;
+
 /**
  * Phase two, part one: **claim** the next queued body and hand it to a recompute.
  *
@@ -249,10 +252,13 @@ export async function recomputeBody(
   now: number,
 ): Promise<void> {
   const computed = await computeClustersForBody(ctx, body, runForSeason);
+  // Bounded like everything else this transaction touches. Clusters are a small fraction of a body's
+  // hazards — realistically tens — so this ceiling is unreachable in practice; it is here because
+  // "unreachable in practice" is what the per-body hazard read was too, right up until it wasn't.
   const existing = await ctx.db
     .query('hazardRecurrence')
     .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
-    .collect();
+    .take(MAX_BODY_CLUSTERS);
 
   const claimed = new Set<string>();
   for (const cluster of computed) {
