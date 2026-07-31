@@ -1513,3 +1513,60 @@ Worth noting what did **not** change: `recurrence.listForBody` still collects a 
 That is a *query*, so a failure costs one drawer render rather than the corpus's annual recompute, and
 it matches the bound `hazards.listForBody` has had since Phase 9 (call 6). Changing it here would be
 fixing a different function's contract inside a hazard-identity PR.
+
+### 20.7 The third pass: two P1s, and both were caps standing in for indexes
+
+Greptile's first inline comments on this PR, and both of them are the *previous fix* being wrong rather
+than the original code.
+
+**A fixed page is not a queue.** `processNextBody` read `.take(200)` off `by_season` and `.find()` an
+eligible row inside that slice. That is only "the next body" if no 200-row prefix is ineligible — and
+§20.3 had just created the conditions for exactly such a prefix, by **retaining skipped rows on
+purpose**. Past 200 stepped-over lakes the scan found nothing, scheduled nothing, and every body behind
+them went unrecomputed for the year: the same permanent stall §20.3 set out to remove, rebuilt by its
+own fix. `maybeRunRollover` had the identical shape one function over, and `startRecurrenceRun`'s stale
+sweep a cousin of it (one page of deletes, leftovers abandoned forever).
+
+Both exclusions now ride a key. `by_season_skipped_claimed` uses an **equality on an unset optional
+field** — indexes over optionals are not sparse, so "unset" is a real indexed value, the lesson this
+repo already had written down — and orders `claimedAt` ascending so unclaimed rows come first and the
+oldest lease next. The *first* row is therefore either eligible or proof that nothing is: if the oldest
+claim is still inside its lease, every remaining claim is newer. One read, no slice, no starvation.
+
+**A cap on the input to a calculation whose answer depends on the dropped rows is not a bound.**
+§20.5's `.take(200)` on a hazard's confirmations was worse than the unbounded read it replaced.
+`hazardConfirmations.confirm` finds a user's row through `by_hazard_and_user` and **patches it in
+place**, so there is exactly one row per (hazard, user) and its `verdict` *is* that user's current
+verdict. A truncated prefix therefore does not return a slightly stale count — it returns a **wrong**
+one, with the decisive `never_existed` votes simply absent, admitting a hazard the community rejected
+and corrupting membership, season counts and ranking together.
+
+The fix is `by_hazard_and_verdict`: read only the rows that can change the answer, capped at 8, which
+is far above where the answer stops changing (two votes disqualify the sighting, `CORROBORATION_CAP`
+flattens the ranking at three). The latest-vote reduction is gone because there was never anything to
+reduce. And exhausting the body's vote budget now **excludes** the disputed sighting rather than
+admitting it unverified — §20.5 had that the other way round, which was right when the alternative was
+dropping evidence on an unread `.take()` and wrong once reaching the branch means a pin *known* to
+carry gone verdicts would enter a pattern with its rejection unread. D3's asymmetry decides it: never
+inflate a claim about recurrence.
+
+Swept the same two shapes across the rest of the PR rather than only the two flagged lines: the three
+remaining per-body `hazardRecurrence` collects (`listForBody`, `listForBodyAdmin`, `bodyFeatures.demote`)
+now share `MAX_BODY_CLUSTERS`. *"A handful of rows"* was the comment justifying each of them, and it is
+the same sentence the per-body hazard read carried until a table that never ages out made it false.
+
+### 20.8 What three passes of this have in common
+
+Each round fixed the named thing and left the *class* alive one level over:
+
+| Pass | Fixed | Missed |
+|---|---|---|
+| §20.3 | the unbounded hazard read | the confirmations multiplying it |
+| §20.5 | the confirmation volume | that capping it made the answer wrong, not just partial |
+| §20.7 | both, at the index | — and the retained-skip prefix its own fix introduced |
+
+The through-line: **every one of these was a predicate the index could have expressed, solved with a
+number instead.** `.take(n)` then filter, `.take(n)` then find, `.take(n)` then reduce — three
+variations on doing in memory what the key could have done exactly. A cap is the right tool only when
+the rows past it cannot change the answer; when they can, the cap is a wrong answer with a ceiling on
+it, and the honest fix is always to make the predicate part of the key.

@@ -38,7 +38,7 @@ import { insertBodyFeature } from './bodyFeatures';
 import { requireContributorRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
-import { computeClustersForBody, windowStartMs } from './lib/recurrence';
+import { computeClustersForBody, MAX_BODY_CLUSTERS, windowStartMs } from './lib/recurrence';
 import { literals } from './lib/validators';
 
 /**
@@ -83,11 +83,20 @@ export const startRecurrenceRun = internalMutation({
     const runForSeason: Season = season ?? seasonOf(Date.now());
     // Leftovers from an abandoned run would make phase two think there is work it has already done.
     // Cleared here rather than at the end of a run, because the end of an abandoned run never comes.
-    for (const stale of await ctx.db
+    //
+    // Self-continuing rather than one page: deleting up to 200 and moving on leaves the rest behind
+    // forever, and "forever" accumulates a season's worth every year. A page that filled means there
+    // is more, so it comes back before discovery starts.
+    const stale = await ctx.db
       .query('recurrenceQueue')
       .withIndex('by_season', (q) => q.lt('runForSeason', runForSeason))
-      .take(DISCOVERY_PAGE)) {
-      await ctx.db.delete(stale._id);
+      .take(DISCOVERY_PAGE);
+    for (const row of stale) await ctx.db.delete(row._id);
+    if (stale.length === DISCOVERY_PAGE) {
+      await ctx.scheduler.runAfter(0, internal.recurrence.startRecurrenceRun, {
+        season: runForSeason,
+      });
+      return;
     }
     await ctx.scheduler.runAfter(0, internal.recurrence.discoverBodies, { runForSeason });
   },
@@ -147,9 +156,6 @@ export const discoverBodies = internalMutation({
  */
 export const MAX_BODY_ATTEMPTS = 3;
 
-/** Stored clusters read per body when diffing a recompute. Far above any real lake; see the call site. */
-const MAX_BODY_CLUSTERS = 1_000;
-
 /**
  * Phase two, part one: **claim** the next queued body and hand it to a recompute.
  *
@@ -170,19 +176,21 @@ export const processNextBody = internalMutation({
   args: { runForSeason: v.number() },
   handler: async (ctx, { runForSeason }) => {
     const now = Date.now();
-    const queued = await ctx.db
+    // **One row, and it is either the answer or proof there isn't one.** Both exclusions ride the
+    // index (see `by_season_skipped_claimed`): skipped rows are outside the range entirely, and
+    // `claimedAt` ascending puts unclaimed first, then the oldest claim. So if this row is claimed and
+    // still inside its lease, every remaining row is claimed *more recently* and the queue genuinely
+    // has nothing to hand out. Scanning a fixed slice and filtering afterwards is what let a prefix of
+    // retained skipped rows strand everything behind it (Greptile, PR #35).
+    const next = await ctx.db
       .query('recurrenceQueue')
-      .withIndex('by_season', (q) => q.eq('runForSeason', runForSeason))
-      .take(DISCOVERY_PAGE);
-
-    const next = queued.find(
-      (row) =>
-        row.skippedAt === undefined &&
-        (row.claimedAt === undefined || now - row.claimedAt > RECURRENCE_LEASE_MS),
-    );
-    if (!next) {
-      // Either the queue is drained, or what is left is claimed and fresh (another run has it), or
-      // skipped. None of those is an error and all of them mean this chain stops.
+      .withIndex('by_season_skipped_claimed', (q) =>
+        q.eq('runForSeason', runForSeason).eq('skippedAt', undefined),
+      )
+      .first();
+    if (!next || (next.claimedAt !== undefined && now - next.claimedAt <= RECURRENCE_LEASE_MS)) {
+      // Either the queue is drained, or everything left is claimed and fresh (another run has it).
+      // Neither is an error, and both mean this chain stops.
       return;
     }
 
@@ -383,12 +391,16 @@ export const maybeRunRollover = internalMutation({
     // that finishes.
     // Skipped rows are left in place on purpose (they are the record of a lake the pass could not
     // compute), so "is there work left" has to mean *unskipped* work — otherwise one stepped-over body
-    // would make every remaining tick in the window restart a run with nothing to do.
-    const pending = await ctx.db
+    // would make every remaining tick in the window restart a run with nothing to do. Off the index
+    // for the same reason `processNextBody` is: a page-then-filter answers "are any of the first 200
+    // unskipped", which is a different question once more than 200 have been stepped over.
+    const unfinished = await ctx.db
       .query('recurrenceQueue')
-      .withIndex('by_season', (q) => q.eq('runForSeason', runForSeason))
-      .take(DISCOVERY_PAGE);
-    if (pending.some((row) => row.skippedAt === undefined)) {
+      .withIndex('by_season_skipped_claimed', (q) =>
+        q.eq('runForSeason', runForSeason).eq('skippedAt', undefined),
+      )
+      .first();
+    if (unfinished) {
       await ctx.scheduler.runAfter(0, internal.recurrence.startRecurrenceRun, {
         season: runForSeason,
       });
@@ -447,7 +459,7 @@ export const listForBody = query({
       .withIndex('by_water_body_public', (q) =>
         q.eq('waterBodyId', body._id).eq('publiclyVisible', true),
       )
-      .collect();
+      .take(MAX_BODY_CLUSTERS);
     // Nothing to yield *to*, so nothing to read this lake's hazards for. While the master switch is
     // off that is every single call, and a full active-hazard collect on every drawer open, on both
     // clients, for a query that returns `[]` by construction is the kind of cost that never announces
@@ -544,7 +556,7 @@ export const listForBodyAdmin = query({
     const rows = await ctx.db
       .query('hazardRecurrence')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
-      .collect();
+      .take(MAX_BODY_CLUSTERS);
     return rows.sort((a, b) => b.priority - a.priority);
   },
 });

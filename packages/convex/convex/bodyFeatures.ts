@@ -20,6 +20,7 @@ import { requireContributorRole, requireRole } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { BODY_FEATURE_TYPES } from './lib/enums';
 import { HAZARD_GEOMETRY_KINDS } from './lib/hazardValidators';
+import { MAX_BODY_CLUSTERS } from './lib/recurrence';
 import { geoJson, literals } from './lib/validators';
 
 /** Active known features for a body — rendered alongside hazards with distinct styling. */
@@ -190,11 +191,12 @@ export const demote = mutation({
     // statement about the lake that has been withdrawn, which is worse than no line at all.
     //
     // Found by walking back from the promotion rather than by an index on the field: a body's clusters
-    // are a handful of rows, so the read is bounded by the same thing every other per-body read is.
+    // are a handful of rows. Bounded anyway, at the shared ceiling — "a handful" is a fact about
+    // today's corpus, and this phase has now twice been wrong about which of those stay true (§20).
     const clusters = await ctx.db
       .query('hazardRecurrence')
       .withIndex('by_water_body', (q) => q.eq('waterBodyId', feature.waterBodyId))
-      .collect();
+      .take(MAX_BODY_CLUSTERS);
     for (const cluster of clusters) {
       if (cluster.promotedToFeatureId !== bodyFeatureId) continue;
       for (const memberId of cluster.memberHazardIds) {

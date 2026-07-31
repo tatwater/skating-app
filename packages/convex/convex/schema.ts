@@ -870,6 +870,15 @@ export default defineSchema({
     .index('by_hazard', ['hazardId'])
     // One confirmation per user per hazard per window — re-confirming updates rather than stacking.
     .index('by_hazard_and_user', ['hazardId', 'userId'])
+    // **One verdict's holders, without reading the pin's whole argument** (N5c, Greptile PR #35).
+    // The recurrence pass needs "how many distinct users currently say this was never real", and read
+    // it by collecting every vote on the hazard and reducing — which on a contested pin is a large,
+    // unbounded read to answer a question about a handful of rows. Capping that read was worse than
+    // the read: because the row above is patched in place rather than stacked, a row's `verdict` *is*
+    // its user's current verdict, so a truncated slice does not give a stale answer, it gives a
+    // **wrong** one — decisive votes simply outside the prefix, silently admitting a hazard the
+    // community rejected. Keyed on the verdict, the read is a handful of rows and exact.
+    .index('by_hazard_and_verdict', ['hazardId', 'verdict'])
     // A user's confirmations across all hazards — the `Watchdog` badge counts distinct *others'*
     // hazards this user has acted on (D50, Phase 6).
     .index('by_user', ['userId'])
@@ -1015,8 +1024,24 @@ export default defineSchema({
   })
     // The dedup on insert: one row per body per run, however many pages the body's hazards span.
     .index('by_season_and_body', ['runForSeason', 'waterBodyId'])
-    // Phase two's "what is left", and the sweep that clears an abandoned run's leftovers.
-    .index('by_season', ['runForSeason']),
+    // The sweep that clears an abandoned run's leftovers.
+    .index('by_season', ['runForSeason'])
+    // **Phase two's "what is left", answered by the index rather than scanned for** (Greptile, PR #35).
+    //
+    // It used to `.take(200)` and `.find()` an eligible row in that slice — which is only "the next
+    // body" if no 200-row prefix is ineligible. Skipped rows are *retained on purpose*, and claimed
+    // rows stay until their lease expires, so a prefix of exactly that kind is the expected end state
+    // of a bad run: past 200 of them the scan found nothing, scheduled nothing, and every body behind
+    // them went unrecomputed for the year. The same shape as `listRecentMerges` (§16.3) and
+    // `by_status_moderation_weather_adjusted` — a predicate applied *after* a fixed read is a
+    // starvation bug, not a filter.
+    //
+    // Both exclusions ride the key instead. `skippedAt` is an equality on `undefined` — indexes over
+    // optional fields are not sparse, so "unset" is a real indexed value — and `claimedAt` ascending
+    // puts unclaimed rows (`undefined` sorts first) ahead of claimed ones, oldest claim next. So the
+    // *first* row is either eligible or proof that nothing is: if the oldest claim is still inside its
+    // lease, every remaining claim is too.
+    .index('by_season_skipped_claimed', ['runForSeason', 'skippedAt', 'claimedAt']),
 
   // Known seasonal water-body hazards — persistent, NOT decayed, no confirmation loop (D53).
   // Springs/current, constrictions and bridges/narrows are weaker every season regardless of cold, and

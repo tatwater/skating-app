@@ -843,6 +843,95 @@ describe('the job’s own machinery', () => {
     expect(left[0]?.skippedAt).toBeGreaterThan(0);
   });
 
+  test('a long prefix of skipped bodies does not strand the ones behind it', async () => {
+    // **Greptile's P1, PR #35.** `processNextBody` used to `.take(200)` and `.find()` an eligible row
+    // in that slice, which is only "the next body" if no 200-row prefix is ineligible. Skipped rows
+    // are retained on purpose and claimed rows linger until their lease expires, so a prefix of
+    // exactly that kind is the *expected* end state of a bad run — and past 200 of them the scan found
+    // nothing, scheduled nothing, and every body behind them went unrecomputed for the year.
+    //
+    // 250 skipped rows, then one real lake at the back.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const stranded = await seedBody(t, { name: 'Lake Iroquois' });
+    await seedHazard(t, stranded, author.id, { season: CURRENT_SEASON });
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 250; i++) {
+        const dead = await ctx.db.insert('waterBodies', {
+          name: `Skipped ${i}`,
+          type: 'lake' as const,
+          source: 'osm' as const,
+          polygon: {
+            type: 'Polygon' as const,
+            coordinates: [
+              [
+                [0, 0],
+                [0, 1],
+                [1, 1],
+                [1, 0],
+                [0, 0],
+              ],
+            ],
+          },
+          bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+          centroid: { lat: 0.5, lng: 0.5 },
+          dedupStatus: 'clean' as const,
+          createdAt: Date.now(),
+        });
+        await ctx.db.insert('recurrenceQueue', {
+          waterBodyId: dead,
+          runForSeason: CURRENT_SEASON,
+          createdAt: Date.now(),
+          skippedAt: Date.now(),
+        });
+      }
+      await ctx.db.insert('recurrenceQueue', {
+        waterBodyId: stranded,
+        runForSeason: CURRENT_SEASON,
+        createdAt: Date.now(),
+      });
+    });
+
+    await t.mutation(internal.recurrence.processNextBody, { runForSeason: CURRENT_SEASON });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    // The lake at the back of a 250-row skipped prefix got its recompute.
+    const computed = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(computed.map((r) => r.waterBodyId)).toEqual([stranded]);
+  }, 20_000);
+
+  test('a claimed-but-fresh prefix stops the chain without stranding anything', async () => {
+    // The other half of the same index: unclaimed rows sort ahead of claimed ones, and among claimed
+    // the oldest lease comes first. So a fresh claim at the front is genuine proof that every
+    // remaining row is claimed *more* recently — the chain stops because another run holds the queue,
+    // not because it could not see past a slice.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const held = await seedBody(t);
+    const free = await seedBody(t, { name: 'Lake Iroquois' });
+    await seedHazard(t, held, author.id, { season: CURRENT_SEASON });
+    await seedHazard(t, free, author.id, { season: CURRENT_SEASON });
+    await t.run(async (ctx) => {
+      await ctx.db.insert('recurrenceQueue', {
+        waterBodyId: held,
+        runForSeason: CURRENT_SEASON,
+        createdAt: Date.now(),
+        claimedAt: Date.now(), // fresh lease, another run has it
+      });
+      await ctx.db.insert('recurrenceQueue', {
+        waterBodyId: free,
+        runForSeason: CURRENT_SEASON,
+        createdAt: Date.now(),
+      });
+    });
+
+    await t.mutation(internal.recurrence.processNextBody, { runForSeason: CURRENT_SEASON });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    // The unclaimed one sorts first and is taken, despite being inserted second.
+    const computed = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(computed.map((r) => r.waterBodyId)).toEqual([free]);
+  });
+
   test('a skipped body does not make every later tick restart a run with nothing to do', async () => {
     const t = harness();
     const author = await seedUser(t, 'author');
@@ -989,6 +1078,60 @@ describe('the job’s own machinery', () => {
     await runPass(t);
     expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(1);
   });
+
+  test('a rejected hazard stays rejected however many people argued about the pin', async () => {
+    // **Greptile's other P1, PR #35.** The verdict read was a `.take(200)` over the hazard's whole
+    // argument, reduced to each user's latest vote. On a contested pin the decisive `never_existed`
+    // rows can sit outside that prefix — and because a user's row is *patched in place* rather than
+    // stacked, the prefix does not give a stale answer, it gives a wrong one: the community's
+    // rejection is simply invisible and the hazard is admitted into a pattern.
+    //
+    // 300 `still_there` votes cast first, so they own the front of `by_hazard`, then the two verdicts
+    // that decide the question. Read off `by_hazard_and_verdict`, the argument's size is irrelevant.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const bogus = await seedHazard(t, waterBodyId, author.id, {
+      season: CURRENT_SEASON - 1,
+      metersEast: 5,
+    });
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 400 });
+
+    await t.run(async (ctx) => {
+      for (let i = 0; i < 300; i++) {
+        const voter = await ctx.db.insert('profiles', {
+          clerkUserId: `noisy-${i}`,
+          displayName: `noisy-${i}`,
+          username: `noisy-${i}`,
+          driveTimePrefMinutes: 60,
+          profileVisibility: 'public' as const,
+          notificationPrefs: NOTIF_PREFS,
+          dateOfBirth: Date.UTC(1990, 0, 1),
+          reputationPoints: 0,
+          role: 'member' as const,
+          status: 'active' as const,
+          createdAt: Date.now(),
+        });
+        await ctx.db.insert('hazardConfirmations', {
+          hazardId: bogus,
+          userId: voter,
+          verdict: 'still_there' as const,
+          via: 'app_open_nearby' as const,
+          createdAt: Date.now(),
+        });
+      }
+    });
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    await seedNeverExisted(t, bogus, [sam.id, kim.id]);
+
+    await runPass(t);
+    // The rejected sighting is out, so the surviving cluster is this season's pin alone.
+    const rows = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.seasonsObserved).toEqual([CURRENT_SEASON]);
+    expect(rows[0]?.memberHazardIds).not.toContain(bogus);
+  }, 20_000);
 
   test('the confirm path keeps goneCount in step, which is what lets the recompute skip the read', async () => {
     // **The invariant the pass's read budget rests on** (Greptile, PR #35, second pass). Bounding the
