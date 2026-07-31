@@ -18,12 +18,18 @@
  */
 
 import {
+  type HazardShape,
+  hazardFamilyFor,
+  hazardFootprint,
   isPubliclyVisible,
+  polygonDistanceMeters,
   RECURRENCE_FAMILIES,
+  RECURRENCE_MATCH_METERS,
   RECURRENCE_WINDOW_SEASONS,
   type Season,
   seasonOf,
 } from '@skating/core';
+import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -298,6 +304,32 @@ export const maybeRunRollover = internalMutation({
     // the rest of the month to retry in.
     if (now.getUTCMonth() !== 6 || now.getUTCDate() > 7) return;
     const runForSeason = seasonOf(Date.now());
+
+    // **A leftover queue means the last attempt did not finish, whatever the stamp says.**
+    //
+    // The stamp below records that *some* body was computed for this season, which is not the same
+    // thing as the run having completed — a chain that dies after body 1 of 200 sets the stamp and
+    // leaves 199 rows queued. Gating on the stamp alone would make every remaining tick in the window
+    // a no-op and the pass really would wait a year, which is the precise failure a daily interval was
+    // chosen to avoid.
+    //
+    // Restarted from the top rather than resumed from the queue, because a run can also die *during*
+    // discovery, and a queue that was never finished being built cannot be told apart from one that
+    // was. Re-running is cheap to reason about and safe to repeat: discovery dedups against rows
+    // already queued, and re-processing a body it already did is byte-identical output by the same
+    // idempotence the pass asserts. One extra pass in a failure year is the right price for a pass
+    // that finishes.
+    const unfinished = await ctx.db
+      .query('recurrenceQueue')
+      .withIndex('by_season', (q) => q.eq('runForSeason', runForSeason))
+      .first();
+    if (unfinished) {
+      await ctx.scheduler.runAfter(0, internal.recurrence.startRecurrenceRun, {
+        season: runForSeason,
+      });
+      return;
+    }
+
     const alreadyRun = await ctx.db
       .query('hazardRecurrence')
       .withIndex('by_computed_season_and_priority', (q) => q.eq('computedForSeason', runForSeason))
@@ -351,30 +383,91 @@ export const listForBody = query({
         q.eq('waterBodyId', body._id).eq('publiclyVisible', true),
       )
       .collect();
+    // Nothing to yield *to*, so nothing to read this lake's hazards for. While the master switch is
+    // off that is every single call, and a full active-hazard collect on every drawer open, on both
+    // clients, for a query that returns `[]` by construction is the kind of cost that never announces
+    // itself. The bar is applied at the index above, so an empty result here is the normal answer.
+    if (rows.length === 0) return [];
 
     // **Live information wins** (§9.3). A pin reported this season inside a cluster's footprint has a
     // date, a reporter and a confirm loop, and is better than history in every respect — so the
     // advisory for that cluster stands down rather than competing with it.
     const thisSeason = seasonOf(Date.now());
-    const live = await ctx.db
-      .query('hazards')
-      .withIndex('by_water_body_status', (q) =>
-        q.eq('waterBodyId', body._id).eq('status', 'active'),
-      )
-      .collect();
-    const liveMembers = new Set(
-      live
-        .filter(
-          (h) => h.moderationStatus === 'visible' && seasonOf(h.firstReportedAt) === thisSeason,
+    const live = (
+      await ctx.db
+        .query('hazards')
+        .withIndex('by_water_body_status', (q) =>
+          q.eq('waterBodyId', body._id).eq('status', 'active'),
         )
-        .map((h) => h._id as string),
+        .collect()
+    ).filter(
+      (h) =>
+        h.moderationStatus === 'visible' &&
+        h.mergedIntoHazardId === undefined &&
+        seasonOf(h.firstReportedAt) === thisSeason,
     );
 
     return rows
-      .filter((row) => !row.memberHazardIds.some((id) => liveMembers.has(id)))
+      .filter((row) => !hasLiveSighting(row, live))
       .sort((a, b) => b.priority - a.priority);
   },
 });
+
+/**
+ * Has this winter already put a pin on the ice a pattern is about? (§9.3)
+ *
+ * **Geometry, not membership, and the difference is the whole rule.** `memberHazardIds` is frozen at
+ * the rollover, and the rollover runs in the first week of July — when the season it is computing for
+ * is days old and holds no hazards at all. So a ridge pinned in January is *never* a member of the
+ * cluster that describes it, and a membership test would leave the advisory talking over a live pin
+ * for the entire winter, which is exactly the season it was supposed to stand down in. §9.3's own
+ * words are *"inside the cluster footprint"*; this is that sentence.
+ *
+ * Same family and within `RECURRENCE_MATCH_METERS` — the tolerance the cluster was built at, so a pin
+ * that would have joined this cluster in July is the pin that silences it in January. Erring wide is
+ * the safe direction here: yielding too readily costs a history panel, and yielding too rarely puts a
+ * statement about past winters beside a report of the ice right now.
+ */
+function hasLiveSighting(row: Doc<'hazardRecurrence'>, live: readonly Doc<'hazards'>[]): boolean {
+  const footprint = footprintOrNull({
+    geometryKind: row.geometryKind,
+    geometry: row.geometry as HazardShape['geometry'],
+    ...(row.radiusMeters !== undefined ? { radiusMeters: row.radiusMeters } : {}),
+    ...(row.bufferMeters !== undefined ? { bufferMeters: row.bufferMeters } : {}),
+  });
+  // A row whose stored shape will not build is one nobody can measure against. Yielding is the
+  // conservative answer: it withholds a claim about past winters rather than making one beside a pin
+  // it could not compare itself to.
+  if (footprint === null) return true;
+
+  for (const hazard of live) {
+    if (hazardFamilyFor(hazard.type) !== row.family) continue;
+    const other = footprintOrNull({
+      geometryKind: hazard.geometryKind,
+      geometry: hazard.geometry as HazardShape['geometry'],
+      ...(hazard.radiusMeters !== undefined ? { radiusMeters: hazard.radiusMeters } : {}),
+      ...(hazard.bufferMeters !== undefined ? { bufferMeters: hazard.bufferMeters } : {}),
+      // The clip is what render and proximity measure, so it is what "inside the footprint" means.
+      ...(hazard.clippedFootprint !== undefined
+        ? { clippedFootprint: hazard.clippedFootprint as HazardShape['geometry'] }
+        : {}),
+    });
+    if (other === null) continue;
+    if (polygonDistanceMeters(footprint, other) <= RECURRENCE_MATCH_METERS) return true;
+  }
+  return false;
+}
+
+/** `hazardFootprint` with the same swallow-and-degrade posture the render and proximity paths take. */
+function footprintOrNull(shape: HazardShape & { clippedFootprint?: HazardShape['geometry'] }) {
+  try {
+    const clipped = shape.clippedFootprint;
+    if (clipped && (clipped.type === 'Polygon' || clipped.type === 'MultiPolygon')) return clipped;
+    return hazardFootprint(shape);
+  } catch {
+    return null;
+  }
+}
 
 /** Everything about one lake's clusters, for the operator card — thin patterns included. */
 export const listForBodyAdmin = query({
@@ -398,28 +491,38 @@ export const listForBodyAdmin = query({
  * `by_computed_season_and_priority` and never touches `hazards` or `waterBodies` in bulk, which is the
  * Phase 7b rule. This is where an operator spends an hour in October and covers the whole corpus,
  * which is the difference between the feature existing and the feature working.
+ *
+ * ⚠ **Genuinely paginated, not capped, and the distinction is one this repo has already paid for.**
+ * The filters below — family, minimum seasons, promoted, suppressed — cannot be expressed on the
+ * index, so they run per page. A single `.take(n)` followed by those filters would be the §16.3
+ * finding wearing a different hat: on a corpus whose top-ranked clusters are mostly promoted, the cap
+ * fills with rows the operator asked not to see and the queue reads *empty* while unpromoted patterns
+ * sit just below it. Paginating instead makes "the next page" mean the next page of **matches**, with
+ * every read still bounded to one page of the index — `listFeed`'s note on the same shape applies:
+ * a page filtered down to nothing is how a filtered scroll makes progress, and `usePaginatedQuery`
+ * keeps going rather than treating it as the end.
  */
 export const listQueue = query({
   args: {
+    paginationOpts: paginationOptsValidator,
     season: v.optional(v.number()),
     family: v.optional(literals(RECURRENCE_FAMILIES)),
     minSeasons: v.optional(v.number()),
     includePromoted: v.optional(v.boolean()),
     includeSuppressed: v.optional(v.boolean()),
-    limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await requireContributorRole(ctx, 'moderator');
     const season = args.season ?? seasonOf(Date.now());
-    // Descending on `priority`, which the index carries — so the ranking is the read order and the
-    // cap takes the *top* of the queue rather than an arbitrary slice of it.
-    const rows = await ctx.db
+    // Descending on `priority`, which the index carries — so the ranking *is* the read order and a
+    // page is the top of what is left rather than an arbitrary slice.
+    const result = await ctx.db
       .query('hazardRecurrence')
       .withIndex('by_computed_season_and_priority', (q) => q.eq('computedForSeason', season))
       .order('desc')
-      .take(Math.min(args.limit ?? 100, 300));
+      .paginate(args.paginationOpts);
 
-    const filtered = rows.filter((row) => {
+    const filtered = result.page.filter((row) => {
       if (args.family !== undefined && row.family !== args.family) return false;
       if (args.minSeasons !== undefined && row.seasonsObserved.length < args.minSeasons)
         return false;
@@ -431,7 +534,7 @@ export const listQueue = query({
     // One body read per distinct lake, cached: a queue is many clusters over few lakes, so this must
     // not be a read per row.
     const names = new Map<string, string>();
-    return Promise.all(
+    const page = await Promise.all(
       filtered.map(async (row) => {
         if (!names.has(row.waterBodyId)) {
           const body = await ctx.db.get(row.waterBodyId);
@@ -440,6 +543,7 @@ export const listQueue = query({
         return { ...row, waterBodyName: names.get(row.waterBodyId) as string };
       }),
     );
+    return { ...result, page };
   },
 });
 

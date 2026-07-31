@@ -9,8 +9,8 @@ once is the only way the two can't disagree.*
 > cross-season half (**C**, **D**, **F**) is built on `phase-n5c-recurrence` and green across every
 > suite — **unpushed, undeployed, not device-tested**, and the skater-facing advisory ships **dark**
 > behind `RECURRENCE_ADVISORIES_PUBLIC = false`, which is the intended shipped state rather than an
-> unfinished one. See *§15 — What the build changed about the plan*, *§16 — What the review pass found*
-> and *§17 — What the cross-season half changed*.
+> unfinished one. See *§15 — What the build changed about the plan*, *§16 — What the review pass
+> found*, *§18 — What the cross-season half changed* and *§19 — What the second review pass found*.
 > Founder asks 2026-07-27 (hazard memory) and 2026-07-30 (duplicate corroboration), merged into one
 > phase by the founder call in [§4](#4-workstream-a--the-clustering-primitive-d77).
 > **Depends on:** [N5a](./phase-N5a-seasons.md) — seasons as a derived first-class dimension, the
@@ -1209,11 +1209,11 @@ that list before it adds anything else.
 
 ---
 
-## 17. What the cross-season half changed about the plan (2026-07-31)
+## 18. What the cross-season half changed about the plan (2026-07-31)
 
 Same discipline as §15: the places the plan was wrong are worth more than the places it was right.
 
-### 17.1 §C4's own matching threshold could not do what §C4 said it would
+### 18.1 §C4's own matching threshold could not do what §C4 said it would
 
 The plan asks for two things in the same paragraph, and they contradict each other:
 
@@ -1230,7 +1230,7 @@ sentence meant: most of the smaller set survived. It matches a cluster that grew
 shrank because pins were hidden, and still refuses two that merely brush past each other. A split still
 lets only one half inherit, because a claimed row is out of the running for the rest of the pass.
 
-### 17.2 The rollover is a daily tick with a month gate, not a `crons.cron`
+### 18.2 The rollover is a daily tick with a month gate, not a `crons.cron`
 
 §C4 notes this would be the repo's first cron expression. It still isn't one, and the reason is better
 than uniformity: a `0 8 2 7 *` expression that fails on July 2 **waits a year**. A daily interval that
@@ -1238,21 +1238,21 @@ does nothing outside the first week of July, and nothing again once `computedFor
 makes the once-a-year job retryable for the price of one indexed read on 358 days. Both halves of that
 gate are tests.
 
-### 17.3 The advisory's timing clause reads "first reported", not "between"
+### 18.3 The advisory's timing clause reads "first reported", not "between"
 
 §9.2's example is *"first seen between late December and February"*. But the window label collapses a
 fully-covered month to its bare name — which is what makes *"late December to February"* come out right
 — and *"between January"* is not a sentence. `first reported <label>` works for every shape the label
 can take, and keeps the clause in the same past tense as the rest of the sentence.
 
-### 17.4 The advisory describes a **family**, not a hazard type
+### 18.4 The advisory describes a **family**, not a hazard type
 
 §9.2 says *"Type from `HAZARD_TYPE_LABELS`"*. A cluster can hold a `pressure_ridge` and an `ice_heave`,
 so naming one of them would report a detail the record does not carry. The copy names the family, and
 `RECURRENCE_FAMILY_PHRASES` has no `crack` entry — the *type* refuses one, since `RecurrenceFamily`
 excludes it, so the compiler holds that line rather than a comment.
 
-### 17.5 Decisions taken in the build
+### 18.5 Decisions taken in the build
 
 - **A scratch queue table**, because the two phases cannot share a `.paginate()` and an array threaded
   through scheduler arguments grows without bound in exactly the corpus this pass was built for.
@@ -1270,7 +1270,7 @@ excludes it, so the compiler holds that line rather than a comment.
   `seasonOf(Date.now())`, so fixtures dated in one season against a real wall clock produce empty
   results that look exactly like a broken query. Five tests failed that way before the pin.
 
-### 17.6 What is deliberately not built
+### 18.6 What is deliberately not built
 
 - **The `?action=` deep link and any notification path for advisories.** §9.4's no-list holds: no
   notification, no bounty, no feed row, no `displayScore`, no trust or points, and nothing confirmable.
@@ -1282,10 +1282,105 @@ excludes it, so the compiler holds that line rather than a comment.
   nothing to measure while it ships dark, and the honest time to decide what to count is when somebody
   proposes flipping the flag.
 
-### 17.7 The trigger, restated now that it is real
+### 18.7 The trigger, restated now that it is real
 
 `RECURRENCE_ADVISORIES_PUBLIC` flips when the operator queue has been read across at least **two**
 rollovers and the clusters at the current bar look like real patterns — realistically the `'28/'29`
 rollover, possibly `'27/'28` if the corpus is dense. That is a judgement from `/admin/recurrence` and
 the *Patterns by winters observed* chart, not a date. Raising `RECURRENCE_PUBLIC_MIN_SEASONS` to 3 is
 one edit, and it moves the advisory and its timing clause together by construction.
+
+---
+
+## 19. What the second review pass found (2026-07-31, before the PR)
+
+Every suite was green before this pass too, which is the recurring lesson of §16: the things worth
+finding here were **claims the plan made that the code did not keep**, and a test cannot fail on a
+sentence nobody translated into an assertion. Four of the six below are of exactly that shape.
+
+### 19.1 The advisory's yield rule could not fire in the season it is for
+
+**The worst of them, and it was asserted as working.** §9.3 says an advisory stands down when a hazard
+has been reported this season *"inside the cluster footprint"*. The code tested **membership** —
+whether a live pin's id appears in `memberHazardIds` — and those are the same test only if membership
+is current. It is not: the rollover runs in the **first week of July**, when the season it computes
+for is days old and holds no hazards at all. So a ridge pinned the following January is *never* a
+member of the cluster that describes it, and the advisory would have gone on talking over a live pin
+for the entire winter — the one season it exists to stand down in.
+
+It ships dark, so nothing reached a skater. What makes it worth writing down is how it passed review
+twice: the test seeded its "live" pin **before** running the pass, which made the pin a member and the
+assertion vacuous. A fixture that pre-dates the job is a fixture that cannot see a staleness bug, and
+this phase's whole subject is a table that is computed once a year.
+
+`hasLiveSighting` now measures geometry — same family, within `RECURRENCE_MATCH_METERS` of the stored
+representative footprint, on the same fallback ladder render and proximity use. The tolerance is the
+one the cluster was built at, so a pin that would have joined this cluster in July is the pin that
+silences it in January. Two tests replace the old one: a sighting filed *after* the pass (asserting
+explicitly that it is **not** a member and yields anyway), and the other direction — a pin a kilometre
+away, or of another family, does not silence a history it is not about.
+
+### 19.2 A query that ships dark should not read the lake
+
+`recurrence.listForBody` collected every active hazard on the body before deciding what to yield —
+including when the public read had returned **zero** rows, which while `RECURRENCE_ADVISORIES_PUBLIC`
+is off is *every single call*. Both clients mount `IceHistory` on every lake drawer open, so the
+shipped-dark state was paying a full per-body hazard read for a query that returns `[]` by
+construction. One early return. Worth naming because it is the failure mode of anything gated by a
+constant: the gate makes the feature invisible, not free.
+
+### 19.3 A partial rollover waited a year, which is what the interval was chosen to avoid
+
+§18.2 argues for a daily tick over a `crons.cron` because *"a run that fails on July 2 is picked up on
+July 3"*. `maybeRunRollover` gated on "does any row exist for this season" — which is true after the
+**first** body commits. A chain dying at body 1 of 200 therefore set the stamp, left 199 rows queued,
+and made every remaining tick in the window a no-op. The retryability held only for the failure that
+happens before any work lands, which is the least likely one.
+
+The queue is now checked first and outranks the stamp. Restarted from the top rather than resumed,
+because a run can also die *during* discovery and a half-built queue cannot be told apart from a
+finished one — and restarting is safe precisely because the pass is idempotent, which was already a
+test. One redundant pass in a failure year is the right price for a pass that finishes.
+
+### 19.4 A reversible decision with nowhere to reverse it
+
+`unsuppress` had a mutation, an audit verb and a test, and **no caller**. The per-lake card printed
+*"Suppressed — {reason}"* as dead text and the cross-lake queue filtered suppressed rows out without a
+way to ask for them, so §7.3's *"Reversible; never a delete"* was true of the server and false of the
+product. Both surfaces now carry Unsuppress, and the queue a *Show suppressed* toggle.
+
+This is §8's own finding — `bodyFeatures.create` shipped with no UI, which is why D79 existed —
+repeating inside the phase that recorded it. The generalisation worth keeping: **a mutation without a
+surface is not a feature, and the reversibility argument for a destructive-looking action is only as
+good as the button.**
+
+### 19.5 `listQueue` was capped, and the plan said paginated
+
+`.take(min(limit, 300))` followed by in-memory filters for family, minimum seasons, promoted and
+suppressed. That is §16.3's finding from the other end: the read is bounded, but the *filters* are not
+in the index, so on a corpus whose top-ranked clusters are mostly promoted the cap fills with rows the
+operator asked not to see and the queue reads **empty** while unpromoted patterns sit just below it.
+Now genuinely paginated on the repo's existing `paginationOpts` / `usePaginatedQuery` idiom, with the
+same note `listFeed` carries: a page filtered to nothing is how a filtered scroll makes progress, not
+the end of the list.
+
+### 19.6 Two sections numbered 17
+
+The cross-season write-up was numbered `17`, as was *What Greptile found* — colliding headings and
+colliding `17.x` anchors, in a repo whose docs suite already has a note about GitHub slug collisions,
+and with the status block linking to the section by number. Renumbered to **18**, and this pass is 19.
+
+### 19.7 Left as-is, deliberately
+
+- **A body that fails to recompute blocks the ones behind it.** `processNextBody` takes the first
+  unclaimed row in index order, so a lake that throws is retried at the head of the queue on each of
+  the July ticks and nothing after it runs that day. Bounded (the window is a week) and visible in the
+  logs, and the alternative — a failure counter per row — is machinery for a failure nobody has seen
+  yet. Worth remembering rather than pre-solving.
+- **`describeCluster` double-counts a mixed archive.** A hazard archived on one `fully_healed` plus
+  one `never_existed` vote lands in both `healedSeasons` and `neverExistedCount`. It needs a hazard
+  with exactly one of each and no third vote, and both penalties point the same way, so the ranking
+  errs conservative. Not worth a special case in the one function whose sign errors are hardest to see.
+- **`enqueueBody` recomputes inline rather than enqueuing.** The name is wrong and the behaviour is
+  right — a body merge should not wait for July. Renaming it touches the merge path in `waterBodies`,
+  which is not where this PR should be making incidental edits.

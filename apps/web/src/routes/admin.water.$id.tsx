@@ -1253,6 +1253,7 @@ function RecurrenceTool({
   const clusters = useQuery(api.recurrence.listForBodyAdmin, { waterBodyId });
   const promote = useMutation(api.recurrence.promoteFromRecurrence);
   const suppress = useMutation(api.recurrence.suppress);
+  const unsuppress = useMutation(api.recurrence.unsuppress);
   const recompute = useMutation(api.recurrence.recomputeForBody);
   const [busy, setBusy] = useState(false);
 
@@ -1326,9 +1327,27 @@ function RecurrenceTool({
                     Already a permanent feature. Sightings keep counting.
                   </span>
                 ) : cluster.suppressedAt !== undefined ? (
-                  <span className="text-foreground-muted text-xs">
-                    Suppressed — {cluster.suppressReason}
-                  </span>
+                  <>
+                    <span className="text-foreground-muted text-xs">
+                      Suppressed — {cluster.suppressReason}
+                    </span>
+                    {/* §7.3 calls suppression reversible, and a reversal needs somewhere to be
+                        pressed. Without this the mutation exists and the product has no way to reach
+                        it, which is a delete with better paperwork. */}
+                    <ReasonDialog
+                      trigger={
+                        <Button size="sm" variant="outline">
+                          Unsuppress
+                        </Button>
+                      }
+                      title="Unsuppress this pattern"
+                      description="It returns to the suggestion queue and regains the public bar. The original suppression and its reason stay in the audit log."
+                      confirmLabel="Unsuppress"
+                      onConfirm={(reason) =>
+                        unsuppress({ recurrenceId: cluster._id, reason }).then(() => undefined)
+                      }
+                    />
+                  </>
                 ) : (
                   <>
                     {cluster.suggestedFeatureType ? (
