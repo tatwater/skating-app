@@ -888,3 +888,217 @@ describe('a nonsense season argument falls back rather than emptying the lake', 
     ).toHaveLength(0);
   });
 });
+
+/**
+ * Cluster pooling (N5c / D80) — the gates read what the *cluster* knows, not what one row does.
+ *
+ * The seeded body is a 1°-square polygon around `[0.5, 0.5]`, so "40 m away" is a coordinate nudge of
+ * about 0.00036°. Two 40 m-radius pins that close overlap comfortably inside `DUPLICATE_MATCH_METERS`.
+ */
+describe('hazards.listForBody — cluster consensus', () => {
+  /** ~`meters` east of the body's centre, at this latitude. */
+  const eastOf = (meters: number) => ({
+    type: 'Point' as const,
+    coordinates: [0.5 + meters / 111_320, 0.5],
+  });
+
+  test('a lone hazard is untouched — no cluster fields, and the row is the answer', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const [only] = await author.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(only?.provisional).toBe(true);
+    expect(only?.clusterMemberIds).toBeUndefined();
+    expect(only?.clusterConfirmCount).toBeUndefined();
+  });
+
+  test('two people marking the same spot corroborate each other, with no confirm taps', async () => {
+    // The headline failure: today each pin sits at zero confirmations, so every phone on the lake gets
+    // the soft "can you see it?" and nobody is ever warned about a ridge two people have drawn.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(30) }));
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(2);
+    for (const h of listed) {
+      expect(h.clusterMemberIds).toHaveLength(2);
+      expect(h.clusterConfirmCount).toBe(1);
+      // Above the threshold of 1, so the on-ice evaluator fires a real warning rather than a prompt.
+      expect(h.provisional).toBe(false);
+    }
+  });
+
+  test('one person posting twice is still one witness', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const waterBodyId = await seedBody(t);
+    await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await alex.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(30) }));
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    for (const h of listed) {
+      expect(h.clusterConfirmCount).toBe(0);
+      expect(h.provisional).toBe(true); // D54's confirm-gate survives clustering intact
+    }
+  });
+
+  test('confirmations cast on one duplicate count for the other', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const second = await alex.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    await sam.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId: first,
+      verdict: 'still_there',
+      via: 'app_open_nearby',
+    });
+    await kim.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId: second,
+      verdict: 'still_there',
+      via: 'app_open_nearby',
+    });
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    // Two witnesses across the cluster, though each stored row still shows one — the stored counts are
+    // untouched, because pooling is a read-time judgement and never rewrites what somebody said.
+    for (const h of listed) expect(h.clusterConfirmCount).toBe(2);
+    const stored = await t.run(async (ctx) => (await ctx.db.get(first))?.confirmCount);
+    expect(stored).toBe(1);
+  });
+
+  test('a fresh duplicate refreshes the whole cluster clock', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const old = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const twelveDaysAgo = Date.now() - 12 * 24 * 60 * 60 * 1000;
+    await t.run((ctx) => ctx.db.patch(old, { lastConfirmedAt: twelveDaysAgo }));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(30) }));
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    const aged = listed.find((h) => h._id === old);
+    // Somebody stood there today and drew the same thing. The old pin is not stale information.
+    expect(aged?.freshness).toBe('fresh');
+    expect(aged?.lastConfirmedAt).toBe(twelveDaysAgo); // the stored row is never rewritten
+  });
+
+  test('different families in the same spot stay separate facts', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'spring_current', geometry: eastOf(10) }),
+    );
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    for (const h of listed) expect(h.clusterMemberIds).toBeUndefined();
+  });
+
+  test('clearance votes are never pooled — archival stays strictly per-row', async () => {
+    // The unsafe direction, and the one this must never take: two people clearing one pin must not
+    // retire the neighbouring pin nobody looked at.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const second = await alex.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    for (const voter of [sam, kim]) {
+      await voter.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId: first,
+        verdict: 'fully_healed',
+        via: 'app_open_nearby',
+      });
+    }
+
+    const rows = await t.run(async (ctx) => ({
+      first: await ctx.db.get(first),
+      second: await ctx.db.get(second),
+    }));
+    expect(rows.first?.status).toBe('archived');
+    expect(rows.second?.status).toBe('active');
+    expect(rows.second?.goneCount).toBe(0);
+  });
+
+  test('the drawer agrees with the map about the same pin', async () => {
+    // A pin drawn solid on the map and then labelled "Unconfirmed" the moment you open it is the app
+    // disagreeing with itself about live ice.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(30) }));
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    const onMap = listed.find((h) => h._id === first);
+    const inDrawer = await alex.as.query(api.hazards.get, { hazardId: first });
+    expect(inDrawer?.provisional).toBe(onMap?.provisional);
+    expect(inDrawer?.clusterConfirmCount).toBe(onMap?.clusterConfirmCount);
+    expect(inDrawer?.freshness).toBe(onMap?.freshness);
+  });
+
+  test('a crossing never pools, however many are drawn on one spot', async () => {
+    // A passage marker is the one pin where escalating too readily is the anti-conservative direction:
+    // "reported crossable" carries people onto ice. Excluded structurally, not by a threshold.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    await alex.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'ridge_crossing', radiusMeters: 15 }),
+    );
+    await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'ridge_crossing', radiusMeters: 15, geometry: eastOf(10) }),
+    );
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(2);
+    for (const h of listed) {
+      expect(h.clusterMemberIds).toBeUndefined();
+      expect(h.provisional).toBe(true);
+    }
+  });
+
+  test('last season and this season are never one cluster', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const thisSeason = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const lastSeason = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    await t.run((ctx) =>
+      // A pin from last February is not corroboration for one drawn this January.
+      ctx.db.patch(lastSeason, { firstReportedAt: seasonStartMs(seasonOf(Date.now()) - 1) + 1000 }),
+    );
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed.map((h) => h._id)).toEqual([thisSeason]);
+    expect(listed[0]?.clusterMemberIds).toBeUndefined();
+  });
+});

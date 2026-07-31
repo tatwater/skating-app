@@ -16,12 +16,18 @@
  */
 
 import {
+  type ConsensusVote,
   clipFootprintToBody,
+  clusterConsensus,
+  clusterHazards,
   confirmThresholdFor,
+  DUPLICATE_MATCH_METERS,
+  DUPLICATE_MAX_CLUSTER_SPREAD_M,
   type deriveHazardFreshness,
   freshnessWithMultiplier,
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_DEFAULT_RADIUS_M,
+  type HazardConsensus,
   type HazardShape,
   hazardBbox,
   hazardFootprint,
@@ -278,35 +284,146 @@ export interface HazardView extends Doc<'hazards'> {
    * warnings about the same ice. Only the single-hazard `get` resolves it.
    */
   promotedFeatureType?: string;
+  /**
+   * Set only when this hazard shares a cluster with at least one other pin (D80). `confirmCount` on
+   * this view is then the **pooled** number and these two say so, which is what lets the drawer print
+   * "3 skaters have marked this, across 2 pins" instead of a count that silently disagrees with the
+   * confirmer list below it. Absent for the singleton case, which is nearly every hazard.
+   *
+   * `clusterMemberIds` is every member including this one, earliest sighting first — the map unions
+   * their footprints, and the drawer lists every reporter behind them.
+   */
+  clusterConfirmCount?: number;
+  clusterMemberIds?: string[];
 }
 
-function toView(hazard: Doc<'hazards'>, now: number): HazardView {
+function toView(hazard: Doc<'hazards'>, now: number, consensus?: HazardConsensus): HazardView {
+  // The gates read the **cluster**, not the row (D80). Absent consensus ⇒ the row's own values, which
+  // is also exactly what a singleton cluster returns — so there is one code path and no special case.
+  const confirmCount = consensus?.confirmCount ?? hazard.confirmCount;
+  const lastConfirmedAt = consensus?.lastConfirmedAt ?? hazard.lastConfirmedAt;
   return {
     ...hazard,
     // Weather-adjusted freshness (D56): the decay cron (§6) stores a time-independent `decayMultiplier`;
     // this query recomputes the live bucket from it + the always-current elapsed. Absent ⇒ 1 (fail-open =
     // plain base decay). Freshness itself is still never stored — only the weather *input* is.
+    //
+    // The **multiplier** stays the row's own while the **clock** is the cluster's. That pairing is
+    // deliberate: the multiplier describes weather over this pin's own window and means nothing applied
+    // to somebody else's, whereas "when did anyone last stand here" is a fact about the ridge.
     freshness: freshnessWithMultiplier(
       hazard.type,
-      hazard.lastConfirmedAt,
+      lastConfirmedAt,
       now,
       hazard.decayMultiplier ?? 1,
     ),
     // A suggested crossing needs **two** independent confirmations to stop reading as one skater's
     // suggestion (D64) — double every hazard's bar, which is what "more corroboration" means for the
-    // one pin type that says you can go this way.
-    provisional: isProvisional(
-      hazard.confirmCount,
-      confirmThresholdFor(isPassageMarker(hazard.type)),
-    ),
+    // one pin type that says you can go this way. Crossings never cluster, so a passage marker's
+    // consensus is always its own row: the one pin type where escalating too readily would be the
+    // anti-conservative direction is structurally excluded from pooling.
+    provisional: isProvisional(confirmCount, confirmThresholdFor(isPassageMarker(hazard.type))),
     /**
      * Past its own 72-hour window a passage marker is **expired**: it stops rendering (D64). Carried
      * on the view rather than filtered out here, so `hazards.get` can tell a permalink holder that
      * the crossing aged out instead of 404-ing a link that used to work — the same courtesy a past
      * season's report gets. `listForBody` is where the drop happens.
      */
-    expired: isPassageExpired(hazard.type, hazard.lastConfirmedAt, now),
+    expired: isPassageExpired(hazard.type, lastConfirmedAt, now),
+    ...(consensus && consensus.memberIds.length > 1
+      ? { clusterConfirmCount: confirmCount, clusterMemberIds: [...consensus.memberIds] }
+      : {}),
   };
+}
+
+/**
+ * Cluster one body's hazards and pool what the gates read (D77/D80).
+ *
+ * **The cost, and why it is bounded.** `listForBody` is the map's live subscription and does no
+ * geometry work of its own, so clustering has to stay off the expensive path: `clusterHazards`
+ * prefilters on the stored `bbox` — four comparisons on numbers already on the row — and only computes
+ * a footprint distance for pairs whose boxes actually come within the tolerance. The confirmation
+ * fan-out then runs for **multi-member clusters only**, which on any real lake is a handful of pins or
+ * none at all; a body of singletons costs one clustering pass and zero extra reads.
+ */
+/**
+ * The rows one hazard could possibly cluster with: active, moderation-visible pins on the same body in
+ * the same **season**.
+ *
+ * The season bound is not incidental. A ridge somebody marked last February is not corroboration for
+ * one drawn this January — within-season clustering asks "is this the same ridge you already marked?",
+ * and the question only means anything inside one winter (D63/D77). Whether the same feature comes back
+ * across winters is the cross-season window's question, and it has a different tolerance and a
+ * different answer.
+ *
+ * Archived rows are excluded by the index, which also means an **archived hazard is not in its own
+ * scope** and therefore gets no pooled consensus — correctly. A pin the community voted healed must
+ * not borrow freshness from a live neighbour; that would be pooling in the unsafe direction by the
+ * back door.
+ */
+export async function clusterScopeFor(
+  ctx: QueryCtx,
+  hazard: Doc<'hazards'>,
+): Promise<Doc<'hazards'>[]> {
+  const siblings = await ctx.db
+    .query('hazards')
+    .withIndex('by_water_body_status', (q) =>
+      q.eq('waterBodyId', hazard.waterBodyId).eq('status', 'active'),
+    )
+    .collect();
+  const target = seasonOf(hazard.firstReportedAt);
+  return siblings.filter(
+    (h) => h.moderationStatus === 'visible' && isInSeason(h.firstReportedAt, target),
+  );
+}
+
+export async function poolConsensus(
+  ctx: QueryCtx,
+  hazards: readonly Doc<'hazards'>[],
+): Promise<Map<string, HazardConsensus>> {
+  const clusters = clusterHazards(
+    hazards.map((h) => ({
+      id: h._id,
+      type: h.type,
+      geometryKind: h.geometryKind,
+      geometry: h.geometry as HazardShape['geometry'],
+      ...(h.radiusMeters !== undefined ? { radiusMeters: h.radiusMeters } : {}),
+      ...(h.bufferMeters !== undefined ? { bufferMeters: h.bufferMeters } : {}),
+      ...(h.clippedFootprint !== undefined
+        ? { clippedFootprint: h.clippedFootprint as HazardShape['geometry'] }
+        : {}),
+      bbox: h.bbox,
+      firstReportedAt: h.firstReportedAt,
+      createdByUserId: h.createdByUserId,
+      confirmCount: h.confirmCount,
+      lastConfirmedAt: h.lastConfirmedAt,
+    })),
+    { matchMeters: DUPLICATE_MATCH_METERS, maxSpreadMeters: DUPLICATE_MAX_CLUSTER_SPREAD_M },
+  );
+
+  const pooled = new Map<string, HazardConsensus>();
+  for (const cluster of clusters) {
+    if (cluster.members.length <= 1) continue;
+    const votes: ConsensusVote[] = [];
+    for (const m of cluster.members) {
+      const rows = await ctx.db
+        .query('hazardConfirmations')
+        .withIndex('by_hazard', (q) => q.eq('hazardId', m.id as Id<'hazards'>))
+        .collect();
+      for (const row of rows) {
+        votes.push({
+          hazardId: row.hazardId,
+          userId: row.userId,
+          verdict: row.verdict,
+          at: row.createdAt,
+        });
+      }
+    }
+    for (const [id, consensus] of clusterConsensus(cluster.members, votes)) {
+      pooled.set(id, consensus);
+    }
+  }
+  return pooled;
 }
 
 /**
@@ -363,20 +480,23 @@ export const listForBody = query({
     // because it's the opposite of the report path — this query is already bounded by *body* (Phase 9
     // call 6, deliberately never a viewport scan), so the read it would narrow is bounded already.
     const target: Season = resolveSeason(season, seasonOf(now));
+    // **No supersession filter** (D53 amendment, N5c). A `bodyFeature` is a standing statement about
+    // the lake; a hazard is a sighting by a person on a date. Promotion adds the first and must not
+    // delete the second — filtering here rewrote February 2027 as a month in which nobody reported a
+    // ridge, and under cluster promotion it would erase the whole evidence trail the pattern rests on,
+    // one click after an operator agreed the pattern was real. The feature and the pin never race:
+    // after the season boundary the sighting is hidden by the **season** axis (D63) and the feature
+    // remains, which is the desired end state reached by machinery N5a already built.
+    const inScope = rows
+      .filter((h) => h.moderationStatus === 'visible')
+      .filter((h) => isInSeason(h.firstReportedAt, target));
+    // Pooled *before* the expiry drop and after the season filter, so a cluster is what one winter's
+    // skaters actually reported on this lake — a pin from last February is not corroboration for one
+    // drawn this January, and the season axis is what says so.
+    const pooled = await poolConsensus(ctx, inScope);
     return (
-      rows
-        .filter((h) => h.moderationStatus === 'visible')
-        // **Promotion no longer hides anything** (D53 amendment, N5c). A `bodyFeature` is a standing
-        // statement about the lake; a hazard is a sighting by a person on a date. Promotion adds the
-        // first and must not delete the second — filtering here rewrote February 2027 as a month in
-        // which nobody reported a ridge, and under cluster promotion it would erase the whole evidence
-        // trail the pattern rests on, one click after an operator agreed the pattern was real. Skaters
-        // go on filing sightings after a promotion, those sightings go on counting, and the feature and
-        // the pin never race: after the season boundary the sighting is hidden by the **season** axis
-        // (D63) and the feature remains, which is the desired end state reached by machinery N5a
-        // already built.
-        .filter((h) => isInSeason(h.firstReportedAt, target))
-        .map((h) => toView(h, now))
+      inScope
+        .map((h) => toView(h, now, pooled.get(h._id)))
         // **The one place a pin leaves the map on time alone** (D64). A hazard fades to a floor and
         // never disappears, because assuming a danger is still there is the recoverable mistake. A
         // suggested crossing is the opposite: "reported crossable" with nobody having looked in three
@@ -486,7 +606,15 @@ export const get = query({
   handler: async (ctx, { hazardId }): Promise<HazardView | null> => {
     const hazard = await ctx.db.get(hazardId);
     if (!isUserVisibleHazard(hazard)) return null;
-    const view = toView(hazard, Date.now());
+    const now = Date.now();
+
+    // **The drawer reads the same consensus the map does** (D80). Not an optimisation — a correctness
+    // requirement: a pin drawn solid on the map because its cluster is confirmed, and then labelled
+    // "Unconfirmed" the moment you open it, is the app disagreeing with itself about live ice. Costs
+    // one body-bounded read on a single-hazard path, which is the same read `listForBody` already
+    // makes, and the pooling itself short-circuits for the singleton case.
+    const pooled = await poolConsensus(ctx, await clusterScopeFor(ctx, hazard));
+    const view = toView(hazard, now, pooled.get(hazard._id));
 
     // The drawer's one-line reconciliation (D53 amendment): a pin the operator has already promoted
     // renders beside a permanent feature of the same shape, and without this the two read as a

@@ -136,7 +136,11 @@ describe('suggestSamplePoints', () => {
       ),
       { numRuns: 100 },
     );
-  });
+    // 100 runs of grid generation plus an O(n²) pairwise distance check. Comfortably under a second on
+    // its own, but it shares a machine with every other workspace's suite under `turbo run test`, and
+    // N5c's geometry property tests made that contention enough to push it past vitest's 5 s default.
+    // Explicit, per the convention the convex suites already follow (see `ci-test-timeout-5s`).
+  }, 20_000);
 
   it('property: every suggested point is inside the polygon it was suggested for', () => {
     fc.assert(

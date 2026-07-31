@@ -299,7 +299,9 @@ describe('clusterHazards', () => {
       ),
       { numRuns: 60 },
     );
-  });
+    // Each run buffers every hazard twice over (ordered and shuffled), so this is genuinely geometry
+    // work rather than arithmetic — explicit budget, per `ci-test-timeout-5s`.
+  }, 20_000);
 
   it('is a partition — every eligible hazard lands in exactly one cluster', () => {
     fc.assert(
@@ -325,5 +327,5 @@ describe('clusterHazards', () => {
       ),
       { numRuns: 60 },
     );
-  });
+  }, 20_000);
 });

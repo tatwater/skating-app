@@ -15,6 +15,7 @@ export * from './feedFilters';
 export * from './geometry';
 export * from './hazardBundle';
 export * from './hazardCluster';
+export * from './hazardConsensus';
 export * from './hazardCopy';
 export * from './hazardDecay';
 export * from './hazardDraft';

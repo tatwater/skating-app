@@ -28,7 +28,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
-import { loadVisibleHazard } from './hazards';
+import { clusterScopeFor, loadVisibleHazard, poolConsensus } from './hazards';
 import { requireContributor } from './lib/auth';
 import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { HAZARD_CONFIRM_VERDICTS, HAZARD_CONFIRM_VIA } from './lib/enums';
@@ -130,30 +130,54 @@ export const confirm = mutation({
 });
 
 /**
- * Award the hazard's author `hazard_corroborated` the first time its peer `confirmCount` reaches the
- * threshold (D50). Idempotent per hazard: a prior `hazard_corroborated` ledger row for this author+hazard
- * short-circuits, so a 3rd/4th confirm (or an offline replay) never re-awards. Recomputes the author's
- * badges on award (the confirm count can push `Hazard Spotter` over its line when thumbs are also present).
+ * Award `hazard_corroborated` the first time a pin's peer confirmations reach the threshold (D50).
+ * Idempotent per (author, hazard): a prior ledger row short-circuits, so a 3rd/4th confirm — or an
+ * offline replay — never re-awards. Recomputes badges on award (the confirm count can push `Hazard
+ * Spotter` over its line when thumbs are also present).
+ *
+ * **The count is the cluster's, and every member's reporter is credited** (D80). Duplicates were
+ * splitting this the same way they split the alert escalation: three people confirm a real ridge across
+ * three pins, no single pin reaches the bar, and nobody is credited for a hazard the community plainly
+ * corroborated. Reading the cluster fixes both halves at once — the bar is met by what was actually
+ * said, and it is met for each person who independently drew the thing, not only for whoever happened
+ * to file the pin that got the votes.
+ *
  */
 async function maybeAwardHazardCorroboration(
   ctx: MutationCtx,
   hazardId: Id<'hazards'>,
 ): Promise<void> {
   const hazard = await ctx.db.get(hazardId);
-  if (!hazard || hazard.confirmCount < HAZARD_CORROBORATION_MIN_CONFIRMS) return;
-  const already = await ctx.db
-    .query('pointEvents')
-    .withIndex('by_user', (q) => q.eq('userId', hazard.createdByUserId))
-    .filter((q) => q.eq(q.field('reason'), 'hazard_corroborated'))
-    .filter((q) => q.eq(q.field('refId'), hazardId))
-    .first();
-  if (already) return;
-  await awardPointEvent(ctx, {
-    userId: hazard.createdByUserId,
-    reason: 'hazard_corroborated',
-    refId: hazardId,
-  });
-  await checkAndAwardBadges(ctx, hazard.createdByUserId);
+  if (!hazard) return;
+  const scope = await clusterScopeFor(ctx, hazard);
+  const consensus = (await poolConsensus(ctx, scope)).get(hazard._id);
+  // No pooled entry means a singleton — read the row, exactly as this did before N5c.
+  const witnesses = consensus?.confirmCount ?? hazard.confirmCount;
+  if (witnesses < HAZARD_CORROBORATION_MIN_CONFIRMS) return;
+
+  const byId = new Map(scope.map((h) => [h._id as string, h]));
+  const members = (consensus?.memberIds ?? [hazard._id])
+    .map((id) => byId.get(id) ?? (id === hazard._id ? hazard : undefined))
+    .filter((h): h is Doc<'hazards'> => h !== undefined);
+
+  for (const member of members) {
+    // Keyed on the member's **own** id, so the idempotency stays per pin and a reporter cannot farm
+    // the award by drawing the same ridge twice — their second pin joins the same cluster, whose
+    // witness count already excludes them.
+    const already = await ctx.db
+      .query('pointEvents')
+      .withIndex('by_user', (q) => q.eq('userId', member.createdByUserId))
+      .filter((q) => q.eq(q.field('reason'), 'hazard_corroborated'))
+      .filter((q) => q.eq(q.field('refId'), member._id))
+      .first();
+    if (already) continue;
+    await awardPointEvent(ctx, {
+      userId: member.createdByUserId,
+      reason: 'hazard_corroborated',
+      refId: member._id,
+    });
+    await checkAndAwardBadges(ctx, member.createdByUserId);
+  }
 }
 
 /**
