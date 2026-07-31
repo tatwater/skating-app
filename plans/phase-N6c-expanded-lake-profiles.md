@@ -607,6 +607,44 @@ just **Pond** is worse than no title at all — it looks like a bug and it's amb
 
 ---
 
+## Workstream F — Record history and import observability
+
+*Added 2026-07-31 from the N6a review (founder call: fold it in here rather than into its own phase).
+Both halves answer the same question — **what happened to this lake, and who or what did it** — and both
+are cheap because the data already exists and is simply never read.*
+
+**F1 — A per-lake activity timeline on `/admin/water/$id`.** Linear-style: a tight, blame-attributed
+list at the bottom of the editor. **This is a UI component and no backend at all** —
+`moderation.listActions` already takes `targetType: 'waterbody'` + `targetId`, reads `by_target` newest
+first, and resolves the actor. Every human write to a body already lands there: depth, curated boost,
+sample points, sub-area create/redraw/rename, put-ins, features. Nobody has ever been able to look at it,
+which is why five mis-matched bodies from the Phase-2.5 seed stayed invisible until N2 built a screen.
+
+Two gaps to close as part of F1, neither large:
+
+- **Before *and* after.** An audit row records what a field *became*, so the log can answer "who changed
+  this" and never "changed it from what". `setDepth` / `clearDepthOverride` already write a `prev` object
+  into their metadata (N6a review); extending that convention to the other body mutations is a few lines
+  each and is what makes an undo affordance possible later. Undo itself is **not** in scope — read the
+  old value and re-enter it, which is one click short and zero new invariants.
+- **ETL writes are unaudited**, so the timeline is human-only until F2.
+
+**F2 — Store an ETL run summary instead of printing it.** Every loader we have (`etl`, `admin-areas`,
+`lake-depth`) computes a genuinely useful summary — match rate, rejects by reason, un-gated matches,
+overrides held, contested merges — and writes it to a terminal that scrolls. There is no way to answer
+"how did the last import go", "is coverage better or worse than last time", or "which lakes did it
+decline" without re-running it.
+
+One row per run — source, target deployment, started/finished, the counts, and a bounded sample of
+itemized rejects — written by the loader through an internal mutation. **Not one row per body**: an 8k-row
+audit trail per run is a different feature with a different cost, and the per-body question is answered by
+the depth provenance already stored on the row. An `/admin/imports` page then lists runs and drills into
+one, which also gives F1's timeline its ETL half ("HydroLAKES filled this mean on 2026-08-12").
+
+Sequencing note: F2 wants to exist **before** the N6a depth run, not after — the first real run is the
+one whose numbers matter most, and it is also the run whose LAGOS-US findings (§5b of that runbook) want
+a durable home.
+
 ## Out of scope / explicitly not doing
 
 - **Hand-maintained per-lake prose** (D70) — replaced by Workstream C.

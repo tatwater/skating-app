@@ -3,8 +3,11 @@
 *The body-level depth attribute the D56 decay model was designed around and never got, plus the
 consumer that makes it mean something. One ETL, one core change, one display surface.*
 
-> **Status: ✅ BUILT 2026-07-30** — every suite green (core 1,024 · convex 810 · web 222 · mobile 79 ·
-> etl 22 · lake-depth 20 · admin-areas 14 · design 61). **The ETL has not been run yet**: it needs three
+> **Status: ✅ BUILT 2026-07-30 · reviewed 2026-07-31** — every suite green (core 1,029 · convex 819 ·
+> web 222 · mobile 79 · etl 33 · lake-depth 29 · admin-areas 14 · design 61). The review pass found one
+> real defect and five smaller ones, all fixed on the branch — see *§What the review found in the build*,
+> which is where the D68 amendment 2 (the three-state operator override) is written up.
+> **The ETL has not been run yet**: it needs three
 > third-party downloads and a licence/column confirmation on the first pass (see *§Open questions*), so
 > the code path is tested but no real depth is loaded. Not device-tested; prod deferred, as every phase
 > since 2.5.
@@ -327,6 +330,81 @@ D69 amplifier would change nothing for it, which is the clamp behavior a test al
 consequence: **the shallow signal is invisible in high summer and does its work in the shoulder season and
 in mid-winter thaws**, which is exactly the window where a skater is deciding whether to trust a fading
 pin. Worth knowing before anyone looks for its effect in the wrong month and concludes it isn't wired.
+
+## What the review found in the build
+
+A full read of the branch against this doc, 2026-07-31, before the PR. Six changes; the first is the one
+that mattered.
+
+**1. The operator editor laundered modelled depths into rung 1, and the mutation let it.** `setDepth`
+took a plain number per field and stamped `operator` on everything it received, while the editor
+pre-filled both fields from whatever the row held. So a moderator who opened a lake carrying a
+HydroLAKES mean and typed the max they *did* know silently relabelled a 90 m-DEM estimate as a survey
+reading: the public caption lost its `~`, and `winsLadder` then locked the value against every future
+import. **Provenance you can launder by accident is not provenance** — and this was D68's own display
+rule being broken by the one screen built to serve it.
+
+The fix is a three-state contract per measurement, because "the moderator left this box alone" and "the
+moderator wants this gone" are different instructions and the first cut could not tell them apart:
+
+| sent | meaning |
+| --- | --- |
+| absent | leave the value **and its rung** exactly as they are |
+| a number | the moderator's own reading, stored at rung `operator` |
+| `null` | an explicit **rejection**: the number goes, the `operator` rung stays as a tombstone |
+
+The editable boxes now hold `operator` values only; an imported value renders as text with its source and
+two explicit actions (**Reject**, and **Restore** via the new `clearDepthOverride`). And the card
+re-syncs when the row changes underneath it, which it previously never did — a `useState` initializer
+runs once, so an ETL run mid-session left you editing a number that was no longer there.
+
+**2. The tombstone is new, and it inverts a stated invariant on purpose.** *Never provenance without a
+number* was protecting the caption, not the row: `describeLakeDepth` renders nothing without a number, so
+an operator rung with no value is invisible to skaters and legible to the ladder. That is exactly the
+split we want, because "a human read HydroLAKES' 14 m and says it's wrong" is a durable claim about the
+lake and has to outlive the next run or it isn't worth making. The loader now reports those separately
+(`operatorHeld`) instead of folding them into "already had a better source", so the person running the
+ETL sees the collision and can release it deliberately.
+
+**3. The ETL write path had no sanity check on the number.** `setDepth` has refused implausible depths
+since day one; `applyDepthLadder` — the path that writes ~8k rows nobody reads first — validated only
+provenance. The transform's `-9999` filter is one third-party column rename away from missing a `-999`.
+Same positivity and `MAX_PLAUSIBLE_DEPTH_M` guard now runs at the write boundary, counted and named.
+
+**4. LAGOS-US rows are merged per lake, and the merge rules are asymmetric.** The transform emitted one
+record per CSV row; several rows for one lake all land on the same body at the same rung, and `winsLadder`
+accepts an equal rank — so the stored value was whichever row the file listed last. Arbitrary, and
+invisible. Now: **a max takes the deepest reading** (an extremum is the union of what surveys found), a
+**mean takes the median** (a mean has no combining rule; the median resists one bad record and is always
+a number somebody reported — never an average nobody did).
+
+The tempting shortcut was rejected on the record: since D69 makes a false "shallow" the *cheap* error, one
+could take the shallowest reading everywhere. But this number is **displayed**, and biasing a published
+depth toward shallow is the D3 violation the provenance work exists to prevent. The measurement stays
+honest; the conservatism stays in the threshold, where `SHALLOW_MAX_DEPTH_M`'s generous 7 m already puts
+it. What is *never* silently merged is a disagreement that **crosses a threshold** — some records saying
+shallow and others not — which is counted, named, and left for review, because there the merge decided a
+safety classification rather than a display detail.
+
+**5. `resolveDepth` was a true orphan and is deleted.** Written when the plan had the transform resolving
+the ladder locally; the join moved server-side mid-build and `applyDepthLadder` is the surviving
+implementation. Keeping it would have been the second copy of the ladder that function's own docstring
+says it exists to prevent. `importDepths`, the other unused export, is **not** an orphan — see 6.
+
+**6. The OSM depth-tag rung existed in the enum with no producer.** The register asserted it was folded
+into N6a; nothing carried it, so `osm_tag` was decoration. Built now in the **water** ETL, which is the
+only pass that sees an OSM feature: `--depths` writes a second NDJSON stream, `load-depths` sends it to
+`importDepths` (which keys on `source` + `externalId` — exactly what it was built for, and now has a
+caller). The parse is deliberately strict, and one mapping is safety-relevant: **a bare `depth` tag
+becomes a `max`, never a mean.** OSM documents `depth` loosely enough that mappers use it for all three,
+and the mean is the field that *wins* the shallow classification — read as a max it enters through the
+generous 7 m fallback instead, which is the direction that keeps a shallow lake shallow. Only the
+explicit `depth:mean` is trusted as a mean.
+
+*Deferred out of the review, folded into N6c:* the per-lake **record timeline** (`moderation.listActions`
+already answers the query — this is a UI component) and **per-run ETL summaries** stored rather than
+printed to a terminal that scrolls. `setDepth` and `clearDepthOverride` already write `prev` into their
+audit metadata, so the timeline will have before/after from the day it renders.
 
 ## Before the ETL runs — the ordering gate
 
