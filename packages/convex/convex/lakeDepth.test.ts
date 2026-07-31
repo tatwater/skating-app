@@ -631,3 +631,195 @@ describe('waterBodies.setDepth — the source note (D68 amendment)', () => {
     ).rejects.toThrow(/keep it under/i);
   });
 });
+
+/**
+ * The pair invariant (Greptile, PR #33). The ladder resolves each measurement independently — D68
+ * working as designed, since mean and max routinely come from different rungs — but independently
+ * resolved is not jointly valid. Two sources that matched slightly different lakes can each win their
+ * own slot and leave `mean 30 m` beside `max 6 m`: impossible for one basin, shown to skaters as fact,
+ * and worse than cosmetic because `isShallowDepth` prefers the mean, so the contradicted number is the
+ * one deciding the safety classification.
+ */
+describe('the depth pair is never left inverted', () => {
+  /** A cell-indexed square body at (44, -72), so the geometric join can find it. */
+  async function seedMatchableBody(t: ReturnType<typeof convexTest>) {
+    const polygon = square(0.05);
+    const shifted = {
+      ...polygon,
+      coordinates: [
+        polygon.coordinates[0]?.map(([x, y]) => [(x as number) - 72, (y as number) + 44]),
+      ],
+    } as Polygon;
+    const bbox = { minLat: 43.95, minLng: -72.05, maxLat: 44.05, maxLng: -71.95 };
+    const id = await seedBody(t, 'way/pair', { polygon: shifted, bbox });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          name: 'Pair Lake',
+          type: 'lake' as const,
+          source: 'osm' as const,
+          externalId: 'way/pair',
+          polygon: shifted,
+          bbox,
+          centroid: { lat: 44, lng: -72 },
+          surfaceAreaSqM: 1e7,
+        },
+      ],
+    });
+    return id;
+  }
+
+  test('a later record cannot leave a mean deeper than the stored max', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/42', {
+      maxDepthM: 6,
+      maxDepthSource: 'lagos_us' as const,
+    });
+    const result = await t.mutation(internal.waterBodies.importDepths, {
+      depths: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/42',
+          meanDepthM: 30,
+          meanDepthSource: 'hydrolakes_modeled' as const,
+        },
+      ],
+    });
+    const row = await t.run((ctx) => ctx.db.get(body));
+    // The measured max outranks the modelled mean, so the mean is refused — not stored beside it.
+    expect(row?.maxDepthM).toBe(6);
+    expect(row?.meanDepthM).toBeUndefined();
+    expect(result.inverted).toBe(1);
+    expect(result.rejects[0]?.reason).toMatch(/exceeds max/);
+  });
+
+  test('a better-ranked incoming max retracts the modelled mean it contradicts', async () => {
+    // The other direction of arrival, and the reason a refusal alone isn't enough: leaving the stored
+    // mean would keep the impossible pair on display and in the classifier.
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/42', {
+      meanDepthM: 30,
+      meanDepthSource: 'hydrolakes_modeled' as const,
+    });
+    await t.mutation(internal.waterBodies.importDepths, {
+      depths: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/42',
+          maxDepthM: 9,
+          maxDepthSource: 'lagos_us' as const,
+        },
+      ],
+    });
+    const row = await t.run((ctx) => ctx.db.get(body));
+    expect(row?.maxDepthM).toBe(9);
+    expect(row?.meanDepthM).toBeUndefined();
+    expect(row?.meanDepthSource).toBeUndefined(); // the rung goes too, so a later run may refill it
+  });
+
+  test('one record carrying both keeps the better-ranked half', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/42');
+    await t.mutation(internal.waterBodies.importDepths, {
+      depths: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/42',
+          meanDepthM: 12,
+          meanDepthSource: 'hydrolakes_modeled' as const,
+          maxDepthM: 9,
+          maxDepthSource: 'globathy' as const,
+        },
+      ],
+    });
+    const row = await t.run((ctx) => ctx.db.get(body));
+    expect(row?.meanDepthM).toBe(12); // hydrolakes_modeled outranks globathy
+    expect(row?.maxDepthM).toBeUndefined();
+  });
+
+  test('on a rank tie the MEAN goes — the conservative half (D69)', async () => {
+    // Dropping the mean routes the body through the generous max fallback, which is the direction that
+    // keeps a shallow lake classified shallow when we are least sure.
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/42');
+    await t.mutation(internal.waterBodies.importDepths, {
+      depths: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/42',
+          meanDepthM: 20,
+          meanDepthSource: 'lagos_us' as const,
+          maxDepthM: 5,
+          maxDepthSource: 'lagos_us' as const,
+        },
+      ],
+    });
+    const row = await t.run((ctx) => ctx.db.get(body));
+    expect(row?.meanDepthM).toBeUndefined();
+    expect(row?.maxDepthM).toBe(5);
+  });
+
+  test('an operator value is never the half that gets dropped', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/42', {
+      meanDepthM: 4,
+      meanDepthSource: 'operator' as const,
+    });
+    await t.mutation(internal.waterBodies.importDepths, {
+      depths: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/42',
+          maxDepthM: 2,
+          maxDepthSource: 'lagos_us' as const,
+        },
+      ],
+    });
+    const row = await t.run((ctx) => ctx.db.get(body));
+    expect(row?.meanDepthM).toBe(4); // rung 1 stands…
+    expect(row?.maxDepthM).toBeUndefined(); // …and the contradicting offer is what gives way
+  });
+
+  test('the geometric join enforces it too — one rule, both entry points', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedMatchableBody(t);
+    await t.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [
+        {
+          key: 'hylak/5',
+          point: { lat: 44, lng: -72 },
+          areaSqM: 1e7,
+          meanDepthM: 40,
+          meanDepthSource: 'hydrolakes_modeled' as const,
+          maxDepthM: 8,
+          maxDepthSource: 'globathy' as const,
+        },
+      ],
+    });
+    const row = await t.run((ctx) => ctx.db.get(body));
+    // Asserted positively, so the test proves the join matched rather than passing on a miss.
+    expect(row?.meanDepthM).toBe(40); // hydrolakes_modeled outranks globathy
+    expect(row?.maxDepthM).toBeUndefined();
+  });
+
+  test('a consistent pair is left entirely alone', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/42');
+    const result = await t.mutation(internal.waterBodies.importDepths, {
+      depths: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/42',
+          meanDepthM: 4,
+          meanDepthSource: 'lagos_us' as const,
+          maxDepthM: 18,
+          maxDepthSource: 'globathy' as const,
+        },
+      ],
+    });
+    const row = await t.run((ctx) => ctx.db.get(body));
+    expect(row?.meanDepthM).toBe(4);
+    expect(row?.maxDepthM).toBe(18);
+    expect(result.inverted).toBe(0);
+  });
+});

@@ -3,10 +3,11 @@
 *The body-level depth attribute the D56 decay model was designed around and never got, plus the
 consumer that makes it mean something. One ETL, one core change, one display surface.*
 
-> **Status: ✅ BUILT 2026-07-30 · reviewed 2026-07-31** — every suite green (core 1,029 · convex 819 ·
+> **Status: ✅ BUILT 2026-07-30 · reviewed 2026-07-31** — every suite green (core 1,029 · convex 826 ·
 > web 222 · mobile 79 · etl 33 · lake-depth 29 · admin-areas 14 · design 61). The review pass found one
-> real defect and five smaller ones, all fixed on the branch — see *§What the review found in the build*,
-> which is where the D68 amendment 2 (the three-state operator override) is written up.
+> real defect and five smaller ones, and Greptile's pass on PR #33 found a seventh — all fixed on the
+> branch. See *§What the review found in the build*, which is where the D68 amendment 2 (the three-state
+> operator override) and the pair invariant are written up.
 > **The ETL has not been run yet**: it needs three
 > third-party downloads and a licence/column confirmation on the first pass (see *§Open questions*), so
 > the code path is tested but no real depth is loaded. Not device-tested; prod deferred, as every phase
@@ -400,6 +401,24 @@ becomes a `max`, never a mean.** OSM documents `depth` loosely enough that mappe
 and the mean is the field that *wins* the shallow classification — read as a max it enters through the
 generous 7 m fallback instead, which is the direction that keeps a shallow lake shallow. Only the
 explicit `depth:mean` is trusted as a mean.
+
+**7. Greptile (PR #33) found the sibling of 3: the guard was on the value, not on the pair.** The ladder
+resolves each measurement independently, which is D68 working as intended — mean and max routinely come
+from different rungs. But *independently resolved* is not *jointly valid*: two sources that matched
+slightly different lakes, or two models that disagree, can each win their own slot and leave `mean 30 m`
+beside `max 6 m`. `setDepth` had refused a transposed pair from day one; the automated path had no such
+check, so an inverted pair could be persisted, displayed as `mean 98 ft · max 20 ft`, **and** used to
+classify the body — the contradicted mean being the half that wins the classification.
+
+A mean cannot exceed a max in one basin, so the pair is not a disagreement to average out: one of the two
+numbers describes something else. The ladder therefore settles it the way it settles everything —
+**the better-ranked measurement wins.** When the loser is an incumbent it is *retracted* rather than left
+in place, because leaving it keeps the impossible pair live; clearing its rung means a later run refills
+it once the sources agree, and `winsLadder` guarantees the loser is never an operator's number. **On a
+tie the mean goes**, which is the conservative half rather than an arbitrary one: dropping it routes the
+body through the generous `SHALLOW_MAX_DEPTH_M` fallback, the direction that keeps a shallow lake
+classified shallow when we are least sure (D69's asymmetry). Counted and named per lake, since a cluster
+of inversions in one area is a *join* problem wearing a depth problem's clothes.
 
 *Deferred out of the review, folded into N6c:* the per-lake **record timeline** (`moderation.listActions`
 already answers the query — this is a UI component) and **per-run ETL summaries** stored rather than

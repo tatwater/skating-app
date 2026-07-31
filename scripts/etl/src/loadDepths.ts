@@ -51,7 +51,7 @@ function main(): void {
     return;
   }
 
-  const totals = { updated: 0, unmatched: 0, skipped: 0, operatorHeld: 0 };
+  const totals = { updated: 0, unmatched: 0, skipped: 0, operatorHeld: 0, inverted: 0 };
   for (let i = 0; i < depths.length; i += MAX_BATCH_COUNT) {
     const stdout = execFileSync(
       'pnpm',
@@ -75,12 +75,14 @@ function main(): void {
     totals.unmatched += result.unmatched ?? 0;
     totals.skipped += result.skipped ?? 0;
     totals.operatorHeld += result.operatorHeld ?? 0;
+    totals.inverted += result.inverted ?? 0;
   }
 
   process.stderr.write(
     `[etl] depth tags loaded: ${totals.updated}/${depths.length} stamped · ` +
       `${totals.skipped} already had a better source · ${totals.unmatched} matched no body · ` +
-      `${totals.operatorHeld} held by a moderator's override\n`,
+      `${totals.operatorHeld} held by a moderator's override · ` +
+      `${totals.inverted} contradictory mean/max pairs resolved\n`,
   );
 }
 

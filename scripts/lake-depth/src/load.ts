@@ -33,6 +33,8 @@ interface MatchResult {
   noAreaGate: number;
   /** Measurements a moderator owns — a reading or an explicit rejection. Never overwritten (D68). */
   operatorHeld: number;
+  /** Lakes where a mean exceeded a max, so the ladder had to drop one of the two. */
+  inverted: number;
   rejects: { key: string; reason: string }[];
 }
 
@@ -127,6 +129,7 @@ function main(): void {
     skipped: 0,
     noAreaGate: 0,
     operatorHeld: 0,
+    inverted: 0,
   };
   const rejects: { key: string; reason: string }[] = [];
   let applied = 0;
@@ -139,6 +142,7 @@ function main(): void {
       totals.skipped += result.skipped;
       totals.noAreaGate += result.noAreaGate ?? 0;
       totals.operatorHeld += result.operatorHeld ?? 0;
+      totals.inverted += result.inverted ?? 0;
       rejects.push(...(result.rejects ?? []));
       applied++;
       if ((index + 1) % 20 === 0 || index + 1 === batches.length) {
@@ -166,7 +170,8 @@ function main(): void {
   // the match rate alone — which is the shape of every silent-cap bug this repo has already hit once.
   process.stderr.write(
     `[lake-depth] of those: ${totals.noAreaGate} matched with no area gate (one side reported no area) · ` +
-      `${totals.operatorHeld} held by a moderator's override\n`,
+      `${totals.operatorHeld} held by a moderator's override · ` +
+      `${totals.inverted} contradictory mean/max pairs resolved\n`,
   );
   const SHOWN = 30;
   for (const r of rejects.slice(0, SHOWN)) {

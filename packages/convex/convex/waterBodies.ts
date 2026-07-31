@@ -1160,6 +1160,7 @@ export const importDepths = internalMutation({
     let unmatched = 0;
     let skipped = 0;
     let operatorHeld = 0;
+    let inverted = 0;
     const rejects: { key: string; reason: string }[] = [];
     for (const item of depths) {
       const body = await ctx.db
@@ -1185,8 +1186,12 @@ export const importDepths = internalMutation({
       for (const bad of outcome.rejectedValues) {
         rejects.push({ key: item.externalId, reason: `implausible depth (${bad} m), not stored` });
       }
+      for (const clash of outcome.inversions) {
+        inverted++;
+        rejects.push({ key: item.externalId, reason: `contradictory pair on ${clash}` });
+      }
     }
-    return { updated, unmatched, skipped, operatorHeld, rejects };
+    return { updated, unmatched, skipped, operatorHeld, inverted, rejects };
   },
 });
 
@@ -1205,6 +1210,8 @@ interface LadderOutcome {
   operatorHeld: boolean;
   /** An offered number that wasn't a plausible depth, per measurement, with the value that failed. */
   rejectedValues: string[];
+  /** A mean-over-max contradiction the ladder resolved, described for the run log. */
+  inversions: string[];
 }
 
 /**
@@ -1217,6 +1224,14 @@ interface LadderOutcome {
  * boundary and a third-party column with a different fill value (`-999`, `9999`) is a version bump away.
  * `setDepth` has refused implausible depths since day one; the automated path had nothing, which put the
  * weaker guard on the input nobody reads before it lands.
+ *
+ * **And it is where the pair is kept consistent** (Greptile, PR #33). The ladder resolves each
+ * measurement independently — that is D68 working as designed, since mean and max routinely come from
+ * different rungs — but *independently resolved* is not the same as *jointly valid*. Two sources that
+ * matched slightly different lakes, or two models that disagree, can each win their own slot and leave
+ * `mean 30 m` beside `max 6 m`: impossible for one basin, displayed to skaters as fact, and worse than
+ * cosmetic because `isShallowDepth` prefers the mean, so the contradicted number is the one that decides
+ * the safety classification. See `resolveInversion`.
  */
 async function applyDepthLadder(
   ctx: MutationCtx,
@@ -1225,6 +1240,7 @@ async function applyDepthLadder(
 ): Promise<LadderOutcome> {
   const patch: Partial<Doc<'waterBodies'>> = {};
   const rejectedValues: string[] = [];
+  const inversions: string[] = [];
   let operatorHeld = false;
 
   const consider = (
@@ -1256,9 +1272,83 @@ async function applyDepthLadder(
     patch.maxDepthSource = max.source;
   }
 
-  if (Object.keys(patch).length === 0) return { changed: false, operatorHeld, rejectedValues };
+  // The pair this write would leave behind, incumbents included — an inversion is just as reachable by
+  // one measurement landing beside an older one as by a record carrying both.
+  const drop = resolveInversion(
+    { applied: mean, storedM: body.meanDepthM, storedSource: body.meanDepthSource },
+    { applied: max, storedM: body.maxDepthM, storedSource: body.maxDepthSource },
+    body.name,
+    inversions,
+  );
+  // Dropping is the same write whether the loser arrived in this offer or was already stored: clear the
+  // value *and* its rung. For an incumbent that is a retraction rather than a refusal — deliberate,
+  // since leaving it keeps an impossible pair on display and in the classifier, and clearing the rung
+  // lets a later run refill it once the sources agree. `winsLadder` guarantees it is never an operator's.
+  if (drop === 'mean') {
+    patch.meanDepthM = undefined;
+    patch.meanDepthSource = undefined;
+  } else if (drop === 'max') {
+    patch.maxDepthM = undefined;
+    patch.maxDepthSource = undefined;
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return { changed: false, operatorHeld, rejectedValues, inversions };
+  }
   await ctx.db.patch(body._id, patch);
-  return { changed: true, operatorHeld, rejectedValues };
+  return { changed: true, operatorHeld, rejectedValues, inversions };
+}
+
+/** One measurement as the pair check sees it: what would be written, or what is already there. */
+interface PairSide {
+  applied?: { valueM: number; source: DepthSource };
+  storedM?: number;
+  storedSource?: DepthSource;
+}
+
+/**
+ * Decide which half of a contradictory depth pair to drop, or `null` when the pair is fine.
+ *
+ * A mean can never exceed a max **in one basin**, so an inverted pair is not a rounding disagreement —
+ * it is proof that one of the two numbers describes something else: a different lake the geometric join
+ * landed on, or a model whose shoreline differs enough to change the answer. One of them is wrong and we
+ * cannot tell which from the numbers alone, so the ladder decides it the way it decides everything else.
+ *
+ * **The better-ranked measurement wins**, because that is what the ladder means: a measured LAGOS-US max
+ * beats a modelled HydroLAKES mean that contradicts it, in either direction of arrival. When the loser is
+ * an incumbent it is *retracted* — deliberately, since leaving it would keep the impossible pair on
+ * display and feeding the classifier, and clearing its rung lets a later run refill it once the sources
+ * agree. An `operator` value can never be the loser: `winsLadder` has already refused any offer that
+ * would contradict one.
+ *
+ * **On a tie the mean goes**, which is the conservative half of the choice rather than an arbitrary one.
+ * The mean *wins* the shallow classification when present (`isShallowDepth`), so dropping it routes the
+ * body through the generous `SHALLOW_MAX_DEPTH_M` fallback instead — the direction that keeps a shallow
+ * lake classified shallow when we are least sure (D69's asymmetry: a false positive makes a warning
+ * linger, a false negative loses the signal outright).
+ */
+function resolveInversion(
+  meanSide: PairSide,
+  maxSide: PairSide,
+  bodyName: string,
+  inversions: string[],
+): 'mean' | 'max' | null {
+  const resolve = (side: PairSide) =>
+    side.applied ??
+    (side.storedM !== undefined ? { valueM: side.storedM, source: side.storedSource } : undefined);
+  const nextMean = resolve(meanSide);
+  const nextMax = resolve(maxSide);
+  if (!nextMean || !nextMax || nextMean.valueM <= nextMax.valueM) return null;
+
+  // A measurement carrying no source at all ranks worst — it has nothing to argue with.
+  const rank = (source?: DepthSource) =>
+    source === undefined ? Number.MAX_SAFE_INTEGER : DEPTH_SOURCE_RANK[source];
+  const dropped = rank(nextMean.source) < rank(nextMax.source) ? 'max' : 'mean';
+  inversions.push(
+    `"${bodyName}": mean ${nextMean.valueM} m (${nextMean.source ?? 'no source'}) exceeds max ` +
+      `${nextMax.valueM} m (${nextMax.source ?? 'no source'}) — dropped the ${dropped}`,
+  );
+  return dropped;
 }
 
 /**
@@ -1322,6 +1412,7 @@ export const matchAndImportDepths = internalMutation({
     let skipped = 0;
     let noAreaGate = 0;
     let operatorHeld = 0;
+    let inverted = 0;
     const rejects: { key: string; reason: string }[] = [];
 
     for (const lake of lakes) {
@@ -1378,8 +1469,21 @@ export const matchAndImportDepths = internalMutation({
           reason: `implausible depth (${bad} m) for "${body.name}", not stored`,
         });
       }
+      for (const clash of outcome.inversions) {
+        inverted++;
+        rejects.push({ key: lake.key, reason: `contradictory pair on ${clash}` });
+      }
     }
-    return { updated, unmatched, areaRejected, skipped, noAreaGate, operatorHeld, rejects };
+    return {
+      updated,
+      unmatched,
+      areaRejected,
+      skipped,
+      noAreaGate,
+      operatorHeld,
+      inverted,
+      rejects,
+    };
   },
 });
 

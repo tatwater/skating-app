@@ -156,11 +156,18 @@ exactly like one that stamped all of it if you only print totals. Rejections are
   from the lake editor if the import should win after all.
 - `implausible depth (…)` — an offered number that wasn't a plausible depth (non-positive, or past the
   400 m ceiling). Expect zero; a non-zero count means a source column changed its fill value.
+- `contradictory pair on "<lake>"` — a mean that exceeded a max, which is impossible in one basin and
+  therefore proof that one of the two numbers describes something else (a different lake the join landed
+  on, or two models whose shorelines disagree). The **better-ranked measurement wins** and the other is
+  dropped, so the row can never display `mean 98 ft · max 20 ft` or classify a lake from the contradicted
+  half. A cluster of these in one area is worth reading as a *join* problem, not a depth problem.
 - `already had a better source` — the ladder held. Normal on a re-run.
 
-The summary's second line reports **`matched with no area gate`**: matches where one side reported no
+The summary's second line reports **`matched with no area gate`** — matches where one side reported no
 area, so the 4× guard never ran. Those are un-checked matches rather than bad ones, and a run should say
-how many of its stamps went un-gated instead of leaving that to be inferred.
+how many of its stamps went un-gated instead of leaving that to be inferred. It also reports the
+**contradictory pairs resolved**, which is the same kind of number: expected to be non-zero, wrong if it
+is *large*, and invisible from the match rate alone.
 
 ### 5. Spot-check
 
