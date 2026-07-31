@@ -1251,6 +1251,14 @@ describe('hazards auto-merge', () => {
       via: 'proximity_alert',
     });
     expect(await t.run(async (ctx) => (await ctx.db.get(first))?.confirmCount)).toBe(1);
+
+    // The confirmer list follows the same chain the count does. Reading it off the argument instead
+    // would print the tombstone's confirmers under the survivor's count — two numbers about two
+    // different pins, one line apart.
+    const named = await alex.as.query(api.hazardConfirmations.listForHazard, {
+      hazardId: loser?._id as Id<'hazards'>,
+    });
+    expect(named.map((v) => v.displayName)).toEqual(['sam']);
   });
 
   test('never merges what a skater said was different', async () => {
@@ -1301,6 +1309,46 @@ describe('hazards auto-merge', () => {
     expect(after.every((h) => h._id !== loser?._id)).toBe(true);
   });
 
+  // The reversibility above is easy to get right for two pins mid-lake and easy to get wrong for
+  // three: recomputing the union from the survivor's *stored* footprint unions the answer with itself,
+  // so the pin a moderator just pulled out leaves its area behind and Unmerge does nothing to the
+  // outline it was pressed to undo. Every recomputation therefore starts from what was drawn.
+  test('unmerging one of three gives back exactly that pin’s area, and no more', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(5) }));
+    const twoPinEast = await t.run(
+      async (ctx) => (await ctx.db.get(first))?.bbox?.maxLng as number,
+    );
+    await kim.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(12) }));
+
+    const all = await t.run((ctx) => ctx.db.query('hazards').collect());
+    expect(all.filter((h) => h.mergedIntoHazardId !== undefined)).toHaveLength(2);
+    const furthestEast = all.find((h) => h.createdByUserId === kim.id);
+    const threePinEast = await t.run(
+      async (ctx) => (await ctx.db.get(first))?.bbox?.maxLng as number,
+    );
+    expect(threePinEast).toBeGreaterThan(twoPinEast);
+
+    await mod.as.mutation(api.hazards.unmerge, {
+      hazardId: furthestEast?._id as Id<'hazards'>,
+      reason: 'That eastern one is a separate lead.',
+    });
+
+    // Back to exactly the two-pin union — the third pin's reach east is gone, and the second pin's
+    // is not, because only the pin that was pulled out was pulled out.
+    const afterEast = await t.run(async (ctx) => (await ctx.db.get(first))?.bbox?.maxLng as number);
+    expect(afterEast).toBeLessThan(threePinEast);
+    expect(afterEast).toBeCloseTo(twoPinEast, 6);
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(2);
+  });
+
   test('every merge leaves an audit row, and the automatic ones name no actor', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', { role: 'moderator' });
@@ -1347,5 +1395,112 @@ describe('hazards auto-merge', () => {
     }));
     expect(rows.survivor?.status).toBe('archived');
     expect(rows.loser?.goneCount).toBe(0);
+  });
+
+  // The survivor chain is the one place a data bug could hang a query rather than answer it wrong, so
+  // the hop cap has to degrade into "we couldn't resolve this" — the same contract `resolveSurvivor`
+  // holds for merged water bodies (D36).
+  test('a merge cycle resolves to nothing rather than looping forever', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const second = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(5), dismissedDuplicateOf: first }),
+    );
+    // Only a bug could write this, which is exactly why the reader is capped rather than trusting.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(first, { mergedIntoHazardId: second });
+      await ctx.db.patch(second, { mergedIntoHazardId: first });
+    });
+
+    expect(await alex.as.query(api.hazards.get, { hazardId: first })).toBeNull();
+    expect(await alex.as.query(api.hazards.listClusterMembers, { hazardId: first })).toEqual([]);
+  });
+});
+
+/**
+ * Pooling scope (N5c / D77) — which rows are even eligible to be one hazard. The exclusions matter more
+ * than the matches: each one is a claim that some pin must *not* borrow another's evidence.
+ */
+describe('hazards cluster scope', () => {
+  const eastOf = (meters: number) => ({
+    type: 'Point' as const,
+    coordinates: [0.5 + meters / 111_320, 0.5],
+  });
+
+  // A pin the community voted healed must not read its freshness off a live neighbour — that is
+  // pooling in the unsafe direction by the back door, and the `status: 'active'` bound is what stops
+  // it. Asserted because the bound is a line in an index expression, not a visible guard.
+  test('an archived pin neither borrows a cluster nor lends itself to one', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const live = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    // 30 m apart: overlapping footprints, so they cluster — but under the merge bar, so they stay two.
+    const healed = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    expect(healed).not.toBe(live);
+    expect(
+      (await alex.as.query(api.hazards.get, { hazardId: live }))?.clusterMemberIds,
+    ).toHaveLength(2);
+
+    await t.run((ctx) => ctx.db.patch(healed, { status: 'archived' }));
+
+    // The live pin is alone again — an archived sighting is not evidence that something is there now.
+    const stillHere = await alex.as.query(api.hazards.get, { hazardId: live });
+    expect(stillHere?.clusterMemberIds).toBeUndefined();
+    expect(stillHere?.clusterConfirmCount).toBeUndefined();
+    // And the archived pin reads its own row rather than the live one's clock.
+    const gone = await alex.as.query(api.hazards.get, { hazardId: healed });
+    expect(gone?.clusterMemberIds).toBeUndefined();
+    expect(gone?.lastConfirmedAt).toBe(
+      await t.run(async (ctx) => (await ctx.db.get(healed))?.lastConfirmedAt),
+    );
+  });
+});
+
+/**
+ * The merges panel's read (N5c / D80). Its whole justification is that auto-merge can be watched, so
+ * the read backing it must not be the kind that gets slower every week the app is alive.
+ */
+describe('hazards.listRecentMerges', () => {
+  async function seedAction(
+    t: ReturnType<typeof harness>,
+    createdAt: number,
+    extra: Record<string, unknown> = {},
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        action: 'merge_hazards' as const,
+        targetType: 'hazard' as const,
+        targetId: 'h-old',
+        reason: 'Footprints overlap above the automatic-merge bar (D80).',
+        createdAt,
+        ...extra,
+      }),
+    );
+  }
+
+  test('reads a window, so an ageing audit log never makes the panel slower', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const recent = await seedAction(t, Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await seedAction(t, Date.now() - 200 * 24 * 60 * 60 * 1000);
+
+    const rows = await mod.as.query(api.hazards.listRecentMerges, {});
+    // Last winter's merges are history and live on the per-day chart; this panel is recent detail.
+    expect(rows.map((r) => r.actionId)).toEqual([recent]);
+  });
+
+  test('is moderator-only', async () => {
+    const t = harness();
+    const member = await seedUser(t, 'member');
+    await expect(member.as.query(api.hazards.listRecentMerges, {})).rejects.toThrow();
   });
 });

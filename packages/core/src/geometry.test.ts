@@ -17,6 +17,7 @@ import {
   polygonBBox,
   polygonDistanceMeters,
   polygonIoU,
+  polygonUnion,
   representativePoint,
   ringSelfIntersects,
   simplifyPath,
@@ -359,6 +360,59 @@ describe('distanceToPolygonMeters (offline auto-select / Phase 9 proximity)', ()
         },
       ),
     );
+  });
+});
+
+/**
+ * The consensus footprint (N5c / D80) — overlapping duplicates drawn as one outline rather than as
+ * stacked halos. Two properties carry the safety argument: the union covers every member (so
+ * collapsing pins can only ever warn about *more* ice), and a clipper failure returns `null` so the
+ * caller draws the members individually rather than losing one.
+ */
+describe('polygonUnion (N5c consensus rendering)', () => {
+  const A = rect({ minLng: 0, minLat: 0, maxLng: 2, maxLat: 2 });
+  const B = rect({ minLng: 1, minLat: 1, maxLng: 3, maxLat: 3 });
+
+  it('returns nothing to draw for an empty list', () => {
+    expect(polygonUnion([])).toBeNull();
+  });
+
+  it('hands a lone polygon straight back — a cluster of one is not a merge', () => {
+    expect(polygonUnion([A])).toBe(A);
+  });
+
+  it('covers every member, which is what makes a merge safe to automate', () => {
+    const merged = polygonUnion([A, B]);
+    expect(merged).not.toBeNull();
+    // Corners of both inputs, including the two that only one of them reaches.
+    for (const corner of [
+      { lat: 0.1, lng: 0.1 },
+      { lat: 2.9, lng: 2.9 },
+      { lat: 1.5, lng: 1.5 },
+    ]) {
+      expect(pointInPolygon(corner, merged as Polygon | MultiPolygon)).toBe(true);
+    }
+  });
+
+  it('produces one shape where the members overlap, not a stack of parts', () => {
+    // A fill layer blends each part separately, so a MultiPolygon of the members would darken where
+    // they agree and seam where they meet — reading as several hazards at the moment we say there is
+    // one.
+    expect(polygonUnion([A, B])?.type).toBe('Polygon');
+  });
+
+  it('keeps disjoint members as separate parts rather than inventing ice between them', () => {
+    const far = rect({ minLng: 10, minLat: 10, maxLng: 11, maxLat: 11 });
+    const merged = polygonUnion([A, far]);
+    expect(merged?.type).toBe('MultiPolygon');
+    expect(pointInPolygon({ lat: 5, lng: 5 }, merged as MultiPolygon)).toBe(false);
+  });
+
+  it('fails open on a degenerate member instead of throwing', () => {
+    // `null` is a signal to draw the members individually — more outlines, never fewer. Silently
+    // dropping a hazard because a polygon operation went wrong is the one outcome D3 forbids.
+    const degenerate = { type: 'Polygon', coordinates: [] } as unknown as Polygon;
+    expect(() => polygonUnion([A, degenerate])).not.toThrow();
   });
 });
 

@@ -289,6 +289,82 @@ describe('runRollup — bounty funnel', () => {
   });
 });
 
+/**
+ * Auto-merge is the one mechanism in the app that changes a safety row with no human in the loop, and
+ * §14 says to watch the unmerge rate through the first winter. That makes this rollup the empirical
+ * half of the merge bar: if it miscounts, the only evidence `AUTOMERGE_MIN_FOOTPRINT_IOU` is set right
+ * is wrong too.
+ */
+describe('runRollup — hazard merges', () => {
+  const seedAction = (
+    t: ReturnType<typeof harness>,
+    action: 'merge_hazards' | 'unmerge_hazards',
+    extra: Record<string, unknown> = {},
+  ) =>
+    t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        action,
+        targetType: 'hazard' as const,
+        targetId: 'h1',
+        reason: 'Footprints overlap above the automatic-merge bar (D80).',
+        createdAt: Date.now(),
+        ...extra,
+      }),
+    );
+
+  test('separates the machine’s merges from a moderator’s, and counts what was undone', async () => {
+    const t = harness();
+    const mod = await seedProfile(t, 'mod');
+    await seedAction(t, 'merge_hazards'); // no actor ⇒ the machine did it
+    await seedAction(t, 'merge_hazards');
+    await seedAction(t, 'merge_hazards', { actorId: mod });
+    await seedAction(t, 'unmerge_hazards', { actorId: mod });
+
+    await doRollup(t);
+    // A moderator merging two pins by hand is a healthy signal; an *automatic* merge they later undo
+    // is the one that says the bar is too low, so the three can never be added up into one number.
+    expect((await snapshot(t, 'hazard_merges', metricDay(Date.now())))?.meta).toEqual({
+      'merged:automatic': 2,
+      'merged:moderator': 1,
+      unmerged: 1,
+    });
+  });
+
+  test('writes a snapshot on a quiet day rather than leaving a hole in the series', async () => {
+    const t = harness();
+    await doRollup(t);
+    // A missing point and a zero read very differently on a chart, and only one of them is true.
+    expect((await snapshot(t, 'hazard_merges', metricDay(Date.now())))?.meta).toEqual({});
+  });
+
+  test('ignores moderation actions that are not merges', async () => {
+    const t = harness();
+    const mod = await seedProfile(t, 'mod');
+    await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: mod,
+        action: 'hide' as const,
+        targetType: 'hazard' as const,
+        targetId: 'h2',
+        reason: 'Not a real hazard.',
+        createdAt: Date.now(),
+      }),
+    );
+    await doRollup(t);
+    expect((await snapshot(t, 'hazard_merges', metricDay(Date.now())))?.meta).toEqual({});
+  });
+
+  test('re-running the day overwrites rather than doubling', async () => {
+    const t = harness();
+    await seedAction(t, 'merge_hazards');
+    await doRollup(t);
+    await doRollup(t);
+    expect((await snapshot(t, 'hazard_merges', metricDay(Date.now())))?.meta).toEqual({
+      'merged:automatic': 1,
+    });
+  });
+});
+
 describe('runRollup — photo orphans', () => {
   const seedPhoto = (
     t: ReturnType<typeof harness>,
