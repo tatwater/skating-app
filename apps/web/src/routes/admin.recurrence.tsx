@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { hazardTypeLabel } from '@skating/core';
+import { hazardTypeLabel, relativeWhen } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
@@ -24,14 +24,6 @@ import { Card, CardContent } from '../components/ui/card';
  * is a worse cost than a page that grows into its name.
  */
 export const Route = createFileRoute('/admin/recurrence')({ component: AdminRecurrence });
-
-function relativeWhen(at: number): string {
-  const hours = (Date.now() - at) / 3_600_000;
-  if (hours < 1) return 'less than an hour ago';
-  if (hours < 24) return `${Math.round(hours)} h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? 'yesterday' : `${days} days ago`;
-}
 
 function AdminRecurrence() {
   const merges = useQuery(api.hazards.listRecentMerges, {});
@@ -74,7 +66,7 @@ function AdminRecurrence() {
                   ) : null}
                 </div>
                 <p className="text-foreground-muted text-xs">
-                  {relativeWhen(m.at)}
+                  {relativeWhen(m.at, Date.now())}
                   {m.survivorId ? ' · folded into the earlier sighting' : ''}
                 </p>
               </div>

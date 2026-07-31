@@ -113,7 +113,7 @@ async function refreshMergedFootprint(ctx: MutationCtx, survivor: Doc<'hazards'>
     // Nothing folded in any more (an unmerge emptied the chain): back to the pin's own footprint,
     // which is what `insertHazard` would have stored — a clip only when it actually removes area.
     const body = await ctx.db.get(survivor.waterBodyId);
-    const footprint = hazardFootprintOf(toCandidateShapeOnly(survivor));
+    const footprint = drawnFootprintOf(survivor);
     const clipped =
       body && footprint
         ? clipFootprintToBody(footprint, body.polygon as Polygon | MultiPolygon)
@@ -126,7 +126,7 @@ async function refreshMergedFootprint(ctx: MutationCtx, survivor: Doc<'hazards'>
   }
 
   const footprints = [survivor, ...chain]
-    .map((h) => hazardFootprintOf(toCandidateShapeOnly(h)))
+    .map(drawnFootprintOf)
     .filter((f): f is Polygon | MultiPolygon => f !== null);
   const merged = polygonUnion(footprints);
   if (!merged) return; // clipper failure ⇒ leave the survivor's own footprint, which warns about less
@@ -139,9 +139,27 @@ async function refreshMergedFootprint(ctx: MutationCtx, survivor: Doc<'hazards'>
   });
 }
 
-/** The minimum `hazardFootprintOf` needs — id and time are irrelevant to a footprint. */
-function toCandidateShapeOnly(hazard: Doc<'hazards'>) {
-  return { ...toCandidate(hazard), id: hazard._id, firstReportedAt: hazard.firstReportedAt };
+/**
+ * The footprint of what this person actually **drew** — the stored `clippedFootprint` deliberately
+ * ignored.
+ *
+ * That exclusion is the whole correctness of a re-merge. Everywhere else `clippedFootprint` is the
+ * footprint, and reading it here is the obvious thing to write — but on a survivor it already *is* the
+ * union, so feeding it back in unions the answer with itself and the result can only ever grow. Two
+ * consequences, both wrong and both invisible in a fixture that sits mid-lake:
+ *
+ * - unmerging one of three pins would leave the removed pin's area in the survivor, so the moderator's
+ *   Unmerge does nothing to the outline it was pressed to undo;
+ * - unmerging the last pin near a shore would re-clip the *union* rather than the pin's own shape, so
+ *   the widened footprint is simply stored again.
+ *
+ * Reading `geometry` + `radiusMeters`/`bufferMeters` instead means every recomputation starts from what
+ * was drawn, which is the only thing a merge never edits — and is what makes `unmerge` reversible in
+ * the geometry as well as in the row.
+ */
+function drawnFootprintOf(hazard: Doc<'hazards'>): Polygon | MultiPolygon | null {
+  const { clippedFootprint: _stored, ...drawn } = toCandidate(hazard);
+  return hazardFootprintOf(drawn);
 }
 
 /**

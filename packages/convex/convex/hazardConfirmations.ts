@@ -162,8 +162,7 @@ async function maybeAwardHazardCorroboration(
   const scope = await clusterScopeFor(ctx, hazard);
   const consensus = (await poolConsensus(ctx, scope)).get(hazard._id);
   // No pooled entry means a singleton — read the row, exactly as this did before N5c.
-  const witnesses = consensus?.confirmCount ?? hazard.confirmCount;
-  if (witnesses < HAZARD_CORROBORATION_MIN_CONFIRMS) return;
+  if ((consensus?.confirmCount ?? hazard.confirmCount) < HAZARD_CORROBORATION_MIN_CONFIRMS) return;
 
   const byId = new Map(scope.map((h) => [h._id as string, h]));
   const members = (consensus?.memberIds ?? [hazard._id])
@@ -171,6 +170,11 @@ async function maybeAwardHazardCorroboration(
     .filter((h): h is Doc<'hazards'> => h !== undefined);
 
   for (const member of members) {
+    // No per-member re-check of the bar, and that is a fact about `clusterConsensus` rather than a
+    // shortcut: every member's author is in the witness set by construction, so every member's count
+    // is `witnesses - 1`. The number is uniform across a cluster, and one member clearing the bar
+    // means all of them have.
+    //
     // Keyed on the member's **own** id, so the idempotency stays per pin and a reporter cannot farm
     // the award by drawing the same ridge twice — their second pin joins the same cluster, whose
     // witness count already excludes them.
@@ -329,9 +333,14 @@ export const listForHazard = query({
   handler: async (ctx, { hazardId }) => {
     const hazard = await loadVisibleHazard(ctx, hazardId);
     if (!hazard) return [];
+    // **The resolved id, not the argument** (D80). `loadVisibleHazard` follows the merge chain, so a
+    // permalink to a folded-away pin renders the survivor — and reading votes off the argument would
+    // then list the *tombstone's* confirmers under the survivor's count, two numbers about two
+    // different pins sitting one line apart. `confirm` resolves the same way, so this is simply where
+    // those votes now live.
     const votes = await ctx.db
       .query('hazardConfirmations')
-      .withIndex('by_hazard', (q) => q.eq('hazardId', hazardId))
+      .withIndex('by_hazard', (q) => q.eq('hazardId', hazard._id))
       .collect();
     // One profile read per distinct confirmer, cached — a hazard the community is actively
     // maintaining is exactly the one with the most votes, so this must not be a read per *vote*.

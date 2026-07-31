@@ -407,7 +407,15 @@ export function HazardCapture() {
     );
   }
 
-  async function post() {
+  /**
+   * `dismissed` is an argument rather than a state read so *"no, this is a different hazard"* files the
+   * pin in the same tap that dismisses the nudge — §B1 promises one tap and no argument, and a second
+   * Done press is the argument, just quieter. It also avoids the real bug in the alternative: a
+   * `setState` isn't visible to the call that follows it, so re-posting from the handler would re-raise
+   * the nudge it just answered. On mobile that matters twice over, since this fires with a cold phone
+   * in a glove.
+   */
+  async function post(dismissed: string | null = dismissedDuplicateOf) {
     const shape = hazardDraft ? draftToShape(hazardDraft) : null;
     if (!hazardDraftType || !shape || !capturedBodyId) return;
 
@@ -416,7 +424,7 @@ export function HazardCapture() {
     // case the nudge simply doesn't fire and the pin is filed — failing open, because a skater on the
     // ice must never be blocked by something we couldn't check.
     const candidate =
-      dismissedDuplicateOf === null && liveHazards
+      dismissed === null && liveHazards
         ? findDuplicateCandidate(
             {
               type: hazardDraftType,
@@ -464,9 +472,7 @@ export function HazardCapture() {
         ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
         ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
         // Rides along so auto-merge can't overrule a person who was standing on the ice looking at it.
-        ...(dismissedDuplicateOf
-          ? { dismissedDuplicateOf: dismissedDuplicateOf as Id<'hazards'> }
-          : {}),
+        ...(dismissed ? { dismissedDuplicateOf: dismissed as Id<'hazards'> } : {}),
       });
       // The upload succeeded, so the persisted copies are now dead weight. `reset()` frees them.
       reset();
@@ -958,8 +964,11 @@ export function HazardCapture() {
                 size="$5"
                 disabled={saving}
                 onPress={() => {
+                  // One tap: dismiss *and* post. The id goes straight to `post` rather than being
+                  // waited for through state, so the pin lands on this tap and not the next one.
                   setDismissedDuplicateOf(nudge.hazardId);
                   setNudge(null);
+                  void post(nudge.hazardId);
                 }}
               >
                 {DUPLICATE_NUDGE_DISTINCT}
@@ -972,7 +981,9 @@ export function HazardCapture() {
               color={postable ? '$primaryForeground' : undefined}
               disabled={!postable || saving}
               opacity={postable ? 1 : 0.5}
-              onPress={post}
+              // Wrapped, not passed: the press handler is given a gesture event, and `post`'s first
+              // argument is the dismissed-duplicate id.
+              onPress={() => post()}
             >
               {saving ? 'Posting…' : 'Done'}
             </Button>

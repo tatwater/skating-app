@@ -255,7 +255,11 @@ export const create = mutation({
         if (existing.createdByUserId !== profile._id) {
           throw new ConvexError('Idempotency key conflict');
         }
-        return existing._id;
+        // Through the merge chain, for the same reason the non-replay path returns the survivor: the
+        // pin this key created may since have been folded into another, and handing a flush retry a
+        // tombstone would send the client to a row the map doesn't draw. `null` can't happen for a row
+        // we just read, but a broken chain falls back to the id we have rather than throwing.
+        return (await resolveHazardSurvivor(ctx, existing._id))?._id ?? existing._id;
       }
     }
 
@@ -753,20 +757,37 @@ export const listClusterMembers = query({
 });
 
 /**
+ * How far back the merges panel looks. A window, because the alternative isn't bounded (below).
+ *
+ * Long enough to hold a whole winter of merges — which is the period an operator is actually watching,
+ * per §14's *"watch the unmerge-rate chart in the first winter"* — and short enough that the scan is
+ * bounded by a season's moderation volume rather than by the lifetime of an append-only table. The
+ * per-day series on `/admin/tuning` is where longer horizons are read; this page is the recent detail.
+ */
+const MERGE_AUDIT_WINDOW_DAYS = 120;
+
+/**
  * Recent automatic merges, for the operator panel that makes auto-merge auditable (D80).
  *
  * **This panel is the reason automating the merge is acceptable at all.** A mechanism that folds one
  * safety pin into another without anywhere to look at what it did is a mechanism nobody can check; the
  * bar is a guess until somebody watches it work, and the unmerge rate is the only empirical evidence
- * that it is set right. Bounded read off `by_target`-free ordering — the audit table is append-only
- * and this takes the newest page.
+ * that it is set right.
+ *
+ * **Bounded by a time window, not by `take`.** A `filter` before a `take` reads rows until it has
+ * collected enough *matches*, so on a corpus with few merges — which is every corpus at the moment —
+ * "the newest 50" walks the entire audit log to find them, and that log only ever grows. `by_created_at`
+ * (added for the 7b rollup, and earning its keep twice) turns the read into "this season's moderation
+ * actions", which is the Phase 7b shape: a scan bounded by a window nobody can outgrow by waiting.
  */
 export const listRecentMerges = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) => {
     await requireContributorRole(ctx, 'moderator');
+    const since = Date.now() - MERGE_AUDIT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
     const rows = await ctx.db
       .query('moderationActions')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', since))
       .order('desc')
       .filter((q) =>
         q.or(q.eq(q.field('action'), 'merge_hazards'), q.eq(q.field('action'), 'unmerge_hazards')),

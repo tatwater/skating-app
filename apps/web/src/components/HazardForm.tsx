@@ -662,7 +662,14 @@ export function HazardForm({
     setHazardDraft(resizeDraft(hazardDraft, direction));
   }
 
-  async function submit() {
+  /**
+   * `dismissed` is threaded as an argument rather than read off state so *"no, this is a different
+   * hazard"* can file the pin in the same tap that dismisses the nudge. §B1's promise is one tap and no
+   * argument; making the skater press Report a second time is the argument, just quieter. Passing it in
+   * also sidesteps the real bug in the alternative — a `setState` isn't visible to the call that
+   * follows it, so re-submitting from the handler would re-raise the nudge it just answered.
+   */
+  async function submit(dismissed: string | null = dismissedDuplicateOf) {
     const shape = hazardDraft ? draftToShape(hazardDraft) : null;
     if (!type) {
       setError('Pick what kind of hazard this is.');
@@ -682,7 +689,7 @@ export function HazardForm({
     // the moment the skater has actually decided what they are filing — and only if they haven't
     // already told us this is a different hazard.
     const candidate =
-      dismissedDuplicateOf === null && liveHazards
+      dismissed === null && liveHazards
         ? findDuplicateCandidate(
             {
               type,
@@ -734,9 +741,7 @@ export function HazardForm({
         ...(description.trim() ? { description: description.trim() } : {}),
         ...(photoIds.length > 0 ? { photoIds } : {}),
         // Rides along so auto-merge can't overrule a person who was standing on the ice looking at it.
-        ...(dismissedDuplicateOf
-          ? { dismissedDuplicateOf: dismissedDuplicateOf as Id<'hazards'> }
-          : {}),
+        ...(dismissed ? { dismissedDuplicateOf: dismissed as Id<'hazards'> } : {}),
       });
       setType(null);
       setDescription('');
@@ -810,8 +815,11 @@ export function HazardForm({
                 variant="outline"
                 disabled={submitting}
                 onClick={() => {
+                  // One tap: dismiss *and* file. The id is passed straight to `submit` rather than
+                  // waited for through state, so the pin lands on this tap and not the next one.
                   setDismissedDuplicateOf(nudge.hazardId);
                   setNudge(null);
+                  void submit(nudge.hazardId);
                 }}
               >
                 {DUPLICATE_NUDGE_DISTINCT}
@@ -846,7 +854,9 @@ export function HazardForm({
           onResize={resize}
           onRequestPlace={requestPlace}
           onDescriptionChange={setDescription}
-          onSubmit={submit}
+          // Wrapped, not passed: the button hands its click event to the handler, and `submit`'s first
+          // argument is the dismissed-duplicate id.
+          onSubmit={() => submit()}
           onCancel={onClose}
         />
       </DialogContent>
