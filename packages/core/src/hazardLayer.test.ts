@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { applyDraftMapClick, draftForType, type HazardDraft, resizeDraft } from './hazardDraft';
 import {
   bodyFeaturesToFeatureCollection,
+  CONFIRMED_HAZARD_FILTER,
   DRAFT_VERTEX_DOT_LIMIT,
   FRESHNESS_FILL_OPACITY,
   hazardColorExpression,
@@ -9,6 +10,8 @@ import {
   hazardFillOpacityExpression,
   hazardsToFeatureCollection,
   type MappableHazard,
+  PROVISIONAL_DASH_ARRAY,
+  PROVISIONAL_HAZARD_FILTER,
 } from './hazardLayer';
 
 const A = { lat: 44.4759, lng: -73.2121 };
@@ -284,6 +287,51 @@ describe('hazardDraftToFeatureCollection', () => {
       );
       expect(fc.features.map((f) => f.properties?.role)).toEqual(['vertex']);
     });
+  });
+});
+
+/**
+ * The provisional/confirmed outline split (D54), which exists because `line-dasharray` accepts no
+ * data expression — the native renderer refuses one and drops the property, taking the distinction
+ * with it. The two layers are only correct if their filters *partition* the source: every hazard
+ * drawn exactly once, no hazard drawn twice, and none dropped because a property was missing.
+ */
+describe('hazard outline filters', () => {
+  /**
+   * Just enough of MapLibre's filter grammar to evaluate the two expressions we ship — `==` / `!=`
+   * over a `['get', key]`. A missing property is `undefined`, which is what the absent case tests.
+   */
+  function evaluate(filter: unknown[], properties: Record<string, unknown>): boolean {
+    const [op, lhs, rhs] = filter as [string, ['get', string], unknown];
+    const value = properties[lhs[1]];
+    return op === '==' ? value === rhs : value !== rhs;
+  }
+
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['a confirmed hazard', { provisional: false }],
+    ['a provisional hazard', { provisional: true }],
+    // Not reachable through `hazardsToFeatureCollection`, which always writes the property — this is
+    // the defensive case, and the one where the two filters could silently disagree.
+    ['a hazard missing the property', {}],
+  ];
+
+  for (const [label, properties] of cases) {
+    it(`draws ${label} exactly once`, () => {
+      const drawn = [PROVISIONAL_HAZARD_FILTER, CONFIRMED_HAZARD_FILTER].filter((f) =>
+        evaluate(f, properties),
+      );
+      expect(drawn).toHaveLength(1);
+    });
+  }
+
+  // The conservative direction: a solid outline claims independent confirmation, so anything that
+  // isn't explicitly confirmed gets the soft dashed line (D3).
+  it('treats a missing property as provisional, not confirmed', () => {
+    expect(evaluate(PROVISIONAL_HAZARD_FILTER, {})).toBe(true);
+  });
+
+  it('keeps the dash pattern a literal, since an expression here is silently dropped', () => {
+    expect(PROVISIONAL_DASH_ARRAY.every((n) => typeof n === 'number')).toBe(true);
   });
 });
 

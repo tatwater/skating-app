@@ -19,11 +19,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { env } from '../lib/env';
 import {
   bodyFeaturesToFeatureCollection,
+  CONFIRMED_HAZARD_FILTER,
   HAZARD_PALETTE,
   hazardColorExpression,
   hazardDraftToFeatureCollection,
   hazardFillOpacityExpression,
   hazardsToFeatureCollection,
+  PROVISIONAL_DASH_ARRAY,
+  PROVISIONAL_HAZARD_FILTER,
 } from '../lib/hazardMap';
 import { useMapCanvas } from '../lib/mapCanvas';
 import { createPolygonDraw, type PolygonDrawControl } from '../lib/polygonDraw';
@@ -433,21 +436,30 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'fill-opacity': hazardFillOpacityExpression() as maplibregl.ExpressionSpecification,
         },
       });
+      // Dashed for provisional (one unverified report), solid once independently confirmed — the same
+      // soft/hard distinction the on-ice alert makes (D54). **Two layers, not one expression:**
+      // `line-dasharray` takes no data expression on either renderer, so the filters carry the
+      // distinction instead (see `PROVISIONAL_DASH_ARRAY` in core). The filters partition the source,
+      // so every hazard is still drawn exactly once.
       map.addLayer({
-        id: 'hazard-outline',
+        id: 'hazard-outline-provisional',
         type: 'line',
         source: 'hazards',
+        filter: PROVISIONAL_HAZARD_FILTER as maplibregl.FilterSpecification,
         paint: {
           'line-color': hazardColorExpression(hazardPalette) as maplibregl.ExpressionSpecification,
           'line-width': 1.5,
-          // Dashed for provisional (one unverified report), solid once independently confirmed —
-          // the same soft/hard distinction the on-ice alert makes (D54).
-          'line-dasharray': [
-            'case',
-            ['get', 'provisional'],
-            ['literal', [2, 2]],
-            ['literal', [1, 0]],
-          ],
+          'line-dasharray': [...PROVISIONAL_DASH_ARRAY],
+        },
+      });
+      map.addLayer({
+        id: 'hazard-outline-confirmed',
+        type: 'line',
+        source: 'hazards',
+        filter: CONFIRMED_HAZARD_FILTER as maplibregl.FilterSpecification,
+        paint: {
+          'line-color': hazardColorExpression(hazardPalette) as maplibregl.ExpressionSpecification,
+          'line-width': 1.5,
         },
       });
       // ── Recorded GPS tracks (Phase 8). The path someone actually skated, drawn under the hazard
