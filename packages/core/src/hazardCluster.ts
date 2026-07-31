@@ -95,27 +95,33 @@ export function hazardFamilyFor(type: HazardType): HazardFamily | null {
 }
 
 /** Every family, which is the within-season set: a duplicate is a duplicate whatever its type family. */
-export const DUPLICATE_FAMILIES: readonly HazardFamily[] = [
+export const DUPLICATE_FAMILIES = [
   'ridge',
   'spring',
   'gas',
   'reef',
   'volatile',
   'crack',
-];
+] as const satisfies readonly HazardFamily[];
 
 /**
  * The cross-season set — everything except `crack`. A recurring working crack is not a permanent
  * feature of a lake, so there is nothing for a recurrence record to be *about*; collapsing two of
  * today's crack pins into one is still worth doing, which is why the two lists differ.
  */
-export const RECURRENCE_FAMILIES: readonly HazardFamily[] = [
+export const RECURRENCE_FAMILIES = [
   'ridge',
   'spring',
   'gas',
   'reef',
   'volatile',
-];
+  // `as const`, not a widened annotation: the Convex validator needs the literal tuple to build the
+  // `hazardRecurrence.family` union, so a `readonly HazardFamily[]` here would force the schema to
+  // hand-write the same five strings — the second copy this whole phase exists to avoid.
+] as const satisfies readonly HazardFamily[];
+
+/** The families a cross-season record can be about — the stored `hazardRecurrence.family` union. */
+export type RecurrenceFamily = (typeof RECURRENCE_FAMILIES)[number];
 
 /**
  * Within a season, how close two footprints must come to be the same hazard (D77).
