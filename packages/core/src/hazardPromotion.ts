@@ -95,14 +95,25 @@ export function promotionPriority(candidate: PromotionCandidate): number {
   return clamp01(score - contradiction * CORROBORATION_SHARE);
 }
 
-/** Confirmations past this add nothing: the question they answer is "was it real", not "how big". */
-const CORROBORATION_CAP = 3;
+/**
+ * Confirmations past this add nothing: the question they answer is "was it real", not "how big".
+ *
+ * Exported so the cross-season ranking reads the same number (N5c / §C5). Two rankings that disagreed
+ * about how much a third confirmation is worth would put the same hazard in two different places on two
+ * halves of one operator surface.
+ */
+export const CORROBORATION_CAP = 3;
 
 /** How much of the score corroboration can move. The rest is the decay tier — the physical signal. */
 const CORROBORATION_SHARE = 0.3;
 
-/** Tier → how permanent the research says that behavior is (`hazardDecay`'s A/B/C/D groupings). */
-const TIER_WEIGHT: Record<'A' | 'B' | 'C' | 'D', number> = {
+/**
+ * Tier → how permanent the research says that behavior is (`hazardDecay`'s A/B/C/D groupings).
+ *
+ * Exported for the same reason as `CORROBORATION_CAP`: the recurrence score reuses it, so the two
+ * rankings cannot end up disagreeing about what a tier *means*.
+ */
+export const TIER_WEIGHT: Record<'A' | 'B' | 'C' | 'D', number> = {
   A: 0,
   B: 0.25,
   C: 0.7,
