@@ -210,6 +210,24 @@ polygon: geojson             // Polygon / MultiPolygon (rivers: the reach/segmen
 bbox: { minLat, minLng, maxLat, maxLng }  // prefilter index
 centroid: { lat, lng }       // geospatial point index
 surfaceAreaSqM?: number      // from NHD/OSM, or estimated for user shapes
+// ── Depth (N6a / D68). Provenance is per *measurement*: mean and max routinely come from
+//    different rungs, so one shared source field could not be honest.
+meanDepthM?: number
+maxDepthM?: number
+meanDepthSource?: enum(operator, state_agency, lagos_us, hydrolakes, globathy, osm_tag)
+maxDepthSource?: enum(operator, state_agency, lagos_us, hydrolakes, globathy, osm_tag)
+depthSourceNote?: string     // public evidence behind an `operator` depth (D68 amendment)
+// ── Derived profile stats (N6c / D70). All computed at ETL from the stored polygon or one
+//    free lookup — nothing here is ever typed by a human.
+elevationM?: number
+elevationSource?: enum(operator, dem_glo90)
+longAxisM?: number           // hull diameter (rotating calipers)
+shortAxisM?: number          // perpendicular hull width — gives the "5 × 1 miles" line
+longAxisBearingDeg?: number  // 0–180, undirected: an axis has no head
+shorelineM?: number          // perimeter at ~5 m simplification fidelity — NOT survey-comparable
+fetchProfileM?: number[]     // 16 bearings @ 22.5°: contiguous over-water run through the centroid
+satelliteImagery?: enum(auto, on, off)  // default auto → resolved off surface area (D75)
+referenceLinks?: { label, url }[]       // the ONE non-derivable link class: lake associations (D71)
 createdByUserId?: ref(profiles) // when source == user
 reviewStatus?: enum(pending, approved, rejected)  // source==user only; auto-visible then review-after (D37)
 dedupStatus: enum(clean, suspected_duplicate, near_certain, merged)  // default clean (D36)
@@ -247,6 +265,21 @@ createdAt: timestamp
 > `gpsActivities` **`activityId`, not a polygon**, and derives the geometry server-side from the
 > recorded track (`core/pathToBody.ts`: buffer the LineString, fill interior rings, refuse a track with
 > no extent). "No freehand drawing, ever" (D14) is therefore a server contract, not a UI convention.
+> **Depth + derived stats (N6a/N6c).** *(The depth block was shipped in N6a but never reached this doc —
+> caught and added during the N6c doc pass, 2026-07-30.)* Everything in both blocks is **optional ⇒
+> migration-free**, and because `importCanonical` patches an **explicit field list**, all of it survives a
+> canonical re-import untouched — the same property that protects `curatedBoost`.
+> **No index on any of it:** depth and the profile stats are only ever read with a body already in hand
+> (the decay cron has the row; so do the drawer and the editor), and nothing selects *by* them.
+> **`shorelineM` carries a caveat that must reach the UI (D70/D3):** perimeter is resolution-dependent
+> (the coastline paradox) and our polygons are simplified to ~5 m, so the figure is systematically shorter
+> than a published survey number and **not comparable** to one. Round hard (nearest 0.1 mi) so it can't
+> read as precise — a shoreline number *looks* like a hard fact in a way a modelled depth doesn't, which
+> makes it more dangerous, not less.
+> **Reference links are generated, not stored (D71)** — every other outbound link is a pure function of
+> `(centroid, name, states)` computed in `@skating/core`, which is what gives all 116,070 bodies coverage
+> with no migration and no stale URLs. `referenceLinks` exists only for lake associations, which no
+> algorithm can derive; expect tens of rows, not thousands.
 
 ### `waterBodySubAreas`  (named regions inside one body — N2 / D60)
 ```
@@ -389,10 +422,15 @@ createdAt: timestamp
 _id
 waterBodyId: ref(waterBodies)
 coord: { lat, lng }          // snapped to the nearest shore/road edge
-source: enum(derived, official)   // derived = clustered from report points; official = admin-set (accurate)
+source: enum(derived, osm, official)  // official > osm > derived; a derived/osm row never overwrites official
 originReportId?: ref(reports)     // for a derived marker, a representative source report
 status: enum(visible, hidden)     // hidden = moderator-suppressed (per-coord, outlives re-clustering)
 createdByUserId?: ref(profiles)   // the admin, when source == official
+// ── N6d / D72
+name?: string                     // from the OSM `name` tag, else a derived compass-side label
+parkingAreaId?: ref(parkingAreas) // where the car actually goes
+approachMeters?: number           // parking → put-in; path distance where one exists, else straight-line
+approachKind?: enum(drive_up, short_walk, hike_in)  // derived from approachMeters, operator-overridable
 createdAt: timestamp
 ```
 > **Derived vs. official (Phase 4).** `derived` markers are materialized by **clustering visible report
@@ -402,6 +440,59 @@ createdAt: timestamp
 > (a `hidden` row / suppression entry) so one action kills the marker regardless of how many reports feed
 > it, plus a `moderationActions` audit row. **Directions** deep-link (Apple/Google) from the lake detail
 > **drawer button** target a put-in `coord`, **never** the on-water `waterBodies.centroid`.
+> **Amended by N6d (D72): directions target the `parkingAreas` row when one exists, else the put-in.**
+> The old rule was right about what to avoid (the on-water centroid) and wrong about what to aim at — for
+> a hike-in body, the put-in coordinate is a destination a maps app cannot route to, and the skater finds
+> that out at the trailhead. `directionsUrl` itself is unchanged; only its call sites got smarter.
+> **The `osm` rung** is populated by a second `osmium tags-filter` pass over the *same* Geofabrik extract
+> (`leisure=slipway`, `natural=beach`, `man_made=pier`, …), associated to a body by shoreline proximity
+> (~30 m) and **keyed on OSM id so a re-run updates in place rather than duplicating**. Names come free
+> from OSM's own `name` tags — which is what makes named put-ins a 116k feature rather than a curated one.
+
+### `parkingAreas`  (where the car goes — N6d / D72)
+```
+_id
+waterBodyId: ref(waterBodies)
+coord: { lat, lng }
+name?: string                     // OSM `name`, else derived
+source: enum(osm, official)       // official beats osm; osm never overwrites official
+status: enum(visible, hidden)     // moderator-suppressed, mirroring putIns
+amenities: enum(toilets, trail, boat_ramp)[]
+capacity?: number                 // OSM `capacity` where tagged
+fee?: boolean                     // OSM `fee` where tagged
+createdByUserId?: ref(profiles)
+createdAt: timestamp
+```
+> **Why a sibling table and not a generalized `accessPoints` with a `kind`** (D72): `putIns` is
+> load-bearing across drive-time bands, the notification fan-out, N3 deletion and the Phase 5 feed. A
+> metadata phase should not put five other systems on its critical path for a modelling nicety, so this
+> is purely additive. **Food is deliberately absent** from `amenities` — everyone has a maps app for
+> restaurants, and it's the amenity most likely to be wrong. **Boat ramp is kept** for the ice-fishing
+> crossover, and costs nothing: it's the same OSM tag already read to find put-ins.
+
+### `accessAlerts`  (temporarily inaccessible — N6d / D73)
+```
+_id
+putInId?: ref(putIns)             // exactly one of putInId / parkingAreaId
+parkingAreaId?: ref(parkingAreas)
+reason: enum(road_closed, gate_locked, not_plowed, lot_full, private_no_access, other)
+note?: string
+authorId: ref(profiles)
+source: enum(community, official) // official = moderator-pinned, does not decay
+expiresAt: timestamp              // ~30d TTL, extended by confirmation; hard-capped at season end
+createdAt: timestamp
+```
+> **A note would have been the obvious design and it rots** (D73). *"Road closed until repairs are done"*
+> is correct the day it's written and stale by spring, and nothing in the system knows the difference. So
+> an access blocker is modelled like a hazard: confirmed/refuted through the **Phase 9 machinery**
+> (`pointEvents`, `by_ref`), including N5b's **"never existed"** retraction (D65).
+> **Decay is weather-INsensitive, and this is the trap.** The instinct is to reuse `HAZARD_DECAY`
+> wholesale. **A locked gate does not thaw** — applying the D56 weather multiplier would let a warm week
+> silently expire a road closure, a failure that looks exactly like normal decay. Plain TTL + confirmation
+> extension, **no weather term at all**.
+> **Hard-expires at the N5a season boundary**, so the map starts each winter clean and the community
+> re-establishes what's true (the cheapest possible re-survey). **Never hides the put-in** — the hazards
+> never-hide invariant applies: it annotates and de-prioritizes for directions, nothing more.
 
 ### `comments`  (threaded discussion on a report — v1, nestable)
 ```
@@ -642,6 +733,13 @@ createdAt: timestamp
 > **EXIF (D42):** all EXIF is stripped client-side during the D31 optimize pass. Only
 > **timestamp** and **GPS coord** may be preserved, and only on opt-in. If `placeOnMap`
 > is false we **don't retain `coord`** at all — the photo attaches to the report only.
+> **Access-point photos are exempt from the seasonal purge (N6d, amending D66).** A photo can now hang off
+> a `putIns` / `parkingAreas` row (cap ~3 each), and it needs a different lifecycle from the rest:
+> report and hazard photos expire at the season boundary because they document **conditions**, which go
+> stale; a photo of a pull-off documents **infrastructure**, and the parking lot looks the same next
+> November. So they survive the purge — while staying inside N3 deletion under the **D62 second
+> amendment's redact-don't-erase** rule, since erasing a departing user's photo of a gravel lot degrades
+> the map for everyone else to no privacy benefit. There is no person in it.
 
 ### `notifications`
 ```
@@ -679,6 +777,26 @@ createdAt: timestamp
 > The user's **trust score** (`profiles.reputationPoints`) is the aggregate of these events.
 > `report_corroborated` is the D50 corroboration signal; it is **boost-only** and window-bounded,
 > so a later report of *changed* conditions never penalizes an earlier honest one (D3).
+
+### `regionStats`  (per-state deciles — the comparison basis for generated captions; N6c / D70)
+```
+_id
+state: string                // 2-letter code, unique
+depthDeciles: number[]       // 9 cut points each; absent dimensions omitted
+elevationDeciles: number[]
+areaDeciles: number[]
+longAxisDeciles: number[]
+bodyCount: number            // how many bodies the deciles were computed over
+computedAt: timestamp
+```
+> **One row per state, not a percentile per body.** The generated lake caption wants to say *"among the
+> deepest in Vermont"*, which needs a corpus-relative basis — but storing a percentile on each body would
+> mean **116,070 rewrites every import**, since every percentile shifts when the corpus does. Deciles
+> invert that: recompute ~5 rows at the end of each state's import, and every caption reads them at render
+> time. Tiny, honest, re-derivable.
+> **`bodyCount` is not decoration** — a decile computed over a handful of bodies is noise wearing a
+> statistic's clothes, and the caption generator should decline the comparative clause below a floor
+> rather than assert a ranking it can't support (D3).
 
 ---
 
@@ -801,7 +919,9 @@ reports 1─* hazards (created)      hazards *─1 waterBodies
 hazards 1─* hazardConfirmations *─1 profiles
 profiles *─* profiles  (blocks — no follow graph, D13)
 profiles *─* waterBodies  (waterBodyFavorites — place-based curation, D13; Phase 4)
-waterBodies 1─* putIns  (derived from reports.point + admin-set; Phase 4)
+waterBodies 1─* putIns  (derived from reports.point + admin-set + OSM; Phase 4 / N6d)
+waterBodies 1─* parkingAreas ; putIns *─0/1 parkingAreas  (directions target the parking row, D72)
+putIns|parkingAreas 1─* accessAlerts  (decaying community blockers, D73)
 profiles 1─* contentFlags ─1 (report | comment | photo | user)
 profiles(mod/admin) 1─* moderationActions ─1 (any moderated target)   (D37 audit log)
 profiles 0/1─* supportTickets                                          (D37 support inbox)

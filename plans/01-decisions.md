@@ -1994,3 +1994,652 @@ rung** in the caption, so a note left behind next to a modelled value never read
 model's number. It also goes into the `moderationActions` reason, because the moderation log is where you
 ask *"who claimed this, and on what basis"*, and a reason that omits the basis makes you go and diff the
 row.
+
+## D70 — Lake-profile content is derived or third-party, never hand-maintained (N6c/N6d)
+
+**Decided (2026-07-30; founder call at N6c scoping.)** Every field in the expanded lake profile must come
+from geometry we already store, an ETL source, a user report, or a URL template. **Hand-written per-lake
+prose and hand-maintained per-lake notes are out of scope.**
+
+**Because the alternative has a known failure mode, and we can watch it happen.** The clearest example in
+our own region is Christopher Boone's **Catamount Hardware Ice Atlas**
+(<https://catamounthardware.com/ice/>), surveyed 2026-07-30 — and it should be said plainly that it is
+*good*: 36 hand-picked NH and VT bodies, each with coordinates, elevation, surface area, dimensions, mean
+and max depth, individually named launches with their parking and facilities, and a curated set of
+external references. **Several ideas in N6c and N6d are lifted straight from what it chose to record** —
+elevation as a first-class field, per-lake reference links, tying depth to freeze behaviour in prose, and
+naming put-ins by compass side. It is also the source of the sharpest one-line framing of D3 any of us has
+written: *"This site tells you where to find ice, not whether it is safe."*
+
+**And its public update log runs 21 Dec 2023 → 3 Feb 2024, then stops.** One winter. That is not a
+criticism of the author — it is the structural cost of the model. Hand-curation puts the maintenance
+burden on one person every season, and the burden never shrinks, so the failure mode is not that the
+content becomes *wrong* but that it becomes **unfalsifiable**: the write-ups are all still there, still
+plausible, and nobody can tell which sentences are still true. A launch description from 2023 looks
+exactly like one from last week.
+
+That is the failure we are designing against, and the reason is not that we would be more diligent. **We
+would not be.** The only durable answer is that no sentence on our lake pages should require a human to
+keep it true.
+
+The second reason is arithmetic. Curation scales to the ~36 bodies someone cares enough to write about.
+**We have 116,070.** Anything requiring a human per body is a feature for 0.03% of the corpus that *looks*
+like a feature for all of it — which is worse than not having it, because a skater cannot tell which lakes
+got the treatment.
+
+**What this rules in.** Depth (N6a), elevation, long axis, shoreline length and wind fetch are all derived
+from a polygon or one free lookup. Access points come from OSM (D72). Access blockers come from skaters
+and expire (D73). The lake caption is *generated* from those numbers against per-state deciles — so the
+prose is ours, it exists for every body that has the inputs, and no sentence can outlive the number it was
+built from.
+
+**What it rules out, specifically:** free-text lake descriptions, free-text seasonal access notes, per-body
+archival photos, and any "we'll fill these in as we go" field. *Considered:* letting moderators write
+descriptions for the top ~50 bodies. Rejected — that is precisely the 0.03% feature, and once the field
+exists nothing stops it filling with text nobody dates or re-reads.
+
+**One deliberate exception, and it proves the rule:** the local lake-association URL (D71), because there
+is no algorithm from a lake's name to its association's website.
+
+## D71 — Reference links are generated at render time, not stored per body (N6c)
+
+**Decided (2026-07-30; founder call at N6c scoping — the founder asked whether the ETL could configure
+these links for all 116,070 bodies, and this is the answer that actually delivers that.)**
+
+Every outbound reference link — satellite imagery, weather, regional community search, mapping — is a
+**pure function of `(centroid, name, states[])`**, all three already on the row. So they are computed in
+`@skating/core` at render time and **stored nowhere**.
+
+**This is the version that covers the whole corpus.** Storing them would mean 116,070 rows of derivable
+strings, a migration to add them, a backfill to populate them, and a re-backfill every time a provider
+changes a query parameter. Generating them means **full coverage on day one**, automatic coverage for
+every body imported later, and a provider format change costing one function edit instead of a corpus
+rewrite. The stored version is more work for a strictly worse result.
+
+**Corollary — P2: a link is not an integration.** A URL template costs no storage, no quota, no licence and
+no legal review. This is what lets the regional-community link ship *now* while forum ingestion stays
+behind the Q8/L5 legal gate: the gate is about **republication and consent**, and a link republishes
+nothing — the skater arrives at the community's own site under the community's own terms. It is the 5% of
+the ingestion feature carrying 0% of its risk.
+
+**The one exception, stored because it cannot be derived:** `referenceLinks[]` on `waterBodies` for local
+lake associations. Expect tens of bodies, not thousands. Operator-editable, preserved across re-import
+like `curatedBoost`.
+
+## D72 — Parking is modelled apart from put-ins, and directions route to the car (N6d)
+
+**Decided (2026-07-30; founder call.)** `putIns` was one coordinate, and `directionsUrl` sent a car to it.
+For a drive-up launch that's right; **for a hike-in pond we hand a maps app a destination it cannot route
+to**, and the skater discovers this at the trailhead, in winter, an hour from home.
+
+So: a new **`parkingAreas`** table (coord, name, amenities, source, status); `putIns` gains
+`name` / `parkingAreaId` / `approachMeters` / `approachKind`; and **directions target the parking area when
+one exists, else the put-in**. `directionsUrl` itself is unchanged — only its call sites get smarter.
+
+**Additive, deliberately.** *Considered and rejected:* generalizing `putIns` into an `accessPoints` table
+with a `kind` discriminator. Cleaner on paper, but `putIns` is load-bearing across drive-time bands, the
+notification fan-out, N3 deletion and the Phase 5 feed — a metadata phase should not put five other systems
+on its critical path for a modelling nicety.
+
+**Names come from OSM, and that is the whole reason this scales.** "Lake Fairlee Boat Ramp" *is* an OSM
+`leisure=slipway` with a `name` tag; so are fishing access areas, town beaches and trailhead lots. A second
+`osmium tags-filter` pass over the *same* Geofabrik extract we already download yields named put-ins,
+parking, toilets and trails corpus-wide, with **no new source, no new download, no new account**. Where OSM
+has no name, a **deterministic compass-side label** ("North launch") is derived from the point's bearing off
+the centroid — re-derivable on every import, never drifting, and matching how skaters already talk about a
+lake's ends.
+
+Derived rows sit on an **`osm` rung below `official`** and never overwrite an operator-set point — the same
+precedence discipline as the N6a depth ladder. **Amenity scope:** toilets, trails, parking, boat ramp (kept
+for the ice-fishing crossover, and free because it's the same tag we read to find put-ins). Food excluded —
+everyone has a maps app for restaurants, and it's the amenity most likely to be wrong.
+
+**Coverage will be patchy** in the rural Northeast, and that must not become an argument for hand-entering
+the rest (D70). It is strictly more than the zero we have now.
+
+## D73 — An access blocker is a decaying community alert, not a note (N6d)
+
+**Decided (2026-07-30; founder call.)** *"Road closed south of the gate until repairs are done"* is the most
+useful sentence on a lake page and the one most certain to be wrong. It is correct the day it's written and
+stale by spring, and **nothing in the system knows the difference**.
+
+So access blockers are modelled on hazards, not on text: an **`accessAlerts`** row against a put-in or
+parking area with a typed reason (`road_closed`, `gate_locked`, `not_plowed`, `lot_full`,
+`private_no_access`, `other`), confirmed or refuted by other skaters through the Phase 9 confirm/deny
+machinery (`pointEvents`, `by_ref`), including N5b's *"never existed"* retraction (D65).
+
+**Decay is weather-insensitive, and this is the part most likely to be got wrong.** The instinct will be to
+reuse `HAZARD_DECAY` wholesale. **A locked gate does not thaw.** Applying the D56 weather multiplier would
+let a warm week silently expire a road closure — a failure that looks like normal decay and is invisible in
+review. So: a plain ~30-day TTL, extended by confirmation, with **no weather term at all**.
+
+**Hard-expires at the N5a season boundary.** Closures often span seasons, but an alert must never outlive
+its evidence; the map starts each winter clean and the community re-establishes what's true, which is also
+the cheapest possible re-survey. **Never hides the put-in** (the hazards never-hide invariant) — it
+annotates and de-prioritizes for directions. Moderators may pin an `official` alert that doesn't decay, the
+analogue of an official put-in.
+
+## D74 — One weather physics source; NWS alerts are an advisory layer that never feeds a calculation (N6c)
+
+**Decided (2026-07-30; founder call.)** **Open-Meteo remains the single source for anything that feeds a
+calculation** — forecast plus the `past_days` history the D56 decay math runs on. **NWS
+(`api.weather.gov`) is added** for what it uniquely has: official winter-storm, ice-storm and wind-chill
+**alerts** from the local forecast office. Free, no API key, US-only, one `User-Agent` header.
+
+**Do not blend them.** Two providers disagreeing yields a *worse* number, not a better one, and averaging
+them would silently break the reproducibility of hazard decay — which depends on one deterministic input
+that can be re-fetched and re-derived. A decay multiplier you cannot reproduce is one you cannot debug or
+refit, and the refit is already on the roadmap.
+
+So the boundary is sharp: **Open-Meteo computes; NWS informs.** Alerts render as a labelled, attributed
+advisory strip and never enter a formula. Polled **per state on a cron** (alerts are issued over
+counties/zones, so one state fetch serves every body in it) — keeping read cost independent of corpus size,
+the `listInViewport` lesson applied before it can bite.
+
+*Considered and rejected:* **MerrySky**, which is a frontend over Pirate Weather and Open-Meteo — the same
+data we already pull, with a nicer UI and no API to buy. Recorded because it looked like a third source and
+isn't one.
+
+**Coverage gap:** US-only. A Québec expansion needs Environment Canada, a different API on different terms.
+
+## D75 — Satellite imagery ships as a link first; the licence blocker is resolved, the cost one isn't (N6c)
+
+**Decided (2026-07-30; founder call.)** The roadmap parked a satellite-imagery layer as *"needs design — and
+it needs an imagery source whose terms permit the use."* **The terms question is now answered:** Copernicus
+Sentinel data is under the free, full and open Copernicus licence — reproduce, distribute and adapt, with
+attribution. What remains is cost, not permission.
+
+**Tier 1, now: a Copernicus Browser deep link.** Centroid, zoom, Sentinel-2 L2A true colour, ~14-day window.
+No account, no quota, no licence question. At 10 m with a ~5-day revisit the difference between open water,
+black ice and snow-covered ice is visually obvious; cloud cover is the real limiter, which is why the link
+opens a *window* rather than a date.
+
+**Availability is derived, not curated (D70).** 10 m pixels cannot resolve a 2-hectare pond, so
+`satelliteImagery: 'auto' | 'on' | 'off'` defaults to `auto`, resolved against a surface-area threshold,
+with operator overrides for the exceptions. Worth noting for the Phase 7 posture: **this toggle needs no
+redeploy** — "constants stay in code" governs *constants*, and per-row data edits through the lake editor
+and takes effect immediately. The threshold driving `auto` is the constant; the per-lake override is data.
+
+**Tier 2, deferred with a trigger: imagery in the app.** The Copernicus Data Space free tier is **10,000
+requests + 10,000 processing units/month, 300/min**; a full-screen tile view is ~10–20 requests, so raw
+that's ~500–1,000 lake views/month. **Server-side tile caching is what makes it viable** — the open licence
+permits it, and a body only needs re-fetching once per ~5-day revisit. **Do this when** we know which bodies
+get real traffic, since caching only wins if reads concentrate.
+
+**Planet: waited on, not rejected.** Their public catalogue (Sentinel, Landsat, HLS, Copernicus DEM) is the
+*same free data*; paying buys **PlanetScope — ~3 m, near-daily**, which is a real difference for ice, since a
+lake can go from open to skateable in 48 hours and a 5-day revisit can miss the whole onset. Against that:
+quote-based commercial pricing, a pilot with no revenue, and **no evidence yet that anyone opens the imagery
+link at all**. Low-regret detail — Planet serves public data from Sentinel Hub endpoints, the same API
+surface as Copernicus, so building against Copernicus now is not a lock-out. **Trigger:** real usage of the
+free link **and** a case where the 5-day revisit demonstrably missed a freeze event.
+
+**Windy: declined on technical grounds, not price.** Their Map Forecast API is *"a library based on Leaflet
+1.4.x"* and tightly coupled to it; **we render MapLibre**, so there is no overlay path — €990/year would buy
+a second map engine, not a layer. Their free tiers are unusable anyway (dev-only; the point API returns
+deliberately shuffled data). We link out instead (D76), which delivers the same skater-facing result for €0.
+Full numbers in [`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md).
+
+## D76 — External links open in an in-app browser on mobile, never a WebView (N6c)
+
+**Decided (2026-07-30; founder call.)** Linking out is fine on desktop; on mobile a skater must not be
+ejected into Safari and left to find their way back. So every outbound reference link opens via
+**`expo-web-browser`'s `openBrowserAsync`** — SFSafariViewController on iOS, Chrome Custom Tabs on Android:
+the page opens *over* our app with a Done button and returns the skater exactly where they were.
+
+**Not a `WebView`, and the reason is legal before it is technical.** Rendering a third-party page inside our
+own chrome **frames someone else's site inside our UI**, which many providers' terms prohibit outright. An
+in-app browser is unambiguously *a browser* — the provider keeps its URL bar, its branding and its terms, and
+there is no framing question to lose. A WebView would also inherit auth walls, cookie banners and consent
+flows with none of the system browser's handling for them, for more code and more surface.
+
+**Rule:** a `WebView` is only for content we are licensed to embed (a provider's own documented embed
+widget). Everything else goes through the in-app browser; web stays a plain new tab.
+
+**One deliberate exception:** **directions**. `directionsUrl` keeps handing off to the real maps app, because
+navigation belongs there — a skater wants turn-by-turn on their lock screen, not a browser tab inside a
+skating app.
+
+## D77 — Hazard identity is one clustering primitive read through two time windows (N5c)
+
+**Decided (2026-07-30; founder call at N5c scoping.)** *"Are these the same ridge?"* within a winter and
+*"is this the ridge that forms here every winter?"* across winters are the **same geometric judgement**
+with a different time bound and a different tolerance. So there is **one** `clusterHazards` function in
+`@skating/core`, with two callers and two constant sets:
+
+| | Within-season (duplicates) | Cross-season (recurrence) |
+|---|---|---|
+| Tolerance | `DUPLICATE_MATCH_METERS` = 25 | `RECURRENCE_MATCH_METERS` = 80 |
+| Families | all six | five (the four promotable, plus `volatile` at D78's raised bar) |
+| Computed | **at read time** in `hazards.listForBody` | **by a job**, stored in `hazardRecurrence` |
+
+**Matching is footprint-to-footprint, never centroid-to-centroid.** A `pressure_ridge` is a `LineString`
+with a buffer that often spans a bay; two ridges overlapping along different segments can have centroids
+400 m apart while sharing 300 m of geometry. The tolerance is therefore a **gap**, which makes 80 m a far
+tighter claim on a 600 m ridge than "centres within 80 m" would be.
+
+**The tolerances differ in that direction deliberately.** Within a season, two pins 80 m apart may be two
+different leads and collapsing them would under-warn; across seasons a ridge re-forming within 80 m *is*
+the same feature, because ice does not reassemble to the metre. **Tight for identity, loose for
+recurrence.**
+
+**One is derived and one is stored, and that asymmetry is about read bounds, not taste.**
+`listForBody` already collects all of a body's active hazards in one bounded read (Phase 9's call 6), so
+within-season clustering is free there and can never go stale. The cross-season read is the opposite:
+`hazards` has no time index and never ages out — `listPromotionCandidates` had to be capped at 500 rows
+mid-review for exactly that reason — so recurrence is precomputed at the season rollover.
+
+**A season contributes at most one observation.** Three skaters pinning the same ridge in one January is
+**one** winter of evidence. `seasonsObserved` is a set keyed on `seasonOf(firstReportedAt)`, the clock
+nobody can move (D63). Without this, one enthusiastic week becomes "a pattern".
+
+**Why:** building the two separately guarantees they drift into disagreeing about what "the same ridge"
+means — this repo already has that scar, in the hazard verdict vocabulary written down in four places
+where only three were updated for D65.
+
+## D78 — A recurrence claim is history with its denominator attached, and it is admin-only until it clears a tunable bar (N5c)
+
+**Decided (2026-07-30; founder call.)** The corpus gate the roadmap set — three seasons of in-app hazard
+rows — cannot fire before roughly 2029, and dev holds **one** hazard row today. Rather than defer, the
+engine is built now and **thin patterns stay inside `/admin`**:
+
+- **Operators see everything** from the first winter, including a 1-of-1 cluster. Patterns can be watched
+  forming, and the public bar gets set from evidence instead of a guess.
+- **Skaters see nothing** until `RECURRENCE_ADVISORIES_PUBLIC` is on **and** the cluster clears
+  `RECURRENCE_PUBLIC_MIN_SEASONS` (start **2** of the last 4; raise to 3 if it reads noisy). The same
+  constant gates the *timing window* ("late December to February"), so the two can never be set to
+  disagree and a raise makes both claims more conservative together.
+- **`publiclyVisible` is stored on the row, not filtered client-side** — otherwise "admin-only" means
+  "admin-only if you don't open the network tab".
+
+**The claim itself is bounded by D3.** Every public advisory carries **both** numbers ("3 of the last 4
+winters", never "most winters"), is written in the past tense with a reporter ("skaters have reported…",
+never "there is…"), has no confirm loop, no decay, no pin and no halo, and **never enters the on-ice
+payload** — a statement about past winters must not become a live warning about ice underfoot. It also
+never feeds `displayScore` (D49), trust, points or the bounty gate.
+
+**The `volatile` family is the one raised bar.** Recurring `thin_ice` / `open_water` / `thawed_rotten`
+may propose a **`shallow_early_thaw`** feature, because a spot that goes out early *every* March is a
+property of the lake bed rather than of the weather — but only at **3 seasons minimum regardless of the
+public constant**, and only where N6a's depth (D68/D69) does not contradict it. Recurrence is how that
+flag finally gets *proposed* from observation; depth is how the proposal gets *checked*.
+
+**Why:** the D3 trap is showing a skater a one-winter coincidence dressed as a pattern — which the gate
+prevents. Deferring the machinery would instead mean three winters of rows nobody ever looked at as a
+series, and a matching radius tuned from scratch in 2029.
+
+## D79 — A moderator can author a body feature directly, not only promote a hazard into one (N5c)
+
+**Decided (2026-07-30; founder call.)** `bodyFeatures.create` has existed since Phase 9 and has **no UI
+anywhere** — `/admin/features` is list-and-demote only — so the only way to hand-create a permanent
+feature today is the Convex dashboard or the CLI. Consequently **four of the nine `BODY_FEATURE_TYPES`**
+(`constriction`, `bridge_narrows`, `delta`, `shallow_early_thaw`) are unreachable in the product: no
+hazard promotes into them and no form creates them.
+
+N5c ships the authoring surface on `/admin/water/$id`, drawing on the lake's own map and reusing N5b's
+web authoring (terra-draw, the same primitives hazards use). Web only — `/admin` is a web tree and
+terra-draw has no React Native adapter.
+
+**Why:** it is also the answer to "what covers the first three winters". An operator who *knows* a lake
+has a spring at the outlet shouldn't wait for the corpus to prove it; the recurrence engine is for the
+lakes nobody on the team skates.
+
+## D80 — Duplicate hazards are consensus, not clutter: prevent, pool, render, and merge reversibly (N5c)
+
+**Decided (2026-07-30; founder call.)** Today duplicates stack. The only dedup anywhere is
+`idempotencyKey`, which protects one device's offline retry; two people marking the same ridge produce
+two rows, two overlapping halos, two list entries and two independent confirm loops.
+
+**The correction to the intuition, worth recording because it is the opposite of what it looks like:**
+splitting confirmations does **not** make hazards fade away. There is no time-based archival at all, and
+the map opacity **floor** is deliberate — absence of evidence *keeps a hazard alive* (D3). What splitting
+actually costs is: the on-ice alert never escalates from the soft `confirm_request` to `warning`; a
+`ridge_crossing` **genuinely expires** at `PASSAGE_EXPIRY_H` off its own `lastConfirmedAt` (D64 — the one
+pin that leaves the map on time alone, so splitting *deletes* rather than dims); the freshness clock
+under-reports what the community knows; and retirement takes two `fully_healed` votes **per duplicate**.
+
+Four layers, cheapest first:
+
+1. **Prevent** — at draw time, a footprint within `DUPLICATE_MATCH_METERS` of a live same-family hazard
+   offers *"confirm that one"* as the primary action, with "no, this is a different hazard" one tap away.
+   **Never a hard block**: a skater standing on ice looking at something the map has wrong must not be
+   argued with. Costs nothing on the server (both clients already hold the body's hazards) and works
+   offline, which is where duplicates are most likely.
+2. **Pool** — every gate that *decides* something reads **distinct confirming users across the cluster**
+   rather than the row: alert escalation, freshness, corroboration credit. **Archival stays per-row,
+   deliberately** — pooling "gone" votes would let two people clearing one pin retire an unexamined
+   neighbour, which is pooling in the unsafe direction. *Pool the evidence a hazard is there; never the
+   evidence it is gone.*
+3. **Render** — overlapping same-family pins draw as one **union** footprint, opening to every reporter
+   and every confirmation. A consensus footprint is never smaller than any member, so it can only warn
+   about more area, never less.
+4. **Auto-merge above a high bar** — same family, footprints genuinely **overlapping** (not merely near),
+   IoU ≥ `AUTOMERGE_MIN_FOOTPRINT_IOU`, same season, not a passage marker, nothing already merged,
+   promoted or moderator-hidden. **No time-window condition:** a ridge marked in December and
+   independently marked again in February is the same ridge, and that second reporter is exactly the
+   corroboration it was missing.
+
+**Auto-merge is built on D36's water-body merge pattern**, which is what makes automating it acceptable:
+the loser is **tombstoned, not deleted** (`mergedIntoHazardId` + a hop-capped `resolveHazardSurvivor`,
+mirroring `resolveSurvivor`), the survivor is the **earliest** `firstReportedAt`, and a moderator
+`unmerge` restores both pins intact. **Confirmations are never re-pointed** — D65 names confirmers
+publicly, so a confirmation is a named person's statement about a *specific* pin, and rewriting its
+`hazardId` would edit that statement; the chain is read *through* instead.
+
+**The residual risk, stated plainly:** a wrong merge costs a distinct hazard its separate identity — the
+one failure here a skater cannot undo. It is bounded by the union footprint (a merge can never shrink
+warned area), by archival staying per-row, and by an admin panel plus an **unmerge-rate chart**, which is
+the only empirical test of whether the bar is set right.
+
+## D53 amendment (2026-07-30, N5c) — supersession is a backlink, not a hiding mechanism; and `shallow_bay_early_thaw` → `shallow_early_thaw`
+
+**Founder call at N5c scoping**, in these words: *"A hazard from previous seasons that has been promoted
+should still be visible as a reported hazard in all years in which it was reported. A recurring feature
+is a pattern, not a real marker — so even in seasons after it's been promoted, users will still report
+it."*
+
+That names the seam better than D53 did: **a `bodyFeature` is a standing statement about the lake; a
+hazard is a sighting by a person on a date.** Promotion adds the first; it must not delete the second, in
+any season, past or future.
+
+D53 as shipped does delete it. `hazards.listForBody` filters out every row with `promotedToFeatureId`
+set, across all seasons, and `isUserVisibleHazard` additionally makes a promoted hazard unreachable by
+permalink and unconfirmable — so a promotion silently rewrites February 2027 as a month in which nobody
+reported a ridge. Under one-hazard promotion that was a small distortion; under N5c's *cluster* promotion
+it would erase the whole evidence trail the advisory rests on, one click after an operator agreed it was
+real.
+
+**So `promotedToFeatureId` becomes pure provenance.** It stops hiding, stops blocking permalinks, and
+stops blocking confirmation. Three consequences:
+
+- **New sightings keep arriving and keep counting**, so a promoted cluster goes on growing and its
+  denominator goes on meaning something after promotion.
+- **Confirmation still works on the sighting** — *"the ridge is here right now"* is a different statement
+  from *"ridges form here"*, and only the first is confirmable.
+- **The two never race.** After a season boundary the sighting is hidden by the **season** axis (D63) and
+  the feature remains — the desired end state, reached by machinery that already exists. Double-rendering
+  is confined to the season of promotion, and the drawer carries one line — *"this spot is also marked as
+  a recurring feature"* — so it reads as one story. Features and hazards are already separate map sources
+  with distinct styling, so nothing else needs building.
+
+`listPromotionCandidates` is the one reader that keeps filtering on the field: an already-promoted hazard
+is genuinely finished *as a suggestion*.
+
+**The rename.** `shallow_bay_early_thaw` → **`shallow_early_thaw`** (founder call, same day): there is no
+guarantee the spot is a bay — it may be an island's lee, a sandbar, a reef or a shallow delta — and the
+old name narrows the type to one of its cases. **Free today and never again:** dev holds zero
+`bodyFeatures` rows, so this is a find-and-replace with no migration, which is the argument for doing it
+inside N5c rather than "later".
+
+> ⚠ **The reviewer's diff for this amendment is *every reader of `promotedToFeatureId`***, not just the
+> new ones. N5a's review pass named the pattern for a value being *widened*; this is the same hazard from
+> the other direction — a value being **narrowed** in meaning, landing on code that was right about the
+> broader version.
+
+## D81 — The map has exactly one layer toggle, and it is satellite (N6b/N6e)
+
+**Decided (2026-07-31; founder call answering N6b's open questions 2 and 3, and N6c's satellite ask.)**
+
+Two halves, decided together because they are the same rule seen from either side:
+
+**Contours are a property of the detail view, not a layer the user manages.** When a body's drawer is
+open, its bathymetric contours are drawn. When it isn't, they aren't. There is no contour toggle.
+
+**Satellite replaces the base map, not the content.** The one switch swaps the cartographic base —
+vector basemap ↔ aerial/satellite raster — and takes contours and water-body fills with it. **Hazards,
+skate paths, put-ins and parking stay drawn in both modes.**
+
+**Because the toggle N6b proposed would have been a control for a question the user doesn't have.** A
+skater does not arrive at the map wanting to *decide about contours*; they want to look at a lake. Making
+the layer follow the thing they already did — opening a body — gets the contours in front of them at the
+only moment they're useful, with no affordance to find, no state to persist, and no settings row.
+
+**What this dissolves rather than answers.** N6b's Q2 asked how contours interact with `minVisibleZoom`
+and D49 prominence on the browse map. Under D81 contours are *never on the browse map*, so the question
+stops existing. Q3 asked whether the toggle is per-session or persisted, and whether it shares an
+affordance with satellite — also gone, because there is only one toggle left to persist. **Two open
+questions closed by removing a control**, which is the shape of most good simplifications.
+
+**The content/chrome line is the load-bearing part of the second half.** Everything we author or receive
+— a hazard someone reported, a track someone skated, a launch someone found — survives the swap.
+Everything we drew to help you read the map — fills, outlines, contours — is what the photograph replaces.
+A skater who turns on imagery to check a put-in must not lose the hazard pins doing it; that would be a
+safety regression delivered by a display preference.
+
+**Consequences to hold:**
+- Contour tiles load lazily on drawer-open, so the browse map's tile budget is unchanged.
+- Contours are not drawn over imagery — no cartographic base to annotate, and they'd fight a photograph
+  for legibility.
+- The satellite preference is per-device and persisted, default off (N6e A5). It is the map's **only**
+  persisted display state.
+
+**Related:** [D82](#d82--bathymetry-is-context-not-counsel-n6b), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-n6e),
+[`phase-N6b`](./phase-N6b-bathymetry-layer.md), [`phase-N6e`](./phase-N6e-satellite-imagery.md).
+
+## D82 — Bathymetry is context, not counsel (N6b)
+
+**Decided (2026-07-31; founder call answering N6b's open question 4 — *"the lines are more for the
+aesthetic… we don't have to tell the users anything about the safety or lack thereof with any copy."*)**
+
+**Depth's safety role stays inside the math.** It feeds the D56/D69 decay multiplier, adjusting how fast a
+hazard's confidence fades — a computation the skater never reads. **The rendered contour layer carries no
+interpretive copy at all.**
+
+**Because saying nothing is strictly safer than saying it carefully, and this is a case where we can.**
+N6b called the copy *"the hardest part"*: bathymetry is not ice thickness, and the naïve reading
+("shallow = safer") **reverses across the season** — shallow water takes first ice, and shallow water
+rots out first. Every careful phrasing of that is still a sentence a skater can act on in the moment they
+are deciding whether to drive, which is what **D3** says is not ours to offer. The line we can hold
+absolutely is the one with no copy behind it.
+
+**What this settles in the styling**, because a decision like this leaks into pixels:
+- **Hazards render above contours.** Contours are decoration; hazards are the product. On any conflict,
+  the contour loses — thinner, muted, lower opacity.
+- **The contour palette must not resemble the hazard palette.** A blue-to-navy depth ramp a skater could
+  read as a severity scale would reintroduce through colour exactly the claim we just declined to make in
+  words. This is the one styling rule here that carries real weight.
+- **The only copy that remains is provenance** — which agency surveyed this, at what interval (D83).
+  Attribution, not interpretation.
+
+**A useful side effect:** because contours make no claim, a lake with no survey data costs the skater
+nothing — it renders as a flat shape, exactly as today. So Maine's density gate and every other
+coverage gate can be set conservatively with no product argument pushing back.
+
+**Related:** [D3](#d3), [D52](#d52), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e), [D68/D69](#d68), [`phase-N6b`](./phase-N6b-bathymetry-layer.md).
+
+## D83 — Contours carry their source's native interval and units, labelled; we never resample (N6b)
+
+**Decided (2026-07-31; founder call — *"we shouldn't invent lines that we don't have true data for. Let's
+use the units we're given."*)**
+
+NH and MA publish isobaths in **feet**, VT in metres, at different intervals. We tile each state at its
+native interval and unit and label it — *"NH GRANIT, 10 ft contours"* — rather than retiling everything to
+a common interval.
+
+**Because resampling a survey's contours means drawing isobaths nobody surveyed**, rendered identically to
+the ones that were. That is the GLOBathy error at a smaller scale, and N6b exists as a document because we
+refused it once already at the dataset level; refusing it again at the interval level is the same
+principle, not a new one.
+
+**The cost, accepted knowingly:** contour spacing visibly changes at a state line. That is honest — the
+surveys *are* different — but it puts weight on the label, which has to be legible rather than a footnote.
+
+**The related normalization we do keep:** the vertical-datum rule stands regardless. Lake Champlain
+(NGVD 1929) and VT ANR (pool elevation at collection) share no reference, so styling reads
+**depth-below-surface**, never absolute elevation, and sources are never silently unioned into one
+styled-by-depth ramp. Native intervals make that easier to hold — each set already renders as its own
+labelled thing.
+
+**The revisit has a trigger, not a date:** a cross-state comparison surface ("the deepest lakes within 90
+minutes") would need common units, and should convert **at read time** from stored native values. The
+tiles stay native permanently.
+
+*(A founder aside worth recording because the intuition recurs: 16 fetch bearings were questioned against
+18 because 18 "divides evenly into 360°." So does 16 — into 22.5°. Every integer divisor divides evenly;
+16 just lands on a fraction, which is nothing to a float. 16 wins because it *is* the compass points, so
+every bucket has the name the wind data already uses. See N6c open question 1.)*
+
+**Related:** [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e), [D82](#d82--bathymetry-is-context-not-counsel-n6b), [`phase-N6b`](./phase-N6b-bathymetry-layer.md).
+
+## D84 — Satellite imagery is two tiers with different jobs (N6e)
+
+**Decided (2026-07-31; scoping N6e out of N6c's B3 at the founder's ask.)**
+
+The word "satellite" was covering two features with different sources, different constraints and different
+honesty requirements. They ship in order:
+
+- **Tier 1 — aerial base map.** USGS/NAIP orthoimagery, ~0.6 m, **public domain, no key, no quota**,
+  refreshed every 2–3 years, leaf-on summer. Answers *where's the pull-off, where's the point, is that an
+  island*. **Ships in v1.**
+- **Tier 2 — recent ice imagery.** Sentinel-2 L2A via Copernicus, 10 m, ~5-day revisit, free tier of
+  10,000 requests/month. Answers *is there ice on it right now*. **Gated on evidence that reads
+  concentrate**, because it only fits the quota with server-side caching and caching only wins if they do.
+
+**Because the quota that deferred in-app imagery is a Sentinel-2 quota, and it says nothing about NAIP.**
+The high-frequency use case — read the landscape, find the access — is served *better* by 0.6 m summer
+aerial than by 10 m winter Sentinel-2, **and** it is the unconstrained one. Splitting the tiers turns
+"blocked on cost" into "ship the valuable half now."
+
+**The second reason is honesty, and it's the one that would have bitten us.** A Sentinel-2 view is a
+**dated observation** — a specific pass on a specific day, possibly under cloud — not a base map. Rendered
+in the same affordance as a base map, without its date foregrounded, it invites *"the lake looked frozen
+in the picture"* about an image from eleven days ago. That is the **D3** trap in raster form. Tier 2's
+date stamp is not a caption detail; it is the content, which is also why N6e open question 4 asks whether
+Tier 2 belongs in the drawer rather than on the map at all.
+
+**Unchanged by this:** **D75** — the Copernicus Browser deep link ships in N6c regardless, covers all
+116,070 bodies at zero cost, and remains the right answer for historical browsing and a date slider. This
+decision is the second step of that two-step, not a replacement for it.
+
+**Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-licence-blocker-is-resolved-the-cost-one-isnt-n6c), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-n6bn6e), [`phase-N6e`](./phase-N6e-satellite-imagery.md).
+
+## D85 — Derived geometry stats are measured on the source geometry, not the simplified copy (N6c)
+
+**Decided (2026-07-31; founder asked whether there was a better source for shoreline length — *"maybe
+we're looking at the wrong source for this."*)**
+
+`shorelineM`, `longAxisM` and `shortAxisM` are computed in the ETL transform from the **full-resolution
+OSM geometry**, immediately before `simplify()` runs — not from the Douglas–Peucker-simplified polygon we
+store.
+
+**Because the wrong source wasn't a provider, it was our own copy.** Perimeter is resolution-dependent
+(the coastline paradox), our stored polygons are simplified to ~5 m, and Lake Champlain is coarsened
+further to fit the D48 8,192-element array cap. Measuring the stored polygon systematically under-reports,
+and worst on exactly the large crenellated lakes where the number is most interesting. Measuring before
+simplification removes that error entirely for the cost of one scalar — the array cap constrains what we
+*store as geometry*, not what we *measure in flight*.
+
+> **The general rule: the stored polygon exists for drawing; the stats exist for describing. The tolerance
+> that makes the first cheap corrupts the second.**
+
+**The consequence that matters for scheduling:** these stats now ride the **canonical water re-import**
+(`scripts/etl`), not the N6a depth run. There are **two ETL passes in flight with different cargo**, and
+conflating them is how a field gets missed. Inventoried in
+[N6a's ordering gate](./phase-N6a-lake-depth.md#before-the-etl-runs--the-ordering-gate).
+
+**A free cross-check, not a source:** HydroLAKES carries `Shore_len`, and we already download and join it
+for N6a's depth rung 3. Its 10 ha floor covers ~7% of our corpus and its polygon is a different water mask
+at a different date, so a disagreement doesn't say who's right — but a 2× gap on a known lake means our
+join or ring handling is broken, and that is worth catching at load time. **Log the comparison; store
+ours.**
+
+**Rounding (founder call): nearest whole mile / kilometre**, taking the softer of the two offers ("nearest"
+over "round up") because rounding up systematically overstates a figure a skater might use to judge a lap.
+Under a mile renders as *"under a mile of shoreline"* — no decimal on a farm pond. **Even measured at
+source it is never presented as authoritative:** OSM's shoreline is a tracing by many hands and still
+won't equal a published survey.
+
+**Related:** [D3](#d3), [D25](#d25), [D48](#d48), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).
+
+## D86 — Aggregate quality renders as a graded mark, never as a word (N6c)
+
+**Decided (2026-07-31; founder call, reversing N6c's own recommendation to defer — *"maybe instead of
+writing the word 'Awesome' or 'Great', we could show some kind of symbol or fill-bar or dots."*)**
+
+The per-body map summary card carries a consensus quality signal, rendered as **filled dots** (first stab:
+four), derived from the existing Phase 6 thumbs. No adjective, ever.
+
+**Because the objection to deferring it was an objection to words.** N6c argued that *"a single word
+summarising how good the ice is here is a safety claim wearing a summary's clothes."* That is true, and the
+founder's answer removes the words rather than the feature. **A word has a referent** — "Great" is a claim
+*about the ice*, asserted by the app, on the surface where someone decides whether to drive. **A mark's
+referent is whatever the legend says**, and we control the legend: *how recent reporters rated it*. Dots
+render our users' ratings, which is a fact about the reports — the same class of content as the count
+beside them, which E1 already permits.
+
+**Why dots and not a fill bar:** a continuous bar reads as a gauge, a gauge reads as an instrument
+reading. Discrete dots read as a tally, which is what this is.
+
+**The quorum floor is the load-bearing rule.** Below ~3 rating reports in the window: **no dots at all**,
+not a low score. One person's opinion rendered as a consensus mark is the worst failure here and it fails
+*silently* — the mark looks identical whether it summarises 1 report or 40. Same denominator discipline as
+**D78**, for the same reason. Season- and window-scoped like the counts beside it, and the accessible text
+alternative (*"rated 3 of 4 by 12 recent reports"*) is usefully the honest long form.
+
+**What stays deferred, and is now clearly separable:** N5c's recurrence line (*"frequently pressure ridges
+off the eastern shore"*). These were bundled as "the D3-sensitive half of the card"; the mark-not-word
+answer separates them, because a recurrence claim has **no word-free rendering** — its whole content is
+the claim.
+
+**Related:** [D3](#d3), [D50](#d50), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-n5c), [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).
+
+## D87 — Approach distance is walked, not flown (N6d)
+
+**Decided (2026-07-31; founder asked whether a trail-routing API exists — *"it could be 800 m as the crow
+flies but a full kilometer of weaving trail… and elevation gain is going to affect people just as much as
+distance."*)**
+
+`approachMeters` is a routed **OpenRouteService `foot-hiking`** distance from parking area to put-in, with
+`approachAscentM` alongside it. Straight-line survives only as an explicitly-flagged fallback.
+
+**Because it's the account we already have.** Phase 4's drive-time isochrones run on ORS; the
+`foot-hiking` profile is the same key, same client, same free tier, and with `elevation: true` the
+response carries **ascent and descent in metres** — the second half of the founder's question, delivered
+by a request parameter rather than a second integration. It is also OSM-routed, so it walks the same
+`highway=path` / `route=hiking` ways N6d's Workstream B is already extracting.
+
+*(Considered: GraphHopper — comparable, but a second vendor and key for no capability we lack. Valhalla —
+most control, and a server to run. Mapbox — `walking` only, tuned for sidewalks. AllTrails/Gaia/Strava —
+trail *content* products with licensed geometry and no general routing API.)*
+
+**The quota is a non-issue because of *when* we call it:** at ETL time, once per put-in, cached on the
+row. **Never from a request path** — that's the one rule worth writing at the call site.
+
+**The fallback ladder is part of the decision, not a caveat.** OSM's rural trail coverage is patchy, so:
+routed distance + ascent → straight-line **flagged** (it under-reports, so the flag is the difference
+between *"about 900 m on foot"* and *"at least 900 m on foot"*) → nothing, for the majority of bodies with
+no parking area to route from.
+
+**The `hike_in` chip ships with it** (founder ask), on the map summary card, the lake drawer and the feed
+card — derived from `approachKind`, not entered. A skater filtering to "within 60 minutes" is filtering on
+**drive** time, and a hike-in lake inside that band is not the trip they think they're being offered. The
+two numbers are never summed: a 55-minute drive plus a 25-minute walk is not an 80-minute drive.
+
+**Still out of scope:** routing the walk itself. We report distance, climb and a kind; navigating a trail
+is a maps app's job.
+
+**Related:** [D72](#d72--parking-is-modelled-apart-from-put-ins-and-directions-route-to-the-car-n6d), [`phase-N6d`](./phase-N6d-lake-access-points.md), [`phase-4`](./phase-4-drive-time-and-filtering.md).
+
+## D88 — Access-point photos ride the existing posting permission (N6d)
+
+**Decided (2026-07-31; founder call — *"anyone who can post reports or hazards can upload access point
+photos (unless we want to add another permissions toggle for this; I'm not convinced)."*)**
+
+No new permission. **D57**'s existing report/hazard posting permission governs access-point photos, with
+post-hoc moderation through `contentFlags` like every other user-supplied photo.
+
+**Because the risk profile sits below reports and hazards, not beside them.** A bad ice report is a safety
+problem; a bad photo of a parking lot is wrong, not dangerous. And there is no personal information in a
+picture of a gravel pull-off — the same reasoning that put these photos under D62's *redact-don't-erase*
+rule rather than under deletion, and that exempts them from D66's seasonal purge (infrastructure doesn't
+expire the way conditions do).
+
+**The real argument against a separate toggle is drift.** A permission that is always set equal to another
+permission is a permission that will one day *not* be, by accident, and confuse someone a year later. Two
+knobs for one idea is the same failure D70's `curatedBoost`-not-`isDestination` call avoided.
+
+**The protective work is done by constraints already in the phase:** the ~3-photos-per-access-point cap
+bounds any single point's abuse surface, and minors are read-only (Phase 3), so the population that can
+upload is already the population trusted with reports.
+
+**Related:** [D57](#d57), [D62](#d62), [D66](#d66), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [`phase-N6d`](./phase-N6d-lake-access-points.md).

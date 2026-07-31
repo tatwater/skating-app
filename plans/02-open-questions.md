@@ -19,6 +19,13 @@ obtainable* as early as possible. Account/permission setup is deferred in
 proposed AI classifier (on email content, not Strava data) routes each message —
 comment vs. new report. See `04-integrations.md`.
 **Status:** desired; feasibility + ToS research needed.
+**Partly routed around, 2026-07-30 (D71).** N6c ships a **pre-canned search link** into the regional
+community for the lake you're looking at, derived from `states[]`. That is *not* ingestion and does not
+touch this gate: we store nothing, republish nothing, and the skater arrives on the community's own site
+under its own terms. It delivers a slice of what Q8 wants — the archive's answer about *this* lake — at
+zero legal exposure, and it doubles as the bridge the founder asked for while people migrate. **Q8 stays
+open** for the thing the link can't do: turning those posts into in-app reports that feed search, decay
+and the feed.
 
 ### Q9 — AI report summarization (beyond weather facts)
 Baseline "weather since report" is now a **decision (D19)** — plain facts, no AI.
@@ -57,13 +64,24 @@ Observations from analyzing 1,197 real community posts (`training_data/google_gr
 `08-legal-feasibility-checklist.md` L5a). Not open *questions* — future-facing signals recorded so
 they aren't lost.
 
-### S1 — Access / put-ins are a dominant concern
+### ~~S1 — Access / put-ins are a dominant concern~~ → **D72/D73** (N6d, 2026-07-30)
 Access language pervades the corpus: `boat launch` (72), `town beach` (43), plus `shore`, `point`,
 `beach`, `island`, `access`, and gear/rescue talk (`dry suit` 41, `rescue` 167). Skaters obsess over
 **where to park and get on the ice** — which reinforces D18's "refine with put-in points later" note
 and D3's safety framing. **Possible future feature:** per-water-body **put-in / access points**
 (parking, launches) — not scoped to a phase yet, but clearly wanted. *(Also feeds the D18 drive-time
 approximation: testing the actual put-in, not the water-body centroid.)*
+
+**Answered by D72/D73** — [N6d](./phase-N6d-lake-access-points.md) scopes parking as a first-class table
+apart from put-ins, named access points derived from a second OSM pass, and access blockers as decaying
+community alerts. **The corpus was more specific than this entry recorded, and the extra specificity is
+the phase:** "where to park" and "where to get on the ice" are *two* questions, and we had been answering
+them with one coordinate — which is why `directionsUrl` routes a car to the shoreline of a hike-in pond.
+
+**One thing this entry got right that's worth keeping:** it predicted the feature would be *wanted*, not
+that it would be *derivable*. The unlock came from somewhere else entirely — OSM already carries named
+slipways, parking, toilets and trails in the extract we download for water polygons, so the corpus signal
+and the data source were sitting one `osmium tags-filter` pass apart for four months.
 
 ### ~~S2 — Big lakes are named by sub-area, spelling varies~~ → **D60** (N2, 2026-07-26)
 Large lakes are referred to by named arms/bays and nicknames, not the parent name: Lake Champlain's
@@ -113,3 +131,15 @@ corpus at all** (see the N2 doc's *Open after this phase*).
   EXIF strip + geotag opt-in; signup assumption-of-risk ack.
 - **License → D43** — AGPL-3.0 + App Store / Play distribution exception.
 - **Skate→lake → D44** — GPS activities resolved to a `waterBodyId` (findable by lake).
+- **S1 → D72/D73** — Access is two questions, not one: parking is modelled apart from put-ins and
+  directions route to the car; access blockers decay like hazards instead of sitting in a note that rots.
+- **Lake-profile content → D70/D71** — derived or third-party, never hand-maintained; reference links are
+  generated at render time, which is what gives all 116,070 bodies coverage instead of a curated few.
+- **Weather providers → D74** — Open-Meteo computes, NWS informs; never blended.
+- **Satellite imagery → D75, then D81/D84** — the deferred layer's blocker was a licence question, and
+  Copernicus Sentinel data already answered it. Deep link ships in N6c; **in-app imagery is now
+  [N6e](./phase-N6e-satellite-imagery.md)** (2026-07-31), where the cost call turned out to bind only one
+  of two tiers: public-domain **USGS/NAIP** aerial has no quota at all, and it's the tier that serves the
+  most common use. Sentinel-2's quota keeps its traffic trigger.
+- **External links on mobile → D76** — in-app browser (`expo-web-browser`), never a WebView, because
+  framing a third party's site inside our chrome is a terms problem before it's a technical one.

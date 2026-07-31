@@ -370,3 +370,25 @@ Stated so nobody hunts for a constant that doesn't exist:
 - **No auto-hide from flags.** Moderation is a separate axis from lifecycle; a moderator hiding
   a troll pin must never read as the community clearing a real hazard (see
   [reputation](./user-reputation.md)).
+
+## A near-neighbour that must NOT reuse this model (D73)
+
+N6d adds **access alerts** — "the gate is locked", "the road isn't plowed" — and they borrow this page's
+*machinery* (the confirm/deny loop, `pointEvents`, the "never existed" retraction) while deliberately
+rejecting its *physics*.
+
+**A locked gate does not thaw.** Layer 2 exists because weather acts on ice; nothing in a thaw acts on a
+padlock. Applying `decayMultiplier` to an access alert would let a warm week silently expire a road
+closure — and that failure is nearly invisible in review, because it looks exactly like an alert decaying
+normally. So access alerts use a plain TTL extended by confirmation, with **no weather term at all**.
+
+Recorded here rather than only in the N6d doc because the mistake is the kind you make by being helpful:
+the two features look alike, the constants are right there, and reusing them reads as consistency.
+
+## Where the type taxonomy comes from
+
+The 16 canonical hazard type keys aren't invented vocabulary. They track the standard classification of
+freshwater ice — **Michel, B. & Ramseier, R.O. (1971), *Classification of River and Lake Ice*, Canadian
+Geotechnical Journal** — which is why the categories carve at joints skaters recognize even though no
+skater wrote them. The wider reading list behind our decay and freeze-timing copy is in
+[`plans/phase-N6c-expanded-lake-profiles.md`](../plans/phase-N6c-expanded-lake-profiles.md) → Appendix A.

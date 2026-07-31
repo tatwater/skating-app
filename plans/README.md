@@ -9,6 +9,22 @@
 > [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md). Non-feature work still
 > outstanding: the **prod cutover** (Convex prod uninitialized), **device verification** of the native
 > surfaces, and the **N6a depth ETL run** (written and tested; needs three third-party downloads).
+> **N5c, N6c and N6d were scoped 2026-07-30** (hazard identity; lake profiles; access points), and
+> **N6e — satellite imagery in the app — was scoped 2026-07-31**; these are the only *unbuilt* phase docs
+> — alongside **N6b**, which is designed and deliberately unbuilt.
+>
+> ⛔ **The N6a depth ETL is gated 2026-07-31 (founder call): do not run it until N6c is complete**, so the
+> elevation pass rides the same run. Folding it in costs one column; doing it afterwards costs a second
+> full pass over 116,070 bodies. Note there are **two** ETL passes in flight with different cargo — the
+> depth run carries elevation, the canonical water re-import carries the geometry stats (D85). The
+> inventory is in [N6a's ordering gate](./phase-N6a-lake-depth.md#before-the-etl-runs--the-ordering-gate).
+>
+> **Every open question in N6a–N6d was answered by the founder on 2026-07-31**, adding decisions
+> **D81–D88**. The four that changed a build: **there is no contour toggle** (D81 — contours follow the
+> detail view, and satellite becomes the map's only switch); **shoreline is measured on the source
+> geometry, not our simplified copy** (D85); **approach distance is routed via OpenRouteService
+> `foot-hiking`**, the account Phase 4 already uses (D87); and **the summary card carries a consensus
+> quality mark after all** (D86, reversing N6c's own recommendation).
 
 This directory is the design record for the app: the vision, the decisions (with their
 *why*), the open questions, and the build sequence. It's meant to be read top-to-bottom
@@ -116,14 +132,54 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   N5 entry, kept separate from N5a on purpose: N5a's risky half is a visibility change, N5b's is an
   authoring change. Freeform areas (the last of D51's three primitives) and snap-to-shoreline
   (**D67**). **✅ Complete on dev (2026-07-29); prod deferred** — still **device-unverified**.
+- [N5c — Hazard identity](./phase-N5c-hazard-memory.md) — one clustering primitive read through two time
+  windows (**D77**): within a winter it collapses duplicate pins so corroboration stops splitting
+  (**D80** — prevent, pool, render, and merge reversibly on D36's tombstone pattern); across winters it
+  becomes recurrence, ranked promotion suggestions and body-level "ice history" advisories that stay
+  admin-only until they clear a tunable bar (**D78**). Also **D79** (moderators author body features
+  directly, which nothing could do before), a **D53 amendment** (supersession is a backlink, not a hiding
+  mechanism — a promoted hazard stays visible in every season it was reported), and the
+  `shallow_bay_early_thaw` → `shallow_early_thaw` rename. **📋 Scoped 2026-07-30, unbuilt.** Merges two
+  founder asks that turned out to be one problem, and answers the old three-season corpus gate rather
+  than waiting it out.
 - [N6a — Lake depth](./phase-N6a-lake-depth.md) — the body-level depth attribute D56 was designed around
   and never got, as a provenance-carrying precedence ladder (**D68**: operator → LAGOS-US → HydroLAKES →
   GLOBathy), plus the shallow decay consumer that makes it mean something (**D69**: shallowness amplifies
   the thaw response only, never the cold one). **✅ Built + on dev (2026-07-30); prod deferred** — the ETL
-  itself is written and tested but **not yet run**.
+  itself is written and tested but **not yet run** — and is now ⛔ **gated on N6c completing** (2026-07-31).
 - [N6b — The bathymetry layer](./phase-N6b-bathymetry-layer.md) — measured state-agency isobaths as a
-  toggleable PMTiles overlay, VT + NH first. **📋 Designed, deliberately unbuilt.** Split from N6 at N6a's
+  PMTiles overlay, VT + NH first. **📋 Designed, deliberately unbuilt.** Split from N6 at N6a's
   kickoff; carries the finding that GLOBathy's rasters are a distance transform and must never be drawn.
+  **All six open questions answered 2026-07-31**: **D81** (no contour toggle — contours follow the detail
+  view, and the map's only switch is satellite), **D82** (bathymetry is context, not counsel — no safety
+  copy at all, which dissolves what this doc called its hardest part), **D83** (native intervals and
+  units, never resampled).
+- [N6c — Expanded lake profiles](./phase-N6c-expanded-lake-profiles.md) — what N6a's depth numbers were
+  missing: elevation, long axis, shoreline, a 16-bearing **wind-fetch profile**, a generated per-lake
+  caption, reference links that cover all 116,070 bodies *because* they aren't stored (**D70/D71**), and
+  — folded in 2026-07-30 out of the deferred register — the **per-body map summary cards**.
+  Also **D74** (NWS alerts alongside Open-Meteo, never blended), **D75** (satellite ships as a Copernicus
+  deep link — the licence blocker is resolved), **D76** (in-app browser, never a WebView).
+  **All five open questions answered 2026-07-31**, adding **D85** (geometry stats measured pre-simplification
+  — which moves them onto the *canonical water re-import*, a different pass from the depth run) and
+  **D86** (the card's quality consensus ships as a graded mark, never a word). Also in: a short forward
+  forecast, free because we already fetch and discard those hours.
+  **📋 Scoped 2026-07-30, unbuilt.** ⛔ It now *gates* the unrun N6a depth ETL rather than merely wanting it.
+- [N6d — Lake access points](./phase-N6d-lake-access-points.md) — parking modelled apart from put-ins so
+  directions stop routing cars to hike-in shorelines (**D72**), named access points derived from a second
+  OSM pass, and access blockers as **decaying community alerts rather than notes** (**D73**).
+  **All four open questions answered 2026-07-31**: **D87** (approach distance routed via OpenRouteService
+  `foot-hiking` — Phase 4's existing account, and it returns elevation gain — plus the Hike-In chip),
+  **D88** (photos ride the existing posting permission), and a **D72 amendment** making `parkingAreas`
+  many-to-many, because the association radius caps *inference*, never a human's assertion.
+  **📋 Scoped 2026-07-30, unbuilt.** Split from N6c at scoping; independent of it.
+- [N6e — Satellite imagery in the app](./phase-N6e-satellite-imagery.md) — the map's one layer toggle,
+  swapping the base map for a photograph while hazards, skate paths and access points stay drawn
+  (**D81**, second half). **D84** splits it into two tiers with different jobs: **public-domain USGS/NAIP
+  aerial** (0.6 m, no key, no quota — ships v1, and it's what makes the access points checkable) and
+  **Sentinel-2 recent-ice** (10 m, quota-bound, gated on evidence that reads concentrate).
+  **📋 Scoped 2026-07-31, unbuilt.** Split from N6c's B3 at the founder's ask; the deep link (D75) ships
+  in N6c either way.
 
 
 ## How these fit together

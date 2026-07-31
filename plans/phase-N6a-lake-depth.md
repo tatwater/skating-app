@@ -9,6 +9,10 @@ consumer that makes it mean something. One ETL, one core change, one display sur
 > the code path is tested but no real depth is loaded. Not device-tested; prod deferred, as every phase
 > since 2.5.
 >
+> ⛔ **Do not run the ETL until [N6c](./phase-N6c-expanded-lake-profiles.md) is complete** (founder call,
+> 2026-07-31). N6c's elevation pass wants to ride this same run, and running without it costs a second
+> full pass over 116,070 bodies. See *§Before the ETL runs — the ordering gate*.
+>
 > Split from the register's single **N6** entry at kickoff: the founder's ask for **real bathymetric
 > contour lines inside the lake polygons** turned out to be both feasible and phase-sized, so it became
 > [**N6b**](./phase-N6b-bathymetry-layer.md) and this doc keeps the scalar depth attribute + its decay
@@ -324,9 +328,54 @@ consequence: **the shallow signal is invisible in high summer and does its work 
 in mid-winter thaws**, which is exactly the window where a skater is deciding whether to trust a fading
 pin. Worth knowing before anyone looks for its effect in the wrong month and concludes it isn't wired.
 
+## Before the ETL runs — the ordering gate
+
+> ⛔ **Founder call, 2026-07-31: hold the run until N6c is complete.**
+
+The loader is written, tested and deployed, and the instinct is to go get the data. Don't yet.
+
+**The reason is one column.** N6c's Workstream A1 adds `elevationM` from the Open-Meteo Elevation API —
+a per-centroid lookup against a free, keyless endpoint, batched ~100 coordinates at a time. Folded into
+this run it is a few minutes of extra wall clock on a pass we are making anyway. Run separately it is a
+**second full pass over 116,070 bodies**, for a field that could have been free.
+
+**The rule as the founder stated it is deliberately conservative:** wait for *N6c complete*, not merely
+*N6c A1 built*. That is the right conservatism, because A1 is not the only N6c item that wants a pass
+over the corpus, and discovering the second one after the first run is exactly the failure this gate
+exists to prevent. The current inventory of what wants to ride a pass:
+
+| N6c item | Which pass | Why it rides |
+|---|---|---|
+| **A1 elevation** | **this one** — the depth run | Per-centroid third-party lookup; identical shape to the depth join, and it writes to the same rows. |
+| **A3 shoreline length** | the **canonical water re-import** (`scripts/etl`), not this one | It must be measured on the *pre-simplification* geometry, which only the water ETL holds (see N6c A3). |
+| **A2 long axis / A4 fetch profile** | the canonical water re-import | Pure geometry, computed in `transform.ts` alongside `surfaceAreaSqM`. |
+| **A5 `regionStats`** | after both | Deciles are computed *from* the loaded values, so it is a consequence of the runs, not a rider on one. |
+
+So there are **two** passes in flight, not one, and they carry different cargo. This gate covers the
+depth pass; the geometry stats ride the other and are not blocked by it.
+
+**When the gate lifts:** the moment N6c's A1 loader can write `elevationM` in the same invocation. At
+that point the licence/column confirmation in *§Open questions* is the only thing left in the way, and
+that one resolves by doing rather than by deciding.
+
+**If N6c slips and the season doesn't wait**, the escape hatch is explicit and costed: run the depth
+pass alone and accept a second pass for elevation. That is a real option, not a failure — it just should
+be chosen out loud rather than arrived at by someone running the script because it was sitting there.
+
+---
+
 ## Open questions
 
-1. **LAGOS-US DEPTH's licence and its coverage in our five states** — both need confirming at download
+1. **LAGOS-US DEPTH's licence and its coverage in our five states** → **not a founder call** (confirmed
+   2026-07-31): *"something we'll learn as we go."* Correct — both halves resolve at download and neither
+   has a decision inside it. The licence is whatever the EDI package's Intellectual Rights statement
+   says, and coverage is a number we count. What the founder's answer *does* settle is that **nobody is
+   waiting on anyone**: the first run is the check, and the transform is already built to fail loudly
+   (a named error listing the headers it actually found) rather than read zero depths and report success.
+   Recorded below as originally written, because the shape of what we're checking still needs to be to
+   hand when someone runs it.
+
+   **Original:** both need confirming at download
    from the EDI package's Intellectual Rights statement and by counting matches per state. **This is what
    blocks the first real run**, along with confirming the CSV column names: the transform matches headers
    case-insensitively against a candidate list and raises a *named error listing the headers it did find*
