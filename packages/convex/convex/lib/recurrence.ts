@@ -2,12 +2,17 @@
  * Computing one body's cross-season recurrence (N5c / §C4) — the part that is about *this lake*, split
  * out from the staged job that decides *which lake*.
  *
- * **This pass is never capped, and that is the whole design.** Its job is completeness: a cap here is
- * the `listPromotionCandidates` finding one level up, where a 500-row bound was fine for one season and
- * wrong as a multi-season basis. It reads a body's hazards across the window in full, and if a lake
- * ever holds enough of them to strain a transaction, that is a thing to *see in the logs* rather than
- * to silently truncate — a recurrence record computed over a corpus missing rows is a count that looks
- * complete and isn't.
+ * **This pass reads a body's window in full, and says so when it can't.** Its job is completeness, and
+ * a silent cap here would be the `listPromotionCandidates` finding one level up — a recurrence record
+ * computed over a corpus missing rows is a count that looks complete and isn't.
+ *
+ * ⚠ **It is bounded all the same, and the plan's "never capped" was wrong about which risk was
+ * bigger** (Greptile, PR #35 — see {@link MAX_BODY_HAZARDS}). The window bound rides
+ * `by_water_body_first_reported` rather than a filter after a full read, so the transaction is sized by
+ * four winters of one lake instead of by everything that lake has ever accumulated; above the ceiling
+ * the truncation is recorded on every row and warned about, rather than swallowed. An unbounded read
+ * defending completeness does not degrade when it finally fails — it stops the annual pass for the
+ * entire corpus at that lake.
  */
 
 import {
@@ -37,10 +42,32 @@ import type { MutationCtx } from '../_generated/server';
 /**
  * A lake whose hazard count is worth a line in the logs.
  *
- * **Not a cap.** Everything over it is still processed in full; the number exists so that a body large
- * enough to matter announces itself before it becomes a transaction failure nobody can explain.
+ * Everything up to {@link MAX_BODY_HAZARDS} is still processed in full; this number exists so that a
+ * body large enough to matter announces itself well before it reaches the ceiling.
  */
 const NOISY_BODY_HAZARD_COUNT = 400;
+
+/**
+ * The most hazards one body's recompute will read — the ceiling that keeps this a mutation that can
+ * always commit.
+ *
+ * **The plan said "never capped, and that is the whole design", and that was right about the wrong
+ * risk.** Its argument is against a cap that *silently truncates*, because a recurrence record computed
+ * over a corpus missing rows is a count that looks complete and isn't. That argument still holds and is
+ * why the truncation is recorded on every row it affects rather than swallowed.
+ *
+ * What the plan did not weigh is that the read set here is a function of **accumulated user-created
+ * rows** on one lake, with no upper bound in time — `hazards` never ages out. A mutation like that does
+ * not fail gracefully when it finally exceeds a backend limit: it rolls back, so the queue row is never
+ * deleted and nothing downstream is scheduled, and the *annual* pass stops at that lake and stays
+ * stopped. An unbounded read defending completeness costs the whole corpus its recompute the first time
+ * one popular lake gets busy enough. Bounded, the worst case is one lake's oldest sightings missing from
+ * one denominator, said out loud (Greptile, PR #35).
+ *
+ * Read **newest first**, so what a ceiling drops is the oldest end of the window — the seasons furthest
+ * from the one being computed for, which are also the ones contributing least to a recurrence claim.
+ */
+const MAX_BODY_HAZARDS = 4_000;
 
 /** What one computed cluster carries into the stored row. */
 export interface ComputedCluster {
@@ -61,6 +88,8 @@ export interface ComputedCluster {
   priority: number;
   subAreaId?: Id<'waterBodySubAreas'>;
   subAreaName?: string;
+  /** The body hit {@link MAX_BODY_HAZARDS}, so this cluster's history starts later than the window. */
+  computedFromPartialHistory?: boolean;
 }
 
 /** The window's first season — inclusive, and the bound the corpus walk shares. */
@@ -96,22 +125,46 @@ export async function computeClustersForBody(
   currentSeason: Season,
 ): Promise<ComputedCluster[]> {
   const from = windowStartMs(currentSeason);
+  // The window bound rides the **index**, not a filter after it. `by_water_body` is creation-ordered,
+  // so bounding four winters there meant reading every hazard the lake has ever held and dropping the
+  // old ones in memory — a read that grows for the life of the app. Descending, so the ceiling below
+  // drops the oldest sightings rather than the most recent ones.
   const rows = await ctx.db
     .query('hazards')
-    .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
-    .collect();
+    .withIndex('by_water_body_first_reported', (q) =>
+      q.eq('waterBodyId', body._id).gte('firstReportedAt', from),
+    )
+    .order('desc')
+    .take(MAX_BODY_HAZARDS);
   if (rows.length >= NOISY_BODY_HAZARD_COUNT) {
     console.warn(
-      `recurrence: ${body._id} holds ${rows.length} hazards — processed in full, but worth watching`,
+      `recurrence: ${body._id} holds ${rows.length} hazards in the window — worth watching`,
+    );
+  }
+  const truncated = rows.length === MAX_BODY_HAZARDS;
+  if (truncated) {
+    // Loud, because §11's "no silent caps" rule is the reason a ceiling is tolerable here at all: a
+    // denominator computed over a partial history has to say so, and it does — on every row, through
+    // `computedFromPartialHistory`, all the way out to the operator card.
+    console.warn(
+      `recurrence: ${body._id} hit the ${MAX_BODY_HAZARDS}-hazard ceiling — clusters computed from the most recent sightings only`,
     );
   }
 
+  // **One confirmation read per hazard, not two.** `never_existed` decides both whether a sighting is
+  // evidence at all and how hard the cluster is ranked down, and reading the votes twice for those two
+  // questions doubled the largest read in the pass — on the table users add to most freely.
   const eligible: Doc<'hazards'>[] = [];
+  const neverExistedByHazard = new Map<string, number>();
   for (const hazard of rows) {
     if (hazard.moderationStatus !== 'visible') continue;
     if (hazard.mergedIntoHazardId !== undefined) continue;
-    if (hazard.firstReportedAt < from) continue;
-    if (await wasSaidNeverToExist(ctx, hazard)) continue;
+    const bogus = await countNeverExisted(ctx, hazard);
+    // Two distinct non-author users saying it was never real — the same distinct-user, latest-vote
+    // rule `deriveHazardLifecycle` archives under. A claim the report was bogus is the opposite of
+    // corroboration, so the sighting is not evidence.
+    if (bogus >= 2) continue;
+    neverExistedByHazard.set(hazard._id, bogus);
     eligible.push(hazard);
   }
   if (eligible.length === 0) return [];
@@ -145,7 +198,14 @@ export async function computeClustersForBody(
       .filter((h): h is Doc<'hazards'> => h !== undefined);
     if (members.length === 0) continue;
     computed.push(
-      await describeCluster(ctx, body, cluster.family as RecurrenceFamily, members, currentSeason),
+      describeCluster(
+        body,
+        cluster.family as RecurrenceFamily,
+        members,
+        currentSeason,
+        neverExistedByHazard,
+        truncated,
+      ),
     );
   }
   // Highest priority first, so the stored order is the order an operator reads and a `take` off the
@@ -154,13 +214,14 @@ export async function computeClustersForBody(
 }
 
 /**
- * Did the community say this pin was never real?
+ * How many distinct non-author users currently say this pin was never real.
  *
- * Two distinct non-author users whose **current** verdict is `never_existed` — the same distinct-user,
- * latest-vote rule `deriveHazardLifecycle` archives under, applied to the one verdict that is a claim
- * about the *report* rather than about the ice.
+ * The same distinct-user, latest-vote rule `deriveHazardLifecycle` archives under, applied to the one
+ * verdict that is a claim about the *report* rather than about the ice. Two of them and the sighting
+ * stops being evidence; below that the count still ranks the cluster down, which is why this returns a
+ * number rather than a boolean — one read answering both questions.
  */
-async function wasSaidNeverToExist(ctx: MutationCtx, hazard: Doc<'hazards'>): Promise<boolean> {
+async function countNeverExisted(ctx: MutationCtx, hazard: Doc<'hazards'>): Promise<number> {
   const votes = await ctx.db
     .query('hazardConfirmations')
     .withIndex('by_hazard', (q) => q.eq('hazardId', hazard._id))
@@ -175,7 +236,7 @@ async function wasSaidNeverToExist(ctx: MutationCtx, hazard: Doc<'hazards'>): Pr
     if (vote.userId === hazard.createdByUserId) continue;
     if (vote.verdict === 'never_existed') bogus += 1;
   }
-  return bogus >= 2;
+  return bogus;
 }
 
 /** The bbox centre of a hazard's stored footprint — what the medoid is measured on. */
@@ -186,13 +247,22 @@ function centreOf(hazard: Doc<'hazards'>) {
   };
 }
 
-async function describeCluster(
-  ctx: MutationCtx,
+/**
+ * Everything one cluster stores, from members already in hand.
+ *
+ * **Pure — no reads.** It used to re-query every member's confirmations for the `never_existed` count
+ * the eligibility pass had already read, which made the pass's largest read set twice the size it
+ * needed to be on the one table users add to most freely. The counts come in through
+ * `neverExistedByHazard` now, so the whole recompute reads each hazard's votes exactly once.
+ */
+function describeCluster(
   body: Doc<'waterBodies'>,
   family: RecurrenceFamily,
   members: readonly Doc<'hazards'>[],
   currentSeason: Season,
-): Promise<ComputedCluster> {
+  neverExistedByHazard: ReadonlyMap<string, number>,
+  computedFromPartialHistory: boolean,
+): ComputedCluster {
   // **A season contributes at most one.** Three skaters pinning the same ridge in one January is one
   // winter of evidence; a set rather than a count is what makes that true by construction.
   const seasons = [...new Set(members.map((m) => seasonOf(m.firstReportedAt)))].sort(
@@ -211,20 +281,7 @@ async function describeCluster(
   for (const member of members) {
     confirmations += member.confirmCount;
     if (member.status === 'archived') healedSeasons.add(seasonOf(member.firstReportedAt));
-    const votes = await ctx.db
-      .query('hazardConfirmations')
-      .withIndex('by_hazard', (q) => q.eq('hazardId', member._id))
-      .collect();
-    const latest = new Map<string, (typeof votes)[number]>();
-    for (const vote of votes) {
-      const prior = latest.get(vote.userId);
-      if (!prior || vote.createdAt >= prior.createdAt) latest.set(vote.userId, vote);
-    }
-    for (const vote of latest.values()) {
-      if (vote.userId !== member.createdByUserId && vote.verdict === 'never_existed') {
-        neverExistedCount += 1;
-      }
-    }
+    neverExistedCount += neverExistedByHazard.get(member._id) ?? 0;
   }
 
   const medoid =
@@ -289,6 +346,10 @@ async function describeCluster(
     ...(representative.subAreaName !== undefined
       ? { subAreaName: representative.subAreaName }
       : {}),
+    // Carried out to the operator card. §11's rule is no silent caps: a denominator computed over a
+    // partial history reads exactly like one computed over all of it, and the difference is the only
+    // thing that would make the number wrong.
+    ...(computedFromPartialHistory ? { computedFromPartialHistory: true } : {}),
   };
 }
 

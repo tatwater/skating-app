@@ -3,7 +3,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { RECURRENCE_LEASE_MS } from './recurrence';
+import { MAX_BODY_ATTEMPTS, RECURRENCE_LEASE_MS } from './recurrence';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -773,6 +773,95 @@ describe('the job’s own machinery', () => {
     expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(2);
     // And it finished: nothing left queued, so the tick after this one is a no-op again.
     expect(await t.run((ctx) => ctx.db.query('recurrenceQueue').collect())).toHaveLength(0);
+  });
+
+  test('a body whose recompute keeps failing is stepped over, not left blocking the queue', async () => {
+    // **Greptile's finding, PR #35.** Claiming and computing used to be one transaction, so a
+    // recompute that could not commit rolled the claim back with it: the queue row stayed, nothing
+    // downstream was scheduled, and every later run picked the same lake first and died the same way.
+    // One lake could stop the annual pass for the whole corpus, permanently — and the read set that
+    // failed is a function of user-created hazards, so it was reachable from ordinary use.
+    //
+    // Simulated here by exhausting the attempt counter directly, which is the state a run of failures
+    // leaves behind. The assertion that matters is that the *other* lake still gets computed.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const poisoned = await seedBody(t);
+    const healthy = await seedBody(t, { name: 'Lake Iroquois' });
+    await seedHazard(t, poisoned, author.id, { season: CURRENT_SEASON });
+    await seedHazard(t, healthy, author.id, { season: CURRENT_SEASON });
+
+    // The queue is built by hand rather than by discovery, so the poisoned row is *ahead* of the
+    // healthy one and already holding the attempts a run of failures would have left on it. Driving
+    // phase two directly is the only way to see the state a rolled-back recompute leaves behind.
+    await t.run(async (ctx) => {
+      await ctx.db.insert('recurrenceQueue', {
+        waterBodyId: poisoned,
+        runForSeason: CURRENT_SEASON,
+        createdAt: Date.now(),
+        attempts: MAX_BODY_ATTEMPTS,
+      });
+      await ctx.db.insert('recurrenceQueue', {
+        waterBodyId: healthy,
+        runForSeason: CURRENT_SEASON,
+        createdAt: Date.now(),
+      });
+    });
+    await t.mutation(internal.recurrence.processNextBody, { runForSeason: CURRENT_SEASON });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const computed = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    // The healthy lake got its recompute — the queue drained past the one it could not do.
+    expect(computed.map((r) => r.waterBodyId)).toEqual([healthy]);
+    // And the poisoned one is still on the record rather than silently dropped.
+    const left = await t.run((ctx) => ctx.db.query('recurrenceQueue').collect());
+    expect(left).toHaveLength(1);
+    expect(left[0]?.waterBodyId).toBe(poisoned);
+    expect(left[0]?.skippedAt).toBeGreaterThan(0);
+  });
+
+  test('a skipped body does not make every later tick restart a run with nothing to do', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+    vi.setSystemTime(Date.UTC(2030, 6, 2, 12));
+    await t.run((ctx) =>
+      ctx.db.insert('recurrenceQueue', {
+        waterBodyId,
+        runForSeason: seasonOf(Date.now()),
+        createdAt: Date.now(),
+        skippedAt: Date.now(),
+      }),
+    );
+    await t.mutation(internal.recurrence.maybeRunRollover, {});
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    // The leftover is skipped, so it is not "unfinished work" — the stamp check decides, and there is
+    // no stamp, so a real run happened. What must not happen is the skipped row being treated as a
+    // reason to restart forever.
+    const left = await t.run((ctx) => ctx.db.query('recurrenceQueue').collect());
+    expect(left.every((r) => r.skippedAt !== undefined)).toBe(true);
+  });
+
+  test('the per-body read is bounded by the window at the index, not filtered after it', async () => {
+    // The other half of the same finding: `by_water_body` is creation-ordered, so bounding four
+    // winters there meant reading every hazard the lake has ever held. `hazards` never ages out, so
+    // that read grows for the life of the app on exactly the lakes people use most.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    // One inside the window, one long before it.
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 10 });
+    await seedHazard(t, waterBodyId, author.id, {
+      season: CURRENT_SEASON - RECURRENCE_WINDOW_SEASONS - 3,
+      metersEast: 10,
+    });
+    await runPass(t);
+    const row = await t.run((ctx) => ctx.db.query('hazardRecurrence').first());
+    expect(row?.seasonsObserved).toEqual([CURRENT_SEASON]);
+    expect(row?.memberHazardIds).toHaveLength(1);
+    // Nothing was truncated, so the honesty flag stays off.
+    expect(row?.computedFromPartialHistory).toBeUndefined();
   });
 
   test('queues each body once however many of its hazards the scan sees', async () => {

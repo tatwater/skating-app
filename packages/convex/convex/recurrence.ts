@@ -139,12 +139,29 @@ export const discoverBodies = internalMutation({
 });
 
 /**
- * Phase two: take one queued body, recompute it completely, delete its row, schedule the next.
+ * How many times one body may be handed to a recompute before the pass steps over it.
  *
- * **One body per call, never capped.** This is the pass whose whole job is completeness, and a cap here
- * would be the `listPromotionCandidates` finding one level up — a bound that was fine for one season
- * and wrong as a multi-season basis. The transaction boundary is per body, so a body is either fully
- * recomputed or not at all; there is no half-computed lake to reason about.
+ * The backstop for a lake whose recompute cannot commit for a reason the ceiling in
+ * `lib/recurrence` does not cover. Three, because the July window is a week: a genuinely poisoned body
+ * is stepped over by the third day and the rest of the corpus still gets its year's recompute.
+ */
+export const MAX_BODY_ATTEMPTS = 3;
+
+/**
+ * Phase two, part one: **claim** the next queued body and hand it to a recompute.
+ *
+ * ⚠ **Claiming and computing are two transactions, and that split is the whole point of this
+ * function.** They used to be one: claim, recompute, delete, schedule the next — which reads well and
+ * fails terribly. A recompute that cannot commit rolls its transaction back, so the claim went with
+ * it, the queue row was never deleted, and nothing downstream was scheduled. Every later run then
+ * picked the same body first and died the same way: **one lake could stop the annual pass for the
+ * whole corpus, permanently** (Greptile, PR #35). And because the read set that failed is a function
+ * of user-created hazards and confirmations, that was reachable from ordinary use of the app.
+ *
+ * Split, the attempt counter commits *before* the work is attempted, so a failure is remembered rather
+ * than undone. After {@link MAX_BODY_ATTEMPTS} the body is marked skipped and the queue moves on — the
+ * corpus's recompute is not held hostage to one lake, and the skipped row stays as a thing an operator
+ * can find, because a silently dropped body presents as "this lake has no patterns".
  */
 export const processNextBody = internalMutation({
   args: { runForSeason: v.number() },
@@ -156,20 +173,59 @@ export const processNextBody = internalMutation({
       .take(DISCOVERY_PAGE);
 
     const next = queued.find(
-      (row) => row.claimedAt === undefined || now - row.claimedAt > RECURRENCE_LEASE_MS,
+      (row) =>
+        row.skippedAt === undefined &&
+        (row.claimedAt === undefined || now - row.claimedAt > RECURRENCE_LEASE_MS),
     );
     if (!next) {
-      // Either the queue is empty (done) or everything left is claimed and fresh (another run has it).
-      // Both mean this chain stops, and neither is an error.
+      // Either the queue is drained, or what is left is claimed and fresh (another run has it), or
+      // skipped. None of those is an error and all of them mean this chain stops.
       return;
     }
-    await ctx.db.patch(next._id, { claimedAt: now });
 
-    const body = await ctx.db.get(next.waterBodyId);
-    if (body) await recomputeBody(ctx, body, runForSeason, now);
+    const attempts = (next.attempts ?? 0) + 1;
+    if (attempts > MAX_BODY_ATTEMPTS) {
+      console.error(
+        `recurrence: ${next.waterBodyId} failed ${MAX_BODY_ATTEMPTS} recomputes — skipping it so the rest of the queue can drain`,
+      );
+      await ctx.db.patch(next._id, { skippedAt: now });
+      await ctx.scheduler.runAfter(0, internal.recurrence.processNextBody, { runForSeason });
+      return;
+    }
+
+    // Committed before the work is attempted. If the recompute below dies, this is what remembers.
+    await ctx.db.patch(next._id, { claimedAt: now, attempts });
+    await ctx.scheduler.runAfter(0, internal.recurrence.recomputeQueuedBody, {
+      queueId: next._id,
+      runForSeason,
+    });
+  },
+});
+
+/**
+ * Phase two, part two: recompute the claimed body, drop its queue row, and continue the chain.
+ *
+ * **One body per call, and the body itself is processed completely.** The pass's job is completeness,
+ * and this is still the transaction boundary — a body is either fully recomputed or not at all, with
+ * no half-computed lake to reason about. What changed is only that a failure here can no longer erase
+ * the record that it was attempted.
+ */
+export const recomputeQueuedBody = internalMutation({
+  args: { queueId: v.id('recurrenceQueue'), runForSeason: v.number() },
+  handler: async (ctx, { queueId, runForSeason }) => {
+    const queued = await ctx.db.get(queueId);
+    // Gone already — another run took it, or the queue was cleared. Continue rather than stop: the
+    // chain is the only thing driving the drain.
+    if (!queued) {
+      await ctx.scheduler.runAfter(0, internal.recurrence.processNextBody, { runForSeason });
+      return;
+    }
+
+    const body = await ctx.db.get(queued.waterBodyId);
+    if (body) await recomputeBody(ctx, body, runForSeason, Date.now());
     // Deleted whether or not the body still exists: a queue row for a body that has been removed is
     // work that can never complete, and leaving it would stall every later run on the same season.
-    await ctx.db.delete(next._id);
+    await ctx.db.delete(queueId);
 
     await ctx.scheduler.runAfter(0, internal.recurrence.processNextBody, { runForSeason });
   },
@@ -319,11 +375,14 @@ export const maybeRunRollover = internalMutation({
     // already queued, and re-processing a body it already did is byte-identical output by the same
     // idempotence the pass asserts. One extra pass in a failure year is the right price for a pass
     // that finishes.
-    const unfinished = await ctx.db
+    // Skipped rows are left in place on purpose (they are the record of a lake the pass could not
+    // compute), so "is there work left" has to mean *unskipped* work — otherwise one stepped-over body
+    // would make every remaining tick in the window restart a run with nothing to do.
+    const pending = await ctx.db
       .query('recurrenceQueue')
       .withIndex('by_season', (q) => q.eq('runForSeason', runForSeason))
-      .first();
-    if (unfinished) {
+      .take(DISCOVERY_PAGE);
+    if (pending.some((row) => row.skippedAt === undefined)) {
       await ctx.scheduler.runAfter(0, internal.recurrence.startRecurrenceRun, {
         season: runForSeason,
       });

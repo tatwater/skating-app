@@ -838,6 +838,15 @@ export default defineSchema({
     // `firstReportedAt` because that is the season clock (D63), the field nobody can move, and the
     // one a cross-season record has to agree with.
     .index('by_first_reported', ['firstReportedAt'])
+    // The same pass's **per-body** read, and the reason it is a second index rather than a filter on
+    // `by_water_body`: that one is creation-ordered, so bounding the four-season window meant reading
+    // *every hazard the lake has ever held* and dropping the old ones in memory. `hazards` never ages
+    // out, so that read grows for the life of the app on the busiest lakes — a mutation whose read set
+    // is a function of accumulated user-created rows, which is a transaction that eventually cannot
+    // commit. With the range on the index the recompute is bounded by *four winters of one lake*
+    // instead. (Greptile, PR #35 — the same shape as N1's `listInViewport` and `listPromotionCandidates`
+    // before it: the bound has to be in the index, not after it.)
+    .index('by_water_body_first_reported', ['waterBodyId', 'firstReportedAt'])
     .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 9 offline)
     // The merge chain (N5c / D80): every pin folded into one survivor, which is what the union
     // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every
@@ -954,6 +963,12 @@ export default defineSchema({
     // Set when a recompute could not match this row to any current cluster but had to keep it anyway
     // (it is promoted or suppressed — a human decision that a recomputation must not silently drop).
     staleSince: v.optional(v.number()),
+    // Set when the body held more hazards in the window than one recompute will read, so this row's
+    // history starts later than the window does. **The denominator is still printed as "of 4 winters"
+    // and could now be an undercount**, which is exactly the kind of thing §11 forbids a surface to
+    // swallow — so it is stored, shown on the operator card, and warned about in the logs rather than
+    // left to look like a complete answer (Greptile, PR #35).
+    computedFromPartialHistory: v.optional(v.boolean()),
   })
     .index('by_water_body', ['waterBodyId'])
     // The ranked cross-lake queue (§7.2) — bounded by construction, since it reads this precomputed
@@ -985,6 +1000,17 @@ export default defineSchema({
     waterBodyId: v.id('waterBodies'),
     runForSeason: v.number(),
     claimedAt: v.optional(v.number()),
+    // **How many times this body has been handed to a recompute**, and it is counted in a *different*
+    // transaction from the one that does the work — which is the whole point of it. A recompute that
+    // exceeds a backend limit rolls its transaction back, taking any counter incremented inside it with
+    // it, so the same body would be picked first on every subsequent run and the annual queue would
+    // stall there permanently. Claiming and computing are therefore two mutations: the claim commits
+    // whatever the compute then does.
+    attempts: v.optional(v.number()),
+    // Set when a body has failed `MAX_BODY_ATTEMPTS` times and is being stepped over so the rest of the
+    // corpus can drain. Never deleted — a lake the pass cannot compute is a thing an operator should be
+    // able to find, and a silently dropped row would present as "this lake has no patterns".
+    skippedAt: v.optional(v.number()),
     createdAt: v.number(),
   })
     // The dedup on insert: one row per body per run, however many pages the body's hazards span.

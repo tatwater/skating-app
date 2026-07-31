@@ -10,7 +10,8 @@ once is the only way the two can't disagree.*
 > suite — **unpushed, undeployed, not device-tested**, and the skater-facing advisory ships **dark**
 > behind `RECURRENCE_ADVISORIES_PUBLIC = false`, which is the intended shipped state rather than an
 > unfinished one. See *§15 — What the build changed about the plan*, *§16 — What the review pass
-> found*, *§18 — What the cross-season half changed* and *§19 — What the second review pass found*.
+> found*, *§18 — What the cross-season half changed*, *§19 — What the second review pass found* and
+> *§20 — What Greptile found*.
 > Founder asks 2026-07-27 (hazard memory) and 2026-07-30 (duplicate corroboration), merged into one
 > phase by the founder call in [§4](#4-workstream-a--the-clustering-primitive-d77).
 > **Depends on:** [N5a](./phase-N5a-seasons.md) — seasons as a derived first-class dimension, the
@@ -390,7 +391,12 @@ or hidden three bogus pins should not wait a year.
    the season-scoped reads N5a currently filters in memory) and collect distinct `waterBodyId`s into a
    scratch queue. There is no "bodies with hazards" index, and adding a counter to `waterBodies` would be
    a write-path change for a once-a-year read.
-2. **Process one body per call, fully — never capped.** This is the pass whose whole job is completeness;
+2. ⚠ **Superseded by [§20](#20-what-greptile-found-2026-07-31--never-capped-was-right-about-the-wrong-risk).**
+   *"Never capped"* held against silent truncation and missed that an unbounded per-body read on a table
+   that never ages out is a mutation users can eventually stop from committing — which costs the *whole
+   corpus* its recompute, not one lake's completeness. The window bound now rides the index, there is a
+   loud ceiling above it, and a body that still fails is stepped over. Original text follows.
+   **Process one body per call, fully — never capped.** This is the pass whose whole job is completeness;
    a cap here is the `listPromotionCandidates` finding one level up. Continue on a cursor rather than
    truncate.
 3. **Diff, don't replace.** Preserve `suppressedAt` and `promotedToFeatureId` by matching new clusters to
@@ -1384,3 +1390,76 @@ and with the status block linking to the section by number. Renumbered to **18**
 - **`enqueueBody` recomputes inline rather than enqueuing.** The name is wrong and the behaviour is
   right — a body merge should not wait for July. Renaming it touches the merge path in `waterBodies`,
   which is not where this PR should be making incidental edits.
+
+---
+
+## 20. What Greptile found (2026-07-31) — *"never capped" was right about the wrong risk*
+
+One finding, no line comments, and it overturns a sentence this plan asserts in **three** places
+(§C4.2, §11's work item 8, and the module docstring in `lib/recurrence.ts`): *"process one body per
+call, fully — never capped."*
+
+### 20.1 The finding
+
+> The rollover processes each body in one mutation that collects its complete hazard history and
+> repeatedly collects confirmations; once that transaction exceeds backend limits, the queue row is not
+> deleted and subsequent bodies are not scheduled.
+
+It is right, and §19.7 had walked past the same ground while looking at the wrong half of it. That note
+observed that *"a body that fails to recompute blocks the ones behind it"* and judged it bounded and
+acceptable — because it assumed failures would be rare and incidental. What it did not ask is **what
+makes a body fail**, and the answer is: accumulated user-created rows. `hazards` never ages out, and
+`computeClustersForBody` was reading a body's *entire* history off the creation-ordered
+`by_water_body` and dropping the out-of-window rows in memory, then reading every member's
+confirmations **twice**. So the read set grew for the life of the app, fastest on the lakes people use
+most — and when it finally could not commit, the rollback took the queue row's claim with it, so every
+later run picked that lake first and died identically. **One popular lake, stopping the annual pass for
+the whole corpus, permanently.**
+
+### 20.2 Why the plan's own argument does not survive contact with this
+
+§C4.2's case against a cap is genuinely good: *"a cap here is the `listPromotionCandidates` finding one
+level up"*, and a recurrence record computed over a corpus missing rows is a count that looks complete
+and isn't. That argument is about **silent** truncation, and it still holds.
+
+What the plan weighed against it was the cost of a partial answer. What it never weighed was the cost
+of **no answer at all, for every lake**. An unbounded read defending completeness buys nothing the
+first time it fails — it does not degrade, it stops the corpus. Bounded, the worst case is one lake's
+oldest sightings missing from one denominator. Between "one lake's history starts a season late, and
+the card says so" and "no lake is recomputed this year", the plan picked the second by accident.
+
+### 20.3 What changed
+
+- **The window bound moved into the index.** New `hazards.by_water_body_first_reported`, so a
+  recompute reads *four winters of one lake* rather than one lake's entire history. This is the actual
+  fix; everything below is defence in depth. It is the same lesson as N1's `listInViewport` and
+  `listPromotionCandidates` — **the bound has to be in the index, not after it**, which this repo has
+  now learned three times.
+- **One confirmation read per hazard, not two.** `never_existed` decides both eligibility and ranking;
+  reading the votes separately for each doubled the largest read in the pass, on the table users add to
+  most freely. `describeCluster` is now pure and takes the counts in.
+- **A ceiling, said out loud.** `MAX_BODY_HAZARDS = 4000`, read **newest first** so what it drops is
+  the oldest end of the window. Every affected row carries `computedFromPartialHistory`, the operator
+  card prints *"computed from this lake's most recent sightings only — the winter count may be low"*,
+  and the job logs it. That is §11's no-silent-caps rule doing exactly the job it exists for.
+- **Claiming and computing are now two transactions**, which is the structural half. The attempt
+  counter has to commit *before* the work is attempted or a rollback erases the evidence that anything
+  was tried — a counter incremented inside the failing transaction is not a counter. After
+  `MAX_BODY_ATTEMPTS = 3` the body is marked `skippedAt` and the queue drains past it. The row is kept,
+  never deleted: a lake the pass cannot compute should be findable, and a silently dropped one presents
+  as *"this lake has no patterns"*.
+- `maybeRunRollover` treats only **unskipped** rows as work left, so one stepped-over body cannot make
+  every remaining July tick restart a run with nothing to do.
+
+### 20.4 The lesson, which is the same one twice
+
+§17.5 named this phase's recurring blind spot as *"the phase asked carefully about **readers** of a
+field and never about **writers**"*. This is the third variation: it asked what a read **returns** and
+never what a read **costs as the corpus ages**. Every bound in this phase was justified against
+*today's* corpus — one hazard on dev — and "bounded by body" quietly meant "bounded by how much one
+lake accumulates forever".
+
+The rule worth keeping: **"bounded by X" is only a bound if X cannot grow without limit.** A per-body
+read is not bounded on a table that never ages out; a per-season read is. And a mutation whose read set
+is a function of user-created rows is a mutation users can eventually stop from committing, which makes
+it a availability question rather than only a performance one.

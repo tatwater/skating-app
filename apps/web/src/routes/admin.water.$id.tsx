@@ -1321,6 +1321,14 @@ function RecurrenceTool({
                   No longer matches anything visible — kept because a decision was made about it.
                 </span>
               ) : null}
+              {/* Never let a capped read read as a complete one: this lake holds more sightings in
+                  the window than one recompute reads, so the denominator beside it may undercount. */}
+              {cluster.computedFromPartialHistory ? (
+                <span className="text-foreground-muted text-xs">
+                  Computed from this lake’s most recent sightings only — it holds more in the window
+                  than one pass reads, so the winter count may be low.
+                </span>
+              ) : null}
               <span className="flex flex-wrap gap-2">
                 {cluster.promotedToFeatureId ? (
                   <span className="text-foreground-muted text-xs">
