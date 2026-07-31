@@ -4,12 +4,13 @@
 this the ridge that forms here every year?" Same question, same function, two windows — and building it
 once is the only way the two can't disagree.*
 
-> **Status:** 🚧 **Half built, 2026-07-31.** The within-season half — workstreams **A** and **B**, plus
-> **E** (manual authoring), the **D53 amendment** (§8.2) and the `shallow_early_thaw` rename — is built
-> on `phase-n5c-hazard-memory` and green across every suite; **unpushed, undeployed, not device-tested.**
-> Workstreams **C**, **D** and **F** (the cross-season engine, the recurrence queue and the dark
-> advisory) are **unbuilt**, and ship as a second PR. See *§15 — What the build changed about the plan*
-> and *§16 — What the review pass found*.
+> **Status:** ✅ **Built, 2026-07-31 — both halves.** The within-season half (workstreams **A**, **B**,
+> **E**, the **D53 amendment** and the `shallow_early_thaw` rename) shipped as **PR #34**. The
+> cross-season half (**C**, **D**, **F**) is built on `phase-n5c-recurrence` and green across every
+> suite — **unpushed, undeployed, not device-tested**, and the skater-facing advisory ships **dark**
+> behind `RECURRENCE_ADVISORIES_PUBLIC = false`, which is the intended shipped state rather than an
+> unfinished one. See *§15 — What the build changed about the plan*, *§16 — What the review pass found*
+> and *§17 — What the cross-season half changed*.
 > Founder asks 2026-07-27 (hazard memory) and 2026-07-30 (duplicate corroboration), merged into one
 > phase by the founder call in [§4](#4-workstream-a--the-clustering-primitive-d77).
 > **Depends on:** [N5a](./phase-N5a-seasons.md) — seasons as a derived first-class dimension, the
@@ -1205,3 +1206,86 @@ once merging exists**. `dismissedDuplicateOf`, `hazardIdsCreated`, `attachHazard
 list were all written before auto-merge and all meant "this row" in a world where a row was a hazard.
 Every one of them needed re-reading as "this *hazard*", and the second PR adds `memberHazardIds` to
 that list before it adds anything else.
+
+---
+
+## 17. What the cross-season half changed about the plan (2026-07-31)
+
+Same discipline as §15: the places the plan was wrong are worth more than the places it was right.
+
+### 17.1 §C4's own matching threshold could not do what §C4 said it would
+
+The plan asks for two things in the same paragraph, and they contradict each other:
+
+> Preserve `suppressedAt` and `promotedToFeatureId` by matching new clusters to existing rows on
+> **member overlap** (Jaccard > 0.5)… A cluster that grew by one member is the same cluster.
+
+One member growing to two is a **Jaccard of exactly 0.5** — not greater — so the row a moderator had
+suppressed would be abandoned the first winter anyone added a sighting. Two growing to four is 0.5 as
+well. Small clusters are the *only* clusters for years, so the symmetric measure fails across the whole
+corpus before it ever succeeds.
+
+The match is the **overlap coefficient**, `shared / min(|old|, |new|)`, which says what the second
+sentence meant: most of the smaller set survived. It matches a cluster that grew, matches one that
+shrank because pins were hidden, and still refuses two that merely brush past each other. A split still
+lets only one half inherit, because a claimed row is out of the running for the rest of the pass.
+
+### 17.2 The rollover is a daily tick with a month gate, not a `crons.cron`
+
+§C4 notes this would be the repo's first cron expression. It still isn't one, and the reason is better
+than uniformity: a `0 8 2 7 *` expression that fails on July 2 **waits a year**. A daily interval that
+does nothing outside the first week of July, and nothing again once `computedForSeason` is stamped,
+makes the once-a-year job retryable for the price of one indexed read on 358 days. Both halves of that
+gate are tests.
+
+### 17.3 The advisory's timing clause reads "first reported", not "between"
+
+§9.2's example is *"first seen between late December and February"*. But the window label collapses a
+fully-covered month to its bare name — which is what makes *"late December to February"* come out right
+— and *"between January"* is not a sentence. `first reported <label>` works for every shape the label
+can take, and keeps the clause in the same past tense as the rest of the sentence.
+
+### 17.4 The advisory describes a **family**, not a hazard type
+
+§9.2 says *"Type from `HAZARD_TYPE_LABELS`"*. A cluster can hold a `pressure_ridge` and an `ice_heave`,
+so naming one of them would report a detail the record does not carry. The copy names the family, and
+`RECURRENCE_FAMILY_PHRASES` has no `crack` entry — the *type* refuses one, since `RecurrenceFamily`
+excludes it, so the compiler holds that line rather than a comment.
+
+### 17.5 Decisions taken in the build
+
+- **A scratch queue table**, because the two phases cannot share a `.paginate()` and an array threaded
+  through scheduler arguments grows without bound in exactly the corpus this pass was built for.
+- **`representativeHazardId` is stored**, so a promotion records itself against the same pin whose
+  shape the feature carries. Re-deriving the medoid at promote time could pick a different one.
+- **`demote` had to grow.** It cleared `promotedFromHazardId` and nothing else, which after a *cluster*
+  promotion leaves every other member naming a standing statement that has been withdrawn. It clears
+  every backlink now and returns the pattern to the queue.
+- **`promote_recurrence` is its own audit verb.** Promoting one sighting and promoting a pattern across
+  winters are different claims, and an audit that could not tell them apart would lose the reason the
+  second one can be trusted.
+- **The tuning chart is a distribution.** "How many patterns go public if I raise the bar" is only
+  answerable as a histogram, and that constant is the one thing in this half a skater ever feels.
+- **The test file pins the clock**, and it is load-bearing: almost everything defaults to
+  `seasonOf(Date.now())`, so fixtures dated in one season against a real wall clock produce empty
+  results that look exactly like a broken query. Five tests failed that way before the pin.
+
+### 17.6 What is deliberately not built
+
+- **The `?action=` deep link and any notification path for advisories.** §9.4's no-list holds: no
+  notification, no bounty, no feed row, no `displayScore`, no trust or points, and nothing confirmable.
+- **A durable offline cache for advisories.** §9.5 was corrected in the first half — no such cache
+  exists for hazards either — and matching hazards' behaviour is the consistent choice. A per-body
+  hazard cache is a real, unbuilt thing if the on-ice path is ever to survive a cold start with no
+  signal, and it should be designed for hazards first.
+- **Impression tracking on the advisory**, and any measurement of whether skaters read it. There is
+  nothing to measure while it ships dark, and the honest time to decide what to count is when somebody
+  proposes flipping the flag.
+
+### 17.7 The trigger, restated now that it is real
+
+`RECURRENCE_ADVISORIES_PUBLIC` flips when the operator queue has been read across at least **two**
+rollovers and the clusters at the current bar look like real patterns — realistically the `'28/'29`
+rollover, possibly `'27/'28` if the corpus is dense. That is a judgement from `/admin/recurrence` and
+the *Patterns by winters observed* chart, not a date. Raising `RECURRENCE_PUBLIC_MIN_SEASONS` to 3 is
+one edit, and it moves the advisory and its timing clause together by construction.
