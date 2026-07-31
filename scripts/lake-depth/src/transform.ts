@@ -19,6 +19,8 @@ import {
   type DepthSource,
   surfaceAreaSqM as geodesicAreaSqM,
   representativePoint,
+  SHALLOW_MAX_DEPTH_M,
+  SHALLOW_MEAN_DEPTH_M,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type {
@@ -206,6 +208,111 @@ function areaGeometry(feature: HydroLakesFeature): Polygon | MultiPolygon | unde
   return undefined;
 }
 
+// --- LAGOS-US: many records, one lake ---
+
+/** One lake's worth of LAGOS-US records, after the merge below. */
+export interface MergedLagosLake {
+  lagoslakeid: string;
+  lat: number;
+  lng: number;
+  areaSqM?: number;
+  meanDepthM?: number;
+  maxDepthM?: number;
+  /** How many source rows fed this lake. `1` for the ordinary case. */
+  rowCount: number;
+  /** Every usable reading, kept for the contested check and the named error. */
+  means: number[];
+  maxima: number[];
+  /** Readings straddle `SHALLOW_MEAN_DEPTH_M` (or `SHALLOW_MAX_DEPTH_M` with no mean). */
+  contested: boolean;
+}
+
+/** Median. Even counts take the lower of the two middles — a real reading, never a fabricated one. */
+function median(values: number[]): number {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted[Math.floor((sorted.length - 1) / 2)] as number;
+}
+
+/**
+ * Collapse LAGOS-US DEPTH rows to one record per `lagoslakeid`.
+ *
+ * **Why this exists at all:** LAGOS-US DEPTH is *compiled* from ~65 agency, university and
+ * monitoring-program sources, so a well-studied lake can plausibly carry several records. Emitting them
+ * all worked — they land on the same body at the same rung — but `winsLadder` accepts an equal rank, so
+ * the value stored was whichever row the file happened to list last. Arbitrary, and invisible.
+ *
+ * **The two measurements merge differently, because they mean different things.**
+ *  - A **max is an extremum**: two surveys reporting 5 m and 9 m together say the lake reaches ≥ 9 m, so
+ *    the deepest reading is the honest one and the shallower is simply a survey that missed the hole.
+ *  - A **mean is a basin property** with no combining rule, so take the **median** — robust to one bad
+ *    record, and always a number somebody actually reported. Never the average, which would publish a
+ *    depth no source measured.
+ *
+ * **The rejected shortcut:** since D69 makes a false "shallow" the cheap error, one could just take the
+ * shallowest reading everywhere and let the safety signal win. But this number is *displayed* to skaters
+ * as well as fed to the decay model, and biasing a published depth toward shallow is exactly the D3
+ * violation the provenance work exists to prevent. The measurement stays honest; the conservatism lives
+ * in the threshold, where `SHALLOW_MAX_DEPTH_M`'s deliberately generous 7 m already puts it.
+ *
+ * **What is never silently merged is a disagreement that crosses a threshold.** If some records say the
+ * lake is shallow and others say it isn't, the merge still picks a number, but the pick has decided a
+ * safety classification rather than a display detail — so it is counted and named for review.
+ *
+ * Location and area come from the first row carrying them: these are per-*lake* attributes in LAGOS-US,
+ * so rows of one lake should agree, and the geometric match is gated on area anyway.
+ */
+export function mergeLagosRows(rows: readonly LagosDepthRow[]): {
+  lakes: MergedLagosLake[];
+  merged: number;
+  contested: number;
+} {
+  const byId = new Map<string, LagosDepthRow[]>();
+  for (const row of rows) {
+    const existing = byId.get(row.lagoslakeid);
+    if (existing) existing.push(row);
+    else byId.set(row.lagoslakeid, [row]);
+  }
+
+  const lakes: MergedLagosLake[] = [];
+  let merged = 0;
+  let contested = 0;
+  for (const [lagoslakeid, group] of byId) {
+    const usable = (pick: (r: LagosDepthRow) => number | undefined) =>
+      group.map(pick).filter((v): v is number => v !== undefined && v > 0 && Number.isFinite(v));
+    const means = usable((r) => r.meanDepthM);
+    const maxima = usable((r) => r.maxDepthM);
+
+    const meanDepthM = means.length > 0 ? median(means) : undefined;
+    const maxDepthM = maxima.length > 0 ? Math.max(...maxima) : undefined;
+
+    // The mean decides shallowness whenever we have one, so it is the reading whose disagreement
+    // matters; the max threshold only applies to lakes with no mean at all (`isShallowDepth`).
+    const straddles = (values: number[], threshold: number) =>
+      values.some((v) => v <= threshold) && values.some((v) => v > threshold);
+    const isContested =
+      means.length > 0
+        ? straddles(means, SHALLOW_MEAN_DEPTH_M)
+        : straddles(maxima, SHALLOW_MAX_DEPTH_M);
+
+    if (group.length > 1) merged += group.length - 1;
+    if (isContested) contested++;
+    const located = group.find((r) => Number.isFinite(r.lat) && Number.isFinite(r.lng)) ?? group[0];
+    lakes.push({
+      lagoslakeid,
+      lat: (located as LagosDepthRow).lat,
+      lng: (located as LagosDepthRow).lng,
+      areaSqM: group.find((r) => r.areaSqM !== undefined)?.areaSqM,
+      meanDepthM,
+      maxDepthM,
+      rowCount: group.length,
+      means,
+      maxima,
+      contested: isContested,
+    });
+  }
+  return { lakes, merged, contested };
+}
+
 // --- The join ---
 
 export interface TransformInput {
@@ -296,23 +403,28 @@ export function transformDepths(input: TransformInput): TransformResult {
     });
   }
 
-  for (const row of input.lagos ?? []) {
-    const key = `lagos/${row.lagoslakeid}`;
-    const hasMean = row.meanDepthM !== undefined && row.meanDepthM > 0;
-    const hasMax = row.maxDepthM !== undefined && row.maxDepthM > 0;
-    if (!hasMean && !hasMax) {
+  const lagos = mergeLagosRows(input.lagos ?? []);
+  for (const merged of lagos.lakes) {
+    const key = `lagos/${merged.lagoslakeid}`;
+    if (merged.meanDepthM === undefined && merged.maxDepthM === undefined) {
       skipped++;
       continue; // a DEPTH row with no usable depth is ordinary, not an error worth naming
     }
+    if (merged.contested) {
+      errors.push({
+        key,
+        message: `${merged.rowCount} records disagree across a shallow threshold (means ${fmt(merged.means)}, maxima ${fmt(merged.maxima)}) — merged, but the shallow classification is a judgement call here`,
+      });
+    }
     records.push({
       key,
-      point: { lat: row.lat, lng: row.lng },
-      areaSqM: row.areaSqM,
-      ...(hasMean
-        ? { meanDepthM: row.meanDepthM as number, meanDepthSource: 'lagos_us' as const }
+      point: { lat: merged.lat, lng: merged.lng },
+      areaSqM: merged.areaSqM,
+      ...(merged.meanDepthM !== undefined
+        ? { meanDepthM: merged.meanDepthM, meanDepthSource: 'lagos_us' as const }
         : {}),
-      ...(hasMax
-        ? { maxDepthM: row.maxDepthM as number, maxDepthSource: 'lagos_us' as const }
+      ...(merged.maxDepthM !== undefined
+        ? { maxDepthM: merged.maxDepthM, maxDepthSource: 'lagos_us' as const }
         : {}),
     });
   }
@@ -325,7 +437,11 @@ export function transformDepths(input: TransformInput): TransformResult {
       lagosRead: input.lagos?.length ?? 0,
       emitted: records.length,
       skipped,
+      lagosMerged: lagos.merged,
+      lagosContested: lagos.contested,
     },
     errors,
   };
 }
+
+const fmt = (values: number[]) => `[${values.map((v) => v.toFixed(1)).join(', ')}]`;

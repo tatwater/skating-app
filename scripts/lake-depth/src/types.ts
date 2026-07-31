@@ -75,6 +75,14 @@ export interface TransformSummary {
   lagosRead: number;
   emitted: number;
   skipped: number;
+  /** LAGOS-US rows that shared a `lagoslakeid` with another and were merged into one record. */
+  lagosMerged: number;
+  /**
+   * Merged lakes whose own records **disagree across a shallow threshold** — some readings say the lake
+   * is shallow and others say it isn't. The merge picks a number either way; this is the count of times
+   * that pick decided a safety classification rather than a display detail, and it wants human eyes.
+   */
+  lagosContested: number;
 }
 
 export interface TransformError {

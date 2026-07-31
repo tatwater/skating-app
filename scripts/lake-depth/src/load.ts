@@ -29,6 +29,10 @@ interface MatchResult {
   unmatched: number;
   areaRejected: number;
   skipped: number;
+  /** Matches the area gate could not run on, because one side reported no area. */
+  noAreaGate: number;
+  /** Measurements a moderator owns — a reading or an explicit rejection. Never overwritten (D68). */
+  operatorHeld: number;
   rejects: { key: string; reason: string }[];
 }
 
@@ -116,7 +120,14 @@ function main(): void {
     `[lake-depth] matching ${lakes.length} source lakes in ${batches.length} batch(es)…\n`,
   );
 
-  const totals = { updated: 0, unmatched: 0, areaRejected: 0, skipped: 0 };
+  const totals = {
+    updated: 0,
+    unmatched: 0,
+    areaRejected: 0,
+    skipped: 0,
+    noAreaGate: 0,
+    operatorHeld: 0,
+  };
   const rejects: { key: string; reason: string }[] = [];
   let applied = 0;
   try {
@@ -126,6 +137,8 @@ function main(): void {
       totals.unmatched += result.unmatched;
       totals.areaRejected += result.areaRejected;
       totals.skipped += result.skipped;
+      totals.noAreaGate += result.noAreaGate ?? 0;
+      totals.operatorHeld += result.operatorHeld ?? 0;
       rejects.push(...(result.rejects ?? []));
       applied++;
       if ((index + 1) % 20 === 0 || index + 1 === batches.length) {
@@ -147,6 +160,13 @@ function main(): void {
     `[lake-depth] load complete: ${totals.updated}/${lakes.length} stamped (${rate}%) · ` +
       `${totals.skipped} already had a better source · ${totals.unmatched} matched no body · ` +
       `${totals.areaRejected} rejected on area\n`,
+  );
+  // The two numbers that describe how much of the run went un-checked or was deliberately withheld.
+  // Both are expected to be non-zero; both are wrong if they are *large*, and neither is visible from
+  // the match rate alone — which is the shape of every silent-cap bug this repo has already hit once.
+  process.stderr.write(
+    `[lake-depth] of those: ${totals.noAreaGate} matched with no area gate (one side reported no area) · ` +
+      `${totals.operatorHeld} held by a moderator's override\n`,
   );
   const SHOWN = 30;
   for (const r of rejects.slice(0, SHOWN)) {

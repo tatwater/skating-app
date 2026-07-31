@@ -75,6 +75,14 @@ function main(): void {
       `[lake-depth] emitted ${summary.emitted} records (${withMean} with a mean · ${withMax} with a max) · ` +
       `${summary.skipped} skipped\n`,
   );
+  if (summary.lagosMerged > 0 || summary.lagosContested > 0) {
+    // Step 0 of the runbook is "find out whether LAGOS-US even has duplicate rows". This line is the
+    // answer, printed by the run that first has the file in hand.
+    process.stderr.write(
+      `[lake-depth] LAGOS-US: ${summary.lagosMerged} duplicate row(s) merged into their lake · ` +
+        `${summary.lagosContested} lake(s) whose records disagree across a shallow threshold (listed below)\n`,
+    );
+  }
   // Cap the per-lake noise but say how much was withheld — a truncated list that looks complete is the
   // failure mode the register's own no-silent-caps rule exists for.
   const SHOWN = 20;

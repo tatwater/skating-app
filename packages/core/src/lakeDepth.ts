@@ -150,34 +150,11 @@ export function isShallowDepth(depths: LakeDepths): boolean {
   return false;
 }
 
-/** One source's offer of a depth, as the ETL assembles them per body. */
-export interface DepthCandidate {
-  valueM: number;
-  source: DepthSource;
-}
-
-/**
- * Resolve the ladder: the best-ranked candidate with a usable value, or `undefined`. Ties keep the
- * **first** candidate at that rank, so a caller's own ordering survives (two `lagos_us` rows for one
- * body means the join matched twice and the transform should have deduped, not that we should pick
- * arbitrarily — but picking stably beats picking by whichever way `sort` went).
- *
- * A non-finite or non-positive depth is dropped rather than ranked. A zero depth is not a shallow lake,
- * it is a missing measurement written as 0 — a distinction several of these sources do not make for us.
- */
-export function resolveDepth(candidates: readonly DepthCandidate[]): DepthCandidate | undefined {
-  let best: DepthCandidate | undefined;
-  for (const candidate of candidates) {
-    if (!Number.isFinite(candidate.valueM) || candidate.valueM <= 0) continue;
-    if (
-      best === undefined ||
-      DEPTH_SOURCE_RANK[candidate.source] < DEPTH_SOURCE_RANK[best.source]
-    ) {
-      best = candidate;
-    }
-  }
-  return best;
-}
+// A `resolveDepth(candidates)` helper lived here until the review of 2026-07-31. It was written when
+// the plan had the transform resolving the ladder locally; the join moved server-side mid-build, and
+// `waterBodies.applyDepthLadder` — which resolves the ladder *against what is already stored*, one
+// measurement at a time — is the surviving implementation. Keeping a second one would have been the
+// duplicate that `applyDepthLadder`'s own docstring says it exists to prevent.
 
 /** Short human label per source, for the display caption and the operator editor. */
 export const DEPTH_SOURCE_LABELS: Record<DepthSource, string> = {

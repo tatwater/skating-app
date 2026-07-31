@@ -4,17 +4,12 @@ import {
   DEPTH_SOURCE_LABELS,
   DEPTH_SOURCE_RANK,
   DEPTH_SOURCES,
-  type DepthCandidate,
-  type DepthSource,
   describeLakeDepth,
   isMeasuredDepthSource,
   isShallowDepth,
-  resolveDepth,
   SHALLOW_MAX_DEPTH_M,
   SHALLOW_MEAN_DEPTH_M,
 } from './lakeDepth';
-
-const arbSource = fc.constantFrom(...DEPTH_SOURCES);
 
 describe('the depth source ladder (D68)', () => {
   it('ranks every source, uniquely, from the array order', () => {
@@ -59,69 +54,6 @@ describe('the depth source ladder (D68)', () => {
     for (const source of ['hydrolakes_reported', 'hydrolakes_modeled', 'globathy'] as const) {
       expect(isMeasuredDepthSource(source)).toBe(false);
     }
-  });
-});
-
-describe('resolveDepth', () => {
-  it('returns nothing for an empty candidate list', () => {
-    expect(resolveDepth([])).toBeUndefined();
-  });
-
-  it('picks the best-ranked candidate regardless of input order', () => {
-    const candidates: DepthCandidate[] = [
-      { valueM: 4, source: 'globathy' },
-      { valueM: 9, source: 'operator' },
-      { valueM: 7, source: 'lagos_us' },
-    ];
-    expect(resolveDepth(candidates)).toEqual({ valueM: 9, source: 'operator' });
-    expect(resolveDepth([...candidates].reverse())).toEqual({ valueM: 9, source: 'operator' });
-  });
-
-  it('drops non-positive and non-finite depths rather than ranking them', () => {
-    // A 0 from these sources means "no measurement", not "a lake with no depth".
-    expect(
-      resolveDepth([
-        { valueM: 0, source: 'operator' },
-        { valueM: -3, source: 'state_agency' },
-        { valueM: Number.NaN, source: 'lagos_us' },
-        { valueM: Number.POSITIVE_INFINITY, source: 'hydrolakes_reported' },
-        { valueM: 12, source: 'globathy' },
-      ]),
-    ).toEqual({ valueM: 12, source: 'globathy' });
-  });
-
-  it('keeps the first candidate on a rank tie (stable, not sort-dependent)', () => {
-    expect(
-      resolveDepth([
-        { valueM: 5, source: 'lagos_us' },
-        { valueM: 6, source: 'lagos_us' },
-      ]),
-    ).toEqual({ valueM: 5, source: 'lagos_us' });
-  });
-
-  it('property: the winner is always a usable candidate of minimal rank', () => {
-    fc.assert(
-      fc.property(
-        fc.array(
-          fc.record({ valueM: fc.double({ min: -10, max: 400, noNaN: true }), source: arbSource }),
-          { maxLength: 12 },
-        ),
-        (candidates) => {
-          const usable = candidates.filter((c) => Number.isFinite(c.valueM) && c.valueM > 0);
-          const winner = resolveDepth(candidates);
-          if (usable.length === 0) {
-            expect(winner).toBeUndefined();
-            return;
-          }
-          expect(winner).toBeDefined();
-          const bestRank = Math.min(
-            ...usable.map((c) => DEPTH_SOURCE_RANK[c.source as DepthSource]),
-          );
-          expect(DEPTH_SOURCE_RANK[(winner as DepthCandidate).source]).toBe(bestRank);
-          expect(usable).toContainEqual(winner);
-        },
-      ),
-    );
   });
 });
 

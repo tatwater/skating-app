@@ -150,7 +150,17 @@ exactly like one that stamped all of it if you only print totals. Rejections are
   is the guard against the one failure mode that produces a *wrong* answer rather than no answer: a big
   lake's representative point landing inside the small pond next door, stamping 40 m of depth onto it and
   quietly telling the decay model that pond is deep.
+- `a moderator owns this depth` — rung 1 held: someone typed a reading in, or **rejected** an imported
+  one (a rejection keeps the `operator` rung as a tombstone precisely so a re-run can't undo it). Counted
+  separately from the line below because it is the one rejection a human decided on purpose — release it
+  from the lake editor if the import should win after all.
+- `implausible depth (…)` — an offered number that wasn't a plausible depth (non-positive, or past the
+  400 m ceiling). Expect zero; a non-zero count means a source column changed its fill value.
 - `already had a better source` — the ladder held. Normal on a re-run.
+
+The summary's second line reports **`matched with no area gate`**: matches where one side reported no
+area, so the 4× guard never ran. Those are un-checked matches rather than bad ones, and a run should say
+how many of its stamps went un-gated instead of leaving that to be inferred.
 
 ### 5. Spot-check
 
@@ -161,6 +171,24 @@ pnpm exec convex run waterBodies:get '{"waterBodyId": "<id>"}'
 Worth checking a lake you know: Shelburne Pond should come back **shallow** despite being large (~1.5 m
 mean over 194 ha), and Willoughby should not. That pair is the whole reason depth beats surface area as a
 proxy.
+
+### 5b. Check what LAGOS-US actually gave you — one row per lake, or many?
+
+The transform **merges rows sharing a `lagoslakeid`** and prints how many it merged. LAGOS-US DEPTH is
+compiled from ~65 sources, so several records per lake is plausible; before this merge existed the stored
+value was whichever row the file happened to list last, which is arbitrary and looks identical to a clean
+run. The merge rules, and why they differ per measurement:
+
+- **max → the deepest reading.** A max is an extremum: two surveys reporting 5 m and 9 m together say the
+  lake reaches ≥ 9 m, and the shallower one simply missed the hole.
+- **mean → the median.** A mean has no principled combining rule, so take a number somebody actually
+  reported, robust to one bad record. Never the average, which publishes a depth no source measured.
+
+If the file turns out to carry **per-record source attribution or quality flags**, those are the better
+tiebreak and the numeric rule should become the fallback — that is a real finding for this step, not a
+todo. Either way, the merge count and any **contested** lakes (records that disagree across the shallow
+threshold — some saying shallow, some not) are printed by the transform and worth reading: those are the
+lakes where the merge decided a safety classification rather than a display detail.
 
 ### 6. Calibrate `SHALLOW_MAX_DEPTH_M` — do this on the first real run
 
@@ -199,5 +227,8 @@ they come out — including "7 m was fine", which is a result and not a non-even
 - **No state-agency bulk depths.** Rung 2 (`state_agency`) exists in the enum and has no loader yet: NH
   GRANIT / VT ANR / MassGIS / NYSDEC are being fetched in N6b anyway for their contours, and parsing them
   twice would be the mistake. Until then a moderator types individual lakes in at rung 1.
-- **No OSM depth tags.** `osm_tag` is in the enum for the water ETL to carry opportunistically; inland
-  coverage is near-zero (the tags are mostly nautical), so it was never worth its own pass.
+- **No OSM depth tags.** `osm_tag` is carried by the **water** ETL (`scripts/etl`, `--depths` →
+  `load-depths`) — it's the only pass that sees an OSM feature, so it can't ride this one. Built in the
+  N6a review after the register spent a phase claiming it was already folded in. Inland coverage is
+  near-zero, and it sits at the bottom of the ladder, so it only ever fills a measurement nothing better
+  has claimed.

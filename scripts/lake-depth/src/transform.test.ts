@@ -2,13 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   findColumn,
   hydroLakesRung,
+  mergeLagosRows,
   parseGlobathy,
   parseLagosDepth,
   parseNumber,
   splitCsvLine,
   transformDepths,
 } from './transform';
-import type { HydroLakesFeature } from './types';
+import type { HydroLakesFeature, LagosDepthRow } from './types';
 
 /** A square HydroLAKES polygon around (44, -72). */
 function hydroFeature(
@@ -232,5 +233,99 @@ describe('transformDepths', () => {
     const { records, summary } = transformDepths({});
     expect(records).toEqual([]);
     expect(summary).toMatchObject({ emitted: 0, skipped: 0 });
+  });
+});
+
+/**
+ * LAGOS-US is *compiled* from ~65 sources, so one lake can carry several records. Emitting them all
+ * "worked" — same body, same rung — but `winsLadder` accepts an equal rank, so the stored value was
+ * whichever row the file listed last. Arbitrary and invisible, which is the combination worth a test.
+ */
+describe('mergeLagosRows (many records, one lake)', () => {
+  const row = (over: Partial<LagosDepthRow> = {}): LagosDepthRow => ({
+    lagoslakeid: '1',
+    lat: 44,
+    lng: -72,
+    ...over,
+  });
+
+  it('leaves a single-record lake exactly as it was', () => {
+    const { lakes, merged, contested } = mergeLagosRows([row({ meanDepthM: 4, maxDepthM: 9 })]);
+    expect(lakes).toHaveLength(1);
+    expect(lakes[0]).toMatchObject({ meanDepthM: 4, maxDepthM: 9, rowCount: 1, contested: false });
+    expect(merged).toBe(0);
+    expect(contested).toBe(0);
+  });
+
+  it('takes the DEEPEST max — an extremum is the union of what surveys found', () => {
+    const { lakes, merged } = mergeLagosRows([
+      row({ maxDepthM: 5 }),
+      row({ maxDepthM: 9 }),
+      row({ maxDepthM: 7 }),
+    ]);
+    expect(lakes[0]?.maxDepthM).toBe(9);
+    expect(merged).toBe(2);
+  });
+
+  it('takes the MEDIAN mean — and never an average nobody reported', () => {
+    const { lakes } = mergeLagosRows([
+      row({ meanDepthM: 2 }),
+      row({ meanDepthM: 3 }),
+      row({ meanDepthM: 40 }), // one bad record must not drag the answer
+    ]);
+    expect(lakes[0]?.meanDepthM).toBe(3);
+  });
+
+  it('flags records that disagree across the shallow threshold', () => {
+    // The merge still picks a number, but here the pick decided a *safety classification* rather than
+    // a display detail, so it gets counted and named instead of silently resolved.
+    const { lakes, contested } = mergeLagosRows([row({ meanDepthM: 2 }), row({ meanDepthM: 6 })]);
+    expect(contested).toBe(1);
+    expect(lakes[0]?.contested).toBe(true);
+    expect(lakes[0]?.means).toEqual([2, 6]);
+  });
+
+  it('does not flag agreement, however far apart the numbers are', () => {
+    const { contested } = mergeLagosRows([row({ meanDepthM: 12 }), row({ meanDepthM: 60 })]);
+    expect(contested).toBe(0); // both say "not shallow"; the disagreement changes nothing we do
+  });
+
+  it('falls back to the max threshold only when no record has a mean', () => {
+    expect(mergeLagosRows([row({ maxDepthM: 5 }), row({ maxDepthM: 20 })]).contested).toBe(1);
+    // With a mean present the mean decides, so a straddling max is not the contested case.
+    expect(
+      mergeLagosRows([row({ meanDepthM: 1, maxDepthM: 5 }), row({ meanDepthM: 2, maxDepthM: 20 })])
+        .contested,
+    ).toBe(0);
+  });
+
+  it('drops unusable readings before merging, and keeps the lake if anything survives', () => {
+    const { lakes } = mergeLagosRows([
+      row({ meanDepthM: 0, maxDepthM: -1 }),
+      row({ meanDepthM: 3 }),
+    ]);
+    expect(lakes[0]).toMatchObject({ meanDepthM: 3, maxDepthM: undefined });
+  });
+
+  it('keeps lakes apart by id, and takes location/area from the row that has them', () => {
+    const { lakes } = mergeLagosRows([
+      row({ lagoslakeid: 'a', meanDepthM: 2 }),
+      row({ lagoslakeid: 'b', lat: 45, lng: -71, areaSqM: 5e5, meanDepthM: 8 }),
+    ]);
+    expect(lakes).toHaveLength(2);
+    expect(lakes[1]).toMatchObject({ lat: 45, lng: -71, areaSqM: 5e5 });
+  });
+
+  it('reports the merge in the transform summary and names the contested lake', () => {
+    const { records, summary, errors } = transformDepths({
+      lagos: [
+        { lagoslakeid: '7', lat: 44, lng: -72, meanDepthM: 2 },
+        { lagoslakeid: '7', lat: 44, lng: -72, meanDepthM: 6 },
+      ],
+    });
+    expect(records).toHaveLength(1); // one lake, one record — not two racing rows
+    expect(summary).toMatchObject({ lagosRead: 2, lagosMerged: 1, lagosContested: 1 });
+    expect(errors[0]?.key).toBe('lagos/7');
+    expect(errors[0]?.message).toContain('disagree across a shallow threshold');
   });
 });
