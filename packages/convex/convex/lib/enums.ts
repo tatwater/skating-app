@@ -192,6 +192,11 @@ export const MODERATION_ACTIONS = [
   // skater sees on their own report — so each write is attributed. Delisting and restoring reuse the
   // generic `remove` / `restore` verbs, disambiguated by the `waterBodySubArea` target type, exactly
   // as `hide` / `remove` are already shared across content kinds.
+  // Duplicate hazards folded into one (N5c / D80). `merge_hazards` is written by the **machine** as
+  // well as by a moderator — deliberately, because an automatic merge that leaves no audit row is a
+  // mechanism nobody can check, and this one is meant to be watched before it is trusted.
+  'merge_hazards',
+  'unmerge_hazards',
   'set_weather_sample_points', // placed the multi-cell weather sampling grid on a giant (D56 §5)
   'set_lake_depth', // typed a surveyed depth in, the top rung of the D68 ladder (N6a)
   'create_sub_area',

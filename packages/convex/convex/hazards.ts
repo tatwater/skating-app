@@ -56,6 +56,7 @@ import {
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
+import { resolveHazardSurvivor, tryAutoMerge, unmergeHazard } from './lib/hazardMerge';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
@@ -264,7 +265,13 @@ export const create = mutation({
     }
     // Granular posting permission (D57): a moderator can restrict hazard posting alone (finer than a ban).
     assertCanPostHazards(profile);
-    return insertHazard(ctx, args, profile._id, now);
+    const hazardId = await insertHazard(ctx, args, profile._id, now);
+    // Auto-merge runs here, in the same mutation (D80, layer 4). Any later and there is a window in
+    // which the map shows two pins for one ridge, which is the state it exists to remove. Returns the
+    // **survivor**, so a client that navigates to what it just created lands on the live pin rather
+    // than on a tombstone.
+    const { survivorId } = await tryAutoMerge(ctx, hazardId);
+    return survivorId;
   },
 });
 
@@ -306,7 +313,17 @@ export interface HazardView extends Doc<'hazards'> {
   clusterMemberIds?: string[];
 }
 
-function toView(hazard: Doc<'hazards'>, now: number, consensus?: HazardConsensus): HazardView {
+function toView(
+  hazard: Doc<'hazards'>,
+  now: number,
+  consensus?: HazardConsensus,
+  /**
+   * Which member ids the caller is actually going to render. Merge tombstones are pooled but never
+   * drawn, so publishing their ids as cluster members would ask the map to union a footprint it can't
+   * see and quietly fall back to drawing this pin alone — losing the very union the merge produced.
+   */
+  visibleMemberIds?: ReadonlySet<string>,
+): HazardView {
   // The gates read the **cluster**, not the row (D80). Absent consensus ⇒ the row's own values, which
   // is also exactly what a singleton cluster returns — so there is one code path and no special case.
   const confirmCount = consensus?.confirmCount ?? hazard.confirmCount;
@@ -339,9 +356,25 @@ function toView(hazard: Doc<'hazards'>, now: number, consensus?: HazardConsensus
      * season's report gets. `listForBody` is where the drop happens.
      */
     expired: isPassageExpired(hazard.type, lastConfirmedAt, now),
-    ...(consensus && consensus.memberIds.length > 1
-      ? { clusterConfirmCount: confirmCount, clusterMemberIds: [...consensus.memberIds] }
-      : {}),
+    ...clusterFields(consensus, confirmCount, visibleMemberIds),
+  };
+}
+
+/** The `clusterConfirmCount` / `clusterMemberIds` pair, or nothing when this pin stands alone. */
+function clusterFields(
+  consensus: HazardConsensus | undefined,
+  confirmCount: number,
+  visibleMemberIds?: ReadonlySet<string>,
+): { clusterConfirmCount?: number; clusterMemberIds?: string[] } {
+  if (!consensus || consensus.memberIds.length <= 1) return {};
+  const drawable = visibleMemberIds
+    ? consensus.memberIds.filter((id) => visibleMemberIds.has(id))
+    : [...consensus.memberIds];
+  // The count still reflects everyone the cluster knows about, tombstones included — a merged pin's
+  // reporter is a witness whether or not their outline is drawn separately. Only the *ids* narrow.
+  return {
+    clusterConfirmCount: confirmCount,
+    ...(drawable.length > 1 ? { clusterMemberIds: drawable } : {}),
   };
 }
 
@@ -381,6 +414,10 @@ export async function clusterScopeFor(
     )
     .collect();
   const target = seasonOf(hazard.firstReportedAt);
+  // **Merge tombstones stay in scope**, deliberately. A pin folded into another still carries its
+  // author and its confirmations, and those are exactly what the survivor's consensus should count —
+  // read *through* the chain rather than rewritten onto it, so nobody's statement is edited (D65).
+  // They are dropped from the rendered list separately, in `listForBody`.
   return siblings.filter(
     (h) => h.moderationStatus === 'visible' && isInSeason(h.firstReportedAt, target),
   );
@@ -499,13 +536,17 @@ export const listForBody = query({
     const inScope = rows
       .filter((h) => h.moderationStatus === 'visible')
       .filter((h) => isInSeason(h.firstReportedAt, target));
+    // Tombstones are pooled but not rendered: the survivor carries the warning, with the union of the
+    // chain's footprints, so drawing the loser too would put a second outline over the same ice.
+    const rendered = inScope.filter((h) => h.mergedIntoHazardId === undefined);
     // Pooled *before* the expiry drop and after the season filter, so a cluster is what one winter's
     // skaters actually reported on this lake — a pin from last February is not corroboration for one
     // drawn this January, and the season axis is what says so.
     const pooled = await poolConsensus(ctx, inScope);
+    const visibleIds = new Set(rendered.map((h) => h._id as string));
     return (
-      inScope
-        .map((h) => toView(h, now, pooled.get(h._id)))
+      rendered
+        .map((h) => toView(h, now, pooled.get(h._id), visibleIds))
         // **The one place a pin leaves the map on time alone** (D64). A hazard fades to a floor and
         // never disappears, because assuming a danger is still there is the recoverable mistake. A
         // suggested crossing is the opposite: "reported crossable" with nobody having looked in three
@@ -609,11 +650,18 @@ function isUserVisibleHazard(hazard: Doc<'hazards'> | null): hazard is Doc<'haza
   return hazard !== null && hazard.moderationStatus === 'visible';
 }
 
-/** A single hazard for its detail drawer. `null` when missing or moderator-hidden. */
+/**
+ * A single hazard for its detail drawer. `null` when missing or moderator-hidden.
+ *
+ * **Resolved through the merge chain** (D80): a permalink to a pin that has since been folded into
+ * another lands on the live one, not on nothing. That is the same courtesy `resolveSurvivor` gives a
+ * merged water body, and it matters more here — the link in an on-ice notification is the one a skater
+ * taps while standing on the ice.
+ */
 export const get = query({
   args: { hazardId: v.id('hazards') },
   handler: async (ctx, { hazardId }): Promise<HazardView | null> => {
-    const hazard = await ctx.db.get(hazardId);
+    const hazard = await resolveHazardSurvivor(ctx, hazardId);
     if (!isUserVisibleHazard(hazard)) return null;
     const now = Date.now();
 
@@ -661,7 +709,7 @@ export const get = query({
 export const listClusterMembers = query({
   args: { hazardId: v.id('hazards') },
   handler: async (ctx, { hazardId }) => {
-    const hazard = await ctx.db.get(hazardId);
+    const hazard = await resolveHazardSurvivor(ctx, hazardId);
     if (!isUserVisibleHazard(hazard)) return [];
     const scope = await clusterScopeFor(ctx, hazard);
     const consensus = (await poolConsensus(ctx, scope)).get(hazard._id);
@@ -687,6 +735,9 @@ export const listClusterMembers = query({
       members.push({
         hazardId: member._id,
         type: member.type,
+        // A pin folded into this one (D80). Named here precisely *because* it no longer draws its own
+        // outline: a merge collapses the geometry, never the record of who saw what.
+        merged: member.mergedIntoHazardId !== undefined,
         firstReportedAt: member.firstReportedAt,
         lastConfirmedAt: member.lastConfirmedAt,
         confirmCount: member.confirmCount,
@@ -698,6 +749,72 @@ export const listClusterMembers = query({
       });
     }
     return members;
+  },
+});
+
+/**
+ * Recent automatic merges, for the operator panel that makes auto-merge auditable (D80).
+ *
+ * **This panel is the reason automating the merge is acceptable at all.** A mechanism that folds one
+ * safety pin into another without anywhere to look at what it did is a mechanism nobody can check; the
+ * bar is a guess until somebody watches it work, and the unmerge rate is the only empirical evidence
+ * that it is set right. Bounded read off `by_target`-free ordering — the audit table is append-only
+ * and this takes the newest page.
+ */
+export const listRecentMerges = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    await requireContributorRole(ctx, 'moderator');
+    const rows = await ctx.db
+      .query('moderationActions')
+      .order('desc')
+      .filter((q) =>
+        q.or(q.eq(q.field('action'), 'merge_hazards'), q.eq(q.field('action'), 'unmerge_hazards')),
+      )
+      .take(Math.min(limit ?? 50, 200));
+
+    return Promise.all(
+      rows.map(async (row) => {
+        const loser = await ctx.db.get(row.targetId as Id<'hazards'>);
+        const survivorId = (row.metadata as { survivorId?: Id<'hazards'> } | undefined)?.survivorId;
+        const survivor = survivorId ? await ctx.db.get(survivorId) : null;
+        const body = loser ? await ctx.db.get(loser.waterBodyId) : null;
+        return {
+          actionId: row._id,
+          action: row.action,
+          automatic: row.actorId === undefined,
+          at: row.createdAt,
+          loserId: row.targetId,
+          survivorId: survivorId ?? null,
+          // Live state, not the state at merge time: what a moderator needs to know is whether the
+          // pair is *currently* merged, since that is what the Unmerge button will act on.
+          stillMerged: loser?.mergedIntoHazardId !== undefined,
+          type: loser?.type ?? survivor?.type ?? null,
+          waterBodyId: loser?.waterBodyId ?? null,
+          waterBodyName: body?.name ?? null,
+        };
+      }),
+    );
+  },
+});
+
+/**
+ * Separate a merged pair, and remember that a human did (D80).
+ *
+ * Both pins return intact — nothing was ever deleted — and both record the other in `noMergeWith`, so
+ * the next create on the same spot can't re-merge them by the same rule that merged them the first
+ * time. Without that, Unmerge would be a button that undoes nothing.
+ */
+export const unmerge = mutation({
+  args: { hazardId: v.id('hazards'), reason: v.string() },
+  handler: async (ctx, { hazardId, reason }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    // Fetched raw, not through `resolveHazardSurvivor` — the whole point is to act on the tombstone.
+    const loser = await ctx.db.get(hazardId);
+    if (!loser) throw new ConvexError('Hazard not found');
+    if (loser.mergedIntoHazardId === undefined) throw new ConvexError('Hazard is not merged');
+    await unmergeHazard(ctx, loser, { actorId: actor._id, reason });
   },
 });
 
@@ -787,6 +904,9 @@ export async function loadVisibleHazard(
   ctx: QueryCtx,
   hazardId: Id<'hazards'>,
 ): Promise<Doc<'hazards'> | null> {
-  const hazard = await ctx.db.get(hazardId);
+  // Through the merge chain, so a confirmation cast from a stale deep link — an on-ice notification
+  // sent before the merge, a drawer left open — lands on the pin that is actually carrying the warning
+  // rather than being refused. The vote is about the ice, and the ice hasn't moved.
+  const hazard = await resolveHazardSurvivor(ctx, hazardId);
   return isUserVisibleHazard(hazard) ? hazard : null;
 }

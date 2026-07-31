@@ -751,6 +751,20 @@ export default defineSchema({
     // still merge the pair by hand; what this blocks is the machine overruling a person who was
     // standing on the ice looking at it.
     dismissedDuplicateOf: v.optional(v.id('hazards')),
+    // MERGE — a fourth axis, and like the other three it means one specific thing (N5c / D80). Set when
+    // this pin was folded into another as a duplicate: the survivor carries the warning with the
+    // **union** of both footprints, so a merge can never shrink warned area. Mirrors
+    // `waterBodies.mergedIntoId` (D36) down to the tombstone-not-delete rule, and `resolveHazardSurvivor`
+    // is its hop-capped reader. A moderator `unmerge` clears it and both pins return intact.
+    //
+    // Confirmations are NEVER re-pointed at the survivor: a confirmation is a named person's statement
+    // about a specific pin (D65), and rewriting its `hazardId` would edit that statement. The chain is
+    // read through instead.
+    mergedIntoHazardId: v.optional(v.id('hazards')),
+    // Pins a moderator has separated from this one. Without it, `unmerge` would be a button that undoes
+    // nothing — the next create on the same spot would re-merge the pair by the same rule that merged
+    // it the first time. Also carries a nudge dismissal forward when a moderator confirms the split.
+    noMergeWith: v.optional(v.array(v.id('hazards'))),
     originReportId: v.optional(v.id('reports')), // set when drawn in-report or bundled later (D55)
     description: v.optional(v.string()),
     // Ice hazards are intensely visual and hard to describe ("folded ridges are hard to see" is a
@@ -811,7 +825,12 @@ export default defineSchema({
       'weatherAdjustedAt',
     ])
     .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 7b)
-    .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
+    .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 9 offline)
+    // The merge chain (N5c / D80): every pin folded into one survivor, which is what the union
+    // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every
+    // row leaves unset, so it costs nothing to carry and turns "what was merged into this?" from a
+    // scan of the body's hazards into a lookup.
+    .index('by_merged_into', ['mergedIntoHazardId']),
   // NOTE: no spatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
   // proximity evaluator runs against that same cached set. A third spatial index
@@ -913,7 +932,19 @@ export default defineSchema({
     .index('by_status_resolved_at', ['status', 'resolvedAt']),
 
   moderationActions: defineTable({
-    actorId: v.id('profiles'), // the moderator/admin who acted
+    /**
+     * The moderator/admin who acted — **absent when the system did** (N5c / D80).
+     *
+     * Auto-merge writes rows here, deliberately: a mechanism that folds one safety pin into another
+     * without leaving an audit row is a mechanism nobody can check, and this one is explicitly meant
+     * to be watched before it is trusted. But it has no human actor, and putting the *creating
+     * skater* here would name a member as having taken a moderation action they never took. Absent is
+     * the honest value, and "no actor" reads as "automatic" everywhere it is rendered.
+     *
+     * `by_actor` is only ever an equality read for a specific moderator, so an unset value simply
+     * never matches — no sparse-index trap here (the `lte`-on-optional problem needs a range).
+     */
+    actorId: v.optional(v.id('profiles')),
     action: literals(MODERATION_ACTIONS),
     targetType: literals(MODERATION_TARGET_TYPES),
     targetId: v.string(),

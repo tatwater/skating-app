@@ -77,12 +77,22 @@ export const confirm = mutation({
 
     const hazard = await loadVisibleHazard(ctx, hazardId);
     if (!hazard) throw new ConvexError('Hazard not found');
+    // **Everything below uses the resolved id, not the argument.** `loadVisibleHazard` follows the
+    // merge chain (D80), so a vote arriving from a stale deep link — an on-ice notification sent
+    // before the merge, a drawer left open — has to land on the pin that is actually carrying the
+    // warning. Writing it against the tombstone instead would file a real observation somewhere no
+    // lifecycle ever reads, which is the quietest possible way to lose a confirmation.
+    //
+    // This is not in tension with "confirmations are never re-pointed": that rule is about *existing*
+    // statements at merge time, which are never rewritten. A vote cast *now* is about the ice in front
+    // of the person casting it, and the survivor is what represents that ice.
+    const targetId = hazard._id;
 
     // A future timestamp (device clock skew, or a client trying to freeze a pin as permanently fresh)
     // is clamped rather than trusted.
     const at = Math.min(observedAt ?? now, now);
 
-    const existing = await findUserVote(ctx, hazardId, profile._id);
+    const existing = await findUserVote(ctx, targetId, profile._id);
     let firstContribution: boolean;
     if (existing) {
       // This skater already has a vote on this hazard: refresh it. `createdAt` stays monotonic so a
@@ -96,7 +106,7 @@ export const confirm = mutation({
       firstContribution = false;
     } else {
       await ctx.db.insert('hazardConfirmations', {
-        hazardId,
+        hazardId: targetId,
         userId: profile._id,
         verdict,
         ...(atCoord ? { atCoord } : {}),
@@ -117,7 +127,7 @@ export const confirm = mutation({
       await awardPointEvent(ctx, {
         userId: profile._id,
         reason: 'hazard_confirmed',
-        refId: hazardId,
+        refId: targetId,
       });
       await checkAndAwardBadges(ctx, profile._id);
     }
@@ -125,7 +135,7 @@ export const confirm = mutation({
     // Author-side corroboration (D50, new): once ≥2 **peers** have confirmed (the author's own votes are
     // excluded from `confirmCount`, D54), the hazard's author earns `hazard_corroborated` — once per
     // hazard. Independent of who is confirming, so it fires even when the confirmer isn't the author.
-    await maybeAwardHazardCorroboration(ctx, hazardId);
+    await maybeAwardHazardCorroboration(ctx, targetId);
   },
 });
 

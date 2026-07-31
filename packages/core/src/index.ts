@@ -23,6 +23,7 @@ export * from './hazardDuplicate';
 export * from './hazardGeometry';
 export * from './hazardLayer';
 export * from './hazardLifecycle';
+export * from './hazardMerge';
 export * from './hazardProjection';
 export * from './hazardPromotion';
 export * from './hazardProximity';
