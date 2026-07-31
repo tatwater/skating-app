@@ -7,7 +7,7 @@
  * These are the backend-centric enums the apps rarely need to enumerate.
  */
 
-import { HAZARD_VERDICTS } from '@skating/core';
+import { BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES, HAZARD_VERDICTS } from '@skating/core';
 
 /**
  * Where a GPS activity came *in* from — the A-inputs of the Phase 8 pipeline (D24).
@@ -115,6 +115,11 @@ export const HAZARD_CONFIRM_VIA = [
   'proximity_alert',
   'report_flow',
   'strava_path',
+  // The draw-time duplicate nudge (N5c / D80): a skater about to mark a hazard was shown the pin
+  // already there and confirmed that one instead. Distinct from the others because it is the *only*
+  // trigger that also tells us a duplicate was prevented, which is how the nudge's conversion rate
+  // becomes measurable rather than assumed.
+  'duplicate_nudge',
 ] as const;
 
 /** The authoring primitive a hazard was drawn with (D51). */
@@ -129,21 +134,12 @@ export const HAZARD_GEOMETRY_KINDS = ['point_radius', 'line', 'polygon'] as cons
 export const HAZARD_HEALING_STATES = ['none', 'healing_unsafe', 'disputed'] as const;
 
 /**
- * Persistent, non-decaying known features of a water body (D53) — always shown, never re-marked,
- * no confirmation loop. Moving water at springs/constrictions/bridges is weaker *every* season
- * regardless of cold, and some ridges reform in the same place annually.
+ * Persistent, non-decaying known features of a water body (D53) — **re-exported from `@skating/core`,
+ * not redefined here**, for the same reason `HAZARD_CONFIRM_VERDICTS` is: a second hand-written copy
+ * is how D65's new verdict reached the validator while a test iterating "every verdict" went on
+ * iterating three. D79's authoring form made this the third reader of the list.
  */
-export const BODY_FEATURE_TYPES = [
-  'spring_current',
-  'constriction',
-  'bridge_narrows',
-  'recurring_pressure_ridge',
-  'gas_hole',
-  'reef_hole',
-  'delta',
-  'shallow_bay_early_thaw',
-  'other',
-] as const;
+export const BODY_FEATURE_TYPES = CORE_BODY_FEATURE_TYPES;
 
 /** Abuse/safety flag targets, reasons, and lifecycle (D32/D37). `hazard` added Phase 9 (D51). */
 export const FLAG_TARGET_TYPES = ['report', 'comment', 'photo', 'user', 'hazard'] as const;
@@ -183,6 +179,11 @@ export const MODERATION_ACTIONS = [
   // skater sees on their own report — so each write is attributed. Delisting and restoring reuse the
   // generic `remove` / `restore` verbs, disambiguated by the `waterBodySubArea` target type, exactly
   // as `hide` / `remove` are already shared across content kinds.
+  // Duplicate hazards folded into one (N5c / D80). `merge_hazards` is written by the **machine** as
+  // well as by a moderator — deliberately, because an automatic merge that leaves no audit row is a
+  // mechanism nobody can check, and this one is meant to be watched before it is trusted.
+  'merge_hazards',
+  'unmerge_hazards',
   'set_weather_sample_points', // placed the multi-cell weather sampling grid on a giant (D56 §5)
   'set_lake_depth', // typed a surveyed depth in, the top rung of the D68 ladder (N6a)
   'create_sub_area',

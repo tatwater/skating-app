@@ -34,6 +34,11 @@ export interface HazardRow {
   /** The body-clipped footprint (Phase 9.5), when the server stored one. Broad, narrowed on use. */
   clippedFootprint?: unknown;
   confirmCount: number;
+  /**
+   * The **cluster's** distinct witnesses, when this pin shares one with another (N5c / D80). Absent for
+   * the singleton case, which is nearly every hazard.
+   */
+  clusterConfirmCount?: number;
 }
 
 /** Narrow a stored clipped footprint to the areal geometry the distance math measures against. */
@@ -57,7 +62,13 @@ export function toProximityHazards(rows: readonly HazardRow[]): ProximityHazard[
     return {
       id: r._id,
       type: r.type,
-      confirmCount: r.confirmCount,
+      // **The cluster's count, not the row's** (N5c / D80). This is the gate §1.2 of the phase plan
+      // opens with: duplicates split corroboration, so three people marking one ridge across three
+      // pins left every phone on the lake stuck at the soft "can you see it?" while the community had
+      // plainly confirmed it. The escalation has to read what the cluster knows — and it is the
+      // *only* re-derivation of `isProvisional` outside the server, so it is the only place this can
+      // be got wrong. Absent ⇒ a singleton, where the two numbers are equal by construction.
+      confirmCount: r.clusterConfirmCount ?? r.confirmCount,
       shape: {
         geometryKind: r.geometryKind,
         geometry: r.geometry as HazardShape['geometry'],

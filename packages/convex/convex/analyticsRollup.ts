@@ -179,6 +179,35 @@ async function rollupDay(ctx: MutationCtx, date: string): Promise<void> {
     buckets: histogram(confirmAges, HOUR_BUCKETS),
   });
 
+  // --- Hazard merges (N5c / D80) -------------------------------------------
+  // Auto-merge is the one mechanism in the phase that changes a row without a human, and the unmerge
+  // rate is the only empirical check on its bar. Read off the audit table's day slice — every merge
+  // writes a row precisely so this can be counted rather than guessed.
+  const mergeActions = await capped(
+    ctx.db
+      .query('moderationActions')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', from).lt('createdAt', to))
+      .filter((q) =>
+        q.or(q.eq(q.field('action'), 'merge_hazards'), q.eq(q.field('action'), 'unmerge_hazards')),
+      )
+      .take(DAY_SCAN_CAP),
+    DAY_SCAN_CAP,
+    `hazard merges on ${date}`,
+  );
+  const merges: Record<string, number> = {};
+  for (const action of mergeActions) {
+    // Split automatic from moderator-initiated: a moderator merging two pins by hand is a healthy
+    // signal, and an automatic merge they later undo is the one that says the bar is wrong.
+    const key =
+      action.action === 'unmerge_hazards'
+        ? 'unmerged'
+        : action.actorId === undefined
+          ? 'merged:automatic'
+          : 'merged:moderator';
+    merges[key] = (merges[key] ?? 0) + 1;
+  }
+  await writeMetricSnapshot(ctx, 'hazard_merges', date, { meta: merges });
+
   // --- Operational latency --------------------------------------------------
   // Read off `by_status_resolved_at` per terminal status, so the scan touches only the flags resolved
   // on this day. `actioned`/`dismissed` accumulate forever; a scan of all of them would grow unbounded.

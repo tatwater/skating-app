@@ -62,7 +62,10 @@ describe('ReportFormFields', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     expect(screen.queryByLabelText('Minimum thickness (inches)')).not.toBeInTheDocument();
-  });
+    // Sub-second on its own, but it renders the whole report form four times over and shares a
+    // machine with every other workspace's suite under `turbo run test`. Explicit budget, per the
+    // convention the convex suites follow (see `ci-test-timeout-5s`).
+  }, 20_000);
 
   it('records typed ice descriptions and notes into form state', () => {
     const { getForm } = renderFields();

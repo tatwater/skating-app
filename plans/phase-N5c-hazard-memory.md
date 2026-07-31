@@ -4,17 +4,23 @@
 this the ridge that forms here every year?" Same question, same function, two windows — and building it
 once is the only way the two can't disagree.*
 
-> **Status:** 📋 Scoped 2026-07-30, unbuilt. Founder asks 2026-07-27 (hazard memory) and 2026-07-30
-> (duplicate corroboration), merged into one phase by the founder call in
-> [§4](#4-workstream-a--the-clustering-primitive-d77).
+> **Status:** 🚧 **Half built, 2026-07-31.** The within-season half — workstreams **A** and **B**, plus
+> **E** (manual authoring), the **D53 amendment** (§8.2) and the `shallow_early_thaw` rename — is built
+> on `phase-n5c-hazard-memory` and green across every suite; **unpushed, undeployed, not device-tested.**
+> Workstreams **C**, **D** and **F** (the cross-season engine, the recurrence queue and the dark
+> advisory) are **unbuilt**, and ship as a second PR. See *§15 — What the build changed about the plan*
+> and *§16 — What the review pass found*.
+> Founder asks 2026-07-27 (hazard memory) and 2026-07-30 (duplicate corroboration), merged into one
+> phase by the founder call in [§4](#4-workstream-a--the-clustering-primitive-d77).
 > **Depends on:** [N5a](./phase-N5a-seasons.md) — seasons as a derived first-class dimension, the
 > interim promotion list, and the D62 second amendment that keeps a departed skater's hazards.
 > **Touches:** `hazards`, `hazardConfirmations`, `bodyFeatures`, a new `hazardRecurrence` table, a new
 > season-rollover job, the hazard draw flow on both clients, the map's hazard layer, the on-ice payload,
 > `/admin/water/$id`, `/admin/features`, `/admin/tuning`, and a new `/admin/recurrence`.
 > **Decisions:** D77–D80, plus a **D53 amendment** (supersession is a backlink, not a hiding
-> mechanism — §8.2) and a **D53 rename** (`shallow_bay_early_thaw` → `shallow_early_thaw`). All proposed
-> here; to be recorded in [`01-decisions.md`](./01-decisions.md) at kickoff.
+> mechanism — §8.2) and a **D53 rename** (`shallow_bay_early_thaw` → `shallow_early_thaw`). All of them
+> are already recorded in [`01-decisions.md`](./01-decisions.md) (2026-07-31), so the work item that
+> said "at kickoff" is done.
 
 ---
 
@@ -325,7 +331,7 @@ near-misses at 30 m still need collapsing to one season.)
 
 - `moderationStatus !== 'visible'` — a moderator judged the pin bad; it is not evidence.
 - Hazards whose community verdict was **`never_existed`** — a claim the report was bogus is the opposite
-  of corroboration. ⚠ **`goneCount` cannot answer this.** `schema.ts:767` says it counts *"'fully healed
+  of corroboration. ⚠ **`goneCount` cannot answer this.** `schema.ts` says it counts *"'fully healed
   & safe' verdicts ONLY"*, and that comment has been **stale since D65**: `hazardLifecycle.ts:281`
   increments it for `fully_healed` **and** `never_existed`, because they pool toward one archive. So the
   job reads `hazardConfirmations` and counts `never_existed` separately, as
@@ -349,7 +355,7 @@ One row per (body, family, cluster):
 | Field | Notes |
 |---|---|
 | `waterBodyId` | |
-| `family` | `ridge` / `spring` / `gas` / `reef` |
+| `family` | `ridge` / `spring` / `gas` / `reef` / `volatile` — five, not four. `volatile` earns a row precisely so §C7's raised bar has something to be raised *about*; `crack` is the one family with no cross-season record, since a recurring working crack is not a permanent feature of a lake |
 | `geometryKind`, `geometry`, `bufferMeters?`, `radiusMeters?`, `bbox` | the **representative footprint** — the medoid member, carried across whole so a promoted cluster keeps a real ridge's shape rather than a synthesised average |
 | `memberHazardIds` | every contributing hazard (survivors only — merged tombstones are represented by their survivor) |
 | `seasonsObserved` | `Season[]`, ascending, **deduped** |
@@ -375,7 +381,8 @@ Indexes: `by_water_body`, `by_computed_season_and_priority` (the ranked cross-la
 
 A `recomputeRecurrence` staged job on the established self-continuing pattern (`lib/contentPurge`,
 `photoReconcile`), scheduled at the **season rollover** — early July, which D63 chose because nobody is
-looking — plus a **"recompute now"** button per body, because an operator who has just merged two lakes
+looking. ⚠ Note for the build: `crons.ts` uses only `crons.interval` today, so this is the repo's first
+`crons.cron` expression rather than a copy of an existing line — plus a **"recompute now"** button per body, because an operator who has just merged two lakes
 or hidden three bogus pins should not wait a year.
 
 1. **Build the work queue.** Page `hazards` (a new `by_first_reported` index earns its keep here, and for
@@ -407,7 +414,9 @@ The recurrence score, in weight order:
    recurrence rather than about a row. Dominant by design.
 2. **Decay tier**, as N5a has it: the only input about physics.
 3. **Recency** — a cluster last seen in `'26/'27` is weaker than one seen last winter. Lakes change
-   (a dredged channel, a new culvert), and a pattern that stopped is evidence too.
+   (a dredged channel, a new culvert), and a pattern that stopped is evidence too. *(No constant of its
+   own in §7.4: the decay is a function of `seasonsObserved`'s newest entry against the current season,
+   so `RECURRENCE_WINDOW_SEASONS` already bounds it.)*
 4. **Corroboration**, capped, counted **per season** rather than across members, so one enthusiastic
    winter cannot outweigh a quiet recurring one.
 5. **Contradiction**, subtracted: `fully_healed` mildly (it healed *that* winter), `never_existed`
@@ -458,7 +467,7 @@ than later is the whole reason to do it at all.
 | **Never auto-suggested where depth positively contradicts** and the depth is measured rather than modelled | D68's provenance ladder exists precisely so a claim can be weighted by what it was read off |
 | Suggestion copy names the mechanism | *"this spot has been reported thin in 3 of the last 4 winters — shallow water goes out from the bottom first"*, so the moderator is judging a physical claim, not a count |
 
-> **A pleasing loop worth noting.** N6a's write-up records that `shallow_bay_early_thaw` is a manual flag
+> **A pleasing loop worth noting.** N6a's write-up records that `shallow_early_thaw` is a manual flag
 > nobody had a path to set, and that N6a's depth data *"does not retire it"*. This is the other half:
 > recurrence is how the flag gets *proposed* from observation, and depth is how the proposal gets
 > checked. Neither alone was enough.
@@ -534,7 +543,7 @@ Founder call, 2026-07-30: *"also allow admins to promote their own manually."*
 **A bigger gap than it sounds.** `bodyFeatures.create` exists (`bodyFeatures.ts:66`) and has **no UI
 anywhere** — `/admin/features` is list-and-demote only (`admin.features.tsx:20-54`). Today the only way
 to hand-create a permanent feature is the Convex dashboard or the CLI, so four of the nine
-`BODY_FEATURE_TYPES` — `constriction`, `bridge_narrows`, `delta`, `shallow_bay_early_thaw` — are
+`BODY_FEATURE_TYPES` — `constriction`, `bridge_narrows`, `delta`, `shallow_early_thaw` — are
 **unreachable in the product**: no hazard promotes into them and no form creates them.
 
 ### 8.1 Draw a body feature by hand
@@ -651,10 +660,23 @@ thumbs-down on a statistic. Revisit if operators find they need the signal.)*
 
 ### 9.5 Offline
 
-Advisories ride the per-body cache (`bodyCache.ts` / `offlineBody.ts`) as plain text — a cached lake with
-no signal is exactly where the map is emptiest. Stored in a **separate field from the cached hazard
-array**, which is how §3's exclusion is enforced structurally: `onIce.ts` reads the hazard array and
-cannot see the advisory field even by accident.
+⚠ **Corrected 2026-07-31, during the build.** This section described a cache that does not exist.
+`bodyCache.ts` stores water-body *reference* data only — name, states, polygon, centroid, area. There is
+no cached hazard array to keep an advisory out of. Hazards reach the on-ice evaluator from a **live
+`hazards.listForBody` subscription**, held in module state by `onIceMode.ts` and fed by `HazardBanner`,
+which is served from the Convex client's own cache when there is no signal.
+
+Two consequences, one better than the plan and one worse:
+
+- **The structural exclusion is *stronger* than described.** An advisory comes from a different query
+  (`hazardRecurrence.listForBody`) that the on-ice path never subscribes to at all. `onIce.ts` cannot
+  see it by accident because it never asks for it — no shared array, no adjacent field, nothing to get
+  wrong. That is a better guarantee than "a separate field in the same row".
+- **"Rides the offline cache" is not true today, for advisories or for hazards.** Neither is durably
+  cached; both depend on the Convex client cache. Matching hazards' behaviour is the consistent choice
+  and needs no new SQLite table, but it should be *said* rather than assumed, and a durable per-body
+  hazard cache is a real (unbuilt) thing if the on-ice path is ever to survive a cold start with no
+  signal.
 
 ---
 
@@ -672,7 +694,7 @@ Checked in the repo on 2026-07-30:
 4. **`listPromotionCandidates` caps at 500 rows in creation order** and logs when it bites
    (`hazards.ts:417-426`). Fine for one season; wrong as a multi-season basis.
 5. **`goneCount` pools `never_existed` with `fully_healed`** (`hazardLifecycle.ts:281`) while
-   `schema.ts:767` still says otherwise. Stale comment, real consequence for recurrence.
+   `schema.ts` still says otherwise. Stale comment, real consequence for recurrence.
 6. **`promotionTargetFor` maps 5 hazard types to 4 feature types**, leaving 4 of 9 `BODY_FEATURE_TYPES`
    unreachable. §C7 reaches one of them (`shallow_early_thaw`) from recurrence; §8.1 reaches the rest by
    hand.
@@ -706,7 +728,7 @@ Checked in the repo on 2026-07-30:
 6. **Auto-merge** — `mergedIntoHazardId`, `resolveHazardSurvivor`, read-through confirmations, the bar
    constants, `unmerge`, audit rows, and the admin panel.
 7. **Schema + indexes** — `hazardRecurrence`, `hazards.by_first_reported`, `mergedIntoHazardId`, the
-   `schema.ts:767` comment fix.
+   `goneCount` comment fix in `schema.ts`.
 8. **The rollover job** — work queue, per-body full pass, diff-preserving upsert, lease, July cron,
    `recomputeForBody`, merge hook.
 9. **Server reads** — `hazardRecurrence.listForBody` (public-gated), `listForBodyAdmin`, `listQueue`,
@@ -827,3 +849,359 @@ no new lifecycle. Correction is a new authoring power and deserves its own scopi
 - **Watch the unmerge-rate chart in the first winter.** It is the only empirical check on
   `AUTOMERGE_MIN_FOOTPRINT_IOU`, and the bar should be raised on the first sign operators are undoing
   merges.
+
+---
+
+## 15. What the build changed about the plan (2026-07-31)
+
+Written during the first half rather than after it, in the house style: the things the plan got wrong
+are more useful than the things it got right.
+
+### 15.1 The chaining guard had to be rebuilt twice
+
+§A1 bounds a cluster's **total span** at `DUPLICATE_MAX_CLUSTER_SPAN_M` = 150 m. Both halves of that
+are wrong, and each was caught by a fixture rather than by reading.
+
+**An absolute cap cannot work.** A `pressure_ridge` is routinely 600 m of buffered LineString, so any
+cap tight enough to stop chaining refuses to merge two pins of *one ridge* — the exact case the
+mechanism exists for. The guard is now **relative**: a cluster may extend `*_MAX_CLUSTER_SPREAD_M`
+beyond its **largest single member**, anchored on the biggest thing anyone actually drew rather than on
+the biggest thing merging has produced, so repeated links cannot ratchet the allowance up one at a
+time.
+
+**And it cannot be measured on the diagonal.** Two 400 m ridges crossing at right angles overlap and
+are plainly one cluster, but their merged box is 400 m square — a 566 m diagonal against a 400 m
+member, so a diagonal guard refuses the merge purely because the ridges point different ways. The
+comparison is now per axis: north–south against north–south, east–west against east–west.
+
+The constants keep their values (150 / 400) and change their meaning, so `/admin/tuning` says
+`DUPLICATE_MAX_CLUSTER_SPREAD_M` and describes it as a spread rather than a span.
+
+### 15.2 Footprint distance needed a second pass, for a shape this phase is mostly about
+
+"Minimum distance between footprints" is exact when computed vertex-against-polygon in both
+directions — for **disjoint** shapes, and for containment. It is wrong for exactly one case: two
+polygons that **cross** with no vertex of either inside the other. That is not a corner case here. It
+is two buffered ridge bands crossing at right angles, which overlap and which clustering should
+plainly collapse, and a vertex-only test reports clear water between them. `polygonDistanceMeters`
+therefore runs a segment-crossing scan as a second pass — but only when the first found a gap while the
+bounding boxes still overlap, so the common answer costs nothing extra.
+
+### 15.3 The witness count includes people who *drew*, not only people who tapped confirm
+
+**Founder call, 2026-07-31.** §B2 says the pooled gate reads "distinct confirming users across the
+cluster". But the commonest duplicate has no confirmations at all — three skaters each mark the same
+ridge, nobody presses anything — and a confirmers-only count leaves every phone on the lake stuck at
+the soft *"can you see it?"*, which is the failure §1.2 opened with.
+
+So a cluster's witnesses are distinct users who **either** confirmed a member **or** authored one,
+always excluding the pin's own author. §B4 already made this argument for the merge case (*"the
+merged-away reporter counts as a corroborating observer — stronger evidence than a confirm tap, since
+they saw it independently and drew it"*); it applies identically to an unmerged cluster. Singletons are
+unchanged — identical to today's `confirmCount`, which is a property test — one person double-posting
+is still one witness (D54 intact), and crossings never cluster, so the one pin type where escalating
+too readily would be anti-conservative is excluded structurally rather than by a threshold.
+
+### 15.4 §9.5's offline story was about a cache that does not exist
+
+Corrected in place — see §9.5. Short version: `bodyCache.ts` holds body reference data only, hazards
+reach the on-ice evaluator from a live `listForBody` subscription, and the structural exclusion is
+consequently *stronger* than the plan claimed (a different query the on-ice path never asks for) while
+"rides the offline cache" is simply not true today, for advisories or for hazards.
+
+### 15.5 Two readers of `promotedToFeatureId` the amendment's diff missed
+
+§8.2 warns that the reviewer's diff is *every* reader of the field, and then lists four. There are six.
+`weather.getHazardWindow` refused a weather strip for a promoted pin, and
+`hazardWeather.listActiveHazardsForWeather` deferred one out of the decay sweep — both on the reasoning
+that a promoted pin "doesn't render". Under the amendment it does, so the second one would have left a
+visible hazard reading its freshness off a stale weather window. Both now key on moderation alone.
+
+### 15.6 Decisions taken in the build, worth recording
+
+- **Auto-merge runs at create**, in the same mutation, bounded to the body and the season. Any later
+  and there is a window in which the map shows two pins for one ridge, which is the state it exists to
+  remove — and it is the same moment the draw-time nudge fired, so the two cannot disagree.
+- **`create` returns the survivor**, so a client navigating to what it just filed lands on a live pin
+  rather than a tombstone. `get`, `listClusterMembers` and the confirm path all resolve through the
+  chain, so a permalink or an on-ice notification sent before a merge still works.
+- **A vote arriving now *does* follow the chain**, which is not in tension with "confirmations are
+  never re-pointed": that rule is about *existing* statements at merge time. Writing a new vote against
+  the tombstone would file a real observation somewhere no lifecycle reads.
+- **The survivor's union is stored as its `clippedFootprint`**, which widens that field's meaning from
+  "the clip, when clipping removed area" to "the stored footprint override". Render, the stored bbox
+  and the proximity evaluator already read it, so a merge changes what is drawn and what is measured
+  with no client change at all — and `unmerge` restores the original by recomputing from the row's own
+  untouched `geometry`.
+- **`moderationActions.actorId` becomes optional.** Auto-merge writes audit rows, but has no human
+  actor, and naming the creating skater would record a member as having moderated when they didn't.
+- **`noMergeWith`** on both rows is what stops `unmerge` being a button that undoes nothing.
+- **`duplicate_nudge`** joins `HAZARD_CONFIRM_VIA` — the only trigger that also records a duplicate
+  *prevented*, which is what makes the nudge's conversion rate measurable.
+- **`BODY_FEATURE_TYPES` moved to `@skating/core`**, re-exported by `lib/enums.ts`, because D79's form
+  made it the third hand-kept copy of the list and the D65 four-copies scar is the reason not to.
+
+### 15.7 Left open, deliberately
+
+**Dismissing the nudge blocks the merge, and only the merge.** Pooling and consensus rendering are
+non-destructive — the union outline is never smaller than either member and the drawer still names both
+reporters — so a dismissed pair still draws as one outline. One outline is visually the same claim a
+merge makes, which is a residual tension worth a founder's eye. If it reads as overruling the skater,
+the lever is to carry `dismissedDuplicateOf` into `poolConsensus` as a cluster split, **not** to weaken
+the merge bar.
+
+**Not built here, and not started:** workstreams C (the `hazardRecurrence` table, the rollover job, the
+ranking), D (the two-section lake card, the cross-lake queue, suppression) and F (the skater-facing
+advisory and its copy tests). §11's cut line held exactly as written — items 2–6, 11, 13 and 14 are the
+half that pays off this winter.
+
+---
+
+## 16. What the review pass found (2026-07-31, before the PR)
+
+Every suite was green when this pass started, which is the point: none of the four below were caught by
+a failing test, and three of them were *asserted* somewhere as already true.
+
+### 16.1 Pooling reached every gate except the one the phase opened with
+
+**The worst of them, and the most instructive.** `toView` pooled `freshness`, `provisional` and
+`expired` correctly, and published the pooled witness count as a **separate** field,
+`clusterConfirmCount`. Nothing read it. The on-ice evaluator takes `confirmCount` off the row and
+**re-derives `isProvisional` itself** (`hazardProximity.ts:108`), so three skaters marking one ridge —
+§1.2's opening scenario, and the whole subject of §15.3's founder call — left every phone on the lake at
+the soft *"can you see it?"* while the drawer beside it read confirmed.
+
+The lesson is not "we forgot a field". It is that **a derived value published alongside its raw input is
+an invitation to read the raw input**, and the on-ice path had a second, independent derivation of the
+same rule sitting a package away. `toProximityHazards` now feeds `clusterConfirmCount ?? confirmCount`
+into the evaluator, which makes the pooled number load-bearing rather than decorative. The deeper fix —
+carrying the server's `provisional` and deleting the client-side re-derivation — is a bigger change to a
+shipped Phase 9.5 interface and its `confirmThreshold` tunable, and is the right thing to do the next
+time that file is opened.
+
+### 16.2 Recomputing a union from the stored union is not reversible
+
+`refreshMergedFootprint` read each row through `hazardFootprintOf`, which prefers `clippedFootprint` —
+and on a survivor that field *is* the union. So the union was recomputed from itself and could only
+grow. §15.6's claim that *"`unmerge` restores the original by recomputing from the row's own untouched
+`geometry`"* was true of the intent and false of the code, in two cases:
+
+- **three pins, one unmerged**: the removed pin's area stays, so Unmerge does nothing to the outline it
+  was pressed to undo;
+- **two pins near a shore**: the empty-chain branch re-clips the *union* instead of the pin's own shape,
+  and stores the widened footprint again.
+
+The existing test passed because its fixture sits mid-lake, where `clipFootprintToBody` returns `null`
+and the row falls back to the drawn shape — a fixture that was tidy in exactly the way §A1 warns
+chaining fixtures are tidy. Every recomputation now starts from `geometry` + `radiusMeters`/
+`bufferMeters`, the one thing a merge never edits, and the three-pin case is a test.
+
+### 16.3 A `filter` before a `take` is not a bounded read
+
+`listRecentMerges` was written as `.order('desc').filter(...).take(50)` and documented as *"bounded"*.
+Convex reads rows until it has 50 **matches**, so on a corpus with no merges — which is every corpus
+today — it walks the whole append-only audit log. The same commit had already added
+`moderationActions.by_created_at` for the 7b rollup, with a comment saying precisely this about scans of
+that table. It now reads a 120-day window off that index: bounded by a season's moderation volume rather
+than by how long the app has been running.
+
+### 16.4 A file git will not diff is a file nobody reviews
+
+`hazardConsensus.ts` carried a **literal NUL byte** as a map-key separator, so git classified the file as
+binary: no diff, no blame, no line comments — on the module that computes what the alert gates read. It
+ran fine and lint was silent. It is written as the `\u0000` escape now, which is the same string
+to the runtime and a reviewable file to everything else.
+
+### 16.5 The rest
+
+- `listForHazard` queried votes by the **argument** id while resolving the hazard through the merge
+  chain, so a stale deep link listed the tombstone's confirmers under the survivor's count.
+- The nudge's *"no, this is a different hazard"* cost a **second** submit press on both clients, which
+  §B1 promised it would not. It now files in the same tap — passed as an argument rather than through
+  `setState`, which would not have been visible to the call that followed it anyway.
+- The idempotent-replay branch of `create` returned the stored id without resolving the chain, breaking
+  the *"`create` returns the survivor"* rule for exactly the offline-flush path that rule was for.
+- `/admin/recurrence` had a hand-written copy of `relativeWhen`, in the phase whose thesis is that the
+  second copy is where the drift starts.
+
+**One finding the review got wrong, kept because the reasoning is the useful part.** It was reported
+that corroboration credit gated every cluster member on the *opened* pin's witness count, and that
+per-member counts could differ by one. They cannot. `clusterConsensus` builds its witness set as
+`confirmers ∪ authors`, and every member's author is in `authors` by construction — so
+`witnesses.has(member.createdByUserId)` is always true and every member's count is `witnesses - 1`.
+The number is uniform across a cluster, one member clearing the bar means all of them have, and the
+per-member re-check briefly added was dead code. It has been removed and the invariant written down
+where the loop reads, since it is a fact about `clusterConsensus` that is not obvious from the call
+site — which is exactly how it got misread the first time.
+
+**Left as-is, deliberately:** `tryAutoMerge` reads every active hazard on the body inside the create
+mutation. It matches `listForBody`'s bound (Phase 9 call 6) and is correct; it does widen the OCC
+conflict window for concurrent creates on one lake, which is worth remembering if a popular lake ever
+sees contention.
+
+### 16.6 The coverage pass
+
+The primitives were already well covered — `hazardCluster` has shuffle-invariance, partition and
+span-guard property tests, and `hazardConsensus` has the monotonicity one. The gaps were all a layer
+out, in the code that *uses* them, and every one of them was a documented claim nothing asserted:
+
+- **Pooled corroboration credit** (§B2's fourth row) had no test at all. Now covered by the case it
+  exists for: two pins 30 m apart — overlapping enough to cluster, not enough to merge — where one
+  confirm tap credits both reporters on a bar no single pin reached.
+- **The `hazard_merges` rollup**, which §7.4 calls the only empirical check on the merge bar. Now
+  asserts the automatic/moderator/undone split stays three numbers, that a quiet day writes a zero
+  rather than a hole in the series, and that re-running a day overwrites.
+- **`clusterScopeFor`'s archived exclusion** — the claim that a pin the community voted healed must not
+  borrow freshness from a live neighbour. It was a bound inside an index expression with nothing
+  asserting it; now a test.
+- **The merge-chain hop cap**, whose whole job is to turn a cycle into `null` rather than a query that
+  never returns.
+- **`listRecentMerges`'s window**, added in this pass, so the bound doesn't quietly regress to a scan.
+- **`polygonUnion`** — exercised indirectly through the layer and the merge tests, but its two
+  load-bearing contracts (the union covers every member; a failure returns `null` so the caller draws
+  more outlines rather than fewer) were never stated directly.
+- **The new copy** — `relativeWhen`'s day/hour boundaries, and the D3 assertions the nudge and the
+  consensus summary have to satisfy: no accusation, no invented attribution, no raw enum key, no claim
+  that the hazard is there.
+
+**Still not asserted:** the one-tap nudge wiring on either client. The pure candidate finder is covered
+in `hazardDuplicate.test.ts`, but neither client has a form harness, so that path is reviewed rather
+than tested — which is the standing state of client UI in this repo, not a gap this phase opened.
+
+---
+
+## 17. What Greptile found (2026-07-31)
+
+Three findings, all real, and they share one shape: **auto-merge was wired into `hazards.create` and
+nowhere else.** §15.6 recorded the decision to merge *at create*, in the same mutation, and that
+reasoning was right — but "create" turned out to name one code path rather than the event, and the
+other two ways a hazard enters the system were each wrong in their own way.
+
+### 17.1 The offline queue dropped the one field that exists to be remembered
+
+`dismissedDuplicateOf` rides a `hazards.create` call, and `QueuedHazard` never carried it. So a
+skater who tapped *"no, this is a different hazard"* and then lost signal had their answer discarded
+at the queue boundary: the pin flushed an hour later without it and was auto-merged into the very
+hazard they had looked at and rejected.
+
+That is the worst version of this defect, because **the nudge fires hardest exactly where there is no
+signal** — two skaters, one ridge, both flagging it — so the dismissal is most likely to be *made*
+offline and, without this, most likely to be lost. The field now travels the same way `capturedAt` and
+a confirmation's `observedAt` do, on the standing rule that what a skater decided on the ice survives
+the round trip unchanged.
+
+### 17.2 The report path created hazards without merging them
+
+`reports.create` calls `insertHazard` directly for the in-report authoring path (D51), so a hazard
+drawn inside a report skipped auto-merge entirely — which made the report form *the way to file a
+duplicate that never collapses.* A hazard drawn in a report is a sighting like any other, and the
+state auto-merge exists to remove does not care which form produced it.
+
+Two details the fix had to get right, both of which only exist because the report path writes several
+hazards at once:
+
+- **The report records the survivor,** not the row it just wrote, so `hazardIdsCreated` can never point
+  at a tombstone.
+- **And dedupes,** because two hazards drawn in one report can be judged the same thing — in which case
+  the report created one hazard and should say so rather than listing the survivor twice.
+
+### 17.3 Reputation was paid per pin, not per sighting
+
+Greptile's P1, and the one with a consequence outside the hazard system. Pooling made the corroboration
+bar cluster-wide, and the award loop then ran once per *member* — so one skater who marked the same
+ridge twice was credited twice for one observation, at four points a time, feeding the D50 trust class
+and the ring that renders from it.
+
+The credit is now keyed to the **earliest member each author drew**, once per person per cluster.
+Earliest because the canonical order is stable, and the idempotency check spans *all* of that author's
+members rather than the one being awarded — otherwise an earlier pin joining the cluster later (a
+backdated `capturedAt` on an offline flush is enough) would re-award, which is the same defect arriving
+more slowly. Two *different* people each drawing the ridge is still two awards: that is two independent
+sightings, and it is the entire reason a cluster is better evidence than a pin.
+
+### 17.4 One more, found while confirming 17.2
+
+`listBundleCandidates` had no merge filter, so the D55 auto-bundle offered **merge tombstones** as
+"your hazards from this skate" — pre-checked, in the form whose job is to tidy them up, and where the
+survivor is the author's own it sat one row above its own tombstone. `attachHazardsToReport` accepted
+them too. Both filter now, on the split the rest of the phase draws: supersession records where a
+feature came from and hides nothing, a merge says *this pin is represented by another one*.
+
+### 17.5 The lesson
+
+Three of these four are the same missed question — *what are all the ways a hazard is created?* — and
+the fourth is *what are all the ways one is offered?* The phase asked that question carefully about
+**readers** of `promotedToFeatureId` (§8.2 warns that the diff is every reader, and §15.5 found two more
+it missed) and never asked the mirrored question about **writers** of a hazard row. Worth carrying into
+the second PR, where the recurrence job becomes a third writer of hazard-shaped state.
+
+### 17.6 The second pass: a dismissal that outlived its draft
+
+Greptile again, on the fix for §17.1 rather than on the original code — and right.
+
+`dismissedDuplicateOf` was carried into the queue correctly, but **nothing cleared it afterwards**.
+Mobile runs the whole capture session on one mounted component, so after filing a pin with a dismissal
+the state stayed set, and the *next* capture — a different hazard, possibly a different type, possibly
+metres from a genuine duplicate — took the `dismissed === null` branch and skipped duplicate detection
+entirely, then sent the stale id to the server to suppress a merge nobody had declined. A field added
+to stop the machine overruling a skater had become a way to silently disable the check for everything
+that followed it.
+
+Cleared now in `resetDraftState` (which every exit already funnels through) and on **retype**, because
+matching is per type family: the pin a skater ruled out may not even be a candidate for what they are
+drawing now, so re-asking is one tap and carrying the exclusion is a silent no.
+
+Web was safe, but only **by accident of its caller** — `WaterBodyDetail` mounts the form conditionally,
+so closing it unmounts and takes the state with it. That is a property of one call site, not of the
+component: the sibling `ReportForm` one line above stays mounted behind an `open` prop, and moving the
+hazard form to match would have reintroduced the bug silently. Both exits now go through a shared
+`clearDraft`, and the reasoning is written where someone would change it.
+
+**Twice now the defect has been in the nudge's client state** — the two-tap dismissal in §16.5, this in
+§17.6 — and both times in the one surface this repo does not test. The lever, if a third appears, is to
+lift the nudge's state into a pure reducer in `@skating/core` that both clients drive, the way
+`hazardDraft` already works. Not done here: it is a refactor of shipped authoring flows, and the second
+PR is a better place for it than the tail of this one.
+
+### 17.7 A dismissal names a row; a skater declines a hazard
+
+Third pass, and the sharpest of them: `dismissedDuplicateOf` was compared by **row id**, and this phase
+spent its whole length establishing that a hazard is not a row. Two doors around the check, both of the
+app's own making:
+
+- **The merge chain.** The pin a skater was shown may since have been folded into a survivor — and on
+  the offline path that is not a rare race, it is the expected case, since hours pass between the nudge
+  on the ice and the flush in signal. Refusing only the dismissed id let the *survivor* — the pin now
+  carrying exactly that hazard's warning — absorb the new one.
+- **The cluster.** A sibling overlapping the same ice is, by §A1's own definition, the same hazard.
+  Folding into it put the pin in precisely the cluster the skater rejected, through a different door.
+
+`shouldAutoMerge` now takes a `dismissedIds` set and the server resolves it: the dismissed row, its
+survivor, everything folded into that survivor, and the cluster the dismissed hazard belongs to.
+Computed only when a dismissal exists — rare — so an ordinary create pays nothing. The new pin is
+excluded from that clustering pass on purpose: what the skater declined is a fact about the *existing*
+pins, and letting the draft influence which cluster that is would make the answer depend on the thing
+being judged.
+
+Erring wide is right here. Over-refusing leaves two pins a moderator can merge by hand; under-refusing
+overrules a person who was standing on the ice looking at it. But the refusal stays scoped to **one
+hazard, not the lake** — a dismissal must not switch off deduplication for everything else that
+session, and that is its own test.
+
+### 17.8 Returning `null` is not unmounting
+
+The other half of §17.6, by a path the fix didn't cover. `HazardCapture` renders `null` while a deletion
+is pending (D62), and a pending deletion **can be cancelled** — so it is a round trip, not an exit, and
+every `useState` survives it. A dismissal made before the read-only window was inherited by the first
+capture after it, which then skipped duplicate detection and sent an unrelated exclusion.
+
+Cleared on the transition now. Only the nudge state: freeing the draft and its photo files when a
+deletion goes pending is arguably right too, but that is a D62 question rather than this phase's, and
+guessing at it inside a hazard-identity change is how unrelated things break.
+
+**Three passes, three variations on one root.** §17.5 named it as "the phase never asked who all the
+*writers* are". §17.6 through §17.8 sharpen it: the phase also never asked **what a stored id refers to
+once merging exists**. `dismissedDuplicateOf`, `hazardIdsCreated`, `attachHazardIds` and the bundle
+list were all written before auto-merge and all meant "this row" in a world where a row was a hazard.
+Every one of them needed re-reading as "this *hazard*", and the second PR adds `memberHazardIds` to
+that list before it adds anything else.

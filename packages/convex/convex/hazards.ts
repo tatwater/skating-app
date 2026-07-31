@@ -16,12 +16,18 @@
  */
 
 import {
+  type ConsensusVote,
   clipFootprintToBody,
+  clusterConsensus,
+  clusterHazards,
   confirmThresholdFor,
+  DUPLICATE_MATCH_METERS,
+  DUPLICATE_MAX_CLUSTER_SPREAD_M,
   type deriveHazardFreshness,
   freshnessWithMultiplier,
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_DEFAULT_RADIUS_M,
+  type HazardConsensus,
   type HazardShape,
   hazardBbox,
   hazardFootprint,
@@ -50,6 +56,7 @@ import {
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
+import { resolveHazardSurvivor, tryAutoMerge, unmergeHazard } from './lib/hazardMerge';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
@@ -102,6 +109,11 @@ export const hazardCreateArgs = {
    * whom capture and create are the same instant.
    */
   capturedAt: v.optional(v.number()),
+  /**
+   * The pin the draw-time nudge offered, which this skater said was a *different* hazard (D80).
+   * Stored so auto-merge can't overrule them a second later — see the schema comment.
+   */
+  dismissedDuplicateOf: v.optional(v.id('hazards')),
   ...inReportHazardArgs,
 };
 
@@ -149,6 +161,7 @@ export async function insertHazard(
     photoIds?: Id<'photos'>[];
     idempotencyKey?: string;
     capturedAt?: number;
+    dismissedDuplicateOf?: Id<'hazards'>;
   },
   authorId: Id<'profiles'>,
   now: number,
@@ -195,6 +208,9 @@ export async function insertHazard(
     ...(subArea !== null ? subArea : {}),
     createdByUserId: authorId,
     ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
+    ...(args.dismissedDuplicateOf !== undefined
+      ? { dismissedDuplicateOf: args.dismissedDuplicateOf }
+      : {}),
     ...(originReportId !== undefined ? { originReportId } : {}),
     ...(args.description !== undefined ? { description: args.description } : {}),
     photoIds,
@@ -239,7 +255,11 @@ export const create = mutation({
         if (existing.createdByUserId !== profile._id) {
           throw new ConvexError('Idempotency key conflict');
         }
-        return existing._id;
+        // Through the merge chain, for the same reason the non-replay path returns the survivor: the
+        // pin this key created may since have been folded into another, and handing a flush retry a
+        // tombstone would send the client to a row the map doesn't draw. `null` can't happen for a row
+        // we just read, but a broken chain falls back to the id we have rather than throwing.
+        return (await resolveHazardSurvivor(ctx, existing._id))?._id ?? existing._id;
       }
     }
 
@@ -249,7 +269,13 @@ export const create = mutation({
     }
     // Granular posting permission (D57): a moderator can restrict hazard posting alone (finer than a ban).
     assertCanPostHazards(profile);
-    return insertHazard(ctx, args, profile._id, now);
+    const hazardId = await insertHazard(ctx, args, profile._id, now);
+    // Auto-merge runs here, in the same mutation (D80, layer 4). Any later and there is a window in
+    // which the map shows two pins for one ridge, which is the state it exists to remove. Returns the
+    // **survivor**, so a client that navigates to what it just created lands on the live pin rather
+    // than on a tombstone.
+    const { survivorId } = await tryAutoMerge(ctx, hazardId);
+    return survivorId;
   },
 });
 
@@ -271,35 +297,183 @@ export interface HazardView extends Doc<'hazards'> {
    * never hides the hazard itself, though — a safety observation stays on the map regardless (D3).
    */
   reporterName?: string;
+  /**
+   * The `bodyFeatures` type this pin was promoted into, when it was and the feature is still active
+   * (D53 amendment). Drives one drawer line — *"this spot is also marked as a recurring feature"* —
+   * so a sighting and the standing statement it produced read as one story rather than as two
+   * warnings about the same ice. Only the single-hazard `get` resolves it.
+   */
+  promotedFeatureType?: string;
+  /**
+   * Set only when this hazard shares a cluster with at least one other pin (D80). `confirmCount` on
+   * this view is then the **pooled** number and these two say so, which is what lets the drawer print
+   * "3 skaters have marked this, across 2 pins" instead of a count that silently disagrees with the
+   * confirmer list below it. Absent for the singleton case, which is nearly every hazard.
+   *
+   * `clusterMemberIds` is every member including this one, earliest sighting first — the map unions
+   * their footprints, and the drawer lists every reporter behind them.
+   */
+  clusterConfirmCount?: number;
+  clusterMemberIds?: string[];
 }
 
-function toView(hazard: Doc<'hazards'>, now: number): HazardView {
+function toView(
+  hazard: Doc<'hazards'>,
+  now: number,
+  consensus?: HazardConsensus,
+  /**
+   * Which member ids the caller is actually going to render. Merge tombstones are pooled but never
+   * drawn, so publishing their ids as cluster members would ask the map to union a footprint it can't
+   * see and quietly fall back to drawing this pin alone — losing the very union the merge produced.
+   */
+  visibleMemberIds?: ReadonlySet<string>,
+): HazardView {
+  // The gates read the **cluster**, not the row (D80). Absent consensus ⇒ the row's own values, which
+  // is also exactly what a singleton cluster returns — so there is one code path and no special case.
+  const confirmCount = consensus?.confirmCount ?? hazard.confirmCount;
+  const lastConfirmedAt = consensus?.lastConfirmedAt ?? hazard.lastConfirmedAt;
   return {
     ...hazard,
     // Weather-adjusted freshness (D56): the decay cron (§6) stores a time-independent `decayMultiplier`;
     // this query recomputes the live bucket from it + the always-current elapsed. Absent ⇒ 1 (fail-open =
     // plain base decay). Freshness itself is still never stored — only the weather *input* is.
+    //
+    // The **multiplier** stays the row's own while the **clock** is the cluster's. That pairing is
+    // deliberate: the multiplier describes weather over this pin's own window and means nothing applied
+    // to somebody else's, whereas "when did anyone last stand here" is a fact about the ridge.
     freshness: freshnessWithMultiplier(
       hazard.type,
-      hazard.lastConfirmedAt,
+      lastConfirmedAt,
       now,
       hazard.decayMultiplier ?? 1,
     ),
     // A suggested crossing needs **two** independent confirmations to stop reading as one skater's
     // suggestion (D64) — double every hazard's bar, which is what "more corroboration" means for the
-    // one pin type that says you can go this way.
-    provisional: isProvisional(
-      hazard.confirmCount,
-      confirmThresholdFor(isPassageMarker(hazard.type)),
-    ),
+    // one pin type that says you can go this way. Crossings never cluster, so a passage marker's
+    // consensus is always its own row: the one pin type where escalating too readily would be the
+    // anti-conservative direction is structurally excluded from pooling.
+    provisional: isProvisional(confirmCount, confirmThresholdFor(isPassageMarker(hazard.type))),
     /**
      * Past its own 72-hour window a passage marker is **expired**: it stops rendering (D64). Carried
      * on the view rather than filtered out here, so `hazards.get` can tell a permalink holder that
      * the crossing aged out instead of 404-ing a link that used to work — the same courtesy a past
      * season's report gets. `listForBody` is where the drop happens.
      */
-    expired: isPassageExpired(hazard.type, hazard.lastConfirmedAt, now),
+    expired: isPassageExpired(hazard.type, lastConfirmedAt, now),
+    ...clusterFields(consensus, confirmCount, visibleMemberIds),
   };
+}
+
+/** The `clusterConfirmCount` / `clusterMemberIds` pair, or nothing when this pin stands alone. */
+function clusterFields(
+  consensus: HazardConsensus | undefined,
+  confirmCount: number,
+  visibleMemberIds?: ReadonlySet<string>,
+): { clusterConfirmCount?: number; clusterMemberIds?: string[] } {
+  if (!consensus || consensus.memberIds.length <= 1) return {};
+  const drawable = visibleMemberIds
+    ? consensus.memberIds.filter((id) => visibleMemberIds.has(id))
+    : [...consensus.memberIds];
+  // The count still reflects everyone the cluster knows about, tombstones included — a merged pin's
+  // reporter is a witness whether or not their outline is drawn separately. Only the *ids* narrow.
+  return {
+    clusterConfirmCount: confirmCount,
+    ...(drawable.length > 1 ? { clusterMemberIds: drawable } : {}),
+  };
+}
+
+/**
+ * Cluster one body's hazards and pool what the gates read (D77/D80).
+ *
+ * **The cost, and why it is bounded.** `listForBody` is the map's live subscription and does no
+ * geometry work of its own, so clustering has to stay off the expensive path: `clusterHazards`
+ * prefilters on the stored `bbox` — four comparisons on numbers already on the row — and only computes
+ * a footprint distance for pairs whose boxes actually come within the tolerance. The confirmation
+ * fan-out then runs for **multi-member clusters only**, which on any real lake is a handful of pins or
+ * none at all; a body of singletons costs one clustering pass and zero extra reads.
+ */
+/**
+ * The rows one hazard could possibly cluster with: active, moderation-visible pins on the same body in
+ * the same **season**.
+ *
+ * The season bound is not incidental. A ridge somebody marked last February is not corroboration for
+ * one drawn this January — within-season clustering asks "is this the same ridge you already marked?",
+ * and the question only means anything inside one winter (D63/D77). Whether the same feature comes back
+ * across winters is the cross-season window's question, and it has a different tolerance and a
+ * different answer.
+ *
+ * Archived rows are excluded by the index, which also means an **archived hazard is not in its own
+ * scope** and therefore gets no pooled consensus — correctly. A pin the community voted healed must
+ * not borrow freshness from a live neighbour; that would be pooling in the unsafe direction by the
+ * back door.
+ */
+export async function clusterScopeFor(
+  ctx: QueryCtx,
+  hazard: Doc<'hazards'>,
+): Promise<Doc<'hazards'>[]> {
+  const siblings = await ctx.db
+    .query('hazards')
+    .withIndex('by_water_body_status', (q) =>
+      q.eq('waterBodyId', hazard.waterBodyId).eq('status', 'active'),
+    )
+    .collect();
+  const target = seasonOf(hazard.firstReportedAt);
+  // **Merge tombstones stay in scope**, deliberately. A pin folded into another still carries its
+  // author and its confirmations, and those are exactly what the survivor's consensus should count —
+  // read *through* the chain rather than rewritten onto it, so nobody's statement is edited (D65).
+  // They are dropped from the rendered list separately, in `listForBody`.
+  return siblings.filter(
+    (h) => h.moderationStatus === 'visible' && isInSeason(h.firstReportedAt, target),
+  );
+}
+
+export async function poolConsensus(
+  ctx: QueryCtx,
+  hazards: readonly Doc<'hazards'>[],
+): Promise<Map<string, HazardConsensus>> {
+  const clusters = clusterHazards(
+    hazards.map((h) => ({
+      id: h._id,
+      type: h.type,
+      geometryKind: h.geometryKind,
+      geometry: h.geometry as HazardShape['geometry'],
+      ...(h.radiusMeters !== undefined ? { radiusMeters: h.radiusMeters } : {}),
+      ...(h.bufferMeters !== undefined ? { bufferMeters: h.bufferMeters } : {}),
+      ...(h.clippedFootprint !== undefined
+        ? { clippedFootprint: h.clippedFootprint as HazardShape['geometry'] }
+        : {}),
+      bbox: h.bbox,
+      firstReportedAt: h.firstReportedAt,
+      createdByUserId: h.createdByUserId,
+      confirmCount: h.confirmCount,
+      lastConfirmedAt: h.lastConfirmedAt,
+    })),
+    { matchMeters: DUPLICATE_MATCH_METERS, maxSpreadMeters: DUPLICATE_MAX_CLUSTER_SPREAD_M },
+  );
+
+  const pooled = new Map<string, HazardConsensus>();
+  for (const cluster of clusters) {
+    if (cluster.members.length <= 1) continue;
+    const votes: ConsensusVote[] = [];
+    for (const m of cluster.members) {
+      const rows = await ctx.db
+        .query('hazardConfirmations')
+        .withIndex('by_hazard', (q) => q.eq('hazardId', m.id as Id<'hazards'>))
+        .collect();
+      for (const row of rows) {
+        votes.push({
+          hazardId: row.hazardId,
+          userId: row.userId,
+          verdict: row.verdict,
+          at: row.createdAt,
+        });
+      }
+    }
+    for (const [id, consensus] of clusterConsensus(cluster.members, votes)) {
+      pooled.set(id, consensus);
+    }
+  }
+  return pooled;
 }
 
 /**
@@ -356,13 +530,27 @@ export const listForBody = query({
     // because it's the opposite of the report path — this query is already bounded by *body* (Phase 9
     // call 6, deliberately never a viewport scan), so the read it would narrow is bounded already.
     const target: Season = resolveSeason(season, seasonOf(now));
+    // **No supersession filter** (D53 amendment, N5c). A `bodyFeature` is a standing statement about
+    // the lake; a hazard is a sighting by a person on a date. Promotion adds the first and must not
+    // delete the second — filtering here rewrote February 2027 as a month in which nobody reported a
+    // ridge, and under cluster promotion it would erase the whole evidence trail the pattern rests on,
+    // one click after an operator agreed the pattern was real. The feature and the pin never race:
+    // after the season boundary the sighting is hidden by the **season** axis (D63) and the feature
+    // remains, which is the desired end state reached by machinery N5a already built.
+    const inScope = rows
+      .filter((h) => h.moderationStatus === 'visible')
+      .filter((h) => isInSeason(h.firstReportedAt, target));
+    // Tombstones are pooled but not rendered: the survivor carries the warning, with the union of the
+    // chain's footprints, so drawing the loser too would put a second outline over the same ice.
+    const rendered = inScope.filter((h) => h.mergedIntoHazardId === undefined);
+    // Pooled *before* the expiry drop and after the season filter, so a cluster is what one winter's
+    // skaters actually reported on this lake — a pin from last February is not corroboration for one
+    // drawn this January, and the season axis is what says so.
+    const pooled = await poolConsensus(ctx, inScope);
+    const visibleIds = new Set(rendered.map((h) => h._id as string));
     return (
-      rows
-        .filter((h) => h.moderationStatus === 'visible')
-        // A hazard promoted to a persistent body feature (D53) is rendered by the feature now, not here.
-        .filter((h) => h.promotedToFeatureId === undefined)
-        .filter((h) => isInSeason(h.firstReportedAt, target))
-        .map((h) => toView(h, now))
+      rendered
+        .map((h) => toView(h, now, pooled.get(h._id), visibleIds))
         // **The one place a pin leaves the map on time alone** (D64). A hazard fades to a floor and
         // never disappears, because assuming a danger is still there is the recoverable mistake. A
         // suggested crossing is the opposite: "reported crossable" with nobody having looked in three
@@ -429,7 +617,10 @@ export const listPromotionCandidates = query({
         // Archived rows count. A ridge the community voted healed in March is *exactly* the kind that
         // comes back in December — "it healed" is a fact about last winter, not about this one.
         .filter((h) => h.moderationStatus === 'visible')
-        // Already promoted: the feature is carrying the warning, so there is nothing to decide.
+        // **The one reader that keeps filtering on supersession** (D53 amendment). Everywhere else
+        // `promotedToFeatureId` is now pure provenance and hides nothing — but this list is a queue of
+        // *decisions*, and an already-promoted hazard is genuinely finished as a suggestion. It is
+        // still visible, still confirmable, still counted; it just has nothing left to ask an operator.
         .filter((h) => h.promotedToFeatureId === undefined)
         .filter((h) => isInSeason(h.firstReportedAt, target))
         .sort((a, b) => b.lastConfirmedAt - a.lastConfirmedAt)
@@ -449,26 +640,51 @@ export const listPromotionCandidates = query({
 });
 
 /**
- * A hazard is visible to ordinary users when a moderator hasn't hidden it AND it hasn't been promoted
- * into a persistent body feature (which now carries the warning). The two are separate axes but both
- * take a hazard off every user-facing surface — a deep link to a promoted or hidden pin resolves to
- * nothing, and it can't be confirmed. `null`/missing rows are also not visible.
+ * A hazard is visible to ordinary users when a moderator hasn't hidden it. `null`/missing rows are
+ * not visible.
+ *
+ * **Supersession used to be a second condition here, and its removal is the D53 amendment** (N5c). A
+ * promoted hazard was unreachable by permalink and unconfirmable, which said the wrong thing twice:
+ * confirming *"the ridge is here right now"* is a different statement from *"ridges form here"*, and
+ * only the first is confirmable at all — so the pin is exactly the thing that should still take votes
+ * once a feature exists beside it. Moderation stays the only visibility axis, which is what it always
+ * should have been: one is a judgement about a *report*, the other is provenance about a *feature*.
  */
 function isUserVisibleHazard(hazard: Doc<'hazards'> | null): hazard is Doc<'hazards'> {
-  return (
-    hazard !== null &&
-    hazard.moderationStatus === 'visible' &&
-    hazard.promotedToFeatureId === undefined
-  );
+  return hazard !== null && hazard.moderationStatus === 'visible';
 }
 
-/** A single hazard for its detail drawer. `null` when missing, moderator-hidden, or promoted. */
+/**
+ * A single hazard for its detail drawer. `null` when missing or moderator-hidden.
+ *
+ * **Resolved through the merge chain** (D80): a permalink to a pin that has since been folded into
+ * another lands on the live one, not on nothing. That is the same courtesy `resolveSurvivor` gives a
+ * merged water body, and it matters more here — the link in an on-ice notification is the one a skater
+ * taps while standing on the ice.
+ */
 export const get = query({
   args: { hazardId: v.id('hazards') },
   handler: async (ctx, { hazardId }): Promise<HazardView | null> => {
-    const hazard = await ctx.db.get(hazardId);
+    const hazard = await resolveHazardSurvivor(ctx, hazardId);
     if (!isUserVisibleHazard(hazard)) return null;
-    const view = toView(hazard, Date.now());
+    const now = Date.now();
+
+    // **The drawer reads the same consensus the map does** (D80). Not an optimisation — a correctness
+    // requirement: a pin drawn solid on the map because its cluster is confirmed, and then labelled
+    // "Unconfirmed" the moment you open it, is the app disagreeing with itself about live ice. Costs
+    // one body-bounded read on a single-hazard path, which is the same read `listForBody` already
+    // makes, and the pooling itself short-circuits for the singleton case.
+    const pooled = await poolConsensus(ctx, await clusterScopeFor(ctx, hazard));
+    const view = toView(hazard, now, pooled.get(hazard._id));
+
+    // The drawer's one-line reconciliation (D53 amendment): a pin the operator has already promoted
+    // renders beside a permanent feature of the same shape, and without this the two read as a
+    // duplicate warning rather than as one story. Resolved only on the single-hazard path — the map's
+    // `listForBody` never shows it, and it must not pay a feature read per pin for a line it won't draw.
+    if (hazard.promotedToFeatureId !== undefined) {
+      const feature = await ctx.db.get(hazard.promotedToFeatureId);
+      if (feature?.active) view.promotedFeatureType = feature.type;
+    }
 
     // Resolve "reported by <name>", withheld when the viewer and the author have blocked each other
     // (D32) — the drawer just omits the line then, exactly as a blocked comment's author is withheld.
@@ -480,6 +696,146 @@ export const get = query({
       if (author) view.reporterName = author.displayName;
     }
     return view;
+  },
+});
+
+/**
+ * Every pin behind a consensus outline, earliest first (N5c / D80).
+ *
+ * When duplicates render as one footprint, the drawer has to be able to say **who** — otherwise
+ * collapsing pins would lose exactly the thing that makes a cluster more convincing than a single
+ * report: that several people saw it separately. So each member keeps its own reporter, its own date
+ * and its own description, and nothing about who said what is merged away.
+ *
+ * Returns `[]` for a hazard that isn't part of a cluster, so a caller can render nothing without a
+ * second decision about whether to ask.
+ */
+export const listClusterMembers = query({
+  args: { hazardId: v.id('hazards') },
+  handler: async (ctx, { hazardId }) => {
+    const hazard = await resolveHazardSurvivor(ctx, hazardId);
+    if (!isUserVisibleHazard(hazard)) return [];
+    const scope = await clusterScopeFor(ctx, hazard);
+    const consensus = (await poolConsensus(ctx, scope)).get(hazard._id);
+    if (!consensus || consensus.memberIds.length <= 1) return [];
+
+    const byId = new Map(scope.map((h) => [h._id as string, h]));
+    // A blocked author's *name* is withheld exactly as `get` withholds it (D32) — the sighting itself
+    // always stays, because a block never pulls safety content off the map (D3).
+    const viewer = await getCurrentProfile(ctx);
+    const blocked = await loadBlockedAuthorIds(ctx, viewer?._id ?? '');
+    const names = new Map<string, string | undefined>();
+
+    const members = [];
+    for (const id of consensus.memberIds) {
+      const member = byId.get(id);
+      if (!member) continue;
+      const authorId = member.createdByUserId;
+      if (!names.has(authorId)) {
+        const author = blocked.has(authorId) ? null : await ctx.db.get(authorId);
+        names.set(authorId, author?.displayName);
+      }
+      const reporterName = names.get(authorId);
+      members.push({
+        hazardId: member._id,
+        type: member.type,
+        // A pin folded into this one (D80). Named here precisely *because* it no longer draws its own
+        // outline: a merge collapses the geometry, never the record of who saw what.
+        merged: member.mergedIntoHazardId !== undefined,
+        firstReportedAt: member.firstReportedAt,
+        lastConfirmedAt: member.lastConfirmedAt,
+        confirmCount: member.confirmCount,
+        isOpen: member._id === hazard._id,
+        ...(reporterName !== undefined ? { reporterName } : {}),
+        // May be absent because a departed skater's free text is cleared (D62's second amendment) —
+        // the sighting is kept and anonymised, so a blank here is a person leaving, not a data bug.
+        ...(member.description !== undefined ? { description: member.description } : {}),
+      });
+    }
+    return members;
+  },
+});
+
+/**
+ * How far back the merges panel looks. A window, because the alternative isn't bounded (below).
+ *
+ * Long enough to hold a whole winter of merges — which is the period an operator is actually watching,
+ * per §14's *"watch the unmerge-rate chart in the first winter"* — and short enough that the scan is
+ * bounded by a season's moderation volume rather than by the lifetime of an append-only table. The
+ * per-day series on `/admin/tuning` is where longer horizons are read; this page is the recent detail.
+ */
+const MERGE_AUDIT_WINDOW_DAYS = 120;
+
+/**
+ * Recent automatic merges, for the operator panel that makes auto-merge auditable (D80).
+ *
+ * **This panel is the reason automating the merge is acceptable at all.** A mechanism that folds one
+ * safety pin into another without anywhere to look at what it did is a mechanism nobody can check; the
+ * bar is a guess until somebody watches it work, and the unmerge rate is the only empirical evidence
+ * that it is set right.
+ *
+ * **Bounded by a time window, not by `take`.** A `filter` before a `take` reads rows until it has
+ * collected enough *matches*, so on a corpus with few merges — which is every corpus at the moment —
+ * "the newest 50" walks the entire audit log to find them, and that log only ever grows. `by_created_at`
+ * (added for the 7b rollup, and earning its keep twice) turns the read into "this season's moderation
+ * actions", which is the Phase 7b shape: a scan bounded by a window nobody can outgrow by waiting.
+ */
+export const listRecentMerges = query({
+  args: { limit: v.optional(v.number()) },
+  handler: async (ctx, { limit }) => {
+    await requireContributorRole(ctx, 'moderator');
+    const since = Date.now() - MERGE_AUDIT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const rows = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_created_at', (q) => q.gte('createdAt', since))
+      .order('desc')
+      .filter((q) =>
+        q.or(q.eq(q.field('action'), 'merge_hazards'), q.eq(q.field('action'), 'unmerge_hazards')),
+      )
+      .take(Math.min(limit ?? 50, 200));
+
+    return Promise.all(
+      rows.map(async (row) => {
+        const loser = await ctx.db.get(row.targetId as Id<'hazards'>);
+        const survivorId = (row.metadata as { survivorId?: Id<'hazards'> } | undefined)?.survivorId;
+        const survivor = survivorId ? await ctx.db.get(survivorId) : null;
+        const body = loser ? await ctx.db.get(loser.waterBodyId) : null;
+        return {
+          actionId: row._id,
+          action: row.action,
+          automatic: row.actorId === undefined,
+          at: row.createdAt,
+          loserId: row.targetId,
+          survivorId: survivorId ?? null,
+          // Live state, not the state at merge time: what a moderator needs to know is whether the
+          // pair is *currently* merged, since that is what the Unmerge button will act on.
+          stillMerged: loser?.mergedIntoHazardId !== undefined,
+          type: loser?.type ?? survivor?.type ?? null,
+          waterBodyId: loser?.waterBodyId ?? null,
+          waterBodyName: body?.name ?? null,
+        };
+      }),
+    );
+  },
+});
+
+/**
+ * Separate a merged pair, and remember that a human did (D80).
+ *
+ * Both pins return intact — nothing was ever deleted — and both record the other in `noMergeWith`, so
+ * the next create on the same spot can't re-merge them by the same rule that merged them the first
+ * time. Without that, Unmerge would be a button that undoes nothing.
+ */
+export const unmerge = mutation({
+  args: { hazardId: v.id('hazards'), reason: v.string() },
+  handler: async (ctx, { hazardId, reason }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    // Fetched raw, not through `resolveHazardSurvivor` — the whole point is to act on the tombstone.
+    const loser = await ctx.db.get(hazardId);
+    if (!loser) throw new ConvexError('Hazard not found');
+    if (loser.mergedIntoHazardId === undefined) throw new ConvexError('Hazard is not merged');
+    await unmergeHazard(ctx, loser, { actorId: actor._id, reason });
   },
 });
 
@@ -512,13 +868,22 @@ export const listBundleCandidates = query({
         q.eq('createdByUserId', profile._id).eq('waterBodyId', body._id),
       )
       .collect();
-    return rows
-      .filter((h) => h.originReportId === undefined)
-      .filter((h) => h.moderationStatus === 'visible')
-      .filter((h) => h.promotedToFeatureId === undefined)
-      .filter((h) => h.firstReportedAt >= from && h.firstReportedAt <= skateEndTime)
-      .map((h) => toView(h, now))
-      .sort((a, b) => a.firstReportedAt - b.firstReportedAt);
+    return (
+      rows
+        .filter((h) => h.originReportId === undefined)
+        .filter((h) => h.moderationStatus === 'visible')
+        // No supersession filter (D53 amendment): a promoted pin is still a sighting this author made on
+        // this skate, and attaching it to the report they are writing about that skate is exactly right.
+        //
+        // A **merge tombstone is filtered out**, though, and the two are not in tension. Supersession
+        // records where a feature came from and changes nothing about the pin; a merge says this pin is
+        // represented by another one, so offering it here would pre-check a hazard that isn't on the map
+        // — and if the survivor is this author's own, it is already in this list, one row up.
+        .filter((h) => h.mergedIntoHazardId === undefined)
+        .filter((h) => h.firstReportedAt >= from && h.firstReportedAt <= skateEndTime)
+        .map((h) => toView(h, now))
+        .sort((a, b) => a.firstReportedAt - b.firstReportedAt)
+    );
   },
 });
 
@@ -544,8 +909,14 @@ export async function attachHazardsToReport(
     if (hazard.createdByUserId !== authorId) continue;
     if (hazard.waterBodyId !== waterBodyId) continue;
     if (hazard.originReportId !== undefined) continue;
-    // A moderator-hidden or already-promoted pin must not be launderable back into visibility by
-    // bundling it into a report (D3) — skip anything not currently user-visible.
+    // A tombstone is represented by its survivor, so binding one to a report would put a pin the map
+    // does not draw into `hazardIdsCreated`. `listBundleCandidates` already filters these, but a client
+    // holding a list from before an auto-merge would still send the id, and the check belongs on the
+    // write anyway — the query is a suggestion, this is the record.
+    if (hazard.mergedIntoHazardId !== undefined) continue;
+    // A moderator-hidden pin must not be launderable back into visibility by bundling it into a
+    // report (D3) — skip anything not currently user-visible. Since the D53 amendment that gate is
+    // moderation and nothing else, which is precisely what this guard was always for.
     if (!isUserVisibleHazard(hazard)) continue;
     await ctx.db.patch(hazardId, { originReportId: reportId });
     attached.push(hazardId);
@@ -565,6 +936,9 @@ export async function loadVisibleHazard(
   ctx: QueryCtx,
   hazardId: Id<'hazards'>,
 ): Promise<Doc<'hazards'> | null> {
-  const hazard = await ctx.db.get(hazardId);
+  // Through the merge chain, so a confirmation cast from a stale deep link — an on-ice notification
+  // sent before the merge, a drawer left open — lands on the pin that is actually carrying the warning
+  // rather than being refused. The vote is about the ice, and the ice hasn't moved.
+  const hazard = await resolveHazardSurvivor(ctx, hazardId);
   return isUserVisibleHazard(hazard) ? hazard : null;
 }

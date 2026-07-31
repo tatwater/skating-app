@@ -1,8 +1,10 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  ALSO_A_KNOWN_FEATURE,
   BODY_FEATURE_CAVEAT,
   confirmerClause,
+  consensusSummary,
   disputedNote,
   expiredCrossingNote,
   FOOTPRINT_IS_APPROXIMATE,
@@ -64,6 +66,25 @@ export interface HazardViewData {
    */
   reporterName?: string;
   reporterImageUrl?: string;
+  /**
+   * Set when this pin has been promoted into a still-active `bodyFeatures` row (D53 amendment). Draws
+   * one reconciling line, because promotion no longer hides the sighting and the two would otherwise
+   * read as two separate warnings about the same ice.
+   */
+  alsoAKnownFeature?: boolean;
+  /**
+   * The other pins drawn as one outline with this one (D80). Present only for genuine duplicates.
+   * Listed rather than merged away: what makes a cluster more convincing than a single report is that
+   * several people saw it separately, and collapsing the outline must not collapse that.
+   */
+  clusterMembers?: {
+    hazardId: string;
+    firstReportedAt: number;
+    confirmCount: number;
+    isOpen: boolean;
+    reporterName?: string;
+    description?: string;
+  }[];
   /** The reporter's cosmetic trust class (D50) — the `TrustAvatar` ring color; `null`/absent ⇒ no ring. */
   reporterTrustClass?: TrustClass | null;
   firstReportedAt: number;
@@ -226,6 +247,29 @@ export function HazardView({
         {data.expired ? (
           <p className="rounded-md bg-surface-muted p-3 text-sm">{expiredCrossingNote()}</p>
         ) : null}
+        {/* Several pins, one outline (D80). The summary says how many people marked the spot; the list
+            keeps each sighting's own reporter and date, because that separateness is the evidence. */}
+        {data.clusterMembers && data.clusterMembers.length > 1 ? (
+          <div className="space-y-2 rounded-md bg-surface-muted p-3 text-sm">
+            <p>{consensusSummary(data.clusterMembers.length)}</p>
+            <ul className="space-y-1 text-foreground-muted">
+              {data.clusterMembers.map((m) => (
+                <li key={m.hazardId}>
+                  {m.isOpen ? '· ' : '· '}
+                  {m.reporterName ?? 'A skater'} — {formatWhen(m.firstReportedAt)}
+                  {m.isOpen ? ' (this pin)' : ''}
+                  {m.description ? ` — "${m.description}"` : ''}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {/* Promotion stopped hiding the pin (D53 amendment), so for the season in which it happened
+            both the sighting and the standing feature are on the map. This line is what makes them one
+            story rather than two independent warnings. */}
+        {data.alsoAKnownFeature ? (
+          <p className="rounded-md bg-surface-muted p-3 text-sm">{ALSO_A_KNOWN_FEATURE}</p>
+        ) : null}
         {/* The sentence that has to do the work of not sounding like an all-clear. */}
         {data.freshness !== 'fresh' ? (
           <p className="rounded-md bg-surface-muted p-3 text-sm">{stalenessCaveat(data.type)}</p>
@@ -360,6 +404,11 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
     api.profiles.publicByIds,
     hazard ? { profileIds: [hazard.createdByUserId] } : 'skip',
   );
+  // The other pins drawn as one outline with this one (D80). Empty for the singleton case, which is
+  // nearly every hazard, so the block below simply doesn't render.
+  const clusterMembers = useQuery(api.hazards.listClusterMembers, {
+    hazardId: hazardId as Id<'hazards'>,
+  });
   // Who has confirmed it (D65). Only names that came back — a private profile confirms without being
   // named, and `confirmCount` is what keeps that honest rather than a shorter list quietly meaning
   // fewer people looked.
@@ -448,6 +497,8 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         description: hazard.description,
         // Phase 6 wires the reporter through `publicByIds` so the author line carries the TrustAvatar
         // ring + avatar (superseding Phase 9.5's plain `hazard.reporterName`).
+        alsoAKnownFeature: hazard.promotedFeatureType !== undefined,
+        ...(clusterMembers && clusterMembers.length > 1 ? { clusterMembers } : {}),
         reporterName: reporter?.displayName,
         reporterImageUrl: reporter?.profileImageUrl,
         reporterTrustClass: reporter?.trustClass,

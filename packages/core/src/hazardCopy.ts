@@ -257,3 +257,71 @@ export const FOOTPRINT_IS_APPROXIMATE =
 /** Explains why a permanent body feature has no age and no confirm loop (D53). */
 export const BODY_FEATURE_CAVEAT =
   'A known seasonal feature of this water body — weak every season regardless of recent cold.';
+
+/**
+ * The one line a promoted pin carries in its drawer (D53 amendment, N5c).
+ *
+ * Promotion no longer hides the sighting it came from, so for the rest of that season the map shows
+ * both: a hazard somebody reported on a date, and a permanent feature saying this is a thing the lake
+ * does. Without a line joining them, that reads as two independent warnings about the same ice, which
+ * over-counts the evidence — precisely the error the amendment exists to avoid in the other direction.
+ *
+ * Written to keep the two claims distinct rather than to merge them: *this* is a sighting, and the
+ * spot is *also* marked as a standing feature. Neither sentence is a prediction (D3).
+ */
+export const ALSO_A_KNOWN_FEATURE =
+  'This spot is also marked as a known feature of the lake — a standing note about what forms here, separate from this sighting.';
+
+/**
+ * The line above a consensus footprint — several pins the app judged to be the same hazard (D80).
+ *
+ * Says what was actually observed and leaves the inference to the reader: *this many people marked
+ * this*, not *this is definitely there*. The count is **pins**, not witnesses, because that is what
+ * the outline in front of them represents and what the list below it enumerates; the witness count
+ * lives in the confirmer clause, where it always has.
+ */
+export function consensusSummary(memberCount: number): string {
+  return `${memberCount} skaters have marked this spot separately — shown as one area below.`;
+}
+
+/**
+ * "3 days ago" / "yesterday" / "less than an hour ago" — the relative phrasing the nudge reads in.
+ *
+ * Deliberately coarse. A hazard's age is a confidence signal, not a measurement, and printing it to
+ * the minute implies a precision the observation never had (D3). `now` is passed rather than read so
+ * every test can pin the clock, per the convention N5a's season work established.
+ */
+export function relativeWhen(at: number, now: number): string {
+  const hours = (now - at) / 3_600_000;
+  if (hours < 1) return 'less than an hour ago';
+  if (hours < 24) return `${Math.round(hours)} h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? 'yesterday' : `${days} days ago`;
+}
+
+/**
+ * The draw-time nudge (D80, layer 1) — *"there's already a pressure ridge marked here"*.
+ *
+ * Phrased as an observation with a date and, where we have one, a name, so the skater can judge
+ * whether it is the thing in front of them. It deliberately does **not** say "you are duplicating" or
+ * "are you sure": the app does not know which of them is right, and the person standing on the ice
+ * knows more about this moment than the map does.
+ */
+export function duplicateNudge(
+  type: HazardType,
+  { reportedAgo, reporterName }: { reportedAgo: string; reporterName?: string },
+): string {
+  const who = reporterName ? ` by ${reporterName}` : '';
+  return `There is already a ${hazardTypeLabel(type).toLowerCase()} marked here — reported ${reportedAgo}${who}.`;
+}
+
+/**
+ * The two ways out of the nudge. Confirming is primary because it is the outcome that helps everyone:
+ * it turns what would have been a second pin into the corroboration the first one was missing.
+ *
+ * **Neither is a block, and the second is never discouraged.** A skater looking at something the map
+ * has wrong must be able to file it in one tap, without an argument — which is also why the wording of
+ * the second option asserts nothing about who is mistaken.
+ */
+export const DUPLICATE_NUDGE_CONFIRM = 'Confirm that one';
+export const DUPLICATE_NUDGE_DISTINCT = 'No, this is a different hazard';

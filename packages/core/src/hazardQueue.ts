@@ -60,7 +60,8 @@ export type QueuedConfirmVia =
   | 'app_open_nearby'
   | 'proximity_alert'
   | 'report_flow'
-  | 'strava_path';
+  | 'strava_path'
+  | 'duplicate_nudge';
 
 /** A hazard captured on the ice, waiting for signal. */
 export interface QueuedHazard {
@@ -86,6 +87,20 @@ export interface QueuedHazard {
    */
   photos: DraftPhoto[];
   capturedAt: number;
+  /**
+   * The pin the draw-time nudge offered and this skater said was a **different** hazard (N5c / D80).
+   *
+   * **Queued rather than dropped, and that is the whole point of the field existing.** The nudge fires
+   * hardest exactly where there is no signal — two skaters, one ridge, both flagging it — so the
+   * offline path is where a dismissal is most likely to be made and, without this, most likely to be
+   * lost. A pin that flushes an hour later without it would be auto-merged into the very hazard the
+   * skater looked at and rejected: the machine overruling a person who was standing on the ice, which
+   * is the one thing `dismissedDuplicateOf` exists to prevent.
+   *
+   * Same discipline as `capturedAt` and a confirmation's `observedAt`: what the skater decided on the
+   * ice must survive the round trip to signal unchanged.
+   */
+  dismissedDuplicateOf?: string;
   createdAt: number;
   updatedAt: number;
 }
@@ -130,6 +145,7 @@ export function createQueuedHazard(args: {
   description?: string;
   photos?: DraftPhoto[];
   capturedAt?: number;
+  dismissedDuplicateOf?: string;
 }): QueuedHazard {
   return {
     kind: 'hazard',
@@ -143,6 +159,7 @@ export function createQueuedHazard(args: {
     description: args.description,
     photos: args.photos ?? [],
     capturedAt: args.capturedAt ?? args.now,
+    dismissedDuplicateOf: args.dismissedDuplicateOf,
     createdAt: args.now,
     updatedAt: args.now,
   };
@@ -192,6 +209,8 @@ export interface HazardFlushEffects {
     // stamped `firstReportedAt` at capture time — the D55 auto-bundle keys on it. Analogous to a
     // confirmation's `observedAt`: neither must reset to signal-recovery time.
     capturedAt: number;
+    /** Carried so a dismissal made offline still blocks the merge it was made about (D80). */
+    dismissedDuplicateOf?: string;
   }): Promise<string>;
   confirmHazard(input: {
     hazardId: string;
@@ -308,6 +327,10 @@ export async function flushHazardItem(
       ...(h.description !== undefined ? { description: h.description } : {}),
       photoIds,
       capturedAt: h.capturedAt,
+      // The skater already answered this question, on the ice, before they lost signal.
+      ...(h.dismissedDuplicateOf !== undefined
+        ? { dismissedDuplicateOf: h.dismissedDuplicateOf }
+        : {}),
     });
     await save({ status: 'done' });
     return { ok: true, item: current, hazardId };

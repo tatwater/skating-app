@@ -684,7 +684,7 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   bookkeeping (debounced against brief GPS excursions) + a form pre-fill, and overlaps the D24
   activity-detection path — so it lands with the report-form / activity work, not the hazard feature.)*
 - **Deferred to this phase's Later/deferred (see the phase doc):** the **lake-depth / shallow-water decay
-  signal** ships v1 as a manual `shallow_bay_early_thaw` `bodyFeature` (no depth data source exists in
+  signal** ships v1 as a manual `shallow_early_thaw` `bodyFeature` (no depth data source exists in
   OSM); the real fix is a **HydroLAKES + GLOBathy** backfill of `meanDepthM`/`maxDepthM`, a separate data
   PR. Full write-up (sources, state bathymetry, ETL update) in `phase-10-weather.md` → Later/deferred.
   **→ scoped as [N6a](./phase-N6a-lake-depth.md) (2026-07-29).** Correction worth carrying: *"the decay
@@ -956,7 +956,7 @@ and that turned out to be phase-sized on its own. Was sequenced after N1 so the 
 the phase doc, and the first one reshaped the work:
 
 - **The `isShallow` scalar this entry claimed to be "replacing" has never existed.** `phase-10-weather.md`
-  describes the decay model as reading it; nothing does. `shallow_bay_early_thaw` lives in exactly two
+  describes the decay model as reading it; nothing does. `shallow_early_thaw` lives in exactly two
   places — the enum and an admin dropdown label — so a moderator can set it and see a pin, and it changes
   no decay anywhere. `decayMultiplier` takes no body-level input at all. **The signal is the deliverable**;
   the data is what extends it past hand-flagged bodies.
@@ -1116,7 +1116,11 @@ I want to do it ASAP."* The Copernicus deep link (D75) ships in N6c either way.
   photo of the pull-off, the gap in the trees and the path to the shore is the confirmation — at home, in
   daylight, before the drive. NAIP's leaf-on summer imagery is useless for ice and ideal for access.
 
-**N5c — Hazard identity: one clustering primitive, two time windows.** 📋 Scoped 2026-07-30, unbuilt —
+**N5c — Hazard identity: one clustering primitive, two time windows.** 🚧 **Half built 2026-07-31**
+(within-season: clustering, nudge, pooling, consensus rendering, auto-merge, manual authoring, the D53
+amendment and the rename — green across every suite; unpushed, undeployed, not device-tested). The
+cross-season half — the `hazardRecurrence` table, the rollover job, the recurrence queue and the dark
+advisory — is **unbuilt and ships as a second PR**. Scoped 2026-07-30 —
 see [`phase-N5c-hazard-memory.md`](./phase-N5c-hazard-memory.md); decisions **D77** (one clustering
 primitive, two windows), **D78** (recurrence is history with its denominator, admin-only until a tunable
 bar), **D79** (moderators author body features directly), **D80** (duplicates are consensus: prevent,

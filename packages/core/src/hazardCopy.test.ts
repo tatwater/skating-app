@@ -1,15 +1,19 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALSO_A_KNOWN_FEATURE,
   BODY_FEATURE_CAVEAT,
   confirmerClause,
   confirmerSummary,
   confirmRequestPrompt,
+  consensusSummary,
+  duplicateNudge,
   expiredCrossingNote,
   FOOTPRINT_IS_APPROXIMATE,
   freshnessLabel,
   hazardTypeLabel,
   healingNote,
   NO_ALERT_IS_NOT_ALL_CLEAR,
+  relativeWhen,
   stalenessCaveat,
   verdictHelp,
   verdictLabel,
@@ -280,6 +284,100 @@ describe('confirmerClause', () => {
  * The one pin allowed to leave the map on time alone (D64) needs to say so when a permalink reaches
  * it — and must not overclaim, because *nobody* reported the crossing closed. Silence retired it.
  */
+const HOUR = 60 * 60 * 1000;
+
+/**
+ * How old a hazard is, in the phrasing the nudge and the cluster list read in. Deliberately coarse:
+ * a hazard's age is a confidence signal, not a measurement, and printing it to the minute implies a
+ * precision the observation never had (D3).
+ */
+describe('relativeWhen', () => {
+  // `now` is passed rather than read, per the clock-pinning convention N5a's season work established —
+  // a fixture that reads the wall clock is a fixture that changes meaning overnight.
+  const NOW = Date.UTC(2027, 0, 15, 12);
+
+  it('never claims minutes it does not have', () => {
+    expect(relativeWhen(NOW - 20 * 60 * 1000, NOW)).toBe('less than an hour ago');
+    expect(relativeWhen(NOW, NOW)).toBe('less than an hour ago');
+  });
+
+  it('counts hours through the first day, then days', () => {
+    expect(relativeWhen(NOW - 3 * HOUR, NOW)).toBe('3 h ago');
+    expect(relativeWhen(NOW - 23 * HOUR, NOW)).toBe('23 h ago');
+    expect(relativeWhen(NOW - 30 * HOUR, NOW)).toBe('yesterday');
+    expect(relativeWhen(NOW - 3 * 24 * HOUR, NOW)).toBe('3 days ago');
+  });
+
+  it('says "yesterday" once and only once — never "1 days ago"', () => {
+    for (let hours = 24; hours <= 35; hours++) {
+      const phrase = relativeWhen(NOW - hours * HOUR, NOW);
+      expect(phrase, `${hours}h`).not.toMatch(/^1 days?/);
+    }
+  });
+
+  // A clock-skewed device, or a hazard whose `firstReportedAt` was clamped forward: the phrasing must
+  // not read as a hazard reported in the future.
+  it('does not invent a tense for a future timestamp', () => {
+    expect(relativeWhen(NOW + 5 * HOUR, NOW)).toBe('less than an hour ago');
+  });
+});
+
+/**
+ * The draw-time nudge (D80, layer 1). It offers an observation, never an accusation: the app does not
+ * know which of the two people is right, and the one standing on the ice knows more about this moment
+ * than the map does.
+ */
+describe('duplicateNudge', () => {
+  it('names the type and when it was reported, so the skater can judge it', () => {
+    const line = duplicateNudge('pressure_ridge', { reportedAgo: '2 days ago' });
+    expect(line).toMatch(/pressure ridge/i);
+    expect(line).toMatch(/2 days ago/);
+  });
+
+  it('names the reporter when we have one, and omits the clause when we do not', () => {
+    expect(
+      duplicateNudge('open_water', { reportedAgo: 'yesterday', reporterName: 'Alex R.' }),
+    ).toMatch(/by Alex R\./);
+    // No invented attribution — a withheld or departed author leaves the sentence shorter (D62).
+    expect(duplicateNudge('open_water', { reportedAgo: 'yesterday' })).not.toMatch(/ by /);
+  });
+
+  it('never tells the skater they are wrong, or asks if they are sure', () => {
+    for (const type of HAZARD_TYPES) {
+      const line = duplicateNudge(type, { reportedAgo: 'an hour ago' });
+      expect(line, type).not.toMatch(/are you sure|duplicat|already reported this|instead/i);
+      // And it never falls back to a raw enum key in front of a skater.
+      expect(line, type).not.toMatch(/_/);
+    }
+  });
+});
+
+describe('consensusSummary', () => {
+  it('counts pins, and says the outline below is the same claim', () => {
+    const line = consensusSummary(3);
+    expect(line).toMatch(/^3 /);
+    expect(line).toMatch(/one area/i);
+  });
+
+  it('reports what was observed without asserting the hazard is there (D3)', () => {
+    expect(consensusSummary(4)).toMatch(/have marked/i);
+    expect(consensusSummary(4)).not.toMatch(/there is|definitely|confirmed hazard/i);
+  });
+});
+
+describe('ALSO_A_KNOWN_FEATURE (the D53 amendment’s one line)', () => {
+  it('keeps the sighting and the standing note as two claims, not one louder one', () => {
+    // Promotion stopped hiding the pin, so both render for that season. Without this line they read
+    // as two independent warnings about the same ice, which over-counts the evidence.
+    expect(ALSO_A_KNOWN_FEATURE).toMatch(/also/i);
+    expect(ALSO_A_KNOWN_FEATURE).toMatch(/separate from this sighting/i);
+  });
+
+  it('makes no prediction — a feature is what forms here, not what is here now (D3)', () => {
+    expect(ALSO_A_KNOWN_FEATURE).not.toMatch(/will be|expect|likely|is currently/i);
+  });
+});
+
 describe('expiredCrossingNote', () => {
   it('says nobody has looked, and explicitly disclaims that the ridge has closed', () => {
     const note = expiredCrossingNote();

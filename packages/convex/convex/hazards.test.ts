@@ -629,6 +629,58 @@ describe('hazards.listBundleCandidates (D55)', () => {
     });
     expect(candidates).toHaveLength(0);
   });
+
+  // A merge tombstone is represented by its survivor, so offering it here would pre-check a pin that
+  // isn't on the map — and where the survivor is the author's own, it is already in this list one row
+  // up, so they would see two entries for one ridge in the form that exists to tidy them up.
+  test('never offers a pin that has been folded into another', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const first = await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, {
+        geometry: { type: 'Point' as const, coordinates: [0.5 + 5 / 111_320, 0.5] },
+      }),
+    );
+
+    const candidates = await author.as.query(api.hazards.listBundleCandidates, {
+      waterBodyId,
+      skateEndTime: Date.now(),
+    });
+    expect(candidates.map((c) => c._id)).toEqual([first]);
+  });
+
+  // The query is a suggestion; the write is the record. A client holding a list from before the merge
+  // would still send the stale id, so the guard has to be on the attach as well.
+  test('refuses to bind a tombstone to a report even when asked directly', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, {
+        geometry: { type: 'Point' as const, coordinates: [0.5 + 5 / 111_320, 0.5] },
+      }),
+    );
+    const loser = await t.run(async (ctx) =>
+      (await ctx.db.query('hazards').collect()).find((h) => h.mergedIntoHazardId !== undefined),
+    );
+
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId,
+      skateEndTime: Date.now(),
+      attachHazardIds: [loser?._id as Id<'hazards'>],
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.hazardIdsCreated).toEqual([]);
+    // And the tombstone is left exactly as it was — refusing to bundle it is not the same as editing
+    // it. (`t.run` serialises an absent field as `null` on the way out, hence the loose check.)
+    expect(
+      await t.run(async (ctx) => (await ctx.db.get(loser?._id as Id<'hazards'>))?.originReportId),
+    ).toBeFalsy();
+  });
 });
 
 describe('reports.create with hazards', () => {
@@ -659,6 +711,61 @@ describe('reports.create with hazards', () => {
     const hazard = await t.run((ctx) => ctx.db.get(createdId));
     expect(hazard?.originReportId).toBe(reportId);
     expect(hazard?.type).toBe('pressure_ridge');
+  });
+
+  // The report form is another way to draw a hazard, not another kind of hazard — so a pin filed this
+  // way collapses into an existing duplicate exactly as a standalone one does. Leaving auto-merge off
+  // this path would have made the report form the way to file a duplicate that never collapses.
+  test('folds an in-report hazard into an existing duplicate, like any other', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const standing = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const reportId = await sam.as.mutation(api.reports.create, {
+      waterBodyId,
+      skateEndTime: Date.now(),
+      hazards: [
+        {
+          type: 'open_water' as const,
+          geometryKind: 'point_radius' as const,
+          geometry: { type: 'Point' as const, coordinates: [0.5 + 5 / 111_320, 0.5] },
+          radiusMeters: 40,
+        },
+      ],
+    });
+
+    // The report records the **survivor**, never the tombstone it just wrote — otherwise the report
+    // would link a pin the map does not draw.
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.hazardIdsCreated).toEqual([standing]);
+    const listed = await sam.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed.map((h) => h._id)).toEqual([standing]);
+  });
+
+  test('a report that draws one ridge twice created one hazard, and says so', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const at = (m: number) => ({ type: 'Point' as const, coordinates: [0.5 + m / 111_320, 0.5] });
+    const hazard = (m: number) => ({
+      type: 'open_water' as const,
+      geometryKind: 'point_radius' as const,
+      geometry: at(m),
+      radiusMeters: 40,
+    });
+
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId,
+      skateEndTime: Date.now(),
+      hazards: [hazard(0), hazard(5)],
+    });
+
+    // Deduped: two rows went in, one survivor came out, and listing it twice would double-count the
+    // report's contribution for no reason a reader could see.
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.hazardIdsCreated).toHaveLength(1);
   });
 
   test("bundles the author's standalone hazards into the report (D55)", async () => {
@@ -776,7 +883,13 @@ describe('hazards.listPromotionCandidates', () => {
     );
     const thisSeason = await author.as.mutation(
       api.hazards.create,
-      createArgs(waterBodyId, { type: 'spring_current' }),
+      // Deliberately elsewhere on the lake. Dropped on the same point it would auto-merge into the
+      // spring above (D80) — same family, identical footprint — and this test is about the season
+      // filter, not about duplicates.
+      createArgs(waterBodyId, {
+        type: 'spring_current',
+        geometry: { type: 'Point' as const, coordinates: [0.7, 0.7] },
+      }),
     );
     await t.run(async (ctx) => {
       await ctx.db.patch(spring, { firstReportedAt: lastSeasonStart() });
@@ -886,5 +999,696 @@ describe('a nonsense season argument falls back rather than emptying the lake', 
     expect(
       await author.as.query(api.hazards.listForBody, { waterBodyId, season: 2000 }),
     ).toHaveLength(0);
+  });
+});
+
+/**
+ * Cluster pooling (N5c / D80) — the gates read what the *cluster* knows, not what one row does.
+ *
+ * The seeded body is a 1°-square polygon around `[0.5, 0.5]`, so "40 m away" is a coordinate nudge of
+ * about 0.00036°. Two 40 m-radius pins that close overlap comfortably inside `DUPLICATE_MATCH_METERS`.
+ */
+describe('hazards.listForBody — cluster consensus', () => {
+  /** ~`meters` east of the body's centre, at this latitude. */
+  const eastOf = (meters: number) => ({
+    type: 'Point' as const,
+    coordinates: [0.5 + meters / 111_320, 0.5],
+  });
+
+  test('a lone hazard is untouched — no cluster fields, and the row is the answer', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const [only] = await author.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(only?.provisional).toBe(true);
+    expect(only?.clusterMemberIds).toBeUndefined();
+    expect(only?.clusterConfirmCount).toBeUndefined();
+  });
+
+  test('two people marking the same spot corroborate each other, with no confirm taps', async () => {
+    // The headline failure: today each pin sits at zero confirmations, so every phone on the lake gets
+    // the soft "can you see it?" and nobody is ever warned about a ridge two people have drawn.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(30) }));
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(2);
+    for (const h of listed) {
+      expect(h.clusterMemberIds).toHaveLength(2);
+      expect(h.clusterConfirmCount).toBe(1);
+      // Above the threshold of 1, so the on-ice evaluator fires a real warning rather than a prompt.
+      expect(h.provisional).toBe(false);
+    }
+  });
+
+  test('one person posting twice is still one witness', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const waterBodyId = await seedBody(t);
+    await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await alex.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(30) }));
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    for (const h of listed) {
+      expect(h.clusterConfirmCount).toBe(0);
+      expect(h.provisional).toBe(true); // D54's confirm-gate survives clustering intact
+    }
+  });
+
+  test('confirmations cast on one duplicate count for the other', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const second = await alex.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    await sam.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId: first,
+      verdict: 'still_there',
+      via: 'app_open_nearby',
+    });
+    await kim.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId: second,
+      verdict: 'still_there',
+      via: 'app_open_nearby',
+    });
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    // Two witnesses across the cluster, though each stored row still shows one — the stored counts are
+    // untouched, because pooling is a read-time judgement and never rewrites what somebody said.
+    for (const h of listed) expect(h.clusterConfirmCount).toBe(2);
+    const stored = await t.run(async (ctx) => (await ctx.db.get(first))?.confirmCount);
+    expect(stored).toBe(1);
+  });
+
+  test('a fresh duplicate refreshes the whole cluster clock', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const old = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const twelveDaysAgo = Date.now() - 12 * 24 * 60 * 60 * 1000;
+    await t.run((ctx) => ctx.db.patch(old, { lastConfirmedAt: twelveDaysAgo }));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(30) }));
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    const aged = listed.find((h) => h._id === old);
+    // Somebody stood there today and drew the same thing. The old pin is not stale information.
+    expect(aged?.freshness).toBe('fresh');
+    expect(aged?.lastConfirmedAt).toBe(twelveDaysAgo); // the stored row is never rewritten
+  });
+
+  test('different families in the same spot stay separate facts', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'spring_current', geometry: eastOf(10) }),
+    );
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    for (const h of listed) expect(h.clusterMemberIds).toBeUndefined();
+  });
+
+  test('clearance votes are never pooled — archival stays strictly per-row', async () => {
+    // The unsafe direction, and the one this must never take: two people clearing one pin must not
+    // retire the neighbouring pin nobody looked at.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const second = await alex.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    for (const voter of [sam, kim]) {
+      await voter.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId: first,
+        verdict: 'fully_healed',
+        via: 'app_open_nearby',
+      });
+    }
+
+    const rows = await t.run(async (ctx) => ({
+      first: await ctx.db.get(first),
+      second: await ctx.db.get(second),
+    }));
+    expect(rows.first?.status).toBe('archived');
+    expect(rows.second?.status).toBe('active');
+    expect(rows.second?.goneCount).toBe(0);
+  });
+
+  test('the drawer agrees with the map about the same pin', async () => {
+    // A pin drawn solid on the map and then labelled "Unconfirmed" the moment you open it is the app
+    // disagreeing with itself about live ice.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(30) }));
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    const onMap = listed.find((h) => h._id === first);
+    const inDrawer = await alex.as.query(api.hazards.get, { hazardId: first });
+    expect(inDrawer?.provisional).toBe(onMap?.provisional);
+    expect(inDrawer?.clusterConfirmCount).toBe(onMap?.clusterConfirmCount);
+    expect(inDrawer?.freshness).toBe(onMap?.freshness);
+  });
+
+  test('a crossing never pools, however many are drawn on one spot', async () => {
+    // A passage marker is the one pin where escalating too readily is the anti-conservative direction:
+    // "reported crossable" carries people onto ice. Excluded structurally, not by a threshold.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    await alex.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'ridge_crossing', radiusMeters: 15 }),
+    );
+    await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { type: 'ridge_crossing', radiusMeters: 15, geometry: eastOf(10) }),
+    );
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(2);
+    for (const h of listed) {
+      expect(h.clusterMemberIds).toBeUndefined();
+      expect(h.provisional).toBe(true);
+    }
+  });
+
+  test('records the pin a skater was shown and told us is different', async () => {
+    // The nudge promised not to argue. Auto-merge is a strictly stronger claim than the 25 m match,
+    // so without this a skater who tapped "no, this is different" could be merged a second later —
+    // the same argument, held quietly.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const second = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30), dismissedDuplicateOf: first }),
+    );
+    expect(await t.run(async (ctx) => (await ctx.db.get(second))?.dismissedDuplicateOf)).toBe(
+      first,
+    );
+    // **Dismissal blocks the merge, and only the merge** (founder call). It does not switch off
+    // pooling or consensus rendering, which are non-destructive: the union outline is never smaller
+    // than either member, so nothing is un-warned, and the drawer still lists both pins with their own
+    // reporters and descriptions. Two people independently marking something here is real evidence
+    // that something is here, whether or not they agree it is one thing.
+    //
+    // The residual tension, stated because a future reader will notice it: one outline is visually the
+    // same claim a merge makes. If that reads as overruling the skater, the lever is to carry
+    // `dismissedDuplicateOf` into `poolConsensus` as a cluster split, not to weaken the merge bar.
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed.every((h) => h.clusterMemberIds?.length === 2)).toBe(true);
+  });
+
+  test('the drawer can name every pin behind a consensus outline', async () => {
+    // Collapsing duplicates into one outline must not collapse *who saw it* — several people seeing a
+    // thing separately is precisely what makes a cluster more convincing than one report.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30), description: 'right by the point' }),
+    );
+
+    const members = await alex.as.query(api.hazards.listClusterMembers, { hazardId: first });
+    expect(members).toHaveLength(2);
+    expect(members.map((m) => m.reporterName).sort()).toEqual(['alex', 'sam']);
+    expect(members.find((m) => m.hazardId === first)?.isOpen).toBe(true);
+    expect(members.find((m) => m.description === 'right by the point')).toBeDefined();
+  });
+
+  test('a lone hazard has no cluster members to list', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const waterBodyId = await seedBody(t);
+    const only = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    expect(await alex.as.query(api.hazards.listClusterMembers, { hazardId: only })).toEqual([]);
+  });
+
+  test('last season and this season are never one cluster', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const thisSeason = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const lastSeason = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    await t.run((ctx) =>
+      // A pin from last February is not corroboration for one drawn this January.
+      ctx.db.patch(lastSeason, { firstReportedAt: seasonStartMs(seasonOf(Date.now()) - 1) + 1000 }),
+    );
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed.map((h) => h._id)).toEqual([thisSeason]);
+    expect(listed[0]?.clusterMemberIds).toBeUndefined();
+  });
+});
+
+/**
+ * Auto-merge (N5c / D80, layer 4) — the only destructive-looking layer, and the one whose safety rests
+ * on three properties: the survivor takes the union, clearance votes are never pooled, and a moderator
+ * can put both pins back.
+ */
+describe('hazards auto-merge', () => {
+  const eastOf = (meters: number) => ({
+    type: 'Point' as const,
+    coordinates: [0.5 + meters / 111_320, 0.5],
+  });
+
+  test('folds an overlapping duplicate into the earliest sighting and returns the survivor', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    // `create` returns the **survivor**, so a client navigating to what it just filed lands on the
+    // live pin rather than on a tombstone.
+    const returned = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(5) }),
+    );
+    expect(returned).toBe(first);
+
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed.map((h) => h._id)).toEqual([first]);
+  });
+
+  test('the survivor takes the union, so a merge never shrinks the warned area', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const before = await t.run(async (ctx) => (await ctx.db.get(first))?.bbox);
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(20) }));
+    const after = await t.run(async (ctx) => (await ctx.db.get(first))?.bbox);
+
+    // The second pin sat further east, so the merged footprint reaches further east than the first
+    // pin's ever did — more ice warned about, never less.
+    expect(after?.maxLng).toBeGreaterThan(before?.maxLng as number);
+    expect(after?.minLng).toBeLessThanOrEqual(before?.minLng as number);
+  });
+
+  test('counts the merged-away reporter as a witness without re-pointing their statement', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(5) }));
+
+    const view = await alex.as.query(api.hazards.get, { hazardId: first });
+    // Sam drew the thing independently, which is stronger evidence than a confirm tap.
+    expect(view?.clusterConfirmCount).toBe(1);
+    expect(view?.provisional).toBe(false);
+    // The drawer still names both people. A merge collapses the geometry, never the record.
+    const members = await alex.as.query(api.hazards.listClusterMembers, { hazardId: first });
+    expect(members.map((m) => m.reporterName).sort()).toEqual(['alex', 'sam']);
+    expect(members.find((m) => m.merged)).toBeDefined();
+  });
+
+  test('a permalink to a merged-away pin lands on the live one', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    // Grab the loser's id from the tombstone rather than the mutation, which returns the survivor.
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(5) }));
+    const loser = await t.run(async (ctx) =>
+      (await ctx.db.query('hazards').collect()).find((h) => h.mergedIntoHazardId !== undefined),
+    );
+
+    expect(
+      (await alex.as.query(api.hazards.get, { hazardId: loser?._id as Id<'hazards'> }))?._id,
+    ).toBe(first);
+    // And a vote cast from a stale deep link lands on the pin actually carrying the warning.
+    await sam.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId: loser?._id as Id<'hazards'>,
+      verdict: 'still_there',
+      via: 'proximity_alert',
+    });
+    expect(await t.run(async (ctx) => (await ctx.db.get(first))?.confirmCount)).toBe(1);
+
+    // The confirmer list follows the same chain the count does. Reading it off the argument instead
+    // would print the tombstone's confirmers under the survivor's count — two numbers about two
+    // different pins, one line apart.
+    const named = await alex.as.query(api.hazardConfirmations.listForHazard, {
+      hazardId: loser?._id as Id<'hazards'>,
+    });
+    expect(named.map((v) => v.displayName)).toEqual(['sam']);
+  });
+
+  test('never merges what a skater said was different', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const second = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(5), dismissedDuplicateOf: first }),
+    );
+    expect(second).not.toBe(first);
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(2);
+  });
+
+  // A dismissal names a row, but a skater declines a *hazard* — and there are two ways for the app's
+  // own notion of "the same hazard" to route around an exact-id check.
+  test('never merges into the survivor the dismissed pin was folded into', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+
+    // What the skater will be shown, and what it gets folded into a moment later. The earlier
+    // `capturedAt` wins the survivor race, so `shown` becomes a tombstone pointing at `survivor`.
+    const shown = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const survivor = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, {
+        geometry: eastOf(5),
+        capturedAt: Date.now() - 60 * 60 * 1000,
+      }),
+    );
+    expect(await t.run(async (ctx) => (await ctx.db.get(shown))?.mergedIntoHazardId)).toBe(
+      survivor,
+    );
+
+    // Kim declined `shown` on the ice; by the time their pin flushes it is a tombstone. Refusing only
+    // that id would hand the pin to the survivor — the very hazard they rejected, one hop away.
+    const mine = await kim.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(5), dismissedDuplicateOf: shown }),
+    );
+    expect(mine).not.toBe(survivor);
+    expect(await t.run(async (ctx) => (await ctx.db.get(mine))?.mergedIntoHazardId)).toBeFalsy();
+  });
+
+  test('never merges into a cluster sibling of the pin that was dismissed', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+
+    // 30 m apart: one cluster (their footprints overlap), two rows (under the merge bar).
+    const shown = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const sibling = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    expect(sibling).not.toBe(shown);
+
+    // Kim declined `shown`, and draws right on top of its sibling. Folding into the sibling would put
+    // the pin in exactly the cluster they rejected, by a different door.
+    const mine = await kim.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30), dismissedDuplicateOf: shown }),
+    );
+    expect(mine).not.toBe(sibling);
+    const listed = await kim.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(3);
+  });
+
+  // The refusal is scoped to one hazard, not to the lake: a dismissal must not turn off deduplication
+  // for everything else the skater draws that session.
+  test('still merges a pin that has nothing to do with what was dismissed', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const shown = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    // Far enough east to be a different hazard entirely — its own cluster, its own identity.
+    const elsewhere = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(400) }),
+    );
+
+    const mine = await kim.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(400), dismissedDuplicateOf: shown }),
+    );
+    expect(mine).toBe(elsewhere);
+  });
+
+  test('unmerge puts both pins back, and nothing re-merges them', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(5) }));
+    const loser = await t.run(async (ctx) =>
+      (await ctx.db.query('hazards').collect()).find((h) => h.mergedIntoHazardId !== undefined),
+    );
+
+    await mod.as.mutation(api.hazards.unmerge, {
+      hazardId: loser?._id as Id<'hazards'>,
+      reason: 'These are two separate leads.',
+    });
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(2);
+
+    // The survivor's footprint goes back to its own shape — the merge is fully reversible, including
+    // the geometry it widened.
+    const restored = await t.run(async (ctx) => await ctx.db.get(first));
+    expect(restored?.clippedFootprint).toBeUndefined();
+
+    // And a third identical pin cannot re-merge the pair a moderator just separated, which is what
+    // stops Unmerge being a button that undoes nothing.
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(5) }));
+    const after = await t.run(async (ctx) =>
+      (await ctx.db.query('hazards').collect()).filter((h) => h.mergedIntoHazardId !== undefined),
+    );
+    expect(after.every((h) => h._id !== loser?._id)).toBe(true);
+  });
+
+  // The reversibility above is easy to get right for two pins mid-lake and easy to get wrong for
+  // three: recomputing the union from the survivor's *stored* footprint unions the answer with itself,
+  // so the pin a moderator just pulled out leaves its area behind and Unmerge does nothing to the
+  // outline it was pressed to undo. Every recomputation therefore starts from what was drawn.
+  test('unmerging one of three gives back exactly that pin’s area, and no more', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(5) }));
+    const twoPinEast = await t.run(
+      async (ctx) => (await ctx.db.get(first))?.bbox?.maxLng as number,
+    );
+    await kim.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(12) }));
+
+    const all = await t.run((ctx) => ctx.db.query('hazards').collect());
+    expect(all.filter((h) => h.mergedIntoHazardId !== undefined)).toHaveLength(2);
+    const furthestEast = all.find((h) => h.createdByUserId === kim.id);
+    const threePinEast = await t.run(
+      async (ctx) => (await ctx.db.get(first))?.bbox?.maxLng as number,
+    );
+    expect(threePinEast).toBeGreaterThan(twoPinEast);
+
+    await mod.as.mutation(api.hazards.unmerge, {
+      hazardId: furthestEast?._id as Id<'hazards'>,
+      reason: 'That eastern one is a separate lead.',
+    });
+
+    // Back to exactly the two-pin union — the third pin's reach east is gone, and the second pin's
+    // is not, because only the pin that was pulled out was pulled out.
+    const afterEast = await t.run(async (ctx) => (await ctx.db.get(first))?.bbox?.maxLng as number);
+    expect(afterEast).toBeLessThan(threePinEast);
+    expect(afterEast).toBeCloseTo(twoPinEast, 6);
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed).toHaveLength(2);
+  });
+
+  test('every merge leaves an audit row, and the automatic ones name no actor', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(5) }));
+
+    const merges = await mod.as.query(api.hazards.listRecentMerges, {});
+    expect(merges).toHaveLength(1);
+    // No human took this action, and naming the creating skater would record a member as having
+    // moderated when they didn't.
+    expect(merges[0]?.automatic).toBe(true);
+    expect(merges[0]?.action).toBe('merge_hazards');
+    expect(merges[0]?.stillMerged).toBe(true);
+    expect(merges[0]?.waterBodyName).toBe('Shelburne Pond');
+  });
+
+  test('clearance votes still archive one row at a time', async () => {
+    // Merging reduces the N× retirement work by making duplicates one row — never by sharing their
+    // clearance votes, which would let two people clearing one pin retire an unexamined neighbour.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(api.hazards.create, createArgs(waterBodyId, { geometry: eastOf(5) }));
+    const loser = await t.run(async (ctx) =>
+      (await ctx.db.query('hazards').collect()).find((h) => h.mergedIntoHazardId !== undefined),
+    );
+
+    for (const voter of [sam, kim]) {
+      await voter.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId: first,
+        verdict: 'fully_healed',
+        via: 'app_open_nearby',
+      });
+    }
+    const rows = await t.run(async (ctx) => ({
+      survivor: await ctx.db.get(first),
+      loser: await ctx.db.get(loser?._id as Id<'hazards'>),
+    }));
+    expect(rows.survivor?.status).toBe('archived');
+    expect(rows.loser?.goneCount).toBe(0);
+  });
+
+  // The survivor chain is the one place a data bug could hang a query rather than answer it wrong, so
+  // the hop cap has to degrade into "we couldn't resolve this" — the same contract `resolveSurvivor`
+  // holds for merged water bodies (D36).
+  test('a merge cycle resolves to nothing rather than looping forever', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const second = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(5), dismissedDuplicateOf: first }),
+    );
+    // Only a bug could write this, which is exactly why the reader is capped rather than trusting.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(first, { mergedIntoHazardId: second });
+      await ctx.db.patch(second, { mergedIntoHazardId: first });
+    });
+
+    expect(await alex.as.query(api.hazards.get, { hazardId: first })).toBeNull();
+    expect(await alex.as.query(api.hazards.listClusterMembers, { hazardId: first })).toEqual([]);
+  });
+});
+
+/**
+ * Pooling scope (N5c / D77) — which rows are even eligible to be one hazard. The exclusions matter more
+ * than the matches: each one is a claim that some pin must *not* borrow another's evidence.
+ */
+describe('hazards cluster scope', () => {
+  const eastOf = (meters: number) => ({
+    type: 'Point' as const,
+    coordinates: [0.5 + meters / 111_320, 0.5],
+  });
+
+  // A pin the community voted healed must not read its freshness off a live neighbour — that is
+  // pooling in the unsafe direction by the back door, and the `status: 'active'` bound is what stops
+  // it. Asserted because the bound is a line in an index expression, not a visible guard.
+  test('an archived pin neither borrows a cluster nor lends itself to one', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const live = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    // 30 m apart: overlapping footprints, so they cluster — but under the merge bar, so they stay two.
+    const healed = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30) }),
+    );
+    expect(healed).not.toBe(live);
+    expect(
+      (await alex.as.query(api.hazards.get, { hazardId: live }))?.clusterMemberIds,
+    ).toHaveLength(2);
+
+    await t.run((ctx) => ctx.db.patch(healed, { status: 'archived' }));
+
+    // The live pin is alone again — an archived sighting is not evidence that something is there now.
+    const stillHere = await alex.as.query(api.hazards.get, { hazardId: live });
+    expect(stillHere?.clusterMemberIds).toBeUndefined();
+    expect(stillHere?.clusterConfirmCount).toBeUndefined();
+    // And the archived pin reads its own row rather than the live one's clock.
+    const gone = await alex.as.query(api.hazards.get, { hazardId: healed });
+    expect(gone?.clusterMemberIds).toBeUndefined();
+    expect(gone?.lastConfirmedAt).toBe(
+      await t.run(async (ctx) => (await ctx.db.get(healed))?.lastConfirmedAt),
+    );
+  });
+});
+
+/**
+ * The merges panel's read (N5c / D80). Its whole justification is that auto-merge can be watched, so
+ * the read backing it must not be the kind that gets slower every week the app is alive.
+ */
+describe('hazards.listRecentMerges', () => {
+  async function seedAction(
+    t: ReturnType<typeof harness>,
+    createdAt: number,
+    extra: Record<string, unknown> = {},
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        action: 'merge_hazards' as const,
+        targetType: 'hazard' as const,
+        targetId: 'h-old',
+        reason: 'Footprints overlap above the automatic-merge bar (D80).',
+        createdAt,
+        ...extra,
+      }),
+    );
+  }
+
+  test('reads a window, so an ageing audit log never makes the panel slower', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', { role: 'moderator' });
+    const recent = await seedAction(t, Date.now() - 2 * 24 * 60 * 60 * 1000);
+    await seedAction(t, Date.now() - 200 * 24 * 60 * 60 * 1000);
+
+    const rows = await mod.as.query(api.hazards.listRecentMerges, {});
+    // Last winter's merges are history and live on the per-day chart; this panel is recent detail.
+    expect(rows.map((r) => r.actionId)).toEqual([recent]);
+  });
+
+  test('is moderator-only', async () => {
+    const t = harness();
+    const member = await seedUser(t, 'member');
+    await expect(member.as.query(api.hazards.listRecentMerges, {})).rejects.toThrow();
   });
 });

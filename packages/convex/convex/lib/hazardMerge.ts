@@ -1,0 +1,329 @@
+/**
+ * The server half of auto-merge (N5c / D80, layer 4) — the tombstone, the survivor chain, and the
+ * footprint rule that keeps a merge from ever shrinking warned area.
+ *
+ * The bar itself is pure and lives in `@skating/core`'s `hazardMerge`; this module is the persistence
+ * around it, modelled on D36's water-body merge (`lib/bodies.resolveSurvivor`) because that pattern is
+ * already proven on this codebase and a moderator already knows how it behaves.
+ */
+
+import {
+  clipFootprintToBody,
+  clusterHazards,
+  DUPLICATE_MATCH_METERS,
+  DUPLICATE_MAX_CLUSTER_SPREAD_M,
+  type HazardShape,
+  hazardBbox,
+  hazardFootprintOf,
+  MERGE_CHAIN_MAX_HOPS,
+  type MergeCandidate,
+  mergeSurvivorOf,
+  polygonUnion,
+  seasonOf,
+  shouldAutoMerge,
+} from '@skating/core';
+import type { MultiPolygon, Polygon } from 'geojson';
+import type { Doc, Id } from '../_generated/dataModel';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
+
+/**
+ * Follow a merged hazard to its surviving row, or `null` if the chain dead-ends.
+ *
+ * The twin of `resolveSurvivor` for water bodies, and hop-capped for the same reason: a cycle written
+ * by a bug must degrade into "we couldn't resolve this" rather than into a query that never returns.
+ * Every path that reaches a hazard by id — the permalink, the confirm mutation, a deep link from an
+ * old notification — goes through here, so a link to a pin that has since been folded into another
+ * lands on the live one instead of on nothing.
+ */
+export async function resolveHazardSurvivor(
+  ctx: QueryCtx,
+  hazardId: Id<'hazards'>,
+): Promise<Doc<'hazards'> | null> {
+  let hazard = await ctx.db.get(hazardId);
+  for (
+    let hops = 0;
+    hazard?.mergedIntoHazardId !== undefined && hops < MERGE_CHAIN_MAX_HOPS;
+    hops++
+  ) {
+    hazard = await ctx.db.get(hazard.mergedIntoHazardId);
+  }
+  // Still pointing somewhere after the cap means a cycle. Returning the tombstone would render a pin
+  // that is supposed to be represented by another; `null` is the honest answer and the callers all
+  // treat it as "not found".
+  return hazard?.mergedIntoHazardId !== undefined ? null : hazard;
+}
+
+/** The shape a hazard row was authored as — what the footprint math reads. */
+function shapeOf(hazard: Doc<'hazards'>): HazardShape {
+  return {
+    geometryKind: hazard.geometryKind,
+    geometry: hazard.geometry as HazardShape['geometry'],
+    ...(hazard.radiusMeters !== undefined ? { radiusMeters: hazard.radiusMeters } : {}),
+    ...(hazard.bufferMeters !== undefined ? { bufferMeters: hazard.bufferMeters } : {}),
+  };
+}
+
+/** A stored row as the pure bar reads it. */
+function toCandidate(hazard: Doc<'hazards'>): MergeCandidate {
+  return {
+    id: hazard._id,
+    type: hazard.type,
+    geometryKind: hazard.geometryKind,
+    geometry: hazard.geometry as HazardShape['geometry'],
+    ...(hazard.radiusMeters !== undefined ? { radiusMeters: hazard.radiusMeters } : {}),
+    ...(hazard.bufferMeters !== undefined ? { bufferMeters: hazard.bufferMeters } : {}),
+    ...(hazard.clippedFootprint !== undefined
+      ? { clippedFootprint: hazard.clippedFootprint as HazardShape['geometry'] }
+      : {}),
+    bbox: hazard.bbox,
+    firstReportedAt: hazard.firstReportedAt,
+    season: seasonOf(hazard.firstReportedAt),
+    moderationStatus: hazard.moderationStatus,
+    ...(hazard.mergedIntoHazardId !== undefined
+      ? { mergedIntoHazardId: hazard.mergedIntoHazardId }
+      : {}),
+    ...(hazard.promotedToFeatureId !== undefined
+      ? { promotedToFeatureId: hazard.promotedToFeatureId }
+      : {}),
+    ...(hazard.dismissedDuplicateOf !== undefined
+      ? { dismissedDuplicateOf: hazard.dismissedDuplicateOf }
+      : {}),
+    ...(hazard.noMergeWith !== undefined ? { noMergeWith: hazard.noMergeWith } : {}),
+  };
+}
+
+/**
+ * Recompute a survivor's stored footprint as the **union of its whole chain**, clipped to the lake.
+ *
+ * This is the rule that makes a merge safe to automate: *a merge can never shrink the warned area*.
+ * The union of two footprints is never smaller than either, so folding pins together can only ever
+ * warn about more ice, never less — and because render, the stored bbox and the proximity evaluator
+ * all read `clippedFootprint` when it is set, the drawn halo and the measured distance stay one shape
+ * without a single client change.
+ *
+ * The survivor's own `geometry` / `radiusMeters` / `bufferMeters` are left untouched: those are what a
+ * person drew, and a merge is not a correction of their drawing. That is also what lets `unmerge`
+ * restore the original footprint by simply recomputing from them.
+ */
+async function refreshMergedFootprint(ctx: MutationCtx, survivor: Doc<'hazards'>): Promise<void> {
+  const chain = await ctx.db
+    .query('hazards')
+    .withIndex('by_merged_into', (q) => q.eq('mergedIntoHazardId', survivor._id))
+    .collect();
+
+  const own = shapeOf(survivor);
+  if (chain.length === 0) {
+    // Nothing folded in any more (an unmerge emptied the chain): back to the pin's own footprint,
+    // which is what `insertHazard` would have stored — a clip only when it actually removes area.
+    const body = await ctx.db.get(survivor.waterBodyId);
+    const footprint = drawnFootprintOf(survivor);
+    const clipped =
+      body && footprint
+        ? clipFootprintToBody(footprint, body.polygon as Polygon | MultiPolygon)
+        : null;
+    await ctx.db.patch(survivor._id, {
+      clippedFootprint: clipped ?? undefined,
+      bbox: hazardBbox(own, clipped),
+    });
+    return;
+  }
+
+  const footprints = [survivor, ...chain]
+    .map(drawnFootprintOf)
+    .filter((f): f is Polygon | MultiPolygon => f !== null);
+  const merged = polygonUnion(footprints);
+  if (!merged) return; // clipper failure ⇒ leave the survivor's own footprint, which warns about less
+  const body = await ctx.db.get(survivor.waterBodyId);
+  const clipped = body ? clipFootprintToBody(merged, body.polygon as Polygon | MultiPolygon) : null;
+  const stored = clipped ?? merged;
+  await ctx.db.patch(survivor._id, {
+    clippedFootprint: stored,
+    bbox: hazardBbox(own, stored),
+  });
+}
+
+/**
+ * The footprint of what this person actually **drew** — the stored `clippedFootprint` deliberately
+ * ignored.
+ *
+ * That exclusion is the whole correctness of a re-merge. Everywhere else `clippedFootprint` is the
+ * footprint, and reading it here is the obvious thing to write — but on a survivor it already *is* the
+ * union, so feeding it back in unions the answer with itself and the result can only ever grow. Two
+ * consequences, both wrong and both invisible in a fixture that sits mid-lake:
+ *
+ * - unmerging one of three pins would leave the removed pin's area in the survivor, so the moderator's
+ *   Unmerge does nothing to the outline it was pressed to undo;
+ * - unmerging the last pin near a shore would re-clip the *union* rather than the pin's own shape, so
+ *   the widened footprint is simply stored again.
+ *
+ * Reading `geometry` + `radiusMeters`/`bufferMeters` instead means every recomputation starts from what
+ * was drawn, which is the only thing a merge never edits — and is what makes `unmerge` reversible in
+ * the geometry as well as in the row.
+ */
+function drawnFootprintOf(hazard: Doc<'hazards'>): Polygon | MultiPolygon | null {
+  const { clippedFootprint: _stored, ...drawn } = toCandidate(hazard);
+  return hazardFootprintOf(drawn);
+}
+
+/**
+ * Fold `loser` into `survivor`. Never called without `shouldAutoMerge` (or a moderator) saying yes.
+ *
+ * Writes the tombstone, then recomputes the survivor's union footprint. Confirmations are untouched
+ * by design — the pooling read path counts the chain, so the survivor's consensus already includes
+ * everyone who spoke about the loser, and every one of those statements stays attached to the pin the
+ * person was actually looking at.
+ */
+export async function mergeHazards(
+  ctx: MutationCtx,
+  survivor: Doc<'hazards'>,
+  loser: Doc<'hazards'>,
+  { actorId, reason }: { actorId?: Id<'profiles'>; reason: string },
+): Promise<void> {
+  await ctx.db.patch(loser._id, { mergedIntoHazardId: survivor._id });
+  const fresh = await ctx.db.get(survivor._id);
+  if (fresh) await refreshMergedFootprint(ctx, fresh);
+  // Every merge is audited, including the automatic ones — that is the whole reason auto-merge is
+  // acceptable to ship. `actorId` is absent when the machine did it, because naming the creating
+  // skater would record a member as having taken a moderation action they never took.
+  await ctx.db.insert('moderationActions', {
+    ...(actorId !== undefined ? { actorId } : {}),
+    action: 'merge_hazards',
+    targetType: 'hazard',
+    targetId: loser._id,
+    reason,
+    metadata: { survivorId: survivor._id, automatic: actorId === undefined },
+    createdAt: Date.now(),
+  });
+}
+
+/** Separate a merged pair, and remember that a human did — so nothing re-merges them. */
+export async function unmergeHazard(
+  ctx: MutationCtx,
+  loser: Doc<'hazards'>,
+  { actorId, reason }: { actorId: Id<'profiles'>; reason: string },
+): Promise<void> {
+  const survivorId = loser.mergedIntoHazardId;
+  if (survivorId === undefined) return;
+  const survivor = await ctx.db.get(survivorId);
+  await ctx.db.patch(loser._id, {
+    mergedIntoHazardId: undefined,
+    noMergeWith: [...(loser.noMergeWith ?? []), survivorId],
+  });
+  if (survivor) {
+    await ctx.db.patch(survivor._id, {
+      noMergeWith: [...(survivor.noMergeWith ?? []), loser._id],
+    });
+    const fresh = await ctx.db.get(survivor._id);
+    if (fresh) await refreshMergedFootprint(ctx, fresh);
+  }
+  await ctx.db.insert('moderationActions', {
+    actorId,
+    action: 'unmerge_hazards',
+    targetType: 'hazard',
+    targetId: loser._id,
+    reason,
+    metadata: { survivorId },
+    createdAt: Date.now(),
+  });
+}
+
+/**
+ * Every row that stands for the hazard this skater declined at draw time (D80, layer 1).
+ *
+ * **A dismissal names a row, but a skater declines a hazard**, and this codebase has two answers to
+ * "which rows are that hazard" that a row-id comparison misses:
+ *
+ * 1. **The merge chain.** The pin they were shown may since have been folded into a survivor. That is
+ *    not a rare race: on the offline path hours pass between the nudge on the ice and the flush in
+ *    signal, and the dismissed id can be a tombstone by the time it arrives. Refusing only that id
+ *    would let the survivor — the very pin now carrying that hazard's warning — absorb the new one.
+ * 2. **The cluster.** A sibling that overlaps the same ice is, by this phase's own definition, the same
+ *    hazard. Folding into it puts the pin in exactly the cluster the skater rejected, by a different
+ *    door.
+ *
+ * Computed only when a dismissal exists, which is rare, so the common create pays nothing. Erring wide
+ * is the right direction here: over-refusing leaves two pins a moderator can merge by hand, while
+ * under-refusing overrules a person who was standing on the ice looking at the thing.
+ */
+async function dismissedIdentity(
+  ctx: MutationCtx,
+  fresh: Doc<'hazards'>,
+  siblings: readonly Doc<'hazards'>[],
+  season: number,
+): Promise<ReadonlySet<string>> {
+  const dismissed = fresh.dismissedDuplicateOf;
+  if (dismissed === undefined) return new Set();
+  const ids = new Set<string>([dismissed]);
+
+  // 1. Follow the chain to whatever carries that hazard's warning now, and back down to every pin
+  //    already folded into it.
+  const survivor = await resolveHazardSurvivor(ctx, dismissed);
+  if (survivor) {
+    ids.add(survivor._id);
+    const folded = await ctx.db
+      .query('hazards')
+      .withIndex('by_merged_into', (q) => q.eq('mergedIntoHazardId', survivor._id))
+      .collect();
+    for (const row of folded) ids.add(row._id);
+  }
+
+  // 2. Add the cluster the dismissed hazard already belongs to. `fresh` is excluded from the input on
+  //    purpose: what the skater declined is a fact about the *existing* pins, and letting the new draft
+  //    influence which cluster that is would make the answer depend on the thing being judged.
+  const clusterable = siblings
+    .filter((h) => h._id !== fresh._id)
+    .filter((h) => h.moderationStatus === 'visible')
+    .filter((h) => seasonOf(h.firstReportedAt) === season)
+    .map((h) => ({ ...toCandidate(h), id: h._id as string }));
+  const cluster = clusterHazards(clusterable, {
+    matchMeters: DUPLICATE_MATCH_METERS,
+    maxSpreadMeters: DUPLICATE_MAX_CLUSTER_SPREAD_M,
+  }).find((c) => c.members.some((m) => ids.has(m.id)));
+  if (cluster) for (const member of cluster.members) ids.add(member.id);
+
+  return ids;
+}
+
+/**
+ * Try to fold a freshly-created hazard into an existing one (D80, layer 4).
+ *
+ * **Runs at create**, in the same mutation, which is the moment the duplicate actually appears and the
+ * same moment the draw-time nudge fired. Any later — a sweep, a cron — and there is a window in which
+ * the map shows two pins for one ridge, which is the state this exists to remove. The read is bounded
+ * by body and season, exactly like the pooling scope it shares.
+ *
+ * Returns the surviving hazard's id, which is the new row's own id when nothing merged.
+ */
+export async function tryAutoMerge(
+  ctx: MutationCtx,
+  hazardId: Id<'hazards'>,
+): Promise<{ survivorId: Id<'hazards'>; mergedLoserId?: Id<'hazards'> }> {
+  const fresh = await ctx.db.get(hazardId);
+  if (!fresh) return { survivorId: hazardId };
+
+  const season = seasonOf(fresh.firstReportedAt);
+  const siblings = await ctx.db
+    .query('hazards')
+    .withIndex('by_water_body_status', (q) =>
+      q.eq('waterBodyId', fresh.waterBodyId).eq('status', 'active'),
+    )
+    .collect();
+
+  const candidate = toCandidate(fresh);
+  const dismissedIds = await dismissedIdentity(ctx, fresh, siblings, season);
+  for (const other of siblings) {
+    if (other._id === fresh._id) continue;
+    if (seasonOf(other.firstReportedAt) !== season) continue;
+    if (shouldAutoMerge(candidate, toCandidate(other), { dismissedIds }).merge !== true) continue;
+
+    // The earliest sighting survives — the honest first-seen date, and the one recurrence keys on.
+    const survivorIsOther = mergeSurvivorOf(candidate, toCandidate(other)).id === other._id;
+    const survivor = survivorIsOther ? other : fresh;
+    const loser = survivorIsOther ? fresh : other;
+    await mergeHazards(ctx, survivor, loser, {
+      reason: 'Footprints overlap above the automatic-merge bar (D80).',
+    });
+    return { survivorId: survivor._id, mergedLoserId: loser._id };
+  }
+  return { survivorId: hazardId };
+}

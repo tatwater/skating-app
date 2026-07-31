@@ -368,7 +368,7 @@ export default defineSchema({
     // the drawer and the editor), and nothing selects *by* depth.
     //
     // Two consumers. The decay model reads shallowness as one bit (D69, via `isShallowBody` — depth OR a
-    // `shallow_bay_early_thaw` `bodyFeature`), and the clients show both numbers to skaters framed by
+    // `shallow_early_thaw` `bodyFeature`), and the clients show both numbers to skaters framed by
     // their source: measured reads plainly, modelled reads as an estimate (D3 — a 90 m-DEM guess must not
     // look like a depth-sounder transect). All optional ⇒ migration-free, and because `importCanonical`
     // patches an explicit field list, depth survives a canonical re-import untouched.
@@ -744,6 +744,27 @@ export default defineSchema({
     // flush retry, so a create whose ack was lost returns the same hazard instead of dropping a
     // second pin on the same spot. Omitted by web/online callers.
     idempotencyKey: v.optional(v.string()),
+    // The pin this skater was shown at draw time and told was a **different** hazard (N5c / D80).
+    // Recorded because the nudge promised not to argue: auto-merge is a strictly stronger claim than
+    // the nudge's 25 m match, so without this a skater who tapped "no, this is different" could have
+    // their pin silently merged a second later — the same argument, held quietly. A moderator can
+    // still merge the pair by hand; what this blocks is the machine overruling a person who was
+    // standing on the ice looking at it.
+    dismissedDuplicateOf: v.optional(v.id('hazards')),
+    // MERGE — a fourth axis, and like the other three it means one specific thing (N5c / D80). Set when
+    // this pin was folded into another as a duplicate: the survivor carries the warning with the
+    // **union** of both footprints, so a merge can never shrink warned area. Mirrors
+    // `waterBodies.mergedIntoId` (D36) down to the tombstone-not-delete rule, and `resolveHazardSurvivor`
+    // is its hop-capped reader. A moderator `unmerge` clears it and both pins return intact.
+    //
+    // Confirmations are NEVER re-pointed at the survivor: a confirmation is a named person's statement
+    // about a specific pin (D65), and rewriting its `hazardId` would edit that statement. The chain is
+    // read through instead.
+    mergedIntoHazardId: v.optional(v.id('hazards')),
+    // Pins a moderator has separated from this one. Without it, `unmerge` would be a button that undoes
+    // nothing — the next create on the same spot would re-merge the pair by the same rule that merged
+    // it the first time. Also carries a nudge dismissal forward when a moderator confirms the split.
+    noMergeWith: v.optional(v.array(v.id('hazards'))),
     originReportId: v.optional(v.id('reports')), // set when drawn in-report or bundled later (D55)
     description: v.optional(v.string()),
     // Ice hazards are intensely visual and hard to describe ("folded ridges are hard to see" is a
@@ -756,10 +777,18 @@ export default defineSchema({
     // archive, abuse would be indistinguishable from a safety verdict (D3).
     moderationStatus: literals(MODERATION_STATUSES),
     healingState: v.optional(literals(HAZARD_HEALING_STATES)), // latest "healing but unsafe" (D52)
-    // SUPERSESSION — a third axis, distinct from both `status` and `moderationStatus` (D53). Set when
-    // an admin promotes this hazard into a persistent `bodyFeatures` row: the feature now carries the
-    // warning, so the hazard stops rendering, but this must NOT be done by setting `status: archived`,
-    // which reads as "the community cleared it" (D3). Cleared on demote, so the hazard resurfaces.
+    // PROVENANCE — set when a moderator promotes this hazard into a persistent `bodyFeatures` row
+    // (D53). It records where the feature came from and **nothing else**.
+    //
+    // It used to be a visibility axis, and the D53 amendment (N5c) is that it stopped being one: a
+    // `bodyFeature` is a standing statement about the lake, a hazard is a sighting by a person on a
+    // date, and promotion adds the first without deleting the second — in any season, before or after.
+    // Hiding on this field rewrote past winters as winters in which nobody reported anything, blocked
+    // the permalink, and blocked confirmation of the one claim that *is* confirmable ("it's here right
+    // now", as opposed to "it forms here"). The only reader still filtering on it is
+    // `listPromotionCandidates`, where an already-promoted hazard is finished as a *suggestion*.
+    // Cleared on demote. Never set `status: archived` for a promotion — that reads as "the community
+    // cleared it" (D3).
     promotedToFeatureId: v.optional(v.id('bodyFeatures')),
     firstReportedAt: v.number(),
     lastConfirmedAt: v.number(), // drives the per-type freshness decay (D15/D52)
@@ -796,7 +825,12 @@ export default defineSchema({
       'weatherAdjustedAt',
     ])
     .index('by_created_at', ['createdAt']) // per-day hazard volume + photo-orphan sweep (Phase 7b)
-    .index('by_idempotency_key', ['idempotencyKey']), // offline-flush dedup (Phase 9 offline)
+    .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 9 offline)
+    // The merge chain (N5c / D80): every pin folded into one survivor, which is what the union
+    // footprint is recomputed from and what `unmerge` walks. An equality read on a field almost every
+    // row leaves unset, so it costs nothing to carry and turns "what was merged into this?" from a
+    // scan of the body's hazards into a lookup.
+    .index('by_merged_into', ['mergedIntoHazardId']),
   // NOTE: no spatial index for hazards (Phase 9 call 6). Hazards are only ever queried per body —
   // the map renders them for the selected lake, the mobile cache stores them per cached body, and the
   // proximity evaluator runs against that same cached set. A third spatial index
@@ -898,7 +932,19 @@ export default defineSchema({
     .index('by_status_resolved_at', ['status', 'resolvedAt']),
 
   moderationActions: defineTable({
-    actorId: v.id('profiles'), // the moderator/admin who acted
+    /**
+     * The moderator/admin who acted — **absent when the system did** (N5c / D80).
+     *
+     * Auto-merge writes rows here, deliberately: a mechanism that folds one safety pin into another
+     * without leaving an audit row is a mechanism nobody can check, and this one is explicitly meant
+     * to be watched before it is trusted. But it has no human actor, and putting the *creating
+     * skater* here would name a member as having taken a moderation action they never took. Absent is
+     * the honest value, and "no actor" reads as "automatic" everywhere it is rendered.
+     *
+     * `by_actor` is only ever an equality read for a specific moderator, so an unset value simply
+     * never matches — no sparse-index trap here (the `lte`-on-optional problem needs a range).
+     */
+    actorId: v.optional(v.id('profiles')),
     action: literals(MODERATION_ACTIONS),
     targetType: literals(MODERATION_TARGET_TYPES),
     targetId: v.string(),
@@ -907,7 +953,12 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_target', ['targetType', 'targetId'])
-    .index('by_actor', ['actorId']),
+    .index('by_actor', ['actorId'])
+    // The 7b rollup's day slice (N5c). Auto-merge is the one mechanism that changes a row without a
+    // human, and its unmerge rate is the only empirical check on the bar — which means counting merges
+    // per day, which means reading this table by time. Without the index that is a scan of an
+    // append-only audit log, i.e. the exact unbounded-growth shape the Phase 7b rule forbids.
+    .index('by_created_at', ['createdAt']),
 
   supportTickets: defineTable({
     userId: v.optional(v.id('profiles')), // absent when the Clerk user has no profile row yet

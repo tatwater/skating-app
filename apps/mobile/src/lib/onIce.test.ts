@@ -46,6 +46,19 @@ describe('toProximityHazards', () => {
     expect(line?.shape).toMatchObject({ geometryKind: 'line', bufferMeters: 12 });
     expect(line?.shape.radiusMeters).toBeUndefined();
   });
+
+  // The gate N5c §1.2 opens with. Three skaters mark one ridge, nobody taps confirm: every row's own
+  // `confirmCount` is 0, and reading it would leave every phone on the lake at the soft prompt for a
+  // hazard the community has plainly corroborated.
+  it('escalates on what the cluster knows, not on what one row does', () => {
+    const [pooled] = toProximityHazards([row({ confirmCount: 0, clusterConfirmCount: 2 })]);
+    expect(pooled?.confirmCount).toBe(2);
+  });
+
+  it('falls back to the row for a singleton, where the two are equal by construction', () => {
+    const [alone] = toProximityHazards([row({ confirmCount: 1 })]);
+    expect(alone?.confirmCount).toBe(1);
+  });
 });
 
 describe('advanceOnIceSession — proximity (Layer 1)', () => {
@@ -62,6 +75,17 @@ describe('advanceOnIceSession — proximity (Layer 1)', () => {
       hazards(row({ confirmCount: 0 })),
     );
     expect(next.banner?.kind).toBe('confirm_request');
+  });
+
+  // …and the whole point of pooling: the same unconfirmed row, once the server has judged it one
+  // hazard with pins other people drew, warns properly (N5c / D80).
+  it('warns for a pin no one confirmed whose cluster other skaters independently drew', () => {
+    const next = advanceOnIceSession(
+      emptyAlertSession(),
+      still(HERE),
+      hazards(row({ confirmCount: 0, clusterConfirmCount: 2 })),
+    );
+    expect(next.banner?.kind).toBe('warning');
   });
 
   it('stays quiet when nothing is near', () => {

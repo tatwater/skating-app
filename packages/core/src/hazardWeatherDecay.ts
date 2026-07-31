@@ -117,7 +117,7 @@ export interface WeatherDecayOptions {
 export interface BodyDecayContext {
   /**
    * Whether this body is shallow — its depth says so (`isShallowDepth`) **or** a moderator flagged it
-   * with the `shallow_bay_early_thaw` `bodyFeature`. Shallow water melts from the bottom and goes out
+   * with the `shallow_early_thaw` `bodyFeature`. Shallow water melts from the bottom and goes out
    * early, so a thaw counts for more here.
    *
    * **It amplifies the thaw term only, never the cold term (D69).** Shallow water also *freezes* earlier,

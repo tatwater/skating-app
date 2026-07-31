@@ -985,7 +985,7 @@ narrows between larger areas** (moving water under a constriction is *always* we
 ridges that reform in the same place annually**. The 2026-07-21 hazard research adds three more
 persistent natural sources from lakeice.info: **`gas_hole`** (marsh-gas deltas/river mouths — deroof
 every season), **`reef_hole`** (thin ice over the same shallow/reef yearly), and **`delta` /
-`shallow_bay_early_thaw`** zones (shallow water melts from the bottom first, goes out well before deep
+`shallow_early_thaw`** zones (shallow water melts from the bottom first, goes out well before deep
 ice). These graduate into a first-class **`bodyFeatures`**
 entity attached to the water body — always-shown with distinct "known seasonal hazard" styling, no
 time-decay, no confirmation loop. **Promotion** (a recurring hazard → a body feature) and **demotion**
@@ -1937,7 +1937,7 @@ of the decision. What holds absolutely is per-class: shallow `structural` ≥ de
 any type. Worth recording because the weaker-sounding invariant is the one that is actually true, and a
 test asserting the stronger one would have been a test asserting a misunderstanding.
 
-**Shallowness is a boolean, and it has to be.** The manual `shallow_bay_early_thaw` `bodyFeature` carries
+**Shallowness is a boolean, and it has to be.** The manual `shallow_early_thaw` `bodyFeature` carries
 no number, and it must feed the same input — a body is shallow if its depth says so **or** a local flagged
 it. That flag is *permanent infrastructure*, not the stand-in the register called it: 73% of our corpus is
 under 1 ha, below the floor of every global depth source, and small ponds are exactly where the shallow
@@ -1962,7 +1962,7 @@ never-hide and the map's opacity floor — while a false negative loses the sign
 deserved it. Cheap error against expensive error, so the objection to over-inclusiveness becomes the
 argument for it. The remaining false negative has a named shape: a broad shallow sheet with one deep hole
 (mean 2 m, max 9 m) reads as not shallow, mitigated by a mean always winning when present and by the
-`shallow_bay_early_thaw` flag overriding the number entirely.
+`shallow_early_thaw` flag overriding the number entirely.
 
 **And it gets settled with data rather than argument.** LAGOS-US DEPTH carries ~6,137 lakes with *both* a
 mean and a max — a labelled set where `mean ≤ 3 m` is ground truth. **Step 6 of `scripts/lake-depth`'s

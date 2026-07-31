@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { distanceToPolygonMeters } from './geometry';
 import { applyDraftMapClick, draftForType, type HazardDraft, resizeDraft } from './hazardDraft';
 import {
   bodyFeaturesToFeatureCollection,
@@ -29,6 +30,75 @@ function hazard(overrides: Partial<MappableHazard> = {}): MappableHazard {
     ...overrides,
   };
 }
+
+describe('hazardsToFeatureCollection — consensus rendering (D80)', () => {
+  /** Two 50 m pins ~40 m apart: their footprints overlap comfortably. */
+  const pair: MappableHazard[] = [
+    hazard({ _id: 'first', clusterMemberIds: ['first', 'second'] }),
+    hazard({
+      _id: 'second',
+      geometry: { type: 'Point', coordinates: [-73.2095, 44.47] },
+      clusterMemberIds: ['first', 'second'],
+    }),
+  ];
+
+  it('draws overlapping duplicates as one outline, not two stacked halos', () => {
+    const fc = hazardsToFeatureCollection(pair);
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0]?.properties?.clusterSize).toBe(2);
+  });
+
+  it('opens the earliest member — the first sighting, and the pin a merge would keep', () => {
+    const fc = hazardsToFeatureCollection(pair);
+    expect(fc.features[0]?.properties?.hazardId).toBe('first');
+  });
+
+  it('never shrinks the warned area: the union covers every member', () => {
+    const consensus = hazardsToFeatureCollection(pair).features[0]?.geometry as
+      | GeoJSON.Polygon
+      | GeoJSON.MultiPolygon;
+    for (const member of pair) {
+      const alone = hazardsToFeatureCollection([{ ...member, clusterMemberIds: undefined }])
+        .features[0]?.geometry as GeoJSON.Polygon;
+      // Every vertex of each member's own footprint lies inside (or on) the consensus outline.
+      for (const [lng, lat] of alone.coordinates[0] as [number, number][]) {
+        expect(distanceToPolygonMeters({ lat, lng }, consensus)).toBeLessThan(1);
+      }
+    }
+  });
+
+  it('leaves a lone hazard exactly as it was', () => {
+    const fc = hazardsToFeatureCollection([hazard()]);
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0]?.properties?.clusterSize).toBe(1);
+  });
+
+  it('falls back to drawing pins individually when a member is missing from the list', () => {
+    // A partial cache or a filtered view: unioning a cluster we only half hold would draw a shape
+    // nobody's data supports. One honest pin beats a confident wrong one.
+    const fc = hazardsToFeatureCollection([pair[0] as MappableHazard]);
+    expect(fc.features).toHaveLength(1);
+    expect(fc.features[0]?.properties?.clusterSize).toBe(1);
+    expect(fc.features[0]?.properties?.hazardId).toBe('first');
+  });
+
+  it('still draws every member when one of them has unusable geometry', () => {
+    const broken = hazard({
+      _id: 'broken',
+      geometryKind: 'line',
+      geometry: { type: 'LineString', coordinates: [] },
+      bufferMeters: 10,
+      clusterMemberIds: ['first', 'broken'],
+    });
+    const fc = hazardsToFeatureCollection([
+      { ...(pair[0] as MappableHazard), clusterMemberIds: ['first', 'broken'] },
+      broken,
+    ]);
+    // The good pin renders. Losing one hazard because a neighbour's geometry is malformed would be
+    // the failure `safeFootprint` exists to prevent, one level up.
+    expect(fc.features.map((f) => f.properties?.hazardId)).toContain('first');
+  });
+});
 
 describe('hazardsToFeatureCollection', () => {
   it('buffers a point+radius hazard into a polygon footprint', () => {

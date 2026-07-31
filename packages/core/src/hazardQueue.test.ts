@@ -101,6 +101,39 @@ describe('flushHazardItem — hazards', () => {
     );
   });
 
+  // The nudge fires hardest where there is no signal — two skaters, one ridge, both flagging it — so a
+  // dismissal is most likely to be *made* offline and, if the queue drops it, most likely to be lost.
+  // A pin that flushed without it would be auto-merged into the very hazard the skater looked at and
+  // said was different: the machine overruling a person standing on the ice, which is the one thing
+  // this field exists to stop.
+  it('carries an offline duplicate dismissal to the server rather than dropping it', async () => {
+    const { eff } = effects();
+    await flushHazardItem(hazard({ dismissedDuplicateOf: 'other-pin' }), eff, NOW);
+    expect(eff.createHazard).toHaveBeenCalledWith(
+      expect.objectContaining({ dismissedDuplicateOf: 'other-pin' }),
+    );
+  });
+
+  it('omits the field entirely when no nudge was shown', async () => {
+    const { eff } = effects();
+    await flushHazardItem(hazard(), eff, NOW);
+    const [arg] = (eff.createHazard as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      Record<string, unknown>,
+    ];
+    expect('dismissedDuplicateOf' in arg).toBe(false);
+  });
+
+  it('keeps the dismissal across a retry, exactly as the idempotency key is kept', async () => {
+    const { eff } = effects();
+    const item = hazard({ dismissedDuplicateOf: 'other-pin' });
+    await flushHazardItem(item, eff, NOW);
+    await flushHazardItem(item, eff, NOW + 60_000);
+    const dismissals = (eff.createHazard as ReturnType<typeof vi.fn>).mock.calls.map(
+      ([arg]) => arg.dismissedDuplicateOf,
+    );
+    expect(dismissals).toEqual(['other-pin', 'other-pin']);
+  });
+
   it('resolves the lake from the capture coord when none was known on-device', async () => {
     const { eff } = effects();
     const item = hazard({ waterBodyId: undefined, coord: AT });

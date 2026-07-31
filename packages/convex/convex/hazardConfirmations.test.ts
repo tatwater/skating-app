@@ -769,3 +769,150 @@ describe('named confirmers (D65)', () => {
     expect(confirmerNames.length).toBeLessThanOrEqual(hazard?.confirmCount ?? 0);
   });
 });
+
+/**
+ * Corroboration credit reads the **cluster**, not the row (N5c / D80, §B2).
+ *
+ * This is the gate duplicates were splitting most quietly: a real ridge marked by three people and
+ * confirmed by a fourth cleared the bar in the community's eyes and cleared it on no single pin, so
+ * nobody was ever credited for it. The fix credits every person who independently *drew* the thing,
+ * which is the same argument §B4 makes for the merge case — drawing it is stronger evidence than a
+ * confirm tap, not weaker.
+ */
+describe('corroboration credit across a cluster', () => {
+  /**
+   * 30 m apart with 40 m radii: the footprints overlap, so they cluster — and their IoU is well under
+   * `AUTOMERGE_MIN_FOOTPRINT_IOU`, so they stay two rows. That combination is the case the pooling
+   * layers exist for, and the one a merge-only fix would never reach.
+   */
+  const eastOf = (meters: number) => ({
+    type: 'Point' as const,
+    coordinates: [0.5 + meters / 111_320, 0.5],
+  });
+
+  async function clusteredPair() {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await seedHazard(alex, waterBodyId);
+    const second = await sam.as.mutation(api.hazards.create, {
+      waterBodyId,
+      type: 'open_water' as const,
+      geometryKind: 'point_radius' as const,
+      geometry: eastOf(30),
+      radiusMeters: 40,
+    });
+    // Two rows, not one: near enough to be the same ridge, not overlapping enough to merge on a guess.
+    expect(second).not.toBe(first);
+    return { t, alex, sam, waterBodyId, first, second };
+  }
+
+  const creditsFor = (t: ReturnType<typeof harness>, userId: Id<'profiles'>) =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('pointEvents')
+          .withIndex('by_user', (q) => q.eq('userId', userId))
+          .collect()
+      ).filter((e) => e.reason === 'hazard_corroborated'),
+    );
+
+  test('credits every reporter in the cluster, on a bar no single pin reached', async () => {
+    const { t, alex, sam, first } = await clusteredPair();
+    const kim = await seedUser(t, 'kim');
+
+    await kim.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId: first,
+      verdict: 'still_there',
+      ...VIA,
+    });
+
+    // One confirm tap, and the row it landed on has a `confirmCount` of 1 — below the bar of 2. What
+    // clears the bar is the cluster: kim confirmed, and sam drew the same ridge independently.
+    expect(await t.run(async (ctx) => (await ctx.db.get(first))?.confirmCount)).toBe(1);
+    expect(await creditsFor(t, alex.id)).toHaveLength(1);
+    // Sam is credited too, and for *their own* pin — the award is keyed per row, so it can never be
+    // farmed by drawing the same ridge twice.
+    const samCredits = await creditsFor(t, sam.id);
+    expect(samCredits).toHaveLength(1);
+    expect(samCredits[0]?.refId).not.toBe(first);
+  });
+
+  // Reputation is paid for *sightings*, not for pins. One skater who marks the same ridge twice
+  // authored two members of one cluster, and awarding per row would hand them the credit twice for one
+  // observation — which feeds the D50 trust class, so it is reputation inflation with a visible ring
+  // on the end of it.
+  test('pays one reporter once, however many of the cluster’s pins are theirs', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const waterBodyId = await seedBody(t);
+    const first = await seedHazard(alex, waterBodyId);
+    // Alex again, 30 m east: same ridge, second pin, one person.
+    await alex.as.mutation(api.hazards.create, {
+      waterBodyId,
+      type: 'open_water' as const,
+      geometryKind: 'point_radius' as const,
+      geometry: eastOf(30),
+      radiusMeters: 40,
+    });
+    for (const who of ['kim', 'dana']) {
+      const peer = await seedUser(t, who);
+      await peer.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId: first,
+        verdict: 'still_there',
+        ...VIA,
+      });
+    }
+
+    // Two peers cleared the bar for the cluster, and alex is credited for the ridge — once.
+    expect(await creditsFor(t, alex.id)).toHaveLength(1);
+  });
+
+  // The other half of the same rule: two *different* people drawing the ridge is two independent
+  // sightings, and paying both is the entire reason a cluster is better evidence than a pin.
+  test('still pays two different reporters, because that is two sightings', async () => {
+    const { t, alex, sam, first } = await clusteredPair();
+    const kim = await seedUser(t, 'kim');
+    await kim.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId: first,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    expect(await creditsFor(t, alex.id)).toHaveLength(1);
+    expect(await creditsFor(t, sam.id)).toHaveLength(1);
+  });
+
+  test('never awards twice, however many more confirmations arrive', async () => {
+    const { t, alex, first } = await clusteredPair();
+    for (const who of ['kim', 'dana', 'reese']) {
+      const user = await seedUser(t, who);
+      await user.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId: first,
+        verdict: 'still_there',
+        ...VIA,
+      });
+    }
+    expect(await creditsFor(t, alex.id)).toHaveLength(1);
+  });
+
+  test('a lone pin still needs its own two confirmations, exactly as before N5c', async () => {
+    const { t, author, hazardId } = await setup();
+    const kim = await seedUser(t, 'kim');
+    await kim.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    // One witness, no cluster to borrow a second from.
+    expect(await creditsFor(t, author.id)).toHaveLength(0);
+
+    const dana = await seedUser(t, 'dana');
+    await dana.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    expect(await creditsFor(t, author.id)).toHaveLength(1);
+  });
+});

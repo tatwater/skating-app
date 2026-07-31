@@ -234,7 +234,7 @@ describe('bodyFeatures.listForBody', () => {
 });
 
 describe('bodyFeatures.promote', () => {
-  test('graduates a recurring hazard and supersedes (never archives) the source', async () => {
+  test('graduates a recurring hazard and leaves the source sighting standing', async () => {
     const t = harness();
     const admin = await seedUser(t, 'admin', 'admin');
     const waterBodyId = await seedBody(t);
@@ -253,16 +253,19 @@ describe('bodyFeatures.promote', () => {
     expect(feature?.active).toBe(true);
 
     // The hazard survives with its history, photos and confirmations intact — and its LIFECYCLE status
-    // is untouched. Promotion supersedes via a separate axis so it can never read as the community
-    // clearing the hazard (D3); it just stops rendering because the feature carries the warning now.
+    // is untouched. Setting `status: archived` here would make a moderator's promotion look like the
+    // community clearing the hazard (D3).
     const hazard = await t.run((ctx) => ctx.db.get(hazardId));
     expect(hazard).not.toBeNull();
     expect(hazard?.status).toBe('active');
     expect(hazard?.promotedToFeatureId).toBe(featureId);
 
-    // And it drops out of the map read path in favour of the feature.
+    // **And it stays on the map** (D53 amendment, N5c). A `bodyFeature` is a standing statement about
+    // the lake; this row is a sighting a person made on a date. Dropping it here rewrote that date as
+    // one on which nobody reported anything — and under cluster promotion it would erase the whole
+    // evidence trail the pattern rests on, one click after an operator agreed the pattern was real.
     const listed = await admin.as.query(api.hazards.listForBody, { waterBodyId });
-    expect(listed).toHaveLength(0);
+    expect(listed.map((h) => h._id)).toEqual([hazardId]);
   });
 
   test('refuses to promote a hazard that is already promoted', async () => {
@@ -317,9 +320,11 @@ describe('bodyFeatures.promote', () => {
     expect(feature?.bbox).toEqual(hazard?.bbox);
   });
 
-  // A promoted hazard must be off *every* user surface, not just the map list — a deep link to it
-  // resolves to nothing and it can't be confirmed (the feature carries the warning now).
-  test('a promoted hazard is not gettable or confirmable', async () => {
+  // The D53 amendment (N5c), stated as the behaviour it replaced: a promoted hazard used to be
+  // unreachable by permalink and unconfirmable. Both were wrong, and for the same reason — confirming
+  // "the ridge is here right now" is a different statement from "ridges form here", and only the first
+  // is confirmable at all. The pin is exactly the thing that should still take votes.
+  test('a promoted hazard is still gettable and still confirmable', async () => {
     const t = harness();
     const admin = await seedUser(t, 'admin', 'admin');
     const skater = await seedUser(t, 'skater');
@@ -332,14 +337,66 @@ describe('bodyFeatures.promote', () => {
       reason: 'recurs annually',
     });
 
-    expect(await skater.as.query(api.hazards.get, { hazardId })).toBeNull();
-    await expect(
-      skater.as.mutation(api.hazardConfirmations.confirm, {
-        hazardId,
-        verdict: 'still_there',
-        via: 'app_open_nearby',
-      }),
-    ).rejects.toThrow(/not found/i);
+    const view = await skater.as.query(api.hazards.get, { hazardId });
+    expect(view?._id).toBe(hazardId);
+    // The drawer's reconciling line: the pin says it is also marked as a standing feature, so the two
+    // read as one story rather than two independent warnings about the same ice.
+    expect(view?.promotedFeatureType).toBe('recurring_pressure_ridge');
+
+    await skater.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId,
+      verdict: 'still_there',
+      via: 'app_open_nearby',
+    });
+    const confirmed = await t.run((ctx) => ctx.db.get(hazardId));
+    expect(confirmed?.confirmCount).toBe(1);
+  });
+
+  test('the drawer line goes away when the feature is demoted, not when the backlink clears', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const skater = await seedUser(t, 'skater');
+    const waterBodyId = await seedBody(t);
+    const hazardId = await seedHazard(t, waterBodyId);
+
+    const featureId = await admin.as.mutation(api.bodyFeatures.promote, {
+      hazardId,
+      type: 'recurring_pressure_ridge',
+      reason: 'recurs annually',
+    });
+    await admin.as.mutation(api.bodyFeatures.demote, {
+      bodyFeatureId: featureId,
+      reason: 'not actually recurring',
+    });
+
+    const view = await skater.as.query(api.hazards.get, { hazardId });
+    expect(view?._id).toBe(hazardId);
+    expect(view?.promotedFeatureType).toBeUndefined();
+  });
+
+  test('a promoted hazard leaves the promotion queue but nothing else', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const waterBodyId = await seedBody(t);
+    const hazardId = await seedHazard(t, waterBodyId);
+
+    // The pass looks back a season, so age the sighting into the one that just ended.
+    await t.run((ctx) =>
+      ctx.db.patch(hazardId, { firstReportedAt: Date.now() - 200 * 24 * 60 * 60 * 1000 }),
+    );
+    const before = await admin.as.query(api.hazards.listPromotionCandidates, { waterBodyId });
+    expect(before.map((c) => c.hazardId)).toContain(hazardId);
+
+    await admin.as.mutation(api.bodyFeatures.promote, {
+      hazardId,
+      type: 'recurring_pressure_ridge',
+      reason: 'recurs annually',
+    });
+
+    // `listPromotionCandidates` is the one reader that still filters on supersession: the list is a
+    // queue of decisions, and there is nothing left to decide about a hazard already promoted.
+    const after = await admin.as.query(api.hazards.listPromotionCandidates, { waterBodyId });
+    expect(after.map((c) => c.hazardId)).not.toContain(hazardId);
   });
 
   test('demoting the feature un-supersedes the source hazard so it returns intact', async () => {

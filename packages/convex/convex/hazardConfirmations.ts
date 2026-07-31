@@ -28,7 +28,7 @@ import {
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, query } from './_generated/server';
-import { loadVisibleHazard } from './hazards';
+import { clusterScopeFor, loadVisibleHazard, poolConsensus } from './hazards';
 import { requireContributor } from './lib/auth';
 import { fileOrBumpAutoFlag } from './lib/autoFlag';
 import { HAZARD_CONFIRM_VERDICTS, HAZARD_CONFIRM_VIA } from './lib/enums';
@@ -77,12 +77,22 @@ export const confirm = mutation({
 
     const hazard = await loadVisibleHazard(ctx, hazardId);
     if (!hazard) throw new ConvexError('Hazard not found');
+    // **Everything below uses the resolved id, not the argument.** `loadVisibleHazard` follows the
+    // merge chain (D80), so a vote arriving from a stale deep link — an on-ice notification sent
+    // before the merge, a drawer left open — has to land on the pin that is actually carrying the
+    // warning. Writing it against the tombstone instead would file a real observation somewhere no
+    // lifecycle ever reads, which is the quietest possible way to lose a confirmation.
+    //
+    // This is not in tension with "confirmations are never re-pointed": that rule is about *existing*
+    // statements at merge time, which are never rewritten. A vote cast *now* is about the ice in front
+    // of the person casting it, and the survivor is what represents that ice.
+    const targetId = hazard._id;
 
     // A future timestamp (device clock skew, or a client trying to freeze a pin as permanently fresh)
     // is clamped rather than trusted.
     const at = Math.min(observedAt ?? now, now);
 
-    const existing = await findUserVote(ctx, hazardId, profile._id);
+    const existing = await findUserVote(ctx, targetId, profile._id);
     let firstContribution: boolean;
     if (existing) {
       // This skater already has a vote on this hazard: refresh it. `createdAt` stays monotonic so a
@@ -96,7 +106,7 @@ export const confirm = mutation({
       firstContribution = false;
     } else {
       await ctx.db.insert('hazardConfirmations', {
-        hazardId,
+        hazardId: targetId,
         userId: profile._id,
         verdict,
         ...(atCoord ? { atCoord } : {}),
@@ -117,7 +127,7 @@ export const confirm = mutation({
       await awardPointEvent(ctx, {
         userId: profile._id,
         reason: 'hazard_confirmed',
-        refId: hazardId,
+        refId: targetId,
       });
       await checkAndAwardBadges(ctx, profile._id);
     }
@@ -125,35 +135,87 @@ export const confirm = mutation({
     // Author-side corroboration (D50, new): once ≥2 **peers** have confirmed (the author's own votes are
     // excluded from `confirmCount`, D54), the hazard's author earns `hazard_corroborated` — once per
     // hazard. Independent of who is confirming, so it fires even when the confirmer isn't the author.
-    await maybeAwardHazardCorroboration(ctx, hazardId);
+    await maybeAwardHazardCorroboration(ctx, targetId);
   },
 });
 
 /**
- * Award the hazard's author `hazard_corroborated` the first time its peer `confirmCount` reaches the
- * threshold (D50). Idempotent per hazard: a prior `hazard_corroborated` ledger row for this author+hazard
- * short-circuits, so a 3rd/4th confirm (or an offline replay) never re-awards. Recomputes the author's
- * badges on award (the confirm count can push `Hazard Spotter` over its line when thumbs are also present).
+ * Award `hazard_corroborated` the first time a pin's peer confirmations reach the threshold (D50).
+ * Idempotent per (author, hazard): a prior ledger row short-circuits, so a 3rd/4th confirm — or an
+ * offline replay — never re-awards. Recomputes badges on award (the confirm count can push `Hazard
+ * Spotter` over its line when thumbs are also present).
+ *
+ * **The count is the cluster's, and every distinct reporter is credited once** (D80). Duplicates were
+ * splitting this the same way they split the alert escalation: three people confirm a real ridge across
+ * three pins, no single pin reaches the bar, and nobody is credited for a hazard the community plainly
+ * corroborated. Reading the cluster fixes both halves at once — the bar is met by what was actually
+ * said, and it is met for each person who independently drew the thing, not only for whoever happened
+ * to file the pin that got the votes.
+ *
+ * **Once per person per cluster, not once per row**, which is the difference between crediting a
+ * sighting and paying for pins. One skater who marks the same ridge twice authored two members of one
+ * cluster; awarding per row would hand them the reputation twice for one observation, and the points
+ * feed the D50 trust class. So the award is keyed to the **earliest member that person authored** —
+ * earliest because the canonical order is stable, which keeps the ledger row idempotent as the cluster
+ * grows. Two *different* people each drawing the ridge is still two awards: that is two independent
+ * sightings, and it is the whole reason a cluster is better evidence than a pin.
  */
 async function maybeAwardHazardCorroboration(
   ctx: MutationCtx,
   hazardId: Id<'hazards'>,
 ): Promise<void> {
   const hazard = await ctx.db.get(hazardId);
-  if (!hazard || hazard.confirmCount < HAZARD_CORROBORATION_MIN_CONFIRMS) return;
-  const already = await ctx.db
-    .query('pointEvents')
-    .withIndex('by_user', (q) => q.eq('userId', hazard.createdByUserId))
-    .filter((q) => q.eq(q.field('reason'), 'hazard_corroborated'))
-    .filter((q) => q.eq(q.field('refId'), hazardId))
-    .first();
-  if (already) return;
-  await awardPointEvent(ctx, {
-    userId: hazard.createdByUserId,
-    reason: 'hazard_corroborated',
-    refId: hazardId,
-  });
-  await checkAndAwardBadges(ctx, hazard.createdByUserId);
+  if (!hazard) return;
+  const scope = await clusterScopeFor(ctx, hazard);
+  const consensus = (await poolConsensus(ctx, scope)).get(hazard._id);
+  // No pooled entry means a singleton — read the row, exactly as this did before N5c.
+  if ((consensus?.confirmCount ?? hazard.confirmCount) < HAZARD_CORROBORATION_MIN_CONFIRMS) return;
+
+  const byId = new Map(scope.map((h) => [h._id as string, h]));
+  const members = (consensus?.memberIds ?? [hazard._id])
+    .map((id) => byId.get(id) ?? (id === hazard._id ? hazard : undefined))
+    .filter((h): h is Doc<'hazards'> => h !== undefined);
+
+  // One entry per author, holding every member they drew — `members` is in canonical order (earliest
+  // sighting first), so the first id per author is stable as the cluster grows.
+  const byAuthor = new Map<Id<'profiles'>, Id<'hazards'>[]>();
+  for (const member of members) {
+    const owned = byAuthor.get(member.createdByUserId);
+    if (owned) owned.push(member._id);
+    else byAuthor.set(member.createdByUserId, [member._id]);
+  }
+
+  for (const [authorId, ownedIds] of byAuthor) {
+    // No per-member re-check of the bar, and that is a fact about `clusterConsensus` rather than a
+    // shortcut: every member's author is in the witness set by construction, so every member's count
+    // is `witnesses - 1`. The number is uniform across a cluster, and one member clearing the bar
+    // means all of them have.
+    //
+    // The idempotency check spans **all** of this author's members, not just the one being awarded.
+    // Keying it to a single row would re-award whenever an earlier pin of theirs joined the cluster
+    // later — a backdated `capturedAt` on an offline flush is enough — and re-awarding on cluster
+    // *growth* is the same defect as awarding per row, arriving more slowly.
+    let already = false;
+    for (const ownedId of ownedIds) {
+      const prior = await ctx.db
+        .query('pointEvents')
+        .withIndex('by_user', (q) => q.eq('userId', authorId))
+        .filter((q) => q.eq(q.field('reason'), 'hazard_corroborated'))
+        .filter((q) => q.eq(q.field('refId'), ownedId))
+        .first();
+      if (prior) {
+        already = true;
+        break;
+      }
+    }
+    if (already) continue;
+    await awardPointEvent(ctx, {
+      userId: authorId,
+      reason: 'hazard_corroborated',
+      refId: ownedIds[0] as Id<'hazards'>,
+    });
+    await checkAndAwardBadges(ctx, authorId);
+  }
 }
 
 /**
@@ -295,9 +357,14 @@ export const listForHazard = query({
   handler: async (ctx, { hazardId }) => {
     const hazard = await loadVisibleHazard(ctx, hazardId);
     if (!hazard) return [];
+    // **The resolved id, not the argument** (D80). `loadVisibleHazard` follows the merge chain, so a
+    // permalink to a folded-away pin renders the survivor — and reading votes off the argument would
+    // then list the *tombstone's* confirmers under the survivor's count, two numbers about two
+    // different pins sitting one line apart. `confirm` resolves the same way, so this is simply where
+    // those votes now live.
     const votes = await ctx.db
       .query('hazardConfirmations')
-      .withIndex('by_hazard', (q) => q.eq('hazardId', hazardId))
+      .withIndex('by_hazard', (q) => q.eq('hazardId', hazard._id))
       .collect();
     // One profile read per distinct confirmer, cached — a hazard the community is actively
     // maintaining is exactly the one with the most votes, so this must not be a read per *vote*.

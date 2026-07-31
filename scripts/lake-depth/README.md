@@ -54,7 +54,7 @@ workspace dependencies.
 **Coverage, honestly.** A 4,000-body sample of the dev corpus puts **7%** of bodies above HydroLAKES'
 10 ha floor, and 73% under 1 ha — below every source here. But every sampled body that draws at **z ≤ 10**
 clears the floor (234 of 234), as do all 16 curated-boosted bodies. So expect **near-total coverage of the
-prominent lakes and near-none of the ponds**, and expect the manual `shallow_bay_early_thaw`
+prominent lakes and near-none of the ponds**, and expect the manual `shallow_early_thaw`
 `bodyFeature` to stay the path for small water permanently. That is not a gap to close; it is what the
 data is.
 

@@ -170,3 +170,43 @@ export const HAZARD_TYPE_PRESETS = ['open_water', 'pressure_ridge', 'thin_ice'] 
 export function isPassageMarker(type: HazardType): boolean {
   return type === 'ridge_crossing';
 }
+
+/**
+ * Persistent, non-decaying known features of a water body (D53) — always shown, never re-marked, no
+ * confirmation loop. Moving water at springs, constrictions and bridges is weaker *every* season
+ * regardless of cold, and some ridges reform in the same place annually.
+ *
+ * **Lives here rather than in the backend enums, and that move has a scar behind it.** It was
+ * backend-only while the only way to reach one of these was `bodyFeatures.promote`, which takes the
+ * type from a hazard. D79 gives moderators a form that authors one directly, which made this the
+ * third place needing the list — and a hand-written third copy is precisely how D65's new verdict
+ * reached the validator and the schema while a test that iterated "every verdict" went on iterating
+ * three. `lib/enums.ts` re-exports it, exactly as it re-exports `HAZARD_VERDICTS`.
+ */
+export const BODY_FEATURE_TYPES = [
+  'spring_current',
+  'constriction',
+  'bridge_narrows',
+  'recurring_pressure_ridge',
+  'gas_hole',
+  'reef_hole',
+  'delta',
+  // Renamed from `shallow_bay_early_thaw` (D53 amendment, N5c): there is no guarantee the spot is a
+  // bay — it may be an island's lee, a sandbar, a reef or a shallow delta.
+  'shallow_early_thaw',
+  'other',
+] as const;
+export type BodyFeatureType = (typeof BODY_FEATURE_TYPES)[number];
+
+/** Display labels, in the vocabulary an operator would use for the thing itself. */
+export const BODY_FEATURE_TYPE_LABELS: Record<BodyFeatureType, string> = {
+  spring_current: 'Spring / current',
+  constriction: 'Constriction',
+  bridge_narrows: 'Bridge narrows',
+  recurring_pressure_ridge: 'Recurring pressure ridge',
+  gas_hole: 'Gas hole',
+  reef_hole: 'Reef hole',
+  delta: 'Delta',
+  shallow_early_thaw: 'Shallow water (early thaw)',
+  other: 'Other',
+};

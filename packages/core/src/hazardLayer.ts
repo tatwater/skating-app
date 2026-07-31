@@ -16,6 +16,7 @@
  * boundary, so imprecision is rendered as the honest message rather than hidden behind a crisp pin.
  */
 
+import { polygonUnion } from './geometry';
 import type { HazardFreshness } from './hazardDecay';
 import { draftToShape, draftVertices, type HazardDraft } from './hazardDraft';
 import { type HazardShape, hazardFootprint } from './hazardGeometry';
@@ -47,6 +48,11 @@ export interface MappableHazard {
   freshness: HazardFreshness;
   provisional: boolean;
   healingState?: 'none' | 'healing_unsafe' | 'disputed';
+  /**
+   * Every pin the server judged to be the same hazard as this one, earliest first, including this one
+   * (N5c / D80). Present only for genuine duplicates; absent on the overwhelming majority of hazards.
+   */
+  clusterMemberIds?: string[];
 }
 
 /** A persistent known feature (D53) — no freshness, because it never decays. */
@@ -81,32 +87,95 @@ const FOOTPRINTABLE = new Set(['Point', 'LineString', 'Polygon', 'MultiPolygon']
 export function hazardsToFeatureCollection(
   hazards: readonly MappableHazard[],
 ): GeoJSON.FeatureCollection {
+  const byId = new Map(hazards.map((h) => [h._id, h]));
+  /** Cluster ids already drawn, so a cluster is emitted once rather than once per member. */
+  const drawn = new Set<string>();
+  const features: GeoJSON.Feature[] = [];
+
+  for (const h of hazards) {
+    // A stored body-clip is drawn as-is (it's already a footprint polygon); otherwise buffer the raw
+    // shape. Either way the map draws exactly what the distance math measures against.
+    const own = clippedPolygon(h.clippedFootprint) ?? safeFootprint(h);
+    if (!own) continue;
+
+    // **Consensus rendering** (D80). Overlapping duplicates draw as one outline carrying the pooled
+    // freshness the server already computed — the union of their footprints, which is never smaller
+    // than any member, so collapsing pins can only ever warn about more area and never less.
+    const members = clusterOf(h, byId);
+    if (!members) {
+      features.push(hazardFeature(h, own, 1));
+      continue;
+    }
+    const key = members[0] as string;
+    if (drawn.has(key)) continue;
+    drawn.add(key);
+
+    const footprints: (GeoJSON.Polygon | GeoJSON.MultiPolygon)[] = [];
+    for (const id of members) {
+      const member = byId.get(id);
+      if (!member) continue;
+      const fp = clippedPolygon(member.clippedFootprint) ?? safeFootprint(member);
+      if (fp) footprints.push(fp);
+    }
+    const merged = polygonUnion(footprints);
+    if (merged) {
+      // The **earliest** member carries the feature: it is the first sighting, the pin a merge would
+      // keep, and the one a tap should open. Every member's own date and reporter live in the drawer.
+      const representative = byId.get(key) ?? h;
+      features.push(hazardFeature(representative, merged, members.length));
+      continue;
+    }
+    // The clipper failed. Draw the members individually — more outlines, never fewer. A safety layer
+    // may look untidy; it may not quietly lose a hazard because a polygon operation went wrong (D3).
+    for (const id of members) {
+      const member = byId.get(id);
+      if (!member) continue;
+      const fp = clippedPolygon(member.clippedFootprint) ?? safeFootprint(member);
+      if (fp) features.push(hazardFeature(member, fp, 1));
+    }
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+/**
+ * The member ids of a hazard's cluster, or `null` when it is alone (which is nearly always).
+ *
+ * Defensive about membership the client can't see: a cluster whose other members aren't in this list —
+ * a filtered view, a partial cache — falls back to drawing this pin alone rather than unioning a
+ * cluster it only half holds.
+ */
+function clusterOf(
+  hazard: MappableHazard,
+  byId: ReadonlyMap<string, MappableHazard>,
+): string[] | null {
+  const ids = hazard.clusterMemberIds;
+  if (!ids || ids.length <= 1) return null;
+  const present = ids.filter((id) => byId.has(id));
+  return present.length > 1 ? present : null;
+}
+
+function hazardFeature(
+  h: MappableHazard,
+  geometry: GeoJSON.Polygon | GeoJSON.MultiPolygon,
+  clusterSize: number,
+): GeoJSON.Feature {
   return {
-    type: 'FeatureCollection',
-    features: hazards.flatMap((h) => {
-      // A stored body-clip is drawn as-is (it's already a footprint polygon); otherwise buffer the raw
-      // shape. Either way the map draws exactly what the distance math measures against.
-      const footprint = clippedPolygon(h.clippedFootprint) ?? safeFootprint(h);
-      if (!footprint) return [];
-      return [
-        {
-          type: 'Feature' as const,
-          geometry: footprint,
-          properties: {
-            hazardId: h._id,
-            hazardType: h.type,
-            freshness: h.freshness,
-            provisional: h.provisional,
-            passage: isPassageMarker(h.type),
-            healing: h.healingState === 'healing_unsafe',
-            // A suggested crossing somebody has reported closed (D64). Carried onto the feature so
-            // the map can mark it without a second query; one vote short of retiring the marker, so
-            // it is a caution on the pin rather than the pin's removal.
-            disputed: h.healingState === 'disputed',
-          },
-        },
-      ];
-    }),
+    type: 'Feature',
+    geometry,
+    properties: {
+      hazardId: h._id,
+      hazardType: h.type,
+      freshness: h.freshness,
+      provisional: h.provisional,
+      passage: isPassageMarker(h.type),
+      healing: h.healingState === 'healing_unsafe',
+      // A suggested crossing somebody has reported closed (D64). Carried onto the feature so
+      // the map can mark it without a second query; one vote short of retiring the marker, so
+      // it is a caution on the pin rather than the pin's removal.
+      disputed: h.healingState === 'disputed',
+      /** How many pins this outline represents — `1` for everything that isn't a duplicate. */
+      clusterSize,
+    },
   };
 }
 

@@ -74,6 +74,7 @@ const NAV: NavItem[] = [
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/water', label: 'Water bodies' },
   { to: '/admin/features', label: 'Body features' },
+  { to: '/admin/recurrence', label: 'Hazard identity' },
   { to: '/admin/support', label: 'Support', adminOnly: true },
   { to: '/admin/tuning', label: 'Tuning', adminOnly: true },
 ];
