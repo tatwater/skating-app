@@ -17,12 +17,23 @@
  * call, each body **completely**.
  */
 
-import { isPubliclyVisible, RECURRENCE_WINDOW_SEASONS, type Season, seasonOf } from '@skating/core';
-import { v } from 'convex/values';
+import {
+  isPubliclyVisible,
+  RECURRENCE_FAMILIES,
+  RECURRENCE_WINDOW_SEASONS,
+  type Season,
+  seasonOf,
+} from '@skating/core';
+import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type MutationCtx } from './_generated/server';
+import { internalMutation, type MutationCtx, mutation, query } from './_generated/server';
+import { insertBodyFeature } from './bodyFeatures';
+import { requireContributorRole } from './lib/auth';
+import { resolveSurvivor } from './lib/bodies';
+import { BODY_FEATURE_TYPES } from './lib/enums';
 import { computeClustersForBody, windowStartMs } from './lib/recurrence';
+import { literals } from './lib/validators';
 
 /**
  * How long a queued body may sit claimed before another run may take it over.
@@ -317,3 +328,277 @@ export const enqueueBody = internalMutation({
 
 /** Re-exported for the tests, which assert the window bound rather than recomputing it. */
 export { RECURRENCE_WINDOW_SEASONS };
+
+/**
+ * What a skater may see about a lake's history (D78) — **nothing at all until the flag flips.**
+ *
+ * The bar is applied at the index rather than after the read, which is the difference between
+ * "admin-only" and "admin-only unless you open the network tab". A thin pattern is not filtered out of
+ * a payload that carried it; it never leaves the server.
+ *
+ * Everything returned here is history with a denominator attached. It never enters the on-ice payload,
+ * never feeds `displayScore`, and never touches trust, points or the bounty gate — see the module
+ * docstring on `hazardAdvisory` in core for the copy discipline that goes with it.
+ */
+export const listForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return [];
+    const rows = await ctx.db
+      .query('hazardRecurrence')
+      .withIndex('by_water_body_public', (q) =>
+        q.eq('waterBodyId', body._id).eq('publiclyVisible', true),
+      )
+      .collect();
+
+    // **Live information wins** (§9.3). A pin reported this season inside a cluster's footprint has a
+    // date, a reporter and a confirm loop, and is better than history in every respect — so the
+    // advisory for that cluster stands down rather than competing with it.
+    const thisSeason = seasonOf(Date.now());
+    const live = await ctx.db
+      .query('hazards')
+      .withIndex('by_water_body_status', (q) =>
+        q.eq('waterBodyId', body._id).eq('status', 'active'),
+      )
+      .collect();
+    const liveMembers = new Set(
+      live
+        .filter(
+          (h) => h.moderationStatus === 'visible' && seasonOf(h.firstReportedAt) === thisSeason,
+        )
+        .map((h) => h._id as string),
+    );
+
+    return rows
+      .filter((row) => !row.memberHazardIds.some((id) => liveMembers.has(id)))
+      .sort((a, b) => b.priority - a.priority);
+  },
+});
+
+/** Everything about one lake's clusters, for the operator card — thin patterns included. */
+export const listForBodyAdmin = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireContributorRole(ctx, 'moderator');
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) return [];
+    const rows = await ctx.db
+      .query('hazardRecurrence')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+      .collect();
+    return rows.sort((a, b) => b.priority - a.priority);
+  },
+});
+
+/**
+ * The cross-lake pre-first-ice queue (§7.2) — every cluster, ranked, paginated.
+ *
+ * **Bounded by construction.** It reads the precomputed table off
+ * `by_computed_season_and_priority` and never touches `hazards` or `waterBodies` in bulk, which is the
+ * Phase 7b rule. This is where an operator spends an hour in October and covers the whole corpus,
+ * which is the difference between the feature existing and the feature working.
+ */
+export const listQueue = query({
+  args: {
+    season: v.optional(v.number()),
+    family: v.optional(literals(RECURRENCE_FAMILIES)),
+    minSeasons: v.optional(v.number()),
+    includePromoted: v.optional(v.boolean()),
+    includeSuppressed: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    await requireContributorRole(ctx, 'moderator');
+    const season = args.season ?? seasonOf(Date.now());
+    // Descending on `priority`, which the index carries — so the ranking is the read order and the
+    // cap takes the *top* of the queue rather than an arbitrary slice of it.
+    const rows = await ctx.db
+      .query('hazardRecurrence')
+      .withIndex('by_computed_season_and_priority', (q) => q.eq('computedForSeason', season))
+      .order('desc')
+      .take(Math.min(args.limit ?? 100, 300));
+
+    const filtered = rows.filter((row) => {
+      if (args.family !== undefined && row.family !== args.family) return false;
+      if (args.minSeasons !== undefined && row.seasonsObserved.length < args.minSeasons)
+        return false;
+      if (!args.includePromoted && row.promotedToFeatureId !== undefined) return false;
+      if (!args.includeSuppressed && row.suppressedAt !== undefined) return false;
+      return true;
+    });
+
+    // One body read per distinct lake, cached: a queue is many clusters over few lakes, so this must
+    // not be a read per row.
+    const names = new Map<string, string>();
+    return Promise.all(
+      filtered.map(async (row) => {
+        if (!names.has(row.waterBodyId)) {
+          const body = await ctx.db.get(row.waterBodyId);
+          names.set(row.waterBodyId, body?.name ?? 'Unknown water body');
+        }
+        return { ...row, waterBodyName: names.get(row.waterBodyId) as string };
+      }),
+    );
+  },
+});
+
+/**
+ * Suppress a cluster: it stops being suggested and stops being publicly advisable, permanently, across
+ * recomputes (§7.3).
+ *
+ * For three pins in one cove across three winters that are three people misreading the same shadow.
+ * **Reversible, never a delete** — the same posture every destructive-looking path in this app takes
+ * (D15 hazard archive, D36 merge tombstone, D53 demote), and a required reason for the same
+ * accountability every other moderation action carries.
+ */
+export const suppress = mutation({
+  args: { recurrenceId: v.id('hazardRecurrence'), reason: v.string() },
+  handler: async (ctx, { recurrenceId, reason }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const row = await ctx.db.get(recurrenceId);
+    if (!row) throw new ConvexError('Recurrence not found');
+    await ctx.db.patch(recurrenceId, {
+      suppressedAt: Date.now(),
+      suppressedByUserId: actor._id,
+      suppressReason: reason.trim(),
+      publiclyVisible: false,
+    });
+    await audit(ctx, actor._id, 'suppress_recurrence', recurrenceId, reason.trim(), {
+      waterBodyId: row.waterBodyId,
+    });
+  },
+});
+
+/** Undo a suppression. The cluster returns to the queue and regains the public bar on the next pass. */
+export const unsuppress = mutation({
+  args: { recurrenceId: v.id('hazardRecurrence'), reason: v.string() },
+  handler: async (ctx, { recurrenceId, reason }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const row = await ctx.db.get(recurrenceId);
+    if (!row) throw new ConvexError('Recurrence not found');
+    await ctx.db.patch(recurrenceId, {
+      suppressedAt: undefined,
+      suppressedByUserId: undefined,
+      suppressReason: undefined,
+      // Recomputed here rather than left to the next rollover: an operator who un-suppresses expects
+      // the cluster to behave normally now, not next July.
+      publiclyVisible: isPubliclyVisible({
+        family: row.family,
+        seasonsObserved: row.seasonsObserved,
+        ...(row.promotedToFeatureId !== undefined
+          ? { promotedToFeatureId: row.promotedToFeatureId }
+          : {}),
+      }),
+    });
+    await audit(ctx, actor._id, 'unsuppress_recurrence', recurrenceId, reason.trim(), {
+      waterBodyId: row.waterBodyId,
+    });
+  },
+});
+
+/**
+ * Graduate a whole cluster into a permanent body feature (§8.2).
+ *
+ * The difference from `bodyFeatures.promote` is the claim being made. That one promotes **one
+ * sighting** somebody judged permanent; this one promotes **a pattern across winters**, and the
+ * evidence is the reason it can be trusted.
+ *
+ * Three things it does *not* do, each deliberate:
+ *
+ * - **It does not hide the hazards.** `promotedToFeatureId` is a backlink on every member and nothing
+ *   more (the D53 amendment). Skaters go on filing sightings here, those sightings go on counting, and
+ *   the denominator goes on meaning something after the promotion.
+ * - **It does not remove the cluster.** The row keeps accumulating members; it just leaves the
+ *   suggestion queue, because there is nothing left to decide.
+ * - **It does not synthesise a shape.** The feature takes the medoid's own geometry, so a promoted
+ *   ridge is a ridge somebody actually drew rather than an average that could bend through ice nobody
+ *   ever marked.
+ */
+export const promoteFromRecurrence = mutation({
+  args: {
+    recurrenceId: v.id('hazardRecurrence'),
+    type: literals(BODY_FEATURE_TYPES),
+    note: v.optional(v.string()),
+    reason: v.string(),
+  },
+  handler: async (ctx, { recurrenceId, type, note, reason }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    if (reason.trim().length === 0) throw new ConvexError('A reason is required');
+    const row = await ctx.db.get(recurrenceId);
+    if (!row) throw new ConvexError('Recurrence not found');
+    if (row.promotedToFeatureId !== undefined) {
+      throw new ConvexError('This pattern has already been promoted');
+    }
+
+    const featureId = await insertBodyFeature(ctx, {
+      waterBodyId: row.waterBodyId,
+      type,
+      geometryKind: row.geometryKind,
+      geometry: row.geometry,
+      ...(row.radiusMeters !== undefined ? { radiusMeters: row.radiusMeters } : {}),
+      ...(row.bufferMeters !== undefined ? { bufferMeters: row.bufferMeters } : {}),
+      ...(note !== undefined ? { note } : {}),
+      addedByUserId: actor._id,
+      // The medoid, so `demote` has a source hazard and it is the pin whose shape the feature carries.
+      promotedFromHazardId: row.representativeHazardId,
+    });
+
+    // A backlink on every member, hiding nothing (D53 amendment). What it buys is provenance: opening
+    // any of these pins says the spot is also marked as a known feature, so the sighting and the
+    // standing statement read as one story rather than two warnings about the same ice.
+    for (const memberId of row.memberHazardIds) {
+      const member = await ctx.db.get(memberId);
+      if (!member || member.promotedToFeatureId !== undefined) continue;
+      await ctx.db.patch(memberId, { promotedToFeatureId: featureId });
+    }
+    await ctx.db.patch(recurrenceId, { promotedToFeatureId: featureId, publiclyVisible: false });
+    await audit(ctx, actor._id, 'promote_recurrence', featureId, reason.trim(), {
+      recurrenceId,
+      seasonsObserved: row.seasonsObserved.length,
+      windowSeasons: row.windowSeasons,
+    });
+    return featureId;
+  },
+});
+
+/**
+ * Recompute one lake now (§C4) — the button beside the card's provenance line.
+ *
+ * An operator who has just merged two lakes or hidden three bogus pins should not wait a year to see
+ * what that did, and a stale answer that looks live is the failure mode of every precomputed surface.
+ * Safe to press repeatedly because the pass is idempotent, which is a test.
+ */
+export const recomputeForBody = mutation({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    await requireContributorRole(ctx, 'moderator');
+    const body = await resolveSurvivor(ctx, waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+    await recomputeBody(ctx, body, seasonOf(Date.now()), Date.now());
+  },
+});
+
+async function audit(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'>,
+  action: 'suppress_recurrence' | 'unsuppress_recurrence' | 'promote_recurrence',
+  targetId: string,
+  reason: string,
+  metadata: Record<string, unknown>,
+): Promise<void> {
+  await ctx.db.insert('moderationActions', {
+    actorId,
+    action,
+    // A recurrence row is a statement *about* a body feature's justification, so the audit targets the
+    // `bodyFeature` on promotion and the cluster itself on suppression — each pointing at the thing a
+    // moderator would go and look at.
+    targetType: action === 'promote_recurrence' ? 'bodyFeature' : 'hazardRecurrence',
+    targetId,
+    reason,
+    metadata,
+    createdAt: Date.now(),
+  });
+}

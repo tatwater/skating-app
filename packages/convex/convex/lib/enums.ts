@@ -184,6 +184,16 @@ export const MODERATION_ACTIONS = [
   // mechanism nobody can check, and this one is meant to be watched before it is trusted.
   'merge_hazards',
   'unmerge_hazards',
+  // A cross-season pattern a moderator judged not to be one (N5c / §7.3) — three pins in one cove
+  // across three winters that are three people misreading the same shadow. Never a delete: the
+  // cluster stops being suggested and stops being publicly advisable, and the reason stays readable.
+  'suppress_recurrence',
+  'unsuppress_recurrence',
+  // A cluster graduated into a permanent feature (D53 + §8.2). Distinct from `promote_body_feature`,
+  // which records a *single hazard* graduating: this one is a claim about several winters, and an
+  // audit that could not tell them apart would lose the difference between "somebody saw this once
+  // and thought it permanent" and "this came back four times".
+  'promote_recurrence',
   'set_weather_sample_points', // placed the multi-cell weather sampling grid on a giant (D56 §5)
   'set_lake_depth', // typed a surveyed depth in, the top rung of the D68 ladder (N6a)
   'create_sub_area',
@@ -200,6 +210,7 @@ export const MODERATION_TARGET_TYPES = [
   'hazard', // Phase 9 (D51): mods can hide a bad pin; admins promote/demote body features
   'bodyFeature',
   'waterBodySubArea', // N2 (D60): a named region inside one body
+  'hazardRecurrence', // N5c (D78): a cross-season pattern a moderator suppressed or restored
 ] as const;
 
 /** In-app support inbox (D37). */

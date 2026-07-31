@@ -903,6 +903,10 @@ export default defineSchema({
     // member overlap rather than on identity, so a cluster that grew by one member is the same cluster
     // and keeps its suppression and its promotion.
     memberHazardIds: v.array(v.id('hazards')),
+    // The medoid — the member whose shape the row carries, and the one a promotion records itself
+    // against so `demote` has a source hazard to point back at. Stored rather than re-derived, because
+    // re-deriving it at promote time could pick a different pin than the one whose geometry is here.
+    representativeHazardId: v.id('hazards'),
     // **A season contributes at most one.** Three skaters pinning the same ridge in one January is one
     // winter of evidence; without that rule an enthusiastic week becomes "a pattern". Ascending, deduped,
     // keyed on `seasonOf(firstReportedAt)` — the clock nobody can move (D63).

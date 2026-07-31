@@ -46,6 +46,7 @@ const NOISY_BODY_HAZARD_COUNT = 400;
 export interface ComputedCluster {
   family: RecurrenceFamily;
   memberHazardIds: Id<'hazards'>[];
+  representativeHazardId: Id<'hazards'>;
   seasonsObserved: Season[];
   windowSeasons: number;
   geometryKind: Doc<'hazards'>['geometryKind'];
@@ -263,6 +264,7 @@ async function describeCluster(
     // Sorted so two runs over the same data produce byte-identical arrays — the idempotence the job
     // asserts is only meaningful if the field order is deterministic too.
     memberHazardIds: [...members.map((m) => m._id)].sort(),
+    representativeHazardId: representative._id,
     seasonsObserved: seasons,
     windowSeasons: RECURRENCE_WINDOW_SEASONS,
     geometryKind: representative.geometryKind,

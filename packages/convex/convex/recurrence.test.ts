@@ -30,9 +30,16 @@ const CURRENT_SEASON = seasonOf(NOW);
  * `scheduler.runAfter(0)` chain, and convex-test leaves such a job `pending` until a timer fires — so
  * without this `finishAllScheduledFunctions` drains nothing and every assertion reads a table the job
  * never reached, which fails as a plausible-looking "the pass computed nothing".
+ *
+ * **And the clock is pinned to `NOW`**, which matters more here than in most files. Almost everything
+ * in this phase defaults to `seasonOf(Date.now())` — the queue's season, the recompute's season, which
+ * hazards `listForBody` shows — so fixtures dated in one season and a wall clock in another produce
+ * empty results that look exactly like a broken query. The convention `accountDeletion.test.ts`
+ * documents, for a phase where every single value is relative to a season boundary.
  */
 function harness() {
   vi.useFakeTimers();
+  vi.setSystemTime(NOW);
   return convexTest(schema, modules);
 }
 
@@ -463,5 +470,210 @@ describe('recomputeForBody, the button and the merge hook', () => {
     // survivor carries the winter it just inherited.
     expect(onLoser).toHaveLength(0);
     expect(onSurvivor).toHaveLength(1);
+  });
+});
+
+describe('the operator surface', () => {
+  /** A body with a three-winter ridge cluster, already computed. */
+  async function withCluster() {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    const skater = await seedUser(t, 'skater');
+    const waterBodyId = await seedBody(t);
+    for (const season of [CURRENT_SEASON - 2, CURRENT_SEASON - 1, CURRENT_SEASON]) {
+      await seedHazard(t, waterBodyId, author.id, { season, metersEast: 10 });
+    }
+    await runPass(t);
+    const row = await t.run((ctx) => ctx.db.query('hazardRecurrence').first());
+    return { t, mod, author, skater, waterBodyId, row };
+  }
+
+  test('shows an operator everything, including a pattern too thin to be public', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+    await runPass(t);
+
+    // One of one is exactly the "thin pattern" the founder call put on the dashboard and nowhere else.
+    const admin = await mod.as.query(api.recurrence.listForBodyAdmin, { waterBodyId });
+    expect(admin).toHaveLength(1);
+    expect(admin[0]?.seasonsObserved).toHaveLength(1);
+  });
+
+  test('shows a skater nothing at all while the flag is off', async () => {
+    const { t, skater, waterBodyId } = await withCluster();
+    expect(await skater.as.query(api.recurrence.listForBody, { waterBodyId })).toEqual([]);
+    void t;
+  });
+
+  test('refuses the operator reads to a member', async () => {
+    const { skater, waterBodyId } = await withCluster();
+    await expect(
+      skater.as.query(api.recurrence.listForBodyAdmin, { waterBodyId }),
+    ).rejects.toThrow();
+    await expect(skater.as.query(api.recurrence.listQueue, {})).rejects.toThrow();
+  });
+
+  test('ranks the cross-lake queue and names each lake', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    const quiet = await seedBody(t, { name: 'Quiet Pond' });
+    const busy = await seedBody(t, { name: 'Busy Pond' });
+    await seedHazard(t, quiet, author.id, { season: CURRENT_SEASON });
+    for (const season of [CURRENT_SEASON - 2, CURRENT_SEASON - 1, CURRENT_SEASON]) {
+      await seedHazard(t, busy, author.id, { season, metersEast: 10 });
+    }
+    await runPass(t);
+
+    const queue = await mod.as.query(api.recurrence.listQueue, {});
+    expect(queue).toHaveLength(2);
+    // Three winters outranks one — the only input that is about recurrence rather than about a row.
+    expect(queue[0]?.waterBodyName).toBe('Busy Pond');
+    expect(queue[0]?.priority).toBeGreaterThan(queue[1]?.priority as number);
+  });
+
+  test('suppression takes a cluster out of the queue and keeps the reason', async () => {
+    const { mod, row } = await withCluster();
+    await mod.as.mutation(api.recurrence.suppress, {
+      recurrenceId: row?._id as Id<'hazardRecurrence'>,
+      reason: 'Three people misreading the same shadow.',
+    });
+
+    expect(await mod.as.query(api.recurrence.listQueue, {})).toHaveLength(0);
+    // Still there, with the reason readable — never a delete.
+    const withSuppressed = await mod.as.query(api.recurrence.listQueue, {
+      includeSuppressed: true,
+    });
+    expect(withSuppressed[0]?.suppressReason).toBe('Three people misreading the same shadow.');
+    expect(withSuppressed[0]?.publiclyVisible).toBe(false);
+  });
+
+  test('suppression requires a reason, and survives a recompute', async () => {
+    const { t, mod, author, waterBodyId, row } = await withCluster();
+    await expect(
+      mod.as.mutation(api.recurrence.suppress, {
+        recurrenceId: row?._id as Id<'hazardRecurrence'>,
+        reason: '   ',
+      }),
+    ).rejects.toThrow(/reason/i);
+
+    await mod.as.mutation(api.recurrence.suppress, {
+      recurrenceId: row?._id as Id<'hazardRecurrence'>,
+      reason: 'Not a pattern.',
+    });
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 12 });
+    await mod.as.mutation(api.recurrence.recomputeForBody, { waterBodyId });
+
+    const after = await t.run((ctx) => ctx.db.query('hazardRecurrence').first());
+    expect(after?.suppressedAt).toBeGreaterThan(0);
+  });
+
+  test('unsuppressing puts it back', async () => {
+    const { mod, row } = await withCluster();
+    const recurrenceId = row?._id as Id<'hazardRecurrence'>;
+    await mod.as.mutation(api.recurrence.suppress, { recurrenceId, reason: 'Not a pattern.' });
+    await mod.as.mutation(api.recurrence.unsuppress, {
+      recurrenceId,
+      reason: 'On reflection it is.',
+    });
+    expect(await mod.as.query(api.recurrence.listQueue, {})).toHaveLength(1);
+  });
+
+  test('promoting a cluster backlinks every member and hides none of them', async () => {
+    const { t, mod, waterBodyId, row } = await withCluster();
+    const featureId = await mod.as.mutation(api.recurrence.promoteFromRecurrence, {
+      recurrenceId: row?._id as Id<'hazardRecurrence'>,
+      type: 'recurring_pressure_ridge',
+      reason: 'Reforms in the same place every winter.',
+    });
+
+    const members = await t.run(async (ctx) => {
+      const cluster = await ctx.db.get(row?._id as Id<'hazardRecurrence'>);
+      return Promise.all((cluster?.memberHazardIds ?? []).map((id) => ctx.db.get(id)));
+    });
+    expect(members).toHaveLength(3);
+    for (const member of members) expect(member?.promotedToFeatureId).toBe(featureId);
+
+    // **And they are all still on the map** (D53 amendment) — a feature is a pattern, a hazard is a
+    // sighting, and promoting the first must not delete the second.
+    const listed = await mod.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed.length).toBeGreaterThan(0);
+
+    // The cluster leaves the queue but keeps its members, because the denominator has to go on meaning
+    // something after a promotion.
+    expect(await mod.as.query(api.recurrence.listQueue, {})).toHaveLength(0);
+    const after = await t.run((ctx) => ctx.db.get(row?._id as Id<'hazardRecurrence'>));
+    expect(after?.memberHazardIds).toHaveLength(3);
+  });
+
+  test('the promoted feature carries the medoid’s own shape, not an average', async () => {
+    const { t, mod, row } = await withCluster();
+    const featureId = await mod.as.mutation(api.recurrence.promoteFromRecurrence, {
+      recurrenceId: row?._id as Id<'hazardRecurrence'>,
+      type: 'recurring_pressure_ridge',
+      reason: 'Reforms here.',
+    });
+    const { feature, representative } = await t.run(async (ctx) => ({
+      feature: await ctx.db.get(featureId),
+      representative: await ctx.db.get(row?.representativeHazardId as Id<'hazards'>),
+    }));
+    expect(feature?.geometry).toEqual(representative?.geometry);
+    expect(feature?.promotedFromHazardId).toBe(row?.representativeHazardId);
+  });
+
+  test('refuses to promote the same pattern twice', async () => {
+    const { mod, row } = await withCluster();
+    const recurrenceId = row?._id as Id<'hazardRecurrence'>;
+    await mod.as.mutation(api.recurrence.promoteFromRecurrence, {
+      recurrenceId,
+      type: 'recurring_pressure_ridge',
+      reason: 'Reforms here.',
+    });
+    await expect(
+      mod.as.mutation(api.recurrence.promoteFromRecurrence, {
+        recurrenceId,
+        type: 'recurring_pressure_ridge',
+        reason: 'Again by mistake.',
+      }),
+    ).rejects.toThrow(/already been promoted/);
+  });
+
+  test('demoting clears the backlink from every member the promotion set', async () => {
+    // Clearing only `promotedFromHazardId` would leave the rest of the cluster naming a standing
+    // statement about the lake that has been withdrawn — worse than no line at all.
+    const { t, mod, row } = await withCluster();
+    const featureId = await mod.as.mutation(api.recurrence.promoteFromRecurrence, {
+      recurrenceId: row?._id as Id<'hazardRecurrence'>,
+      type: 'recurring_pressure_ridge',
+      reason: 'Reforms here.',
+    });
+    await mod.as.mutation(api.bodyFeatures.demote, {
+      bodyFeatureId: featureId,
+      reason: 'Not actually recurring.',
+    });
+
+    const members = await t.run(async (ctx) => {
+      const cluster = await ctx.db.get(row?._id as Id<'hazardRecurrence'>);
+      return Promise.all((cluster?.memberHazardIds ?? []).map((id) => ctx.db.get(id)));
+    });
+    for (const member of members) expect(member?.promotedToFeatureId).toBeUndefined();
+    // And the pattern is back in the queue where the operator left it, rather than waiting for July.
+    expect(await mod.as.query(api.recurrence.listQueue, {})).toHaveLength(1);
+  });
+
+  test('every suppression and promotion leaves an audit row with its reason', async () => {
+    const { t, mod, row } = await withCluster();
+    await mod.as.mutation(api.recurrence.suppress, {
+      recurrenceId: row?._id as Id<'hazardRecurrence'>,
+      reason: 'Not a pattern.',
+    });
+    const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    const suppression = actions.find((a) => a.action === 'suppress_recurrence');
+    expect(suppression?.reason).toBe('Not a pattern.');
+    expect(suppression?.targetType).toBe('hazardRecurrence');
   });
 });
