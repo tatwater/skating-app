@@ -141,7 +141,11 @@ export const BODY_FEATURE_TYPES = [
   'gas_hole',
   'reef_hole',
   'delta',
-  'shallow_bay_early_thaw',
+  // Renamed from `shallow_bay_early_thaw` (D53 amendment, N5c). There is no guarantee the spot is a
+  // bay — it may be an island's lee, a sandbar, a reef or a shallow delta — and the old name narrowed
+  // the type to one of its cases. Done as a plain find-and-replace because dev held **zero**
+  // `bodyFeatures` rows: free at N5c, a migration at any point after.
+  'shallow_early_thaw',
   'other',
 ] as const;
 

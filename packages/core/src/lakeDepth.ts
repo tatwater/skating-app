@@ -10,7 +10,7 @@
  * Provenance is therefore **per measurement**, never per body (D68).
  *
  * **Why shallowness is a boolean.** The decay consumer (D69) needs one bit, and it has to be a bit,
- * because the manual `shallow_bay_early_thaw` `bodyFeature` — which is how a local flags a pond nobody
+ * because the manual `shallow_early_thaw` `bodyFeature` — which is how a local flags a pond nobody
  * has ever sounded — carries no number and feeds the same input. That flag is permanent infrastructure,
  * not a stand-in: 73% of the corpus sits below every global source's area floor, and small ponds are
  * exactly where "goes out early" is most predictive.
@@ -104,7 +104,7 @@ export const SHALLOW_MEAN_DEPTH_M = 3;
  * The false negative has a named shape worth remembering: a broad shallow sheet with one deep hole or a
  * dredged channel — mean 2 m, max 9 m — reads as not shallow. Two things already catch it, and they are
  * the reason this is a limitation rather than a hole: a mean **always wins** when we have one, and a
- * moderator's `shallow_bay_early_thaw` flag overrides the number entirely.
+ * moderator's `shallow_early_thaw` flag overrides the number entirely.
  *
  * **How this gets settled, rather than argued (founder call, 2026-07-30).** LAGOS-US DEPTH holds ~6,137
  * lakes with *both* a mean and a max — a labelled validation set. Once the ETL has run, fit the max cutoff
@@ -135,7 +135,7 @@ export interface LakeDepths {
 /**
  * Whether a body's depth makes it shallow. **Mean wins when present** (it describes the sheet; a max
  * describes one point). Unknown depth is **not** shallow — fail-open in the sense that matters here:
- * absent data must not silently apply a decay amplifier, and the `shallow_bay_early_thaw` `bodyFeature`
+ * absent data must not silently apply a decay amplifier, and the `shallow_early_thaw` `bodyFeature`
  * is the path for a body we have no number for. Non-finite or non-positive values are treated as absent.
  */
 export function isShallowDepth(depths: LakeDepths): boolean {

@@ -584,7 +584,7 @@ createdAt: timestamp
 _id
 waterBodyId: ref(waterBodies)
 type: enum(spring_current, constriction, bridge_narrows, recurring_pressure_ridge,
-           gas_hole, reef_hole, delta, shallow_bay_early_thaw, other)  // last four added 2026-07-21
+           gas_hole, reef_hole, delta, shallow_early_thaw, other)  // last four added 2026-07-21
                                                                        // (Phase 9 research): persistent
                                                                        // natural sources that recur every
                                                                        // season regardless of cold

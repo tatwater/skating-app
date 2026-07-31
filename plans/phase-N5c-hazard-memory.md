@@ -458,7 +458,7 @@ than later is the whole reason to do it at all.
 | **Never auto-suggested where depth positively contradicts** and the depth is measured rather than modelled | D68's provenance ladder exists precisely so a claim can be weighted by what it was read off |
 | Suggestion copy names the mechanism | *"this spot has been reported thin in 3 of the last 4 winters — shallow water goes out from the bottom first"*, so the moderator is judging a physical claim, not a count |
 
-> **A pleasing loop worth noting.** N6a's write-up records that `shallow_bay_early_thaw` is a manual flag
+> **A pleasing loop worth noting.** N6a's write-up records that `shallow_early_thaw` is a manual flag
 > nobody had a path to set, and that N6a's depth data *"does not retire it"*. This is the other half:
 > recurrence is how the flag gets *proposed* from observation, and depth is how the proposal gets
 > checked. Neither alone was enough.
@@ -534,7 +534,7 @@ Founder call, 2026-07-30: *"also allow admins to promote their own manually."*
 **A bigger gap than it sounds.** `bodyFeatures.create` exists (`bodyFeatures.ts:66`) and has **no UI
 anywhere** — `/admin/features` is list-and-demote only (`admin.features.tsx:20-54`). Today the only way
 to hand-create a permanent feature is the Convex dashboard or the CLI, so four of the nine
-`BODY_FEATURE_TYPES` — `constriction`, `bridge_narrows`, `delta`, `shallow_bay_early_thaw` — are
+`BODY_FEATURE_TYPES` — `constriction`, `bridge_narrows`, `delta`, `shallow_early_thaw` — are
 **unreachable in the product**: no hazard promotes into them and no form creates them.
 
 ### 8.1 Draw a body feature by hand

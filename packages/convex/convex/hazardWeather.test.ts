@@ -413,7 +413,7 @@ describe('hazardWeather — shallow bodies (N6a / D69)', () => {
     expect(shallow.multiplier).toBeLessThan(deep.multiplier as number);
   });
 
-  test('a `shallow_bay_early_thaw` bodyFeature counts even with no depth at all', async () => {
+  test('a `shallow_early_thaw` bodyFeature counts even with no depth at all', async () => {
     // The path for the 73% of the corpus below every global source's area floor — and the whole reason
     // shallowness is a boolean rather than a curve. Before N6a this feature was wired to nothing.
     const plain = await multiplierFor({}, 'warm');
@@ -425,7 +425,7 @@ describe('hazardWeather — shallow bodies (N6a / D69)', () => {
     await t.run((ctx) =>
       ctx.db.insert('bodyFeatures', {
         waterBodyId,
-        type: 'shallow_bay_early_thaw' as const,
+        type: 'shallow_early_thaw' as const,
         geometryKind: 'point_radius' as const,
         geometry: { type: 'Point', coordinates: [-72.0, 44.0] },
         radiusMeters: 100,
@@ -454,7 +454,7 @@ describe('hazardWeather — shallow bodies (N6a / D69)', () => {
     await t.run((ctx) =>
       ctx.db.insert('bodyFeatures', {
         waterBodyId,
-        type: 'shallow_bay_early_thaw' as const,
+        type: 'shallow_early_thaw' as const,
         geometryKind: 'point_radius' as const,
         geometry: { type: 'Point', coordinates: [-72.0, 44.0] },
         radiusMeters: 100,

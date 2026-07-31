@@ -5,7 +5,7 @@
  *  - **depth data** (`isShallowDepth`), which reaches ~7% of bodies — but essentially all of the ones
  *    prominent enough to draw at regional zoom, where "it's big so it's deep" is a bad inference
  *    (Shelburne Pond: 194 km²-scale prominence, ~1.5 m mean);
- *  - a **`shallow_bay_early_thaw` `bodyFeature`**, which is how a local flags a pond nobody has ever
+ *  - a **`shallow_early_thaw` `bodyFeature`**, which is how a local flags a pond nobody has ever
  *    sounded. 73% of the corpus sits under 1 ha, below the floor of every global depth source, so this
  *    path is permanent infrastructure rather than the stand-in the roadmap called it — and it is the
  *    reason shallowness is a boolean and not a curve (a moderator's flag carries no number).
@@ -29,5 +29,5 @@ export async function isShallowBody(ctx: QueryCtx, body: Doc<'waterBodies'>): Pr
     .query('bodyFeatures')
     .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', body._id).eq('active', true))
     .collect();
-  return features.some((f) => f.type === 'shallow_bay_early_thaw');
+  return features.some((f) => f.type === 'shallow_early_thaw');
 }

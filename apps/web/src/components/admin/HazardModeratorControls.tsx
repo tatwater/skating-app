@@ -26,7 +26,9 @@ const FEATURE_TYPES = [
   { value: 'gas_hole', label: 'Gas hole' },
   { value: 'reef_hole', label: 'Reef hole' },
   { value: 'delta', label: 'Delta' },
-  { value: 'shallow_bay_early_thaw', label: 'Shallow bay (early thaw)' },
+  // Not "shallow bay" — a spot that goes out early may be an island's lee, a sandbar, a reef or a
+  // shallow delta, and the old name narrowed the type to one of its cases (D53 amendment).
+  { value: 'shallow_early_thaw', label: 'Shallow water (early thaw)' },
   { value: 'other', label: 'Other' },
 ] as const;
 

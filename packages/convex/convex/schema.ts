@@ -368,7 +368,7 @@ export default defineSchema({
     // the drawer and the editor), and nothing selects *by* depth.
     //
     // Two consumers. The decay model reads shallowness as one bit (D69, via `isShallowBody` — depth OR a
-    // `shallow_bay_early_thaw` `bodyFeature`), and the clients show both numbers to skaters framed by
+    // `shallow_early_thaw` `bodyFeature`), and the clients show both numbers to skaters framed by
     // their source: measured reads plainly, modelled reads as an estimate (D3 — a 90 m-DEM guess must not
     // look like a depth-sounder transect). All optional ⇒ migration-free, and because `importCanonical`
     // patches an explicit field list, depth survives a canonical re-import untouched.
