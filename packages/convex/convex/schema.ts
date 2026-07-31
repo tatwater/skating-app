@@ -959,6 +959,35 @@ export default defineSchema({
     // rather than after the read — the difference between "admin-only" and "admin-only unless you look".
     .index('by_water_body_public', ['waterBodyId', 'publiclyVisible']),
 
+  /**
+   * The recurrence job's scratch queue (N5c / §C4).
+   *
+   * The job has two phases and Convex allows **one `.paginate()` per function execution**, which makes
+   * "discover the bodies, then process them" a hard structural requirement rather than a style choice.
+   * Phase one pages `hazards.by_first_reported` across the window and drops one row here per distinct
+   * body; phase two takes one row per call, recomputes that body **completely**, and deletes the row.
+   *
+   * A table rather than an array threaded through scheduler arguments, because the array is unbounded
+   * in exactly the case that matters: a corpus where lots of lakes have hazards is the corpus this pass
+   * was built for, and an argument that grows with it would fail at the worst time.
+   *
+   * `claimedAt` is the **lease**. It bounds overlap between runs rather than protecting a single body's
+   * recompute — that is one transaction and therefore atomic — and a stale lease is taken over rather
+   * than respected, since the alternative to a wrong retry here is a body that is never recomputed at
+   * all. The lesson Greptile taught this repo twice on PR #31: a marker written at schedule time is a
+   * lie about completion.
+   */
+  recurrenceQueue: defineTable({
+    waterBodyId: v.id('waterBodies'),
+    runForSeason: v.number(),
+    claimedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    // The dedup on insert: one row per body per run, however many pages the body's hazards span.
+    .index('by_season_and_body', ['runForSeason', 'waterBodyId'])
+    // Phase two's "what is left", and the sweep that clears an abandoned run's leftovers.
+    .index('by_season', ['runForSeason']),
+
   // Known seasonal water-body hazards — persistent, NOT decayed, no confirmation loop (D53).
   // Springs/current, constrictions and bridges/narrows are weaker every season regardless of cold, and
   // some pressure ridges reform in the same place annually. Making users re-mark them is busywork and

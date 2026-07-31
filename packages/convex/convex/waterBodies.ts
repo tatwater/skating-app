@@ -33,6 +33,7 @@ import {
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
@@ -802,6 +803,13 @@ export const merge = mutation({
     // The loser's reports and hazards now belong to the survivor, so their sub-area stamps have to be
     // recomputed against the survivor's bays — the old stamps were resolved against a different set.
     await scheduleRestamp(ctx, survivorId);
+    // And so does the survivor's cross-season recurrence (N5c / §C4): it just gained a winter's worth
+    // of sightings that were clustered against a different lake, and the loser's stored clusters would
+    // otherwise sit ranked in the operator queue on a tombstoned body, linking nowhere. Scheduled
+    // rather than run inline — the merge is already a fan-out over every body-keyed child, and one
+    // more full pass inside it is the transaction size nobody wants to debug.
+    await ctx.scheduler.runAfter(0, internal.recurrence.enqueueBody, { waterBodyId: survivorId });
+    await ctx.scheduler.runAfter(0, internal.recurrence.enqueueBody, { waterBodyId: loserId });
     return survivorId;
   },
 });

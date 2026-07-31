@@ -1,0 +1,467 @@
+import { RECURRENCE_WINDOW_SEASONS, seasonOf, seasonStartMs } from '@skating/core';
+import { convexTest } from 'convex-test';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { api, internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
+import schema from './schema';
+
+const modules = import.meta.glob('./**/*.*s');
+
+const NOTIF_PREFS = {
+  activityDetected: true,
+  bountyRequest: true,
+  hazardConfirmation: true,
+  bountyFulfilled: true,
+  reportRated: true,
+  reportCommented: true,
+  contentFlagResolved: true,
+  favoriteReport: true,
+  nearbyReportDigest: false,
+  greatReportNearby: false,
+};
+
+/** Pinned, per the convention `accountDeletion.test.ts` documents: a January fixture is in this season
+ *  for half the year, and every date here is relative to a season boundary. */
+const NOW = Date.UTC(2030, 0, 15, 12);
+const CURRENT_SEASON = seasonOf(NOW);
+
+/**
+ * Fake timers from before the first schedule, per the trap `subAreas.test.ts` documents: the pass is a
+ * `scheduler.runAfter(0)` chain, and convex-test leaves such a job `pending` until a timer fires — so
+ * without this `finishAllScheduledFunctions` drains nothing and every assertion reads a table the job
+ * never reached, which fails as a plausible-looking "the pass computed nothing".
+ */
+function harness() {
+  vi.useFakeTimers();
+  return convexTest(schema, modules);
+}
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+async function seedUser(t: ReturnType<typeof convexTest>, subject: string, role = 'member') {
+  const id = await t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: subject,
+      displayName: subject,
+      username: subject,
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public' as const,
+      notificationPrefs: NOTIF_PREFS,
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role: role as 'member' | 'moderator' | 'admin',
+      status: 'active' as const,
+      createdAt: Date.now(),
+    }),
+  );
+  return { id, as: t.withIdentity({ subject }) };
+}
+
+async function seedBody(t: ReturnType<typeof convexTest>, overrides: Record<string, unknown> = {}) {
+  return t.run((ctx) =>
+    ctx.db.insert('waterBodies', {
+      name: 'Shelburne Pond',
+      type: 'lake' as const,
+      source: 'osm' as const,
+      polygon: {
+        type: 'Polygon' as const,
+        coordinates: [
+          [
+            [0, 0],
+            [0, 1],
+            [1, 1],
+            [1, 0],
+            [0, 0],
+          ],
+        ],
+      },
+      bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
+      centroid: { lat: 0.5, lng: 0.5 },
+      dedupStatus: 'clean' as const,
+      createdAt: Date.now(),
+      ...overrides,
+    }),
+  );
+}
+
+/** A day inside a given season, as epoch ms. `dayOffset` counts from July 1. */
+function inSeason(season: number, dayOffset: number): number {
+  return seasonStartMs(season) + dayOffset * 86_400_000;
+}
+
+/** A hazard at `metersEast` of the body's centre, first reported in `season`. */
+async function seedHazard(
+  t: ReturnType<typeof convexTest>,
+  waterBodyId: Id<'waterBodies'>,
+  authorId: Id<'profiles'>,
+  {
+    season,
+    dayOffset = 190,
+    metersEast = 0,
+    type = 'pressure_ridge' as const,
+    status = 'active' as const,
+  }: {
+    season: number;
+    dayOffset?: number;
+    metersEast?: number;
+    type?: 'pressure_ridge' | 'thin_ice' | 'spring_current';
+    status?: 'active' | 'archived';
+  },
+) {
+  const at = inSeason(season, dayOffset);
+  const lng = 0.5 + metersEast / 111_320;
+  return t.run((ctx) =>
+    ctx.db.insert('hazards', {
+      waterBodyId,
+      type,
+      geometryKind: 'point_radius' as const,
+      geometry: { type: 'Point' as const, coordinates: [lng, 0.5] },
+      radiusMeters: 30,
+      bbox: { minLat: 0.4995, minLng: lng - 0.0004, maxLat: 0.5005, maxLng: lng + 0.0004 },
+      createdByUserId: authorId,
+      photoIds: [],
+      status,
+      moderationStatus: 'visible' as const,
+      firstReportedAt: at,
+      lastConfirmedAt: at,
+      confirmCount: 0,
+      goneCount: 0,
+      createdAt: at,
+    }),
+  );
+}
+
+/** Run a whole pass to completion. `convex-test` drains scheduled functions on `finishAllScheduledFunctions`. */
+async function runPass(t: ReturnType<typeof convexTest>, season = CURRENT_SEASON) {
+  await t.mutation(internal.recurrence.startRecurrenceRun, { season });
+  await t.finishAllScheduledFunctions(vi.runAllTimers);
+}
+
+describe('the recurrence pass', () => {
+  test('records a cluster seen in three winters, with its denominator', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    for (const season of [CURRENT_SEASON - 2, CURRENT_SEASON - 1, CURRENT_SEASON]) {
+      await seedHazard(t, waterBodyId, author.id, { season, metersEast: 10 });
+    }
+    await runPass(t);
+
+    const rows = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.seasonsObserved).toHaveLength(3);
+    // The denominator is stored, not derived — "3 of the last 4 winters" is only honest if both halves
+    // came from the same pass.
+    expect(rows[0]?.windowSeasons).toBe(RECURRENCE_WINDOW_SEASONS);
+    expect(rows[0]?.family).toBe('ridge');
+    expect(rows[0]?.suggestedFeatureType).toBe('recurring_pressure_ridge');
+  });
+
+  test('a season contributes at most one, however many people pinned it', async () => {
+    // Three skaters pinning the same ridge in one January is one winter of evidence. Without this,
+    // one enthusiastic week becomes "a pattern" — the exact D3 trap the phase is built to avoid.
+    const t = harness();
+    const a = await seedUser(t, 'a');
+    const b = await seedUser(t, 'b');
+    const c = await seedUser(t, 'c');
+    const waterBodyId = await seedBody(t);
+    for (const author of [a, b, c]) {
+      await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 5 });
+    }
+    await runPass(t);
+
+    const rows = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(rows[0]?.seasonsObserved).toEqual([CURRENT_SEASON]);
+    // The authors are still all counted — that is the number an operator reads to tell a real pattern
+    // from one person's repeated mistake.
+    expect(rows[0]?.distinctAuthorCount).toBe(3);
+  });
+
+  test('never crosses families', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, type: 'pressure_ridge' });
+    await seedHazard(t, waterBodyId, author.id, {
+      season: CURRENT_SEASON,
+      type: 'spring_current',
+      metersEast: 5,
+    });
+    await runPass(t);
+
+    const families = (await t.run((ctx) => ctx.db.query('hazardRecurrence').collect()))
+      .map((r) => r.family)
+      .sort();
+    expect(families).toEqual(['ridge', 'spring']);
+  });
+
+  test('counts an archived winter — "it healed" is a fact about last winter', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, {
+      season: CURRENT_SEASON - 1,
+      status: 'archived',
+    });
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 10 });
+    await runPass(t);
+
+    const rows = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(rows[0]?.seasonsObserved).toHaveLength(2);
+  });
+
+  test('excludes what a moderator hid and what the community said never existed', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const sam = await seedUser(t, 'sam');
+    const kim = await seedUser(t, 'kim');
+    const waterBodyId = await seedBody(t);
+    const hidden = await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON - 1 });
+    const bogus = await seedHazard(t, waterBodyId, author.id, {
+      season: CURRENT_SEASON - 2,
+      metersEast: 5,
+    });
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 10 });
+
+    await t.run(async (ctx) => {
+      await ctx.db.patch(hidden, { moderationStatus: 'hidden' });
+      // Two distinct non-author "never existed" verdicts: a claim the *report* was bogus, which is the
+      // opposite of corroboration. `goneCount` can't answer this — it pools the two verdicts (D65).
+      for (const userId of [sam.id, kim.id]) {
+        await ctx.db.insert('hazardConfirmations', {
+          hazardId: bogus,
+          userId,
+          verdict: 'never_existed' as const,
+          via: 'app_open_nearby' as const,
+          createdAt: Date.now(),
+        });
+      }
+    });
+    await runPass(t);
+
+    const rows = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(rows[0]?.seasonsObserved).toEqual([CURRENT_SEASON]);
+  });
+
+  test('drops a hazard from before the window', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, {
+      season: CURRENT_SEASON - RECURRENCE_WINDOW_SEASONS,
+    });
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 10 });
+    await runPass(t);
+
+    const rows = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(rows[0]?.seasonsObserved).toEqual([CURRENT_SEASON]);
+  });
+
+  test('is idempotent — two runs agree on everything but the clock', async () => {
+    // The plan names this one explicitly, and it is the property that makes a "recompute now" button
+    // safe to press: an operator must be able to re-run a body without wondering what it changed.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    for (const season of [CURRENT_SEASON - 1, CURRENT_SEASON]) {
+      await seedHazard(t, waterBodyId, author.id, { season, metersEast: 10 });
+    }
+
+    await runPass(t);
+    const first = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    await runPass(t);
+    const second = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+
+    expect(second).toHaveLength(first.length);
+    const strip = (r: (typeof first)[number]) => ({ ...r, computedAt: 0, _creationTime: 0 });
+    expect(second.map(strip)).toEqual(first.map(strip));
+    // And the row was *patched*, not replaced — the id is what a suppression hangs off.
+    expect(second[0]?._id).toBe(first[0]?._id);
+  });
+
+  test('a recompute keeps a suppression and a promotion across the diff', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON - 1, metersEast: 10 });
+    await runPass(t);
+
+    const before = await t.run((ctx) => ctx.db.query('hazardRecurrence').first());
+    await t.run((ctx) =>
+      ctx.db.patch(before?._id as Id<'hazardRecurrence'>, {
+        suppressedAt: 1_000,
+        suppressedByUserId: mod.id,
+        suppressReason: 'Three people misreading one shadow.',
+      }),
+    );
+
+    // A new winter's sighting joins the cluster. Matched on member overlap rather than identity, so
+    // the row a human touched survives growing by one.
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON, metersEast: 15 });
+    await runPass(t);
+
+    const after = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(after).toHaveLength(1);
+    expect(after[0]?._id).toBe(before?._id);
+    expect(after[0]?.suppressedAt).toBe(1_000);
+    expect(after[0]?.seasonsObserved).toHaveLength(2);
+  });
+
+  test('keeps a human-touched row that no longer matches, and marks it stale', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const hazard = await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+    await runPass(t);
+
+    const row = await t.run((ctx) => ctx.db.query('hazardRecurrence').first());
+    await t.run(async (ctx) => {
+      await ctx.db.patch(row?._id as Id<'hazardRecurrence'>, {
+        suppressedAt: 1_000,
+        suppressedByUserId: mod.id,
+        suppressReason: 'Not a pattern.',
+      });
+      // The evidence goes away — a moderator hides the only pin behind it.
+      await ctx.db.patch(hazard, { moderationStatus: 'hidden' });
+    });
+    await runPass(t);
+
+    const after = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    // Kept, and said so: deleting it would drop the decision along with the reason for it.
+    expect(after).toHaveLength(1);
+    expect(after[0]?.staleSince).toBeGreaterThan(0);
+    expect(after[0]?.publiclyVisible).toBe(false);
+  });
+
+  test('deletes an untouched row whose cluster is gone', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const hazard = await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+    await runPass(t);
+    expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(1);
+
+    await t.run((ctx) => ctx.db.patch(hazard, { moderationStatus: 'hidden' }));
+    await runPass(t);
+    expect(await t.run((ctx) => ctx.db.query('hazardRecurrence').collect())).toHaveLength(0);
+  });
+
+  test('nothing is publicly visible while the master switch is off', async () => {
+    // The engine ships dark. Every output reaches an operator dashboard and nothing else.
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    for (const season of [
+      CURRENT_SEASON - 3,
+      CURRENT_SEASON - 2,
+      CURRENT_SEASON - 1,
+      CURRENT_SEASON,
+    ]) {
+      await seedHazard(t, waterBodyId, author.id, { season, metersEast: 10 });
+    }
+    await runPass(t);
+
+    const rows = await t.run((ctx) => ctx.db.query('hazardRecurrence').collect());
+    expect(rows[0]?.seasonsObserved).toHaveLength(4);
+    expect(rows[0]?.publiclyVisible).toBe(false);
+  });
+
+  test('empties its queue, so a later run is not blocked by an earlier one', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await seedHazard(t, waterBodyId, author.id, { season: CURRENT_SEASON });
+    await runPass(t);
+    expect(await t.run((ctx) => ctx.db.query('recurrenceQueue').collect())).toHaveLength(0);
+  });
+});
+
+describe('the volatile family and the depth cross-check (§C7)', () => {
+  async function volatilePass(depth: Record<string, unknown>) {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t, depth);
+    for (const season of [CURRENT_SEASON - 2, CURRENT_SEASON - 1, CURRENT_SEASON]) {
+      await seedHazard(t, waterBodyId, author.id, { season, type: 'thin_ice', metersEast: 10 });
+    }
+    await runPass(t);
+    return t.run((ctx) => ctx.db.query('hazardRecurrence').first());
+  }
+
+  test('proposes the type no hazard could ever reach', async () => {
+    const row = await volatilePass({});
+    expect(row?.family).toBe('volatile');
+    // Unreachable from any hazard before this: no promotion path, no form. Recurrence is the evidence
+    // that distinguishes "a thin patch happened here" from "this spot thaws first, every year".
+    expect(row?.suggestedFeatureType).toBe('shallow_early_thaw');
+  });
+
+  test('agrees more readily when the depth says shallow', async () => {
+    const row = await volatilePass({ meanDepthM: 2, meanDepthSource: 'lagos_us' });
+    expect(row?.suggestedFeatureType).toBe('shallow_early_thaw');
+  });
+
+  test('withholds the suggestion where a measured depth contradicts it', async () => {
+    // The claim is about the lake *bed*. A measured mean of 30 m is the only physical measurement we
+    // hold, and it says the opposite — so the suggestion is withheld while the history is kept.
+    const row = await volatilePass({ meanDepthM: 30, meanDepthSource: 'lagos_us' });
+    expect(row?.suggestedFeatureType).toBeUndefined();
+    expect(row?.seasonsObserved).toHaveLength(3);
+  });
+
+  test('still suggests where the contradicting depth is only modelled', async () => {
+    // D68's provenance ladder exists so a claim can be weighted by what it was read off, and a
+    // modelled depth is a guess that several winters of people standing there outweighs.
+    const row = await volatilePass({ meanDepthM: 30, meanDepthSource: 'hydrolakes_modeled' });
+    expect(row?.suggestedFeatureType).toBe('shallow_early_thaw');
+  });
+});
+
+describe('recomputeForBody, the button and the merge hook', () => {
+  test('a body merge recomputes both lakes', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const author = await seedUser(t, 'author');
+    const survivorId = await seedBody(t);
+    const loserId = await seedBody(t, { name: 'Duplicate Pond' });
+    await seedHazard(t, loserId, author.id, { season: CURRENT_SEASON });
+    await runPass(t);
+    // The loser's cluster exists, ranked, on a lake that is about to stop existing.
+    expect(
+      await t.run((ctx) =>
+        ctx.db
+          .query('hazardRecurrence')
+          .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))
+          .collect(),
+      ),
+    ).toHaveLength(1);
+
+    await admin.as.mutation(api.waterBodies.merge, {
+      survivorId,
+      loserId,
+      reason: 'Same pond, imported twice.',
+    });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+
+    const onLoser = await t.run((ctx) =>
+      ctx.db
+        .query('hazardRecurrence')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', loserId))
+        .collect(),
+    );
+    const onSurvivor = await t.run((ctx) =>
+      ctx.db
+        .query('hazardRecurrence')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', survivorId))
+        .collect(),
+    );
+    // The hazards moved, so the clusters moved with them: nothing ranked on a tombstoned lake, and the
+    // survivor carries the winter it just inherited.
+    expect(onLoser).toHaveLength(0);
+    expect(onSurvivor).toHaveLength(1);
+  });
+});

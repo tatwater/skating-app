@@ -115,4 +115,20 @@ crons.interval(
   {},
 );
 
+/**
+ * The season-rollover recurrence pass (N5c / §C4) — the once-a-year job, checked daily.
+ *
+ * A daily tick with a month gate rather than a `crons.cron` expression, for two reasons. It keeps this
+ * file uniform (every other job here is an interval), and more usefully it makes the rollover
+ * **retryable**: a run that fails on July 2 is picked up on July 3, where a once-a-year expression
+ * would wait a year. `maybeRunRollover` is a no-op outside the first week of July and a no-op again
+ * once the season has been computed, so 358 of the 365 ticks cost one indexed read.
+ */
+crons.interval(
+  'recompute hazard recurrence at the rollover',
+  { hours: 24 },
+  internal.recurrence.maybeRunRollover,
+  {},
+);
+
 export default crons;
