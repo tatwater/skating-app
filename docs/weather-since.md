@@ -154,4 +154,18 @@ All defaults, all admin-tunable in Phase 7 (D49):
   fetch → empty summary → fail-open at every consumer.
 - **It doesn't decide anything by itself.** The reducer produces numbers; the *judgment*
   (multiplier, contradiction, reopen) lives in the consumer docs linked above.
-</invoke>
+
+## One provider, and a second one that never touches this layer (D74)
+
+Every number on this page comes from **Open-Meteo**, and that is a decision rather than a default.
+N6c adds **NWS (`api.weather.gov`)** for official winter-storm, ice-storm and wind-chill **alerts** — and
+those alerts are deliberately walled off from everything described above.
+
+**They are never blended.** Two providers disagreeing produces a worse number, not a better one, and
+averaging them would quietly break the property this whole layer depends on: that any window can be
+re-fetched and re-derived to the same result. A decay multiplier you cannot reproduce is one you cannot
+debug, and cannot refit when the corpus finally justifies refitting it.
+
+So the boundary is sharp, and worth stating in the same breath as the reducer: **Open-Meteo computes;
+NWS informs.** An NWS alert renders as a labelled, attributed strip beside this one. It never enters
+`weatherDecaySignal`, never moves a multiplier, and never gates the honesty check.

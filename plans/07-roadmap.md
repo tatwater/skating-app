@@ -687,6 +687,11 @@ the feeds so **blocks** are enforced before the Newsfeed filters on them.)*
   signal** ships v1 as a manual `shallow_bay_early_thaw` `bodyFeature` (no depth data source exists in
   OSM); the real fix is a **HydroLAKES + GLOBathy** backfill of `meanDepthM`/`maxDepthM`, a separate data
   PR. Full write-up (sources, state bathymetry, ETL update) in `phase-10-weather.md` → Later/deferred.
+  **→ scoped as [N6a](./phase-N6a-lake-depth.md) (2026-07-29).** Correction worth carrying: *"the decay
+  model reads a simple `isShallow` scalar"* was never true — the v1-without-the-data half of this bullet
+  **did not ship**. The `bodyFeature` renders and is wired to nothing, so N6a builds the signal rather
+  than sharpening it, and the manual flag turns out to be permanent (73% of the corpus is below every
+  global source's area floor).
 - **Done:** aging reports **and hazards** show a plain-text, Open-Meteo-attributed weather-since strip
   (peak/overnight-low temp · nights below freezing · sun · rain-vs-snow · wind); hazard decay reflects
   what the weather actually did (never hiding a hazard); report conditions auto-fill from Open-Meteo;
@@ -939,13 +944,198 @@ feature-state and our ids are array indices, so panning rebound them.
 review deliberately didn't settle: whether 25 m is the right default band half-width for a small pond, or
 whether the derivation should try narrowing itself before refusing.
 
-**N6 — Lake-depth backfill: HydroLAKES + GLOBathy.** *(Sharpens the D56 decay model with real data
-instead of a manual flag. Was sequenced after N1 so the two shared one reindex; **N1 has now shipped
-and its backfill is run**, so this is unblocked and its ETL pass stands alone.)* A one-time spatial join stamping
-`meanDepthM` / `maxDepthM` / `depthSource` onto water bodies, replacing the manual
-`shallow_bay_early_thaw` `bodyFeature` stand-in for most bodies; plus an ETL update to carry OSM depth
-tags where they exist (rare) and fall back to the GLOBathy match on future imports. State-agency
-bathymetry (NH F&G, VT DEC) can refine specific lakes later. Own data PR — no app changes.
+**N6 — Lake depth.** *(Split at kickoff 2026-07-29 into **N6a** — the depth attribute and its decay
+consumer — and **N6b** — the bathymetric contour layer — after the founder asked whether we could draw
+real topographic lines inside the lake polygons. The answer is yes, from measured state-agency surveys,
+and that turned out to be phase-sized on its own. Was sequenced after N1 so the two shared one reindex;
+**N1 has now shipped and its backfill is run**, so both are unblocked.)*
+
+**N6a — Lake depth: the precedence ladder and the shallow signal.** ✅ **BUILT + on dev 2026-07-30** (ETL written and tested but **not yet run** — it needs three third-party downloads plus a licence/column confirmation; not device-tested; prod deferred) — see
+[`phase-N6a-lake-depth.md`](./phase-N6a-lake-depth.md); decisions **D68** (provenance-carrying depth) and
+**D69** (shallow amplifies thaw only). **Four of this entry's own premises were false**, all corrected in
+the phase doc, and the first one reshaped the work:
+
+- **The `isShallow` scalar this entry claimed to be "replacing" has never existed.** `phase-10-weather.md`
+  describes the decay model as reading it; nothing does. `shallow_bay_early_thaw` lives in exactly two
+  places — the enum and an admin dropdown label — so a moderator can set it and see a pin, and it changes
+  no decay anywhere. `decayMultiplier` takes no body-level input at all. **The signal is the deliverable**;
+  the data is what extends it past hand-flagged bodies.
+- **"Own data PR — no app changes" was unachievable**, and the field shape here is wrong: mean and max
+  depth arrive from *different* sources (LAGOS-US holds 17,675 maxima and 6,137 means), so one
+  `depthSource` cannot be honest. Provenance is per measurement (D68).
+- **"For most bodies" is off by an order of magnitude, and the correction is better news than the claim.**
+  HydroLAKES' floor is 10 ha; a 4,000-body sample of the dev corpus puts **7%** above it (73% are under
+  1 ha). But **every** sampled body drawing at z ≤ 10 is above the floor — 234 of 234, plus all 16
+  curated-boosted bodies. The data reaches 7% of the corpus and ~100% of what a skater browses at regional
+  zoom. The inverse is the honest half: the shallow signal is most predictive for the ponds no global
+  source reaches, so the manual `bodyFeature` is **permanent infrastructure, not a stand-in**.
+- **"Real data instead of a manual flag" overstates both named sources** — HydroLAKES' `Depth_avg` is
+  modelled from a 90 m DEM, GLOBathy's `Dmax` is a random forest validated at 1,503 lakes *globally*.
+  Neither is measured bathymetry, which is why provenance is a field and why D3 governs the display.
+- **A better first source than either:** **LAGOS-US DEPTH** — *observed* depths compiled from ~65 agency /
+  university / monitoring sources, lakes > 1 ha, an order of magnitude below HydroLAKES' floor. It becomes
+  rung 2 of the D68 ladder, above both modelled sources.
+
+**N6b — The bathymetry layer: real isobaths inside the lake.** 📋 Designed, deliberately unbuilt — see
+[`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md). Settled at kickoff: **PMTiles on R2**
+(the Phase 2.5 basemap infra), **VT + NH first**, Maine's point-interpolation path written up rather than
+built. Two findings worth carrying:
+
+- **Not from GLOBathy's rasters, permanently.** They are generated by converting each cell's Euclidean
+  distance-to-shoreline into a depth with a linear equation, so contours drawn from them are inward
+  offsets of an outline we already store — smooth, plausible, and carrying zero information about basin
+  shape. The mistake is available (free, global, already joined for N6a, and the output *looks like*
+  bathymetry), which is why it is recorded as out of scope rather than deferred.
+- **Vermont is cheap, and we build it ourselves anyway** *(decided 2026-07-30)*. VT ANR + NOAA-charted
+  Champlain isobaths are cleanly published, and an open-source CC0 project has already run the same chain
+  over them — useful as prior art (two of the phase doc's findings come from its README, including the
+  Champlain **datum trap**), but not as a dependency. Reusing its prebuilt tiles would save one lane of a
+  pipeline we're building for NH/MA/NY regardless, while leaving one state's overlay on someone else's
+  tiling parameters and skipping the end-to-end proof on half our pilot. **Every state goes through our
+  own pipeline.**
+
+- **All six open questions answered 2026-07-31**, and two of them were **dissolved rather than decided**.
+  **D81** — contours are a property of the detail view, not a toggleable layer — removes the zoom-cutoff /
+  D49-prominence question (contours are never on the browse map) *and* the persisted-preference question
+  (there's no preference left to persist). **D82** — bathymetry is context, not counsel — removes what the
+  doc called its hardest part: the copy that had to explain that "shallow = safer" reverses across the
+  season is now **no copy at all**, since depth's safety role stays inside the decay math the skater never
+  reads. **D83** keeps each state's native contour interval and units, labelled, because resampling a
+  survey means drawing isobaths nobody surveyed. And attribution turned out smaller than feared: OSM's
+  on-map obligation is the *basemap's*, while state-agency contour credits have no placement rule and
+  belong at the bottom of the lake drawer with the depth provenance.
+
+*Also folded into N6a:* the ETL update carrying OSM `depth`/`maxdepth` tags where they exist (rare).
+*Also folded into N6b:* bulk state-agency bathymetry (NH GRANIT, VT ANR, MassGIS, NYSDEC), since those
+datasets are being fetched there anyway — an operator override covers specific lakes until then.
+
+**N6c — Expanded lake profiles: derived stats, captions, and reference links.** 📋 Scoped 2026-07-30,
+unbuilt — see [`phase-N6c-expanded-lake-profiles.md`](./phase-N6c-expanded-lake-profiles.md); decisions
+**D70** (derived-not-hand-maintained), **D71** (links generated, not stored), **D74** (one physics source
++ NWS alerts), **D75** (satellite ships as a link), **D76** (in-app browser, never a WebView).
+
+N6a gave every lake two depth numbers and a provenance caption, and **told a skater nothing about what
+they mean**. This phase is that payoff plus the lake-page gaps open since Phase 2 — shape, exposure,
+elevation, and where else to look.
+
+> **All five open questions answered 2026-07-31**, adding **D85** (geometry stats measured on the source
+> geometry) and **D86** (the summary card's quality consensus renders as a graded mark, never a word —
+> reversing the doc's own recommendation to defer). Also in scope now: a **short forward forecast** on the
+> lake drawer, which turned out to be free — `weather.ts:112` already requests `forecast_days: '1'` and
+> the window filter discards the forward hours. NWS alerts move to **zone precision with a state
+> fallback rung**, so a slipping zone import can't block the feature.
+
+- **⛔ Elevation now *gates* the N6a depth ETL run** (founder call, 2026-07-31 — *"definitely block N6a
+  ETL run until we're ready for elevation"*). `elevationM` is a per-centroid lookup against Open-Meteo's
+  free elevation endpoint (~1,200 batched requests for all 116,070). Folding it into that unrun loader
+  costs **one column**; doing it afterwards costs **a second full pass over the corpus**. Recorded as a
+  hard gate in [N6a](./phase-N6a-lake-depth.md#before-the-etl-runs--the-ordering-gate), with the escape
+  hatch stated so it stays reversible under season pressure.
+- **There are two ETL passes in flight, not one (D85).** The depth run carries elevation; the **canonical
+  water re-import** carries the geometry stats, because shoreline and axis must be measured on the
+  pre-simplification geometry rather than the ~5 m-simplified polygon we store. Conflating them is how a
+  field gets missed.
+- **Wind fetch is the genuinely new signal** — a 16-bearing over-water-distance profile precomputed at
+  ETL (16 numbers/body), so the drawer can pair today's wind direction with the distance it crossed. It
+  is one of the main determinants of whether a lake sets smooth black ice or gets wind-slabbed, and
+  nothing in `plans/` had mentioned it before this pass. Long axis + shoreline length come along with it.
+- **The links cover 116k *because* they aren't stored (D71).** They're pure functions of
+  `(centroid, name, states)`, so full-corpus coverage costs a `@skating/core` module and no migration.
+  The founder asked for ETL coverage; not storing them is what delivers it.
+- **This retires the satellite-imagery blocker below.** Copernicus Sentinel data is under the free, full
+  and open licence, so *"needs an imagery source whose terms permit the use"* is answered — the deep link
+  ships here (D75), and **in-app imagery is now its own phase, [N6e](./phase-N6e-satellite-imagery.md)**
+  (scoped 2026-07-31 at the founder's ask). The cost trigger turned out to bind only *half* of it: see
+  **D84**.
+- **NWS alerts are the one new integration** (free, no key, `User-Agent` only). Open-Meteo still computes;
+  NWS only informs (D74).
+- **A proving run, not a general rollout:** `scripts/seed-satellite` (renamed from `seed-destinations`
+  2026-07-31 — named after the job, not its first dataset) matches the ~35–40 destinations already
+  surfaced in research to `waterBodies` rows, sets `curatedBoost`, and verifies each generated Copernicus
+  URL — proving URL shape, name-matching at 116k, and imagery legibility before anything is built on top.
+  **Two commands, not one:** a `--dry-run` emitting reviewable matches, then an apply step, because the
+  founder reviews the list before boosts land. The unmatched entries are the interesting output.
+
+**N6d — Lake access points: parking, named put-ins, and access alerts.** 📋 Scoped 2026-07-30, unbuilt —
+see [`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md); decisions **D72** (parking
+modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes). **Split out of N6c at
+scoping** — it was roughly the size of everything else there combined, and it's the only part introducing
+a new lifecycle. Independent of N6c; either order.
+
+- **The bug this fixes:** `putIns` is a bare coordinate and `directionsUrl` routes a car to it. For a
+  hike-in pond that's a destination a maps app cannot route to, discovered at the trailhead in winter.
+- **OSM already has the data, and already named it.** A second `osmium tags-filter` pass over the *same*
+  Geofabrik extract yields named slipways, parking, toilets and trails — no new source, no new download,
+  no new account. Compass-side fallback labels ("North launch") where OSM is silent. This is what makes
+  named access points a 116k feature rather than a 36-lake one.
+- **Access blockers reuse the hazard confirm/deny machinery but must *not* reuse its decay.** A locked
+  gate does not thaw; applying the D56 weather multiplier would let a warm week silently expire a road
+  closure (D73). Plain TTL + confirmation, hard-expiring at the N5a season boundary.
+- **One N5a carve-out:** access-point photos document infrastructure, not conditions, so they're excluded
+  from the seasonal photo purge (D66) while staying inside N3's redact-don't-erase.
+
+> **All four open questions answered 2026-07-31.** **D87** — approach distance is **routed**, not flown:
+> **OpenRouteService's `foot-hiking` profile** is the same account, key and client Phase 4's drive-time
+> isochrones already use, and with `elevation: true` it returns **ascent in metres**, which answers the
+> founder's *"elevation gain is going to affect people just as much as distance"* with a request parameter
+> rather than a second integration. Called at ETL time and cached — **never from a request path**. The
+> **Hike-In chip** ships on the map card, the drawer and the feed card, and the drive time and the walk are
+> **never summed**: a 55-minute drive plus a 25-minute walk is not an 80-minute drive.
+> **D88** — access photos ride D57's existing posting permission; a permission always equal to another
+> permission is one that will silently drift.
+> **A D72 amendment** — the ~250 m radius caps the OSM pass's *guessing*, never a human's assertion, so an
+> author can associate a trailhead lot a mile from the ice. That makes `parkingAreas` **many-to-many** with
+> bodies (a trailhead serving three ponds is normal here), which is cheap now and awkward later.
+
+**N6e — Satellite imagery in the app: the one map-layer toggle.** 📋 Scoped 2026-07-31, unbuilt — see
+[`phase-N6e-satellite-imagery.md`](./phase-N6e-satellite-imagery.md); decisions **D81** (second half —
+satellite is the map's only layer toggle and it replaces the base map) and **D84** (two imagery tiers).
+**Split out of N6c's Workstream B3** at the founder's ask — *"I don't want to lose track of this, because
+I want to do it ASAP."* The Copernicus deep link (D75) ships in N6c either way.
+
+- **It doesn't fit inside B3, and the reason is the phase.** B3 ships a URL. This ships a **base-map
+  swap**: a style branch on two clients, a persisted toggle, an attribution that changes with it, an
+  offline story, and an interaction with every layer already on the map.
+- **The quota that deferred this binds only half of it (D84).** Sentinel-2's 10,000 requests/month says
+  nothing about **USGS/NAIP aerial** — public domain, no key, no quota, ~0.6 m. And the highest-frequency
+  use of a satellite view (*where's the pull-off, which dirt road, is that an island*) is served **better**
+  by 0.6 m summer aerial than by 10 m winter Sentinel-2. **The valuable tier is the unconstrained one.**
+- **Tier 2 is a dated observation, not a base map.** A Sentinel-2 pass from eleven days ago rendered
+  without its date foregrounded is the D3 trap in raster form. Its date is not a caption detail; it is the
+  content — which is why the phase's last open question asks whether it belongs in the drawer rather than
+  on the map at all.
+- **The swap line is content vs. chrome (D81).** Hazards, skate paths, put-ins and parking stay drawn;
+  fills, outlines and contours are what the photograph replaces. A skater who turns on imagery to check a
+  put-in must not lose the hazard pins doing it.
+- **The pairing that justifies it: imagery + N6d.** *"Park here, then 400 m on foot"* is a claim; a 0.6 m
+  photo of the pull-off, the gap in the trees and the path to the shore is the confirmation — at home, in
+  daylight, before the drive. NAIP's leaf-on summer imagery is useless for ice and ideal for access.
+
+**N5c — Hazard identity: one clustering primitive, two time windows.** 📋 Scoped 2026-07-30, unbuilt —
+see [`phase-N5c-hazard-memory.md`](./phase-N5c-hazard-memory.md); decisions **D77** (one clustering
+primitive, two windows), **D78** (recurrence is history with its denominator, admin-only until a tunable
+bar), **D79** (moderators author body features directly), **D80** (duplicates are consensus: prevent,
+pool, render, merge reversibly), plus a **D53 amendment** (supersession is a backlink, not a hiding
+mechanism) and the `shallow_bay_early_thaw` → `shallow_early_thaw` rename. **Moved out of *Waiting on a
+blocker* by a founder call**, and merged at scoping with the duplicate-corroboration ask of the same day.
+
+- **Two founder asks turned out to be one problem.** *"Which hazards existed on this lake in `'24/'25`?"*
+  and *"if three people pin the same ridge, do their confirmations split?"* are the same geometric
+  judgement at two time scales. One `clusterHazards` in `@skating/core`, two callers, two tolerances —
+  because building it twice guarantees they drift, which is the D65 four-copies lesson.
+- **The corpus gate was answered, not waited out.** Dev holds **one** hazard row and the three-season gate
+  can't fire before ~2029, so the engine ships now with thin patterns **admin-only** and the skater-facing
+  advisory dark behind a constant (D78). Nothing shows a skater a one-winter coincidence; operators watch
+  patterns form and set the bar from evidence.
+- **The duplicate half has no corpus gate and pays off in the first winter.** Splitting confirmations
+  doesn't fade hazards — there's no time-based archival and the opacity floor is deliberate — but it does
+  stop the on-ice alert escalating, and it **deletes** a `ridge_crossing`, which is the one pin that
+  expires on time alone (D64).
+- **Absorbs two entries from *Volume + calibration*:** consensus rendering of clustered same-type hazards,
+  and auto-merge of very-high-confidence dedup pairs (now reversible, on the D36 tombstone pattern).
+- **Reaches a `bodyFeature` type nothing could reach before.** Recurring volatile hazards propose
+  `shallow_early_thaw` at a raised bar, checked against N6a's depth (D68/D69) — recurrence proposes the
+  flag from observation, depth checks the proposal.
 
 **N7 — Notification pipeline, the non-push half.** *(Grouped because both are pipeline internals that
 **don't** need push credentials — worth doing while push is blocked, so the pipeline is correct and
@@ -1004,39 +1194,46 @@ Grouped by *what* is blocking, because that's what determines when it moves.
   sending domain (until which operator alerts log-and-skip). TestFlight / Play internal-testing
   distribution to the alpha crew rides on the same accounts. *First step is a founder task, not an
   external wait.*
-- **Hazard memory → automated `bodyFeatures` promotion + "potential hazard" surfacing (founder ask,
-  2026-07-27).** **N5a is what makes this possible**, and the connection is worth spelling out: today a
-  hazard is a single mutable row with no season semantics, so *"which hazards existed on this lake in
-  '24/'25?"* has no answer you can query. Once season is a derived, first-class dimension it does — and
-  across several seasons that becomes *"this lake has had a pressure ridge within ~80 m of this point in
-  3 of the last 4 winters, always between late December and February."* Two things fall out: **ranked
-  promotion suggestions**, so the pre-first-ice operator pass stops being a memory test; and
-  **body-level "potential hazard" advisories** shown before anyone reports anything this season — which
-  is exactly the window where the map is emptiest and a skater is least warned.
-  - **Do this when** there are ~**three seasons** of in-app hazard rows on at least a handful of bodies.
-    With one season, recurrence is noise dressed as insight, which is the D3 trap. Same corpus gate as
-    the decay-magnitude refit and GPS-path hazard deduction below.
-  - **Two constraints to keep the option open.** The first was **removed by the D62 second amendment
-    and is recorded here because the version it replaced would have quietly corrupted this feature**:
-    under round one a departed user's hazards were *deleted*, so recurrence would have been computed
-    over a corpus silently missing rows — a count that looks complete and isn't. Under
-    redact-don't-erase, **hazards are kept and anonymized**; only their descriptions go, and the
-    multi-season record this depends on survives a departure intact. That is the main reason the second
-    amendment matters to the roadmap and not only to the deletion flow. The second constraint stands:
-    any recurrence claim must be phrased as **history, never a prediction** (D3) — "ridges usually form
-    here" and "there is a ridge here" are different sentences, and only one of them is ours to say.
-- **Volume + calibration (buildable, but building now is speculative).** Per-body map summary cards
-  (needs report density *and* its own denormalized-summary design — sketch below); **GPS-path hazard
+- ~~**Hazard memory → automated `bodyFeatures` promotion + "potential hazard" surfacing (founder ask,
+  2026-07-27).**~~ **→ SCOPED AS N5c (2026-07-30), and the blocker was answered rather than waited out.**
+  The gate said *three seasons of in-app hazard rows*; dev holds **one**, so the gate couldn't fire
+  before ~2029. The founder call was to **build the engine now with thin patterns admin-only** (D78) —
+  which avoids the D3 trap by the gate rather than by the delay, since the trap is showing a *skater* a
+  one-winter coincidence, and nothing does that. Deferring would instead have meant three winters of rows
+  nobody looked at as a series, and a matching radius tuned from scratch in 2029. See
+  [`phase-N5c-hazard-memory.md`](./phase-N5c-hazard-memory.md).
+  - **The D62 constraint is closed, and it's worth keeping the record of why it mattered.** Under the
+    first amendment a departed user's hazards were *deleted*, so recurrence would have been computed over
+    a corpus silently missing rows — a count that looks complete and isn't. Under redact-don't-erase,
+    **hazards are kept and anonymized**; only their descriptions go, and the multi-season record survives
+    a departure intact. That is the main reason the second amendment matters to the roadmap and not only
+    to the deletion flow.
+  - **The D3 constraint stands and became D78's copy discipline**: any recurrence claim is **history,
+    never a prediction** — "ridges usually form here" and "there is a ridge here" are different sentences
+    and only one of them is ours to say. Every public advisory carries both numbers, is past-tense with a
+    reporter, and never enters the on-ice payload.
+- **Volume + calibration (buildable, but building now is speculative).** ~~Per-body map summary cards~~
+  **→ moved into N6c as Workstream E (2026-07-30, founder call)**; the density gate that held them here
+  is retired by a design rule rather than by waiting — *a body with nothing to say gets no card at all,
+  not an empty one* — so they're safe to ship into a sparse corpus. **GPS-path hazard
   deduction** (Q11 / L9 — the *legal* half cleared with the Phase 8 pivot, so what's left is path volume
-  plus an L14 privacy pass); pressure-ridge / clearest-side crowd intelligence; non-destructive
-  **consensus rendering** of clustered same-type hazards; **auto-merge** of very-high-confidence dedup
-  pairs, community "same place?" confirmations, and the re-ETL overlap scan (D36's staged half); a
+  plus an L14 privacy pass); pressure-ridge / clearest-side crowd intelligence; ~~non-destructive
+  **consensus rendering** of clustered same-type hazards~~ and ~~**auto-merge** of very-high-confidence
+  dedup pairs~~ — **both folded into N5c (2026-07-30, D80)**, since the clustering primitive N5c needs
+  across seasons is the same one they need within a season; community "same place?" confirmations and the
+  re-ETL overlap scan (D36's staged half) stay here;
+  **in-app satellite imagery** (moved here from "needs design" by N6c — the licence is settled, what's
+  left is whether reads concentrate enough for server-side tile caching to fit the free quota, plus the
+  standing Planet cost question); a
   **decay-magnitude refit** of `HAZARD_DECAY` + the `decayMultiplier` magnitudes against a real in-app
   corpus (signs are locked, numbers are tunable defaults); a dedicated bounties **geospatial** instance
   (only past the 200-scan cap); and **self-hosted ORS** for a true 90-min band (a ~$15–50/mo warm
   container — a cost/ops decision, not a technical one).
-- **Needs design before it's buildable.** The **satellite imagery layer** (the entry below still says
-  the plan needs exploring — and it needs an imagery source with usable terms); **in-app guides**;
+- **Needs design before it's buildable.** ~~The **satellite imagery layer**~~ **→ resolved by N6c
+  (2026-07-30, D75): the licence question is answered** (Copernicus Sentinel data is free/full/open with
+  attribution), the deep link ships in N6c, and what's left — imagery rendered *in* the app — moved to
+  **Volume + calibration** below, since it's now a cost/traffic call rather than a design one. Still
+  here: **in-app guides**;
   **group-skate organizing**; **rivers as named reaches** (the D4 model, deferred since Phase 1 —
   validate still-water with users first). Deliberately *not* doing: **Fitbit** as a provider, the
   **`appConfig`** runtime-tuning seam (edit-and-redeploy is the settled posture), **encoded-polyline**
@@ -1046,7 +1243,19 @@ Grouped by *what* is blocking, because that's what determines when it moves.
 
 The long-form write-ups the entries above point at — preserved verbatim, since the *why* is the point.
 
-- **Per-body summary cards on the map at appropriate zoom (founder ask, 2026-07-21).** Today the map
+- **Per-body summary cards on the map at appropriate zoom (founder ask, 2026-07-21).**
+  **✅ PROMOTED INTO N6c AS WORKSTREAM E (2026-07-30, founder call — *"it's about time we took care of
+  that"*).** Kept in full because the sketch is what N6c's workstream was written from, with three
+  changes made at that scoping: **(1)** the card carries **active report counts and types only** — no
+  recurrence / "potential hazard" line from N5c, since this surface sits closest to the map where D3
+  pressure is highest (asked and answered at N5c scoping, and recorded there as worth revisiting
+  deliberately later); **(2)** the **consensus quality** signal below is deferred to that same later
+  pass, as the other D3-sensitive half — it is N6c's open question 5; **(3)** the "do this when" density
+  trigger is **retired by a design rule instead of by waiting** — a body with nothing to say gets **no
+  card at all**, not an empty one, so the feature is harmless in a sparse corpus and simply appears on
+  the lakes people are actually using. The original text follows.
+
+  Today the map
   shows water-body polygons and you must open a lake to learn anything about it. The ask: at suitable
   zoom levels, surface a compact card/label over *unselected* bodies with the at-a-glance basics — lake
   name, recent report count, a general quality consensus, and the most important active hazard types.
@@ -1104,8 +1313,34 @@ The long-form write-ups the entries above point at — preserved verbatim, since
   (D36), AI summarization beyond weather facts (Q9), the full legal review (Q10), in-app guides,
   group-skate organizing, and Fitbit — now live in **Waiting on a blocker** above, filed under what's
   actually blocking each. Not dropped; sorted.)*
-- Satellite imagery layer toggleable in lake detail view. **NOTE: This plan still needs to be explored**
-  — and it needs an imagery source whose terms permit the use, which is its own question.
+- ~~Satellite imagery layer toggleable in lake detail view. **NOTE: This plan still needs to be explored**
+  — and it needs an imagery source whose terms permit the use, which is its own question.~~
+  **✅ EXPLORED — and the blocking question is answered (N6c, 2026-07-30, D75).** Kept as a pointer
+  because the shape of the answer is worth carrying: *"an imagery source whose terms permit the use"* had
+  been treated as an open search, and **Copernicus Sentinel data already satisfied it** — free, full and
+  open licence, reproduce/distribute/adapt with attribution. The blocker was never a missing source; it
+  was that nobody had checked the one obvious one.
+  - **What ships in N6c:** a Copernicus Browser **deep link** per body — zero cost, zero quota, no
+    account. Sentinel-2 is 10 m on a ~5-day revisit, which is enough that open water vs. black ice vs.
+    snow-covered ice is visually obvious; cloud cover is the limiter, so the link opens a ~14-day window.
+  - **The toggle this entry asked for exists, derived** (D70): `satelliteImagery: 'auto' | 'on' | 'off'`,
+    where `auto` resolves off surface area, because 10 m pixels cannot resolve a 2-hectare pond. Per-row
+    data ⇒ **the admin control needs no redeploy**; only the threshold behind `auto` is a code constant.
+  - **What's left, and where it went → [N6e](./phase-N6e-satellite-imagery.md), scoped 2026-07-31** at the
+    founder's ask (*"I want to do it ASAP"*). And the scoping pass found that **the quota binds only half
+    of it (D84)**: the 10,000-requests/month ceiling is a *Sentinel-2* constraint and says nothing about
+    **USGS/NAIP aerial imagery**, which is **public domain, no key, no quota, 0.6 m**. The
+    highest-frequency use of a satellite view — read the landscape, find the pull-off, check the
+    put-in — is served *better* by 0.6 m summer aerial than by 10 m winter Sentinel-2, **and** it's the
+    unconstrained tier. So the toggle ships on Tier 1 now; Tier 2 (dated Sentinel-2 ice imagery, with
+    server-side tile caching the open licence permits) keeps the traffic trigger under **Volume +
+    calibration**.
+  - **The toggle's semantics are settled (D81):** satellite is the map's **only** layer switch, it
+    replaces the *base map* rather than the content, and hazards, skate paths and access points stay drawn
+    in both modes. Bathymetric contours go with the base map — they're cartographic furniture, and they
+    have no toggle of their own.
+  - **Planet** stays deferred as a *cost* decision (D75): their public catalogue is the same free data,
+    and only PlanetScope (~3 m, near-daily) is new. Full numbers in `05-accounts-and-credentials.md`.
 - ~~**Photo-orphan GC cron (cleanup/polish).**~~ **→ folded into N3 (2026-07-27).** The Phase 2 photo
   pipeline uploads before `reports.create`, so failed/abandoned/partial submits can strand storage. The
   client reclaims best-effort (`photos.remove`/`removeBlob`, incl. uploads that resolve after the form

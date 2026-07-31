@@ -226,6 +226,108 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
   has *done*, to support the skater's own judgment. **Never** used to assert ice safety.
 - **Attribution:** show a small "Weather: Open-Meteo" credit wherever the strip appears (legal checklist
   **L13** — same class as "Powered by Strava" / "© OpenStreetMap contributors").
+- **Also Open-Meteo, no account:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM,
+  batched coordinates) — N6c's lake-elevation pass, ~1,200 requests for all 116,070 centroids.
+
+### NWS alerts — a second provider that never touches a calculation (D74, N6c)
+
+- Provider: **`api.weather.gov`** — free, **no account and no API key**, US-only. Requires a `User-Agent`
+  header identifying the app; rate limits are unpublished (retry a 429 after ~5 s), and their docs warn a
+  key **may** be required in future.
+- Use: **official alerts only** — winter-storm, ice-storm and wind-chill warnings from the local forecast
+  office, rendered as a labelled, attributed advisory strip on the lake drawer.
+- **The boundary is the decision (D74): Open-Meteo computes, NWS informs.** Open-Meteo stays the single
+  source for anything feeding a calculation, because the D56 decay math depends on one deterministic,
+  re-fetchable input — a multiplier you cannot reproduce is one you cannot debug or refit. **Never blend
+  the two.**
+- Polled **per state on a cron**, not per body per view: alerts are issued over counties/zones, so one
+  state fetch serves every body in it and read cost stays independent of corpus size.
+- **Coverage gap:** US-only. A Québec expansion needs Environment Canada — a different API on different
+  terms.
+- *Considered and rejected:* **MerrySky**, a frontend over Pirate Weather and Open-Meteo — the same data
+  we already pull, with no API to buy. Recorded because it looks like a third source and isn't one.
+
+## Satellite imagery — Copernicus (D75, N6c)
+
+- Provider: **Copernicus Data Space Ecosystem**. **Copernicus Sentinel data is under the free, full and
+  open Copernicus licence** — reproduce, distribute and adapt, **with attribution**. That licence is what
+  retired the long-deferred satellite-layer blocker; the open question was never a missing source.
+- **Ships in N6c: a deep link** to `browser.dataspace.copernicus.eu` per body (centroid, zoom, Sentinel-2
+  L2A true colour, ~14-day window). **No account, no quota, no key.** ⚠ The query-param shape is the one
+  URL format we don't control — verify against the live browser and keep it behind a single tested
+  function.
+- **Imagery rendered in-app → [N6e](./phase-N6e-satellite-imagery.md) (D84, 2026-07-31)**, and the quota
+  binds only *one* of two tiers. Sentinel-2 via their Sentinel Hub–compatible OGC/Process APIs is
+  **10,000 requests + 10,000 processing units/month, 300/min**; a tile view is ~10–20 requests, so it only
+  works with **server-side tile caching** (which the open licence permits — a body needs re-fetching once
+  per ~5-day revisit). Cost/traffic call, not a design one. **The other tier has no quota at all** — see
+  the USGS/NAIP entry below, which is what actually ships the toggle.
+- **Attribution requirement** joins the L13 family alongside Open-Meteo / Strava / OpenStreetMap.
+- **Planet** is evaluated and deferred: their public catalogue is the same free Sentinel/Landsat/HLS data,
+  and only **PlanetScope** (~3 m, near-daily) is genuinely new. Same Sentinel Hub API surface, so choosing
+  Copernicus now is not a lock-out. Numbers + triggers in `05-accounts-and-credentials.md`.
+
+## Aerial imagery — USGS / NAIP (D84, N6e)
+
+The other half of D84's two-tier split, and **the one that ships the satellite toggle**.
+
+- Provider: **USGS, The National Map** — `basemap.nationalmap.gov`'s `USGSImageryOnly` tile service,
+  serving NAIP-derived aerial orthoimagery (~0.6 m from 2018 onward) for the conterminous US.
+- **Public domain.** NAIP is USDA Farm Service Agency imagery and USGS distributes it as public-domain
+  federal work: **no key, no quota, no licence review.** The three things that deferred in-app imagery are
+  all absent here. It is the same imagery layer OSM editors offer for tracing.
+- **XYZ-compatible tiles**, so it drops into a MapLibre `raster` source directly — no new client library.
+- ⚠ **Confirm at build:** the ArcGIS endpoint's axis order is `/tile/{z}/{y}/{x}` — **y before x**, a
+  classic silent failure that returns tiles, just the wrong ones. Also the service's stated usage
+  expectations and its behaviour past native max zoom. One tested URL function, same discipline as the
+  Copernicus link.
+- **What it's for, and what it isn't.** Leaf-on summer imagery refreshed every ~2–3 years: **useless for
+  reading ice, ideal for reading access** — roads, lots, trailheads and shorelines don't change between
+  July and January. It answers *where's the pull-off*, which pairs directly with
+  [N6d](./phase-N6d-lake-access-points.md)'s parking and approach data. Recent-ice questions stay with
+  Sentinel-2 above.
+- **Caching:** none in v1 — point MapLibre at it and measure. Public-domain imagery may be freely cached,
+  so a proxy is available whenever load or latency justifies it, and **it's the same caching layer
+  Sentinel-2 would need** — which is the argument for building it once, later, rather than twice.
+- *(Considered and rejected: **Esri World Imagery** — terms restrict use off their platform; **Mapbox /
+  Maxar** — excellent and metered per tile; **state orthoimagery** (VT/NH/MA all publish it) — higher
+  resolution, but five integrations with five sets of terms for a marginal gain over 0.6 m. Revisit state
+  imagery only if NAIP proves inadequate for the access use case.)*
+
+## Trail routing — OpenRouteService `foot-hiking` (D87, N6d)
+
+**Not a new provider.** Phase 4's drive-time isochrones already run on OpenRouteService (§6 of
+[`05-accounts-and-credentials.md`](./05-accounts-and-credentials.md)); the `foot-hiking` profile is the
+**same account, key and client**.
+
+- **What it answers:** the founder's *"it could be 800 m as the crow flies but a full kilometer of weaving
+  trail."* ORS routes over the OSM `highway=path` / `route=hiking` ways N6d's second `osmium` pass is
+  already extracting, so the routed distance and the trail data agree by construction.
+- **Elevation gain comes with it.** With `elevation: true` the Directions response carries **`ascent` /
+  `descent` in metres** — the second half of the ask, delivered by a request parameter rather than a
+  second integration. ⚠ Confirm we read the **one-way** figure (parking → put-in); there are known
+  oddities on out-and-back routes, and reporting a round trip would silently double it.
+- **Quota is a non-issue because of *when* we call it:** at **ETL time, once per put-in**, cached on the
+  row — never from a request path. Even a full corpus pass is a rate-limited background job.
+- **Fallback ladder:** routed distance + ascent → straight-line **explicitly flagged** (it under-reports,
+  so the flag is the difference between *"about 900 m on foot"* and *"at least 900 m"*) → nothing, for the
+  majority of bodies with no parking area to route from.
+- *(Considered: **GraphHopper** — comparable hiking profile, but a second vendor and key for no capability
+  we lack; **Valhalla** self-hosted — most control, and a server to run; **Mapbox Directions** — `walking`
+  only, tuned for sidewalks; **AllTrails / Gaia / Strava** — trail *content* products with licensed
+  geometry and no general point-to-point routing API.)*
+
+## Windy — a link, not an integration (D75/D76, N6c)
+
+- **No API purchase.** Windy's Map Forecast API is *"a library based on Leaflet 1.4.x"* and tightly coupled
+  to it; **we render MapLibre**, so their animated layers cannot be overlaid on our map — €990/year would
+  buy a second map engine, not a layer. Their free tiers are unusable regardless (map API is dev-only; the
+  point API returns deliberately shuffled data), and the point API duplicates Open-Meteo anyway.
+- **What we do instead:** open `windy.com/?<lat>,<lng>,<zoom>`. On mobile that goes through
+  **`expo-web-browser`** (D76), so the skater gets Windy's animation over our app with a Done button —
+  the same outcome for €0.
+- **Revisit only if** we want animated weather inside our own canvas *and* a MapLibre-compatible path
+  exists. More money does not currently buy a different answer.
 
 ### "Weather since report" spec (derived summary)
 Computed over the window **[skate time → now]** from Open-Meteo **hourly** data,
