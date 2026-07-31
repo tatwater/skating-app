@@ -133,21 +133,117 @@ describe('waterBodies.setDepth (D68 rung 1)', () => {
     expect(row?.meanDepthSource).toBeUndefined();
   });
 
-  test('clearing a value clears its source too — never provenance without a number', async () => {
+  test('an UNTOUCHED field keeps its value and its rung — no provenance laundering', async () => {
+    // The review regression (2026-07-31). The editor pre-filled every field and the mutation stamped
+    // `operator` on everything it received, so saving a max you did know relabelled the imported mean
+    // beside it as a survey reading: the public caption lost its `~` and the ETL could never fix it.
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/1', {
+      meanDepthM: 4,
+      meanDepthSource: 'hydrolakes_modeled' as const,
+    });
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: body, maxDepthM: 18 });
+    const row = await t.run((ctx) => ctx.db.get(body));
+    expect(row?.maxDepthM).toBe(18);
+    expect(row?.maxDepthSource).toBe('operator');
+    expect(row?.meanDepthM).toBe(4); // untouched…
+    expect(row?.meanDepthSource).toBe('hydrolakes_modeled'); // …and still a model's number
+  });
+
+  test('a save that touches nothing writes nothing at all', async () => {
     const t = convexTest(schema, modules);
     const body = await seedBody(t, 'way/1', {
       meanDepthM: 4,
       meanDepthSource: 'lagos_us' as const,
-      maxDepthM: 18,
-      maxDepthSource: 'globathy' as const,
     });
     const mod = await seedUser(t, 'mod', 'moderator');
     await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: body });
     const row = await t.run((ctx) => ctx.db.get(body));
+    expect(row?.meanDepthM).toBe(4);
+    expect(row?.meanDepthSource).toBe('lagos_us');
+    const audits = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(audits).toHaveLength(0); // nothing happened, so nothing is logged
+  });
+
+  test('an explicit `null` rejects a value and leaves the operator rung as a tombstone', async () => {
+    // "A human read HydroLAKES' 14 m and says it's wrong" is a durable claim about the lake, so it has
+    // to outlive the next import — which means the rung stays even though the number goes.
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/1', {
+      meanDepthM: 14,
+      meanDepthSource: 'hydrolakes_modeled' as const,
+    });
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: body, meanDepthM: null });
+    const row = await t.run((ctx) => ctx.db.get(body));
     expect(row?.meanDepthM).toBeUndefined();
-    expect(row?.meanDepthSource).toBeUndefined();
-    expect(row?.maxDepthM).toBeUndefined();
-    expect(row?.maxDepthSource).toBeUndefined();
+    expect(row?.meanDepthSource).toBe('operator');
+  });
+
+  test('the tombstone keeps the import out, and `clearDepthOverride` lets it back in', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/1', {
+      meanDepthM: 14,
+      meanDepthSource: 'hydrolakes_modeled' as const,
+    });
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: body, meanDepthM: null });
+
+    const offer = {
+      depths: [
+        {
+          source: 'osm' as const,
+          externalId: 'way/1',
+          meanDepthM: 14,
+          meanDepthSource: 'hydrolakes_modeled' as const,
+        },
+      ],
+    };
+    const held = await t.mutation(internal.waterBodies.importDepths, offer);
+    expect(held.operatorHeld).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(body)))?.meanDepthM).toBeUndefined();
+
+    // Reversible, which is what makes the rejection safe to make in the first place.
+    await mod.as.mutation(api.waterBodies.clearDepthOverride, {
+      waterBodyId: body,
+      measurements: ['mean'],
+    });
+    expect((await t.run((ctx) => ctx.db.get(body)))?.meanDepthSource).toBeUndefined();
+    await t.mutation(internal.waterBodies.importDepths, offer);
+    expect((await t.run((ctx) => ctx.db.get(body)))?.meanDepthM).toBe(14);
+  });
+
+  test('`clearDepthOverride` never touches an automated rung', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/1', {
+      maxDepthM: 20,
+      maxDepthSource: 'globathy' as const,
+    });
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.clearDepthOverride, {
+      waterBodyId: body,
+      measurements: ['mean', 'max'],
+    });
+    const row = await t.run((ctx) => ctx.db.get(body));
+    expect(row?.maxDepthM).toBe(20); // the thing released is the override, not the number
+    expect(row?.maxDepthSource).toBe('globathy');
+  });
+
+  test('the audit row carries the prior values, not just the new ones', async () => {
+    // A log that records only what a field became can answer "who changed this" and never "from what".
+    const t = convexTest(schema, modules);
+    const body = await seedBody(t, 'way/1', {
+      meanDepthM: 4,
+      meanDepthSource: 'lagos_us' as const,
+    });
+    const mod = await seedUser(t, 'mod', 'moderator');
+    await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: body, meanDepthM: 2 });
+    const audit = (await t.run((ctx) => ctx.db.query('moderationActions').collect()))[0];
+    expect(audit?.metadata).toMatchObject({
+      meanDepthM: 2,
+      prev: { meanDepthM: 4, meanDepthSource: 'lagos_us' },
+    });
   });
 
   test('refuses a non-positive or implausible depth', async () => {
@@ -192,7 +288,7 @@ describe('waterBodies.importDepths (the D68 ladder, enforced at the write bounda
         },
       ],
     });
-    expect(result).toEqual({ updated: 1, unmatched: 0, skipped: 0 });
+    expect(result).toMatchObject({ updated: 1, unmatched: 0, skipped: 0 });
     const row = await t.run((ctx) => ctx.db.get(body));
     expect(row?.meanDepthM).toBe(3.2);
     expect(row?.maxDepthSource).toBe('globathy');
@@ -294,7 +390,7 @@ describe('waterBodies.importDepths (the D68 ladder, enforced at the write bounda
         },
       ],
     });
-    expect(result).toEqual({ updated: 0, unmatched: 1, skipped: 0 });
+    expect(result).toMatchObject({ updated: 0, unmatched: 1, skipped: 0 });
   });
 
   test('a canonical re-import leaves depth untouched (importCanonical patches a field list)', async () => {
@@ -505,7 +601,8 @@ describe('waterBodies.setDepth — the source note (D68 amendment)', () => {
       depthSourceNote: 'VT DEC chart, 2012',
     });
     const mod = await seedUser(t, 'mod', 'moderator');
-    await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: body });
+    // Rejecting the last operator number leaves a tombstone but no claim for the note to substantiate.
+    await mod.as.mutation(api.waterBodies.setDepth, { waterBodyId: body, maxDepthM: null });
     expect((await t.run((ctx) => ctx.db.get(body)))?.depthSourceNote).toBeUndefined();
   });
 
