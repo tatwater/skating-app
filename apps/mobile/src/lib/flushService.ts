@@ -197,6 +197,9 @@ function hazardEffects(): HazardFlushEffects {
         ...(input.description !== undefined ? { description: input.description } : {}),
         photoIds: input.photoIds as Id<'photos'>[],
         capturedAt: input.capturedAt,
+        ...(input.dismissedDuplicateOf !== undefined
+          ? { dismissedDuplicateOf: input.dismissedDuplicateOf as Id<'hazards'> }
+          : {}),
       }),
     confirmHazard: async (input) => {
       await convex.mutation(api.hazardConfirmations.confirm, {

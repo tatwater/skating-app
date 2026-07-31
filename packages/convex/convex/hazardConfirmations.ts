@@ -145,13 +145,20 @@ export const confirm = mutation({
  * offline replay — never re-awards. Recomputes badges on award (the confirm count can push `Hazard
  * Spotter` over its line when thumbs are also present).
  *
- * **The count is the cluster's, and every member's reporter is credited** (D80). Duplicates were
+ * **The count is the cluster's, and every distinct reporter is credited once** (D80). Duplicates were
  * splitting this the same way they split the alert escalation: three people confirm a real ridge across
  * three pins, no single pin reaches the bar, and nobody is credited for a hazard the community plainly
  * corroborated. Reading the cluster fixes both halves at once — the bar is met by what was actually
  * said, and it is met for each person who independently drew the thing, not only for whoever happened
  * to file the pin that got the votes.
  *
+ * **Once per person per cluster, not once per row**, which is the difference between crediting a
+ * sighting and paying for pins. One skater who marks the same ridge twice authored two members of one
+ * cluster; awarding per row would hand them the reputation twice for one observation, and the points
+ * feed the D50 trust class. So the award is keyed to the **earliest member that person authored** —
+ * earliest because the canonical order is stable, which keeps the ledger row idempotent as the cluster
+ * grows. Two *different* people each drawing the ridge is still two awards: that is two independent
+ * sightings, and it is the whole reason a cluster is better evidence than a pin.
  */
 async function maybeAwardHazardCorroboration(
   ctx: MutationCtx,
@@ -169,28 +176,45 @@ async function maybeAwardHazardCorroboration(
     .map((id) => byId.get(id) ?? (id === hazard._id ? hazard : undefined))
     .filter((h): h is Doc<'hazards'> => h !== undefined);
 
+  // One entry per author, holding every member they drew — `members` is in canonical order (earliest
+  // sighting first), so the first id per author is stable as the cluster grows.
+  const byAuthor = new Map<Id<'profiles'>, Id<'hazards'>[]>();
   for (const member of members) {
+    const owned = byAuthor.get(member.createdByUserId);
+    if (owned) owned.push(member._id);
+    else byAuthor.set(member.createdByUserId, [member._id]);
+  }
+
+  for (const [authorId, ownedIds] of byAuthor) {
     // No per-member re-check of the bar, and that is a fact about `clusterConsensus` rather than a
     // shortcut: every member's author is in the witness set by construction, so every member's count
     // is `witnesses - 1`. The number is uniform across a cluster, and one member clearing the bar
     // means all of them have.
     //
-    // Keyed on the member's **own** id, so the idempotency stays per pin and a reporter cannot farm
-    // the award by drawing the same ridge twice — their second pin joins the same cluster, whose
-    // witness count already excludes them.
-    const already = await ctx.db
-      .query('pointEvents')
-      .withIndex('by_user', (q) => q.eq('userId', member.createdByUserId))
-      .filter((q) => q.eq(q.field('reason'), 'hazard_corroborated'))
-      .filter((q) => q.eq(q.field('refId'), member._id))
-      .first();
+    // The idempotency check spans **all** of this author's members, not just the one being awarded.
+    // Keying it to a single row would re-award whenever an earlier pin of theirs joined the cluster
+    // later — a backdated `capturedAt` on an offline flush is enough — and re-awarding on cluster
+    // *growth* is the same defect as awarding per row, arriving more slowly.
+    let already = false;
+    for (const ownedId of ownedIds) {
+      const prior = await ctx.db
+        .query('pointEvents')
+        .withIndex('by_user', (q) => q.eq('userId', authorId))
+        .filter((q) => q.eq(q.field('reason'), 'hazard_corroborated'))
+        .filter((q) => q.eq(q.field('refId'), ownedId))
+        .first();
+      if (prior) {
+        already = true;
+        break;
+      }
+    }
     if (already) continue;
     await awardPointEvent(ctx, {
-      userId: member.createdByUserId,
+      userId: authorId,
       reason: 'hazard_corroborated',
-      refId: member._id,
+      refId: ownedIds[0] as Id<'hazards'>,
     });
-    await checkAndAwardBadges(ctx, member.createdByUserId);
+    await checkAndAwardBadges(ctx, authorId);
   }
 }
 

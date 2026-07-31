@@ -874,6 +874,12 @@ export const listBundleCandidates = query({
         .filter((h) => h.moderationStatus === 'visible')
         // No supersession filter (D53 amendment): a promoted pin is still a sighting this author made on
         // this skate, and attaching it to the report they are writing about that skate is exactly right.
+        //
+        // A **merge tombstone is filtered out**, though, and the two are not in tension. Supersession
+        // records where a feature came from and changes nothing about the pin; a merge says this pin is
+        // represented by another one, so offering it here would pre-check a hazard that isn't on the map
+        // — and if the survivor is this author's own, it is already in this list, one row up.
+        .filter((h) => h.mergedIntoHazardId === undefined)
         .filter((h) => h.firstReportedAt >= from && h.firstReportedAt <= skateEndTime)
         .map((h) => toView(h, now))
         .sort((a, b) => a.firstReportedAt - b.firstReportedAt)
@@ -903,6 +909,11 @@ export async function attachHazardsToReport(
     if (hazard.createdByUserId !== authorId) continue;
     if (hazard.waterBodyId !== waterBodyId) continue;
     if (hazard.originReportId !== undefined) continue;
+    // A tombstone is represented by its survivor, so binding one to a report would put a pin the map
+    // does not draw into `hazardIdsCreated`. `listBundleCandidates` already filters these, but a client
+    // holding a list from before an auto-merge would still send the id, and the check belongs on the
+    // write anyway — the query is a suggestion, this is the record.
+    if (hazard.mergedIntoHazardId !== undefined) continue;
     // A moderator-hidden pin must not be launderable back into visibility by bundling it into a
     // report (D3) — skip anything not currently user-visible. Since the D53 amendment that gate is
     // moderation and nothing else, which is precisely what this guard was always for.

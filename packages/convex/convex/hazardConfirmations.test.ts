@@ -839,6 +839,50 @@ describe('corroboration credit across a cluster', () => {
     expect(samCredits[0]?.refId).not.toBe(first);
   });
 
+  // Reputation is paid for *sightings*, not for pins. One skater who marks the same ridge twice
+  // authored two members of one cluster, and awarding per row would hand them the credit twice for one
+  // observation — which feeds the D50 trust class, so it is reputation inflation with a visible ring
+  // on the end of it.
+  test('pays one reporter once, however many of the cluster’s pins are theirs', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const waterBodyId = await seedBody(t);
+    const first = await seedHazard(alex, waterBodyId);
+    // Alex again, 30 m east: same ridge, second pin, one person.
+    await alex.as.mutation(api.hazards.create, {
+      waterBodyId,
+      type: 'open_water' as const,
+      geometryKind: 'point_radius' as const,
+      geometry: eastOf(30),
+      radiusMeters: 40,
+    });
+    for (const who of ['kim', 'dana']) {
+      const peer = await seedUser(t, who);
+      await peer.as.mutation(api.hazardConfirmations.confirm, {
+        hazardId: first,
+        verdict: 'still_there',
+        ...VIA,
+      });
+    }
+
+    // Two peers cleared the bar for the cluster, and alex is credited for the ridge — once.
+    expect(await creditsFor(t, alex.id)).toHaveLength(1);
+  });
+
+  // The other half of the same rule: two *different* people drawing the ridge is two independent
+  // sightings, and paying both is the entire reason a cluster is better evidence than a pin.
+  test('still pays two different reporters, because that is two sightings', async () => {
+    const { t, alex, sam, first } = await clusteredPair();
+    const kim = await seedUser(t, 'kim');
+    await kim.as.mutation(api.hazardConfirmations.confirm, {
+      hazardId: first,
+      verdict: 'still_there',
+      ...VIA,
+    });
+    expect(await creditsFor(t, alex.id)).toHaveLength(1);
+    expect(await creditsFor(t, sam.id)).toHaveLength(1);
+  });
+
   test('never awards twice, however many more confirmations arrive', async () => {
     const { t, alex, first } = await clusteredPair();
     for (const who of ['kim', 'dana', 'reese']) {

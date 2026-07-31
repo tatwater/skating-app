@@ -507,6 +507,10 @@ export function HazardCapture() {
           // Hand over the *checkpointed* photos: any blob/row already uploaded above carries its id, so
           // the flush resumes from there instead of re-uploading from disk and orphaning the first set.
           photos: photosRef.current,
+          // And the dismissal, which is the decision most likely to be made offline and the one that
+          // must not be lost: without it the flush would hand this pin to auto-merge with nothing
+          // recording that the skater already looked at the other one and said it was different.
+          ...(dismissed ? { dismissedDuplicateOf: dismissed } : {}),
         }),
       );
       // The queue owns the files now — reset draft state WITHOUT freeing them.

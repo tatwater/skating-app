@@ -1067,3 +1067,70 @@ out, in the code that *uses* them, and every one of them was a documented claim 
 **Still not asserted:** the one-tap nudge wiring on either client. The pure candidate finder is covered
 in `hazardDuplicate.test.ts`, but neither client has a form harness, so that path is reviewed rather
 than tested — which is the standing state of client UI in this repo, not a gap this phase opened.
+
+---
+
+## 17. What Greptile found (2026-07-31)
+
+Three findings, all real, and they share one shape: **auto-merge was wired into `hazards.create` and
+nowhere else.** §15.6 recorded the decision to merge *at create*, in the same mutation, and that
+reasoning was right — but "create" turned out to name one code path rather than the event, and the
+other two ways a hazard enters the system were each wrong in their own way.
+
+### 17.1 The offline queue dropped the one field that exists to be remembered
+
+`dismissedDuplicateOf` rides a `hazards.create` call, and `QueuedHazard` never carried it. So a
+skater who tapped *"no, this is a different hazard"* and then lost signal had their answer discarded
+at the queue boundary: the pin flushed an hour later without it and was auto-merged into the very
+hazard they had looked at and rejected.
+
+That is the worst version of this defect, because **the nudge fires hardest exactly where there is no
+signal** — two skaters, one ridge, both flagging it — so the dismissal is most likely to be *made*
+offline and, without this, most likely to be lost. The field now travels the same way `capturedAt` and
+a confirmation's `observedAt` do, on the standing rule that what a skater decided on the ice survives
+the round trip unchanged.
+
+### 17.2 The report path created hazards without merging them
+
+`reports.create` calls `insertHazard` directly for the in-report authoring path (D51), so a hazard
+drawn inside a report skipped auto-merge entirely — which made the report form *the way to file a
+duplicate that never collapses.* A hazard drawn in a report is a sighting like any other, and the
+state auto-merge exists to remove does not care which form produced it.
+
+Two details the fix had to get right, both of which only exist because the report path writes several
+hazards at once:
+
+- **The report records the survivor,** not the row it just wrote, so `hazardIdsCreated` can never point
+  at a tombstone.
+- **And dedupes,** because two hazards drawn in one report can be judged the same thing — in which case
+  the report created one hazard and should say so rather than listing the survivor twice.
+
+### 17.3 Reputation was paid per pin, not per sighting
+
+Greptile's P1, and the one with a consequence outside the hazard system. Pooling made the corroboration
+bar cluster-wide, and the award loop then ran once per *member* — so one skater who marked the same
+ridge twice was credited twice for one observation, at four points a time, feeding the D50 trust class
+and the ring that renders from it.
+
+The credit is now keyed to the **earliest member each author drew**, once per person per cluster.
+Earliest because the canonical order is stable, and the idempotency check spans *all* of that author's
+members rather than the one being awarded — otherwise an earlier pin joining the cluster later (a
+backdated `capturedAt` on an offline flush is enough) would re-award, which is the same defect arriving
+more slowly. Two *different* people each drawing the ridge is still two awards: that is two independent
+sightings, and it is the entire reason a cluster is better evidence than a pin.
+
+### 17.4 One more, found while confirming 17.2
+
+`listBundleCandidates` had no merge filter, so the D55 auto-bundle offered **merge tombstones** as
+"your hazards from this skate" — pre-checked, in the form whose job is to tidy them up, and where the
+survivor is the author's own it sat one row above its own tombstone. `attachHazardsToReport` accepted
+them too. Both filter now, on the split the rest of the phase draws: supersession records where a
+feature came from and hides nothing, a merge says *this pin is represented by another one*.
+
+### 17.5 The lesson
+
+Three of these four are the same missed question — *what are all the ways a hazard is created?* — and
+the fourth is *what are all the ways one is offered?* The phase asked that question carefully about
+**readers** of `promotedToFeatureId` (§8.2 warns that the diff is every reader, and §15.5 found two more
+it missed) and never asked the mirrored question about **writers** of a hazard row. Worth carrying into
+the second PR, where the recurrence job becomes a third writer of hazard-shaped state.

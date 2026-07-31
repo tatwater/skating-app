@@ -629,6 +629,58 @@ describe('hazards.listBundleCandidates (D55)', () => {
     });
     expect(candidates).toHaveLength(0);
   });
+
+  // A merge tombstone is represented by its survivor, so offering it here would pre-check a pin that
+  // isn't on the map — and where the survivor is the author's own, it is already in this list one row
+  // up, so they would see two entries for one ridge in the form that exists to tidy them up.
+  test('never offers a pin that has been folded into another', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const first = await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, {
+        geometry: { type: 'Point' as const, coordinates: [0.5 + 5 / 111_320, 0.5] },
+      }),
+    );
+
+    const candidates = await author.as.query(api.hazards.listBundleCandidates, {
+      waterBodyId,
+      skateEndTime: Date.now(),
+    });
+    expect(candidates.map((c) => c._id)).toEqual([first]);
+  });
+
+  // The query is a suggestion; the write is the record. A client holding a list from before the merge
+  // would still send the stale id, so the guard has to be on the attach as well.
+  test('refuses to bind a tombstone to a report even when asked directly', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    await author.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await author.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, {
+        geometry: { type: 'Point' as const, coordinates: [0.5 + 5 / 111_320, 0.5] },
+      }),
+    );
+    const loser = await t.run(async (ctx) =>
+      (await ctx.db.query('hazards').collect()).find((h) => h.mergedIntoHazardId !== undefined),
+    );
+
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId,
+      skateEndTime: Date.now(),
+      attachHazardIds: [loser?._id as Id<'hazards'>],
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.hazardIdsCreated).toEqual([]);
+    // And the tombstone is left exactly as it was — refusing to bundle it is not the same as editing
+    // it. (`t.run` serialises an absent field as `null` on the way out, hence the loose check.)
+    expect(
+      await t.run(async (ctx) => (await ctx.db.get(loser?._id as Id<'hazards'>))?.originReportId),
+    ).toBeFalsy();
+  });
 });
 
 describe('reports.create with hazards', () => {
@@ -659,6 +711,61 @@ describe('reports.create with hazards', () => {
     const hazard = await t.run((ctx) => ctx.db.get(createdId));
     expect(hazard?.originReportId).toBe(reportId);
     expect(hazard?.type).toBe('pressure_ridge');
+  });
+
+  // The report form is another way to draw a hazard, not another kind of hazard — so a pin filed this
+  // way collapses into an existing duplicate exactly as a standalone one does. Leaving auto-merge off
+  // this path would have made the report form the way to file a duplicate that never collapses.
+  test('folds an in-report hazard into an existing duplicate, like any other', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const standing = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+
+    const reportId = await sam.as.mutation(api.reports.create, {
+      waterBodyId,
+      skateEndTime: Date.now(),
+      hazards: [
+        {
+          type: 'open_water' as const,
+          geometryKind: 'point_radius' as const,
+          geometry: { type: 'Point' as const, coordinates: [0.5 + 5 / 111_320, 0.5] },
+          radiusMeters: 40,
+        },
+      ],
+    });
+
+    // The report records the **survivor**, never the tombstone it just wrote — otherwise the report
+    // would link a pin the map does not draw.
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.hazardIdsCreated).toEqual([standing]);
+    const listed = await sam.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed.map((h) => h._id)).toEqual([standing]);
+  });
+
+  test('a report that draws one ridge twice created one hazard, and says so', async () => {
+    const t = harness();
+    const author = await seedUser(t, 'author');
+    const waterBodyId = await seedBody(t);
+    const at = (m: number) => ({ type: 'Point' as const, coordinates: [0.5 + m / 111_320, 0.5] });
+    const hazard = (m: number) => ({
+      type: 'open_water' as const,
+      geometryKind: 'point_radius' as const,
+      geometry: at(m),
+      radiusMeters: 40,
+    });
+
+    const reportId = await author.as.mutation(api.reports.create, {
+      waterBodyId,
+      skateEndTime: Date.now(),
+      hazards: [hazard(0), hazard(5)],
+    });
+
+    // Deduped: two rows went in, one survivor came out, and listing it twice would double-count the
+    // report's contribution for no reason a reader could see.
+    const report = await t.run((ctx) => ctx.db.get(reportId));
+    expect(report?.hazardIdsCreated).toHaveLength(1);
   });
 
   test("bundles the author's standalone hazards into the report (D55)", async () => {

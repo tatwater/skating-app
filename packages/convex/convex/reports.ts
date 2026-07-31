@@ -74,6 +74,7 @@ import {
 import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
 import { bumpContributionCount } from './lib/contributionCounts';
+import { tryAutoMerge } from './lib/hazardMerge';
 import { isListed } from './lib/listing';
 import { assertOwnedPhotos } from './lib/photoAccess';
 import { getViewableReport, loadBlockedAuthorIds } from './lib/reportVisibility';
@@ -277,11 +278,25 @@ export const create = mutation({
     //  - `attachHazardIds`: the author's own standalone on-ice pins, bundled in after the fact (D55).
     // Created after the report so each hazard carries `originReportId` from birth — one write order,
     // no back-patching, and the two collections stay consistent inside a single transaction.
+    // Auto-merge runs here too (N5c / D80), for the same reason it runs inside `hazards.create`: a
+    // hazard drawn in a report is a sighting like any other, and the state this mechanism exists to
+    // remove — two pins on the map for one ridge — does not care which form produced them. Leaving it
+    // out would have made the *report* path the way to file a duplicate that never collapses.
+    //
+    // The **survivor** is recorded rather than the row just written, so `hazardIdsCreated` never points
+    // at a tombstone; and it is deduped, because two hazards drawn in one report can be judged the same
+    // thing, in which case the report created one hazard and should say so.
     const createdHazardIds: Id<'hazards'>[] = [];
     for (const hazard of args.hazards ?? []) {
-      createdHazardIds.push(
-        await insertHazard(ctx, { ...hazard, waterBodyId: body._id }, profile._id, now, reportId),
+      const hazardId = await insertHazard(
+        ctx,
+        { ...hazard, waterBodyId: body._id },
+        profile._id,
+        now,
+        reportId,
       );
+      const { survivorId } = await tryAutoMerge(ctx, hazardId);
+      if (!createdHazardIds.includes(survivorId)) createdHazardIds.push(survivorId);
     }
     const bundledHazardIds = await attachHazardsToReport(
       ctx,
