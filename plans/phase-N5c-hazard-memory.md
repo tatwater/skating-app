@@ -1134,3 +1134,31 @@ the fourth is *what are all the ways one is offered?* The phase asked that quest
 **readers** of `promotedToFeatureId` (§8.2 warns that the diff is every reader, and §15.5 found two more
 it missed) and never asked the mirrored question about **writers** of a hazard row. Worth carrying into
 the second PR, where the recurrence job becomes a third writer of hazard-shaped state.
+
+### 17.6 The second pass: a dismissal that outlived its draft
+
+Greptile again, on the fix for §17.1 rather than on the original code — and right.
+
+`dismissedDuplicateOf` was carried into the queue correctly, but **nothing cleared it afterwards**.
+Mobile runs the whole capture session on one mounted component, so after filing a pin with a dismissal
+the state stayed set, and the *next* capture — a different hazard, possibly a different type, possibly
+metres from a genuine duplicate — took the `dismissed === null` branch and skipped duplicate detection
+entirely, then sent the stale id to the server to suppress a merge nobody had declined. A field added
+to stop the machine overruling a skater had become a way to silently disable the check for everything
+that followed it.
+
+Cleared now in `resetDraftState` (which every exit already funnels through) and on **retype**, because
+matching is per type family: the pin a skater ruled out may not even be a candidate for what they are
+drawing now, so re-asking is one tap and carrying the exclusion is a silent no.
+
+Web was safe, but only **by accident of its caller** — `WaterBodyDetail` mounts the form conditionally,
+so closing it unmounts and takes the state with it. That is a property of one call site, not of the
+component: the sibling `ReportForm` one line above stays mounted behind an `open` prop, and moving the
+hazard form to match would have reintroduced the bug silently. Both exits now go through a shared
+`clearDraft`, and the reasoning is written where someone would change it.
+
+**Twice now the defect has been in the nudge's client state** — the two-tap dismissal in §16.5, this in
+§17.6 — and both times in the one surface this repo does not test. The lever, if a third appears, is to
+lift the nudge's state into a pure reducer in `@skating/core` that both clients drive, the way
+`hazardDraft` already works. Not done here: it is a refactor of shipped authoring flows, and the second
+PR is a better place for it than the tail of this one.

@@ -577,6 +577,30 @@ export function HazardForm({
     };
   }, [setHazardDropMode, setHazardDraft, setType, setHazardShoreTaps]);
 
+  /**
+   * Everything the finished draft owned, including the nudge state.
+   *
+   * **The nudge state is the part that matters, and today it is belt-and-braces.** `WaterBodyDetail`
+   * mounts this form conditionally, so closing it unmounts and every `useState` above goes with it —
+   * which means a stale `dismissedDuplicateOf` cannot survive into the next capture *as the parent is
+   * written right now*. That is an accident of one caller, not a property of this component: the
+   * sibling `ReportForm` one line above stays mounted behind an `open` prop, and someone moving this
+   * form to match would silently reintroduce a leak where the next hazard skips duplicate detection
+   * entirely and carries somebody else's exclusion to the server. Mobile, which genuinely runs the
+   * whole session on one mounted component, had exactly that bug.
+   *
+   * Shared by both exits so they cannot drift apart again — the confirm path and the file path both
+   * end the same draft.
+   */
+  function clearDraft() {
+    setType(null);
+    setDescription('');
+    setHazardDraft(null);
+    setHazardShoreTaps(null);
+    setNudge(null);
+    setDismissedDuplicateOf(null);
+  }
+
   function chooseType(next: HazardType) {
     setType(next);
     // A type change abandons a snap: the band was derived for the old type's shape, and the new type
@@ -585,6 +609,11 @@ export function HazardForm({
     setHazardShoreTaps(null);
     setShoreError(null);
     setShoreArcLength(null);
+    // And it abandons a nudge dismissal: matching is per **type family**, so the pin the skater ruled
+    // out may not even be a candidate for what they are now drawing. Re-asking costs one tap; carrying
+    // a stale exclusion across a retype is a silent no.
+    setNudge(null);
+    setDismissedDuplicateOf(null);
     // Re-typing keeps whatever has already been placed but adopts the new type's primitive and
     // default size: a drilled hole and a thaw-rotten zone are two orders of magnitude apart, so
     // starting near the truth matters more than starting consistent.
@@ -743,10 +772,7 @@ export function HazardForm({
         // Rides along so auto-merge can't overrule a person who was standing on the ice looking at it.
         ...(dismissed ? { dismissedDuplicateOf: dismissed as Id<'hazards'> } : {}),
       });
-      setType(null);
-      setDescription('');
-      setHazardDraft(null);
-      setHazardShoreTaps(null);
+      clearDraft();
       onClose();
     } catch (e) {
       photoDrafts.setCommitted(false); // creation didn't complete — uploads are reclaimable again
@@ -774,10 +800,7 @@ export function HazardForm({
         verdict: 'still_there',
         via: 'duplicate_nudge',
       });
-      setType(null);
-      setDescription('');
-      setHazardDraft(null);
-      setHazardShoreTaps(null);
+      clearDraft();
       onClose();
     } catch (e) {
       setNudge(null);

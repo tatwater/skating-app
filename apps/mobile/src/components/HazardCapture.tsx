@@ -174,6 +174,13 @@ export function HazardCapture() {
     setShowAllTypes(false);
     setLocating(false);
     setError(null);
+    // **The nudge state goes with the draft, and forgetting this is a real bug rather than untidiness.**
+    // A dismissal is a statement about *this* pin and *that* one; carrying it into the next capture
+    // would skip the duplicate check entirely for an unrelated hazard and then send a stale exclusion
+    // to the server, suppressing a merge nobody declined. The whole session runs on one mounted
+    // component, so nothing else clears it.
+    setNudge(null);
+    setDismissedDuplicateOf(null);
   }
 
   /**
@@ -265,6 +272,11 @@ export function HazardCapture() {
     setHazardShoreTaps(null);
     setShoreError(null);
     setShoreArcLength(null);
+    // It abandons a nudge dismissal for the same reason: matching is per **type family**, so the pin
+    // the skater ruled out may not even be a candidate for what they are now drawing. Re-asking is one
+    // tap; carrying a stale exclusion across a retype is a silent no.
+    setNudge(null);
+    setDismissedDuplicateOf(null);
     // Show the pin's adjust bar *immediately*, armed for a map tap, so tap 2 is never a dead tap while
     // a cold GPS receiver spins up: the sheet has closed and without this the screen would show only
     // the reappeared FAB, reading as "nothing happened" — and a gloved re-tap restarts the whole flow.
