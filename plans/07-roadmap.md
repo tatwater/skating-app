@@ -1116,7 +1116,11 @@ I want to do it ASAP."* The Copernicus deep link (D75) ships in N6c either way.
   photo of the pull-off, the gap in the trees and the path to the shore is the confirmation — at home, in
   daylight, before the drive. NAIP's leaf-on summer imagery is useless for ice and ideal for access.
 
-**N5c — Hazard identity: one clustering primitive, two time windows.** 📋 Scoped 2026-07-30, unbuilt —
+**N5c — Hazard identity: one clustering primitive, two time windows.** 🚧 **Half built 2026-07-31**
+(within-season: clustering, nudge, pooling, consensus rendering, auto-merge, manual authoring, the D53
+amendment and the rename — green across every suite; unpushed, undeployed, not device-tested). The
+cross-season half — the `hazardRecurrence` table, the rollover job, the recurrence queue and the dark
+advisory — is **unbuilt and ships as a second PR**. Scoped 2026-07-30 —
 see [`phase-N5c-hazard-memory.md`](./phase-N5c-hazard-memory.md); decisions **D77** (one clustering
 primitive, two windows), **D78** (recurrence is history with its denominator, admin-only until a tunable
 bar), **D79** (moderators author body features directly), **D80** (duplicates are consensus: prevent,

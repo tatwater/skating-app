@@ -4,17 +4,22 @@
 this the ridge that forms here every year?" Same question, same function, two windows — and building it
 once is the only way the two can't disagree.*
 
-> **Status:** 📋 Scoped 2026-07-30, unbuilt. Founder asks 2026-07-27 (hazard memory) and 2026-07-30
-> (duplicate corroboration), merged into one phase by the founder call in
-> [§4](#4-workstream-a--the-clustering-primitive-d77).
+> **Status:** 🚧 **Half built, 2026-07-31.** The within-season half — workstreams **A** and **B**, plus
+> **E** (manual authoring), the **D53 amendment** (§8.2) and the `shallow_early_thaw` rename — is built
+> on `phase-n5c-hazard-memory` and green across every suite; **unpushed, undeployed, not device-tested.**
+> Workstreams **C**, **D** and **F** (the cross-season engine, the recurrence queue and the dark
+> advisory) are **unbuilt**, and ship as a second PR. See *§15 — What the build changed about the plan*.
+> Founder asks 2026-07-27 (hazard memory) and 2026-07-30 (duplicate corroboration), merged into one
+> phase by the founder call in [§4](#4-workstream-a--the-clustering-primitive-d77).
 > **Depends on:** [N5a](./phase-N5a-seasons.md) — seasons as a derived first-class dimension, the
 > interim promotion list, and the D62 second amendment that keeps a departed skater's hazards.
 > **Touches:** `hazards`, `hazardConfirmations`, `bodyFeatures`, a new `hazardRecurrence` table, a new
 > season-rollover job, the hazard draw flow on both clients, the map's hazard layer, the on-ice payload,
 > `/admin/water/$id`, `/admin/features`, `/admin/tuning`, and a new `/admin/recurrence`.
 > **Decisions:** D77–D80, plus a **D53 amendment** (supersession is a backlink, not a hiding
-> mechanism — §8.2) and a **D53 rename** (`shallow_bay_early_thaw` → `shallow_early_thaw`). All proposed
-> here; to be recorded in [`01-decisions.md`](./01-decisions.md) at kickoff.
+> mechanism — §8.2) and a **D53 rename** (`shallow_bay_early_thaw` → `shallow_early_thaw`). All of them
+> are already recorded in [`01-decisions.md`](./01-decisions.md) (2026-07-31), so the work item that
+> said "at kickoff" is done.
 
 ---
 
@@ -325,7 +330,7 @@ near-misses at 30 m still need collapsing to one season.)
 
 - `moderationStatus !== 'visible'` — a moderator judged the pin bad; it is not evidence.
 - Hazards whose community verdict was **`never_existed`** — a claim the report was bogus is the opposite
-  of corroboration. ⚠ **`goneCount` cannot answer this.** `schema.ts:767` says it counts *"'fully healed
+  of corroboration. ⚠ **`goneCount` cannot answer this.** `schema.ts` says it counts *"'fully healed
   & safe' verdicts ONLY"*, and that comment has been **stale since D65**: `hazardLifecycle.ts:281`
   increments it for `fully_healed` **and** `never_existed`, because they pool toward one archive. So the
   job reads `hazardConfirmations` and counts `never_existed` separately, as
@@ -349,7 +354,7 @@ One row per (body, family, cluster):
 | Field | Notes |
 |---|---|
 | `waterBodyId` | |
-| `family` | `ridge` / `spring` / `gas` / `reef` |
+| `family` | `ridge` / `spring` / `gas` / `reef` / `volatile` — five, not four. `volatile` earns a row precisely so §C7's raised bar has something to be raised *about*; `crack` is the one family with no cross-season record, since a recurring working crack is not a permanent feature of a lake |
 | `geometryKind`, `geometry`, `bufferMeters?`, `radiusMeters?`, `bbox` | the **representative footprint** — the medoid member, carried across whole so a promoted cluster keeps a real ridge's shape rather than a synthesised average |
 | `memberHazardIds` | every contributing hazard (survivors only — merged tombstones are represented by their survivor) |
 | `seasonsObserved` | `Season[]`, ascending, **deduped** |
@@ -375,7 +380,8 @@ Indexes: `by_water_body`, `by_computed_season_and_priority` (the ranked cross-la
 
 A `recomputeRecurrence` staged job on the established self-continuing pattern (`lib/contentPurge`,
 `photoReconcile`), scheduled at the **season rollover** — early July, which D63 chose because nobody is
-looking — plus a **"recompute now"** button per body, because an operator who has just merged two lakes
+looking. ⚠ Note for the build: `crons.ts` uses only `crons.interval` today, so this is the repo's first
+`crons.cron` expression rather than a copy of an existing line — plus a **"recompute now"** button per body, because an operator who has just merged two lakes
 or hidden three bogus pins should not wait a year.
 
 1. **Build the work queue.** Page `hazards` (a new `by_first_reported` index earns its keep here, and for
@@ -407,7 +413,9 @@ The recurrence score, in weight order:
    recurrence rather than about a row. Dominant by design.
 2. **Decay tier**, as N5a has it: the only input about physics.
 3. **Recency** — a cluster last seen in `'26/'27` is weaker than one seen last winter. Lakes change
-   (a dredged channel, a new culvert), and a pattern that stopped is evidence too.
+   (a dredged channel, a new culvert), and a pattern that stopped is evidence too. *(No constant of its
+   own in §7.4: the decay is a function of `seasonsObserved`'s newest entry against the current season,
+   so `RECURRENCE_WINDOW_SEASONS` already bounds it.)*
 4. **Corroboration**, capped, counted **per season** rather than across members, so one enthusiastic
    winter cannot outweigh a quiet recurring one.
 5. **Contradiction**, subtracted: `fully_healed` mildly (it healed *that* winter), `never_existed`
@@ -651,10 +659,23 @@ thumbs-down on a statistic. Revisit if operators find they need the signal.)*
 
 ### 9.5 Offline
 
-Advisories ride the per-body cache (`bodyCache.ts` / `offlineBody.ts`) as plain text — a cached lake with
-no signal is exactly where the map is emptiest. Stored in a **separate field from the cached hazard
-array**, which is how §3's exclusion is enforced structurally: `onIce.ts` reads the hazard array and
-cannot see the advisory field even by accident.
+⚠ **Corrected 2026-07-31, during the build.** This section described a cache that does not exist.
+`bodyCache.ts` stores water-body *reference* data only — name, states, polygon, centroid, area. There is
+no cached hazard array to keep an advisory out of. Hazards reach the on-ice evaluator from a **live
+`hazards.listForBody` subscription**, held in module state by `onIceMode.ts` and fed by `HazardBanner`,
+which is served from the Convex client's own cache when there is no signal.
+
+Two consequences, one better than the plan and one worse:
+
+- **The structural exclusion is *stronger* than described.** An advisory comes from a different query
+  (`hazardRecurrence.listForBody`) that the on-ice path never subscribes to at all. `onIce.ts` cannot
+  see it by accident because it never asks for it — no shared array, no adjacent field, nothing to get
+  wrong. That is a better guarantee than "a separate field in the same row".
+- **"Rides the offline cache" is not true today, for advisories or for hazards.** Neither is durably
+  cached; both depend on the Convex client cache. Matching hazards' behaviour is the consistent choice
+  and needs no new SQLite table, but it should be *said* rather than assumed, and a durable per-body
+  hazard cache is a real (unbuilt) thing if the on-ice path is ever to survive a cold start with no
+  signal.
 
 ---
 
@@ -672,7 +693,7 @@ Checked in the repo on 2026-07-30:
 4. **`listPromotionCandidates` caps at 500 rows in creation order** and logs when it bites
    (`hazards.ts:417-426`). Fine for one season; wrong as a multi-season basis.
 5. **`goneCount` pools `never_existed` with `fully_healed`** (`hazardLifecycle.ts:281`) while
-   `schema.ts:767` still says otherwise. Stale comment, real consequence for recurrence.
+   `schema.ts` still says otherwise. Stale comment, real consequence for recurrence.
 6. **`promotionTargetFor` maps 5 hazard types to 4 feature types**, leaving 4 of 9 `BODY_FEATURE_TYPES`
    unreachable. §C7 reaches one of them (`shallow_early_thaw`) from recurrence; §8.1 reaches the rest by
    hand.
@@ -706,7 +727,7 @@ Checked in the repo on 2026-07-30:
 6. **Auto-merge** — `mergedIntoHazardId`, `resolveHazardSurvivor`, read-through confirmations, the bar
    constants, `unmerge`, audit rows, and the admin panel.
 7. **Schema + indexes** — `hazardRecurrence`, `hazards.by_first_reported`, `mergedIntoHazardId`, the
-   `schema.ts:767` comment fix.
+   `goneCount` comment fix in `schema.ts`.
 8. **The rollover job** — work queue, per-body full pass, diff-preserving upsert, lease, July cron,
    `recomputeForBody`, merge hook.
 9. **Server reads** — `hazardRecurrence.listForBody` (public-gated), `listForBodyAdmin`, `listQueue`,
@@ -827,3 +848,108 @@ no new lifecycle. Correction is a new authoring power and deserves its own scopi
 - **Watch the unmerge-rate chart in the first winter.** It is the only empirical check on
   `AUTOMERGE_MIN_FOOTPRINT_IOU`, and the bar should be raised on the first sign operators are undoing
   merges.
+
+---
+
+## 15. What the build changed about the plan (2026-07-31)
+
+Written during the first half rather than after it, in the house style: the things the plan got wrong
+are more useful than the things it got right.
+
+### 15.1 The chaining guard had to be rebuilt twice
+
+§A1 bounds a cluster's **total span** at `DUPLICATE_MAX_CLUSTER_SPAN_M` = 150 m. Both halves of that
+are wrong, and each was caught by a fixture rather than by reading.
+
+**An absolute cap cannot work.** A `pressure_ridge` is routinely 600 m of buffered LineString, so any
+cap tight enough to stop chaining refuses to merge two pins of *one ridge* — the exact case the
+mechanism exists for. The guard is now **relative**: a cluster may extend `*_MAX_CLUSTER_SPREAD_M`
+beyond its **largest single member**, anchored on the biggest thing anyone actually drew rather than on
+the biggest thing merging has produced, so repeated links cannot ratchet the allowance up one at a
+time.
+
+**And it cannot be measured on the diagonal.** Two 400 m ridges crossing at right angles overlap and
+are plainly one cluster, but their merged box is 400 m square — a 566 m diagonal against a 400 m
+member, so a diagonal guard refuses the merge purely because the ridges point different ways. The
+comparison is now per axis: north–south against north–south, east–west against east–west.
+
+The constants keep their values (150 / 400) and change their meaning, so `/admin/tuning` says
+`DUPLICATE_MAX_CLUSTER_SPREAD_M` and describes it as a spread rather than a span.
+
+### 15.2 Footprint distance needed a second pass, for a shape this phase is mostly about
+
+"Minimum distance between footprints" is exact when computed vertex-against-polygon in both
+directions — for **disjoint** shapes, and for containment. It is wrong for exactly one case: two
+polygons that **cross** with no vertex of either inside the other. That is not a corner case here. It
+is two buffered ridge bands crossing at right angles, which overlap and which clustering should
+plainly collapse, and a vertex-only test reports clear water between them. `polygonDistanceMeters`
+therefore runs a segment-crossing scan as a second pass — but only when the first found a gap while the
+bounding boxes still overlap, so the common answer costs nothing extra.
+
+### 15.3 The witness count includes people who *drew*, not only people who tapped confirm
+
+**Founder call, 2026-07-31.** §B2 says the pooled gate reads "distinct confirming users across the
+cluster". But the commonest duplicate has no confirmations at all — three skaters each mark the same
+ridge, nobody presses anything — and a confirmers-only count leaves every phone on the lake stuck at
+the soft *"can you see it?"*, which is the failure §1.2 opened with.
+
+So a cluster's witnesses are distinct users who **either** confirmed a member **or** authored one,
+always excluding the pin's own author. §B4 already made this argument for the merge case (*"the
+merged-away reporter counts as a corroborating observer — stronger evidence than a confirm tap, since
+they saw it independently and drew it"*); it applies identically to an unmerged cluster. Singletons are
+unchanged — identical to today's `confirmCount`, which is a property test — one person double-posting
+is still one witness (D54 intact), and crossings never cluster, so the one pin type where escalating
+too readily would be anti-conservative is excluded structurally rather than by a threshold.
+
+### 15.4 §9.5's offline story was about a cache that does not exist
+
+Corrected in place — see §9.5. Short version: `bodyCache.ts` holds body reference data only, hazards
+reach the on-ice evaluator from a live `listForBody` subscription, and the structural exclusion is
+consequently *stronger* than the plan claimed (a different query the on-ice path never asks for) while
+"rides the offline cache" is simply not true today, for advisories or for hazards.
+
+### 15.5 Two readers of `promotedToFeatureId` the amendment's diff missed
+
+§8.2 warns that the reviewer's diff is *every* reader of the field, and then lists four. There are six.
+`weather.getHazardWindow` refused a weather strip for a promoted pin, and
+`hazardWeather.listActiveHazardsForWeather` deferred one out of the decay sweep — both on the reasoning
+that a promoted pin "doesn't render". Under the amendment it does, so the second one would have left a
+visible hazard reading its freshness off a stale weather window. Both now key on moderation alone.
+
+### 15.6 Decisions taken in the build, worth recording
+
+- **Auto-merge runs at create**, in the same mutation, bounded to the body and the season. Any later
+  and there is a window in which the map shows two pins for one ridge, which is the state it exists to
+  remove — and it is the same moment the draw-time nudge fired, so the two cannot disagree.
+- **`create` returns the survivor**, so a client navigating to what it just filed lands on a live pin
+  rather than a tombstone. `get`, `listClusterMembers` and the confirm path all resolve through the
+  chain, so a permalink or an on-ice notification sent before a merge still works.
+- **A vote arriving now *does* follow the chain**, which is not in tension with "confirmations are
+  never re-pointed": that rule is about *existing* statements at merge time. Writing a new vote against
+  the tombstone would file a real observation somewhere no lifecycle reads.
+- **The survivor's union is stored as its `clippedFootprint`**, which widens that field's meaning from
+  "the clip, when clipping removed area" to "the stored footprint override". Render, the stored bbox
+  and the proximity evaluator already read it, so a merge changes what is drawn and what is measured
+  with no client change at all — and `unmerge` restores the original by recomputing from the row's own
+  untouched `geometry`.
+- **`moderationActions.actorId` becomes optional.** Auto-merge writes audit rows, but has no human
+  actor, and naming the creating skater would record a member as having moderated when they didn't.
+- **`noMergeWith`** on both rows is what stops `unmerge` being a button that undoes nothing.
+- **`duplicate_nudge`** joins `HAZARD_CONFIRM_VIA` — the only trigger that also records a duplicate
+  *prevented*, which is what makes the nudge's conversion rate measurable.
+- **`BODY_FEATURE_TYPES` moved to `@skating/core`**, re-exported by `lib/enums.ts`, because D79's form
+  made it the third hand-kept copy of the list and the D65 four-copies scar is the reason not to.
+
+### 15.7 Left open, deliberately
+
+**Dismissing the nudge blocks the merge, and only the merge.** Pooling and consensus rendering are
+non-destructive — the union outline is never smaller than either member and the drawer still names both
+reporters — so a dismissed pair still draws as one outline. One outline is visually the same claim a
+merge makes, which is a residual tension worth a founder's eye. If it reads as overruling the skater,
+the lever is to carry `dismissedDuplicateOf` into `poolConsensus` as a cluster split, **not** to weaken
+the merge bar.
+
+**Not built here, and not started:** workstreams C (the `hazardRecurrence` table, the rollover job, the
+ranking), D (the two-section lake card, the cross-lake queue, suppression) and F (the skater-facing
+advisory and its copy tests). §11's cut line held exactly as written — items 2–6, 11, 13 and 14 are the
+half that pays off this winter.

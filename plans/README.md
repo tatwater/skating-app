@@ -139,7 +139,9 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   admin-only until they clear a tunable bar (**D78**). Also **D79** (moderators author body features
   directly, which nothing could do before), a **D53 amendment** (supersession is a backlink, not a hiding
   mechanism — a promoted hazard stays visible in every season it was reported), and the
-  `shallow_bay_early_thaw` → `shallow_early_thaw` rename. **📋 Scoped 2026-07-30, unbuilt.** Merges two
+  `shallow_bay_early_thaw` → `shallow_early_thaw` rename. **🚧 Half built 2026-07-31** — the
+  within-season half (clustering, nudge, pooling, consensus rendering, auto-merge, manual authoring) is
+  done; the cross-season recurrence engine is a second PR. Merges two
   founder asks that turned out to be one problem, and answers the old three-season corpus gate rather
   than waiting it out.
 - [N6a — Lake depth](./phase-N6a-lake-depth.md) — the body-level depth attribute D56 was designed around
