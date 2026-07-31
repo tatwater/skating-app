@@ -8,7 +8,8 @@ once is the only way the two can't disagree.*
 > **E** (manual authoring), the **D53 amendment** (§8.2) and the `shallow_early_thaw` rename — is built
 > on `phase-n5c-hazard-memory` and green across every suite; **unpushed, undeployed, not device-tested.**
 > Workstreams **C**, **D** and **F** (the cross-season engine, the recurrence queue and the dark
-> advisory) are **unbuilt**, and ship as a second PR. See *§15 — What the build changed about the plan*.
+> advisory) are **unbuilt**, and ship as a second PR. See *§15 — What the build changed about the plan*
+> and *§16 — What the review pass found*.
 > Founder asks 2026-07-27 (hazard memory) and 2026-07-30 (duplicate corroboration), merged into one
 > phase by the founder call in [§4](#4-workstream-a--the-clustering-primitive-d77).
 > **Depends on:** [N5a](./phase-N5a-seasons.md) — seasons as a derived first-class dimension, the
@@ -953,3 +954,116 @@ the merge bar.
 ranking), D (the two-section lake card, the cross-lake queue, suppression) and F (the skater-facing
 advisory and its copy tests). §11's cut line held exactly as written — items 2–6, 11, 13 and 14 are the
 half that pays off this winter.
+
+---
+
+## 16. What the review pass found (2026-07-31, before the PR)
+
+Every suite was green when this pass started, which is the point: none of the four below were caught by
+a failing test, and three of them were *asserted* somewhere as already true.
+
+### 16.1 Pooling reached every gate except the one the phase opened with
+
+**The worst of them, and the most instructive.** `toView` pooled `freshness`, `provisional` and
+`expired` correctly, and published the pooled witness count as a **separate** field,
+`clusterConfirmCount`. Nothing read it. The on-ice evaluator takes `confirmCount` off the row and
+**re-derives `isProvisional` itself** (`hazardProximity.ts:108`), so three skaters marking one ridge —
+§1.2's opening scenario, and the whole subject of §15.3's founder call — left every phone on the lake at
+the soft *"can you see it?"* while the drawer beside it read confirmed.
+
+The lesson is not "we forgot a field". It is that **a derived value published alongside its raw input is
+an invitation to read the raw input**, and the on-ice path had a second, independent derivation of the
+same rule sitting a package away. `toProximityHazards` now feeds `clusterConfirmCount ?? confirmCount`
+into the evaluator, which makes the pooled number load-bearing rather than decorative. The deeper fix —
+carrying the server's `provisional` and deleting the client-side re-derivation — is a bigger change to a
+shipped Phase 9.5 interface and its `confirmThreshold` tunable, and is the right thing to do the next
+time that file is opened.
+
+### 16.2 Recomputing a union from the stored union is not reversible
+
+`refreshMergedFootprint` read each row through `hazardFootprintOf`, which prefers `clippedFootprint` —
+and on a survivor that field *is* the union. So the union was recomputed from itself and could only
+grow. §15.6's claim that *"`unmerge` restores the original by recomputing from the row's own untouched
+`geometry`"* was true of the intent and false of the code, in two cases:
+
+- **three pins, one unmerged**: the removed pin's area stays, so Unmerge does nothing to the outline it
+  was pressed to undo;
+- **two pins near a shore**: the empty-chain branch re-clips the *union* instead of the pin's own shape,
+  and stores the widened footprint again.
+
+The existing test passed because its fixture sits mid-lake, where `clipFootprintToBody` returns `null`
+and the row falls back to the drawn shape — a fixture that was tidy in exactly the way §A1 warns
+chaining fixtures are tidy. Every recomputation now starts from `geometry` + `radiusMeters`/
+`bufferMeters`, the one thing a merge never edits, and the three-pin case is a test.
+
+### 16.3 A `filter` before a `take` is not a bounded read
+
+`listRecentMerges` was written as `.order('desc').filter(...).take(50)` and documented as *"bounded"*.
+Convex reads rows until it has 50 **matches**, so on a corpus with no merges — which is every corpus
+today — it walks the whole append-only audit log. The same commit had already added
+`moderationActions.by_created_at` for the 7b rollup, with a comment saying precisely this about scans of
+that table. It now reads a 120-day window off that index: bounded by a season's moderation volume rather
+than by how long the app has been running.
+
+### 16.4 A file git will not diff is a file nobody reviews
+
+`hazardConsensus.ts` carried a **literal NUL byte** as a map-key separator, so git classified the file as
+binary: no diff, no blame, no line comments — on the module that computes what the alert gates read. It
+ran fine and lint was silent. It is written as the `\u0000` escape now, which is the same string
+to the runtime and a reviewable file to everything else.
+
+### 16.5 The rest
+
+- `listForHazard` queried votes by the **argument** id while resolving the hazard through the merge
+  chain, so a stale deep link listed the tombstone's confirmers under the survivor's count.
+- The nudge's *"no, this is a different hazard"* cost a **second** submit press on both clients, which
+  §B1 promised it would not. It now files in the same tap — passed as an argument rather than through
+  `setState`, which would not have been visible to the call that followed it anyway.
+- The idempotent-replay branch of `create` returned the stored id without resolving the chain, breaking
+  the *"`create` returns the survivor"* rule for exactly the offline-flush path that rule was for.
+- `/admin/recurrence` had a hand-written copy of `relativeWhen`, in the phase whose thesis is that the
+  second copy is where the drift starts.
+
+**One finding the review got wrong, kept because the reasoning is the useful part.** It was reported
+that corroboration credit gated every cluster member on the *opened* pin's witness count, and that
+per-member counts could differ by one. They cannot. `clusterConsensus` builds its witness set as
+`confirmers ∪ authors`, and every member's author is in `authors` by construction — so
+`witnesses.has(member.createdByUserId)` is always true and every member's count is `witnesses - 1`.
+The number is uniform across a cluster, one member clearing the bar means all of them have, and the
+per-member re-check briefly added was dead code. It has been removed and the invariant written down
+where the loop reads, since it is a fact about `clusterConsensus` that is not obvious from the call
+site — which is exactly how it got misread the first time.
+
+**Left as-is, deliberately:** `tryAutoMerge` reads every active hazard on the body inside the create
+mutation. It matches `listForBody`'s bound (Phase 9 call 6) and is correct; it does widen the OCC
+conflict window for concurrent creates on one lake, which is worth remembering if a popular lake ever
+sees contention.
+
+### 16.6 The coverage pass
+
+The primitives were already well covered — `hazardCluster` has shuffle-invariance, partition and
+span-guard property tests, and `hazardConsensus` has the monotonicity one. The gaps were all a layer
+out, in the code that *uses* them, and every one of them was a documented claim nothing asserted:
+
+- **Pooled corroboration credit** (§B2's fourth row) had no test at all. Now covered by the case it
+  exists for: two pins 30 m apart — overlapping enough to cluster, not enough to merge — where one
+  confirm tap credits both reporters on a bar no single pin reached.
+- **The `hazard_merges` rollup**, which §7.4 calls the only empirical check on the merge bar. Now
+  asserts the automatic/moderator/undone split stays three numbers, that a quiet day writes a zero
+  rather than a hole in the series, and that re-running a day overwrites.
+- **`clusterScopeFor`'s archived exclusion** — the claim that a pin the community voted healed must not
+  borrow freshness from a live neighbour. It was a bound inside an index expression with nothing
+  asserting it; now a test.
+- **The merge-chain hop cap**, whose whole job is to turn a cycle into `null` rather than a query that
+  never returns.
+- **`listRecentMerges`'s window**, added in this pass, so the bound doesn't quietly regress to a scan.
+- **`polygonUnion`** — exercised indirectly through the layer and the merge tests, but its two
+  load-bearing contracts (the union covers every member; a failure returns `null` so the caller draws
+  more outlines rather than fewer) were never stated directly.
+- **The new copy** — `relativeWhen`'s day/hour boundaries, and the D3 assertions the nudge and the
+  consensus summary have to satisfy: no accusation, no invented attribution, no raw enum key, no claim
+  that the hazard is there.
+
+**Still not asserted:** the one-tap nudge wiring on either client. The pure candidate finder is covered
+in `hazardDuplicate.test.ts`, but neither client has a form harness, so that path is reviewed rather
+than tested — which is the standing state of client UI in this repo, not a gap this phase opened.
