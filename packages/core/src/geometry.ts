@@ -152,8 +152,7 @@ function segmentDistanceMetres(
  */
 export function distanceToPolygonMeters(point: LatLng, polygon: Polygon | MultiPolygon): number {
   if (pointInPolygon(point, polygon)) return 0;
-  const rings: Position[][] =
-    polygon.type === 'Polygon' ? polygon.coordinates : polygon.coordinates.flat(1);
+  const rings = polygonRings(polygon);
   let min = Number.POSITIVE_INFINITY;
   for (const ring of rings) {
     const local = (ring as [number, number][]).map((c) => toLocalMetres(c, point));
@@ -168,6 +167,99 @@ export function distanceToPolygonMeters(point: LatLng, polygon: Polygon | MultiP
     }
   }
   return min;
+}
+
+/** Every ring of a polygon / multipolygon, outer and interior alike, as raw positions. */
+function polygonRings(polygon: Polygon | MultiPolygon): Position[][] {
+  return polygon.type === 'Polygon' ? polygon.coordinates : polygon.coordinates.flat(1);
+}
+
+/**
+ * Minimum distance in metres between two polygons' **edges** — `0` when they overlap, touch or one
+ * contains the other. The hazard-clustering primitive (N5c/D77): "are these the same ridge?" is asked
+ * of *footprints*, never of centroids, because a `pressure_ridge` is a buffered LineString that often
+ * spans a bay, and two ridges sharing 300 m of geometry can have centroids 400 m apart. Measuring
+ * edge-to-edge makes the tolerance a **gap** rather than a radius, which is a far tighter claim on a
+ * long feature than "their centres are within 80 m".
+ *
+ * Computed in two passes, because each catches a case the other misses:
+ *
+ * 1. **Every vertex of each polygon against the other polygon.** Exact for disjoint shapes — the
+ *    closest approach of two disjoint polygons is always at a vertex of one against an edge of the
+ *    other — and it returns `0` for containment, since `distanceToPolygonMeters` reports `0` inside.
+ * 2. **A segment-crossing scan**, and only when pass 1 found a positive distance while the bounding
+ *    boxes still overlap. That narrow case is real rather than theoretical: two buffered ridge bands
+ *    crossing at right angles genuinely overlap while no vertex of either lies inside the other, and
+ *    two crossing ridges are exactly what clustering should collapse. Skipped otherwise, because it
+ *    is `O(n·m)` and the vertex passes have already answered.
+ */
+export function polygonDistanceMeters(
+  a: Polygon | MultiPolygon,
+  b: Polygon | MultiPolygon,
+): number {
+  let min = Number.POSITIVE_INFINITY;
+  for (const [from, to] of [
+    [a, b],
+    [b, a],
+  ] as const) {
+    for (const ring of polygonRings(from)) {
+      for (const [lng, lat] of ring as [number, number][]) {
+        const d = distanceToPolygonMeters({ lat, lng }, to);
+        // Nothing beats touching, and a hazard footprint has enough vertices that the early exit is
+        // worth more than the branch costs.
+        if (d === 0) return 0;
+        if (d < min) min = d;
+      }
+    }
+  }
+  if (bboxIntersects(polygonBBox(a), polygonBBox(b)) && ringsCross(a, b)) return 0;
+  return min;
+}
+
+/** Does any edge of `a` cross any edge of `b`? Raw lng/lat: crossing is topological (see `ringSelfIntersects`). */
+function ringsCross(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon): boolean {
+  for (const ringA of polygonRings(a)) {
+    for (let i = 0; i + 1 < ringA.length; i++) {
+      for (const ringB of polygonRings(b)) {
+        for (let j = 0; j + 1 < ringB.length; j++) {
+          if (
+            segmentsIntersect(
+              ringA[i] as [number, number],
+              ringA[i + 1] as [number, number],
+              ringB[j] as [number, number],
+              ringB[j + 1] as [number, number],
+            )
+          ) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Grow a bounding box by `meters` on every side — the cheap prefilter that keeps clustering off the
+ * expensive path. Two hazards can only be within a tolerance of each other if their boxes are, and a
+ * box test is four comparisons against fields already stored on the row, where a footprint distance
+ * is a buffer plus an `O(n·m)` scan.
+ *
+ * Longitude is widened using the box's **outermost** latitude (the one with the smallest cosine), so
+ * the grown box is never narrower than the true one anywhere along its height. Erring wide is the
+ * correct direction for a prefilter: a box that is too generous costs one exact test, a box that is
+ * too tight silently drops a real match.
+ */
+export function expandBBox(box: BBox, meters: number): BBox {
+  const latPad = meters / (EARTH_RADIUS_M * DEG);
+  const worstLat = Math.min(89, Math.max(Math.abs(box.minLat), Math.abs(box.maxLat)));
+  const lngPad = latPad / Math.cos(worstLat * DEG);
+  return {
+    minLat: box.minLat - latPad,
+    maxLat: box.maxLat + latPad,
+    minLng: box.minLng - lngPad,
+    maxLng: box.maxLng + lngPad,
+  };
 }
 
 /**

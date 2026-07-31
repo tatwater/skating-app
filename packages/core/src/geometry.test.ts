@@ -8,12 +8,14 @@ import {
   bufferedLineOverlap,
   destinationPoint,
   distanceToPolygonMeters,
+  expandBBox,
   haversineMeters,
   type LatLng,
   nearestBodyForPoint,
   pointInPolygon,
   pointNearPolygon,
   polygonBBox,
+  polygonDistanceMeters,
   polygonIoU,
   representativePoint,
   ringSelfIntersects,
@@ -563,6 +565,80 @@ describe('simplifyPath', () => {
           expect(simplified.length).toBeLessThanOrEqual(points.length);
           expect(simplified[0]).toEqual(points[0]);
           expect(simplified[simplified.length - 1]).toEqual(points[points.length - 1]);
+        },
+      ),
+    );
+  });
+});
+
+describe('polygonDistanceMeters (N5c hazard clustering)', () => {
+  const M_PER_DEG = 6_371_008.8 * (Math.PI / 180);
+  const box = rect({ minLat: -0.0005, minLng: -0.0005, maxLat: 0.0005, maxLng: 0.0005 });
+
+  it('is 0 for polygons that overlap', () => {
+    const overlapping = rect({ minLat: 0, minLng: 0, maxLat: 0.001, maxLng: 0.001 });
+    expect(polygonDistanceMeters(box, overlapping)).toBe(0);
+  });
+
+  it('is 0 when one polygon wholly contains the other', () => {
+    const outer = rect({ minLat: -0.01, minLng: -0.01, maxLat: 0.01, maxLng: 0.01 });
+    expect(polygonDistanceMeters(box, outer)).toBe(0);
+    expect(polygonDistanceMeters(outer, box)).toBe(0);
+  });
+
+  it('measures the gap between edges, not between centroids', () => {
+    // A box of the same size, 0.0005° of clear water to the east of this one's east edge.
+    const east = rect({ minLat: -0.0005, minLng: 0.001, maxLat: 0.0005, maxLng: 0.002 });
+    // Centroids are 0.00125° apart (~139 m); the gap is 0.0005° (~55.6 m). The gap is the answer.
+    expect(polygonDistanceMeters(box, east)).toBeCloseTo(0.0005 * M_PER_DEG, -1);
+  });
+
+  it('is symmetric', () => {
+    const east = rect({ minLat: -0.0005, minLng: 0.001, maxLat: 0.0005, maxLng: 0.002 });
+    expect(polygonDistanceMeters(box, east)).toBeCloseTo(polygonDistanceMeters(east, box), 6);
+  });
+
+  it('reports 0 for crossing polygons with no vertex inside the other', () => {
+    // A "+": two thin bars whose ends stick out past each other, so no corner of either lies within
+    // the other, yet they plainly overlap. This is the case a vertex-only test gets wrong, and it is
+    // the shape two crossing pressure ridges actually make.
+    const horizontal = rect({ minLat: -0.0001, minLng: -0.001, maxLat: 0.0001, maxLng: 0.001 });
+    const vertical = rect({ minLat: -0.001, minLng: -0.0001, maxLat: 0.001, maxLng: 0.0001 });
+    expect(polygonDistanceMeters(horizontal, vertical)).toBe(0);
+  });
+});
+
+describe('expandBBox', () => {
+  it('grows a box by the requested distance on every side', () => {
+    const grown = expandBBox({ minLat: 0, minLng: 0, maxLat: 0, maxLng: 0 }, 100);
+    // At the equator, 100 m north and 100 m east are the same number of degrees.
+    expect(haversineMeters({ lat: 0, lng: 0 }, { lat: grown.maxLat, lng: 0 })).toBeCloseTo(100, 0);
+    expect(haversineMeters({ lat: 0, lng: 0 }, { lat: 0, lng: grown.maxLng })).toBeCloseTo(100, 0);
+  });
+
+  it('never grows narrower than the true distance anywhere along the box (property)', () => {
+    // The prefilter's whole contract: a point within `meters` of the box must land inside the grown
+    // box. Erring wide costs one exact test; erring tight silently drops a real match.
+    fc.assert(
+      fc.property(
+        fc.double({ min: -60, max: 60, noNaN: true }),
+        fc.double({ min: -179, max: 179, noNaN: true }),
+        fc.double({ min: 1, max: 2000, noNaN: true }),
+        fc.integer({ min: 0, max: 359 }),
+        (lat, lng, meters, bearing) => {
+          const box = { minLat: lat, minLng: lng, maxLat: lat + 0.01, maxLng: lng + 0.01 };
+          const grown = expandBBox(box, meters);
+          // Step out from each corner in an arbitrary direction, by just under the pad.
+          for (const corner of [
+            { lat: box.minLat, lng: box.minLng },
+            { lat: box.maxLat, lng: box.maxLng },
+          ]) {
+            const out = destinationPoint(corner, bearing, meters * 0.99);
+            expect(out.lat).toBeGreaterThanOrEqual(grown.minLat);
+            expect(out.lat).toBeLessThanOrEqual(grown.maxLat);
+            expect(out.lng).toBeGreaterThanOrEqual(grown.minLng);
+            expect(out.lng).toBeLessThanOrEqual(grown.maxLng);
+          }
         },
       ),
     );

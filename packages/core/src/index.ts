@@ -14,6 +14,7 @@ export * from './feed';
 export * from './feedFilters';
 export * from './geometry';
 export * from './hazardBundle';
+export * from './hazardCluster';
 export * from './hazardCopy';
 export * from './hazardDecay';
 export * from './hazardDraft';
