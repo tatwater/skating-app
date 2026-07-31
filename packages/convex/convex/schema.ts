@@ -744,6 +744,13 @@ export default defineSchema({
     // flush retry, so a create whose ack was lost returns the same hazard instead of dropping a
     // second pin on the same spot. Omitted by web/online callers.
     idempotencyKey: v.optional(v.string()),
+    // The pin this skater was shown at draw time and told was a **different** hazard (N5c / D80).
+    // Recorded because the nudge promised not to argue: auto-merge is a strictly stronger claim than
+    // the nudge's 25 m match, so without this a skater who tapped "no, this is different" could have
+    // their pin silently merged a second later — the same argument, held quietly. A moderator can
+    // still merge the pair by hand; what this blocks is the machine overruling a person who was
+    // standing on the ice looking at it.
+    dismissedDuplicateOf: v.optional(v.id('hazards')),
     originReportId: v.optional(v.id('reports')), // set when drawn in-report or bundled later (D55)
     description: v.optional(v.string()),
     // Ice hazards are intensely visual and hard to describe ("folded ridges are hard to see" is a

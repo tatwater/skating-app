@@ -115,6 +115,11 @@ export const HAZARD_CONFIRM_VIA = [
   'proximity_alert',
   'report_flow',
   'strava_path',
+  // The draw-time duplicate nudge (N5c / D80): a skater about to mark a hazard was shown the pin
+  // already there and confirmed that one instead. Distinct from the others because it is the *only*
+  // trigger that also tells us a duplicate was prevented, which is how the nudge's conversion rate
+  // becomes measurable rather than assumed.
+  'duplicate_nudge',
 ] as const;
 
 /** The authoring primitive a hazard was drawn with (D51). */

@@ -1,10 +1,14 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  DUPLICATE_NUDGE_CONFIRM,
+  DUPLICATE_NUDGE_DISTINCT,
   deriveShoreBand,
   draftForType,
   draftPlacementCount,
   draftToShape,
+  duplicateNudge,
+  findDuplicateCandidate,
   HAZARD_BUFFER_STEPS_M,
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_TYPE_LABELS,
@@ -12,9 +16,11 @@ import {
   HAZARD_TYPES,
   type HazardAuthorableKind,
   type HazardDraft,
+  type HazardShape,
   type HazardType,
   isPassageMarker,
   offersShoreBand,
+  relativeWhen,
   resizeDraft,
   retypeDraft,
   SHORE_BAND_DEFAULT_HALF_WIDTH_M,
@@ -33,6 +39,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { type PhotoDraftView, usePhotoDrafts } from './usePhotoDrafts';
+
+/** The geometry union the clustering primitive accepts, narrowed from Convex's broad `geoJson`. */
+type HazardDraftGeometry = HazardShape['geometry'];
 
 /**
  * Hazard authoring — the web half of D51.
@@ -458,6 +467,15 @@ export function HazardForm({
   onClose: () => void;
 }) {
   const createHazard = useMutation(api.hazards.create);
+  const confirmHazard = useMutation(api.hazardConfirmations.confirm);
+  /**
+   * The body's live hazards, for the draw-time nudge (D80, layer 1). The map is already subscribed to
+   * this query, so it costs nothing extra and — crucially — it is data the client already holds, which
+   * is what lets the nudge work with no signal. On-ice is exactly where duplicates happen.
+   */
+  const liveHazards = useQuery(api.hazards.listForBody, {
+    waterBodyId: waterBodyId as Id<'waterBodies'>,
+  });
   const {
     hazardDraft,
     setHazardDraft,
@@ -485,6 +503,18 @@ export function HazardForm({
   const [shoreOtherWay, setShoreOtherWay] = useState(false);
   const [shoreError, setShoreError] = useState<string | null>(null);
   const [shoreArcLength, setShoreArcLength] = useState<number | null>(null);
+  /**
+   * The pin the nudge is currently offering, and the one the skater has already said is different.
+   *
+   * Two pieces of state rather than one, because they answer different questions: the first is "what
+   * are we showing right now", the second is "what have they already ruled out" — and the second has
+   * to survive the submit it unblocks, because it rides along to the server so auto-merge can't
+   * overrule them a second later.
+   */
+  const [nudge, setNudge] = useState<{ hazardId: string; type: HazardType; at: number } | null>(
+    null,
+  );
+  const [dismissedDuplicateOf, setDismissedDuplicateOf] = useState<string | null>(null);
 
   const offersShore = type !== null && offersShoreBand(type);
   const snapping = hazardShoreTaps !== null;
@@ -648,6 +678,44 @@ export function HazardForm({
       );
       return;
     }
+    // **The nudge** (D80, layer 1). Checked here rather than while drawing, so it interrupts once, at
+    // the moment the skater has actually decided what they are filing — and only if they haven't
+    // already told us this is a different hazard.
+    const candidate =
+      dismissedDuplicateOf === null && liveHazards
+        ? findDuplicateCandidate(
+            {
+              type,
+              geometryKind: shape.geometryKind,
+              geometry: shape.geometry,
+              ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
+              ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
+            },
+            liveHazards.map((h) => ({
+              id: h._id,
+              type: h.type,
+              geometryKind: h.geometryKind,
+              geometry: h.geometry as HazardDraftGeometry,
+              ...(h.radiusMeters !== undefined ? { radiusMeters: h.radiusMeters } : {}),
+              ...(h.bufferMeters !== undefined ? { bufferMeters: h.bufferMeters } : {}),
+              ...(h.clippedFootprint !== undefined
+                ? { clippedFootprint: h.clippedFootprint as HazardDraftGeometry }
+                : {}),
+              bbox: h.bbox,
+              firstReportedAt: h.firstReportedAt,
+              lastConfirmedAt: h.lastConfirmedAt,
+            })),
+          )
+        : null;
+    if (candidate) {
+      setNudge({
+        hazardId: candidate.hazard.id,
+        type: candidate.hazard.type,
+        at: candidate.hazard.firstReportedAt,
+      });
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     photoDrafts.clearError(); // a photo that was already removed shouldn't keep failing the form
@@ -665,6 +733,10 @@ export function HazardForm({
         ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
         ...(description.trim() ? { description: description.trim() } : {}),
         ...(photoIds.length > 0 ? { photoIds } : {}),
+        // Rides along so auto-merge can't overrule a person who was standing on the ice looking at it.
+        ...(dismissedDuplicateOf
+          ? { dismissedDuplicateOf: dismissedDuplicateOf as Id<'hazards'> }
+          : {}),
       });
       setType(null);
       setDescription('');
@@ -687,6 +759,33 @@ export function HazardForm({
     }
   }
 
+  /** Turn the duplicate into the corroboration it was about to replace — the outcome that helps most. */
+  async function confirmExisting(hazardId: string) {
+    setSubmitting(true);
+    setError(null);
+    try {
+      await confirmHazard({
+        hazardId: hazardId as Id<'hazards'>,
+        verdict: 'still_there',
+        via: 'duplicate_nudge',
+      });
+      setType(null);
+      setDescription('');
+      setHazardDraft(null);
+      setHazardShoreTaps(null);
+      onClose();
+    } catch (e) {
+      setNudge(null);
+      setError(
+        e instanceof ConvexError
+          ? String(e.data)
+          : 'Could not confirm that one — file yours instead if you prefer.',
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
     // Hidden (not unmounted) while arming a map click, so the in-progress form survives the
     // placement — and, for a polyline or an area, survives the whole multi-click draw.
@@ -695,6 +794,31 @@ export function HazardForm({
         <DialogHeader>
           <DialogTitle>Report a hazard</DialogTitle>
         </DialogHeader>
+        {/* The nudge (D80, layer 1). Confirming is primary because it turns a second pin into the
+            corroboration the first one was missing; the way past is one tap and is never discouraged,
+            because a skater looking at something the map has wrong must not be argued with. */}
+        {nudge ? (
+          <div className="space-y-3 rounded-md border border-border bg-surface-muted p-3">
+            <p className="text-sm">
+              {duplicateNudge(nudge.type, { reportedAgo: relativeWhen(nudge.at, Date.now()) })}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={() => confirmExisting(nudge.hazardId)} disabled={submitting}>
+                {DUPLICATE_NUDGE_CONFIRM}
+              </Button>
+              <Button
+                variant="outline"
+                disabled={submitting}
+                onClick={() => {
+                  setDismissedDuplicateOf(nudge.hazardId);
+                  setNudge(null);
+                }}
+              >
+                {DUPLICATE_NUDGE_DISTINCT}
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <HazardFormFields
           type={type}
           draft={hazardDraft}

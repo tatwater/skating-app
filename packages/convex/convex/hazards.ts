@@ -108,6 +108,11 @@ export const hazardCreateArgs = {
    * whom capture and create are the same instant.
    */
   capturedAt: v.optional(v.number()),
+  /**
+   * The pin the draw-time nudge offered, which this skater said was a *different* hazard (D80).
+   * Stored so auto-merge can't overrule them a second later — see the schema comment.
+   */
+  dismissedDuplicateOf: v.optional(v.id('hazards')),
   ...inReportHazardArgs,
 };
 
@@ -155,6 +160,7 @@ export async function insertHazard(
     photoIds?: Id<'photos'>[];
     idempotencyKey?: string;
     capturedAt?: number;
+    dismissedDuplicateOf?: Id<'hazards'>;
   },
   authorId: Id<'profiles'>,
   now: number,
@@ -201,6 +207,9 @@ export async function insertHazard(
     ...(subArea !== null ? subArea : {}),
     createdByUserId: authorId,
     ...(args.idempotencyKey !== undefined ? { idempotencyKey: args.idempotencyKey } : {}),
+    ...(args.dismissedDuplicateOf !== undefined
+      ? { dismissedDuplicateOf: args.dismissedDuplicateOf }
+      : {}),
     ...(originReportId !== undefined ? { originReportId } : {}),
     ...(args.description !== undefined ? { description: args.description } : {}),
     photoIds,

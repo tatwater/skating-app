@@ -3,20 +3,27 @@ import type { Id } from '@skating/convex/dataModel';
 import {
   applyDraftMapClick,
   classifyFlushError,
+  createQueuedConfirmation,
   createQueuedHazard,
   type DraftPhoto,
+  DUPLICATE_NUDGE_CONFIRM,
+  DUPLICATE_NUDGE_DISTINCT,
   deriveShoreBand,
   draftPlacementCount,
   draftToShape,
+  duplicateNudge,
+  findDuplicateCandidate,
   HAZARD_BUFFER_STEPS_M,
   HAZARD_DEFAULT_BUFFER_M,
   HAZARD_TYPE_LABELS,
   HAZARD_TYPE_PRESETS,
   HAZARD_TYPES,
+  type HazardShape,
   type HazardType,
   isPassageMarker,
   offersShoreBand,
   pointDraftForType,
+  relativeWhen,
   resizeDraft,
   SHORE_BAND_DEFAULT_HALF_WIDTH_M,
   shoreBandRefusalText,
@@ -24,7 +31,7 @@ import {
   switchDraftKind,
   undoDraftPlacement,
 } from '@skating/core';
-import { useMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
 import { randomUUID } from 'expo-crypto';
 import * as Location from 'expo-location';
@@ -65,6 +72,7 @@ export function HazardCapture() {
   // button never appears — being handed a draw tool and refused at submit is the failure this avoids.
   const leaving = useIsLeaving();
   const createHazard = useMutation(api.hazards.create);
+  const confirmHazard = useMutation(api.hazardConfirmations.confirm);
   const generateUploadUrl = useMutation(api.photos.generateUploadUrl);
   const createPhoto = useMutation(api.photos.create);
   const deletePhoto = useMutation(api.photos.remove);
@@ -89,6 +97,15 @@ export function HazardCapture() {
   const [addingPhotos, setAddingPhotos] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  /**
+   * The pin the nudge is offering, and the one the skater has already ruled out (D80, layer 1).
+   * The second survives the submit it unblocks — it rides to the server so auto-merge can't overrule
+   * a person who was standing on the ice looking at the thing.
+   */
+  const [nudge, setNudge] = useState<{ hazardId: string; type: HazardType; at: number } | null>(
+    null,
+  );
+  const [dismissedDuplicateOf, setDismissedDuplicateOf] = useState<string | null>(null);
   /**
    * The lake the pin belongs to, **captured the instant a type is chosen** rather than read live at
    * Done time. `targetBodyId` below is derived from map state that changes underfoot — navigating back
@@ -131,6 +148,15 @@ export function HazardCapture() {
   // Flag against the lake the skater is standing on; fall back to whichever lake they have open, so
   // the affordance still works when browsing from the couch.
   const targetBodyId = onIceWaterBodyId ?? highlightWaterBodyId;
+  /**
+   * The body's live hazards, for the draw-time nudge. The same query the map and the on-ice banner are
+   * already subscribed to, so this adds no traffic and — the part that matters here — it is served
+   * from the client's cache with no signal, which is exactly when duplicates get filed.
+   */
+  const liveHazards = useQuery(
+    api.hazards.listForBody,
+    targetBodyId ? { waterBodyId: targetBodyId as Id<'waterBodies'> } : 'skip',
+  );
 
   /** Clear the draft state without touching photo files — the queue path keeps the files it owns. */
   function resetDraftState() {
@@ -384,6 +410,45 @@ export function HazardCapture() {
   async function post() {
     const shape = hazardDraft ? draftToShape(hazardDraft) : null;
     if (!hazardDraftType || !shape || !capturedBodyId) return;
+
+    // **The nudge** (D80, layer 1), and mobile is where it earns its keep: two skaters, one ridge, no
+    // signal, both flagging it. `liveHazards` is `undefined` when the query has never loaded, in which
+    // case the nudge simply doesn't fire and the pin is filed — failing open, because a skater on the
+    // ice must never be blocked by something we couldn't check.
+    const candidate =
+      dismissedDuplicateOf === null && liveHazards
+        ? findDuplicateCandidate(
+            {
+              type: hazardDraftType,
+              geometryKind: shape.geometryKind,
+              geometry: shape.geometry,
+              ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
+              ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
+            },
+            liveHazards.map((h) => ({
+              id: h._id,
+              type: h.type,
+              geometryKind: h.geometryKind,
+              geometry: h.geometry as HazardShape['geometry'],
+              ...(h.radiusMeters !== undefined ? { radiusMeters: h.radiusMeters } : {}),
+              ...(h.bufferMeters !== undefined ? { bufferMeters: h.bufferMeters } : {}),
+              ...(h.clippedFootprint !== undefined
+                ? { clippedFootprint: h.clippedFootprint as HazardShape['geometry'] }
+                : {}),
+              bbox: h.bbox,
+              firstReportedAt: h.firstReportedAt,
+            })),
+          )
+        : null;
+    if (candidate) {
+      setNudge({
+        hazardId: candidate.hazard.id,
+        type: candidate.hazard.type,
+        at: candidate.hazard.firstReportedAt,
+      });
+      return;
+    }
+
     setSaving(true);
     setError(null);
     const idempotencyKey = randomUUID();
@@ -398,6 +463,10 @@ export function HazardCapture() {
         geometry: shape.geometry,
         ...(shape.radiusMeters !== undefined ? { radiusMeters: shape.radiusMeters } : {}),
         ...(shape.bufferMeters !== undefined ? { bufferMeters: shape.bufferMeters } : {}),
+        // Rides along so auto-merge can't overrule a person who was standing on the ice looking at it.
+        ...(dismissedDuplicateOf
+          ? { dismissedDuplicateOf: dismissedDuplicateOf as Id<'hazards'> }
+          : {}),
       });
       // The upload succeeded, so the persisted copies are now dead weight. `reset()` frees them.
       reset();
@@ -437,6 +506,55 @@ export function HazardCapture() {
       // The queue owns the files now — reset draft state WITHOUT freeing them.
       resetDraftState();
       setToast('Saved — it’ll post when you’re back in signal.');
+      setTimeout(() => setToast(null), 4000);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /**
+   * Turn the duplicate into the corroboration it was about to replace. Queues on a transient failure
+   * exactly as the drawer's confirm does — this fires with a skater standing on ice, which is the
+   * likeliest place in the app to have no signal, and a confirmation dropped there is a confirmation
+   * the next person never gets.
+   */
+  async function confirmExisting(hazardId: string) {
+    setSaving(true);
+    setError(null);
+    const observedAt = Date.now();
+    try {
+      await confirmHazard({
+        hazardId: hazardId as Id<'hazards'>,
+        verdict: 'still_there',
+        via: 'duplicate_nudge',
+        observedAt,
+      });
+      reset();
+      setToast('Confirmed. Thanks — that helps more than a second pin.');
+      setTimeout(() => setToast(null), 3000);
+    } catch (e) {
+      if (classifyFlushError(e) === 'permanent') {
+        setNudge(null);
+        setError(
+          e instanceof ConvexError
+            ? String(e.data)
+            : 'Couldn’t confirm that one — file yours instead if you prefer.',
+        );
+        setSaving(false);
+        return;
+      }
+      saveHazardItem(
+        createQueuedConfirmation({
+          id: randomUUID(),
+          now: observedAt,
+          hazardId,
+          verdict: 'still_there',
+          via: 'duplicate_nudge',
+          observedAt,
+        }),
+      );
+      reset();
+      setToast('Saved — it’ll confirm when you’re back in signal.');
       setTimeout(() => setToast(null), 4000);
     } finally {
       setSaving(false);
@@ -819,16 +937,46 @@ export function HazardCapture() {
             </Text>
           ) : null}
 
-          <Button
-            size="$6"
-            backgroundColor={postable ? '$primary' : undefined}
-            color={postable ? '$primaryForeground' : undefined}
-            disabled={!postable || saving}
-            opacity={postable ? 1 : 0.5}
-            onPress={post}
-          >
-            {saving ? 'Posting…' : 'Done'}
-          </Button>
+          {/* The nudge (D80, layer 1). Confirming is the big button because it is the outcome that
+              helps everyone; the way past is right beside it, one tap, and is never discouraged — a
+              skater looking at something the map has wrong must not be argued with. */}
+          {nudge ? (
+            <YStack gap="$2">
+              <Paragraph color="$foreground" fontSize={14}>
+                {duplicateNudge(nudge.type, { reportedAgo: relativeWhen(nudge.at, Date.now()) })}
+              </Paragraph>
+              <Button
+                size="$6"
+                backgroundColor="$primary"
+                color="$primaryForeground"
+                disabled={saving}
+                onPress={() => confirmExisting(nudge.hazardId)}
+              >
+                {DUPLICATE_NUDGE_CONFIRM}
+              </Button>
+              <Button
+                size="$5"
+                disabled={saving}
+                onPress={() => {
+                  setDismissedDuplicateOf(nudge.hazardId);
+                  setNudge(null);
+                }}
+              >
+                {DUPLICATE_NUDGE_DISTINCT}
+              </Button>
+            </YStack>
+          ) : (
+            <Button
+              size="$6"
+              backgroundColor={postable ? '$primary' : undefined}
+              color={postable ? '$primaryForeground' : undefined}
+              disabled={!postable || saving}
+              opacity={postable ? 1 : 0.5}
+              onPress={post}
+            >
+              {saving ? 'Posting…' : 'Done'}
+            </Button>
+          )}
           {isPassageMarker(hazardDraftType) ? (
             <Paragraph color="$foregroundMuted" fontSize={12}>
               A crossing marks where you got across — it’s not a promise it’s safe, and ridges

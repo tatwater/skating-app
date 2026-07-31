@@ -19,6 +19,7 @@ export * from './hazardConsensus';
 export * from './hazardCopy';
 export * from './hazardDecay';
 export * from './hazardDraft';
+export * from './hazardDuplicate';
 export * from './hazardGeometry';
 export * from './hazardLayer';
 export * from './hazardLifecycle';

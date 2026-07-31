@@ -1082,6 +1082,35 @@ describe('hazards.listForBody — cluster consensus', () => {
     }
   });
 
+  test('records the pin a skater was shown and told us is different', async () => {
+    // The nudge promised not to argue. Auto-merge is a strictly stronger claim than the 25 m match,
+    // so without this a skater who tapped "no, this is different" could be merged a second later —
+    // the same argument, held quietly.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    const second = await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30), dismissedDuplicateOf: first }),
+    );
+    expect(await t.run(async (ctx) => (await ctx.db.get(second))?.dismissedDuplicateOf)).toBe(
+      first,
+    );
+    // **Dismissal blocks the merge, and only the merge** (founder call). It does not switch off
+    // pooling or consensus rendering, which are non-destructive: the union outline is never smaller
+    // than either member, so nothing is un-warned, and the drawer still lists both pins with their own
+    // reporters and descriptions. Two people independently marking something here is real evidence
+    // that something is here, whether or not they agree it is one thing.
+    //
+    // The residual tension, stated because a future reader will notice it: one outline is visually the
+    // same claim a merge makes. If that reads as overruling the skater, the lever is to carry
+    // `dismissedDuplicateOf` into `poolConsensus` as a cluster split, not to weaken the merge bar.
+    const listed = await alex.as.query(api.hazards.listForBody, { waterBodyId });
+    expect(listed.every((h) => h.clusterMemberIds?.length === 2)).toBe(true);
+  });
+
   test('the drawer can name every pin behind a consensus outline', async () => {
     // Collapsing duplicates into one outline must not collapse *who saw it* — several people seeing a
     // thing separately is precisely what makes a cluster more convincing than one report.

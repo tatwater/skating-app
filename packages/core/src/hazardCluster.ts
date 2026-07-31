@@ -242,7 +242,7 @@ function clusterOneFamily<T extends ClusterableHazard>(
 ): T[][] {
   const sorted = [...bucket].sort(canonicalOrder);
   const n = sorted.length;
-  const footprints = sorted.map(footprintOf);
+  const footprints = sorted.map(hazardFootprintOf);
   const boxes = footprints.map((fp, i) => fp && (sorted[i]?.bbox ?? polygonBBox(fp)));
 
   const parent = sorted.map((_, i) => i);
@@ -330,7 +330,7 @@ function canonicalOrder(a: ClusterableHazard, b: ClusterableHazard): number {
  * geometry grown by its radius or buffer — the same fallback ladder render, bbox and proximity use, so
  * "the same ridge" is judged on the shape a skater actually sees. `null` when it can't be built.
  */
-function footprintOf(hazard: ClusterableHazard) {
+export function hazardFootprintOf(hazard: ClusterableHazard) {
   try {
     if (
       hazard.clippedFootprint &&

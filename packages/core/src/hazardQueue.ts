@@ -60,7 +60,8 @@ export type QueuedConfirmVia =
   | 'app_open_nearby'
   | 'proximity_alert'
   | 'report_flow'
-  | 'strava_path';
+  | 'strava_path'
+  | 'duplicate_nudge';
 
 /** A hazard captured on the ice, waiting for signal. */
 export interface QueuedHazard {
