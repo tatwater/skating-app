@@ -4,6 +4,7 @@ import {
   ALSO_A_KNOWN_FEATURE,
   classifyFlushError,
   confirmerClause,
+  consensusSummary,
   createQueuedConfirmation,
   disputedNote,
   expiredCrossingNote,
@@ -84,6 +85,10 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
     hazard ? { profileIds: [hazard.createdByUserId] } : 'skip',
   );
   const me = useQuery(api.profiles.current, {});
+  // The other pins drawn as one outline with this one (D80) — empty unless this is a real duplicate.
+  const clusterMembers = useQuery(api.hazards.listClusterMembers, {
+    hazardId: hazardId as Id<'hazards'>,
+  });
   // Who has confirmed it (D65) — named where the profile is public, counted where it isn't, so the
   // list can be shorter than the count without the count ever being wrong.
   const confirmations = useQuery(api.hazardConfirmations.listForHazard, {
@@ -277,6 +282,22 @@ export function HazardDetail({ hazardId, action }: { hazardId: string; action?: 
         <Paragraph color="$foregroundMuted" fontSize={13}>
           {expiredCrossingNote()}
         </Paragraph>
+      ) : null}
+
+      {/* Several pins, one outline (D80). Each sighting keeps its own reporter and date, because that
+          separateness is what makes a cluster more convincing than any one report. */}
+      {clusterMembers && clusterMembers.length > 1 ? (
+        <YStack gap="$1">
+          <Paragraph color="$foregroundMuted" fontSize={13}>
+            {consensusSummary(clusterMembers.length)}
+          </Paragraph>
+          {clusterMembers.map((m) => (
+            <Paragraph key={m.hazardId} color="$foregroundMuted" fontSize={12}>
+              · {m.reporterName ?? 'A skater'} — {formatWhen(m.firstReportedAt)}
+              {m.isOpen ? ' (this pin)' : ''}
+            </Paragraph>
+          ))}
+        </YStack>
       ) : null}
 
       {/* Promotion stopped hiding the pin (D53 amendment), so for the season in which it happened both

@@ -26,6 +26,7 @@
     "@turf/intersect": "^7.3.5",
     "@turf/point-on-feature": "^7.3.5",
     "@turf/truncate": "^7.3.5",
+    "@turf/union": "^7.3.5",
     "@types/geojson": "^7946.0.16"
   }
 }

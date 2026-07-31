@@ -271,3 +271,15 @@ export const BODY_FEATURE_CAVEAT =
  */
 export const ALSO_A_KNOWN_FEATURE =
   'This spot is also marked as a known feature of the lake — a standing note about what forms here, separate from this sighting.';
+
+/**
+ * The line above a consensus footprint — several pins the app judged to be the same hazard (D80).
+ *
+ * Says what was actually observed and leaves the inference to the reader: *this many people marked
+ * this*, not *this is definitely there*. The count is **pins**, not witnesses, because that is what
+ * the outline in front of them represents and what the list below it enumerates; the witness count
+ * lives in the confirmer clause, where it always has.
+ */
+export function consensusSummary(memberCount: number): string {
+  return `${memberCount} skaters have marked this spot separately — shown as one area below.`;
+}

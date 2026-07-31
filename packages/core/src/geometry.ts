@@ -17,6 +17,7 @@ import { feature, featureCollection } from '@turf/helpers';
 import intersect from '@turf/intersect';
 import pointOnFeature from '@turf/point-on-feature';
 import truncate from '@turf/truncate';
+import union from '@turf/union';
 import type { Feature, LineString, MultiPolygon, Polygon, Position } from 'geojson';
 
 /** A geographic point — mirrors the Convex `latLng` validator. */
@@ -237,6 +238,40 @@ function ringsCross(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon): boole
     }
   }
   return false;
+}
+
+/**
+ * The union of several polygons as one shape, or `null` if the clipper can't produce one.
+ *
+ * The consensus footprint (N5c / D80): overlapping duplicates of one hazard draw as a single outline
+ * rather than as stacked halos. **Union specifically, never a MultiPolygon of the parts** — a fill
+ * layer blends each part separately, so overlapping members would darken where they agree and show
+ * seams where they meet, which reads as several hazards at exactly the moment we are saying there is
+ * one.
+ *
+ * Truncated first for the reason `polygonIoU` and `clipFootprintToBody` both document: sub-epsilon
+ * float noise makes the clipper choke on near-coincident edges, and near-coincident is precisely the
+ * duplicate case this exists for.
+ *
+ * **`null` is a fail-open signal, not an error.** A caller that can't union must draw the members
+ * individually — more outlines, never fewer. Silently dropping a hazard because a polygon operation
+ * failed is the one outcome a safety layer cannot have (D3).
+ */
+export function polygonUnion(
+  polygons: readonly (Polygon | MultiPolygon)[],
+): Polygon | MultiPolygon | null {
+  if (polygons.length === 0) return null;
+  const first = polygons[0];
+  if (!first) return null;
+  if (polygons.length === 1) return first;
+  try {
+    const merged = union(
+      featureCollection(polygons.map((p) => truncate(feature(p), { precision: 9 }))),
+    );
+    return merged ? merged.geometry : null;
+  } catch {
+    return null;
+  }
 }
 
 /**

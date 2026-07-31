@@ -639,6 +639,60 @@ export const get = query({
 });
 
 /**
+ * Every pin behind a consensus outline, earliest first (N5c / D80).
+ *
+ * When duplicates render as one footprint, the drawer has to be able to say **who** — otherwise
+ * collapsing pins would lose exactly the thing that makes a cluster more convincing than a single
+ * report: that several people saw it separately. So each member keeps its own reporter, its own date
+ * and its own description, and nothing about who said what is merged away.
+ *
+ * Returns `[]` for a hazard that isn't part of a cluster, so a caller can render nothing without a
+ * second decision about whether to ask.
+ */
+export const listClusterMembers = query({
+  args: { hazardId: v.id('hazards') },
+  handler: async (ctx, { hazardId }) => {
+    const hazard = await ctx.db.get(hazardId);
+    if (!isUserVisibleHazard(hazard)) return [];
+    const scope = await clusterScopeFor(ctx, hazard);
+    const consensus = (await poolConsensus(ctx, scope)).get(hazard._id);
+    if (!consensus || consensus.memberIds.length <= 1) return [];
+
+    const byId = new Map(scope.map((h) => [h._id as string, h]));
+    // A blocked author's *name* is withheld exactly as `get` withholds it (D32) — the sighting itself
+    // always stays, because a block never pulls safety content off the map (D3).
+    const viewer = await getCurrentProfile(ctx);
+    const blocked = await loadBlockedAuthorIds(ctx, viewer?._id ?? '');
+    const names = new Map<string, string | undefined>();
+
+    const members = [];
+    for (const id of consensus.memberIds) {
+      const member = byId.get(id);
+      if (!member) continue;
+      const authorId = member.createdByUserId;
+      if (!names.has(authorId)) {
+        const author = blocked.has(authorId) ? null : await ctx.db.get(authorId);
+        names.set(authorId, author?.displayName);
+      }
+      const reporterName = names.get(authorId);
+      members.push({
+        hazardId: member._id,
+        type: member.type,
+        firstReportedAt: member.firstReportedAt,
+        lastConfirmedAt: member.lastConfirmedAt,
+        confirmCount: member.confirmCount,
+        isOpen: member._id === hazard._id,
+        ...(reporterName !== undefined ? { reporterName } : {}),
+        // May be absent because a departed skater's free text is cleared (D62's second amendment) —
+        // the sighting is kept and anonymised, so a blank here is a person leaving, not a data bug.
+        ...(member.description !== undefined ? { description: member.description } : {}),
+      });
+    }
+    return members;
+  },
+});
+
+/**
  * The author's own hazards on a body that aren't yet attached to any report — the D55 auto-bundle
  * candidates, offered (pre-checked, dismissible) when they write the report for that skate.
  *

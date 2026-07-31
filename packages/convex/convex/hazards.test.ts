@@ -1082,6 +1082,34 @@ describe('hazards.listForBody — cluster consensus', () => {
     }
   });
 
+  test('the drawer can name every pin behind a consensus outline', async () => {
+    // Collapsing duplicates into one outline must not collapse *who saw it* — several people seeing a
+    // thing separately is precisely what makes a cluster more convincing than one report.
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const sam = await seedUser(t, 'sam');
+    const waterBodyId = await seedBody(t);
+    const first = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    await sam.as.mutation(
+      api.hazards.create,
+      createArgs(waterBodyId, { geometry: eastOf(30), description: 'right by the point' }),
+    );
+
+    const members = await alex.as.query(api.hazards.listClusterMembers, { hazardId: first });
+    expect(members).toHaveLength(2);
+    expect(members.map((m) => m.reporterName).sort()).toEqual(['alex', 'sam']);
+    expect(members.find((m) => m.hazardId === first)?.isOpen).toBe(true);
+    expect(members.find((m) => m.description === 'right by the point')).toBeDefined();
+  });
+
+  test('a lone hazard has no cluster members to list', async () => {
+    const t = harness();
+    const alex = await seedUser(t, 'alex');
+    const waterBodyId = await seedBody(t);
+    const only = await alex.as.mutation(api.hazards.create, createArgs(waterBodyId));
+    expect(await alex.as.query(api.hazards.listClusterMembers, { hazardId: only })).toEqual([]);
+  });
+
   test('last season and this season are never one cluster', async () => {
     const t = harness();
     const alex = await seedUser(t, 'alex');
