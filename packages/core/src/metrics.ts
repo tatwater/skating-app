@@ -270,6 +270,14 @@ export const METRICS = {
     edges: HOUR_BUCKETS,
   },
 
+  hazard_merges: {
+    label: 'Automatic merges and unmerges',
+    description:
+      'Duplicate pins folded into one row automatically this day, against the ones a moderator pulled back apart (N5c / D80). The unmerge rate is the only empirical evidence AUTOMERGE_MIN_FOOTPRINT_IOU is set right: a rising one means the bar is too low and the machine is collapsing pins that were not the same hazard. Watch it through the first winter.',
+    kind: 'rollup',
+    shape: 'meta',
+  },
+
   // ── Display / map (the minVisibleZoom curve, MAX_VIEWPORT_LIMIT) ───────────
   zoom_band_distribution: {
     label: 'Bodies by zoom band',

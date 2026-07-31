@@ -953,7 +953,12 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_target', ['targetType', 'targetId'])
-    .index('by_actor', ['actorId']),
+    .index('by_actor', ['actorId'])
+    // The 7b rollup's day slice (N5c). Auto-merge is the one mechanism that changes a row without a
+    // human, and its unmerge rate is the only empirical check on the bar — which means counting merges
+    // per day, which means reading this table by time. Without the index that is a scan of an
+    // append-only audit log, i.e. the exact unbounded-growth shape the Phase 7b rule forbids.
+    .index('by_created_at', ['createdAt']),
 
   supportTickets: defineTable({
     userId: v.optional(v.id('profiles')), // absent when the Clerk user has no profile row yet

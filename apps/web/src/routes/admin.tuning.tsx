@@ -1,5 +1,7 @@
 import {
   AUTO_LOW_QUALITY_NET_UNHELPFUL,
+  AUTOMERGE_MIN_FOOTPRINT_IOU,
+  AUTOMERGE_REQUIRE_OVERLAP,
   BOUNTY_ELIGIBILITY_WINDOW_HOURS,
   BOUNTY_REOPEN_FREEZING_DEGREE_HOURS,
   BOUNTY_REOPEN_THAW_DEGREE_HOURS,
@@ -9,6 +11,8 @@ import {
   DEFAULT_BOUNTY_REWARD_POINTS,
   DISPLAY_AREA_MAX_SQM,
   DISPLAY_AREA_MIN_SQM,
+  DUPLICATE_MATCH_METERS,
+  DUPLICATE_MAX_CLUSTER_SPREAD_M,
   FRESH_REPORT_HOURS,
   HAZARD_CORROBORATION_MIN_CONFIRMS,
   MAX_OPEN_BOUNTIES_PER_DAY,
@@ -301,6 +305,57 @@ function AdminTuning() {
             direction D69 exists to refuse. 1 turns it off.
           </ConstantCard>
         </div>
+      </TuningSection>
+
+      {/* ── Hazard memory ────────────────────────────────────────────────── */}
+      <TuningSection
+        title="Hazard memory"
+        blurb="When two pins are the same hazard (N5c / D77, D80). The match tolerance decides what pools and draws as one outline; the merge bar decides what collapses into one row without anyone being asked. Watch the unmerge rate — it is the only empirical evidence the merge bar is set right, and a rising one means it is set too low."
+      >
+        <div className="grid gap-3 sm:grid-cols-2">
+          <ConstantCard
+            name="DUPLICATE_MATCH_METERS"
+            value={`${DUPLICATE_MATCH_METERS} m`}
+            file="hazardCluster.ts"
+          >
+            The edge-to-edge gap at which two pins this winter are the same hazard. A{' '}
+            <strong>gap between footprints</strong>, not a distance between centres — which makes it
+            a far tighter claim on a 600 m ridge than a radius would be. Raising it pools more
+            aggressively; two leads 80 m apart on one afternoon really can be two leads, and
+            collapsing those would under-warn.
+          </ConstantCard>
+          <ConstantCard
+            name="DUPLICATE_MAX_CLUSTER_SPREAD_M"
+            value={`${DUPLICATE_MAX_CLUSTER_SPREAD_M} m`}
+            file="hazardCluster.ts"
+          >
+            The chaining guard: how far a cluster may reach{' '}
+            <strong>beyond its largest member</strong>. Relative rather than absolute, because a
+            pressure ridge is routinely 600 m long and any absolute cap tight enough to stop
+            chaining would refuse to merge two pins of one ridge. Lower it if clusters start
+            swallowing distinct pins strung along a shoreline.
+          </ConstantCard>
+          <ConstantCard
+            name="AUTOMERGE_MIN_FOOTPRINT_IOU"
+            value={AUTOMERGE_MIN_FOOTPRINT_IOU.toFixed(2)}
+            file="hazardMerge.ts"
+          >
+            How much of the two footprints must be shared before duplicates collapse into one row
+            with no human asked. It stops a lake-spanning polygon swallowing a small distinct pin it
+            happens to contain — <em>contains</em> is not <em>is the same as</em>. Raise it on the
+            first sign operators are undoing merges.
+          </ConstantCard>
+          <ConstantCard
+            name="AUTOMERGE_REQUIRE_OVERLAP"
+            value={AUTOMERGE_REQUIRE_OVERLAP ? 'true' : 'false'}
+            file="hazardMerge.ts"
+          >
+            A near miss never auto-merges. 25 m apart is <em>probably</em> the same ridge;
+            overlapping is <em>yes</em>, and automating the first would merge on a guess. Here to be
+            read, not flipped.
+          </ConstantCard>
+        </div>
+        <MetricComposition metricKey="hazard_merges" catalogue={catalogue} semantic />
       </TuningSection>
 
       {/* ── Display / map ────────────────────────────────────────────────── */}
