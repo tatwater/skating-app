@@ -61,7 +61,12 @@ export const SOURCES: BathymetrySource[] = [
       '104,910 POINTS with a single DEPTH_FT column — not isobaths. Digitised from 1:40,000 NOAA ' +
       'charts; VCGI added the Mallets Bay–north and Crown Point–south gaps in 2003 and replaced the ' +
       'shoreline points in 2010. Covers the whole lake, so it is also our only New York coverage. ' +
-      'NGVD 1929 does NOT share a datum with the VT ANR set below — never union the two into one ramp.',
+      'NGVD 1929 does NOT share a datum with the VT ANR set below — never union the two into one ramp. ' +
+      'COUNT TRAP: only **20,345** of the 104,910 points are depth readings. The other 84,565 (80.6%) ' +
+      'are DEPTH_FT = 0 — that 2010 shoreline replacement. They are not soundings and must not be ' +
+      'counted as coverage, but they are not junk either: they are the depth-0 boundary constraint ' +
+      'that keeps an interpolated surface from running deep at the shore. Dropped by the normalizer, ' +
+      're-added deliberately by the gridder.',
   },
   {
     key: 'vt-anr-biobase-soundings',

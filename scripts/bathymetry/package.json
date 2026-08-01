@@ -12,7 +12,8 @@
     "//snapshot": "NOT `fetch` — that is a built-in pnpm command and silently runs an install instead.",
     "snapshot": "tsx src/fetch.ts",
     "verify": "tsx src/verify.ts",
-    "provenance": "tsx src/provenanceCli.ts"
+    "provenance": "tsx src/provenanceCli.ts",
+    "sweep": "tsx src/sweep.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*"
