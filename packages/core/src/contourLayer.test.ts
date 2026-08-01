@@ -162,16 +162,19 @@ describe('contourCredit', () => {
     expect(credit?.notices).toEqual([]);
   });
 
-  it('flags an interpolated lane, because it is a different claim from a survey', () => {
+  it('separates the lanes, because they are different claims', () => {
     // A state's own isobaths and a surface we fitted through its soundings must never render as the
     // same thing (§Maine step 5, gate 3 of §6).
-    expect(contourCredit([feature()])?.interpolated).toBe(false);
-    expect(contourCredit([feature({ lane: 'interpolated' })])?.interpolated).toBe(true);
+    expect(contourCredit([feature()])?.lane).toBe('surveyed');
+    expect(contourCredit([feature({ lane: 'interpolated' })])?.lane).toBe('interpolated');
   });
 
-  it('flags interpolation if ANY drawn line is ours', () => {
+  it('says "mixed" rather than taking credit for an agency survey', () => {
+    // Two sources on one water body — a border lake filed by both states. The old single boolean
+    // made ANY fitted line turn the whole body into "interpolated by us", over a credit list naming
+    // the agency whose own survey was also drawn. Symmetric with `intervalFt` going null.
     const credit = contourCredit([feature(), feature({ lane: 'interpolated' })]);
-    expect(credit?.interpolated).toBe(true);
+    expect(credit?.lane).toBe('mixed');
   });
 
   it('reports the interval when the features agree and null when they do not', () => {
@@ -259,17 +262,38 @@ describe('formatContourCredit', () => {
     expect(line).not.toMatch(/\d+ ft contours/);
   });
 
+  it('names both claims when two sources drew one lake', () => {
+    // Neither "surveyed by" (which credits the agency with our fit) nor "interpolated by us" (which
+    // takes credit for the agency's survey) is available, so the line says both.
+    const line = formatContourCredit(
+      contourCredit([
+        feature(),
+        feature({ lane: 'interpolated', agency: 'Maine DEP / MaineIF&W' }),
+      ]),
+    );
+    expect(line).toContain('part surveyed and part interpolated by us');
+    expect(line).toContain('NH Department of Environmental Services');
+    expect(line).toContain('Maine Department of Environmental Protection');
+  });
+
   it('carries no interpretation — provenance only (D82)', () => {
     // Any sentence about what a depth MEANS for ice is a sentence a skater can act on, and D3 says
     // prediction is not ours to make. The line we can hold absolutely is the one with no copy behind it.
-    const lines = [
-      formatContourCredit(contourCredit([feature()])),
-      formatContourCredit(contourCredit([feature({ lane: 'interpolated' })])),
-    ];
+    //
+    // Swept across EVERY registered agency and every lane rather than a hand-picked pair: the credit
+    // is an agency's legal name and we do not choose those, so the next source added is the one that
+    // could quietly put a forbidden word into drawer copy.
+    const lines = Object.keys(CONTOUR_SOURCE_TERMS).flatMap((agency) => [
+      formatContourCredit(contourCredit([feature({ agency })])),
+      formatContourCredit(contourCredit([feature({ agency, lane: 'interpolated' })])),
+      formatContourCredit(
+        contourCredit([feature({ agency }), feature({ agency, lane: 'interpolated' })]),
+      ),
+    ]);
     // Whole words: an agency's legal name is not our copy, and "Department of Environmental
     // Serv*ice*s" is the credit rendering correctly rather than a claim about ice.
     for (const line of lines) {
-      expect(line).not.toMatch(/\b(ice|safe|danger|thin|thick|shallow|deep|risk)\b/i);
+      expect(line, line).not.toMatch(/\b(ice|safe|danger|thin|thick|shallow|deep|risk)\b/i);
     }
   });
 });

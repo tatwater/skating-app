@@ -243,8 +243,21 @@ export const CONTOUR_SOURCE_TERMS: Readonly<Record<string, ContourSourceTerms>> 
 export interface ContourCredit {
   /** The required wording per agency, resolved through `CONTOUR_SOURCE_TERMS`. */
   agencies: string[];
-  /** Present when any drawn contour is ours rather than the agency's. */
-  interpolated: boolean;
+  /**
+   * Whose lines these are. `'mixed'` when the drawn set contains both, which is handled here for
+   * the same reason `intervalFt` goes `null` on disagreement: **the honest answer to "two sources
+   * drew this lake" is to say so, not to pick one and label the other's lines with it.**
+   *
+   * A single boolean got this exactly backwards — any fitted line made the whole body read
+   * *"interpolated by us"*, over a credit list that included the agency whose own survey was also on
+   * screen. That is gate 3 of §6 inverted: the two claims must never render as the same thing, and
+   * the same thing they rendered as was ours.
+   *
+   * The ETL now refuses to build a body from two lanes at all (`preferSurveyedLane`), so this should
+   * not arise — but a tile archive outlives the build that made it, and the client is what a stale
+   * archive is read by.
+   */
+  lane: 'surveyed' | 'interpolated' | 'mixed';
   /** `null` when the drawn features disagree, which should not happen within one body. */
   intervalFt: number | null;
   notices: string[];
@@ -268,7 +281,7 @@ export function contourCredit(
   const notices: string[] = [];
   const intervals = new Set<number>();
   const seen = new Set<string>();
-  let interpolated = false;
+  const lanes = new Set<string>();
 
   for (const feature of features) {
     const agency = feature.agency?.trim();
@@ -279,14 +292,14 @@ export function contourCredit(
       if (!agencies.includes(credit)) agencies.push(credit);
       if (entry?.notice && !notices.includes(entry.notice)) notices.push(entry.notice);
     }
-    if (feature.lane === 'interpolated') interpolated = true;
+    if (feature.lane) lanes.add(feature.lane);
     if (typeof feature.intervalFt === 'number') intervals.add(feature.intervalFt);
   }
 
   if (agencies.length === 0) return undefined;
   return {
     agencies,
-    interpolated,
+    lane: lanes.size > 1 ? 'mixed' : lanes.has('interpolated') ? 'interpolated' : 'surveyed',
     // One body should carry one interval. Disagreement means two sources overlapped, and the honest
     // answer is to say nothing rather than to pick one and label the other's lines with it.
     intervalFt: intervals.size === 1 ? ([...intervals][0] as number) : null,
@@ -312,8 +325,15 @@ export function formatContourCredit(credit: ContourCredit | undefined): string {
   if (!credit) return '';
   const source = credit.agencies.join(' · ');
   const interval = credit.intervalFt ? `${credit.intervalFt} ft contours` : 'depth contours';
-  const claim = credit.interpolated
-    ? `${interval}, interpolated by us from published soundings. ${source}.`
-    : `${interval}, surveyed by ${source}.`;
+  const claim =
+    credit.lane === 'surveyed'
+      ? `${interval}, surveyed by ${source}.`
+      : credit.lane === 'mixed'
+        ? // Both claims, named. Neither collapsing to "surveyed" (which would credit the agency with
+          // our fit) nor to "interpolated" (which would take credit for the agency's survey) is
+          // available here, and dropping the lane entirely would render two different assertions as
+          // one unlabelled thing — the exact failure gate 3 of §6 forbids.
+          `${interval}, part surveyed and part interpolated by us from published soundings. ${source}.`
+        : `${interval}, interpolated by us from published soundings. ${source}.`;
   return credit.notices.length > 0 ? `${claim} ${credit.notices.join(' ')}` : claim;
 }

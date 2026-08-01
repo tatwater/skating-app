@@ -29,10 +29,10 @@ import process from 'node:process';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
 import { type Drawn, interpolate, lakeId, publishedContours } from './contour';
-import { contourFeature } from './feature';
+import { contourFeature, stampBodyId } from './feature';
 import { readJoin } from './join';
 import { readAllLakes } from './lakeSources';
-import { measure, splitByBody } from './lakes';
+import { measure, preferSurveyedLane, splitByBody } from './lakes';
 import { sourceByKey } from './sources';
 
 const BUILD_DIR = join(SCRATCH_ROOT, 'build');
@@ -68,12 +68,29 @@ async function main(): Promise<void> {
 
   log('reading every archived source…');
   const all = (await readAllLakes()).filter((l) => !states || states.includes(l.state));
-  const lakes = all.flatMap(splitByBody);
-  log(`${lakes.length} lakes (${lakes.length - all.length} from split keys)`);
+  const split = all.flatMap(splitByBody);
+  log(`${split.length} lakes (${split.length - all.length} from split keys)`);
+
+  // A border lake is filed by both states, so it joins twice and both lanes would write under one
+  // `bodyId` — the agency's isobaths and our fit, drawn over each other and credited as ours. Runs
+  // before the loop for the same reason `splitByBody` runs before the join: by the time features are
+  // being written, "which lake is this" is already settled.
+  const { kept: lakes, superseded } = preferSurveyedLane(split, (lake) => {
+    const body = joined[lakeId(lake)];
+    return body ? stampBodyId(body) : undefined;
+  });
+  if (superseded.length > 0) {
+    log(`${superseded.length} lakes superseded by a surveyed lane on the same body`);
+  }
 
   mkdirSync(BUILD_DIR, { recursive: true });
   const out = createWriteStream(OUT_FILE);
-  const dropped: Dropped[] = [];
+  const dropped: Dropped[] = superseded.map(({ lake, reason }) => ({
+    key: lakeId(lake),
+    name: lake.lakeName,
+    state: lake.state,
+    reason,
+  }));
   let built = 0;
   let features = 0;
   let done = 0;

@@ -6,6 +6,7 @@ import {
   disjointGapFor,
   maxDepthFt,
   measure,
+  preferSurveyedLane,
   representativePoint,
   shapePoints,
   spanSelect,
@@ -365,5 +366,68 @@ describe('splitByBody', () => {
   it('does not split a lake it cannot measure', () => {
     expect(splitByBody(soundingLake([{ lng: -72, lat: 44, depthFt: 5 }]))).toHaveLength(1);
     expect(splitByBody({ ...soundingLake([]), soundings: [] })).toHaveLength(1);
+  });
+});
+
+/**
+ * The other direction of the collision: **two source keys, one lake.**
+ *
+ * `splitByBody` above handles one key holding two waters. This handles two sources covering the same
+ * water — a border lake filed by both states, which joins twice and writes both lanes under one
+ * `bodyId`. It shipped that way: Lower Kimball Pond and Province Lake each carried NH GRANIT's
+ * published isobaths *and* our fit through Maine's soundings, drawn over each other and credited as
+ * ours.
+ */
+describe('preferSurveyedLane', () => {
+  const bodies = new Map<string, string>();
+  const bodyKeyFor = (lake: ArchivedLake) => bodies.get(lake.lakeKey);
+  const line = { depthFt: 10, coordinates: [[-72, 44] as number[], [-72.01, 44.01] as number[]] };
+  const point = { lng: -72, lat: 44, depthFt: 10 };
+
+  it('keeps the survey and sets our fit aside when both cover one body', () => {
+    const surveyed = contourLake([line], 'NHLAK-1');
+    const fitted = soundingLake([point], 'MIDAS-1');
+    bodies.set('NHLAK-1', 'way/1').set('MIDAS-1', 'way/1');
+
+    const { kept, superseded } = preferSurveyedLane([surveyed, fitted], bodyKeyFor);
+    expect(kept).toEqual([surveyed]);
+    expect(superseded).toHaveLength(1);
+    expect(superseded[0]?.lake).toBe(fitted);
+    // No silent caps: the reason names the agency that displaced it, for `dropped.json`.
+    expect(superseded[0]?.reason).toContain('NH GRANIT');
+  });
+
+  it('leaves an agency that files one lake under two keys completely alone', () => {
+    // NH GRANIT files Great East Lake as both `NHLAK…` and `MELAK…`, and the two halves together
+    // ARE the lake. Same lane, so there is nothing to resolve — only a survey/fit mix is a problem.
+    const half = contourLake([line], 'NHLAK-2');
+    const otherHalf = contourLake([line], 'MELAK-2');
+    bodies.set('NHLAK-2', 'way/2').set('MELAK-2', 'way/2');
+
+    const { kept, superseded } = preferSurveyedLane([half, otherHalf], bodyKeyFor);
+    expect(kept).toEqual([half, otherHalf]);
+    expect(superseded).toEqual([]);
+  });
+
+  it('leaves two fitted lanes on one body alone too, having no survey to prefer', () => {
+    const a = soundingLake([point], 'MIDAS-3a');
+    const b = soundingLake([point], 'MIDAS-3b');
+    bodies.set('MIDAS-3a', 'way/3').set('MIDAS-3b', 'way/3');
+
+    expect(preferSurveyedLane([a, b], bodyKeyFor).superseded).toEqual([]);
+  });
+
+  it('passes an unjoined lake through, since that is the join’s drop to report', () => {
+    const orphan = soundingLake([point], 'MIDAS-4');
+    const { kept, superseded } = preferSurveyedLane([orphan], () => undefined);
+    expect(kept).toEqual([orphan]);
+    expect(superseded).toEqual([]);
+  });
+
+  it('does not disturb lakes that share nothing', () => {
+    const a = contourLake([line], 'NHLAK-5');
+    const b = soundingLake([point], 'MIDAS-5');
+    bodies.set('NHLAK-5', 'way/5a').set('MIDAS-5', 'way/5b');
+    expect(preferSurveyedLane([a, b], bodyKeyFor).kept).toEqual([a, b]);
   });
 });
