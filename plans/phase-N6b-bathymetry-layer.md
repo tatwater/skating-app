@@ -2,7 +2,7 @@
 
 *An underwater-contour layer inside an open lake's drawer, drawn from state-agency surveys.*
 
-> **Status: 🔨 IN BUILD (2026-08-01). The ETL is complete end to end; neither client renders it yet.**
+> **Status: ✅ BUILT end to end (2026-08-01). Both clients render it. Not yet uploaded or deployed.**
 >
 > | | |
 > | --- | --- |
@@ -12,15 +12,14 @@
 > | **Gated** | ✅ coverage gap + data support. **No output-side gate** — five were tried and falsified (below) |
 > | **Interpolated + contoured** | ✅ **2,044 lakes → 49,767 lines**, all five agencies, Champlain included |
 > | **Tiled** | ✅ **15 MB** `.pmtiles`, z9–z14, 10,753 tiles, on the Phase 2.5 upload lane |
-> | **Web client** | ⬜ **not built** — shared layer logic and palette exist, `MapView` is unwired |
-> | **Mobile client** | ⬜ **not built** |
-> | **Drawer credit row** | ⬜ **not built** — the copy is written and tested, nothing renders it |
+> | **Web client** | ✅ lazily-mounted source on drawer-open, filtered to the body, faded in, under hazards |
+> | **Mobile client** | ✅ same, as a conditionally-rendered `VectorSource` with `beforeId` |
+> | **Drawer credit row** | ✅ derived from the drawn features, on both clients |
+> | **Uploaded + wired** | ⬜ the archive is built locally; no R2 key, so no deployment has a URL yet |
 > | **Rung-1 depth write** | ⏸ correctly gated behind [N6a](./phase-N6a-lake-depth.md)'s ordering gate |
 >
-> **What is genuinely left is the render half**, and it is a real chunk rather than cleanup: adding a
-> lazily-mounted source to two `MapView`s, filtering it to the open body, fading it in, keeping it
-> under hazards, and rendering one credit line at the bottom of the drawer. Everything it needs is
-> built and tested — `@skating/core/contourLayer`, the per-app palettes, the env vars, the tiles.
+> **What remains is one `tile.sh --upload` and an env var per deployment.** Until then both clients
+> mount nothing, which is the correct behaviour rather than a degraded one — see *§The render half*.
 >
 > **We ship with no output-side quality gate**, deliberately — five were tried and every one was
 > falsified by a render. See *§The gate that measured the wrong thing*. That is only tolerable because
@@ -1020,6 +1019,80 @@ now be judged against a real map rather than an argument.
 It is 3% shoreline-constrained with 13,926 soundings across a 935 m basin — a shallow 17 ft pond
 genuinely is close to a bowl. Recorded because it was the first thing that looked suspicious in the
 grid, and checking it is what produced the table above.
+
+---
+
+## The render half (2026-08-01)
+
+*The ETL half of this page took eight sections to describe because almost everything in it failed
+first. The render half is the opposite — D81 and D82 had already removed most of what there was to
+decide — so this is short on purpose. What follows is the four things that were still choices.*
+
+### Visibility is derived, so there is no state to own
+
+D81 said contours are a property of the detail view, and that turned out to be a *smaller* build than
+a toggle rather than an equivalent one. The layer's whole lifecycle is one value in each app's
+`MapSelectionContext`: `contourBodyKey`, set by the lake drawer when its body loads and cleared by
+the map layout on any navigation. Web adds the source and layer in an effect keyed on it; mobile
+renders a `<VectorSource>` when it is non-null. There is no preference, no settings row, and no
+divergence between the clients about what is remembered, because nothing is remembered.
+
+**It is keyed by the OSM `externalId`, not the Convex `_id`** — `contourBodyKey` in
+`@skating/core`, which `scripts/bathymetry`'s `stampBodyId` now delegates to. A stamp and a filter
+that disagree draw nothing at all, with no error anywhere, so the two sides resolve the key with the
+same function rather than with the same intention.
+
+**Only the lake drawer sets it.** A report drawer and a hazard drawer also highlight a body, and
+neither mounts contours. That is D81 read literally — *"when the drawer is open for a given water
+body"* — and it is the reading that keeps the layer out of views that are about something else.
+
+### The credit comes off the tile, which is the one thing that flows map → drawer
+
+Everything else in `MapSelectionContext` flows drawer → map. The credit runs the other way, because
+the tile is the authority on who surveyed this lake: `agency`, `lane` and `intervalFt` are properties
+on the features, and only the map can read them back. Both clients query the source after rendering
+settles (`idle` on web, `onDidFinishRenderingMapFully` on native), format one line with
+`formatContourCredit`, and push it up; the drawer renders it last, beside the depth provenance and
+the Open-Meteo credit. On a lake nobody surveyed nothing is queried, nothing is pushed, and the row
+is simply absent — which is also what an unconfigured deployment looks like.
+
+**A registry had to exist, and this is the one place the render half found a real problem.** The tile
+carries a short agency label (`VCGI / NOAA`), and §*The NOAA notice* settled that this exact string is
+the credit we may **not** render: VCGI's terms name the University of Vermont, and NOAA asks that
+attribution not imply its involvement in data it did not draw. So `CONTOUR_SOURCE_TERMS` in
+`@skating/core` maps each label to the required wording verbatim, and a test in `scripts/bathymetry`
+asserts it matches `sources.ts`'s `attribution`/`notice` for every source — in both directions. The
+app cannot import from `scripts/`, and a copied credit table nobody checks is how an attribution goes
+quietly stale the first time an agency restates its terms.
+
+One consequence for the copy: **the required wording is a sentence for one source and a name for the
+other four**, so the interpolated lane's line ends with the credit as its own sentence rather than
+splicing it into ours. *"5 ft contours, interpolated by us from published soundings. Soundings
+digitised from NOAA nautical charts by University of Vermont and VCGI. Not for navigation."*
+
+### The ramp is scaled by the deepest ring drawn, and only ever grows
+
+`contourColorExpression` needs a maximum to ramp against, and the honest source is the tile rather
+than the body's N6a `maxDepthM` — the two come from different measurements, and a lake whose deepest
+sounding is 42 ft can carry a modelled `maxDepthM` of 60, which leaves every drawn ring in the pale
+end of the ramp and flattens exactly the contrast it exists to give.
+
+Read per-lake and **monotonically**: `querySourceFeatures` answers from the tiles currently loaded,
+so panning the deep basin off screen would otherwise re-scale the ramp under a skater who touched
+nothing. Reset on body change.
+
+### The fade waits for the data rather than racing it
+
+The layer mounts at `line-opacity: 0` and fades to 0.75 on the *first successful read* — not on add.
+So the fade covers the tile fetch instead of competing with it, and a lake with no contours never
+fades in at all rather than flashing an empty layer. On both clients this is a paint transition
+(`line-opacity-transition`), which the native renderer honours the same way the web one does.
+
+**Z-order is a string convention between two files, so it is tested.** Contours insert before
+`sub-area-outline` — a layer both maps add unconditionally — which puts them under every pin, track
+and hazard added after it. Rename that layer and web's `addLayer` silently appends instead, drawing
+contours *over* hazards, which is the one direction D82 says this layer must never fail in. Each
+app's `contourMap.test.ts` reads its own `MapView` and asserts the id is still there.
 
 ---
 
