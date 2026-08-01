@@ -2,7 +2,7 @@
 
 *An underwater-contour layer inside an open lake's drawer, drawn from state-agency surveys.*
 
-> **Status: ✅ BUILT end to end (2026-08-01). Both clients render it. Not yet uploaded or deployed.**
+> **Status: ✅ COMPLETE (2026-08-01) — ETL, tiles, and both clients. Prod cutover deferred, as everywhere.**
 >
 > | | |
 > | --- | --- |
@@ -15,11 +15,12 @@
 > | **Web client** | ✅ lazily-mounted source on drawer-open, filtered to the body, faded in, under hazards |
 > | **Mobile client** | ✅ same, as a conditionally-rendered `VectorSource` with `beforeId` |
 > | **Drawer credit row** | ✅ derived from the drawn features, on both clients |
-> | **Uploaded + wired** | ⬜ the archive is built locally; no R2 key, so no deployment has a URL yet |
+> | **Uploaded + wired** | ✅ `dev/bathymetry-20260801.pmtiles` on the basemap R2 bucket, both `.env.local`s set |
 > | **Rung-1 depth write** | ⏸ correctly gated behind [N6a](./phase-N6a-lake-depth.md)'s ordering gate |
 >
-> **What remains is one `tile.sh --upload` and an env var per deployment.** Until then both clients
-> mount nothing, which is the correct behaviour rather than a degraded one — see *§The render half*.
+> **A deployment without the env var mounts nothing, and that is correct rather than degraded** — under
+> D82 contours make no claim, so an unconfigured build shows a flat lake exactly as it does for the
+> majority of bodies no agency ever surveyed. Adding a region means one more `tile.sh --upload`.
 >
 > **We ship with no output-side quality gate**, deliberately — five were tried and every one was
 > falsified by a render. See *§The gate that measured the wrong thing*. That is only tolerable because

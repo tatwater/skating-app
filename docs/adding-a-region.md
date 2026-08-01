@@ -246,9 +246,8 @@ Reload the map and confirm the basemap covers the new region.
 
 ## Step 4b — Bathymetry contours (per **agency**, not per bbox)
 
-> **Status: the ETL half is built and runnable; the clients do not render it yet (N6b).** Follow this
-> to produce and host the tiles; the last step (repointing an app env var) has nothing to point at
-> until the client work lands.
+> **Status: complete and live (N6b).** Both clients draw contours inside an open lake, so a new
+> agency's tiles show up as soon as this step's last line — repointing the app env var — is done.
 
 **This step breaks the mental model above, and that is the most important thing to know about it.**
 The other three data sets agree on one bounding box. Bathymetry agrees on nothing geographic: it is

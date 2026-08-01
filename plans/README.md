@@ -1,8 +1,9 @@
 # Planning docs
 
-> **Where things stand (2026-07-30): every roadmap phase — 0 through 10 — is built**, and the
-> post-roadmap run **N1 → N2 → N3/N4 → N5a → N5b** has shipped on dev (read-path durability, sub-areas
-> + the lake editor, account lifecycle, seasons, hazard authoring, lake depth).
+> **Where things stand (2026-08-01): every roadmap phase — 0 through 10 — is built**, and the
+> post-roadmap run **N1 → N2 → N3/N4 → N5a → N5b → N5c → N6a → N6b** has shipped on dev (read-path
+> durability, sub-areas + the lake editor, account lifecycle, seasons, hazard authoring, hazard
+> identity, lake depth, bathymetry contours).
 > Phase 8 was the last numbered phase. Everything still unbuilt is *explicitly* deferred and registered in
 > [`07-roadmap.md`](./07-roadmap.md) → *Later / deferred*, each phase doc's *Out of scope / deferred*
 > section, [`02-open-questions.md`](./02-open-questions.md), and
@@ -10,8 +11,8 @@
 > outstanding: the **prod cutover** (Convex prod uninitialized), **device verification** of the native
 > surfaces, and the **N6a depth ETL run** (written and tested; needs three third-party downloads).
 > **N5c, N6c and N6d were scoped 2026-07-30** (hazard identity; lake profiles; access points), and
-> **N6e — satellite imagery in the app — was scoped 2026-07-31**; these are the only *unbuilt* phase docs
-> — alongside **N6b**, which is designed and deliberately unbuilt.
+> **N6e — satellite imagery in the app — was scoped 2026-07-31**; these are the only *unbuilt* phase docs.
+> **N6b shipped 2026-08-01** — ETL, tiles and both clients.
 >
 > ⛔ **The N6a depth ETL is gated 2026-07-31 (founder call): do not run it until N6c is complete**, so the
 > elevation pass rides the same run. Folding it in costs one column; doing it afterwards costs a second
@@ -150,12 +151,14 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   the thaw response only, never the cold one). **✅ Built + on dev (2026-07-30); prod deferred** — the ETL
   itself is written and tested but **not yet run** — and is now ⛔ **gated on N6c completing** (2026-07-31).
 - [N6b — The bathymetry layer](./phase-N6b-bathymetry-layer.md) — measured state-agency isobaths as a
-  PMTiles overlay, VT + NH first. **📋 Designed, deliberately unbuilt.** Split from N6 at N6a's
-  kickoff; carries the finding that GLOBathy's rasters are a distance transform and must never be drawn.
-  **All six open questions answered 2026-07-31**: **D81** (no contour toggle — contours follow the detail
-  view, and the map's only switch is satellite), **D82** (bathymetry is context, not counsel — no safety
-  copy at all, which dissolves what this doc called its hardest part), **D83** (native intervals and
-  units, never resampled).
+  PMTiles overlay, drawn inside the open lake. **✅ Complete (2026-08-01); prod deferred.** Five agencies
+  archived → **2,044 lakes contoured into 49,767 lines** → a 15 MB z9–z14 archive on the Phase 2.5 upload
+  lane → rendered by both clients. Split from N6 at N6a's kickoff; carries the finding that GLOBathy's
+  rasters are a distance transform and must never be drawn, and the harder one that **every input-side
+  quality gate we tried was falsified by a render** — so it ships with none. **D81** (no contour toggle —
+  contours follow the detail view, and the map's only switch is satellite), **D82** (bathymetry is
+  context, not counsel — no safety copy at all, which dissolves what this doc called its hardest part),
+  **D83** (native intervals, never resampled), **D89** (a fixed 5 ft ladder, so ring count reads as depth).
 - [N6c — Expanded lake profiles](./phase-N6c-expanded-lake-profiles.md) — what N6a's depth numbers were
   missing: elevation, long axis, shoreline, a 16-bearing **wind-fetch profile**, a generated per-lake
   caption, reference links that cover all 116,070 bodies *because* they aren't stored (**D70/D71**), and
