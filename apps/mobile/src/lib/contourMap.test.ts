@@ -1,28 +1,14 @@
-import { hexToRgb } from '@skating/design';
+import { hexToRgb, hueDistance } from '@skating/design';
 import { describe, expect, it } from 'vitest';
 import { CONTOUR_PALETTE } from './contourMap';
 import { HAZARD_PALETTE } from './hazardMap';
 
-/** Hue in degrees, from a hex. Enough to say "this is a cyan and that is a red". */
-function hue(hex: string): number {
-  const [r, g, b] = hexToRgb(hex).map((v) => v / 255) as [number, number, number];
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-  if (delta === 0) return 0;
-  let h: number;
-  if (max === r) h = ((g - b) / delta) % 6;
-  else if (max === g) h = (b - r) / delta + 2;
-  else h = (r - g) / delta + 4;
-  return (h * 60 + 360) % 360;
-}
-
-/** Shortest distance between two hues on the colour wheel. */
-function hueDistance(a: string, b: string): number {
-  const d = Math.abs(hue(a) - hue(b)) % 360;
-  return d > 180 ? 360 - d : d;
-}
-
+/**
+ * Mobile's contour palette. The layer transforms are tested in `@skating/core`
+ * (`contourLayer.test.ts`) and the hue math in `@skating/design` (`hue.test.ts`); what is mobile-specific
+ * — and the only reason this file exists on both clients — is that *these* tokens still satisfy D82
+ * against *this* app's hazard palette.
+ */
 describe('CONTOUR_PALETTE', () => {
   const themes = ['white', 'dark'] as const;
 
