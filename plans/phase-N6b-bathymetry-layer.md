@@ -667,6 +667,103 @@ Two smaller things the wide grid surfaced:
 
 ---
 
+## Checked against the agencies' own maps (2026-08-01)
+
+*The founder's question was the right one: **we had no ideal to compare against.** We do now. Both
+Maine IF&W and VT DEC publish finished depth charts as PDFs, including for lakes in our sample grid —
+and for Maine those charts are the **originals our digitised points came from**, which makes the
+comparison as close to apples-to-apples as this phase will ever get.*
+
+| Lake | Official chart | Their max | **Our max** | Their interval | **Our interval** |
+| --- | --- | --- | --- | --- | --- |
+| Washington Pond (MIDAS 4894) | [Maine IF&W](https://www.maine.gov/ifw/docs/lake-survey-maps/Washington-Pond-4894.pdf) | 36 ft | **36 ft** ✅ | 5 ft / 10 ft | **2 ft** |
+| Lake Morey | [VT DEC](https://dec.vermont.gov/sites/dec/files/wsm/lakes/docs/Depth/lp_morey.pdf) | 42 ft | **42 ft** ✅ | 2 ft | **5 ft** |
+
+**What validates.** Depth extremes match *exactly* on both, which independently confirms the unit
+handling end to end — Maine's 3.3-vs-3.28084 constant, Vermont's negative-depth flip, the shoreline
+drops. Basin shape validates too: Washington Pond's dogleg with two deep holes, Morey's fat southern
+basin narrowing to a north-east arm, and on both the tight-near-shore / flat-in-the-middle gradient.
+Morey's north-east arm is left blank by the mask where the state's chart has contours, and **that is
+correct** — no sonar ran up there, so we decline to draw it.
+
+### 1 — The contour interval is chosen from depth alone, and it should not be
+
+**We give the sparse lake the fine interval and the dense lake the coarse one — exactly backwards.**
+
+`chooseInterval` targets ~12 bands from `maxDepth` and nothing else, so the cut falls at 40 ft:
+
+| max depth | interval | levels |
+| --- | --- | --- |
+| 17–36 ft | **2 ft** | 8–17 |
+| 42–59 ft | 5 ft | 8–11 |
+
+Washington Pond is 36 ft with **105 soundings**, so it lands on 2 ft and we draw **17 levels through
+105 measurements** — 69 fragmented line features where the state drew a handful of clean closed rings.
+Morey is 42 ft with **68,139 soundings** and lands on 5 ft, where the state — with the same data —
+drew 2 ft. Depth decided both, and depth is the one input that says nothing about how much structure
+the survey can support.
+
+**`interval.ts` already states the principle it is violating:** *"too fine and we are drawing our
+interpolator's noise."* The fix is to make the interval a function of **data support** as well as
+depth — sounding count and coverage gap are both already computed per lake by `assessDensity`.
+
+### 2 — On the Maine lane, most of what the spline sees is our own shoreline
+
+The measurement that should govern this phase's next decision. `blockmedian` reduces to one value per
+grid cell before the spline sees anything, so the honest ratio is **cells occupied**, not points:
+
+| Lake | sounding cells | shoreline cells | **shoreline share** |
+| --- | --- | --- | --- |
+| Horserace Ponds (ME) | 24 | 515 | **96%** |
+| Washington Pond (ME) | 105 | 1,409 | **93%** |
+| Long Pond (ME) | 78 | 918 | **92%** |
+| Long Lake (ME) | 183 | 1,206 | **87%** |
+| Middle Branch Pond (ME) | 68 | 361 | **84%** |
+| Lake Champlain | 13,873 | 5,145 | 27% |
+| Clyde Pond (VT) | 13,604 | 1,113 | 8% |
+| Great Hosmer (VT) | 26,738 | 1,381 | 5% |
+| Burr Pond (VT) | 13,926 | 461 | 3% |
+| Lake Morey (VT) | 68,139 | 1,389 | **2%** |
+
+**On Maine lakes, 84–96% of the constraint is a depth-0 ring we drew ourselves.** A surface fitted
+mostly to distance-from-shoreline is, to a first approximation, a distance transform — which is the
+**GLOBathy failure this document opens by refusing**, arriving through the back door. Vermont is the
+opposite and is genuinely measurement-driven.
+
+**`shoreline.ts`'s stated reasoning is half right and the measurement corrects it.** It argues the
+shore needs no thinning because *"`blockmedian` already prevents that — it reduces the input to one
+value per grid cell, so a dense shore fills cells rather than stacking them."* True, and beside the
+point: `blockmedian` stops the shore **stacking** within a cell, not the shore **occupying fourteen
+times more cells** than the data does. The shore is resampled at one grid cell (extent ÷ 500)
+regardless of how many soundings exist, so its cell count is set by lake size while the soundings' is
+set by survey effort, and on a sparse lake those two numbers are three orders of magnitude apart.
+
+**The candidate fix is small:** scale shoreline resampling to the *sounding* spacing rather than to
+the grid. It does not make Maine's data denser — nothing can — but it stops the shore outvoting it,
+and it would move the visible near-shore contour band, which is where this shows up on a render.
+
+**And it sharpens the density gate's job.** MAX_GAP_RATIO asks *"how far is the nearest measurement"*;
+this asks *"how much of the fit is measurement at all"*, and the second question is the one that
+decides whether Maine's lane is honest. Worth considering as a second gate before Maine ships.
+
+### 3 — Anisotropy stretches Morey's deep basin into a finger
+
+Against the VT DEC chart, Morey's deepest region is a **broad rounded basin**; ours is a narrow
+elongated finger running along the axis. Morey measures elongation 2.80 and therefore receives the
+full 2.80 anisotropy. This is the first *evidence from ground truth* for the complaint recorded in
+§*The limitation that remains* — and it argues the straight-axis compression is over-applied on a lake
+whose basin is rounder than its outline. It does not settle option A vs D; it does mean the choice can
+now be judged against a real map rather than an argument.
+
+### What did NOT turn out to be wrong
+
+**Burr Pond's bowl-like concentric rings looked like the distance-transform signature and are not.**
+It is 3% shoreline-constrained with 13,926 soundings across a 935 m basin — a shallow 17 ft pond
+genuinely is close to a bowl. Recorded because it was the first thing that looked suspicious in the
+grid, and checking it is what produced the table above.
+
+---
+
 ## What the build found in the plan
 
 *Written 2026-07-31, at the start of the build, from checking every source against its live service

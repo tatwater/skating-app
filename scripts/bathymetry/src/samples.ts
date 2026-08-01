@@ -79,7 +79,8 @@ const MIN_DEPTH_FT = 15;
 /** A contour lane needs enough published lines to show a basin rather than a single ring. */
 const MIN_CONTOUR_LINES = 6;
 
-const CARD = 340;
+const DEFAULT_CARD = 340;
+let CARD = DEFAULT_CARD;
 const CARD_PAD = 10;
 
 function flag(args: string[], name: string): string | undefined {
@@ -531,6 +532,7 @@ async function main(): Promise<void> {
   mkdirSync(WORK_DIR, { recursive: true });
   const outPath = flag(args, 'out') ?? join(WORK_DIR, 'samples.html');
   const perState = Number(flag(args, 'per-state') ?? 5);
+  CARD = Number(flag(args, 'card') ?? DEFAULT_CARD);
   const states = (flag(args, 'states') ?? 'VT,NH,MA,ME').split(',').map((s) => s.trim());
 
   log('[bathymetry] reading every archived source…');
@@ -643,7 +645,7 @@ async function main(): Promise<void> {
  body{font:14px/1.55 -apple-system,system-ui,sans-serif;margin:2rem auto;max-width:1400px;color:#16222c;padding:0 1rem}
  h1{font-size:1.5rem;margin-bottom:.3rem} h2{font-size:1.1rem;margin-top:2.5rem;border-bottom:1px solid #e3eaf0;padding-bottom:.3rem}
  .count{color:#8b9aa6;font-weight:400;font-size:.85em}
- figure{margin:0;display:inline-block;vertical-align:top;width:360px}
+ figure{margin:0;display:inline-block;vertical-align:top;max-width:${CARD + 20}px}
  figcaption{font-size:12px;color:#5a6b78;margin-top:.5rem;line-height:1.5}
  .grid{display:flex;flex-wrap:wrap;gap:1.5rem;margin-top:1.2rem}
  .state{background:#eef3f7;border-radius:3px;padding:0 5px;font-size:11px;color:#5a6b78}
