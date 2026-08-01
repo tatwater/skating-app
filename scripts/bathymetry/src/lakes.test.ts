@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest';
 import {
   type ArchivedLake,
   contourVertices,
+  disjointGapFor,
   maxDepthFt,
   measure,
   representativePoint,
   shapePoints,
   spanSelect,
   spatialClusters,
+  splitByBody,
 } from './lakes';
 
 function soundingLake(
@@ -278,5 +280,90 @@ describe('spanSelect', () => {
       (x) => x.shape,
     );
     expect(a).toEqual(b);
+  });
+});
+
+describe('splitByBody', () => {
+  function blob(lng: number, lat: number, n = 30, depth = 20) {
+    return Array.from({ length: n }, (_, i) => ({
+      lng: lng + (i % 6) * 0.0009,
+      lat: lat + Math.floor(i / 6) * 0.0009,
+      depthFt: depth,
+    }));
+  }
+
+  it('leaves a single-body key completely alone, original key included', () => {
+    // The common case must not pay a rename for the rare one.
+    const lake = soundingLake(blob(-72, 44), 'MIDAS-1');
+    const parts = splitByBody(lake);
+    expect(parts).toHaveLength(1);
+    expect(parts[0]?.lakeKey).toBe('MIDAS-1');
+    expect(parts[0]).toBe(lake);
+  });
+
+  it('splits two ponds miles apart into two lakes, losing no readings', () => {
+    // NH's `au_id` "Horseshoe Pond" holds two waters 51 km apart. Unsplit, one of them is clipped
+    // away against a shoreline nowhere near it and vanishes without an error.
+    const lake = soundingLake([...blob(-72, 44, 30), ...blob(-71.4, 44.3, 12)], '626');
+    const parts = splitByBody(lake);
+    expect(parts).toHaveLength(2);
+    expect(parts.map((p) => p.lakeKey)).toEqual(['626#1', '626#2']);
+    const total = parts.reduce((n, p) => n + (p.soundings?.length ?? 0), 0);
+    expect(total).toBe(42);
+  });
+
+  it('orders sub-keys by size, so the principal body keeps a stable name', () => {
+    const lake = soundingLake([...blob(-72, 44, 8), ...blob(-71.4, 44.3, 40)], 'k');
+    const parts = splitByBody(lake);
+    expect(parts[0]?.soundings).toHaveLength(40);
+    expect(parts[1]?.soundings).toHaveLength(8);
+  });
+
+  it('keeps each part geographically coherent', () => {
+    const lake = soundingLake([...blob(-72, 44, 20), ...blob(-71.4, 44.3, 20)], 'k');
+    for (const part of splitByBody(lake)) {
+      expect(spatialClusters(shapePoints(part), disjointGapFor(measure(part).extentM))).toBe(1);
+    }
+  });
+
+  it('splits a contour lane by feature, never cutting a line in half', () => {
+    const far = contourLake(
+      [
+        {
+          depthFt: 10,
+          coordinates: [
+            [-72, 44],
+            [-71.999, 44.001],
+          ],
+        },
+        {
+          depthFt: 20,
+          coordinates: [
+            [-72.001, 44.002],
+            [-72.0, 44.003],
+          ],
+        },
+        {
+          depthFt: 10,
+          coordinates: [
+            [-71.4, 44.3],
+            [-71.399, 44.301],
+          ],
+        },
+      ],
+      'NHLAK-x',
+    );
+    const parts = splitByBody(far);
+    expect(parts).toHaveLength(2);
+    expect(parts[0]?.contours).toHaveLength(2);
+    expect(parts[1]?.contours).toHaveLength(1);
+    // Every original line survives intact in exactly one part.
+    const all = parts.flatMap((p) => p.contours ?? []);
+    expect(all).toHaveLength(3);
+  });
+
+  it('does not split a lake it cannot measure', () => {
+    expect(splitByBody(soundingLake([{ lng: -72, lat: 44, depthFt: 5 }]))).toHaveLength(1);
+    expect(splitByBody({ ...soundingLake([]), soundings: [] })).toHaveLength(1);
   });
 });

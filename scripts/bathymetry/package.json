@@ -3,19 +3,21 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual bathymetry ETL (N6b): state-agency contours + soundings → isobath PMTiles + rung-1 depths. Not built or deployed.",
+  "description": "Manual bathymetry ETL (N6b): state-agency contours + soundings \u2192 isobath PMTiles + rung-1 depths. Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "probe": "tsx src/probe.ts",
-    "//snapshot": "NOT `fetch` — that is a built-in pnpm command and silently runs an install instead.",
+    "//snapshot": "NOT `fetch` \u2014 that is a built-in pnpm command and silently runs an install instead.",
     "snapshot": "tsx src/fetch.ts",
     "verify": "tsx src/verify.ts",
     "provenance": "tsx src/provenanceCli.ts",
     "sweep": "tsx src/sweep.ts",
     "samples": "tsx src/samples.ts",
-    "join": "tsx src/join.ts"
+    "join": "tsx src/join.ts",
+    "build-contours": "tsx src/build.ts",
+    "tile": "./tile.sh"
   },
   "dependencies": {
     "@skating/core": "workspace:*"

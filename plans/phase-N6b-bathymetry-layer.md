@@ -673,6 +673,38 @@ Two smaller things the wide grid surfaced:
 
 ---
 
+## The NOAA notice, resolved (2026-08-01)
+
+*§5 left one thing open: "NOAA chart-derived data in particular usually carries a 'not for
+navigation' class of notice, which is worth reading properly before it renders next to anything on a
+safety product." Read properly, it changed the credit line in three ways.*
+
+**Our licence relationship runs to VCGI, not to NOAA.** We take the data from VCGI's service; VCGI's
+archived metadata says the layer is *"bathymetric data derived NOAA nautical charts… digitized from
+the RF 40,000 scale NOAA charts."* NOAA's terms govern the character of the underlying survey, not
+our redistribution chain.
+
+**Three corrections to the placeholder credit** (`NOAA · VCGI · VT ANR · VT DEC`):
+
+1. **It omitted the actual copyright holder.** VCGI's own `copyrightText` reads *"University of
+   Vermont (JEFF LAIBLE), VCGI"* — so the placeholder left out UVM and added VT ANR and VT DEC, who
+   are not in it at all.
+2. **NOAA asks that attribution not imply endorsement or affiliation**, and that modified data not be
+   presented as unaltered NOAA data. Champlain's contours are *doubly* derived — NOAA chart, digitised
+   by UVM/VCGI, then interpolated by us — so the credit has to say where the soundings came from and
+   stop short of implying NOAA drew any of this.
+3. **The notice is a separate obligation from the credit**, and is stored and rendered as its own
+   field rather than folded into the attribution string.
+
+The credit is now *"Soundings digitised from NOAA nautical charts by University of Vermont and
+VCGI"*, with the notice *"Not for navigation."*
+
+**This does not breach D82.** D82 refuses copy telling a skater what a depth *means* for ice; a
+licence notice makes no claim about ice at all. If anything it points the same way — it says do not
+navigate by this. Worth stating because the first reader of the drawer copy will ask.
+
+---
+
 ## Rebuilt against the charts (2026-08-01)
 
 *The four fixes the chart comparison below argued for, built the same day. **D89**: the contour

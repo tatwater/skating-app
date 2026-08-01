@@ -200,7 +200,7 @@ Only step 5 answers that.
 ## 4. Join — resolve source lakes to our water bodies
 
 ```bash
-pnpm --filter @skating/bathymetry join [<source-key>…] [--refresh]
+pnpm --filter @skating/bathymetry join [--states=VT,NH] [--refresh]
 ```
 
 Calls `waterBodies:matchBathymetryLakes` — the same geometric join N6a's depth ETL uses, running
@@ -216,13 +216,11 @@ Three things to know before running it:
   cost per lake ranges over three orders of magnitude between a farm pond and a point in the middle
   of Champlain. Batches that trip the cap are split and retried; a lake that fails alone is recorded
   as a named reject rather than dropped.
-- **VT ANR is not joined by this command.** It is a CSV inside a zip rather than an ArcGIS lane, and
-  the command names it rather than silently skipping it.
-
-> ⚠ **Known bug, unfixed:** 15 source keys (3 in NH, 12 in ME) hold **more than one water body**, so
-> one key resolves to one polygon and the other pond's geometry is clipped away against a shoreline
-> miles from it. `samples` excludes and names them; `join` does not yet split them. See the phase doc,
-> *§What the wide render found* §1.
+- **A source key that holds two water bodies is split first.** 15 keys do (3 NH, 12 ME) — NH files two
+  ponds 51 km apart under one `au_id`, and Maine's MIDAS `870` scatters over 379 km. One key resolves
+  to one polygon, so an unsplit key sends the second pond's geometry to be clipped against a shoreline
+  miles away and it vanishes without an error. Split parts are suffixed `#1`, `#2`… largest first, so
+  the principal body keeps a stable name.
 
 ## 5. Samples — look at what the chain actually draws
 
@@ -259,7 +257,40 @@ to the interpolation, and *look at it*, before believing a green test suite.
 
 Prerequisites for this step specifically: **GMT** (`brew install gmt`) and **GDAL**.
 
-## 6. Provenance — regenerate the committed record
+## 6. Build — run the chain over everything
+
+```bash
+pnpm --filter @skating/bathymetry build-contours [--states=VT,NH] [--limit=50]
+```
+
+Runs the chain over every joined lake and writes newline-delimited GeoJSON to
+`.scratch/build/contours.geojsonl`. Every feature carries `bodyId` (the OSM `externalId` the client
+filters on for D81), `depthFt`, `lane` (`surveyed` vs `interpolated` — the provenance claim),
+`agency`, `state` and `intervalFt`.
+
+**Everything dropped is named**, in `.scratch/build/dropped.json` and in the printed tally. This
+matters more here than anywhere else in the package: in the finished layer, a lake that silently
+failed to build is indistinguishable from a lake nobody ever surveyed.
+
+## 7. Tile — PMTiles, and optionally upload
+
+```bash
+scripts/bathymetry/tile.sh                                    # -> .scratch/build/bathymetry.pmtiles
+scripts/bathymetry/tile.sh --upload dev/bathymetry-20260801.pmtiles
+```
+
+z9–z14. The ceiling is set by D81 rather than by cartography — contours are detail-view furniture, so
+the only zoom that has to look right is the one a drawer opens at, and z14 is already finer than the
+25 m grid the surfaces were solved on. The floor is a guard rail: a drawer can be open while the
+camera is zoomed out, and a whole state's isobaths at z5 is a lot of tile for a picture nobody can
+read. `--drop-densest-as-needed` rather than `--drop-fraction-as-needed`, so a sparse lake keeps every
+line it has instead of being thinned alongside a dense one.
+
+Uploads go to the **public** basemap bucket via the Phase 2.5 lane — browsers range-read the overlay
+exactly like the basemap. That is the opposite of `.raw/`, which is third-party source data and is
+mirrored privately.
+
+## 8. Provenance — regenerate the committed record
 
 ```bash
 pnpm --filter @skating/bathymetry provenance
@@ -271,7 +302,13 @@ Run this after any `snapshot`, so `PROVENANCE.md` matches the archive it describ
 
 ## Not built yet
 
-The render half of the phase: `tippecanoe` → `.pmtiles` → R2, and the two clients. Nothing here
-produces a tile. `tippecanoe` and `pmtiles` are listed as prerequisites above in anticipation, not
-because a command uses them yet. The rung-1 depth write for the D68 ladder is also unbuilt, and is
-gated behind N6a's ordering gate (hold the corpus pass until N6c can ride it).
+**The two clients.** The tiles exist; nothing renders them. D81 says contours are drawn when a body's
+drawer is open and never on the browse map, which means a lazily-added source filtered by `bodyId`,
+below hazards in the z-order, in a palette that cannot be mistaken for the hazard palette.
+
+**The rung-1 depth write** for the D68 ladder, which is gated behind N6a's ordering gate — hold the
+corpus pass until N6c can ride it.
+
+**The NOAA notice.** Champlain's soundings are digitised from NOAA charts, and §5 of the phase doc
+flags that NOAA chart-derived data usually carries a *"not for navigation"* class of notice. That
+wording needs reading properly before the layer renders next to anything on a safety product.

@@ -115,12 +115,12 @@ const DISJOINT_GAP_FLOOR_M = 600;
  * that the effective threshold is the cell diagonal rather than the radius, which errs toward
  * *merging* — the safe direction, since a false split would drop a real lake.
  */
-export function spatialClusters(
+export function clusterLabels(
   points: readonly { lng: number; lat: number }[],
   gapM: number,
-): number {
-  if (points.length === 0) return 0;
-  if (!(gapM > 0)) return 1;
+): number[] {
+  if (points.length === 0) return [];
+  if (!(gapM > 0)) return points.map(() => 0);
 
   let minLat = Number.POSITIVE_INFINITY;
   for (const p of points) if (p.lat < minLat) minLat = p.lat;
@@ -129,12 +129,16 @@ export function spatialClusters(
 
   const cells = new Map<string, number>();
   const keys: string[] = [];
+  const cellOf: number[] = [];
   for (const p of points) {
     const key = `${Math.floor(p.lng / degLng)},${Math.floor(p.lat / degLat)}`;
-    if (!cells.has(key)) {
-      cells.set(key, keys.length);
+    let index = cells.get(key);
+    if (index === undefined) {
+      index = keys.length;
+      cells.set(key, index);
       keys.push(key);
     }
+    cellOf.push(index);
   }
 
   const parent = keys.map((_, i) => i);
@@ -164,9 +168,100 @@ export function spatialClusters(
     }
   }
 
-  const roots = new Set<number>();
-  for (let i = 0; i < parent.length; i += 1) roots.add(find(i));
-  return roots.size;
+  // Relabel roots to dense 0..n-1 in first-appearance order, so the labels are stable and a split
+  // lake's sub-keys don't move between runs.
+  const dense = new Map<number, number>();
+  return cellOf.map((cell) => {
+    const root = find(cell);
+    let label = dense.get(root);
+    if (label === undefined) {
+      label = dense.size;
+      dense.set(root, label);
+    }
+    return label;
+  });
+}
+
+/** How many spatially separate water bodies a set of points covers. */
+export function spatialClusters(
+  points: readonly { lng: number; lat: number }[],
+  gapM: number,
+): number {
+  return new Set(clusterLabels(points, gapM)).size;
+}
+
+/** The gap that separates two water bodies, for a lake of this extent. */
+export function disjointGapFor(extentM: number): number {
+  return Math.max(DISJOINT_GAP_FLOOR_M, extentM * DISJOINT_GAP_RATIO);
+}
+
+/**
+ * Split a source key that holds more than one water body into one lake per body.
+ *
+ * **The fix for the defect §*What the wide render found* §1 recorded**, and it has to happen before
+ * the join rather than after: one key resolves to one polygon, so an unsplit key sends the second
+ * pond's geometry to be clipped against a shoreline miles away, and it vanishes without an error.
+ * NH's `au_id` puts two ponds 51 km apart under *"Horseshoe Pond"*; Maine's MIDAS `870` scatters over
+ * 379 km of the state.
+ *
+ * Sub-keys are suffixed `#1`, `#2`… **ordered by size, largest first**, so the principal body of a
+ * collided key keeps a stable name across runs even if a satellite pond gains or loses readings.
+ * A key holding one body is returned untouched and keeps its original key — the common case must not
+ * pay a rename for the rare one.
+ */
+export function splitByBody(lake: ArchivedLake): ArchivedLake[] {
+  const points = shapePoints(lake);
+  if (points.length < 2) return [lake];
+
+  const extent = assessDensity({ lakeKey: lake.lakeKey, points }, { minPoints: 2 }).extentM;
+  const labels = clusterLabels(points, disjointGapFor(extent));
+  const distinct = new Set(labels);
+  if (distinct.size <= 1) return [lake];
+
+  // Contour lanes have one label per VERTEX, not per feature, so a line is assigned by its first
+  // vertex. A contour that straddles two clusters cannot exist — that is what "separate bodies" means.
+  const buckets = new Map<
+    number,
+    { soundings: NormalizedSounding[]; contours: NormalizedContour[] }
+  >();
+  const bucket = (label: number) => {
+    let b = buckets.get(label);
+    if (!b) {
+      b = { soundings: [], contours: [] };
+      buckets.set(label, b);
+    }
+    return b;
+  };
+
+  if (lake.soundings) {
+    lake.soundings.forEach((sounding, i) => {
+      bucket(labels[i] ?? 0).soundings.push(sounding);
+    });
+  } else {
+    let cursor = 0;
+    for (const contour of lake.contours ?? []) {
+      const label = labels[cursor] ?? 0;
+      cursor += contourVertices(contour).length;
+      bucket(label).contours.push(contour);
+    }
+  }
+
+  const parts = [...buckets.entries()]
+    .map(([label, records]) => ({
+      label,
+      count: records.soundings.length + records.contours.length,
+      records,
+    }))
+    .filter((p) => p.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  return parts.map((part, index) => ({
+    ...lake,
+    lakeKey: `${lake.lakeKey}#${index + 1}`,
+    ...(lake.soundings
+      ? { soundings: part.records.soundings, contours: undefined }
+      : { contours: part.records.contours, soundings: undefined }),
+  }));
 }
 
 export interface LakeMetrics {

@@ -36,6 +36,19 @@ export interface BathymetrySource {
   fetch: ArcGisFetchSpec | FileFetchSpec;
   /** The credit line we render (§5). Confirmed against the portal's terms at fetch time. */
   attribution: string;
+  /**
+   * A notice the source's own terms require, rendered under the credit.
+   *
+   * Only Champlain carries one so far. Its soundings are digitised from NOAA nautical charts, and
+   * chart-derived data conventionally carries a **"not for navigation"** notice — see §5 of the phase
+   * doc, which flagged reading this properly before the layer renders next to anything on a safety
+   * product.
+   *
+   * **This does not breach D82's no-interpretive-copy rule.** D82 refuses copy that tells a skater
+   * what the depth *means* for ice; a licence notice makes no claim about the ice at all. If anything
+   * it points the same way D82 does — it says do not navigate by this.
+   */
+  notice?: string;
   /** Where a human goes to read the terms and the metadata. Rendered as the credit's link. */
   sourceUrl: string;
   /**

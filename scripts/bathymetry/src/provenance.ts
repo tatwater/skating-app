@@ -127,6 +127,10 @@ export function renderProvenance(entries: readonly ProvenanceEntry[], generatedA
         ['Source page', `<${source.sourceUrl}>`],
         ['Endpoint', `\`${source.fetch.url}\``],
         ['Credit we render', source.attribution],
+        // Rendered as its own row rather than folded into the credit: a notice the source's terms
+        // require is a different obligation from a credit, and a reader checking one should not have
+        // to parse the other to find it.
+        ...(source.notice ? [['Required notice', source.notice] as [string, string]] : []),
       ];
       if (manifest) {
         rows.push(

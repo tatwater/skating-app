@@ -68,3 +68,37 @@ describe('the source registry', () => {
     expect(sourcesForState('nh')).toHaveLength(1);
   });
 });
+
+describe('attribution and notices', () => {
+  it('gives every source a credit line, because the drawer has to render one', () => {
+    for (const source of SOURCES) {
+      expect(source.attribution.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it('credits Champlain to the holders VCGI actually names, not to NOAA alone', () => {
+    // VCGI's own `copyrightText` is "University of Vermont (JEFF LAIBLE), VCGI". The placeholder
+    // credit omitted UVM — the named copyright holder — and added two agencies who are not in it.
+    const champlain = sourceByKey('vt-vcgi-champlain-soundings');
+    expect(champlain?.attribution).toContain('University of Vermont');
+    expect(champlain?.attribution).toContain('VCGI');
+  });
+
+  it('says the Champlain soundings were digitised rather than surveyed by NOAA', () => {
+    // NOAA asks that attribution not imply endorsement or affiliation, and that modified data not be
+    // presented as unaltered NOAA data. Ours is doubly derived: chart -> digitised -> interpolated.
+    const champlain = sourceByKey('vt-vcgi-champlain-soundings');
+    expect(champlain?.attribution).toMatch(/digitised|digitized/i);
+    expect(champlain?.attribution).toContain('NOAA nautical charts');
+  });
+
+  it('carries the not-for-navigation notice on the chart-derived source and nowhere else', () => {
+    for (const source of SOURCES) {
+      if (source.key === 'vt-vcgi-champlain-soundings') {
+        expect(source.notice).toMatch(/not for navigation/i);
+      } else {
+        expect(source.notice).toBeUndefined();
+      }
+    }
+  });
+});

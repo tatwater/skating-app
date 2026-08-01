@@ -108,7 +108,8 @@ mirror is `rclone copy`, never `sync`, so a previous push is still there.
 | **Vertical datum** | NGVD 1929 |
 | **Source page** | <https://geodata.vermont.gov/datasets/7f451335fc6644e7a7376adbcd6282df_2/about> |
 | **Endpoint** | `https://services1.arcgis.com/BkFxaEFNwHqX3tAw/arcgis/rest/services/FS_VCGI_OPENDATA_Elevation_LKCHDEM_point_SP_v1/FeatureServer/0` |
-| **Credit we render** | NOAA · VCGI · VT ANR · VT DEC |
+| **Credit we render** | Soundings digitised from NOAA nautical charts by University of Vermont and VCGI |
+| **Required notice** | Not for navigation. |
 | **Captured** | 2026-08-01 |
 | **Records** | 104910 |
 | **Files** | 54 · 2.3 MB |

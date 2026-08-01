@@ -18,6 +18,8 @@ export default defineConfig({
         'src/cache.ts',
         'src/lakeSources.ts',
         'src/joinRunner.ts',
+        'src/contour.ts',
+        'src/build.ts',
         'src/fetch.ts',
         'src/probe.ts',
         'src/verify.ts',

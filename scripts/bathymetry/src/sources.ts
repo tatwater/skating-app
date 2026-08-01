@@ -54,7 +54,19 @@ export const SOURCES: BathymetrySource[] = [
       type: 'arcgis',
       url: 'https://services1.arcgis.com/BkFxaEFNwHqX3tAw/arcgis/rest/services/FS_VCGI_OPENDATA_Elevation_LKCHDEM_point_SP_v1/FeatureServer/0',
     },
-    attribution: 'NOAA · VCGI · VT ANR · VT DEC',
+    // **Checked against the archived service metadata and NOAA's own terms, 2026-08-01.** Three
+    // things had to change from the placeholder "NOAA · VCGI · VT ANR · VT DEC":
+    //
+    // 1. VCGI's `copyrightText` names **University of Vermont** and VCGI. The placeholder omitted UVM,
+    //    the actual named copyright holder, and added VT ANR / VT DEC, who are not in it.
+    // 2. NOAA asks that attribution not "state or imply endorsement by or affiliation with NOAA", and
+    //    that modified data not be presented as unaltered NOAA data. Our Champlain surface is doubly
+    //    derived — NOAA chart, digitised by UVM/VCGI, then interpolated by us — so the credit says
+    //    where the soundings came from and stops short of implying NOAA drew any of this.
+    // 3. Our licence relationship runs to **VCGI**, not to NOAA: we take the data from VCGI's service.
+    //    NOAA's terms govern the character of the underlying survey, not our redistribution chain.
+    attribution: 'Soundings digitised from NOAA nautical charts by University of Vermont and VCGI',
+    notice: 'Not for navigation.',
     sourceUrl: 'https://geodata.vermont.gov/datasets/7f451335fc6644e7a7376adbcd6282df_2/about',
     datum: 'NGVD 1929',
     notes:
