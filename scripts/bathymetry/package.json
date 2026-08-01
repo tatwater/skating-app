@@ -9,7 +9,8 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "probe": "tsx src/probe.ts",
-    "fetch": "tsx src/fetch.ts",
+    "//snapshot": "NOT `fetch` — that is a built-in pnpm command and silently runs an install instead.",
+    "snapshot": "tsx src/fetch.ts",
     "verify": "tsx src/verify.ts"
   },
   "dependencies": {

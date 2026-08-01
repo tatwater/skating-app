@@ -131,9 +131,9 @@ for Vermont, and a probe is thirty seconds.
 ## 2. Fetch — fill the archive
 
 ```bash
-pnpm --filter @skating/bathymetry fetch                     # every source lacking a snapshot
-pnpm --filter @skating/bathymetry fetch nh-granit-contours  # one
-pnpm --filter @skating/bathymetry fetch --refresh           # re-pull, overwriting
+pnpm --filter @skating/bathymetry snapshot                     # every source lacking a snapshot
+pnpm --filter @skating/bathymetry snapshot nh-granit-contours  # one
+pnpm --filter @skating/bathymetry snapshot --refresh           # re-pull, overwriting
 ```
 
 **An existing snapshot is never overwritten without `--refresh`.** Pages are stored byte-faithful and

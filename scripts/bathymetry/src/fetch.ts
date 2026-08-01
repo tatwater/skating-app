@@ -1,7 +1,10 @@
 /**
  * Snapshot fetcher (N6b) — pull a source into the permanent `.raw/` archive.
  *
- *   pnpm --filter @skating/bathymetry fetch [<key>…] [--refresh] [--delay=250]
+ *   pnpm --filter @skating/bathymetry snapshot [<key>…] [--refresh] [--delay=250]
+ *
+ * (The script is `snapshot`, not `fetch`: `pnpm fetch` is a built-in pnpm command that populates the
+ * package store, so a script by that name is shadowed and silently runs an install instead.)
  *
  * With no keys it fetches every registry source that has no snapshot yet. **An existing snapshot is
  * never overwritten without `--refresh`**, which is the rule that makes this safe to re-run and safe
@@ -28,7 +31,10 @@ import {
   downloadToRaw,
   ensureRawDir,
   getText,
+  hasRawPage,
   hasSnapshot,
+  rawFileRecord,
+  readRawPage,
   sleep,
   writeManifest,
   writeRawFile,
@@ -46,7 +52,11 @@ function log(message: string): void {
   process.stderr.write(`[bathymetry] ${message}\n`);
 }
 
-async function fetchArcGis(source: BathymetrySource, delayMs: number): Promise<void> {
+async function fetchArcGis(
+  source: BathymetrySource,
+  delayMs: number,
+  refresh: boolean,
+): Promise<void> {
   if (source.fetch.type !== 'arcgis') throw new Error('not an arcgis source');
   const { url } = source.fetch;
 
@@ -74,7 +84,24 @@ async function fetchArcGis(source: BathymetrySource, delayMs: number): Promise<v
   ];
 
   let captured = 0;
+  let resumed = 0;
   for (let index = 0; index < pages; index += 1) {
+    const name = pageFilename(index);
+
+    // **Resume.** A page already on disk is a page we already paid for. MassGIS is 56 pages at ~15
+    // seconds each, and losing all of it to one transient 500 is how a person ends up reaching for
+    // `--refresh` on a whole state — the exact opposite of what the archive is for. Pages are written
+    // whole (a synchronous gzip write), so an existing file is a complete one.
+    if (!refresh && hasRawPage(source.key, name)) {
+      const parsedExisting = parsePage(readRawPage(source.key, name));
+      if (!parsedExisting.error) {
+        files.push(rawFileRecord(source.key, name));
+        captured += parsedExisting.count;
+        resumed += 1;
+        continue;
+      }
+    }
+
     const body = await getText(
       pageUrl(url, { offset: index * pageSize, pageSize, orderByFields: oid, format }),
     );
@@ -82,13 +109,14 @@ async function fetchArcGis(source: BathymetrySource, delayMs: number): Promise<v
     if (parsed.error) {
       throw new Error(`${source.key}: page ${index} failed: ${parsed.error}`);
     }
-    files.push(writeRawPage(source.key, pageFilename(index), body));
+    files.push(writeRawPage(source.key, name, body));
     captured += parsed.count;
     if (index % 10 === 0 || index === pages - 1) {
       log(`  ${source.key}: page ${index + 1}/${pages} · ${captured}/${total} records`);
     }
     if (delayMs > 0 && index < pages - 1) await sleep(delayMs);
   }
+  if (resumed > 0) log(`  ${source.key}: reused ${resumed} page(s) already in the archive`);
 
   if (captured !== total) {
     // Not fatal — a live layer can genuinely gain rows mid-fetch — but it must be visible, because a
@@ -161,7 +189,7 @@ async function main(): Promise<void> {
   }
 
   for (const source of todo) {
-    if (source.fetch.type === 'arcgis') await fetchArcGis(source, delayMs);
+    if (source.fetch.type === 'arcgis') await fetchArcGis(source, delayMs, refresh);
     else await fetchFile(source);
   }
 }

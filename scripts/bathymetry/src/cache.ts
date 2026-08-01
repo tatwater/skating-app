@@ -94,6 +94,17 @@ export function readRawPage(key: string, name: string): string {
   return gunzipSync(readFileSync(join(rawDir(key), name))).toString('utf8');
 }
 
+/** Is this page already archived? The resume check — an existing page is one we already paid for. */
+export function hasRawPage(key: string, name: string): boolean {
+  return existsSync(join(rawDir(key), name));
+}
+
+/** Re-derive a manifest record for a file already on disk, so a resumed page still gets checksummed. */
+export function rawFileRecord(key: string, name: string): RawFileRecord {
+  const bytes = readFileSync(join(rawDir(key), name));
+  return { name, bytes: bytes.byteLength, sha256: sha256(bytes) };
+}
+
 /** Every stored page for a source, in fetch order (the filenames are zero-padded to guarantee it). */
 export function listRawPages(key: string): string[] {
   const dir = rawDir(key);
@@ -157,12 +168,32 @@ export const USER_AGENT = 'skating-bathymetry-etl/0.1 (+https://github.com/tatwa
 
 /** GET a URL as text, with the ETL's user agent and a loud failure. */
 export async function getText(url: string): Promise<string> {
-  const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
-  if (!response.ok) {
-    throw new Error(`GET failed (${response.status} ${response.statusText}): ${url}`);
+  let lastError = '';
+  for (let attempt = 0; attempt < GET_ATTEMPTS; attempt += 1) {
+    if (attempt > 0) await sleep(2000 * attempt);
+    try {
+      const response = await fetch(url, { headers: { 'User-Agent': USER_AGENT } });
+      if (response.ok) return await response.text();
+      lastError = `${response.status} ${response.statusText}`;
+      // A 4xx is our query being wrong and will be wrong again in two seconds. Only server-side and
+      // transport failures are worth retrying.
+      if (response.status < 500) break;
+    } catch (error) {
+      lastError = (error as Error).message;
+    }
   }
-  return await response.text();
+  throw new Error(`GET failed (${lastError}) after ${GET_ATTEMPTS} attempt(s): ${url}`);
 }
+
+/**
+ * How many times to try a page before giving up.
+ *
+ * Not politeness-theatre: MassGIS returned a 500 partway through a 56-page fetch during the first
+ * real run. Without a retry that is fourteen minutes of work lost to one transient, and — worse — the
+ * natural response to losing it repeatedly is to reach for `--refresh` on a whole state, which is the
+ * opposite of what the archive is for.
+ */
+const GET_ATTEMPTS = 4;
 
 /**
  * Be a good citizen between pages.

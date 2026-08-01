@@ -55,16 +55,23 @@ per lake and cannot describe a shape at all.)*
 
 ## Where the real data is
 
+> ⚠️ **This section was written from portal descriptions and is wrong in four places.** Every source
+> below was checked against the live service on 2026-07-31 and the corrected table is in
+> *§What the build found in the plan*, with the machine-readable version in
+> `scripts/bathymetry/src/sources.ts`. The original is kept because the *reasoning* it supports —
+> survey-not-model, the datum trap, the coverage caveat — survives the corrections intact, and because
+> the shape of the error is itself worth not repeating: **every one of these rows was plausible.**
+
 All five states have digitised bathymetry, at varying maturity. Every one of them is a **survey** —
 GPS/depth-sounder transects or digitised chart soundings — not a model.
 
 | State | Source | Form | Notes |
 | --- | --- | --- | --- |
-| **VT** | VT ANR (compiled Aug 2020) + Lake Champlain from NOAA charts (1:40,000, VCGI updates 2003/2010) | isobaths, published via VCGI / ANR | prior art worth reading before building: [`cboone/vermont-lakes-and-ponds-bathymetry`](https://github.com/cboone/vermont-lakes-and-ponds-bathymetry) (CC0) |
-| **NH** | NH GRANIT *NH Bathymetry — Lakes (Lines)*; NHDES surveys since 2000 + NH Fish & Game; updated Feb 2024 | contour lines, depth in feet | also a Polygons layer (contour-interval areas) |
-| **MA** | MassGIS *MassWildlife Inland Water Bathymetry*, 1:10,000, GPS/depth-sounder | contour lines + depth raster | shapefile + TIFF in one zip |
-| **NY** | NYSDEC Lake Contours, NYS GIS Clearinghouse | contours | maturity/format needs a look; much of DEC's fishing-map corpus is PDF |
-| **ME** | Maine GeoLibrary *Lake Depths* | **sounding points, not contours** | IFW lake survey maps are PDFs — see *§Maine* |
+| **VT** | VT ANR (compiled Aug 2020) + Lake Champlain from NOAA charts (1:40,000, VCGI updates 2003/2010) | ~~isobaths, published via VCGI / ANR~~ **→ sounding points** | prior art worth reading before building: [`cboone/vermont-lakes-and-ponds-bathymetry`](https://github.com/cboone/vermont-lakes-and-ponds-bathymetry) (CC0) |
+| **NH** | NH GRANIT *NH Bathymetry — Lakes (Lines)*; NHDES surveys since 2000 + NH Fish & Game; updated Feb 2024 | contour lines, depth in feet ✅ | also a Polygons layer (contour-interval areas) |
+| **MA** | MassGIS *MassWildlife Inland Water Bathymetry*, 1:10,000, GPS/depth-sounder | contour lines ✅ (+ a depth raster we don't need) | ~~shapefile + TIFF in one zip~~ **→ a live FeatureServer** |
+| **NY** | NYSDEC Lake Contours, NYS GIS Clearinghouse | ~~contours~~ **→ no statewide dataset exists** | maturity/format needs a look; much of DEC's fishing-map corpus is PDF |
+| **ME** | Maine GeoLibrary *Lake Depths* | **sounding points, not contours** ✅ | ~~IFW lake survey maps are PDFs~~ **→ the state already digitised them** |
 
 **Vermont has usable prior art, and we build our own anyway.** An open-source project
 ([`cboone/vermont-lakes-and-ponds-bathymetry`](https://github.com/cboone/vermont-lakes-and-ponds-bathymetry),
@@ -328,7 +335,135 @@ and unlabelled when absent has no coverage embarrassment to manage.
 
 ### Still genuinely open
 
-**NY's actual maturity.** *(Was Q6, unchanged and not a founder question.)* DEC lake contours exist on the
-NYS GIS Clearinghouse, but much of DEC's contour-map corpus is PDF fishing maps. Whether NY behaves like
-NH (clean vector download) or like ME (a digitisation project) needs one afternoon of looking before it's
-sequenced. It doesn't block VT + NH, which is the pilot pair.
+~~**NY's actual maturity.**~~ → **Answered 2026-07-31, and the answer is "neither."** See
+*§What the build found in the plan* §5. NY behaves like neither NH nor ME: there is no statewide lake
+bathymetry dataset in any form, vector or digitised-point. The afternoon of looking happened.
+
+---
+
+## What the build found in the plan
+
+*Written 2026-07-31, at the start of the build, from checking every source against its live service
+rather than against a portal description. Same discipline N1/N2/N3/N6a applied to their register
+entries — and it found more here than in any of them, because this doc's source table was assembled
+from dataset landing pages and **a landing page describes a dataset the way its author thinks of it,
+not the way it is serialised.***
+
+The machine-readable version of all of this lives in `scripts/bathymetry/src/sources.ts`, as `notes`
+on each registry entry. It is duplicated there deliberately: the person who next re-runs this ETL will
+be standing in that file, not in this one.
+
+### 1 — Vermont publishes soundings, not isobaths, and that inverts this phase's sequencing
+
+The single load-bearing error. *§Where the real data is* recorded VT as *"isobaths, published via VCGI
+/ ANR."* Both Vermont datasets are **point clouds**:
+
+| VT source | What it actually is |
+| --- | --- |
+| VCGI *VT Lake Champlain Bathymetry* | **104,910 points**, one attribute: `DEPTH_FT` |
+| VT ANR *Bathymetric Data* | a 22 MB zip holding a 134 MB CSV — **2,442,512 sounding points**, `Longitude,Latitude,DepthInFeet,LakeName`, over **66 lakes**, from BioBase sonar logs |
+
+**The consequence is not "one row of a table is wrong."** *§Settled at kickoff* chose VT + NH as the
+pilot pair *because* both were believed to be clean contour downloads — *"the pipeline gets exercised
+end-to-end on the easy data first, before MA's shapefile-plus-TIFF zip and NY's uneven formats test
+it."* In fact Vermont is the **hardest** lane in the set: it is *§Maine*'s interpolation problem, at
+2.4 million points. The chosen pilot front-loaded the risk it was chosen to defer.
+
+**And it re-reads the prior art.** `cboone/vermont-lakes-and-ponds-bathymetry` is not, as this doc
+assumed, a project that ran a tiling chain over published isobaths — it is a project that **generated**
+the isobaths by interpolating those points (QGIS plus a forked contour plugin). So the *§Where the real
+data is* argument for building our own still stands, but for a different reason than it gives: the
+thing that repo solved is the interpolation, which is the expensive part, and the thing we were
+declining to reuse was its tiles, which are the cheap part.
+
+**What rescues Vermont is density.** The sparsest VT lake carries **5,034** soundings and the densest
+**136,856** — these are sonar transect logs, not scattered spot readings. Every Vermont lake clears any
+defensible density gate by an order of magnitude, which makes the interpolation genuinely defensible
+there in a way *§Maine* correctly doubts for Maine. Same shape of data, opposite problem.
+
+### 2 — Maine's PDFs have already been digitised, by Maine
+
+*§Maine* opens: *"Maine IF&W's ~1,900 lake survey maps exist as **PDFs**, which is a digitisation
+project, not an ETL."* The state did the digitisation. Maine DEP's *Depth Points* layer carries
+**147,755 points** whose provenance columns read `FMSRC=depthmap`, `FMSRCORG=meifw`, `FMPROCSS=dig` —
+those *are* the IF&W depth maps, digitised, published, and queryable.
+
+So the §Maine process stands as written, minus its step 0. What it gains instead is a wrinkle it didn't
+anticipate: **the layer is two datasets wearing one schema**, and `FMSRC` is the discriminator —
+`depthmap` rows are digitised IF&W map soundings, `gpscarrier`/`gpsrec` rows are Maine DEP
+depth-sounder tracks. Two provenances, two collection methods, one table.
+
+Maine also keeps its density problem, and it is exactly the one §Maine step 2 was written for:
+**~29 points per lake on average** across 5,000+ lakes, against Vermont's ~37,000. The gate is not
+theoretical here; it is the whole integrity of the Maine lane.
+
+### 3 — Maine's depth columns are both wrong, by a constant
+
+`DEPTHM` was computed with a **3.3 ft/m** constant rather than 3.28084. `DEPTHM × 3.3` lands on a whole
+foot for the digitised rows; `DEPTHM × 3.28084` does not:
+
+| `DEPTHM` | `× 3.3` | published `DEPTHF` |
+| --- | --- | --- |
+| 3.0303 | **10.0** | 9.94192913 |
+| 10.90909 | **36.0** | 35.79097769 |
+| 23.63636 | **78.0** | 77.54711286 |
+
+Since `DEPTHF` was then derived from the bad metres with the *good* constant, **every published Maine
+depth in feet is systematically 0.58% shallow.** Small, and on the safe side, and precisely the class
+of thing that becomes permanent if nobody writes it down. Native feet are recoverable exactly as
+`DEPTHM × 3.3` for the `depthmap` rows; the GPS rows are genuine metre readings and convert normally.
+
+### 4 — Contour interval is a per-lake property, and every source is in feet
+
+Two corrections to **D83**, one of which makes it easier to hold and one of which makes its example
+label unwritable.
+
+**The unit seam does not exist.** D83 says *"NH and MA publish in **feet**, VT in **metres**"* and
+builds its cost argument on a skater crossing a state line and seeing the spacing change. Every source
+in the set is feet — VT's columns are literally named `DepthInFeet` and `DEPTH_FT`. D83's *rule*
+(carry native intervals, never resample) is untouched and still right; its worked example was
+describing a seam that isn't there.
+
+**The interval is not a state-level fact.** D83's model label is *"NH GRANIT, 10 ft contours."* NH's
+depth values run 0–180 ft at 1 ft granularity; MassGIS runs 2/3/4/5 ft in the shallows and 5 ft steps
+below. Each *lake* has an interval; a *state* does not. The label has to be derived per lake from the
+values actually present for that lake, or dropped — and since D82 already says the layer makes no
+claim, dropping it is a live option rather than a failure.
+
+*(A small trap inside this one: NH's `depth` column has been round-tripped through metres, so it holds
+`1.00000003` alongside `1`. A naive `DISTINCT` returns 116 values where about 60 exist. Round before
+grouping, labelling, or deriving an interval.)*
+
+### 5 — New York has no lake bathymetry, and Champlain covers for it anyway
+
+The open question is answered, and the answer is worse than either branch it offered. Checked
+exhaustively:
+
+- **NYSDEC's public ArcGIS server** — every folder, every service, every layer — carries exactly **two**
+  depth layers, and both are the Hudson River *estuary*.
+- **The NYS GIS Clearinghouse's full DCAT catalogue** (385 datasets) holds no statewide lake
+  bathymetry: a topographic contour *download app* for land contours, and one Seneca Lake document.
+- The only candidate that surfaced anywhere, *"Bathymetry of the Finger Lakes"*, is **50 unattributed
+  depth-band polygons** for eleven lakes, with no published copyright and no traceable agency. That is
+  an authoritative-looking artifact of unknown provenance — the same thing this document's opening
+  section refuses GLOBathy for, arriving by a different road.
+
+**But New York is not blank.** The VCGI/NOAA Champlain source covers *the lake*, not *the state* — its
+104,910 soundings include the entire New York shore. So NY's most prominent skating water is covered by
+a source filed under Vermont, which is a good outcome reached by an accident of filing and is worth
+stating plainly so nobody "fixes" it later.
+
+### 6 — MassGIS needs no download-and-unpack lane, and lies about its page size
+
+*§Settled at kickoff* worried about *"MA's shapefile-plus-TIFF zip."* MassGIS publishes the contours as
+a live **FeatureServer** (27,989 lines, keyed per lake by `NAME` + `PALIS_ID`), so the vector half needs
+no unpacking at all, and the TIFF is the raster we don't want.
+
+It does have its own quirk, found by running it: the service advertises `maxRecordCount: 2000` and
+returns **500** on anything above ~500 rows. Stranger, `resultRecordCount=250` is ignored outright and
+begins streaming the entire layer. So the page size is a measured value, not a conservative one, and
+"smaller is safer" is false here.
+
+*(Also worth recording because it cost fourteen minutes: `pnpm fetch` is a **built-in pnpm command**
+that populates the package store. A package script named `fetch` is silently shadowed and runs an
+install instead of your code. The script is called `snapshot`.)*

@@ -93,6 +93,11 @@ export const SOURCES: BathymetrySource[] = [
     fetch: {
       type: 'arcgis',
       url: 'https://arcgisserver.digital.mass.gov/arcgisserver/rest/services/AGOL/MassWildlife_Inland_Bathymetry/FeatureServer/0',
+      // The service advertises maxRecordCount 2000 and 500s on anything above ~500. This is exactly
+      // the case `pageSize` exists for: an advertised capacity the server cannot actually honour.
+      // (Odder still, `resultRecordCount=250` is ignored outright and streams the entire layer, so
+      // "smaller is safer" does not hold here — 500 is a measured value, not a conservative guess.)
+      pageSize: 500,
     },
     attribution: 'MassGIS · MassWildlife (Massachusetts Division of Fisheries & Wildlife)',
     sourceUrl:
