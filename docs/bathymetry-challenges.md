@@ -292,7 +292,7 @@ invisible until it wasn't.
 - **A source lake key isn't always one lake.** New Hampshire files two ponds **51 km apart** under one
   id; Maine has one key scattered over **379 km**. One key resolves to one lake outline, so the second
   pond's contours get clipped away against a shoreline miles from them — and **vanish without an
-  error**. 15 keys are like this. Found by noticing one blank image.
+  error**. 17 keys are like this. Found by noticing one blank image.
 - **A tool that writes to the screen, and a 1 MB limit.** One step streams its output rather than
   writing a file, and Node captures only 1 MB by default. Vermont's dense lakes overflowed it and were
   killed — presenting as *"the tool failed for no reason"* with an empty error.

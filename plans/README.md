@@ -10,9 +10,9 @@
 > [`08-legal-feasibility-checklist.md`](./08-legal-feasibility-checklist.md). Non-feature work still
 > outstanding: the **prod cutover** (Convex prod uninitialized), **device verification** of the native
 > surfaces, and the **N6a depth ETL run** (written and tested; needs three third-party downloads).
-> **N5c, N6c and N6d were scoped 2026-07-30** (hazard identity; lake profiles; access points), and
-> **N6e — satellite imagery in the app — was scoped 2026-07-31**; these are the only *unbuilt* phase docs.
-> **N6b shipped 2026-08-01** — ETL, tiles and both clients.
+> **N6c and N6d were scoped 2026-07-30** (lake profiles; access points), and **N6e — satellite
+> imagery in the app — was scoped 2026-07-31**; these three are the only *unbuilt* phase docs.
+> **N5c shipped 2026-07-31** and **N6b shipped 2026-08-01** — ETL, tiles and both clients.
 >
 > ⛔ **The N6a depth ETL is gated 2026-07-31 (founder call): do not run it until N6c is complete**, so the
 > elevation pass rides the same run. Folding it in costs one column; doing it afterwards costs a second

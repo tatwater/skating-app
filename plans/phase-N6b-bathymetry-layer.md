@@ -16,6 +16,8 @@
 > | **Mobile client** | ✅ same, as a conditionally-rendered `VectorSource` with `beforeId` |
 > | **Drawer credit row** | ✅ derived from the drawn features, on both clients |
 > | **Uploaded + wired** | ✅ `dev/bathymetry-20260801.pmtiles` on the basemap R2 bucket, both `.env.local`s set |
+> | **Seen drawing** | ✅ but only after it wasn't — see *§The render half had to be rendered too* |
+> | **Re-tile owed** | ⚠️ the uploaded archive predates `preferSurveyedLane`; two lakes carry two agencies' lines |
 > | **Rung-1 depth write** | ⏸ correctly gated behind [N6a](./phase-N6a-lake-depth.md)'s ordering gate |
 >
 > **A deployment without the env var mounts nothing, and that is correct rather than degraded** — under
@@ -149,7 +151,10 @@ The consequences to accept with that choice, rather than discover later:
   needs to *read* a contour, only to draw it.
 - **Offline rides on the deferred Layer-3 tile-pack.** The `file://` pmtiles path was built flag-off in
   Phase 9.5 and needs exactly one on-device confirmation; a bathymetry overlay is a second consumer of
-  that same unblocking, not a new problem. Online-only in v1, stated in the UI.
+  that same unblocking, not a new problem. Online-only in v1, ~~stated in the UI~~ — **and nothing is
+  stated, which D81/D82 later made correct rather than a gap**: a lake with no contours renders flat,
+  which is what the great majority of bodies do anyway, so an offline caveat would be copy explaining
+  the absence of a layer that makes no claim when present.
 - **A second tile artifact to rebuild** when a state republishes. The basemap runbook
   (`plans/phase-2.5-regional-expansion.md`) is the template; this adds one more `tippecanoe` → R2 lane.
 
@@ -1094,6 +1099,96 @@ fades in at all rather than flashing an empty layer. On both clients this is a p
 and hazard added after it. Rename that layer and web's `addLayer` silently appends instead, drawing
 contours *over* hazards, which is the one direction D82 says this layer must never fail in. Each
 app's `contourMap.test.ts` reads its own `MapView` and asserts the id is still there.
+
+---
+
+## The render half had to be rendered too (2026-08-01)
+
+> *"I've done fresh builds of both the web and mobile app and I don't see contour lines inside any of
+> the lakes."* — founder, on the branch as it was about to be pushed
+
+**The layer shipped invisible on both clients, and every check that could have caught it passed.**
+Tests green, types green, tiles correct, URL correct, filter correct. This section exists because the
+section above it — *§The fade waits for the data rather than racing it* — was describing a mechanism
+that never ran, and reads perfectly convincingly while doing so.
+
+### What was actually wrong
+
+The whole reveal hung on one line: `map.on('idle', readDrawnContours)`.
+
+`idle` is the intuitive trigger and its documentation says exactly what we wanted — *all requested
+tiles have loaded, no transitions in flight*. **A source added after the map's `load` event leaves
+MapLibre in a state where `idle` is never emitted again.** So the only read that ever ran was the
+synchronous one at mount, before a single tile existed. It returned nothing, took the early return,
+and the layer stayed at `line-opacity: 0` for the rest of the session — drawing every ring correctly
+and transparently, with no credit row, no console error and nothing in any log.
+
+Mobile failed the same way for the same reason: `onDidFinishRenderingMapFully` is the native
+analogue, chosen *because* it is the analogue, and it fires before the contour tiles are fetched with
+no guarantee of coming round again.
+
+### How it was found, which is the transferable part
+
+By building a standalone page — MapLibre, the real `.pmtiles`, the real filter, nothing else — and
+running it in headless Chrome. That took minutes and settled in one output what a day of reading the
+code had not:
+
+```
+sourcedata#4 isSourceLoaded=false tile=true
+t+2s: filtered=13 unfiltered=13 rendered=13
+t+6s: filtered=39 unfiltered=39 rendered=36 sourceLoaded=true
+idle events seen: 0 | sourcedata events: 9
+```
+
+**39 features queried, 36 rendered, zero `idle` events.** A control page — a bare map, no added
+source — fires `idle` once, which is what rules out "headless doesn't fire `idle`" and makes the
+result a finding rather than an artifact.
+
+Worth keeping as a method: *when a map layer misbehaves, reproduce it without the app.* Every
+hypothesis before this one was about our React wiring, and all of them were wrong.
+
+### The fix, and the shape of it
+
+**Web reads on `sourcedata` for its own source id.** A tile arriving is precisely the event that
+matters, it fires repeatedly, and it also covers the case `idle` was chosen for — panning to a deeper
+part of the basin re-scales the ramp, because a new tile *is* a `sourcedata`.
+
+**Mobile keeps the settled callback for the ramp and adds a per-frame probe for the reveal**
+(`onDidFinishRenderingFrame`), mounted only while the first read has not yet landed and unmounted the
+instant it does, with one query in flight at a time. A per-frame bridge call is not something to
+leave running; a per-frame bridge call for the second and a half before the tiles arrive is fine.
+
+**And the reveal was separated from the ramp.** Both clients had folded "we have data" into "the
+deepest ring is deeper than what we had", so a lake whose deepest drawn ring read 0 would have stayed
+invisible while its credit row rendered — a flat lake with an attribution under it. Unreachable with
+today's archive (`contourLevels` and `thinPublishedLevels` both exclude 0) and now unreachable by
+construction.
+
+Each app's `contourMap.test.ts` pins the trigger, including the negative: **web must not go back to
+`idle`.** That is a weak test of a strong finding, which is the best available — the real check is a
+render, and the real check is the one that found this.
+
+### Two other things fixed in the same pass
+
+**Two lakes shipped two agencies' contours at once.** `build.ts` had no dedup by `bodyId`, so a
+border lake filed by both states joined twice and both lanes wrote under one key. In the shipped
+archive that is **Lower Kimball Pond** (7 NH GRANIT lines + 23 of ours) and **Province Lake** (11 +
+2) — the agency's own isobaths and our Maine fit, drawn over each other, unioned into one depth ramp
+and credited as *"interpolated by us"*. That last part is **gate 3 of §6 inverted**: the two claims
+must never render as the same thing, and the thing they rendered as was ours.
+
+`preferSurveyedLane` (`lakes.ts`) now keeps the survey and sets our fit aside with a named reason, and
+it resolves **only a lane disagreement** — an agency filing one lake under two keys (NH GRANIT files
+Great East Lake as both `NHLAK…` and `MELAK…`, and the two halves together *are* the lake) is not a
+collision and is left alone. 28 bodies are joined by 2+ source lakes; 22 of those are that legitimate
+case.
+
+**And the client no longer takes credit for a survey it didn't do.** `ContourCredit.interpolated` was
+one boolean, so any fitted line made the whole body read as ours. It is now
+`lane: 'surveyed' | 'interpolated' | 'mixed'`, symmetric with how `intervalFt` already went `null` on
+disagreement, and `'mixed'` renders *"part surveyed and part interpolated by us from published
+soundings."* Defence in depth rather than the fix — **a tile archive outlives the build that made
+it**, and the currently-uploaded one still contains those two lakes.
 
 ---
 

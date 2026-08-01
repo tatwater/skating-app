@@ -996,7 +996,7 @@ tried was falsified by a render**: five of them, each plausible on paper. The la
 output-side gate at all, which is only tolerable because D82 means a contour makes no claim a skater
 can act on wrongly.
 
-- **A source lake key is not always one lake.** 15 keys hold two or more water bodies — NH files two
+- **A source lake key is not always one lake.** 17 keys hold two or more water bodies — NH files two
   ponds 51 km apart under one `au_id`, Maine's MIDAS `870` scatters over 379 km. One key resolves to
   one polygon, so unsplit, the second pond's geometry is clipped against a shoreline miles away and
   vanishes *without an error*. Found by rendering a blank card. Split before the join now.
