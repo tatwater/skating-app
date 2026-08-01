@@ -5,3 +5,8 @@
 # Intermediate artifacts if run outside .scratch/
 *.osm.pbf
 *.osm.pbf.md5
+
+# The permanent OSM snapshot archive. Unlike `.scratch/`, this is NOT disposable: it is what makes a
+# corpus reproducible, and Geofabrik rebuilds `-latest` daily so a deleted extract is unrecoverable.
+# Mirror it rather than removing it. See README §"Pinning the OSM snapshot".
+.raw/

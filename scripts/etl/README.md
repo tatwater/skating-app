@@ -76,6 +76,38 @@ run notes / the PR description so the import is reproducible. A small committed 
 
 ---
 
+## Pinning the OSM snapshot
+
+> **This ETL's provenance discipline failed once already, and the failure is recorded below in its
+> own run table: five states, all reading `_(not captured)_`.** Geofabrik rebuilds `-latest` daily,
+> so the exact snapshot behind our 116,070 bodies is gone and cannot be recovered. The instruction to
+> capture it existed since Phase 1; it just wasn't a command anybody ran.
+
+```bash
+pnpm --filter @skating/etl archive              # all five states
+pnpm --filter @skating/etl archive VT           # one
+pnpm --filter @skating/etl archive --refresh    # re-pull, overwriting
+```
+
+Extracts land in a gitignored **`.raw/<state>/`** that is **never deleted** — the same split
+[`scripts/bathymetry`](../bathymetry/README.md) uses, and for the same reason: `.scratch/` holds
+things that rebuild locally, `.raw/` holds the things that cannot be rebuilt at all.
+
+**The pin is the *resolved* URL, not the requested one.** `vermont-latest.osm.pbf` is a redirect;
+following it lands on `vermont-260731.osm.pbf`, a dated build that stays retrievable for months.
+Recording what we asked for pins nothing; recording what we got pins everything — and that is exactly
+the distinction a hand-written run note loses.
+
+Each `manifest.json` records the requested URL, the resolved dated URL, the build date, our sha256,
+Geofabrik's published md5, and **whether the two matched**. "Unverified" and "mismatched" stay
+distinct on purpose: collapsing them is how a truncated download gets loaded on a technicality.
+
+**Two things this does not do.** It does not recover the current corpus's provenance — nothing can.
+And it does not re-import anything: archiving is a fetch, and the corpus on dev is untouched until
+someone runs the transform and loader against a new extract.
+
+---
+
 ## Running the pipeline
 
 Work in a scratch dir (gitignored); nothing here is committed except the final DB rows.
@@ -254,11 +286,10 @@ transform/load already handle multiple states. Full runbook + rationale:
   bays in VT *and* NH) lands as one row and its `states` unions to e.g. `["NY","VT"]` — run order
   doesn't matter. VT can be skipped if already loaded (but re-run it with `--state=VT` to backfill
   the state tag).
-- **Record each extract's md5 (per state).** Same discipline as the Phase 1 run above — Geofabrik
-  rebuilds the `-latest` extracts daily, so the download date alone doesn't pin the source. For each
-  state, `curl -L` its `.osm.pbf.md5` companion, verify the download against it, and record the md5 +
-  Geofabrik replication timestamp in the run table below. This is what makes a corpus reproducible
-  and catches a truncated download (e.g. the `-latest` redirect trap) before ~30k bad bodies load.
+- **Record each extract's md5 (per state)** — now automatic, see §*Pinning the OSM snapshot* below.
+  `pnpm --filter @skating/etl archive` captures the resolved dated URL, Geofabrik's md5, our sha256
+  and the byte count, and prints the run-table rows already filled in. The manual version of this
+  instruction was followed zero times out of five (below), which is why it is now code.
 - **Executed 2026-07-15 (dev):** NH 15,458 · ME 25,541 · MA 30,219 · NY 34,885 inserted (+ VT ~9,970)
   ≈ 116k bodies, zero read-cap errors. *(Exact count confirmed 2026-07-26 by N1's cell backfill:
   **116,070** bodies.)* Extract builds dated 2026-07-14. **md5s not captured this run**
