@@ -981,8 +981,8 @@ is complete end to end; neither client renders it yet.** See
 [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
 
 Archived (five sources, 298 MB, mirrored privately) → normalized → **joined, 2,437 of 2,491 lakes
-(98%)**, Vermont included for the first time → gated → **1,450 lakes contoured into 44,442 lines** →
-tiled to a z9–z14 `.pmtiles` on the Phase 2.5 upload lane.
+(98%)**, Vermont included for the first time → gated → **2,044 lakes contoured into 49,767 lines** →
+tiled to a **15 MB** z9–z14 `.pmtiles` on the Phase 2.5 upload lane.
 
 **What is left is the render half**, and it is a real chunk rather than cleanup: a lazily-mounted
 source on two `MapView`s, filtered to the open body (D81), faded in, kept under hazards, plus one
@@ -1004,8 +1004,11 @@ rung-1 depth write stays correctly gated behind N6a's ordering gate.
 - **⚠ Three gates, and two of them had to be re-derived by looking.** The density gate's premise was
   overturned by its own comparison (quality does not track the gap ratio); the shore-share gate was
   added and removed the same day after it kept the worst map in a 20-lake sample and dropped four of
-  the cleanest. **Three input ratios have now failed to predict output quality.** What replaced it
-  measures the *output*: disconnected pieces per contour level. Threshold provisional pending a render.
+  the cleanest. Its replacement — disconnected pieces per contour level — was falsified within the hour
+  by Lake Champlain, whose 10.2 pieces per level are a dozen real basins. **Five metrics have now
+  failed to predict output quality**, so we ship with no output gate at all, which D82 makes cheap.
+  The whole sequence is written up for a non-specialist reader in
+  [`docs/bathymetry-challenges.md`](../docs/bathymetry-challenges.md).
 - **A fairness bug in the primary gate**, found by the founder asking whether the floor should be a
   density rather than a count: the coverage gap was normalised by the **bbox diagonal**, which across
   2,437 bodies runs 1.76–3.36× `sqrt(area)` — so long thin lakes got up to a 4× easier pass. Now

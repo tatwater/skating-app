@@ -9,9 +9,9 @@
 > | **Archived** | ✅ five sources, 298 MB, mirrored to a private R2 bucket, `PROVENANCE.md` committed |
 > | **Normalized** | ✅ two lanes — the agency's isobaths, or our surface fitted through its soundings |
 > | **Joined** | ✅ **2,437 of 2,491 lakes (98%)**, including Vermont for the first time |
-> | **Gated** | ✅ coverage gap + data support; the third gate is being re-chosen (below) |
-> | **Interpolated + contoured** | ✅ **1,450 lakes → 44,442 lines** on the first full pass |
-> | **Tiled** | ✅ `tile.sh` → z9–z14 `.pmtiles`, reusing the Phase 2.5 upload lane |
+> | **Gated** | ✅ coverage gap + data support. **No output-side gate** — five were tried and falsified (below) |
+> | **Interpolated + contoured** | ✅ **2,044 lakes → 49,767 lines**, all five agencies, Champlain included |
+> | **Tiled** | ✅ **15 MB** `.pmtiles`, z9–z14, 10,753 tiles, on the Phase 2.5 upload lane |
 > | **Web client** | ⬜ **not built** — shared layer logic and palette exist, `MapView` is unwired |
 > | **Mobile client** | ⬜ **not built** |
 > | **Drawer credit row** | ⬜ **not built** — the copy is written and tested, nothing renders it |
@@ -22,7 +22,9 @@
 > under hazards, and rendering one credit line at the bottom of the drawer. Everything it needs is
 > built and tested — `@skating/core/contourLayer`, the per-app palettes, the env vars, the tiles.
 >
-> **One gate is unsettled**, and deliberately so: see *§The gate that measured the wrong thing*.
+> **We ship with no output-side quality gate**, deliberately — five were tried and every one was
+> falsified by a render. See *§The gate that measured the wrong thing*. That is only tolerable because
+> D82 means a contour makes no claim a skater can act on wrongly.
 >
 > 📖 **The narrative version, written for a reader with no mapping background, is
 > [`docs/bathymetry-challenges.md`](../docs/bathymetry-challenges.md)** — every interpolator and every
@@ -695,9 +697,10 @@ Two smaller things the wide grid surfaced:
 
 ## The gate that measured the wrong thing (2026-08-01)
 
-> ⚠ **Unsettled at the time of writing.** The replacement is implemented and a full rebuild is in
-> flight; the threshold is provisional until the founder has looked at the comparison grid. Recorded
-> now because the *finding* stands regardless of where the number lands.
+> **Settled: we ship with neither.** Shore share was falsified by a render, and the fragmentation gate
+> that replaced it was falsified within the hour by Lake Champlain. Both are still *computed and
+> reported* on every sample card, so the next attempt costs nothing to evaluate — but nothing gates on
+> the output today. Full narrative: [`docs/bathymetry-challenges.md`](../docs/bathymetry-challenges.md).
 
 **`MAX_SHORE_SHARE` was added and removed on the same day, and the reason is the most transferable
 thing this phase has produced.**
