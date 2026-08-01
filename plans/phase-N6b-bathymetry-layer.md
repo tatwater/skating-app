@@ -640,10 +640,16 @@ extent is not a lake* — the damage is small and real:
 
 | Source | Keys holding 2+ water bodies |
 | --- | --- |
-| NH GRANIT | **3** of 617 |
+| NH GRANIT | **4** of 617 |
 | ME DEP/IF&W | **12** of 1,522 |
-| MassGIS | 0 of 265 |
+| MassGIS | **1** of 265 |
 | VT ANR | 0 of 66 |
+
+**17 keys, not the 15 this table first recorded** — NH has a fourth (*Great East Lake*) and MassGIS
+has one (*Stockbridge Bowl*, two basins 3.1 km apart) where this said none. The first count was taken
+before the shoreline rebalance moved every lake's extent, and the gap test is *relative to extent*, so
+re-measuring moved the borderline keys across it. Corrected from what `samples` prints on every run,
+which is the authority: it enumerates all 17 by name and state before it renders anything.
 
 Maine's worst is MIDAS `870`, whose soundings are scattered over **379 km** — most of the state.
 

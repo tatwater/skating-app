@@ -219,7 +219,7 @@ Three things to know before running it:
   cost per lake ranges over three orders of magnitude between a farm pond and a point in the middle
   of Champlain. Batches that trip the cap are split and retried; a lake that fails alone is recorded
   as a named reject rather than dropped.
-- **A source key that holds two water bodies is split first.** 15 keys do (3 NH, 12 ME) — NH files two
+- **A source key that holds two water bodies is split first.** 17 keys do (4 NH, 12 ME, 1 MA) — NH files two
   ponds 51 km apart under one `au_id`, and Maine's MIDAS `870` scatters over 379 km. One key resolves
   to one polygon, so an unsplit key sends the second pond's geometry to be clipped against a shoreline
   miles away and it vanishes without an error. Split parts are suffixed `#1`, `#2`… largest first, so
