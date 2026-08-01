@@ -28,7 +28,7 @@ function MapLayout() {
 
 function MapLayoutInner() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { setHighlightWaterBodyId, setPhotoPins } = useMapSelection();
+  const { setHighlightWaterBodyId, setPhotoPins, setContourBodyKey } = useMapSelection();
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
@@ -46,7 +46,11 @@ function MapLayoutInner() {
   useEffect(() => {
     setHighlightWaterBodyId(null);
     setPhotoPins([]);
-  }, [pathname, setHighlightWaterBodyId, setPhotoPins]);
+    // The contour layer unmounts with the drawer it belongs to (N6b/D81). Cleared here rather than
+    // in the drawer's own unmount so navigating lake → lake tears the source down and rebuilds it
+    // for the new body, instead of leaving one lake's isobaths filtered to another's id.
+    setContourBodyKey(null);
+  }, [pathname, setHighlightWaterBodyId, setPhotoPins, setContourBodyKey]);
 
   return (
     <div className="flex flex-col gap-2">

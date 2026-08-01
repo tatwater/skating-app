@@ -16,6 +16,24 @@ import type maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useTheme } from 'next-themes';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CONTOUR_BEFORE_LAYER_ID,
+  CONTOUR_FADE_MS,
+  CONTOUR_LAYER_ID,
+  CONTOUR_MIN_ZOOM,
+  CONTOUR_OPACITY,
+  CONTOUR_PALETTE,
+  CONTOUR_SOURCE_ID,
+  CONTOUR_SOURCE_LAYER,
+  type ContourFeatureProperties,
+  contourColorExpression,
+  contourCredit,
+  contourFilter,
+  contourSourceSpec,
+  contourWidthExpression,
+  formatContourCredit,
+  maxContourDepthFt,
+} from '../lib/contourMap';
 import { env } from '../lib/env';
 import {
   bodyFeaturesToFeatureCollection,
@@ -113,6 +131,8 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     hazardShoreTaps,
     setHazardShoreTaps,
     browseSeason,
+    contourBodyKey,
+    setContourCredit,
   } = useMapSelection();
 
   const [queryArgs, setQueryArgs] = useState<QueryArgs | null>(null);
@@ -125,6 +145,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const subAreaPalette = SUB_AREA_PALETTE[flavor];
   const hazardPalette = HAZARD_PALETTE[flavor];
   const trackColor = TRACK_PALETTE[flavor];
+  const contourPalette = CONTOUR_PALETTE[flavor];
 
   // The map click handler is registered once (in the create effect) but must read the *current*
   // pin-drop mode + latest setters, so mirror them into refs that the handler closes over.
@@ -675,6 +696,109 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     const source = map.getSource('body-features') as maplibregl.GeoJSONSource | undefined;
     source?.setData(bodyFeaturesToFeatureCollection(bodyFeatures ?? []));
   }, [bodyFeatures, loaded, mapRef.current]);
+
+  // ── Bathymetric contours for the open lake (N6b / D81 / D82).
+  //
+  // **The one layer in this file that is not added at map init**, and that is the decision rather
+  // than an optimisation: contours are a property of the detail view, so the source is added when a
+  // lake's drawer opens and removed when it closes. The browse map's tile budget is exactly what it
+  // was before this phase, and there is no toggle, no persisted preference and no settings row —
+  // the visibility is derived from something the app already knows, which body is selected.
+  //
+  // Three things it must not do, in the order they would go wrong:
+  //
+  // 1. **Draw over a hazard.** Contours are decoration and hazards are the product, so the layer is
+  //    inserted *beneath* the first bay layer — under every pin, track and hazard added after it.
+  // 2. **Pop in.** *"Fading in on open reads as a detail revealing itself; popping in reads as a
+  //    bug."* It mounts invisible and fades only once its own lines are on screen, so the fade also
+  //    covers the tile fetch rather than racing it.
+  // 3. **Draw with no credit.** The tile is the authority on who surveyed this lake, so the drawn
+  //    features are read back and the drawer's credit line comes from them (§5).
+  //
+  // Blank `bathymetryPmtilesUrl` ⇒ this never runs, which is correct rather than degraded: under
+  // D82 contours make no claim, so an unconfigured deployment shows a flat lake exactly as it does
+  // for the majority of bodies no agency ever surveyed.
+  const contourCreditRef = useRef<string | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    const archiveUrl = env.bathymetryPmtilesUrl;
+    if (!map || !loaded || !archiveUrl || !contourBodyKey) return;
+
+    const filter = contourFilter(contourBodyKey) as maplibregl.FilterSpecification;
+    map.addSource(CONTOUR_SOURCE_ID, contourSourceSpec(archiveUrl));
+    map.addLayer(
+      {
+        id: CONTOUR_LAYER_ID,
+        type: 'line',
+        source: CONTOUR_SOURCE_ID,
+        'source-layer': CONTOUR_SOURCE_LAYER,
+        // A guard rail, not the mechanism (D81 already keeps contours off the browse map): a drawer
+        // can be open while the camera is zoomed out, and a lake's isobaths at z6 are a smear.
+        minzoom: CONTOUR_MIN_ZOOM,
+        filter,
+        layout: { 'line-join': 'round', 'line-cap': 'round' },
+        paint: {
+          // Replaced by the real ramp before anything is visible — see `readDrawnContours`.
+          'line-color': contourPalette.deep,
+          'line-width': contourWidthExpression() as maplibregl.ExpressionSpecification,
+          'line-opacity': 0,
+          'line-opacity-transition': { duration: CONTOUR_FADE_MS, delay: 0 },
+        },
+      },
+      map.getLayer(CONTOUR_BEFORE_LAYER_ID) ? CONTOUR_BEFORE_LAYER_ID : undefined,
+    );
+
+    // The deepest ring seen for *this* lake, which only ever grows. `querySourceFeatures` answers
+    // from the tiles currently loaded, so panning the deep end off screen would otherwise re-scale
+    // the ramp under the skater and repaint a lake they are looking at but not touching.
+    let deepestFt = 0;
+    let faded = false;
+    const readDrawnContours = () => {
+      if (!map.getLayer(CONTOUR_LAYER_ID)) return;
+      const properties = map
+        .querySourceFeatures(CONTOUR_SOURCE_ID, { sourceLayer: CONTOUR_SOURCE_LAYER, filter })
+        .map((feature) => feature.properties as Partial<ContourFeatureProperties>);
+      // No tiles in yet, or a lake nobody surveyed. Either way keep the last answer rather than
+      // clearing a credit that is still true for the lines on screen.
+      if (properties.length === 0) return;
+
+      const line = formatContourCredit(contourCredit(properties)) || null;
+      if (line !== contourCreditRef.current) {
+        contourCreditRef.current = line;
+        setContourCredit(line);
+      }
+
+      const deepest = maxContourDepthFt(properties);
+      if (deepest === undefined || deepest <= deepestFt) return;
+      deepestFt = deepest;
+      map.setPaintProperty(
+        CONTOUR_LAYER_ID,
+        'line-color',
+        contourColorExpression(contourPalette, deepestFt) as maplibregl.ExpressionSpecification,
+      );
+      if (!faded) {
+        faded = true;
+        map.setPaintProperty(CONTOUR_LAYER_ID, 'line-opacity', CONTOUR_OPACITY);
+      }
+    };
+    // `idle` rather than `sourcedata`: it fires once the tiles for the settled view are in, so the
+    // read happens after the fly-to lands rather than on every intermediate frame of it.
+    map.on('idle', readDrawnContours);
+    readDrawnContours();
+
+    return () => {
+      map.off('idle', readDrawnContours);
+      contourCreditRef.current = null;
+      setContourCredit(null);
+      try {
+        if (map.getLayer(CONTOUR_LAYER_ID)) map.removeLayer(CONTOUR_LAYER_ID);
+        if (map.getSource(CONTOUR_SOURCE_ID)) map.removeSource(CONTOUR_SOURCE_ID);
+      } catch {
+        // The shell's own cleanup runs first on unmount, so by here the map may already be gone and
+        // MapLibre throws rather than no-opping. Nothing is leaked — the map took the style with it.
+      }
+    };
+  }, [contourBodyKey, contourPalette, loaded, mapRef.current, setContourCredit]);
 
   // Open-bounty pins across the viewport (D10/D17) — refreshed as the map pans + as bounties change.
   useEffect(() => {

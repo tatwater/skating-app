@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  contourBodyKey,
   describeLakeDepth,
   formatAreaAcres,
   formatSkateTime,
@@ -57,7 +58,7 @@ export function WaterBodyDetail({
   const focusSubArea = focusSubAreaId
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
     : undefined;
-  const { setFocus, setHighlightWaterBodyId } = useMapSelection();
+  const { setFocus, setHighlightWaterBodyId, setContourBodyKey, contourCredit } = useMapSelection();
   // Mirrors the server's `requireContributor` — see `LeavingNotice`.
   const leaving = isLeaving(useQuery(api.profiles.current, {}));
   const [formOpen, setFormOpen] = useState(false);
@@ -87,7 +88,20 @@ export function WaterBodyDetail({
     }
     // Highlight the parent either way: the bay is a name on this lake, not a selectable thing.
     setHighlightWaterBodyId(body._id);
-  }, [body, focusSubArea, focusSubAreaId, subAreas, setFocus, setHighlightWaterBodyId]);
+    // And mount the bathymetry layer for this lake (N6b/D81). Keyed by the OSM id the contour tiles
+    // carry, not by the Convex `_id` the highlight uses — a re-import that churned ids would
+    // otherwise silently blank the layer on every lake at once. Only the *lake* drawer does this:
+    // D81 makes contours a property of this view, not of every view that happens to select a body.
+    setContourBodyKey(contourBodyKey(body.externalId, body._id));
+  }, [
+    body,
+    focusSubArea,
+    focusSubAreaId,
+    subAreas,
+    setFocus,
+    setHighlightWaterBodyId,
+    setContourBodyKey,
+  ]);
 
   if (result === undefined) return <DetailSkeleton />;
 
@@ -164,6 +178,13 @@ export function WaterBodyDetail({
           waterBodyId={result.body._id}
           {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}
         />
+        {/* The bathymetry credit (N6b §5), last in the drawer and absent on the great majority of
+            lakes no agency ever surveyed. "How far away can we put it" resolved to *here*, and that
+            is not a compromise: nothing requires a contour credit on the map surface, and this is
+            where the depth provenance above and the Open-Meteo credit already live, so someone
+            asking where a number came from looks in one place. Provenance only — D82 means there is
+            no sentence here about what a depth implies for ice. */}
+        {contourCredit ? <p className="text-foreground-muted text-xs">{contourCredit}</p> : null}
       </div>
       {formOpen ? (
         <ReportForm
