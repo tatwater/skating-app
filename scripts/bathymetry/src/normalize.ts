@@ -13,7 +13,7 @@
  * that is.
  */
 
-import type { Feature, Geometry, LineString, MultiLineString, Point } from 'geojson';
+import type { Feature, Geometry, LineString, MultiLineString } from 'geojson';
 
 import { SHORELINE_DEPTH } from './sources';
 
@@ -269,7 +269,7 @@ export function normalizeChamplainSoundings(
       skip(skipped, 'not a point');
       continue;
     }
-    const raw = num((feature.properties ?? {}).DEPTH_FT);
+    const raw = num(feature.properties?.DEPTH_FT);
     if (raw === undefined) {
       skip(skipped, 'no depth value');
       continue;

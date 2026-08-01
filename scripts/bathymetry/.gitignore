@@ -10,3 +10,7 @@
 
 # rclone remote + bucket for the raw mirror. Holds no secrets (those live in ~/.config/rclone).
 .env.local
+
+# GMT writes its "common arguments shelf" into the working directory on every invocation, so this is
+# per-run scratch that would otherwise churn the diff with the last lake's bounding box.
+gmt.history

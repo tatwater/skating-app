@@ -40,17 +40,13 @@ function flag(args: string[], name: string): string | undefined {
 }
 
 /**
- * The three gridding algorithms tried, and how each one fails. `{r}` is substituted with a search
- * radius scaled to the lake.
+ * **Three GDAL gridders were tried before `gmt surface`, and all three are rejected.** Recorded here
+ * rather than as selectable options, because each failure was invisible in code review and obvious on
+ * a render — which is the reason the samples had to be looked at rather than reasoned about:
  *
- * **None of them is production-quality**, which is the finding this tool produced and the reason it
- * is worth keeping rather than deleting once the gate is chosen. Each fails differently and each
- * failure is visible at a glance, which is exactly why the samples had to be rendered rather than
- * reasoned about:
- *
- * - **`idw`** — an *exact* interpolator: it passes through every sounding, so each one becomes a local
- *   extremum ringed by tiny closed contours. Bullseyes everywhere. It also has no edge, so contours
- *   run out across dry land to the corners of the raster.
+ * - **`invdistnn`** — an *exact* interpolator: it passes through every sounding, so each one becomes a
+ *   local extremum ringed by tiny closed contours. Bullseyes everywhere. It also has no edge, so
+ *   contours run out across dry land to the corners of the raster.
  * - **`linear`** — Delaunay TIN. Kills the bullseyes and gives a free, correct mask (a TIN is only
  *   defined inside the convex hull). But it renders the triangulation itself: angular facets, and
  *   long sliver triangles spanning the hull wherever soundings sit on near-parallel transects.
@@ -58,9 +54,8 @@ function flag(args: string[], name: string): string | undefined {
  *   it draws its own search radius: overlapping circular arcs around every cluster of readings.
  *
  * The pattern is that GDAL's gridders are built for scattered data and ours is **transect** data,
- * whose anisotropy defeats all three. The real fix is a proper interpolator — natural-neighbour, or a
- * tensioned spline (GMT's `surface`), or TIN followed by a smoothing pass — which is a focused piece
- * of cartographic work rather than a flag on this command.
+ * whose anisotropy defeats all three. What replaced them is a tensioned spline — `gmt surface`, below
+ * — solved on an axis-compressed grid, which is the only chain in this file.
  */
 /**
  * Grid cells across the lake's long axis. 500 keeps a contour smooth at drawer zoom without making
@@ -87,39 +82,20 @@ const TENSION = 0.25;
  */
 const SMOOTH_CELLS = 3;
 
-export const ALGORITHMS: Record<string, string> = {
-  gmt: 'gmt-surface',
-  idw: 'invdistnn:radius={r}:max_points=12:min_points=1:power=2.0',
-  linear: 'linear:radius=-1:nodata=-9999',
-  average: 'average:radius={r}:min_points=1:nodata=-9999',
-};
-
 /**
- * Interpolate soundings to a grid and contour it, via GDAL.
+ * Interpolate soundings to a grid and contour it: `blockmedian` → `surface` → `grdedit` → `grdfilter`
+ * → `gdal_contour` → clip.
  *
- * **`linear` — Delaunay triangulation with linear interpolation inside each triangle.** §Maine called
- * this exactly right ("natural-neighbour or TIN-based interpolation over kriging: fewer knobs, no
- * variogram to defend"), and the first attempt here ignored it in favour of inverse-distance
- * weighting. Rendering the result is what settled it, and IDW lost on two counts at once:
- *
- * 1. **Bullseyes.** IDW is an exact interpolator — it passes precisely through every data point, so
- *    each sounding becomes a local extremum with a ring of tiny closed contours around it. The sample
- *    strip was covered in them. They are the fit's arithmetic, not the basin, and drawing them is a
- *    smaller version of the mistake this whole document opens by refusing.
- * 2. **It has no edge.** IDW returns a value for every cell in the raster, so contours ran out across
- *    dry land to the corners of the bounding box. A TIN is only defined inside the convex hull of the
- *    data, so everything outside comes back as nodata — the mask falls out of the method for free,
- *    and it is the *right* mask: exactly the area the survey actually covered.
- *
- * The remaining clip — to our own water-body polygon — still has to happen in the production lane,
- * because a hull spans a concave bay the survey went around. But the hull edge is what keeps the
- * samples honest, and it is what the density gate is measuring against anyway.
+ * The whole chain runs in the lake's own frame with the along-axis coordinate compressed for the
+ * solve, and every stage below carries the render that forced it. Two clips are in play and both are
+ * needed: `surface -M` trims to what the survey covered, and `ogr2ogr -clipsrc` trims to our polygon,
+ * because a mask is circular around each reading and a hull spans a concave bay the survey went
+ * around.
  */
 function interpolateAndContour(
   lakeKey: string,
   points: readonly NormalizedSounding[],
   workDir: string,
-  algorithm: string,
   polygon: Polygon | MultiPolygon | undefined,
 ):
   | { levels: number[]; interval: number; maxDepthFt: number; contours: GeoJSON.FeatureCollection }
@@ -370,7 +346,7 @@ function renderSvg(
 
   const paths: string[] = [];
   for (const feature of contours.features) {
-    const depth = Number((feature.properties ?? {}).depth ?? 0);
+    const depth = Number(feature.properties?.depth ?? 0);
     // A blue ramp, deliberately nothing like the hazard palette (D82): a depth ramp a skater could
     // mistake for a severity scale would reintroduce through colour the claim we declined in words.
     const t = maxDepth > 0 ? Math.min(1, depth / maxDepth) : 0;
@@ -419,7 +395,6 @@ function main(): void {
   const workDir = join(SCRATCH_ROOT, 'samples');
   mkdirSync(workDir, { recursive: true });
   const outPath = flag(args, 'out') ?? join(workDir, 'samples.html');
-  const algorithm = flag(args, 'algo') ?? ALGORITHMS.gmt ?? '';
 
   // Lake polygons, keyed by the source's own lake id, fetched from our corpus. Optional: without
   // them the tool still runs, and the difference is exactly the point being demonstrated.
@@ -500,7 +475,7 @@ function main(): void {
   const cards: string[] = [];
   for (const { assessment, points } of picked) {
     const polygon = polygons[assessment.lakeKey];
-    const result = interpolateAndContour(assessment.lakeKey, points, workDir, algorithm, polygon);
+    const result = interpolateAndContour(assessment.lakeKey, points, workDir, polygon);
     if (!result) continue;
     const pct = (assessment.gapRatio * 100).toFixed(0);
     cards.push(

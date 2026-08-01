@@ -53,7 +53,7 @@ async function main(): Promise<void> {
   for (const source of selected) {
     const manifest = readManifest(source.key);
     if (!manifest) {
-      process.stdout.write(`  ? ${source.key}: no snapshot yet — run \`fetch\` first\n`);
+      process.stdout.write(`  ? ${source.key}: no snapshot yet — run \`snapshot\` first\n`);
       continue;
     }
     checked += 1;
@@ -82,7 +82,8 @@ async function main(): Promise<void> {
   }
 
   if (checked === 0) {
-    process.stdout.write('\nNothing archived yet. Run `fetch` before `verify`.\n');
+    // `snapshot`, not `fetch` — `pnpm fetch` is a built-in that silently runs an install instead.
+    process.stdout.write('\nNothing archived yet. Run `snapshot` before `verify`.\n');
     return;
   }
   if (worst === 'breaking') {

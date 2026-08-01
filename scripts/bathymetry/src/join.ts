@@ -127,9 +127,10 @@ function runJoinQuery(lakes: { key: string; point: { lat: number; lng: number } 
       'run',
       'waterBodies:matchBathymetryLakes',
       JSON.stringify({ lakes }),
-      '--component',
-      '',
-    ].filter((a) => a !== '--component' && a !== ''),
+    ],
+    // A generous buffer, not a guess: 40 lakes each carrying a full OSM shoreline polygon back is
+    // megabytes of JSON on one stdout, and node's 1 MB default truncates it into a parse error that
+    // reads like a query failure.
     { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, cwd: process.cwd() },
   );
   if (result.status !== 0) {
