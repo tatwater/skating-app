@@ -1,3 +1,4 @@
+import { CONTOUR_SOURCE_TERMS } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import { coveredStates, SOURCES, sourceByKey, sourcesForState } from './sources';
 
@@ -100,5 +101,36 @@ describe('attribution and notices', () => {
         expect(source.notice).toBeUndefined();
       }
     }
+  });
+});
+
+/**
+ * The credit contract across the ETL/app boundary.
+ *
+ * The tile carries each line's short `agency` label, not its attribution — so the client resolves
+ * the label back to the required wording through `CONTOUR_SOURCE_TERMS` in `@skating/core`. That
+ * table is a hand-mirrored copy of the `attribution`/`notice` fields above, because the app cannot
+ * import from `scripts/`, and a copy nobody checks is how a credit goes quietly stale the first time
+ * an agency restates its terms.
+ *
+ * This is that check. It fails in the direction that matters: adding a source here without adding it
+ * there ships lines with **no credit at all**, and editing an attribution here without editing there
+ * ships the old wording — neither of which is visible on a rendered map.
+ */
+describe('the credit registry the client renders', () => {
+  it('resolves every source agency to its required wording, verbatim', () => {
+    for (const source of SOURCES) {
+      const terms = CONTOUR_SOURCE_TERMS[source.agency];
+      expect(terms, `no client credit registered for "${source.agency}"`).toBeDefined();
+      expect(terms?.credit).toBe(source.attribution);
+      expect(terms?.notice).toBe(source.notice);
+    }
+  });
+
+  it('registers nothing the ETL does not actually stamp', () => {
+    // A stale entry is harmless to render but it is a claim about data we no longer hold, sitting in
+    // a table whose whole job is to be trustworthy about provenance.
+    const stamped = new Set(SOURCES.map((s) => s.agency));
+    for (const agency of Object.keys(CONTOUR_SOURCE_TERMS)) expect(stamped.has(agency)).toBe(true);
   });
 });
