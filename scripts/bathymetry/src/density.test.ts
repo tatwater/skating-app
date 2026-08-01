@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { assessDensity, convexHull, MIN_SOUNDINGS, summariseDensity } from './density';
+import {
+  assessDensity,
+  convexHull,
+  MAX_GAP_RATIO,
+  MIN_SOUNDINGS,
+  summariseDensity,
+} from './density';
 
 /** A filled grid of soundings over a square patch — the well-surveyed case. */
 function grid(n: number, spanDeg = 0.02, originLng = -70, originLat = 45) {
@@ -141,6 +147,15 @@ describe('assessDensity', () => {
     const result = assessDensity({ lakeKey: 'named', points: grid(2) });
     expect(result.lakeKey).toBe('named');
     expect(result.reason).toBeTruthy();
+  });
+});
+
+describe('the gate threshold', () => {
+  it('is 12%, chosen by rendering twelve real lakes in three bands', () => {
+    // Pinned because the number was set by looking, not derived — and because the comparison found
+    // that quality does NOT track this ratio (the worst sample was at 10%, with the most soundings
+    // of any lake in the grid). A future change should come from another render, not from taste.
+    expect(MAX_GAP_RATIO).toBe(0.12);
   });
 });
 

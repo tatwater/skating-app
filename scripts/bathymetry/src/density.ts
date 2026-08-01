@@ -41,12 +41,22 @@ export const MIN_SOUNDINGS = 12;
 /**
  * How far the worst-covered water may be from a measurement, as a fraction of the lake's extent.
  *
- * Tunable, and deliberately exposed rather than inlined: this number decides how much of Maine gets
- * contours at all, and it is the kind of value that should be re-set from data rather than defended
- * from first principles. D82 is what makes a strict default cheap — contours make no claim, so a lake
- * with none costs the skater nothing, and there is no product pressure to loosen it.
+ * **0.12, set by looking (founder call, 2026-08-01).** Twelve real Maine lakes were rendered in three
+ * bands — ~7–8%, ~9–10%, ~11–12% — specifically to avoid choosing from one or two lucky examples.
+ * The result overturned the premise of the question: **visual quality does not track this ratio.**
+ * The worst map in the grid was Long Lake at **10%**, which has 304 soundings — more than any other
+ * sample — while Quantabacook at 11% and Foley at 12% both read cleanly. Nothing in the comparison
+ * argued for stricter, so the gate sits where coverage is defensible rather than where quality was
+ * assumed to live.
+ *
+ * What that leaves: the real quality problem is contour *crowding and angularity*, which is a
+ * rendering concern and is fixed at the smoothing stage, not by refusing lakes.
+ *
+ * Tunable, and deliberately exposed rather than inlined. D82 is what makes a generous setting cheap —
+ * contours make no claim, so a lake with none costs the skater nothing, and equally a lake with
+ * imperfect ones is not asserting anything false.
  */
-export const MAX_GAP_RATIO = 0.15;
+export const MAX_GAP_RATIO = 0.12;
 
 /** How finely to probe. 24×24 over the bbox is plenty to find a hole and cheap enough for 1,528 lakes. */
 const PROBE_GRID = 24;

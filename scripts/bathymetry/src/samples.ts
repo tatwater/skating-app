@@ -68,6 +68,16 @@ const GRID_CELLS = 500;
  */
 const TENSION = 0.25;
 
+/**
+ * Gaussian filter width, in grid cells, applied to the surface before contouring.
+ *
+ * Three is chosen to sit firmly between the two scales that matter: wider than the raster tracing
+ * artifact it exists to remove, and far narrower than the sounding spacing, so it cannot smooth away
+ * a feature the survey actually resolved. A filter approaching the data spacing would be inventing a
+ * smoother lake than was measured.
+ */
+const SMOOTH_CELLS = 3;
+
 export const ALGORITHMS: Record<string, string> = {
   gmt: 'gmt-surface',
   idw: 'invdistnn:radius={r}:max_points=12:min_points=1:power=2.0',
@@ -213,6 +223,34 @@ function interpolateAndContour(
     return undefined;
   }
 
+  // **Smooth the surface before contouring, not the contours after.**
+  //
+  // `gdal_contour` traces a raster, so its output follows cell boundaries: at 500 cells across a lake
+  // that puts a kink every few metres, and the result reads as sharp pointy corners that no lake bed
+  // has. Smoothing the *grid* fixes the cause; smoothing the *lines* afterwards would fix the symptom
+  // and would let neighbouring contours cross each other, since each line would move independently.
+  //
+  // Deliberately NOT a fix for crowding. Dropping contour levels where lines bunch would make a deep
+  // lake with a steep bed show fewer rings than a shallow one with a gentle bed — understating depth
+  // by omission, which is the kind of misleading-by-rendering D82 exists to prevent (founder call,
+  // 2026-08-01). Smoothing changes the shape of the lines and never their number.
+  //
+  // A Gaussian at ~3 grid cells: wide enough to remove the tracing stair-step, far narrower than the
+  // sounding spacing, so it cannot invent or erase a basin feature the survey actually resolved.
+  const filterWidthDeg = (Math.max(spanLng, spanLat) / GRID_CELLS) * SMOOTH_CELLS;
+  const smoothed = join(workDir, `${lakeKey}.sm.nc`);
+  const filter = spawnSync(
+    'gmt',
+    ['grdfilter', nc, `-Fg${filterWidthDeg}`, '-D0', `-G${smoothed}`],
+    { encoding: 'utf8' },
+  );
+  const gridForContour = filter.status === 0 ? smoothed : nc;
+  if (filter.status !== 0) {
+    process.stderr.write(
+      `  gmt grdfilter failed for ${lakeKey}, contouring unsmoothed: ${filter.stderr?.slice(0, 200)}\n`,
+    );
+  }
+
   const interval = chooseInterval(maxDepth);
   const levels = contourLevels(maxDepth, interval);
   if (levels.length === 0) return undefined;
@@ -220,7 +258,7 @@ function interpolateAndContour(
   rmSync(out, { force: true });
   const contour = spawnSync(
     'gdal_contour',
-    ['-a', 'depth', '-fl', ...levels.map(String), '-f', 'GeoJSON', nc, out],
+    ['-a', 'depth', '-fl', ...levels.map(String), '-f', 'GeoJSON', gridForContour, out],
     { encoding: 'utf8' },
   );
   if (contour.status !== 0) {
