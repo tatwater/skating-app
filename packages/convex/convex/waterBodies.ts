@@ -1496,6 +1496,103 @@ export const matchAndImportDepths = internalMutation({
 });
 
 /**
+ * Resolve a batch of source lakes to our bodies, for the N6b bathymetry ETL (internal; read-only).
+ *
+ * The same geometric join as `matchAndImportDepths` above, and deliberately the *same* helpers — a
+ * second notion of "these are the same lake" is exactly what N6a's ladder work exists to avoid. What
+ * differs is what comes back, because N6b needs two things a depth stamp doesn't:
+ *
+ * - **The body's `externalId`.** Contour tiles carry it per feature so the client can filter to the
+ *   open lake (D81). It is the OSM id rather than the Convex `_id` on purpose: `_id` changes if a row
+ *   is ever recreated, and re-tiling five states because a re-import churned ids is not a thing we
+ *   should be one accident away from. `externalId` is what `importCanonical` upserts on, so it
+ *   survives re-imports by construction.
+ * - **The polygon.** The sounding lanes need the shoreline as a depth-0 boundary constraint (§Maine
+ *   step 3), and the contour lanes need it to clip. Returning it here is what keeps the ETL from
+ *   needing its own copy of the corpus.
+ *
+ * A **query**, not a mutation: this resolves, it doesn't write. The rung-1 depth write is a separate
+ * call, so a run can inspect its own join before changing anything — which matters more than usual
+ * here, because a bad join silently attributes one lake's basin to another.
+ */
+export const matchBathymetryLakes = internalQuery({
+  args: {
+    lakes: v.array(
+      v.object({
+        /** The source's own lake id (`au_id`, `PALIS_ID`, `MIDAS`, a VT lake name), echoed back. */
+        key: v.string(),
+        point: latLng,
+        areaSqM: v.optional(v.number()),
+      }),
+    ),
+    /** Omit the polygon when only the identity is wanted — a coverage count, say. */
+    includePolygon: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { lakes, includePolygon = true }) => {
+    const matches: Array<{
+      key: string;
+      waterBodyId: Id<'waterBodies'>;
+      externalId?: string;
+      source: string;
+      name: string;
+      surfaceAreaSqM?: number;
+      states?: string[];
+      polygon?: unknown;
+    }> = [];
+    const rejects: { key: string; reason: string }[] = [];
+
+    for (const lake of lakes) {
+      const byId = await listedBodiesNearCoord(ctx, lake.point);
+      // Zero approach buffer, for the same reason `matchAndImportDepths` uses zero: a lake's
+      // representative point must be *on* our polygon to be that lake. A buffer would let a sounding
+      // just off one shoreline claim the body across the road.
+      const matchId = nearestBodyForPoint(
+        lake.point,
+        [...byId.values()].map((b) => ({
+          ref: b._id,
+          polygon: b.polygon as unknown as Polygon | MultiPolygon,
+          surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
+        })),
+        0,
+      );
+      const body = matchId ? byId.get(matchId) : undefined;
+      if (!body) {
+        rejects.push({ key: lake.key, reason: 'no listed body at this point' });
+        continue;
+      }
+
+      // The same 4× area gate, and it earns its place here more than it did for depth. A depth
+      // stamped on the wrong pond is one bad number; a *basin* attributed to the wrong pond is a
+      // whole rendered map of somewhere else, drawn confidently inside the wrong shoreline.
+      const ours = body.surfaceAreaSqM;
+      if (ours !== undefined && ours > 0 && lake.areaSqM !== undefined && lake.areaSqM > 0) {
+        const ratio = Math.max(ours / lake.areaSqM, lake.areaSqM / ours);
+        if (ratio > DEPTH_MATCH_AREA_RATIO) {
+          rejects.push({
+            key: lake.key,
+            reason: `area mismatch with "${body.name}": ${Math.round(ours)} m² vs ${Math.round(lake.areaSqM)} m² (${ratio.toFixed(1)}×)`,
+          });
+          continue;
+        }
+      }
+
+      matches.push({
+        key: lake.key,
+        waterBodyId: body._id,
+        externalId: body.externalId,
+        source: body.source,
+        name: body.name,
+        surfaceAreaSqM: body.surfaceAreaSqM,
+        states: body.states,
+        ...(includePolygon ? { polygon: body.polygon } : {}),
+      });
+    }
+
+    return { matches, rejects };
+  },
+});
+
+/**
  * Internal seed (run via `pnpm exec convex run`, no auth) — the Phase 2.5 re-seed of the community
  * favorites list. For each `{ name, boost, state? }`: find *listed* bodies whose name matches
  * (search index, then exact case-insensitive), disambiguate a repeated name by the optional `state`
