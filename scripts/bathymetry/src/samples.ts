@@ -145,8 +145,12 @@ function interpolateAndContour(
   // water the fit knew perfectly well. Measured: 73 contour fragments → 61 on MIDAS 314 from this
   // change alone, with more total line drawn.
   const spanMaxDeg = Math.max(maxLng - minLng, maxLat - minLat);
+  const shoreSpacingCells = Number(process.env.SHORE_SPACING_CELLS ?? '1');
   const shore = polygon
-    ? densifyShoreline(polygon, Math.max(5, (spanMaxDeg / GRID_CELLS) * 111_320))
+    ? densifyShoreline(
+        polygon,
+        Math.max(5, (spanMaxDeg / GRID_CELLS) * 111_320 * shoreSpacingCells),
+      )
     : [];
   const all = [
     ...points.map((p) => `${p.lng}\t${p.lat}\t${p.depthFt}`),

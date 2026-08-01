@@ -21,17 +21,56 @@ import { SHORELINE_DEPTH } from './sources';
 const FEET_PER_METRE = 3.28084;
 
 /**
- * Maine's metre column was computed with **3.3** ft/m rather than 3.28084, so `DEPTHM * 3.3` lands on
- * a whole foot for the digitised rows and `DEPTHM * 3.28084` does not (3.0303 → 10.0 vs 9.94).
- * Since the published `DEPTHF` was then derived from those bad metres with the *good* constant, every
- * Maine depth in feet is systematically **0.58% shallow** as published.
+ * Maine converted feet to metres with **two different constants**, and which one a row used has to be
+ * decided per row.
  *
- * So we recover the surveyor's original feet by undoing the mistake rather than trusting either
- * published column. That is reading the uncorrupted signal, not correcting a measurement toward a
- * guess: the evidence is that it lands on whole feet across the whole digitised set and the
- * alternative doesn't.
+ * Some rows were built with a sloppy **3.3** ft/m: `DEPTHM 3.0303 × 3.3 = 10.0` exactly, where the
+ * true constant gives 9.94. Most were built with the correct **3.28084**. Across a 40,000-row sample:
+ *
+ * | rows landing on a whole foot under… | count |
+ * | --- | --- |
+ * | 3.28084 only | 31,375 |
+ * | either (small depths, difference under tolerance) | 4,482 |
+ * | 3.3 only | 2,086 |
+ * | neither (genuine fractional readings) | 1,659 |
+ *
+ * **This corrected an earlier version of this module that applied 3.3 to every `depthmap` row.** That
+ * came from a 400-row sample taken off the first archived page, which happened to sit in the 2,086
+ * minority — a reminder that a page of an ordered export is not a sample of the export. Applying 3.3
+ * blanket-fashion inflated ~94% of Maine's depths by 0.58%.
+ *
+ * So the constant is chosen by evidence rather than assumed: whichever one lands the value on a whole
+ * foot wins, and the value is snapped to it, recovering the surveyor's original reading exactly. When
+ * neither does, the row is a genuine fractional measurement and gets the physically correct constant.
+ * When both do, the correct one wins — they only agree where the depth is small enough that the 0.58%
+ * difference is below the tolerance anyway.
  */
-const ME_FEET_PER_METRE = 3.3;
+const ME_SLOPPY_FEET_PER_METRE = 3.3;
+
+/**
+ * How close to a whole foot counts as "this was originally a whole foot".
+ *
+ * 0.02 ft is about 6 mm — far tighter than any depth sounder resolves, so it cannot accidentally
+ * capture a genuine fractional reading, and far looser than the float noise a metre round-trip
+ * introduces.
+ */
+const WHOLE_FOOT_TOLERANCE = 0.02;
+
+/**
+ * Recover a Maine depth in feet.
+ *
+ * The GPS lanes (`gpscarrier`, `gpsrec`) are depth-sounder tracks — genuine metre readings — and are
+ * converted normally. Only the digitised map lane is ambiguous, because only it was converted *from*
+ * feet in the first place.
+ */
+function maineDepthFt(metres: number, method: string): number {
+  if (method !== 'depthmap') return metres * FEET_PER_METRE;
+  const correct = metres * FEET_PER_METRE;
+  const sloppy = metres * ME_SLOPPY_FEET_PER_METRE;
+  if (Math.abs(correct - Math.round(correct)) < WHOLE_FOOT_TOLERANCE) return Math.round(correct);
+  if (Math.abs(sloppy - Math.round(sloppy)) < WHOLE_FOOT_TOLERANCE) return Math.round(sloppy);
+  return correct;
+}
 
 /**
  * How much rounding recovers a round-tripped value.
@@ -293,9 +332,7 @@ export function normalizeMeSoundings(
       continue;
     }
     const method = str(p.FMSRC).toLowerCase();
-    const depthFt = cleanDepth(
-      metres * (method === 'depthmap' ? ME_FEET_PER_METRE : FEET_PER_METRE),
-    );
+    const depthFt = cleanDepth(maineDepthFt(metres, method));
     if (depthFt <= SHORELINE_DEPTH) {
       skip(skipped, 'shoreline or above surface (depth <= 0)');
       continue;
