@@ -1,0 +1,12 @@
+# The permanent raw snapshot of what each state agency served us (N6b). Gitignored because it is
+# hundreds of MB of third-party data, but — unlike `.scratch/` — it is **not** disposable: it is the
+# archive that makes reprocessing free and survives a state reorganising its portal. Mirror it with
+# `mirror-r2.sh push` rather than deleting it. See README §"The two caches".
+.raw/
+
+# Derived intermediates only: reprojected GeoJSON, interpolation grids, gdal_contour output, the
+# .pmtiles. Safe to `rm -rf` at any moment — everything here rebuilds from `.raw/` with no network.
+.scratch/
+
+# rclone remote + bucket for the raw mirror. Holds no secrets (those live in ~/.config/rclone).
+.env.local
