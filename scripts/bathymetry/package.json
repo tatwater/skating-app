@@ -13,7 +13,8 @@
     "snapshot": "tsx src/fetch.ts",
     "verify": "tsx src/verify.ts",
     "provenance": "tsx src/provenanceCli.ts",
-    "sweep": "tsx src/sweep.ts"
+    "sweep": "tsx src/sweep.ts",
+    "samples": "tsx src/samples.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*"
