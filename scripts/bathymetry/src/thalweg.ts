@@ -126,13 +126,6 @@ export function fromLocal(local: LocalPoint, frame: Frame): { lng: number; lat: 
 export const THALWEG_ANISOTROPY = 4;
 
 /**
- * Apply the anisotropy: compress along-axis distance so it competes fairly with across-axis distance.
- *
- * Separated from the frame maths so the pipeline can grid in compressed space and expand the
- * resulting contours by the exact inverse — a mismatch between the two would rotate and stretch every
- * lake in the corpus by a factor nobody would spot in a thumbnail.
- */
-/**
  * How elongated a point cloud actually is, as the ratio of its principal spreads.
  *
  * 1 is round. A long straight lake runs 3–5. **A lake that bends scores LOW**, because the curve
@@ -178,10 +171,26 @@ export function effectiveAnisotropy(
   return Math.max(1, Math.min(ratio, elongation(points, frame)));
 }
 
+/**
+ * Apply the anisotropy: compress along-axis distance so it competes fairly with across-axis distance.
+ *
+ * Separated from the frame maths because the compression is applied to the solver's *input* and undone
+ * on its *output grid* — the pipeline feeds `surface` compressed coordinates and then `grdedit -R`s the
+ * solved grid back to real metres, rather than expanding the traced contours point by point. A
+ * mismatch between the two would stretch every lake in the corpus by a factor nobody would spot in a
+ * thumbnail, which is why the round trip is tested rather than eyeballed.
+ */
 export function compressAlong(local: LocalPoint, ratio: number): LocalPoint {
   return { along: local.along / ratio, across: local.across };
 }
 
+/**
+ * The exact inverse of `compressAlong`.
+ *
+ * Not on the production path — `grdedit` undoes the compression on the grid instead, in one step and
+ * without touching a value. Kept because it is what pins `compressAlong` down in the round-trip tests:
+ * an inverse that only exists in the test file is an inverse nobody can check against.
+ */
 export function expandAlong(local: LocalPoint, ratio: number): LocalPoint {
   return { along: local.along * ratio, across: local.across };
 }
