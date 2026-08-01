@@ -25,12 +25,40 @@ import { MAX_GAP_RATIO } from './density';
 import { compressAlong, type Frame, type LocalPoint, toLocal } from './thalweg';
 
 /**
- * Grid cells across the lake's long axis.
+ * Grid cells across the lake's long axis, when nothing scales it.
  *
- * 500 keeps a contour smooth at drawer zoom without making `surface` iterate for minutes on
- * Champlain — which at 174 km across is the case that sets this ceiling rather than a typical pond.
+ * Kept as the default for callers that do not know the lake's real extent; `gridCellsFor` is what the
+ * pipeline actually uses.
  */
 export const GRID_CELLS = 500;
+
+/**
+ * Ground resolution to aim for, in metres per cell.
+ *
+ * A constant *cell count* was the bug: 500 cells is 349 m per cell on Champlain, which is why it
+ * rendered as blobs, and 1.9 m per cell on a 935 m pond, which is resolution no sounding survey can
+ * justify. 25 m is roughly the scale a shoreline is drawn at in OSM and comfortably finer than any
+ * transect spacing in the corpus.
+ */
+export const TARGET_CELL_M = 25;
+
+/** Floor and ceiling on the cell count, so neither a farm pond nor Champlain makes `surface` silly. */
+export const MIN_GRID_CELLS = 300;
+export const MAX_GRID_CELLS = 1200;
+
+/**
+ * Cells across the long axis for a lake of this size.
+ *
+ * The ceiling binds on Champlain and the floor binds on everything under ~7.5 km, which is most of
+ * the corpus — so in practice this trades "every lake gets 500 cells" for "every lake gets at least
+ * 300, and a big one gets more." Champlain moves from 349 m per cell to 145 m: still coarse, because
+ * a 174 km lake solved at 25 m would be a 7,000-cell grid, but no longer the reason it looks blobby.
+ */
+export function gridCellsFor(extentM: number): number {
+  if (!Number.isFinite(extentM) || extentM <= 0) return MIN_GRID_CELLS;
+  const ideal = extentM / TARGET_CELL_M;
+  return Math.round(Math.min(MAX_GRID_CELLS, Math.max(MIN_GRID_CELLS, ideal)));
+}
 
 /**
  * Spline tension, 0 (minimum curvature) to 1 (harmonic).

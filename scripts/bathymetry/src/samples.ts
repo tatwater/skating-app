@@ -3,6 +3,7 @@
  *
  *   pnpm --filter @skating/bathymetry samples [--per-state=5] [--states=VT,NH,MA,ME]
  *   pnpm --filter @skating/bathymetry samples --only=nh-granit-contours:NHLAK...,vt-anr:MOREY
+ *   pnpm --filter @skating/bathymetry samples --ungated   # draw what the shore-share gate refuses
  *   pnpm --filter @skating/bathymetry samples --list
  *
  * The founder's call on the density gate was *"show me both, then decide"*, and this is the showing.
@@ -24,8 +25,9 @@ import { join } from 'node:path';
 import process from 'node:process';
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
-import { compressedCloud, gridPlan, spanDegrees, TENSION } from './grid';
-import { chooseInterval, contourLevels } from './interval';
+import { MAX_SHORE_SHARE, shoreShare } from './density';
+import { compressedCloud, gridCellsFor, gridPlan, TENSION } from './grid';
+import { BASE_INTERVAL_FT, chooseInterval, thinPublishedLevels } from './interval';
 import { type JoinCandidate, joinInBatches } from './joinQuery';
 import { runJoinQuery } from './joinRunner';
 import { readAllLakes } from './lakeSources';
@@ -46,7 +48,7 @@ import {
   isEmptyBounds,
   unionBounds,
 } from './render';
-import { densifyShoreline, ringsOf } from './shoreline';
+import { densifyShoreline, perimeterMeters, ringsOf, shoreSpacingFor } from './shoreline';
 import { effectiveAnisotropy, fromLocal, principalFrame, THALWEG_ANISOTROPY } from './thalweg';
 
 const WORK_DIR = join(SCRATCH_ROOT, 'samples');
@@ -78,6 +80,9 @@ const MIN_EXTENT_M = 700;
 const MIN_DEPTH_FT = 15;
 /** A contour lane needs enough published lines to show a basin rather than a single ring. */
 const MIN_CONTOUR_LINES = 6;
+
+/** `--ungated` draws lakes the shore-share gate would refuse, so the gate can be judged by looking. */
+let UNGATED = false;
 
 const DEFAULT_CARD = 340;
 let CARD = DEFAULT_CARD;
@@ -168,8 +173,27 @@ interface Drawn {
   interval?: number;
   levels?: number[];
   ratio?: number;
+  /** Set when the ladder had to step up, and by which of the two ceilings. */
+  coarsenedBy?: 'depth' | 'data support';
+  /** Fraction of the solved grid constrained by our own outline rather than the state's readings. */
+  shoreShare?: number;
+  gridCells?: number;
   clippedAway?: number;
+  /** Published levels a contour lane declined to draw, so the thinning is never silent. */
+  thinnedAway?: number;
   note?: string;
+}
+
+/** Distinct grid cells a point set occupies, at this plan's resolution — what `blockmedian` leaves. */
+function occupiedCells(
+  cloud: readonly { along: number; across: number }[],
+  plan: { increment: string },
+): number {
+  const inc = Number(plan.increment.slice(2));
+  if (!(inc > 0)) return cloud.length;
+  const cells = new Set<string>();
+  for (const p of cloud) cells.add(`${Math.floor(p.along / inc)},${Math.floor(p.across / inc)}`);
+  return cells.size;
 }
 
 function gmt(args: string[], label: string): boolean {
@@ -233,7 +257,11 @@ function clipToPolygon(
  * and the filter, the mask and the contour tracer all see real distances. Every number handed to GMT
  * comes from `gridPlan`, where it is tested.
  */
-function interpolate(lake: ArchivedLake, polygon: Polygon | MultiPolygon | undefined): Drawn {
+function interpolate(
+  lake: ArchivedLake,
+  polygon: Polygon | MultiPolygon | undefined,
+  extentM: number,
+): Drawn {
   const points = lake.soundings ?? [];
   const label = id(lake).replace(/[^\w.-]+/g, '_');
   const maxDepth = maxDepthFt(lake);
@@ -243,12 +271,50 @@ function interpolate(lake: ArchivedLake, polygon: Polygon | MultiPolygon | undef
   // Capped by the lake's own elongation: a curved or round basin asks for less on its own.
   const ratio = effectiveAnisotropy(points, frame, configured);
 
-  // Sized before the plan, because the plan needs the shore inside its region. A shoreline sampled
-  // coarser than a grid cell leaves gaps the fit runs deep through.
-  const roughSpacing = Math.max(5, (spanDegrees(points) / 500) * 111_320);
-  const shore = polygon ? densifyShoreline(polygon, roughSpacing) : [];
+  // Resolution follows the lake's real size, not a constant cell count — 500 cells is 349 m on
+  // Champlain and 1.9 m on a farm pond, and only one of those is a resolution the data supports.
+  const gridCells = gridCellsFor(extentM);
+
+  // Two passes, because the shoreline budget needs the cell size and the cell size needs a region
+  // that contains the shoreline. The first pass sizes the grid from the soundings alone; the second
+  // rebuilds it with the shore placed against that budget. Cheap, and it is what stops the outline
+  // outvoting the measurements on a sparse lake.
+  const soundingsOnly = gridPlan(compressedCloud(points, [], frame, ratio), ratio, { gridCells });
+  const cellSizeM = Number(soundingsOnly.increment.slice(2)) * ratio;
+  const shore = polygon
+    ? densifyShoreline(
+        polygon,
+        shoreSpacingFor({
+          perimeterM: perimeterMeters(polygon),
+          soundingCells: occupiedCells(compressedCloud(points, [], frame, ratio), soundingsOnly),
+          cellSizeM,
+          maskRadiusM: soundingsOnly.maskRadius * ratio,
+        }),
+      )
+    : [];
   const cloud = compressedCloud(points, shore, frame, ratio);
-  const plan = gridPlan(cloud, ratio);
+  const plan = gridPlan(cloud, ratio, { gridCells });
+
+  const soundCells = occupiedCells(compressedCloud(points, [], frame, ratio), plan);
+  const shoreCells = occupiedCells(compressedCloud([], shore, frame, ratio), plan);
+  const share = shoreShare(soundCells, shoreCells);
+
+  // **The second gate.** `MAX_GAP_RATIO` asks how far the nearest measurement is; this asks how much
+  // of the fit is measurement at all. Past the threshold the surface is mostly a distance transform
+  // from our own outline, which is the thing this phase opens by refusing — so we draw nothing and
+  // say why, exactly as the density gate does. `--ungated` renders it anyway, for the same reason the
+  // density gate was chosen by looking: a gate you cannot see the far side of cannot be judged.
+  if (share > MAX_SHORE_SHARE && !UNGATED) {
+    return {
+      lines: [],
+      depths: [],
+      shoreShare: share,
+      gridCells,
+      note:
+        `shore-share gate: ${(share * 100).toFixed(0)}% of this fit would be our own outline ` +
+        `(${soundCells} sounding cells against ${shoreCells} shoreline cells)`,
+    };
+  }
 
   const xyz = join(WORK_DIR, `${label}.xyz`);
   const blocked = join(WORK_DIR, `${label}.blk`);
@@ -307,8 +373,9 @@ function interpolate(lake: ArchivedLake, polygon: Polygon | MultiPolygon | undef
   );
   const toContour = filtered ? smoothed : grid;
 
-  const interval = chooseInterval(maxDepth);
-  const levels = contourLevels(maxDepth, interval);
+  // The ladder, and how much of it this lake can carry. `soundCells` rather than the raw reading
+  // count: that is what survives `blockmedian`, and it is what a band has to be traced from.
+  const { intervalFt, levels, coarsenedBy } = chooseInterval(maxDepth, soundCells);
   if (levels.length === 0) return { lines: [], depths: [], note: 'no contour levels in range' };
 
   rmSync(contoured, { force: true });
@@ -353,9 +420,12 @@ function interpolate(lake: ArchivedLake, polygon: Polygon | MultiPolygon | undef
   return {
     lines,
     depths,
-    interval,
+    interval: intervalFt,
     levels,
     ratio,
+    coarsenedBy,
+    shoreShare: share,
+    gridCells,
     clippedAway: clipped ? before - clipped.features.length : undefined,
   };
 }
@@ -363,22 +433,41 @@ function interpolate(lake: ArchivedLake, polygon: Polygon | MultiPolygon | undef
 /** A contour lane: the agency already drew the isobaths, so this is clip and nothing else. */
 function publishedContours(lake: ArchivedLake, polygon: Polygon | MultiPolygon | undefined): Drawn {
   const label = id(lake).replace(/[^\w.-]+/g, '_');
+
+  // The contour lanes' half of the fixed ladder. We choose which SURVEYED levels to show and never
+  // move or add one, so a source coarser than the ladder (NH at 10 ft) comes back untouched and a
+  // source finer than it (MassGIS's 2/3/4/5 ft shallows) is thinned toward 5 ft. D83's rule was never
+  // "don't choose which surveyed lines to show" — it was "don't draw a line where no sounder went."
+  const published = (lake.contours ?? []).map((c) => c.depthFt);
+  const keep = new Set(thinPublishedLevels(published));
+  const dropped = published.length - published.filter((d) => keep.has(d)).length;
   const collection: GeoJSON.FeatureCollection = {
     type: 'FeatureCollection',
-    features: (lake.contours ?? []).map((contour) => ({
-      type: 'Feature' as const,
-      properties: { depth: contour.depthFt },
-      geometry: contour.geometry,
-    })),
+    features: (lake.contours ?? [])
+      .filter((contour) => keep.has(contour.depthFt))
+      .map((contour) => ({
+        type: 'Feature' as const,
+        properties: { depth: contour.depthFt },
+        geometry: contour.geometry,
+      })),
   };
-  if (!polygon) return { ...linesOf(collection) };
+  const laneInfo = {
+    interval: BASE_INTERVAL_FT,
+    levels: [...keep].sort((a, b) => a - b),
+    thinnedAway: dropped > 0 ? dropped : undefined,
+  };
+  if (!polygon) return { ...linesOf(collection), ...laneInfo };
 
   const path = join(WORK_DIR, `${label}.published.geojson`);
   writeFileSync(path, JSON.stringify(collection));
   const before = collection.features.length;
   const clipped = clipToPolygon(path, polygon, WORK_DIR, label);
   const final = clipped ?? collection;
-  return { ...linesOf(final), clippedAway: clipped ? before - clipped.features.length : undefined };
+  return {
+    ...linesOf(final),
+    ...laneInfo,
+    clippedAway: clipped ? before - clipped.features.length : undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -479,7 +568,14 @@ function caption(
   bits.push(`${Math.round(metrics.extentM).toLocaleString()} m across`);
   bits.push(`max ${Math.round(metrics.maxDepthFt)} ft`);
   if (metrics.density) bits.push(`gap ${(metrics.density.gapRatio * 100).toFixed(1)}%`);
-  if (drawn.interval) bits.push(`${drawn.interval} ft interval`);
+  if (drawn.interval) {
+    bits.push(
+      `${drawn.interval} ft interval${drawn.coarsenedBy ? ` (coarsened: ${drawn.coarsenedBy})` : ''}`,
+    );
+  }
+  if (drawn.shoreShare !== undefined) {
+    bits.push(`${(drawn.shoreShare * 100).toFixed(0)}% shoreline-constrained`);
+  }
   if (drawn.ratio !== undefined) {
     bits.push(`elong ${metrics.elongation.toFixed(2)} → aniso ${drawn.ratio.toFixed(2)}`);
   }
@@ -493,6 +589,20 @@ function caption(
   }
   if (drawn.clippedAway && drawn.clippedAway > 0) {
     warnings.push(`${drawn.clippedAway} feature(s) removed by the clip against our shoreline`);
+  }
+  if (drawn.thinnedAway) {
+    warnings.push(
+      `${drawn.thinnedAway} published line(s) thinned toward the ${BASE_INTERVAL_FT} ft ladder`,
+    );
+  }
+  if (
+    drawn.shoreShare !== undefined &&
+    drawn.shoreShare > MAX_SHORE_SHARE &&
+    drawn.lines.length > 0
+  ) {
+    warnings.push(
+      `past the shore-share gate, drawn anyway (--ungated) — ${(drawn.shoreShare * 100).toFixed(0)}% of this fit is our own outline`,
+    );
   }
   if (drawn.note) warnings.push(drawn.note);
   if (stretched) {
@@ -533,6 +643,7 @@ async function main(): Promise<void> {
   const outPath = flag(args, 'out') ?? join(WORK_DIR, 'samples.html');
   const perState = Number(flag(args, 'per-state') ?? 5);
   CARD = Number(flag(args, 'card') ?? DEFAULT_CARD);
+  UNGATED = args.includes('--ungated');
   const states = (flag(args, 'states') ?? 'VT,NH,MA,ME').split(',').map((s) => s.trim());
 
   log('[bathymetry] reading every archived source…');
@@ -609,7 +720,9 @@ async function main(): Promise<void> {
     const body = bodies[id(lake)] ?? null;
     const polygon = body?.polygon;
     const drawn =
-      lake.lane === 'contours' ? publishedContours(lake, polygon) : interpolate(lake, polygon);
+      lake.lane === 'contours'
+        ? publishedContours(lake, polygon)
+        : interpolate(lake, polygon, metrics.extentM);
     const picture = svg(lake, drawn, polygon);
     if (!picture) {
       log(`  ✗ ${lake.lakeName} (${lake.state}) — nothing to draw`);

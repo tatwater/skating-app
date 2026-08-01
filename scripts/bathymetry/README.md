@@ -242,6 +242,16 @@ anything already picked. Taking the first N of this corpus returns farm ponds ev
 **Both lanes render in the same grid on purpose.** A state-surveyed lake beside an interpolated one is
 the only honest calibration for how good the interpolated ones look.
 
+**Contour levels come off a fixed 5 ft ladder (D89)**, so ring count reads as depth across lakes. The
+ladder only steps coarser — for depth, or for thin data — never finer. Contour lanes reach it by
+subtraction: the agency's published levels are thinned toward it and never moved or added to, and the
+deepest published level is always kept.
+
+**Two gates now, and they ask different questions.** `MAX_GAP_RATIO` asks *how far is the nearest
+measurement*; `MAX_SHORE_SHARE` asks *how much of the fit is measurement at all*. A lake fitted mostly
+to its own outline is approximately a distance transform, which is what this phase opens by refusing.
+`--ungated` draws what the second gate declines, so it can be judged by looking.
+
 **This is the step that finds things.** Every failure in this phase was invisible in code review and
 obvious on a render — the isotropic fit splitting a real trough into isolated pits, the anisotropy
 smearing every lake into a lens, a source key holding two ponds 51 km apart. Run it after any change

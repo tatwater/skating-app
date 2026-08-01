@@ -459,8 +459,14 @@ otherwise re-derive them in the same order.*
 | Clip | `ogr2ogr -clipsrc` against our polygon | A mask is circular; a lake is not. |
 
 **The tunable knobs**, all in `@skating/core`-style constants with env overrides for a run:
-`THALWEG_ANISOTROPY` (4, capped per lake) · `MAX_GAP_RATIO` (0.12) · `TENSION` (0.25) ·
-`SMOOTH_CELLS` (3) · `GRID_CELLS` (500) · `TARGET_CONTOUR_COUNT` (12).
+`THALWEG_ANISOTROPY` (4, capped per lake) · `MAX_GAP_RATIO` (0.12) · `MAX_SHORE_SHARE` (0.75) ·
+`TENSION` (0.25) · `SMOOTH_CELLS` (3) · `TARGET_CELL_M` (25, clamped 300–1200 cells) ·
+`BASE_INTERVAL_FT` (5) · `MIN_SAMPLES_PER_BAND` (5) · `MAX_BANDS` (20).
+
+*(`GRID_CELLS` (500) and `TARGET_CONTOUR_COUNT` (12) were both retired on 2026-08-01 — see
+§*Rebuilt against the charts*. A constant cell count and a constant band count were the same mistake
+twice: a per-lake normalisation that ignored how big the lake was and how much of it had been
+measured.)*
 
 ### What was tried and rejected, in order
 
@@ -664,6 +670,67 @@ Two smaller things the wide grid surfaced:
   not a bug, but it is a number worth watching rather than discovering later.
 - **NH GRANIT carries river reaches, not only lakes** (*Piscataquog River*, *Baker River Site 2*).
   Harmless here, but a lane that assumes "lake" will meet them.
+
+---
+
+## Rebuilt against the charts (2026-08-01)
+
+*The four fixes the chart comparison below argued for, built the same day. **D89**: the contour
+interval is a fixed ladder, not a per-lake target.*
+
+> **D89 — Every lake is drawn on the same 5 ft ladder, and the ladder only ever steps coarser.**
+> Ring *count* is therefore a readout of depth — three rings on a 17 ft pond, eleven on a 59 ft one —
+> rather than every lake being normalised to a dozen bands. The interval may step up (10, 25, 50 ft)
+> for depth or for thin data, never down. Contour lanes reach the same ladder by **subtraction only**:
+> the agency's published levels are thinned toward it, and no level is ever moved or added.
+
+> *"I'd rather see contours every 5 ft and therefore only get 3 contours in one lake and 10 in
+> another. But I don't want to just make it up and end up with a very inaccurate depiction."*
+> — founder, 2026-08-01
+
+**Why this does not reopen the question D82 already closed.** The earlier proposal — dropping levels
+*where lines crowd together on the map* — was rejected because ring count would then depend on how
+steep the bed is, *"understating depth by omission."* A fixed **depth** ladder is the opposite: spacing
+is uniform in depth and never in map distance, so a deeper lake always shows more rings. It settles
+that open question rather than reviving it. *(Spatial crowding on a steep bed is untouched and remains
+open — it is a rendering problem, not a level-selection one.)*
+
+**And D83 survives intact.** Its rule was never *"don't choose which surveyed lines to show"* — it was
+*"don't draw a line where no depth-sounder went."* Thinning is subtraction. NH publishes at 10 ft,
+coarser than the ladder, and comes back untouched; MassGIS's 2/3/4/5 ft shallows collapse toward 5 ft.
+67 of 265 MassGIS lakes and 40 of 617 NH lakes thin; the rest are already on the ladder.
+
+**One bug the corpus found and the unit tests had not.** Thinning a lake published at 2/4/6/8/10/12 ft
+gave 4/10 — *dropping its 12 ft ring*, the innermost one, the only line that says where the deep water
+is. That is D82's understating-by-omission arriving by a different road. **The deepest published level
+is now always kept**, whichever rung it lands near.
+
+### What the four fixes did
+
+| | before | after |
+| --- | --- | --- |
+| Washington Pond (ME) — lines drawn | 69 | **28** |
+| Middle Branch Pond (ME) | 18 | **5** |
+| Horserace Ponds (ME) | 13 | **5**, and gated |
+| Burr Pond (VT) | 26 | **5** |
+| Lake Groton (VT) | 80 | **13** |
+| **Maine shore share** | 84–96% | **58–85%** |
+| **Vermont shore share** | 2–8% | **2–6%** |
+| Champlain cell size | 349 m | **145 m** |
+
+**The shoreline rebalance is the one that matters most**, because it is the one that was quietly
+turning the Maine lane into a distance transform. The shore is now sampled against a budget tied to
+the *sounding* count rather than to lake size — and the original objection is preserved as a hard
+clamp: never coarser than half the mask radius, because a shore the mask cannot bridge cuts its own
+contours in water the fit knows.
+
+**`MAX_SHORE_SHARE` = 0.75**, set from the distribution *after* the rebalance rather than from the
+numbers that prompted it — rebalancing moved every lake, so a threshold chosen against the old figures
+would have been measuring a problem that no longer existed. It catches exactly one lake in the sample
+grid, and the right one: **Horserace Ponds, 24 soundings on a 1.4 km lake, 85%.** That lake also
+coarsens to a 10 ft interval on data support, so both new mechanisms fire on the same lake
+independently. `samples --ungated` draws what the gate refuses, for the same reason the density gate
+was chosen by looking.
 
 ---
 

@@ -1,6 +1,6 @@
 import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { densifyShoreline, ringsOf } from './shoreline';
+import { densifyShoreline, perimeterMeters, ringsOf, shoreSpacingFor } from './shoreline';
 
 /** A ~1 km square at 45°N, closed. */
 const SQUARE: Polygon = {
@@ -93,5 +93,73 @@ describe('densifyShoreline', () => {
   it('refuses a non-positive spacing rather than looping forever', () => {
     expect(() => densifyShoreline(SQUARE, 0)).toThrow(/positive/);
     expect(() => densifyShoreline(SQUARE, -5)).toThrow(/positive/);
+  });
+});
+
+describe('perimeterMeters', () => {
+  it('sums every ring, islands included — an island has a shore too', () => {
+    const withIsland: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-72.0, 44.0],
+          [-71.99, 44.0],
+          [-71.99, 44.01],
+          [-72.0, 44.01],
+          [-72.0, 44.0],
+        ],
+        [
+          [-71.996, 44.004],
+          [-71.994, 44.004],
+          [-71.994, 44.006],
+          [-71.996, 44.006],
+          [-71.996, 44.004],
+        ],
+      ],
+    };
+    const outerOnly: Polygon = {
+      type: 'Polygon',
+      coordinates: [withIsland.coordinates[0] as number[][]],
+    };
+    expect(perimeterMeters(withIsland)).toBeGreaterThan(perimeterMeters(outerOnly));
+  });
+
+  it('is zero for a degenerate ring rather than NaN', () => {
+    expect(perimeterMeters({ type: 'Polygon', coordinates: [[]] })).toBe(0);
+  });
+});
+
+describe('shoreSpacingFor', () => {
+  const base = { perimeterM: 12_875, cellSizeM: 14, maskRadiusM: 514 };
+
+  it('budgets the shore against the SOUNDINGS, not against the lake size', () => {
+    // Washington Pond: 105 soundings against a 12.9 km perimeter. Sampled at one grid cell the shore
+    // filled 1,409 cells to the soundings' 105 — a surface fitted 93% to its own outline.
+    const sparse = shoreSpacingFor({ ...base, soundingCells: 105 });
+    const dense = shoreSpacingFor({ ...base, soundingCells: 20_000 });
+    expect(sparse).toBeGreaterThan(dense);
+    expect(base.perimeterM / sparse).toBeLessThan(400);
+  });
+
+  it('never spaces wider than the mask can bridge, which is the original objection', () => {
+    // A shore coarser than the interpolation mask cuts its own contours in water the fit knows.
+    const spacing = shoreSpacingFor({ ...base, perimeterM: 5_000_000, soundingCells: 1 });
+    expect(spacing).toBeLessThanOrEqual(base.maskRadiusM / 2);
+  });
+
+  it('never spaces finer than a grid cell, where the extra points buy nothing', () => {
+    // `blockmedian` collapses them anyway; they only cost time.
+    const spacing = shoreSpacingFor({ ...base, perimeterM: 100, soundingCells: 500_000 });
+    expect(spacing).toBeGreaterThanOrEqual(base.cellSizeM);
+  });
+
+  it('holds a floor on shore points so the contours still close', () => {
+    // Below roughly 120 points the outline stops being a boundary condition and nothing nests.
+    const spacing = shoreSpacingFor({ ...base, soundingCells: 2 });
+    expect(base.perimeterM / spacing).toBeGreaterThanOrEqual(100);
+  });
+
+  it('survives a lake with no perimeter', () => {
+    expect(shoreSpacingFor({ ...base, perimeterM: 0, soundingCells: 10 })).toBeGreaterThan(0);
   });
 });

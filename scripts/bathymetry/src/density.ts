@@ -270,6 +270,40 @@ export function assessDensity(
   return { ...base, extentM, coverageGapM, gapRatio, verdict: 'ok' };
 }
 
+/**
+ * How much of a fitted surface is our own shoreline rather than the state's measurements.
+ *
+ * **The second gate, and it asks a different question from the first.** `MAX_GAP_RATIO` asks *"how far
+ * is the nearest measurement"*; this asks *"how much of the fit is measurement at all"* — and on the
+ * sparse lanes the second question is the one that decides whether the lane is honest. Measured on
+ * 2026-08-01, Maine's lakes were 84–96% shoreline and Vermont's 2–8%, and a surface fitted mostly to
+ * distance-from-shore is approximately a distance transform, which is the GLOBathy failure this phase
+ * opens by refusing.
+ *
+ * Counted in **occupied grid cells**, never in raw points, because `blockmedian` reduces the input to
+ * one value per cell before the spline sees anything. A transect of 1,387 readings collapsing into 24
+ * cells carries 24 measurements' worth of information, and counting the 1,387 would hide exactly the
+ * lakes this exists to find.
+ */
+export function shoreShare(soundingCells: number, shorelineCells: number): number {
+  const total = soundingCells + shorelineCells;
+  if (!(total > 0)) return 1;
+  return shorelineCells / total;
+}
+
+/**
+ * The most of a fit that may be our own outline before we decline to draw it.
+ *
+ * **Set from the post-rebalance distribution** (see `shoreSpacingFor`) rather than from the numbers
+ * that prompted it — rebalancing the shoreline budget moved every lake, so a threshold chosen against
+ * the old figures would have been measuring a problem that no longer existed.
+ *
+ * Generous on purpose, for the same reason `MAX_GAP_RATIO` is: D82 means a lake with no contours costs
+ * the skater nothing, so the gate can sit where the claim stops being defensible rather than where the
+ * picture stops being pretty.
+ */
+export const MAX_SHORE_SHARE = 0.75;
+
 /** Summarise a run for the drop log — counts by verdict, and every dropped lake named. */
 export function summariseDensity(assessments: readonly DensityAssessment[]): {
   kept: DensityAssessment[];

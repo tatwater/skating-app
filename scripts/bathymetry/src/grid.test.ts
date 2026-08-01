@@ -2,10 +2,14 @@ import { describe, expect, it } from 'vitest';
 import {
   compressedCloud,
   GRID_CELLS,
+  gridCellsFor,
   gridPlan,
   localBounds,
+  MAX_GRID_CELLS,
+  MIN_GRID_CELLS,
   metresPerLngDegree,
   spanDegrees,
+  TARGET_CELL_M,
 } from './grid';
 import { compressAlong, expandAlong, principalFrame, toLocal } from './thalweg';
 
@@ -207,5 +211,43 @@ describe('metresPerLngDegree', () => {
     // ~0.72 of a degree of latitude at our region's centre — the factor whose omission squashed every
     // lake horizontally by 28%.
     expect(metresPerLngDegree(44) / 111_320).toBeCloseTo(0.719, 2);
+  });
+});
+
+describe('gridCellsFor', () => {
+  it('keeps a big lake off the blob resolution a constant cell count gave it', () => {
+    // Champlain at 174 km: 500 cells was 349 m per cell, which is why it rendered as blobs.
+    const cells = gridCellsFor(174_399);
+    expect(cells).toBe(MAX_GRID_CELLS);
+    expect(174_399 / cells).toBeLessThan(200);
+  });
+
+  it('stops a farm pond being solved at a resolution no survey supports', () => {
+    // 935 m at 500 cells is 1.9 m per cell — finer than any sounding spacing in the corpus.
+    expect(gridCellsFor(935)).toBe(MIN_GRID_CELLS);
+  });
+
+  it('tracks the target cell size between the clamps', () => {
+    const extent = TARGET_CELL_M * 700;
+    expect(gridCellsFor(extent)).toBe(700);
+    expect(extent / gridCellsFor(extent)).toBeCloseTo(TARGET_CELL_M, 6);
+  });
+
+  it('never returns something silly for a degenerate extent', () => {
+    expect(gridCellsFor(0)).toBe(MIN_GRID_CELLS);
+    expect(gridCellsFor(Number.NaN)).toBe(MIN_GRID_CELLS);
+    expect(gridCellsFor(-100)).toBe(MIN_GRID_CELLS);
+  });
+
+  it('is bounded on both sides for every real lake in the corpus', () => {
+    for (const extent of [700, 935, 3305, 4285, 12_409, 51_277, 174_399]) {
+      const cells = gridCellsFor(extent);
+      expect(cells).toBeGreaterThanOrEqual(MIN_GRID_CELLS);
+      expect(cells).toBeLessThanOrEqual(MAX_GRID_CELLS);
+    }
+  });
+
+  it('leaves the old constant available for callers with no extent to scale by', () => {
+    expect(GRID_CELLS).toBe(500);
   });
 });
