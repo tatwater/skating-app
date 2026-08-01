@@ -25,6 +25,14 @@ import { assessDensity, type DensityAssessment, MAX_GAP_RATIO } from './density'
 import { chooseInterval, contourLevels } from './interval';
 import { groupByLake, type NormalizedSounding, normalizeMeSoundings } from './normalize';
 import { densifyShoreline, ringsOf } from './shoreline';
+import {
+  compressAlong,
+  expandAlong,
+  fromLocal,
+  principalFrame,
+  THALWEG_ANISOTROPY,
+  toLocal,
+} from './thalweg';
 
 function flag(args: string[], name: string): string | undefined {
   return args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -120,80 +128,60 @@ function interpolateAndContour(
   const nc = join(workDir, `${lakeKey}.nc`);
   const out = join(workDir, `${lakeKey}.geojson`);
 
-  let minLng = Number.POSITIVE_INFINITY;
-  let maxLng = Number.NEGATIVE_INFINITY;
-  let minLat = Number.POSITIVE_INFINITY;
-  let maxLat = Number.NEGATIVE_INFINITY;
   let maxDepth = 0;
-  for (const p of points) {
-    if (p.lng < minLng) minLng = p.lng;
-    if (p.lng > maxLng) maxLng = p.lng;
-    if (p.lat < minLat) minLat = p.lat;
-    if (p.lat > maxLat) maxLat = p.lat;
-    if (p.depthFt > maxDepth) maxDepth = p.depthFt;
-  }
-  // The shoreline joins the survey as depth-0 constraints (§Maine step 3), sampled at roughly one
-  // grid cell so it constrains the boundary evenly.
-  //
-  // **Uncapped, and that reverses an earlier decision.** The first cut thinned the shore to 2× the
-  // sounding count, on the theory that thousands of zero-depth constraints would out-vote a few dozen
-  // real readings and flatten every lake into the same dish. `blockmedian` already prevents that: it
-  // collapses the input to one value per grid cell before `surface` ever sees it, so a dense shore
-  // fills cells rather than stacking them, and cannot out-weight anything. The cap was solving a
-  // problem the decimation had already solved — and it was causing a real one, because a sparse shore
-  // leaves mid-arm water further from any constraint than the mask allows, so contours got cut in
-  // water the fit knew perfectly well. Measured: 73 contour fragments → 61 on MIDAS 314 from this
-  // change alone, with more total line drawn.
-  const spanMaxDeg = Math.max(maxLng - minLng, maxLat - minLat);
-  const shoreSpacingCells = Number(process.env.SHORE_SPACING_CELLS ?? '1');
+  for (const p of points) if (p.depthFt > maxDepth) maxDepth = p.depthFt;
+
+  // Work in the lake's OWN frame: rotate to its principal axis, then compress along-axis distance so
+  // a trough competes fairly with the across-axis pull toward shore. See `thalweg.ts` for why this
+  // is a smoothness prior rather than a data claim — `surface` still fits through every measurement,
+  // so a real sill between two troughs survives.
+  const ratio = Number(process.env.THALWEG_RATIO ?? THALWEG_ANISOTROPY);
+  const frame = principalFrame(points);
+
+  const spanMaxDeg = (() => {
+    let lo = Number.POSITIVE_INFINITY;
+    let hi = Number.NEGATIVE_INFINITY;
+    let loLat = Number.POSITIVE_INFINITY;
+    let hiLat = Number.NEGATIVE_INFINITY;
+    for (const p of points) {
+      if (p.lng < lo) lo = p.lng;
+      if (p.lng > hi) hi = p.lng;
+      if (p.lat < loLat) loLat = p.lat;
+      if (p.lat > hiLat) hiLat = p.lat;
+    }
+    return Math.max(hi - lo, hiLat - loLat);
+  })();
+
   const shore = polygon
-    ? densifyShoreline(
-        polygon,
-        Math.max(5, (spanMaxDeg / GRID_CELLS) * 111_320 * shoreSpacingCells),
-      )
+    ? densifyShoreline(polygon, Math.max(5, (spanMaxDeg / GRID_CELLS) * 111_320))
     : [];
-  const all = [
-    ...points.map((p) => `${p.lng}\t${p.lat}\t${p.depthFt}`),
-    ...shore.map((p) => `${p.lng}\t${p.lat}\t0`),
+
+  const local = [
+    ...points.map((p) => ({ ...compressAlong(toLocal(p, frame), ratio), depthFt: p.depthFt })),
+    ...shore.map((p) => ({ ...compressAlong(toLocal(p, frame), ratio), depthFt: 0 })),
   ];
-  writeFileSync(xyz, `${all.join('\n')}\n`);
 
-  // Pad the region slightly so the spline is solved a little beyond the data and the mask, rather
-  // than the solver's own boundary, is what decides the edge.
-  const spanLng = maxLng - minLng;
-  const spanLat = maxLat - minLat;
-  const pad = Math.max(spanLng, spanLat) * 0.02;
-  const region = `-R${minLng - pad}/${maxLng + pad}/${minLat - pad}/${maxLat + pad}`;
-  const increment = `-I${Math.max(spanLng, spanLat) / GRID_CELLS}`;
+  let minA = Number.POSITIVE_INFINITY;
+  let maxA = Number.NEGATIVE_INFINITY;
+  let minC = Number.POSITIVE_INFINITY;
+  let maxC = Number.NEGATIVE_INFINITY;
+  for (const l of local) {
+    if (l.along < minA) minA = l.along;
+    if (l.along > maxA) maxA = l.along;
+    if (l.across < minC) minC = l.across;
+    if (l.across > maxC) maxC = l.across;
+  }
+  writeFileSync(xyz, `${local.map((l) => `${l.along}\t${l.across}\t${l.depthFt}`).join('\n')}\n`);
 
-  // The mask radius is the density gate's own allowance, deliberately: a node further from a real
-  // reading than the gate permits is exactly the water we said we would not draw. Tying them means
-  // the picture and the gate can never disagree about what counts as covered.
-  //
-  // At exactly the gate's ratio, not half of it. An earlier cut halved it, reasoning that the gate's
-  // number is a p95 over a whole lake while the mask is a per-node test. That reasoning was sound and
-  // the result was wrong: measured against real lakes, halving cut contours through water the shore
-  // constrains on both sides. Restoring the full ratio took MIDAS 5690 from 38 contour fragments to
-  // 29 *and* drew more total line — fewer, longer, more connected.
-  //
-  // Doubling it again changes almost nothing, which is the useful part: the polygon clip has become
-  // the binding constraint rather than the mask. That is the right thing to be binding, because the
-  // clip is a fact about the lake and the mask is a heuristic about coverage.
-  const maskRadius = Math.max(spanLng, spanLat) * MAX_GAP_RATIO;
+  // Metres now, not degrees — and the cell is square in the COMPRESSED frame, which is what makes the
+  // anisotropy actually reach the solver rather than being undone by the grid spacing.
+  const padM = Math.max(maxA - minA, maxC - minC) * 0.02;
+  const region = `-R${minA - padM}/${maxA + padM}/${minC - padM}/${maxC + padM}`;
+  const increment = `-I${Math.max(maxA - minA, maxC - minC) / GRID_CELLS}`;
+  const maskRadius = Math.max(maxA - minA, maxC - minC) * MAX_GAP_RATIO;
+  const spanLng = maxA - minA;
+  const spanLat = maxC - minC;
 
-  // Decimate to one value per grid cell first. GMT requires this in spirit and the data requires it
-  // in fact: a sonar log puts thousands of readings inside one cell, and `surface` is unstable when
-  // several data points land on the same node.
-  //
-  // **`blockmedian`, not `blockmean`** — the median is robust to a single anomalous reading, and a
-  // depth-sounder corpus is full of them (a fish, a weed bed, a momentary loss of bottom lock).
-  //
-  // It earns its place on Vermont, where a cell holds hundreds of sonar returns. It does **nothing**
-  // on Maine, and that is worth knowing rather than assuming: at a median of 48 soundings per lake
-  // against a 500-cell grid, almost every Maine cell holds at most one point, so the median has
-  // nothing to be robust over and reduces to the mean. The tight spirals visible on the Maine samples
-  // are therefore NOT a decimation artifact — they are `surface` faithfully honouring a genuinely
-  // isolated deep reading. Removing them would mean editing the survey, which is not ours to do.
   const block = spawnSync('gmt', ['blockmedian', xyz, region, increment], { encoding: 'utf8' });
   if (block.status !== 0) {
     process.stderr.write(
@@ -241,13 +229,11 @@ function interpolateAndContour(
   //
   // A Gaussian at ~3 grid cells: wide enough to remove the tracing stair-step, far narrower than the
   // sounding spacing, so it cannot invent or erase a basin feature the survey actually resolved.
-  const filterWidthDeg = (Math.max(spanLng, spanLat) / GRID_CELLS) * SMOOTH_CELLS;
+  const filterWidthM = (Math.max(spanLng, spanLat) / GRID_CELLS) * SMOOTH_CELLS;
   const smoothed = join(workDir, `${lakeKey}.sm.nc`);
-  const filter = spawnSync(
-    'gmt',
-    ['grdfilter', nc, `-Fg${filterWidthDeg}`, '-D0', `-G${smoothed}`],
-    { encoding: 'utf8' },
-  );
+  const filter = spawnSync('gmt', ['grdfilter', nc, `-Fg${filterWidthM}`, '-D0', `-G${smoothed}`], {
+    encoding: 'utf8',
+  });
   const gridForContour = filter.status === 0 ? smoothed : nc;
   if (filter.status !== 0) {
     process.stderr.write(
@@ -272,21 +258,49 @@ function interpolateAndContour(
     return undefined;
   }
 
-  // Clip to the lake itself. The `-M` mask already trims to what the survey covered, but a mask is
+  // Back out of the lake frame FIRST: the contours come out of gdal in the compressed local frame,
+  // and everything downstream — the clip polygon, the SVG, the tiles — is lng/lat. Expand the
+  // along-axis coordinate by exactly the ratio it was compressed by, then rotate. A mismatch here
+  // stretches every lake in the corpus by a factor nobody would spot in a thumbnail, which is why
+  // the transform is round-trip tested rather than eyeballed.
+  const raw = JSON.parse(readFileSync(out, 'utf8')) as GeoJSON.FeatureCollection;
+  for (const feature of raw.features) {
+    const g = feature.geometry;
+    const lines: number[][][] =
+      g.type === 'LineString'
+        ? [g.coordinates as number[][]]
+        : g.type === 'MultiLineString'
+          ? (g.coordinates as number[][][])
+          : [];
+    for (const line of lines) {
+      for (const c of line) {
+        const back = fromLocal(
+          expandAlong({ along: c[0] as number, across: c[1] as number }, ratio),
+          frame,
+        );
+        c[0] = back.lng;
+        c[1] = back.lat;
+      }
+    }
+  }
+  const geo = join(workDir, `${lakeKey}.wgs84.geojson`);
+  writeFileSync(geo, JSON.stringify(raw));
+
+  // Then clip to the lake. The `-M` mask already trims to what the survey covered, but a mask is
   // circular around each reading and a lake is not — without this, contours spill over the shoreline
   // onto land wherever a sounding sat near the bank.
-  let clipped = out;
+  let clipped = geo;
   if (polygon) {
     const clipFile = join(workDir, `${lakeKey}.clip.geojson`);
     writeFileSync(clipFile, JSON.stringify({ type: 'Feature', geometry: polygon, properties: {} }));
     clipped = join(workDir, `${lakeKey}.clipped.geojson`);
     rmSync(clipped, { force: true });
-    const clip = spawnSync('ogr2ogr', ['-f', 'GeoJSON', '-clipsrc', clipFile, clipped, out], {
+    const clip = spawnSync('ogr2ogr', ['-f', 'GeoJSON', '-clipsrc', clipFile, clipped, geo], {
       encoding: 'utf8',
     });
     if (clip.status !== 0 || !existsSync(clipped)) {
       process.stderr.write(`  ogr2ogr clip failed for ${lakeKey}: ${clip.stderr?.slice(0, 200)}\n`);
-      clipped = out;
+      clipped = geo;
     }
   }
 
