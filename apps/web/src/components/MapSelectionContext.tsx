@@ -94,6 +94,30 @@ interface MapSelectionValue {
    */
   browseSeason: number | null;
   setBrowseSeason: (season: number | null) => void;
+  /**
+   * The open lake, keyed the way the **contour tiles** are keyed (N6b/D81) — the OSM `externalId`,
+   * falling back to the Convex `_id`. `null` whenever no lake drawer is open, which is what makes
+   * the bathymetry layer's visibility derived rather than managed: there is no toggle, no persisted
+   * preference and no settings row, because the layer is a property of the detail view.
+   *
+   * Deliberately *not* `highlightWaterBodyId`. That is a Convex id, and a Convex id changes if a row
+   * is ever recreated — re-tiling five states because a re-import churned ids is not a thing we
+   * should be one accident away from. The drawer pushes this because the drawer is what holds the
+   * body document.
+   */
+  contourBodyKey: string | null;
+  setContourBodyKey: (key: string | null) => void;
+  /**
+   * One line of provenance for the contours currently drawn, or `null` when none are.
+   *
+   * **The only thing in this context that flows map → drawer**, and it does so because the tile is
+   * the authority: which agency surveyed this lake, at what interval, and under whose lane is
+   * carried on the features themselves, and only the map can read them back. §5's finding was that
+   * the credit's minimum is smaller than it looks and belongs at the bottom of the drawer, beside
+   * the depth provenance and the Open-Meteo credit — so this is the wire between the two.
+   */
+  contourCredit: string | null;
+  setContourCredit: (line: string | null) => void;
 }
 
 const MapSelectionContext = createContext<MapSelectionValue | null>(null);
@@ -112,6 +136,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [browseSeason, setBrowseSeason] = useState<number | null>(null);
+  const [contourBodyKey, setContourBodyKey] = useState<string | null>(null);
+  const [contourCredit, setContourCredit] = useState<string | null>(null);
 
   const value = useMemo(
     () => ({
@@ -137,6 +163,10 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       setHazardShoreTaps,
       browseSeason,
       setBrowseSeason,
+      contourBodyKey,
+      setContourBodyKey,
+      contourCredit,
+      setContourCredit,
     }),
     [
       highlightWaterBodyId,
@@ -150,6 +180,8 @@ export function MapSelectionProvider({ children }: { children: ReactNode }) {
       hazardDropMode,
       hazardShoreTaps,
       browseSeason,
+      contourBodyKey,
+      contourCredit,
     ],
   );
 

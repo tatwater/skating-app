@@ -39,6 +39,47 @@ export const CONTOUR_LAYER_ID = 'bathymetry-contours';
 export const CONTOUR_SOURCE_LAYER = 'bathymetry';
 
 /**
+ * The layer the contours are inserted *beneath*.
+ *
+ * D82's z-order in one constant: hazards are the product and contours are decoration, so the
+ * contours go under everything a skater can act on. Both clients add the water fill/outline and the
+ * bay outlines at map-init, so inserting before the first bay layer puts contours directly above the
+ * lake's own fill and below every pin, track and hazard that comes after it.
+ */
+export const CONTOUR_BEFORE_LAYER_ID = 'sub-area-outline';
+
+/**
+ * The vector source, from the archive URL.
+ *
+ * The `pmtiles://` prefix lives here rather than at two call sites because it is the difference
+ * between a source that range-reads an archive and one that asks a static host for a TileJSON
+ * document it does not have — and the failure is a lake that renders flat, which looks exactly like
+ * a lake no agency ever surveyed.
+ */
+export function contourSourceSpec(archiveUrl: string): {
+  type: 'vector';
+  url: string;
+} {
+  return { type: 'vector', url: `pmtiles://${archiveUrl}` };
+}
+
+/**
+ * The id a contour line is stamped with, and the id the client filters on.
+ *
+ * **The OSM `externalId`, falling back to the Convex `_id`.** `_id` changes if a row is ever
+ * recreated, and re-tiling five states because a re-import churned ids is not a thing we should be
+ * one accident away from; `externalId` is what `importCanonical` upserts on, so it survives a
+ * re-import by construction. The fallback exists so a body somehow lacking an `externalId` still
+ * renders rather than silently vanishing.
+ *
+ * Shared with the ETL (`scripts/bathymetry`'s `stampBodyId` delegates here) because the two sides
+ * agreeing is the whole contract: a stamp and a filter that disagree draw nothing, with no error.
+ */
+export function contourBodyKey(externalId: string | undefined, fallbackId: string): string {
+  return externalId?.trim() || fallbackId;
+}
+
+/**
  * The floor below which contours are not drawn, however open the drawer is.
  *
  * **A guard rail, not the mechanism.** D81 keeps contours off the browse map entirely, so there is
@@ -72,7 +113,7 @@ export interface ContourFeatureProperties {
  * because `_id` changes if a row is ever recreated and re-tiling five states because a re-import
  * churned ids is not a thing we should be one accident away from.
  */
-export function contourFilter(bodyId: string | undefined): unknown[] {
+export function contourFilter(bodyId: string | null | undefined): unknown[] {
   // No body selected means no contours — not "all contours". Getting this backwards would put every
   // surveyed lake in the region on the browse map, which is precisely what D81 removed.
   if (!bodyId) return ['==', ['literal', true], ['literal', false]];
@@ -123,6 +164,71 @@ export const CONTOUR_OPACITY = 0.75;
 export const CONTOUR_FADE_MS = 220;
 
 /**
+ * The deepest contour among the lines actually drawn.
+ *
+ * Feeds `contourColorExpression`, which scales the ramp to the lake on screen. Read off the tile
+ * rather than from the body's N6a `maxDepthM` on purpose: the ramp has to span *the rings that are
+ * drawn*, and the two numbers are from different sources — a lake whose deepest sounding is 42 ft
+ * can carry a GLOBathy-derived `maxDepthM` of 60, which would leave every drawn ring in the pale
+ * two-thirds of the ramp and flatten exactly the contrast the ramp exists to give.
+ */
+export function maxContourDepthFt(
+  features: readonly Partial<ContourFeatureProperties>[],
+): number | undefined {
+  let deepest: number | undefined;
+  for (const feature of features) {
+    const depth = feature.depthFt;
+    if (typeof depth !== 'number' || !Number.isFinite(depth)) continue;
+    if (deepest === undefined || depth > deepest) deepest = depth;
+  }
+  return deepest;
+}
+
+/**
+ * What an agency's own terms require us to render, keyed by the `agency` a tile carries.
+ *
+ * **The tile carries a short agency label; the licence requires particular words.** For four of the
+ * five sources those are nearly the same thing, and for the fifth they are not: VCGI's terms name
+ * the University of Vermont as the copyright holder, and NOAA asks that attribution neither imply
+ * its endorsement nor present modified data as unaltered NOAA data — so *"VCGI / NOAA"*, which is
+ * what the tile says, is precisely the credit we may not render (see the phase doc, §The NOAA
+ * notice). Hence a registry: the tile stays small and the required wording stays verbatim.
+ *
+ * **Mirrored from `scripts/bathymetry/src/sources.ts`, and the ETL's test suite asserts they match**
+ * — `attribution` → `credit`, `notice` → `notice`, for every source. Duplicating it is deliberate:
+ * the app cannot import from `scripts/`, and a client-side lookup table nobody checks against its
+ * source is how a credit goes quietly stale after an agency's terms change.
+ *
+ * The notice is a **separate obligation** from the credit and is stored as its own field rather than
+ * folded into the attribution string, because a reader checking one should not have to parse the
+ * other to find it.
+ */
+export interface ContourSourceTerms {
+  /** The attribution, exactly as the source's terms require it. Never paraphrased. */
+  credit: string;
+  /** A notice the terms require alongside the credit. */
+  notice?: string;
+}
+
+export const CONTOUR_SOURCE_TERMS: Readonly<Record<string, ContourSourceTerms>> = {
+  'NH GRANIT': {
+    credit: 'NH Department of Environmental Services · NH Fish and Game (NH GRANIT)',
+  },
+  'VCGI / NOAA': {
+    credit: 'Soundings digitised from NOAA nautical charts by University of Vermont and VCGI',
+    notice: 'Not for navigation.',
+  },
+  'VT ANR': { credit: 'Vermont Agency of Natural Resources' },
+  'MassGIS / MassWildlife': {
+    credit: 'MassGIS · MassWildlife (Massachusetts Division of Fisheries & Wildlife)',
+  },
+  'Maine DEP / MaineIF&W': {
+    credit:
+      'Maine Department of Environmental Protection · Maine Dept. of Inland Fisheries & Wildlife',
+  },
+};
+
+/**
  * The credit line for whatever is on screen, and any notice its source requires.
  *
  * **Scoped to the body, not a standing list of all five states** — which is only possible *because*
@@ -135,9 +241,23 @@ export const CONTOUR_FADE_MS = 220;
  * step 5, and gate 3 of §6).
  */
 export interface ContourCredit {
+  /** The required wording per agency, resolved through `CONTOUR_SOURCE_TERMS`. */
   agencies: string[];
-  /** Present when any drawn contour is ours rather than the agency's. */
-  interpolated: boolean;
+  /**
+   * Whose lines these are. `'mixed'` when the drawn set contains both, which is handled here for
+   * the same reason `intervalFt` goes `null` on disagreement: **the honest answer to "two sources
+   * drew this lake" is to say so, not to pick one and label the other's lines with it.**
+   *
+   * A single boolean got this exactly backwards — any fitted line made the whole body read
+   * *"interpolated by us"*, over a credit list that included the agency whose own survey was also on
+   * screen. That is gate 3 of §6 inverted: the two claims must never render as the same thing, and
+   * the same thing they rendered as was ours.
+   *
+   * The ETL now refuses to build a body from two lanes at all (`preferSurveyedLane`), so this should
+   * not arise — but a tile archive outlives the build that made it, and the client is what a stale
+   * archive is read by.
+   */
+  lane: 'surveyed' | 'interpolated' | 'mixed';
   /** `null` when the drawn features disagree, which should not happen within one body. */
   intervalFt: number | null;
   notices: string[];
@@ -147,34 +267,39 @@ export interface ContourCredit {
  * Build the drawer credit from the features actually drawn.
  *
  * Derived from the tile rather than from a lookup table keyed by state, because the tile is what is
- * on screen — and a lake can only be credited to the agency whose lines are visible.
+ * on screen — and a lake can only be credited to the agency whose lines are visible. The tile's
+ * short agency label is resolved to the required wording here; an agency with no registry entry
+ * falls back to its own label, so a newly-added source credits *someone* rather than nobody.
  */
 export function contourCredit(
   features: readonly Partial<ContourFeatureProperties>[],
-  noticesByAgency: Readonly<Record<string, string>> = {},
+  terms: Readonly<Record<string, ContourSourceTerms>> = CONTOUR_SOURCE_TERMS,
 ): ContourCredit | undefined {
   if (features.length === 0) return undefined;
 
   const agencies: string[] = [];
   const notices: string[] = [];
   const intervals = new Set<number>();
-  let interpolated = false;
+  const seen = new Set<string>();
+  const lanes = new Set<string>();
 
   for (const feature of features) {
     const agency = feature.agency?.trim();
-    if (agency && !agencies.includes(agency)) {
-      agencies.push(agency);
-      const notice = noticesByAgency[agency];
-      if (notice && !notices.includes(notice)) notices.push(notice);
+    if (agency && !seen.has(agency)) {
+      seen.add(agency);
+      const entry = terms[agency];
+      const credit = entry?.credit ?? agency;
+      if (!agencies.includes(credit)) agencies.push(credit);
+      if (entry?.notice && !notices.includes(entry.notice)) notices.push(entry.notice);
     }
-    if (feature.lane === 'interpolated') interpolated = true;
+    if (feature.lane) lanes.add(feature.lane);
     if (typeof feature.intervalFt === 'number') intervals.add(feature.intervalFt);
   }
 
   if (agencies.length === 0) return undefined;
   return {
     agencies,
-    interpolated,
+    lane: lanes.size > 1 ? 'mixed' : lanes.has('interpolated') ? 'interpolated' : 'surveyed',
     // One body should carry one interval. Disagreement means two sources overlapped, and the honest
     // answer is to say nothing rather than to pick one and label the other's lines with it.
     intervalFt: intervals.size === 1 ? ([...intervals][0] as number) : null,
@@ -187,13 +312,28 @@ export function contourCredit(
  *
  * Provenance only. **No interpretation** — D82 means the single sentence that survives is who
  * surveyed this and at what spacing, and nothing about what the depth implies for ice.
+ *
+ * **The two lanes are two different sentences, and that is the point** (§Maine step 5, gate 3 of §6):
+ * a state's own isobaths and a surface we fitted through its soundings must never render as the same
+ * claim. The interpolated form also puts the required credit in its *own* sentence rather than
+ * inside ours, because at least one source's required wording is itself a sentence about where the
+ * soundings came from — *"Soundings digitised from NOAA nautical charts by…"* — and splicing that
+ * into "…published by X" produces a line that is both ungrammatical and, worse, an alteration of
+ * licence text.
  */
 export function formatContourCredit(credit: ContourCredit | undefined): string {
   if (!credit) return '';
   const source = credit.agencies.join(' · ');
   const interval = credit.intervalFt ? `${credit.intervalFt} ft contours` : 'depth contours';
-  const claim = credit.interpolated
-    ? `${interval}, interpolated from soundings published by ${source}`
-    : `${interval} surveyed by ${source}`;
-  return credit.notices.length > 0 ? `${claim}. ${credit.notices.join(' ')}` : claim;
+  const claim =
+    credit.lane === 'surveyed'
+      ? `${interval}, surveyed by ${source}.`
+      : credit.lane === 'mixed'
+        ? // Both claims, named. Neither collapsing to "surveyed" (which would credit the agency with
+          // our fit) nor to "interpolated" (which would take credit for the agency's survey) is
+          // available here, and dropping the lane entirely would render two different assertions as
+          // one unlabelled thing — the exact failure gate 3 of §6 forbids.
+          `${interval}, part surveyed and part interpolated by us from published soundings. ${source}.`
+        : `${interval}, interpolated by us from published soundings. ${source}.`;
+  return credit.notices.length > 0 ? `${claim} ${credit.notices.join(' ')}` : claim;
 }

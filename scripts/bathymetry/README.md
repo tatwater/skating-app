@@ -310,15 +310,28 @@ Run this after any `snapshot`, so `PROVENANCE.md` matches the archive it describ
 
 ---
 
+## 9. Wire it — the last step, and the one that is easy to forget
+
+Set the archive's public URL in both apps (`VITE_BATHYMETRY_PMTILES_URL`,
+`EXPO_PUBLIC_BATHYMETRY_PMTILES_URL`). **Blank means the layer never mounts, and that is correct
+rather than degraded**: under D82 contours make no claim, so an unconfigured deployment shows a flat
+lake exactly as it does for the majority of bodies no agency ever surveyed. There is nothing to warn
+about and no fallback tile source to reach for — which also means a mis-set URL is silent. If a lake
+you know is in `contours.geojsonl` draws flat, check this first.
+
+Currently on dev: `dev/bathymetry-20260801-2.pmtiles`.
+
+**Always upload under a new key rather than overwriting one.** The public R2 URL is CDN-cached, so
+replacing the bytes behind a key that clients already hold is how a fix appears not to have worked.
+The date suffix exists for that, and a second build the same day takes `-2`.
+
+---
+
 ## Not built yet
 
-**The two clients.** The tiles exist; nothing renders them. D81 says contours are drawn when a body's
-drawer is open and never on the browse map, which means a lazily-added source filtered by `bodyId`,
-below hazards in the z-order, in a palette that cannot be mistaken for the hazard palette.
-
 **The rung-1 depth write** for the D68 ladder, which is gated behind N6a's ordering gate — hold the
-corpus pass until N6c can ride it.
-
-**The NOAA notice.** Champlain's soundings are digitised from NOAA charts, and §5 of the phase doc
-flags that NOAA chart-derived data usually carries a *"not for navigation"* class of notice. That
-wording needs reading properly before the layer renders next to anything on a safety product.
+corpus pass until N6c can ride it. That is the only outstanding piece; the clients render the layer
+(N6b's render half, 2026-08-01) and the NOAA notice is settled — Champlain's credit reads *"Soundings
+digitised from NOAA nautical charts by University of Vermont and VCGI"* with the notice *"Not for
+navigation."*, carried to the drawer by `CONTOUR_SOURCE_TERMS` in `@skating/core` and pinned against
+`sources.ts` by a test here.

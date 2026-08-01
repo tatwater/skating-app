@@ -265,6 +265,73 @@ export function splitByBody(lake: ArchivedLake): ArchivedLake[] {
   }));
 }
 
+/** A lake set aside because another source already covers the same water body, and why. */
+export interface Superseded {
+  lake: ArchivedLake;
+  reason: string;
+}
+
+/**
+ * Where two sources cover the same water body, keep the survey and set our own fit aside.
+ *
+ * `splitByBody` is the *"one key, two lakes"* direction; this is the other one — **two source keys,
+ * one lake**. A border lake is filed by both states, so it joins twice, and nothing downstream
+ * noticed: every surviving lake writes its features under the same `bodyId`, and the client draws
+ * whatever it finds there. In the first shipped archive that was Lower Kimball Pond and Province
+ * Lake, each carrying NH GRANIT's published isobaths *and* our surface fitted through Maine's
+ * soundings, drawn on top of each other.
+ *
+ * Two things break when that happens, and the second is the one that matters:
+ *
+ * - **The ramp spans two surveys.** `maxContourDepthFt` takes the deepest ring drawn, whichever
+ *   source drew it, which is the union D83's vertical-datum rule exists to forbid.
+ * - **The credit calls the agency's own survey ours.** `contourCredit` carries one `interpolated`
+ *   flag for the whole body, so a lake with any fitted line renders *"interpolated by us"* over a
+ *   list that includes the agency that surveyed it — precisely the claim §Maine step 5 and gate 3 of
+ *   §6 say must never be blurred, inverted.
+ *
+ * **Only a lane disagreement is resolved**, and that restraint is the whole design. An agency filing
+ * one lake under two keys — NH GRANIT files Great East Lake as both `NHLAK…` and `MELAK…`, and the
+ * two halves together *are* the lake — is not a collision and must be left alone. What we refuse is
+ * mixing a survey with a fit.
+ *
+ * Nothing is dropped silently: every superseded lake comes back with a reason, for `dropped.json`.
+ */
+export function preferSurveyedLane(
+  lakes: readonly ArchivedLake[],
+  bodyKeyFor: (lake: ArchivedLake) => string | undefined,
+): { kept: ArchivedLake[]; superseded: Superseded[] } {
+  const byBody = new Map<string, ArchivedLake[]>();
+  for (const lake of lakes) {
+    const key = bodyKeyFor(lake);
+    // A lake that resolves to no body is the join's problem, not ours; it passes through and is
+    // dropped downstream with the reason the join gives it.
+    if (!key) continue;
+    const group = byBody.get(key);
+    if (group) group.push(lake);
+    else byBody.set(key, [lake]);
+  }
+
+  const superseded: Superseded[] = [];
+  const set = new Set<ArchivedLake>();
+  for (const group of byBody.values()) {
+    if (group.length < 2) continue;
+    const surveyed = group.filter((l) => l.lane === 'contours');
+    if (surveyed.length === 0 || surveyed.length === group.length) continue;
+    const agencies = [...new Set(surveyed.map((l) => l.agency))].join(' · ');
+    for (const lake of group) {
+      if (lake.lane === 'contours') continue;
+      superseded.push({
+        lake,
+        reason: `same water body as a surveyed lane (${agencies}); our fit would draw over the agency's own isobaths`,
+      });
+      set.add(lake);
+    }
+  }
+
+  return { kept: lakes.filter((lake) => !set.has(lake)), superseded };
+}
+
 export interface LakeMetrics {
   extentM: number;
   elongation: number;

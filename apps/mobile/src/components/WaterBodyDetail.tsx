@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  contourBodyKey,
   describeLakeDepth,
   formatAreaAcres,
   formatSkateTime,
@@ -60,7 +61,7 @@ export function WaterBodyDetail({
   const focusSubArea = focusSubAreaId
     ? subAreas?.find((s) => s._id === focusSubAreaId && !s.removed)
     : undefined;
-  const { setFocus, setHighlightWaterBodyId } = useMapSelection();
+  const { setFocus, setHighlightWaterBodyId, setContourBodyKey, contourCredit } = useMapSelection();
   const [formOpen, setFormOpen] = useState(trackDraftId !== undefined);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
   const leaving = useIsLeaving();
@@ -93,6 +94,11 @@ export function WaterBodyDetail({
           : { lat: body.centroid.lat, lng: body.centroid.lng, bounds: body.bbox },
       );
       setHighlightWaterBodyId(body._id);
+      // And mount the bathymetry layer for this lake (N6b/D81). Keyed by the OSM id the contour
+      // tiles carry, not by the Convex `_id` the highlight uses — a re-import that churned ids would
+      // otherwise silently blank the layer on every lake at once. Only the *lake* sheet does this:
+      // D81 makes contours a property of this view, not of every view that selects a body.
+      setContourBodyKey(contourBodyKey(body.externalId, body._id));
       // Cache this viewed lake's reference data on-device (F2 Layer 2) so it can be GPS-resolved
       // offline for a no-signal report. Best-effort; the sqlite write never blocks viewing.
       cacheBody({
@@ -104,7 +110,7 @@ export function WaterBodyDetail({
         surfaceAreaSqM: body.surfaceAreaSqM,
       });
     }
-  }, [body, focusSubArea, setFocus, setHighlightWaterBodyId]);
+  }, [body, focusSubArea, setFocus, setHighlightWaterBodyId, setContourBodyKey]);
 
   if (result === undefined) return <DetailLoading />;
   if (result === null) {
@@ -195,6 +201,16 @@ export function WaterBodyDetail({
             waterBodyId={result.body._id}
             {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}
           />
+          {/* The bathymetry credit (N6b §5), last in the sheet and absent on the great majority of
+              lakes no agency ever surveyed. "How far away can we put it" resolved to *here*, and
+              that is not a compromise: nothing requires a contour credit on the map surface, and
+              this is where the depth provenance above and the Open-Meteo credit already live.
+              Provenance only — D82 means no sentence here about what a depth implies for ice. */}
+          {contourCredit ? (
+            <Text color="$foregroundMuted" fontSize="$1">
+              {contourCredit}
+            </Text>
+          ) : null}
         </>
       )}
     </YStack>

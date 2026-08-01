@@ -976,21 +976,27 @@ the phase doc, and the first one reshaped the work:
   university / monitoring sources, lakes > 1 ha, an order of magnitude below HydroLAKES' floor. It becomes
   rung 2 of the D68 ladder, above both modelled sources.
 
-**N6b — The bathymetry layer: real isobaths inside the lake.** 🔨 **IN BUILD (2026-08-01) — the ETL
-is complete end to end; neither client renders it yet.** See
-[`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
+**N6b — The bathymetry layer: real isobaths inside the lake.** ✅ **COMPLETE (2026-08-01); prod
+deferred.** See [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
 
 Archived (five sources, 298 MB, mirrored privately) → normalized → **joined, 2,437 of 2,491 lakes
-(98%)**, Vermont included for the first time → gated → **2,044 lakes contoured into 49,767 lines** →
-tiled to a **15 MB** z9–z14 `.pmtiles` on the Phase 2.5 upload lane.
+(98%)**, Vermont included for the first time → gated → **2,042 lakes contoured into 49,742 lines** →
+tiled to a **15 MB** z9–z14 `.pmtiles` on the Phase 2.5 upload lane → uploaded → drawn by both clients.
 
-**What is left is the render half**, and it is a real chunk rather than cleanup: a lazily-mounted
-source on two `MapView`s, filtered to the open body (D81), faded in, kept under hazards, plus one
-credit line at the bottom of the drawer. Everything it needs is built and tested — the shared layer
-logic in `@skating/core/contourLayer`, per-app palettes, env vars in both apps, and the tiles. The
-rung-1 depth write stays correctly gated behind N6a's ordering gate.
+The render half is small because **D81 and D82 removed most of what there was to decide**: contours
+are a property of the detail view, so the source mounts on drawer-open and unmounts on close, with no
+toggle, no persisted preference and no settings row. They sit under every hazard, fade in once their
+own lines are on screen, and carry one credit line at the bottom of the drawer, derived from the
+features actually drawn. The rung-1 depth write stays correctly gated behind N6a's ordering gate.
 
-- **A source lake key is not always one lake.** 15 keys hold two or more water bodies — NH files two
+**Two findings worth carrying forward.** GLOBathy's 1.4 M per-lake rasters are a linear
+distance-from-shoreline transform, so contours drawn from them would be an authoritative-looking
+rendering of a guess — permanently out of scope, not deferred. And **every input-side quality gate we
+tried was falsified by a render**: five of them, each plausible on paper. The layer ships with no
+output-side gate at all, which is only tolerable because D82 means a contour makes no claim a skater
+can act on wrongly.
+
+- **A source lake key is not always one lake.** 17 keys hold two or more water bodies — NH files two
   ponds 51 km apart under one `au_id`, Maine's MIDAS `870` scatters over 379 km. One key resolves to
   one polygon, so unsplit, the second pond's geometry is clipped against a shoreline miles away and
   vanishes *without an error*. Found by rendering a blank card. Split before the join now.
@@ -1047,6 +1053,13 @@ rung-1 depth write stays correctly gated behind N6a's ordering gate.
   lanes reach it by **subtraction only**: an agency's published levels are thinned toward the ladder and
   never moved or added to, and the deepest published level is always kept, because thinning away the
   innermost ring is D82's understating-by-omission by another road.
+- **The render half found one real thing, and it was a licence problem rather than a rendering one.** To
+  stay small, a tile carries a short agency label — and for Champlain that label is `VCGI / NOAA`, which
+  is exactly the credit we may **not** render: VCGI's terms name the University of Vermont, and NOAA asks
+  that attribution not imply its involvement in data it did not draw. So the client resolves each label
+  to the required wording verbatim (`CONTOUR_SOURCE_TERMS` in `@skating/core`), and a test in
+  `scripts/bathymetry` pins that table against the source registry **in both directions** — adding a
+  source without registering it would ship lines with no credit at all.
 
 Settled at kickoff: **PMTiles on R2** (the Phase 2.5 basemap infra), **VT + NH first**, Maine's
 point-interpolation path written up rather than built. Two findings worth carrying:

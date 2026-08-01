@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { hexToRgb, hueDistance } from '@skating/design';
 import { describe, expect, it } from 'vitest';
-import { CONTOUR_PALETTE } from './contourMap';
+import { CONTOUR_BEFORE_LAYER_ID, CONTOUR_PALETTE } from './contourMap';
 import { HAZARD_PALETTE } from './hazardMap';
 
 /**
@@ -51,5 +53,51 @@ describe('CONTOUR_PALETTE', () => {
     const light = (hex: string) => hexToRgb(hex).reduce((a, b) => a + b, 0);
     expect(light(CONTOUR_PALETTE.white.deep)).toBeLessThan(light(CONTOUR_PALETTE.white.shallow));
     expect(light(CONTOUR_PALETTE.dark.deep)).toBeGreaterThan(light(CONTOUR_PALETTE.dark.shallow));
+  });
+});
+
+/**
+ * The z-order, which is a string convention between two files and fails silently.
+ *
+ * D82 puts hazards above contours: contours are decoration, hazards are the product, and if the two
+ * ever compete for legibility the contour is the one that loses. The map expresses that with
+ * `beforeId` on a layer it renders unconditionally — so if that layer is ever renamed, the contour
+ * layer lands wherever the native renderer puts it, over every hazard, and nothing says so.
+ */
+describe('the layer contours are inserted beneath', () => {
+  it('is a layer MapView actually renders', () => {
+    const mapView = readFileSync(
+      join(import.meta.dirname, '..', 'components', 'MapView.tsx'),
+      'utf8',
+    );
+    expect(mapView).toContain(`id="${CONTOUR_BEFORE_LAYER_ID}"`);
+  });
+});
+
+/**
+ * What triggers the read that reveals the layer — web's bug, guarded here because this half has the
+ * same shape.
+ *
+ * The layer mounts at `line-opacity: 0` and fades only once its own lines can be read back off the
+ * tile, so the trigger *is* the feature: get it wrong and every surveyed lake draws perfectly and
+ * invisibly, with no credit row and no error. Web proved that one "everything has settled" callback
+ * is not enough — it fires before the contour tiles are fetched and is not guaranteed to come round
+ * again. So the settled callback keeps the ramp growing and a per-frame probe covers the reveal,
+ * mounted only while the read has not yet succeeded.
+ */
+describe('the events the contour read is wired to', () => {
+  const mapView = () =>
+    readFileSync(join(import.meta.dirname, '..', 'components', 'MapView.tsx'), 'utf8');
+
+  it('reads on the settled callback, for the ramp', () => {
+    expect(mapView()).toContain('onDidFinishRenderingMapFully={() => void readDrawnContours()}');
+  });
+
+  it('also probes per frame until the first read lands, for the reveal', () => {
+    expect(mapView()).toContain('onDidFinishRenderingFrame: () => void readDrawnContours()');
+  });
+
+  it('unmounts that probe once the contours are revealed, so it is not a per-frame bridge call', () => {
+    expect(mapView()).toContain('contoursMounted && !contoursRevealed');
   });
 });

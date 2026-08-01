@@ -16,6 +16,7 @@
  * inside a loop.
  */
 
+import { contourBodyKey } from '@skating/core';
 import type { Position } from 'geojson';
 import type { ArchivedLake } from './lakes';
 
@@ -59,9 +60,13 @@ export function laneClaim(lake: ArchivedLake): 'surveyed' | 'interpolated' {
  * somehow lacking an `externalId` still renders rather than silently vanishing, but it is a fallback:
  * `_id` changes if a row is ever recreated, and re-tiling five states because a re-import churned ids
  * is not a thing we should be one accident away from.
+ *
+ * **The rule itself lives in `@skating/core`**, because the client resolves the same key to build its
+ * filter and the two sides agreeing *is* the contract: a stamp and a filter that disagree draw
+ * nothing at all, with no error anywhere.
  */
 export function stampBodyId(body: StampBody): string {
-  return body.externalId?.trim() || body.waterBodyId;
+  return contourBodyKey(body.externalId, body.waterBodyId);
 }
 
 /** One contour line, stamped and ready to write. */

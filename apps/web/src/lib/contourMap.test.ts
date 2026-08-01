@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { hexToRgb, hueDistance } from '@skating/design';
 import { describe, expect, it } from 'vitest';
-import { CONTOUR_PALETTE } from './contourMap';
+import { CONTOUR_BEFORE_LAYER_ID, CONTOUR_PALETTE } from './contourMap';
 import { HAZARD_PALETTE } from './hazardMap';
 
 /**
@@ -51,5 +53,52 @@ describe('CONTOUR_PALETTE', () => {
     const light = (hex: string) => hexToRgb(hex).reduce((a, b) => a + b, 0);
     expect(light(CONTOUR_PALETTE.white.deep)).toBeLessThan(light(CONTOUR_PALETTE.white.shallow));
     expect(light(CONTOUR_PALETTE.dark.deep)).toBeGreaterThan(light(CONTOUR_PALETTE.dark.shallow));
+  });
+});
+
+/**
+ * The z-order, which is a string convention between two files and fails silently.
+ *
+ * D82 puts hazards above contours: contours are decoration, hazards are the product, and if the two
+ * ever compete for legibility the contour is the one that loses. The map expresses that by inserting
+ * the contour layer *before* a layer it added at init — so if that layer is ever renamed, MapLibre's
+ * `addLayer` falls back to appending, the contours land on top of every hazard, and nothing anywhere
+ * says so.
+ */
+describe('the layer contours are inserted beneath', () => {
+  it('is a layer MapView actually adds', () => {
+    const mapView = readFileSync(
+      join(import.meta.dirname, '..', 'components', 'MapView.tsx'),
+      'utf8',
+    );
+    expect(mapView).toContain(`id: '${CONTOUR_BEFORE_LAYER_ID}'`);
+  });
+});
+
+/**
+ * What triggers the read that reveals the layer — the bug that shipped and had to be rendered to be
+ * found.
+ *
+ * The contour layer mounts at `line-opacity: 0` and fades only once its own lines can be read back
+ * off the tile, so **the trigger is the whole feature**: get it wrong and every surveyed lake draws
+ * perfectly and invisibly, with no credit row and no error in any console.
+ *
+ * `idle` is the intuitive choice and it is wrong. It reads correctly — *"all requested tiles have
+ * loaded, no transitions in flight"* — but a source added *after* the map's `load` leaves MapLibre in
+ * a state where `idle` is simply never emitted again, verified against a real archive in a real
+ * browser. The only read that ever ran was the synchronous one at mount, before a single tile
+ * existed. `sourcedata` for this source fires on every tile that arrives, which is both the reveal
+ * and the pan-keeps-the-ramp-honest case `idle` was chosen for.
+ */
+describe('the event the contour read is wired to', () => {
+  const mapView = () =>
+    readFileSync(join(import.meta.dirname, '..', 'components', 'MapView.tsx'), 'utf8');
+
+  it("subscribes to 'sourcedata'", () => {
+    expect(mapView()).toContain("map.on('sourcedata', onContourSourceData)");
+  });
+
+  it("never goes back to 'idle', which does not arrive for a post-load source", () => {
+    expect(mapView()).not.toContain("map.on('idle'");
   });
 });

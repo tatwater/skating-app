@@ -55,6 +55,7 @@ function MapLayoutInner() {
     setFocus,
     pinDropMode,
     setDrawerCoveredFraction,
+    setContourBodyKey,
     hazardDropMode,
     onIceCoord,
     setOnIceWaterBodyId,
@@ -86,7 +87,11 @@ function MapLayoutInner() {
     setHighlightWaterBodyId(null);
     setPhotoPins([]);
     setFocus(null);
-  }, [pathname, setHighlightWaterBodyId, setPhotoPins, setFocus]);
+    // The contour source unmounts with the sheet it belongs to (N6b/D81). Cleared here rather than
+    // in the sheet's own unmount so navigating lake → lake tears it down and rebuilds it for the new
+    // body, instead of leaving one lake's isobaths filtered to another's id.
+    setContourBodyKey(null);
+  }, [pathname, setHighlightWaterBodyId, setPhotoPins, setFocus, setContourBodyKey]);
 
   // Adopt a recording the app was killed in the middle of (Phase 8). A skate is unrepeatable, so a
   // crash on the ice must surface the session again — paused, with everything captured so far — not

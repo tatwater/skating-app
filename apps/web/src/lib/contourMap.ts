@@ -31,19 +31,24 @@ import type { ContourPalette } from '@skating/core';
 import { ice } from '@skating/design';
 
 export {
+  CONTOUR_BEFORE_LAYER_ID,
   CONTOUR_FADE_MS,
   CONTOUR_LAYER_ID,
   CONTOUR_MIN_ZOOM,
   CONTOUR_OPACITY,
   CONTOUR_SOURCE_ID,
   CONTOUR_SOURCE_LAYER,
+  CONTOUR_SOURCE_TERMS,
   type ContourFeatureProperties,
   type ContourPalette,
+  contourBodyKey,
   contourColorExpression,
   contourCredit,
   contourFilter,
+  contourSourceSpec,
   contourWidthExpression,
   formatContourCredit,
+  maxContourDepthFt,
 } from '@skating/core';
 
 /**

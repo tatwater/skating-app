@@ -6,8 +6,8 @@
 > run**. That unrun loader is this phase's one scheduling constraint; see [Sequencing](#sequencing--and-the-one-time-sensitive-item).
 > **Sibling of:** [N6d — lake access points](./phase-N6d-lake-access-points.md) (split out of this doc
 > at scoping, 2026-07-30: it was roughly the size of everything else here combined) and
-> [N6b — bathymetry contours](./phase-N6b-bathymetry-layer.md) (ETL complete, clients unbuilt —
-> its coverage is what feeds this doc's `+2 has bathymetric contours` prominence term).
+> [N6b — bathymetry contours](./phase-N6b-bathymetry-layer.md) (complete 2026-08-01 — its coverage is
+> what feeds this doc's `+2 has bathymetric contours` prominence term).
 > **N6 is now a five-way split:** N6a depth → N6b contours → **N6c profiles** → N6d access points →
 > [N6e satellite imagery](./phase-N6e-satellite-imagery.md) (specced 2026-07-31 out of B3).
 > **Decisions:** D70, D71, D74, D75, D76, and **D85/D86** added 2026-07-31 (see

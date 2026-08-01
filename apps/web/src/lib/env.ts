@@ -27,5 +27,7 @@ export const env = {
 export const isConfigured = {
   convex: env.convexUrl !== CONVEX_URL_PLACEHOLDER,
   sentry: env.sentryDsn.length > 0,
-  bathymetry: env.bathymetryPmtilesUrl.length > 0,
+  // No `bathymetry` entry: the contour layer needs the URL itself, not a boolean about it, so
+  // `MapView` reads `env.bathymetryPmtilesUrl` and a second way to ask the same question would only
+  // be a second thing to keep in step.
 } as const;
