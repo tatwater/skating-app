@@ -295,10 +295,22 @@ export function interpolate(
   // Then clip to the lake. The `-M` mask already trims to what the survey covered, but a mask is
   // circular around each reading and a lake is not — without this, contours spill over the shoreline
   // wherever a sounding sat near the bank.
+  //
+  // **A failed clip drops the lake; it does not fall back to the unclipped lines.** Publishing `raw`
+  // here would put contours on dry land — the exact thing the paragraph above says this step exists
+  // to prevent — and it would do it silently, since a lake with contours running up the bank looks
+  // like a lake with contours. The empty return sends it to `dropped.json` with a reason, per the
+  // no-silent-caps rule, which is recoverable; a wrong map in the tiles is not.
   const before = raw.features.length;
   const clipped = polygon ? clipToPolygon(wgs84, polygon, WORK_DIR, label) : undefined;
-  const final = clipped ?? raw;
-  const { lines, depths } = linesOf(final);
+  if (polygon && !clipped) {
+    return {
+      lines: [],
+      depths: [],
+      note: 'ogr2ogr clip failed — refusing to publish unclipped lines',
+    };
+  }
+  const { lines, depths } = linesOf(clipped ?? raw);
   return {
     lines,
     depths,
@@ -348,10 +360,19 @@ export function publishedContours(
   writeFileSync(path, JSON.stringify(collection));
   const before = collection.features.length;
   const clipped = clipToPolygon(path, polygon, WORK_DIR, label);
-  const final = clipped ?? collection;
+  // Same refusal as the sounding lane, and it is not redundant here: the agency's shoreline and OSM's
+  // water mask genuinely disagree — the clip removes 46 real features on Quinsigamond alone — so an
+  // unclipped agency set also draws outside our polygon.
+  if (!clipped) {
+    return {
+      lines: [],
+      depths: [],
+      note: 'ogr2ogr clip failed — refusing to publish unclipped lines',
+    };
+  }
   return {
-    ...linesOf(final),
+    ...linesOf(clipped),
     ...laneInfo,
-    clippedAway: clipped ? before - clipped.features.length : undefined,
+    clippedAway: before - clipped.features.length,
   };
 }

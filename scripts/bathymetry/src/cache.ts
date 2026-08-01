@@ -23,6 +23,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -70,10 +71,20 @@ function sha256(bytes: Buffer): string {
   return createHash('sha256').update(bytes).digest('hex');
 }
 
-/** Write a file into the snapshot and return its manifest record (bytes + checksum). */
+/**
+ * Write a file into the snapshot and return its manifest record (bytes + checksum).
+ *
+ * **Written to a temp name and renamed, so a half-written file never wears the real one.** `rename`
+ * is atomic within a filesystem; `writeFileSync` is not, and the difference is the whole of the
+ * resume story below — an interrupted run that leaves a truncated `page-007.json.gz` would otherwise
+ * hand the next run a file that exists, looks paid-for, and cannot be decompressed.
+ */
 export function writeRawFile(key: string, name: string, bytes: Buffer): RawFileRecord {
   const dir = ensureRawDir(key);
-  writeFileSync(join(dir, name), bytes);
+  const target = join(dir, name);
+  const partial = `${target}.partial`;
+  writeFileSync(partial, bytes);
+  renameSync(partial, target);
   return { name, bytes: bytes.byteLength, sha256: sha256(bytes) };
 }
 
@@ -89,9 +100,57 @@ export function writeRawPage(key: string, name: string, body: string): RawFileRe
   return writeRawFile(key, name, gzipSync(Buffer.from(body, 'utf8')));
 }
 
-/** Read a gzipped page back as text. The transform's entry point into the archive. */
+/**
+ * Decompress page bytes, or `undefined` if they are not a whole gzip member.
+ *
+ * **gzip carries its own CRC over the uncompressed data**, so a successful `gunzipSync` is already an
+ * integrity check rather than merely a parse — which is what lets a truncated or corrupted page be
+ * detected without a manifest to compare against. That matters because the manifest is written at the
+ * *end* of a successful fetch, so the pages an interrupted run left behind have no checksum on record.
+ *
+ * Pure, so the case that caused this — a page cut off mid-write — is testable without a filesystem.
+ */
+export function decodeRawPage(bytes: Buffer): string | undefined {
+  try {
+    return gunzipSync(bytes).toString('utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Read a gzipped page back as text. The transform's entry point into the archive.
+ *
+ * Throws, and names the file when it does: a lane reading a damaged archive should stop rather than
+ * transform a short set, and `Error: incorrect header check` with no path is a bad half-hour.
+ */
 export function readRawPage(key: string, name: string): string {
-  return gunzipSync(readFileSync(join(rawDir(key), name))).toString('utf8');
+  const path = join(rawDir(key), name);
+  const text = decodeRawPage(readFileSync(path));
+  if (text === undefined) {
+    throw new Error(
+      `${path} is not a readable gzip page. Delete it and re-run \`snapshot\` for this source — ` +
+        'the remaining pages resume from the archive.',
+    );
+  }
+  return text;
+}
+
+/**
+ * Read a page only if it is intact; `undefined` means "treat as not archived".
+ *
+ * **The resume check's read, and it must not throw.** An interrupted write, a partial `mirror-r2.sh
+ * pull`, or a bad sector leaves a file that `hasRawPage` says is there and `gunzipSync` refuses — and
+ * a throw at that point aborts not just this run but *every* subsequent one, permanently, until
+ * somebody deletes the file by hand or reaches for `--refresh` on a whole state. That is the precise
+ * outcome the resume exists to prevent, so an unreadable page is simply re-fetched over.
+ */
+export function tryReadRawPage(key: string, name: string): string | undefined {
+  try {
+    return decodeRawPage(readFileSync(join(rawDir(key), name)));
+  } catch {
+    return undefined;
+  }
 }
 
 /** Is this page already archived? The resume check — an existing page is one we already paid for. */

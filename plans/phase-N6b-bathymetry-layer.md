@@ -791,6 +791,38 @@ that were getting the easy ride.
 
 ---
 
+## Two failure paths the review found (2026-08-01)
+
+*Both from the PR review, and both the same shape as everything else on this page: a fallback that
+does the wrong thing quietly, in a branch that had never been taken.*
+
+**A failed clip published contours on land.** When `ogr2ogr` could not clip a lake to our polygon,
+`clipped ?? raw` treated the *unclipped* geometry as the answer — the lines the clip step exists to
+remove, drawn over the bank, with no dropped-lake record. Now a failed clip returns no lines and a
+reason, so the lake lands in `dropped.json` and shows as a flat shape. **A missing map is
+recoverable; a wrong one in the tiles is not.** Both lanes refuse, not just the sounding lane: OSM's
+water mask and the agencies' survey shorelines genuinely disagree — the clip removes 46 real features
+on Quinsigamond alone — so an unclipped *agency* set draws outside our polygon too.
+
+**The shipped artifact is unaffected**, checked rather than assumed: 0 of the 447 drops in the
+2,044-lake run were clip failures. The fix is preventive and no rebuild is owed.
+
+**An interrupted snapshot could not be resumed, ever again.** A run killed mid-write left a truncated
+`page-NNN.json.gz`; `hasRawPage` reported it present and `gunzipSync` threw, aborting not just that
+run but every later one, until somebody deleted the file by hand or reached for `--refresh` on a
+whole state — **precisely the outcome the resume exists to prevent.** Fixed at both ends: pages are
+now written to a temp name and renamed, so this run cannot create a truncated one, and the resume
+read treats *any* unusable page as absent and re-fetches it, naming what it replaced. The second half
+is not redundant — a partial `mirror-r2.sh pull` or a bad sector produces the same file, and neither
+is something an atomic write upstream can prevent.
+
+*(Worth keeping: **gzip carries a CRC over its uncompressed data**, so a successful decompress is
+already an integrity check. That is what makes a damaged page detectable at all, given that the
+manifest — the only checksum record — is written at the *end* of a successful fetch and so never
+exists for the pages an interrupted run left behind.)*
+
+---
+
 ## The NOAA notice, resolved (2026-08-01)
 
 *§5 left one thing open: "NOAA chart-derived data in particular usually carries a 'not for

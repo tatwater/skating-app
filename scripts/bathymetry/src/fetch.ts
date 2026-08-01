@@ -34,8 +34,8 @@ import {
   hasRawPage,
   hasSnapshot,
   rawFileRecord,
-  readRawPage,
   sleep,
+  tryReadRawPage,
   writeManifest,
   writeRawFile,
   writeRawPage,
@@ -86,21 +86,34 @@ async function fetchArcGis(
 
   let captured = 0;
   let resumed = 0;
+  const discarded: string[] = [];
   for (let index = 0; index < pages; index += 1) {
     const name = pageFilename(index);
 
     // **Resume.** A page already on disk is a page we already paid for. MassGIS is 56 pages at ~15
     // seconds each, and losing all of it to one transient 500 is how a person ends up reaching for
-    // `--refresh` on a whole state — the exact opposite of what the archive is for. Pages are written
-    // whole (a synchronous gzip write), so an existing file is a complete one.
+    // `--refresh` on a whole state — the exact opposite of what the archive is for.
+    //
+    // **Every way an existing page can be unusable falls through to re-fetching it**, and none of them
+    // throws. Pages are now written atomically, so this run cannot create a truncated one — but a page
+    // left by an older run, a partial `mirror-r2.sh pull`, or a bad sector all produce a file that
+    // exists and will not decompress. Aborting there would abort every *later* run too, which turns a
+    // one-page problem into a permanently unresumable state: the exact failure resume exists to avoid.
     if (!refresh && hasRawPage(source.key, name)) {
-      const parsedExisting = parsePage(readRawPage(source.key, name));
-      if (!parsedExisting.error) {
+      const existing = tryReadRawPage(source.key, name);
+      const parsedExisting = existing === undefined ? undefined : parsePage(existing);
+      if (parsedExisting && !parsedExisting.error) {
         files.push(rawFileRecord(source.key, name));
         captured += parsedExisting.count;
         resumed += 1;
         continue;
       }
+      // Named, not silent — a re-fetched page is a page that was on disk and wrong, which is worth
+      // knowing about an archive whose whole promise is that it makes reprocessing free.
+      discarded.push(name);
+      log(
+        `  ⚠ ${source.key}: ${name} is on disk but ${existing === undefined ? 'will not decompress' : 'did not parse'} — re-fetching it`,
+      );
     }
 
     const body = await getText(
@@ -118,6 +131,9 @@ async function fetchArcGis(
     if (delayMs > 0 && index < pages - 1) await sleep(delayMs);
   }
   if (resumed > 0) log(`  ${source.key}: reused ${resumed} page(s) already in the archive`);
+  if (discarded.length > 0) {
+    log(`  ${source.key}: replaced ${discarded.length} unusable page(s): ${discarded.join(', ')}`);
+  }
 
   if (captured !== total) {
     // Not fatal — a live layer can genuinely gain rows mid-fetch — but it must be visible, because a

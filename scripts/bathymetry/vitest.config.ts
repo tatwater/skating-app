@@ -13,6 +13,10 @@ export default defineConfig({
       // split OUT of a tested one — `manifest.ts`, `lakes.ts`, `joinQuery.ts` — so that the logic
       // which can be wrong in a way that still looks right stays measured. Mirrors the water-ETL,
       // admin-areas and lake-depth configs.
+      //
+      // Excluded from the *numbers* is not the same as untested: `cache.test.ts` covers
+      // `decodeRawPage`, which is pure, and which is the decision the whole snapshot-resume path
+      // turns on. Where a piece of an I/O module is decidable without a filesystem, test it anyway.
       exclude: [
         'src/**/*.test.ts',
         'src/cache.ts',
