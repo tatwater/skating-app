@@ -16,13 +16,15 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import type { MultiPolygon, Polygon } from 'geojson';
 import { listRawPages, readRawPage, SCRATCH_ROOT } from './cache';
 import { assessDensity, type DensityAssessment, MAX_GAP_RATIO } from './density';
 import { chooseInterval, contourLevels } from './interval';
 import { groupByLake, type NormalizedSounding, normalizeMeSoundings } from './normalize';
+import { capShoreline, densifyShoreline, ringsOf } from './shoreline';
 
 function flag(args: string[], name: string): string | undefined {
   return args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -67,6 +69,7 @@ const GRID_CELLS = 500;
 const TENSION = 0.25;
 
 export const ALGORITHMS: Record<string, string> = {
+  gmt: 'gmt-surface',
   idw: 'invdistnn:radius={r}:max_points=12:min_points=1:power=2.0',
   linear: 'linear:radius=-1:nodata=-9999',
   average: 'average:radius={r}:min_points=1:nodata=-9999',
@@ -98,6 +101,7 @@ function interpolateAndContour(
   points: readonly NormalizedSounding[],
   workDir: string,
   algorithm: string,
+  polygon: Polygon | MultiPolygon | undefined,
 ):
   | { levels: number[]; interval: number; maxDepthFt: number; contours: GeoJSON.FeatureCollection }
   | undefined {
@@ -118,7 +122,22 @@ function interpolateAndContour(
     if (p.lat > maxLat) maxLat = p.lat;
     if (p.depthFt > maxDepth) maxDepth = p.depthFt;
   }
-  writeFileSync(xyz, `${points.map((p) => `${p.lng}\t${p.lat}\t${p.depthFt}`).join('\n')}\n`);
+  // The shoreline joins the survey as depth-0 constraints (§Maine step 3). Without it the fit has
+  // no anchor at the edge, contours never close, and nothing nests — which is a structural failure,
+  // not a cosmetic one. Spaced at roughly one grid cell so it constrains the boundary evenly, then
+  // capped in proportion to the survey so it shapes the edge without authoring the interior.
+  const spanMaxDeg = Math.max(maxLng - minLng, maxLat - minLat);
+  const shore = polygon
+    ? capShoreline(
+        densifyShoreline(polygon, Math.max(5, (spanMaxDeg / GRID_CELLS) * 111_320)),
+        points.length,
+      )
+    : [];
+  const all = [
+    ...points.map((p) => `${p.lng}\t${p.lat}\t${p.depthFt}`),
+    ...shore.map((p) => `${p.lng}\t${p.lat}\t0`),
+  ];
+  writeFileSync(xyz, `${all.join('\n')}\n`);
 
   // Pad the region slightly so the spline is solved a little beyond the data and the mask, rather
   // than the solver's own boundary, is what decides the edge.
@@ -201,11 +220,29 @@ function interpolateAndContour(
     return undefined;
   }
 
+  // Clip to the lake itself. The `-M` mask already trims to what the survey covered, but a mask is
+  // circular around each reading and a lake is not — without this, contours spill over the shoreline
+  // onto land wherever a sounding sat near the bank.
+  let clipped = out;
+  if (polygon) {
+    const clipFile = join(workDir, `${lakeKey}.clip.geojson`);
+    writeFileSync(clipFile, JSON.stringify({ type: 'Feature', geometry: polygon, properties: {} }));
+    clipped = join(workDir, `${lakeKey}.clipped.geojson`);
+    rmSync(clipped, { force: true });
+    const clip = spawnSync('ogr2ogr', ['-f', 'GeoJSON', '-clipsrc', clipFile, clipped, out], {
+      encoding: 'utf8',
+    });
+    if (clip.status !== 0 || !existsSync(clipped)) {
+      process.stderr.write(`  ogr2ogr clip failed for ${lakeKey}: ${clip.stderr?.slice(0, 200)}\n`);
+      clipped = out;
+    }
+  }
+
   return {
     levels,
     interval,
     maxDepthFt: maxDepth,
-    contours: JSON.parse(readFileSync(out, 'utf8')) as GeoJSON.FeatureCollection,
+    contours: JSON.parse(readFileSync(clipped, 'utf8')) as GeoJSON.FeatureCollection,
   };
 }
 
@@ -214,6 +251,7 @@ function renderSvg(
   points: readonly NormalizedSounding[],
   contours: GeoJSON.FeatureCollection,
   size = 320,
+  polygon?: Polygon | MultiPolygon,
 ): string {
   let minLng = Number.POSITIVE_INFINITY;
   let maxLng = Number.NEGATIVE_INFINITY;
@@ -255,6 +293,18 @@ function renderSvg(
     }
   }
 
+  // The shoreline, drawn so the nesting is legible: every contour should sit inside this.
+  const shoreRings = polygon
+    ? ringsOf(polygon)
+        .map(
+          (ring) =>
+            `<path d="${ring
+              .map((c, i) => `${i === 0 ? 'M' : 'L'}${x(c[0] as number)},${y(c[1] as number)}`)
+              .join('')}Z" fill="#f4f9fd" stroke="#94a9b8" stroke-width="1"/>`,
+        )
+        .join('')
+    : '';
+
   const dots = points
     .slice(0, 1500)
     .map((p) => `<circle cx="${x(p.lng)}" cy="${y(p.lat)}" r="0.9" fill="#d1495b" opacity="0.55"/>`)
@@ -263,7 +313,7 @@ function renderSvg(
   return (
     `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" ` +
     `style="background:#fbfdff;border:1px solid #dde5ec;border-radius:6px">` +
-    `${paths.join('')}${dots}</svg>`
+    `${shoreRings}${paths.join('')}${dots}</svg>`
   );
 }
 
@@ -272,7 +322,14 @@ function main(): void {
   const workDir = join(SCRATCH_ROOT, 'samples');
   mkdirSync(workDir, { recursive: true });
   const outPath = flag(args, 'out') ?? join(workDir, 'samples.html');
-  const algorithm = flag(args, 'algo') ?? ALGORITHMS.linear ?? 'linear:radius=-1:nodata=-9999';
+  const algorithm = flag(args, 'algo') ?? ALGORITHMS.gmt ?? '';
+
+  // Lake polygons, keyed by the source's own lake id, fetched from our corpus. Optional: without
+  // them the tool still runs, and the difference is exactly the point being demonstrated.
+  const polyPath = join(workDir, 'polygons.json');
+  const polygons: Record<string, Polygon | MultiPolygon> = existsSync(polyPath)
+    ? (JSON.parse(readFileSync(polyPath, 'utf8')) as Record<string, Polygon | MultiPolygon>)
+    : {};
 
   process.stderr.write('[bathymetry] reading Maine soundings from the archive…\n');
   const records: NormalizedSounding[] = [];
@@ -306,21 +363,33 @@ function main(): void {
       a.points.some((p) => p.depthFt >= MIN_SAMPLE_DEPTH_FT),
   );
 
-  const wanted = [0.05, 0.08, 0.1, 0.12, 0.15, 0.18, 0.22, 0.3];
-  const picked: typeof assessed = [];
-  for (const target of wanted) {
-    const match = eligible.find((a) => a.assessment.gapRatio >= target && !picked.includes(a));
-    if (match) picked.push(match);
+  const only = flag(args, 'only')
+    ?.split(',')
+    .map((k) => k.trim());
+  let picked: typeof assessed;
+  if (only) {
+    // Explicit lake keys — used to compare the same lakes with and without a shoreline constraint.
+    picked = only
+      .map((key) => assessed.find((a) => a.assessment.lakeKey === key))
+      .filter((a): a is (typeof assessed)[number] => a !== undefined);
+  } else {
+    const wanted = [0.05, 0.08, 0.1, 0.12, 0.15, 0.18, 0.22, 0.3];
+    picked = [];
+    for (const target of wanted) {
+      const match = eligible.find((a) => a.assessment.gapRatio >= target && !picked.includes(a));
+      if (match) picked.push(match);
+    }
   }
 
   process.stderr.write(`[bathymetry] interpolating ${picked.length} sample lakes…\n`);
   const cards: string[] = [];
   for (const { assessment, points } of picked) {
-    const result = interpolateAndContour(assessment.lakeKey, points, workDir, algorithm);
+    const polygon = polygons[assessment.lakeKey];
+    const result = interpolateAndContour(assessment.lakeKey, points, workDir, algorithm, polygon);
     if (!result) continue;
     const pct = (assessment.gapRatio * 100).toFixed(0);
     cards.push(
-      `<figure>${renderSvg(points, result.contours)}` +
+      `<figure>${renderSvg(points, result.contours, 320, polygon)}` +
         `<figcaption><b>MIDAS ${assessment.lakeKey}</b> — gap <b>${pct}%</b><br>` +
         `${assessment.pointCount} soundings · ${Math.round(assessment.extentM)} m across<br>` +
         `worst water ${Math.round(assessment.coverageGapM)} m from a reading<br>` +

@@ -141,7 +141,8 @@ function thin<T>(items: readonly T[], limit: number): T[] {
   const out: T[] = [];
   for (let i = 0; i < limit; i += 1) {
     const item = items[Math.floor(i * step)];
-    if (item) out.push(item);
+    // `!== undefined`, not truthiness — a falsy element of a generic list is still an element.
+    if (item !== undefined) out.push(item);
   }
   return out;
 }
