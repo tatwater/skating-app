@@ -15,10 +15,17 @@ export const env = {
   // Basemap vector tiles (D6). Blank → the Protomaps hosted demo (`waterMap.DEMO_PMTILES_URL`);
   // set to a self-built Vermont `.pmtiles` URL to swap the basemap (PR#5). Public.
   pmtilesUrl: import.meta.env.VITE_PMTILES_URL ?? '',
+  // Bathymetric contours (N6b). A SECOND `.pmtiles` archive, hosted alongside the basemap and added
+  // to the style only while a lake's drawer is open (D81). Blank ⇒ the layer never mounts, which is
+  // the correct behaviour rather than a degraded one: contours are decoration under D82, so an
+  // unconfigured deployment simply shows a flat lake exactly as it does for the majority of bodies
+  // that no agency ever surveyed. Public.
+  bathymetryPmtilesUrl: import.meta.env.VITE_BATHYMETRY_PMTILES_URL ?? '',
 } as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */
 export const isConfigured = {
   convex: env.convexUrl !== CONVEX_URL_PLACEHOLDER,
   sentry: env.sentryDsn.length > 0,
+  bathymetry: env.bathymetryPmtilesUrl.length > 0,
 } as const;

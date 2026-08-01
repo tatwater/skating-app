@@ -20,6 +20,12 @@ export const env = {
   // to device storage and render the map from that local `file://` archive. Off by default — it's an
   // unverified device experiment (does native pmtiles read `file://`?), see `offlineBasemap.ts`.
   offlineBasemap: process.env.EXPO_PUBLIC_OFFLINE_BASEMAP === '1',
+  // Bathymetric contours (N6b), mirroring web's VITE_BATHYMETRY_PMTILES_URL. A second `.pmtiles`
+  // archive added to the style only while a lake's drawer is open (D81). Blank ⇒ the layer never
+  // mounts, which is correct rather than degraded: contours are decoration under D82, so an
+  // unconfigured build shows a flat lake exactly as it does for the majority of bodies no agency
+  // ever surveyed.
+  bathymetryPmtilesUrl: process.env.EXPO_PUBLIC_BATHYMETRY_PMTILES_URL ?? '',
 } as const;
 
 /** True once the corresponding real key has been provisioned (not a placeholder). */
@@ -27,4 +33,5 @@ export const isConfigured = {
   clerk: env.clerkPublishableKey.startsWith('pk_'),
   convex: env.convexUrl !== CONVEX_URL_PLACEHOLDER,
   sentry: env.sentryDsn.length > 0,
+  bathymetry: env.bathymetryPmtilesUrl.length > 0,
 } as const;
