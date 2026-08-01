@@ -321,3 +321,18 @@ above. This is the pin for the *next* re-import.
 | NY | `new-york-260731.osm.pbf` | 260731 | `d167cb4b9a4035a0…` | ✓ | 2026-08-01 |
 
 Mirrored to the private R2 bucket `skating-raw-lake-osm` (`scripts/etl/mirror-r2.sh push`).
+
+**How much does OSM actually move? ~0.33% in 2.5 weeks.** Measured 2026-08-01 rather than guessed:
+the 2026-07-31 Vermont extract transforms to **9,981** bodies against the ~9,970 loaded on
+2026-07-15, and a 600-id random sample checked against the corpus by indexed lookup found **2**
+externalIds we don't have. Extrapolated, that is ~33 new VT bodies and roughly **390 across all five
+states**.
+
+Two caveats on that number. It counts **additions only** — a name correction or a redrawn shoreline
+on an existing body is invisible to an id diff, and those are plausibly more common than new ponds.
+And it is one state; VT is not obviously representative of NY.
+
+**The practical conclusion is to wait**, for the same reason N6a's depth ETL waits: a canonical
+re-import is the pass that N6c's geometry stats ride (shoreline length, long axis, wind fetch — all
+of which must be measured on the *pre-simplification* geometry that only this ETL holds). Re-importing
+now for 0.33% would mean a second full pass later for the fields that actually needed one.
