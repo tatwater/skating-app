@@ -10,3 +10,6 @@
 # corpus reproducible, and Geofabrik rebuilds `-latest` daily so a deleted extract is unrecoverable.
 # Mirror it rather than removing it. See README §"Pinning the OSM snapshot".
 .raw/
+
+# Mirror config (holds no secrets, but stays local).
+.env.local

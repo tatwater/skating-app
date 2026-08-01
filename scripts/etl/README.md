@@ -302,3 +302,22 @@ transform/load already handle multiple states. Full runbook + rationale:
   | NH | `new-hampshire-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
   | ME | `maine-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
   | MA | `massachusetts-latest.osm.pbf` | _(not captured)_ | _(not captured)_ |
+
+  **The row above is kept as the record of the failure, not tidied away.** The five `_(not
+  captured)_` cells are why `pnpm --filter @skating/etl archive` exists — the instruction was there
+  from Phase 1 and the capture was manual, so it didn't happen. The corpus currently on dev came from
+  these extracts and its exact snapshot is unrecoverable.
+
+**Archived extracts (2026-08-01)** — captured mechanically, all five md5-verified against Geofabrik's
+own published checksums. **These are not yet loaded**; the dev corpus is still the 2026-07-14 import
+above. This is the pin for the *next* re-import.
+
+| State | Extract | Geofabrik build | sha256 | md5 | Captured |
+| --- | --- | --- | --- | --- | --- |
+| VT | `vermont-260731.osm.pbf` | 260731 | `66f53cacb79470b2…` | ✓ | 2026-08-01 |
+| NH | `new-hampshire-260731.osm.pbf` | 260731 | `c33c9bb30fc52a55…` | ✓ | 2026-08-01 |
+| ME | `maine-260731.osm.pbf` | 260731 | `f41005da3a37a289…` | ✓ | 2026-08-01 |
+| MA | `massachusetts-260731.osm.pbf` | 260731 | `6d14690559f4761a…` | ✓ | 2026-08-01 |
+| NY | `new-york-260731.osm.pbf` | 260731 | `d167cb4b9a4035a0…` | ✓ | 2026-08-01 |
+
+Mirrored to the private R2 bucket `skating-raw-lake-osm` (`scripts/etl/mirror-r2.sh push`).
