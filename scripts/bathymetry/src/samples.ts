@@ -25,14 +25,7 @@ import { assessDensity, type DensityAssessment, MAX_GAP_RATIO } from './density'
 import { chooseInterval, contourLevels } from './interval';
 import { groupByLake, type NormalizedSounding, normalizeMeSoundings } from './normalize';
 import { densifyShoreline, ringsOf } from './shoreline';
-import {
-  compressAlong,
-  expandAlong,
-  fromLocal,
-  principalFrame,
-  THALWEG_ANISOTROPY,
-  toLocal,
-} from './thalweg';
+import { compressAlong, fromLocal, principalFrame, THALWEG_ANISOTROPY, toLocal } from './thalweg';
 
 function flag(args: string[], name: string): string | undefined {
   return args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -156,6 +149,18 @@ function interpolateAndContour(
     ? densifyShoreline(polygon, Math.max(5, (spanMaxDeg / GRID_CELLS) * 111_320))
     : [];
 
+  // Rotated into the lake's frame, and the along-axis coordinate compressed for the SOLVE ONLY.
+  //
+  // Three mechanisms were tried before this one. Compressing the coordinates and leaving them
+  // compressed connected the troughs but warped everything downstream measured in grid units — cell
+  // size, Gaussian width, mask radius — so a circular smoothing kernel became a 4–8× elongated one
+  // and every lake smeared into an axis-aligned lens. Moving the anisotropy into the solver's own
+  // `-A` flag removed the smearing but did nothing else: measured contour elongation held at ~2.2
+  // across ratios from 0.25 to 4, and the fragment count went UP.
+  //
+  // So: compress for the solve, then `grdedit` the result back to real metres before anything else
+  // touches it. The solver sees a lake squashed along its axis — which is what makes a trough
+  // connect — and the filter, the mask and the contour tracer all see real distances.
   const local = [
     ...points.map((p) => ({ ...compressAlong(toLocal(p, frame), ratio), depthFt: p.depthFt })),
     ...shore.map((p) => ({ ...compressAlong(toLocal(p, frame), ratio), depthFt: 0 })),
@@ -215,6 +220,18 @@ function interpolateAndContour(
     return undefined;
   }
 
+  // Relabel the solved grid back to real metres along the axis. `grdedit -R` rewrites the coordinate
+  // range without touching a single value, so this un-compresses the geometry while leaving the
+  // anisotropic solution intact — which is the whole trick.
+  const real = join(workDir, `${lakeKey}.real.nc`);
+  const realRegion = `-R${(minA - padM) * ratio}/${(maxA + padM) * ratio}/${minC - padM}/${maxC + padM}`;
+  spawnSync('cp', [nc, real]);
+  const edit = spawnSync('gmt', ['grdedit', real, realRegion], { encoding: 'utf8' });
+  if (edit.status !== 0) {
+    process.stderr.write(`  gmt grdedit failed for ${lakeKey}: ${edit.stderr?.slice(0, 200)}\n`);
+  }
+  const solved = edit.status === 0 ? real : nc;
+
   // **Smooth the surface before contouring, not the contours after.**
   //
   // `gdal_contour` traces a raster, so its output follows cell boundaries: at 500 cells across a lake
@@ -229,12 +246,16 @@ function interpolateAndContour(
   //
   // A Gaussian at ~3 grid cells: wide enough to remove the tracing stair-step, far narrower than the
   // sounding spacing, so it cannot invent or erase a basin feature the survey actually resolved.
-  const filterWidthM = (Math.max(spanLng, spanLat) / GRID_CELLS) * SMOOTH_CELLS;
+  const filterWidthM = (Math.max(spanLng * ratio, spanLat) / GRID_CELLS) * SMOOTH_CELLS;
   const smoothed = join(workDir, `${lakeKey}.sm.nc`);
-  const filter = spawnSync('gmt', ['grdfilter', nc, `-Fg${filterWidthM}`, '-D0', `-G${smoothed}`], {
-    encoding: 'utf8',
-  });
-  const gridForContour = filter.status === 0 ? smoothed : nc;
+  const filter = spawnSync(
+    'gmt',
+    ['grdfilter', solved, `-Fg${filterWidthM}`, '-D0', `-G${smoothed}`],
+    {
+      encoding: 'utf8',
+    },
+  );
+  const gridForContour = filter.status === 0 ? smoothed : solved;
   if (filter.status !== 0) {
     process.stderr.write(
       `  gmt grdfilter failed for ${lakeKey}, contouring unsmoothed: ${filter.stderr?.slice(0, 200)}\n`,
@@ -274,10 +295,7 @@ function interpolateAndContour(
           : [];
     for (const line of lines) {
       for (const c of line) {
-        const back = fromLocal(
-          expandAlong({ along: c[0] as number, across: c[1] as number }, ratio),
-          frame,
-        );
+        const back = fromLocal({ along: c[0] as number, across: c[1] as number }, frame);
         c[0] = back.lng;
         c[1] = back.lat;
       }
