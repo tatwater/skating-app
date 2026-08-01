@@ -1,11 +1,14 @@
 import {
   Camera,
   type CameraRef,
+  type FilterSpecification,
   GeoJSONSource,
   Layer,
   Map as MapGL,
   type PressEvent,
   type PressEventWithFeatures,
+  VectorSource,
+  type VectorSourceRef,
   type ViewStateChangeEvent,
 } from '@maplibre/maplibre-react-native';
 import { api } from '@skating/convex/api';
@@ -18,6 +21,24 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NativeSyntheticEvent } from 'react-native';
 import { StyleSheet, Text, useColorScheme, useWindowDimensions, View } from 'react-native';
 import { cacheBody } from '../lib/bodyCache';
+import {
+  CONTOUR_BEFORE_LAYER_ID,
+  CONTOUR_FADE_MS,
+  CONTOUR_LAYER_ID,
+  CONTOUR_MIN_ZOOM,
+  CONTOUR_OPACITY,
+  CONTOUR_PALETTE,
+  CONTOUR_SOURCE_ID,
+  CONTOUR_SOURCE_LAYER,
+  type ContourFeatureProperties,
+  contourColorExpression,
+  contourCredit,
+  contourFilter,
+  contourSourceSpec,
+  contourWidthExpression,
+  formatContourCredit,
+  maxContourDepthFt,
+} from '../lib/contourMap';
 import { env } from '../lib/env';
 import {
   bodyFeaturesToFeatureCollection,
@@ -120,10 +141,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     hazardShoreTaps,
     setHazardShoreTaps,
     browseSeason,
+    contourBodyKey,
+    setContourCredit,
   } = useMapSelection();
   const { height: windowHeight } = useWindowDimensions();
   const hazardPalette = HAZARD_PALETTE[flavor];
   const trackColor = TRACK_PALETTE[flavor];
+  const contourPalette = CONTOUR_PALETTE[flavor];
   /** When the hazard source last claimed a tap — see `onWaterPress` for why both sides check. */
   const hazardPressAtRef = useRef(0);
 
@@ -303,6 +327,70 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     [hazardDraft, hazardDraftType],
   );
 
+  // ── Bathymetric contours for the open lake (N6b / D81 / D82).
+  //
+  // **The one source in this file that is not always mounted**, and that is the decision rather than
+  // an optimisation: contours are a property of the detail view, so the source exists while a lake's
+  // sheet is open and not otherwise. No toggle, no persisted preference, no settings row — the
+  // visibility is derived from something the app already knows, which body is selected.
+  //
+  // Blank `bathymetryPmtilesUrl` ⇒ never mounted, which is correct rather than degraded: under D82
+  // contours make no claim, so an unconfigured build shows a flat lake exactly as it does for the
+  // majority of bodies no agency ever surveyed.
+  const contourSourceRef = useRef<VectorSourceRef>(null);
+  const contourCreditRef = useRef<string | null>(null);
+  // The deepest ring seen for *this* lake, which only ever grows — `querySourceFeatures` answers from
+  // the tiles currently loaded, so panning the deep end off screen would otherwise re-scale the ramp
+  // under the skater. `0` also means "nothing read yet", which is what holds the layer invisible: it
+  // fades in once its own lines are on screen, so the fade covers the tile fetch rather than racing
+  // it. Popping in reads as a bug; fading in reads as a detail revealing itself.
+  const [contourMaxDepthFt, setContourMaxDepthFt] = useState(0);
+  const contourArchiveUrl = env.bathymetryPmtilesUrl;
+  const contoursMounted = Boolean(contourArchiveUrl && contourBodyKey);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `contourBodyKey` is the intended trigger.
+  useEffect(() => {
+    // A new lake starts a new ramp and a new credit: the last lake's deepest ring says nothing about
+    // this one, and the agency that surveyed it may not be this one's.
+    setContourMaxDepthFt(0);
+    contourCreditRef.current = null;
+    setContourCredit(null);
+  }, [contourBodyKey, setContourCredit]);
+
+  /**
+   * Read the drawn contours back off the tile — the credit and the depth ramp both come from there.
+   *
+   * The tile is the authority on who surveyed this lake and at what interval (§5), so the drawer's
+   * credit line is derived from the features actually on screen rather than from a table keyed by
+   * state. Called when the map finishes rendering, which on native is the analogue of web's `idle`.
+   */
+  async function readDrawnContours() {
+    const source = contourSourceRef.current;
+    if (!source || !contourBodyKey) return;
+    let features: GeoJSON.Feature[];
+    try {
+      features = await source.querySourceFeatures({
+        sourceLayer: CONTOUR_SOURCE_LAYER,
+        filter: contourFilter(contourBodyKey) as FilterSpecification,
+      });
+    } catch {
+      // The sheet closed mid-query and the source went with it. Nothing to report and nothing wrong.
+      return;
+    }
+    const properties = features.map((f) => f.properties as Partial<ContourFeatureProperties>);
+    // No tiles in yet, or a lake nobody surveyed. Either way keep the last answer rather than
+    // clearing a credit that is still true for the lines on screen.
+    if (properties.length === 0) return;
+
+    const line = formatContourCredit(contourCredit(properties)) || null;
+    if (line !== contourCreditRef.current) {
+      contourCreditRef.current = line;
+      setContourCredit(line);
+    }
+    const deepest = maxContourDepthFt(properties);
+    if (deepest !== undefined) setContourMaxDepthFt((seen) => Math.max(seen, deepest));
+  }
+
   // Frame a drawer's focus (a lake / report put-in) into the area the drawer does NOT cover, re-fitting
   // whenever the drawer settles at a new snap point. A lake with a `bounds` gets zoom-to-fit
   // (`fitBounds`); a bare point (report put-in) gets a fly at its zoom. The drawer's covered fraction
@@ -437,6 +525,9 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       compass={false}
       onPress={onMapPress}
       onRegionDidChange={onRegionDidChange}
+      // The native analogue of web's `idle`: the tiles for the settled view are in, so the contour
+      // read happens after a fly-to lands rather than on every intermediate frame of it.
+      onDidFinishRenderingMapFully={() => void readDrawnContours()}
     >
       <Camera
         ref={cameraRef}
@@ -515,6 +606,40 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           }}
         />
       </GeoJSONSource>
+
+      {/* ── Bathymetric contours for the open lake (N6b/D81), mounted only while its sheet is open.
+          `beforeId` puts them under every pin, track and hazard that follows: contours are
+          decoration and hazards are the product, so if the two ever compete for legibility the
+          contour is the one that loses (D82). Hairline, and a single hue varying only in lightness —
+          a green→yellow→red depth ramp would be far more legible, and that is exactly the problem. */}
+      {contoursMounted ? (
+        <VectorSource
+          id={CONTOUR_SOURCE_ID}
+          ref={contourSourceRef}
+          url={contourSourceSpec(contourArchiveUrl).url}
+        >
+          <Layer
+            id={CONTOUR_LAYER_ID}
+            type="line"
+            source-layer={CONTOUR_SOURCE_LAYER}
+            beforeId={CONTOUR_BEFORE_LAYER_ID}
+            // A guard rail, not the mechanism: a sheet can be open while the camera is zoomed out,
+            // and a lake's isobaths at z6 are a smear that says nothing.
+            minzoom={CONTOUR_MIN_ZOOM}
+            filter={contourFilter(contourBodyKey) as FilterSpecification}
+            layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+            paint={{
+              'line-color':
+                contourMaxDepthFt > 0
+                  ? (contourColorExpression(contourPalette, contourMaxDepthFt) as never)
+                  : contourPalette.deep,
+              'line-width': contourWidthExpression() as never,
+              'line-opacity': contourMaxDepthFt > 0 ? CONTOUR_OPACITY : 0,
+              'line-opacity-transition': { duration: CONTOUR_FADE_MS, delay: 0 },
+            }}
+          />
+        </VectorSource>
+      ) : null}
 
       <GeoJSONSource id="photo-pins" data={photoPinsFC}>
         <Layer

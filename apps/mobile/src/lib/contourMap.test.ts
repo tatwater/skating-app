@@ -1,6 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { hexToRgb, hueDistance } from '@skating/design';
 import { describe, expect, it } from 'vitest';
-import { CONTOUR_PALETTE } from './contourMap';
+import { CONTOUR_BEFORE_LAYER_ID, CONTOUR_PALETTE } from './contourMap';
 import { HAZARD_PALETTE } from './hazardMap';
 
 /**
@@ -51,5 +53,23 @@ describe('CONTOUR_PALETTE', () => {
     const light = (hex: string) => hexToRgb(hex).reduce((a, b) => a + b, 0);
     expect(light(CONTOUR_PALETTE.white.deep)).toBeLessThan(light(CONTOUR_PALETTE.white.shallow));
     expect(light(CONTOUR_PALETTE.dark.deep)).toBeGreaterThan(light(CONTOUR_PALETTE.dark.shallow));
+  });
+});
+
+/**
+ * The z-order, which is a string convention between two files and fails silently.
+ *
+ * D82 puts hazards above contours: contours are decoration, hazards are the product, and if the two
+ * ever compete for legibility the contour is the one that loses. The map expresses that with
+ * `beforeId` on a layer it renders unconditionally — so if that layer is ever renamed, the contour
+ * layer lands wherever the native renderer puts it, over every hazard, and nothing says so.
+ */
+describe('the layer contours are inserted beneath', () => {
+  it('is a layer MapView actually renders', () => {
+    const mapView = readFileSync(
+      join(import.meta.dirname, '..', 'components', 'MapView.tsx'),
+      'utf8',
+    );
+    expect(mapView).toContain(`id="${CONTOUR_BEFORE_LAYER_ID}"`);
   });
 });
