@@ -85,6 +85,27 @@ GLOBathy's basic-parameters CSV comes from its figshare collection (the collecti
 bathymetry TIFFs — **don't download those**, see above). LAGOS-US DEPTH comes from its EDI package page.
 Record the download date and version of each in your run notes so the import is reproducible.
 
+> 📌 **Before you run this: move these three downloads into a `.raw/` archive first.**
+>
+> "Record the download date in your run notes" is provenance by human memory, and it is the weakest
+> part of this runbook. [`scripts/bathymetry`](../bathymetry/README.md) (N6b) solved the same problem
+> properly and the pattern is worth adopting here rather than reinventing:
+>
+> - **`.raw/`** — exactly what the third party served, plus a machine-written `manifest.json` carrying
+>   the source URL, fetch timestamp, sha256, byte + record counts, and the licence text. Never deleted.
+> - **`.scratch/`** — everything derived. Safe to `rm -rf`, because it rebuilds from `.raw/` with no
+>   network.
+> - **`mirror-r2.sh push`** — a second copy in a private R2 bucket, so the archive isn't one laptop.
+> - **`verify`** — two cheap requests that say whether the source republished under you.
+>
+> This matters more here than it did for the state agencies. HydroLAKES is a **763 MB** download and
+> LAGOS-US' licence and column names are [an open question this ETL has never resolved](../../plans/phase-N6a-lake-depth.md#open-questions)
+> — which means the first real run is also a debugging session, and every iteration of it currently
+> costs a re-download. Do this before the run, not after: afterwards the incentive disappears and the
+> download date goes back to living in someone's memory.
+>
+> Deliberately **not** done as part of N6b, to keep a gated ETL out of that phase's diff.
+
 ### 2. Convert + clip (GDAL)
 
 Clip HydroLAKES to our five-state region and keep only the attributes the transform reads. The bbox is

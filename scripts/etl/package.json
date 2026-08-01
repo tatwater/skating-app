@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "transform": "tsx src/cli.ts",
     "load": "tsx src/load.ts",
-    "load-depths": "tsx src/loadDepths.ts"
+    "load-depths": "tsx src/loadDepths.ts",
+    "archive": "tsx src/fetchExtract.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

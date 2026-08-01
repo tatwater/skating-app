@@ -2684,3 +2684,46 @@ bounds any single point's abuse surface, and minors are read-only (Phase 3), so 
 upload is already the population trusted with reports.
 
 **Related:** [D57](#d57), [D62](#d62), [D66](#d66), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [`phase-N6d`](./phase-N6d-lake-access-points.md).
+
+## D89 — The contour interval is a fixed ladder, not a per-lake target (N6b)
+
+**Decided (2026-08-01, after comparing our output against Maine IF&W's and VT DEC's own depth charts.)**
+
+Every lake is drawn on the same **5 ft ladder**, and the ladder only ever steps **coarser** — to 10, 25
+or 50 ft, each a whole multiple so two lakes' rings always nest. Ring *count* is therefore a readout of
+depth: three rings on a 17 ft pond, eleven on a 59 ft one.
+
+> *"I'd rather see contours every 5 ft and therefore only get 3 contours in one lake and 10 in another.
+> But I don't want to just make it up and end up with a very inaccurate depiction."* — founder
+
+**What it replaces, and why that was wrong.** The interval used to target ~12 bands per lake from
+`maxDepth` alone. Checked against the agencies' charts, that was backwards in the way that matters:
+Washington Pond (36 ft, **105 soundings**) got a 2 ft interval and seventeen levels, while Lake Morey
+(42 ft, **68,139 soundings**) got 5 ft. The sparse lake was given the fine interval and the dense one
+the coarse, because depth is the one input that says nothing about how much structure the survey can
+support.
+
+**Two ceilings step the ladder up, and nothing steps it down:**
+
+- **Depth**, so Champlain does not draw 79 rings (`MAX_BANDS` = 20).
+- **Data support** — a band needs measurements around it to be traced rather than invented, counted in
+  *independent* samples (grid cells surviving `blockmedian`), never raw readings, since a transect log
+  of 1,387 points collapsing into 24 cells carries 24 measurements' worth of information.
+
+Refusing to go finer than the base is what keeps it honest: the failure being fixed was too many lines
+on too little data, so no lake gets a denser picture than the standard.
+
+**Contour lanes reach the same ladder by subtraction only.** For NH and MA the agency already drew the
+isobaths, so we thin their published levels toward the ladder and never move or add one — a source
+coarser than the ladder (NH at 10 ft) comes back untouched; a finer one (MassGIS's 2/3/4/5 ft shallows)
+collapses toward 5 ft. **The deepest published level is always kept**, because thinning away the
+innermost ring is [D82](#d82--bathymetry-is-context-not-counsel-n6b)'s understating-by-omission arriving
+by a different road.
+
+**This does not reopen what D82 closed.** The proposal D82 rejected dropped levels *where lines crowd
+together on the map*, which would make ring count depend on bed steepness. A fixed **depth** ladder is
+uniform in depth and never in map distance, so a deeper lake always shows more rings. **And D83
+survives**: its rule was *"don't draw a line where no depth-sounder went"*, not *"don't choose which
+surveyed lines to show."*
+
+**Related:** [D82](#d82--bathymetry-is-context-not-counsel-n6b), [D83](#d83--contours-carry-their-sources-native-interval-and-units-labelled-we-never-resample-n6b), [`phase-N6b`](./phase-N6b-bathymetry-layer.md).

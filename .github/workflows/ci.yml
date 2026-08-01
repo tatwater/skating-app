@@ -45,4 +45,5 @@ jobs:
           path: |
             packages/*/coverage
             apps/*/coverage
+            scripts/*/coverage
           if-no-files-found: ignore

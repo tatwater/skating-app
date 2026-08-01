@@ -6,11 +6,12 @@
 > run**. That unrun loader is this phase's one scheduling constraint; see [Sequencing](#sequencing--and-the-one-time-sensitive-item).
 > **Sibling of:** [N6d — lake access points](./phase-N6d-lake-access-points.md) (split out of this doc
 > at scoping, 2026-07-30: it was roughly the size of everything else here combined) and
-> [N6b — bathymetry contours](./phase-N6b-bathymetry-layer.md) (designed only).
+> [N6b — bathymetry contours](./phase-N6b-bathymetry-layer.md) (ETL complete, clients unbuilt —
+> its coverage is what feeds this doc's `+2 has bathymetric contours` prominence term).
 > **N6 is now a five-way split:** N6a depth → N6b contours → **N6c profiles** → N6d access points →
 > [N6e satellite imagery](./phase-N6e-satellite-imagery.md) (specced 2026-07-31 out of B3).
 > **Decisions:** D70, D71, D74, D75, D76, and **D85/D86** added 2026-07-31 (see
-> [`01-decisions.md`](./01-decisions.md)). D72/D73 are N6d's; D81–D84 are N6b's and N6e's.
+> [`01-decisions.md`](./01-decisions.md)). D72/D73 are N6d's; D81–D84 are N6b's and N6e's, plus **D89** (N6b's fixed contour ladder).
 > **All five open questions were answered 2026-07-31**, plus A3, B3, B3a, B5 and E3 — see the marked
 > sections. Two answers changed the build: **shoreline is measured on the source geometry** (D85, and it
 > moves A2–A4 onto the *canonical water re-import* rather than the depth run), and **the summary card
@@ -513,6 +514,77 @@ a discovery signal; a listed spot nobody discusses may be listed for scenery rat
 **Long-term:** D49 already plans for popularity to feed `displayScore` once we have our own report
 volume. These manual boosts are a **cold-start seed with a retirement path**, not a permanent registry —
 another argument against giving them their own flag.
+
+---
+
+## Workstream D2 — Profile richness feeds prominence (founder call, 2026-08-01)
+
+> *"Maybe we just really deprioritize any water bodies for which we don't have bathymetry, put-ins,
+> etc? Like having more **kinds** of body profile data should maybe automatically boost prominence on
+> the map, in a similar way to how we boosted the visibility of lakes that appear in our training
+> corpus."*
+
+Filed here rather than in its own phase for the reason the founder gave: **this rides the ETL pass
+N6c is already making.** A `displayScore` change means recomputing `minVisibleZoom` across all
+116,070 bodies and rebuilding the N1 cell index, and doing that twice would be the mistake.
+
+### The question it answers, and the one it doesn't
+
+The founder's starting instinct was to consider **dropping unnamed bodies** — the map feels crowded,
+and a lot of what's stored will never be skated. Measured against the corpus (8,000-body sample,
+2026-08-01), that turns out to be the wrong lever:
+
+| Prominence | Named | Unnamed |
+| --- | --- | --- |
+| **z ≤ 10** (regional browse) | 201 | 122 |
+| z 11–12 | 305 | 2,746 |
+| z 13+ | 33 | 4,593 |
+
+**92% of the corpus is unnamed**, so "drop unnamed bodies" is very nearly "drop the corpus." And D49
+is *already* doing the filtering: at regional zoom the split is 62% named, and named bodies average
+**529,301 m²** against unnamed **13,986 m²** — 38× larger. The crowding at z13+ is unnamed ponds you
+only see zoomed right in, which is arguably correct behaviour rather than a bug.
+
+So the answer is not subtraction. It is that **prominence should reward how much we know about a
+body**, which is additive, reversible, and self-correcting: a pond nobody has documented stays quiet
+until someone documents it, and then it surfaces. It also makes the map reward contribution, which is
+the behaviour this product wants most.
+
+### The shape
+
+Additional `displayScore` terms, weighted by how much each signal says about whether a body is worth
+a skater's attention:
+
+| Signal | Weight | Why this weight |
+| --- | --- | --- |
+| Has a real name | **+1** | Weak but real: someone cared enough to name it. Near-free, since it's already on the row. |
+| Has bathymetric contours (N6b) | **+2** | A state surveyed it, which is itself a statement that the water matters. |
+| Has a depth (N6a, any rung) | **+1** | Weaker than contours — most of it is modelled. |
+| Has **derived** put-ins (N6d) | **+2** | Access exists and we found it. |
+| Has **official/moderated** put-ins (N6d) | **+4** | A human confirmed you can get on the ice here. The strongest static signal we have. |
+| Has hazards or reports on record | **+3** | Someone has actually been there — the only signal that is evidence of *use* rather than of data. |
+
+Weights are illustrative and belong in the `@skating/core` "signs locked, numbers tunable" family
+alongside the existing D49 constants, surfaced read-only on the Phase 7b tuning page.
+
+### Three things to get right at build
+
+**Reports and hazards are a different kind of signal from the rest**, and probably want to stay
+separate rather than being one more term. Every other row is *static metadata we imported*; report
+volume is *evidence of use*, and D49 already plans for popularity to feed `displayScore` once there's
+enough of our own. Folding them together now risks a cold-start problem where the seeded corpus
+permanently outranks anything a community actually discovers.
+
+**This must not silently bury bodies.** Prominence is a *boost*, never a penalty: a body with no
+profile data keeps exactly the `minVisibleZoom` it has today, and richer bodies rise past it. Framing
+it as "deprioritize the empty ones" and implementing it as a subtraction would push already-obscure
+ponds below the discoverability floor — and the founder's own stated worry, *"I'd hate to not have a
+body someone cares about"*, is precisely the thing that would break.
+
+**It interacts with `curatedBoost` (Workstream D above) and should not duplicate it.** The curated
+seed is a cold-start hack with a retirement path; this is the durable mechanism meant to replace it.
+Best read as: curated boosts are what we assert before we know anything, and profile richness is what
+takes over once we do.
 
 ---
 

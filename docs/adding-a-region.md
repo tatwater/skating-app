@@ -25,6 +25,11 @@ The map is built from **three data sets that must agree on the same bounding box
 3. **Basemap tiles** — the underlying land/roads/labels, a Protomaps `.pmtiles` file we build
    and host on Cloudflare R2 (`scripts/basemap`). The app reads its URL from an env var.
 
+**And one that deliberately does not fit that model:** *bathymetry contours* (`scripts/bathymetry`,
+Step 4b) are keyed to **state agencies**, not to a bounding box. Widening the envelope gets you no
+contours; a state that publishes them does. It is optional, it is per-agency, and it is the one step
+that can honestly answer "this state has none."*
+
 On top of those, **three places hard-code the region's bounding box**, and they must stay in
 sync or you get blank tiles at a corner or a map that pans past the data:
 
@@ -236,6 +241,86 @@ The app reads the tile URL from an env var, so this is a swap, not code:
   production build.
 
 Reload the map and confirm the basemap covers the new region.
+
+---
+
+## Step 4b — Bathymetry contours (per **agency**, not per bbox)
+
+> **Status: the ETL half is built and runnable; the clients do not render it yet (N6b).** Follow this
+> to produce and host the tiles; the last step (repointing an app env var) has nothing to point at
+> until the client work lands.
+
+**This step breaks the mental model above, and that is the most important thing to know about it.**
+The other three data sets agree on one bounding box. Bathymetry agrees on nothing geographic: it is
+published **per state agency**, on that agency's own schedule, in that agency's own format, covering
+whichever lakes that agency happened to survey. Widening the region envelope does not get you more
+contours. **Asking whether the new state publishes bathymetry at all** does.
+
+That question is research, not a pipeline run, and it has a real chance of answering "no" — New York
+publishes none, which we established by enumerating every layer on NYSDEC's ArcGIS server, the full
+385-dataset NYS GIS Clearinghouse catalogue, ArcGIS Online and `data.ny.gov`. Budget an afternoon,
+and see `plans/phase-N6b-bathymetry-layer.md` §New York for what a thorough "no" looks like so you
+can stop when you reach one.
+
+### If the state does publish
+
+```bash
+cd scripts/bathymetry
+
+# 1. Probe the layer before committing to it — lines or points, how many, what credit is required.
+pnpm --filter @skating/bathymetry probe <layer-url>
+
+# 2. Add an entry to src/sources.ts (key, state, agency, kind, unit, url, attribution, datum, notes).
+#    Adding a state is a DATA entry, never a code path. If you find yourself writing an `if` on the
+#    state name, the registry is the thing to extend instead.
+
+# 3. Archive it, mirror it, and record it.
+pnpm --filter @skating/bathymetry snapshot --state=XX
+scripts/bathymetry/mirror-r2.sh push
+pnpm --filter @skating/bathymetry provenance
+
+# 4. Resolve every lake to one of our water bodies (needs the corpus from Step 1 already loaded).
+pnpm --filter @skating/bathymetry join --refresh
+
+# 5. Run the chain and tile it.
+pnpm --filter @skating/bathymetry build-contours
+scripts/bathymetry/tile.sh --upload dev/bathymetry-$(date +%Y%m%d).pmtiles
+```
+
+**Two lanes, and which one you are in is a provenance claim rather than a file format.** If the agency
+publishes **contour lines**, we reproject and clip and invent nothing. If it publishes **sounding
+points**, *we* fit the surface — a weaker claim, gated harder, and labelled differently in the drawer.
+Both are legitimate; conflating them is not.
+
+### What will actually go wrong
+
+- **Order matters: `join` needs Step 1's water corpus already loaded.** The join resolves a source
+  lake to *our* body, so running it against a corpus that lacks the new state matches nothing and
+  reports a clean, wrong 0%.
+- **`join` is slow — budget ~25 minutes for a five-state corpus.** It spawns one `convex run` per
+  batch, and the Convex 16 MB per-execution read cap forces small batches. It is resumable: the result
+  is cached, and only `--refresh` re-runs it.
+- **Read the drop tally, do not skim it.** `build-contours` writes `.scratch/build/dropped.json` and
+  prints counts by reason. A lake dropped by the density gate and a lake dropped by a bug produce the
+  *same* result on the finished map — a flat shape — so the tally is the only place the difference is
+  visible.
+- **A source key does not always mean one lake.** NH files two ponds 51 km apart under one `au_id`;
+  Maine's MIDAS `870` scatters over 379 km of the state. The pipeline splits these automatically and
+  names them, but if a new agency's keying is worse you will see it in that log first.
+- **`verify` before you re-snapshot.** Two cheap requests per source tell you whether the agency
+  republished; a re-snapshot without it is a download you may not need.
+
+### Checklist additions
+
+- [ ] Established whether the state publishes bathymetry **at all**, and recorded the search if the
+      answer is no.
+- [ ] `src/sources.ts` entry added with the agency's own required credit wording, its vertical datum,
+      and any notice its terms require (NOAA chart-derived data carries *"not for navigation"*).
+- [ ] Archive snapshotted, mirrored to the **private** raw bucket, and `PROVENANCE.md` regenerated.
+- [ ] `join` run **after** the water corpus for that state is loaded; match rate spot-checked.
+- [ ] `build-contours` drop tally read, not skimmed.
+- [ ] Tiles uploaded to the **public** basemap bucket (the overlay is range-read by browsers, unlike
+      `.raw/`).
 
 ---
 
