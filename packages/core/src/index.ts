@@ -5,6 +5,7 @@ export * from './block';
 export * from './bounties';
 export * from './coalesce';
 export * from './comment';
+export * from './contourLayer';
 export * from './dedup';
 export * from './display';
 export * from './dob';

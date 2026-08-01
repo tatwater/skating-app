@@ -30,6 +30,7 @@ import process from 'node:process';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
 import { type Drawn, interpolate, lakeId, publishedContours, setUngated } from './contour';
+import { contourFeature } from './feature';
 import { readJoin } from './join';
 import { readAllLakes } from './lakeSources';
 import { measure, splitByBody } from './lakes';
@@ -124,22 +125,20 @@ async function main(): Promise<void> {
       continue;
     }
 
+    // The registry is the source of the credit, not the ArchivedLake's copy (which is for logs).
     const agency = sourceByKey(lake.sourceKey)?.agency ?? lake.agency;
-    const lane = lake.lane === 'contours' ? 'surveyed' : 'interpolated';
     for (const [i, line] of drawn.lines.entries()) {
       out.write(
-        `${JSON.stringify({
-          type: 'Feature',
-          properties: {
-            bodyId: body.externalId ?? body.waterBodyId,
-            depthFt: drawn.depths[i] ?? 0,
-            lane,
+        `${JSON.stringify(
+          contourFeature({
+            lake,
+            body,
             agency,
-            state: lake.state,
-            intervalFt: drawn.interval ?? null,
-          },
-          geometry: { type: 'LineString', coordinates: line },
-        })}\n`,
+            coordinates: line,
+            depthFt: drawn.depths[i] ?? 0,
+            intervalFt: drawn.interval,
+          }),
+        )}\n`,
       );
       features += 1;
     }
