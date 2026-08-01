@@ -516,6 +516,77 @@ another argument against giving them their own flag.
 
 ---
 
+## Workstream D2 — Profile richness feeds prominence (founder call, 2026-08-01)
+
+> *"Maybe we just really deprioritize any water bodies for which we don't have bathymetry, put-ins,
+> etc? Like having more **kinds** of body profile data should maybe automatically boost prominence on
+> the map, in a similar way to how we boosted the visibility of lakes that appear in our training
+> corpus."*
+
+Filed here rather than in its own phase for the reason the founder gave: **this rides the ETL pass
+N6c is already making.** A `displayScore` change means recomputing `minVisibleZoom` across all
+116,070 bodies and rebuilding the N1 cell index, and doing that twice would be the mistake.
+
+### The question it answers, and the one it doesn't
+
+The founder's starting instinct was to consider **dropping unnamed bodies** — the map feels crowded,
+and a lot of what's stored will never be skated. Measured against the corpus (8,000-body sample,
+2026-08-01), that turns out to be the wrong lever:
+
+| Prominence | Named | Unnamed |
+| --- | --- | --- |
+| **z ≤ 10** (regional browse) | 201 | 122 |
+| z 11–12 | 305 | 2,746 |
+| z 13+ | 33 | 4,593 |
+
+**92% of the corpus is unnamed**, so "drop unnamed bodies" is very nearly "drop the corpus." And D49
+is *already* doing the filtering: at regional zoom the split is 62% named, and named bodies average
+**529,301 m²** against unnamed **13,986 m²** — 38× larger. The crowding at z13+ is unnamed ponds you
+only see zoomed right in, which is arguably correct behaviour rather than a bug.
+
+So the answer is not subtraction. It is that **prominence should reward how much we know about a
+body**, which is additive, reversible, and self-correcting: a pond nobody has documented stays quiet
+until someone documents it, and then it surfaces. It also makes the map reward contribution, which is
+the behaviour this product wants most.
+
+### The shape
+
+Additional `displayScore` terms, weighted by how much each signal says about whether a body is worth
+a skater's attention:
+
+| Signal | Weight | Why this weight |
+| --- | --- | --- |
+| Has a real name | **+1** | Weak but real: someone cared enough to name it. Near-free, since it's already on the row. |
+| Has bathymetric contours (N6b) | **+2** | A state surveyed it, which is itself a statement that the water matters. |
+| Has a depth (N6a, any rung) | **+1** | Weaker than contours — most of it is modelled. |
+| Has **derived** put-ins (N6d) | **+2** | Access exists and we found it. |
+| Has **official/moderated** put-ins (N6d) | **+4** | A human confirmed you can get on the ice here. The strongest static signal we have. |
+| Has hazards or reports on record | **+3** | Someone has actually been there — the only signal that is evidence of *use* rather than of data. |
+
+Weights are illustrative and belong in the `@skating/core` "signs locked, numbers tunable" family
+alongside the existing D49 constants, surfaced read-only on the Phase 7b tuning page.
+
+### Three things to get right at build
+
+**Reports and hazards are a different kind of signal from the rest**, and probably want to stay
+separate rather than being one more term. Every other row is *static metadata we imported*; report
+volume is *evidence of use*, and D49 already plans for popularity to feed `displayScore` once there's
+enough of our own. Folding them together now risks a cold-start problem where the seeded corpus
+permanently outranks anything a community actually discovers.
+
+**This must not silently bury bodies.** Prominence is a *boost*, never a penalty: a body with no
+profile data keeps exactly the `minVisibleZoom` it has today, and richer bodies rise past it. Framing
+it as "deprioritize the empty ones" and implementing it as a subtraction would push already-obscure
+ponds below the discoverability floor — and the founder's own stated worry, *"I'd hate to not have a
+body someone cares about"*, is precisely the thing that would break.
+
+**It interacts with `curatedBoost` (Workstream D above) and should not duplicate it.** The curated
+seed is a cold-start hack with a retirement path; this is the durable mechanism meant to replace it.
+Best read as: curated boosts are what we assert before we know anything, and profile richness is what
+takes over once we do.
+
+---
+
 ## Workstream E — Per-body summary cards on the map
 
 **Moved into this phase by founder call, 2026-07-30**, from the roadmap's *Design sketches for deferred

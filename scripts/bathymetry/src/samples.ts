@@ -391,6 +391,24 @@ function main(): void {
     }
   }
 
+  // `--list` prints eligible lakes with their real gap ratio and centroid, so a comparison grid can
+  // be assembled from measured values rather than a proxy.
+  if (args.includes('--list')) {
+    for (const { assessment, points } of eligible) {
+      // The DEEPEST sounding, not the centroid of soundings, as the representative point.
+      // A centroid is not guaranteed to be on the water — on a crescent or a horseshoe lake it lands
+      // on the headland in the middle, and the join then finds nothing (or worse, the pond next
+      // door). A sounding is on water by definition, and the deepest one is furthest from any shore,
+      // which makes it the least likely to fall outside a shoreline drawn from a different survey.
+      let deepest = points[0];
+      for (const pt of points) if (deepest && pt.depthFt > deepest.depthFt) deepest = pt;
+      process.stdout.write(
+        `${assessment.lakeKey}\t${(assessment.gapRatio * 100).toFixed(1)}\t${assessment.pointCount}\t${Math.round(assessment.extentM)}\t${deepest?.lng.toFixed(5)}\t${deepest?.lat.toFixed(5)}\n`,
+      );
+    }
+    return;
+  }
+
   process.stderr.write(`[bathymetry] interpolating ${picked.length} sample lakes…\n`);
   const cards: string[] = [];
   for (const { assessment, points } of picked) {

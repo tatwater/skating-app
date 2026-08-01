@@ -19,6 +19,7 @@ export default defineConfig({
         'src/provenanceCli.ts',
         'src/sweep.ts',
         'src/samples.ts',
+        'src/join.ts',
         'src/types.ts',
       ],
       thresholds: {
