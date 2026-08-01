@@ -179,6 +179,96 @@ answer for Maine rather than a fallback.
 
 ---
 
+## New York
+
+*Written up at the founder's request (2026-07-31), on the same principle as §Maine: the work should be
+**known** rather than rediscovered. Unlike Maine, this one is not a lane we are deferring — it is a lane
+that does not exist, and the write-up is a costing so that a future decision to fund it is made with
+open eyes.*
+
+### What we established, and how
+
+New York is the only state in our set with **no digital lake bathymetry of any kind**. That is a
+checked finding rather than an assumption, and the search is recorded so nobody repeats it:
+
+| Where we looked | What is there |
+| --- | --- |
+| **NYSDEC's public ArcGIS server** — every folder, every service, every layer, enumerated programmatically | Exactly two depth layers, both **Hudson River estuary** |
+| **NYS GIS Clearinghouse** (`data.gis.ny.gov`), full DCAT catalogue — 385 datasets | A *topographic* contour download app (land), one Seneca Lake document. No lake bathymetry |
+| **ArcGIS Online**, org- and keyword-scoped searches | Nothing from NYSDEC or any NY state agency |
+| **`data.ny.gov`** open-data portal | Nothing |
+| Regional candidates (Adirondack Park Agency, Finger Lakes, Lake George) | One item: *"Bathymetry of the Finger Lakes"* — **50 unattributed depth-band polygons** for eleven lakes, no published copyright, no traceable agency |
+
+**That last one is a trap, not a source.** Fifty polygons across eleven lakes is four or five depth
+bands each, of unknown provenance, unknown vintage and unknown method. Drawing it would be rendering an
+authoritative-looking artifact whose accuracy we cannot speak to — the same thing this document's
+opening section refuses GLOBathy's rasters for, arriving by a different road. **Declined on the same
+grounds.**
+
+### New York is not blank
+
+Worth stating plainly, because it is easy to lose and easy for someone to "fix" later: **the VCGI/NOAA
+Champlain source covers the lake, not the state.** Its 104,910 soundings span the entire New York shore.
+So New York's most prominent skating water is covered — by a source filed under Vermont. That is an
+accident of filing that happens to be correct, and it means the pipeline does run end-to-end for NY.
+
+### The digitisation path, costed
+
+NYSDEC has historically published lake contour maps as **PDFs** — the fishing-map corpus this doc's
+source table gestured at. They are the only NY bathymetry that exists, and turning them into a layer is
+a project rather than an ETL lane.
+
+**Step 0 is establishing the inventory, and it is not free.** DEC restructured its website (the old
+`dec.ny.gov/outdoor/…` paths now 404 and the maps are not surfaced at any stable path we could find), so
+*"how many maps are there, and where do they live"* is itself unanswered. Historically this corpus has
+been in the low hundreds of waters. **Nobody should plan against that number until it has been
+counted** — and the counting is a scrape plus a manual pass, not a query.
+
+**Then, per map, in order of increasing pain:**
+
+1. **Georeference.** A scanned contour map has no coordinate system. Each one needs control points tied
+   to identifiable shoreline features, then a warp. This is the step that does not automate: the maps
+   are hand-drawn at inconsistent scales, often without a graticule, and often with the shoreline itself
+   as the only registration feature available.
+2. **Vectorise.** Raster-to-vector on the contour strokes. Tolerable when the linework is clean; the
+   labels, depth soundings, hachures and boat-launch symbols printed *on top of* the contours are what
+   makes it not tolerable, since they break lines and add false ones.
+3. **Attribute.** Every extracted line needs its depth, which is read off a printed label. This is
+   manual, and it is the step where an error is invisible downstream — a contour attributed 20 ft
+   instead of 30 ft is geometrically perfect and simply wrong.
+4. **Join + QA.** Match each map to our `waterBodies` row, then check the result against the map by eye.
+
+**The honest estimate is that this is larger than the rest of N6b combined**, and its output would carry
+a **third** provenance tier, weaker than either lane we have:
+
+| Tier | Claim | States |
+| --- | --- | --- |
+| **State-surveyed** | The agency surveyed the lake and published isobaths. We reproject and tile. | NH, MA |
+| **Interpolated from state soundings** | The agency measured depths; **we** fit the surface. | VT, ME |
+| **Traced from a scanned agency map** | The agency drew a map; **we** georeferenced, vectorised and attributed it. Every step is ours and each is lossy. | *(NY, hypothetically)* |
+
+### The recommendation
+
+**Don't.** Not now, and probably not as a project of its own — the cost is concentrated in manual work
+that produces our weakest claim, on the state where we already cover the marquee water.
+
+**Two cheaper things to do first, in this order:**
+
+1. **Re-check periodically.** New York is the largest state in our region without a bathymetry program,
+   which makes it a plausible thing for NYSDEC to eventually publish. `verify` already establishes the
+   habit of checking sources; NY costs one probe.
+2. **Let the operator override carry the specific lakes.** N6a's rung-1 `operator` depth and the D68
+   amendment's public source note already let a moderator enter *"NYSDEC contour map, 1994"* for a
+   named lake. For the handful of NY waters people actually skate, that is a few minutes each and it
+   produces a **stronger** claim than tracing would — a human reading a number off an official map and
+   citing it, rather than an algorithm inferring geometry from a scan.
+
+**If it is ever funded**, do it as a bounded pilot: georeference and vectorise **five** lakes, measure
+the real per-map hours, and check the output against a known depth before committing to the corpus. The
+pilot is what turns "low hundreds of maps" from a guess into a schedule.
+
+---
+
 ## Settled by the founder (2026-07-31)
 
 All six questions answered in one pass. Three became decisions; the other three became build constraints.

@@ -34,11 +34,40 @@ REMOTE="$RCLONE_REMOTE:$RAW_BUCKET/bathymetry"
 
 command -v rclone >/dev/null || { echo "rclone not found — brew install rclone" >&2; exit 1; }
 
+# The basemap's token is scoped to `skating-basemap` alone, so it cannot see — let alone create — the
+# raw bucket. That is the secure, expected result rather than a misconfiguration, but the raw 403 it
+# produces is unreadable, so say what is actually needed.
+preflight() {
+  if ! rclone lsjson "$RCLONE_REMOTE:$RAW_BUCKET" --max-depth 1 >/dev/null 2>&1; then
+    cat >&2 <<MSG
+✗ Can't reach $RCLONE_REMOTE:$RAW_BUCKET.
+
+  This is expected until the bucket exists and the token can see it. One-time setup:
+
+    1. Cloudflare R2 → Create bucket → "$RAW_BUCKET".
+       Leave public access OFF. This is our copy of third-party state data, not a
+       distribution channel — and it is deliberately NOT the basemap bucket, which
+       has r2.dev public access enabled for browser range-reads.
+
+    2. R2 → Manage API Tokens → Object Read & Write, scoped to "$RAW_BUCKET"
+       (or widen the existing token to cover both buckets).
+
+    3. Point rclone at it — either widen the existing "$RCLONE_REMOTE" remote's
+       credentials, or add a second remote and set RCLONE_REMOTE in
+       scripts/bathymetry/.env.local.
+
+  Until then the archive lives only on this machine, which is the thing the mirror exists to fix.
+MSG
+    exit 1
+  fi
+}
+
 MODE="${1:-}"
 KEY="${2:-}"
 
 case "$MODE" in
   push)
+    preflight
     mkdir -p "$RAW_DIR"
     if [ -n "$KEY" ]; then
       echo "→ pushing $KEY to $REMOTE/$KEY"
@@ -51,6 +80,7 @@ case "$MODE" in
     fi
     ;;
   pull)
+    preflight
     mkdir -p "$RAW_DIR"
     if [ -n "$KEY" ]; then
       echo "← pulling $KEY from $REMOTE/$KEY"

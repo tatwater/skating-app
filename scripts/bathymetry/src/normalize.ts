@@ -13,6 +13,8 @@
  * that is.
  */
 
+import type { Feature, Geometry, LineString, MultiLineString, Point } from 'geojson';
+
 import { SHORELINE_DEPTH } from './sources';
 
 /** Feet per metre. The real one — see `ME_FEET_PER_METRE` for the one Maine used. */
@@ -51,7 +53,7 @@ export interface NormalizedContour {
   lakeKey: string;
   /** Best available lake name, for the join and for logs. Empty when the source carries none. */
   lakeName: string;
-  geometry: GeoJSON.LineString | GeoJSON.MultiLineString;
+  geometry: LineString | MultiLineString;
 }
 
 /** A measured sounding, normalized. */
@@ -94,8 +96,8 @@ function str(value: unknown): string {
 }
 
 function isLineGeometry(
-  geometry: GeoJSON.Geometry | null | undefined,
-): geometry is GeoJSON.LineString | GeoJSON.MultiLineString {
+  geometry: Geometry | null | undefined,
+): geometry is LineString | MultiLineString {
   return geometry?.type === 'LineString' || geometry?.type === 'MultiLineString';
 }
 
@@ -112,7 +114,7 @@ function isLineGeometry(
  * `au_id` is NHDES's assessment-unit id and is the per-lake key; `lake` is the display name.
  */
 export function normalizeNhContours(
-  features: readonly GeoJSON.Feature[],
+  features: readonly Feature[],
 ): NormalizeResult<NormalizedContour> {
   const records: NormalizedContour[] = [];
   const skipped: Record<string, number> = {};
@@ -158,7 +160,7 @@ export function normalizeNhContours(
  * integer string — a `String(31044)` and a `String(31044.0)` must not become two different lakes.
  */
 export function normalizeMaContours(
-  features: readonly GeoJSON.Feature[],
+  features: readonly Feature[],
 ): NormalizeResult<NormalizedContour> {
   const records: NormalizedContour[] = [];
   const skipped: Record<string, number> = {};
@@ -199,7 +201,7 @@ export function normalizeMaContours(
 }
 
 /** Pull a Point's coordinates, rejecting anything else. */
-function pointCoords(geometry: GeoJSON.Geometry | null | undefined): [number, number] | undefined {
+function pointCoords(geometry: Geometry | null | undefined): [number, number] | undefined {
   if (geometry?.type !== 'Point') return undefined;
   const [lng, lat] = geometry.coordinates;
   if (typeof lng !== 'number' || typeof lat !== 'number') return undefined;
@@ -217,7 +219,7 @@ function pointCoords(geometry: GeoJSON.Geometry | null | undefined): [number, nu
 export const CHAMPLAIN_LAKE_KEY = 'champlain';
 
 export function normalizeChamplainSoundings(
-  features: readonly GeoJSON.Feature[],
+  features: readonly Feature[],
 ): NormalizeResult<NormalizedSounding> {
   const records: NormalizedSounding[] = [];
   const skipped: Record<string, number> = {};
@@ -266,7 +268,7 @@ export function normalizeChamplainSoundings(
  * `MIDAS` is Maine's lake id, so the per-lake split needs no spatial work at all.
  */
 export function normalizeMeSoundings(
-  features: readonly GeoJSON.Feature[],
+  features: readonly Feature[],
 ): NormalizeResult<NormalizedSounding> {
   const records: NormalizedSounding[] = [];
   const skipped: Record<string, number> = {};
@@ -376,7 +378,9 @@ export function vtSoundingColumns(headerLine: string): {
 }
 
 /** Group normalized records by their per-lake key. */
-export function groupByLake<T extends { lakeKey: string }>(records: readonly T[]): Map<string, T[]> {
+export function groupByLake<T extends { lakeKey: string }>(
+  records: readonly T[],
+): Map<string, T[]> {
   const groups = new Map<string, T[]>();
   for (const record of records) {
     const existing = groups.get(record.lakeKey);

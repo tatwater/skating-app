@@ -1,7 +1,7 @@
 /**
  * Snapshot fetcher (N6b) — pull a source into the permanent `.raw/` archive.
  *
- *   pnpm --filter @skating/bathymetry snapshot [<key>…] [--refresh] [--delay=250]
+ *   pnpm --filter @skating/bathymetry snapshot [<key>…] [--state=NH] [--refresh] [--delay=250]
  *
  * (The script is `snapshot`, not `fetch`: `pnpm fetch` is a built-in pnpm command that populates the
  * package store, so a script by that name is shadowed and silently runs an install instead.)
@@ -41,7 +41,8 @@ import {
   writeRawPage,
 } from './cache';
 import { buildManifest, normalizeDescriptor, objectIdField } from './manifest';
-import { SOURCES, sourceByKey } from './sources';
+import { parseSelection, selectSources } from './select';
+import { SOURCES } from './sources';
 import type { BathymetrySource, RawFileRecord } from './types';
 
 function flag(args: string[], name: string): string | undefined {
@@ -166,16 +167,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const refresh = args.includes('--refresh');
   const delayMs = Number(flag(args, 'delay') ?? 250);
-  const requested = args.filter((a) => !a.startsWith('--'));
-
-  const selected =
-    requested.length > 0
-      ? requested.map((key) => {
-          const source = sourceByKey(key);
-          if (!source) throw new Error(`unknown source key: ${key}`);
-          return source;
-        })
-      : SOURCES;
+  const selected = selectSources(SOURCES, parseSelection(args));
 
   const todo = selected.filter((source) => {
     if (!hasSnapshot(source.key) || refresh) return true;

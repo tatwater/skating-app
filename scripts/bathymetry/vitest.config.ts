@@ -16,6 +16,7 @@ export default defineConfig({
         'src/fetch.ts',
         'src/probe.ts',
         'src/verify.ts',
+        'src/provenanceCli.ts',
         'src/types.ts',
       ],
       thresholds: {

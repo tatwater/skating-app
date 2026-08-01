@@ -1,7 +1,7 @@
 /**
  * Drift check (N6b) — has an agency republished under our archive?
  *
- *   pnpm --filter @skating/bathymetry verify [<key>…]
+ *   pnpm --filter @skating/bathymetry verify [<key>…] [--state=NH]
  *
  * Two cheap requests per source (a descriptor and a count) against a stored manifest. It never pulls
  * a payload, and that is the point: a check that costs as much as a refetch is a check nobody runs.
@@ -16,7 +16,8 @@ import process from 'node:process';
 import { countUrl, descriptorUrl, parseCount } from './arcgis';
 import { getText, readManifest } from './cache';
 import { diffManifests, normalizeDescriptor, worstSeverity } from './manifest';
-import { SOURCES, sourceByKey } from './sources';
+import { parseSelection, selectSources } from './select';
+import { SOURCES } from './sources';
 import type { RawManifest } from './types';
 
 const MARK = { breaking: '✗', notable: '!', cosmetic: '·' } as const;
@@ -44,15 +45,7 @@ async function probeCurrent(manifest: RawManifest): Promise<Partial<RawManifest>
 }
 
 async function main(): Promise<void> {
-  const requested = process.argv.slice(2).filter((a) => !a.startsWith('--'));
-  const selected =
-    requested.length > 0
-      ? requested.map((key) => {
-          const source = sourceByKey(key);
-          if (!source) throw new Error(`unknown source key: ${key}`);
-          return source;
-        })
-      : SOURCES;
+  const selected = selectSources(SOURCES, parseSelection(process.argv.slice(2)));
 
   let worst: 'breaking' | 'notable' | 'cosmetic' | undefined;
   let checked = 0;

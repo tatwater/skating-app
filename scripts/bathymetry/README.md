@@ -50,6 +50,49 @@ The severity split exists because these failures are silent by nature: a renamed
 contours and reports success. N6a's transform already fails loudly on a header rename; this is that
 discipline moved one stage earlier, to where the change is observable.
 
+### The committed record: `PROVENANCE.md`
+
+`.raw/` is gitignored, so on a fresh clone the repo would know nothing about what we hold. [
+`PROVENANCE.md`](./PROVENANCE.md) is the committed half — **generated, never hand-edited**:
+
+```bash
+pnpm --filter @skating/bathymetry provenance
+```
+
+Per source it records where the data came from, **when we captured it**, how many records and bytes, a
+content **fingerprint**, the agency's own `copyrightText` *as captured*, the vertical datum, and the
+field notes for the traps in that dataset. It is organised **per state**, because agencies republish
+independently and so "our records are out of date" is a per-state judgement.
+
+Two details that matter:
+
+- **The fingerprint ignores the fetch timestamp**, so re-capturing identical data compares equal. It
+  answers "is my archive the one that produced the current tiles?", which a manifest hash could not.
+- **The agency's copyright and the credit we render are shown as two separate rows.** They are
+  different things — what they say today vs. what we agreed to display — and a drift between them is
+  for a human to read, not for the tool to auto-resolve.
+
+The renderer takes its date as an argument rather than reading the clock, so re-running it on an
+unchanged archive produces no diff.
+
+### Refreshing a single state
+
+Staleness is per-state, so refreshing is too. Check first; re-capture only what moved.
+
+```bash
+pnpm --filter @skating/bathymetry verify --state=NH             # cheap: no payload pulled
+pnpm --filter @skating/bathymetry snapshot --state=NH --refresh # re-capture just NH
+scripts/bathymetry/mirror-r2.sh push                            # mirror it
+pnpm --filter @skating/bathymetry provenance                    # regenerate the record
+```
+
+`--state=` is repeatable and comma-separated, and it **throws on a state with no sources** rather than
+matching nothing — a typo'd `--state=NY` silently selecting zero sources would make `verify` report
+*"all sources unchanged"*, which is true and completely misleading.
+
+A refresh **replaces** a snapshot. If the old one still matters, `mirror-r2.sh pull` it first — the
+mirror is `rclone copy`, never `sync`, so a previous push survives a local overwrite.
+
 ### The mirror
 
 An archive on one laptop is not an archive.

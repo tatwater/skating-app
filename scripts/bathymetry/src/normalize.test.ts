@@ -1,3 +1,4 @@
+import type { Feature, MultiLineString, Point } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
   CHAMPLAIN_LAKE_KEY,
@@ -12,7 +13,7 @@ import {
   vtSoundingColumns,
 } from './normalize';
 
-const LINE: GeoJSON.MultiLineString = {
+const LINE: MultiLineString = {
   type: 'MultiLineString',
   coordinates: [
     [
@@ -22,13 +23,13 @@ const LINE: GeoJSON.MultiLineString = {
   ],
 };
 
-function point(lng: number, lat: number): GeoJSON.Point {
+function point(lng: number, lat: number): Point {
   return { type: 'Point', coordinates: [lng, lat] };
 }
 
 describe('normalizeNhContours', () => {
   // Property bags copied from the real archived page-00000.
-  const feature = (props: Record<string, unknown>): GeoJSON.Feature => ({
+  const feature = (props: Record<string, unknown>): Feature => ({
     type: 'Feature',
     geometry: LINE,
     properties: {
@@ -85,7 +86,7 @@ describe('normalizeNhContours', () => {
 });
 
 describe('normalizeMaContours', () => {
-  const feature = (props: Record<string, unknown>): GeoJSON.Feature => ({
+  const feature = (props: Record<string, unknown>): Feature => ({
     type: 'Feature',
     geometry: LINE,
     properties: { DEPTH: 15, SHORE: 0, NAME: 'Upper Spectacle Pond', PALIS_ID: 31044.0, ...props },
@@ -93,7 +94,11 @@ describe('normalizeMaContours', () => {
 
   it('normalizes a contour', () => {
     const record = normalizeMaContours([feature({})]).records[0];
-    expect(record).toMatchObject({ depthFt: 15, lakeKey: '31044', lakeName: 'Upper Spectacle Pond' });
+    expect(record).toMatchObject({
+      depthFt: 15,
+      lakeKey: '31044',
+      lakeName: 'Upper Spectacle Pond',
+    });
   });
 
   it('keys PALIS_ID as an integer, so 31044 and 31044.0 are one lake', () => {
@@ -106,13 +111,17 @@ describe('normalizeMaContours', () => {
   it('drops the shoreline by BOTH its flag and its depth', () => {
     // MassGIS marks the shoreline two ways (SHORE = 1 at DEPTH = 0). A source that flags a thing
     // twice will eventually flag it once, so neither test is allowed to be the only one.
-    expect(normalizeMaContours([feature({ SHORE: 1, DEPTH: 20 })]).skipped['shoreline (SHORE = 1)']).toBe(1);
-    expect(normalizeMaContours([feature({ SHORE: 0, DEPTH: 0 })]).skipped['shoreline (depth <= 0)']).toBe(1);
+    expect(
+      normalizeMaContours([feature({ SHORE: 1, DEPTH: 20 })]).skipped['shoreline (SHORE = 1)'],
+    ).toBe(1);
+    expect(
+      normalizeMaContours([feature({ SHORE: 0, DEPTH: 0 })]).skipped['shoreline (depth <= 0)'],
+    ).toBe(1);
   });
 });
 
 describe('normalizeChamplainSoundings', () => {
-  const feature = (depth: unknown): GeoJSON.Feature => ({
+  const feature = (depth: unknown): Feature => ({
     type: 'Feature',
     geometry: point(-73.356, 44.998),
     properties: { OBJECTID: 1, DEPTH_FT: depth },
@@ -139,13 +148,13 @@ describe('normalizeChamplainSoundings', () => {
 });
 
 describe('normalizeMeSoundings', () => {
-  const feature = (props: Record<string, unknown>): GeoJSON.Feature => ({
+  const feature = (props: Record<string, unknown>): Feature => ({
     type: 'Feature',
     geometry: point(-69.5, 45.1),
     properties: { DEPTHM: 3.0303, DEPTHF: 9.94192913, MIDAS: 982, FMSRC: 'depthmap', ...props },
   });
 
-  it('undoes Maine\'s 3.3 ft/m conversion error instead of trusting DEPTHF', () => {
+  it("undoes Maine's 3.3 ft/m conversion error instead of trusting DEPTHF", () => {
     // The published DEPTHF (9.94) is systematically 0.58% shallow because DEPTHM was built with a
     // 3.3 constant and then converted back with 3.28084. DEPTHM * 3.3 recovers the surveyed 10 ft.
     expect(normalizeMeSoundings([feature({})]).records[0]?.depthFt).toBe(10);
@@ -252,7 +261,13 @@ describe('reading values the services actually emit', () => {
     const result = normalizeNhContours([
       {
         type: 'Feature',
-        geometry: { type: 'LineString', coordinates: [[-72, 42], [-72.1, 42.1]] },
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [-72, 42],
+            [-72.1, 42.1],
+          ],
+        },
         properties: { depth: 5, au_id: 'x' },
       },
     ]);
@@ -282,7 +297,9 @@ describe('vtSoundingColumns', () => {
   });
 
   it('throws naming the headers it actually found, rather than reading zero soundings', () => {
-    expect(() => vtSoundingColumns('lon,lat,depth_m,lake')).toThrow(/Found: lon, lat, depth_m, lake/);
+    expect(() => vtSoundingColumns('lon,lat,depth_m,lake')).toThrow(
+      /Found: lon, lat, depth_m, lake/,
+    );
   });
 });
 
