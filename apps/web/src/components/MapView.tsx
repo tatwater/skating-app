@@ -768,6 +768,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         setContourCredit(line);
       }
 
+      // The reveal is its own decision, taken the moment ANY of this lake's lines are readable.
+      // Deliberately not folded into the ramp update below: a lake whose deepest drawn ring reads
+      // 0 would otherwise never pass `deepest > deepestFt` and would stay permanently invisible
+      // while its credit row rendered — a flat lake with an attribution under it.
+      if (!faded) {
+        faded = true;
+        map.setPaintProperty(CONTOUR_LAYER_ID, 'line-opacity', CONTOUR_OPACITY);
+      }
+
       const deepest = maxContourDepthFt(properties);
       if (deepest === undefined || deepest <= deepestFt) return;
       deepestFt = deepest;
@@ -776,18 +785,32 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
         'line-color',
         contourColorExpression(contourPalette, deepestFt) as maplibregl.ExpressionSpecification,
       );
-      if (!faded) {
-        faded = true;
-        map.setPaintProperty(CONTOUR_LAYER_ID, 'line-opacity', CONTOUR_OPACITY);
-      }
     };
-    // `idle` rather than `sourcedata`: it fires once the tiles for the settled view are in, so the
-    // read happens after the fly-to lands rather than on every intermediate frame of it.
-    map.on('idle', readDrawnContours);
+    // **`sourcedata` for this source, and NOT `idle`** — the one thing in the render half that a
+    // render had to find. `idle` reads correctly ("the tiles for the settled view are in") and is
+    // simply never delivered: a source added *after* `load` leaves the map in a state where
+    // MapLibre stops emitting `idle` entirely, so the only read that ever ran was the synchronous
+    // one below — before a single tile existed. It returned nothing, the layer never left
+    // `line-opacity: 0`, and every lake rendered flat with no credit and no error anywhere.
+    //
+    // `sourcedata` also keeps the ramp honest while panning, which `idle` was chosen for: a tile
+    // arriving with a deeper ring is exactly a `sourcedata` event.
+    //
+    // **Every event for this source, with no further filter.** Narrowing to `event.tile` or
+    // `event.isSourceLoaded` is the tidy-looking version and it drops the only event that matters —
+    // the one delivering tile content arrives as `sourceDataType: 'content'` carrying neither.
+    // Measured rather than reasoned, because reasoning about this is what produced the bug above.
+    // `readDrawnContours` is its own guard: it returns on an empty read, which is every event before
+    // the data is there.
+    const onContourSourceData = (event: maplibregl.MapSourceDataEvent) => {
+      if (event.sourceId !== CONTOUR_SOURCE_ID) return;
+      readDrawnContours();
+    };
+    map.on('sourcedata', onContourSourceData);
     readDrawnContours();
 
     return () => {
-      map.off('idle', readDrawnContours);
+      map.off('sourcedata', onContourSourceData);
       contourCreditRef.current = null;
       setContourCredit(null);
       try {

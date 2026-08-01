@@ -341,18 +341,29 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const contourCreditRef = useRef<string | null>(null);
   // The deepest ring seen for *this* lake, which only ever grows — `querySourceFeatures` answers from
   // the tiles currently loaded, so panning the deep end off screen would otherwise re-scale the ramp
-  // under the skater. `0` also means "nothing read yet", which is what holds the layer invisible: it
-  // fades in once its own lines are on screen, so the fade covers the tile fetch rather than racing
-  // it. Popping in reads as a bug; fading in reads as a detail revealing itself.
+  // under the skater.
   const [contourMaxDepthFt, setContourMaxDepthFt] = useState(0);
+  // Whether any of this lake's lines have been read back yet, which is what holds the layer
+  // invisible until they have: it fades in once its own lines are on screen, so the fade covers the
+  // tile fetch rather than racing it. Popping in reads as a bug; fading in reads as a detail
+  // revealing itself.
+  //
+  // **Separate from the depth above, deliberately.** Folding the reveal into "deepest > 0" would
+  // leave a lake whose deepest drawn ring reads 0 permanently invisible while its credit row
+  // rendered — a flat lake with an attribution under it.
+  const [contoursRevealed, setContoursRevealed] = useState(false);
+  // One query in flight at a time. The pre-reveal probe below runs per rendered frame, and without
+  // this a slow tile fetch would queue a bridge round-trip for every one of them.
+  const contourQueryInFlight = useRef(false);
   const contourArchiveUrl = env.bathymetryPmtilesUrl;
   const contoursMounted = Boolean(contourArchiveUrl && contourBodyKey);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `contourBodyKey` is the intended trigger.
   useEffect(() => {
-    // A new lake starts a new ramp and a new credit: the last lake's deepest ring says nothing about
-    // this one, and the agency that surveyed it may not be this one's.
+    // A new lake starts a new ramp, a new reveal and a new credit: the last lake's deepest ring says
+    // nothing about this one, and the agency that surveyed it may not be this one's.
     setContourMaxDepthFt(0);
+    setContoursRevealed(false);
     contourCreditRef.current = null;
     setContourCredit(null);
   }, [contourBodyKey, setContourCredit]);
@@ -362,12 +373,20 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
    *
    * The tile is the authority on who surveyed this lake and at what interval (§5), so the drawer's
    * credit line is derived from the features actually on screen rather than from a table keyed by
-   * state. Called when the map finishes rendering, which on native is the analogue of web's `idle`.
+   * state.
+   *
+   * **Called from two events, and needing both is the finding web's half paid for.** A single
+   * "everything has settled" callback (`onDidFinishRenderingMapFully`, the native analogue of web's
+   * `idle`) fires before the contour tiles are fetched and is not guaranteed to come round again —
+   * on web that exact design left every lake flat, invisible, with no error anywhere. So the settled
+   * callback keeps the ramp growing as the skater pans, and a per-frame probe covers the reveal, and
+   * that probe is unmounted the instant the first read succeeds.
    */
   async function readDrawnContours() {
     const source = contourSourceRef.current;
-    if (!source || !contourBodyKey) return;
+    if (!source || !contourBodyKey || contourQueryInFlight.current) return;
     let features: GeoJSON.Feature[];
+    contourQueryInFlight.current = true;
     try {
       features = await source.querySourceFeatures({
         sourceLayer: CONTOUR_SOURCE_LAYER,
@@ -376,12 +395,15 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     } catch {
       // The sheet closed mid-query and the source went with it. Nothing to report and nothing wrong.
       return;
+    } finally {
+      contourQueryInFlight.current = false;
     }
     const properties = features.map((f) => f.properties as Partial<ContourFeatureProperties>);
     // No tiles in yet, or a lake nobody surveyed. Either way keep the last answer rather than
     // clearing a credit that is still true for the lines on screen.
     if (properties.length === 0) return;
 
+    setContoursRevealed(true);
     const line = formatContourCredit(contourCredit(properties)) || null;
     if (line !== contourCreditRef.current) {
       contourCreditRef.current = line;
@@ -525,9 +547,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       compass={false}
       onPress={onMapPress}
       onRegionDidChange={onRegionDidChange}
-      // The native analogue of web's `idle`: the tiles for the settled view are in, so the contour
-      // read happens after a fly-to lands rather than on every intermediate frame of it.
+      // The settled read: the tiles for this view are in, so the ramp keeps up as the skater pans.
       onDidFinishRenderingMapFully={() => void readDrawnContours()}
+      // And the reveal. Mounted only while a lake's contours are still unread, so it costs nothing
+      // for the great majority of bodies-and-moments where there is nothing to wait for — see
+      // `readDrawnContours` for why one settled callback is not enough to reveal a layer.
+      {...(contoursMounted && !contoursRevealed
+        ? { onDidFinishRenderingFrame: () => void readDrawnContours() }
+        : {})}
     >
       <Camera
         ref={cameraRef}
@@ -634,7 +661,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
                   ? (contourColorExpression(contourPalette, contourMaxDepthFt) as never)
                   : contourPalette.deep,
               'line-width': contourWidthExpression() as never,
-              'line-opacity': contourMaxDepthFt > 0 ? CONTOUR_OPACITY : 0,
+              'line-opacity': contoursRevealed ? CONTOUR_OPACITY : 0,
               'line-opacity-transition': { duration: CONTOUR_FADE_MS, delay: 0 },
             }}
           />

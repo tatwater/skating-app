@@ -74,3 +74,31 @@ describe('the layer contours are inserted beneath', () => {
     expect(mapView).toContain(`id: '${CONTOUR_BEFORE_LAYER_ID}'`);
   });
 });
+
+/**
+ * What triggers the read that reveals the layer — the bug that shipped and had to be rendered to be
+ * found.
+ *
+ * The contour layer mounts at `line-opacity: 0` and fades only once its own lines can be read back
+ * off the tile, so **the trigger is the whole feature**: get it wrong and every surveyed lake draws
+ * perfectly and invisibly, with no credit row and no error in any console.
+ *
+ * `idle` is the intuitive choice and it is wrong. It reads correctly — *"all requested tiles have
+ * loaded, no transitions in flight"* — but a source added *after* the map's `load` leaves MapLibre in
+ * a state where `idle` is simply never emitted again, verified against a real archive in a real
+ * browser. The only read that ever ran was the synchronous one at mount, before a single tile
+ * existed. `sourcedata` for this source fires on every tile that arrives, which is both the reveal
+ * and the pan-keeps-the-ramp-honest case `idle` was chosen for.
+ */
+describe('the event the contour read is wired to', () => {
+  const mapView = () =>
+    readFileSync(join(import.meta.dirname, '..', 'components', 'MapView.tsx'), 'utf8');
+
+  it("subscribes to 'sourcedata'", () => {
+    expect(mapView()).toContain("map.on('sourcedata', onContourSourceData)");
+  });
+
+  it("never goes back to 'idle', which does not arrive for a post-load source", () => {
+    expect(mapView()).not.toContain("map.on('idle'");
+  });
+});

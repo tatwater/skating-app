@@ -73,3 +73,31 @@ describe('the layer contours are inserted beneath', () => {
     expect(mapView).toContain(`id="${CONTOUR_BEFORE_LAYER_ID}"`);
   });
 });
+
+/**
+ * What triggers the read that reveals the layer — web's bug, guarded here because this half has the
+ * same shape.
+ *
+ * The layer mounts at `line-opacity: 0` and fades only once its own lines can be read back off the
+ * tile, so the trigger *is* the feature: get it wrong and every surveyed lake draws perfectly and
+ * invisibly, with no credit row and no error. Web proved that one "everything has settled" callback
+ * is not enough — it fires before the contour tiles are fetched and is not guaranteed to come round
+ * again. So the settled callback keeps the ramp growing and a per-frame probe covers the reveal,
+ * mounted only while the read has not yet succeeded.
+ */
+describe('the events the contour read is wired to', () => {
+  const mapView = () =>
+    readFileSync(join(import.meta.dirname, '..', 'components', 'MapView.tsx'), 'utf8');
+
+  it('reads on the settled callback, for the ramp', () => {
+    expect(mapView()).toContain('onDidFinishRenderingMapFully={() => void readDrawnContours()}');
+  });
+
+  it('also probes per frame until the first read lands, for the reveal', () => {
+    expect(mapView()).toContain('onDidFinishRenderingFrame: () => void readDrawnContours()');
+  });
+
+  it('unmounts that probe once the contours are revealed, so it is not a per-frame bridge call', () => {
+    expect(mapView()).toContain('contoursMounted && !contoursRevealed');
+  });
+});
