@@ -248,10 +248,17 @@ ladder only steps coarser — for depth, or for thin data — never finer. Conto
 subtraction: the agency's published levels are thinned toward it and never moved or added to, and the
 deepest published level is always kept.
 
-**Two gates now, and they ask different questions.** `MAX_GAP_RATIO` asks *how far is the nearest
-measurement*; `MAX_SHORE_SHARE` asks *how much of the fit is measurement at all*. A lake fitted mostly
-to its own outline is approximately a distance transform, which is what this phase opens by refusing.
-`--ungated` draws what the second gate declines, so it can be judged by looking.
+**One gate, and it is on the input.** The density gate — `MIN_SOUNDINGS`, then `MAX_GAP_RATIO` asking
+*how far is the nearest measurement* — is the only thing that refuses a lake. `--ungated` draws what
+it declines, so a threshold can be judged by looking rather than by argument.
+
+**Two further measurements are printed on every card and gate nothing**, deliberately. *Shore share*
+asks how much of the fit is measurement at all (a lake fitted mostly to its own outline is
+approximately a distance transform, which this phase opens by refusing) and *fragments per level*
+asks whether a depth traced as one ring or as eight. Both were tried as gates and both were falsified
+by a render within hours — see `plans/phase-N6b-bathymetry-layer.md` §*The gate that measured the
+wrong thing*. **Read them before changing anything about the interpolation; do not re-add either as a
+gate without rendering the lakes either side of the threshold first.**
 
 **This is the step that finds things.** Every failure in this phase was invisible in code review and
 obvious on a render — the isotropic fit splitting a real trough into isolated pits, the anisotropy

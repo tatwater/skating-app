@@ -472,22 +472,35 @@ otherwise re-derive them in the same order.*
 | Stage | Tool | Why |
 | --- | --- | --- |
 | Decimate | `gmt blockmedian` | One value per grid cell. The median resists a bad reading; a sonar log has thousands of points per cell. |
-| Constrain | shoreline at depth 0 | §Maine step 3. **The load-bearing step** — without it contours never close and nothing nests. Uncapped, and sampled at ~1 grid cell. |
+| Constrain | shoreline at depth 0 | §Maine step 3. **The load-bearing step** — without it contours never close and nothing nests. Sampled against a budget tied to the *sounding* count (`shoreSpacingFor`), so the outline cannot outvote the survey — see §*Rebuilt against the charts*. |
 | Solve | `gmt surface`, `-T0.25`, `-Ll0 -Lu<max>` | Tensioned spline. The clamps stop it inventing a hole deeper than anything sounded. |
 | Anisotropy | compress along-axis for the solve, `grdedit` back to real metres | Connects a trough the isotropic fit was splitting. Capped by each lake's own elongation. |
 | Smooth | `gmt grdfilter -Fg`, 3 cells | Removes the raster tracing stair-step. Narrower than the sounding spacing, so it cannot erase a surveyed feature. |
 | Mask | `surface -M`, at the density gate's ratio | Refuses to draw water further from a reading than the gate allows. |
-| Contour | `gdal_contour` at a per-lake interval | Interval targets ~12 bands, snapped to {2,5,10,20,25,50,100}. |
+| Contour | `gdal_contour` on the fixed 5 ft ladder | **D89.** Steps coarser (10, 25, 50 ft) for depth or thin data, never finer, so ring count reads as depth. |
 | Clip | `ogr2ogr -clipsrc` against our polygon | A mask is circular; a lake is not. |
 
-**The tunable knobs**, all in `@skating/core`-style constants with env overrides for a run:
-`THALWEG_ANISOTROPY` (4, capped per lake) · `MAX_GAP_RATIO` (0.12) · `MAX_SHORE_SHARE` (0.75) ·
+**The tunable knobs**, as exported constants — read them from the source, which carries the reasoning
+for each: `THALWEG_ANISOTROPY` (4, capped per lake) · `MAX_GAP_RATIO` (0.22) · `MIN_SOUNDINGS` (12) ·
 `TENSION` (0.25) · `SMOOTH_CELLS` (3) · `TARGET_CELL_M` (25, clamped 300–1200 cells) ·
-`BASE_INTERVAL_FT` (5) · `MIN_SAMPLES_PER_BAND` (5) · `MAX_BANDS` (20).
+`MIN_SHORE_POINTS` (120) · `BASE_INTERVAL_FT` (5) · `MIN_SAMPLES_PER_BAND` (5) · `MAX_BANDS` (20).
+**Exactly one takes an env override** — `THALWEG_RATIO`, for the anisotropy sweep that produced the
+table below. The rest are edit-and-rerun, which is the honest interface for a chain whose every
+setting was chosen by looking at a render.
 
-*(`GRID_CELLS` (500) and `TARGET_CONTOUR_COUNT` (12) were both retired on 2026-08-01 — see
-§*Rebuilt against the charts*. A constant cell count and a constant band count were the same mistake
-twice: a per-lake normalisation that ignored how big the lake was and how much of it had been
+*(`MAX_GAP_RATIO` reads **0.22**, not the 0.12 this section first recorded. Both numbers gate the same
+lakes: the fairness fix renormalised the gap by `sqrt(area)` instead of the bbox diagonal, which runs
+1.82× smaller, so the old threshold silently tightened from 271 dropped lakes to 1,224. Re-deriving
+it against the new denominator restored the keep-rate. The lesson is in `density.ts` and worth
+lifting: **a threshold is calibrated against its denominator, and changing one without re-deriving
+the other is a silent retune wearing the clothes of a bug fix.**)*
+
+*(**`MAX_SHORE_SHARE` is not in this list because it does not exist.** It was added and removed on the
+same day; shore share is computed and printed on every sample card but gates nothing — §*The gate that
+measured the wrong thing*. `TARGET_CONTOUR_COUNT` (12) was retired outright by D89. `GRID_CELLS` (500)
+survives as a fallback default in `grid.ts` for callers that don't know a lake's extent, but the
+pipeline itself uses `gridCellsFor`: a constant cell count and a constant band count were the same
+mistake twice, a per-lake normalisation that ignored how big the lake was and how much of it had been
 measured.)*
 
 ### What was tried and rejected, in order
@@ -640,10 +653,25 @@ to catch 870 splits Champlain. A lake is *continuous at its own scale*, and a ke
 not, at any scale. Implemented as grid-based connected components rather than pairwise distances —
 single-link clustering over the corpus is ~400 million haversines.
 
-**Sampling now excludes these keys and names every one on every run.** *That is not the fix.* The fix
-is to **split a collided key into its clusters and join each separately**, which is real work and is
-the first thing to do when this phase resumes — 15 keys is small, but each one is a confidently
-mis-drawn basin, which is precisely what D82 cannot afford.
+**First mitigation: sampling excluded these keys and named every one on every run.** That was never
+the fix — 15 keys is small, but each one is a confidently mis-drawn basin, which is precisely what D82
+cannot afford.
+
+**✅ Fixed the same day.** `splitByBody` (`lakes.ts`) divides a collided key into one lake per cluster
+and each is joined separately. **It runs before the join, and that ordering is the whole of it:** one
+key resolves to one polygon, so an unsplit key sends the second pond's geometry to be clipped against
+a shoreline miles away, where it vanishes without an error. Both callers split — `join.ts` and
+`build.ts` — and both report how many extra lakes the split produced.
+
+Two details worth keeping, because each was a decision:
+
+- **Sub-keys are `#1`, `#2`… ordered by size, largest first**, so a collided key's principal body
+  keeps a stable name across runs even if a satellite pond gains or loses readings. A key holding one
+  body is returned untouched with its original key: the common case must not pay a rename for the
+  rare one.
+- **Contour lanes label per *vertex*, so a line is assigned by its first one.** A contour straddling
+  two clusters cannot exist — that is what "separate bodies" means — and assuming otherwise would
+  have needed a merge step that could only ever produce a wrong answer.
 
 ### 2 — The join blows the Convex read cap, and `join.ts` had the same bug
 
@@ -833,7 +861,7 @@ is now always kept**, whichever rung it lands near.
 | --- | --- | --- |
 | Washington Pond (ME) — lines drawn | 69 | **28** |
 | Middle Branch Pond (ME) | 18 | **5** |
-| Horserace Ponds (ME) | 13 | **5**, and gated |
+| Horserace Ponds (ME) | 13 | **5**, and coarsened to 10 ft on data support |
 | Burr Pond (VT) | 26 | **5** |
 | Lake Groton (VT) | 80 | **13** |
 | **Maine shore share** | 84–96% | **58–85%** |
@@ -846,13 +874,17 @@ the *sounding* count rather than to lake size — and the original objection is 
 clamp: never coarser than half the mask radius, because a shore the mask cannot bridge cuts its own
 contours in water the fit knows.
 
-**`MAX_SHORE_SHARE` = 0.75**, set from the distribution *after* the rebalance rather than from the
-numbers that prompted it — rebalancing moved every lake, so a threshold chosen against the old figures
-would have been measuring a problem that no longer existed. It catches exactly one lake in the sample
-grid, and the right one: **Horserace Ponds, 24 soundings on a 1.4 km lake, 85%.** That lake also
-coarsens to a 10 ft interval on data support, so both new mechanisms fire on the same lake
-independently. `samples --ungated` draws what the gate refuses, for the same reason the density gate
-was chosen by looking.
+~~**`MAX_SHORE_SHARE` = 0.75**~~ — **added here, and removed again before the day was out.** It was
+set from the distribution *after* the rebalance rather than from the numbers that prompted it, on the
+reasoning that rebalancing moved every lake and a threshold chosen against the old figures would be
+measuring a problem that no longer existed. It caught exactly one lake in the sample grid and
+apparently the right one: **Horserace Ponds, 24 soundings on a 1.4 km lake, 85%.** Rendered across
+twenty Maine lakes either side of the line, it predicted nothing — §*The gate that measured the wrong
+thing* is that render, and the constant is gone. **Shore share is still computed and printed on every
+sample card**, so the next attempt costs nothing to evaluate.
+
+`samples --ungated` draws what a gate refuses, for the same reason the density gate was chosen by
+looking — and it is the reason this one lasted hours instead of shipping.
 
 ---
 
