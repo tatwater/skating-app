@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
-import { MAX_SHORE_SHARE, shoreShare } from './density';
+import { fragmentsPerLevel, MAX_FRAGMENTS_PER_LEVEL, shoreShare } from './density';
 import { compressedCloud, gridCellsFor, gridPlan, TENSION } from './grid';
 import { BASE_INTERVAL_FT, chooseInterval, thinPublishedLevels } from './interval';
 import { type ArchivedLake, maxDepthFt } from './lakes';
@@ -64,6 +64,8 @@ export interface Drawn {
   coarsenedBy?: 'depth' | 'data support';
   /** Fraction of the solved grid constrained by our own outline rather than the state's readings. */
   shoreShare?: number;
+  /** Disconnected pieces per contour level — the gate, measured on the output. */
+  fragmentsPerLevel?: number;
   gridCells?: number;
   clippedAway?: number;
   /** Published levels a contour lane declined to draw, so the thinning is never silent. */
@@ -186,22 +188,9 @@ export function interpolate(
   const shoreCells = occupiedCells(compressedCloud([], shore, frame, ratio), plan);
   const share = shoreShare(soundCells, shoreCells);
 
-  // **The second gate.** `MAX_GAP_RATIO` asks how far the nearest measurement is; this asks how much
-  // of the fit is measurement at all. Past the threshold the surface is mostly a distance transform
-  // from our own outline, which is the thing this phase opens by refusing — so we draw nothing and
-  // say why, exactly as the density gate does. `--ungated` renders it anyway, for the same reason the
-  // density gate was chosen by looking: a gate you cannot see the far side of cannot be judged.
-  if (share > MAX_SHORE_SHARE && !UNGATED) {
-    return {
-      lines: [],
-      depths: [],
-      shoreShare: share,
-      gridCells,
-      note:
-        `shore-share gate: ${(share * 100).toFixed(0)}% of this fit would be our own outline ` +
-        `(${soundCells} sounding cells against ${shoreCells} shoreline cells)`,
-    };
-  }
+  // Shore share is REPORTED, not gated. It says what a fit rests on, which is genuinely useful —
+  // but rendered across twenty Maine lakes either side of a 75% threshold it predicted nothing about
+  // whether the map was any good. The gate that replaced it is below, after the contours exist.
 
   const xyz = join(WORK_DIR, `${label}.xyz`);
   const blocked = join(WORK_DIR, `${label}.blk`);
@@ -278,6 +267,27 @@ export function interpolate(
   // Out of the lake frame FIRST — everything downstream is lng/lat. `grdedit` already un-compressed
   // the along axis, so this is a rotation only.
   const raw = JSON.parse(readFileSync(contoured, 'utf8')) as GeoJSON.FeatureCollection;
+
+  // **The gate, and it runs here because it can only be measured here.** Every other check in this
+  // pipeline asks something about the inputs and tries to predict whether the output will be honest.
+  // This one looks at the output: a depth level that traced as one or two closed rings is describing
+  // a basin; the same level traced as eight disconnected pieces is describing the fit wobbling either
+  // side of that depth. `--ungated` draws it anyway, so the threshold stays judgeable by looking.
+  const rawFragments = fragmentsPerLevel(raw.features.length, levels.length);
+  if (rawFragments > MAX_FRAGMENTS_PER_LEVEL && !UNGATED) {
+    return {
+      lines: [],
+      depths: [],
+      interval: intervalFt,
+      shoreShare: share,
+      gridCells,
+      fragmentsPerLevel: rawFragments,
+      note:
+        `fragmentation gate: ${levels.length} level(s) traced as ${raw.features.length} disconnected ` +
+        `pieces (${rawFragments.toFixed(1)} per level, limit ${MAX_FRAGMENTS_PER_LEVEL})`,
+    };
+  }
+
   for (const feature of raw.features) {
     const geometry = feature.geometry;
     const parts =
@@ -313,6 +323,7 @@ export function interpolate(
     coarsenedBy,
     shoreShare: share,
     gridCells,
+    fragmentsPerLevel: rawFragments,
     clippedAway: clipped ? before - clipped.features.length : undefined,
   };
 }

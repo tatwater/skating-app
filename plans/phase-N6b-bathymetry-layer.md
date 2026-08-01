@@ -1,23 +1,39 @@
 # N6b — The bathymetry layer: real isobaths inside the lake
 
-*A toggleable underwater-contour layer, drawn from state-agency surveys. Designed, not built.*
+*An underwater-contour layer inside an open lake's drawer, drawn from state-agency surveys.*
 
-> **Status: 🔨 IN BUILD (2026-08-01), paused at the founder's call.** The data half is done: all five
-> states archived (298 MB, mirrored to R2), normalized, joined to our corpus, gated, interpolated and
-> contoured. **Nothing is tiled or rendered in either client yet.** See *§The interpolation — where it
-> ended up* for the state of the hard part and the options for finishing it, and
-> *§What the build found in the plan* for the six premises of this document that turned out false.
+> **Status: 🔨 IN BUILD (2026-08-01). The ETL is complete end to end; neither client renders it yet.**
+>
+> | | |
+> | --- | --- |
+> | **Archived** | ✅ five sources, 298 MB, mirrored to a private R2 bucket, `PROVENANCE.md` committed |
+> | **Normalized** | ✅ two lanes — the agency's isobaths, or our surface fitted through its soundings |
+> | **Joined** | ✅ **2,437 of 2,491 lakes (98%)**, including Vermont for the first time |
+> | **Gated** | ✅ coverage gap + data support; the third gate is being re-chosen (below) |
+> | **Interpolated + contoured** | ✅ **1,450 lakes → 44,442 lines** on the first full pass |
+> | **Tiled** | ✅ `tile.sh` → z9–z14 `.pmtiles`, reusing the Phase 2.5 upload lane |
+> | **Web client** | ⬜ **not built** — shared layer logic and palette exist, `MapView` is unwired |
+> | **Mobile client** | ⬜ **not built** |
+> | **Drawer credit row** | ⬜ **not built** — the copy is written and tested, nothing renders it |
+> | **Rung-1 depth write** | ⏸ correctly gated behind [N6a](./phase-N6a-lake-depth.md)'s ordering gate |
+>
+> **What is genuinely left is the render half**, and it is a real chunk rather than cleanup: adding a
+> lazily-mounted source to two `MapView`s, filtering it to the open body, fading it in, keeping it
+> under hazards, and rendering one credit line at the bottom of the drawer. Everything it needs is
+> built and tested — `@skating/core/contourLayer`, the per-app palettes, the env vars, the tiles.
+>
+> **One gate is unsettled**, and deliberately so: see *§The gate that measured the wrong thing*.
 >
 > **Originally: 📋 Designed at N6a's kickoff (2026-07-29), deliberately not built.** Split out of the
 > register's single **N6** entry when the founder asked whether we could draw topographic lines inside
 > the lake bodies. The answer is **yes, from measured state-agency data, and emphatically not from the
-> global modelled sources** — which is the finding that made this its own phase rather than a bullet in
-> [N6a](./phase-N6a-lake-depth.md). Storage/serving settled at kickoff: **PMTiles on R2**. Coverage:
-> **VT + NH first.** Maine's path is written up in *§Maine* per the founder's explicit ask.
+> global modelled sources** — the finding that made this its own phase rather than a bullet in
+> [N6a](./phase-N6a-lake-depth.md). Storage/serving settled at kickoff: **PMTiles on R2**.
 > **All six open questions were answered 2026-07-31** — see *§Settled by the founder*. The largest
 > consequence: **there is no contour toggle.** Contours are a property of the detail view, and the map's
 > only layer switch is satellite, which now has its own phase — [N6e](./phase-N6e-satellite-imagery.md).
-> New decisions **D81** (one toggle), **D82** (context, not counsel), **D83** (native intervals).
+> Decisions: **D81** (one toggle), **D82** (context, not counsel), **D83** (native intervals),
+> **D89** (the fixed 5 ft ladder).
 
 ## The ask, and why it isn't a small addition to N6a
 
@@ -670,6 +686,73 @@ Two smaller things the wide grid surfaced:
   not a bug, but it is a number worth watching rather than discovering later.
 - **NH GRANIT carries river reaches, not only lakes** (*Piscataquog River*, *Baker River Site 2*).
   Harmless here, but a lane that assumes "lake" will meet them.
+
+---
+
+## The gate that measured the wrong thing (2026-08-01)
+
+> ⚠ **Unsettled at the time of writing.** The replacement is implemented and a full rebuild is in
+> flight; the threshold is provisional until the founder has looked at the comparison grid. Recorded
+> now because the *finding* stands regardless of where the number lands.
+
+**`MAX_SHORE_SHARE` was added and removed on the same day, and the reason is the most transferable
+thing this phase has produced.**
+
+It gated on the fraction of the solved grid constrained by our own depth-0 shoreline rather than the
+state's measurements — the idea being that a fit mostly anchored to distance-from-the-bank is
+approximately a distance transform, which is the GLOBathy failure this document opens by refusing.
+Set at 0.75 from a 12-lake sample, it dropped **672 lakes on the full corpus, every one of them in
+Maine** — 27% of everything we hold.
+
+**Rendered across twenty Maine lakes either side of the threshold, it predicted nothing.**
+
+| Lake | frag/level | shore share | old verdict | reads as |
+| --- | --- | --- | --- | --- |
+| Beddington Lake | **7.7** | 74% | ✅ kept | the worst map in the grid |
+| Ebeemee Lake | **7.3** | 81% | ❌ dropped | noisy |
+| Stevens Pond | **5.9** | 90% | ❌ dropped | noisy |
+| Silver Lake | 2.0 | 83% | ❌ dropped | clean |
+| Bowlin Pond | 1.5 | 76% | ❌ dropped | clean |
+| Bowles Lake | 1.0 | 85% | ❌ dropped | clean |
+| Deer Lake | 1.2 | 65% | ✅ kept | clean |
+
+The gate kept the single worst map in the sample and dropped four of the cleanest.
+
+### Why it failed, and it is not that the concern was wrong
+
+The concern is real: a surface fitted mostly to its own outline *is* closer to a distance transform.
+The metric just doesn't measure it. **The shoreline point budget has a floor** (`MIN_SHORE_POINTS`,
+120) because below that an outline stops being a boundary condition and the rings stop closing — so
+for any lake with fewer than ~120 independent soundings the shoreline side contributes a roughly
+*constant* number of cells while the sounding side varies. The ratio ends up reporting **how few
+soundings a lake has**, which we already gate on twice, in `MIN_SOUNDINGS` and in the ladder's
+data-support ceiling.
+
+### What replaced it: fragmentation, measured on the output
+
+`MAX_FRAGMENTS_PER_LEVEL` = 4. A depth level that traces as one or two closed rings is describing a
+basin; the same level traced as eight disconnected pieces is describing the fit wobbling either side
+of that depth, drawn as though it were bathymetry.
+
+**The transferable point is where it is measured.** Every other check in this pipeline asks something
+about the *inputs* and tries to predict whether the output will be honest. This one waits for the
+output and looks at it. That is the third time an input ratio has failed to predict quality here —
+nearest-neighbour spacing (rejected while building the density gate), the coverage gap ratio itself
+(*"visual quality does not track this ratio"*), and now shore share. Three for three.
+
+### And one fairness bug the founder found by asking the right question
+
+> *"Should our metric really be # of soundings proportional to total surface area, so as to set a
+> density floor, not pure count?"*
+
+The answer is that the density floor already exists and is better than soundings-per-area — the
+coverage gap measures the **worst-covered** water, so it catches clustering that an average density
+cannot. But the question exposed a real bias in it: **the gap was normalised by the bounding-box
+diagonal**, and measured across all 2,437 joined bodies, diagonal ÷ sqrt(area) runs **1.76× at the 5th
+percentile, 3.36× at the 95th, 6.9× at the extreme.** A long thin lake was being handed a denominator
+nearly twice as large as a round lake of the same area, and therefore nearly twice as easy a pass. Now
+normalised by `sqrt(area)`, which is a *stricter* gate and strictest on exactly the elongated lakes
+that were getting the easy ride.
 
 ---
 

@@ -1,6 +1,13 @@
 import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { densifyShoreline, perimeterMeters, ringsOf, shoreSpacingFor } from './shoreline';
+import {
+  areaSquareMeters,
+  characteristicLengthM,
+  densifyShoreline,
+  perimeterMeters,
+  ringsOf,
+  shoreSpacingFor,
+} from './shoreline';
 
 /** A ~1 km square at 45°N, closed. */
 const SQUARE: Polygon = {
@@ -161,5 +168,77 @@ describe('shoreSpacingFor', () => {
 
   it('survives a lake with no perimeter', () => {
     expect(shoreSpacingFor({ ...base, perimeterM: 0, soundingCells: 10 })).toBeGreaterThan(0);
+  });
+});
+
+describe('areaSquareMeters', () => {
+  it('measures a simple polygon', () => {
+    // SQUARE is ~1 km on a side at 45N.
+    const area = areaSquareMeters(SQUARE);
+    expect(area).toBeGreaterThan(900_000);
+    expect(area).toBeLessThan(1_200_000);
+  });
+
+  it('SUBTRACTS interior rings — a lake with islands is smaller than its outline', () => {
+    // `ringsOf` flattens every ring, which is right for the shoreline constraint (an island's bank is
+    // a depth-0 boundary too) and wrong here: using it would ADD the island instead of removing it.
+    const outer = SQUARE.coordinates[0] as number[][];
+    const withIsland: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        outer,
+        [
+          [-72.0, 45.0],
+          [-71.998, 45.0],
+          [-71.998, 45.002],
+          [-72.0, 45.002],
+          [-72.0, 45.0],
+        ],
+      ],
+    };
+    expect(areaSquareMeters(withIsland)).toBeLessThan(areaSquareMeters(SQUARE));
+  });
+
+  it('never returns a negative area', () => {
+    expect(areaSquareMeters({ type: 'Polygon', coordinates: [[]] })).toBe(0);
+  });
+});
+
+describe('characteristicLengthM', () => {
+  it('is the side of the equivalent square', () => {
+    expect(characteristicLengthM(SQUARE)).toBeCloseTo(Math.sqrt(areaSquareMeters(SQUARE)), 6);
+  });
+
+  it('does not reward elongation the way a bbox diagonal does', () => {
+    // The bias being fixed: a long thin lake was handed a denominator up to 4x larger than a round
+    // lake of the same area, and therefore that much easier a pass on the density gate.
+    const thin: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-72.0, 45.0],
+          [-71.9, 45.0],
+          [-71.9, 45.001],
+          [-72.0, 45.001],
+          [-72.0, 45.0],
+        ],
+      ],
+    };
+    const fat: Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-72.0, 45.0],
+          [-71.99, 45.0],
+          [-71.99, 45.01],
+          [-72.0, 45.01],
+          [-72.0, 45.0],
+        ],
+      ],
+    };
+    // Same order of area, wildly different aspect — the characteristic lengths should be close.
+    const ratio = characteristicLengthM(thin) / characteristicLengthM(fat);
+    expect(ratio).toBeGreaterThan(0.3);
+    expect(ratio).toBeLessThan(3);
   });
 });

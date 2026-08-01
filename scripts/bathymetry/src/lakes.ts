@@ -18,9 +18,10 @@
  * silently wrong — take the first N of anything in this corpus and you get farm ponds, every time.
  */
 
-import type { Position } from 'geojson';
+import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { assessDensity, type DensityAssessment } from './density';
 import type { NormalizedContour, NormalizedSounding } from './normalize';
+import { characteristicLengthM } from './shoreline';
 import { elongation, principalFrame } from './thalweg';
 
 export type Lane = 'contours' | 'soundings';
@@ -279,11 +280,24 @@ export interface LakeMetrics {
   bodyCount: number;
 }
 
-export function measure(lake: ArchivedLake): LakeMetrics {
+/**
+ * Measure a lake.
+ *
+ * `polygon` is optional and changes one thing: the density gate's denominator. Given it, the coverage
+ * gap is judged against **sqrt(lake area)** rather than the sounding bounding box's diagonal, which is
+ * a fairness fix rather than a refinement — the diagonal rewards elongation, by up to 4x at the
+ * extreme. Callers that are still choosing which lakes to look at (the sample renderer's selection
+ * pass) do not have a polygon yet and fall back to the diagonal.
+ */
+export function measure(lake: ArchivedLake, polygon?: Polygon | MultiPolygon): LakeMetrics {
   const points = shapePoints(lake);
   const frame = principalFrame(points);
+  const scaleM = polygon ? characteristicLengthM(polygon) : undefined;
   const density = lake.soundings
-    ? assessDensity({ lakeKey: lake.lakeKey, points: lake.soundings })
+    ? assessDensity(
+        { lakeKey: lake.lakeKey, points: lake.soundings },
+        scaleM && scaleM > 0 ? { characteristicLengthM: scaleM } : {},
+      )
     : undefined;
   // Contour lanes get their extent from the assessor too — it is only measuring a bbox diagonal, and
   // reusing it keeps one definition of "how big is this lake" rather than two that drift.

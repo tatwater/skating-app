@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   assessDensity,
   convexHull,
+  fragmentsPerLevel,
+  MAX_FRAGMENTS_PER_LEVEL,
   MAX_GAP_RATIO,
   MIN_SOUNDINGS,
   summariseDensity,
@@ -174,5 +176,70 @@ describe('summariseDensity', () => {
     expect(summary.byVerdict.ok).toBe(1);
     expect(summary.byVerdict['too-few-points']).toBe(1);
     expect(summary.byVerdict.degenerate).toBe(1);
+  });
+});
+
+describe('fragmentsPerLevel', () => {
+  it('is pieces divided by levels asked for', () => {
+    expect(fragmentsPerLevel(92, 12)).toBeCloseTo(7.67, 2);
+    expect(fragmentsPerLevel(3, 3)).toBe(1);
+  });
+
+  it('counts levels that produced nothing in the denominator', () => {
+    // "We asked for eleven levels and got ninety-two pieces" is the statement being made; a level
+    // that traced nothing is still a level we asked for.
+    expect(fragmentsPerLevel(10, 10)).toBe(1);
+  });
+
+  it('is zero rather than infinite when no levels were asked for', () => {
+    expect(fragmentsPerLevel(5, 0)).toBe(0);
+    expect(fragmentsPerLevel(0, 0)).toBe(0);
+  });
+
+  it('separates the lakes shore share could not', () => {
+    // The measured sample that replaced the shore-share gate. Beddington sits at 74% shore share and
+    // is the worst map in the grid; Bowles sits at 85% and is one of the cleanest. Shore share
+    // ordered them backwards; fragmentation orders them correctly.
+    const beddington = fragmentsPerLevel(92, 12);
+    const bowles = fragmentsPerLevel(3, 3);
+    expect(beddington).toBeGreaterThan(MAX_FRAGMENTS_PER_LEVEL);
+    expect(bowles).toBeLessThan(MAX_FRAGMENTS_PER_LEVEL);
+  });
+});
+
+describe('assessDensity — characteristic length', () => {
+  /** A 6x6 grid of soundings over a long thin footprint. */
+  function transect(): { lng: number; lat: number }[] {
+    const pts: { lng: number; lat: number }[] = [];
+    for (let i = 0; i < 8; i += 1) {
+      for (let j = 0; j < 4; j += 1) {
+        pts.push({ lng: -72 + i * 0.004, lat: 44 + j * 0.0006 });
+      }
+    }
+    return pts;
+  }
+
+  it('judges the gap against sqrt(area) when the caller knows the lake', () => {
+    // The fairness fix: the bbox diagonal rewards elongation, running 1.76x sqrt(area) at the 5th
+    // percentile of our corpus and 3.36x at the 95th. A smaller denominator is a STRICTER gate.
+    const points = transect();
+    const byDiagonal = assessDensity({ lakeKey: 'k', points });
+    const byArea = assessDensity({ lakeKey: 'k', points }, { characteristicLengthM: 400 });
+    expect(byArea.gapRatio).toBeGreaterThan(byDiagonal.gapRatio);
+  });
+
+  it('falls back to the bbox diagonal when no length is given', () => {
+    const points = transect();
+    const a = assessDensity({ lakeKey: 'k', points });
+    const b = assessDensity({ lakeKey: 'k', points }, {});
+    expect(a.gapRatio).toBe(b.gapRatio);
+  });
+
+  it('ignores a nonsense length rather than dividing by zero', () => {
+    const points = transect();
+    const fallback = assessDensity({ lakeKey: 'k', points });
+    expect(assessDensity({ lakeKey: 'k', points }, { characteristicLengthM: 0 }).gapRatio).toBe(
+      fallback.gapRatio,
+    );
   });
 });

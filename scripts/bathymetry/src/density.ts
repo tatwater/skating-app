@@ -172,7 +172,7 @@ function percentile(sorted: readonly number[], p: number): number {
  */
 export function assessDensity(
   input: DensityInput,
-  options: { maxGapRatio?: number; minPoints?: number } = {},
+  options: { maxGapRatio?: number; minPoints?: number; characteristicLengthM?: number } = {},
 ): DensityAssessment {
   const maxGapRatio = options.maxGapRatio ?? MAX_GAP_RATIO;
   const minPoints = options.minPoints ?? MIN_SOUNDINGS;
@@ -252,7 +252,12 @@ export function assessDensity(
 
   distances.sort((a, b) => a - b);
   const coverageGapM = percentile(distances, 0.95);
-  const gapRatio = coverageGapM / extentM;
+  // `sqrt(area)` when the caller knows the lake's polygon, the sounding bbox diagonal otherwise.
+  // The diagonal rewards elongation: measured across 2,437 joined bodies it runs 1.76x sqrt(area) at
+  // the 5th percentile and 3.36x at the 95th, so a long thin lake was getting a denominator nearly
+  // twice as large as a round one of the same area — and therefore nearly twice as easy a pass.
+  const scaleM = options.characteristicLengthM ?? extentM;
+  const gapRatio = coverageGapM / (scaleM > 0 ? scaleM : extentM);
 
   if (gapRatio > maxGapRatio) {
     return {
@@ -292,17 +297,47 @@ export function shoreShare(soundingCells: number, shorelineCells: number): numbe
 }
 
 /**
- * The most of a fit that may be our own outline before we decline to draw it.
+ * How many disconnected pieces a single contour level may break into before we refuse the lake.
  *
- * **Set from the post-rebalance distribution** (see `shoreSpacingFor`) rather than from the numbers
- * that prompted it — rebalancing the shoreline budget moved every lake, so a threshold chosen against
- * the old figures would have been measuring a problem that no longer existed.
+ * **This replaced the shore-share gate on 2026-08-01, and the replacement is the whole point.** Shore
+ * share was measured on the *inputs* and tried to predict whether a fit would be honest. Rendered
+ * across twenty Maine lakes either side of its threshold, it predicted nothing: Beddington Lake sits
+ * at 74% and is the worst map in the sample; Bowles Lake sits at 85% and is one of the cleanest.
  *
- * Generous on purpose, for the same reason `MAX_GAP_RATIO` is: D82 means a lake with no contours costs
- * the skater nothing, so the gate can sit where the claim stops being defensible rather than where the
- * picture stops being pretty.
+ * Fragmentation is measured on the **output**, and it separates them cleanly:
+ *
+ * | Lake | frag/level | shore share | reads as |
+ * | --- | --- | --- | --- |
+ * | Beddington Lake | **7.7** | 74% | worst in the grid |
+ * | Ebeemee Lake | **7.3** | 81% | noisy |
+ * | Stevens Pond | **5.9** | 90% | noisy |
+ * | Bowles Lake | 1.0 | 85% | clean |
+ * | Haywire Pond | 1.0 | 78% | clean |
+ * | Deer Lake | 1.2 | 65% | clean |
+ *
+ * The reasoning it encodes: a depth level that traces as one or two closed rings is describing a
+ * basin. The same level traced as eight disconnected squiggles is describing the interpolator — the
+ * fit wobbling either side of that depth, drawn as though it were bathymetry. Four is where the
+ * sampled lakes separate; it is a judgement, but it is a judgement about a picture rather than about
+ * a ratio of inputs.
+ *
+ * **Sounding lanes only.** On a contour lane the fragments are the agency's own cartography — a real
+ * lake with two basins genuinely has two rings at the same depth — and there is no fit of ours to
+ * refuse.
  */
-export const MAX_SHORE_SHARE = 0.75;
+export const MAX_FRAGMENTS_PER_LEVEL = 4;
+
+/**
+ * Disconnected pieces per contour level.
+ *
+ * `lines` is what `gdal_contour` traced; `levels` is what we asked for. A level that produced nothing
+ * still counts in the denominator, because "we asked for eleven levels and got ninety-two pieces" is
+ * the statement being made.
+ */
+export function fragmentsPerLevel(lineCount: number, levelCount: number): number {
+  if (levelCount <= 0) return 0;
+  return lineCount / levelCount;
+}
 
 /** Summarise a run for the drop log — counts by verdict, and every dropped lake named. */
 export function summariseDensity(assessments: readonly DensityAssessment[]): {

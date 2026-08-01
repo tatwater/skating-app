@@ -57,6 +57,55 @@ import type { MultiPolygon, Polygon, Position } from 'geojson';
  */
 export const MIN_SHORE_POINTS = 120;
 
+/**
+ * Planar area of a lake, in square metres.
+ *
+ * **Interior rings subtract.** A lake with islands is smaller than its outline, and `ringsOf` — which
+ * flattens every ring for the shoreline constraint, where an island's bank is as much a depth-0
+ * boundary as the outer bank — is deliberately the wrong tool here. Using it would add island area
+ * instead of removing it.
+ *
+ * Equirectangular about each ring's own first latitude. Over one lake the distortion is far below
+ * what this is used for: a characteristic length to normalise a coverage gap by.
+ */
+export function areaSquareMeters(geometry: Polygon | MultiPolygon): number {
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates;
+  let total = 0;
+  for (const rings of polygons) {
+    for (const [index, ring] of rings.entries()) {
+      if (ring.length < 4) continue;
+      const lat0 = (ring[0]?.[1] as number) ?? 0;
+      const mPerLng = 111_320 * Math.cos((lat0 * Math.PI) / 180);
+      let shoelace = 0;
+      for (let i = 0; i < ring.length - 1; i += 1) {
+        const a = ring[i];
+        const b = ring[i + 1];
+        if (!a || !b) continue;
+        shoelace +=
+          (a[0] as number) * mPerLng * ((b[1] as number) * 111_320) -
+          (b[0] as number) * mPerLng * ((a[1] as number) * 111_320);
+      }
+      const ringArea = Math.abs(shoelace / 2);
+      total += index === 0 ? ringArea : -ringArea;
+    }
+  }
+  return Math.max(0, total);
+}
+
+/**
+ * The length a coverage gap should be judged against.
+ *
+ * **`sqrt(area)`, not the bounding-box diagonal**, and the difference is a fairness problem rather
+ * than a refinement. Measured across all 2,437 joined bodies, diagonal ÷ sqrt(area) runs 1.76 at the
+ * 5th percentile to 3.36 at the 95th and 6.9 at the extreme — so a long thin lake was being handed a
+ * denominator nearly twice as large as a round lake of the same area, and therefore nearly twice as
+ * easy a pass on the density gate. A circle scores 1.60 and a 10:1 rectangle 3.18; the gate was
+ * rewarding elongation.
+ */
+export function characteristicLengthM(geometry: Polygon | MultiPolygon): number {
+  return Math.sqrt(areaSquareMeters(geometry));
+}
+
 /** Total perimeter of every ring, interior ones included. Islands have shores too. */
 export function perimeterMeters(geometry: Polygon | MultiPolygon): number {
   let total = 0;

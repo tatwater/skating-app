@@ -100,7 +100,8 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const metrics = measure(lake);
+    const polygon = body.polygon as Polygon | MultiPolygon;
+    const metrics = measure(lake, polygon);
     // The density gate, for the lanes where we fit a surface. Contour lanes are the agency's own
     // survey and there is no fit of ours to gate.
     if (lake.lane === 'soundings' && metrics.density?.verdict !== 'ok') {
@@ -108,7 +109,6 @@ async function main(): Promise<void> {
       continue;
     }
 
-    const polygon = body.polygon as Polygon | MultiPolygon;
     let drawn: Drawn;
     try {
       drawn =

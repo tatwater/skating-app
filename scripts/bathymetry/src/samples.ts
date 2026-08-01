@@ -4,7 +4,6 @@ import process from 'node:process';
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
 import { type Drawn, interpolate, lakeId, publishedContours, setUngated } from './contour';
-import { MAX_SHORE_SHARE } from './density';
 import { BASE_INTERVAL_FT } from './interval';
 import { type JoinCandidate, joinInBatches } from './joinQuery';
 import { runJoinQuery } from './joinRunner';
@@ -244,6 +243,9 @@ function caption(
   if (drawn.shoreShare !== undefined) {
     bits.push(`${(drawn.shoreShare * 100).toFixed(0)}% shoreline-constrained`);
   }
+  if (drawn.fragmentsPerLevel !== undefined) {
+    bits.push(`${drawn.fragmentsPerLevel.toFixed(1)} frag/level`);
+  }
   if (drawn.ratio !== undefined) {
     bits.push(`elong ${metrics.elongation.toFixed(2)} → aniso ${drawn.ratio.toFixed(2)}`);
   }
@@ -261,15 +263,6 @@ function caption(
   if (drawn.thinnedAway) {
     warnings.push(
       `${drawn.thinnedAway} published line(s) thinned toward the ${BASE_INTERVAL_FT} ft ladder`,
-    );
-  }
-  if (
-    drawn.shoreShare !== undefined &&
-    drawn.shoreShare > MAX_SHORE_SHARE &&
-    drawn.lines.length > 0
-  ) {
-    warnings.push(
-      `past the shore-share gate, drawn anyway (--ungated) — ${(drawn.shoreShare * 100).toFixed(0)}% of this fit is our own outline`,
     );
   }
   if (drawn.note) warnings.push(drawn.note);
@@ -387,10 +380,11 @@ async function main(): Promise<void> {
   for (const { lake, metrics } of picked) {
     const body = bodies[id(lake)] ?? null;
     const polygon = body?.polygon;
+    const measured = polygon ? measure(lake, polygon) : metrics;
     const drawn =
       lake.lane === 'contours'
         ? publishedContours(lake, polygon)
-        : interpolate(lake, polygon, metrics.extentM);
+        : interpolate(lake, polygon, measured.extentM);
     const picture = svg(lake, drawn, polygon);
     if (!picture) {
       log(`  ✗ ${lake.lakeName} (${lake.state}) — nothing to draw`);
