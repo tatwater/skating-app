@@ -153,11 +153,26 @@ describe('assessDensity', () => {
 });
 
 describe('the gate threshold', () => {
-  it('is 12%, chosen by rendering twelve real lakes in three bands', () => {
-    // Pinned because the number was set by looking, not derived — and because the comparison found
-    // that quality does NOT track this ratio (the worst sample was at 10%, with the most soundings
-    // of any lake in the grid). A future change should come from another render, not from taste.
-    expect(MAX_GAP_RATIO).toBe(0.12);
+  it('is 22% of sqrt(area) — the 12%-of-diagonal calibration, carried to its new denominator', () => {
+    // Pinned because the number was set by LOOKING, not derived: twelve real Maine lakes rendered in
+    // three bands, which found that quality does not track this ratio at all (the worst sample was at
+    // 10%, with the most soundings in the grid).
+    //
+    // It reads 0.22 rather than 0.12 because the denominator changed, not because the judgement did.
+    // `sqrt(area)` runs a median 1.82x smaller than the bbox diagonal, so holding 0.12 would have
+    // silently tightened the gate by that factor — it took the drop count from 271 to 1,224. 0.22
+    // reproduces the approved keep-rate (279) while letting the fairness fix redistribute WHICH lakes
+    // are refused. A future change should come from another render, not from taste.
+    expect(MAX_GAP_RATIO).toBe(0.22);
+  });
+
+  it('is stated against sqrt(area), which is a stricter scale than the diagonal it replaced', () => {
+    // Guards the trap that produced the 1,224: a threshold is calibrated against its denominator, and
+    // changing one without re-deriving the other is a silent retune wearing a bug fix's clothes.
+    const points = grid(12);
+    const byDiagonal = assessDensity({ lakeKey: 'k', points });
+    const byArea = assessDensity({ lakeKey: 'k', points }, { characteristicLengthM: 200 });
+    expect(byArea.gapRatio).toBeGreaterThan(byDiagonal.gapRatio);
   });
 });
 

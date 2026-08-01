@@ -39,24 +39,35 @@ import { haversineMeters, type LatLng } from '@skating/core';
 export const MIN_SOUNDINGS = 12;
 
 /**
- * How far the worst-covered water may be from a measurement, as a fraction of the lake's extent.
+ * How far the worst-covered water may be from a measurement, as a fraction of the lake's
+ * characteristic length.
  *
- * **0.12, set by looking (founder call, 2026-08-01).** Twelve real Maine lakes were rendered in three
- * bands — ~7–8%, ~9–10%, ~11–12% — specifically to avoid choosing from one or two lucky examples.
- * The result overturned the premise of the question: **visual quality does not track this ratio.**
- * The worst map in the grid was Long Lake at **10%**, which has 304 soundings — more than any other
- * sample — while Quantabacook at 11% and Foley at 12% both read cleanly. Nothing in the comparison
- * argued for stricter, so the gate sits where coverage is defensible rather than where quality was
- * assumed to live.
+ * ## The number, and the two calibrations behind it
  *
- * What that leaves: the real quality problem is contour *crowding and angularity*, which is a
- * rendering concern and is fixed at the smoothing stage, not by refusing lakes.
+ * **It started at 0.12, set by looking (founder call, 2026-08-01).** Twelve real Maine lakes were
+ * rendered in three bands — ~7–8%, ~9–10%, ~11–12% — specifically to avoid choosing from one or two
+ * lucky examples. The result overturned the premise of the question: **visual quality does not track
+ * this ratio.** The worst map in the grid was Long Lake at 10%, with more soundings than any other
+ * sample, while Quantabacook at 11% and Foley at 12% both read cleanly. Nothing argued for stricter,
+ * so it sat where coverage was defensible rather than where quality was assumed to live.
+ *
+ * **It moved to 0.22 the same day, and that is not a loosening.** The denominator changed from the
+ * sounding bounding box's diagonal to `sqrt(lake area)`, to stop the gate rewarding elongation — and
+ * a threshold calibrated against one denominator does not survive being handed another. `sqrt(area)`
+ * runs a median **1.82×** smaller than the diagonal across the corpus, so every lake's ratio grew by
+ * that factor and the gate silently tightened by it: the same 0.12 went from dropping **271** lakes
+ * to dropping **1,224**. 0.22 restores the keep-rate the founder actually approved (279 dropped)
+ * while letting the fairness fix do what it was for — redistributing *which* lakes are refused, so an
+ * elongated basin is now judged as strictly as a round one of the same area.
+ *
+ * **The lesson worth keeping is the general one:** a threshold is calibrated against its denominator,
+ * and changing one without re-deriving the other is a silent retune wearing the clothes of a bug fix.
  *
  * Tunable, and deliberately exposed rather than inlined. D82 is what makes a generous setting cheap —
  * contours make no claim, so a lake with none costs the skater nothing, and equally a lake with
  * imperfect ones is not asserting anything false.
  */
-export const MAX_GAP_RATIO = 0.12;
+export const MAX_GAP_RATIO = 0.22;
 
 /** How finely to probe. 24×24 over the bbox is plenty to find a hole and cheap enough for 1,528 lakes. */
 const PROBE_GRID = 24;
@@ -85,7 +96,11 @@ export interface DensityAssessment {
   extentM: number;
   /** p95 distance from a probe inside the surveyed hull to the nearest sounding, in metres. */
   coverageGapM: number;
-  /** `coverageGapM / extentM` — scale-free, so a pond and Champlain are judged on the same terms. */
+  /**
+   * `coverageGapM` over the lake's characteristic length — `sqrt(area)` when the caller knows the
+   * polygon, the sounding bbox diagonal otherwise. Scale-free either way, so a pond and Champlain are
+   * judged on the same terms; only `sqrt(area)` is also *shape*-free.
+   */
   gapRatio: number;
   verdict: DensityVerdict;
   /** Human-readable, for the drop log. Every rejected lake is named, per the no-silent-caps rule. */
@@ -324,6 +339,38 @@ export function shoreShare(soundingCells: number, shorelineCells: number): numbe
  * **Sounding lanes only.** On a contour lane the fragments are the agency's own cartography — a real
  * lake with two basins genuinely has two rings at the same depth — and there is no fit of ours to
  * refuse.
+ *
+ * ## ⚠ Computed and reported, but NOT gating (2026-08-01)
+ *
+ * **It was falsified by Lake Champlain within an hour of being written.** Champlain traces 15 levels
+ * as 153 pieces — 10.2 per level, worse than any lake the metric was built to catch — and it is not
+ * noise: a 174 km lake with a dozen basins and bays legitimately has many separate rings at one depth.
+ * Fragment *count* does not scale with lake size.
+ *
+ * Measuring fragment *length* instead did not rescue it either. By share of fragments under 20 grid
+ * cells, Champlain (65%) scores worse than both lakes the gate was built for — Ebeemee (64%) and
+ * Beddington (54%) — and only Morey (38%) separates cleanly:
+ *
+ * | Lake | frag/level | median length (cells) | under 20 cells |
+ * | --- | --- | --- | --- |
+ * | Lake Champlain | 10.2 | 9 | 65% |
+ * | Ebeemee Lake | 6.2 | 15 | 64% |
+ * | Beddington Lake | 6.2 | 16 | 54% |
+ * | Lake Morey | 1.5 | 39 | 38% |
+ *
+ * **So it is left off rather than tuned to fit.** Dropping Champlain is not an option — it is the
+ * founder's explicit ask, the region's most prominent skating water, and our only New York coverage —
+ * and the alternative was to keep adjusting a metric against four data points until it produced the
+ * answer we wanted, which is how you get a number that means nothing.
+ *
+ * **This is the fourth input-side metric in this phase to fail on contact with a render** (see
+ * `MAX_GAP_RATIO`'s history, and the shore-share gate that lasted a day). The pattern is now the
+ * finding: quality here is settled by looking, and the settling belongs in the render PR, next to a
+ * comparison grid, the way every gate in this phase that *did* survive was chosen.
+ *
+ * Left computed, reported on every card, and covered by tests, so that grid costs nothing to produce.
+ *
+ * Narrative write-up of this and the four other falsified metrics: `docs/bathymetry-challenges.md`.
  */
 export const MAX_FRAGMENTS_PER_LEVEL = 4;
 

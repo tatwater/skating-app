@@ -24,6 +24,10 @@
 >
 > **One gate is unsettled**, and deliberately so: see *§The gate that measured the wrong thing*.
 >
+> 📖 **The narrative version, written for a reader with no mapping background, is
+> [`docs/bathymetry-challenges.md`](../docs/bathymetry-challenges.md)** — every interpolator and every
+> gate we tried, what each one drew, and why it was abandoned. Read that before changing a threshold.
+>
 > **Originally: 📋 Designed at N6a's kickoff (2026-07-29), deliberately not built.** Split out of the
 > register's single **N6** entry when the founder asked whether we could draw topographic lines inside
 > the lake bodies. The answer is **yes, from measured state-agency data, and emphatically not from the

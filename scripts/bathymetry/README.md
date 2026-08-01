@@ -6,6 +6,9 @@ lake's drawer, and (b) measured **rung-1 depths** for the D68 ladder. Manual and
 or deployed with the apps.
 
 Phase doc: [`plans/phase-N6b-bathymetry-layer.md`](../../plans/phase-N6b-bathymetry-layer.md).
+**Read first if you are about to change an interpolator or a gate:**
+[`docs/bathymetry-challenges.md`](../../docs/bathymetry-challenges.md) — the five interpolation
+methods and five gates that were tried and abandoned, and what each one actually drew.
 
 ---
 

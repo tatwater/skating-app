@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
-import { fragmentsPerLevel, MAX_FRAGMENTS_PER_LEVEL, shoreShare } from './density';
+import { fragmentsPerLevel, shoreShare } from './density';
 import { compressedCloud, gridCellsFor, gridPlan, TENSION } from './grid';
 import { BASE_INTERVAL_FT, chooseInterval, thinPublishedLevels } from './interval';
 import { type ArchivedLake, maxDepthFt } from './lakes';
@@ -48,11 +48,9 @@ function scratchLabel(lake: ArchivedLake): string {
   return lakeId(lake).replace(/[^\w.-]+/g, '_');
 }
 
-/** `--ungated` draws lakes the shore-share gate would refuse, so the gate can be judged by looking. */
-let UNGATED = false;
-export function setUngated(value: boolean): void {
-  UNGATED = value;
-}
+// No `--ungated` escape hatch, because nothing gates on the output any more. It existed for the
+// shore-share and fragmentation gates, both of which were falsified and removed; re-add it alongside
+// whatever replaces them, so that gate can be chosen by looking the way every surviving one was.
 
 export interface Drawn {
   lines: Position[][];
@@ -268,25 +266,12 @@ export function interpolate(
   // the along axis, so this is a rotation only.
   const raw = JSON.parse(readFileSync(contoured, 'utf8')) as GeoJSON.FeatureCollection;
 
-  // **The gate, and it runs here because it can only be measured here.** Every other check in this
-  // pipeline asks something about the inputs and tries to predict whether the output will be honest.
-  // This one looks at the output: a depth level that traced as one or two closed rings is describing
-  // a basin; the same level traced as eight disconnected pieces is describing the fit wobbling either
-  // side of that depth. `--ungated` draws it anyway, so the threshold stays judgeable by looking.
+  // Fragmentation is measured and reported, **not gated** — see `MAX_FRAGMENTS_PER_LEVEL`. Gating on
+  // it dropped Lake Champlain, whose 10.2 pieces per level are a dozen real basins rather than noise,
+  // and no reformulation separated it from the lakes the gate was built to catch. It stays on the card
+  // so the render PR can settle the threshold by looking, which is how every gate here that survived
+  // was chosen.
   const rawFragments = fragmentsPerLevel(raw.features.length, levels.length);
-  if (rawFragments > MAX_FRAGMENTS_PER_LEVEL && !UNGATED) {
-    return {
-      lines: [],
-      depths: [],
-      interval: intervalFt,
-      shoreShare: share,
-      gridCells,
-      fragmentsPerLevel: rawFragments,
-      note:
-        `fragmentation gate: ${levels.length} level(s) traced as ${raw.features.length} disconnected ` +
-        `pieces (${rawFragments.toFixed(1)} per level, limit ${MAX_FRAGMENTS_PER_LEVEL})`,
-    };
-  }
 
   for (const feature of raw.features) {
     const geometry = feature.geometry;

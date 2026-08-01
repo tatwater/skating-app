@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
-import { type Drawn, interpolate, lakeId, publishedContours, setUngated } from './contour';
+import { type Drawn, interpolate, lakeId, publishedContours } from './contour';
 import { BASE_INTERVAL_FT } from './interval';
 import { type JoinCandidate, joinInBatches } from './joinQuery';
 import { runJoinQuery } from './joinRunner';
@@ -304,7 +304,6 @@ async function main(): Promise<void> {
   const outPath = flag(args, 'out') ?? join(WORK_DIR, 'samples.html');
   const perState = Number(flag(args, 'per-state') ?? 5);
   CARD = Number(flag(args, 'card') ?? DEFAULT_CARD);
-  setUngated(args.includes('--ungated'));
   const states = (flag(args, 'states') ?? 'VT,NH,MA,ME').split(',').map((s) => s.trim());
 
   log('[bathymetry] reading every archived source…');

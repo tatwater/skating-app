@@ -1,7 +1,6 @@
 /**
  * Build the contour set for every lane, ready to tile (N6b).
  *
- *   pnpm --filter @skating/bathymetry build [--states=VT,NH] [--limit=50] [--ungated]
  *
  * Runs the chain over every joined lake and writes newline-delimited GeoJSON to
  * `.scratch/build/contours.geojsonl` — the format `tippecanoe` reads fastest, and the one that lets a
@@ -29,7 +28,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
-import { type Drawn, interpolate, lakeId, publishedContours, setUngated } from './contour';
+import { type Drawn, interpolate, lakeId, publishedContours } from './contour';
 import { contourFeature } from './feature';
 import { readJoin } from './join';
 import { readAllLakes } from './lakeSources';
@@ -57,7 +56,6 @@ interface Dropped {
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  setUngated(args.includes('--ungated'));
   const states = flag(args, 'states')
     ?.split(',')
     .map((s) => s.trim().toUpperCase());

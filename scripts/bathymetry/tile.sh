@@ -20,26 +20,26 @@
 # * `--drop-densest-as-needed` — NOT `--drop-fraction-as-needed`. Both keep tiles under the limit, but
 #   this one drops whole features from the densest tiles rather than thinning everywhere, so a sparse
 #   lake keeps every line it has. The alternative degrades the lakes that need help least.
-# * `--no-tiny-polygon-reduction` / `--no-line-simplification` at max zoom (`-ps`) — at the zoom the
-#   drawer actually uses, the line we drew is the line we mean. Simplification there would be a second
-#   cartographic opinion layered on the smoothing pass that `grdfilter` already applied deliberately.
+# * **Simplification is left ON below max zoom.** An earlier version disabled it outright, on the
+#   argument that "at the zoom the drawer uses, the line we drew is the line we mean." That argument
+#   only holds at z14 — which tippecanoe already exempts from simplification by default — and below it
+#   the flag was retaining detail nobody can see, on 19.9 M vertices. It also over-claimed: the traced
+#   line carries a vertex per grid-cell crossing, and one Champlain contour arrives with **164,325** of
+#   them. That is raster stair-step at the solve resolution, not bathymetry. At z14 a pixel is ~9 m and
+#   the grid the surfaces were solved on is 25–145 m, so nothing below a cell was ever meaningful.
 # * `--layer=bathymetry` — the client adds this source on drawer-open and filters it by `bodyId`.
 #
 # Prereqs: tippecanoe + pmtiles (brew install tippecanoe pmtiles).
 set -euo pipefail
-
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IN="$HERE/.scratch/build/contours.geojsonl"
 MBTILES="$HERE/.scratch/build/bathymetry.mbtiles"
 OUT="$HERE/.scratch/build/bathymetry.pmtiles"
-
 command -v tippecanoe >/dev/null || { echo "tippecanoe not found — brew install tippecanoe" >&2; exit 1; }
 command -v pmtiles >/dev/null || { echo "pmtiles not found — brew install pmtiles" >&2; exit 1; }
 [ -f "$IN" ] || { echo "no $IN — run: pnpm --filter @skating/bathymetry build-contours" >&2; exit 1; }
-
 echo "[bathymetry] tiling $(wc -l < "$IN" | tr -d ' ') contour lines…"
 rm -f "$MBTILES" "$OUT"
-
 tippecanoe \
   --output="$MBTILES" \
   --layer=bathymetry \
@@ -48,17 +48,13 @@ tippecanoe \
   --minimum-zoom=9 \
   --maximum-zoom=14 \
   --drop-densest-as-needed \
-  --no-line-simplification \
   --no-tiny-polygon-reduction \
   --preserve-input-order \
   --quiet \
   "$IN"
-
 pmtiles convert "$MBTILES" "$OUT"
 rm -f "$MBTILES"
-
 echo "[bathymetry] wrote $OUT ($(du -h "$OUT" | cut -f1))"
-
 if [ "${1:-}" = "--upload" ]; then
   KEY="${2:-}"
   [ -n "$KEY" ] || { echo "usage: tile.sh --upload <r2-key>" >&2; exit 1; }
