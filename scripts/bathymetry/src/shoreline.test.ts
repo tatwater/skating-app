@@ -1,6 +1,6 @@
 import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { capShoreline, densifyShoreline, ringsOf } from './shoreline';
+import { densifyShoreline, ringsOf } from './shoreline';
 
 /** A ~1 km square at 45°N, closed. */
 const SQUARE: Polygon = {
@@ -93,31 +93,5 @@ describe('densifyShoreline', () => {
   it('refuses a non-positive spacing rather than looping forever', () => {
     expect(() => densifyShoreline(SQUARE, 0)).toThrow(/positive/);
     expect(() => densifyShoreline(SQUARE, -5)).toThrow(/positive/);
-  });
-});
-
-describe('capShoreline', () => {
-  const shore = Array.from({ length: 5000 }, (_, i) => i);
-
-  it('caps the shore in proportion to the survey', () => {
-    // The failure this prevents: thousands of zero-depth constraints ringing 46 real readings make
-    // every lake converge on the same shallow dish regardless of what was surveyed.
-    expect(capShoreline(shore, 46)).toHaveLength(92);
-  });
-
-  it('leaves a shore alone when it is already proportionate', () => {
-    expect(capShoreline([1, 2, 3, 4, 5], 100)).toHaveLength(5);
-  });
-
-  it('keeps a floor, so a tiny survey still gets a closed ring', () => {
-    expect(capShoreline(shore, 0)).toHaveLength(4);
-  });
-
-  it('thins evenly rather than truncating, so the whole shore stays represented', () => {
-    // Taking the first N would constrain one side of the lake and leave the rest open.
-    const kept = capShoreline(shore, 5, 2);
-    expect(kept).toHaveLength(10);
-    expect(kept[0]).toBe(0);
-    expect(kept.at(-1)).toBeGreaterThan(4000);
   });
 });

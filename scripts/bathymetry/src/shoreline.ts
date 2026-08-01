@@ -15,6 +15,13 @@
  * because there is no outer ring to nest inside. Adding the shore is what turns a field of squiggles
  * into a basin.
  *
+ * **The shore is deliberately NOT thinned.** An earlier cut capped it at 2× the sounding count, on
+ * the theory that thousands of zero-depth constraints would out-vote a few dozen readings. GMT's
+ * `blockmedian` already prevents that — it reduces the input to one value per grid cell before the
+ * spline sees it, so a dense shore fills cells rather than stacking them. The cap was solving a
+ * solved problem while causing a real one: a thin shore leaves mid-arm water further from any
+ * constraint than the interpolation mask allows, and contours get cut in water the fit knows.
+ *
  * It is also the one place we may legitimately *add* data we did not measure — because we are not
  * inventing a depth. The waterline of a lake is at the surface by definition; that is what makes it a
  * waterline. Everything else in this phase refuses to supply values nobody surveyed, and this is the
@@ -84,32 +91,6 @@ export function densifyShoreline(
         out.push({ lng: aLng + (bLng - aLng) * t, lat: aLat + (bLat - aLat) * t, depthFt: 0 });
       }
     }
-  }
-  return out;
-}
-
-/**
- * Thin a shoreline so it cannot out-vote the soundings.
- *
- * A dense shore against a sparse survey is its own failure mode: with a few thousand zero-depth
- * constraints ringing 46 real readings, the fit is dominated by the boundary and every lake converges
- * on the same shallow dish regardless of what the survey found. The shore should shape the *edge* of
- * the surface, not author its interior.
- *
- * Capping the shoreline at a multiple of the sounding count keeps the constraint proportionate — the
- * shore still closes the rings, and the measurements still decide the shape.
- */
-export function capShoreline<T>(points: readonly T[], soundingCount: number, ratio = 2): T[] {
-  const limit = Math.max(4, Math.round(soundingCount * ratio));
-  if (points.length <= limit) return [...points];
-  const step = points.length / limit;
-  const out: T[] = [];
-  for (let i = 0; i < limit; i += 1) {
-    const point = points[Math.floor(i * step)];
-    // Compared against `undefined` rather than tested for truthiness: a generic `T` may legitimately
-    // be `0`, `''` or `false`, and `if (point)` silently drops those. Caught by a test whose fixture
-    // was an index array, where it quietly ate element zero.
-    if (point !== undefined) out.push(point);
   }
   return out;
 }

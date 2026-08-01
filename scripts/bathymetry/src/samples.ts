@@ -24,7 +24,7 @@ import { listRawPages, readRawPage, SCRATCH_ROOT } from './cache';
 import { assessDensity, type DensityAssessment, MAX_GAP_RATIO } from './density';
 import { chooseInterval, contourLevels } from './interval';
 import { groupByLake, type NormalizedSounding, normalizeMeSoundings } from './normalize';
-import { capShoreline, densifyShoreline, ringsOf } from './shoreline';
+import { densifyShoreline, ringsOf } from './shoreline';
 
 function flag(args: string[], name: string): string | undefined {
   return args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -122,16 +122,21 @@ function interpolateAndContour(
     if (p.lat > maxLat) maxLat = p.lat;
     if (p.depthFt > maxDepth) maxDepth = p.depthFt;
   }
-  // The shoreline joins the survey as depth-0 constraints (§Maine step 3). Without it the fit has
-  // no anchor at the edge, contours never close, and nothing nests — which is a structural failure,
-  // not a cosmetic one. Spaced at roughly one grid cell so it constrains the boundary evenly, then
-  // capped in proportion to the survey so it shapes the edge without authoring the interior.
+  // The shoreline joins the survey as depth-0 constraints (§Maine step 3), sampled at roughly one
+  // grid cell so it constrains the boundary evenly.
+  //
+  // **Uncapped, and that reverses an earlier decision.** The first cut thinned the shore to 2× the
+  // sounding count, on the theory that thousands of zero-depth constraints would out-vote a few dozen
+  // real readings and flatten every lake into the same dish. `blockmedian` already prevents that: it
+  // collapses the input to one value per grid cell before `surface` ever sees it, so a dense shore
+  // fills cells rather than stacking them, and cannot out-weight anything. The cap was solving a
+  // problem the decimation had already solved — and it was causing a real one, because a sparse shore
+  // leaves mid-arm water further from any constraint than the mask allows, so contours got cut in
+  // water the fit knew perfectly well. Measured: 73 contour fragments → 61 on MIDAS 314 from this
+  // change alone, with more total line drawn.
   const spanMaxDeg = Math.max(maxLng - minLng, maxLat - minLat);
   const shore = polygon
-    ? capShoreline(
-        densifyShoreline(polygon, Math.max(5, (spanMaxDeg / GRID_CELLS) * 111_320)),
-        points.length,
-      )
+    ? densifyShoreline(polygon, Math.max(5, (spanMaxDeg / GRID_CELLS) * 111_320))
     : [];
   const all = [
     ...points.map((p) => `${p.lng}\t${p.lat}\t${p.depthFt}`),
@@ -151,11 +156,16 @@ function interpolateAndContour(
   // reading than the gate permits is exactly the water we said we would not draw. Tying them means
   // the picture and the gate can never disagree about what counts as covered.
   //
-  // Halved, though, and for a reason worth stating. The gate's ratio is a **p95 over the whole lake**
-  // — a budget for the worst-covered corner — whereas this is a **per-node** test. Using the p95
-  // figure pointwise would extend the surface a gate-tolerance beyond every last sounding, drawing
-  // contours across water the gate had merely tolerated rather than vouched for.
-  const maskRadius = Math.max(spanLng, spanLat) * MAX_GAP_RATIO * 0.5;
+  // At exactly the gate's ratio, not half of it. An earlier cut halved it, reasoning that the gate's
+  // number is a p95 over a whole lake while the mask is a per-node test. That reasoning was sound and
+  // the result was wrong: measured against real lakes, halving cut contours through water the shore
+  // constrains on both sides. Restoring the full ratio took MIDAS 5690 from 38 contour fragments to
+  // 29 *and* drew more total line — fewer, longer, more connected.
+  //
+  // Doubling it again changes almost nothing, which is the useful part: the polygon clip has become
+  // the binding constraint rather than the mask. That is the right thing to be binding, because the
+  // clip is a fact about the lake and the mask is a heuristic about coverage.
+  const maskRadius = Math.max(spanLng, spanLat) * MAX_GAP_RATIO;
 
   // Decimate to one value per grid cell first. GMT requires this in spirit and the data requires it
   // in fact: a sonar log puts thousands of readings inside one cell, and `surface` is unstable when
