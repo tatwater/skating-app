@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   compressAlong,
+  effectiveAnisotropy,
+  elongation,
   expandAlong,
   fromLocal,
   type LocalPoint,
@@ -116,6 +118,77 @@ describe('compressAlong / expandAlong', () => {
 
   it('is the identity at ratio 1 — the isotropic behaviour it replaces', () => {
     expect(compressAlong(local, 1)).toEqual(local);
+  });
+});
+
+describe('elongation', () => {
+  it('is ~1 for a round cloud', () => {
+    const round: { lng: number; lat: number }[] = [];
+    for (let i = 0; i < 24; i += 1) {
+      const a = (i / 24) * Math.PI * 2;
+      round.push({ lng: -70 + Math.cos(a) * 0.01, lat: 45 + (Math.sin(a) * 0.01) / 1.41 });
+    }
+    const frame = principalFrame(round);
+    expect(elongation(round, frame)).toBeLessThan(1.4);
+  });
+
+  it('is high for a long straight lake', () => {
+    const points = cigar(Math.PI / 6, 60, 6000, 400);
+    expect(elongation(points, principalFrame(points))).toBeGreaterThan(3);
+  });
+
+  it('is LOW for a lake that bends — which is the property the cap relies on', () => {
+    // A bend makes the cloud rounder, so a curved basin asks for less anisotropy on its own. That is
+    // what stops a single straight axis being forced onto a lake that isn't straight.
+    const bent: { lng: number; lat: number }[] = [];
+    const mPerLng = 111_320 * Math.cos((45 * Math.PI) / 180);
+    for (let i = 0; i < 60; i += 1) {
+      const t = i / 59;
+      const x = Math.cos(t * Math.PI) * 2000;
+      const y = Math.sin(t * Math.PI) * 2000;
+      bent.push({ lng: -70 + x / mPerLng, lat: 45 + y / 111_320 });
+    }
+    const straight = cigar(0, 60, 6000, 400);
+    expect(elongation(bent, principalFrame(bent))).toBeLessThan(
+      elongation(straight, principalFrame(straight)),
+    );
+  });
+
+  it('never returns less than 1, so it can only ever relax the ratio', () => {
+    expect(elongation([], principalFrame([]))).toBe(1);
+    expect(elongation([{ lng: -70, lat: 45 }], principalFrame([{ lng: -70, lat: 45 }]))).toBe(1);
+  });
+});
+
+describe('effectiveAnisotropy', () => {
+  it("caps the configured ratio at the lake's own elongation", () => {
+    // "Never assume more directionality than the shape exhibits."
+    const points = cigar(0, 60, 4000, 1500);
+    const frame = principalFrame(points);
+    const measured = elongation(points, frame);
+    expect(effectiveAnisotropy(points, frame, 8)).toBeCloseTo(measured, 6);
+    expect(effectiveAnisotropy(points, frame, 8)).toBeLessThan(8);
+  });
+
+  it('does not raise a configured ratio below the elongation', () => {
+    const points = cigar(0, 60, 6000, 300);
+    const frame = principalFrame(points);
+    expect(effectiveAnisotropy(points, frame, 1.5)).toBeCloseTo(1.5, 6);
+  });
+
+  it('lands at 1 for a round pond — isotropic, which is right for a basin with no axis', () => {
+    const round: { lng: number; lat: number }[] = [];
+    for (let i = 0; i < 24; i += 1) {
+      const a = (i / 24) * Math.PI * 2;
+      round.push({ lng: -70 + Math.cos(a) * 0.01, lat: 45 + (Math.sin(a) * 0.01) / 1.41 });
+    }
+    const frame = principalFrame(round);
+    expect(effectiveAnisotropy(round, frame, 4)).toBeLessThan(1.4);
+  });
+
+  it('never goes below 1, which would invert the anisotropy', () => {
+    const points = cigar(0, 60, 4000, 400);
+    expect(effectiveAnisotropy(points, principalFrame(points), 0.2)).toBe(1);
   });
 });
 

@@ -25,7 +25,15 @@ import { assessDensity, type DensityAssessment, MAX_GAP_RATIO } from './density'
 import { chooseInterval, contourLevels } from './interval';
 import { groupByLake, type NormalizedSounding, normalizeMeSoundings } from './normalize';
 import { densifyShoreline, ringsOf } from './shoreline';
-import { compressAlong, fromLocal, principalFrame, THALWEG_ANISOTROPY, toLocal } from './thalweg';
+import {
+  compressAlong,
+  effectiveAnisotropy,
+  elongation,
+  fromLocal,
+  principalFrame,
+  THALWEG_ANISOTROPY,
+  toLocal,
+} from './thalweg';
 
 function flag(args: string[], name: string): string | undefined {
   return args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -128,8 +136,13 @@ function interpolateAndContour(
   // a trough competes fairly with the across-axis pull toward shore. See `thalweg.ts` for why this
   // is a smoothness prior rather than a data claim — `surface` still fits through every measurement,
   // so a real sill between two troughs survives.
-  const ratio = Number(process.env.THALWEG_RATIO ?? THALWEG_ANISOTROPY);
+  const configured = Number(process.env.THALWEG_RATIO ?? THALWEG_ANISOTROPY);
   const frame = principalFrame(points);
+  // Capped by the lake's own elongation: a curved or round basin asks for less on its own.
+  const ratio = effectiveAnisotropy(points, frame, configured);
+  process.stderr.write(
+    `    ${lakeKey}: elongation ${elongation(points, frame).toFixed(2)} -> anisotropy ${ratio.toFixed(2)} (configured ${configured})\n`,
+  );
 
   const spanMaxDeg = (() => {
     let lo = Number.POSITIVE_INFINITY;

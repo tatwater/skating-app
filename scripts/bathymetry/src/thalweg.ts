@@ -132,6 +132,52 @@ export const THALWEG_ANISOTROPY = 4;
  * resulting contours by the exact inverse — a mismatch between the two would rotate and stretch every
  * lake in the corpus by a factor nobody would spot in a thumbnail.
  */
+/**
+ * How elongated a point cloud actually is, as the ratio of its principal spreads.
+ *
+ * 1 is round. A long straight lake runs 3–5. **A lake that bends scores LOW**, because the curve
+ * makes its cloud rounder — which is exactly the property that makes this useful as a cap.
+ */
+export function elongation(points: readonly { lng: number; lat: number }[], frame: Frame): number {
+  if (points.length < 3) return 1;
+  let sa = 0;
+  let sc = 0;
+  let n = 0;
+  for (const p of points) {
+    const l = toLocal(p, frame);
+    sa += l.along * l.along;
+    sc += l.across * l.across;
+    n += 1;
+  }
+  const along = Math.sqrt(sa / n);
+  const across = Math.sqrt(sc / n);
+  if (!(across > 0) || !Number.isFinite(along / across)) return 1;
+  return Math.max(1, along / across);
+}
+
+/**
+ * The anisotropy actually applied to a lake: the configured ratio, capped by the lake's own measured
+ * elongation.
+ *
+ * **The rule is "never assume more directionality than the shape exhibits."** A single global axis is
+ * a straight line, and a lake that bends is not; forcing full anisotropy on a curved basin pulls its
+ * contours parallel to one direction that fits only part of it, which reads as rigid and stretched
+ * (founder, 2026-08-01: *"overly-reliant on following the main axis… loosen the stretch so there's
+ * more opportunity for curves"*).
+ *
+ * Capping by elongation fixes that without a second mechanism, because the measurement already
+ * encodes the thing we care about: a bend lowers a cloud's principal-spread ratio, so a curved lake
+ * asks for less anisotropy on its own and a long straight one still gets the full benefit. A round
+ * pond lands at 1 — isotropic — which is the right answer for a basin with no axis to speak of.
+ */
+export function effectiveAnisotropy(
+  points: readonly { lng: number; lat: number }[],
+  frame: Frame,
+  ratio: number,
+): number {
+  return Math.max(1, Math.min(ratio, elongation(points, frame)));
+}
+
 export function compressAlong(local: LocalPoint, ratio: number): LocalPoint {
   return { along: local.along / ratio, across: local.across };
 }
