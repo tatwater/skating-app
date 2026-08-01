@@ -980,7 +980,7 @@ the phase doc, and the first one reshaped the work:
 deferred.** See [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
 
 Archived (five sources, 298 MB, mirrored privately) → normalized → **joined, 2,437 of 2,491 lakes
-(98%)**, Vermont included for the first time → gated → **2,044 lakes contoured into 49,767 lines** →
+(98%)**, Vermont included for the first time → gated → **2,042 lakes contoured into 49,742 lines** →
 tiled to a **15 MB** z9–z14 `.pmtiles` on the Phase 2.5 upload lane → uploaded → drawn by both clients.
 
 The render half is small because **D81 and D82 removed most of what there was to decide**: contours

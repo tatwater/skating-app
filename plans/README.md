@@ -152,7 +152,7 @@ the first time, then used as a reference (decisions are numbered `D#`, open ques
   itself is written and tested but **not yet run** — and is now ⛔ **gated on N6c completing** (2026-07-31).
 - [N6b — The bathymetry layer](./phase-N6b-bathymetry-layer.md) — measured state-agency isobaths as a
   PMTiles overlay, drawn inside the open lake. **✅ Complete (2026-08-01); prod deferred.** Five agencies
-  archived → **2,044 lakes contoured into 49,767 lines** → a 15 MB z9–z14 archive on the Phase 2.5 upload
+  archived → **2,042 lakes contoured into 49,742 lines** → a 15 MB z9–z14 archive on the Phase 2.5 upload
   lane → rendered by both clients. Split from N6 at N6a's kickoff; carries the finding that GLOBathy's
   rasters are a distance transform and must never be drawn, and the harder one that **every input-side
   quality gate we tried was falsified by a render** — so it ships with none. **D81** (no contour toggle —

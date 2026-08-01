@@ -319,7 +319,11 @@ lake exactly as it does for the majority of bodies no agency ever surveyed. Ther
 about and no fallback tile source to reach for — which also means a mis-set URL is silent. If a lake
 you know is in `contours.geojsonl` draws flat, check this first.
 
-Currently on dev: `dev/bathymetry-20260801.pmtiles`.
+Currently on dev: `dev/bathymetry-20260801-2.pmtiles`.
+
+**Always upload under a new key rather than overwriting one.** The public R2 URL is CDN-cached, so
+replacing the bytes behind a key that clients already hold is how a fix appears not to have worked.
+The date suffix exists for that, and a second build the same day takes `-2`.
 
 ---
 

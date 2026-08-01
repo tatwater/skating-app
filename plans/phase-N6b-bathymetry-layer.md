@@ -10,14 +10,14 @@
 > | **Normalized** | ✅ two lanes — the agency's isobaths, or our surface fitted through its soundings |
 > | **Joined** | ✅ **2,437 of 2,491 lakes (98%)**, including Vermont for the first time |
 > | **Gated** | ✅ coverage gap + data support. **No output-side gate** — five were tried and falsified (below) |
-> | **Interpolated + contoured** | ✅ **2,044 lakes → 49,767 lines**, all five agencies, Champlain included |
+> | **Interpolated + contoured** | ✅ **2,042 lakes → 49,742 lines**, all five agencies, Champlain included |
 > | **Tiled** | ✅ **15 MB** `.pmtiles`, z9–z14, 10,753 tiles, on the Phase 2.5 upload lane |
 > | **Web client** | ✅ lazily-mounted source on drawer-open, filtered to the body, faded in, under hazards |
 > | **Mobile client** | ✅ same, as a conditionally-rendered `VectorSource` with `beforeId` |
 > | **Drawer credit row** | ✅ derived from the drawn features, on both clients |
-> | **Uploaded + wired** | ✅ `dev/bathymetry-20260801.pmtiles` on the basemap R2 bucket, both `.env.local`s set |
-> | **Seen drawing** | ✅ but only after it wasn't — see *§The render half had to be rendered too* |
-> | **Re-tile owed** | ⚠️ the uploaded archive predates `preferSurveyedLane`; two lakes carry two agencies' lines |
+> | **Uploaded + wired** | ✅ `dev/bathymetry-20260801-2.pmtiles` on the basemap R2 bucket, both `.env.local`s set |
+> | **Seen drawing** | ✅ confirmed by the founder on both clients — but only after it wasn't, see *§The render half had to be rendered too* |
+> | **Two-agency lakes** | ✅ re-tiled out: **2,022 bodies, 49,742 lines**, no body carrying two surveys |
 > | **Rung-1 depth write** | ⏸ correctly gated behind [N6a](./phase-N6a-lake-depth.md)'s ordering gate |
 >
 > **A deployment without the env var mounts nothing, and that is correct rather than degraded** — under
@@ -1182,6 +1182,13 @@ it resolves **only a lane disagreement** — an agency filing one lake under two
 Great East Lake as both `NHLAK…` and `MELAK…`, and the two halves together *are* the lake) is not a
 collision and is left alone. 28 bodies are joined by 2+ source lakes; 22 of those are that legitimate
 case.
+
+**Re-tiled the same day**, without re-interpolating: the 25 superseded lines were filtered out of the
+built `contours.geojsonl` — which is exactly what `preferSurveyedLane` would have withheld, since one
+lake resolves to one body — and `tile.sh` re-run over the result. **49,767 → 49,742 lines across the
+same 2,022 bodies, and no body carries two agencies.** Uploaded as
+`dev/bathymetry-20260801-2.pmtiles`; both `.env.local`s repointed. A *new key* rather than a replaced
+one, because the public R2 URL is CDN-cached and overwriting is how a fix appears not to have worked.
 
 **And the client no longer takes credit for a survey it didn't do.** `ContourCredit.interpolated` was
 one boolean, so any fitted line made the whole body read as ours. It is now
