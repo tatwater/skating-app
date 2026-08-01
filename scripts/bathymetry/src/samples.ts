@@ -20,7 +20,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { listRawPages, readRawPage, SCRATCH_ROOT } from './cache';
-import { assessDensity, type DensityAssessment } from './density';
+import { assessDensity, type DensityAssessment, MAX_GAP_RATIO } from './density';
 import { chooseInterval, contourLevels } from './interval';
 import { groupByLake, type NormalizedSounding, normalizeMeSoundings } from './normalize';
 
@@ -51,6 +51,21 @@ function flag(args: string[], name: string): string | undefined {
  * tensioned spline (GMT's `surface`), or TIN followed by a smoothing pass — which is a focused piece
  * of cartographic work rather than a flag on this command.
  */
+/**
+ * Grid cells across the lake's long axis. 500 keeps a contour smooth at drawer zoom without making
+ * `surface` iterate for minutes on Champlain.
+ */
+const GRID_CELLS = 500;
+
+/**
+ * Spline tension, 0 (minimum curvature) to 1 (harmonic).
+ *
+ * GMT's own guidance for bathymetry and steep topography is ~0.25: unconstrained minimum-curvature
+ * splines oscillate around sharp gradients, which on a lake bed means ringing around a drop-off —
+ * the same class of invented structure as IDW's bullseyes, arriving from the opposite direction.
+ */
+const TENSION = 0.25;
+
 export const ALGORITHMS: Record<string, string> = {
   idw: 'invdistnn:radius={r}:max_points=12:min_points=1:power=2.0',
   linear: 'linear:radius=-1:nodata=-9999',
@@ -86,24 +101,10 @@ function interpolateAndContour(
 ):
   | { levels: number[]; interval: number; maxDepthFt: number; contours: GeoJSON.FeatureCollection }
   | undefined {
-  const csv = join(workDir, `${lakeKey}.csv`);
-  const vrt = join(workDir, `${lakeKey}.vrt`);
-  const tif = join(workDir, `${lakeKey}.tif`);
+  const xyz = join(workDir, `${lakeKey}.xyz`);
+  const blocked = join(workDir, `${lakeKey}.blk`);
+  const nc = join(workDir, `${lakeKey}.nc`);
   const out = join(workDir, `${lakeKey}.geojson`);
-
-  writeFileSync(
-    csv,
-    `lng,lat,depth\n${points.map((p) => `${p.lng},${p.lat},${p.depthFt}`).join('\n')}\n`,
-  );
-  writeFileSync(
-    vrt,
-    `<OGRVRTDataSource><OGRVRTLayer name="${lakeKey}">` +
-      `<SrcDataSource>${csv}</SrcDataSource>` +
-      `<GeometryType>wkbPoint</GeometryType>` +
-      `<LayerSRS>EPSG:4326</LayerSRS>` +
-      `<GeometryField encoding="PointFromColumns" x="lng" y="lat" z="depth"/>` +
-      `</OGRVRTLayer></OGRVRTDataSource>\n`,
-  );
 
   let minLng = Number.POSITIVE_INFINITY;
   let maxLng = Number.NEGATIVE_INFINITY;
@@ -117,41 +118,69 @@ function interpolateAndContour(
     if (p.lat > maxLat) maxLat = p.lat;
     if (p.depthFt > maxDepth) maxDepth = p.depthFt;
   }
+  writeFileSync(xyz, `${points.map((p) => `${p.lng}\t${p.lat}\t${p.depthFt}`).join('\n')}\n`);
 
-  // A moving-average window sized to the lake, not to a fixed distance. `average` is deliberately a
-  // SMOOTHING interpolator rather than an exact one — it does not pass through the data points, which
-  // is precisely what kills the bullseyes, and it is honest about what we are doing: fitting a
-  // low-detail surface through readings whose spacing is the resolution limit.
-  const spanDeg = Math.max(maxLng - minLng, maxLat - minLat);
-  const smoothRadius = spanDeg * 0.06;
+  // Pad the region slightly so the spline is solved a little beyond the data and the mask, rather
+  // than the solver's own boundary, is what decides the edge.
+  const spanLng = maxLng - minLng;
+  const spanLat = maxLat - minLat;
+  const pad = Math.max(spanLng, spanLat) * 0.02;
+  const region = `-R${minLng - pad}/${maxLng + pad}/${minLat - pad}/${maxLat + pad}`;
+  const increment = `-I${Math.max(spanLng, spanLat) / GRID_CELLS}`;
 
-  const grid = spawnSync(
-    'gdal_grid',
+  // The mask radius is the density gate's own allowance, deliberately: a node further from a real
+  // reading than the gate permits is exactly the water we said we would not draw. Tying them means
+  // the picture and the gate can never disagree about what counts as covered.
+  //
+  // Halved, though, and for a reason worth stating. The gate's ratio is a **p95 over the whole lake**
+  // — a budget for the worst-covered corner — whereas this is a **per-node** test. Using the p95
+  // figure pointwise would extend the surface a gate-tolerance beyond every last sounding, drawing
+  // contours across water the gate had merely tolerated rather than vouched for.
+  const maskRadius = Math.max(spanLng, spanLat) * MAX_GAP_RATIO * 0.5;
+
+  // Decimate to one value per grid cell first. GMT requires this in spirit and the data requires it
+  // in fact: a sonar log puts thousands of readings inside one cell, and `surface` is unstable when
+  // several data points land on the same node.
+  //
+  // **`blockmedian`, not `blockmean`** — the median is robust to a single anomalous reading, and a
+  // depth-sounder corpus is full of them (a fish, a weed bed, a momentary loss of bottom lock).
+  //
+  // It earns its place on Vermont, where a cell holds hundreds of sonar returns. It does **nothing**
+  // on Maine, and that is worth knowing rather than assuming: at a median of 48 soundings per lake
+  // against a 500-cell grid, almost every Maine cell holds at most one point, so the median has
+  // nothing to be robust over and reduces to the mean. The tight spirals visible on the Maine samples
+  // are therefore NOT a decimation artifact — they are `surface` faithfully honouring a genuinely
+  // isolated deep reading. Removing them would mean editing the survey, which is not ours to do.
+  const block = spawnSync('gmt', ['blockmedian', xyz, region, increment], { encoding: 'utf8' });
+  if (block.status !== 0) {
+    process.stderr.write(
+      `  gmt blockmedian failed for ${lakeKey}: ${block.stderr?.slice(0, 300)}\n`,
+    );
+    return undefined;
+  }
+  writeFileSync(blocked, block.stdout);
+
+  const surface = spawnSync(
+    'gmt',
     [
-      '-a',
-      algorithm.replace('{r}', String(smoothRadius)),
-      '-txe',
-      String(minLng),
-      String(maxLng),
-      '-tye',
-      String(minLat),
-      String(maxLat),
-      '-outsize',
-      '700',
-      '700',
-      '-of',
-      'GTiff',
-      '-ot',
-      'Float32',
-      '-l',
-      lakeKey,
-      vrt,
-      tif,
+      'surface',
+      blocked,
+      region,
+      increment,
+      `-T${TENSION}`,
+      // Clamp the solution to the range actually measured. A continuous-curvature spline WILL
+      // overshoot near a steep gradient, and an unclamped overshoot invents a hole deeper than
+      // anything the survey found — an artifact indistinguishable, once contoured, from a discovery.
+      // `-Ll0` likewise stops the fit rising above the water surface near shore.
+      '-Ll0',
+      `-Lu${maxDepth}`,
+      `-M${maskRadius}`,
+      `-G${nc}`,
     ],
     { encoding: 'utf8' },
   );
-  if (grid.status !== 0) {
-    process.stderr.write(`  gdal_grid failed for ${lakeKey}: ${grid.stderr?.slice(0, 300)}\n`);
+  if (surface.status !== 0) {
+    process.stderr.write(`  gmt surface failed for ${lakeKey}: ${surface.stderr?.slice(0, 300)}\n`);
     return undefined;
   }
 
@@ -162,7 +191,7 @@ function interpolateAndContour(
   rmSync(out, { force: true });
   const contour = spawnSync(
     'gdal_contour',
-    ['-a', 'depth', '-fl', ...levels.map(String), '-f', 'GeoJSON', tif, out],
+    ['-a', 'depth', '-fl', ...levels.map(String), '-f', 'GeoJSON', nc, out],
     { encoding: 'utf8' },
   );
   if (contour.status !== 0) {
