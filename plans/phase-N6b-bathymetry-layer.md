@@ -576,6 +576,97 @@ rendered lake: **the most detailed-looking part of the picture is the part we kn
 
 ---
 
+## What the wide render found (2026-08-01)
+
+*The chain had only ever been looked at on Maine. The founder asked for it across all five sources —
+Lake Morey, Lake Sunapee, Mascoma, Newfound and Champlain by name, plus five each from VT, NH, MA and
+ME spanning shapes and sizes, each framed to the whole lake. **Twenty-five lakes, and the widening is
+what found all five of the following.** Four were invisible on Maine alone. One is a real ETL bug.*
+
+**Lake George was asked for and cannot be drawn.** No agency publishes bathymetry for it, or for any
+other New York lake — §5 below. New York appears in the grid only as Champlain, filed under Vermont
+where its source lives, per the founder's call.
+
+### 1 — A source lake key is not always one lake, and the join cannot survive that
+
+**The load-bearing find, and it produced a blank card rather than an error.** NH GRANIT's `au_id`
+groups 69 contours under *"Horseshoe Pond"* that span **51 km** with a principal elongation of **56**.
+It is two different ponds sharing one assessment-unit id. Since one key resolves to one polygon, the
+join picks one pond's shoreline and the clip then deletes the other pond's contours entirely.
+
+Measured across the whole archive, with a scale-free test — *a gap larger than 8% of the lake's own
+extent is not a lake* — the damage is small and real:
+
+| Source | Keys holding 2+ water bodies |
+| --- | --- |
+| NH GRANIT | **3** of 617 |
+| ME DEP/IF&W | **12** of 1,522 |
+| MassGIS | 0 of 265 |
+| VT ANR | 0 of 66 |
+
+Maine's worst is MIDAS `870`, whose soundings are scattered over **379 km** — most of the state.
+
+**The gate had to be scale-free, and that is the whole difficulty.** An absolute threshold generous
+enough to keep Champlain whole (174 km, and genuinely one lake) also keeps MIDAS 870; one tight enough
+to catch 870 splits Champlain. A lake is *continuous at its own scale*, and a key holding two ponds is
+not, at any scale. Implemented as grid-based connected components rather than pairwise distances —
+single-link clustering over the corpus is ~400 million haversines.
+
+**Sampling now excludes these keys and names every one on every run.** *That is not the fix.* The fix
+is to **split a collided key into its clusters and join each separately**, which is real work and is
+the first thing to do when this phase resumes — 15 keys is small, but each one is a confidently
+mis-drawn basin, which is precisely what D82 cannot afford.
+
+### 2 — The join blows the Convex read cap, and `join.ts` had the same bug
+
+A batch of 20 lakes exceeded Convex's **16 MB per-execution read limit**: each lake pulls every listed
+body near its point, polygons attached. It surfaces as an opaque server 500, not a validation error.
+
+**Lowering the constant does not fix it**, because the cost per lake ranges over three orders of
+magnitude — a farm pond near nothing against a point in the middle of Champlain. So batching is now
+**adaptive**: optimistic, and split-and-retry on a read-limit failure, with a lake that fails alone
+recorded as a named reject. `join.ts` shipped with `BATCH = 40` and would have hit exactly this on its
+first real run over 1,500 Maine lakes; both callers now share one implementation.
+
+### 3 — Three arithmetic traps that only a second lake reveals
+
+All three were silent on the Maine samples and fatal elsewhere. All three are now pure functions with
+tests, in `grid.ts` and `render.ts`:
+
+- **GMT requires the region to be a whole number of cells** (*"(x_max-x_min) must equal (NX + eps) *
+  x_inc"*). A padded bbox almost never is, because the pad is a fraction of the *long* side and the
+  short axis lands mid-cell. Two of twenty-five lakes failed; twenty-three drew correctly first.
+- **`blockmedian` writes to stdout, and node captures 1 MB by default.** Vermont's densest lakes
+  reduce to megabytes of cell medians, so the process was killed — with an empty stderr and a null
+  status, presenting as *"GMT failed for no reason."* It cost Morey and Groton.
+- **The sample renderer ignored latitude.** A degree of longitude at 44°N is ~0.72 of a degree of
+  latitude, so every lake was drawn **28% too wide**. On a phase whose entire output is the *shape* of
+  a basin, a round pond rendering as an east–west oval reads as a morphology finding.
+
+### 4 — Framing to the data is not framing to the lake
+
+The cards were bounded by the soundings, so on any lake whose survey stopped short of the bank — most
+of them — the shoreline ran off the card and the contours appeared to float. The frame is now the
+union of polygon, soundings and drawn contours, and the card is sized to the lake's own aspect rather
+than letterboxed into a square. Champlain still needs a clamp at 174 km by a few km wide, and **says
+so on the card** rather than presenting a false shape silently.
+
+### 5 — What the surveyed lanes are actually for
+
+NH and MA contribute nothing to the interpolation — the agency drew those isobaths. They earn their
+place in the grid anyway: **a state-surveyed lake beside a fitted one is the only honest calibration
+we have for how good the fitted ones look**, and side by side the fitted lakes hold up.
+
+Two smaller things the wide grid surfaced:
+
+- **The clip against our own shoreline removes real contours** — 46 features on Quinsigamond, 17 on
+  Clyde, 8 on several others. That is OSM's water mask disagreeing with the state's survey shoreline,
+  not a bug, but it is a number worth watching rather than discovering later.
+- **NH GRANIT carries river reaches, not only lakes** (*Piscataquog River*, *Baker River Site 2*).
+  Harmless here, but a lane that assumes "lake" will meet them.
+
+---
+
 ## What the build found in the plan
 
 *Written 2026-07-31, at the start of the build, from checking every source against its live service

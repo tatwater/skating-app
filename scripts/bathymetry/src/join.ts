@@ -23,12 +23,13 @@
  * Untestable subprocess + file glue, excluded from coverage.
  */
 
-import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join as pathJoin } from 'node:path';
 import process from 'node:process';
 import type { Position } from 'geojson';
 import { listRawPages, readRawPage, SCRATCH_ROOT } from './cache';
+import { joinInBatches } from './joinQuery';
+import { runJoinQuery } from './joinRunner';
 import {
   groupByLake,
   type NormalizedContour,
@@ -44,8 +45,16 @@ import type { BathymetrySource } from './types';
 
 const JOIN_DIR = pathJoin(SCRATCH_ROOT, 'join');
 
-/** How many lakes to resolve per query. Each carries a polygon back, so the response is the limit. */
-const BATCH = 40;
+/**
+ * Lakes per query, optimistically.
+ *
+ * **Not a safe constant, and it isn't meant to be one.** A Convex function may read 16 MB in a single
+ * execution, and each lake pulls every listed body near its point with polygons attached — so the
+ * cost per lake ranges over three orders of magnitude between a farm pond and a point in the middle
+ * of Champlain. `joinInBatches` splits any batch that trips the cap, which is what lets this be sized
+ * for the common case instead of for the worst one.
+ */
+const BATCH = 20;
 
 export interface JoinedLake {
   externalId?: string;
@@ -112,37 +121,6 @@ function pointForContours(
   return typeof lng === 'number' && typeof lat === 'number' ? { lat, lng } : undefined;
 }
 
-/** Call the deployed join query for one batch. */
-function runJoinQuery(lakes: { key: string; point: { lat: number; lng: number } }[]): {
-  matches: JoinedLake[] & { key: string }[];
-  rejects: { key: string; reason: string }[];
-} {
-  const result = spawnSync(
-    'pnpm',
-    [
-      '--filter',
-      '@skating/convex',
-      'exec',
-      'convex',
-      'run',
-      'waterBodies:matchBathymetryLakes',
-      JSON.stringify({ lakes }),
-    ],
-    // A generous buffer, not a guess: 40 lakes each carrying a full OSM shoreline polygon back is
-    // megabytes of JSON on one stdout, and node's 1 MB default truncates it into a parse error that
-    // reads like a query failure.
-    { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, cwd: process.cwd() },
-  );
-  if (result.status !== 0) {
-    throw new Error(`convex run failed: ${(result.stderr ?? '').slice(0, 600)}`);
-  }
-  // The CLI prints the JSON result after any banner lines; take from the first brace.
-  const out = result.stdout ?? '';
-  const start = out.indexOf('{');
-  if (start < 0) throw new Error(`convex run returned no JSON: ${out.slice(0, 300)}`);
-  return JSON.parse(out.slice(start));
-}
-
 async function joinSource(source: BathymetrySource, refresh: boolean): Promise<void> {
   const outPath = pathJoin(JOIN_DIR, `${source.key}.json`);
   if (existsSync(outPath) && !refresh) {
@@ -162,18 +140,17 @@ async function joinSource(source: BathymetrySource, refresh: boolean): Promise<v
     else noPoint.push(key);
   }
 
-  log(`${source.key}: resolving ${lakes.length} lakes in batches of ${BATCH}…`);
+  log(`${source.key}: resolving ${lakes.length} lakes, starting at ${BATCH} per query…`);
   const joined: Record<string, JoinedLake> = {};
-  const rejects: { key: string; reason: string }[] = [];
-  for (let i = 0; i < lakes.length; i += BATCH) {
-    const batch = lakes.slice(i, i + BATCH);
-    const { matches, rejects: batchRejects } = runJoinQuery(batch);
-    for (const m of matches) joined[m.key] = m;
-    rejects.push(...batchRejects);
-    if (i % (BATCH * 10) === 0) {
-      log(`  ${source.key}: ${Math.min(i + BATCH, lakes.length)}/${lakes.length}`);
-    }
-  }
+  const { matches, rejects } = await joinInBatches(
+    lakes,
+    BATCH,
+    async (batch) => runJoinQuery(batch),
+    (done, total) => {
+      if (done % (BATCH * 10) < BATCH) log(`  ${source.key}: ${done}/${total}`);
+    },
+  );
+  for (const m of matches) joined[m.key] = m;
 
   mkdirSync(JOIN_DIR, { recursive: true });
   writeFileSync(outPath, JSON.stringify({ joined, rejects, noPoint }, null, 0));

@@ -184,3 +184,84 @@ gzipped, one file per page, zero-padded so a directory listing sorts into fetch 
 comes up short of the reported count warns loudly rather than reporting success.
 
 Then mirror it: `scripts/bathymetry/mirror-r2.sh push`.
+
+## 3. Sweep — size the density gate against the real distribution
+
+```bash
+pnpm --filter @skating/bathymetry sweep [--ratios=0.10,0.15,0.20]
+```
+
+Runs the gate over every archived sounding lane at a range of thresholds and prints how many lakes
+each keeps. §Maine says to *"pick the threshold from the real distribution"*, and this is the thing to
+point at — but note what the sample grid then found: **visual quality does not track the gap ratio.**
+The table tells you how many lakes a threshold keeps, not whether the kept ones look like basins.
+Only step 5 answers that.
+
+## 4. Join — resolve source lakes to our water bodies
+
+```bash
+pnpm --filter @skating/bathymetry join [<source-key>…] [--refresh]
+```
+
+Calls `waterBodies:matchBathymetryLakes` — the same geometric join N6a's depth ETL uses, running
+server-side because that is where the cell index lives. Writes `.scratch/join/<key>.json`: the matched
+body's `externalId` (what tiles are stamped with) and its polygon (the shoreline constraint).
+
+Three things to know before running it:
+
+- **The representative point is the deepest sounding, not a centroid.** A centroid is not guaranteed
+  to be on water — on a crescent lake it lands on the headland in the middle. Found by watching a
+  hand-rolled centroid join miss 4 of 6 real Maine lakes.
+- **Batching is adaptive, and has to be.** A Convex function may read 16 MB per execution, and the
+  cost per lake ranges over three orders of magnitude between a farm pond and a point in the middle
+  of Champlain. Batches that trip the cap are split and retried; a lake that fails alone is recorded
+  as a named reject rather than dropped.
+- **VT ANR is not joined by this command.** It is a CSV inside a zip rather than an ArcGIS lane, and
+  the command names it rather than silently skipping it.
+
+> ⚠ **Known bug, unfixed:** 15 source keys (3 in NH, 12 in ME) hold **more than one water body**, so
+> one key resolves to one polygon and the other pond's geometry is clipped away against a shoreline
+> miles from it. `samples` excludes and names them; `join` does not yet split them. See the phase doc,
+> *§What the wide render found* §1.
+
+## 5. Samples — look at what the chain actually draws
+
+```bash
+pnpm --filter @skating/bathymetry samples                       # the standard grid
+pnpm --filter @skating/bathymetry samples --per-state=8         # more per state
+pnpm --filter @skating/bathymetry samples --states=VT,NH        # narrower
+pnpm --filter @skating/bathymetry samples --only=<src>:<key>,…  # named lakes
+pnpm --filter @skating/bathymetry samples --list                # the eligible pool, as TSV
+```
+
+Writes an HTML page of one card per lake: our water-body polygon, the source's measurements, and the
+contours the chain produces, **framed to the whole lake**. It picks a few lakes the founder named plus
+a spanning set per state — ranked by size, cut into buckets, one from each, preferring a shape unlike
+anything already picked. Taking the first N of this corpus returns farm ponds every time.
+
+**Both lanes render in the same grid on purpose.** A state-surveyed lake beside an interpolated one is
+the only honest calibration for how good the interpolated ones look.
+
+**This is the step that finds things.** Every failure in this phase was invisible in code review and
+obvious on a render — the isotropic fit splitting a real trough into isolated pits, the anisotropy
+smearing every lake into a lens, a source key holding two ponds 51 km apart. Run it after any change
+to the interpolation, and *look at it*, before believing a green test suite.
+
+Prerequisites for this step specifically: **GMT** (`brew install gmt`) and **GDAL**.
+
+## 6. Provenance — regenerate the committed record
+
+```bash
+pnpm --filter @skating/bathymetry provenance
+```
+
+Run this after any `snapshot`, so `PROVENANCE.md` matches the archive it describes.
+
+---
+
+## Not built yet
+
+The render half of the phase: `tippecanoe` → `.pmtiles` → R2, and the two clients. Nothing here
+produces a tile. `tippecanoe` and `pmtiles` are listed as prerequisites above in anticipation, not
+because a command uses them yet. The rung-1 depth write for the D68 ladder is also unbuilt, and is
+gated behind N6a's ordering gate (hold the corpus pass until N6c can ride it).
