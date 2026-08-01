@@ -2,7 +2,13 @@
 
 *A toggleable underwater-contour layer, drawn from state-agency surveys. Designed, not built.*
 
-> **Status: 📋 Designed at N6a's kickoff (2026-07-29), deliberately not built.** Split out of the
+> **Status: 🔨 IN BUILD (2026-08-01), paused at the founder's call.** The data half is done: all five
+> states archived (298 MB, mirrored to R2), normalized, joined to our corpus, gated, interpolated and
+> contoured. **Nothing is tiled or rendered in either client yet.** See *§The interpolation — where it
+> ended up* for the state of the hard part and the options for finishing it, and
+> *§What the build found in the plan* for the six premises of this document that turned out false.
+>
+> **Originally: 📋 Designed at N6a's kickoff (2026-07-29), deliberately not built.** Split out of the
 > register's single **N6** entry when the founder asked whether we could draw topographic lines inside
 > the lake bodies. The answer is **yes, from measured state-agency data, and emphatically not from the
 > global modelled sources** — which is the finding that made this its own phase rather than a bullet in
@@ -428,6 +434,145 @@ and unlabelled when absent has no coverage embarrassment to manage.
 ~~**NY's actual maturity.**~~ → **Answered 2026-07-31, and the answer is "neither."** See
 *§What the build found in the plan* §5. NY behaves like neither NH nor ME: there is no statewide lake
 bathymetry dataset in any form, vector or digitised-point. The afternoon of looking happened.
+
+---
+
+## The interpolation — where it ended up, and what's still open
+
+*Written 2026-08-01, at the point the founder called a pause. The sounding lanes (VT, ME) need us to
+fit a surface, and that surface turned out to be the hardest thing in this phase by a wide margin —
+five distinct mechanisms, four of which failed visibly. This section is the record, because every
+failure here was **invisible in code review and obvious on a render**, and the next person will
+otherwise re-derive them in the same order.*
+
+### The chain as it now stands
+
+| Stage | Tool | Why |
+| --- | --- | --- |
+| Decimate | `gmt blockmedian` | One value per grid cell. The median resists a bad reading; a sonar log has thousands of points per cell. |
+| Constrain | shoreline at depth 0 | §Maine step 3. **The load-bearing step** — without it contours never close and nothing nests. Uncapped, and sampled at ~1 grid cell. |
+| Solve | `gmt surface`, `-T0.25`, `-Ll0 -Lu<max>` | Tensioned spline. The clamps stop it inventing a hole deeper than anything sounded. |
+| Anisotropy | compress along-axis for the solve, `grdedit` back to real metres | Connects a trough the isotropic fit was splitting. Capped by each lake's own elongation. |
+| Smooth | `gmt grdfilter -Fg`, 3 cells | Removes the raster tracing stair-step. Narrower than the sounding spacing, so it cannot erase a surveyed feature. |
+| Mask | `surface -M`, at the density gate's ratio | Refuses to draw water further from a reading than the gate allows. |
+| Contour | `gdal_contour` at a per-lake interval | Interval targets ~12 bands, snapped to {2,5,10,20,25,50,100}. |
+| Clip | `ogr2ogr -clipsrc` against our polygon | A mask is circular; a lake is not. |
+
+**The tunable knobs**, all in `@skating/core`-style constants with env overrides for a run:
+`THALWEG_ANISOTROPY` (4, capped per lake) · `MAX_GAP_RATIO` (0.12) · `TENSION` (0.25) ·
+`SMOOTH_CELLS` (3) · `GRID_CELLS` (500) · `TARGET_CONTOUR_COUNT` (12).
+
+### What was tried and rejected, in order
+
+Recorded because each looked correct in advance:
+
+1. **Inverse-distance weighting.** An *exact* interpolator: it passes through every sounding, so each
+   becomes a local extremum ringed by bullseyes. It also has no edge, so contours ran across dry land
+   to the raster corners.
+2. **Delaunay TIN (`gdal_grid -a linear`).** Killed the bullseyes and gave a free correct mask, but
+   drew the triangulation itself — angular facets and sliver triangles between parallel transects.
+3. **Moving average.** GDAL's only smoothing option. It renders its own search radius as overlapping
+   circular arcs around every cluster.
+4. **GMT `surface` isotropic.** The first thing that looked like bathymetry. Its failure was subtler
+   and the founder found it: deep readings sit ~300 m apart *along* the axis while shallow shore
+   readings sit ~100 m *across* it, so an isotropic fit lets the lateral pull win and a continuous
+   trough breaks into isolated pits. The long-axis profile of MIDAS 1100 runs 44–64 ft continuously
+   across half the lake, so the trough is in the data and the fit was splitting it.
+5. **Anisotropy by coordinate compression, left compressed.** Connected the troughs and smeared every
+   lake into an axis-aligned lens — because the compression warped everything measured in grid units
+   downstream (cell size, filter width, mask radius), so a circular smoothing kernel became a 4–8×
+   elongated one.
+6. **GMT `surface -A`, the documented anisotropy flag.** Removed the smearing and did nothing else:
+   measured contour elongation held at ~2.2 across ratios from 0.25 to 4, and the fragment count went
+   *up*. Worth recording that the obvious flag is inert here.
+
+What works is **compress for the solve, then `grdedit -R` back to real metres** before anything else
+touches the grid. `grdedit` rewrites the coordinate range without altering a value, so the solver sees
+a squashed lake while the filter, mask and contour tracer all see real distances.
+
+### The limitation that remains: the axis is straight, and lakes bend
+
+The anisotropy uses **one principal axis per lake**. A lake that curves through its length — Pleasant
+Lake does — gets its contours pulled toward a single direction that fits only part of it, which reads
+as rigid and over-stretched.
+
+The current mitigation is to **cap the anisotropy at each lake's own measured elongation**, on the
+rule *never assume more directionality than the shape exhibits*. It works because a bend makes a point
+cloud rounder, so a curved lake asks for less on its own:
+
+| Lake | elongation → anisotropy applied |
+| --- | --- |
+| Pleasant Lake (curved) | 1.95 |
+| Big Reed Pond | 2.01 |
+| Quantabacook (long, straight) | 3.32 |
+| Varnum Pond (round-ish) | 1.73 |
+| a round pond | 1.00 — isotropic |
+
+Configured at 4, no sampled lake receives 4. This is a real improvement and it is **still a straight
+axis, just a gentler one.**
+
+### Options for the curving axis, costed
+
+**A — Curvilinear (medial-axis) frame.** *The proper fix.* Compute the lake's centreline, parameterise
+every point as (distance along the centreline, signed distance across it), grid in that space, map
+back. The anisotropy then follows the lake wherever it goes, and the same transform would make
+near-shore behaviour more natural as a side effect.
+
+> **Cost: the largest of these, and the risk is in the branches.** A centreline for a simple
+> elongated basin is tractable; for a lake with three arms it is a *skeleton*, and the inverse map is
+> ambiguous where branches meet. That ambiguity is not a detail — it is where the contours of two
+> arms would have to agree, and getting it wrong shows up as a seam exactly at the junction a skater
+> is most likely to be looking at. Would want its own render-first pass like this one had.
+
+**B — Local direction field, applied as steered smoothing.** Grid isotropically, then filter with an
+anisotropic kernel whose direction follows a field computed from the shoreline (the gradient of the
+distance transform points across the lake; its perpendicular points along). Curves naturally, no
+centreline needed.
+
+> **Cost: moderate — a custom filter, since `grdfilter` is isotropic.** The real limit is what
+> smoothing can do: it shapes features that already exist and **cannot reconnect a trough the fit
+> already split**. So it would address "stretchy and rigid" without addressing "isolated pits", which
+> is the problem we started from.
+
+**C — Piecewise axes.** Segment the lake along its length, grid each segment on its own local axis,
+blend the overlaps.
+
+> **Cost: moderate, and it buys a seam problem.** Cheaper than a true skeleton and gets most of the
+> curvature benefit; the blending between segments is where it would go wrong, and it fails on
+> exactly the same branched lakes as A.
+
+**D — Accept the elongation-capped straight axis.** Where we are now.
+
+> **Cost: none.** The honest argument for it: the remaining artifact is a *rendering* imperfection on
+> a layer that D82 says makes no claim, on lakes where we have ~48 soundings. Chasing curvilinear
+> fidelity on data this sparse may be precision the survey does not support. Revisit if a specific
+> lake looks wrong to a real user.
+
+**E — Set the ratio to 1.** Isotropic, i.e. before any of this.
+
+> **Cost: it reinstates the isolated-pit failure** the founder identified, which the long-axis profile
+> shows is contrary to the data. Defensible only as "we draw exactly what an isotropic fit gives",
+> which is not a neutral position either — isotropy is also a morphological claim, just an unexamined
+> one.
+
+**Recommendation: D now, A when a real user complains about a named lake.** The pipeline is already
+several iterations past where a paper decision would have landed, and every one of those iterations
+was forced by a render rather than by an argument. A is worth doing on evidence from a real map, not
+from the sample grid.
+
+### Two other things left open
+
+**Contour crowding.** Where the bed drops off steeply, contour levels bunch into a narrow band and
+read as hatching. The obvious fix — dropping levels that render too close together — was **rejected
+by the founder and correctly**: a deep lake with a steep bed would then show *fewer* rings than a
+shallow one with a gentle bed, understating depth by omission, which is the misleading-by-rendering
+D82 exists to prevent. No accepted fix yet. Most likely candidates are a zoom-dependent client-side
+thinning (which moves cartographic judgement into two clients) or simply accepting it.
+
+**Near-shore detail is unearned.** The shoreline is pinned at 0 ft and the nearest sounding is often
+30–40 ft, with nothing measured in between, so a band of contours crowds into the one place we have no
+data. This is inherent to the boundary condition and is not resolved. Worth remembering when reading a
+rendered lake: **the most detailed-looking part of the picture is the part we know least about.**
 
 ---
 
