@@ -210,9 +210,8 @@ function scoreFields(input: {
  * a few hundred bodies per transaction) and NOT in `importCanonical`, which already does the
  * heaviest work in the app and would pay this on all 116,070 rows mid-import.
  *
- * `hasContours` is deliberately absent: N6b's join (`matchBathymetryLakes`) is a read-only
- * `internalQuery` that stores nothing, so no field on the row records contour coverage. The term
- * exists in `@skating/core` and stays dark until something persists that — deferred by founder call.
+ * `hasContours` reads the `bathymetryCoverage` side table rather than a column, because contour
+ * coverage is a property of the N6b TILESET rather than of the body — see that table's comment.
  */
 async function richnessFor(ctx: QueryCtx, body: Doc<'waterBodies'>): Promise<ProfileRichness> {
   const putIns = await ctx.db
@@ -232,9 +231,17 @@ async function richnessFor(ctx: QueryCtx, body: Doc<'waterBodies'>): Promise<Pro
         .withIndex('by_water_body_first_reported', (q) => q.eq('waterBodyId', body._id))
         .first();
 
+  const coverage = await ctx.db
+    .query('bathymetryCoverage')
+    .withIndex('by_external_id', (q) =>
+      q.eq('source', body.source === 'nhd' ? 'nhd' : 'osm').eq('externalId', body.externalId ?? ''),
+    )
+    .first();
+
   return {
     // A blank name is the 92% case; a name is a weak but real signal that someone cared.
     hasName: body.name.trim().length > 0,
+    hasContours: coverage !== null,
     hasDepth: body.meanDepthM !== undefined || body.maxDepthM !== undefined,
     hasDerivedPutIn: visiblePutIns.some((p) => p.source === 'derived'),
     hasOfficialPutIn: visiblePutIns.some((p) => p.source === 'official'),
@@ -451,6 +458,46 @@ export const backfillCells = internalMutation({
       });
     }
     return { reindexed: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+// ── Bathymetry contour coverage (N6c-1 / D2) ─────────────────────────────────────────────────
+
+/**
+ * Replace the contour-coverage set with the bodies the current tileset actually draws.
+ *
+ * **Replace, not merge**, and paginated so it can be driven from a loader loop: a re-tile that drops
+ * a lake must drop its coverage too, or the row keeps claiming surveyed bathymetry it no longer has
+ * — silently, since nothing on the map would look different. `clearFirst` on the opening batch is
+ * what makes the whole operation a replacement rather than an accumulation.
+ */
+export const importContourCoverage = internalMutation({
+  args: {
+    source: literals(CANONICAL_SOURCES),
+    externalIds: v.array(v.string()),
+    clearFirst: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { source, externalIds, clearFirst }) => {
+    let cleared = 0;
+    if (clearFirst) {
+      // ~2,000 rows, so a full collect is bounded and this is the one place it is honest to do.
+      const existing = await ctx.db.query('bathymetryCoverage').collect();
+      for (const row of existing) {
+        await ctx.db.delete(row._id);
+        cleared++;
+      }
+    }
+    let inserted = 0;
+    for (const externalId of externalIds) {
+      const already = await ctx.db
+        .query('bathymetryCoverage')
+        .withIndex('by_external_id', (q) => q.eq('source', source).eq('externalId', externalId))
+        .first();
+      if (already) continue;
+      await ctx.db.insert('bathymetryCoverage', { source, externalId });
+      inserted++;
+    }
+    return { cleared, inserted };
   },
 });
 

@@ -7,6 +7,7 @@ import {
   COMPASS_POINTS_16,
   compassPointFor,
   FETCH_BEARING_COUNT,
+  FETCH_BEARING_STEP_DEG,
   fetchBucketFor,
   fetchProfileMeters,
   lakeAxes,
@@ -100,6 +101,19 @@ describe('compass buckets', () => {
         expect(axisCompassLabel(deg)).toBe(axisCompassLabel(deg + 180));
       }),
     );
+  });
+
+  it('is invariant exactly ON a sector boundary, where the rounding is a coin flip', () => {
+    // Regression for seed 1780398957. Bucketing the bearing and its reciprocal separately is two
+    // independent Math.round calls on two different floats, so a bearing sitting precisely between
+    // two sectors could round one way and its opposite the other. Folding to [0, 180) first makes
+    // the invariant structural.
+    for (let k = 0; k < 16; k++) {
+      const boundary = k * FETCH_BEARING_STEP_DEG + FETCH_BEARING_STEP_DEG / 2;
+      for (const deg of [boundary, boundary - 1e-13, boundary + 1e-13]) {
+        expect(axisCompassLabel(deg)).toBe(axisCompassLabel(deg + 180));
+      }
+    }
   });
 });
 

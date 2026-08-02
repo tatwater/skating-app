@@ -120,12 +120,22 @@ depth… Its 8 km axis"*, and A3 says *"Metric per D25: nearest kilometre"*. **D
 *display imperial*, and there is no metric display mode in this product.** The caption is imperial
 throughout.
 
-### 6. `hasContours` has no data behind it
+### 6. `hasContours` had no data behind it — **now fixed** (founder call, 2026-08-02)
 
-D2's `+2 has bathymetric contours` assumes contour coverage is queryable. It is not:
+D2's `+2 has bathymetric contours` assumed contour coverage was queryable. It was not:
 `waterBodies.matchBathymetryLakes` is a read-only `internalQuery` that stores nothing, and no field on
-the row records it. The term exists in code and **ships dark**; persisting the ~2,437 N6b matches is
-roughly thirty lines, deferred by founder call.
+the row recorded it.
+
+Now persisted, as a **`bathymetryCoverage` side table rather than a column**, because coverage is a
+property of the **tileset** rather than of the body: re-tiling replaces ~2,000 rows instead of
+migrating 116,070, and a lake dropped by a re-tile cannot leave a stale `true` behind claiming a
+state survey we no longer draw. Keyed on `externalId` for the same reason the tiles are, so it
+survives a canonical re-import.
+
+**And it records 2,022 bodies, not 2,437.** The join *matched* 2,437 source lakes; only **2,022**
+produced a contour line anyone can see. A lake whose survey was matched and then gated out is not a
+lake with contours, so `pnpm --filter @skating/bathymetry coverage` reads the built
+`contours.geojsonl` rather than the join cache — streaming it, since it is ~800 MB.
 
 ### The run order, which is not optional
 

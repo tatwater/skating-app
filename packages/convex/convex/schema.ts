@@ -40,6 +40,7 @@ import {
   BODY_FEATURE_TYPES,
   BOUNTY_GATE_DECISIONS,
   BOUNTY_STATUSES,
+  CANONICAL_SOURCES,
   COMMENT_SOURCES,
   DATA_EXPORT_STATUSES,
   DEDUP_STATUSES,
@@ -509,6 +510,26 @@ export default defineSchema({
     // by the range rather than filtered after the read.
     .index('by_curated_boost', ['curatedBoost'])
     .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
+
+  // Which bodies the N6b contour tileset actually draws lines for (N6c-1 / D2).
+  //
+  // **A side table rather than a flag on `waterBodies`, because contour coverage is a property of
+  // the TILESET, not of the body.** Re-tiling replaces ~2,000 rows here instead of migrating 116,070,
+  // and a body that drops out of a re-tile cannot leave a stale `true` behind — which is the failure
+  // a boolean column invites, and it would be silent: a lake claiming surveyed bathymetry it no
+  // longer has.
+  //
+  // Keyed on `externalId` for the same reason the tiles are (N6b): a Convex `_id` changes if a row
+  // is recreated, and re-tiling five states because a re-import churned ids is not a thing we should
+  // be one accident away from. That also means coverage survives a canonical re-import untouched.
+  //
+  // Populated from the built contour features, so it records lakes we actually DREW — 2,022 — not
+  // the 2,437 that merely matched the join. A lake whose survey produced no usable line is not a
+  // lake with contours.
+  bathymetryCoverage: defineTable({
+    source: literals(CANONICAL_SOURCES),
+    externalId: v.string(),
+  }).index('by_external_id', ['source', 'externalId']),
 
   // Per-state distribution basis for the derived caption (N6c A5). **One row per state**, holding
   // the 10th–90th percentiles of each metric across that state's listed bodies.

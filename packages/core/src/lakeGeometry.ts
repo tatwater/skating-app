@@ -98,7 +98,13 @@ export function compassPointFor(bearingDeg: number): CompassPoint16 {
  * skaters describe a lake's lie.
  */
 export function axisCompassLabel(bearingDeg: number): string {
-  const bucket = fetchBucketFor(bearingDeg);
+  // **Fold to [0, 180) BEFORE bucketing**, so a bearing and its reciprocal produce the same bucket
+  // by construction rather than by luck. Bucketing each separately means two independent
+  // `Math.round` calls on two different floats, and a bearing sitting exactly on a sector boundary
+  // can round one way while its reciprocal rounds the other: `101.24999999999993` and its opposite
+  // disagreed, which fast-check found on seed 1780398957 after this had passed hundreds of runs.
+  const folded = normalizeBearing(bearingDeg) % 180;
+  const bucket = fetchBucketFor(folded) % FETCH_BEARING_COUNT;
   const opposite = (bucket + FETCH_BEARING_COUNT / 2) % FETCH_BEARING_COUNT;
   // Lead with the northerly end (N through E), so an axis reads "N–S" and "NNW–SSE" rather than
   // "S–N" and "SSE–NNW". Purely conventional — the axis is undirected either way — but a lake

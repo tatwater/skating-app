@@ -678,6 +678,59 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
 });
 
 describe('waterBodies profile-richness prominence (N6c / D2)', () => {
+  test('contour coverage feeds the richness score, and a re-tile can take it away', async () => {
+    // Coverage is a property of the TILESET, not the body, so it lives in a side table keyed on
+    // externalId — which is also why a body that drops out of a re-tile cannot keep claiming a
+    // state survey we no longer draw.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const withoutContours = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+
+    expect(
+      await t.mutation(internal.waterBodies.importContourCoverage, {
+        source: 'osm',
+        externalIds: [CANONICAL_ITEM.externalId],
+        clearFirst: true,
+      }),
+    ).toMatchObject({ inserted: 1 });
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const withContours = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+    expect(withContours).toBeGreaterThan(withoutContours);
+
+    // A re-tile that no longer draws this lake REPLACES the set rather than adding to it.
+    await t.mutation(internal.waterBodies.importContourCoverage, {
+      source: 'osm',
+      externalIds: [],
+      clearFirst: true,
+    });
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore).toBeCloseTo(
+      withoutContours,
+      10,
+    );
+  });
+
+  test('importContourCoverage is idempotent within a run', async () => {
+    // The loader batches 400 at a time and only the first batch clears, so a retried batch must not
+    // double-insert.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importContourCoverage, {
+      source: 'osm',
+      externalIds: ['way/1', 'way/2'],
+      clearFirst: true,
+    });
+    expect(
+      await t.mutation(internal.waterBodies.importContourCoverage, {
+        source: 'osm',
+        externalIds: ['way/1', 'way/2'],
+      }),
+    ).toMatchObject({ inserted: 0, cleared: 0 });
+    expect(await t.run((ctx) => ctx.db.query('bathymetryCoverage').collect())).toHaveLength(2);
+  });
+
   test('backfillCells raises a body that has a report, and leaves a bare one alone', async () => {
     // The founder's ask: real-world documentation should out-rank hand-curation. Activity is the
     // only term that is evidence of USE rather than of data, so it is the one that moves a body.

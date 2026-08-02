@@ -2102,8 +2102,11 @@ check.
 byte-identically to before, and a property test asserts enrichment never moves a body to a *narrower*
 zoom bucket. That is the founder's *"I'd hate to not have a body someone cares about"*, mechanised.
 
-**Two terms ship dark.** `hasContours` has no data source — N6b's `matchBathymetryLakes` is a
-read-only `internalQuery` that persists nothing — and the put-in terms wait on N6d.
+**`hasContours` ships live** (founder call, 2026-08-02), via a `bathymetryCoverage` side table keyed
+on `externalId` rather than a column on `waterBodies`: coverage is a property of the **tileset**, so
+re-tiling replaces ~2,000 rows instead of migrating 116,070, and a dropped lake cannot leave a stale
+flag claiming a survey we no longer draw. It records the **2,022** bodies that produced a visible
+contour line, not the 2,437 the join merely matched. **The put-in terms still wait on N6d.**
 
 **Related:** [D49](#d49), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).
 

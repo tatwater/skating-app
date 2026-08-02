@@ -32,6 +32,7 @@ export default defineConfig({
         'src/samples.ts',
         'src/join.ts',
         'src/types.ts',
+        'src/coverage.ts',
       ],
       thresholds: {
         lines: 90,

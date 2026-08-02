@@ -1007,7 +1007,10 @@ passed its unit tests:
 - **D2's prominence weights were ~13× the score's whole dynamic range.** A "+1 for a name" would
   have pushed every named body to the widest zoom bucket with all tests still green.
 - **The plan's illustrative caption contradicted D25**, mixing acres and miles with metres and km.
-- **`hasContours` has no data source** — N6b's join is a read-only query that stores nothing.
+- **`hasContours` had no data source** — N6b's join is a read-only query that stores nothing. Fixed
+  at the founder's ask: a `bathymetryCoverage` side table records the **2,022** bodies that actually
+  produced a contour line (not the 2,437 the join matched), keyed on `externalId` so it survives a
+  re-import.
 
 *The run order is now load-bearing and asserted:* canonical re-import → depth + elevation →
 `regionStats:recompute` → wind rose → `backfillCells` **last**, because the D2 re-score reads
