@@ -169,6 +169,11 @@ produced a contour line anyone can see. A lake whose survey was matched and then
 lake with contours, so `pnpm --filter @skating/bathymetry coverage` reads the built
 `contours.geojsonl` rather than the join cache — streaming it, since it is ~800 MB.
 
+The loader replaces the set in one pass: the opening batch clears, and that batch goes out even when
+there is nothing to stamp, or a dropped-everything re-tile would leave the whole old set standing. A
+build naming **no** body refuses instead, behind `--allow-empty` — from the loader, a truncated build
+and an empty tileset look the same, and only one of them should cost 2,022 rows.
+
 ### The run order, which is not optional
 
 `richnessFor` costs two index reads per body, so it runs in `backfillCells` and **not** in
