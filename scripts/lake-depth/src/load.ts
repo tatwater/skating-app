@@ -35,6 +35,10 @@ interface MatchResult {
   operatorHeld: number;
   /** Lakes where a mean exceeded a max, so the ladder had to drop one of the two. */
   inverted: number;
+  /** Lakes where both we and HydroLAKES had a shoreline, so D85's cross-check could run. */
+  shorelineCompared: number;
+  /** …of those, how many disagreed by more than 2x — a broken-join signal, not an accuracy bar. */
+  shorelineDisagreed: number;
   rejects: { key: string; reason: string }[];
 }
 
@@ -130,6 +134,8 @@ function main(): void {
     noAreaGate: 0,
     operatorHeld: 0,
     inverted: 0,
+    shorelineCompared: 0,
+    shorelineDisagreed: 0,
   };
   const rejects: { key: string; reason: string }[] = [];
   let applied = 0;
@@ -143,6 +149,8 @@ function main(): void {
       totals.noAreaGate += result.noAreaGate ?? 0;
       totals.operatorHeld += result.operatorHeld ?? 0;
       totals.inverted += result.inverted ?? 0;
+      totals.shorelineCompared += result.shorelineCompared ?? 0;
+      totals.shorelineDisagreed += result.shorelineDisagreed ?? 0;
       rejects.push(...(result.rejects ?? []));
       applied++;
       if ((index + 1) % 20 === 0 || index + 1 === batches.length) {
@@ -172,6 +180,12 @@ function main(): void {
     `[lake-depth] of those: ${totals.noAreaGate} matched with no area gate (one side reported no area) · ` +
       `${totals.operatorHeld} held by a moderator's override · ` +
       `${totals.inverted} contradictory mean/max pairs resolved\n`,
+  );
+  // D85's free cross-check. Printed even at zero, because "HydroLAKES and we agreed everywhere" and
+  // "the comparison never ran" are different results that look identical if you only print failures.
+  process.stderr.write(
+    `[lake-depth] shoreline cross-check (D85): ${totals.shorelineCompared} lakes comparable · ` +
+      `${totals.shorelineDisagreed} disagreed by >2× (ours is stored either way)\n`,
   );
   const SHOWN = 30;
   for (const r of rejects.slice(0, SHOWN)) {

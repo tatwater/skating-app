@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { pointInPolygon } from '@skating/core';
+import { type LatLng, pointInPolygon, shorelineMeters } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
@@ -455,5 +455,62 @@ describe('depthFromOsmTags', () => {
     expect(depths).toEqual([
       { source: 'osm', externalId: 'way/7', maxDepthM: 4, maxDepthSource: 'osm_tag' },
     ]);
+  });
+});
+
+describe('derived shape stats (N6c / D85)', () => {
+  /**
+   * A crenellated shoreline whose detail is finer than `SIMPLIFY_TOLERANCE_DEG` (~5 m), so
+   * simplification demonstrably eats it. This is the fixture the D85 ordering test needs: on a
+   * smooth polygon, measuring before and after simplification gives the same answer and the test
+   * would pass no matter which side of `simplify()` the measurement sat on.
+   */
+  function crenellatedFeature(): OsmWaterFeature {
+    const ring: number[][] = [];
+    // Teeth sized so simplification demonstrably eats them: ~4.4 m of amplitude (just inside the
+    // ~5 m `SIMPLIFY_TOLERANCE_DEG`, so Douglas–Peucker collapses the whole run) over a ~4.0 m
+    // step (so each segment is ~1.5× the flat distance it replaces). Shallower teeth also get
+    // removed but change the perimeter by a fraction of a percent, which would make this test pass
+    // on either side of `simplify()` and guard nothing.
+    const teeth = 1000;
+    for (let i = 0; i <= teeth; i++) {
+      ring.push([-72.1 + i * 0.00005, 43.9 + (i % 2) * 0.00004]);
+    }
+    ring.push([-72.05, 43.95], [-72.1, 43.95], [-72.1, 43.9]);
+    return waterFeature({}, [ring]);
+  }
+
+  it('measures the SOURCE geometry, not the simplified copy', () => {
+    // The whole of D85 in one assertion. If `lakeGeometryStats` is ever moved below
+    // `simplifyForStorage`, the stored shoreline collapses toward the smoothed outline and this
+    // fails — which is the only mechanical guard on a one-line ordering constraint.
+    const body = featureToCanonicalBody(crenellatedFeature());
+    expect(body).not.toBeNull();
+    const measuredOnStoredCopy = shorelineMeters(body?.polygon as Polygon);
+    expect(body?.shorelineM).toBeGreaterThan(measuredOnStoredCopy * 1.05);
+  });
+
+  it('carries the full stat block onto the canonical body', () => {
+    const body = featureToCanonicalBody(waterFeature({}));
+    expect(body?.shorelineM).toBeGreaterThan(0);
+    expect(body?.longAxisM).toBeGreaterThan(0);
+    expect(body?.shortAxisM).toBeGreaterThan(0);
+    expect(body?.longAxisBearingDeg).toBeGreaterThanOrEqual(0);
+    expect(body?.longAxisBearingDeg).toBeLessThan(180);
+    expect(body?.fetchProfileM).toHaveLength(16);
+    expect(body?.fetchProfileM?.every((d) => d > 0)).toBe(true);
+  });
+
+  it('puts interiorPoint inside the water, where centroid may not be', () => {
+    const body = featureToCanonicalBody(waterFeature({}));
+    expect(body?.interiorPoint).toBeDefined();
+    expect(pointInPolygon(body?.interiorPoint as LatLng, body?.polygon as Polygon)).toBe(true);
+  });
+
+  it('still produces a body when the stats cannot all be measured', () => {
+    // Resilience over completeness: a stat is omitted, never zeroed, and never fails the feature.
+    const body = featureToCanonicalBody(waterFeature({}));
+    expect(body).not.toBeNull();
+    expect(body?.externalId).toBe('way/1');
   });
 });

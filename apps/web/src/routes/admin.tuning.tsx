@@ -13,6 +13,7 @@ import {
   DISPLAY_AREA_MIN_SQM,
   DUPLICATE_MATCH_METERS,
   DUPLICATE_MAX_CLUSTER_SPREAD_M,
+  FETCH_BEARING_COUNT,
   FRESH_REPORT_HOURS,
   HAZARD_CORROBORATION_MIN_CONFIRMS,
   MAX_OPEN_BOUNTIES_PER_DAY,
@@ -33,6 +34,10 @@ import {
   REPORT_FRESHNESS_PER_CORROBORATION,
   REPORT_FRESHNESS_PER_THUMB,
   REPORT_FRESHNESS_WEATHER_MULTIPLIER,
+  RICHNESS_ACTIVITY,
+  RICHNESS_STATIC_CAP,
+  RICHNESS_TOTAL_CAP,
+  SCORE_PER_ZOOM_LEVEL,
   SHALLOW_MAX_DEPTH_M,
   SHALLOW_MEAN_DEPTH_M,
   SHALLOW_THAW_K,
@@ -442,6 +447,30 @@ function AdminTuning() {
         blurb="The displayScore curve decides which bodies draw at each zoom. Compare a band against the 1,000-body render budget — once a band holds far more than that, dense viewports at that zoom are being truncated and the curve is what to move. (That budget is now a rendering choice, not a safety limit: since N1 the viewport read is bounded by the cell index rather than by a tuned row cap.)"
       >
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <ConstantCard name="RICHNESS_ACTIVITY" value={RICHNESS_ACTIVITY} file="display.ts">
+            A body with any report or hazard on record. The only term that is evidence of{' '}
+            <em>use</em> rather than of data, so it is the largest — and it alone can out-rank a
+            curated boost, which is the point (D2).
+          </ConstantCard>
+          <ConstantCard name="RICHNESS_STATIC_CAP" value={RICHNESS_STATIC_CAP} file="display.ts">
+            Ceiling on the imported-metadata half (name, depth, contours, put-ins). Deliberately
+            below a curated boost&rsquo;s 0.3: metadata says a body is documented, not that anyone
+            wants to skate it.
+          </ConstantCard>
+          <ConstantCard name="RICHNESS_TOTAL_CAP" value={RICHNESS_TOTAL_CAP} file="display.ts">
+            Ceiling on the whole richness boost — about{' '}
+            {(RICHNESS_TOTAL_CAP / SCORE_PER_ZOOM_LEVEL).toFixed(1)} zoom levels, against a curated
+            boost&rsquo;s 2.4. Above it on purpose: a used lake should overtake a hand-seeded one.
+          </ConstantCard>
+          <ConstantCard
+            name="FETCH_BEARING_COUNT"
+            value={FETCH_BEARING_COUNT}
+            file="lakeGeometry.ts"
+          >
+            Compass sectors in the wind-fetch profile and the winter rose. 16 because those{' '}
+            <em>are</em> the compass points, which is how forecast APIs report wind and how skaters
+            describe it.
+          </ConstantCard>
           <ConstantCard
             name="DISPLAY_AREA_MIN_SQM"
             value={DISPLAY_AREA_MIN_SQM.toLocaleString()}

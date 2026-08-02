@@ -976,6 +976,51 @@ the phase doc, and the first one reshaped the work:
   university / monitoring sources, lakes > 1 ha, an order of magnitude below HydroLAKES' floor. It becomes
   rung 2 of the D68 ladder, above both modelled sources.
 
+**N6c — Expanded lake profiles.** *(Split at kickoff 2026-08-02 into **N6c-1** — derived numbers —
+and **N6c-2** — links, cards and observability. As scoped it was ~15 workstreams across schema, ETL,
+two clients, a new external API, an admin surface and a corpus-wide re-score, i.e. one review surface
+for all of it.)*
+
+**N6c-1 — geometry stats, elevation, the caption, and profile-richness prominence.** ✅ **BUILT
+2026-08-02** (branch `phase-N6c-1-lake-profiles`; **unpushed, undeployed, ETL passes not yet run**)
+— see [`phase-N6c-expanded-lake-profiles.md`](./phase-N6c-expanded-lake-profiles.md) *§What the
+N6c-1 build found*. New decision **D90** (wind exposure) plus **D85**, **D86** and **D2** amendments.
+
+**Six of the plan's own claims were false**, four of them caught by running the code against real
+lakes rather than fixtures — which is the finding underneath the findings, since every one of them
+passed its unit tests:
+
+- **The dimension-line method reported 2× the true width.** Hull diameter + perpendicular extent
+  gives `2w` on an elongated rectangle, so a 5 × 1 mile lake would have rendered "5 × 2 miles".
+  Replaced with the minimum-area bounding rectangle; Champlain now measures 106.3 × 14.8 mi against
+  a published ~107 × 14.
+- **`waterBodies.centroid` is not a centroid** — it is `pointOnFeature`, which falls back to a point
+  on the *shoreline* whenever the bbox centre lands outside the polygon. Willoughby's is ring vertex
+  199; Champlain's sits 30.7 km from mid-lake. The fetch profile was casting rays from the shore, so
+  7 of Willoughby's 16 bearings came back 0.0. `centroid` is deliberately left alone (drive-time and
+  town stamps want it); a new `interiorPoint` serves weather sampling, the one consumer it hurt.
+- **Fetch alone names the wrong wind direction (D90).** Founder catch. Measured at Willoughby: the
+  winter rose is bimodal along the trough (19.4% SE, 16.1% SSE, 18.6% NW) with the E/NE quadrant
+  blocked by the ridges — so exposure is `frequency × fetch`, and a lake with no rose says nothing
+  about wind. New `scripts/wind-climate` against NREL's WIND Toolkit; GWA was rejected for having no
+  documented API.
+- **D2's prominence weights were ~13× the score's whole dynamic range.** A "+1 for a name" would
+  have pushed every named body to the widest zoom bucket with all tests still green.
+- **The plan's illustrative caption contradicted D25**, mixing acres and miles with metres and km.
+- **`hasContours` had no data source** — N6b's join is a read-only query that stores nothing. Fixed
+  at the founder's ask: a `bathymetryCoverage` side table records the **2,022** bodies that actually
+  produced a contour line (not the 2,437 the join matched), keyed on `externalId` so it survives a
+  re-import.
+
+*The run order is now load-bearing and asserted:* canonical re-import → depth + elevation →
+`regionStats:recompute` → wind rose → `backfillCells` **last**, because the D2 re-score reads
+everything above it.
+
+**N6c-2 — reference links, NWS alerts, the short forecast, the seed script, per-body summary cards,
+and import observability.** **Not built.** Carries the **D86 amendment**: the consensus dots read
+`reports.skateQuality`, not the Phase 6 thumbs, which measure whether a *report* was helpful rather
+than what the ice was like.
+
 **N6b — The bathymetry layer: real isobaths inside the lake.** ✅ **COMPLETE (2026-08-01); prod
 deferred.** See [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
 

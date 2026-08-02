@@ -15,6 +15,7 @@
 import {
   CONDITION_SOURCES,
   DEPTH_SOURCES,
+  ELEVATION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
   PRECIP_TYPES,
@@ -28,6 +29,7 @@ import {
   USER_ROLES,
   USER_STATUSES,
   WATER_BODY_TYPES,
+  WIND_ROSE_SOURCES,
 } from '@skating/core';
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
@@ -38,6 +40,7 @@ import {
   BODY_FEATURE_TYPES,
   BOUNTY_GATE_DECISIONS,
   BOUNTY_STATUSES,
+  CANONICAL_SOURCES,
   COMMENT_SOURCES,
   DATA_EXPORT_STATUSES,
   DEDUP_STATUSES,
@@ -66,7 +69,15 @@ import {
   SUPPORT_STATUSES,
   WATER_BODY_SOURCES,
 } from './lib/enums';
-import { bbox, boolFlags, geoJson, latLng, literals, weatherSinceSummary } from './lib/validators';
+import {
+  bbox,
+  boolFlags,
+  decileBlock,
+  geoJson,
+  latLng,
+  literals,
+  weatherSinceSummary,
+} from './lib/validators';
 
 /** Per-type notification toggles; keys single-sourced to mirror `notifications.type` 1:1 (D16). */
 const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
@@ -350,6 +361,29 @@ export default defineSchema({
     states: v.optional(v.array(v.string())),
     polygon: geoJson, // Polygon / MultiPolygon (rivers: the reach/segment)
     bbox, // prefilter index
+    /**
+     * The on-water **representative point** (D48) — display, distance and the town stamp.
+     *
+     * **Renamed from `centroid`, because it never was one** (founder call, 2026-08-02). It comes
+     * from Turf's `pointOnFeature`, which returns the bbox centre when that lands inside the polygon
+     * and a point on the **boundary** when it does not — so on a curved or narrow lake it sits on
+     * the shoreline. Lake Willoughby's is ring vertex 199.
+     *
+     * **That behaviour is correct and must not be "fixed" into a true centroid.** The area centroid
+     * of a crescent lake is on the headland in the middle, i.e. on land — which breaks the on-water
+     * guarantee every consumer here relies on. N6b already paid for this lesson: a hand-rolled
+     * centroid join missed 4 of 6 real Maine lakes (`scripts/bathymetry/src/join.ts`). The name was
+     * the bug, not the maths.
+     *
+     * Need a point genuinely *inside* the water — ray casting, DEM or weather sampling? Use
+     * `interiorPoint`.
+     */
+    representativePoint: v.optional(latLng),
+    /**
+     * @deprecated Renamed to `representativePoint`. Kept optional through the transition window so
+     * the schema still validates against rows written before the rename; every writer now sets both
+     * and `backfillRepresentativePoint` fills the rest. Dropped once that has run everywhere.
+     */
     centroid: latLng, // on-water representative point (D48); display + distance, not lookup
     // Weather sampling escape hatch (Phase 10 / D56 §5). Weather doesn't vary below Open-Meteo's grid
     // (~2–25 km), so **every body samples at its centroid by default** — town/county is the wrong
@@ -357,7 +391,74 @@ export default defineSchema({
     // a handful of points spaced at grid resolution here, and a hazard/report picks its nearest. Absent /
     // empty ⇒ `[centroid]`. Populated via the Phase 7 admin surface; no auto-population in v1.
     weatherSamplePoints: v.optional(v.array(latLng)),
+    /**
+     * A point genuinely **inside** the water (N6c / `@skating/core`'s `fetchOrigin`), computed at
+     * canonical import from the source geometry.
+     *
+     * **It exists because `centroid` above is not a centroid.** That field is Turf's
+     * `pointOnFeature`, which returns the bbox centre when it lands inside the polygon and a point
+     * on the **boundary** when it doesn't — true of any curved or narrow lake. Lake Willoughby's
+     * `centroid` is ring vertex 199; Lake Champlain's sits **30.7 km** from mid-lake.
+     *
+     * **`centroid` is deliberately left as it is**, because a shoreline-ish point is right or
+     * better for every consumer it has: drive-time bands (`notifications.ts`, `reports.ts` — you
+     * drive to a shore, not to mid-lake) and the town/state stamp a pin-less report inherits. The
+     * one consumer it hurt is **weather sampling**, where Open-Meteo's 2–25 km grid makes
+     * Champlain's offset one to several cells wrong on an input to the D56 decay math — so
+     * `lib/sampling.ts` prefers this field and falls back to `centroid`.
+     *
+     * Optional ⇒ migration-free; absent on any body not yet re-imported, which is the fallback's
+     * whole job.
+     */
+    interiorPoint: v.optional(latLng),
     surfaceAreaSqM: v.optional(v.number()),
+    // ── Derived shape stats (N6c Workstream A / D85) ───────────────────────────────────────────
+    // Measured in the ETL transform on the **full-resolution OSM geometry, before `simplify()`** —
+    // never on the polygon stored above. Perimeter is resolution-dependent (the coastline paradox),
+    // our stored copy is simplified to ~5 m and Champlain is coarsened past that to fit the D48
+    // array cap, so measuring what we store under-reports systematically and worst on exactly the
+    // big crenellated lakes where the number is most interesting. The stored polygon exists for
+    // drawing; these exist for describing. All computed by `@skating/core`'s `lakeGeometry.ts`.
+    //
+    // No index on any of them: like depth, they are only ever read with a body already in hand.
+    // All optional ⇒ migration-free, and `importCanonical` patches an explicit field list.
+    /** Total shoreline in metres, **including island rings** — the conventional definition, and
+     *  what HydroLAKES' `Shore_len` measures, so D85's free cross-check compares like with like.
+     *  Never authoritative (D3): OSM's shoreline is a tracing by many hands. */
+    shorelineM: v.optional(v.number()),
+    /** Longer side of the minimum-area bounding rectangle, in metres. NOT the hull diameter — see
+     *  `lakeAxes`, which documents why the plan's stated method reported 2× the true width. */
+    longAxisM: v.optional(v.number()),
+    /** The long axis's bearing in `[0, 180)`, clockwise from north. Undirected: an axis has no head. */
+    longAxisBearingDeg: v.optional(v.number()),
+    /** Shorter side of the same rectangle. With `longAxisM` this is the "about 5 × 1 miles" line. */
+    shortAxisM: v.optional(v.number()),
+    /** Wind fetch in metres at 16 compass bearings, **indexed by the direction wind blows FROM** —
+     *  so the drawer reads `fetchProfileM[fetchBucketFor(windDirection)]` with no arithmetic.
+     *  Precomputed because the read-time alternative is geometry on every drawer open. */
+    fetchProfileM: v.optional(v.array(v.number())),
+    /**
+     * Winter (Dec–Mar) wind-frequency rose, 16 sectors summing to 1, indexed by the direction wind
+     * blows **from** — the same sectors as `fetchProfileM`, so the two multiply elementwise.
+     *
+     * **Fetch alone names the wrong direction, which is why this exists.** A direction with five
+     * miles of open water that wind never blows from is not an exposed shore. Measured for Lake
+     * Willoughby (NREL WTK 2 km, Dec–Mar): a strongly bimodal rose along its NNW–SSE trough — 19.4%
+     * SE, 16.1% SSE, 18.6% NW — with the E/NE quadrant blocked by the ridges. That is terrain
+     * channelling, and it is invisible to the geometry.
+     *
+     * Consumed as `frequency × fetch` (`@skating/core`'s `mostExposedSector`). Absent ⇒ the caption
+     * says nothing about wind at all, deliberately: falling back to longest-fetch is the claim this
+     * field was added to stop making.
+     */
+    windRose: v.optional(v.array(v.number())),
+    /**
+     * `v.literal` rather than `literals(WIND_ROSE_SOURCES)` because the helper requires two or more
+     * members and there is exactly one source. The field exists anyway, on the D3/D68 principle
+     * that a modelled number carries its provenance: if a second downscaling is ever added, every
+     * already-stored rose stays attributable instead of becoming ambiguous.
+     */
+    windRoseSource: v.optional(v.literal(WIND_ROSE_SOURCES[0])),
     // Lake depth (N6a / D68). Best-available value plus **per-measurement** provenance: mean and max
     // routinely come from different rungs of the ladder (LAGOS-US holds 17,675 maxima against 6,137
     // means), so one `depthSource` could not honestly describe both. The ladder itself lives in
@@ -387,6 +488,21 @@ export default defineSchema({
     // chart, max from the 2015 DEC survey") without a second field nobody fills. Cleared when no
     // operator-sourced depth remains, so a note can never outlive the claim it substantiates.
     depthSourceNote: v.optional(v.string()),
+    // Lake **surface elevation** (N6c A1) — a real freeze-ORDER signal: a 1,700 ft pond in the
+    // Greens is skateable weeks before a valley lake twenty minutes away. One source, not a ladder
+    // (see `@skating/core`'s `elevation.ts` for why depth needed five rungs and this needs one),
+    // but D68's precedence discipline carries across unchanged: an `operator` value wins and the
+    // loader refuses to overwrite it.
+    //
+    // Sampled at `interiorPoint` rather than `centroid`, because a DEM read taken on a bank is
+    // biased upward by the bank. Accurate to ~5% on three of four spot-checked lakes and 20 m high
+    // on the fourth — fine for freeze order, which is a hundreds-of-feet question, and the reason
+    // the copy must never imply two lakes' elevations are comparable at tens of feet.
+    //
+    // No index: read only with a body already in hand. Optional ⇒ migration-free, and survives a
+    // canonical re-import because `importCanonical` patches an explicit field list.
+    elevationM: v.optional(v.number()),
+    elevationSource: v.optional(literals(ELEVATION_SOURCES)),
     // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
     // `minVisibleZoom` is its integer bucket, ALSO denormalized onto `waterBodyCells` so
     // `listInViewport` filters `minVisibleZoom <= zoom` in-query. All optional ⇒ migration-free;
@@ -417,6 +533,57 @@ export default defineSchema({
     // by the range rather than filtered after the read.
     .index('by_curated_boost', ['curatedBoost'])
     .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
+
+  // Which bodies the N6b contour tileset actually draws lines for (N6c-1 / D2).
+  //
+  // **A side table rather than a flag on `waterBodies`, because contour coverage is a property of
+  // the TILESET, not of the body.** Re-tiling replaces ~2,000 rows here instead of migrating 116,070,
+  // and a body that drops out of a re-tile cannot leave a stale `true` behind — which is the failure
+  // a boolean column invites, and it would be silent: a lake claiming surveyed bathymetry it no
+  // longer has.
+  //
+  // Keyed on `externalId` for the same reason the tiles are (N6b): a Convex `_id` changes if a row
+  // is recreated, and re-tiling five states because a re-import churned ids is not a thing we should
+  // be one accident away from. That also means coverage survives a canonical re-import untouched.
+  //
+  // Populated from the built contour features, so it records lakes we actually DREW — 2,022 — not
+  // the 2,437 that merely matched the join. A lake whose survey produced no usable line is not a
+  // lake with contours.
+  bathymetryCoverage: defineTable({
+    source: literals(CANONICAL_SOURCES),
+    externalId: v.string(),
+  }).index('by_external_id', ['source', 'externalId']),
+
+  // Per-state distribution basis for the derived caption (N6c A5). **One row per state**, holding
+  // the 10th–90th percentiles of each metric across that state's listed bodies.
+  //
+  // The obvious alternative — a stored percentile per body — is the wrong shape: a percentile is a
+  // property of the corpus, not of the body, so every import would invalidate all 116,070 of them
+  // and keeping them true would mean rewriting the corpus on every run. Nobody would, so they would
+  // quietly become claims about whenever the pass last finished. Deciles invert that: bodies store
+  // nothing, a caption looks the basis up at render time, and re-deriving costs one job.
+  //
+  // Per state rather than per corpus because "among the deepest lakes we know about" spans five
+  // states and is nearly meaningless — Vermont and coastal Maine are different populations. A
+  // border-spanning body is counted in each of its `states`, which is correct: Champlain genuinely
+  // is among the deepest in both Vermont and New York.
+  //
+  // A metric is **absent** rather than empty when its sample is too thin (`MIN_DECILE_SAMPLE`), and
+  // `decileRankOf` returns null for an absent block — which the caption must read as "say nothing",
+  // never as "average".
+  regionStats: defineTable({
+    state: v.string(), // 2-letter code, matching `waterBodies.states[]`
+    metrics: v.object({
+      maxDepthM: v.optional(decileBlock),
+      meanDepthM: v.optional(decileBlock),
+      elevationM: v.optional(decileBlock),
+      surfaceAreaSqM: v.optional(decileBlock),
+      longAxisM: v.optional(decileBlock),
+    }),
+    /** Bodies scanned for this state, whether or not they carried any metric — the honest denominator. */
+    bodiesScanned: v.number(),
+    updatedAt: v.number(),
+  }).index('by_state', ['state']),
 
   // The water-body spatial index (N1) — one row per grid cell a *listed* body's bbox covers, at the
   // ladder level `indexLevelFor` picks (see `lib/cellIndex` / `@skating/core`'s `spatialCells`).
@@ -463,6 +630,9 @@ export default defineSchema({
     searchText: v.string(),
     polygon: geoJson, // the CLIPPED shape, inside the parent by construction (Decision 10)
     bbox, // of the clipped polygon — what the cell index covers
+    /** The on-water representative point — same `pointOnFeature` basis as a body (D48). */
+    representativePoint: v.optional(latLng),
+    /** @deprecated Renamed to `representativePoint`; see the note on `waterBodies`. */
     centroid: latLng, // on-water representative point, same `pointOnFeature` basis as a body (D48)
     surfaceAreaSqM: v.number(), // geodesic; also the Decision 9 tie-break (smallest containing wins)
     // Same D49 curve as a body, off the sub-area's own area + boost — so Malletts Bay can label at a
@@ -538,6 +708,9 @@ export default defineSchema({
     externalId: v.string(), // OSM relation id (way/123 · relation/456) — idempotent upsert key
     polygon: geoJson, // boundary
     bbox, // cheap point-containment prefilter before the Turf pointInPolygon test
+    /** Representative interior point; display/debug only, never a lookup key (N1). */
+    representativePoint: v.optional(latLng),
+    /** @deprecated Renamed to `representativePoint`; see the note on `waterBodies`. */
     centroid: latLng, // representative interior point; kept for display/debug, not for lookup (N1)
     createdAt: v.number(),
   })

@@ -10,6 +10,8 @@
  */
 
 import {
+  fetchOrigin,
+  lakeGeometryStats,
   MAX_PLAUSIBLE_DEPTH_M,
   type OsmTags,
   polygonBBox,
@@ -142,7 +144,21 @@ export function featureToCanonicalBody(feature: OsmWaterFeature): CanonicalBody 
     throw new Error(`unsupported geometry type "${geom.type}" (expected a polygon area)`);
   }
 
-  // Simplify first, then derive bbox / centroid / area from the geometry we actually store.
+  // ── D85: measure the SOURCE geometry, here, before anything touches it ──────────────────────
+  //
+  // This line is the whole of D85 and it is one line, which is exactly why it is easy to move by
+  // accident. `geom` is the full-resolution OSM ring; three lines down it becomes a ~5 m
+  // Douglas-Peucker approximation (~7 m for Champlain, coarsened to fit the D48 array cap).
+  // Perimeter is resolution-dependent — the coastline paradox — so measuring after `simplify()`
+  // under-reports systematically, and worst on the big crenellated lakes where a shoreline figure
+  // is most interesting. The stored polygon exists for drawing; these stats exist for describing.
+  //
+  // **Do not move this below `simplifyForStorage`.** The stats would still compute, still look
+  // plausible, and be quietly short on precisely the bodies that matter most.
+  const stats = lakeGeometryStats(geom);
+  const interiorPoint = fetchOrigin(geom) ?? undefined;
+
+  // Simplify, then derive bbox / centroid / area from the geometry we actually store.
   const polygon = simplifyForStorage(geom);
   // Coarsening thins ring positions but can't reduce component/hole counts; reject (→ skip)
   // anything still over the array cap so one bad body never fails a whole loader batch.
@@ -162,6 +178,8 @@ export function featureToCanonicalBody(feature: OsmWaterFeature): CanonicalBody 
     bbox: polygonBBox(polygon),
     centroid,
     surfaceAreaSqM: surfaceAreaSqM(polygon),
+    ...(interiorPoint ? { interiorPoint } : {}),
+    ...stats,
   };
 }
 

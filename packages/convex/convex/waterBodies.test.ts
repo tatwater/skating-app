@@ -50,6 +50,13 @@ const CANONICAL_ITEM = {
   surfaceAreaSqM: 1_000_000,
 };
 
+/** `onlyBodyId` from inside an existing `t.run` context. */
+// biome-ignore lint/suspicious/noExplicitAny: convex-test's ctx type is not exported.
+async function onlyBodyIdIn(ctx: any): Promise<Id<'waterBodies'>> {
+  const rows = await ctx.db.query('waterBodies').collect();
+  return rows[0]._id as Id<'waterBodies'>;
+}
+
 /** The `_id` of the single water body in the DB (import/seed helpers create exactly one). */
 async function onlyBodyId(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodies'>> {
   const bodies = await t.run((ctx) => ctx.db.query('waterBodies').collect());
@@ -677,6 +684,352 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
   });
 });
 
+describe('waterBodies.backfillRepresentativePoint (the centroid rename transition)', () => {
+  test('fills the new field from the old one, and is idempotent', async () => {
+    // The rename cannot be atomic: Convex validates the schema against existing data on push, and
+    // dev holds 116,070 rows written before the field existed. So representativePoint ships
+    // optional, every writer sets both, and this fills the backlog.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+
+    // Simulate a pre-rename row.
+    await t.run((ctx) => ctx.db.patch(bodyId, { representativePoint: undefined }));
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.representativePoint).toBeUndefined();
+
+    const first = await t.mutation(internal.waterBodies.backfillRepresentativePoint, {
+      table: 'waterBodies',
+    });
+    expect(first).toMatchObject({ filled: 1, isDone: true });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.representativePoint).toEqual(
+      CANONICAL_ITEM.centroid,
+    );
+
+    // Re-running costs reads and no writes.
+    expect(
+      await t.mutation(internal.waterBodies.backfillRepresentativePoint, { table: 'waterBodies' }),
+    ).toMatchObject({ filled: 0 });
+  });
+
+  test('a canonical import writes both fields, so nothing needs backfilling', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.representativePoint).toEqual(body?.centroid);
+    expect(
+      await t.mutation(internal.waterBodies.backfillRepresentativePoint, { table: 'waterBodies' }),
+    ).toMatchObject({ filled: 0 });
+  });
+});
+
+describe('waterBodies profile-richness prominence (N6c / D2)', () => {
+  test('contour coverage feeds the richness score, and a re-tile can take it away', async () => {
+    // Coverage is a property of the TILESET, not the body, so it lives in a side table keyed on
+    // externalId — which is also why a body that drops out of a re-tile cannot keep claiming a
+    // state survey we no longer draw.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const withoutContours = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+
+    expect(
+      await t.mutation(internal.waterBodies.importContourCoverage, {
+        source: 'osm',
+        externalIds: [CANONICAL_ITEM.externalId],
+        clearFirst: true,
+      }),
+    ).toMatchObject({ inserted: 1 });
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const withContours = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+    expect(withContours).toBeGreaterThan(withoutContours);
+
+    // A re-tile that no longer draws this lake REPLACES the set rather than adding to it.
+    await t.mutation(internal.waterBodies.importContourCoverage, {
+      source: 'osm',
+      externalIds: [],
+      clearFirst: true,
+    });
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore).toBeCloseTo(
+      withoutContours,
+      10,
+    );
+  });
+
+  test('importContourCoverage is idempotent within a run', async () => {
+    // The loader batches 400 at a time and only the first batch clears, so a retried batch must not
+    // double-insert.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importContourCoverage, {
+      source: 'osm',
+      externalIds: ['way/1', 'way/2'],
+      clearFirst: true,
+    });
+    expect(
+      await t.mutation(internal.waterBodies.importContourCoverage, {
+        source: 'osm',
+        externalIds: ['way/1', 'way/2'],
+      }),
+    ).toMatchObject({ inserted: 0, cleared: 0 });
+    expect(await t.run((ctx) => ctx.db.query('bathymetryCoverage').collect())).toHaveLength(2);
+  });
+
+  test('backfillCells raises a body that has a report, and leaves a bare one alone', async () => {
+    // The founder's ask: real-world documentation should out-rank hand-curation. Activity is the
+    // only term that is evidence of USE rather than of data, so it is the one that moves a body.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+    const before = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+
+    // A re-score with no activity changes nothing — richness is a boost, never a penalty.
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const bare = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+    expect(bare).toBeGreaterThanOrEqual(before);
+
+    const author = await seedUser(t, 'clerk_reporter', 'member');
+    await author.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: Date.now(),
+      iceTypes: ['black_ice'],
+      surfaceTags: [],
+      photoIds: [],
+    });
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const withReport = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+    expect(withReport).toBeGreaterThan(bare);
+  });
+
+  test('a canonical re-import drops the richness term until the re-score runs', async () => {
+    // Not a bug — a documented ordering constraint, asserted so it cannot drift silently.
+    // importCanonical would otherwise pay two extra index reads on every one of 116,070 rows.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+    const author = await seedUser(t, 'clerk_reporter2', 'member');
+    await author.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: Date.now(),
+      iceTypes: ['black_ice'],
+      surfaceTags: [],
+      photoIds: [],
+    });
+
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const enriched = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore).toBeLessThan(enriched);
+
+    // …and the re-score restores it, which is why the runbook order is import → depth → backfill.
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore).toBeCloseTo(enriched, 10);
+  });
+});
+
+describe('waterBodies wind rose (N6c A4b)', () => {
+  const FETCH = [
+    1900, 500, 300, 200, 200, 200, 400, 4500, 1900, 1300, 1100, 1000, 1200, 1100, 1300, 3000,
+  ];
+  const ROSE = Array.from({ length: 16 }, () => 1 / 16);
+
+  async function seedBody(t: ReturnType<typeof convexTest>, extra: Record<string, unknown> = {}) {
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, fetchProfileM: FETCH }],
+    });
+    const id = await onlyBodyId(t);
+    if (Object.keys(extra).length > 0) await t.run((ctx) => ctx.db.patch(id, extra));
+    return id;
+  }
+
+  test('only offers bodies that could ever render a wind clause', async () => {
+    // Requests are the scarce resource (10k/day, one point-year each), so a body whose longest
+    // fetch is under the caption's own floor must not cost any: nothing would ever render it.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, fetchProfileM: Array.from({ length: 16 }, () => 100) }],
+    });
+    expect((await t.query(internal.waterBodies.listNeedingWindRose, {})).targets).toEqual([]);
+  });
+
+  test('offers a body with real open water, sampled at its interior point', async () => {
+    const t = convexTestWithGeo();
+    const at = { lat: 44.5, lng: -73.3 };
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, fetchProfileM: FETCH, interiorPoint: at }],
+    });
+    const id = await onlyBodyId(t);
+    expect((await t.query(internal.waterBodies.listNeedingWindRose, {})).targets).toEqual([
+      { waterBodyId: id, lat: at.lat, lng: at.lng },
+    ]);
+  });
+
+  test('skips a body with no fetch profile at all', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    expect((await t.query(internal.waterBodies.listNeedingWindRose, {})).targets).toEqual([]);
+  });
+
+  test('resumes rather than restarts, unless asked to refresh', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, { windRose: ROSE });
+    expect((await t.query(internal.waterBodies.listNeedingWindRose, {})).targets).toEqual([]);
+    expect(
+      (await t.query(internal.waterBodies.listNeedingWindRose, { refresh: true })).targets,
+    ).toHaveLength(1);
+  });
+
+  test('stores a normalized rose and REJECTS raw counts', async () => {
+    // Raw hour counts are still sixteen plausible numbers; stored, they would scale every exposure
+    // index by the hours sampled — invisible in a ranking, fatal to any threshold.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    expect(
+      await t.mutation(internal.waterBodies.importWindRoses, {
+        roses: [{ waterBodyId: id, rose: ROSE }],
+      }),
+    ).toMatchObject({ updated: 1, malformed: 0 });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.windRoseSource).toBe('wtk_2km');
+
+    expect(
+      await t.mutation(internal.waterBodies.importWindRoses, {
+        roses: [{ waterBodyId: id, rose: Array.from({ length: 16 }, () => 900) }],
+      }),
+    ).toMatchObject({ updated: 0, malformed: 1 });
+    // The good rose survives the bad write.
+    expect((await t.run((ctx) => ctx.db.get(id)))?.windRose?.[0]).toBeCloseTo(1 / 16, 10);
+  });
+
+  test('rejects a wrong-length rose', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    expect(
+      await t.mutation(internal.waterBodies.importWindRoses, {
+        roses: [{ waterBodyId: id, rose: [0.5, 0.5] }],
+      }),
+    ).toMatchObject({ updated: 0, malformed: 1 });
+  });
+
+  test('a wind rose survives a canonical re-import', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    await t.mutation(internal.waterBodies.importWindRoses, {
+      roses: [{ waterBodyId: id, rose: ROSE }],
+    });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, fetchProfileM: FETCH, name: 'renamed' }],
+    });
+    const body = await t.run((ctx) => ctx.db.get(id));
+    expect(body?.name).toBe('renamed');
+    expect(body?.windRose).toHaveLength(16);
+  });
+});
+
+describe('waterBodies elevation (N6c A1)', () => {
+  const AT = { lat: 44.5, lng: -73.3 };
+
+  async function seedBody(
+    t: ReturnType<typeof convexTest>,
+    extra: Record<string, unknown> = {},
+  ): Promise<Id<'waterBodies'>> {
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, interiorPoint: AT }],
+    });
+    const id = await onlyBodyId(t);
+    if (Object.keys(extra).length > 0) await t.run((ctx) => ctx.db.patch(id, extra));
+    return id;
+  }
+
+  test('listNeedingElevation samples interiorPoint, not centroid', async () => {
+    // A DEM read taken on a bank is biased upward by the bank, and `centroid` is Turf's
+    // pointOnFeature, which lands on the shoreline for any curved or narrow lake.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const page = await t.query(internal.waterBodies.listNeedingElevation, {});
+    expect(page.targets).toEqual([{ waterBodyId: id, lat: AT.lat, lng: AT.lng }]);
+  });
+
+  test('falls back to centroid for a body the re-import has not reached yet', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const page = await t.query(internal.waterBodies.listNeedingElevation, {});
+    expect(page.targets[0]).toMatchObject({
+      lat: CANONICAL_ITEM.centroid.lat,
+      lng: CANONICAL_ITEM.centroid.lng,
+    });
+  });
+
+  test('skips rows already stamped, so an interrupted 116k pass resumes rather than restarts', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, { elevationM: 350, elevationSource: 'dem_glo90' });
+    expect((await t.query(internal.waterBodies.listNeedingElevation, {})).targets).toEqual([]);
+    // …unless explicitly asked to re-read, for the day the DEM changes.
+    expect(
+      (await t.query(internal.waterBodies.listNeedingElevation, { refresh: true })).targets,
+    ).toHaveLength(1);
+  });
+
+  test('never returns or overwrites an operator elevation (D68 precedence)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t, { elevationM: 412, elevationSource: 'operator' });
+
+    // Not offered to the pass, even with --refresh: a moderator's value costs no quota.
+    expect((await t.query(internal.waterBodies.listNeedingElevation, {})).targets).toEqual([]);
+    expect(
+      (await t.query(internal.waterBodies.listNeedingElevation, { refresh: true })).targets,
+    ).toEqual([]);
+
+    // And re-checked at WRITE time, because the read and the write are separate transactions and a
+    // 116k pass takes minutes — a moderator can set an override in between, and losing it would be
+    // silent.
+    const result = await t.mutation(internal.waterBodies.importElevations, {
+      elevations: [{ waterBodyId: id, elevationM: 999 }],
+    });
+    expect(result).toMatchObject({ updated: 0, operatorHeld: 1 });
+    const body = await t.run((ctx) => ctx.db.get(id));
+    expect(body?.elevationM).toBe(412);
+    expect(body?.elevationSource).toBe('operator');
+  });
+
+  test('stores a plausible reading and drops a sentinel', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    expect(
+      await t.mutation(internal.waterBodies.importElevations, {
+        elevations: [{ waterBodyId: id, elevationM: 357 }],
+      }),
+    ).toMatchObject({ updated: 1, implausible: 0 });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.elevationSource).toBe('dem_glo90');
+
+    expect(
+      await t.mutation(internal.waterBodies.importElevations, {
+        elevations: [{ waterBodyId: id, elevationM: -9999 }],
+      }),
+    ).toMatchObject({ updated: 0, implausible: 1 });
+    // The good value survives the bad write.
+    expect((await t.run((ctx) => ctx.db.get(id)))?.elevationM).toBe(357);
+  });
+
+  test('elevation survives a canonical re-import', async () => {
+    // importCanonical patches a named field list; elevation is deliberately not in it, so the
+    // geometry pass and the depth pass can run in either order.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    await t.mutation(internal.waterBodies.importElevations, {
+      elevations: [{ waterBodyId: id, elevationM: 357 }],
+    });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, name: 'renamed' }],
+    });
+    const body = await t.run((ctx) => ctx.db.get(id));
+    expect(body?.name).toBe('renamed');
+    expect(body?.elevationM).toBe(357);
+    expect(body?.elevationSource).toBe('dem_glo90');
+  });
+});
+
 describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
   test('inserts a canonical body (listed) and is idempotent on re-import', async () => {
     const t = convexTestWithGeo();
@@ -724,6 +1077,41 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     expect(
       await t.query(api.waterBodies.listInViewport, { viewport: VIEWPORT_CONTAINING, zoom: 14 }),
     ).toHaveLength(0);
+  });
+
+  test('carries the N6c shape stats onto the row, and clears them when a re-import cannot measure them', async () => {
+    const t = convexTestWithGeo();
+
+    // `importCanonical` patches a NAMED field list, which is what lets depth, curatedBoost and the
+    // removal state survive a re-import. The cost of that discipline is that a new field which
+    // isn't named simply never lands — silently, and visible only as a column of blanks later.
+    const stats = {
+      interiorPoint: { lat: 44.5, lng: -73.3 },
+      shorelineM: 984_500,
+      longAxisM: 171_000,
+      longAxisBearingDeg: 8.5,
+      shortAxisM: 23_800,
+      fetchProfileM: Array.from({ length: 16 }, (_, i) => 1000 * (i + 1)),
+    };
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, ...stats }],
+    });
+    const bodyId = await onlyBodyId(t);
+    expect(await t.run((ctx) => ctx.db.get(bodyId))).toMatchObject(stats);
+
+    // And the update path, which is a different field list in the same mutation.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, ...stats, shorelineM: 990_000 }],
+    });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.shorelineM).toBe(990_000);
+
+    // A re-import whose geometry no longer supports a stat must CLEAR it. A stale shoreline beside
+    // a fresh outline is worse than no shoreline, and an omitted key would have left it in place.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const cleared = await t.run((ctx) => ctx.db.get(bodyId));
+    expect(cleared?.shorelineM).toBeUndefined();
+    expect(cleared?.fetchProfileM).toBeUndefined();
+    expect(cleared?.interiorPoint).toBeUndefined();
   });
 
   test('keeps OSM and NHD distinct even when they share an externalId (source in the key)', async () => {

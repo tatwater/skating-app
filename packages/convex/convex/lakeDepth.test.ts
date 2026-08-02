@@ -823,3 +823,98 @@ describe('the depth pair is never left inverted', () => {
     expect(result.inverted).toBe(0);
   });
 });
+
+describe("waterBodies.matchAndImportDepths — D85's shoreline cross-check", () => {
+  /**
+   * "Log the comparison; store ours." HydroLAKES' polygon is a different water mask at a different
+   * date and its own resolution, so a disagreement does not say who is right — but a 2× gap on a
+   * lake big enough for HydroLAKES to carry means the join or the ring handling is broken, and that
+   * is worth catching at load time rather than in a screenshot.
+   */
+  const POLYGON = {
+    type: 'Polygon' as const,
+    coordinates: [
+      [
+        [-73.0, 44.0],
+        [-72.9, 44.0],
+        [-72.9, 44.1],
+        [-73.0, 44.1],
+        [-73.0, 44.0],
+      ],
+    ],
+  };
+
+  /** Seeded through `importCanonical`, so the N1 cell rows exist and the point lookup can match. */
+  async function seed(t: ReturnType<typeof convexTest>, shorelineM?: number) {
+    const bbox = { minLat: 44, minLng: -73, maxLat: 44.1, maxLng: -72.9 };
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          name: 'Cross-check Lake',
+          type: 'lake' as const,
+          source: 'osm' as const,
+          externalId: 'way/xc',
+          polygon: POLYGON,
+          bbox,
+          centroid: { lat: 44.05, lng: -72.95 },
+          surfaceAreaSqM: 1_000_000,
+          ...(shorelineM !== undefined ? { shorelineM } : {}),
+        },
+      ],
+    });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    return rows[0]?._id as Id<'waterBodies'>;
+  }
+
+  const lake = (shorelineM?: number) => ({
+    key: 'hydrolakes:1',
+    point: { lat: 44.05, lng: -72.95 },
+    areaSqM: 1_000_000,
+    meanDepthM: 5,
+    meanDepthSource: 'hydrolakes_reported' as const,
+    ...(shorelineM !== undefined ? { shorelineM } : {}),
+  });
+
+  test('counts a comparison that agrees, and flags one that does not', async () => {
+    const t = convexTest(schema, modules);
+    await seed(t, 10_000);
+    const agree = await t.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [lake(11_000)],
+    });
+    expect(agree.shorelineCompared).toBe(1);
+    expect(agree.shorelineDisagreed).toBe(0);
+
+    const t2 = convexTest(schema, modules);
+    await seed(t2, 10_000);
+    const disagree = await t2.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [lake(40_000)],
+    });
+    expect(disagree.shorelineCompared).toBe(1);
+    expect(disagree.shorelineDisagreed).toBe(1);
+    expect(disagree.rejects.some((r) => r.reason.includes('shoreline cross-check'))).toBe(true);
+  });
+
+  test('stores OURS regardless — the cross-check never writes', async () => {
+    const t = convexTest(schema, modules);
+    const id = await seed(t, 10_000);
+    await t.mutation(internal.waterBodies.matchAndImportDepths, { lakes: [lake(40_000)] });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.shorelineM).toBe(10_000);
+  });
+
+  test('stays silent when either side has no shoreline — the 93% case, not a finding', async () => {
+    // HydroLAKES' 10 ha floor covers ~7% of our corpus, so an absent comparison is the norm.
+    const t = convexTest(schema, modules);
+    await seed(t, 10_000);
+    expect(
+      (await t.mutation(internal.waterBodies.matchAndImportDepths, { lakes: [lake()] }))
+        .shorelineCompared,
+    ).toBe(0);
+
+    const t2 = convexTest(schema, modules);
+    await seed(t2);
+    expect(
+      (await t2.mutation(internal.waterBodies.matchAndImportDepths, { lakes: [lake(11_000)] }))
+        .shorelineCompared,
+    ).toBe(0);
+  });
+});

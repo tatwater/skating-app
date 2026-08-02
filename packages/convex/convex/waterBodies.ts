@@ -12,6 +12,7 @@
 
 import {
   bboxIntersects,
+  canOverwriteElevation,
   classifyDedup,
   DEPTH_SOURCE_RANK,
   DEPTH_SOURCES,
@@ -21,12 +22,17 @@ import {
   displayScore,
   isKnownStateCode,
   isMinor,
+  isPlausibleElevationM,
+  isPlausibleWindRose,
   KNOWN_STATE_CODES,
+  type LatLng,
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_SUGGESTED_SAMPLE_POINTS,
+  MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
   minVisibleZoom,
   nearestBodyForPoint,
+  type ProfileRichness,
   pathToBody,
   pointInPolygon,
   WATER_BODY_TYPES,
@@ -143,17 +149,104 @@ const canonicalBody = v.object({
   bbox,
   centroid: latLng, // the on-water representative point (D48)
   surfaceAreaSqM: v.optional(v.number()),
+  // A genuinely-interior point + the D85 shape stats, measured by the ETL on the source geometry
+  // before it was simplified. All optional: a body whose geometry defeats one of them still loads.
+  interiorPoint: v.optional(latLng),
+  shorelineM: v.optional(v.number()),
+  longAxisM: v.optional(v.number()),
+  longAxisBearingDeg: v.optional(v.number()),
+  shortAxisM: v.optional(v.number()),
+  fetchProfileM: v.optional(v.array(v.number())),
 });
 
 /**
- * Derived display-prominence fields (D49) from a body's area + admin boost. `minVisibleZoom` is
- * stored on the row AND denormalized onto its cell rows (see `./lib/cellIndex`), where it's the
- * trailing field of `by_cell` — so a wide-zoom query returns the most-prominent bodies first and
- * never reads the rest at all.
+ * The N6c shape stats as a patch fragment, `undefined` for anything the ETL couldn't measure.
+ *
+ * **Spread explicitly into both the insert and the update**, rather than relying on `...item`:
+ * `importCanonical` patches a named field list on purpose (that discipline is what lets depth,
+ * `curatedBoost` and the review/removal state survive a re-import), so a new field that isn't named
+ * here simply never lands — silently, and only visibly as a column of blanks weeks later.
+ *
+ * Written as explicit `undefined`s rather than omitted keys so a re-import *clears* a stat the new
+ * geometry can no longer support. A stale shoreline beside a fresh outline is worse than none.
  */
-function scoreFields(input: { surfaceAreaSqM?: number; curatedBoost?: number }) {
+function shapeFields(item: {
+  interiorPoint?: LatLng;
+  shorelineM?: number;
+  longAxisM?: number;
+  longAxisBearingDeg?: number;
+  shortAxisM?: number;
+  fetchProfileM?: number[];
+}) {
+  return {
+    interiorPoint: item.interiorPoint,
+    shorelineM: item.shorelineM,
+    longAxisM: item.longAxisM,
+    longAxisBearingDeg: item.longAxisBearingDeg,
+    shortAxisM: item.shortAxisM,
+    fetchProfileM: item.fetchProfileM,
+  };
+}
+
+/**
+ * Derived display-prominence fields (D49/D2) from a body's area, admin boost and profile richness.
+ * `minVisibleZoom` is stored on the row AND denormalized onto its cell rows (see `./lib/cellIndex`),
+ * where it's the trailing field of `by_cell` — so a wide-zoom query returns the most-prominent
+ * bodies first and never reads the rest at all.
+ */
+function scoreFields(input: {
+  surfaceAreaSqM?: number;
+  curatedBoost?: number;
+  richness?: ProfileRichness;
+}) {
   const score = displayScore(input);
   return { displayScore: score, minVisibleZoom: minVisibleZoom(score) };
+}
+
+/**
+ * A body's D2 profile richness, read from what it actually has.
+ *
+ * **Costs two index reads per body**, which is why it is computed in `backfillCells` (paginated,
+ * a few hundred bodies per transaction) and NOT in `importCanonical`, which already does the
+ * heaviest work in the app and would pay this on all 116,070 rows mid-import.
+ *
+ * `hasContours` reads the `bathymetryCoverage` side table rather than a column, because contour
+ * coverage is a property of the N6b TILESET rather than of the body — see that table's comment.
+ */
+async function richnessFor(ctx: QueryCtx, body: Doc<'waterBodies'>): Promise<ProfileRichness> {
+  const putIns = await ctx.db
+    .query('putIns')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+    .take(25);
+  const visiblePutIns = putIns.filter((p) => p.status === 'visible');
+
+  const report = await ctx.db
+    .query('reports')
+    .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', body._id))
+    .first();
+  const hazard = report
+    ? null
+    : await ctx.db
+        .query('hazards')
+        .withIndex('by_water_body_first_reported', (q) => q.eq('waterBodyId', body._id))
+        .first();
+
+  const coverage = await ctx.db
+    .query('bathymetryCoverage')
+    .withIndex('by_external_id', (q) =>
+      q.eq('source', body.source === 'nhd' ? 'nhd' : 'osm').eq('externalId', body.externalId ?? ''),
+    )
+    .first();
+
+  return {
+    // A blank name is the 92% case; a name is a weak but real signal that someone cared.
+    hasName: body.name.trim().length > 0,
+    hasContours: coverage !== null,
+    hasDepth: body.meanDepthM !== undefined || body.maxDepthM !== undefined,
+    hasDerivedPutIn: visiblePutIns.some((p) => p.source === 'derived'),
+    hasOfficialPutIn: visiblePutIns.some((p) => p.source === 'official'),
+    hasActivity: report !== null || hazard !== null,
+  };
 }
 
 /**
@@ -241,6 +334,12 @@ export const importCanonical = internalMutation({
       if (existing) {
         // Patch geometry/name/area + re-derived scores; removed*/reviewStatus/dedupStatus/
         // curatedBoost are preserved. Score uses the new area + the *preserved* admin boost (D49).
+        //
+        // ⚠ **This resets the score to area + boost, dropping the D2 richness term**, because
+        // reading put-ins and reports per body would put two extra index reads on every one of
+        // 116,070 rows inside the heaviest mutation in the app. So the ordering is not optional:
+        // canonical re-import → depth/elevation run → `backfillCells`, which recomputes richness
+        // last. Re-scoring earlier would score against data that had not landed yet.
         const scores = scoreFields({
           surfaceAreaSqM: item.surfaceAreaSqM,
           curatedBoost: existing.curatedBoost,
@@ -251,9 +350,11 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
+          representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
           states: unionState(existing.states, state),
           ...scores,
+          ...shapeFields(item),
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
         // body against its new geometry + prominence (N1).
@@ -298,9 +399,11 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
+          representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
           states: unionState(undefined, state),
           ...scores,
+          ...shapeFields(item),
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
         });
@@ -337,7 +440,11 @@ export const backfillCells = internalMutation({
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
 
     for (const body of page.page) {
+      // The D2 richness term is applied HERE and nowhere else — see `richnessFor` for why, and the
+      // warning in `importCanonical` for the ordering that makes it correct.
+      const richness = await richnessFor(ctx, body);
       const scores = scoreFields({
+        richness,
         surfaceAreaSqM: body.surfaceAreaSqM,
         curatedBoost: body.curatedBoost,
       });
@@ -353,6 +460,253 @@ export const backfillCells = internalMutation({
       });
     }
     return { reindexed: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
+ * Copy `centroid` → `representativePoint` on rows written before the rename (N6c-1).
+ *
+ * **The transition window in one job.** Convex validates the schema against existing data on push,
+ * and dev holds 116,070 rows that predate the new field, so the rename cannot be a single atomic
+ * step: `representativePoint` ships optional, every writer sets both, this fills the backlog, and a
+ * later change makes it required and drops `centroid`.
+ *
+ * Paginated for the same reason `backfillCells` is — the whole table cannot be read in one
+ * transaction. Idempotent: a row that already has the field is skipped, so re-running costs reads
+ * and no writes.
+ *
+ * Covers all three tables that carried the misnamed field.
+ */
+export const backfillRepresentativePoint = internalMutation({
+  args: {
+    table: literals(['waterBodies', 'waterBodySubAreas', 'adminAreas'] as const),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { table, cursor, batchSize }) => {
+    const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
+    const page = await ctx.db.query(table).paginate({ cursor: cursor ?? null, numItems });
+    let filled = 0;
+    for (const row of page.page) {
+      if (row.representativePoint !== undefined) continue;
+      await ctx.db.patch(row._id, { representativePoint: row.centroid });
+      filled++;
+    }
+    return { scanned: page.page.length, filled, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
+ * How far our shoreline may differ from HydroLAKES' before the run says so (D85).
+ *
+ * **2×, and deliberately loose.** The two are measuring different polygons — different water mask,
+ * different date, different resolution — so ordinary disagreement is expected and is not a finding.
+ * This is a *broken-join* detector, not an accuracy bar: a factor of two on a lake big enough for
+ * HydroLAKES to carry at all means we matched the wrong body or mishandled its rings.
+ */
+const SHORELINE_CROSS_CHECK_RATIO = 2;
+
+// ── Bathymetry contour coverage (N6c-1 / D2) ─────────────────────────────────────────────────
+
+/**
+ * Replace the contour-coverage set with the bodies the current tileset actually draws.
+ *
+ * **Replace, not merge**, and paginated so it can be driven from a loader loop: a re-tile that drops
+ * a lake must drop its coverage too, or the row keeps claiming surveyed bathymetry it no longer has
+ * — silently, since nothing on the map would look different. `clearFirst` on the opening batch is
+ * what makes the whole operation a replacement rather than an accumulation.
+ */
+export const importContourCoverage = internalMutation({
+  args: {
+    source: literals(CANONICAL_SOURCES),
+    externalIds: v.array(v.string()),
+    clearFirst: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { source, externalIds, clearFirst }) => {
+    let cleared = 0;
+    if (clearFirst) {
+      // ~2,000 rows, so a full collect is bounded and this is the one place it is honest to do.
+      const existing = await ctx.db.query('bathymetryCoverage').collect();
+      for (const row of existing) {
+        await ctx.db.delete(row._id);
+        cleared++;
+      }
+    }
+    let inserted = 0;
+    for (const externalId of externalIds) {
+      const already = await ctx.db
+        .query('bathymetryCoverage')
+        .withIndex('by_external_id', (q) => q.eq('source', source).eq('externalId', externalId))
+        .first();
+      if (already) continue;
+      await ctx.db.insert('bathymetryCoverage', { source, externalId });
+      inserted++;
+    }
+    return { cleared, inserted };
+  },
+});
+
+// ── Elevation (N6c A1) ───────────────────────────────────────────────────────────────────────
+
+/**
+ * Page the corpus for bodies whose elevation the DEM pass should look up.
+ *
+ * **Paginated and filtered server-side**, the `backfillCells` shape: 116,070 bodies cannot be
+ * `.collect()`-ed, and the loader has no business deciding what to skip — the precedence rule lives
+ * next to the write that enforces it, or the two drift.
+ *
+ * Two exclusions, and they are the difference between a resumable pass and a pass that redoes its
+ * work every time it is interrupted:
+ * - **`operator`-sourced rows are never returned**, so a moderator's value costs no quota and can
+ *   never be overwritten by a race between the read and the write.
+ * - **Rows already carrying a `dem_glo90` reading are skipped** unless `refresh` is set, so a
+ *   re-run after a failure resumes rather than restarts. `refresh` exists for the day the DEM
+ *   changes; it is not the normal path.
+ *
+ * Returns the point to sample — `interiorPoint` where the re-import has set one, `centroid`
+ * otherwise. A DEM read on a bank is biased upward by the bank, which is the whole reason
+ * `interiorPoint` exists.
+ */
+export const listNeedingElevation = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    refresh: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { cursor, batchSize, refresh }) => {
+    const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    const targets = page.page
+      .filter((body) => {
+        if (body.elevationSource === 'operator') return false;
+        return refresh === true || body.elevationM === undefined;
+      })
+      .map((body) => {
+        const point = body.interiorPoint ?? body.representativePoint ?? body.centroid;
+        return { waterBodyId: body._id, lat: point.lat, lng: point.lng };
+      });
+    return {
+      targets,
+      scanned: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/**
+ * Write a batch of DEM elevations (N6c A1).
+ *
+ * **Re-checks the operator rung at write time** even though `listNeedingElevation` already filtered
+ * on it. The read and the write are separate transactions and a 116k-body pass takes minutes, so a
+ * moderator can set an override in between — and the failure mode of getting that wrong is silent:
+ * the override simply disappears and nobody knows which lakes lost one.
+ *
+ * Implausible readings are counted and dropped rather than stored (`isPlausibleElevationM`), on the
+ * same reasoning as the OSM depth tag's strict parse: a wrong number here renders as a fact.
+ */
+export const importElevations = internalMutation({
+  args: {
+    elevations: v.array(v.object({ waterBodyId: v.id('waterBodies'), elevationM: v.number() })),
+  },
+  handler: async (ctx, { elevations }) => {
+    let updated = 0;
+    let operatorHeld = 0;
+    let implausible = 0;
+    let missing = 0;
+    for (const { waterBodyId, elevationM } of elevations) {
+      const body = await ctx.db.get(waterBodyId);
+      if (!body) {
+        missing++;
+        continue;
+      }
+      if (!canOverwriteElevation(body.elevationSource)) {
+        operatorHeld++;
+        continue;
+      }
+      if (!isPlausibleElevationM(elevationM)) {
+        implausible++;
+        continue;
+      }
+      await ctx.db.patch(waterBodyId, { elevationM, elevationSource: 'dem_glo90' });
+      updated++;
+    }
+    return { updated, operatorHeld, implausible, missing };
+  },
+});
+
+// ── Winter wind rose (N6c A4b) ───────────────────────────────────────────────────────────────
+
+/**
+ * Page the corpus for bodies whose wind rose is worth fetching.
+ *
+ * **Only bodies that could ever use one.** The caption suppresses the wind clause below
+ * `MIN_FETCH_CLAUSE_M`, so a body whose longest fetch is under that threshold would spend WIND
+ * Toolkit requests on a number nothing will ever render. That filter is what turns a 116,070-body
+ * pass into a few thousand — and the requests are the scarce resource here (10,000/day, one point
+ * and one year each), not the storage.
+ *
+ * Returns the point to sample and the body's current rose state, so the loader can dedupe by grid
+ * cell before spending anything.
+ */
+export const listNeedingWindRose = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    refresh: v.optional(v.boolean()),
+    /** Minimum longest-fetch to qualify; defaults to the caption's own floor. */
+    minFetchM: v.optional(v.number()),
+  },
+  handler: async (ctx, { cursor, batchSize, refresh, minFetchM }) => {
+    const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
+    const floor = minFetchM ?? MIN_FETCH_CLAUSE_M;
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    const targets = page.page
+      .filter((body) => {
+        if (!isListed(body)) return false;
+        if (!refresh && body.windRose !== undefined) return false;
+        const fetchProfileM = body.fetchProfileM;
+        if (!fetchProfileM || fetchProfileM.length === 0) return false;
+        return Math.max(...fetchProfileM) >= floor;
+      })
+      .map((body) => {
+        const point = body.interiorPoint ?? body.representativePoint ?? body.centroid;
+        return { waterBodyId: body._id, lat: point.lat, lng: point.lng };
+      });
+    return { targets, scanned: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
+ * Write a batch of winter wind roses.
+ *
+ * **Validates the rose shape server-side** rather than trusting the loader: a rose stored as raw
+ * hour counts instead of frequencies is still sixteen plausible numbers, and it would scale every
+ * exposure index by the hours sampled — which changes no ranking and breaks every threshold. See
+ * `isPlausibleWindRose`.
+ */
+export const importWindRoses = internalMutation({
+  args: {
+    roses: v.array(v.object({ waterBodyId: v.id('waterBodies'), rose: v.array(v.number()) })),
+  },
+  handler: async (ctx, { roses }) => {
+    let updated = 0;
+    let malformed = 0;
+    let missing = 0;
+    for (const { waterBodyId, rose } of roses) {
+      const body = await ctx.db.get(waterBodyId);
+      if (!body) {
+        missing++;
+        continue;
+      }
+      if (!isPlausibleWindRose(rose)) {
+        malformed++;
+        continue;
+      }
+      await ctx.db.patch(waterBodyId, { windRose: rose, windRoseSource: 'wtk_2km' });
+      updated++;
+    }
+    return { updated, malformed, missing };
   },
 });
 
@@ -424,6 +778,7 @@ export const create = mutation({
       polygon: derived.polygon,
       bbox: derived.bbox,
       centroid: derived.centroid,
+      representativePoint: derived.centroid,
       surfaceAreaSqM: derived.surfaceAreaSqM,
       ...scores,
       createdByUserId: profile._id,
@@ -1410,6 +1765,8 @@ export const matchAndImportDepths = internalMutation({
         meanDepthSource: v.optional(literals(DEPTH_SOURCES)),
         maxDepthM: v.optional(v.number()),
         maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
+        /** HydroLAKES' own shoreline in metres — D85's cross-check. Compared, logged, never stored. */
+        shorelineM: v.optional(v.number()),
       }),
     ),
   },
@@ -1417,6 +1774,8 @@ export const matchAndImportDepths = internalMutation({
     let updated = 0;
     let unmatched = 0;
     let areaRejected = 0;
+    let shorelineCompared = 0;
+    let shorelineDisagreed = 0;
     let skipped = 0;
     let noAreaGate = 0;
     let operatorHeld = 0;
@@ -1461,6 +1820,38 @@ export const matchAndImportDepths = internalMutation({
         noAreaGate++;
       }
 
+      // ── D85's free cross-check: HydroLAKES' Shore_len against our own shoreline ──────────────
+      //
+      // **Log the comparison; store ours.** HydroLAKES' polygon is a different water mask at a
+      // different date and its own resolution, so a disagreement does not say who is right. What it
+      // does say is whether our number is in the right neighbourhood — a 2× gap on a known lake
+      // means the join or the ring handling is broken, and that is worth catching at load time
+      // rather than in a screenshot.
+      //
+      // Only fires where both exist: HydroLAKES' 10 ha floor covers ~7% of the corpus, so a silent
+      // absence here is the norm and not a finding.
+      if (
+        typeof body.shorelineM === 'number' &&
+        body.shorelineM > 0 &&
+        typeof lake.shorelineM === 'number' &&
+        lake.shorelineM > 0
+      ) {
+        shorelineCompared++;
+        const ratio = Math.max(
+          body.shorelineM / lake.shorelineM,
+          lake.shorelineM / body.shorelineM,
+        );
+        if (ratio > SHORELINE_CROSS_CHECK_RATIO) {
+          shorelineDisagreed++;
+          rejects.push({
+            key: lake.key,
+            reason:
+              `shoreline cross-check on "${body.name}": ours ${Math.round(body.shorelineM / 1000)} km vs ` +
+              `HydroLAKES ${Math.round(lake.shorelineM / 1000)} km (${ratio.toFixed(1)}×) — not stored, check the ring handling`,
+          });
+        }
+      }
+
       const outcome = await applyDepthLadder(ctx, body, lake);
       if (outcome.changed) updated++;
       else skipped++;
@@ -1485,6 +1876,8 @@ export const matchAndImportDepths = internalMutation({
     return {
       updated,
       unmatched,
+      shorelineCompared,
+      shorelineDisagreed,
       areaRejected,
       skipped,
       noAreaGate,

@@ -375,6 +375,8 @@ export function transformDepths(input: TransformInput): TransformResult {
 
     // Prefer the source's own reported area over our geodesic recomputation of its polygon: it is what
     // the depth was derived from, so it is the number the area gate should compare against.
+    // `Shore_len` is km in HydroLAKES; ours is metres everywhere (D85 cross-check).
+    const shorelineKm = parseNumber(String(feature.properties?.Shore_len ?? ''));
     const reportedAreaKm2 = parseNumber(String(feature.properties?.Lake_area ?? ''));
     const areaSqM =
       reportedAreaKm2 !== undefined ? reportedAreaKm2 * SQ_KM_TO_SQ_M : geodesicAreaSqM(geometry);
@@ -389,6 +391,8 @@ export function transformDepths(input: TransformInput): TransformResult {
       ...(maxDepthM !== undefined && maxDepthM > 0
         ? { maxDepthM, maxDepthSource: 'globathy' as const }
         : {}),
+      // Carried for D85's cross-check only — compared server-side and thrown away. We store ours.
+      ...(shorelineKm !== undefined && shorelineKm > 0 ? { shorelineM: shorelineKm * 1000 } : {}),
     });
   }
 

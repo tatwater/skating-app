@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  buildLakeCaption,
   contourBodyKey,
   describeLakeDepth,
   formatAreaAcres,
@@ -65,6 +66,9 @@ export function WaterBodyDetail({
   const [formOpen, setFormOpen] = useState(trackDraftId !== undefined);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
   const leaving = useIsLeaving();
+  // Same whole-table fetch as web — five rows of aggregate geography, so the caption stays a pure
+  // function of (body, basis) rather than needing a second round trip to learn which state to ask.
+  const regionStats = useQuery(api.regionStats.list, {});
 
   // Offline read-cache (decision #8): stash this opened lake's freshest reports as feed cards so they
   // read back on the ice with no signal. Skips until the (merge-resolved) body id is known.
@@ -131,6 +135,7 @@ export function WaterBodyDetail({
   }
 
   const depth = describeLakeDepth(result.body);
+  const caption = buildLakeCaption(result.body, regionStats);
 
   return (
     <YStack gap="$3">
@@ -154,6 +159,13 @@ export function WaterBodyDetail({
           <Text color="$foregroundMuted" fontSize="$1">
             {depth.caption}
           </Text>
+        ) : null}
+        {/* The derived profile (N6c/C), assembled by the same @skating/core function web calls so
+            the two surfaces cannot drift. Nothing renders when there is nothing to say. */}
+        {caption ? (
+          <Paragraph color="$foregroundMuted" fontSize={14} paddingTop="$1">
+            {caption}
+          </Paragraph>
         ) : null}
         <DirectionsButton waterBodyId={result.body._id} />
       </YStack>

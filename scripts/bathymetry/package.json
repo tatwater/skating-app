@@ -17,7 +17,8 @@
     "samples": "tsx src/samples.ts",
     "join": "tsx src/join.ts",
     "build-contours": "tsx src/build.ts",
-    "tile": "./tile.sh"
+    "tile": "./tile.sh",
+    "coverage": "tsx src/coverage.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*"

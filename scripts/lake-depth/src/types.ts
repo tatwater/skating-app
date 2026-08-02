@@ -24,6 +24,8 @@ export type HydroLakesProperties = Record<string, unknown> & {
   Lake_area?: number | string;
   Depth_avg?: number | string;
   Vol_src?: number | string;
+  /** Shoreline length in km, from HydroLAKES' own polygon — D85's free cross-check on `shorelineM`. */
+  Shore_len?: number | string;
 };
 
 export type HydroLakesFeature = Feature<Geometry, HydroLakesProperties>;
@@ -66,6 +68,16 @@ export interface DepthRecord {
   meanDepthSource?: DepthSource;
   maxDepthM?: number;
   maxDepthSource?: DepthSource;
+  /**
+   * HydroLAKES' own shoreline length, in **metres** (its `Shore_len` is km).
+   *
+   * **A cross-check, never a source** (D85). Its polygon is a different water mask at a different
+   * date and its own resolution, so a disagreement does not say who is right — but a 2× gap on a
+   * known lake means our join or ring handling is broken, and that is worth catching at load time
+   * rather than in a screenshot. Compared server-side against the stored `shorelineM`, logged, and
+   * discarded: **we store ours**.
+   */
+  shorelineM?: number;
 }
 
 /** Per-source counts, printed by the CLI so a thin source is visible rather than inferred. */

@@ -1,6 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import {
+  buildLakeCaption,
   contourBodyKey,
   describeLakeDepth,
   formatAreaAcres,
@@ -61,6 +62,10 @@ export function WaterBodyDetail({
   const { setFocus, setHighlightWaterBodyId, setContourBodyKey, contourCredit } = useMapSelection();
   // Mirrors the server's `requireContributor` — see `LeavingNotice`.
   const leaving = isLeaving(useQuery(api.profiles.current, {}));
+  // Five rows of aggregate geography, fetched whole rather than per-state: it keeps the caption a
+  // pure function of (body, basis) on both clients, and the alternative is a second round trip to
+  // learn which state to ask about.
+  const regionStats = useQuery(api.regionStats.list, {});
   const [formOpen, setFormOpen] = useState(false);
   const [hazardFormOpen, setHazardFormOpen] = useState(false);
   const [bountyFormOpen, setBountyFormOpen] = useState(false);
@@ -123,6 +128,7 @@ export function WaterBodyDetail({
   }
 
   const depth = describeLakeDepth(result.body);
+  const caption = buildLakeCaption(result.body, regionStats);
 
   return (
     <>
@@ -146,6 +152,10 @@ export function WaterBodyDetail({
             {depth.caption}
           </p>
         ) : null}
+        {/* The derived profile (N6c/C). Renders NOTHING — no heading, no empty section — when
+            there is nothing to say, which is most of the corpus and is the correct outcome rather
+            than a gap to fill with hedged filler. */}
+        {caption ? <p className="pt-1 text-muted-foreground text-sm">{caption}</p> : null}
       </SheetHeader>
       <div className="flex flex-col gap-4 px-4 pb-4">
         {/* Report creation + directions to a put-in (never the on-water centroid, D#7).
