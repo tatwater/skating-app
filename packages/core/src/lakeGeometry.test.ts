@@ -435,7 +435,7 @@ describe('fetchProfileMeters', () => {
     }
   });
 
-  it('never exceeds the long axis — you cannot have more fetch than the lake is long', () => {
+  it('never exceeds the bounding rectangle diagonal — no chord can', () => {
     fc.assert(
       fc.property(
         fc.double({ min: 0.002, max: 0.2, noNaN: true }),
@@ -448,8 +448,14 @@ describe('fetchProfileMeters', () => {
             maxLng: -73 + dLng,
           });
           const profile = fetchProfileMeters(poly) ?? [];
-          const longAxis = lakeAxes(poly, centre)?.longAxisM ?? 0;
-          for (const d of profile) expect(d).toBeLessThanOrEqual(longAxis + 1);
+          const axes = lakeAxes(poly, centre);
+          // The bound is the bounding rectangle's DIAGONAL, not its long side. `longAxisM` became
+          // a side when this module moved off hull-diameter onto the minimum-area rectangle, and a
+          // ray cast toward a corner runs along the diagonal — which is up to 1.41x the long side
+          // on a square. The old assertion survived because fast-check had not yet drawn a nearly
+          // square lake with an off-centre fetch origin; it did on seed -298658357.
+          const diagonal = Math.hypot(axes?.longAxisM ?? 0, axes?.shortAxisM ?? 0);
+          for (const d of profile) expect(d).toBeLessThanOrEqual(diagonal + 1);
         },
       ),
     );
