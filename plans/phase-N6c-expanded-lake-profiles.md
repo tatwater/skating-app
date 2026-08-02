@@ -190,6 +190,29 @@ lake with contours, so `pnpm --filter @skating/bathymetry coverage` reads the bu
 
 A test fails if step 1 stops clobbering richness, so the constraint cannot drift silently.
 
+> **The data passes and the re-score decouple, and only the re-score has an ordering constraint**
+> (founder call, 2026-08-02). *"One single pass"* means **one re-score**, not one session:
+>
+> - **Steps 1–5 run as soon as N6c-1 merges.** Nothing later depends on them being late, and
+>   everything the caption reads — shoreline, dimensions, elevation, depth, wind — becomes visible
+>   immediately, because those read the row rather than the score. It also surfaces any ETL surprise
+>   while N6c-1 is fresh rather than tangled with N6c-2's changes; none of these loaders has ever run
+>   against the corpus.
+> - **N6c-2 adds essentially no corpus-wide pass.** Checked rather than assumed: B's links are
+>   generated at render time and stored nowhere (D71), B7 is operator-entered on tens of bodies,
+>   `satelliteImagery` defaults to `auto` resolved from surface area so absent *is* the default,
+>   B3a/D touches ~40 bodies, B5 polls per state on a cron by design, E's counters are
+>   write-maintained, and F writes one row per run. **No N6c-2 field wants to ride the water
+>   transform** — the specific check N6a's ordering gate got incomplete.
+> - **N6d reuses the archived extract.** Its Workstream B1 is a second `osmium tags-filter` pass over
+>   *the same* Geofabrik file, and `scripts/etl`'s `fetchExtract` keeps each state's `.pbf` in a
+>   permanent `.raw/<state>/` with a manifest pinning the resolved dated URL and md5. So N6d is not a
+>   reason to delay the re-import — and it is *better* built after one, since put-in→body association
+>   and the compass-side labels are derived from shorelines that the re-import will move.
+>
+> **Only `backfillCells` waits**, until after N6d, because D2's put-in terms (+0.06 derived, +0.12
+> official) are the strongest static signals in the richness model and are dark until then.
+>
 > **The re-score is deliberately NOT run at the end of N6c-1.** It walks all 116,070 bodies,
 > recomputes `displayScore` and rebuilds every cell row in the N1 index, and running it twice would
 > be the mistake D2 was folded into this phase to avoid in the first place. The cost of waiting is
