@@ -12,6 +12,7 @@
 
 import {
   bboxIntersects,
+  canOverwriteElevation,
   classifyDedup,
   DEPTH_SOURCE_RANK,
   DEPTH_SOURCES,
@@ -21,6 +22,7 @@ import {
   displayScore,
   isKnownStateCode,
   isMinor,
+  isPlausibleElevationM,
   KNOWN_STATE_CODES,
   type LatLng,
   MAX_PLAUSIBLE_DEPTH_M,
@@ -393,6 +395,95 @@ export const backfillCells = internalMutation({
       });
     }
     return { reindexed: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+// ── Elevation (N6c A1) ───────────────────────────────────────────────────────────────────────
+
+/**
+ * Page the corpus for bodies whose elevation the DEM pass should look up.
+ *
+ * **Paginated and filtered server-side**, the `backfillCells` shape: 116,070 bodies cannot be
+ * `.collect()`-ed, and the loader has no business deciding what to skip — the precedence rule lives
+ * next to the write that enforces it, or the two drift.
+ *
+ * Two exclusions, and they are the difference between a resumable pass and a pass that redoes its
+ * work every time it is interrupted:
+ * - **`operator`-sourced rows are never returned**, so a moderator's value costs no quota and can
+ *   never be overwritten by a race between the read and the write.
+ * - **Rows already carrying a `dem_glo90` reading are skipped** unless `refresh` is set, so a
+ *   re-run after a failure resumes rather than restarts. `refresh` exists for the day the DEM
+ *   changes; it is not the normal path.
+ *
+ * Returns the point to sample — `interiorPoint` where the re-import has set one, `centroid`
+ * otherwise. A DEM read on a bank is biased upward by the bank, which is the whole reason
+ * `interiorPoint` exists.
+ */
+export const listNeedingElevation = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    refresh: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { cursor, batchSize, refresh }) => {
+    const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    const targets = page.page
+      .filter((body) => {
+        if (body.elevationSource === 'operator') return false;
+        return refresh === true || body.elevationM === undefined;
+      })
+      .map((body) => {
+        const point = body.interiorPoint ?? body.centroid;
+        return { waterBodyId: body._id, lat: point.lat, lng: point.lng };
+      });
+    return {
+      targets,
+      scanned: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/**
+ * Write a batch of DEM elevations (N6c A1).
+ *
+ * **Re-checks the operator rung at write time** even though `listNeedingElevation` already filtered
+ * on it. The read and the write are separate transactions and a 116k-body pass takes minutes, so a
+ * moderator can set an override in between — and the failure mode of getting that wrong is silent:
+ * the override simply disappears and nobody knows which lakes lost one.
+ *
+ * Implausible readings are counted and dropped rather than stored (`isPlausibleElevationM`), on the
+ * same reasoning as the OSM depth tag's strict parse: a wrong number here renders as a fact.
+ */
+export const importElevations = internalMutation({
+  args: {
+    elevations: v.array(v.object({ waterBodyId: v.id('waterBodies'), elevationM: v.number() })),
+  },
+  handler: async (ctx, { elevations }) => {
+    let updated = 0;
+    let operatorHeld = 0;
+    let implausible = 0;
+    let missing = 0;
+    for (const { waterBodyId, elevationM } of elevations) {
+      const body = await ctx.db.get(waterBodyId);
+      if (!body) {
+        missing++;
+        continue;
+      }
+      if (!canOverwriteElevation(body.elevationSource)) {
+        operatorHeld++;
+        continue;
+      }
+      if (!isPlausibleElevationM(elevationM)) {
+        implausible++;
+        continue;
+      }
+      await ctx.db.patch(waterBodyId, { elevationM, elevationSource: 'dem_glo90' });
+      updated++;
+    }
+    return { updated, operatorHeld, implausible, missing };
   },
 });
 

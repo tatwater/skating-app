@@ -677,6 +677,109 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
   });
 });
 
+describe('waterBodies elevation (N6c A1)', () => {
+  const AT = { lat: 44.5, lng: -73.3 };
+
+  async function seedBody(
+    t: ReturnType<typeof convexTest>,
+    extra: Record<string, unknown> = {},
+  ): Promise<Id<'waterBodies'>> {
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, interiorPoint: AT }],
+    });
+    const id = await onlyBodyId(t);
+    if (Object.keys(extra).length > 0) await t.run((ctx) => ctx.db.patch(id, extra));
+    return id;
+  }
+
+  test('listNeedingElevation samples interiorPoint, not centroid', async () => {
+    // A DEM read taken on a bank is biased upward by the bank, and `centroid` is Turf's
+    // pointOnFeature, which lands on the shoreline for any curved or narrow lake.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    const page = await t.query(internal.waterBodies.listNeedingElevation, {});
+    expect(page.targets).toEqual([{ waterBodyId: id, lat: AT.lat, lng: AT.lng }]);
+  });
+
+  test('falls back to centroid for a body the re-import has not reached yet', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const page = await t.query(internal.waterBodies.listNeedingElevation, {});
+    expect(page.targets[0]).toMatchObject({
+      lat: CANONICAL_ITEM.centroid.lat,
+      lng: CANONICAL_ITEM.centroid.lng,
+    });
+  });
+
+  test('skips rows already stamped, so an interrupted 116k pass resumes rather than restarts', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, { elevationM: 350, elevationSource: 'dem_glo90' });
+    expect((await t.query(internal.waterBodies.listNeedingElevation, {})).targets).toEqual([]);
+    // …unless explicitly asked to re-read, for the day the DEM changes.
+    expect(
+      (await t.query(internal.waterBodies.listNeedingElevation, { refresh: true })).targets,
+    ).toHaveLength(1);
+  });
+
+  test('never returns or overwrites an operator elevation (D68 precedence)', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t, { elevationM: 412, elevationSource: 'operator' });
+
+    // Not offered to the pass, even with --refresh: a moderator's value costs no quota.
+    expect((await t.query(internal.waterBodies.listNeedingElevation, {})).targets).toEqual([]);
+    expect(
+      (await t.query(internal.waterBodies.listNeedingElevation, { refresh: true })).targets,
+    ).toEqual([]);
+
+    // And re-checked at WRITE time, because the read and the write are separate transactions and a
+    // 116k pass takes minutes — a moderator can set an override in between, and losing it would be
+    // silent.
+    const result = await t.mutation(internal.waterBodies.importElevations, {
+      elevations: [{ waterBodyId: id, elevationM: 999 }],
+    });
+    expect(result).toMatchObject({ updated: 0, operatorHeld: 1 });
+    const body = await t.run((ctx) => ctx.db.get(id));
+    expect(body?.elevationM).toBe(412);
+    expect(body?.elevationSource).toBe('operator');
+  });
+
+  test('stores a plausible reading and drops a sentinel', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    expect(
+      await t.mutation(internal.waterBodies.importElevations, {
+        elevations: [{ waterBodyId: id, elevationM: 357 }],
+      }),
+    ).toMatchObject({ updated: 1, implausible: 0 });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.elevationSource).toBe('dem_glo90');
+
+    expect(
+      await t.mutation(internal.waterBodies.importElevations, {
+        elevations: [{ waterBodyId: id, elevationM: -9999 }],
+      }),
+    ).toMatchObject({ updated: 0, implausible: 1 });
+    // The good value survives the bad write.
+    expect((await t.run((ctx) => ctx.db.get(id)))?.elevationM).toBe(357);
+  });
+
+  test('elevation survives a canonical re-import', async () => {
+    // importCanonical patches a named field list; elevation is deliberately not in it, so the
+    // geometry pass and the depth pass can run in either order.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    await t.mutation(internal.waterBodies.importElevations, {
+      elevations: [{ waterBodyId: id, elevationM: 357 }],
+    });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, name: 'renamed' }],
+    });
+    const body = await t.run((ctx) => ctx.db.get(id));
+    expect(body?.name).toBe('renamed');
+    expect(body?.elevationM).toBe(357);
+    expect(body?.elevationSource).toBe('dem_glo90');
+  });
+});
+
 describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
   test('inserts a canonical body (listed) and is idempotent on re-import', async () => {
     const t = convexTestWithGeo();

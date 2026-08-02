@@ -9,7 +9,13 @@ export default defineConfig({
       // The transform is the tested logic. `cli.ts`/`load.ts` are subprocess + file-I/O glue
       // (untestable shells; all real work is in the covered transform + `@skating/core`), and
       // `types.ts` is type-only. Mirrors the water ETL and admin-areas configs.
-      exclude: ['src/**/*.test.ts', 'src/cli.ts', 'src/load.ts', 'src/types.ts'],
+      exclude: [
+        'src/**/*.test.ts',
+        'src/cli.ts',
+        'src/load.ts',
+        'src/loadElevation.ts',
+        'src/types.ts',
+      ],
       thresholds: {
         lines: 90,
         functions: 90,

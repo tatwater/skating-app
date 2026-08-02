@@ -15,6 +15,7 @@
 import {
   CONDITION_SOURCES,
   DEPTH_SOURCES,
+  ELEVATION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
   PRECIP_TYPES,
@@ -432,6 +433,21 @@ export default defineSchema({
     // chart, max from the 2015 DEC survey") without a second field nobody fills. Cleared when no
     // operator-sourced depth remains, so a note can never outlive the claim it substantiates.
     depthSourceNote: v.optional(v.string()),
+    // Lake **surface elevation** (N6c A1) — a real freeze-ORDER signal: a 1,700 ft pond in the
+    // Greens is skateable weeks before a valley lake twenty minutes away. One source, not a ladder
+    // (see `@skating/core`'s `elevation.ts` for why depth needed five rungs and this needs one),
+    // but D68's precedence discipline carries across unchanged: an `operator` value wins and the
+    // loader refuses to overwrite it.
+    //
+    // Sampled at `interiorPoint` rather than `centroid`, because a DEM read taken on a bank is
+    // biased upward by the bank. Accurate to ~5% on three of four spot-checked lakes and 20 m high
+    // on the fourth — fine for freeze order, which is a hundreds-of-feet question, and the reason
+    // the copy must never imply two lakes' elevations are comparable at tens of feet.
+    //
+    // No index: read only with a body already in hand. Optional ⇒ migration-free, and survives a
+    // canonical re-import because `importCanonical` patches an explicit field list.
+    elevationM: v.optional(v.number()),
+    elevationSource: v.optional(literals(ELEVATION_SOURCES)),
     // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
     // `minVisibleZoom` is its integer bucket, ALSO denormalized onto `waterBodyCells` so
     // `listInViewport` filters `minVisibleZoom <= zoom` in-query. All optional ⇒ migration-free;

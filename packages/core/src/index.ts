@@ -11,6 +11,7 @@ export * from './display';
 export * from './dob';
 export * from './draftQueue';
 export * from './driveTime';
+export * from './elevation';
 export * from './feed';
 export * from './feedFilters';
 export * from './geometry';
