@@ -35,6 +35,38 @@
 
 ---
 
+## N6c-1 deliverables — audited against this doc, 2026-08-02
+
+*Checked line by line against the workstream sections below rather than against the build's own
+memory of them. **Two specified items had been missed** and are now done; both are marked.*
+
+| Item | State | Where |
+| --- | --- | --- |
+| **A1** elevation + `elevationSource`, operator precedence, batched resumable loader | ✅ | `core/elevation.ts`, `scripts/lake-depth/{elevation,loadElevation}.ts` |
+| **A2** long/short axis + undirected bearing | ✅ *(method corrected — see finding 1)* | `core/lakeGeometry.ts` |
+| **A3** shoreline measured pre-`simplify()` (D85) | ✅ | `core/lakeGeometry.ts`, `scripts/etl/transform.ts` |
+| **A3** HydroLAKES `Shore_len` cross-check — *"log the comparison; store ours"* | ✅ **was missed, now done** | `waterBodies.matchAndImportDepths` |
+| **A4** 16-bearing fetch profile, contiguous-run rule, stated limitations | ✅ *(origin corrected — see finding 2)* | `core/lakeGeometry.ts` |
+| **A4b** winter wind rose — **not in the original plan**, added by founder call | ✅ | `core/windRose.ts`, `scripts/wind-climate/` |
+| **A5** `regionStats` per-state deciles | ✅ *(one deviation — see below)* | `convex/regionStats.ts` |
+| **C** derived caption, all four rules, rendered on both clients | ✅ | `core/lakeCaption.ts`, `core/lakeProfile.ts` |
+| **D2** richness → prominence, boost-never-penalty, retirement signal | ✅ *(weights rescaled — see finding 4)* | `core/display.ts`, `waterBodies.backfillCells` |
+| **D2** `hasContours` term | ✅ **was dark, now live** | `bathymetryCoverage` table, `scripts/bathymetry coverage` |
+| **D2 / A4** constants surfaced read-only on the Phase 7b tuning page | ✅ **was missed, now done** | `apps/web/src/routes/admin.tuning.tsx` |
+| `centroid` → `representativePoint` rename | ◐ **stage 1 of 2** | blocked on the backfill running |
+
+**One deliberate deviation from the text.** A5 says the deciles are *"recomputed at the end of each
+state's import"*. `regionStats:recompute` instead recomputes **every state in one pass**, because it
+is an action that pages the whole corpus and splitting it per state would mean five passes over
+116,070 rows to produce five small rows. The output is identical; only the trigger differs.
+
+**Out of scope here by the split, not by omission:** Workstreams **B** (reference links, NWS alerts,
+the short forecast), **B3a/D** (the seed script), **E** (summary cards) and **F** (record history and
+import observability) are N6c-2. That matches this doc's own sequencing, where items 1–3 are the
+derived numbers and 4–7 are everything else.
+
+---
+
 ## What the N6c-1 build found
 
 *Written 2026-08-02, against the code. **Six of this plan's own claims were false or misleading**,
