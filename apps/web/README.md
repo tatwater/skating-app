@@ -126,9 +126,17 @@ cp .env.example .env     # then fill in real keys (see below)
 | `CLERK_SECRET_KEY` | Clerk secret (`sk_…`) — **server-only** | Clerk dashboard → API keys |
 | `VITE_CONVEX_URL` | Convex deployment URL (public, client) | `pnpm convex-dev` / Convex dashboard |
 | `VITE_PMTILES_URL` | Basemap `.pmtiles` URL (public; blank ⇒ a live Protomaps dated build, dev only) | The self-hosted Northeast extract's Cloudflare R2 URL (Phase 2.5) — see [`scripts/basemap`](../../scripts/basemap/README.md) |
+| `VITE_BATHYMETRY_PMTILES_URL` | Contour `.pmtiles` URL (public; blank ⇒ the layer never mounts) | The bathymetry archive alongside the basemap — see [`scripts/bathymetry`](../../scripts/bathymetry/README.md) |
 | `VITE_SENTRY_DSN` | Sentry DSN — drives client **and** server (optional) | A **separate** `skating-web` Sentry project (same org as mobile) → project settings |
 | `SENTRY_ORG` / `SENTRY_PROJECT` | Source-map upload target (build-time; set on Vercel) | Sentry org slug + the `skating-web` project slug |
 | `SENTRY_AUTH_TOKEN` | Enables source-map upload (build-time; set on Vercel) | Sentry → auth tokens. Absent ⇒ upload skipped, build still succeeds |
+
+> **A new build-time var needs `turbo.json` too.** Turbo runs `build` in **strict** env mode, so a
+> var it doesn't know about is stripped from the build's environment *and* left out of the cache
+> hash — the symptom is a deploy that silently keeps the old value (Vite sees nothing and falls
+> back). `VITE_*` is wildcarded in the root `turbo.json` for exactly this reason; anything without
+> that prefix (a new `SENTRY_*`, say) has to be listed by hand. This bites only on Vercel — local
+> `vite dev` reads `.env` directly and never goes through turbo's filter.
 
 Sentry uses its **own project** (`skating-web`), distinct from the mobile app's project but
 in the same org (D29): the two surfaces run different SDKs and ship on different cadences, so

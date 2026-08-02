@@ -22,6 +22,7 @@ import {
   isKnownStateCode,
   isMinor,
   KNOWN_STATE_CODES,
+  type LatLng,
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_SUGGESTED_SAMPLE_POINTS,
   MIN_VISIBLE_ZOOM_FLOOR,
@@ -143,7 +144,44 @@ const canonicalBody = v.object({
   bbox,
   centroid: latLng, // the on-water representative point (D48)
   surfaceAreaSqM: v.optional(v.number()),
+  // A genuinely-interior point + the D85 shape stats, measured by the ETL on the source geometry
+  // before it was simplified. All optional: a body whose geometry defeats one of them still loads.
+  interiorPoint: v.optional(latLng),
+  shorelineM: v.optional(v.number()),
+  longAxisM: v.optional(v.number()),
+  longAxisBearingDeg: v.optional(v.number()),
+  shortAxisM: v.optional(v.number()),
+  fetchProfileM: v.optional(v.array(v.number())),
 });
+
+/**
+ * The N6c shape stats as a patch fragment, `undefined` for anything the ETL couldn't measure.
+ *
+ * **Spread explicitly into both the insert and the update**, rather than relying on `...item`:
+ * `importCanonical` patches a named field list on purpose (that discipline is what lets depth,
+ * `curatedBoost` and the review/removal state survive a re-import), so a new field that isn't named
+ * here simply never lands — silently, and only visibly as a column of blanks weeks later.
+ *
+ * Written as explicit `undefined`s rather than omitted keys so a re-import *clears* a stat the new
+ * geometry can no longer support. A stale shoreline beside a fresh outline is worse than none.
+ */
+function shapeFields(item: {
+  interiorPoint?: LatLng;
+  shorelineM?: number;
+  longAxisM?: number;
+  longAxisBearingDeg?: number;
+  shortAxisM?: number;
+  fetchProfileM?: number[];
+}) {
+  return {
+    interiorPoint: item.interiorPoint,
+    shorelineM: item.shorelineM,
+    longAxisM: item.longAxisM,
+    longAxisBearingDeg: item.longAxisBearingDeg,
+    shortAxisM: item.shortAxisM,
+    fetchProfileM: item.fetchProfileM,
+  };
+}
 
 /**
  * Derived display-prominence fields (D49) from a body's area + admin boost. `minVisibleZoom` is
@@ -254,6 +292,7 @@ export const importCanonical = internalMutation({
           surfaceAreaSqM: item.surfaceAreaSqM,
           states: unionState(existing.states, state),
           ...scores,
+          ...shapeFields(item),
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
         // body against its new geometry + prominence (N1).
@@ -301,6 +340,7 @@ export const importCanonical = internalMutation({
           surfaceAreaSqM: item.surfaceAreaSqM,
           states: unionState(undefined, state),
           ...scores,
+          ...shapeFields(item),
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
         });

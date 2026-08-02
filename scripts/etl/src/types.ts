@@ -36,6 +36,20 @@ export interface CanonicalBody {
   bbox: BBox;
   centroid: LatLng;
   surfaceAreaSqM: number;
+  /**
+   * A point genuinely inside the water (N6c) — see `waterBodies.interiorPoint`. Absent only when
+   * the geometry has no locatable interior, which is a body the transform is about to skip anyway.
+   */
+  interiorPoint?: LatLng;
+  /**
+   * Derived shape stats (N6c Workstream A), measured on the **pre-simplification** geometry per
+   * D85. Each is independently optional: a degenerate ring costs one field, not the feature.
+   */
+  shorelineM?: number;
+  longAxisM?: number;
+  longAxisBearingDeg?: number;
+  shortAxisM?: number;
+  fetchProfileM?: number[];
 }
 
 /**

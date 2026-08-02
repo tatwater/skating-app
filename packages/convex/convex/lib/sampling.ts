@@ -4,8 +4,16 @@
  * point** — the guarantee behind the "one window → one cache entry → strip & decay agree" claim. Lives
  * here (not in `hazardWeather.ts`) so `weather.ts` can import it without a cycle.
  *
- * v1 samples every body at its centroid; the escape hatch is `waterBodies.weatherSamplePoints[]` for the
- * few genuinely multi-cell giants (Champlain ~200 km), where a hazard/report picks its nearest point.
+ * v1 samples every body at one derived point; the escape hatch is `waterBodies.weatherSamplePoints[]` for
+ * the few genuinely multi-cell giants (Champlain ~200 km), where a hazard/report picks its nearest point.
+ *
+ * **That derived point is `interiorPoint`, not `centroid` (N6c).** `centroid` is Turf's
+ * `pointOnFeature`, which falls back to a point on the **shoreline** whenever the bbox centre lands
+ * outside the polygon — true of any curved or narrow lake, and measured at **30.7 km** off mid-lake for
+ * Champlain. Against Open-Meteo's 2–25 km grid that is one to several cells wrong, on an input the D56
+ * decay math is supposed to be reproducible from. Every *other* `centroid` consumer wants the old
+ * behaviour (you drive to a shore, and a shore is in the shore's town), which is why this is a second
+ * field rather than a correction to the first.
  */
 
 import type { Doc } from '../_generated/dataModel';
@@ -17,13 +25,17 @@ function distSq(a: { lat: number; lng: number }, b: { lat: number; lng: number }
   return dLat * dLat + dLng * dLng;
 }
 
-/** The nearest weather sample point to `target` — the body's centroid by default (D56 §5). */
+/**
+ * The nearest weather sample point to `target` — the body's derived interior point by default
+ * (D56 §5), falling back to `centroid` for any body not yet re-imported with one.
+ */
 export function nearestSamplePoint(
   body: Doc<'waterBodies'>,
   target: { lat: number; lng: number },
 ): { lat: number; lng: number } {
-  const points = body.weatherSamplePoints?.length ? body.weatherSamplePoints : [body.centroid];
-  let best = points[0] ?? body.centroid;
+  const fallback = body.interiorPoint ?? body.centroid;
+  const points = body.weatherSamplePoints?.length ? body.weatherSamplePoints : [fallback];
+  let best = points[0] ?? fallback;
   let bestD = distSq(best, target);
   for (const p of points) {
     const d = distSq(p, target);

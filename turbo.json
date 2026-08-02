@@ -4,13 +4,13 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", ".output/**", ".vercel/output/**"],
-      "env": [
-        "SENTRY_ORG",
-        "SENTRY_PROJECT",
-        "SENTRY_AUTH_TOKEN",
-        "VITE_SENTRY_DSN",
-        "VITE_CONVEX_URL"
-      ]
+      // Turbo runs tasks in `strict` env mode, so anything not listed here is REMOVED from the
+      // build's environment — and is absent from the cache hash, so changing it replays a stale
+      // build instead of rebuilding. Framework inference doesn't save us: turbo detects this
+      // package as `nitro`, not `vite`, so it infers no `VITE_` prefix. Hence the wildcard —
+      // every `VITE_*` var is baked into the client bundle at build time, so every one of them
+      // both belongs in the build environment and must participate in the hash.
+      "env": ["SENTRY_ORG", "SENTRY_PROJECT", "SENTRY_AUTH_TOKEN", "VITE_*"]
     },
     "check-types": {
       "dependsOn": ["^check-types"]

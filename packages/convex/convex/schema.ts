@@ -357,7 +357,52 @@ export default defineSchema({
     // a handful of points spaced at grid resolution here, and a hazard/report picks its nearest. Absent /
     // empty ⇒ `[centroid]`. Populated via the Phase 7 admin surface; no auto-population in v1.
     weatherSamplePoints: v.optional(v.array(latLng)),
+    /**
+     * A point genuinely **inside** the water (N6c / `@skating/core`'s `fetchOrigin`), computed at
+     * canonical import from the source geometry.
+     *
+     * **It exists because `centroid` above is not a centroid.** That field is Turf's
+     * `pointOnFeature`, which returns the bbox centre when it lands inside the polygon and a point
+     * on the **boundary** when it doesn't — true of any curved or narrow lake. Lake Willoughby's
+     * `centroid` is ring vertex 199; Lake Champlain's sits **30.7 km** from mid-lake.
+     *
+     * **`centroid` is deliberately left as it is**, because a shoreline-ish point is right or
+     * better for every consumer it has: drive-time bands (`notifications.ts`, `reports.ts` — you
+     * drive to a shore, not to mid-lake) and the town/state stamp a pin-less report inherits. The
+     * one consumer it hurt is **weather sampling**, where Open-Meteo's 2–25 km grid makes
+     * Champlain's offset one to several cells wrong on an input to the D56 decay math — so
+     * `lib/sampling.ts` prefers this field and falls back to `centroid`.
+     *
+     * Optional ⇒ migration-free; absent on any body not yet re-imported, which is the fallback's
+     * whole job.
+     */
+    interiorPoint: v.optional(latLng),
     surfaceAreaSqM: v.optional(v.number()),
+    // ── Derived shape stats (N6c Workstream A / D85) ───────────────────────────────────────────
+    // Measured in the ETL transform on the **full-resolution OSM geometry, before `simplify()`** —
+    // never on the polygon stored above. Perimeter is resolution-dependent (the coastline paradox),
+    // our stored copy is simplified to ~5 m and Champlain is coarsened past that to fit the D48
+    // array cap, so measuring what we store under-reports systematically and worst on exactly the
+    // big crenellated lakes where the number is most interesting. The stored polygon exists for
+    // drawing; these exist for describing. All computed by `@skating/core`'s `lakeGeometry.ts`.
+    //
+    // No index on any of them: like depth, they are only ever read with a body already in hand.
+    // All optional ⇒ migration-free, and `importCanonical` patches an explicit field list.
+    /** Total shoreline in metres, **including island rings** — the conventional definition, and
+     *  what HydroLAKES' `Shore_len` measures, so D85's free cross-check compares like with like.
+     *  Never authoritative (D3): OSM's shoreline is a tracing by many hands. */
+    shorelineM: v.optional(v.number()),
+    /** Longer side of the minimum-area bounding rectangle, in metres. NOT the hull diameter — see
+     *  `lakeAxes`, which documents why the plan's stated method reported 2× the true width. */
+    longAxisM: v.optional(v.number()),
+    /** The long axis's bearing in `[0, 180)`, clockwise from north. Undirected: an axis has no head. */
+    longAxisBearingDeg: v.optional(v.number()),
+    /** Shorter side of the same rectangle. With `longAxisM` this is the "about 5 × 1 miles" line. */
+    shortAxisM: v.optional(v.number()),
+    /** Wind fetch in metres at 16 compass bearings, **indexed by the direction wind blows FROM** —
+     *  so the drawer reads `fetchProfileM[fetchBucketFor(windDirection)]` with no arithmetic.
+     *  Precomputed because the read-time alternative is geometry on every drawer open. */
+    fetchProfileM: v.optional(v.array(v.number())),
     // Lake depth (N6a / D68). Best-available value plus **per-measurement** provenance: mean and max
     // routinely come from different rungs of the ladder (LAGOS-US holds 17,675 maxima against 6,137
     // means), so one `depthSource` could not honestly describe both. The ladder itself lives in

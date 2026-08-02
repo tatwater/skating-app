@@ -726,6 +726,41 @@ describe('waterBodies.importCanonical (idempotent OSM upsert, D14/D48)', () => {
     ).toHaveLength(0);
   });
 
+  test('carries the N6c shape stats onto the row, and clears them when a re-import cannot measure them', async () => {
+    const t = convexTestWithGeo();
+
+    // `importCanonical` patches a NAMED field list, which is what lets depth, curatedBoost and the
+    // removal state survive a re-import. The cost of that discipline is that a new field which
+    // isn't named simply never lands — silently, and visible only as a column of blanks later.
+    const stats = {
+      interiorPoint: { lat: 44.5, lng: -73.3 },
+      shorelineM: 984_500,
+      longAxisM: 171_000,
+      longAxisBearingDeg: 8.5,
+      shortAxisM: 23_800,
+      fetchProfileM: Array.from({ length: 16 }, (_, i) => 1000 * (i + 1)),
+    };
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, ...stats }],
+    });
+    const bodyId = await onlyBodyId(t);
+    expect(await t.run((ctx) => ctx.db.get(bodyId))).toMatchObject(stats);
+
+    // And the update path, which is a different field list in the same mutation.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, ...stats, shorelineM: 990_000 }],
+    });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.shorelineM).toBe(990_000);
+
+    // A re-import whose geometry no longer supports a stat must CLEAR it. A stale shoreline beside
+    // a fresh outline is worse than no shoreline, and an omitted key would have left it in place.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const cleared = await t.run((ctx) => ctx.db.get(bodyId));
+    expect(cleared?.shorelineM).toBeUndefined();
+    expect(cleared?.fetchProfileM).toBeUndefined();
+    expect(cleared?.interiorPoint).toBeUndefined();
+  });
+
   test('keeps OSM and NHD distinct even when they share an externalId (source in the key)', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, {
