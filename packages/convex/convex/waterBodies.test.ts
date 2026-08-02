@@ -677,6 +677,60 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
   });
 });
 
+describe('waterBodies profile-richness prominence (N6c / D2)', () => {
+  test('backfillCells raises a body that has a report, and leaves a bare one alone', async () => {
+    // The founder's ask: real-world documentation should out-rank hand-curation. Activity is the
+    // only term that is evidence of USE rather than of data, so it is the one that moves a body.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+    const before = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+
+    // A re-score with no activity changes nothing — richness is a boost, never a penalty.
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const bare = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+    expect(bare).toBeGreaterThanOrEqual(before);
+
+    const author = await seedUser(t, 'clerk_reporter', 'member');
+    await author.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: Date.now(),
+      iceTypes: ['black_ice'],
+      surfaceTags: [],
+      photoIds: [],
+    });
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const withReport = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+    expect(withReport).toBeGreaterThan(bare);
+  });
+
+  test('a canonical re-import drops the richness term until the re-score runs', async () => {
+    // Not a bug — a documented ordering constraint, asserted so it cannot drift silently.
+    // importCanonical would otherwise pay two extra index reads on every one of 116,070 rows.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+    const author = await seedUser(t, 'clerk_reporter2', 'member');
+    await author.mutation(api.reports.create, {
+      waterBodyId: bodyId,
+      skateEndTime: Date.now(),
+      iceTypes: ['black_ice'],
+      surfaceTags: [],
+      photoIds: [],
+    });
+
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const enriched = (await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore ?? 0;
+
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore).toBeLessThan(enriched);
+
+    // …and the re-score restores it, which is why the runbook order is import → depth → backfill.
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.displayScore).toBeCloseTo(enriched, 10);
+  });
+});
+
 describe('waterBodies wind rose (N6c A4b)', () => {
   const FETCH = [
     1900, 500, 300, 200, 200, 200, 400, 4500, 1900, 1300, 1100, 1000, 1200, 1100, 1300, 3000,

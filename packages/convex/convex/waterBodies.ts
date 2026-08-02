@@ -32,6 +32,7 @@ import {
   MIN_VISIBLE_ZOOM_FLOOR,
   minVisibleZoom,
   nearestBodyForPoint,
+  type ProfileRichness,
   pathToBody,
   pointInPolygon,
   WATER_BODY_TYPES,
@@ -188,14 +189,57 @@ function shapeFields(item: {
 }
 
 /**
- * Derived display-prominence fields (D49) from a body's area + admin boost. `minVisibleZoom` is
- * stored on the row AND denormalized onto its cell rows (see `./lib/cellIndex`), where it's the
- * trailing field of `by_cell` — so a wide-zoom query returns the most-prominent bodies first and
- * never reads the rest at all.
+ * Derived display-prominence fields (D49/D2) from a body's area, admin boost and profile richness.
+ * `minVisibleZoom` is stored on the row AND denormalized onto its cell rows (see `./lib/cellIndex`),
+ * where it's the trailing field of `by_cell` — so a wide-zoom query returns the most-prominent
+ * bodies first and never reads the rest at all.
  */
-function scoreFields(input: { surfaceAreaSqM?: number; curatedBoost?: number }) {
+function scoreFields(input: {
+  surfaceAreaSqM?: number;
+  curatedBoost?: number;
+  richness?: ProfileRichness;
+}) {
   const score = displayScore(input);
   return { displayScore: score, minVisibleZoom: minVisibleZoom(score) };
+}
+
+/**
+ * A body's D2 profile richness, read from what it actually has.
+ *
+ * **Costs two index reads per body**, which is why it is computed in `backfillCells` (paginated,
+ * a few hundred bodies per transaction) and NOT in `importCanonical`, which already does the
+ * heaviest work in the app and would pay this on all 116,070 rows mid-import.
+ *
+ * `hasContours` is deliberately absent: N6b's join (`matchBathymetryLakes`) is a read-only
+ * `internalQuery` that stores nothing, so no field on the row records contour coverage. The term
+ * exists in `@skating/core` and stays dark until something persists that — deferred by founder call.
+ */
+async function richnessFor(ctx: QueryCtx, body: Doc<'waterBodies'>): Promise<ProfileRichness> {
+  const putIns = await ctx.db
+    .query('putIns')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', body._id))
+    .take(25);
+  const visiblePutIns = putIns.filter((p) => p.status === 'visible');
+
+  const report = await ctx.db
+    .query('reports')
+    .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', body._id))
+    .first();
+  const hazard = report
+    ? null
+    : await ctx.db
+        .query('hazards')
+        .withIndex('by_water_body_first_reported', (q) => q.eq('waterBodyId', body._id))
+        .first();
+
+  return {
+    // A blank name is the 92% case; a name is a weak but real signal that someone cared.
+    hasName: body.name.trim().length > 0,
+    hasDepth: body.meanDepthM !== undefined || body.maxDepthM !== undefined,
+    hasDerivedPutIn: visiblePutIns.some((p) => p.source === 'derived'),
+    hasOfficialPutIn: visiblePutIns.some((p) => p.source === 'official'),
+    hasActivity: report !== null || hazard !== null,
+  };
 }
 
 /**
@@ -283,6 +327,12 @@ export const importCanonical = internalMutation({
       if (existing) {
         // Patch geometry/name/area + re-derived scores; removed*/reviewStatus/dedupStatus/
         // curatedBoost are preserved. Score uses the new area + the *preserved* admin boost (D49).
+        //
+        // ⚠ **This resets the score to area + boost, dropping the D2 richness term**, because
+        // reading put-ins and reports per body would put two extra index reads on every one of
+        // 116,070 rows inside the heaviest mutation in the app. So the ordering is not optional:
+        // canonical re-import → depth/elevation run → `backfillCells`, which recomputes richness
+        // last. Re-scoring earlier would score against data that had not landed yet.
         const scores = scoreFields({
           surfaceAreaSqM: item.surfaceAreaSqM,
           curatedBoost: existing.curatedBoost,
@@ -381,7 +431,11 @@ export const backfillCells = internalMutation({
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
 
     for (const body of page.page) {
+      // The D2 richness term is applied HERE and nowhere else — see `richnessFor` for why, and the
+      // warning in `importCanonical` for the ordering that makes it correct.
+      const richness = await richnessFor(ctx, body);
       const scores = scoreFields({
+        richness,
         surfaceAreaSqM: body.surfaceAreaSqM,
         curatedBoost: body.curatedBoost,
       });
