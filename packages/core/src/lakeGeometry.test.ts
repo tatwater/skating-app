@@ -83,12 +83,23 @@ describe('compass buckets', () => {
     );
   });
 
-  it('labels an axis with a point and its opposite', () => {
-    expect(axisCompassLabel(22.5)).toBe('NNE–SSW');
+  it('labels an axis with a point and its opposite, leading with the northerly end', () => {
     expect(axisCompassLabel(0)).toBe('N–S');
+    expect(axisCompassLabel(22.5)).toBe('NNE–SSW');
     expect(axisCompassLabel(90)).toBe('E–W');
-    // Undirected: the reciprocal bearing produces the mirrored label, same axis.
-    expect(axisCompassLabel(202.5)).toBe('SSW–NNE');
+    // `longAxisBearingDeg` is folded to [0, 180), which lands roughly half of all lakes on the
+    // southern point. "Shelburne Pond runs S–N" reads like a bug; leading with the northerly end
+    // is purely conventional but it is the convention people use.
+    expect(axisCompassLabel(161.7)).toBe('NNW–SSE');
+    expect(axisCompassLabel(170.4)).toBe('N–S');
+  });
+
+  it('is invariant under a reciprocal bearing — an axis has no head', () => {
+    fc.assert(
+      fc.property(fc.double({ min: 0, max: 359.999, noNaN: true }), (deg) => {
+        expect(axisCompassLabel(deg)).toBe(axisCompassLabel(deg + 180));
+      }),
+    );
   });
 });
 

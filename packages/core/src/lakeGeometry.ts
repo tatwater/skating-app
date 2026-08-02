@@ -100,7 +100,13 @@ export function compassPointFor(bearingDeg: number): CompassPoint16 {
 export function axisCompassLabel(bearingDeg: number): string {
   const bucket = fetchBucketFor(bearingDeg);
   const opposite = (bucket + FETCH_BEARING_COUNT / 2) % FETCH_BEARING_COUNT;
-  return `${COMPASS_POINTS_16[bucket]}–${COMPASS_POINTS_16[opposite]}`;
+  // Lead with the northerly end (N through E), so an axis reads "N–S" and "NNW–SSE" rather than
+  // "S–N" and "SSE–NNW". Purely conventional — the axis is undirected either way — but a lake
+  // described as running "S–N" reads like a bug, and `longAxisBearingDeg` is folded to [0, 180),
+  // which lands roughly half of all lakes on the southern label.
+  const [first, second] =
+    bucket <= FETCH_BEARING_COUNT / 4 ? [bucket, opposite] : [opposite, bucket];
+  return `${COMPASS_POINTS_16[first]}–${COMPASS_POINTS_16[second]}`;
 }
 
 // ── Rings and projection ─────────────────────────────────────────────────────────────────────
