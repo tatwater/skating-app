@@ -496,6 +496,16 @@ export const backfillRepresentativePoint = internalMutation({
   },
 });
 
+/**
+ * How far our shoreline may differ from HydroLAKES' before the run says so (D85).
+ *
+ * **2×, and deliberately loose.** The two are measuring different polygons — different water mask,
+ * different date, different resolution — so ordinary disagreement is expected and is not a finding.
+ * This is a *broken-join* detector, not an accuracy bar: a factor of two on a lake big enough for
+ * HydroLAKES to carry at all means we matched the wrong body or mishandled its rings.
+ */
+const SHORELINE_CROSS_CHECK_RATIO = 2;
+
 // ── Bathymetry contour coverage (N6c-1 / D2) ─────────────────────────────────────────────────
 
 /**
@@ -1755,6 +1765,8 @@ export const matchAndImportDepths = internalMutation({
         meanDepthSource: v.optional(literals(DEPTH_SOURCES)),
         maxDepthM: v.optional(v.number()),
         maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
+        /** HydroLAKES' own shoreline in metres — D85's cross-check. Compared, logged, never stored. */
+        shorelineM: v.optional(v.number()),
       }),
     ),
   },
@@ -1762,6 +1774,8 @@ export const matchAndImportDepths = internalMutation({
     let updated = 0;
     let unmatched = 0;
     let areaRejected = 0;
+    let shorelineCompared = 0;
+    let shorelineDisagreed = 0;
     let skipped = 0;
     let noAreaGate = 0;
     let operatorHeld = 0;
@@ -1806,6 +1820,38 @@ export const matchAndImportDepths = internalMutation({
         noAreaGate++;
       }
 
+      // ── D85's free cross-check: HydroLAKES' Shore_len against our own shoreline ──────────────
+      //
+      // **Log the comparison; store ours.** HydroLAKES' polygon is a different water mask at a
+      // different date and its own resolution, so a disagreement does not say who is right. What it
+      // does say is whether our number is in the right neighbourhood — a 2× gap on a known lake
+      // means the join or the ring handling is broken, and that is worth catching at load time
+      // rather than in a screenshot.
+      //
+      // Only fires where both exist: HydroLAKES' 10 ha floor covers ~7% of the corpus, so a silent
+      // absence here is the norm and not a finding.
+      if (
+        typeof body.shorelineM === 'number' &&
+        body.shorelineM > 0 &&
+        typeof lake.shorelineM === 'number' &&
+        lake.shorelineM > 0
+      ) {
+        shorelineCompared++;
+        const ratio = Math.max(
+          body.shorelineM / lake.shorelineM,
+          lake.shorelineM / body.shorelineM,
+        );
+        if (ratio > SHORELINE_CROSS_CHECK_RATIO) {
+          shorelineDisagreed++;
+          rejects.push({
+            key: lake.key,
+            reason:
+              `shoreline cross-check on "${body.name}": ours ${Math.round(body.shorelineM / 1000)} km vs ` +
+              `HydroLAKES ${Math.round(lake.shorelineM / 1000)} km (${ratio.toFixed(1)}×) — not stored, check the ring handling`,
+          });
+        }
+      }
+
       const outcome = await applyDepthLadder(ctx, body, lake);
       if (outcome.changed) updated++;
       else skipped++;
@@ -1830,6 +1876,8 @@ export const matchAndImportDepths = internalMutation({
     return {
       updated,
       unmatched,
+      shorelineCompared,
+      shorelineDisagreed,
       areaRejected,
       skipped,
       noAreaGate,
