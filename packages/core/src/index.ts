@@ -33,6 +33,7 @@ export * from './hazardQueue';
 export * from './hazardRecurrence';
 export * from './hazardWeatherDecay';
 export * from './lakeDepth';
+export * from './lakeGeometry';
 export * from './lakeSearch';
 export * from './metrics';
 export * from './oauthRedirect';
