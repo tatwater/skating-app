@@ -54,6 +54,7 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
+          representativePoint: item.centroid,
         });
         id = existing._id;
         updated++;
@@ -66,6 +67,7 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
+          representativePoint: item.centroid,
           createdAt: Date.now(),
         });
         inserted++;

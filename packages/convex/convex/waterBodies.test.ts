@@ -50,6 +50,13 @@ const CANONICAL_ITEM = {
   surfaceAreaSqM: 1_000_000,
 };
 
+/** `onlyBodyId` from inside an existing `t.run` context. */
+// biome-ignore lint/suspicious/noExplicitAny: convex-test's ctx type is not exported.
+async function onlyBodyIdIn(ctx: any): Promise<Id<'waterBodies'>> {
+  const rows = await ctx.db.query('waterBodies').collect();
+  return rows[0]._id as Id<'waterBodies'>;
+}
+
 /** The `_id` of the single water body in the DB (import/seed helpers create exactly one). */
 async function onlyBodyId(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodies'>> {
   const bodies = await t.run((ctx) => ctx.db.query('waterBodies').collect());
@@ -674,6 +681,44 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
       zoom: 14,
     });
     expect(inView.map((b) => b._id)).toEqual([insideId]);
+  });
+});
+
+describe('waterBodies.backfillRepresentativePoint (the centroid rename transition)', () => {
+  test('fills the new field from the old one, and is idempotent', async () => {
+    // The rename cannot be atomic: Convex validates the schema against existing data on push, and
+    // dev holds 116,070 rows written before the field existed. So representativePoint ships
+    // optional, every writer sets both, and this fills the backlog.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const bodyId = await onlyBodyId(t);
+
+    // Simulate a pre-rename row.
+    await t.run((ctx) => ctx.db.patch(bodyId, { representativePoint: undefined }));
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.representativePoint).toBeUndefined();
+
+    const first = await t.mutation(internal.waterBodies.backfillRepresentativePoint, {
+      table: 'waterBodies',
+    });
+    expect(first).toMatchObject({ filled: 1, isDone: true });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.representativePoint).toEqual(
+      CANONICAL_ITEM.centroid,
+    );
+
+    // Re-running costs reads and no writes.
+    expect(
+      await t.mutation(internal.waterBodies.backfillRepresentativePoint, { table: 'waterBodies' }),
+    ).toMatchObject({ filled: 0 });
+  });
+
+  test('a canonical import writes both fields, so nothing needs backfilling', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.representativePoint).toEqual(body?.centroid);
+    expect(
+      await t.mutation(internal.waterBodies.backfillRepresentativePoint, { table: 'waterBodies' }),
+    ).toMatchObject({ filled: 0 });
   });
 });
 

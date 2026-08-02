@@ -361,6 +361,29 @@ export default defineSchema({
     states: v.optional(v.array(v.string())),
     polygon: geoJson, // Polygon / MultiPolygon (rivers: the reach/segment)
     bbox, // prefilter index
+    /**
+     * The on-water **representative point** (D48) — display, distance and the town stamp.
+     *
+     * **Renamed from `centroid`, because it never was one** (founder call, 2026-08-02). It comes
+     * from Turf's `pointOnFeature`, which returns the bbox centre when that lands inside the polygon
+     * and a point on the **boundary** when it does not — so on a curved or narrow lake it sits on
+     * the shoreline. Lake Willoughby's is ring vertex 199.
+     *
+     * **That behaviour is correct and must not be "fixed" into a true centroid.** The area centroid
+     * of a crescent lake is on the headland in the middle, i.e. on land — which breaks the on-water
+     * guarantee every consumer here relies on. N6b already paid for this lesson: a hand-rolled
+     * centroid join missed 4 of 6 real Maine lakes (`scripts/bathymetry/src/join.ts`). The name was
+     * the bug, not the maths.
+     *
+     * Need a point genuinely *inside* the water — ray casting, DEM or weather sampling? Use
+     * `interiorPoint`.
+     */
+    representativePoint: v.optional(latLng),
+    /**
+     * @deprecated Renamed to `representativePoint`. Kept optional through the transition window so
+     * the schema still validates against rows written before the rename; every writer now sets both
+     * and `backfillRepresentativePoint` fills the rest. Dropped once that has run everywhere.
+     */
     centroid: latLng, // on-water representative point (D48); display + distance, not lookup
     // Weather sampling escape hatch (Phase 10 / D56 §5). Weather doesn't vary below Open-Meteo's grid
     // (~2–25 km), so **every body samples at its centroid by default** — town/county is the wrong
@@ -607,6 +630,9 @@ export default defineSchema({
     searchText: v.string(),
     polygon: geoJson, // the CLIPPED shape, inside the parent by construction (Decision 10)
     bbox, // of the clipped polygon — what the cell index covers
+    /** The on-water representative point — same `pointOnFeature` basis as a body (D48). */
+    representativePoint: v.optional(latLng),
+    /** @deprecated Renamed to `representativePoint`; see the note on `waterBodies`. */
     centroid: latLng, // on-water representative point, same `pointOnFeature` basis as a body (D48)
     surfaceAreaSqM: v.number(), // geodesic; also the Decision 9 tie-break (smallest containing wins)
     // Same D49 curve as a body, off the sub-area's own area + boost — so Malletts Bay can label at a
@@ -682,6 +708,9 @@ export default defineSchema({
     externalId: v.string(), // OSM relation id (way/123 · relation/456) — idempotent upsert key
     polygon: geoJson, // boundary
     bbox, // cheap point-containment prefilter before the Turf pointInPolygon test
+    /** Representative interior point; display/debug only, never a lookup key (N1). */
+    representativePoint: v.optional(latLng),
+    /** @deprecated Renamed to `representativePoint`; see the note on `waterBodies`. */
     centroid: latLng, // representative interior point; kept for display/debug, not for lookup (N1)
     createdAt: v.number(),
   })

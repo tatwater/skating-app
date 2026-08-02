@@ -350,6 +350,7 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
+          representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
           states: unionState(existing.states, state),
           ...scores,
@@ -398,6 +399,7 @@ export const importCanonical = internalMutation({
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
+          representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
           states: unionState(undefined, state),
           ...scores,
@@ -458,6 +460,39 @@ export const backfillCells = internalMutation({
       });
     }
     return { reindexed: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
+ * Copy `centroid` → `representativePoint` on rows written before the rename (N6c-1).
+ *
+ * **The transition window in one job.** Convex validates the schema against existing data on push,
+ * and dev holds 116,070 rows that predate the new field, so the rename cannot be a single atomic
+ * step: `representativePoint` ships optional, every writer sets both, this fills the backlog, and a
+ * later change makes it required and drops `centroid`.
+ *
+ * Paginated for the same reason `backfillCells` is — the whole table cannot be read in one
+ * transaction. Idempotent: a row that already has the field is skipped, so re-running costs reads
+ * and no writes.
+ *
+ * Covers all three tables that carried the misnamed field.
+ */
+export const backfillRepresentativePoint = internalMutation({
+  args: {
+    table: literals(['waterBodies', 'waterBodySubAreas', 'adminAreas'] as const),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { table, cursor, batchSize }) => {
+    const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
+    const page = await ctx.db.query(table).paginate({ cursor: cursor ?? null, numItems });
+    let filled = 0;
+    for (const row of page.page) {
+      if (row.representativePoint !== undefined) continue;
+      await ctx.db.patch(row._id, { representativePoint: row.centroid });
+      filled++;
+    }
+    return { scanned: page.page.length, filled, cursor: page.continueCursor, isDone: page.isDone };
   },
 });
 
@@ -537,7 +572,7 @@ export const listNeedingElevation = internalQuery({
         return refresh === true || body.elevationM === undefined;
       })
       .map((body) => {
-        const point = body.interiorPoint ?? body.centroid;
+        const point = body.interiorPoint ?? body.representativePoint ?? body.centroid;
         return { waterBodyId: body._id, lat: point.lat, lng: point.lng };
       });
     return {
@@ -625,7 +660,7 @@ export const listNeedingWindRose = internalQuery({
         return Math.max(...fetchProfileM) >= floor;
       })
       .map((body) => {
-        const point = body.interiorPoint ?? body.centroid;
+        const point = body.interiorPoint ?? body.representativePoint ?? body.centroid;
         return { waterBodyId: body._id, lat: point.lat, lng: point.lng };
       });
     return { targets, scanned: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
@@ -733,6 +768,7 @@ export const create = mutation({
       polygon: derived.polygon,
       bbox: derived.bbox,
       centroid: derived.centroid,
+      representativePoint: derived.centroid,
       surfaceAreaSqM: derived.surfaceAreaSqM,
       ...scores,
       createdByUserId: profile._id,

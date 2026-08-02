@@ -33,7 +33,7 @@ export function nearestSamplePoint(
   body: Doc<'waterBodies'>,
   target: { lat: number; lng: number },
 ): { lat: number; lng: number } {
-  const fallback = body.interiorPoint ?? body.centroid;
+  const fallback = body.interiorPoint ?? body.representativePoint ?? body.centroid;
   const points = body.weatherSamplePoints?.length ? body.weatherSamplePoints : [fallback];
   let best = points[0] ?? fallback;
   let bestD = distSq(best, target);
