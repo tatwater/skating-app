@@ -67,7 +67,15 @@ import {
   SUPPORT_STATUSES,
   WATER_BODY_SOURCES,
 } from './lib/enums';
-import { bbox, boolFlags, geoJson, latLng, literals, weatherSinceSummary } from './lib/validators';
+import {
+  bbox,
+  boolFlags,
+  decileBlock,
+  geoJson,
+  latLng,
+  literals,
+  weatherSinceSummary,
+} from './lib/validators';
 
 /** Per-type notification toggles; keys single-sourced to mirror `notifications.type` 1:1 (D16). */
 const notificationPrefs = boolFlags(NOTIFICATION_PREF_KEYS);
@@ -478,6 +486,37 @@ export default defineSchema({
     // by the range rather than filtered after the read.
     .index('by_curated_boost', ['curatedBoost'])
     .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
+
+  // Per-state distribution basis for the derived caption (N6c A5). **One row per state**, holding
+  // the 10th–90th percentiles of each metric across that state's listed bodies.
+  //
+  // The obvious alternative — a stored percentile per body — is the wrong shape: a percentile is a
+  // property of the corpus, not of the body, so every import would invalidate all 116,070 of them
+  // and keeping them true would mean rewriting the corpus on every run. Nobody would, so they would
+  // quietly become claims about whenever the pass last finished. Deciles invert that: bodies store
+  // nothing, a caption looks the basis up at render time, and re-deriving costs one job.
+  //
+  // Per state rather than per corpus because "among the deepest lakes we know about" spans five
+  // states and is nearly meaningless — Vermont and coastal Maine are different populations. A
+  // border-spanning body is counted in each of its `states`, which is correct: Champlain genuinely
+  // is among the deepest in both Vermont and New York.
+  //
+  // A metric is **absent** rather than empty when its sample is too thin (`MIN_DECILE_SAMPLE`), and
+  // `decileRankOf` returns null for an absent block — which the caption must read as "say nothing",
+  // never as "average".
+  regionStats: defineTable({
+    state: v.string(), // 2-letter code, matching `waterBodies.states[]`
+    metrics: v.object({
+      maxDepthM: v.optional(decileBlock),
+      meanDepthM: v.optional(decileBlock),
+      elevationM: v.optional(decileBlock),
+      surfaceAreaSqM: v.optional(decileBlock),
+      longAxisM: v.optional(decileBlock),
+    }),
+    /** Bodies scanned for this state, whether or not they carried any metric — the honest denominator. */
+    bodiesScanned: v.number(),
+    updatedAt: v.number(),
+  }).index('by_state', ['state']),
 
   // The water-body spatial index (N1) — one row per grid cell a *listed* body's bbox covers, at the
   // ladder level `indexLevelFor` picks (see `lib/cellIndex` / `@skating/core`'s `spatialCells`).

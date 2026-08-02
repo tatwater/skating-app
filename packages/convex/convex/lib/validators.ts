@@ -47,6 +47,20 @@ export function partialBoolFlags<const T extends readonly [string, ...string[]]>
 export const latLng = v.object({ lat: v.number(), lng: v.number() });
 
 /** Axis-aligned bounding box — the cheap prefilter before precise Turf tests (D5). */
+/**
+ * One metric's distribution within one state (N6c A5) — the 10th–90th percentiles plus the sample
+ * that produced them.
+ *
+ * `count` is not decoration: `decileRankOf` refuses to rank against a block below
+ * `MIN_DECILE_SAMPLE`, because deciles over a handful of lakes are noise wearing a distribution's
+ * clothes and the failure is silent — a block summarising eight bodies looks exactly like one
+ * summarising eight thousand.
+ */
+export const decileBlock = v.object({
+  deciles: v.array(v.number()),
+  count: v.number(),
+});
+
 export const bbox = v.object({
   minLat: v.number(),
   minLng: v.number(),

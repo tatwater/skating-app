@@ -45,6 +45,7 @@ export * from './photo';
 export * from './profile';
 export * from './putIn';
 export * from './recommended';
+export * from './regionStats';
 export * from './regions';
 export * from './report';
 export * from './reportForm';
