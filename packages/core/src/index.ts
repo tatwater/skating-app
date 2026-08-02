@@ -36,6 +36,7 @@ export * from './hazardWeatherDecay';
 export * from './lakeCaption';
 export * from './lakeDepth';
 export * from './lakeGeometry';
+export * from './lakeProfile';
 export * from './lakeSearch';
 export * from './metrics';
 export * from './oauthRedirect';
