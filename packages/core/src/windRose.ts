@@ -102,8 +102,11 @@ export function isPlausibleWindRose(rose: unknown): rose is number[] {
  * a silent degradation to it would be invisible in the rendered sentence.
  */
 export function exposureIndex(
-  rose: readonly number[] | undefined,
-  fetchProfileM: readonly number[] | undefined,
+  // `null` is accepted as well as `undefined` because `normalizeRose` returns `number[] | null`,
+  // and making every call site launder that into `undefined` is friction with no safety in it —
+  // both mean "no rose", and both must produce no sentence.
+  rose: readonly number[] | null | undefined,
+  fetchProfileM: readonly number[] | null | undefined,
 ): number[] | null {
   if (!isPlausibleWindRose(rose)) return null;
   if (!fetchProfileM || fetchProfileM.length !== WIND_ROSE_SECTORS) return null;
@@ -133,8 +136,8 @@ export interface WindExposure {
  * caption that changes wording between runs on a perfectly symmetric pond.
  */
 export function mostExposedSector(
-  rose: readonly number[] | undefined,
-  fetchProfileM: readonly number[] | undefined,
+  rose: readonly number[] | null | undefined,
+  fetchProfileM: readonly number[] | null | undefined,
 ): WindExposure | null {
   const index = exposureIndex(rose, fetchProfileM);
   if (!index) return null;
