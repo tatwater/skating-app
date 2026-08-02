@@ -29,6 +29,7 @@ import {
   USER_ROLES,
   USER_STATUSES,
   WATER_BODY_TYPES,
+  WIND_ROSE_SOURCES,
 } from '@skating/core';
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
@@ -412,6 +413,28 @@ export default defineSchema({
      *  so the drawer reads `fetchProfileM[fetchBucketFor(windDirection)]` with no arithmetic.
      *  Precomputed because the read-time alternative is geometry on every drawer open. */
     fetchProfileM: v.optional(v.array(v.number())),
+    /**
+     * Winter (Dec–Mar) wind-frequency rose, 16 sectors summing to 1, indexed by the direction wind
+     * blows **from** — the same sectors as `fetchProfileM`, so the two multiply elementwise.
+     *
+     * **Fetch alone names the wrong direction, which is why this exists.** A direction with five
+     * miles of open water that wind never blows from is not an exposed shore. Measured for Lake
+     * Willoughby (NREL WTK 2 km, Dec–Mar): a strongly bimodal rose along its NNW–SSE trough — 19.4%
+     * SE, 16.1% SSE, 18.6% NW — with the E/NE quadrant blocked by the ridges. That is terrain
+     * channelling, and it is invisible to the geometry.
+     *
+     * Consumed as `frequency × fetch` (`@skating/core`'s `mostExposedSector`). Absent ⇒ the caption
+     * says nothing about wind at all, deliberately: falling back to longest-fetch is the claim this
+     * field was added to stop making.
+     */
+    windRose: v.optional(v.array(v.number())),
+    /**
+     * `v.literal` rather than `literals(WIND_ROSE_SOURCES)` because the helper requires two or more
+     * members and there is exactly one source. The field exists anyway, on the D3/D68 principle
+     * that a modelled number carries its provenance: if a second downscaling is ever added, every
+     * already-stored rose stays attributable instead of becoming ambiguous.
+     */
+    windRoseSource: v.optional(v.literal(WIND_ROSE_SOURCES[0])),
     // Lake depth (N6a / D68). Best-available value plus **per-measurement** provenance: mean and max
     // routinely come from different rungs of the ladder (LAGOS-US holds 17,675 maxima against 6,137
     // means), so one `depthSource` could not honestly describe both. The ladder itself lives in

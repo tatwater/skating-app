@@ -46,16 +46,7 @@ import {
 } from './lakeGeometry';
 import { type DecileBlock, isBottomDecile, isTopDecile } from './regionStats';
 import { metersToMiles, roundTo, sqMetersToAcres } from './units';
-
-/**
- * Below this long axis, the dimension line is omitted.
- *
- * Half a mile. A farm pond rendered as *"0.3 × 0.1 miles"* is false precision dressed as a fact —
- * the reader cannot tell whether that is a measurement or a rounding artefact, and the area figure
- * beside it already says everything a dimension line would. Omitting beats switching to feet,
- * which would put two unit systems in one sentence.
- */
-export const MIN_DIMENSION_LINE_AXIS_M = 800;
+import { mostExposedSector } from './windRose';
 
 /**
  * Below this fetch, the wind-exposure clause is omitted.
@@ -86,6 +77,8 @@ export interface CaptionInput extends LakeDepths {
   shortAxisM?: number;
   longAxisBearingDeg?: number;
   fetchProfileM?: number[];
+  /** Winter wind-frequency rose, 16 sectors summing to 1 (see `windRose.ts`). */
+  windRose?: number[];
   /** The state whose deciles `basis` describes, for the comparison's wording ("in Vermont"). */
   stateName?: string;
   basis?: CaptionBasis;
@@ -127,22 +120,10 @@ export function formatShoreline(meters: number): string {
   return `about ${Math.round(miles).toLocaleString('en-US')} miles of shoreline`;
 }
 
-/** The compass point wind has the longest run from, or `null` if there is no usable profile. */
-export function mostExposedBearing(
-  profile: readonly number[] | undefined,
-): { point: CompassPoint16; fetchM: number } | null {
-  if (!profile || profile.length !== COMPASS_POINTS_16.length) return null;
-  let best = -1;
-  let bestIndex = -1;
-  for (const [i, d] of profile.entries()) {
-    if (Number.isFinite(d) && d > best) {
-      best = d;
-      bestIndex = i;
-    }
-  }
-  if (bestIndex < 0 || best <= 0) return null;
-  return { point: COMPASS_POINTS_16[bestIndex] as CompassPoint16, fetchM: best };
-}
+// `mostExposedBearing` — "the compass point with the longest fetch" — used to live here and is
+// deliberately gone rather than merely unused. It is a claim about geometry that reads as a claim
+// about wind, and exporting it leaves the bug one autocomplete away from coming back. The replacement
+// is `mostExposedSector` in `windRose.ts`, which cannot answer without a rose.
 
 /** "the northwest" — the spoken form of a compass point, for prose rather than a label. */
 export function spokenDirection(point: CompassPoint16): string {
@@ -167,18 +148,19 @@ export function spokenDirection(point: CompassPoint16): string {
   return words[point] ?? 'the north';
 }
 
-/** The size clause: area, the dimension line, and shoreline. */
+/**
+ * The size clause: acres, then shoreline.
+ *
+ * **No dimension line** (founder call, 2026-08-02: *"I'd drop the 'about A × B miles' clause, and
+ * just go from surface-area acres to miles of shoreline"*). Acres and shoreline are two different
+ * facts; acres, dimensions and shoreline are three ways of saying one, and the middle one is the
+ * least useful of the three to someone deciding where to skate. The axis still earns its place —
+ * it orients the wind clause, and `longAxisM` still feeds the D2 prominence terms and A5's deciles.
+ */
 function sizeClause(input: CaptionInput): string | null {
   const parts: string[] = [];
   if (typeof input.surfaceAreaSqM === 'number' && input.surfaceAreaSqM > 0) {
     parts.push(formatAcres(input.surfaceAreaSqM));
-  }
-  if (
-    typeof input.longAxisM === 'number' &&
-    typeof input.shortAxisM === 'number' &&
-    input.longAxisM >= MIN_DIMENSION_LINE_AXIS_M
-  ) {
-    parts.push(`about ${formatMiles(input.longAxisM)} × ${formatMiles(input.shortAxisM)} miles`);
   }
   if (typeof input.shorelineM === 'number' && input.shorelineM > 0) {
     parts.push(formatShoreline(input.shorelineM));
@@ -261,26 +243,41 @@ function elevationClause(input: CaptionInput): string | null {
   return null;
 }
 
-/** The wind clause: the lake's lie, and where it is most open to wind. */
+/**
+ * The wind clause: the lake's lie, and where wind actually reaches it across open water.
+ *
+ * **Requires a wind rose, and falls back to nothing without one.** An earlier version named the
+ * longest-fetch bearing outright, which is a claim about *geometry* dressed as a claim about
+ * *wind* — Lake Willoughby was described as "most open to wind out of the south-southeast" purely
+ * because that is where its water runs. Falling back to that when a rose is missing would
+ * reintroduce the exact sentence this clause was rewritten to stop saying, and it would be
+ * invisible in the output. See `windRose.ts` for the measurement that settled it.
+ */
 function fetchClause(input: CaptionInput): string | null {
-  const exposed = mostExposedBearing(input.fetchProfileM);
+  const exposed = mostExposedSector(input.windRose, input.fetchProfileM);
   if (!exposed || exposed.fetchM < MIN_FETCH_CLAUSE_M) return null;
 
   const run = formatMiles(exposed.fetchM);
-  const from = spokenDirection(exposed.point);
-  // The direction is meteorological — the one wind blows FROM — matching the profile's indexing.
+  const from = spokenDirection(COMPASS_POINTS_16[exposed.sector] as CompassPoint16);
+  const share = Math.round(exposed.frequency * 100);
+  // The direction is meteorological — the one wind blows FROM — matching both the profile's
+  // indexing and the rose's.
+  //
+  // **The percentage is not decoration: it is the denominator.** "Most exposed to the northwest"
+  // is a superlative with nothing behind it, and it reads the same whether that sector carries 40%
+  // of winter hours or 7%. Naming the share lets a reader discount it themselves, which is the same
+  // discipline D78 applies to recurrence and D86 to the quality mark.
   //
   // **Deliberately factual, with no physics tacked on.** An earlier draft closed with "long fetch
   // is what roughens ice and builds pressure ridges", which is true, useful to a novice, and would
-  // have appeared verbatim on every one of the ~116k bodies that clears the fetch floor. Repeated
-  // at that scale a general explanation stops being information and becomes chrome, and it dilutes
-  // the one clause here that IS specific to this lake. The physics belongs in the docs/ narrative
-  // and a tooltip, once, not in every caption.
+  // have appeared verbatim on every body that clears the fetch floor. Repeated at that scale a
+  // general explanation stops being information and becomes chrome, and it dilutes the one part of
+  // the sentence specific to this lake. That physics belongs in docs/ once, not in every caption.
   const axis =
     typeof input.longAxisBearingDeg === 'number'
-      ? `Its long axis runs ${axisCompassLabel(input.longAxisBearingDeg)}, and it is`
-      : 'It is';
-  return `${axis} most open to wind out of ${from} — about ${run} miles of water for wind to cross.`;
+      ? `Its long axis runs ${axisCompassLabel(input.longAxisBearingDeg)}. `
+      : '';
+  return `${axis}Winter wind here comes from ${from} about ${share}% of the time, crossing roughly ${run} miles of open water.`;
 }
 
 /**

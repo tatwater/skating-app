@@ -23,10 +23,12 @@ import {
   isKnownStateCode,
   isMinor,
   isPlausibleElevationM,
+  isPlausibleWindRose,
   KNOWN_STATE_CODES,
   type LatLng,
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_SUGGESTED_SAMPLE_POINTS,
+  MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
   minVisibleZoom,
   nearestBodyForPoint,
@@ -484,6 +486,81 @@ export const importElevations = internalMutation({
       updated++;
     }
     return { updated, operatorHeld, implausible, missing };
+  },
+});
+
+// ── Winter wind rose (N6c A4b) ───────────────────────────────────────────────────────────────
+
+/**
+ * Page the corpus for bodies whose wind rose is worth fetching.
+ *
+ * **Only bodies that could ever use one.** The caption suppresses the wind clause below
+ * `MIN_FETCH_CLAUSE_M`, so a body whose longest fetch is under that threshold would spend WIND
+ * Toolkit requests on a number nothing will ever render. That filter is what turns a 116,070-body
+ * pass into a few thousand — and the requests are the scarce resource here (10,000/day, one point
+ * and one year each), not the storage.
+ *
+ * Returns the point to sample and the body's current rose state, so the loader can dedupe by grid
+ * cell before spending anything.
+ */
+export const listNeedingWindRose = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    refresh: v.optional(v.boolean()),
+    /** Minimum longest-fetch to qualify; defaults to the caption's own floor. */
+    minFetchM: v.optional(v.number()),
+  },
+  handler: async (ctx, { cursor, batchSize, refresh, minFetchM }) => {
+    const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
+    const floor = minFetchM ?? MIN_FETCH_CLAUSE_M;
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    const targets = page.page
+      .filter((body) => {
+        if (!isListed(body)) return false;
+        if (!refresh && body.windRose !== undefined) return false;
+        const fetchProfileM = body.fetchProfileM;
+        if (!fetchProfileM || fetchProfileM.length === 0) return false;
+        return Math.max(...fetchProfileM) >= floor;
+      })
+      .map((body) => {
+        const point = body.interiorPoint ?? body.centroid;
+        return { waterBodyId: body._id, lat: point.lat, lng: point.lng };
+      });
+    return { targets, scanned: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});
+
+/**
+ * Write a batch of winter wind roses.
+ *
+ * **Validates the rose shape server-side** rather than trusting the loader: a rose stored as raw
+ * hour counts instead of frequencies is still sixteen plausible numbers, and it would scale every
+ * exposure index by the hours sampled — which changes no ranking and breaks every threshold. See
+ * `isPlausibleWindRose`.
+ */
+export const importWindRoses = internalMutation({
+  args: {
+    roses: v.array(v.object({ waterBodyId: v.id('waterBodies'), rose: v.array(v.number()) })),
+  },
+  handler: async (ctx, { roses }) => {
+    let updated = 0;
+    let malformed = 0;
+    let missing = 0;
+    for (const { waterBodyId, rose } of roses) {
+      const body = await ctx.db.get(waterBodyId);
+      if (!body) {
+        missing++;
+        continue;
+      }
+      if (!isPlausibleWindRose(rose)) {
+        malformed++;
+        continue;
+      }
+      await ctx.db.patch(waterBodyId, { windRose: rose, windRoseSource: 'wtk_2km' });
+      updated++;
+    }
+    return { updated, malformed, missing };
   },
 });
 

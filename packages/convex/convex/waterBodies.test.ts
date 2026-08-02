@@ -677,6 +677,104 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
   });
 });
 
+describe('waterBodies wind rose (N6c A4b)', () => {
+  const FETCH = [
+    1900, 500, 300, 200, 200, 200, 400, 4500, 1900, 1300, 1100, 1000, 1200, 1100, 1300, 3000,
+  ];
+  const ROSE = Array.from({ length: 16 }, () => 1 / 16);
+
+  async function seedBody(t: ReturnType<typeof convexTest>, extra: Record<string, unknown> = {}) {
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, fetchProfileM: FETCH }],
+    });
+    const id = await onlyBodyId(t);
+    if (Object.keys(extra).length > 0) await t.run((ctx) => ctx.db.patch(id, extra));
+    return id;
+  }
+
+  test('only offers bodies that could ever render a wind clause', async () => {
+    // Requests are the scarce resource (10k/day, one point-year each), so a body whose longest
+    // fetch is under the caption's own floor must not cost any: nothing would ever render it.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, fetchProfileM: Array.from({ length: 16 }, () => 100) }],
+    });
+    expect((await t.query(internal.waterBodies.listNeedingWindRose, {})).targets).toEqual([]);
+  });
+
+  test('offers a body with real open water, sampled at its interior point', async () => {
+    const t = convexTestWithGeo();
+    const at = { lat: 44.5, lng: -73.3 };
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, fetchProfileM: FETCH, interiorPoint: at }],
+    });
+    const id = await onlyBodyId(t);
+    expect((await t.query(internal.waterBodies.listNeedingWindRose, {})).targets).toEqual([
+      { waterBodyId: id, lat: at.lat, lng: at.lng },
+    ]);
+  });
+
+  test('skips a body with no fetch profile at all', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    expect((await t.query(internal.waterBodies.listNeedingWindRose, {})).targets).toEqual([]);
+  });
+
+  test('resumes rather than restarts, unless asked to refresh', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, { windRose: ROSE });
+    expect((await t.query(internal.waterBodies.listNeedingWindRose, {})).targets).toEqual([]);
+    expect(
+      (await t.query(internal.waterBodies.listNeedingWindRose, { refresh: true })).targets,
+    ).toHaveLength(1);
+  });
+
+  test('stores a normalized rose and REJECTS raw counts', async () => {
+    // Raw hour counts are still sixteen plausible numbers; stored, they would scale every exposure
+    // index by the hours sampled — invisible in a ranking, fatal to any threshold.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    expect(
+      await t.mutation(internal.waterBodies.importWindRoses, {
+        roses: [{ waterBodyId: id, rose: ROSE }],
+      }),
+    ).toMatchObject({ updated: 1, malformed: 0 });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.windRoseSource).toBe('wtk_2km');
+
+    expect(
+      await t.mutation(internal.waterBodies.importWindRoses, {
+        roses: [{ waterBodyId: id, rose: Array.from({ length: 16 }, () => 900) }],
+      }),
+    ).toMatchObject({ updated: 0, malformed: 1 });
+    // The good rose survives the bad write.
+    expect((await t.run((ctx) => ctx.db.get(id)))?.windRose?.[0]).toBeCloseTo(1 / 16, 10);
+  });
+
+  test('rejects a wrong-length rose', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    expect(
+      await t.mutation(internal.waterBodies.importWindRoses, {
+        roses: [{ waterBodyId: id, rose: [0.5, 0.5] }],
+      }),
+    ).toMatchObject({ updated: 0, malformed: 1 });
+  });
+
+  test('a wind rose survives a canonical re-import', async () => {
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    await t.mutation(internal.waterBodies.importWindRoses, {
+      roses: [{ waterBodyId: id, rose: ROSE }],
+    });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, fetchProfileM: FETCH, name: 'renamed' }],
+    });
+    const body = await t.run((ctx) => ctx.db.get(id));
+    expect(body?.name).toBe('renamed');
+    expect(body?.windRose).toHaveLength(16);
+  });
+});
+
 describe('waterBodies elevation (N6c A1)', () => {
   const AT = { lat: 44.5, lng: -73.3 };
 

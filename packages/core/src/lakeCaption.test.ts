@@ -6,11 +6,11 @@ import {
   fetchForWind,
   formatShoreline,
   lakeCaption,
-  mostExposedBearing,
   spokenDirection,
 } from './lakeCaption';
 import { FETCH_BEARING_COUNT } from './lakeGeometry';
 import { computeDeciles } from './regionStats';
+import { normalizeRose } from './windRose';
 
 /** A Vermont-ish basis: skewed depth and elevation populations, so ranks mean something. */
 const BASIS: CaptionBasis = {
@@ -19,6 +19,14 @@ const BASIS: CaptionBasis = {
   elevationM:
     computeDeciles(Array.from({ length: 400 }, (_, i) => 30 + (i / 400) ** 2 * 500)) ?? undefined,
 };
+
+/**
+ * Willoughby's real winter rose, measured from NREL WTK 2 km (Dec-Mar 2012) — bimodal along the
+ * NNW-SSE trough, with the E/NE quadrant blocked by the ridges. Rounded to 3dp and renormalised.
+ */
+const WINTER_ROSE = normalizeRose([
+  110, 58, 23, 20, 20, 102, 563, 468, 87, 58, 93, 107, 163, 264, 540, 229,
+]) as number[];
 
 const WILLOUGHBY: CaptionInput = {
   surfaceAreaSqM: 7_032_294,
@@ -29,6 +37,7 @@ const WILLOUGHBY: CaptionInput = {
   fetchProfileM: [
     1900, 500, 300, 200, 200, 200, 400, 4500, 1900, 1300, 1100, 1000, 1200, 1100, 1300, 3000,
   ],
+  windRose: WINTER_ROSE,
   maxDepthM: 97,
   maxDepthSource: 'state_agency',
   elevationM: 357,
@@ -52,7 +61,9 @@ describe('lakeCaption', () => {
   it('assembles every clause for a fully-populated lake', () => {
     const caption = lakeCaption(WILLOUGHBY) ?? '';
     expect(caption).toContain('1,738 acres');
-    expect(caption).toContain('about 4.8 × 1.2 miles');
+    // No dimension line: acres and shoreline are two facts; adding "4.8 x 1.2 miles" makes them
+    // three ways of saying one (founder call, 2026-08-02).
+    expect(caption).not.toContain('×');
     expect(caption).toContain('about 11 miles of shoreline');
     expect(caption).toContain('among the deepest in Vermont');
     expect(caption).toContain('NNW–SSE');
@@ -70,7 +81,10 @@ describe('lakeCaption', () => {
       ],
       ['depth only, no source', { maxDepthM: 40 }],
       ['mean depth only', { meanDepthM: 4, meanDepthSource: 'hydrolakes_reported' }],
-      ['fetch but no axis bearing', { fetchProfileM: WILLOUGHBY.fetchProfileM }],
+      [
+        'wind but no axis bearing',
+        { windRose: WINTER_ROSE, fetchProfileM: WILLOUGHBY.fetchProfileM },
+      ],
       ['area only', { surfaceAreaSqM: 500_000 }],
     ];
 
@@ -189,18 +203,31 @@ describe('lakeCaption', () => {
   });
 
   describe('thresholds that keep small bodies honest', () => {
-    it('omits the dimension line on a farm pond', () => {
-      // "0.3 × 0.1 miles" is false precision dressed as a fact.
-      const caption = lakeCaption({ surfaceAreaSqM: 40_000, longAxisM: 300, shortAxisM: 120 });
-      expect(caption).not.toContain('×');
-    });
-
     it('omits the wind clause when there is no open water to speak of', () => {
       const caption = lakeCaption({
         surfaceAreaSqM: 40_000,
+        windRose: WINTER_ROSE,
         fetchProfileM: Array.from({ length: FETCH_BEARING_COUNT }, () => 120),
       });
       expect(caption).not.toContain('wind');
+    });
+
+    it('says NOTHING about wind without a rose, rather than naming the longest fetch', () => {
+      // The regression this whole windRose module exists for. Willoughby's longest fetch runs SSE
+      // and an earlier version announced it as the exposed direction on that basis alone — a claim
+      // about geometry wearing the clothes of a claim about wind. No rose, no sentence.
+      const caption = lakeCaption({ ...WILLOUGHBY, windRose: undefined }) ?? '';
+      expect(caption).not.toContain('wind');
+      expect(caption).toContain('1,738 acres');
+    });
+
+    it('names the exposed direction WITH its share of winter hours', () => {
+      // "Most exposed to the northwest" reads identically whether that sector carries 40% of
+      // winter hours or 7%. The denominator is the point (D78/D86 discipline).
+      const caption = lakeCaption(WILLOUGHBY) ?? '';
+      expect(caption).toMatch(
+        /Winter wind here comes from the south-southeast about \d+% of the time/,
+      );
     });
   });
 });
@@ -219,19 +246,6 @@ describe('formatShoreline', () => {
 
   it('separates thousands on a big lake', () => {
     expect(formatShoreline(2_500_000)).toContain('1,553');
-  });
-});
-
-describe('mostExposedBearing', () => {
-  it('finds the longest run and names its compass point', () => {
-    const profile = Array.from({ length: FETCH_BEARING_COUNT }, (_, i) => (i === 4 ? 9000 : 100));
-    expect(mostExposedBearing(profile)).toEqual({ point: 'E', fetchM: 9000 });
-  });
-
-  it('returns null for a missing, wrong-length or all-zero profile', () => {
-    expect(mostExposedBearing(undefined)).toBeNull();
-    expect(mostExposedBearing([1, 2, 3])).toBeNull();
-    expect(mostExposedBearing(Array.from({ length: FETCH_BEARING_COUNT }, () => 0))).toBeNull();
   });
 });
 
