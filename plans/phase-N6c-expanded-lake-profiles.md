@@ -137,9 +137,24 @@ roughly thirty lines, deferred by founder call.
 2. **depth + elevation run** — the N6a loader, now carrying `elevationM`
 3. **`regionStats:recompute`** — deciles derived *from* what the first two loaded
 4. **`wind-climate load`** — needs `fetchProfileM` from step 1 to know which bodies qualify
-5. **`backfillCells`** — the D2 re-score, **last**, because it reads everything above
+5. …then everything **N6c-2** gathers (N6d put-ins if they land in the same window, the
+   `hasContours` flag if it gets persisted, the B3a seed boosts)
+6. **`backfillCells` — ONE re-score pass, at the very end of N6c as a whole** (founder call,
+   2026-08-02: *"once we've gathered as much data as we can on every body during this phase N6c
+   (either part 1 or 2, whichever makes sense), let's do a single re-score pass"*)
 
 A test fails if step 1 stops clobbering richness, so the constraint cannot drift silently.
+
+> **The re-score is deliberately NOT run at the end of N6c-1.** It walks all 116,070 bodies,
+> recomputes `displayScore` and rebuilds every cell row in the N1 index, and running it twice would
+> be the mistake D2 was folded into this phase to avoid in the first place. The cost of waiting is
+> that **profile richness does not affect the map until N6c-2's data has landed** — prominence stays
+> exactly as it is today until then, which is the safe direction, since richness is a boost and its
+> absence is simply the status quo.
+>
+> The trap this creates, worth naming: after steps 1–4 the corpus will *have* depth, elevation and
+> stats while `displayScore` still reflects only area + boost. That looks like the D2 term is broken.
+> It isn't — it is waiting.
 
 ---
 
