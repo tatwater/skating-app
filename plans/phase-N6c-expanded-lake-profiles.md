@@ -147,9 +147,12 @@ lake with contours, so `pnpm --filter @skating/bathymetry coverage` reads the bu
 2. **depth + elevation run** — the N6a loader, now carrying `elevationM`
 3. **`regionStats:recompute`** — deciles derived *from* what the first two loaded
 4. **`wind-climate load`** — needs `fetchProfileM` from step 1 to know which bodies qualify
-5. …then everything **N6c-2** gathers (N6d put-ins if they land in the same window, the
-   `hasContours` flag if it gets persisted, the B3a seed boosts)
-6. **`backfillCells` — ONE re-score pass, at the very end of N6c as a whole** (founder call,
+5. **`bathymetry coverage`** — the 2,022 contoured bodies, for D2's `hasContours` term
+6. **`backfillRepresentativePoint`** for `waterBodySubAreas` and `adminAreas` — the water re-import
+   already writes the field for `waterBodies`, but nothing rewrites those two
+7. …then everything **N6c-2** gathers (N6d put-ins if they land in the same window, the B3a seed
+   boosts)
+8. **`backfillCells` — ONE re-score pass, at the very end of N6c as a whole** (founder call,
    2026-08-02: *"once we've gathered as much data as we can on every body during this phase N6c
    (either part 1 or 2, whichever makes sense), let's do a single re-score pass"*)
 
@@ -162,6 +165,30 @@ A test fails if step 1 stops clobbering richness, so the constraint cannot drift
 > exactly as it is today until then, which is the safe direction, since richness is a boost and its
 > absence is simply the status quo.
 >
+### 7. `centroid` was never a centroid, and now says so
+
+Renamed to **`representativePoint`** across all three tables that carried it (founder call,
+2026-08-02). It is Turf's `pointOnFeature` and it lands on the **shoreline** whenever the bbox centre
+falls outside the polygon.
+
+**It must not be "fixed" into a true centroid**, which is the tempting reading of the mismatch. The
+area centroid of a crescent lake is on the headland in the middle — on land — and that breaks the
+on-water guarantee display, drive-time and the town stamp all depend on. N6b already paid for this:
+*"a hand-rolled centroid join miss[ed] 4 of 6 real Maine lakes"*
+(`scripts/bathymetry/src/join.ts`). The name was the bug, not the maths.
+
+**Two stages, because Convex validates the schema against existing data on push** and dev holds
+116,070 rows predating the field:
+
+- **Stage 1 (done).** `representativePoint` optional, `centroid` deprecated, every writer sets both,
+  `backfillRepresentativePoint` fills the backlog.
+- **Stage 2 (blocked on the run).** Once the backfill has run, one clean sweep renames the ~100 read
+  sites, makes the field required, drops `centroid`, and removes the double-write. Readers were
+  deliberately **left alone** in stage 1: migrating them to `representativePoint ?? centroid` now
+  would be a hundred edits immediately undone by stage 2, where no fallback is needed at all.
+
+---
+
 > The trap this creates, worth naming: after steps 1–4 the corpus will *have* depth, elevation and
 > stats while `displayScore` still reflects only area + boost. That looks like the D2 term is broken.
 > It isn't — it is waiting.
