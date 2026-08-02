@@ -451,6 +451,19 @@ exists to prevent. The current inventory of what wants to ride a pass:
 So there are **two** passes in flight, not one, and they carry different cargo. This gate covers the
 depth pass; the geometry stats ride the other and are not blocked by it.
 
+> **✅ GATE CLEARED 2026-08-02.** N6c-1 is built: `elevationM` / `elevationSource` are on the schema,
+> and `scripts/lake-depth`'s `load-elevation` writes them in the same pass as the depth join. The
+> founder's conservative phrasing (*"until N6c is complete"*) was honoured by building all of N6c-1
+> before the run rather than only A1 — and it earned its keep, because **A4b (the winter wind rose)
+> and `interiorPoint` both turned out to want a pass too**, neither of which existed when the gate
+> was written. The inventory table below was right that A1 would not be the only rider; it was
+> incomplete about which.
+>
+> **The run order that replaced it** — see N6c's *§What the N6c-1 build found*: canonical re-import
+> → **this depth + elevation run** → `regionStats:recompute` → `wind-climate load` → `backfillCells`.
+> The last step is not optional: `importCanonical` resets `displayScore` to area + boost, so the D2
+> re-score has to come after everything it reads.
+
 **When the gate lifts:** the moment N6c's A1 loader can write `elevationM` in the same invocation. At
 that point the licence/column confirmation in *§Open questions* is the only thing left in the way, and
 that one resolves by doing rather than by deciding.

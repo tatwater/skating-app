@@ -2066,6 +2066,47 @@ exists nothing stops it filling with text nobody dates or re-reads.
 **One deliberate exception, and it proves the rule:** the local lake-association URL (D71), because there
 is no algorithm from a lake's name to its association's website.
 
+## D2 amendment — profile-richness weights are fractions of the score, and activity dominates (N6c-1)
+
+**Decided (2026-08-02; the weights were caught by reading `display.ts`, the ordering by a founder
+call.)**
+
+N6c's Workstream D2 tabled prominence weights of **+1** for a name, **+2** for contours, **+4** for
+an official put-in — summing to +13. **That is roughly thirteen times the score's entire dynamic
+range.** `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, and `minVisibleZoom` clamps
+the total to `[0,1]` before mapping it onto z14→z6. Measured on dev: **every** curated boost is
+exactly `0.3`, and boosted bodies score 0.75–1.30. A `+1` for having a name would have pushed all
+~9,000 named bodies to the widest zoom bucket — and nothing would have failed, because no test
+asserts what the map looks like.
+
+The weights are therefore the plan's **relative ordering on the real scale**: name `0.02`, depth
+`0.04`, contours `0.06`, derived put-in `0.06`, official put-in `0.12`, activity `0.30`. One zoom
+level is `0.125`, which is the unit these should be read in.
+
+**Activity dominates, and the caps encode why** (founder call):
+
+> *"I would love for the real-world data of users documenting lakes well… to completely remove the
+> need for moderators to hand-curate 'destination' lakes. Curation should exist only as a way to get
+> us a good seed, and as a check on our automated system."*
+
+So static metadata caps at **0.15**, *below* `curatedBoost`'s 0.3 — metadata says a body is
+documented, not that anyone wants to skate it — while activity alone reaches 0.30 and the total caps
+at **0.40**, above it. A genuinely used lake overtakes a hand-seeded one.
+
+**And the retirement path becomes a mechanism**: `curatedBoostIsRedundant` flags a boost the body has
+now earned on its own, for the admin surface. **Advisory, never automatic** — clearing a boost on a
+body's behalf is a silent prominence change nobody reviewed, and a check that removes itself is not a
+check.
+
+**Never a penalty**, which D2 already said and which is now an invariant: an un-enriched body scores
+byte-identically to before, and a property test asserts enrichment never moves a body to a *narrower*
+zoom bucket. That is the founder's *"I'd hate to not have a body someone cares about"*, mechanised.
+
+**Two terms ship dark.** `hasContours` has no data source — N6b's `matchBathymetryLakes` is a
+read-only `internalQuery` that persists nothing — and the put-in terms wait on N6d.
+
+**Related:** [D49](#d49), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).
+
 ## D71 — Reference links are generated at render time, not stored per body (N6c)
 
 **Decided (2026-07-30; founder call at N6c scoping — the founder asked whether the ETL could configure
@@ -2592,6 +2633,77 @@ won't equal a published survey.
 
 **Related:** [D3](#d3), [D25](#d25), [D48](#d48), [D70](#d70--lake-profile-content-is-derived-or-third-party-never-hand-maintained-n6cn6d), [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).
 
+## D85 amendment — the stats are measured from an interior point, and `centroid` is not one (N6c-1)
+
+**Decided (2026-08-02; found by running A4 against real lakes rather than fixtures.)**
+
+D85 said *measure the source geometry*. It did not say *from where*, and N6c's A4 said "cast a ray
+through the centroid" — which cannot be taken literally. **`waterBodies.centroid` is Turf's
+`pointOnFeature`**, which returns the bbox centre only when that lands inside the polygon and a point
+on the **boundary** when it does not. That is true of any curved or narrow lake: Lake Willoughby's
+stored centroid **is ring vertex 199**, and Lake Champlain's sits **30.7 km** from mid-lake.
+
+Nothing caught it because `pointInPolygon` counts the boundary as inside, and it was harmless for
+every consumer the field previously had. It was fatal to the fetch profile: **7 of Willoughby's 16
+bearings and 8 of Champlain's returned 0.0**, since a ray cast north from a west-shore vertex
+correctly finds no water.
+
+**`centroid` is left exactly as it is.** Every other consumer wants it or is indifferent: drive-time
+bands measure to it (`notifications.ts`, `reports.ts`) and you drive to a shore rather than to
+mid-lake, and a pin-less report inherits it for the `adminAreas` town stamp, where a shore is in the
+shore's town. *Checked and worth recording, because it would have changed the answer:* put-ins are
+**not** used for drive-time today.
+
+**A new optional `interiorPoint` is stored instead**, derived at import as the midpoint of the
+longest water span across 15 scanlines each way — always strictly interior by construction, and
+biased toward open water, which is the right bias for an exposure figure. Only `lib/sampling.ts`
+reads it, because **weather sampling was the one consumer the offset genuinely hurt**: Open-Meteo's
+grid is 2–25 km, so Champlain's error was one to several cells wrong on an input the D56 decay math
+is supposed to be reproducible from.
+
+**Related:** [D48](#d48), [D56](#d56), [D85](#d85--derived-geometry-stats-are-measured-on-the-source-geometry-not-the-simplified-copy-n6c), [D90](#d90--wind-exposure-is-frequency-times-fetch-never-fetch-alone-n6c-1).
+
+## D90 — Wind exposure is frequency × fetch, never fetch alone (N6c-1)
+
+**Decided (2026-08-02; founder call, catching a claim the caption had no business making.)**
+
+The caption described Lake Willoughby as *"most open to wind out of the south-southeast"* because
+that is where its longest fetch runs. **Founder:** *"I am almost certain Lake Willoughby never gets
+wind out of the south… the terrain (mountains) around lakes drastically impact the chance that wind
+could come from particular directions."*
+
+**A fetch profile is a claim about geometry. Rendering it as a claim about wind is the error.** A
+direction with five miles of open water that wind never blows from is not an exposed shore.
+
+**So we measured it, and the result was more interesting than either position.** NREL WIND Toolkit,
+2 km WRF, Willoughby, Dec–Mar: **19.4% SE, 16.1% SSE, 18.6% NW** — a strongly *bimodal* rose along
+the NNW–SSE trough, with the E/NE quadrant essentially blocked by Mount Pisgah and Mount Hor. The
+specific prediction was wrong; the **reasoning was exactly right**, and the data shows the named
+mechanism — terrain funnels wind *along* the valley rather than excluding half of it.
+
+**The rule:** exposure is `winterFrequency[k] × fetchM[k]`, and **a lake with no rose says nothing
+about wind at all.** There is deliberately no fallback to fetch-alone: that fallback is the claim
+this decision exists to stop making, and its failure mode is a plausible sentence, not an empty one.
+`mostExposedBearing` was deleted rather than left unused, because exporting it leaves the bug one
+autocomplete away.
+
+**Source: NREL WIND Toolkit (2 km), not the Global Wind Atlas (250 m).** GWA resolves finer and
+would see more terrain, but it publishes **no documented public API** — depending on an undocumented
+endpoint is the fragility D71 argues against. The question here is valley-scale and the Willoughby
+rose shows 2 km answers it; 250 m matters for siting a turbine on a ridge. WTK also gives what GWA
+cannot: hourly data, so the rose is **winter only** (Dec–Mar), where GWA publishes an annual
+climatology and prevailing December wind is not prevailing July wind.
+
+**Two denominator guards**, the same discipline as D78 and D86: a rose is refused below 4,000 winter
+hours, and the caption states the percentage rather than a bare superlative — *"most exposed to the
+northwest"* reads identically whether that sector carries 40% of winter hours or 7%.
+
+**Recorded because it moved:** the API's host is `developer.nlr.gov`; `developer.nrel.gov` no longer
+resolves. The credential is `WIND_TOOLKIT_API_KEY`, named for the dataset, since the provider has
+already moved once.
+
+**Related:** [D3](#d3), [D71](#d71--reference-links-are-generated-at-render-time-not-stored-per-body-n6c), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-n5c), [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).
+
 ## D86 — Aggregate quality renders as a graded mark, never as a word (N6c)
 
 **Decided (2026-07-31; founder call, reversing N6c's own recommendation to defer — *"maybe instead of
@@ -2623,6 +2735,27 @@ answer separates them, because a recurrence claim has **no word-free rendering**
 the claim.
 
 **Related:** [D3](#d3), [D50](#d50), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-n5c), [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).
+
+## D86 amendment — the dots read `skateQuality`, not the Phase 6 thumbs (N6c-2)
+
+**Decided (2026-08-02; found at N6c kickoff by checking what a thumb actually means.)**
+
+D86 says the mark is *"derived from the existing thumbs"*. **Those are the wrong input.** Phase 6's
+polymorphic thumbs are `helpful` / `unhelpful` on a **report** — they measure whether the write-up
+was useful, not what the ice was like. Rendering them under a legend reading *"how recent reporters
+rated it"* would summarise one thing and label it another, on the surface where someone decides
+whether to drive. That is precisely the class of failure D86 was written to prevent; it just came in
+through the input rather than through the adjective.
+
+**The right field is already in the schema:** `reports.skateQuality` — `great | good | fair | poor`,
+a four-value scale, authored by the person who was actually on the ice, and it maps onto four dots
+with no arithmetic at all. It is also an existing input, so D86's *"no new user-facing input, which
+is most of why this is small"* still holds.
+
+Everything else in D86 is unchanged: mark never word, the quorum floor, season- and window-scoping,
+and the accessible long form naming the denominator.
+
+**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word-n6c), [D50](#d50), [D78](#d78--a-recurrence-claim-is-history-with-its-denominator-attached-and-it-is-admin-only-until-it-clears-a-tunable-bar-n5c).
 
 ## D87 — Approach distance is walked, not flown (N6d)
 

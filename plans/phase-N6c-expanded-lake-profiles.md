@@ -1,5 +1,20 @@
 # Phase N6c — Expanded lake profiles: derived stats, captions, reference links, and map summary cards
 
+> **⚠️ SPLIT INTO TWO PHASES, 2026-08-02 (founder call at kickoff).** As scoped this was ~15
+> workstreams across schema, ETL, two clients, a new external API, an admin surface and a
+> corpus-wide re-score — comfortably the largest phase on the roadmap and one review surface for all
+> of it.
+>
+> - **N6c-1 — derived numbers.** Workstreams **A** (geometry stats, elevation), **A5**
+>   (`regionStats`), **C** (the caption) and **D2** (profile richness → prominence), plus **A4b**,
+>   the winter wind rose that came out of the build. ✅ **BUILT 2026-08-02** on branch
+>   `phase-N6c-1-lake-profiles` — unpushed, undeployed, ETL passes **not yet run**. See
+>   [*§What the N6c-1 build found*](#what-the-n6c-1-build-found).
+> - **N6c-2 — links, cards and observability.** Workstreams **B** (reference links, NWS alerts, the
+>   short forecast), **B3a/D** (the seed script), **E** (per-body summary cards) and **F** (record
+>   history + import observability). **Not built.** Everything below those headings stands as
+>   written except where *§What the N6c-1 build found* corrects it.
+>
 > **Status:** 📋 Scoped, not built (2026-07-30). Founder ask, same day. **Workstream E (per-body map
 > summary cards) was folded in on 2026-07-30**, out of the roadmap's deferred design sketches.
 > **Depends on:** N6a (`meanDepthM`/`maxDepthM` + the depth ladder) — built and on dev, **ETL not yet
@@ -10,12 +25,121 @@
 > what feeds this doc's `+2 has bathymetric contours` prominence term).
 > **N6 is now a five-way split:** N6a depth → N6b contours → **N6c profiles** → N6d access points →
 > [N6e satellite imagery](./phase-N6e-satellite-imagery.md) (specced 2026-07-31 out of B3).
-> **Decisions:** D70, D71, D74, D75, D76, and **D85/D86** added 2026-07-31 (see
-> [`01-decisions.md`](./01-decisions.md)). D72/D73 are N6d's; D81–D84 are N6b's and N6e's, plus **D89** (N6b's fixed contour ladder).
+> **Decisions:** D70, D71, D74, D75, D76, and **D85/D86** added 2026-07-31, plus **D90** (the wind
+> rose) and the **D85/D86/D2 amendments** added 2026-08-02 (see [`01-decisions.md`](./01-decisions.md)).
+> D72/D73 are N6d's; D81–D84 are N6b's and N6e's, plus **D89** (N6b's fixed contour ladder).
 > **All five open questions were answered 2026-07-31**, plus A3, B3, B3a, B5 and E3 — see the marked
 > sections. Two answers changed the build: **shoreline is measured on the source geometry** (D85, and it
 > moves A2–A4 onto the *canonical water re-import* rather than the depth run), and **the summary card
 > carries a consensus quality mark after all** (D86, reversing this doc's own recommendation).
+
+---
+
+## What the N6c-1 build found
+
+*Written 2026-08-02, against the code. **Six of this plan's own claims were false or misleading**,
+four of them caught by running the functions against real lakes rather than against fixtures — which
+is the finding underneath the findings: every one of these passed its unit tests.*
+
+### 1. The dimension-line method reported 2× the true width
+
+A2 specified *"the hull diameter (longest chord between hull vertices), giving `longAxisM`… The
+perpendicular hull width gives `shortAxisM`."* **That pair does not produce a dimension line.** For a
+rectangle `w × h` with `h ≫ w`, the hull diameter is the *diagonal*, and the hull's extent measured
+perpendicular to that diagonal is `2wh/L ≈ 2w` — because the two extreme corners sit on opposite sides
+of the diagonal. A 5 × 1 mile lake would have rendered as **"5 × 2 miles"**, plausibly.
+
+Replaced with the **minimum-area bounding rectangle** — the same rotating-calipers sweep, exact for a
+rectangle and major × minor for an ellipse. Lake Champlain now measures **106.3 × 14.8 mi** against a
+published ~107 × 14.
+
+*(The dimension line was then dropped from the caption entirely at the founder's ask — but the axis
+still feeds the wind clause, the D2 prominence terms and A5's deciles, so the fix stands.)*
+
+### 2. `waterBodies.centroid` is not a centroid, and the fetch profile was cast from the shore
+
+A4 says *"cast a ray through the centroid"*. **That cannot be taken literally.** `centroid` comes from
+`representativePoint` → Turf's `pointOnFeature`, which returns the bbox centre only when it lands
+inside the polygon and a point on the **boundary** when it does not — true of any curved or narrow
+lake. Measured: **Lake Willoughby's stored centroid is ring vertex 199**, and Lake Champlain's sits
+**30.7 km** from mid-lake.
+
+Nothing upstream catches this because `pointInPolygon` counts a boundary point as inside, and it was
+harmless for every prior consumer. Here it was fatal: **7 of Willoughby's 16 bearings and 8 of
+Champlain's came back 0.0**, because a ray cast north from a west-shore vertex correctly finds no
+water.
+
+The fetch profile now derives its own origin (`fetchOrigin`), and a supplied origin is honoured only
+if it is *strictly* interior, so passing the stored centroid can never silently reproduce the bug.
+
+**Founder call on the wider fix:** `centroid` itself is **left alone** — drive-time bands
+(`notifications.ts`, `reports.ts`) and the pin-less report's town stamp all want a shoreline-ish
+point, and put-ins are *not* used for drive-time today (checked). A new optional **`interiorPoint`**
+is stored instead, and only `lib/sampling.ts` reads it, because weather sampling was the one consumer
+the offset genuinely hurt: Open-Meteo's grid is 2–25 km and Champlain's 30.7 km error is one to
+several cells wrong on an input the D56 decay math must be reproducible from.
+
+### 3. Fetch alone names the wrong wind direction — **D90**
+
+The caption first said Willoughby is *"most open to wind out of the south-southeast"* on fetch alone.
+**Founder:** *"I am almost certain Lake Willoughby never gets wind out of the south… the terrain
+(mountains) around lakes drastically impact the chance that wind could come from particular
+directions."*
+
+Measured against NREL's WIND Toolkit (2 km WRF, Dec–Mar): **19.4% SE, 16.1% SSE, 18.6% NW** — a
+strongly **bimodal rose along the NNW–SSE trough**, with the E/NE quadrant blocked by Pisgah and Hor.
+So the specific prediction was wrong and the *reasoning* was exactly right: terrain dominates, and it
+funnels wind **along** the valley rather than excluding half of it.
+
+Exposure is therefore the **product**, `winterFrequency[k] × fetchM[k]` (**D90**), and the caption
+says nothing about wind without a rose — there is deliberately no fallback to fetch-alone, because
+that fallback *is* the claim the rose exists to stop making.
+
+**Source: NREL WIND Toolkit, not the Global Wind Atlas.** GWA resolves 250 m and would see more
+terrain, but publishes **no documented public API**. WTK also gives what GWA cannot: hourly data, so
+the rose is **winter only** rather than annual. Its host moved from `developer.nrel.gov` (now dead)
+to `developer.nlr.gov` — hence `WIND_TOOLKIT_API_KEY`, named for the dataset rather than the provider.
+
+### 4. D2's weights were off by an order of magnitude
+
+The D2 table proposes +1 for a name, +2 for contours, +4 for an official put-in — summing to **+13**.
+But `displayScore` is `normalize(log area) ∈ [0,1] + curatedBoost`, and `minVisibleZoom` clamps the
+total to `[0,1]`. **Every curated boost on dev is exactly 0.3**, and boosted bodies score 0.75–1.30.
+A `+1` for a name would have pushed all ~9,000 named bodies to the widest zoom bucket — and the map
+would have read as broken with every test still green.
+
+Rescaled to the real range, with the plan's relative ordering intact and **activity dominant**
+(founder call: curation should be *"only a seed, and a check on our automated system"*), so a used
+lake out-ranks a hand-seeded one. Plus `curatedBoostIsRedundant`, the retirement signal — advisory,
+never automatic, because a check that removes itself is not a check.
+
+### 5. The caption's units contradicted D25
+
+This doc's illustrative caption reads *"1,688 acres, about 5 × 1 miles… a measured 91 m maximum
+depth… Its 8 km axis"*, and A3 says *"Metric per D25: nearest kilometre"*. **D25 says store metric,
+*display imperial*, and there is no metric display mode in this product.** The caption is imperial
+throughout.
+
+### 6. `hasContours` has no data behind it
+
+D2's `+2 has bathymetric contours` assumes contour coverage is queryable. It is not:
+`waterBodies.matchBathymetryLakes` is a read-only `internalQuery` that stores nothing, and no field on
+the row records it. The term exists in code and **ships dark**; persisting the ~2,437 N6b matches is
+roughly thirty lines, deferred by founder call.
+
+### The run order, which is not optional
+
+`richnessFor` costs two index reads per body, so it runs in `backfillCells` and **not** in
+`importCanonical`, which already does the heaviest work in the app. A canonical re-import therefore
+*resets* the score to area + boost until the re-score runs. The order is:
+
+1. **canonical water re-import** — geometry + the A2/A3/A4 stats + `interiorPoint`
+2. **depth + elevation run** — the N6a loader, now carrying `elevationM`
+3. **`regionStats:recompute`** — deciles derived *from* what the first two loaded
+4. **`wind-climate load`** — needs `fetchProfileM` from step 1 to know which bodies qualify
+5. **`backfillCells`** — the D2 re-score, **last**, because it reads everything above
+
+A test fails if step 1 stops clobbering richness, so the constraint cannot drift silently.
 
 ---
 
