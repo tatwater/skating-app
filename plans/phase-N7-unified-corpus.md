@@ -11,7 +11,8 @@
 > **Decisions:** **D92–D102**, proposed here, to be logged in [`01-decisions.md`](./01-decisions.md) at
 > build kickoff. D91 is the last one logged. **D95, D100, D101 and D102 are approved** (founder,
 > 2026-08-03), and **D92 was widened to three catalogues** at the same sitting.
-> **Step 1 (NHD acquisition) is ✅ done**, 2026-08-03 — see the acquisition section.
+> **Steps 1 and 1b (NHD + 3DHP acquisition) are ✅ done**, 2026-08-03 — see the acquisition section.
+> **D92 is back to two-way**: 3DHP was measured against NHD over 7,878 lakes and is the same data.
 
 ---
 
@@ -849,6 +850,32 @@ All five states archived to `scripts/etl/.raw-nhd/<state>/` and mirrored to **`s
 `{85383A01-DC89-47AA-BC5D-BE373FB0B5C3}`, `areasqkm 7.594` = 1,876.6 ac, FTYPE 390. The phase's
 headline fixture is now local and checksummed.
 
+### ✅ Done, 2026-08-03 — step 1b of the campaign
+
+3DHP FY26 acquired, clipped and mirrored to **`skating-raw-3dhp`** (2 objects, 409 MiB). The 11.9 GB
+CONUS download verified byte-exact, was hashed (`5c2f868b24c1eb7a…`) and then deleted per D102's
+retention rule; its manifest remains. **274,994 waterbodies**, 98% `featuretype = Lake`, no floor
+applied — Beau Lake, Moosehead, Champlain and Lake George all present.
+
+**R2 now sits at 4.31 GiB of the 10 GB free tier** across seven buckets.
+
+**Trim parity, checked because the founder asked (2026-08-03).** The three lanes agree on the axes
+that affect our data and diverge on one that does not:
+
+| axis | OSM | NHD | 3DHP |
+| --- | --- | --- | --- |
+| geography | whole state, untrimmed — NY's `clipBBox` is *recorded in the manifest, not applied* | whole state GDB, in practice **wider** than the state | Northeast bbox |
+| feature classes | everything OSM ships (roads, buildings, all of it) | all ~30 GDB layers | **1 of 7** — waterbody only |
+| water class filter | none | none | none |
+| **size floor** | **none** | **none** | **none** |
+
+So no lane applies the D91 floor at acquisition, and no lane filters by water class — the floor and
+the classifier stay downstream where redoing them is cheap. 3DHP keeps less of its *source*, and that
+was forced by 11.9 GB against 417 MB. **The cost of that asymmetry, stated once:** adding an OSM or
+NHD layer later is free, adding a 3DHP layer costs an 11.9 GB re-download. The only dropped layer
+plausibly worth anything is `hydro_3dhp_all_flowline` — rivers and streams, which ties to the still-open
+"no rivers in the corpus at all" question from N2.
+
 **One latent bug fixed on the way in.** `scripts/lib/mirror-r2.sh` now passes `--s3-no-check-bucket`
 on every rclone call. rclone issues a `CreateBucket` before its first upload to a bucket it has not
 already seen succeed, and R2 answers **403 AccessDenied** for any Object Read & Write token — which is
@@ -868,7 +895,7 @@ prune"* — and under the order below, nothing does.
 ```
  0  wipe the run ledger; open one campaign id                  (D99)
  1  acquire NHD → .raw-nhd/ → R2                        ✅ done (no Convex writes)
- 1b acquire 3DHP → clip → .raw-3dhp/waterbody/ → R2             (no Convex writes; D92 lane 3)
+ 1b acquire 3DHP → clip → .raw-3dhp/waterbody/ → R2  ✅ done    (no Convex writes; divergence monitor, NOT a bake-off lane)
  2  reconcile OSM ↔ NHD ↔ 3DHP by polygonIoU                   (writes catalogue ids only)
  3  D92 bake-off, containment-passing keys only                (read-only; produces the rule)
  4  mint waterBodyKey; backfill osmId / nhdId / geometrySource (D93)
