@@ -147,6 +147,18 @@ comes down.
 Survey, National Hydrography Dataset"* — is courtesy rather than obligation, and is recorded in every
 manifest so it is not an oversight.
 
+### Watching the base map get re-surveyed
+
+`workunitid` is 3DHP's **own provenance label**: the literal string `NHD` where a feature was
+inherited from the retired dataset, an EDH work-unit id where it was traced from LiDAR. `measure-3dhp`
+tallies that and files it as a `catalogue_edh_coverage` snapshot, rendered on `/admin`.
+
+As of **2026-08-03** the FY26 archive reads **0 of 274,994** — nothing in our five states has been
+re-surveyed yet. The live service already reads **1,590 of 356,980 (0.445%)**, all of it in western
+Massachusetts (Pontoosuc, Onota, Stockbridge Bowl, Goose Pond, Cobble Mountain Reservoir). **That gap
+is what the annual cadence costs**, measured rather than assumed, and both numbers land in one row so
+the chart can draw the lag as its own line.
+
 ### Reading a geodatabase
 
 `ogr2ogr` opens the zip directly; no unpacking needed.
@@ -195,6 +207,8 @@ an annual staged release with quarterly service updates.
 pnpm --filter @skating/etl archive-3dhp                # download CONUS, clip, archive, delete source
 pnpm --filter @skating/etl archive-3dhp --keep-source  # keep the 11.9 GB (rarely wanted)
 pnpm --filter @skating/etl archive-3dhp --clip-only    # source already on disk; just re-clip
+pnpm --filter @skating/etl measure-3dhp                # file the EDH-coverage snapshot
+pnpm --filter @skating/etl measure-3dhp --dry-run      # print it, write nothing
 scripts/etl/mirror-3dhp-r2.sh push
 ```
 
@@ -267,6 +281,9 @@ about 2023 with a shelf life; one about OSM or 3DHP is not.
    there. There is a test asserting exactly this.
 3. `pnpm --filter @skating/etl archive-3dhp` — downloads (~50 min at 6 MB/s), clips, archives, and
    deletes the 11.9 GB.
+4. `pnpm --filter @skating/etl measure-3dhp` — files a `catalogue_edh_coverage` snapshot. **Run it
+   every year even while it reads zero**: `/admin` plots the series, and a series that starts at zero
+   is only legible if somebody recorded the zeroes.
 4. `pnpm --filter @skating/etl archive --refresh` — a fresh OSM extract for the same run.
 5. `scripts/etl/mirror-3dhp-r2.sh push` and `scripts/etl/mirror-r2.sh push`.
 6. Re-run the campaign from step 2 of the N7 order (reconcile → bake-off → import → prune → the
