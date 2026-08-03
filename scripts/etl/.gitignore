@@ -13,3 +13,10 @@
 
 # Mirror config (holds no secrets, but stays local).
 .env.local
+
+# The permanent NHD geodatabase archive (N7). Same rule as `.raw/`, and more load-bearing: USGS
+# retired NHD on 2023-10-01, so this is a final snapshot with no successor. Mirror it, never delete.
+.raw-nhd/
+
+# NHD mirror config (holds no secrets, but stays local).
+.env.nhd.local

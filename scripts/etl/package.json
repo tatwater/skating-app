@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual OSM → Convex water-body ETL (Phase 1). Not built or deployed.",
+  "description": "Manual OSM \u2192 Convex water-body ETL (Phase 1). Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
@@ -12,7 +12,8 @@
     "load": "tsx src/load.ts",
     "load-depths": "tsx src/loadDepths.ts",
     "prune-floor": "tsx src/pruneFloor.ts",
-    "archive": "tsx src/fetchExtract.ts"
+    "archive": "tsx src/fetchExtract.ts",
+    "archive-nhd": "tsx src/fetchNhd.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

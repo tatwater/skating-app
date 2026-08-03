@@ -109,6 +109,82 @@ someone runs the transform and loader against a new extract.
 
 ---
 
+## Pinning the NHD snapshot (N7)
+
+The second canonical-water catalogue. Same discipline, opposite provenance problem.
+
+```bash
+pnpm --filter @skating/etl archive-nhd              # all five states, smallest first
+pnpm --filter @skating/etl archive-nhd NH           # one
+pnpm --filter @skating/etl archive-nhd --refresh    # re-pull, overwriting
+scripts/etl/mirror-nhd-r2.sh push                   # the durable second copy
+```
+
+Geodatabases land in a gitignored **`.raw-nhd/<state>/`** — separate from `.raw/`, with its own
+`.env.nhd.local` and its own bucket (`skating-raw-nhd`), because the shared mirror body honours an
+inherited `RAW_BUCKET` and one config file for two archives would push a geodatabase into the OSM
+bucket and report success.
+
+**The pin is the freeze date.** Geofabrik rebuilds daily, so the OSM lane chases a moving target.
+**USGS retired NHD on 2023-10-01**; every state geodatabase carries `Last-Modified: 2023-12-27` and
+will never be rebuilt. So the question is not *which build did we get* but *is this still the same
+bytes* — and there is no published checksum to ask with. No `.md5`, no `.sha256` (both 404), and S3's
+`ETag` is a multipart digest rather than a usable md5. So:
+
+- **before** download, the integrity check is the **expected byte count**, pinned in `nhdArchive.ts`
+  from the bucket listing. A truncated geodatabase opens fine in `ogr2ogr` and simply holds fewer
+  lakes — indistinguishable from a real coverage gap once it is in the corpus, so a short read
+  **fails the state** rather than warning.
+- **after** download, our own sha256 is recorded so the next fetch has something to compare against.
+- the publisher's `Last-Modified` is checked against the freeze date. If it ever moves, something
+  republished a retired dataset under us.
+
+The ~29 KB FGDC `.xml` beside each payload is archived too — process lineage and the licence
+statement in USGS's own words. It costs nothing and nobody can reconstruct it once a retired dataset
+comes down.
+
+**Licence:** public domain (US Government work, 17 U.S.C. §105). Attribution — *"U.S. Geological
+Survey, National Hydrography Dataset"* — is courtesy rather than obligation, and is recorded in every
+manifest so it is not an oversight.
+
+### Reading a geodatabase
+
+`ogr2ogr` opens the zip directly; no unpacking needed.
+
+```bash
+Z=/vsizip/$PWD/.raw-nhd/nh/NHD_H_New_Hampshire_State_GDB.zip
+ogrinfo -so "$Z"                 # layer list
+ogrinfo -so "$Z" NHDWaterbody    # the layer we want
+```
+
+**Three things that will catch you out:**
+
+1. **Field names are lower-case in the geodatabase** (`permanent_identifier`, `gnis_name`,
+   `areasqkm`, `reachcode`, `ftype`) and **upper-case from the ArcGIS REST service**
+   (`PERMANENT_IDENTIFIER`). Every measurement taken before this archive existed used the REST
+   spelling.
+2. **The CRS is `NAD83 + NAVD88 height`, a compound 3D CRS** (EPSG:4269 + 5703), and the geometry is
+   3D multipolygon. Reproject explicitly to EPSG:4326 and drop Z; do not assume.
+3. **The state geodatabase is not clipped to the state.** Its `CLIPPOLY` layer is *empty*, and New
+   Hampshire's extract reaches 46.09°N — well into Maine and Québec. The five extracts overlap
+   heavily, so a five-state import **must** dedupe on `permanent_identifier`, and any per-state count
+   taken from a bounding box is measuring the bleed as well as the state.
+
+### Run table
+
+| State | Geodatabase | Bytes | Frozen 2023-12-27 | sha256 | Captured |
+| --- | --- | --- | --- | --- | --- |
+| NH | `NHD_H_New_Hampshire_State_GDB.zip` | ✓ | ✓ | `68c90ef7b0241624…` | 2026-08-03 |
+| MA | `NHD_H_Massachusetts_State_GDB.zip` | ✓ | ✓ | `b529e30886cc475f…` | 2026-08-03 |
+| VT | `NHD_H_Vermont_State_GDB.zip` | ✓ | ✓ | `d35026b193ecf18c…` | 2026-08-03 |
+| ME | `NHD_H_Maine_State_GDB.zip` | ✓ | ✓ | `75b193ccf345fdf6…` | 2026-08-03 |
+| NY | `NHD_H_New_York_State_GDB.zip` | ✓ | ✓ | `dd1bbe1b9b7f63c3…` | 2026-08-03 |
+
+924 MiB across five states, mirrored to `skating-raw-nhd` (15 objects — a zip, an `.xml` and a
+manifest each). Every state verified on both checks: exact byte count, and the freeze date unmoved.
+
+---
+
 ## Running the pipeline
 
 > **The short version, for a normal re-import:**

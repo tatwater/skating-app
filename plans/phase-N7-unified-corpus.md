@@ -458,6 +458,62 @@ catalogue drew this lake" change *what kind of thing it is* — the exact confus
 variants. The named junk is tiny: 8 sewage treatment, 4 treatment, 11 water storage, 20 unspecified
 reservoir.
 
+### What the archived geodatabases actually contain (measured 2026-08-03)
+
+**The sentence above is true of Maine and false of New Hampshire, and that is the finding.** Counted
+directly out of the archived geodatabases, above the D91 floor:
+
+| ≥ 5 acres | ME LakePond | ME SwampMarsh | NH LakePond | NH SwampMarsh |
+| --- | --- | --- | --- | --- |
+| features | 4,670 | 703 | 2,380 | **4,120** |
+| named | 3,059 (**66%**) | 16 (**2%**) | 1,411 (**59%**) | 31 (**1%**) |
+
+*(Bounding-box clips: ME `-71.1,42.9 → -66.9,47.5`; NH `-72.6,42.7 → -70.6,45.31`. See the bleed
+caveat below — these are approximations of a state, not the state.)*
+
+**SwampMarsh is 13% of Maine's post-floor set and 63% of New Hampshire's.** So D96 cannot be decided
+from Maine, which is exactly what the paragraph above did. Admitting FTYPE 466 wholesale would roughly
+**triple** New Hampshire's NHD contribution, entirely with wetland.
+
+**And the FCODEs give no lever, confirming the asymmetry is real.** Of NH's 5,138 post-floor
+SwampMarsh features, **5,053 are FCODE 46600** — the unspecified variant — against 57 intermittent
+and 28 perennial. NHD genuinely does not separate swamp from marsh.
+
+**The naming gradient is the discriminator, and it is consistent across both states:** LakePond runs
+59–66% named, SwampMarsh **1–2%**. That is the same signal D91 already leans on — *"a name in OSM is a
+human assertion that a place is a place"* — and it says NHD's post-floor SwampMarsh is overwhelmingly
+unnamed wetland. **Proposed resolution: admit FTYPE 466 only where it carries a GNIS name**, which
+costs ~47 bodies across the two states and closes the asymmetry without importing 8,000 bogs. To be
+confirmed against VT/MA/NY and against what OSM's `wetland=marsh` acceptance actually admits today.
+
+**Estuary (493) is a non-issue at this scale** — 83 post-floor in Maine, 10 in New Hampshire. Decide
+it on principle rather than on volume.
+
+### Three traps in the geodatabase itself
+
+1. **Field names are lower-case in the GDB** (`permanent_identifier`, `gnis_name`, `areasqkm`,
+   `ftype`) and **upper-case from the REST service**. Every measurement in this plan taken before the
+   archive existed used the REST spelling.
+2. **The CRS is a compound 3D `NAD83 + NAVD88 height`** (EPSG:4269 + 5703) with 3D multipolygon
+   geometry — reproject and flatten explicitly.
+3. **A "state" geodatabase is not clipped to the state.** Its `CLIPPOLY` layer is *empty*, and New
+   Hampshire's extract reaches **46.09°N** — into Maine and Québec. The five extracts overlap
+   heavily. Two consequences: the import **must** dedupe on `permanent_identifier`, and every
+   per-state figure in this document that came from a bounding box is measuring bleed as well as
+   state. That includes D92's count table.
+
+### The count comparison, re-measured — OSM and NHD are a dead heat in Maine
+
+D92's table reports NHD Maine at 5,163 post-floor after removing SwampMarsh and Estuary, against
+OSM's 4,715 — **1.10×**. Measured from the archive, Maine's post-floor LakePond + Reservoir is
+**4,718**, against that same OSM 4,715: **1.001×**.
+
+**So on bulk coverage the two catalogues are indistinguishable in Maine**, and D92's stated
+willingness to conclude *"they are within noise, say so"* now has a number behind it. What NHD is
+actually worth is not bulk — it is the three things §Why this phase exists names: a key that collapses
+OSM's invisible duplicates, specific gap lakes like Beau Lake, and the MIDAS linkage. **D92's write-up
+must not let the count table imply otherwise.**
+
 ---
 
 ## D97 — The audit reports; only the prune deletes
@@ -544,6 +600,12 @@ it. It covers lakes ≥ 10 ha, which is ~100% of what draws at regional zoom and
 statistic is computed over. For the remainder, **USGS 3DEP** is a one-time raster download sampled
 locally, with no per-coordinate accounting and no shared allowance.
 
+**NHD's own `elevation` field is not the answer, checked and ruled out 2026-08-03.** `NHDWaterbody`
+carries an `elevation` attribute, which looked like a free win sitting inside an archive we were
+downloading anyway. It is populated on **1,300 of New Hampshire's 52,999 waterbodies — 2.5%**, and on
+1,086 of the 8,257 above the area floor (**13%**). Not a source; a field that exists. Recorded here so
+nobody spends an afternoon rediscovering it.
+
 **Measure before switching, not after.** The pass to run first is a read-only coverage comparison:
 what fraction of the *post-prune* corpus does HydroLAKES `Elevation` cover, what does 3DEP add, and
 where do the two disagree with the ~5,975 rows Open-Meteo already stamped. A source swap that silently
@@ -598,6 +660,32 @@ statement. Archive it with the payload, the way `DepthManifest` archives a data 
 **3DHP is acquired separately and later.** Its downloadable product is on ScienceBase rather than the
 staged-products tree, and it is only needed for the bake-off's third lane — so it must not block the
 NHD acquisition or the corpus build. Resolve its artifact when the bake-off is written.
+
+### ✅ Done, 2026-08-03 — step 1 of the campaign
+
+All five states archived to `scripts/etl/.raw-nhd/<state>/` and mirrored to **`skating-raw-nhd`**
+(15 objects, 924 MiB: a zip, an FGDC `.xml` and a manifest each). Every state passed both checks —
+**exact byte count** and **freeze date unmoved from 2023-12-27**. R2 now sits at **3.91 GiB of the
+10 GB free tier**.
+
+| | sha256 |
+| --- | --- |
+| NH | `68c90ef7b0241624…` |
+| MA | `b529e30886cc475f…` |
+| VT | `d35026b193ecf18c…` |
+| ME | `75b193ccf345fdf6…` |
+| NY | `dd1bbe1b9b7f63c3…` |
+
+**Beau Lake is in the Maine archive**, not merely on the REST service:
+`{85383A01-DC89-47AA-BC5D-BE373FB0B5C3}`, `areasqkm 7.594` = 1,876.6 ac, FTYPE 390. The phase's
+headline fixture is now local and checksummed.
+
+**One latent bug fixed on the way in.** `scripts/lib/mirror-r2.sh` now passes `--s3-no-check-bucket`
+on every rclone call. rclone issues a `CreateBucket` before its first upload to a bucket it has not
+already seen succeed, and R2 answers **403 AccessDenied** for any Object Read & Write token — which is
+every token we use, correctly so. It only bites an *empty* bucket, which is why four mirrors worked
+and this surfaced on the fifth. **`skating-raw-wind-climate` is also empty** and would have hit the
+same wall on its first push.
 
 ---
 

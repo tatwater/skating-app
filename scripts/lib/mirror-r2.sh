@@ -25,8 +25,22 @@ REMOTE="$RCLONE_REMOTE:$RAW_BUCKET"
 
 command -v rclone >/dev/null || { echo "rclone not found — brew install rclone" >&2; exit 1; }
 
+#
+# `--s3-no-check-bucket` is required, not a tuning knob.
+#
+# rclone's S3 backend issues a `CreateBucket` before its first upload to a bucket it has not seen
+# succeed in this process. R2 answers that with **403 AccessDenied** for any Object Read & Write
+# token — which is every token we use, and correctly so: a backup mirror has no business being able
+# to create buckets. The failure is doubly misleading because it names `CreateBucket` on a bucket
+# that plainly exists and that `rclone ls` just listed without complaint.
+#
+# It only bites an EMPTY bucket, which is why four mirrors have worked and this was found on the
+# fifth. `skating-raw-wind-climate` is empty too and would have hit it on its first push.
+#
+RCLONE_FLAGS=(--s3-no-check-bucket)
+
 preflight() {
-  if ! rclone lsjson "$REMOTE" --max-depth 1 >/dev/null 2>&1; then
+  if ! rclone lsjson "${RCLONE_FLAGS[@]}" "$REMOTE" --max-depth 1 >/dev/null 2>&1; then
     cat >&2 <<MSG
 ✗ Can't reach $REMOTE.
 
@@ -66,7 +80,7 @@ record_run() {
 
   [ "$rc" -eq 0 ] || { status="failed"; error="\"rclone exited $rc\""; }
 
-  if remote_json=$(rclone size "$REMOTE" --json 2>/dev/null); then
+  if remote_json=$(rclone size "${RCLONE_FLAGS[@]}" "$REMOTE" --json 2>/dev/null); then
     objects=$(printf '%s' "$remote_json" | sed -n 's/.*"count":\([0-9]*\).*/\1/p')
     bytes=$(printf '%s' "$remote_json" | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')
   fi
@@ -109,10 +123,10 @@ mirror_main() {
       started_at=$(date +%s)000
       if [ -n "$key" ]; then
         echo "→ pushing $ARCHIVE_LABEL/$key to $REMOTE/$key"
-        rclone copy "$ARCHIVE_DIR/$key" "$REMOTE/$key" --progress || rc=$?
+        rclone copy "${RCLONE_FLAGS[@]}" "$ARCHIVE_DIR/$key" "$REMOTE/$key" --progress || rc=$?
       else
         echo "→ pushing the $ARCHIVE_LABEL archive to $REMOTE"
-        rclone copy "$ARCHIVE_DIR" "$REMOTE" --progress || rc=$?
+        rclone copy "${RCLONE_FLAGS[@]}" "$ARCHIVE_DIR" "$REMOTE" --progress || rc=$?
       fi
       # File the receipt (N6c F2). The push is the step that makes an archive durable, and "when did
       # we last mirror this, and did it work" had no answer outside whoever ran it. `|| rc=$?` above
@@ -126,10 +140,10 @@ mirror_main() {
       mkdir -p "$ARCHIVE_DIR"
       if [ -n "$key" ]; then
         echo "← pulling $ARCHIVE_LABEL/$key from $REMOTE/$key"
-        rclone copy "$REMOTE/$key" "$ARCHIVE_DIR/$key" --progress
+        rclone copy "${RCLONE_FLAGS[@]}" "$REMOTE/$key" "$ARCHIVE_DIR/$key" --progress
       else
         echo "← pulling the $ARCHIVE_LABEL archive from $REMOTE"
-        rclone copy "$REMOTE" "$ARCHIVE_DIR" --progress
+        rclone copy "${RCLONE_FLAGS[@]}" "$REMOTE" "$ARCHIVE_DIR" --progress
       fi
       ;;
     status)
@@ -138,7 +152,7 @@ mirror_main() {
       if [ -d "$ARCHIVE_DIR" ]; then du -sh "$ARCHIVE_DIR"/* 2>/dev/null || echo "  (empty)"; else echo "  (missing)"; fi
       echo
       echo "remote   $REMOTE"
-      rclone size "$REMOTE" 2>/dev/null || echo "  (not reachable — run push for setup instructions)"
+      rclone size "${RCLONE_FLAGS[@]}" "$REMOTE" 2>/dev/null || echo "  (not reachable — run push for setup instructions)"
       ;;
     *)
       echo "usage: $(basename "$0") push|pull|status [<key>]" >&2

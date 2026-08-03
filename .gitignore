@@ -28,6 +28,10 @@ web-build/
 .env
 .env.*
 !.env.example
+# A package with two archives needs two mirror configs (scripts/etl: OSM and NHD), so the template
+# for the second one has to be spelled out — `.env.*` swallows anything that is not literally
+# `.env.example`, which is how a committed template silently goes missing.
+!.env.*.example
 
 # Logs
 *.log

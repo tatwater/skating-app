@@ -15,6 +15,7 @@ export default defineConfig({
         'src/**/*.test.ts',
         'src/cli.ts',
         'src/fetchExtract.ts',
+        'src/fetchNhd.ts',
         'src/load.ts',
         'src/loadDepths.ts',
         'src/pruneFloor.ts',
