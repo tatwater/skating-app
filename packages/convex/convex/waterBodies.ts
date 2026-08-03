@@ -446,6 +446,96 @@ export const importCanonical = internalMutation({
  * bytes long before document count, and one page containing Lake Champlain carries ~0.3 MiB in a
  * single row.
  */
+/**
+ * Count the corpus, one page at a time — **the campaign baseline** (N7).
+ *
+ * Every "how much did this add" claim in the N7 plan is measured against the post-prune corpus size,
+ * and that number has been quoted as *"~21,000"* with a note that it is unconfirmed. There was no
+ * cheap way to establish it: a one-off query cannot scan ~21,000 rows inside Convex's 16 MB read cap
+ * (a body averages 1.8 KB and the large ones are far bigger), and no counting function existed.
+ *
+ * So this is paged and resumable, in the same shape as `backfillCatalogueIds` — hand back the cursor
+ * and the running totals, call it until `isDone`. It is a **query**, so it writes nothing and can be
+ * run against a live corpus mid-campaign without interfering.
+ *
+ * **It counts the fields the campaign actually reasons about**, not just rows: how many bodies carry
+ * each catalogue id (so the reconciliation's progress is visible), how many are listed, and the
+ * per-state split (so a regional claim can be checked).
+ *
+ * **Contour coverage is deliberately absent.** It lives in the `contourCoverage` side table rather
+ * than on the body — a property of the tileset, not of the lake — so counting it here would mean a
+ * second scan inside a function whose whole job is to walk `waterBodies` once. Ask that table.
+ */
+export const corpusStats = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    running: v.optional(v.any()),
+  },
+  handler: async (ctx, { cursor, batchSize, running }) => {
+    // 200 keeps a page well inside the byte cap even where the corpus is all Champlain-sized
+    // polygons — the N6c depth loader blew 16 MB at a batch of 25 by not thinking about this.
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    const prior = (running ?? {}) as {
+      total?: number;
+      listed?: number;
+      withOsmId?: number;
+      withNhdId?: number;
+      withGeometrySource?: number;
+      withDepth?: number;
+      withElevation?: number;
+      withWindRose?: number;
+      byState?: Record<string, number>;
+      byType?: Record<string, number>;
+    };
+    const byState: Record<string, number> = { ...(prior.byState ?? {}) };
+    const byType: Record<string, number> = { ...(prior.byType ?? {}) };
+    let total = prior.total ?? 0;
+    let listed = prior.listed ?? 0;
+    let withOsmId = prior.withOsmId ?? 0;
+    let withNhdId = prior.withNhdId ?? 0;
+    let withGeometrySource = prior.withGeometrySource ?? 0;
+    let withDepth = prior.withDepth ?? 0;
+    let withElevation = prior.withElevation ?? 0;
+    let withWindRose = prior.withWindRose ?? 0;
+
+    for (const body of page.page) {
+      total++;
+      if (isListed(body)) listed++;
+      if (body.osmId) withOsmId++;
+      if (body.nhdId) withNhdId++;
+      if (body.geometrySource) withGeometrySource++;
+      if (body.maxDepthM !== undefined || body.meanDepthM !== undefined) withDepth++;
+      if (body.elevationM !== undefined) withElevation++;
+      if (body.windRose) withWindRose++;
+      byType[body.type] = (byType[body.type] ?? 0) + 1;
+      // A border-spanning body counts once per state it touches, so these sum above `total` — which
+      // is correct and is why they are reported separately rather than as a partition.
+      for (const state of body.states ?? []) byState[state] = (byState[state] ?? 0) + 1;
+    }
+
+    return {
+      running: {
+        total,
+        listed,
+        withOsmId,
+        withNhdId,
+        withGeometrySource,
+        withDepth,
+        withElevation,
+        withWindRose,
+        byState,
+        byType,
+      },
+      scanned: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
 export const backfillCatalogueIds = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {

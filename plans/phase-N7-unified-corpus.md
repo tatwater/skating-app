@@ -72,10 +72,61 @@ found so far, all by measuring rather than by reading docs:
 | CRS | NHD HR is **NAD83 (EPSG:4269)**; 3DHP staged is **NAD83(2011)/Conus Albers (EPSG:5070)**, a metre grid | `ogr2ogr -spat` reads its envelope in the *source* SRS — a degrees box against Albers selects ocean and the clip "succeeds" empty |
 
 **The pattern is the finding.** In each case the wrong rule produced *silence*, not an error: an empty
-join, a missing id, an empty clip. **Normalize in one place, derive the rule from a census rather than
-from one example, and assert it with real ids from the archive.** `normalizeNhdId` was written from a
-single observed GUID and was wrong about the majority case; that is recorded in its docstring rather
-than quietly fixed.
+join, a missing id, an empty clip.
+
+### ✅ Fixed as a mechanism, not as four fixes (2026-08-03)
+
+`@skating/run-log` gained a **`DropLedger`**. A normalizer now returns a **reason** instead of
+`undefined`; the ledger tallies each reason with a bounded sample of the offending raw values; and
+**`expectAcceptance` throws** when a rule drops more than its census says it should. A warning inside a
+twenty-minute ETL log is indistinguishable from silence — an exception is not, and it carries the
+breakdown and the samples, so it is the diagnosis rather than the start of one.
+
+Reasons are three separate facts because they mean three different things. **`absent` is normal**
+(71.7% of NHD's post-floor rows carry no GNIS id). **`sentinel` is healthy data** the publisher wrote
+deliberately. **Only `malformed` indicts the rule**, and only it counts against the floor.
+
+> **That last distinction was found by the mechanism catching itself.** The floor first excluded only
+> `absent`, and the very first real audit run failed at 93.1% — entirely because 1,032
+> correctly-identified sentinels were being scored as parse failures. The semantics were fixed rather
+> than the number lowered, because a floor that cries wolf gets ignored, which is exactly what this
+> exists to prevent.
+
+**The sentinel deserves naming on its own.** NHD writes `gnis_id = -1` on **1,032 post-floor rows
+across four states** — cross-border Québec lakes (`Lac des Ours`, `Étang Payeur`, `Lac Coulombe`) with
+no US GNIS entry. Treating it as an identifier would **collapse 855 unrelated lakes onto one body**.
+Before the census it was rejected only as a side effect of the minus sign failing a digits test: the
+right answer reached by accident, uncounted, and one refactor from catastrophe.
+
+**And `pnpm --filter @skating/etl audit-archives` re-derives every rule from the archives** and asserts
+it against the census stored beside it (`NHD_ID_CENSUS`, `GNIS_ID_CENSUS` — data, not prose, so next
+year's release is checked against this year's rather than against memory).
+
+---
+
+## The archives are audited and clean (2026-08-03)
+
+`audit-archives`, run against all five NHD states plus the 3DHP clip:
+
+```
+nhdId    53,130 / 53,130 accepted          ← the rule now covers 100% of the archive
+gnisId   13,991 accepted · 38,107 absent · 1,032 sentinel · 0 malformed
+distinct nhdIds                    40,928  from 53,130 rows
+duplicated across state files        9,792  ← the known overlap, expected
+duplicated within a single file          0  ← would be a real conflict
+shared ids whose areas DISAGREE          0  ← so dedup is lossless, not a coin flip
+3DHP   274,994 rows / 274,994 distinct id3dhp    ← clean primary key
+GNIS   10,984 distinct · 92 resolve to >1 body (0.8%)
+```
+
+**No duplicates, no conflicts, no format surprises.** The 9,792 cross-file repeats are the state
+geodatabases' known overlap and every copy agrees on area to six decimals, which is what makes
+deduping on `permanent_identifier` safe. The 92 fan-out GNIS ids are the split-lake case, and they are
+the measured reason GNIS proposes while `polygonIoU` decides.
+
+---
+
+### The rule that started it, kept for the record
 
 **9. Beau Lake checks out.** Queried live 2026-08-03: `PERMANENT_IDENTIFIER
 {85383A01-DC89-47AA-BC5D-BE373FB0B5C3}`, `AREASQKM 7.594` = **1,876.6 ac** against Maine's published
@@ -357,9 +408,34 @@ span two features where a catalogue splits a lake. It proposes; `polygonIoU` adj
 > matches **nothing**, because `centroid` is Turf `pointOnFeature` and lands on the shoreline of any
 > large irregular lake (D85 amendment). Both failures are silent.
 
-### The unsolved half: what is the upsert key?
+### The upsert key — ✅ **solved and tested**, `@skating/core/bodyIdentity.ts` (2026-08-03)
 
-**Flagged at kickoff, because the plan as written skips it and it is the hardest part of D93.**
+**Flagged at kickoff as the hardest unsolved part of D93; now pure, tested logic rather than a plan.**
+`resolveUpsert` takes the incoming feature's ids and what each one resolved to, and returns one of
+four verdicts. The caller does the index reads; this makes the decision, which is what lets the
+dangerous cases be tested exhaustively without a database.
+
+| incoming matches | verdict | why |
+| --- | --- | --- |
+| nothing | `insert` | a lake we have never seen |
+| one row, by one or more ids | `patch` | the normal case — in place, `_id` never moves |
+| two ids → two **different** rows | `merge` | reconciliation missed a duplicate; never create a third |
+| one id → two rows | `conflict` | the corpus already violates uniqueness; refuse to guess |
+
+`requiresReview` gates the last two into the existing dedup queue rather than letting them run
+unattended: an automatic merge that is wrong is unrecoverable in a way a queued one is not, and the
+measured frequency says queueing is affordable.
+
+**`gnisId` is deliberately not an upsert key.** It is the best *candidate generator* we have, but GNIS
+names **places** and a catalogue may split one place into several features — **92 GNIS ids resolve to
+more than one NHD body** (measured). Upserting on it would merge those lakes.
+
+**One bug the tests caught before it shipped:** the default survivor rule read the first match in the
+*caller's* array, not the first in `CATALOGUE_ID_FIELDS` order. Which row survived a merge would have
+depended on the shape of someone else's lookup code — nondeterministic, and untraceable, because both
+orderings look correct at the call site. Now ranked explicitly.
+
+### The problem it was solving, kept for the record
 
 `externalId` does three jobs today, and D93 names all three but only re-homes two. Identity moves to
 `waterBodyKey` and the tile stamp moves with the rebuild — but the **upsert key**, the thing an import
@@ -999,6 +1075,26 @@ confluence, catchment outlet), which may already carry what an inlet needs witho
 **Measure that before committing to "known inlet" in any copy** — shipping the phrase and then finding
 we can only populate outlets would be the coverage-gap problem all over again.
 
+> ### 📌 Note for whoever wants inlets later
+>
+> **Postponed deliberately (founder, 2026-08-03), not forgotten.** Ship outlets first; add inlets when
+> someone wants them. This is where to start:
+>
+> 1. **Try `network` first — it is already free.** `3DHP_all/MapServer/30`, 48,550 points in our
+>    envelope, types `Headwater · Terminus · Divergence · Confluence · Catchment Outlet`. If
+>    `Terminus` or `Confluence` reliably lands where a stream meets a lake, that is an inlet and costs
+>    nothing beyond a REST query. **Nobody has checked whether it does.**
+> 2. **Only if that fails, reach for `flowline`.** An inlet is properly *a flowline whose downstream
+>    end meets a waterbody*, which needs the largest feature class in 3DHP — and D102's clip keeps
+>    only `waterbody`, so it means re-downloading the 11.9 GB CONUS geodatabase. The source manifest
+>    (`.raw-3dhp/source/manifest.json`) retains the URL and sha256 precisely so that re-fetch is
+>    verifiable rather than a fresh guess.
+> 3. **Whichever route, the vocabulary rule from D103 still binds**: "known inlet", never "inlet".
+>    Coverage will be partial for inlets in exactly the way it is for outlets.
+>
+> The cheapest moment to do (2) is **during a yearly refresh**, when the 11.9 GB is already coming
+> down for the annual clip — adding a second layer to that pass costs disk, not a download.
+
 ---
 
 ## D104 — Elevation from 3DEP, and the recurring cost is near zero ✅ **APPROVED**
@@ -1091,12 +1187,30 @@ which D92's unified corpus should absorb. Re-measure after step 5.
 state's 215.1. One-to-many disagreements are not fixable by any id scheme and will need a rule or a
 human; quantify them during the bake-off rather than meeting them in production.
 
-**The exact post-prune corpus count is unconfirmed.** ~21,000 is the founder's figure and D91
-predicted 21,660 of 123,940. Establish it precisely at kickoff; every "how much did this add"
-statement in this phase is measured against it. **There is no cheap way to ask right now** — no
-corpus-count function exists, and a one-off query cannot scan ~21,000 rows inside Convex's 16 MB read
-cap. The first deliverable of the campaign is a paged internal counter, which the audit pass (D97)
-needs anyway.
+**✅ The campaign baseline is now measured: 21,665 bodies** (`waterBodies:corpusStats`, paged,
+2026-08-03). **D91 predicted 21,660 of 123,940 — the floor landed within five rows of its own
+forecast.** Every "how much did this add" statement in this phase is measured against this number.
+
+| | | | |
+| --- | --- | --- | --- |
+| total | **21,665** | listed | 21,665 |
+| `osmId` | **0** | `nhdId` | **0** |
+| `geometrySource` | **0** | wind rose | **0** |
+| depth | 5,937 (27%) | elevation | 6,791 (31%) |
+
+**by type** — `other` **10,033 (46%)** · marsh 3,854 · pond 3,756 · reservoir 2,393 · lake 1,376 ·
+bay 253
+**by state** — NY 8,142 · MA 5,130 · ME 4,726 · NH 2,486 · VT 1,282 *(border bodies count in each,
+so these sum above the total)*
+
+Three things this measurement settles that were assumptions:
+
+- **The identity fields really are unbackfilled** — zero rows carry `osmId`, `nhdId` or
+  `geometrySource`. `backfillCatalogueIds` has never run, exactly as the header claims.
+- **Wind climate is at zero**, not ~2%. The N6c pass wrote nothing before it was stopped.
+- **`other` is the largest class in the corpus at 46%** — water OSM's classifier could not identify.
+  That is a bigger unknown than the wetland question D96 has been agonising over, and nothing in this
+  plan has looked at it. Worth a pass before the bake-off treats classification as settled.
 
 **The N6c campaign's own passes are unfinished and this campaign subsumes them.** Elevation stopped at
 5,975 of ~11,000 on quota (now D101's problem); wind stopped at ~2% deliberately; `regionStats` never
