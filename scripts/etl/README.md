@@ -147,18 +147,6 @@ comes down.
 Survey, National Hydrography Dataset"* — is courtesy rather than obligation, and is recorded in every
 manifest so it is not an oversight.
 
-### Watching the base map get re-surveyed
-
-`workunitid` is 3DHP's **own provenance label**: the literal string `NHD` where a feature was
-inherited from the retired dataset, an EDH work-unit id where it was traced from LiDAR. `measure-3dhp`
-tallies that and files it as a `catalogue_edh_coverage` snapshot, rendered on `/admin`.
-
-As of **2026-08-03** the FY26 archive reads **0 of 274,994** — nothing in our five states has been
-re-surveyed yet. The live service already reads **1,590 of 356,980 (0.445%)**, all of it in western
-Massachusetts (Pontoosuc, Onota, Stockbridge Bowl, Goose Pond, Cobble Mountain Reservoir). **That gap
-is what the annual cadence costs**, measured rather than assumed, and both numbers land in one row so
-the chart can draw the lag as its own line.
-
 ### Reading a geodatabase
 
 `ogr2ogr` opens the zip directly; no unpacking needed.
@@ -254,6 +242,26 @@ The clip envelope (`NORTHEAST_CLIP`) is deliberately **wider** than the OSM lane
 one keeps the downstate metro out of a *corpus*; this is an *acquisition* boundary, and clipping a
 border lake in half here is unrecoverable without re-downloading 11.9 GB. The floor and the classifier
 narrow later, where redoing it is cheap.
+
+**Measured against NHD over 7,878 lakes in ME/VT/NY (2026-08-03): zero disagreements at or above
+0.1%.** In our five states 3DHP *is* NHD, republished. That is why D92's bake-off is two-way and why
+this lane's real job is the coverage watch below.
+
+### Watching the base map get re-surveyed
+
+`workunitid` is 3DHP's **own provenance label**: the literal string `NHD` where a feature was
+inherited from the retired dataset, an EDH work-unit id where it was traced from LiDAR. So the
+measurement is USGS's claim, not our inference — which matters, because the alternative was diffing
+3DHP's areas against NHD's and calling a divergence a new survey, a proxy that needs both archives and
+cannot tell a re-trace from a typo fix.
+
+`measure-3dhp` tallies it and files a `catalogue_edh_coverage` snapshot, plotted on `/admin`.
+
+As of **2026-08-03** the FY26 archive reads **0 of 274,994** — nothing in our five states has been
+re-surveyed yet. The live service already reads **1,590 of 356,980 (0.445%)**, all of it in western
+Massachusetts (Pontoosuc, Onota, Stockbridge Bowl, Goose Pond, Cobble Mountain Reservoir). **That gap
+is what the annual cadence costs**, measured rather than assumed, and both numbers land in one row so
+the chart can draw the lag as its own line.
 
 ---
 
