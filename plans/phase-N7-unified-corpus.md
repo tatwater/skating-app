@@ -489,6 +489,36 @@ confirmed against VT/MA/NY and against what OSM's `wetland=marsh` acceptance act
 **Estuary (493) is a non-issue at this scale** — 83 post-floor in Maine, 10 in New Hampshire. Decide
 it on principle rather than on volume.
 
+### The wetland call, deferred on purpose (founder, 2026-08-03)
+
+**Default: keep them.** *"So we're talking about wetlands larger than 5 acres without names? I might
+let that become a moderation problem in the future rather than dropping them now."*
+
+**And the size data supports that more strongly than the moderation argument does.** Measured
+2026-08-03 — NHD New Hampshire's 4,089 unnamed post-floor SwampMarsh features band as 3,208 at
+5–25 ac (78%), 502 at 25–50, 229 at 50–100 and 150 above 100 (largest 1,108 ac). The corpus's own
+unnamed OSM marsh (534 in a 3,000-row sample; **zero below five acres, so the prune worked**) has a
+median of 14.2 ac — and a **long axis with a median of 552 m, a p90 of 1,355 m and a maximum of
+6,108 m**.
+
+That last figure is the argument. D91 settled that *"area is the wrong axis"*: Keiser Pond is 36 acres
+and 909 m long, *"a 1.8 km out-and-back, better skating than a round 30-acre pond 390 m across."*
+**10% of these unnamed marshes are longer than Keiser Pond**, and some run 6 km. Linear bog and marsh
+channels are plausibly skateable in a way that "unnamed 14-acre wetland" does not convey. Keeping them
+is consistent with reasoning already committed to, not merely a deferral.
+
+**The one measurement that would reverse this is not available yet, and is free at step 2.** What
+matters is not how many wetlands NHD has but how many are **new** — the same bogs are very likely in
+both catalogues, and reconciliation collapses them onto one row. If the increment is small, admitting
+NHD 466 costs almost nothing. If it is large, five states of this is on the order of a **50% corpus
+expansion in unnamed wetland**, which lands on read-path cost, tile size, the D2 prominence deciles,
+and every metered pass in D100's table.
+
+**So D96's wetland half stays open until reconciliation reports the increment.** Keep-them is the
+standing default; revisit only on that number. The naming gradient stays recorded as the lever that
+exists if it is ever wanted — it is a one-line change on both sides, and the two catalogues agree by
+construction under it.
+
 ### Three traps in the geodatabase itself
 
 1. **Field names are lower-case in the GDB** (`permanent_identifier`, `gnis_name`, `areasqkm`,

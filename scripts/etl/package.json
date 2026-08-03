@@ -13,7 +13,8 @@
     "load-depths": "tsx src/loadDepths.ts",
     "prune-floor": "tsx src/pruneFloor.ts",
     "archive": "tsx src/fetchExtract.ts",
-    "archive-nhd": "tsx src/fetchNhd.ts"
+    "archive-nhd": "tsx src/fetchNhd.ts",
+    "archive-3dhp": "tsx src/fetch3dhp.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

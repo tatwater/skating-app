@@ -20,3 +20,8 @@
 
 # NHD mirror config (holds no secrets, but stays local).
 .env.nhd.local
+
+# The 3DHP archive (N7). `source/` holds an 11.9 GB CONUS download that is deliberately NOT mirrored
+# and is deleted after a successful clip; `waterbody/` holds the Northeast clip that IS mirrored.
+.raw-3dhp/
+.env.3dhp.local

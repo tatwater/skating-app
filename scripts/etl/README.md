@@ -185,6 +185,103 @@ manifest each). Every state verified on both checks: exact byte count, and the f
 
 ---
 
+## Pinning the 3DHP snapshot (N7)
+
+The third canonical-water catalogue, and **the only one of the three with a future**. NHD was retired;
+3DHP is its successor — elevation-derived hydrography where LiDAR exists, NHD elsewhere — published as
+an annual staged release with quarterly service updates.
+
+```bash
+pnpm --filter @skating/etl archive-3dhp                # download CONUS, clip, archive, delete source
+pnpm --filter @skating/etl archive-3dhp --keep-source  # keep the 11.9 GB (rarely wanted)
+pnpm --filter @skating/etl archive-3dhp --clip-only    # source already on disk; just re-clip
+scripts/etl/mirror-3dhp-r2.sh push
+```
+
+### Why this one archives a derivative
+
+**It is the single break from the byte-faithful rule in this repo, and the reason is scale.** 3DHP has
+**no per-state and no per-HU4 staging** — it ships CONUS-wide as one **11.9 GB** geodatabase (FY26),
+holding flowlines, catchments and hydrolocations for the entire country, from which we want the
+`waterbody` feature class for five states: on the order of 300 MB.
+
+Mirroring the whole thing would grow R2 by **~12 GB per annual release** in data nothing reads. For a
+yearly cadence that is not a storage question, it is a design error — so:
+
+| | kept | mirrored |
+| --- | --- | --- |
+| `.raw-3dhp/source/` — the 11.9 GB download | **deleted after a successful clip** | never |
+| `.raw-3dhp/source/manifest.json` | yes | never |
+| `.raw-3dhp/waterbody/` — the Northeast clip | yes | **yes** (`skating-raw-3dhp`) |
+
+**What stands in for byte-faithfulness:** the source manifest records the URL, the byte count, the
+publisher's `Last-Modified` and **our sha256 of the full 11.9 GB**, and the clip manifest records that
+sha256 plus **the literal `ogr2ogr` command**. Re-deriving the clip needs the download again;
+re-deriving anything *downstream* of the clip does not — and that is the property the archive
+discipline exists to protect.
+
+A source manifest sitting next to no payload is therefore the **normal** post-run state, not a broken
+archive. The manifest says so in its own `retention` field, because whoever finds it next shouldn't
+have to infer that.
+
+### What 3DHP can and cannot be
+
+**It cannot be the identity spine.** Its waterbody layer carries `id3dhp`, `mainstemid` and `gnisid` —
+and **no `Permanent_Identifier`, no `ReachCode`**. Every reconciliation measurement in the N7 plan
+keys on `Permanent_Identifier`, including the five OSM duplicate pairs and the Maine MIDAS linkage. If
+3DHP wins D92 on geometry, it wins as a `geometrySource` value on a record whose identity is still
+OSM ↔ NHD.
+
+**And a 3DHP polygon identical to its NHD counterpart is expected, not a bug** — 3DHP falls back to
+NHD wherever elevation-derived hydrography does not yet exist. The bake-off must report how often that
+happens, or it claims a three-way comparison it did not make.
+
+The clip envelope (`NORTHEAST_CLIP`) is deliberately **wider** than the OSM lane's New York clip. That
+one keeps the downstate metro out of a *corpus*; this is an *acquisition* boundary, and clipping a
+border lake in half here is unrecoverable without re-downloading 11.9 GB. The floor and the classifier
+narrow later, where redoing it is cheap.
+
+---
+
+## The annual refresh runbook
+
+**Two of the three catalogues refresh; one cannot.**
+
+| catalogue | cadence | why |
+| --- | --- | --- |
+| **OSM** (`archive`) | any time — Geofabrik rebuilds daily | live, continuously edited |
+| **3DHP** (`archive-3dhp`) | **annually**, early in the federal fiscal year | new staged release, more EDH each year |
+| **NHD** (`archive-nhd`) | **never** | retired 2023-10-01; the 2023-12-27 snapshot is terminal |
+
+**That asymmetry compounds, and D92's bake-off has to weigh it:** every year that passes, NHD's
+outlines age by a year and 3DHP's do not. A conclusion that "NHD draws the better lake" is a statement
+about 2023 with a shelf life; one about OSM or 3DHP is not.
+
+### Yearly, when USGS publishes the new staged release
+
+1. **Check for it.** `https://prd-tnm.s3.amazonaws.com/?list-type=2&prefix=StagedProducts/Hydrography/3DHP/Annual/GDB/&delimiter=/`
+   lists the release directories. A new `FY<nn>_CONUS_<date>` is the signal.
+2. **Add it to `THREE_DHP_RELEASES` in `src/threeDhpArchive.ts`, at the head.** Take
+   `expectedBytes` and `publishedAt` from the bucket listing. **Add, never replace** — the point of
+   the yearly cadence is being able to say what changed, which needs last year's entry to still be
+   there. There is a test asserting exactly this.
+3. `pnpm --filter @skating/etl archive-3dhp` — downloads (~50 min at 6 MB/s), clips, archives, and
+   deletes the 11.9 GB.
+4. `pnpm --filter @skating/etl archive --refresh` — a fresh OSM extract for the same run.
+5. `scripts/etl/mirror-3dhp-r2.sh push` and `scripts/etl/mirror-r2.sh push`.
+6. Re-run the campaign from step 2 of the N7 order (reconcile → bake-off → import → prune → the
+   downstream passes). **Nothing metered runs before the prune** — D100.
+7. Append to the run tables below, and re-record the D92 bake-off result. If the geometry winner
+   changed, that is a `geometrySource` update per lake, not a re-key: D93 exists so this is a field
+   and not a migration.
+
+**Budget it.** Each year's 3DHP clip is ~300 MB in `skating-raw-3dhp` and each OSM refresh replaces
+~960 MB in `skating-raw-lake-osm`. Five years of 3DHP clips still fits the 10 GB free tier; if that
+ever tightens, drop the oldest clips rather than the manifests — the manifests are what make a clip
+re-derivable, and they are kilobytes.
+
+---
+
 ## Running the pipeline
 
 > **The short version, for a normal re-import:**
