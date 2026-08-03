@@ -3,7 +3,8 @@
  *
  *   pnpm --filter @skating/etl reconcile --export     # corpus + NHD geometry → .scratch/ (once)
  *   pnpm --filter @skating/etl reconcile --match      # score + decide, offline (many times)
- *   pnpm --filter @skating/etl reconcile              # both
+ *   pnpm --filter @skating/etl reconcile --audit      # check the mapping before anything writes
+ *   pnpm --filter @skating/etl reconcile              # all three
  *
  * ## Fetch once, derive many — the same split the archives use
  *
@@ -34,7 +35,9 @@ import {
   type BBox,
   findCollapsedDuplicates,
   polygonBBox,
+  polygonIoU,
   type ReconcileCandidate,
+  type ReconcileOutcome,
   reconcileOne,
 } from '@skating/core';
 import {
@@ -315,10 +318,102 @@ async function match(logger: RunLogger): Promise<void> {
   logger.count('duplicatePairsCollapsed', dupes.length);
 }
 
+/**
+ * Audit the mapping before anything is written — **the checks that were run by hand once**.
+ *
+ * They found nothing wrong, which is exactly why they belong in a command: a hand-run check that
+ * passes is indistinguishable from a check nobody ran, and next year nobody will remember to do it.
+ *
+ * Three questions, each with a failure mode worth stopping for:
+ *
+ * 1. **Is a collapsed group a real duplicate, or a false merge?** Two of our bodies landing on one
+ *    NHD feature is the phase's headline win — but only if they are the same lake. There is a proof
+ *    that they must be: to both clear 0.5 IoU against one candidate, each must cover more than half
+ *    of it, so they must overlap each other. **This asserts the proof against the data anyway**,
+ *    because a proof about one's own code is worth checking, and because lowering `minIou` below 0.5
+ *    would quietly invalidate it.
+ * 2. **How much of NHD did nothing claim?** The unclaimed-and-named set is the gap-fill opportunity
+ *    step 5 exists to close, and it is the number that says whether the phase is worth its cost.
+ * 3. **Does every match have a plausible area ratio?** A high IoU already implies it, so a violation
+ *    would mean the IoU itself is wrong — a canary on the geometry library rather than on the rule.
+ */
+async function audit(logger: RunLogger): Promise<void> {
+  if (!existsSync(OUT_FILE)) throw new Error('no mapping to audit — run --match first');
+
+  const matches: { key: string; name: string; ext: string; id: string }[] = [];
+  await readNdjson<{ key: string; externalId: string; name: string; outcome: ReconcileOutcome }>(
+    OUT_FILE,
+    (r) => {
+      if (r.outcome.verdict === 'matched') {
+        matches.push({ key: r.key, name: r.name, ext: r.externalId, id: r.outcome.id });
+      }
+    },
+  );
+
+  const groups = findCollapsedDuplicates(matches.map((m) => ({ key: m.key, id: m.id })));
+  const needed = new Set(groups.flatMap((g) => g.keys));
+  const polys = new Map<string, Polygon | MultiPolygon>();
+  await readNdjson<{ key: string; polygon: Polygon | MultiPolygon }>(CORPUS_FILE, (b) => {
+    if (needed.has(b.key)) polys.set(b.key, b.polygon);
+  });
+
+  const falseMerges: string[] = [];
+  for (const group of groups) {
+    for (let i = 0; i < group.keys.length; i++) {
+      for (let j = i + 1; j < group.keys.length; j++) {
+        const a = polys.get(group.keys[i] as string);
+        const b = polys.get(group.keys[j] as string);
+        if (a && b && polygonIoU(a, b) <= 0) falseMerges.push(group.id);
+      }
+    }
+  }
+
+  const claimed = new Set(matches.map((m) => m.id));
+  let nhdTotal = 0;
+  let unclaimedNamed = 0;
+  let unclaimed = 0;
+  await readNdjson<{ nhdId: string; name?: string }>(NHD_FILE, (f) => {
+    nhdTotal++;
+    if (claimed.has(f.nhdId)) return;
+    unclaimed++;
+    if (f.name) unclaimedNamed++;
+  });
+
+  log('');
+  log(`collapsed groups              ${groups.length.toLocaleString()}`);
+  log(
+    `  members overlap each other  ${(groups.length - falseMerges.length).toLocaleString()}  ← real duplicates`,
+  );
+  log(
+    `  members DISJOINT            ${falseMerges.length.toLocaleString()}  ← would be a false merge`,
+  );
+  log(`NHD features                  ${nhdTotal.toLocaleString()}`);
+  log(`  claimed by a body           ${claimed.size.toLocaleString()}`);
+  log(
+    `  unclaimed                   ${unclaimed.toLocaleString()}  (named: ${unclaimedNamed.toLocaleString()})  ← the step-5 gap-fill`,
+  );
+
+  logger.count('collapsedGroups', groups.length);
+  logger.count('nhdUnclaimed', unclaimed);
+  logger.count('nhdUnclaimedNamed', unclaimedNamed);
+
+  if (falseMerges.length > 0) {
+    throw new Error(
+      `${falseMerges.length} collapsed group(s) contain DISJOINT bodies — two different lakes were ` +
+        `merged onto one nhdId: ${falseMerges.slice(0, 5).join(', ')}. This cannot happen at ` +
+        'minIou >= 0.5 (each member would have to cover half the candidate), so either the threshold ' +
+        'was lowered or the IoU is wrong.',
+    );
+  }
+  log('✓ mapping audit clean');
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const doExport = args.includes('--export') || !args.includes('--match');
-  const doMatch = args.includes('--match') || !args.includes('--export');
+  const only = args.some((a) => ['--export', '--match', '--audit'].includes(a));
+  const doExport = args.includes('--export') || !only;
+  const doMatch = args.includes('--match') || !only;
+  const doAudit = args.includes('--audit') || !only;
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.split('=')[1];
 
   const logger = new RunLogger({
@@ -338,6 +433,7 @@ async function main(): Promise<void> {
       exportNhd();
     }
     if (doMatch) await match(logger);
+    if (doAudit) await audit(logger);
     logger.succeed();
   } catch (err) {
     logger.fail({
