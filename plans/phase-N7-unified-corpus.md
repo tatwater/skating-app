@@ -8,9 +8,10 @@
 > **Touches:** every ETL package — `scripts/etl`, `scripts/admin-areas`, `scripts/lake-depth`,
 > `scripts/bathymetry`, `scripts/wind-climate` — plus `waterBodies` identity, and every downstream
 > that keys off `externalId`.
-> **Decisions:** **D92–D101**, proposed here, to be logged in [`01-decisions.md`](./01-decisions.md) at
-> build kickoff. D91 is the last one logged. **D95, D100 and D101 are approved** (founder,
+> **Decisions:** **D92–D102**, proposed here, to be logged in [`01-decisions.md`](./01-decisions.md) at
+> build kickoff. D91 is the last one logged. **D95, D100, D101 and D102 are approved** (founder,
 > 2026-08-03), and **D92 was widened to three catalogues** at the same sitting.
+> **Step 1 (NHD acquisition) is ✅ done**, 2026-08-03 — see the acquisition section.
 
 ---
 
@@ -687,9 +688,55 @@ York 920 MB against 397 MB. There is no capability difference for our use.
 each `.zip` is ~29 KB and is the provenance record — publication date, process lineage, the licence
 statement. Archive it with the payload, the way `DepthManifest` archives a data dictionary.
 
-**3DHP is acquired separately and later.** Its downloadable product is on ScienceBase rather than the
-staged-products tree, and it is only needed for the bake-off's third lane — so it must not block the
-NHD acquisition or the corpus build. Resolve its artifact when the bake-off is written.
+### 3DHP, resolved (2026-08-03) — and it forced a design call
+
+**There is no per-state and no per-HU4 staging.** 3DHP ships CONUS-wide as one artifact:
+
+| release | FileGDB | GeoPackage |
+| --- | --- | --- |
+| FY26, published 2026-01-21 | **11.9 GB** | ~22 GB |
+| FY25, published 2025-03-20 | 12.0 GB | 22.4 GB |
+
+`https://prd-tnm.s3.amazonaws.com/StagedProducts/Hydrography/3DHP/Annual/GDB/3dhp_all_GDB_FY26_CONUS_20260112/3dhp_all_CONUS_20260112_GDB.zip`
+
+That is flowlines, catchments and hydrolocations for the entire country, to extract a **~300 MB**
+waterbody clip for five states. The REST alternative holds **325,404 waterbodies** across our
+five-state bbox, but `3DHP_all/MapServer/60` does not advertise `supportsPagination` and caps at
+2,500 records, so it would be 130+ tiled requests — exactly the volume this section's own rule warns
+against.
+
+**Decision: download CONUS, clip locally, mirror the clip.** Settled by D102's annual cadence — see
+below. Mirroring 11.9 GB would grow R2 by ~12 GB *per release*, which is a design error rather than a
+storage question once the cadence is yearly. **This is the one source in the repo that archives a
+derivative**, and what stands in for byte-faithfulness is the source manifest (URL, byte count, our
+sha256 of the full download) plus the literal `ogr2ogr` command in the clip manifest. Re-deriving the
+clip needs the 11.9 GB again; re-deriving anything *downstream* of it does not.
+
+---
+
+## D102 — The corpus refreshes annually, and only two of the three catalogues can ✅ **APPROVED**
+
+**Approved by the founder, 2026-08-03:** *"Please also document this process so that we can run
+re-imports for OSM and 3DHP every year to keep our maps up to date!"*
+
+| catalogue | cadence | why |
+| --- | --- | --- |
+| **OSM** | any time — Geofabrik rebuilds daily | live, continuously edited |
+| **3DHP** | **annually**, early in the federal fiscal year | new staged release, more EDH each year |
+| **NHD** | **never** | retired 2023-10-01; the 2023-12-27 snapshot is terminal |
+
+**This is not a scheduling note — it changes what D92 is measuring.** The bake-off compares three
+polygons as they stand today. But two of the three sources improve every year and one cannot, so a
+finding that *"NHD draws the better lake"* is a statement about 2023 with a shelf life, while a
+finding about OSM or 3DHP is not. **D92's write-up must state the decay direction alongside the
+result**, and a per-lake `geometrySource` override chosen on 2026 evidence has to be re-checkable when
+the next release lands — which is exactly what D93's field-not-migration design buys.
+
+**The runbook lives in `scripts/etl/README.md` §"The annual refresh runbook"**, not here, because the
+person running it next year will be in the package rather than in a phase plan. It covers: how to spot
+a new staged release, adding it to `THREE_DHP_RELEASES` (**add, never replace** — there is a test
+asserting a predecessor survives, because "what changed this year" needs last year's entry), the two
+fetches, the two mirror pushes, re-running the campaign from step 2, and the storage budget.
 
 ### ✅ Done, 2026-08-03 — step 1 of the campaign
 
@@ -728,8 +775,8 @@ prune"* — and under the order below, nothing does.
 
 ```
  0  wipe the run ledger; open one campaign id                  (D99)
- 1  acquire NHD → .raw/ → R2                                   (no Convex writes)
- 1b acquire 3DHP waterbodies → .raw/ → R2                      (no Convex writes; D92 lane 3)
+ 1  acquire NHD → .raw-nhd/ → R2                        ✅ done (no Convex writes)
+ 1b acquire 3DHP → clip → .raw-3dhp/waterbody/ → R2             (no Convex writes; D92 lane 3)
  2  reconcile OSM ↔ NHD ↔ 3DHP by polygonIoU                   (writes catalogue ids only)
  3  D92 bake-off, containment-passing keys only                (read-only; produces the rule)
  4  mint waterBodyKey; backfill osmId / nhdId / geometrySource (D93)
