@@ -141,6 +141,83 @@ export const THREE_DHP_LICENCE = 'Public domain (USGS · US Government work, 17 
 export const THREE_DHP_ATTRIBUTION = 'U.S. Geological Survey, 3D Hydrography Program';
 
 /**
+ * The value `workunitid` takes when a feature is **not** elevation-derived — it is NHD, republished.
+ *
+ * This is the whole EDH-coverage measurement, and it is a **first-party label rather than our
+ * inference**. Before finding it we were going to detect EDH by comparing 3DHP's areas against NHD's
+ * and calling a divergence a new survey; that proxy would have been noisier, needed both archives,
+ * and could not tell "re-traced from LiDAR" from "someone fixed a typo in the geometry".
+ *
+ * Every other value is an EDH work-unit id, so the rule is a string comparison.
+ */
+export const NHD_FALLBACK_WORK_UNIT = 'NHD';
+
+/**
+ * Whether a 3DHP feature was traced from elevation data rather than inherited from NHD.
+ *
+ * Measured against the FY26 staged release, 2026-08-03: **0 of 274,994** features in our five states.
+ * Nationally, 14,024 of 7,158,943 — **0.196%**.
+ *
+ * A blank or missing `workunitid` is **not** treated as elevation-derived. Unknown provenance must
+ * not inflate a coverage number that exists to be trusted when it finally moves.
+ */
+export function isElevationDerived(workUnitId: string | null | undefined): boolean {
+  if (!workUnitId) return false;
+  const trimmed = workUnitId.trim();
+  return trimmed.length > 0 && trimmed !== NHD_FALLBACK_WORK_UNIT;
+}
+
+/** What one EDH-coverage measurement records. Stored as a `catalogue_edh_coverage` snapshot. */
+export interface EdhCoverage {
+  /** Every water body in the clip, whatever its provenance. */
+  total: number;
+  /** …of which traced from elevation data. */
+  elevationDerived: number;
+  /** …of which republished from NHD. `total - elevationDerived` unless provenance was blank. */
+  nhdFallback: number;
+  /** Blank/absent `workunitid` — counted separately rather than folded into either side. */
+  unknownProvenance: number;
+  /** EDH feature counts by work unit, so a step up is attributable to a place. */
+  workUnits: Record<string, number>;
+  /** `elevationDerived / total`, a fraction rather than a percent (see `rate` in core). */
+  share: number;
+}
+
+/**
+ * Tally provenance over a catalogue's features.
+ *
+ * Pure and streaming-friendly: the caller supplies work-unit ids one at a time so a 275k-row
+ * GeoPackage never has to be materialised.
+ */
+export function summarizeEdhCoverage(
+  workUnitIds: Iterable<string | null | undefined>,
+): EdhCoverage {
+  let total = 0;
+  let elevationDerived = 0;
+  let unknownProvenance = 0;
+  const workUnits: Record<string, number> = {};
+  for (const raw of workUnitIds) {
+    total += 1;
+    const trimmed = raw?.trim() ?? '';
+    if (trimmed.length === 0) {
+      unknownProvenance += 1;
+      continue;
+    }
+    if (trimmed === NHD_FALLBACK_WORK_UNIT) continue;
+    elevationDerived += 1;
+    workUnits[trimmed] = (workUnits[trimmed] ?? 0) + 1;
+  }
+  return {
+    total,
+    elevationDerived,
+    nhdFallback: total - elevationDerived - unknownProvenance,
+    unknownProvenance,
+    workUnits,
+    share: total === 0 ? 0 : elevationDerived / total,
+  };
+}
+
+/**
  * The `ogr2ogr` invocation that turns 11.9 GB of CONUS into the clip we keep.
  *
  * Returned as data rather than run inline so the exact command lands in the manifest and in the run

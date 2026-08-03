@@ -5,7 +5,9 @@ import {
   buildThreeDhpSourceManifest,
   CURRENT_3DHP_RELEASE,
   clipCommand,
+  isElevationDerived,
   NORTHEAST_CLIP,
+  summarizeEdhCoverage,
   THREE_DHP_RELEASES,
   THREE_DHP_SOURCE_LAYER,
   THREE_DHP_WATERBODY_LAYER,
@@ -151,5 +153,61 @@ describe('buildThreeDhpClipManifest', () => {
     expect(m.command).toContain('-spat');
     expect(m.clipBBox).toEqual(NORTHEAST_CLIP);
     expect(m.features).toBe(325_404);
+  });
+});
+
+describe('isElevationDerived', () => {
+  it('reads the first-party provenance label rather than inferring from geometry', () => {
+    // `workunitid` is USGS's own claim. The alternative we nearly built — diffing 3DHP areas against
+    // NHD's and calling a divergence a new survey — needed both archives and could not tell a
+    // re-trace from a typo fix.
+    expect(isElevationDerived('NHD')).toBe(false);
+    expect(isElevationDerived('300285')).toBe(true); // western Massachusetts, live as of 2026-08-03
+    expect(isElevationDerived('19050401')).toBe(true);
+  });
+
+  it('does NOT count unknown provenance as elevation-derived', () => {
+    // A coverage number that exists to be trusted when it finally moves must not be inflated by
+    // blanks.
+    for (const blank of ['', '   ', null, undefined]) {
+      expect(isElevationDerived(blank)).toBe(false);
+    }
+  });
+});
+
+describe('summarizeEdhCoverage', () => {
+  it('reproduces the FY26 five-state measurement: zero, of a lot', () => {
+    const coverage = summarizeEdhCoverage(Array.from({ length: 1000 }, () => 'NHD'));
+    expect(coverage.total).toBe(1000);
+    expect(coverage.elevationDerived).toBe(0);
+    expect(coverage.nhdFallback).toBe(1000);
+    expect(coverage.share).toBe(0);
+    expect(coverage.workUnits).toEqual({});
+  });
+
+  it('attributes a step up to its work unit, so a jump has a place name behind it', () => {
+    const coverage = summarizeEdhCoverage(['NHD', 'NHD', '300285', '300285', '300286']);
+    expect(coverage.elevationDerived).toBe(3);
+    expect(coverage.nhdFallback).toBe(2);
+    expect(coverage.workUnits).toEqual({ '300285': 2, '300286': 1 });
+    expect(coverage.share).toBeCloseTo(0.6);
+  });
+
+  it('keeps unknown provenance out of BOTH sides rather than picking one', () => {
+    const coverage = summarizeEdhCoverage(['NHD', '', null, '300285']);
+    expect(coverage.total).toBe(4);
+    expect(coverage.elevationDerived).toBe(1);
+    expect(coverage.nhdFallback).toBe(1);
+    expect(coverage.unknownProvenance).toBe(2);
+    // The three still account for the whole.
+    expect(coverage.elevationDerived + coverage.nhdFallback + coverage.unknownProvenance).toBe(
+      coverage.total,
+    );
+  });
+
+  it('is a rate, not a percent, and survives an empty catalogue', () => {
+    const empty = summarizeEdhCoverage([]);
+    expect(empty.share).toBe(0); // never NaN on an axis
+    expect(empty.total).toBe(0);
   });
 });

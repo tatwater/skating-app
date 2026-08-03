@@ -18,6 +18,7 @@ export default defineConfig({
         'src/fetch3dhp.ts',
         'src/fetchNhd.ts',
         'src/load.ts',
+        'src/measure3dhp.ts',
         'src/loadDepths.ts',
         'src/pruneFloor.ts',
         'src/types.ts',

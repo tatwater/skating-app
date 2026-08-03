@@ -14,7 +14,8 @@
     "prune-floor": "tsx src/pruneFloor.ts",
     "archive": "tsx src/fetchExtract.ts",
     "archive-nhd": "tsx src/fetchNhd.ts",
-    "archive-3dhp": "tsx src/fetch3dhp.ts"
+    "archive-3dhp": "tsx src/fetch3dhp.ts",
+    "measure-3dhp": "tsx src/measure3dhp.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

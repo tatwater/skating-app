@@ -2,6 +2,7 @@ import { api } from '@skating/convex/api';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { AdminEmpty, AdminPageHeader, StatTile, Table, Td, Th } from '../components/admin/adminUi';
+import { CatalogueCoverage } from '../components/admin/CatalogueCoverage';
 import { ScalarTrend } from '../components/admin/MetricCharts';
 import { useRole } from '../lib/useRole';
 
@@ -93,6 +94,18 @@ function AdminDashboard() {
               height={160}
             />
           </div>
+        </section>
+      ) : null}
+
+      {/* The base map's own provenance (N7). Admin-only for the same reason as the health strip: it
+          reads a metric snapshot. Sits below app health because it moves once a year, not once a day —
+          it is the slowest number on this page and the one with the longest horizon. */}
+      {isAdmin ? (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
+            Base map · elevation-derived hydrography
+          </h2>
+          <CatalogueCoverage />
         </section>
       ) : null}
 
