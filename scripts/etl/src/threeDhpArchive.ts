@@ -112,8 +112,30 @@ export const CURRENT_3DHP_RELEASE: ThreeDhpRelease = (() => {
  */
 export const NORTHEAST_CLIP: readonly [number, number, number, number] = [-80.0, 40.9, -66.8, 47.6];
 
-/** The one feature class we keep. 3DHP's other layers are flowlines, catchments, hydrolocations. */
+/**
+ * The one feature class we keep, **as it is named inside the geodatabase**.
+ *
+ * Not `waterbody`, which is what the REST service calls the equivalent layer and what this constant
+ * said until the first real download proved otherwise. The staged product prefixes every feature
+ * class (`hydro_3dhp_all_catchment`, `…_flowline`, `…_drainagearea`, and this one). 5,747,966
+ * waterbodies nationally; we keep the Northeast.
+ */
+export const THREE_DHP_SOURCE_LAYER = 'hydro_3dhp_all_waterbody';
+
+/** What we rename it to on the way out, so downstream reads one name regardless of the vintage. */
 export const THREE_DHP_WATERBODY_LAYER = 'waterbody';
+
+/**
+ * The CRS the staged product is actually in: **NAD83(2011) / Conus Albers**, a projected metre grid,
+ * not lat/lon.
+ *
+ * This matters more than it looks. `ogr2ogr -spat` interprets its coordinates **in the source
+ * layer's SRS unless told otherwise** — so passing our degrees envelope without `-spat_srs` would
+ * have been read as metres from the Albers origin, selecting a strip of ocean somewhere south of
+ * Texas and returning zero features. A clip that silently returns nothing looks exactly like a
+ * source with no coverage.
+ */
+export const THREE_DHP_SOURCE_SRS = 'EPSG:5070';
 
 export const THREE_DHP_LICENCE = 'Public domain (USGS · US Government work, 17 U.S.C. §105)';
 export const THREE_DHP_ATTRIBUTION = 'U.S. Geological Survey, 3D Hydrography Program';
@@ -125,9 +147,12 @@ export const THREE_DHP_ATTRIBUTION = 'U.S. Geological Survey, 3D Hydrography Pro
  * row. "What did the clip actually do" is the question a derivative archive has to be able to
  * answer, since the bytes no longer answer it themselves.
  *
- * `-t_srs EPSG:4326` and `-dim XY` are explicit for the reason recorded in the N7 plan: NHD and 3DHP
- * both ship compound 3D CRSs, and assuming WGS84 2D is a silent 1–2 m error plus a Z coordinate
- * nothing downstream expects.
+ * Three flags are explicit because each one is a silent failure if omitted:
+ *
+ * - **`-spat_srs`** — `-spat` reads its coordinates in the *source* SRS by default, and this source
+ *   is Albers metres. Without it, a degrees envelope selects nothing and the clip "succeeds" empty.
+ * - **`-t_srs EPSG:4326`** — we store WGS84; the source does not.
+ * - **`-dim XY`** — the source geometry is 3D, and nothing downstream expects a Z.
  */
 export function clipCommand(
   sourceZip: string,
@@ -139,18 +164,20 @@ export function clipCommand(
     'GPKG',
     outPath,
     `/vsizip/${sourceZip}`,
-    THREE_DHP_WATERBODY_LAYER,
+    THREE_DHP_SOURCE_LAYER,
     '-spat',
     String(minLng),
     String(minLat),
     String(maxLng),
     String(maxLat),
+    '-spat_srs',
+    'EPSG:4326',
     '-t_srs',
     'EPSG:4326',
     '-dim',
     'XY',
     '-nln',
-    'waterbody',
+    THREE_DHP_WATERBODY_LAYER,
   ];
   return { bin: 'ogr2ogr', args, line: ['ogr2ogr', ...args].join(' ') };
 }

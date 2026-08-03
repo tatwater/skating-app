@@ -7,6 +7,7 @@ import {
   clipCommand,
   NORTHEAST_CLIP,
   THREE_DHP_RELEASES,
+  THREE_DHP_SOURCE_LAYER,
   THREE_DHP_WATERBODY_LAYER,
 } from './threeDhpArchive';
 
@@ -70,8 +71,18 @@ describe('clipCommand', () => {
     expect(line.startsWith('ogr2ogr ')).toBe(true);
   });
 
-  it('takes only the waterbody layer', () => {
-    expect(cmd).toContain(THREE_DHP_WATERBODY_LAYER);
+  it('reads the geodatabase-internal layer name, and renames it on the way out', () => {
+    // The staged product prefixes every feature class; the REST service does not. This constant
+    // said 'waterbody' until the first real download proved otherwise.
+    expect(THREE_DHP_SOURCE_LAYER).toBe('hydro_3dhp_all_waterbody');
+    expect(cmd).toContain(THREE_DHP_SOURCE_LAYER);
+    expect(cmd[cmd.indexOf('-nln') + 1]).toBe(THREE_DHP_WATERBODY_LAYER);
+  });
+
+  it('declares the -spat SRS, because the source is Albers metres', () => {
+    // Without -spat_srs, ogr2ogr reads the envelope in the SOURCE srs: a degrees box becomes metres
+    // from the Albers origin, selects ocean, and the clip "succeeds" with zero features.
+    expect(cmd[cmd.indexOf('-spat_srs') + 1]).toBe('EPSG:4326');
   });
 
   it('reprojects and flattens explicitly, never by assumption', () => {
