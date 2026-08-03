@@ -346,6 +346,75 @@ export function nearestBodyForPoint<T>(
 }
 
 /**
+ * **Every** candidate covering `point`, largest area first — the resolver for placing a whole
+ * *survey*, as against `nearestBodyForPoint`'s job of placing a single *reading*.
+ *
+ * The two want opposite tie-breaks and that is the whole reason this exists separately. A GPS sample
+ * inside both a bay and its parent lake belongs to the bay: the most specific body is the one the
+ * skater is standing on, so `nearestBodyForPoint` picks smallest-area and is right to. A bathymetric
+ * survey's deepest sounding inside both belongs to the **lake**: the survey covers the whole basin,
+ * and the deepest point of a lake very often falls in one of its bays. Ranking that smallest-first
+ * attributed all 75,416 acres of Moosehead Lake's soundings to North Bay (1,240 acres) — the survey
+ * placed on 1.6% of the water it actually measured, with nothing thrown and nothing logged.
+ *
+ * So this returns the **chain**, not a winner. The caller decides which end of it to take, and can
+ * use the rest: a lake's contours belong to the lake *and* to every bay drawn inside it, because a
+ * skater on the bay is on the lake.
+ *
+ * `bufferMeters` is measured the same way `nearestBodyForPoint` measures it — 0 means "the point must
+ * be inside" — and bodies reached only via the buffer are ordered after every body that truly
+ * contains the point, since containment is a stronger claim than proximity.
+ */
+export function bodiesCoveringPoint<T>(
+  point: LatLng,
+  candidates: readonly BodyCandidate<T>[],
+  bufferMeters: number,
+): { ref: T; surfaceAreaSqM: number; distance: number }[] {
+  const hits: { ref: T; surfaceAreaSqM: number; distance: number }[] = [];
+  for (const c of candidates) {
+    const distance = distanceToPolygonMeters(point, c.polygon);
+    if (distance > bufferMeters) continue;
+    hits.push({ ref: c.ref, surfaceAreaSqM: c.surfaceAreaSqM, distance });
+  }
+  // Containment first (distance 0 sorts ahead of anything reached by the buffer), then largest area.
+  return hits.sort((a, b) => a.distance - b.distance || b.surfaceAreaSqM - a.surfaceAreaSqM);
+}
+
+/**
+ * What share of a survey's own measurements fall inside this polygon — in `[0, 1]`.
+ *
+ * **The test for "is this body the lake that was surveyed?", and it replaced an area comparison that
+ * could not answer the question.** The obvious approach is to measure the survey's footprint and
+ * compare it to the body's area, and it fails on real data in both directions:
+ *
+ * - Soundings are a *sample of the interior*, so any footprint derived from them — a hull, a bbox —
+ *   systematically **under**-states the lake, worst where the survey is sparsest. Spencer Pond's
+ *   soundings hull to 54 m², which made a correct match look like a 1,159× error.
+ * - Some source keys are junk buckets rather than lakes. Two Maine MIDAS ids hold 30% of the state's
+ *   soundings in clouds spanning 348 km, which **over**-states by five orders of magnitude.
+ *
+ * Containment is immune to both, because it never asks how big anything is. A sparse survey of the
+ * right lake is near 1 however few points it has; a survey of the pond next door is near 0 however
+ * many; and a cloud spread over half a state is near 0 against every candidate, which is the correct
+ * answer for a key that is not a lake.
+ *
+ * It also subsumes the bay problem. Moosehead Lake's soundings are ~1 inside Moosehead and ~0.02
+ * inside North Bay, so ranking by containment picks the lake — where ranking by area had to *assume*
+ * bigger-is-righter, and ranking by distance picked the bay.
+ *
+ * Returns 0 for an empty sample, which callers must read as "unknown" rather than "no overlap".
+ */
+export function containedFraction(
+  points: readonly LatLng[],
+  polygon: Polygon | MultiPolygon,
+): number {
+  if (points.length === 0) return 0;
+  let inside = 0;
+  for (const p of points) if (pointInPolygon(p, polygon)) inside += 1;
+  return inside / points.length;
+}
+
+/**
  * A representative point *guaranteed to lie on the water body's surface* (Turf
  * `pointOnFeature`) — the **on-water** point stored as `waterBodies.centroid` (D48).
  *

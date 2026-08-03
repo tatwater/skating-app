@@ -7,6 +7,7 @@ export * from './coalesce';
 export * from './comment';
 export * from './contourLayer';
 export * from './dedup';
+export * from './depthMatch';
 export * from './display';
 export * from './dob';
 export * from './draftQueue';

@@ -26,10 +26,11 @@
 import { createWriteStream, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
-import type { MultiPolygon, Polygon } from 'geojson';
+import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
-import { type Drawn, interpolate, lakeId, publishedContours } from './contour';
-import { contourFeature, stampBodyId } from './feature';
+import { clipDrawnToBody, type Drawn, interpolate, lakeId, publishedContours } from './contour';
+import { contourFeature, type StampBody, stampBodyId } from './feature';
 import { readJoin } from './join';
 import { readAllLakes } from './lakeSources';
 import { measure, preferSurveyedLane, splitByBody } from './lakes';
@@ -61,10 +62,27 @@ async function main(): Promise<void> {
     .map((s) => s.trim().toUpperCase());
   const limit = Number(flag(args, 'limit') ?? Number.POSITIVE_INFINITY);
 
+  const campaignId = flag(args, 'campaign');
   const joined = readJoin();
   if (Object.keys(joined).length === 0) {
     throw new Error('no join cached — run `pnpm --filter @skating/bathymetry join` first');
   }
+
+  const logger = new RunLogger({
+    kind: 'bathymetry_build',
+    label: 'bathymetry build — soundings/contours → drawable isobaths',
+    campaignId,
+    target: resolveDeployment(),
+    call: convexRun,
+    stages: [
+      {
+        name: 'draw',
+        detail:
+          'published contours pass through; soundings are interpolated behind a density gate, because a fit over three points is a drawing, not a survey',
+      },
+    ],
+  });
+  logger.start();
 
   log('reading every archived source…');
   const all = (await readAllLakes()).filter((l) => !states || states.includes(l.state));
@@ -94,6 +112,9 @@ async function main(): Promise<void> {
   let built = 0;
   let features = 0;
   let done = 0;
+  /** Bays that took a share of their lake's contours, and bays that took none. */
+  let nestedBuilt = 0;
+  let nestedEmpty = 0;
 
   for (const lake of lakes) {
     if (built >= limit) break;
@@ -142,20 +163,44 @@ async function main(): Promise<void> {
 
     // The registry is the source of the credit, not the ArchivedLake's copy (which is for logs).
     const agency = sourceByKey(lake.sourceKey)?.agency ?? lake.agency;
-    for (const [i, line] of drawn.lines.entries()) {
-      out.write(
-        `${JSON.stringify(
-          contourFeature({
-            lake,
-            body,
-            agency,
-            coordinates: line,
-            depthFt: drawn.depths[i] ?? 0,
-            intervalFt: drawn.interval,
-          }),
-        )}\n`,
+    const emit = (target: StampBody, lines: Position[][], depths: number[]) => {
+      for (const [i, line] of lines.entries()) {
+        out.write(
+          `${JSON.stringify(
+            contourFeature({
+              lake,
+              body: target,
+              agency,
+              coordinates: line,
+              depthFt: depths[i] ?? 0,
+              intervalFt: drawn.interval,
+            }),
+          )}\n`,
+        );
+        features += 1;
+      }
+    };
+    emit(body, drawn.lines, drawn.depths);
+
+    // **The bays.** A body nested inside the surveyed lake gets the lake's own contours trimmed to it,
+    // stamped under its own id — because D81's filter keys off the open body, and a skater who opens
+    // North Bay is standing on Moosehead Lake's basin. Without this the bay renders flat next to a
+    // lake that is fully drawn, which reads as "nobody surveyed this" rather than "this is the lake".
+    for (const nested of body.alsoCovers ?? []) {
+      if (!nested.polygon) continue;
+      const trimmed = clipDrawnToBody(
+        drawn,
+        nested.polygon as Polygon | MultiPolygon,
+        `${key.replace(/[^\w.-]+/g, '_')}.${stampBodyId(nested).replace(/[^\w.-]+/g, '_')}`,
       );
-      features += 1;
+      // Not a drop: the lake itself built fine, and a bay that takes no whole contour line is an
+      // ordinary outcome of a containment test rather than a failure worth a ledger entry.
+      if (!trimmed) {
+        nestedEmpty += 1;
+        continue;
+      }
+      emit(nested, trimmed.lines, trimmed.depths);
+      nestedBuilt += 1;
     }
     built += 1;
   }
@@ -165,6 +210,9 @@ async function main(): Promise<void> {
 
   log(`\n✓ ${built} lakes → ${features.toLocaleString()} contour lines`);
   log(`  ${OUT_FILE}`);
+  if (nestedBuilt + nestedEmpty > 0) {
+    log(`  ${nestedBuilt} nested body/bodies also drawn (${nestedEmpty} took no whole line)`);
+  }
 
   // Grouped, then every kind named. A build that quietly drops a third of the corpus looks exactly
   // like one that drew all of it, and the finished layer cannot tell you which happened.
@@ -178,6 +226,47 @@ async function main(): Promise<void> {
     log(`    ${String(n).padStart(5)} × ${kind}`);
   }
   log(`  every one named in ${DROPPED_FILE}`);
+
+  // This is the gap that mattered most and was invisible: the join matched far more lakes than the
+  // build can actually draw, and only the drop ledger says which ones and why.
+  for (const d of dropped) {
+    logger.fail({
+      stage: 'draw',
+      key: `${d.key} (${d.name ?? '?'}, ${d.state ?? '?'})`,
+      reason: d.reason,
+    });
+  }
+  logger.count('joinedLakes', Object.keys(joined).length);
+  logger.count('candidates', lakes.length);
+  logger.count('built', built);
+  logger.count('contourFeatures', features);
+  logger.count('dropped', dropped.length);
+  logger.count('nestedBodiesDrawn', nestedBuilt);
+  logger.count('nestedBodiesWithNoWholeLine', nestedEmpty);
+  logger.count('supersededBySurveyedLane', superseded.length);
+  logger.coverage({
+    unit: 'lakes with a matched body',
+    eligible: lakes.length + superseded.length,
+    covered: built,
+    omissions: Object.entries(kinds)
+      .map(([reason, count]) => ({ reason, count }))
+      .filter((o) => o.count > 0),
+  });
+  logger.stage({
+    name: 'draw',
+    detail:
+      'published contours pass through; soundings are interpolated behind a density gate, because a fit over three points is a drawing, not a survey',
+    output: OUT_FILE,
+    counts: [
+      { name: 'built', value: built },
+      { name: 'contourFeatures', value: features },
+      { name: 'dropped', value: dropped.length },
+    ],
+  });
+  logger.succeed([
+    `${built} lakes drew ${features.toLocaleString()} contour lines`,
+    'Contour coverage does not reach the map until `tile` and `coverage` run.',
+  ]);
 }
 
 main().catch((error: unknown) => {

@@ -7,7 +7,7 @@
 >
 > Nothing from the plan below is outstanding. The retired `isLarge` field was stripped from all
 > 116,070 rows and dropped from the schema; the notification **reverse spatial index** was never in
-> scope and remains N7 (N1 made the profile walk bounded, not unnecessary).
+> scope and remains N8 (N1 made the profile walk bounded, not unnecessary).
 
 **Goal.** End the read-cap crash class on the water-body read path for good: replace the centroid
 prefilter + two-tier large-body workaround with a spatial index whose reads are bounded **by

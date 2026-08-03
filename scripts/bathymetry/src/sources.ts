@@ -143,8 +143,13 @@ export const SOURCES: BathymetrySource[] = [
     sourceUrl: 'https://www.maine.gov/geolib/',
     datum: 'depth below surface; per-point surface elevation carried in SURFELVM/SURFELVF',
     notes:
-      "147,755 depth POINTS over 5,000+ lakes, grouped by MIDAS (Maine's lake id) — so the per-lake " +
-      'split needs no spatial work. TWO findings that change the plan: (1) the IF&W depth maps the ' +
+      "147,755 depth POINTS over 1,528 lakes, grouped by MIDAS (Maine's lake id) — so the per-lake " +
+      'split needs no spatial work. COUNTED FROM THE ARCHIVE 2026-08-03, correcting an earlier ' +
+      '"5,000+ lakes" in this note that was never measured: there are 1,528 distinct MIDAS ids, ' +
+      '1,526 of which carry at least one positive depth. The gap matters because the wrong figure ' +
+      'made Maine look badly under-extracted — it is not. Every MIDAS in the layer is read, and the ' +
+      'layer is the only depth layer the service publishes (MapServer/2 of five). ' +
+      'TWO findings that change the plan: (1) the IF&W depth maps the ' +
       'plan calls "PDFs, a digitisation project, not an ETL" HAVE ALREADY BEEN DIGITISED by the ' +
       'state — those are the FMSRC=depthmap rows (FMPROCSS=dig, FMSRCORG=meifw). (2) This layer is ' +
       'TWO datasets wearing one schema, and FMSRC tells them apart: `depthmap` rows are digitised ' +
@@ -153,7 +158,10 @@ export const SOURCES: BathymetrySource[] = [
       'whole foot for the depthmap rows, DEPTHM * 3.28084 does not. So the published DEPTHF is ' +
       'systematically 0.58% shallow and must NOT be read as-is. Recover feet as DEPTHM * 3.3 for ' +
       'depthmap rows; the GPS rows are genuine metre readings and convert normally. ' +
-      "Density IS the concern here: ~29 points per lake on average, against Vermont's ~37,000.",
+      'Density IS the concern here, but not as badly as this note used to claim: the "~29 points per ' +
+      'lake" figure followed from the wrong lake count. The real distribution is a MEDIAN of 48 ' +
+      "points per lake (mean 97), against Vermont's ~37,000 — still the sparsest source by orders of " +
+      'magnitude, which is why the coverage gate drops more Maine lakes than everything else combined.',
   },
 ];
 

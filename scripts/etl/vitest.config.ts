@@ -6,8 +6,9 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
-      // The transform is the tested logic. `cli.ts`/`load.ts` are subprocess + file-I/O
-      // glue (untestable shells; all real work is in the covered transform + `@skating/core`),
+      // The transform is the tested logic. `cli.ts`/`load.ts`/`pruneFloor.ts` are subprocess +
+      // file-I/O glue (untestable shells; all real work is in the covered transform, the rule in
+      // `@skating/core`'s `meetsAreaFloor`, and `waterBodies.pruneBelowAreaFloor`'s own tests),
       // and `types.ts` is type-only. Excluding the glue is not coverage-gaming — the gate
       // still bites on every line of transform logic (settled note, phase-1 plan).
       exclude: [
@@ -16,6 +17,7 @@ export default defineConfig({
         'src/fetchExtract.ts',
         'src/load.ts',
         'src/loadDepths.ts',
+        'src/pruneFloor.ts',
         'src/types.ts',
       ],
       // Matches @skating/core + @skating/convex; ratchet upward over time (D40).

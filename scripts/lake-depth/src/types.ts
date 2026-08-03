@@ -48,6 +48,10 @@ export interface LagosDepthRow {
   lat: number;
   lng: number;
   areaSqM?: number;
+  /** `lake_namegnis`, when the row has one. Absent is common and never corroborates. */
+  name?: string;
+  /** `lake_states`, e.g. `"NH-VT"` — used to drop lakes outside the states we support. */
+  states?: string;
   meanDepthM?: number;
   maxDepthM?: number;
 }
@@ -64,6 +68,15 @@ export interface DepthRecord {
   key: string;
   point: { lat: number; lng: number };
   areaSqM?: number;
+  /**
+   * The source's own name for the lake.
+   *
+   * Carried purely as **corroboration for the proximity fallback** (`matchDepthSource`), never
+   * stored — our name is ours. Added after the first real run, where 40% of prominent bodies went
+   * unmatched because a source's representative point sat just outside our polygon, and an agreeing
+   * name is the independent evidence that makes accepting such a match safe.
+   */
+  name?: string;
   meanDepthM?: number;
   meanDepthSource?: DepthSource;
   maxDepthM?: number;
@@ -82,6 +95,8 @@ export interface DepthRecord {
 
 /** Per-source counts, printed by the CLI so a thin source is visible rather than inferred. */
 export interface TransformSummary {
+  /** LAGOS rows dropped by `--states=` for naming no supported state. A scope boundary, not a skip. */
+  outOfRegion?: number;
   hydroLakesRead: number;
   globathyRead: number;
   lagosRead: number;

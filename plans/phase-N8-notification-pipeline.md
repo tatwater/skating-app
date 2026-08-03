@@ -1,6 +1,6 @@
-# N7 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
+# N8 — The notification pipeline: the inbox, the missing producers, and the reverse reach index
 
-> **Status:** 📋 Scoped, not built (2026-07-30). Founder call the same day: **no N7 code until every N6
+> **Status:** 📋 Scoped, not built (2026-07-30). Founder call the same day: **no N8 code until every N6
 > phase has shipped** (N6a's ETL run, N6b, N6c, N6d). This document is the design record so the scope
 > stops drifting in the meantime.
 > **Depends on:** nothing. It touches no water-body data and no N6 surface; it can be built the day
@@ -15,7 +15,7 @@
 
 ## Why this is its own pass
 
-The roadmap's N7 entry is two bullets — per-user digest timing and a reverse spatial index — grouped
+The roadmap's N8 entry is two bullets — per-user digest timing and a reverse spatial index — grouped
 because neither needs push credentials. Both are real, both are correctly described, and **neither is
 the thing wrong with the notification pipeline.**
 
@@ -614,7 +614,7 @@ output nobody can see.
 8. **D — the reverse reach index.** Last, and only past its trigger (D4). It changes no behavior when
    it works, which is precisely why it goes after everything that does.
 
-Steps 1–3 are a shippable phase on their own. If N7 has to be cut short, cut from the bottom.
+Steps 1–3 are a shippable phase on their own. If N8 has to be cut short, cut from the bottom.
 
 ---
 

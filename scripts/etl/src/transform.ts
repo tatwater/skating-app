@@ -2,8 +2,9 @@
  * ETL transform (Phase 1) — the tested heart of the OSM water-body pipeline.
  *
  * Turns raw `osmium export` water features into canonical bodies for
- * `waterBodies.importCanonical`: classify OSM tags → our `type` (dropping non-still-water),
- * simplify to ~5 m fidelity (D48), then compute `bbox` / on-water `centroid` / surface area
+ * `waterBodies.importCanonical`: classify OSM tags → our `type` (dropping non-still-water), drop
+ * what's below the surface-area floor (`meetsAreaFloor`), simplify to ~5 m fidelity (D48), then
+ * compute `bbox` / on-water `centroid` / surface area
  * from the *simplified* geometry (what actually gets stored). Pure and framework-free — the
  * geometry + classification live in `@skating/core`; this composes them and adds the
  * per-feature resilience the ETL needs (a degenerate polygon is skipped, never aborts a batch).
@@ -11,8 +12,13 @@
 
 import {
   fetchOrigin,
+  HARD_MIN_SURFACE_AREA_ACRES,
+  HARD_MIN_SURFACE_AREA_SQM,
   lakeGeometryStats,
   MAX_PLAUSIBLE_DEPTH_M,
+  MIN_SURFACE_AREA_ACRES,
+  MIN_SURFACE_AREA_SQM,
+  meetsAreaFloor,
   type OsmTags,
   polygonBBox,
   representativePoint,
@@ -32,6 +38,28 @@ import type { CanonicalBody, OsmDepthRecord, OsmWaterFeature, OsmWaterProperties
  * item in the phase-1 plan).
  */
 export const SIMPLIFY_TOLERANCE_DEG = 0.00005;
+
+/**
+ * The corpus floor (D91) lives in `@skating/core` because the ETL is not the only thing that applies
+ * it — `waterBodies.pruneBelowAreaFloor` enforces the same rule over the rows already stored. Two
+ * copies would drift into a prune that deletes what the next import re-adds. Re-exported so the
+ * transform's own module stays the one place to read about the pipeline.
+ */
+export {
+  HARD_MIN_SURFACE_AREA_ACRES,
+  HARD_MIN_SURFACE_AREA_SQM,
+  MIN_SURFACE_AREA_ACRES,
+  MIN_SURFACE_AREA_SQM,
+  meetsAreaFloor,
+};
+
+/**
+ * Returned by `featureToCanonicalBody` for a feature that classified fine but is below the floor —
+ * distinct from `null` (classification) so the run summary can tally the two separately. "We import
+ * no rivers" and "we import no puddles" are different facts about a run and an operator reading
+ * `droppedByType: 60,000` should not be looking at a number that silently means both.
+ */
+export const BELOW_AREA_FLOOR = 'below_area_floor' as const;
 
 /**
  * Convex rejects any array longer than **8192 elements**. For a polygon that cap applies to
@@ -120,8 +148,10 @@ function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygo
 }
 
 /**
- * Transform one OSM feature into a canonical body, or `null` to **skip by classification**
- * (rivers / streams / generic wetland / … — `waterBodyTypeFromOsmTags` returns `null`).
+ * Transform one OSM feature into a canonical body, or a skip:
+ *  - `null` — **skipped by classification** (rivers / streams / generic wetland / … —
+ *    `waterBodyTypeFromOsmTags` returns `null`).
+ *  - `BELOW_AREA_FLOOR` — real still water, too small to be a destination (`meetsAreaFloor`).
  *
  * **Throws** on data we can't turn into a storable body: a missing `@type`/`@id`, a non-area
  * geometry, a degenerate polygon `representativePoint` can't place a point on, or a geometry
@@ -129,7 +159,9 @@ function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygo
  * catch per feature (see `transformFeatures`) — raw data carries enough junk geometry that a
  * single throw must not kill the import (phase-1 plan / PR#1 review P2).
  */
-export function featureToCanonicalBody(feature: OsmWaterFeature): CanonicalBody | null {
+export function featureToCanonicalBody(
+  feature: OsmWaterFeature,
+): CanonicalBody | null | typeof BELOW_AREA_FLOOR {
   const props: OsmWaterProperties = feature.properties ?? {};
   const type = waterBodyTypeFromOsmTags(props as OsmTags);
   if (type === null) return null;
@@ -143,6 +175,29 @@ export function featureToCanonicalBody(feature: OsmWaterFeature): CanonicalBody 
   if (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon') {
     throw new Error(`unsupported geometry type "${geom.type}" (expected a polygon area)`);
   }
+
+  const name = typeof props.name === 'string' ? props.name : '';
+
+  // Degenerate geometry has to fail **before** the floor, or it stops being visible. A closed linear
+  // ring needs four positions; anything less measures as zero area, which the floor would happily
+  // read as "a very small pond" and tally into a bucket of ~100,000. This used to surface as a throw
+  // from `representativePoint` further down — the check is now explicit and named, because the floor
+  // moved in front of it and a broken polygon must never be indistinguishable from a puddle.
+  if (largestRingSize(geom) < 4) {
+    throw new Error('degenerate geometry: no ring with 4+ positions (cannot form a closed area)');
+  }
+
+  // The floor (founder call, 2026-08-02), checked **here** — after classification, before any of the
+  // per-body geometry below. Four fifths of a raw extract fails it, and shoreline + axes + a
+  // 16-bearing fetch profile on 100,000 bodies we then discard is the most expensive way not to
+  // import something.
+  //
+  // Measured on the SOURCE geometry, like the D85 stats and unlike the stored `surfaceAreaSqM`
+  // (which is derived from the simplified polygon a few lines down, because that's what we draw).
+  // The two differ by well under a percent, so a body can in principle store an area a hair under
+  // the floor it cleared. That is the right way round: the source is the more accurate measure, and
+  // the alternative is doing the expensive work first to decide with a worse number.
+  if (!meetsAreaFloor({ name, surfaceAreaSqM: surfaceAreaSqM(geom) })) return BELOW_AREA_FLOOR;
 
   // ── D85: measure the SOURCE geometry, here, before anything touches it ──────────────────────
   //
@@ -172,7 +227,7 @@ export function featureToCanonicalBody(feature: OsmWaterFeature): CanonicalBody 
   return {
     source: 'osm',
     externalId,
-    name: typeof props.name === 'string' ? props.name : '',
+    name,
     type,
     polygon,
     bbox: polygonBBox(polygon),
@@ -255,6 +310,11 @@ export interface TransformSummary {
   imported: number;
   /** Skipped by classification — non-still-water we defer this phase (rivers, wetland, …). */
   droppedByType: number;
+  /**
+   * Skipped by the surface-area floor (`meetsAreaFloor`) — still water, too small and unnamed to be
+   * anywhere. Expect this to be the **largest** number in the summary: ~4 of every 5 features.
+   */
+  droppedByAreaFloor: number;
   /** Skipped because the feature threw (bad geometry / missing id) — see `errors`. */
   skipped: number;
   /** Bodies carrying a usable OSM depth tag (N6a rung 7). Expect a handful: inland coverage is ~nil. */
@@ -278,7 +338,8 @@ export interface TransformOutput {
 /**
  * Transform a batch of features, isolating each failure (skip + tally) so one bad polygon
  * never aborts the import (phase-1 plan / PR#1 review P2). `droppedByType` is intentional
- * classification skips; `skipped` (with `errors`) is features that threw.
+ * classification skips and `droppedByAreaFloor` is the intentional size floor; `skipped` (with
+ * `errors`) is features that threw.
  */
 export function transformFeatures(features: Iterable<OsmWaterFeature>): TransformOutput {
   const bodies: CanonicalBody[] = [];
@@ -286,6 +347,7 @@ export function transformFeatures(features: Iterable<OsmWaterFeature>): Transfor
   const errors: TransformError[] = [];
   let total = 0;
   let droppedByType = 0;
+  let droppedByAreaFloor = 0;
 
   for (const feature of features) {
     total++;
@@ -293,6 +355,10 @@ export function transformFeatures(features: Iterable<OsmWaterFeature>): Transfor
       const body = featureToCanonicalBody(feature);
       if (body === null) {
         droppedByType++;
+        continue;
+      }
+      if (body === BELOW_AREA_FLOOR) {
+        droppedByAreaFloor++;
         continue;
       }
       bodies.push(body);
@@ -316,6 +382,7 @@ export function transformFeatures(features: Iterable<OsmWaterFeature>): Transfor
       total,
       imported: bodies.length,
       droppedByType,
+      droppedByAreaFloor,
       skipped: errors.length,
       depthsTagged: depths.length,
     },

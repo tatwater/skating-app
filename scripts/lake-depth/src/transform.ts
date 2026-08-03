@@ -107,18 +107,34 @@ export function parseNumber(cell: string | undefined): number | undefined {
 // --- Sources ---
 
 /**
- * GLOBathy's basic-parameters CSV → `Hylak_id` → max depth. GLOBathy publishes several `Dmax` estimates
- * (four geometric shapes plus two empirical methods); we take the **random-forest** column, which is the
- * one the paper validates at 1,503 waterbodies (NSE 0.97) and the one the dataset presents as its
- * headline estimate.
+ * GLOBathy's basic-parameters CSV → `Hylak_id` → max depth.
+ *
+ * GLOBathy publishes seven `Dmax` columns — four geometric idealisations (`box`, `cone`, `prism`,
+ * `ellip`), two empirical fits (`est_PA`, `est_PAVEW`), and `Dmax_use_m`, which its own README calls
+ * the *"Suggested/Best estimation"*. We take `Dmax_use_m`.
+ *
+ * **It is not simply the model column, which this docstring used to claim.** Measured against the
+ * real file (200k-row sample, 2026-08-02), `Dmax_use_m` equals `Dmax_est_PAVEW_m` — the shoreline /
+ * area / volume / elevation / watershed fit — for **99.5%** of lakes, and differs for the rest, where
+ * it carries a round, plainly *reported* figure instead (Hylak_id 1: 1025 m against the model's
+ * 1201.4). So it is the model with known depths substituted in, which is strictly better than either
+ * pure column and is why it is the one to take.
+ *
+ * The one consequence worth knowing: for that 0.5%, a `globathy` rung is really a reported depth
+ * wearing a modelled label, so D68 under-rates it. Left alone deliberately — the substitutions are
+ * the world's largest lakes, our region has almost none of them, and a per-row "is this substituted"
+ * test would mean carrying a second column to correct a rung that is already the ladder's floor.
  */
 export function parseGlobathy(csv: string): GlobathyRow[] {
   const lines = csv.split('\n').filter((l) => l.trim().length > 0);
   const header = splitCsvLine(lines[0] ?? '');
   const idCol = requireColumn(header, ['Hylak_id', 'hylakid', 'lake_id'], 'GLOBathy');
+  // `Dmax_use_m` is what the published file actually calls it; the un-suffixed spellings are kept
+  // because they were what this list guessed before anyone had the file, and a future release
+  // renaming the column back is likelier than it inventing a third convention.
   const depthCol = requireColumn(
     header,
-    ['Dmax_use', 'Dmax_RF', 'Dmax', 'max_depth', 'maxdepth'],
+    ['Dmax_use_m', 'Dmax_use', 'Dmax_RF', 'Dmax', 'max_depth', 'maxdepth'],
     'GLOBathy',
   );
   const rows: GlobathyRow[] = [];
@@ -152,6 +168,10 @@ export function parseLagosDepth(csv: string): LagosDepthRow[] {
   );
   // Area and both depths are genuinely optional columns — a version that omits them still loads.
   const areaCol = findColumn(header, ['lake_waterarea_ha', 'lake_area_ha', 'lake_totalarea_ha']);
+  // Both optional and both purely for matching: the name corroborates a proximity match, the states
+  // let a run drop lakes it could never match. Neither is ever stored on a body.
+  const nameCol = findColumn(header, ['lake_namegnis', 'lake_name', 'gnis_name']);
+  const statesCol = findColumn(header, ['lake_states', 'lake_state', 'states']);
   const maxCol = findColumn(header, [
     'lake_maxdepth_m',
     'lake_maxdepth',
@@ -178,10 +198,16 @@ export function parseLagosDepth(csv: string): LagosDepthRow[] {
     const lng = parseNumber(cells[lngCol]);
     if (!lagoslakeid || lat === undefined || lng === undefined) continue;
     const areaHa = areaCol >= 0 ? parseNumber(cells[areaCol]) : undefined;
+    const rawName = nameCol >= 0 ? cells[nameCol]?.trim() : undefined;
+    const rawStates = statesCol >= 0 ? cells[statesCol]?.trim() : undefined;
     rows.push({
       lagoslakeid,
       lat,
       lng,
+      // LAGOS writes `NULL` for an absent string — treating that as a name would make every unnamed
+      // lake "match" every other unnamed lake by name.
+      name: rawName && rawName !== 'NULL' && rawName !== 'NA' ? rawName : undefined,
+      states: rawStates && rawStates !== 'NULL' && rawStates !== 'NA' ? rawStates : undefined,
       areaSqM: areaHa === undefined ? undefined : areaHa * HA_TO_SQ_M,
       maxDepthM: maxCol >= 0 ? parseNumber(cells[maxCol]) : undefined,
       meanDepthM: meanCol >= 0 ? parseNumber(cells[meanCol]) : undefined,
@@ -213,6 +239,10 @@ function areaGeometry(feature: HydroLakesFeature): Polygon | MultiPolygon | unde
 /** One lake's worth of LAGOS-US records, after the merge below. */
 export interface MergedLagosLake {
   lagoslakeid: string;
+  /** Carried for proximity corroboration; see `DepthRecord.name`. Never stored on a body. */
+  name?: string;
+  /** `lake_states` (e.g. `"NH-VT"`) — lets `--states=` drop lakes we could never match. */
+  states?: string;
   lat: number;
   lng: number;
   areaSqM?: number;
@@ -302,6 +332,10 @@ export function mergeLagosRows(rows: readonly LagosDepthRow[]): {
       lat: (located as LagosDepthRow).lat,
       lng: (located as LagosDepthRow).lng,
       areaSqM: group.find((r) => r.areaSqM !== undefined)?.areaSqM,
+      // Same rule as location and area: first row that has one. These are per-*lake* attributes in
+      // LAGOS, so any row carrying them carries the same value.
+      name: group.find((r) => r.name !== undefined)?.name,
+      states: group.find((r) => r.states !== undefined)?.states,
       meanDepthM,
       maxDepthM,
       rowCount: group.length,
@@ -322,6 +356,16 @@ export interface TransformInput {
   globathy?: readonly GlobathyRow[];
   /** LAGOS-US DEPTH rows — independent of the other two. */
   lagos?: readonly LagosDepthRow[];
+  /**
+   * Two-letter state codes we support. When set, LAGOS rows naming none of them are dropped.
+   *
+   * **This is what makes the coverage rate a rate.** LAGOS-US is nationwide and we cover five
+   * states, so ~73% of its rows can never match anything — and every one still costs a spatial
+   * query. The first real run reported "21.2% matched" against a denominator three quarters of
+   * which was never eligible. HydroLAKES needs no equivalent because its extract is already clipped
+   * geographically; this is the source that arrives whole.
+   */
+  states?: readonly string[];
 }
 
 export interface TransformResult {
@@ -344,6 +388,8 @@ export function transformDepths(input: TransformInput): TransformResult {
   const records: DepthRecord[] = [];
   const errors: TransformError[] = [];
   let skipped = 0;
+  /** LAGOS rows dropped for naming no supported state — not a failure, a scope boundary. */
+  let outOfRegion = 0;
 
   const globathyByHylakId = new Map<string, number>();
   for (const row of input.globathy ?? []) globathyByHylakId.set(row.hylakId, row.maxDepthM);
@@ -381,10 +427,12 @@ export function transformDepths(input: TransformInput): TransformResult {
     const areaSqM =
       reportedAreaKm2 !== undefined ? reportedAreaKm2 * SQ_KM_TO_SQ_M : geodesicAreaSqM(geometry);
 
+    const lakeName = String(feature.properties?.Lake_name ?? '').trim();
     records.push({
       key,
       point: representativePoint(geometry),
       areaSqM,
+      ...(lakeName ? { name: lakeName } : {}),
       ...(meanDepthM !== undefined && meanDepthM > 0
         ? { meanDepthM, meanDepthSource: hydroLakesRung(volSrc) }
         : {}),
@@ -408,8 +456,20 @@ export function transformDepths(input: TransformInput): TransformResult {
   }
 
   const lagos = mergeLagosRows(input.lagos ?? []);
+
   for (const merged of lagos.lakes) {
     const key = `lagos/${merged.lagoslakeid}`;
+    // LAGOS-US is nationwide; we support five states. A lake in Minnesota costs a spatial query per
+    // record and can never match, which is ~3 of every 4 rows and roughly a third of the whole run's
+    // wall clock. Dropping it here is also what makes the coverage denominator mean anything: a rate
+    // measured against lakes that could never match is not a rate, it is arithmetic.
+    if (input.states && input.states.length > 0) {
+      const lakeStates = (merged.states ?? '').split('-').filter(Boolean);
+      if (lakeStates.length > 0 && !lakeStates.some((st) => input.states?.includes(st))) {
+        outOfRegion++;
+        continue;
+      }
+    }
     if (merged.meanDepthM === undefined && merged.maxDepthM === undefined) {
       skipped++;
       continue; // a DEPTH row with no usable depth is ordinary, not an error worth naming
@@ -424,6 +484,7 @@ export function transformDepths(input: TransformInput): TransformResult {
       key,
       point: { lat: merged.lat, lng: merged.lng },
       areaSqM: merged.areaSqM,
+      name: merged.name,
       ...(merged.meanDepthM !== undefined
         ? { meanDepthM: merged.meanDepthM, meanDepthSource: 'lagos_us' as const }
         : {}),
@@ -439,6 +500,7 @@ export function transformDepths(input: TransformInput): TransformResult {
       hydroLakesRead: input.hydroLakes?.length ?? 0,
       globathyRead: input.globathy?.length ?? 0,
       lagosRead: input.lagos?.length ?? 0,
+      outOfRegion,
       emitted: records.length,
       skipped,
       lagosMerged: lagos.merged,

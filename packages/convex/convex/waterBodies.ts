@@ -12,8 +12,10 @@
 
 import {
   bboxIntersects,
+  bodiesCoveringPoint,
   canOverwriteElevation,
   classifyDedup,
+  containedFraction,
   DEPTH_SOURCE_RANK,
   DEPTH_SOURCES,
   type DedupClassification,
@@ -30,6 +32,8 @@ import {
   MAX_SUGGESTED_SAMPLE_POINTS,
   MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
+  matchDepthSource,
+  meetsAreaFloor,
   minVisibleZoom,
   nearestBodyForPoint,
   type ProfileRichness,
@@ -355,6 +359,10 @@ export const importCanonical = internalMutation({
           states: unionState(existing.states, state),
           ...scores,
           ...shapeFields(item),
+          // `osmId` only. **`nhdId` is deliberately absent from this patch**, which is what makes a
+          // reconciliation survive a canonical re-import — the same reason depth and `curatedBoost`
+          // are absent. An NHD match is something we worked out, not something OSM can restate.
+          ...catalogueIds(item),
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
         // body against its new geometry + prominence (N1).
@@ -396,6 +404,9 @@ export const importCanonical = internalMutation({
           type: item.type,
           source: item.source,
           externalId: item.externalId,
+          // Identity alongside the key. Set here so a fresh import needs no backfill to be
+          // reconcilable, and so the day `externalId` stops being an OSM id, this still is one.
+          ...catalogueIds(item),
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
@@ -416,6 +427,63 @@ export const importCanonical = internalMutation({
       }
     }
     return { inserted, updated };
+  },
+});
+
+/**
+ * Backfill `osmId` / `geometrySource` onto rows imported before those fields existed (N6b follow-up).
+ *
+ * Pure restatement — every value is derived from `source` and `externalId`, which the row already
+ * carries — so this is idempotent, order-independent, and safe to re-run against a corpus that is
+ * still changing underneath it. That last property is the point: it can run alongside the depth,
+ * elevation and wind passes without any of them having to know about it.
+ *
+ * **It writes no `nhdId`.** Reconciliation is a geometric question (`polygonIoU` against NHD, never
+ * point containment — see the schema note), and it belongs in its own pass with its own evidence.
+ * This one only says what we already knew and had nowhere to put.
+ *
+ * Paginated for the same byte-budget reason as `pruneBelowAreaFloor`: a page is bounded by polygon
+ * bytes long before document count, and one page containing Lake Champlain carries ~0.3 MiB in a
+ * single row.
+ */
+export const backfillCatalogueIds = internalMutation({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    let patched = 0;
+    let alreadySet = 0;
+    let noExternalId = 0;
+    for (const body of page.page) {
+      const want = catalogueIds(body);
+      if (Object.keys(want).length === 0) {
+        noExternalId++;
+        continue;
+      }
+      // Never overwrite. A value already present was either set by a later import or by a
+      // reconciliation, and both outrank a restatement of what the row shipped with.
+      const patch: Record<string, unknown> = {};
+      if (want.osmId !== undefined && body.osmId === undefined) patch.osmId = want.osmId;
+      if (want.nhdId !== undefined && body.nhdId === undefined) patch.nhdId = want.nhdId;
+      if (body.geometrySource === undefined && want.geometrySource !== undefined) {
+        patch.geometrySource = want.geometrySource;
+      }
+      if (Object.keys(patch).length === 0) {
+        alreadySet++;
+        continue;
+      }
+      await ctx.db.patch(body._id, patch);
+      patched++;
+    }
+    return {
+      patched,
+      alreadySet,
+      noExternalId,
+      scanned: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
   },
 });
 
@@ -497,6 +565,190 @@ export const backfillRepresentativePoint = internalMutation({
 });
 
 /**
+ * Is anything at all attached to this body — and if so, what?
+ *
+ * Every table here holds a **human** act against a specific lake: a report, a hazard, a bounty, a
+ * put-in, a favourite, a recorded track, a moderator's body feature. A body with any of them is not
+ * a puddle no matter what it measures, and deleting it would orphan the row rather than tidy the
+ * corpus. Returns the first table that claims it, for the run summary; `null` means unattached.
+ *
+ * **Two queue tables are deliberately absent.** `recurrenceQueue` and `notificationQueue` have no
+ * by-body index — but both are *derived*: a queue row exists only because a hazard, report or bounty
+ * for that body exists, all three of which are checked here. No hazard ⇒ no recurrence row to strand.
+ */
+async function bodyAttachmentKind(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<string | null> {
+  const report = await ctx.db
+    .query('reports')
+    .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (report) return 'reports';
+  const hazard = await ctx.db
+    .query('hazards')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (hazard) return 'hazards';
+  const recurrence = await ctx.db
+    .query('hazardRecurrence')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (recurrence) return 'hazardRecurrence';
+  const bounty = await ctx.db
+    .query('bounties')
+    .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (bounty) return 'bounties';
+  const activity = await ctx.db
+    .query('gpsActivities')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (activity) return 'gpsActivities';
+  const favorite = await ctx.db
+    .query('waterBodyFavorites')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (favorite) return 'waterBodyFavorites';
+  const putIn = await ctx.db
+    .query('putIns')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (putIn) return 'putIns';
+  const feature = await ctx.db
+    .query('bodyFeatures')
+    .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (feature) return 'bodyFeatures';
+  const subArea = await ctx.db
+    .query('waterBodySubAreas')
+    .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (subArea) return 'waterBodySubAreas';
+  const gateEvent = await ctx.db
+    .query('bountyGateEvents')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .first();
+  if (gateEvent) return 'bountyGateEvents';
+  return null;
+}
+
+/**
+ * Delete the canonical bodies the D91 floor would never have imported — **paginated, dry by
+ * default, and refusing anything with a claim on it.**
+ *
+ * The floor (`meetsAreaFloor`, `@skating/core`) governs what a *future* import writes; it cannot
+ * reach the ~116,000 rows already stored, because `importCanonical` upserts and never deletes. This
+ * is the other half: one pass that brings the stored corpus into agreement with the rule, driven
+ * from `pnpm --filter @skating/etl prune-floor`.
+ *
+ * **It runs dry unless `apply` is true.** The tallies are identical either way, so the operator sees
+ * exactly what a real run would do before it does it.
+ *
+ * A body is deleted only when it fails the floor **and** nothing else speaks for it:
+ *  - `source: 'user'` is never touched — a skater drew it from a track they recorded (Phase 8).
+ *  - `surfaceAreaSqM` absent ⇒ kept. The field is optional; "we can't measure it" is not "it's
+ *    small", and a silent delete on a missing number is how you lose Champlain to a schema gap.
+ *  - `curatedBoost` set ⇒ kept. An admin promoted it by hand (D49); that outranks a threshold.
+ *  - `dedupStatus !== 'clean'`, or any merge pointer ⇒ kept. Reads follow the survivor (D36) and
+ *    there is no index from a survivor back to the rows that name it, so a merge target must not
+ *    vanish underneath them.
+ *  - `removedAt` set ⇒ kept. A soft-delist is an admin act with a reason attached (D48), sometimes a
+ *    landowner takedown; deleting the row destroys the record of the takedown along with the body.
+ *  - anything attached to it (`bodyAttachmentKind`) ⇒ kept, and named in the summary.
+ *
+ * Cell rows go through `syncWaterBodyCells` with `listed: false` rather than a hand-rolled delete, so
+ * the one tested path that maintains the N1 index stays the only thing that writes to it.
+ */
+export const pruneBelowAreaFloor = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    /** Actually delete. Absent / false ⇒ count only, write nothing. */
+    apply: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { cursor, batchSize, apply }) => {
+    // A body carries its polygon, so a page is bounded by the transaction's **byte** budget long
+    // before its document count, and the ceiling has to hold for the worst page rather than the
+    // average one: most bodies are a few KB, but a page that happens to contain Lake Champlain
+    // carries ~0.3 MiB in one row. 500 measured comfortably inside the limits on the five-state
+    // corpus (a candidate also costs ≤ 10 index probes for attachments and ≤ 5 writes to delete),
+    // and the cap is what keeps a caller from turning a slow pass into a failed transaction.
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 100));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    const kept = {
+      clearsFloor: 0,
+      areaUnknown: 0,
+      userCreated: 0,
+      curated: 0,
+      dedupOrMerged: 0,
+      delisted: 0,
+      attached: 0,
+    };
+    const attachedBy: Record<string, number> = {};
+    let deleted = 0;
+
+    for (const body of page.page) {
+      if (body.surfaceAreaSqM === undefined) {
+        kept.areaUnknown++;
+        continue;
+      }
+      if (meetsAreaFloor({ name: body.name, surfaceAreaSqM: body.surfaceAreaSqM })) {
+        kept.clearsFloor++;
+        continue;
+      }
+      if (body.source === 'user') {
+        kept.userCreated++;
+        continue;
+      }
+      if ((body.curatedBoost ?? 0) !== 0) {
+        kept.curated++;
+        continue;
+      }
+      if (
+        body.dedupStatus !== 'clean' ||
+        body.mergedIntoId !== undefined ||
+        (body.duplicateCandidateIds?.length ?? 0) > 0
+      ) {
+        kept.dedupOrMerged++;
+        continue;
+      }
+      if (body.removedAt !== undefined) {
+        kept.delisted++;
+        continue;
+      }
+      const attachment = await bodyAttachmentKind(ctx, body._id);
+      if (attachment !== null) {
+        kept.attached++;
+        attachedBy[attachment] = (attachedBy[attachment] ?? 0) + 1;
+        continue;
+      }
+
+      if (apply === true) {
+        await syncWaterBodyCells(ctx, body._id, {
+          bbox: body.bbox,
+          minVisibleZoom: body.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
+          listed: false,
+        });
+        await ctx.db.delete(body._id);
+      }
+      deleted++;
+    }
+
+    return {
+      applied: apply === true,
+      scanned: page.page.length,
+      deleted,
+      kept,
+      attachedBy,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/**
  * How far our shoreline may differ from HydroLAKES' before the run says so (D85).
  *
  * **2×, and deliberately loose.** The two are measuring different polygons — different water mask,
@@ -572,13 +824,32 @@ export const listNeedingElevation = internalQuery({
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
     refresh: v.optional(v.boolean()),
+    /**
+     * Only return bodies the canonical import would keep — `meetsAreaFloor`, imported, not restated.
+     *
+     * **Paging is free; API calls are not.** Open-Meteo's free tier counts each *coordinate* against
+     * the quota, so a 100-coordinate request costs ~100 calls and a corpus-wide pass is ~12 days of
+     * free-tier allowance. Scanning every body costs nothing, so the filter belongs here — between
+     * the cheap read and the expensive lookup — rather than on the caller.
+     *
+     * **A boolean, not a threshold, and that is the point.** This was briefly a `minAreaSqM` number
+     * with a comment saying it mirrored the import's rule. It drifted within hours: the rule became
+     * `>= 5 acres OR (named AND >= 1 acre)` while the copy here still said `named OR >= 5 acres`,
+     * which is strictly more permissive — it would have spent quota on sub-one-acre named bodies
+     * that `pruneBelowAreaFloor` deletes. Importing the predicate makes "the current rule" true by
+     * construction; a parameter invites a caller to invent a different floor.
+     */
+    importFloorOnly: v.optional(v.boolean()),
   },
-  handler: async (ctx, { cursor, batchSize, refresh }) => {
+  handler: async (ctx, { cursor, batchSize, refresh, importFloorOnly }) => {
     const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    const belowFloor = (body: Doc<'waterBodies'>) =>
+      !meetsAreaFloor({ name: body.name ?? '', surfaceAreaSqM: body.surfaceAreaSqM ?? 0 });
     const targets = page.page
       .filter((body) => {
         if (body.elevationSource === 'operator') return false;
+        if (importFloorOnly === true && belowFloor(body)) return false;
         return refresh === true || body.elevationM === undefined;
       })
       .map((body) => {
@@ -588,6 +859,10 @@ export const listNeedingElevation = internalQuery({
     return {
       targets,
       scanned: page.page.length,
+      // Counted so a filtered run can say how much of the corpus it deliberately walked past —
+      // otherwise "scanned 116,070, looked up 16,817" reads like a 14% failure rather than a 14%
+      // target.
+      belowFloor: importFloorOnly === true ? page.page.filter(belowFloor).length : 0,
       cursor: page.continueCursor,
       isDone: page.isDone,
     };
@@ -656,15 +931,32 @@ export const listNeedingWindRose = internalQuery({
     refresh: v.optional(v.boolean()),
     /** Minimum longest-fetch to qualify; defaults to the caption's own floor. */
     minFetchM: v.optional(v.number()),
+    /**
+     * The import floor, same predicate and same reason as `listNeedingElevation` — `meetsAreaFloor`,
+     * imported rather than restated. A rose costs five WIND Toolkit requests against a 10,000/day
+     * allowance, and a body `pruneBelowAreaFloor` is about to delete is not worth one of them.
+     *
+     * Expected to change little — qualifying on fetch already selects big water — but "expected" is
+     * not "measured", and the run reports `belowFloor` either way.
+     */
+    importFloorOnly: v.optional(v.boolean()),
   },
-  handler: async (ctx, { cursor, batchSize, refresh, minFetchM }) => {
+  handler: async (ctx, { cursor, batchSize, refresh, minFetchM, importFloorOnly }) => {
     const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
     const floor = minFetchM ?? MIN_FETCH_CLAUSE_M;
+    let belowFloor = 0;
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
     const targets = page.page
       .filter((body) => {
         if (!isListed(body)) return false;
         if (!refresh && body.windRose !== undefined) return false;
+        if (
+          importFloorOnly === true &&
+          !meetsAreaFloor({ name: body.name ?? '', surfaceAreaSqM: body.surfaceAreaSqM ?? 0 })
+        ) {
+          belowFloor++;
+          return false;
+        }
         const fetchProfileM = body.fetchProfileM;
         if (!fetchProfileM || fetchProfileM.length === 0) return false;
         return Math.max(...fetchProfileM) >= floor;
@@ -673,7 +965,13 @@ export const listNeedingWindRose = internalQuery({
         const point = body.interiorPoint ?? body.representativePoint ?? body.centroid;
         return { waterBodyId: body._id, lat: point.lat, lng: point.lng };
       });
-    return { targets, scanned: page.page.length, cursor: page.continueCursor, isDone: page.isDone };
+    return {
+      targets,
+      scanned: page.page.length,
+      belowFloor,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
   },
 });
 
@@ -1740,6 +2038,63 @@ function winsLadder(incoming: DepthSource, existing?: DepthSource): boolean {
 const DEPTH_MATCH_AREA_RATIO = 4;
 
 /**
+ * How far outside our shoreline a *survey's* representative point may fall and still be that lake.
+ *
+ * Zero for a single depth reading (`matchAndImportDepths`), and deliberately not zero here. The two
+ * differ in what is being placed. A reading is a point and could genuinely belong to the pond across
+ * the road, so it must land inside. A survey's representative point is its **deepest** measurement —
+ * the furthest point in the lake from any shore — so a point that lands 9 m outside our polygon is
+ * never the pond next door; it is two agencies drawing the same shoreline from different imagery on
+ * different dates.
+ *
+ * Measured, not guessed: of 54 lakes the zero buffer rejected, 7 sit 0–9 m outside a polygon carrying
+ * the same lake's name (Burncoat Park Pond at 0 m, Wat-Tuh Lake at 1 m, Middle Pond at 2 m). The next
+ * band out begins at 126 m and is where wrong answers start — Goodwin Pond, 7 acres, reaching
+ * Mooselookmeguntic Lake at 16,213. 25 m clears the first group with an order of magnitude to spare
+ * and cannot reach the second.
+ *
+ * **This is only safe because the area gate above actually runs.** It did not, for the whole of the
+ * first bathymetry build: the caller never sent `areaSqM`, so every ratio test was skipped and a
+ * buffer would have had nothing behind it. Do not widen this without checking that gate is live.
+ */
+const BATHYMETRY_APPROACH_M = 25;
+
+/**
+ * The catalogue-identity fields an import can assert, from the row it is importing.
+ *
+ * Only ever what the *importer* knows: an OSM import knows the lake's OSM id and that it drew OSM's
+ * polygon, and knows nothing about NHD. `nhdId` is written by reconciliation, never by import —
+ * keeping it out of here is what stops a re-import erasing it.
+ */
+function catalogueIds(item: { source: string; externalId?: string }): {
+  osmId?: string;
+  nhdId?: string;
+  geometrySource?: 'osm' | 'nhd' | 'user';
+} {
+  if (item.source === 'osm' && item.externalId) {
+    return { osmId: item.externalId, geometrySource: 'osm' };
+  }
+  if (item.source === 'nhd' && item.externalId) {
+    return { nhdId: item.externalId, geometrySource: 'nhd' };
+  }
+  return {};
+}
+
+/**
+ * How much of a survey a body must hold to be called the lake that was surveyed.
+ *
+ * A half, and the half is doing real work in both directions. **Not higher**, because our shoreline
+ * and the agency's disagree at the edges — near-shore soundings routinely fall outside our polygon,
+ * and an OSM outline that under-draws a lake would fail a 0.8 test while being the right lake.
+ * **Not lower**, because a bay holds a few percent of its lake's survey and must lose to the lake;
+ * anything under a half means most of what was measured is somewhere else.
+ *
+ * It is a *fraction*, never a count, which is what makes it work on Maine's sparse surveys: a lake
+ * with nine soundings and a lake with ninety thousand are judged the same way.
+ */
+const MIN_SURVEY_CONTAINMENT = 0.5;
+
+/**
  * Spatially match a batch of source lakes to our bodies and stamp their depths (internal; the N6a ETL's
  * load stage). The global sources are keyed to their **own** lake ids — `Hylak_id`, `lagoslakeid` — so
  * there is no join key to our OSM corpus and the join has to be geometric.
@@ -1767,12 +2122,18 @@ export const matchAndImportDepths = internalMutation({
         maxDepthSource: v.optional(literals(DEPTH_SOURCES)),
         /** HydroLAKES' own shoreline in metres — D85's cross-check. Compared, logged, never stored. */
         shorelineM: v.optional(v.number()),
+        /** The source's own name, corroboration for a proximity match only. Never stored. */
+        name: v.optional(v.string()),
       }),
     ),
   },
   handler: async (ctx, { lakes }) => {
     let updated = 0;
     let unmatched = 0;
+    /** Matched by proximity rather than containment — a weaker claim, so it is counted apart. */
+    let matchedByProximity = 0;
+    /** A body was in range but nothing corroborated it. Distinct from "nothing here". */
+    let proximityUnconfirmed = 0;
     let areaRejected = 0;
     let shorelineCompared = 0;
     let shorelineDisagreed = 0;
@@ -1784,41 +2145,57 @@ export const matchAndImportDepths = internalMutation({
 
     for (const lake of lakes) {
       const byId = await listedBodiesNearCoord(ctx, lake.point);
-      // No approach buffer: a lake's representative point must be *on* our polygon to be that lake.
-      // The 300 m parking buffer `resolveBodyForCoord` uses exists so a skater in the car resolves the
-      // lake; here it would let a point just off one shoreline claim the body across the road.
-      const matchId = nearestBodyForPoint(
-        lake.point,
+      // Containment first, then a corroborated proximity fallback — see `matchDepthSource`, which
+      // owns the rule and the reasoning. The zero-buffer rule this replaced was right about the
+      // danger ("a point just off one shoreline claiming the body across the road") and wrong about
+      // the cost: it lost 40% of the prominent bodies to source polygons drawn on a different date.
+      // The fallback is held to a strictly tighter standard than containment, never a looser one.
+      const match = matchDepthSource(
+        { point: lake.point, areaSqM: lake.areaSqM, name: lake.name },
         [...byId.values()].map((b) => ({
           ref: b._id,
           polygon: b.polygon as unknown as Polygon | MultiPolygon,
           surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
+          name: b.name,
         })),
-        0,
+        { areaRatioLimit: DEPTH_MATCH_AREA_RATIO },
       );
-      const body = matchId ? byId.get(matchId) : undefined;
-      if (!body) {
-        unmatched++;
-        rejects.push({ key: lake.key, reason: 'no listed body at this point' });
-        continue;
-      }
 
-      const ours = body.surfaceAreaSqM;
-      if (ours !== undefined && ours > 0 && lake.areaSqM !== undefined && lake.areaSqM > 0) {
-        const ratio = Math.max(ours / lake.areaSqM, lake.areaSqM / ours);
-        if (ratio > DEPTH_MATCH_AREA_RATIO) {
+      if (match.matched === null) {
+        // Name the body we declined. A rejection an operator can act on says *which* lake it looked
+        // at and how the two areas compared; a bare ratio is a number to squint at.
+        const declined = match.nearest ? byId.get(match.nearest) : undefined;
+        const named = declined
+          ? ` with "${declined.name}": ${Math.round(declined.surfaceAreaSqM ?? 0)} m² vs ${Math.round(lake.areaSqM ?? 0)} m²`
+          : '';
+        if (match.reason === 'area_mismatch') {
           areaRejected++;
           rejects.push({
             key: lake.key,
-            reason: `area mismatch with "${body.name}": ${Math.round(ours)} m² vs ${Math.round(lake.areaSqM)} m² (${ratio.toFixed(1)}×)`,
+            reason: `area mismatch${named} (${match.detail ?? ''})`,
           });
-          continue;
+        } else if (match.reason === 'proximity_unconfirmed') {
+          proximityUnconfirmed++;
+          rejects.push({
+            key: lake.key,
+            reason: `body within range but unconfirmed${named} — ${match.detail ?? ''}`,
+          });
+        } else {
+          unmatched++;
+          rejects.push({ key: lake.key, reason: 'no listed body at or near this point' });
         }
-      } else {
-        // Counted, not silent: with an area missing on either side the guard against "the pond next
-        // door" simply doesn't run, and a run needs to say how much of its output went un-gated.
-        noAreaGate++;
+        continue;
       }
+
+      const body = byId.get(match.matched);
+      if (!body) {
+        unmatched++;
+        rejects.push({ key: lake.key, reason: 'matched body vanished mid-batch' });
+        continue;
+      }
+      if (match.method === 'proximity') matchedByProximity++;
+      // Same accounting as before: an area gate that could not run is counted, never silent.
+      if (match.areaRatio === undefined) noAreaGate++;
 
       // ── D85's free cross-check: HydroLAKES' Shore_len against our own shoreline ──────────────
       //
@@ -1876,6 +2253,8 @@ export const matchAndImportDepths = internalMutation({
     return {
       updated,
       unmatched,
+      matchedByProximity,
+      proximityUnconfirmed,
       shorelineCompared,
       shorelineDisagreed,
       areaRejected,
@@ -1891,9 +2270,21 @@ export const matchAndImportDepths = internalMutation({
 /**
  * Resolve a batch of source lakes to our bodies, for the N6b bathymetry ETL (internal; read-only).
  *
- * The same geometric join as `matchAndImportDepths` above, and deliberately the *same* helpers — a
- * second notion of "these are the same lake" is exactly what N6a's ladder work exists to avoid. What
- * differs is what comes back, because N6b needs two things a depth stamp doesn't:
+ * Sibling to `matchAndImportDepths` above, over the same corpus and the same candidate lookup — but
+ * **not the same resolver**, and the difference is load-bearing rather than incidental.
+ *
+ * That function places a *reading*: one depth, one point, and the most specific body containing it is
+ * the right answer, so it ranks smallest-area-first and uses a zero buffer. This one places a
+ * *survey*: thousands of soundings describing a whole basin, where the most specific body containing
+ * the deepest point is very often a **bay** of the lake that was actually surveyed. Ranking those the
+ * same way put every acre of Moosehead Lake onto North Bay, 1.6% of the water the survey covers.
+ *
+ * So this ranks largest-first (`bodiesCoveringPoint`), bounds the answer by the survey's own footprint
+ * rather than by an unsigned area disagreement, and returns the whole containment chain instead of a
+ * winner — because a lake's isobaths belong to the lake *and* to the bays drawn inside it. Someone
+ * skating the bay is skating the lake.
+ *
+ * What comes back also carries two things a depth stamp doesn't need:
  *
  * - **The body's `externalId`.** Contour tiles carry it per feature so the client can filter to the
  *   open lake (D81). It is the OSM id rather than the Convex `_id` on purpose: `_id` changes if a row
@@ -1915,15 +2306,19 @@ export const matchBathymetryLakes = internalQuery({
         /** The source's own lake id (`au_id`, `PALIS_ID`, `MIDAS`, a VT lake name), echoed back. */
         key: v.string(),
         point: latLng,
-        areaSqM: v.optional(v.number()),
+        /**
+         * A deterministic sample of the survey's own measurements — what the containment gate is
+         * measured against. Optional only because the validator cannot require what an older caller
+         * won't send; omitting it runs the join ungated, which the ETL counts and reports.
+         */
+        samplePoints: v.optional(v.array(latLng)),
       }),
     ),
     /** Omit the polygon when only the identity is wanted — a coverage count, say. */
     includePolygon: v.optional(v.boolean()),
   },
   handler: async (ctx, { lakes, includePolygon = true }) => {
-    const matches: Array<{
-      key: string;
+    interface Resolved {
       waterBodyId: Id<'waterBodies'>;
       externalId?: string;
       source: string;
@@ -1931,54 +2326,98 @@ export const matchBathymetryLakes = internalQuery({
       surfaceAreaSqM?: number;
       states?: string[];
       polygon?: unknown;
-    }> = [];
+    }
+    const matches: Array<Resolved & { key: string; alsoCovers: Resolved[] }> = [];
     const rejects: { key: string; reason: string }[] = [];
 
     for (const lake of lakes) {
       const byId = await listedBodiesNearCoord(ctx, lake.point);
-      // Zero approach buffer, for the same reason `matchAndImportDepths` uses zero: a lake's
-      // representative point must be *on* our polygon to be that lake. A buffer would let a sounding
-      // just off one shoreline claim the body across the road.
-      const matchId = nearestBodyForPoint(
+      // **Every** body covering the point, largest first — not the nearest one. See
+      // `bodiesCoveringPoint`: a survey placed by smallest-area lands on a lake's bay instead of the
+      // lake, and Moosehead Lake proved it by arriving as North Bay.
+      const covering = bodiesCoveringPoint(
         lake.point,
         [...byId.values()].map((b) => ({
           ref: b._id,
           polygon: b.polygon as unknown as Polygon | MultiPolygon,
           surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
         })),
-        0,
+        BATHYMETRY_APPROACH_M,
       );
-      const body = matchId ? byId.get(matchId) : undefined;
-      if (!body) {
-        rejects.push({ key: lake.key, reason: 'no listed body at this point' });
+      if (covering.length === 0) {
+        rejects.push({
+          key: lake.key,
+          reason: `no listed body within ${BATHYMETRY_APPROACH_M} m of this point`,
+        });
         continue;
       }
 
-      // The same 4× area gate, and it earns its place here more than it did for depth. A depth
-      // stamped on the wrong pond is one bad number; a *basin* attributed to the wrong pond is a
-      // whole rendered map of somewhere else, drawn confidently inside the wrong shoreline.
-      const ours = body.surfaceAreaSqM;
-      if (ours !== undefined && ours > 0 && lake.areaSqM !== undefined && lake.areaSqM > 0) {
-        const ratio = Math.max(ours / lake.areaSqM, lake.areaSqM / ours);
-        if (ratio > DEPTH_MATCH_AREA_RATIO) {
-          rejects.push({
-            key: lake.key,
-            reason: `area mismatch with "${body.name}": ${Math.round(ours)} m² vs ${Math.round(lake.areaSqM)} m² (${ratio.toFixed(1)}×)`,
-          });
-          continue;
-        }
+      // **Which of these bodies is the lake that was surveyed?** Answered by asking how much of the
+      // survey each one actually holds — see `containedFraction` for why the area comparison this
+      // replaces could not answer it, and cost 68 correct lakes when it tried.
+      //
+      // A survey that sent no sample disables the gate rather than failing it, exactly as a missing
+      // `areaSqM` used to: unmeasurable is not evidence of a bad match. That path is a caller bug and
+      // is counted by the ETL, not silently tolerated.
+      const sample = lake.samplePoints ?? [];
+      const scored = covering.map((hit) => ({
+        ...hit,
+        held:
+          sample.length > 0 ? containedFraction(sample, byId.get(hit.ref)?.polygon as Polygon) : 1,
+      }));
+      // Most of the survey first; ties (including the no-sample case) fall back to the largest body,
+      // which is the containment answer for a bay-vs-lake pair when we cannot measure it.
+      scored.sort((a, b) => b.held - a.held || b.surfaceAreaSqM - a.surfaceAreaSqM);
+
+      const eligible = scored.filter((h) => h.held >= MIN_SURVEY_CONTAINMENT);
+      if (eligible.length === 0) {
+        const best = scored[0];
+        rejects.push({
+          key: lake.key,
+          reason:
+            `no body here holds the survey: best is "${byId.get(best?.ref as Id<'waterBodies'>)?.name ?? '?'}" ` +
+            `with ${((best?.held ?? 0) * 100).toFixed(0)}% of ${sample.length} sampled measurements ` +
+            `(need ${MIN_SURVEY_CONTAINMENT * 100}%)`,
+        });
+        continue;
       }
 
-      matches.push({
-        key: lake.key,
-        waterBodyId: body._id,
-        externalId: body.externalId,
-        source: body.source,
-        name: body.name,
-        surfaceAreaSqM: body.surfaceAreaSqM,
-        states: body.states,
-        ...(includePolygon ? { polygon: body.polygon } : {}),
-      });
+      const resolve = (id: Id<'waterBodies'>): Resolved | undefined => {
+        const body = byId.get(id);
+        if (!body) return undefined;
+        return {
+          waterBodyId: body._id,
+          externalId: body.externalId,
+          source: body.source,
+          name: body.name,
+          surfaceAreaSqM: body.surfaceAreaSqM,
+          states: body.states,
+          ...(includePolygon ? { polygon: body.polygon } : {}),
+        };
+      };
+
+      // The body holding most of the survey — the lake, not one of its bays.
+      const primaryHit = eligible[0];
+      const primary = primaryHit ? resolve(primaryHit.ref) : undefined;
+      if (!primaryHit || !primary) {
+        rejects.push({ key: lake.key, reason: 'body vanished between lookup and resolve' });
+        continue;
+      }
+
+      // **The bays**, taken from the full chain rather than from `eligible`: a bay is by definition
+      // far smaller than the lake that was surveyed, so the gate that picks the lake excludes exactly
+      // the bodies we want here. What qualifies is being covered by the survey and nested inside the
+      // body it resolved to — which is why this filters on the *primary's* area rather than its own.
+      //
+      // Same-size neighbours are included on purpose: two OSM polygons for one lake (a cross-border
+      // duplicate, most often) are a real case, and both should draw rather than one of them
+      // rendering flat beside the other.
+      const alsoCovers = covering
+        .filter((h) => h.ref !== primaryHit.ref && h.surfaceAreaSqM <= primaryHit.surfaceAreaSqM)
+        .map((h) => resolve(h.ref))
+        .filter((r): r is Resolved => r !== undefined);
+
+      matches.push({ key: lake.key, ...primary, alsoCovers });
     }
 
     return { matches, rejects };

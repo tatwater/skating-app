@@ -52,19 +52,74 @@ MSG
   fi
 }
 
+#
+# Write one `importRuns` row for a push, via the run-log CLI (N6c F2).
+#
+# Everything here is best-effort and swallowed: a mirror push that succeeded must not report failure
+# because its receipt could not be filed. `rclone size` is asked *after* the push, so the counts
+# describe what is now in the bucket rather than what we hoped to put there — the number an operator
+# actually wants when asking "is the archive complete".
+#
+record_run() {
+  local rc="$1" started_at="$2" key="$3"
+  local status="succeeded" error="null" objects=0 bytes=0 remote_json
+
+  [ "$rc" -eq 0 ] || { status="failed"; error="\"rclone exited $rc\""; }
+
+  if remote_json=$(rclone size "$REMOTE" --json 2>/dev/null); then
+    objects=$(printf '%s' "$remote_json" | sed -n 's/.*"count":\([0-9]*\).*/\1/p')
+    bytes=$(printf '%s' "$remote_json" | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')
+  fi
+  : "${objects:=0}" "${bytes:=0}"
+
+  local scope="the whole archive"
+  [ -n "$key" ] && scope="$key only"
+
+  printf '%s' "{
+    \"kind\": \"r2_mirror\",
+    \"label\": \"$ARCHIVE_LABEL → $RAW_BUCKET\",
+    \"status\": \"$status\",
+    \"startedAt\": $started_at,
+    \"finishedAt\": $(date +%s)000,
+    \"error\": $error,
+    \"counts\": [
+      {\"name\": \"objectsInBucket\", \"value\": $objects},
+      {\"name\": \"bytesInBucket\", \"value\": $bytes}
+    ],
+    \"stages\": [{
+      \"name\": \"mirror\",
+      \"detail\": \"rclone copy (never sync — a local deletion must not propagate to the backup); pushed $scope\",
+      \"command\": \"rclone copy $ARCHIVE_DIR $REMOTE\",
+      \"input\": \"$ARCHIVE_DIR\",
+      \"output\": \"$REMOTE\",
+      \"bytes\": $bytes
+    }],
+    \"notes\": [\"Object and byte counts are read back from the bucket after the push, so they describe what is actually there.\"]
+  }" | (cd "$(dirname "${BASH_SOURCE[0]}")/.." && pnpm --filter @skating/run-log record) 2>&1 |
+    sed 's/^/[mirror] /' || true
+}
+
 mirror_main() {
   local mode="${1:-}" key="${2:-}"
   case "$mode" in
     push)
       preflight
       mkdir -p "$ARCHIVE_DIR"
+      local started_at rc=0
+      started_at=$(date +%s)000
       if [ -n "$key" ]; then
         echo "→ pushing $ARCHIVE_LABEL/$key to $REMOTE/$key"
-        rclone copy "$ARCHIVE_DIR/$key" "$REMOTE/$key" --progress
+        rclone copy "$ARCHIVE_DIR/$key" "$REMOTE/$key" --progress || rc=$?
       else
         echo "→ pushing the $ARCHIVE_LABEL archive to $REMOTE"
-        rclone copy "$ARCHIVE_DIR" "$REMOTE" --progress
+        rclone copy "$ARCHIVE_DIR" "$REMOTE" --progress || rc=$?
       fi
+      # File the receipt (N6c F2). The push is the step that makes an archive durable, and "when did
+      # we last mirror this, and did it work" had no answer outside whoever ran it. `|| rc=$?` above
+      # rather than letting `set -e` kill us, so a FAILED push is recorded as failed rather than
+      # vanishing — the outcome most worth knowing is the one that used to leave no trace.
+      record_run "$rc" "$started_at" "$key"
+      [ "$rc" -eq 0 ] || exit "$rc"
       ;;
     pull)
       preflight

@@ -167,6 +167,138 @@ export const DEPTH_SOURCE_LABELS: Record<DepthSource, string> = {
   osm_tag: 'OpenStreetMap',
 };
 
+/**
+ * What each depth source's **licence** requires us to render, as opposed to what we call it.
+ *
+ * **A label is not an attribution, and `DEPTH_SOURCE_LABELS` above is a label.** `'LAGOS-US DEPTH'`
+ * tells a skater where a number came from; it does not identify the creators, name the licence, or
+ * link the material, which is what CC BY 4.0 §3.a.1 actually asks for. That distinction is the same
+ * one `CONTOUR_SOURCE_TERMS` exists for in `contourLayer.ts` — *"the tile carries a short agency
+ * label; the licence requires particular words"* — and depth needs it for the same reason.
+ *
+ * **Two of the three bulk sources are CC BY**, confirmed at download on 2026-08-02 rather than
+ * assumed: HydroLAKES from hydrosheds.org, and LAGOS-US DEPTH from its EDI package page (that one
+ * had been an open question since the phase was scoped). Neither is free-to-use; both carry an
+ * obligation that only discharges where the data is displayed.
+ *
+ * `null` means **no obligation**, and it is a claim, not a gap — GLOBathy is CC0 and a moderator's
+ * own reading belongs to us. `credit: undefined` on a licensed source means the opposite: the
+ * obligation exists and has not been met yet. {@link attributionGaps} is what keeps the two apart.
+ */
+export interface DepthSourceTerms {
+  /** Short licence name, for the caption. */
+  licence: string;
+  licenceUrl?: string;
+  /**
+   * Whether this licence obliges us to credit the source where its data is shown.
+   *
+   * **Stated, never inferred.** The first cut of this derived it from `credit === undefined`, which
+   * quietly reported CC0 GLOBathy as an unmet obligation — a licence permitting use without
+   * attribution and one whose attribution we simply haven't written down are opposite situations
+   * that look identical from the outside. Whether a licence requires attribution is a legal claim,
+   * and legal claims do not belong in a substring match on a licence name.
+   */
+  requiresAttribution: boolean;
+  /**
+   * The attribution exactly as the source requires it. Never paraphrased — the point of copying it
+   * verbatim is that a credit which drifts is a credit nobody can check.
+   */
+  credit?: string;
+  /** A further notice the terms require alongside the credit. */
+  notice?: string;
+}
+
+export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms | null>> = {
+  // Ours / a person's own reading — nothing to credit outward.
+  operator: null,
+  // Each agency's wording lives in `CONTOUR_SOURCE_TERMS`, keyed by agency rather than by rung:
+  // `state_agency` spans five publishers with five different required strings.
+  state_agency: null,
+  lagos_us: {
+    licence: 'CC BY 4.0',
+    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    requiresAttribution: true,
+    // Verbatim from the EDI package's own recommended citation, read 2026-08-02. The "Accessed"
+    // date is ours and is the date the archive under `scripts/lake-depth/.raw/lagos-us-depth/` was
+    // pulled — if that archive is ever refreshed, this moves with it. That is the citation form the
+    // repository asks for precisely because the package can be revised.
+    credit:
+      'Stachelek, J., L.K. Rodriguez, J. Díaz Vázquez, A. Hawkins, E. Phillips, A. Shoffner, I.M. McCullough, K.B. King, J. Namovich, L.A. Egedy, M. Haite, P.J. Hanly, K.E. Webster, K.S. Cheruvelil, and P.A. Soranno. 2021. LAGOS-US DEPTH v1.0: Data module of observed maximum and mean lake depths for a subset of lakes in the conterminous U.S. ver 1. Environmental Data Initiative. https://doi.org/10.6073/pasta/64ddc4d04661d9aef4bd702dc5d8984f (Accessed 2026-08-02).',
+  },
+  hydrolakes_reported: HYDROLAKES_TERMS(),
+  hydrolakes_modeled: HYDROLAKES_TERMS(),
+  globathy: {
+    // CC0 asks for nothing. Recorded anyway, because "no obligation" and "nobody checked" look
+    // identical in an absent entry, and only one of them is safe to ship. Citing it is still good
+    // manners and the caption does; it is simply not owed.
+    licence: 'CC0 1.0',
+    licenceUrl: 'https://creativecommons.org/publicdomain/zero/1.0/',
+    requiresAttribution: false,
+  },
+  osm_tag: {
+    licence: 'ODbL 1.0',
+    licenceUrl: 'https://www.openstreetmap.org/copyright',
+    requiresAttribution: true,
+    credit: '© OpenStreetMap contributors',
+  },
+};
+
+/** Both HydroLAKES rungs are the same dataset under the same terms, so the wording is shared. */
+function HYDROLAKES_TERMS(): DepthSourceTerms {
+  return {
+    licence: 'CC-BY 4.0',
+    licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',
+    requiresAttribution: true,
+    // Verbatim from hydrosheds.org/products/hydrolakes, checked 2026-08-02.
+    credit:
+      'Messager, M.L., Lehner, B., Grill, G., Nedeva, I., Schmitt, O. (2016). Estimating the volume and age of water stored in global lakes using a geo-statistical approach. Nature Communications, 7: 13603.',
+  };
+}
+
+/**
+ * Sources whose licence requires attribution that we have not recorded yet.
+ *
+ * **This is a shipping gate, not a lint.** A depth value rendered from a CC BY source with no credit
+ * is a licence breach, and the failure is silent by nature — nothing in the app misbehaves, the
+ * number just appears. So the gap is computed rather than remembered, and the test suite asserts the
+ * set matches what is knowingly outstanding.
+ */
+export function attributionGaps(
+  registry: Readonly<Record<DepthSource, DepthSourceTerms | null>> = DEPTH_SOURCE_TERMS,
+): DepthSource[] {
+  return (Object.keys(registry) as DepthSource[]).filter((source) => {
+    const terms = registry[source];
+    return terms?.requiresAttribution && !terms.credit?.trim();
+  });
+}
+
+/**
+ * The credits a set of shown depth sources obliges us to render, deduped and in ladder order.
+ *
+ * **Separate from `describeLakeDepth`'s caption on purpose.** The caption answers *where did this
+ * number come from* in four words, and stuffing a fifteen-author citation into it would make the
+ * common case unreadable to serve a requirement that CC BY lets us meet "in any manner reasonable to
+ * the medium". So the caption keeps the short label and this returns the wording for a sources line
+ * or an expandable — the same split the contour layer makes between its agency label and its credit.
+ *
+ * Returns `[]` when nothing shown is owed a credit, which is most bodies: a moderator's own reading
+ * and a state survey are handled elsewhere, and GLOBathy is CC0.
+ */
+export function requiredDepthCredits(sources: readonly DepthSource[]): string[] {
+  const credits: string[] = [];
+  for (const source of [...new Set(sources)].sort(
+    (a, b) => DEPTH_SOURCE_RANK[a] - DEPTH_SOURCE_RANK[b],
+  )) {
+    const terms = DEPTH_SOURCE_TERMS[source];
+    if (!terms?.requiresAttribution) continue;
+    const credit = terms.credit?.trim();
+    // A licensed source with no recorded credit is a bug caught by `attributionGaps` in the test
+    // suite, not something to paper over at render time by omitting the obligation silently.
+    if (credit && !credits.includes(credit)) credits.push(credit);
+  }
+  return credits;
+}
+
 /** A body's depth, ready to render: the numbers, their attribution, and whether any is an estimate. */
 export interface DepthDisplay {
   /** e.g. `"mean ~13 ft · max 59 ft"` — a `~` marks a modelled value. */

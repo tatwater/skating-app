@@ -3,18 +3,24 @@ import { type LatLng, pointInPolygon, shorelineMeters } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
+  BELOW_AREA_FLOOR,
   CONVEX_ARRAY_LIMIT,
   depthFromOsmTags,
   externalIdFromProperties,
   featureToCanonicalBody,
+  HARD_MIN_SURFACE_AREA_ACRES,
+  HARD_MIN_SURFACE_AREA_SQM,
   largestRingSize,
   MAX_RING_VERTICES,
+  MIN_SURFACE_AREA_ACRES,
+  MIN_SURFACE_AREA_SQM,
   maxArrayLength,
+  meetsAreaFloor,
   parseOsmDepthMeters,
   SIMPLIFY_TOLERANCE_DEG,
   transformFeatures,
 } from './transform';
-import type { OsmWaterFeature } from './types';
+import type { CanonicalBody, OsmWaterFeature } from './types';
 
 /** The committed real Vermont fixture (osmium `geojsonseq`, one Feature per line). */
 function loadFixture(): OsmWaterFeature[] {
@@ -58,6 +64,18 @@ function waterFeature(
   } as OsmWaterFeature;
 }
 
+/**
+ * `featureToCanonicalBody` for a feature a test expects to survive **both** skip paths
+ * (classification and the area floor), narrowing the union so assertions can read fields directly.
+ * Fails loudly naming which skip it hit, rather than quietly asserting against `undefined`.
+ */
+function importedBody(feature: OsmWaterFeature): CanonicalBody {
+  const body = featureToCanonicalBody(feature);
+  if (body === null) throw new Error('expected a body, got a classification skip');
+  if (body === BELOW_AREA_FLOOR) throw new Error('expected a body, got an area-floor skip');
+  return body;
+}
+
 describe('externalIdFromProperties', () => {
   it('builds `way/<id>` and `relation/<id>` from osmium @type/@id', () => {
     expect(externalIdFromProperties({ '@type': 'way', '@id': 47338349 })).toBe('way/47338349');
@@ -87,9 +105,7 @@ describe('externalIdFromProperties', () => {
 
 describe('featureToCanonicalBody', () => {
   it('classifies, simplifies, and derives bbox/centroid/area from the stored geometry', () => {
-    const body = featureToCanonicalBody(waterFeature({ '@id': 42, name: 'Test Pond' }));
-    expect(body).not.toBeNull();
-    if (body === null) return;
+    const body = importedBody(waterFeature({ '@id': 42, name: 'Test Pond' }));
     expect(body).toMatchObject({
       source: 'osm',
       externalId: 'way/42',
@@ -114,9 +130,9 @@ describe('featureToCanonicalBody', () => {
     expect(featureToCanonicalBody(feature)).toBeNull();
   });
 
-  it('falls back to an empty name when the feature is unnamed', () => {
-    const body = featureToCanonicalBody(waterFeature({}));
-    expect(body?.name).toBe('');
+  it('falls back to an empty name when the feature is unnamed (and clears the floor on size)', () => {
+    const body = importedBody(waterFeature({}));
+    expect(body.name).toBe('');
   });
 
   it('throws when @type/@id is missing (feature not exported with -a type,id)', () => {
@@ -134,9 +150,9 @@ describe('featureToCanonicalBody', () => {
     expect(() => featureToCanonicalBody(feature)).toThrow(/geometry type/);
   });
 
-  it('throws on a degenerate polygon (empty ring) representativePoint cannot place', () => {
+  it('throws on a degenerate polygon (empty ring) rather than floor it as a tiny body', () => {
     const feature = waterFeature({}, [[]]);
-    expect(() => featureToCanonicalBody(feature)).toThrow();
+    expect(() => featureToCanonicalBody(feature)).toThrow(/degenerate geometry/);
   });
 
   it('simplifies a dense ring to fewer vertices at the ~5 m tolerance', () => {
@@ -145,10 +161,11 @@ describe('featureToCanonicalBody', () => {
     const dense: number[][] = [];
     for (let i = 0; i <= 200; i++) dense.push([-72 + i * 0.000001, 44]);
     dense.push([-72, 44.01], [-72, 44]);
-    const feature = waterFeature({}, [dense]);
+    // Named, because this sliver is far under the area floor and the subject here is simplification.
+    const feature = waterFeature({ name: 'Dense Sliver Pond' }, [dense]);
     const body = featureToCanonicalBody(feature);
     expect(body).not.toBeNull();
-    if (body === null) return;
+    if (body === null || body === BELOW_AREA_FLOOR) return;
     expect(vertexCount(body.polygon)).toBeLessThan(vertexCount(feature.geometry as Polygon));
   });
 
@@ -170,9 +187,7 @@ describe('featureToCanonicalBody', () => {
     ring.push(ring[0] as number[]); // close the ring
     expect(ring.length).toBeGreaterThan(MAX_RING_VERTICES);
 
-    const body = featureToCanonicalBody(waterFeature({}, [ring]));
-    expect(body).not.toBeNull();
-    if (body === null) return;
+    const body = importedBody(waterFeature({}, [ring]));
     expect(largestRingSize(body.polygon)).toBeLessThanOrEqual(MAX_RING_VERTICES);
     expect(body.surfaceAreaSqM).toBeGreaterThan(0);
     // Adaptive coarsening of a ~9k-vertex ring is genuinely CPU-heavy; CI runs ~8× slower than
@@ -271,8 +286,10 @@ describe('transformFeatures (batch resilience)', () => {
     const { bodies, summary, errors } = transformFeatures(loadFixture());
     expect(summary).toEqual({
       total: 10,
-      imported: 8,
+      imported: 6,
       droppedByType: 2,
+      // way/34856116 (1.9 ac) and way/40420872 (3.2 ac), both unnamed — the floor's whole point.
+      droppedByAreaFloor: 2,
       skipped: 0,
       depthsTagged: 0,
     });
@@ -289,12 +306,18 @@ describe('transformFeatures (batch resilience)', () => {
       type: 'reservoir',
       name: 'Sugar Hill Reservoir',
     });
-    // wetland=marsh → marsh; bare natural=water → other; unnamed → empty name.
+    // wetland=marsh → marsh; unnamed but over the floor (14.8 ac) → kept with an empty name.
     expect(byId.get('way/40089880')?.type).toBe('marsh');
-    expect(byId.get('way/34856116')).toMatchObject({ type: 'other', name: '' });
+    expect(byId.get('way/30930914')).toMatchObject({ type: 'other', name: '' });
     // The two deferred features are absent from the output.
     expect(byId.has('way/143518175')).toBe(false); // water=river
     expect(byId.has('way/43152092')).toBe(false); // natural=wetland, no subtag
+    // …as are the two under the floor: unnamed, and nowhere anyone is going.
+    expect(byId.has('way/34856116')).toBe(false); // 1.9 ac, unnamed
+    expect(byId.has('way/40420872')).toBe(false); // 3.2 ac, unnamed
+    // Bugbee Pond is 6.0 ac and Occom Pond 9.4 — small, named, and the floor keeps both.
+    expect(byId.get('way/40420827')).toMatchObject({ name: 'Bugbee Pond' });
+    expect(byId.get('way/4802652')).toMatchObject({ name: 'Occom Pond' });
 
     // Every stored centroid lies on its stored (simplified) polygon (D48 on-water invariant).
     for (const body of bodies) {
@@ -310,6 +333,7 @@ describe('transformFeatures (batch resilience)', () => {
       total: 2,
       imported: 1,
       droppedByType: 0,
+      droppedByAreaFloor: 0,
       skipped: 1,
       depthsTagged: 0,
     });
@@ -365,9 +389,105 @@ describe('transformFeatures (batch resilience)', () => {
     expect(transformFeatures([])).toEqual({
       bodies: [],
       depths: [],
-      summary: { total: 0, imported: 0, droppedByType: 0, skipped: 0, depthsTagged: 0 },
+      summary: {
+        total: 0,
+        imported: 0,
+        droppedByType: 0,
+        droppedByAreaFloor: 0,
+        skipped: 0,
+        depthsTagged: 0,
+      },
       errors: [],
     });
+  });
+});
+
+/**
+ * The surface-area floor (founder call, 2026-08-02). Five acres, with a name as the escape hatch —
+ * see `MIN_SURFACE_AREA_ACRES` / `meetsAreaFloor` for why those two numbers and not the 25 / 30 / 50
+ * that were also on the table.
+ */
+describe('surface-area floor', () => {
+  /** A square pond of roughly `acres`, at Vermont's latitude. */
+  function pondOfAcres(acres: number, props: Record<string, unknown> = {}): OsmWaterFeature {
+    const side = Math.sqrt(acres * 4046.8564224); // metres
+    const dLat = side / 111_320;
+    const dLng = side / (111_320 * Math.cos((44 * Math.PI) / 180));
+    return waterFeature(props, [
+      [
+        [-72, 44],
+        [-72 + dLng, 44],
+        [-72 + dLng, 44 + dLat],
+        [-72, 44 + dLat],
+        [-72, 44],
+      ],
+    ]);
+  }
+
+  it('is five acres, or one for an attested body', () => {
+    expect(MIN_SURFACE_AREA_ACRES).toBe(5);
+    expect(MIN_SURFACE_AREA_SQM).toBeCloseTo(20_234.28, 1);
+    expect(HARD_MIN_SURFACE_AREA_ACRES).toBe(1);
+    expect(HARD_MIN_SURFACE_AREA_SQM).toBeCloseTo(4_046.86, 1);
+  });
+
+  it('keeps an unnamed body at or above the floor', () => {
+    expect(meetsAreaFloor({ name: '', surfaceAreaSqM: MIN_SURFACE_AREA_SQM })).toBe(true);
+    expect(featureToCanonicalBody(pondOfAcres(20))).not.toBe(BELOW_AREA_FLOOR);
+  });
+
+  it('drops an unnamed body below the floor — the backyard pond this exists for', () => {
+    expect(meetsAreaFloor({ name: '', surfaceAreaSqM: MIN_SURFACE_AREA_SQM - 1 })).toBe(false);
+    expect(featureToCanonicalBody(pondOfAcres(0.5))).toBe(BELOW_AREA_FLOOR);
+  });
+
+  it('keeps a NAMED body down to one acre — a mapper naming it is the signal', () => {
+    // The hedge, not a rescue: no *discussed* body is under five acres, so this tier protects 2,398
+    // small named ponds nobody is known to skate — ~2% of rows, against a corpus we have very little
+    // demand data about. See `meetsAreaFloor`.
+    expect(
+      meetsAreaFloor({ name: 'Some Named Pond', surfaceAreaSqM: HARD_MIN_SURFACE_AREA_SQM }),
+    ).toBe(true);
+    const body = importedBody(pondOfAcres(2, { name: 'Someones Named Pond' }));
+    expect(body.name).toBe('Someones Named Pond');
+  });
+
+  it('drops a named body under ONE acre — a name stops asserting anything down there', () => {
+    // 98% of sub-acre bodies are unnamed; of the 1,586 that aren't, one has an agency survey and one
+    // has a long axis over 300 m. An acre is 64 m across.
+    expect(
+      meetsAreaFloor({ name: 'Named Puddle', surfaceAreaSqM: HARD_MIN_SURFACE_AREA_SQM - 1 }),
+    ).toBe(false);
+    expect(featureToCanonicalBody(pondOfAcres(0.25, { name: 'Someones Named Puddle' }))).toBe(
+      BELOW_AREA_FLOOR,
+    );
+  });
+
+  it('drops an unnamed 1–5 ac body even where a state agency has surveyed it', () => {
+    // The knowingly-accepted cost of having no bathymetry clause (D91): 5 bodies across five states.
+    expect(featureToCanonicalBody(pondOfAcres(4, { '@id': 77 }))).toBe(BELOW_AREA_FLOOR);
+  });
+
+  it('tallies floor drops separately from classification drops', () => {
+    const { bodies, summary } = transformFeatures([
+      pondOfAcres(40, { '@id': 1, name: 'Big Pond' }),
+      pondOfAcres(0.3, { '@id': 2 }), // unnamed puddle → floor
+      pondOfAcres(2, { '@id': 3, name: 'Small Named Pond' }), // named, over an acre → kept
+      waterFeature({ '@id': 4, water: 'river' }), // classification
+    ]);
+    expect(summary).toMatchObject({
+      total: 4,
+      imported: 2,
+      droppedByType: 1,
+      droppedByAreaFloor: 1,
+    });
+    expect(bodies.map((b) => b.externalId)).toEqual(['way/1', 'way/3']);
+  });
+
+  it('does not let a below-floor feature swallow a depth tag', () => {
+    // A depth keyed to an `externalId` no row carries counts as `unmatched` in the loader forever.
+    const { depths } = transformFeatures([pondOfAcres(0.3, { '@id': 9, maxdepth: '4' })]);
+    expect(depths).toEqual([]);
   });
 });
 
@@ -484,33 +604,31 @@ describe('derived shape stats (N6c / D85)', () => {
     // The whole of D85 in one assertion. If `lakeGeometryStats` is ever moved below
     // `simplifyForStorage`, the stored shoreline collapses toward the smoothed outline and this
     // fails — which is the only mechanical guard on a one-line ordering constraint.
-    const body = featureToCanonicalBody(crenellatedFeature());
-    expect(body).not.toBeNull();
-    const measuredOnStoredCopy = shorelineMeters(body?.polygon as Polygon);
-    expect(body?.shorelineM).toBeGreaterThan(measuredOnStoredCopy * 1.05);
+    const body = importedBody(crenellatedFeature());
+    const measuredOnStoredCopy = shorelineMeters(body.polygon as Polygon);
+    expect(body.shorelineM).toBeGreaterThan(measuredOnStoredCopy * 1.05);
   });
 
   it('carries the full stat block onto the canonical body', () => {
-    const body = featureToCanonicalBody(waterFeature({}));
-    expect(body?.shorelineM).toBeGreaterThan(0);
-    expect(body?.longAxisM).toBeGreaterThan(0);
-    expect(body?.shortAxisM).toBeGreaterThan(0);
-    expect(body?.longAxisBearingDeg).toBeGreaterThanOrEqual(0);
-    expect(body?.longAxisBearingDeg).toBeLessThan(180);
-    expect(body?.fetchProfileM).toHaveLength(16);
-    expect(body?.fetchProfileM?.every((d) => d > 0)).toBe(true);
+    const body = importedBody(waterFeature({}));
+    expect(body.shorelineM).toBeGreaterThan(0);
+    expect(body.longAxisM).toBeGreaterThan(0);
+    expect(body.shortAxisM).toBeGreaterThan(0);
+    expect(body.longAxisBearingDeg).toBeGreaterThanOrEqual(0);
+    expect(body.longAxisBearingDeg).toBeLessThan(180);
+    expect(body.fetchProfileM).toHaveLength(16);
+    expect(body.fetchProfileM?.every((d) => d > 0)).toBe(true);
   });
 
   it('puts interiorPoint inside the water, where centroid may not be', () => {
-    const body = featureToCanonicalBody(waterFeature({}));
-    expect(body?.interiorPoint).toBeDefined();
-    expect(pointInPolygon(body?.interiorPoint as LatLng, body?.polygon as Polygon)).toBe(true);
+    const body = importedBody(waterFeature({}));
+    expect(body.interiorPoint).toBeDefined();
+    expect(pointInPolygon(body.interiorPoint as LatLng, body.polygon as Polygon)).toBe(true);
   });
 
   it('still produces a body when the stats cannot all be measured', () => {
     // Resilience over completeness: a stat is omitted, never zeroed, and never fails the feature.
-    const body = featureToCanonicalBody(waterFeature({}));
-    expect(body).not.toBeNull();
-    expect(body?.externalId).toBe('way/1');
+    const body = importedBody(waterFeature({}));
+    expect(body.externalId).toBe('way/1');
   });
 });

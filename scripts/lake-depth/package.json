@@ -3,17 +3,19 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual lake-depth ETL (N6a): LAGOS-US DEPTH + HydroLAKES + GLOBathy \u2192 Convex. Not built or deployed.",
+  "description": "Manual lake-depth ETL (N6a): LAGOS-US DEPTH + HydroLAKES + GLOBathy → Convex. Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "transform": "tsx src/cli.ts",
     "load": "tsx src/load.ts",
-    "load-elevation": "tsx src/loadElevation.ts"
+    "load-elevation": "tsx src/loadElevation.ts",
+    "archive": "tsx src/archiveCli.ts"
   },
   "dependencies": {
-    "@skating/core": "workspace:*"
+    "@skating/core": "workspace:*",
+    "@skating/run-log": "workspace:*"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

@@ -316,3 +316,34 @@ export const POINT_EVENT_REASONS = [
   'hazard_corroborated', // your hazard confirmed by ≥2 peers — author-side boost (D50, Phase 6)
   'bounty_fulfilled',
 ] as const;
+
+/**
+ * Which loader an `importRuns` row describes (N6c F2). One member per manual ETL under `scripts/`,
+ * because "how did the last import go" is a question about a *pipeline*, and the coverage of the
+ * depth join is not comparable to the coverage of the wind-rose fetch.
+ */
+export const IMPORT_RUN_KINDS = [
+  'canonical_water', // scripts/etl — OSM extract → waterBodies
+  'osm_depths', // scripts/etl load-depths — the N6a rung-7 tag stream
+  'admin_areas', // scripts/admin-areas
+  'lake_depth', // scripts/lake-depth — HydroLAKES/GLOBathy/LAGOS-US join
+  'elevation', // scripts/lake-depth load-elevation — Open-Meteo
+  'wind_climate', // scripts/wind-climate — NREL WIND Toolkit winter roses
+  'bathymetry_coverage', // scripts/bathymetry coverage — D2's hasContours
+  'region_stats', // convex regionStats:recompute — derived, but it is a pass and it can fail
+  // The steps *before* a loader — where the third-party data is actually acquired, and where a
+  // source most often turns out to have moved, changed schema, or quietly returned less than
+  // last time. Logging only the load answers "how many rows landed" and never "landed from what".
+  'raw_archive', // a `.raw/` archive populated from third parties (OSM extracts, agency services)
+  'r2_mirror', // scripts/lib/mirror-r2.sh — pushing an archive to its private R2 bucket
+  'bathymetry_join', // scripts/bathymetry join — archived lakes matched to corpus bodies
+  'bathymetry_build', // scripts/bathymetry build-contours — soundings/contours → drawable isobaths
+  'bathymetry_tiles', // scripts/bathymetry tile — contours → PMTiles
+] as const;
+
+/**
+ * A run's terminal state. **`running` is not merely a transient** — a row left in it is the
+ * signature of a loader whose process died without getting to write a summary, which is exactly
+ * the failure mode a printed-to-stderr summary could never record.
+ */
+export const IMPORT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;

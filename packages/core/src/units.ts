@@ -9,7 +9,15 @@ const CM_PER_INCH = 2.54;
 const MM_PER_INCH = 25.4;
 const KM_PER_MILE = 1.609344;
 const M_PER_FOOT = 0.3048;
-const SQM_PER_ACRE = 4046.8564224;
+/**
+ * Exported because the ETLs need it as a *threshold*, not just a display conversion.
+ *
+ * The canonical import's area floor is expressed in acres (`MIN_SURFACE_AREA_ACRES`) and the
+ * elevation pass has to target the same set of bodies, so both need the factor. It was already
+ * written out by hand in `scripts/etl/src/transform.ts`; one shared constant beats three copies of
+ * `4046.8564224` drifting in the last decimal.
+ */
+export const SQM_PER_ACRE = 4046.8564224;
 const SQFT_PER_SQM = 10.76391041671;
 
 // --- Conversions (metric → imperial and back) ---

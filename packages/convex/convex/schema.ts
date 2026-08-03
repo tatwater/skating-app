@@ -52,6 +52,8 @@ import {
   HAZARD_GEOMETRY_KINDS,
   HAZARD_HEALING_STATES,
   HAZARD_STATUSES,
+  IMPORT_RUN_KINDS,
+  IMPORT_RUN_STATUSES,
   MODERATION_ACTIONS,
   MODERATION_STATUSES,
   MODERATION_TARGET_TYPES,
@@ -354,6 +356,38 @@ export default defineSchema({
     type: literals(WATER_BODY_TYPES),
     source: literals(WATER_BODY_SOURCES),
     externalId: v.optional(v.string()), // OSM/NHD id when source != user
+    /**
+     * **Who this lake is, in each catalogue that knows it** — as against `externalId`, which is who
+     * we happened to import it from.
+     *
+     * The two are the same string today, and the split exists because that is a coincidence rather
+     * than a fact. `externalId` is a *key*: `importCanonical` upserts on it and contour tiles are
+     * stamped with it, so it must not move. These are *claims about identity*, and a lake can hold
+     * both — most do, once reconciled.
+     *
+     * **`nhdId` earns its place before any NHD geometry is ever imported.** OSM carries the same lake
+     * twice more often than it looks (Long Pond is `way/150404999` at 2,552 acres and
+     * `relation/2602300` at 2,532; Lovell Lake, Duncan Lake, Meadow Lake and Bolster Pond are the
+     * same shape), and OSM cannot see its own duplicates. NHD can: all five pairs collapse onto a
+     * single `Permanent_Identifier`. So this is a reconciliation key first and an import key second.
+     *
+     * **Reconcile by `polygonIoU`, never by point containment.** Measured, not assumed: North Bay's
+     * interior point sits inside NHD's *Moosehead Lake*, so a containment join would give a bay its
+     * parent's id and make the two look like duplicates of each other — while Moosehead itself
+     * matched nothing at all, because `centroid` is `pointOnFeature` and lands on the shoreline of a
+     * large irregular lake (D85 amendment). Both failures are silent.
+     */
+    osmId: v.optional(v.string()), // `way/<id>` / `relation/<id>`
+    nhdId: v.optional(v.string()), // NHD `Permanent_Identifier`
+    /**
+     * Whose polygon `polygon` actually is — which `source` conflates with where the row came from.
+     *
+     * Separate so the two can diverge per lake without a migration: a body imported from OSM whose
+     * geometry we later take from NHD (Beau Lake, absent from OSM's Maine extract because Geofabrik
+     * clips the Québec half) keeps its OSM identity and access layer while drawing from NHD.
+     * Absent means "the same as `source`", which is true of every row imported so far.
+     */
+    geometrySource: v.optional(literals(WATER_BODY_SOURCES)),
     // Admin regions (2-letter US state codes) the body falls in, unioned from the per-state ETL
     // extracts at import — a border-spanning body (Lake Champlain) appears in multiple state
     // extracts and accumulates e.g. ["NY","VT"]. Powers the search-result location label +
@@ -524,6 +558,11 @@ export default defineSchema({
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
     .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
     .index('by_external_id', ['source', 'externalId']) // idempotent canonical upsert (D14/D48)
+    // Reconciliation lookups only, and **equality only**. An index on an optional field is not
+    // sparse in Convex — every one of the 116,070 rows without an `nhdId` sits at the front under
+    // `undefined` — so a bare range scan here would read the whole corpus. `.eq()` is safe; `.lte()`
+    // is the trap.
+    .index('by_nhd_id', ['nhdId'])
     // The curation list (N2). Until now there was NO index on `curatedBoost` and no query listing
     // boosted bodies — `WaterBodyModeratorControls` edits the boost on a body you already navigated
     // to, and nothing told you which of 116k carry one. The five known Phase-2.5 mis-matches (South
@@ -1640,4 +1679,115 @@ export default defineSchema({
   })
     // Point lookup for the upsert + the per-metric date-range read every chart makes.
     .index('by_metric_date', ['metric', 'date']),
+
+  /**
+   * One row per ETL run — the durable version of the summary every loader used to print to a
+   * terminal that scrolls (N6c Workstream F2).
+   *
+   * **The question this exists to answer is "how did the last import go", and the sharper one
+   * underneath it: "which bodies did it decline, and why".** Every loader we have (`etl`,
+   * `admin-areas`, `lake-depth`, `wind-climate`, `bathymetry`) already computes a genuinely useful
+   * summary — match rate, rejects by reason, overrides held, contested merges — and then throws it
+   * away. Nothing was ever wrong with the numbers; there was simply nowhere to put them, so
+   * coverage regressions between runs were invisible by construction.
+   *
+   * **One row per run, never one per body.** An 8k-row audit trail per run is a different feature
+   * with a different cost, and the per-body question is already answered by the depth/elevation
+   * provenance stored on the row itself. `failures` is therefore a *bounded sample* and
+   * `failuresTotal` is the honest count beside it — a truncated list that doesn't say it was
+   * truncated reads as "only three lakes failed", which is the specific lie this table exists to
+   * stop telling.
+   *
+   * **`stages` is the full path, and it is the point.** A run is not one step: an archived
+   * Geofabrik extract → an `osmium` filter → a tested transform → a batched load. Each stage
+   * carries whatever provenance it actually has — the source URL, the build date, the sha256 the
+   * archive verified, the exact command, the counts in and out — so an operator can trace a body
+   * on the map back to the byte range of a file with a checksum. Recording only the last stage
+   * would answer "how many rows landed" and never "landed from what".
+   *
+   * **`campaignId` groups the runs that were one operation.** Five state extracts are five loader
+   * invocations and five rows, but they are one canonical update, and "how did the last import go"
+   * is a question about the update rather than about Vermont.
+   */
+  importRuns: defineTable({
+    kind: literals(IMPORT_RUN_KINDS),
+    /** Human label for the run — 'VT canonical water', 'winter wind roses'. */
+    label: v.string(),
+    /** Operator-supplied grouping for runs that were one logical operation. */
+    campaignId: v.optional(v.string()),
+    /** Resolved target, recorded verbatim so a prod run is never mistaken for a dev one. */
+    deployment: v.string(),
+    isProd: v.boolean(),
+    status: literals(IMPORT_RUN_STATUSES),
+    startedAt: v.number(),
+    /** Absent while `status` is 'running' — including for a run whose process was killed. */
+    finishedAt: v.optional(v.number()),
+    /**
+     * Named tallies, deliberately free-form: each loader names its own (`inserted`, `updated`,
+     * `matched`, `unmatched`, `cellsFetched`). A fixed column set would have to be the union of
+     * five loaders' vocabularies and would still be wrong for the sixth.
+     */
+    counts: v.array(v.object({ name: v.string(), value: v.number() })),
+    stages: v.array(
+      v.object({
+        name: v.string(),
+        detail: v.optional(v.string()),
+        /** The command as run, so the path is reproducible rather than merely described. */
+        command: v.optional(v.string()),
+        input: v.optional(v.string()),
+        output: v.optional(v.string()),
+        sourceUrl: v.optional(v.string()),
+        bytes: v.optional(v.number()),
+        sha256: v.optional(v.string()),
+        md5: v.optional(v.string()),
+        /** Whether the archive verified the publisher's checksum at fetch time. */
+        checksumVerified: v.optional(v.boolean()),
+        /** When the *stage's input* was produced (an extract's build date), not when it ran. */
+        sourceAt: v.optional(v.number()),
+        counts: v.optional(v.array(v.object({ name: v.string(), value: v.number() }))),
+      }),
+    ),
+    /** Bounded sample — see `failuresTotal` for the real count. */
+    failures: v.array(
+      v.object({
+        stage: v.string(),
+        /** Whatever identifies the item: an `externalId`, a grid cell, a state code. */
+        key: v.optional(v.string()),
+        reason: v.string(),
+      }),
+    ),
+    failuresTotal: v.number(),
+    /**
+     * What share of what it *could* have covered, this run actually did — and where the rest went.
+     *
+     * **A rate, not a count, because a count cannot be wrong.** "9,981 bodies stamped" reads as a
+     * complete pass whether the corpus is 10,000 or 116,070; only a denominator makes a shortfall
+     * visible. Every loader here already knew its rate and printed it to a terminal.
+     *
+     * **`omissions` must account for the gap, and the UI checks that it does.** `eligible - covered`
+     * minus the omission counts is rendered as *unexplained* when it isn't zero — which is the
+     * difference between "we skipped 4,000 lakes below the HydroLAKES area floor" (a documented
+     * limit of the source) and "4,000 lakes went missing and nobody noticed" (a bug). Those two look
+     * identical in a totals-only summary, and they are the two readings that matter most.
+     */
+    coverage: v.optional(
+      v.object({
+        /** What is being counted — 'bodies', 'lakes', 'grid cells', 'towns'. */
+        unit: v.string(),
+        /** The honest denominator: everything this pass could in principle have stamped. */
+        eligible: v.number(),
+        /** What it actually stamped. */
+        covered: v.number(),
+        /** Where the difference went, by reason. Documented limits belong here, not in prose. */
+        omissions: v.array(v.object({ reason: v.string(), count: v.number() })),
+      }),
+    ),
+    /** The error that ended the run, when `status` is 'failed'. */
+    error: v.optional(v.string()),
+    notes: v.optional(v.array(v.string())),
+  })
+    // The admin list: newest first, optionally narrowed to one loader.
+    .index('by_started', ['startedAt'])
+    .index('by_kind_started', ['kind', 'startedAt'])
+    .index('by_campaign', ['campaignId', 'startedAt']),
 });

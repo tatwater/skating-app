@@ -2863,3 +2863,119 @@ survives**: its rule was *"don't draw a line where no depth-sounder went"*, not 
 surveyed lines to show."*
 
 **Related:** [D82](#d82--bathymetry-is-context-not-counsel-n6b), [D83](#d83--contours-carry-their-sources-native-interval-and-units-labelled-we-never-resample-n6b), [`phase-N6b`](./phase-N6b-bathymetry-layer.md).
+
+## D91 — The canonical corpus has a floor: five acres, or one acre with a name
+
+**Decided (2026-08-02, founder call, from a measurement of the 2026-08-02 five-state transform —
+123,940 bodies.)**
+
+A body enters the canonical corpus only if it is **at least 5 acres**, or **named and at least
+1 acre** (`meetsAreaFloor`, `@skating/core`'s `osm.ts`). Nothing under an acre survives on any
+evidence. Everything else is dropped at transform time and tallied as `droppedByAreaFloor`, distinct
+from the classification drop. **Keeps 21,660 of 123,940 — 17.5%.**
+
+> *"If I get user feedback that someone's pond isn't there, then we can relax the rule and re-run the
+> import."* — founder. That is the fallback the whole decision rests on, and it is why the rule is
+> tuned to be cheap to loosen rather than safe to leave alone.
+
+The rule lives in core, not in the ETL that applies it, because two things enforce it: the transform
+(what a future import writes) and `waterBodies.pruneBelowAreaFloor` (what an existing corpus keeps).
+Two copies would drift into a prune that deletes rows the next import puts straight back.
+
+**Why there's a floor at all.** 64% of every feature the ETL imports is under one acre, with a median
+long axis of **50 m** — farm dugouts, retention basins, widenings in a brook. 84% is under five acres.
+Those ~104,000 rows are cell-indexed, searched, tiled and stat-computed, and none of them is a place
+anyone drives to.
+
+**Why five, when 25 / 30 / 50 were on the table.** Because the size argument cannot tell those apart
+and the cost argument can. All three floors delete ~95% of the corpus — 25 ac keeps 6,966 bodies,
+50 ac keeps 4,207, a gap of 2% of the corpus — while the difference between them is 2,759 real lakes.
+Above five acres you are no longer deleting junk, you are choosing how many lakes to lose for a
+rounding error in row count.
+
+Checked against the only two demand signals we have, and both said the same thing:
+
+- **The Google-Group gazetteer** (`training_data/google_group`, 117 discussed bodies). A 50-acre floor
+  deletes **Keiser Pond** (36 ac — and on our own VT curation seed), Boston Lot Lake (44.8), Drew Lake
+  (48.2), Ewell Pond (48.2) and Oliverian Pond (32.1). Nothing anyone has been recorded skating is
+  under five.
+- **State bathymetric surveys** (the N6b ingest, 2,022 lakes an agency paid to sound). **41% are under
+  50 acres, 23% under 25.** A 50-acre floor deletes 826 lakes whose contours we had already drawn.
+
+**Area is also the wrong axis, which is the second half of why the floor is set low.** The test being
+applied — "you can't skate a full circle" — is about *length*, and we store `longAxisM` (D85). Keiser
+Pond is 36 acres and **909 m** long: a 1.8 km out-and-back, better skating than a round 30-acre pond
+390 m across. There are 993 named bodies under 30 acres with a long axis over 600 m. At five acres the
+question doesn't arise, so no axis clause is needed; **if the floor is ever raised, it must gain one.**
+
+**The name tier is a hedge, and its evidence is thin — deliberately recorded as such.** It rescues
+2,398 named bodies between one and five acres, and **none of them is a known destination**: no body
+discussed in the Google-Group corpus is under five acres at all. Everything named above as a casualty
+of the *higher* floors — Keiser, Boston Lot, Solitude, Profile — clears five acres on size and needs
+no name.
+
+It stays because it is a cheap way to be wrong in the recoverable direction. A name in OSM is a human
+assertion that a place is a place, and it is the only such signal in the extract; search is name-driven,
+so a named pond returning nothing reads as broken rather than curated. It costs ~2% of the corpus
+against the 81% the floor removes. **If it is ever dropped, drop it on that trade and not on a belief
+that it is protecting known lakes.**
+
+**There is deliberately no "…or an agency surveyed it" tier, and that knowingly costs 5 bodies.**
+One was built on 2026-08-03 and removed the same day (founder call), because **agency coverage is
+downstream of this rule**: `waterBodies.matchBathymetryLakes` resolves a surveyed lake by looking for
+a *listed body in our corpus* at its deepest sounding, with a zero-metre buffer. A lake the floor
+excludes therefore can never be matched, contoured, or counted as covered.
+
+The consequence is a ratchet rather than a cycle. The clause could only ever protect lakes that a
+**previous, more permissive** corpus had already discovered — and for **any newly imported region it
+is a no-op by construction**, since the import runs before the join. Keeping it would have bought
+five bodies (3 in Maine, 2 in New Hampshire, all unnamed, 3.6–4.6 acres) in exchange for a permanent
+ordering rule nobody could enforce — *import unfiltered → join → build → coverage → prune* — plus a
+live trap: `importContourCoverage` **replaces** the coverage set, so pruning first and re-tiling later
+would silently drop those lakes from coverage and then delete them.
+
+Five bodies is the right price for deleting a whole class of ordering bug. **They are knowingly
+skipped**, and the fallback is the same one the rest of this decision rests on: someone reports a
+missing pond, we relax the rule and re-import.
+
+**The name tier stops at one acre**, because that is where a name stops asserting anything. 98% of
+sub-acre bodies are unnamed; of the 1,586 that are named, exactly **one** carries a state bathymetric
+survey and **one** has a long axis over 300 m. The largest are Quarry Pond (105 m long), Spring Pond
+(139 m) and Bog Pond (102 m) — an acre is 64 m across. The naming gradient only becomes informative
+above it: 2.0% named under an acre, then 5.6% / 10.4% / 16.1% / 19.7% through the 1–5 acre bands, then
+52.1% above five.
+
+Cutting the sub-acre named bodies costs one gazetteer name and it is a **false match**: "Button Bay"
+(32 mentions) resolves only to an unrelated 0.62-acre bay in *Maine*. The real Button Bay is on Lake
+Champlain and is not a body in the corpus under any rule — OSM models it as part of the lake, so it
+belongs to the sub-area layer with Malletts Bay and Dillenbeck Bay. Dropping it fixes a search that
+currently returns the wrong lake. Every other discussed name only loses redundant same-name matches
+(Beaver Pond drops 9 of 89, Mud Pond 2 of 180, Mill Pond 4 of 87) and keeps the lake itself.
+
+**Three acres for the unnamed tier was weighed and rejected** (same session). It would admit 4,988
+more bodies — +23% on the kept set — whose median shape is 235 × 117 m. **81% of them are `other` or
+`marsh`**, the buckets for water the classifier couldn't identify, and only **5** carry a state
+bathymetric survey: 0.10%, against 0.80% for the unnamed bodies already above five acres, an eightfold
+difference in the one independent quality signal available. The gazetteer cannot separate three from
+five, because nothing discussed is under five either way. If the worry is a skateable-but-unnamed pond,
+the honest lever is an axis clause — unnamed ≥ 3 ac **with a long axis ≥ 300 m** admits 1,174 of those
+4,988 and leaves the 3,814 round pockets (1,935 `other`, 1,085 `marsh`) out — not a lower area, which
+buys 4 junk rows for every plausible one.
+
+**Scope.** Canonical (OSM) import only. A body a skater creates from a recorded track (Phase 8,
+`waterBodies.create`) never passes through the transform and is exempt on purpose — someone skated it,
+which outranks any threshold. Sub-areas ([D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-n2))
+are untouched, which matters more than it looks: three of the seven most-discussed destinations in the
+corpus (Malletts Bay, Button Bay, Dillenbeck Bay) are bays of Champlain, not bodies.
+
+**What this does not do.** The floor alone doesn't remove anything already imported —
+`importCanonical` upserts and never deletes. `waterBodies.pruneBelowAreaFloor` is the other half: a
+paginated, **dry-by-default** pass that deletes the stored rows the floor would now refuse, and keeps
+anything with a claim on it (`source: 'user'`, a `curatedBoost`, a soft-delist, a dedup/merge pointer,
+an unknown area, or any attached report / hazard / bounty / favourite / put-in / track / sub-area).
+And this isn't a
+map-clutter fix: [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at)'s
+`minVisibleZoom` already bounds what a wide viewport reads, in-index. This buys storage, ETL time and a
+corpus that means something.
+
+**Related:** [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-n2), [D85](#d85--derived-geometry-stats-are-measured-on-the-source-geometry-not-the-simplified-copy-n6c), [`phase-1`](./phase-1-water-bodies.md).

@@ -24,6 +24,7 @@ import { Route as UUsernameRouteImport } from './routes/u.$username'
 import { Route as AdminTuningRouteImport } from './routes/admin.tuning'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminRecurrenceRouteImport } from './routes/admin.recurrence'
+import { Route as AdminImportsRouteImport } from './routes/admin.imports'
 import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
 import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
 import { Route as AdminWaterIndexRouteImport } from './routes/admin.water.index'
@@ -109,6 +110,11 @@ const AdminRecurrenceRoute = AdminRecurrenceRouteImport.update({
   path: '/recurrence',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminImportsRoute = AdminImportsRouteImport.update({
+  id: '/imports',
+  path: '/imports',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminFlagsRoute = AdminFlagsRouteImport.update({
   id: '/flags',
   path: '/flags',
@@ -172,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/sign-up': typeof SignUpRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
+  '/admin/imports': typeof AdminImportsRoute
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
@@ -196,6 +203,7 @@ export interface FileRoutesByTo {
   '/sign-up': typeof SignUpRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
+  '/admin/imports': typeof AdminImportsRoute
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
@@ -224,6 +232,7 @@ export interface FileRoutesById {
   '/sign-up': typeof SignUpRoute
   '/admin/features': typeof AdminFeaturesRoute
   '/admin/flags': typeof AdminFlagsRoute
+  '/admin/imports': typeof AdminImportsRoute
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
@@ -253,6 +262,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin/features'
     | '/admin/flags'
+    | '/admin/imports'
     | '/admin/recurrence'
     | '/admin/support'
     | '/admin/tuning'
@@ -277,6 +287,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin/features'
     | '/admin/flags'
+    | '/admin/imports'
     | '/admin/recurrence'
     | '/admin/support'
     | '/admin/tuning'
@@ -304,6 +315,7 @@ export interface FileRouteTypes {
     | '/sign-up'
     | '/admin/features'
     | '/admin/flags'
+    | '/admin/imports'
     | '/admin/recurrence'
     | '/admin/support'
     | '/admin/tuning'
@@ -440,6 +452,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRecurrenceRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/imports': {
+      id: '/admin/imports'
+      path: '/imports'
+      fullPath: '/admin/imports'
+      preLoaderRoute: typeof AdminImportsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/flags': {
       id: '/admin/flags'
       path: '/flags'
@@ -534,6 +553,7 @@ const MapRouteWithChildren = MapRoute._addFileChildren(MapRouteChildren)
 interface AdminRouteChildren {
   AdminFeaturesRoute: typeof AdminFeaturesRoute
   AdminFlagsRoute: typeof AdminFlagsRoute
+  AdminImportsRoute: typeof AdminImportsRoute
   AdminRecurrenceRoute: typeof AdminRecurrenceRoute
   AdminSupportRoute: typeof AdminSupportRoute
   AdminTuningRoute: typeof AdminTuningRoute
@@ -547,6 +567,7 @@ interface AdminRouteChildren {
 const AdminRouteChildren: AdminRouteChildren = {
   AdminFeaturesRoute: AdminFeaturesRoute,
   AdminFlagsRoute: AdminFlagsRoute,
+  AdminImportsRoute: AdminImportsRoute,
   AdminRecurrenceRoute: AdminRecurrenceRoute,
   AdminSupportRoute: AdminSupportRoute,
   AdminTuningRoute: AdminTuningRoute,

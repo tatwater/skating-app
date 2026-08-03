@@ -1,0 +1,24 @@
+{
+  "name": "@skating/run-log",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Shared ETL run-history writer (N6c F2): every loader records one `importRuns` row instead of printing a summary to a terminal that scrolls.",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "record": "tsx src/cli.ts",
+    "backfill-archives": "tsx src/backfillArchives.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@vitest/coverage-v8": "^3.2.7",
+    "tsx": "^4.19.0",
+    "vitest": "^3.2.7"
+  }
+}

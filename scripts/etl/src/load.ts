@@ -8,14 +8,29 @@
  * target unless `--prod` is passed. Thin subprocess + file I/O — excluded from coverage; all
  * real work is in the tested transform.
  *
- *   pnpm --filter @skating/etl load <bodies.ndjson> [--prod]
+ *   pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]
+ *     [--campaign=<id>] [--label=<text>] [--manifest=<manifest.json>]
+ *     [--transform-summary=<run.json>] [--filter-command=<text>] [--no-run-log]
+ *
+ * The second row of flags is the run history (N6c F2): the loader writes one `importRuns` row
+ * carrying the **whole path** — the archived extract's URL/checksum/build date, the `osmium`
+ * filter, the transform's own summary and itemized skips, and its own batch outcomes — so an
+ * admin can answer "how did the last import go" and "which features did it decline" without
+ * re-running it. `--no-run-log` opts out; nothing else about the load changes.
  */
 
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
 import { isKnownStateCode, KNOWN_STATE_CODES } from '@skating/core';
+import {
+  convexRun,
+  type ExtractManifest,
+  extractStage,
+  RunLogger,
+  type RunStage,
+  resolveDeployment,
+} from '@skating/run-log';
 
 /**
  * Batches are bounded by two Convex/OS limits:
@@ -54,56 +69,82 @@ function chunk(lines: string[]): string[][] {
   return batches;
 }
 
+/**
+ * How many batches may fail back-to-back before the load gives up.
+ *
+ * A single bad batch is worth surviving: at ~150 bodies a batch, a five-state run is hundreds of
+ * `convex run` calls and thirty-odd minutes, and dying at batch 700 over one malformed body throws
+ * away everything after it for nothing (the upsert is idempotent, so the work is not *lost* — but
+ * the wall clock is). A *streak* of failures is different: that is a schema mismatch or a dead
+ * deployment, and grinding through 600 more doomed batches would turn a clear error into a slow
+ * one. Isolated failures are recorded on the run row and the load continues; a streak aborts.
+ */
+const MAX_CONSECUTIVE_BATCH_FAILURES = 5;
+
 function runImport(
   bodies: unknown[],
   state: string | undefined,
 ): { inserted: number; updated: number } {
-  const args = JSON.stringify(state ? { bodies, state } : { bodies });
-  const stdout = execFileSync(
-    'pnpm',
-    ['--filter', '@skating/convex', 'exec', 'convex', 'run', 'waterBodies:importCanonical', args],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 64 * 1024 * 1024 },
+  // `importCanonical` returns {inserted, updated}. Anything we can't read as that is a hard error —
+  // the mutation may well have committed, so reporting zeroes would mislead the operator.
+  const parsed = convexRun<unknown>(
+    'waterBodies:importCanonical',
+    state ? { bodies, state } : { bodies },
   );
-  // convex run pretty-prints the function's return value as a multi-line JSON object on stdout
-  // (function logs go to the inherited stderr). Parse it; fall back to the last {...} block if
-  // anything else slipped onto stdout. Anything we can't read as {inserted, updated} is a hard
-  // error — the mutation may well have committed, so reporting zeroes would mislead the operator.
-  const trimmed = stdout.trim();
-  const candidate = trimmed.startsWith('{') ? trimmed : trimmed.match(/\{[\s\S]*\}/)?.[0];
-  const parsed: unknown = candidate ? JSON.parse(candidate) : undefined;
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
     typeof (parsed as { inserted?: unknown }).inserted !== 'number' ||
     typeof (parsed as { updated?: unknown }).updated !== 'number'
   ) {
-    throw new Error(`convex run returned an unexpected response: ${trimmed || '(empty)'}`);
+    throw new Error(`convex run returned an unexpected response: ${JSON.stringify(parsed)}`);
   }
   return parsed as { inserted: number; updated: number };
 }
 
-/**
- * Best-effort read of the Convex deployment `convex run` will target, mirroring the CLI's
- * resolution order: a `CONVEX_DEPLOY_KEY` (points anywhere — treated as non-dev so it needs
- * opt-in), then `CONVEX_DEPLOYMENT` in the env, then the convex package's `.env.local`.
- */
-function resolveDeployment(): { label: string; isDev: boolean } {
-  if (process.env.CONVEX_DEPLOY_KEY)
-    return { label: 'CONVEX_DEPLOY_KEY (target unknown)', isDev: false };
-  let deployment = process.env.CONVEX_DEPLOYMENT;
-  if (!deployment) {
-    try {
-      const envLocal = readFileSync(
-        new URL('../../../packages/convex/.env.local', import.meta.url),
-        'utf8',
-      );
-      deployment = envLocal.match(/^CONVEX_DEPLOYMENT=(.+)$/m)?.[1]?.trim();
-    } catch {
-      // no .env.local reachable — fall through to unknown (treated as non-dev)
-    }
+/** Read a JSON sidecar (an extract manifest, a transform summary), or `undefined` if unreadable. */
+function readJson<T>(path: string | undefined, what: string): T | undefined {
+  if (!path) return undefined;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as T;
+  } catch (err) {
+    // A missing sidecar costs provenance, never the import — warn and carry on with a hole in the
+    // path, which is more honest than refusing to load because the bookkeeping was incomplete.
+    process.stderr.write(
+      `[etl] could not read ${what} at ${path}: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return undefined;
   }
-  if (!deployment) return { label: 'unknown', isDev: false };
-  return { label: deployment, isDev: deployment.startsWith('dev:') };
+}
+
+/**
+ * The first body's `externalId` in a batch, for naming a failed batch on the run row.
+ *
+ * Defensive to the point of paranoia because it runs **inside a catch block**: a throw here would
+ * replace the batch's real error with a parse error about the bookkeeping, losing the diagnosis.
+ */
+function firstExternalId(batch: string[]): string | undefined {
+  const first = batch[0];
+  if (first === undefined) return undefined;
+  try {
+    return (JSON.parse(first) as { externalId?: string }).externalId;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The transform's `--summary=` sidecar (see `cli.ts`). */
+interface TransformSummaryFile {
+  input?: string;
+  output?: string;
+  total?: number;
+  imported?: number;
+  droppedByType?: number;
+  droppedByAreaFloor?: number;
+  skipped?: number;
+  depthsTagged?: number;
+  densestRing?: { externalId: string; name?: string; vertices: number; cap: number };
+  errors?: { externalId?: string; message: string }[];
 }
 
 function main(): void {
@@ -116,10 +157,21 @@ function main(): void {
     .find((arg) => arg.startsWith('--state='))
     ?.slice('--state='.length)
     .toUpperCase();
+  const flag = (name: string) =>
+    args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const campaignId = flag('campaign');
+  const label = flag('label');
+  const manifestPath = flag('manifest');
+  const transformSummaryPath = flag('transform-summary');
+  const filterCommand = flag('filter-command');
+  const runLogEnabled = !args.includes('--no-run-log');
+
   const inputPath = args.find((arg) => !arg.startsWith('--'));
   if (!inputPath) {
     process.stderr.write(
-      'usage: pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]\n',
+      'usage: pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]\n' +
+        '       [--campaign=<id>] [--label=<text>] [--manifest=<manifest.json>]\n' +
+        '       [--transform-summary=<run.json>] [--filter-command=<text>] [--no-run-log]\n',
     );
     process.exit(1);
   }
@@ -155,11 +207,83 @@ function main(): void {
       `${state ? ` (state: ${state})` : ''}…\n`,
   );
 
+  // ---- Run history (N6c F2) -------------------------------------------------------------------
+  // Assembled before the first batch so a killed process still leaves a row naming what it was
+  // doing. Everything here is best-effort: `RunLogger` swallows its own failures by design.
+  const manifest = readJson<ExtractManifest>(manifestPath, 'extract manifest');
+  const transform = readJson<TransformSummaryFile>(transformSummaryPath, 'transform summary');
+
+  const stages: RunStage[] = [];
+  if (manifest) stages.push(extractStage(manifest));
+  if (filterCommand) {
+    stages.push({
+      name: 'filter',
+      detail:
+        'osmium tags-filter + export — a superset of what we import; the transform classifies',
+      command: filterCommand,
+      output: transform?.input,
+      counts:
+        transform?.total === undefined
+          ? undefined
+          : [{ name: 'polygonFeatures', value: transform.total }],
+    });
+  }
+  if (transform) {
+    stages.push({
+      name: 'transform',
+      detail:
+        'classify, apply the surface-area floor, simplify to ~5 m (D48), measure shoreline/axes/' +
+        'fetch on the source geometry (D85)',
+      input: transform.input,
+      output: transform.output ?? inputPath,
+      counts: [
+        { name: 'features', value: transform.total ?? 0 },
+        { name: 'imported', value: transform.imported ?? 0 },
+        { name: 'droppedByType', value: transform.droppedByType ?? 0 },
+        // Named even when the sidecar predates the floor (⇒ 0): a run row that doesn't say how many
+        // bodies the floor removed can't be told apart from one where the floor wasn't applied.
+        { name: 'droppedByAreaFloor', value: transform.droppedByAreaFloor ?? 0 },
+        { name: 'skipped', value: transform.skipped ?? 0 },
+        { name: 'osmDepthTagged', value: transform.depthsTagged ?? 0 },
+        ...(transform.densestRing
+          ? [{ name: 'densestRingVertices', value: transform.densestRing.vertices }]
+          : []),
+      ],
+    });
+  }
+
+  const logger = new RunLogger({
+    kind: 'canonical_water',
+    label: label ?? `${state ?? 'unscoped'} canonical water`,
+    campaignId,
+    target,
+    stages,
+    call: convexRun,
+    notes: transform?.densestRing
+      ? [
+          `densest ring: ${transform.densestRing.externalId} "${transform.densestRing.name ?? ''}" — ` +
+            `${transform.densestRing.vertices} vertices (cap ${transform.densestRing.cap})`,
+        ]
+      : undefined,
+  });
+  if (runLogEnabled) logger.start();
+
+  // The transform's own skips are failures of this run, itemized — they are the features that
+  // silently never became lakes, and until now they scrolled past in a terminal.
+  for (const err of transform?.errors ?? []) {
+    logger.fail({ stage: 'transform', key: err.externalId, reason: err.message });
+  }
+
   let inserted = 0;
   let updated = 0;
   let applied = 0;
-  try {
-    for (const [index, batch] of batches.entries()) {
+  let failedBatches = 0;
+  let bodiesInFailedBatches = 0;
+  let consecutiveFailures = 0;
+  let aborted: Error | undefined;
+
+  for (const [index, batch] of batches.entries()) {
+    try {
       const result = runImport(
         batch.map((line) => JSON.parse(line)),
         state,
@@ -167,18 +291,100 @@ function main(): void {
       inserted += result.inserted;
       updated += result.updated;
       applied++;
+      consecutiveFailures = 0;
       process.stderr.write(`[etl] batch ${index + 1}/${batches.length} done\n`);
+    } catch (err) {
+      failedBatches++;
+      bodiesInFailedBatches += batch.length;
+      consecutiveFailures++;
+      const message = err instanceof Error ? err.message : String(err);
+      // Name the batch by its first body, so "which lakes did it decline" has an answer that
+      // survives the run — a bare batch index is meaningless once the scratch files are gone.
+      const firstId = firstExternalId(batch);
+      logger.fail({
+        stage: 'load',
+        key: `batch ${index + 1}/${batches.length} (from ${firstId ?? 'unknown'}, ${batch.length} bodies)`,
+        reason: message,
+      });
+      process.stderr.write(
+        `[etl] batch ${index + 1}/${batches.length} FAILED (${consecutiveFailures} in a row): ${message}\n`,
+      );
+      if (consecutiveFailures >= MAX_CONSECUTIVE_BATCH_FAILURES) {
+        aborted = err instanceof Error ? err : new Error(message);
+        break;
+      }
     }
-  } catch (err) {
-    // A batch threw; earlier batches are already committed. Report progress so the operator
-    // can recover (a re-run is safe — importCanonical upserts idempotently) before rethrowing.
-    process.stderr.write(
-      `[etl] FAILED on batch ${applied + 1}/${batches.length}; ${applied} batch(es) applied ` +
-        `(${inserted} inserted · ${updated} updated). Re-running is safe (idempotent upsert).\n`,
-    );
-    throw err;
+
+    if ((index + 1) % 25 === 0) {
+      logger.count('inserted', inserted);
+      logger.count('updated', updated);
+      logger.count('batchesApplied', applied);
+      logger.count('batchesFailed', failedBatches);
+      logger.flush();
+    }
   }
-  process.stderr.write(`[etl] load complete: ${inserted} inserted · ${updated} updated\n`);
+
+  logger.count('bodiesRead', lines.length);
+  logger.count('batchesTotal', batches.length);
+  logger.count('batchesApplied', applied);
+  logger.count('batchesFailed', failedBatches);
+  logger.count('inserted', inserted);
+  logger.count('updated', updated);
+  // The denominator is the *polygon features the filter emitted*, not the bodies the transform
+  // kept — otherwise "dropped as a river" disappears from the ledger and the pass looks perfect.
+  const featuresIn = transform?.total ?? lines.length;
+  logger.coverage({
+    unit: 'polygon features',
+    eligible: featuresIn,
+    covered: inserted + updated,
+    omissions: [
+      {
+        reason: 'not still water (river, stream, generic wetland) — dropped by the classifier',
+        count: transform?.droppedByType ?? 0,
+      },
+      { reason: 'threw during transform (see failures)', count: transform?.skipped ?? 0 },
+      { reason: 'in a batch that failed and was skipped', count: bodiesInFailedBatches },
+    ].filter((o) => o.count > 0),
+  });
+  logger.stage({
+    name: 'load',
+    detail: `waterBodies:importCanonical — idempotent upsert on (source, externalId), cell-indexed (N1)`,
+    input: inputPath,
+    output: target.label,
+    counts: [
+      { name: 'batchesApplied', value: applied },
+      { name: 'batchesFailed', value: failedBatches },
+      { name: 'inserted', value: inserted },
+      { name: 'updated', value: updated },
+    ],
+  });
+
+  if (aborted) {
+    process.stderr.write(
+      `[etl] ABORTED after ${MAX_CONSECUTIVE_BATCH_FAILURES} consecutive batch failures; ` +
+        `${applied}/${batches.length} batch(es) applied (${inserted} inserted · ${updated} updated). ` +
+        'Re-running is safe (idempotent upsert).\n',
+    );
+    logger.failed(aborted);
+    throw aborted;
+  }
+
+  const declined = logger.totalFailures;
+  process.stderr.write(
+    `[etl] load complete: ${inserted} inserted · ${updated} updated` +
+      `${failedBatches > 0 ? ` · ${failedBatches} batch(es) failed and were skipped` : ''}` +
+      `${declined > 0 ? ` · ${declined} itemized failure(s) recorded` : ''}\n`,
+  );
+  // A run with skipped batches did not succeed, even though it got to the end — saying otherwise on
+  // the admin page is the exact dishonesty this table was built to remove.
+  if (failedBatches > 0) {
+    logger.failed(
+      new Error(`${failedBatches} of ${batches.length} batches failed and were skipped`),
+    );
+    process.exitCode = 1;
+  } else {
+    logger.succeed();
+  }
 }
 
 main();

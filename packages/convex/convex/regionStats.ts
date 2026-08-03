@@ -85,69 +85,130 @@ export const upsertState = internalMutation({
  * sits comfortably inside.
  */
 export const recompute = internalAction({
-  args: { batchSize: v.optional(v.number()) },
-  handler: async (ctx, { batchSize }) => {
-    // state → metric → values
-    const byState = new Map<string, Map<Metric, number[]>>();
-    const scanned = new Map<string, number>();
+  args: { batchSize: v.optional(v.number()), campaignId: v.optional(v.string()) },
+  handler: async (ctx, { batchSize, campaignId }) => {
+    // Run history (N6c F2). This is the one pass that isn't a script, and it earns a row for the
+    // same reason the loaders do: it walks 116,070 bodies, it can die halfway, and the deciles it
+    // leaves behind after a partial pass describe a corpus that never existed.
+    const runId = await ctx.runMutation(internal.importRuns.start, {
+      kind: 'region_stats',
+      label: 'regionStats deciles',
+      campaignId,
+      deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
+      // An action has no view of which deployment it is: it *is* the deployment. A prod row is
+      // therefore identified by its own URL rather than by a `--prod` flag nobody passed.
+      isProd: !(process.env.CONVEX_CLOUD_URL ?? '').includes('agile-bee-397'),
+      stages: [
+        {
+          name: 'scan',
+          detail:
+            'pageMetricValues — raw numbers only, never whole documents; unlisted bodies excluded from the population',
+        },
+      ],
+    });
 
-    let cursor: string | undefined;
-    let isDone = false;
-    let total = 0;
-    while (!isDone) {
-      const page: {
-        rows: Array<{ states: string[] } & Partial<Record<Metric, number>>>;
-        cursor: string;
-        isDone: boolean;
-      } = await ctx.runQuery(internal.regionStats.pageMetricValues, {
-        ...(cursor ? { cursor } : {}),
-        ...(batchSize ? { batchSize } : {}),
-      });
-      cursor = page.cursor;
-      isDone = page.isDone;
-      total += page.rows.length;
+    // Inline rather than extracted into a helper, deliberately. A helper taking `ActionCtx` and
+    // returning an inferred type closes a circle — `ActionCtx` → the generated API → this action's
+    // return type → the helper — and TypeScript breaks that circle by degrading `DataModel` to the
+    // union of every table, which showed up as ~375 errors in unrelated *test* files and nothing at
+    // all here. Annotate the return type or keep it inline; this keeps it inline.
+    try {
+      // state → metric → values
+      const byState = new Map<string, Map<Metric, number[]>>();
+      const scanned = new Map<string, number>();
 
-      for (const row of page.rows) {
-        for (const state of row.states) {
-          // Defence in depth against a bad tag reaching the caption as a region name.
-          if (!isKnownStateCode(state)) continue;
-          scanned.set(state, (scanned.get(state) ?? 0) + 1);
-          let metrics = byState.get(state);
-          if (!metrics) {
-            metrics = new Map();
-            byState.set(state, metrics);
-          }
-          for (const metric of METRICS) {
-            const value = row[metric];
-            if (typeof value !== 'number') continue;
-            const bucket = metrics.get(metric);
-            if (bucket) bucket.push(value);
-            else metrics.set(metric, [value]);
+      let cursor: string | undefined;
+      let isDone = false;
+      let total = 0;
+      while (!isDone) {
+        const page: {
+          rows: Array<{ states: string[] } & Partial<Record<Metric, number>>>;
+          cursor: string;
+          isDone: boolean;
+        } = await ctx.runQuery(internal.regionStats.pageMetricValues, {
+          ...(cursor ? { cursor } : {}),
+          ...(batchSize ? { batchSize } : {}),
+        });
+        cursor = page.cursor;
+        isDone = page.isDone;
+        total += page.rows.length;
+
+        for (const row of page.rows) {
+          for (const state of row.states) {
+            // Defence in depth against a bad tag reaching the caption as a region name.
+            if (!isKnownStateCode(state)) continue;
+            scanned.set(state, (scanned.get(state) ?? 0) + 1);
+            let metrics = byState.get(state);
+            if (!metrics) {
+              metrics = new Map();
+              byState.set(state, metrics);
+            }
+            for (const metric of METRICS) {
+              const value = row[metric];
+              if (typeof value !== 'number') continue;
+              const bucket = metrics.get(metric);
+              if (bucket) bucket.push(value);
+              else metrics.set(metric, [value]);
+            }
           }
         }
       }
-    }
 
-    const written: Array<{ state: string; bodiesScanned: number; metrics: string[] }> = [];
-    for (const state of KNOWN_STATE_CODES) {
-      const metrics = byState.get(state);
-      if (!metrics) continue;
-      const blocks: Partial<Record<Metric, DecileBlock>> = {};
-      for (const metric of METRICS) {
-        // `computeDeciles` returns null below MIN_DECILE_SAMPLE, and an absent block is what makes
-        // the caption stay silent rather than compare against noise.
-        const block = computeDeciles(metrics.get(metric) ?? []);
-        if (block) blocks[metric] = block;
+      const written: Array<{ state: string; bodiesScanned: number; metrics: string[] }> = [];
+      for (const state of KNOWN_STATE_CODES) {
+        const metrics = byState.get(state);
+        if (!metrics) continue;
+        const blocks: Partial<Record<Metric, DecileBlock>> = {};
+        for (const metric of METRICS) {
+          // `computeDeciles` returns null below MIN_DECILE_SAMPLE, and an absent block is what makes
+          // the caption stay silent rather than compare against noise.
+          const block = computeDeciles(metrics.get(metric) ?? []);
+          if (block) blocks[metric] = block;
+        }
+        const bodiesScanned = scanned.get(state) ?? 0;
+        await ctx.runMutation(internal.regionStats.upsertState, {
+          state,
+          metrics: blocks,
+          bodiesScanned,
+        });
+        written.push({ state, bodiesScanned, metrics: Object.keys(blocks) });
       }
-      const bodiesScanned = scanned.get(state) ?? 0;
-      await ctx.runMutation(internal.regionStats.upsertState, {
-        state,
-        metrics: blocks,
-        bodiesScanned,
+
+      await ctx.runMutation(internal.importRuns.finish, {
+        runId,
+        status: 'succeeded',
+        counts: [
+          { name: 'bodiesRead', value: total },
+          { name: 'statesWritten', value: written.length },
+          ...written.map((w) => ({ name: `${w.state}.bodiesScanned`, value: w.bodiesScanned })),
+        ],
+        stages: [
+          {
+            name: 'write',
+            detail: 'one small row per state — deciles are a property of the corpus, not of a body',
+            counts: written.map((w) => ({ name: `${w.state}.metrics`, value: w.metrics.length })),
+          },
+        ],
+        // A state whose sample was too thin to produce ANY block is a real finding — its captions will
+        // stay silent — and it looks identical to a healthy state if you only count rows written.
+        notes: written
+          .filter((w) => w.metrics.length < METRICS.length)
+          .map(
+            (w) =>
+              `${w.state}: only ${w.metrics.length}/${METRICS.length} metrics had a large enough sample (${w.metrics.join(', ') || 'none'})`,
+          ),
       });
-      written.push({ state, bodiesScanned, metrics: Object.keys(blocks) });
+
+      return { bodiesRead: total, states: written };
+    } catch (err) {
+      await ctx.runMutation(internal.importRuns.finish, {
+        runId,
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+        notes: ['Partial pass — the deciles on file may describe a corpus slice, not the corpus.'],
+      });
+      throw err;
     }
-    return { bodiesRead: total, states: written };
   },
 });
 

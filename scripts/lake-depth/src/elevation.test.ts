@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   batchTargets,
   ELEVATION_BATCH_SIZE,
+  ELEVATION_MAX_RETRIES,
+  ELEVATION_RATE_LIMIT_BASE_MS,
+  ELEVATION_RATE_LIMIT_RETRIES,
   type ElevationTarget,
   elevationUrl,
   fetchElevationBatch,
+  retryAfterMs,
   zipElevations,
 } from './elevation';
 
@@ -112,14 +116,50 @@ describe('fetchElevationBatch', () => {
         ? ({ ok: false, status: 429 } as Response)
         : ({ ok: true, status: 200, json: async () => ({ elevation: [27] }) } as Response);
     }) as unknown as typeof fetch;
-    const result = await fetchElevationBatch(targets(1), impl);
+    // No real waiting: the backoff is injected, so this asserts the retry happened rather than
+    // asserting the clock.
+    const waited: number[] = [];
+    const result = await fetchElevationBatch(targets(1), impl, async (ms) => {
+      waited.push(ms);
+    });
     expect(result.records).toEqual([{ waterBodyId: 'body0', elevationM: 27 }]);
     expect(calls).toBe(2);
-  }, 20_000);
+    // A 429 must buy minutes, not the ~1s a flaky socket gets.
+    expect(waited[0]).toBeGreaterThanOrEqual(ELEVATION_RATE_LIMIT_BASE_MS);
+  });
 
   it('surfaces a length mismatch immediately rather than retrying it', async () => {
     const impl = vi.fn(jsonFetch({ elevation: [27] }));
     await expect(fetchElevationBatch(targets(2), impl as never)).rejects.toThrow(/does not match/);
     expect(impl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('rate limiting (429)', () => {
+  it('honours the server’s Retry-After over our own guess', () => {
+    // The only number in the exchange that is not a guess — the server knows when its window resets.
+    expect(retryAfterMs('30')).toBe(30_000);
+    expect(retryAfterMs(' 5 ')).toBe(5_000);
+  });
+
+  it('ignores an unusable Retry-After rather than misparsing it', () => {
+    // The HTTP-date form is legal but nobody sends it here, and turning a date into a 50-year sleep
+    // is a worse failure than ignoring the header.
+    expect(retryAfterMs(null)).toBeUndefined();
+    expect(retryAfterMs('Wed, 21 Oct 2026 07:28:00 GMT')).toBeUndefined();
+    expect(retryAfterMs('0')).toBeUndefined();
+    expect(retryAfterMs('-5')).toBeUndefined();
+  });
+
+  it('caps a very long Retry-After so a run ends rather than hanging', () => {
+    expect(retryAfterMs('86400')).toBe(10 * 60_000);
+  });
+
+  it('gives a 429 far more patience than a flaky socket gets', () => {
+    // The bug this fixes: 4 attempts of 250ms x 4^n is ~21 seconds total, the right shape for a
+    // dropped connection and useless against a quota measured per minute. The real run died at
+    // page 3 of ~230.
+    expect(ELEVATION_RATE_LIMIT_RETRIES).toBeGreaterThan(ELEVATION_MAX_RETRIES);
+    expect(ELEVATION_RATE_LIMIT_BASE_MS).toBeGreaterThanOrEqual(30_000);
   });
 });

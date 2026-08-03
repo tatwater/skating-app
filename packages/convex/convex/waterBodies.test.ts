@@ -1,3 +1,4 @@
+import { meetsAreaFloor } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -1267,6 +1268,179 @@ describe('waterBodies.backfillCells (the migration onto the ladder grid, N1)', (
   });
 });
 
+describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', () => {
+  const SMALL = 4 * 4046.8564224; // 4 acres — under the floor
+  const BIG = 40 * 4046.8564224; // 40 acres — over it
+
+  /** Insert a body directly, so the test controls fields `importCanonical` would derive. */
+  async function seedBody(
+    t: ReturnType<typeof convexTest>,
+    overrides: Partial<Doc<'waterBodies'>> & { externalId: string },
+  ): Promise<Id<'waterBodies'>> {
+    return await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        name: '',
+        source: 'osm',
+        dedupStatus: 'clean',
+        surfaceAreaSqM: SMALL,
+        createdAt: Date.now(),
+        ...overrides,
+      } as Doc<'waterBodies'>),
+    );
+  }
+
+  /** Drive the paginated prune to completion, summing its tallies. */
+  async function runPrune(t: ReturnType<typeof convexTest>, apply: boolean) {
+    let cursor: string | undefined;
+    let done = false;
+    let deleted = 0;
+    let scanned = 0;
+    const attachedBy: Record<string, number> = {};
+    const kept: Record<string, number> = {};
+    while (!done) {
+      const page = await t.mutation(internal.waterBodies.pruneBelowAreaFloor, {
+        cursor,
+        batchSize: 2,
+        apply,
+      });
+      cursor = page.cursor;
+      done = page.isDone;
+      deleted += page.deleted;
+      scanned += page.scanned;
+      for (const [k, v] of Object.entries(page.kept)) kept[k] = (kept[k] ?? 0) + v;
+      for (const [k, v] of Object.entries(page.attachedBy))
+        attachedBy[k] = (attachedBy[k] ?? 0) + v;
+    }
+    return { deleted, scanned, kept, attachedBy };
+  }
+
+  async function remaining(t: ReturnType<typeof convexTest>): Promise<string[]> {
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    return rows.map((r) => r.externalId ?? '(none)').sort();
+  }
+
+  test('deletes an unnamed sub-floor body and its cell rows, keeping named and large ones', async () => {
+    const t = convexTestWithGeo();
+    const doomed = await seedBody(t, { externalId: 'osm/puddle' });
+    await seedBody(t, { externalId: 'osm/named', name: 'Someones Pond' });
+    await seedBody(t, { externalId: 'osm/big', surfaceAreaSqM: BIG });
+    // Named but under an acre — the 2026-08-02 amendment: no name saves anything down there.
+    await seedBody(t, {
+      externalId: 'osm/named-puddle',
+      name: 'Quarry Pond',
+      surfaceAreaSqM: 0.5 * 4046.8564224,
+    });
+    await t.mutation(internal.waterBodies.backfillCells, {}); // give them all cell rows
+
+    const result = await runPrune(t, true);
+    expect(result.deleted).toBe(2);
+    expect(result.kept.clearsFloor).toBe(2);
+    expect(await remaining(t)).toEqual(['osm/big', 'osm/named']);
+    // The N1 index row went with it — an orphan cell would keep the body on the map.
+    const cells = await t.run((ctx) =>
+      ctx.db
+        .query('waterBodyCells')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', doomed))
+        .collect(),
+    );
+    expect(cells).toHaveLength(0);
+  });
+
+  test('dry by default: identical tallies, nothing written', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, { externalId: 'osm/puddle' });
+
+    const dry = await runPrune(t, false);
+    expect(dry.deleted).toBe(1);
+    expect(await remaining(t)).toEqual(['osm/puddle']); // still there
+
+    const wet = await runPrune(t, true);
+    expect(wet.deleted).toBe(dry.deleted);
+    expect(await remaining(t)).toEqual([]);
+  });
+
+  test('keeps a sub-floor body that anything is attached to, and names the table', async () => {
+    const t = convexTestWithGeo();
+    const bodyId = await seedBody(t, { externalId: 'osm/skated' });
+    await seedUser(t, 'favouriter');
+    await t.run(async (ctx) => {
+      const profile = await ctx.db.query('profiles').first();
+      if (!profile) throw new Error('expected the seeded profile');
+      await ctx.db.insert('waterBodyFavorites', {
+        userId: profile._id,
+        waterBodyId: bodyId,
+        createdAt: Date.now(),
+      } as Doc<'waterBodyFavorites'>);
+    });
+
+    const result = await runPrune(t, true);
+    expect(result.deleted).toBe(0);
+    expect(result.kept.attached).toBe(1);
+    expect(result.attachedBy).toEqual({ waterBodyFavorites: 1 });
+    expect(await remaining(t)).toEqual(['osm/skated']);
+  });
+
+  test('keeps a sub-floor body an admin curated, delisted, merged, or drew from a track', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, { externalId: 'osm/curated', curatedBoost: 2 });
+    await seedBody(t, { externalId: 'osm/delisted', removedAt: Date.now() });
+    await seedBody(t, { externalId: 'osm/dupe', dedupStatus: 'suspected_duplicate' });
+    await seedBody(t, { externalId: 'user/drawn', source: 'user' });
+
+    const result = await runPrune(t, true);
+    expect(result.deleted).toBe(0);
+    expect(result.kept).toMatchObject({
+      curated: 1,
+      delisted: 1,
+      dedupOrMerged: 1,
+      userCreated: 1,
+    });
+    expect(await remaining(t)).toHaveLength(4);
+  });
+
+  test('drops an unnamed 1–5 ac body even where a state agency surveyed it', async () => {
+    // No bathymetry clause, on purpose (D91): agency coverage is downstream of the corpus, so a
+    // clause reading it could only ever protect what a looser corpus had already found.
+    const t = convexTestWithGeo();
+    await seedBody(t, { externalId: 'osm/surveyed' });
+    await t.run((ctx) =>
+      ctx.db.insert('bathymetryCoverage', { source: 'osm', externalId: 'osm/surveyed' }),
+    );
+
+    const result = await runPrune(t, true);
+    expect(result.deleted).toBe(1);
+    expect(await remaining(t)).toEqual([]);
+  });
+
+  test('never deletes a body whose area we do not know — absent is not small', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, { externalId: 'osm/unmeasured', surfaceAreaSqM: undefined });
+
+    const result = await runPrune(t, true);
+    expect(result.deleted).toBe(0);
+    expect(result.kept.areaUnknown).toBe(1);
+    expect(await remaining(t)).toEqual(['osm/unmeasured']);
+  });
+
+  test('agrees exactly with the importer: nothing it deletes would be re-imported', async () => {
+    // The invariant that makes the prune safe to run repeatedly. If these two ever disagree, a
+    // prune deletes rows the next canonical import puts straight back.
+    const t = convexTestWithGeo();
+    await seedBody(t, { externalId: 'osm/puddle' });
+    await seedBody(t, { externalId: 'osm/named', name: 'Someones Pond' });
+    await seedBody(t, { externalId: 'osm/big', surfaceAreaSqM: BIG });
+    await runPrune(t, true);
+
+    const survivors = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    for (const body of survivors) {
+      expect(meetsAreaFloor({ name: body.name, surfaceAreaSqM: body.surfaceAreaSqM ?? 0 })).toBe(
+        true,
+      );
+    }
+  });
+});
+
 describe('waterBodies.remove / restore (admin soft-delist, D48)', () => {
   async function seedCanonical(t: ReturnType<typeof convexTest>): Promise<Id<'waterBodies'>> {
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
@@ -2099,5 +2273,65 @@ describe('waterBodies.findMatchCandidates (the "attach here?" steer, D36)', () =
     await expect(
       asOther.query(api.waterBodies.findMatchCandidates, { activityId: owned.activityId }),
     ).rejects.toThrow(/Not your activity/i);
+  });
+});
+
+/**
+ * Catalogue identity — `osmId` / `nhdId` / `geometrySource` (N6b follow-up).
+ *
+ * These fields exist to separate *who a lake is* from *which key we imported it under*, so that a
+ * body can eventually hold both an OSM and an NHD identity and draw from either. The tests that
+ * matter are the two invariants a later NHD reconciliation depends on: an import must assert only
+ * what it knows, and a re-import must not erase what reconciliation worked out.
+ */
+describe('waterBodies catalogue identity', () => {
+  test('a canonical import stamps osmId and geometrySource without a backfill', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.osmId).toBe('osm/way/1');
+    expect(body?.geometrySource).toBe('osm');
+    // An OSM import knows nothing about NHD and must not claim to.
+    expect(body?.nhdId).toBeUndefined();
+  });
+
+  test('a re-import preserves a reconciled nhdId — the whole point of keeping it out of the patch', async () => {
+    // The same reason depth and curatedBoost survive a re-import: an NHD match is something we
+    // worked out geometrically, not something OSM can restate. If a nightly canonical re-import
+    // wiped it, every reconciliation pass would have to be re-run after every import, forever.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const id = await t.run(async (ctx) => onlyBodyIdIn(ctx));
+    await t.run(async (ctx) => ctx.db.patch(id, { nhdId: '{C4A423E4-F036}' }));
+
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, name: 'Lake Champlain (renamed upstream)' }],
+    });
+    const after = await t.run(async (ctx) => ctx.db.get(id));
+    expect(after?.name).toBe('Lake Champlain (renamed upstream)'); // the import did land
+    expect(after?.nhdId).toBe('{C4A423E4-F036}'); // …and did not clobber the reconciliation
+  });
+
+  test('the backfill restates what a row already carries, and never overwrites', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [CANONICAL_ITEM] });
+    const id = await t.run(async (ctx) => onlyBodyIdIn(ctx));
+    // A row as it existed before these fields did, plus a reconciliation the backfill must respect.
+    await t.run(async (ctx) =>
+      ctx.db.patch(id, { osmId: undefined, geometrySource: undefined, nhdId: 'already-known' }),
+    );
+
+    const first = await t.mutation(internal.waterBodies.backfillCatalogueIds, {});
+    expect(first.patched).toBe(1);
+    const body = await t.run(async (ctx) => ctx.db.get(id));
+    expect(body?.osmId).toBe('osm/way/1');
+    expect(body?.geometrySource).toBe('osm');
+    expect(body?.nhdId).toBe('already-known');
+
+    // Idempotent: a second pass over a corpus that is still changing must be a no-op, because it
+    // will be re-run alongside the depth, elevation and wind passes rather than instead of them.
+    const second = await t.mutation(internal.waterBodies.backfillCatalogueIds, {});
+    expect(second.patched).toBe(0);
+    expect(second.alreadySet).toBe(1);
   });
 });

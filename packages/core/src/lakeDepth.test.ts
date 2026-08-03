@@ -1,12 +1,15 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  attributionGaps,
   DEPTH_SOURCE_LABELS,
   DEPTH_SOURCE_RANK,
+  DEPTH_SOURCE_TERMS,
   DEPTH_SOURCES,
   describeLakeDepth,
   isMeasuredDepthSource,
   isShallowDepth,
+  requiredDepthCredits,
   SHALLOW_MAX_DEPTH_M,
   SHALLOW_MEAN_DEPTH_M,
 } from './lakeDepth';
@@ -262,5 +265,98 @@ describe('describeLakeDepth — the operator source note (D68 amendment)', () =>
     expect(d?.caption).toContain('VT DEC chart, 2012');
     expect(d?.caption).toContain('GLOBathy (modeled)');
     expect(d?.caption).not.toContain('moderator');
+  });
+});
+
+/**
+ * Licence obligations (N6a, closed 2026-08-02).
+ *
+ * Two of the three bulk depth sources are CC BY, which means displaying their numbers without a
+ * credit is a breach — and a silent one: nothing misbehaves, the depth just renders. So the gap is
+ * computed and asserted rather than remembered.
+ */
+describe('depth source terms', () => {
+  it('has an entry for every source, so a new rung cannot ship unconsidered', () => {
+    for (const source of Object.keys(DEPTH_SOURCE_LABELS) as (keyof typeof DEPTH_SOURCE_LABELS)[]) {
+      expect(DEPTH_SOURCE_TERMS).toHaveProperty(source);
+    }
+  });
+
+  it('carries HydroLAKES’ required citation verbatim, on both of its rungs', () => {
+    // Both rungs are the same dataset under the same terms; a credit on one and not the other would
+    // mean a lake attributed or not depending on whether its volume was reported or modelled.
+    for (const rung of ['hydrolakes_reported', 'hydrolakes_modeled'] as const) {
+      const terms = DEPTH_SOURCE_TERMS[rung];
+      expect(terms?.licence).toMatch(/CC-BY/);
+      expect(terms?.credit).toContain('Messager');
+      expect(terms?.credit).toContain('Nature Communications');
+    }
+  });
+
+  it('records CC0 explicitly rather than leaving GLOBathy blank', () => {
+    // "No obligation" and "nobody checked" look identical in an absent entry.
+    expect(DEPTH_SOURCE_TERMS.globathy?.licence).toBe('CC0 1.0');
+    expect(DEPTH_SOURCE_TERMS.globathy?.credit).toBeUndefined();
+  });
+
+  it('does not mistake a permissive licence for an unmet obligation', () => {
+    // The bug this replaced: deriving the obligation from `credit === undefined` reported CC0
+    // GLOBathy as outstanding. Whether attribution is owed is a stated fact, not a string match.
+    expect(DEPTH_SOURCE_TERMS.globathy?.requiresAttribution).toBe(false);
+    expect(attributionGaps()).not.toContain('globathy');
+  });
+
+  it('treats operator and state_agency as having no outward obligation', () => {
+    // A moderator's own reading is ours; the agencies' wording is keyed by agency in
+    // CONTOUR_SOURCE_TERMS, because `state_agency` spans five publishers.
+    expect(DEPTH_SOURCE_TERMS.operator).toBeNull();
+    expect(DEPTH_SOURCE_TERMS.state_agency).toBeNull();
+  });
+
+  it('has no outstanding attribution — every CC BY source carries its required wording', () => {
+    // The gate. A depth rendered from a CC BY source with no credit is a licence breach, and it
+    // fails silently: nothing misbehaves, the number just appears. Closed 2026-08-02 when the EDI
+    // package's recommended citation was read off the portal.
+    expect(attributionGaps()).toEqual([]);
+  });
+
+  it('still detects a gap when one exists', () => {
+    // The gate has to be able to fail, or passing means nothing.
+    const gaps = attributionGaps({
+      ...DEPTH_SOURCE_TERMS,
+      lagos_us: { licence: 'CC BY 4.0', requiresAttribution: true, credit: '   ' },
+    });
+    expect(gaps).toEqual(['lagos_us']);
+  });
+
+  it('names LAGOS-US’ authors, not just the dataset', () => {
+    // CC BY asks for the creators. "LAGOS-US DEPTH" is the dataset — the distinction this whole
+    // registry exists for.
+    const credit = DEPTH_SOURCE_TERMS.lagos_us?.credit ?? '';
+    expect(credit).toContain('Stachelek');
+    expect(credit).toContain('Soranno');
+    expect(credit).toContain('doi.org/10.6073/pasta/');
+  });
+});
+
+describe('requiredDepthCredits', () => {
+  it('returns the credits owed, deduped and in ladder order', () => {
+    const credits = requiredDepthCredits(['globathy', 'hydrolakes_modeled', 'lagos_us']);
+    expect(credits).toHaveLength(2);
+    expect(credits[0]).toContain('Stachelek'); // lagos_us outranks hydrolakes
+    expect(credits[1]).toContain('Messager');
+  });
+
+  it('collapses the two HydroLAKES rungs into one credit', () => {
+    // Same dataset, same terms — crediting it twice on one lake would be noise, not diligence.
+    expect(requiredDepthCredits(['hydrolakes_reported', 'hydrolakes_modeled'])).toHaveLength(1);
+  });
+
+  it('owes nothing for CC0, operator or state-agency depths', () => {
+    expect(requiredDepthCredits(['globathy', 'operator', 'state_agency'])).toEqual([]);
+  });
+
+  it('returns nothing for a body with no depth at all', () => {
+    expect(requiredDepthCredits([])).toEqual([]);
   });
 });

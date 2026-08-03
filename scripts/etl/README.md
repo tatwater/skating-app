@@ -9,7 +9,8 @@ Pipeline stages:
 
 1. **Fetch** — download a [Geofabrik](https://download.geofabrik.de/) regional extract.
 2. **Filter + convert** — `osmium` + `GDAL`: keep water features, export clean GeoJSON.
-3. **Transform** — TypeScript: classify OSM tags → our `type`, simplify to ~5 m, compute
+3. **Transform** — TypeScript: classify OSM tags → our `type`, drop what's under the
+   surface-area floor (D91: ≥ 5 acres, or ≥ 1 acre with a name), simplify to ~5 m, compute
    `bbox` / on-water `centroid` / `surfaceAreaSqM`, emit **NDJSON**.
 4. **Load** — chunk the NDJSON into the internal `importCanonical` Convex mutation.
 
@@ -110,6 +111,16 @@ someone runs the transform and loader against a new extract.
 
 ## Running the pipeline
 
+> **The short version, for a normal re-import:**
+> ```bash
+> ./run-canonical.sh n6c-20260802          # all five states, from the archived .raw/ extracts
+> ./run-canonical.sh n6c-20260802 vt nh    # or just some
+> ```
+> That is the manual steps below, in order, with the arguments that carry provenance — the
+> extract's manifest, the transform's summary sidecar, the campaign id — already wired. It writes
+> one `importRuns` row per state, visible at **`/admin/imports`**. Read on if you are doing
+> something the script does not cover; the steps are still what it runs.
+
 Work in a scratch dir (gitignored); nothing here is committed except the final DB rows.
 
 ```bash
@@ -164,14 +175,40 @@ osmium export water.osm.pbf \
 cd ..                                   # back to scripts/etl
 pnpm --filter @skating/etl transform .scratch/water.geojsonseq .scratch/bodies.ndjson \
   --depths=.scratch/depths.ndjson       # optional second stream, see step 5
+  --summary=.scratch/transform.json     # optional run summary, see below
 ```
 
-Classifies each feature, simplifies to ~5 m (D48), computes `bbox` / on-water `centroid` /
-`surfaceAreaSqM`, and writes one canonical body per line. A degenerate/bad feature is logged
-and skipped (never aborts the batch); the run summary prints imported / dropped / skipped
-counts and the **densest ring** (so any adaptive coarsening is visible). *(Reference: the
-2026-07-12 Vermont extract yields ~9,970 bodies from ~12,700 polygon features — the remainder
-are deferred rivers/wetland. Total NDJSON ≈ 6 MB.)*
+Classifies each feature, applies the **surface-area floor** (below), simplifies to ~5 m (D48),
+computes `bbox` / on-water `centroid` / `surfaceAreaSqM`, and writes one canonical body per line.
+A degenerate/bad feature is logged and skipped (never aborts the batch); the run summary prints
+imported / dropped / skipped counts and the **densest ring** (so any adaptive coarsening is
+visible). *(Reference: the 2026-07-12 Vermont extract yields ~9,970 bodies from ~12,700 polygon
+features before the floor — the remainder are deferred rivers/wetland. Total NDJSON ≈ 6 MB.)*
+
+**The surface-area floor (D91).** A feature is imported only if it is at least **5 acres**, or
+**named and at least 1 acre**. Nothing under an acre survives either way. The rest are dropped and
+counted as `droppedByAreaFloor`, separately from the classification drop. Expect it to be the largest
+number in the summary — **~4 of every 5 features** — because 64% of a raw extract is under one acre
+(median long axis 50 m: farm dugouts, retention basins, widenings in a brook).
+
+The name tier is a cheap hedge, not a rescue of known lakes: no water body discussed in the
+Google-Group corpus is under five acres, so everything we can name as a destination clears the floor
+on size. It stops at an acre because 98% of sub-acre bodies are unnamed and a name down there asserts
+nothing. There is **no bathymetry clause** — see D91 for why one was built and removed, and which 5
+bodies that knowingly drops.
+
+See [D91](../../plans/01-decisions.md) for why five and not the 25/30/50 that were also on the table,
+why three was rejected, and why a *higher* floor would need a `longAxisM` clause to be safe. Bodies a
+skater creates from a recorded track (Phase 8) never pass through here and are exempt.
+
+The rule itself lives in `@skating/core` (`meetsAreaFloor`), not here, because the ETL is not the
+only thing that applies it — see **[Pruning an already-loaded corpus](#pruning-an-already-loaded-corpus)**.
+
+**`--summary` — the durable copy of what you just watched scroll past (N6c F2).** The same counts,
+plus **every** skipped feature itemized rather than only tallied, as JSON. The loader folds it into
+the `importRuns` row as the `transform` stage, which is what lets `/admin/imports` answer *which
+features did it decline, and why* without re-running the pass. `"3 skipped"` is a number an operator
+can do nothing with.
 
 **`--depths` — OSM depth tags (N6a rung 7).** A second, much smaller NDJSON: the bodies carrying a
 `depth` / `maxdepth` / `depth:mean` tag we can read. The parse is deliberately strict — a bare value is
@@ -203,6 +240,30 @@ so the normal command can't upsert into production by accident — and prints th
 deployment before loading. Confirm the data renders on the read-only web map before touching
 prod. The import is **idempotent** (upsert on `source + externalId`) and **preserves removed
 state**, so re-running (or resuming after a failed batch, which the loader reports) is safe.
+
+**One bad batch no longer ends the run.** A five-state pass is ~830 `convex run` calls and ~40
+minutes; dying at batch 700 over one malformed body threw away the wall clock for nothing, since the
+upsert is idempotent and the work itself was never at risk. An isolated batch failure is now
+recorded — named by its first body's `externalId` — and the load continues. **Five consecutive**
+failures abort, because a streak is a schema mismatch or a dead deployment rather than bad data, and
+600 more doomed batches would turn a clear error into a slow one. A load that skipped any batch
+closes its run row as `failed` and exits non-zero: reaching the end is not the same as succeeding.
+
+**Run history flags (N6c F2).** Pass these and the load writes one `importRuns` row carrying the
+whole path, readable at `/admin/imports`:
+
+| flag | what it adds to the row |
+| --- | --- |
+| `--campaign=<id>` | groups the five state loads as one canonical update |
+| `--label=<text>` | the run's display name (defaults to `<STATE> canonical water`) |
+| `--manifest=.raw/<state>/manifest.json` | the `extract` stage — resolved Geofabrik URL, build date, size, sha256, whether the published md5 verified |
+| `--transform-summary=<transform.json>` | the `filter` + `transform` stages, including every itemized skip |
+| `--filter-command=<text>` | the exact `osmium` invocation, so the path is reproducible rather than merely described |
+| `--no-run-log` | opt out; nothing else about the load changes |
+
+`run-canonical.sh` passes all of them. Bookkeeping is best-effort throughout — a run-history write
+that fails warns and is ignored, never taking the import down with it.
+
 `importCanonical` also **cell-indexes each body** (N1) — one `waterBodyCells` row per grid cell its
 bbox covers, at a rung no finer than the zoom it first draws at — which is what `listInViewport`
 reads. Cells are reconciled, not appended, so a re-import of a redrawn lake moves its rows rather
@@ -232,6 +293,40 @@ since these depths came off the very features the bodies were built from. (The *
 need a geometric join and live in [`scripts/lake-depth`](../lake-depth/README.md).) The D68 ladder runs
 inside the mutation and `osm_tag` is its bottom rung, so a re-run can only fill a measurement nothing
 better has claimed, and it can never overwrite a moderator's reading or rejection.
+
+### Pruning an already-loaded corpus
+
+The floor above governs what a **future** import writes. It cannot reach rows already stored, because
+`importCanonical` upserts and never deletes — so a deployment loaded before 2026-08-02 still holds the
+~100,000 sub-floor bodies the transform now skips. `prune-floor` walks the table and deletes exactly
+those, applying the same `meetsAreaFloor` from `@skating/core` that the transform does (which is why
+the rule lives there and not in `transform.ts` — two copies would drift into a prune that deletes rows
+the next import puts straight back).
+
+```bash
+pnpm --filter @skating/etl prune-floor            # DRY RUN — counts, writes nothing
+pnpm --filter @skating/etl prune-floor --apply    # actually delete
+```
+
+**Dry by default, and dev-only unless `--prod`** — the same two guards the loader has, for a stronger
+reason: this is the only script here that destroys rows. A page is one transaction, so killing it
+mid-run leaves the corpus consistent and the next run resumes from the start of the table.
+
+It **refuses to delete a sub-floor body that anything speaks for**, and reports each kind separately
+so the summary shows why:
+
+| kept as | because |
+| --- | --- |
+| `clearsFloor` | ≥ 5 ac, or named ≥ 1 ac — the rule itself |
+| `areaUnknown` | `surfaceAreaSqM` is absent; "we can't measure it" is not "it's small" |
+| `userCreated` | `source: 'user'` — a skater drew it from a track they recorded (Phase 8) |
+| `curated` | an admin set a `curatedBoost` by hand (D49) |
+| `dedupOrMerged` | a merge pointer or non-`clean` dedup status; reads follow the survivor (D36) |
+| `delisted` | `removedAt` is set — a soft-delist carries a reason, sometimes a takedown (D48) |
+| `attached` | a report, hazard, bounty, favourite, put-in, track, sub-area or gate event names it |
+
+Expect the run to take roughly **20 ms per body** (it reads whole rows, polygons included), so a
+five-state corpus is ~40 minutes per pass.
 
 ### Repairing the spatial index without a re-import
 

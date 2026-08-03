@@ -11,7 +11,8 @@
     "load": "tsx src/load.ts"
   },
   "dependencies": {
-    "@skating/core": "workspace:*"
+    "@skating/core": "workspace:*",
+    "@skating/run-log": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

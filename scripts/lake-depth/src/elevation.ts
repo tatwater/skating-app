@@ -10,6 +10,7 @@
  * actually worth and why there is one source rather than a ladder.
  */
 
+import process from 'node:process';
 import { isPlausibleElevationM } from '@skating/core';
 
 /**
@@ -34,6 +35,36 @@ export const ELEVATION_REQUEST_DELAY_MS = 250;
 
 /** How many times to retry one batch before giving up on the run. */
 export const ELEVATION_MAX_RETRIES = 4;
+
+/**
+ * Extra attempts granted specifically to a **429**, and the floor they wait between tries.
+ *
+ * A rate limit is not a transient error and must not be treated as one. The original backoff was
+ * `250ms × 4^attempt` — 21 seconds across all four attempts — which is the right shape for a flaky
+ * socket and useless against a quota measured per minute or per hour. The 2026-08-02 run died at
+ * page 3 of ~230 for exactly this.
+ *
+ * **And the quota is shared.** `weather.ts` fetches forecasts from `api.open-meteo.com` too, on
+ * crons — so a corpus-wide elevation pass is competing with the app's own weather for one free-tier
+ * allowance. Backing off in minutes is not paranoia here, it is the only way both fit.
+ */
+export const ELEVATION_RATE_LIMIT_RETRIES = 8;
+export const ELEVATION_RATE_LIMIT_BASE_MS = 30_000;
+
+/**
+ * Honour the server's own `Retry-After` when it sends one.
+ *
+ * It is the only number in this exchange that is not a guess — Open-Meteo knows when the window
+ * resets and we do not. Seconds-form only; the HTTP-date form is legal but nobody sends it here,
+ * and misparsing a date into a 50-year sleep is a worse failure than ignoring the header.
+ */
+export function retryAfterMs(header: string | null): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header.trim());
+  if (!Number.isFinite(seconds) || seconds <= 0) return undefined;
+  // Cap it: a server asking us to wait an hour should end the run, not hang it silently.
+  return Math.min(seconds * 1000, 10 * 60_000);
+}
 
 export const ELEVATION_URL = 'https://api.open-meteo.com/v1/elevation';
 
@@ -121,10 +152,18 @@ export function sleep(ms: number): Promise<void> {
 export async function fetchElevationBatch(
   batch: readonly ElevationTarget[],
   fetchImpl: typeof fetch = fetch,
+  // Injectable for the same reason `fetchImpl` is: a rate-limit backoff is measured in *minutes*,
+  // and a test that actually waits one is a test nobody runs.
+  sleepImpl: (ms: number) => Promise<void> = sleep,
 ): Promise<{ records: ElevationRecord[]; implausible: number }> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < ELEVATION_MAX_RETRIES; attempt++) {
-    if (attempt > 0) await sleep(ELEVATION_REQUEST_DELAY_MS * 4 ** attempt);
+  // Rate-limit retries are counted separately so a 429 storm cannot exhaust the budget a genuinely
+  // transient 5xx needs, and vice versa.
+  let rateLimitRetries = 0;
+  let waitMs = 0;
+  for (let attempt = 0; attempt < ELEVATION_MAX_RETRIES + ELEVATION_RATE_LIMIT_RETRIES; attempt++) {
+    if (attempt > 0) await sleepImpl(waitMs || ELEVATION_REQUEST_DELAY_MS * 4 ** attempt);
+    waitMs = 0;
 
     // Each failure mode is handled where it happens rather than in one `catch`. The first version
     // of this wrapped the whole body in a try and re-`throw`ew the non-retryable case from inside
@@ -143,6 +182,27 @@ export async function fetchElevationBatch(
       // A malformed request will be malformed on the fourth attempt too, and retrying it just
       // spends someone else's quota.
       if (res.status !== 429 && res.status < 500) throw err;
+      if (res.status === 429) {
+        rateLimitRetries++;
+        if (rateLimitRetries > ELEVATION_RATE_LIMIT_RETRIES) {
+          throw new Error(
+            `elevation rate-limited (429) after ${rateLimitRetries} waits — the daily or hourly ` +
+              'quota is likely spent. The pass is resumable: re-run later and it continues from ' +
+              'where it stopped (already-stamped rows are skipped server-side).',
+          );
+        }
+        // The server's own number first; ours only as a fallback. Linear, not exponential — a quota
+        // window empties at a fixed time, so doubling just overshoots it.
+        // `headers` is optional-chained: a real Response always has it, but a hand-rolled stub in a
+        // test legitimately may not, and crashing the retry path over a missing header would turn a
+        // recoverable rate limit into a dead run.
+        waitMs =
+          retryAfterMs(res.headers?.get('retry-after') ?? null) ??
+          ELEVATION_RATE_LIMIT_BASE_MS * rateLimitRetries;
+        process.stderr.write(
+          `[elevation] rate-limited; waiting ${Math.round(waitMs / 1000)}s (${rateLimitRetries}/${ELEVATION_RATE_LIMIT_RETRIES})\n`,
+        );
+      }
       lastError = err;
       continue;
     }

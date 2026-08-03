@@ -9,11 +9,21 @@
  *
  * `--depths` writes the second, much smaller stream: bodies carrying an OSM `depth`/`maxdepth` tag
  * (N6a rung 7), for `pnpm --filter @skating/etl load-depths`. Omit it and depths are simply counted.
+ *
+ * `--summary=run.json` writes the run summary as JSON beside the NDJSON, for the loader to fold
+ * into the `importRuns` row it writes (N6c F2). The same numbers still go to stderr — this is not a
+ * replacement for the operator seeing them live, it is a way for them to survive the terminal.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
-import { largestRingSize, MAX_RING_VERTICES, transformFeatures } from './transform';
+import {
+  HARD_MIN_SURFACE_AREA_ACRES,
+  largestRingSize,
+  MAX_RING_VERTICES,
+  MIN_SURFACE_AREA_ACRES,
+  transformFeatures,
+} from './transform';
 import type { OsmWaterFeature } from './types';
 
 /** RFC 8142 record separator (U+001E) — geojsonseq may prefix each line with it. */
@@ -22,6 +32,7 @@ const RECORD_SEPARATOR = String.fromCharCode(0x1e);
 function main(): void {
   const args = process.argv.slice(2);
   const depthsPath = args.find((a) => a.startsWith('--depths='))?.slice('--depths='.length);
+  const summaryPath = args.find((a) => a.startsWith('--summary='))?.slice('--summary='.length);
   const [inputPath, outputPath] = args.filter((a) => !a.startsWith('--'));
 
   // Default input is stdin (fd 0). Strip any record separator defensively (as a string, not
@@ -48,6 +59,8 @@ function main(): void {
 
   process.stderr.write(
     `\n[etl] ${summary.imported} imported · ${summary.droppedByType} dropped (non-still-water) · ` +
+      `${summary.droppedByAreaFloor} dropped (under ${MIN_SURFACE_AREA_ACRES} ac, or ` +
+      `${HARD_MIN_SURFACE_AREA_ACRES} ac unnamed) · ` +
       `${summary.skipped} skipped (errors) · of ${summary.total} features\n`,
   );
   // Named even at zero: "no inland lake in five states tags its depth" is the expected result and a
@@ -69,6 +82,33 @@ function main(): void {
   if (densest) {
     process.stderr.write(
       `[etl] densest ring: ${densest.externalId} "${densest.name}" — ${largestRingSize(densest.polygon)} vertices (cap ${MAX_RING_VERTICES})\n`,
+    );
+  }
+
+  // The durable copy. Every skipped feature is itemized here, not just tallied: "3 skipped" is a
+  // number an operator can do nothing with, and the whole point of F2 is to be able to answer
+  // *which lakes did it decline, and why* without re-running the pass.
+  if (summaryPath) {
+    writeFileSync(
+      summaryPath,
+      `${JSON.stringify(
+        {
+          input: inputPath ?? '(stdin)',
+          output: outputPath,
+          ...summary,
+          densestRing: densest
+            ? {
+                externalId: densest.externalId,
+                name: densest.name,
+                vertices: largestRingSize(densest.polygon),
+                cap: MAX_RING_VERTICES,
+              }
+            : undefined,
+          errors,
+        },
+        null,
+        2,
+      )}\n`,
     );
   }
 }

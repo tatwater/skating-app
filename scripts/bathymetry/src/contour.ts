@@ -135,6 +135,41 @@ function clipToPolygon(
 }
 
 /**
+ * Re-clip an already-drawn line set to a **bay** of the lake it was drawn for (N6b).
+ *
+ * The survey is fitted once, against the lake's own polygon, and then trimmed to each nested body the
+ * join said it also covers. Fitting per bay instead would be both slower and *wrong*: a bay's share of
+ * a lake's basin is the lake's surface cut down, not a new surface solved from whichever soundings
+ * happen to fall inside the bay, which would bend the contours to the bay's edges as though the water
+ * ended there.
+ *
+ * Returns undefined when the clip fails or leaves nothing, and both are ordinary: `alsoCovers` bodies
+ * come from a point-containment test, so a body can legitimately hold the deepest sounding and still
+ * take no whole contour line. The caller drops the bay and keeps the lake.
+ */
+export function clipDrawnToBody(
+  drawn: { lines: Position[][]; depths: number[] },
+  polygon: Polygon | MultiPolygon,
+  label: string,
+): { lines: Position[][]; depths: number[] } | undefined {
+  if (drawn.lines.length === 0) return undefined;
+  const collection: GeoJSON.FeatureCollection = {
+    type: 'FeatureCollection',
+    features: drawn.lines.map((coordinates, i) => ({
+      type: 'Feature' as const,
+      properties: { depth: drawn.depths[i] ?? 0 },
+      geometry: { type: 'LineString' as const, coordinates },
+    })),
+  };
+  const path = join(WORK_DIR, `${label}.drawn.geojson`);
+  writeFileSync(path, JSON.stringify(collection));
+  const clipped = clipToPolygon(path, polygon, WORK_DIR, `${label}.nested`);
+  if (!clipped) return undefined;
+  const result = linesOf(clipped);
+  return result.lines.length > 0 ? result : undefined;
+}
+
+/**
  * Interpolate soundings and contour the result: `blockmedian` → `surface` → `grdedit` → `grdfilter`
  * → `gdal_contour` → clip.
  *

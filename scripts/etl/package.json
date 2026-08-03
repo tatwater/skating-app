@@ -11,11 +11,13 @@
     "transform": "tsx src/cli.ts",
     "load": "tsx src/load.ts",
     "load-depths": "tsx src/loadDepths.ts",
+    "prune-floor": "tsx src/pruneFloor.ts",
     "archive": "tsx src/fetchExtract.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",
-    "@turf/simplify": "^7.3.0"
+    "@turf/simplify": "^7.3.0",
+    "@skating/run-log": "workspace:*"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",
