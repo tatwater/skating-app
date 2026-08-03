@@ -1,0 +1,6 @@
+
+# The permanent WTK response archive — 7.7 hours of fetching. Mirror it, never delete.
+.raw/
+
+# Mirror config (holds no secrets, but stays local).
+.env.local
