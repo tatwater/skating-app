@@ -1,5 +1,16 @@
 export { convexRun } from './convexRun';
 export { type DeploymentTarget, resolveDeployment } from './deployment';
+export {
+  accepted,
+  DropLedger,
+  expectAcceptance,
+  formatLedger,
+  LEDGER_SAMPLE_CAP,
+  type LedgerReport,
+  type Normalized,
+  type RejectionReason,
+  rejected,
+} from './ledger';
 export { parseConvexOutput } from './parseOutput';
 export { type ExtractManifest, extractStage, parseBuildDate } from './provenance';
 export {

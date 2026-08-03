@@ -25,6 +25,8 @@
  * Pure logic here and tested; the download glue is `fetchNhd.ts`.
  */
 
+import { accepted, type Normalized, rejected } from '@skating/run-log';
+
 /** One state's NHD High Resolution geodatabase. */
 export interface NhdSource {
   /** Two-letter state code, matching the OSM lane's `--state=` tag. */
@@ -98,17 +100,19 @@ export function nhdArchiveKey(source: NhdSource): string {
  * ## `Permanent_Identifier` has TWO formats, and the first version of this function knew about one
  *
  * Written from a single observed example — Beau Lake, `{85383A01-DC89-47AA-BC5D-BE373FB0B5C3}`, read
- * off the REST service — and it refused everything that was not a GUID. Then the archive was measured:
- * of Maine's **3,701** post-floor GNIS-keyed waterbodies, only **872 (23.6%)** carry a GUID. The other
- * **2,829 (76.4%)** carry a **plain numeric** id like `141034078` (Dead Pond) or `118181968` (Sessions
- * Pond) — legacy identifiers NHD never re-minted.
+ * off the REST service — and it refused everything that was not a GUID. Then **all five archives were
+ * censused** (`NHD_ID_CENSUS`): of 53,130 post-floor water bodies, only **8,268 (15.6%)** carry a
+ * GUID. The other **44,862 (84.4%)** carry a **plain numeric** id like `141034078` (Dead Pond) or
+ * `118181968` (Sessions Pond) — legacy identifiers NHD never re-minted.
  *
- * So the strict version would have silently dropped **three quarters of Maine's lakes** out of
- * reconciliation, with no error and no drop-ledger entry, because a body that fails to normalize just
- * never gets an `nhdId`. The very failure mode the docstring claimed to prevent.
+ * So the strict version would have silently dropped **five sixths of the corpus's join keys**, with no
+ * error and no ledger entry, because a body that fails to normalize just never gets an `nhdId`. The
+ * very failure mode the original docstring claimed to prevent.
  *
- * The lesson is worth more than the fix: **a format rule derived from one example is a guess.** This
- * one is now derived from a census of the archive, and the test carries real ids from it.
+ * The lesson is worth more than the fix, and it is now enforced rather than remembered: **a format
+ * rule derived from one example is a guess.** This one comes from a census, the census is stored
+ * beside it, `auditArchives` re-derives it from the archives on demand, and the rejection path returns
+ * a *reason* so `DropLedger` can count what it refused.
  *
  * ## Braces vary by access path, and that part was right
  *
@@ -118,15 +122,36 @@ export function nhdArchiveKey(source: NhdSource): string {
  * Still refuses anything that is neither shape, because a join key that accepts garbage rots quietly
  * while one that returns `undefined` gets counted.
  */
-export function normalizeNhdId(raw: string | null | undefined): string | undefined {
-  if (!raw) return undefined;
+export function normalizeNhdId(raw: string | null | undefined): Normalized {
+  if (raw === null || raw === undefined) return rejected('absent');
   const stripped = raw.trim().replace(/^\{/, '').replace(/\}$/, '').toLowerCase();
-  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(stripped))
-    return stripped;
-  // Legacy numeric ids. NOT zero-stripped: unlike `gnis_id` there is no evidence NHD pads these, and
-  // trimming a leading zero that turned out to be significant would silently merge two lakes.
-  return /^[0-9]{1,20}$/.test(stripped) ? stripped : undefined;
+  if (stripped.length === 0) return rejected('absent');
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(stripped)) {
+    return accepted(stripped);
+  }
+  // Legacy numeric ids — the majority case. NOT zero-stripped: unlike `gnis_id` there is no evidence
+  // NHD pads these, and trimming a leading zero that turned out to be significant would silently
+  // merge two lakes.
+  return /^[0-9]{1,20}$/.test(stripped) ? accepted(stripped) : rejected('malformed');
 }
+
+/**
+ * The census this rule is derived from — **all five archived states, not one**, 2026-08-03.
+ *
+ * Recorded as data rather than prose because `auditArchives` asserts against it: a re-run whose
+ * distribution has moved is either a changed source or a changed rule, and both should stop the pass.
+ * The first version of `normalizeNhdId` was written from **one** observed value and was wrong about
+ * 84.4% of the corpus.
+ */
+export const NHD_ID_CENSUS = {
+  postFloorRows: 53_130,
+  numeric: 44_862, // 84.4%
+  guid: 8_268, // 15.6%
+  empty: 0,
+  other: 0,
+  /** Distinct ids, after the five state files' overlap collapses. */
+  distinct: 40_928,
+} as const;
 
 /**
  * The GNIS Feature ID, in the one form we ever store it in — **the bridge all three catalogues share**.
@@ -148,13 +173,43 @@ export function normalizeNhdId(raw: string | null | undefined): string | undefin
  * legitimately span two features when a catalogue splits a lake. Use it to propose a match; let
  * `polygonIoU` adjudicate.
  */
-export function normalizeGnisId(raw: string | number | null | undefined): string | undefined {
-  if (raw === null || raw === undefined) return undefined;
+export function normalizeGnisId(raw: string | number | null | undefined): Normalized {
+  if (raw === null || raw === undefined) return rejected('absent');
   const text = String(raw).trim();
-  if (!/^[0-9]+$/.test(text)) return undefined;
+  if (text.length === 0) return rejected('absent');
+  if (GNIS_SENTINELS.has(text)) return rejected('sentinel');
+  if (!/^[0-9]+$/.test(text)) return rejected('malformed');
   const stripped = text.replace(/^0+/, '');
-  return stripped.length > 0 ? stripped : undefined;
+  // All zeros is a sentinel too, whatever its width — "0", "00000000".
+  return stripped.length > 0 ? accepted(stripped) : rejected('sentinel');
 }
+
+/**
+ * Values NHD writes **in the id's own slot** to mean *"this feature has no GNIS entry"*.
+ *
+ * **Found by census, and it is the most dangerous thing in this file.** `-1` appears on **1,032
+ * post-floor rows across four states** — cross-border Québec lakes like `Lac des Ours`, `Étang
+ * Payeur` and `Lac Coulombe`, which have no US GNIS entry because they are not in the US.
+ *
+ * Treating `-1` as an identifier would collapse **855 unrelated lakes onto one body**. Before this
+ * set existed it was rejected only as a side effect of the minus sign failing a digits test — the
+ * right outcome reached by accident, uncounted, and one refactor away from becoming a catastrophe.
+ * Named here so the rejection is deliberate, reported under its own reason, and kept out of the
+ * malformed bucket that trips the acceptance floor.
+ */
+export const GNIS_SENTINELS: ReadonlySet<string> = new Set(['-1', '0']);
+
+/** The GNIS census behind the rule and the floor. Same discipline as `NHD_ID_CENSUS`. */
+export const GNIS_ID_CENSUS = {
+  postFloorRows: 53_130,
+  absent: 38_107, // 71.7% — normal; most NHD features are unnamed and carry no GNIS entry
+  zeroPadded: 13_989, // 26.3%
+  bareDigits: 2, // both spellings exist inside NHD itself
+  sentinel: 1_032, // 1.9% — `-1`
+  distinct: 10_985,
+  /** GNIS ids resolving to more than one NHD body, excluding the sentinel: a split lake. */
+  multiBody: 92,
+} as const;
 
 /** What a `.raw-nhd/<state>/manifest.json` records. */
 export interface NhdManifest {

@@ -13,6 +13,7 @@ export default defineConfig({
       // still bites on every line of transform logic (settled note, phase-1 plan).
       exclude: [
         'src/**/*.test.ts',
+        'src/auditArchives.ts',
         'src/cli.ts',
         'src/fetchExtract.ts',
         'src/fetch3dhp.ts',

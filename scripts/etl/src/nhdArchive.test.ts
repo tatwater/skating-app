@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildNhdManifest,
+  GNIS_ID_CENSUS,
+  GNIS_SENTINELS,
   NHD_FROZEN_AT,
+  NHD_ID_CENSUS,
   NHD_SOURCES,
   nhdArchiveKey,
   nhdMetadataUrl,
@@ -40,72 +43,109 @@ describe('the source registry', () => {
 });
 
 describe('normalizeNhdId', () => {
-  // Beau Lake — the phase's headline fixture, as NHD actually returns it.
+  // Beau Lake — the phase's headline fixture, as the REST service actually returns it.
   const BEAU = '{85383A01-DC89-47AA-BC5D-BE373FB0B5C3}';
   const bare = '85383a01-dc89-47aa-bc5d-be373fb0b5c3';
+  const val = (raw: string | null | undefined) => {
+    const r = normalizeNhdId(raw);
+    return r.ok ? r.value : undefined;
+  };
+  const why = (raw: string | null | undefined) => {
+    const r = normalizeNhdId(raw);
+    return r.ok ? 'accepted' : r.reason;
+  };
 
   it('strips the braces and lower-cases, so one lake has one key', () => {
-    expect(normalizeNhdId(BEAU)).toBe(bare);
+    expect(val(BEAU)).toBe(bare);
   });
 
   it('agrees across every spelling the access paths hand back', () => {
     for (const spelling of [BEAU, BEAU.toLowerCase(), bare, bare.toUpperCase(), ` ${BEAU} `]) {
-      expect(normalizeNhdId(spelling)).toBe(bare);
+      expect(val(spelling)).toBe(bare);
     }
   });
 
-  // The formats that a single-example rule missed. 76.4% of Maine's post-floor GNIS-keyed
-  // waterbodies carry a plain numeric id, not a GUID — the strict version dropped all of them.
-  it('accepts the LEGACY NUMERIC ids, which are the majority', () => {
-    expect(normalizeNhdId('141034078')).toBe('141034078'); // Dead Pond
-    expect(normalizeNhdId('118181968')).toBe('118181968'); // Sessions Pond
+  // The format a single-example rule missed. 84.4% of the five-state post-floor corpus is numeric.
+  it('accepts the LEGACY NUMERIC ids, which are five sixths of the corpus', () => {
+    expect(val('141034078')).toBe('141034078'); // Dead Pond
+    expect(val('118181968')).toBe('118181968'); // Sessions Pond
+    expect(NHD_ID_CENSUS.numeric).toBeGreaterThan(NHD_ID_CENSUS.guid * 4);
   });
 
   it('does not strip leading zeros off a numeric id', () => {
     // Unlike gnis_id there is no evidence NHD pads these, and trimming a zero that turned out to be
     // significant would silently merge two lakes.
-    expect(normalizeNhdId('0141034078')).toBe('0141034078');
+    expect(val('0141034078')).toBe('0141034078');
   });
 
   it('takes a GUID with or without braces, since access paths disagree', () => {
-    // ogr2ogr returns it bare from the same column the REST service brace-wraps.
-    expect(normalizeNhdId('601F3C2E-2C78-4691-8AEC-8735A10D22B5')).toBe(
+    expect(val('601F3C2E-2C78-4691-8AEC-8735A10D22B5')).toBe(
       '601f3c2e-2c78-4691-8aec-8735a10d22b5',
     );
   });
 
-  it('refuses what is neither shape, rather than passing it through', () => {
-    // The point of the refusal: a join key that accepts anything matches nothing, silently.
-    for (const junk of [
-      '',
-      '   ',
-      'way/150404999',
-      '{not-a-guid}',
-      '85383a01-nope',
-      null,
-      undefined,
-    ]) {
-      expect(normalizeNhdId(junk)).toBeUndefined();
-    }
+  it('says WHY it refused, so a ledger can count it', () => {
+    // The whole point of the rewrite: `undefined` cannot be tallied by reason, and a rejection
+    // nobody tallies is the silent drop this phase kept meeting.
+    expect(why(null)).toBe('absent');
+    expect(why('')).toBe('absent');
+    expect(why('   ')).toBe('absent');
+    expect(why('way/150404999')).toBe('malformed');
+    expect(why('{not-a-guid}')).toBe('malformed');
+    expect(why('141034078')).toBe('accepted');
+  });
+
+  it('census matches the archives it was derived from', () => {
+    expect(NHD_ID_CENSUS.numeric + NHD_ID_CENSUS.guid).toBe(NHD_ID_CENSUS.postFloorRows);
+    // Nothing fell outside the two accepted shapes — the rule covers 100% of the archive.
+    expect(NHD_ID_CENSUS.empty + NHD_ID_CENSUS.other).toBe(0);
   });
 });
 
 describe('normalizeGnisId', () => {
+  const val = (raw: string | number | null | undefined) => {
+    const r = normalizeGnisId(raw);
+    return r.ok ? r.value : undefined;
+  };
+  const why = (raw: string | number | null | undefined) => {
+    const r = normalizeGnisId(raw);
+    return r.ok ? 'accepted' : r.reason;
+  };
+
   it('reconciles NHD zero-padded strings with 3DHP bare integers', () => {
     // Joined raw over Maine this matched 0 of 3,031 ids. Normalised, it matches 3,007.
-    expect(normalizeGnisId('00869848')).toBe('869848'); // NHD, Sessions Pond
-    expect(normalizeGnisId(869_848)).toBe('869848'); // 3DHP, same lake
-    expect(normalizeGnisId('0561883')).toBe(normalizeGnisId(561_883)); // Beau Lake
+    expect(val('00869848')).toBe('869848'); // NHD, Sessions Pond
+    expect(val(869_848)).toBe('869848'); // 3DHP, same lake
+    expect(val('0561883')).toBe(val(561_883)); // Beau Lake
   });
 
   it('accepts OSM gnis:feature_id, the third spelling', () => {
-    expect(normalizeGnisId('561883')).toBe('561883');
+    expect(val('561883')).toBe('561883');
   });
 
-  it('refuses anything non-numeric, and refuses all-zeros', () => {
-    for (const junk of ['', '  ', 'abc', '12a', '0', '000', null, undefined]) {
-      expect(normalizeGnisId(junk)).toBeUndefined();
-    }
+  it("refuses NHD's -1 as a SENTINEL, never as an id", () => {
+    // 1,032 post-floor rows carry it — cross-border Québec lakes with no US GNIS entry. Treating it
+    // as an id would collapse 855 unrelated lakes onto one body. Before this it was rejected only
+    // as a side effect of the minus sign failing a digits test: right answer, reached by accident.
+    expect(why('-1')).toBe('sentinel');
+    expect(GNIS_SENTINELS.has('-1')).toBe(true);
+    expect(why('0')).toBe('sentinel');
+    expect(why('000')).toBe('sentinel'); // all-zeros at any width
+  });
+
+  it('keeps sentinel, absent and malformed as three separate facts', () => {
+    // They mean different things: absent is normal (71.7% of rows), sentinel is healthy data, and
+    // only malformed suggests the parser is wrong. One bucket would hide that.
+    expect(why(null)).toBe('absent');
+    expect(why('')).toBe('absent');
+    expect(why('abc')).toBe('malformed');
+    expect(why('12a')).toBe('malformed');
+    expect(why('869848')).toBe('accepted');
+  });
+
+  it('census accounts for every post-floor row', () => {
+    const c = GNIS_ID_CENSUS;
+    expect(c.absent + c.zeroPadded + c.bareDigits + c.sentinel).toBe(c.postFloorRows);
   });
 });
 
