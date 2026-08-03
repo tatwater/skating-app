@@ -95,20 +95,65 @@ export function nhdArchiveKey(source: NhdSource): string {
 /**
  * NHD's `Permanent_Identifier`, in the one form we ever store it in.
  *
- * High-resolution NHD ships it as a **brace-wrapped, upper-case GUID** —
- * `{85383A01-DC89-47AA-BC5D-BE373FB0B5C3}` — and different access paths disagree about the braces.
- * Two spellings of one key is how a join silently matches nothing, so the normalization lives here
- * and every producer of an `nhdId` calls it.
+ * ## `Permanent_Identifier` has TWO formats, and the first version of this function knew about one
  *
- * **Refuses anything that is not a GUID** rather than passing it through. A join key that accepts
- * garbage rots quietly; one that returns `undefined` gets counted in a drop ledger.
+ * Written from a single observed example — Beau Lake, `{85383A01-DC89-47AA-BC5D-BE373FB0B5C3}`, read
+ * off the REST service — and it refused everything that was not a GUID. Then the archive was measured:
+ * of Maine's **3,701** post-floor GNIS-keyed waterbodies, only **872 (23.6%)** carry a GUID. The other
+ * **2,829 (76.4%)** carry a **plain numeric** id like `141034078` (Dead Pond) or `118181968` (Sessions
+ * Pond) — legacy identifiers NHD never re-minted.
+ *
+ * So the strict version would have silently dropped **three quarters of Maine's lakes** out of
+ * reconciliation, with no error and no drop-ledger entry, because a body that fails to normalize just
+ * never gets an `nhdId`. The very failure mode the docstring claimed to prevent.
+ *
+ * The lesson is worth more than the fix: **a format rule derived from one example is a guess.** This
+ * one is now derived from a census of the archive, and the test carries real ids from it.
+ *
+ * ## Braces vary by access path, and that part was right
+ *
+ * The REST service returns `{85383A01-…}`; `ogr2ogr` returns `601F3C2E-…` from the same column. Two
+ * spellings of one key is how a join silently matches nothing.
+ *
+ * Still refuses anything that is neither shape, because a join key that accepts garbage rots quietly
+ * while one that returns `undefined` gets counted.
  */
 export function normalizeNhdId(raw: string | null | undefined): string | undefined {
   if (!raw) return undefined;
   const stripped = raw.trim().replace(/^\{/, '').replace(/\}$/, '').toLowerCase();
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(stripped)
-    ? stripped
-    : undefined;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(stripped))
+    return stripped;
+  // Legacy numeric ids. NOT zero-stripped: unlike `gnis_id` there is no evidence NHD pads these, and
+  // trimming a leading zero that turned out to be significant would silently merge two lakes.
+  return /^[0-9]{1,20}$/.test(stripped) ? stripped : undefined;
+}
+
+/**
+ * The GNIS Feature ID, in the one form we ever store it in — **the bridge all three catalogues share**.
+ *
+ * OSM tags it `gnis:feature_id`, NHD stores `gnis_id`, 3DHP stores `gnisid`. That makes it the only
+ * identifier common to every catalogue we read, and unlike `polygonIoU` it is an *exact* match rather
+ * than a geometric guess. Measured against the Vermont extract: every OSM water feature carrying a
+ * `gnis:feature_id` is also named, and it covers **35.3% of named** features.
+ *
+ * **The spellings do not agree, and the join returns exactly zero until they do.** NHD zero-pads to
+ * eight characters as a string (`"00869848"`); 3DHP stores a bare integer (`561883`). Joining them raw
+ * over Maine matched **0 of 3,031** ids — a silent, total failure that looked like "these catalogues
+ * have nothing in common". Normalised, the same join matches **3,007**.
+ *
+ * Stripping leading zeros is safe here precisely because we have the evidence the strict `nhdId` case
+ * lacks: GNIS ids are integers that NHD pads for display, and 3DHP proves it by storing them as ints.
+ *
+ * **A GNIS id is a candidate generator, not a uniqueness proof.** GNIS names *places*, so one id can
+ * legitimately span two features when a catalogue splits a lake. Use it to propose a match; let
+ * `polygonIoU` adjudicate.
+ */
+export function normalizeGnisId(raw: string | number | null | undefined): string | undefined {
+  if (raw === null || raw === undefined) return undefined;
+  const text = String(raw).trim();
+  if (!/^[0-9]+$/.test(text)) return undefined;
+  const stripped = text.replace(/^0+/, '');
+  return stripped.length > 0 ? stripped : undefined;
 }
 
 /** What a `.raw-nhd/<state>/manifest.json` records. */

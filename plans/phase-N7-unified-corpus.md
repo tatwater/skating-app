@@ -60,10 +60,21 @@ simplifies to ~5 m; NHD HR is 1:24,000 and far denser. Comparing simplified copi
 vertex density" a measurement of our own pipeline. **The bake-off compares source geometries; only
 storage simplifies** — the same rule D85 already applies to derived stats.
 
-**8. Two mechanical traps, each needing one rule defined once.** NHD HR is **NAD83 (EPSG:4269)** and we
-store WGS84 — a 1–2 m offset in the Northeast, negligible but it must be an explicit `ogr2ogr`
-reprojection rather than an assumption. And `PERMANENT_IDENTIFIER` arrives as a **brace-wrapped
-uppercase GUID** (`{85383A01-DC89-47AA-BC5D-BE373FB0B5C3}`); normalize it in one place.
+**8. Every identifier in this phase has more than one spelling, and each one fails silently.** Four
+found so far, all by measuring rather than by reading docs:
+
+| id | spellings | consequence of getting it wrong |
+| --- | --- | --- |
+| NHD `permanent_identifier` | brace-wrapped GUID from REST, bare GUID from `ogr2ogr`, **and plain numeric** — **76.4%** of Maine's post-floor GNIS-keyed rows are numeric (`141034078`), only 23.6% GUIDs | a GUID-only rule drops three quarters of Maine's lakes from reconciliation, with no error |
+| GNIS id | NHD zero-pads to a string (`"00869848"`), 3DHP stores an int (`561883`), OSM tags `gnis:feature_id` | joined raw over Maine: **0 of 3,031** matched. Normalised: **3,007** |
+| NHD field names | lower-case in the geodatabase, upper-case from REST | every measurement taken before the archive existed used the REST spelling |
+| CRS | NHD HR is **NAD83 (EPSG:4269)**; 3DHP staged is **NAD83(2011)/Conus Albers (EPSG:5070)**, a metre grid | `ogr2ogr -spat` reads its envelope in the *source* SRS — a degrees box against Albers selects ocean and the clip "succeeds" empty |
+
+**The pattern is the finding.** In each case the wrong rule produced *silence*, not an error: an empty
+join, a missing id, an empty clip. **Normalize in one place, derive the rule from a census rather than
+from one example, and assert it with real ids from the archive.** `normalizeNhdId` was written from a
+single observed GUID and was wrong about the majority case; that is recorded in its docstring rather
+than quietly fixed.
 
 **9. Beau Lake checks out.** Queried live 2026-08-03: `PERMANENT_IDENTIFIER
 {85383A01-DC89-47AA-BC5D-BE373FB0B5C3}`, `AREASQKM 7.594` = **1,876.6 ac** against Maine's published
@@ -164,6 +175,35 @@ nothing from `contours.geojsonl` until it is rebuilt.
 > do; note that 3DHP falls back to NHD geometry wherever EDH does not yet exist, so **a 3DHP polygon
 > that is byte-identical to its NHD counterpart is the expected case, not a bug** — and the bake-off
 > must report how often that happens, or it will claim a three-way comparison it did not make.
+>
+> ### 🔬 Measured, 2026-08-03: it happens **every time**. The bake-off is two-way.
+>
+> Both archives are on disk, so the question got answered before the bake-off was written rather than
+> during it. Joining NHD to the 3DHP clip on normalised GNIS id, restricted to bodies matched **1:1**
+> on both sides and above the D91 floor:
+>
+> | state | matched 1:1 | identical area (exact float) | differ < 0.1% | **differ ≥ 0.1%** | worst |
+> | --- | --- | --- | --- | --- | --- |
+> | ME | 3,003 | 2,090 (69.6%) | 913 | **0** | 0.0000% |
+> | VT | 953 | 624 (65.5%) | 329 | **0** | 0.0000% |
+> | NY | 3,922 | 2,668 (68.0%) | 1,254 | **0** | 0.0000% |
+>
+> **7,878 lakes, zero disagreements at or above 0.1%.** The ~32% that are not exact are float
+> round-trip through the Albers reprojection — the largest "disagreement" prints as `0.5024 vs 0.5024`.
+> Segmentation differs on 4 of 3,007 in Maine.
+>
+> **Elevation-derived hydrography has not reached the Northeast.** 3DHP's waterbody layer here is NHD,
+> republished. So:
+>
+> 1. **D92's bake-off is OSM vs NHD.** Running a third lane that is provably the second lane would
+>    manufacture a three-way result out of a two-way fact, and cost the effort twice.
+> 2. **The 3DHP lane still earns its keep — as a divergence monitor, not a contestant.** It is the
+>    channel through which EDH *will* arrive, and re-running this exact comparison each year is a
+>    cheap, precise tripwire: the year the identical-area share drops, LiDAR-derived hydrography has
+>    landed in our states and D92 genuinely becomes a three-way question. That is a better use of
+>    417 MB/year than a bake-off lane, and it belongs in D102's runbook.
+> 3. **`threeDhpId` still gets stored**, because "which 3DHP feature is this" is the question the
+>    monitor asks, and it cannot ask it without the id.
 
 An earlier draft of this document asserted "OSM wins, NHD fills holes" on the strength of a
 count comparison. That comparison is real but it only answers *how many*, not *which is better*:
@@ -241,10 +281,51 @@ A body carries:
 - **`waterBodyKey`** — a stable id we mint once and never change. Not the Convex `_id`, which moves if
   a row is ever recreated; not `externalId`, which is a foreign catalogue's key and cannot survive a
   source change.
-- **`osmId` and/or `nhdId`** — what this lake is called in each catalogue that knows it. Both may be
-  present, and once reconciled most will be.
+- **`osmId` / `nhdId` / `threeDhpId`** — what this lake is called in each catalogue that knows it.
+  More than one may be present, and once reconciled most will be. `threeDhpId` is populated, not a
+  parity placeholder: 3DHP ships `id3dhp` on every feature.
+- **`gnisId`** — the one identifier all three catalogues share, and the cheapest exact-match bridge
+  between them. See below.
 - **`geometrySource`** — whose outline we drew, so D92's per-lake override is a field and not a
   migration.
+
+### Why not derive the key from geometry (founder question, 2026-08-03)
+
+**Asked, and the answer is no — but the intuition behind it lands somewhere useful.**
+
+The proposal was to mint the key from the body's own coordinates (a bbox hash, a geohash) so it would
+be re-derivable on a later dedup pass. Three reasons it cannot be the *key*:
+
+1. **D92 is the thing that breaks it.** The bake-off exists to possibly change *which catalogue draws a
+   lake*. That changes the polygon → the bbox → the key. A geometry-derived id would move at exactly
+   the moment identity must not, for every lake whose source we switched, in one pass, silently.
+2. **It repeats `externalId`'s sin at a worse ratio.** `externalId` conflates identity with a foreign
+   catalogue's key; a bbox key conflates identity with a *continuously edited measurement*. A mapper
+   tightening one bay re-keys the lake.
+3. **No quantization setting works.** Coarse enough to survive shoreline edits and it collides — bays
+   nested inside parents (North Bay/Moosehead, below), 180 "Mud Pond"s, dense pond clusters. Fine
+   enough to separate them and one vertex re-keys the lake. And we have already paid for the general
+   lesson: `centroid` is Turf `pointOnFeature` and lands *on* the shoreline (Willoughby's at ring
+   vertex 199, D85 amendment). Anything derived from a polygon inherits that value's pathologies.
+
+**Where the intuition is right is the blocking key** — the cheap thing that narrows candidates before
+an expensive `polygonIoU`. That is a real need and it is **already built**: N1's `waterBodyCells`
+ladder-grid indexes every body by the cells its bbox covers. A dedup pass asks the grid for co-located
+candidates, then computes IoU on the short list. So "re-derivable for dedup" is served by an *index*,
+which is allowed to move, rather than by an *identity*, which is not.
+
+**And the sharper question underneath:** if the re-import patches in place and never delete-recreates
+(kickoff finding 10), the Convex `_id` never moves either — so what is `waterBodyKey` for? There is an
+answer, but it is narrower than this section originally implied: **the tile stamp**. Contour tiles are
+built offline and reference bodies by id; a restore-from-export mints fresh `_id`s and would break
+every tile in the basemap bucket with no error, just blank lakes. Portability off Convex is the
+second-order version of the same thing. **That is the argument, and it should be stated rather than
+inherited.**
+
+**Form: opaque and sortable** (ULID-style), not minted from whichever catalogue id we happened to see
+first. The first-id version is more debuggable but reads as a provenance claim when it is not — the
+exact failure `externalId` is being split up to escape. Debuggability comes from `osmId` / `nhdId` /
+`gnisId` sitting on the row.
 
 **Why this is the enabling change and not a nicety.** Today `externalId` is doing three unrelated jobs
 at once: upsert key, tile stamp, and identity. That is why changing a lake's geometry source is
@@ -258,7 +339,18 @@ never created. Everything downstream points at `waterBodyKey` and is unaffected 
 later prefer. Residual one-to-many cases (Sherman Lake is one OSM body that NHD splits) are not fixable
 by any id scheme and need a rule or a human.
 
-> **Reconcile by `polygonIoU`, never by point containment.** Measured, not assumed. North Bay's
+> **Add `gnisId`, and reconcile by it first.** The GNIS Feature ID is **the only identifier all three
+catalogues carry** — OSM's `gnis:feature_id` tag, NHD's `gnis_id`, 3DHP's `gnisid` — and unlike
+`polygonIoU` it is an *exact* match rather than a geometric inference. Measured against the Vermont
+extract (18,260 water features): 361 carry one, **every single one of them is also named**, and it
+covers **35.3% of named features**. Since named bodies are what survives the D91 floor and what anyone
+drives to, that is a strong deterministic candidate generator to run *ahead* of IoU, free, from data
+already in the extract.
+
+**It is a candidate generator, not a uniqueness proof.** GNIS names *places*, so one id can legitimately
+span two features where a catalogue splits a lake. It proposes; `polygonIoU` adjudicates.
+
+**Reconcile by `polygonIoU`, never by point containment.** Measured, not assumed. North Bay's
 > interior point sits inside NHD's *Moosehead Lake*, so a containment join hands a bay its parent's id
 > — after which the bay and the lake look like duplicates of each other. Meanwhile Moosehead itself
 > matches **nothing**, because `centroid` is Turf `pointOnFeature` and lands on the shoreline of any

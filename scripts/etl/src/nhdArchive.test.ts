@@ -7,6 +7,7 @@ import {
   nhdMetadataUrl,
   nhdRunTableRow,
   nhdZipUrl,
+  normalizeGnisId,
   normalizeNhdId,
   toIsoDate,
 } from './nhdArchive';
@@ -53,10 +54,57 @@ describe('normalizeNhdId', () => {
     }
   });
 
-  it('refuses a non-GUID rather than passing it through', () => {
+  // The formats that a single-example rule missed. 76.4% of Maine's post-floor GNIS-keyed
+  // waterbodies carry a plain numeric id, not a GUID — the strict version dropped all of them.
+  it('accepts the LEGACY NUMERIC ids, which are the majority', () => {
+    expect(normalizeNhdId('141034078')).toBe('141034078'); // Dead Pond
+    expect(normalizeNhdId('118181968')).toBe('118181968'); // Sessions Pond
+  });
+
+  it('does not strip leading zeros off a numeric id', () => {
+    // Unlike gnis_id there is no evidence NHD pads these, and trimming a zero that turned out to be
+    // significant would silently merge two lakes.
+    expect(normalizeNhdId('0141034078')).toBe('0141034078');
+  });
+
+  it('takes a GUID with or without braces, since access paths disagree', () => {
+    // ogr2ogr returns it bare from the same column the REST service brace-wraps.
+    expect(normalizeNhdId('601F3C2E-2C78-4691-8AEC-8735A10D22B5')).toBe(
+      '601f3c2e-2c78-4691-8aec-8735a10d22b5',
+    );
+  });
+
+  it('refuses what is neither shape, rather than passing it through', () => {
     // The point of the refusal: a join key that accepts anything matches nothing, silently.
-    for (const junk of ['', '   ', 'way/150404999', '{not-a-guid}', '85383a01', null, undefined]) {
+    for (const junk of [
+      '',
+      '   ',
+      'way/150404999',
+      '{not-a-guid}',
+      '85383a01-nope',
+      null,
+      undefined,
+    ]) {
       expect(normalizeNhdId(junk)).toBeUndefined();
+    }
+  });
+});
+
+describe('normalizeGnisId', () => {
+  it('reconciles NHD zero-padded strings with 3DHP bare integers', () => {
+    // Joined raw over Maine this matched 0 of 3,031 ids. Normalised, it matches 3,007.
+    expect(normalizeGnisId('00869848')).toBe('869848'); // NHD, Sessions Pond
+    expect(normalizeGnisId(869_848)).toBe('869848'); // 3DHP, same lake
+    expect(normalizeGnisId('0561883')).toBe(normalizeGnisId(561_883)); // Beau Lake
+  });
+
+  it('accepts OSM gnis:feature_id, the third spelling', () => {
+    expect(normalizeGnisId('561883')).toBe('561883');
+  });
+
+  it('refuses anything non-numeric, and refuses all-zeros', () => {
+    for (const junk of ['', '  ', 'abc', '12a', '0', '000', null, undefined]) {
+      expect(normalizeGnisId(junk)).toBeUndefined();
     }
   });
 });
