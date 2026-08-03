@@ -8,9 +8,9 @@
 > **Touches:** every ETL package — `scripts/etl`, `scripts/admin-areas`, `scripts/lake-depth`,
 > `scripts/bathymetry`, `scripts/wind-climate` — plus `waterBodies` identity, and every downstream
 > that keys off `externalId`.
-> **Decisions:** **D92–D102**, proposed here, to be logged in [`01-decisions.md`](./01-decisions.md) at
-> build kickoff. D91 is the last one logged. **D95, D100, D101 and D102 are approved** (founder,
-> 2026-08-03), and **D92 was widened to three catalogues** at the same sitting.
+> **Decisions:** **D92–D105**, proposed here, to be logged in [`01-decisions.md`](./01-decisions.md) at
+> build kickoff. D91 is the last one logged. **D95 and D100–D105 are approved** (founder, 2026-08-03).
+> D92 was widened to three catalogues and then **narrowed back to two** by measurement.
 > **Steps 1 and 1b (NHD + 3DHP acquisition) are ✅ done**, 2026-08-03 — see the acquisition section.
 > **D92 is back to two-way**: 3DHP was measured against NHD over 7,878 lakes and is the same data.
 
@@ -943,6 +943,107 @@ answers:
   with 25,807 legitimate soundings) **must not** be touched by the re-key lane.
 - After D98's recalibration, the set of lakes that stop drawing **must** be enumerated and reviewed,
   not summarised.
+
+---
+
+## D103 — Known outlets and inlets: USGS seeds them, users extend them, USGS reclaims them ✅ **APPROVED**
+
+**Founder, 2026-08-03:** *"We use the 'known outlet' (and 'known inlet' if possible) terminology,
+seeded by this dataset, but then augmented by our built-in hazard reporting system. That way we can
+show this data for more lakes than USGS provides. As the 3DHP dataset grows YoY, we can replace
+user-reported markers with 'official' ones."*
+
+**The data.** 3DHP's `landscape` feature class (REST layer 20) holds **1,802 points across our five
+states**: **1,519 Waterbody Outlets, 193 Sinks, 90 Springs**. Outlets are where a lake drains — moving
+water under ice. Springs are groundwater upwelling, which keeps holes open all winter. These are
+exactly where ice goes bad, and it is a tiny dataset sitting inside a download we already take.
+
+**The failure mode this design solves.** 1,519 mapped outlets against ~21,000 bodies means **most
+lakes have no mapped outlet, and every lake has one**. A bare import would make absence read as
+safety — the same silent-absence trap that ran through this whole phase, pointed at a safety
+question. The founder's framing fixes it at the vocabulary level: **"known outlet", never "outlet"**,
+so the claim is about our knowledge rather than about the lake. Nothing may phrase it otherwise (D3).
+
+### It lands on `bodyFeatures`, which already exists and already does most of this
+
+`bodyFeatures` (D53, N5c) is the **persistent** counterpart to a hazard: no seasonal reset touches it,
+it shares the hazard authoring primitives (point / line / polygon with a buffer), `active` makes
+demotion reversible rather than destructive, and `promotedFromHazardId` **already implements the
+augment half** — a recurring user-reported hazard becomes a permanent feature by promotion.
+
+So "seeded by USGS, extended by users" is one new source on an existing table, not a new subsystem.
+Three gaps to close:
+
+1. **No outlet or inlet type.** `BODY_FEATURE_TYPES` has `spring_current`, `constriction`,
+   `bridge_narrows`, `recurring_pressure_ridge`, `gas_hole`, `reef_hole`, `delta`,
+   `shallow_early_thaw`, `other`. **3DHP's `Spring` maps straight onto `spring_current`** — no new
+   type needed for 90 of the 1,802. Outlets need one; inlets need one if they are obtainable.
+2. **No provenance field, and `addedByUserId` is required.** A USGS-seeded feature has no author. It
+   needs a `source` (`'user' | 'usgs_3dhp'`) plus the `id3dhp` it came from, both so the two are
+   distinguishable in the UI and so the **reclaim** step is a real operation: when a release adds an
+   official outlet where a user put one, supersede rather than duplicate. `addedByUserId` becomes
+   optional, or a system profile owns the seeded rows — that choice is open.
+3. **The reclaim needs a match rule.** "Official one replaces the user one" is a spatial join with a
+   tolerance, and it must be conservative: superseding the wrong user marker deletes someone's
+   contribution. Prefer leaving both and flagging for review over an automatic merge that can be wrong.
+
+### ⚠️ Outlets are free; inlets are not, and that should be settled before promising them
+
+3DHP's `landscape` layer carries **`Waterbody Outlet` and no inlet type**. An inlet would have to be
+derived — a flowline whose terminus meets a waterbody, flowing in — and **`flowline` is the layer we
+deliberately did not keep** (D102's clip). Getting it means another 11.9 GB download and the largest
+feature class in the product.
+
+The cheaper lead is the `network` layer (48,550 points in our states: headwater, terminus, divergence,
+confluence, catchment outlet), which may already carry what an inlet needs without the flowlines.
+**Measure that before committing to "known inlet" in any copy** — shipping the phrase and then finding
+we can only populate outlets would be the coverage-gap problem all over again.
+
+---
+
+## D104 — Elevation from 3DEP, and the recurring cost is near zero ✅ **APPROVED**
+
+**Founder's question, 2026-08-03:** *"We only have to do this once — when we upsert the latest batch in
+a year, we should only have to call this endpoint for any new bodies, right?"*
+
+**Right, and that is the argument for the point service over the raster tiles.** Two routes exist:
+
+| | 3DEP tiles | `epqs.nationalmap.gov` |
+| --- | --- | --- |
+| cost | ~57 MB per 1°×1° at ~30 m; **~4 GB** for our region | one HTTP call per coordinate |
+| key / cap | none — fully offline forever | **no API key, no documented daily cap** |
+| resolution | 30 m (or 10 m at 472 MB/tile) | **1 m** where LiDAR exists — verified: Champlain returned 29.689 m at `resolution: 1` |
+
+Since the recurring cost is only new bodies, spending 4 GB of the remaining free tier to avoid a few
+hundred annual requests is the wrong trade. **Use EPQS.** Keep the tiles as the documented fallback if
+it turns out to rate-limit.
+
+**The incremental behaviour is already built** — `listNeedingElevation` skips already-stamped rows
+server-side, which is what made the N6c pass resumable. Two caveats on "only new bodies":
+
+1. **A body whose geometry changes needs re-stamping**, because its representative point moves. Under
+   D92 a `geometrySource` switch moves it, potentially a long way (`pointOnFeature` puts Champlain's
+   30.7 km off). That set is small but it is not empty, and it is not "new bodies".
+2. **3DEP improves under us.** The response carries `rasterId` and `resolution`, so a lake stamped
+   from a 30 m raster can be re-stamped from 1 m later. **Store the resolution alongside the
+   elevation** — optional to act on, impossible to act on if we did not record it.
+
+**The first run is still the whole corpus**, so throughput-test EPQS before committing to it.
+
+---
+
+## D105 — GNIS becomes a fourth lane ✅ **APPROVED**
+
+**Founder, 2026-08-03.** The National Map stages the authoritative GNIS database per state at ~1 MB a
+piece (`StagedProducts/GeographicNames/DomesticNames/`), **~5 MB for our five states**, public domain.
+
+It is the resolver behind the `gnisId` bridge D93 adds: feature ids, official names, coordinates and
+feature classes, from the body that assigns them. Two jobs it does that the inline ids cannot:
+settling a GNIS id where OSM, NHD and 3DHP disagree, and supplying **names and variant names** for
+search on bodies whose catalogue entry is unnamed.
+
+Cheapest lane in the phase by a wide margin, and it needs no new bucket — it belongs beside the
+catalogues it resolves.
 
 ---
 
