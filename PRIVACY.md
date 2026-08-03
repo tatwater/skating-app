@@ -13,7 +13,7 @@ location-based app, it necessarily handles some location data. This notice expla
 we collect, why, who can see it, and your choices.
 
 ## Who this is
-The app is operated by its founder. Questions or requests: **teagan@newmoneycompany.com**.
+The app is operated by its founder. Questions or requests: **desk@teaganatwater.com**.
 
 ## Age requirement
 You must be **at least 16 years old** to use the app. We collect your **date of birth**
@@ -103,4 +103,4 @@ This interim notice will be replaced by a full policy before any broader launch.
 changes will be communicated in-app.
 
 ## Contact
-Questions, data export, or deletion requests: **teagan@newmoneycompany.com**.
+Questions, data export, or deletion requests: **desk@teaganatwater.com**.

@@ -17,12 +17,26 @@ const config: ExpoConfig = {
   version: '0.0.1',
   orientation: 'portrait',
   userInterfaceStyle: 'automatic',
+  // EAS Update (OTA). Ships a new *JS bundle + assets* to installed builds without a rebuild
+  // or a store round-trip — the `channel` in eas.json picks which branch a build subscribes to.
+  //
+  // `fingerprint` policy derives the runtime version by hashing the native layer (deps, plugins,
+  // permissions, config). That's the safety interlock: change only JS and the fingerprint holds,
+  // so the update reaches existing installs. Touch anything NATIVE — add a module, edit a plugin,
+  // change a permission string, bump the SDK — and the fingerprint changes, so the update is
+  // simply not offered to old builds instead of shipping them a bundle they'd crash on.
+  // A native change therefore still requires a fresh `eas build` + reinstall. There is no way
+  // around that; it's the price of not being able to hot-swap native code.
+  runtimeVersion: { policy: 'fingerprint' },
+  updates: {
+    url: 'https://u.expo.dev/bc7e5bb9-9b85-4343-b93c-cdd14cbeeb64',
+  },
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'com.newmoneycompany.skating',
+    bundleIdentifier: 'com.teaganatwater.skating',
   },
   android: {
-    package: 'com.newmoneycompany.skating',
+    package: 'com.teaganatwater.skating',
   },
   plugins: [
     'expo-router',

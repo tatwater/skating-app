@@ -67,7 +67,7 @@ These interim terms will be replaced by a full agreement before any broader laun
 Material changes will be communicated in-app.
 
 ## 10. Contact
-Questions: **teagan@newmoneycompany.com**.
+Questions: **desk@teaganatwater.com**.
 
 ---
 

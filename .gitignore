@@ -19,8 +19,10 @@ web-build/
 /apps/*/android/
 *.orig.*
 
-# Convex
-**/convex/_generated/
+# Convex — `convex/_generated/` is deliberately COMMITTED, per Convex's own guidance
+# ("should be committed to the repo ... your code won't typecheck without it").
+# Do NOT re-ignore it: cloud EAS builds upload via git, so ignoring it breaks the
+# JS bundle with `Unable to resolve module @skating/convex/api`.
 
 # Environment / secrets — never commit real values
 .env
