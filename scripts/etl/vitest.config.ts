@@ -22,6 +22,7 @@ export default defineConfig({
         'src/measure3dhp.ts',
         'src/loadDepths.ts',
         'src/pruneFloor.ts',
+        'src/reconcileNhd.ts',
         'src/types.ts',
       ],
       // Matches @skating/core + @skating/convex; ratchet upward over time (D40).

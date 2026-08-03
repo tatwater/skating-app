@@ -536,6 +536,36 @@ export const corpusStats = internalQuery({
   },
 });
 
+/**
+ * Page the corpus out for offline reconciliation — campaign step 2 (N7).
+ *
+ * **Geometry included, which is why this is paged at 100 rather than 500.** A body averages 1.8 KB
+ * but Champlain's polygon alone is 10,755 vertices, and Convex caps a transaction at 16 MB of reads
+ * as well as 4,096 documents — the N6c depth loader blew the byte cap at a batch of 25 by reasoning
+ * only about the document count.
+ *
+ * Returns the minimum reconciliation needs: the key to write back to, the OSM id for the ledger, the
+ * name for a human reading the review queue, and the polygon. **Not** the scores, cells or provenance
+ * — this is one pass to get the geometry local, after which the matching iterates offline.
+ */
+export const listForReconcile = internalQuery({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(200, Math.max(1, batchSize ?? 100));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    return {
+      bodies: page.page.map((b) => ({
+        key: b._id,
+        externalId: b.externalId,
+        name: b.name,
+        polygon: b.polygon,
+      })),
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
 export const backfillCatalogueIds = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {

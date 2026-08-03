@@ -1022,6 +1022,46 @@ answers:
 
 ---
 
+## Step 2 — reconciliation, as built (2026-08-03)
+
+**Read-only against Convex.** It produces a mapping and a ledger for review; a separate loader applies
+them. A reconciliation that writes as it goes cannot be reviewed before it has already happened.
+
+**Fetch once, derive many — the same split the archives use.** `--export` pages the corpus out of
+Convex (`waterBodies:listForReconcile`, 100/page because Champlain's polygon is 10,755 vertices and
+the byte cap bites before the document cap) and dumps NHD's post-floor polygons out of the five
+geodatabases. `--match` reads only those files. The thresholds will want tuning against real
+distributions, and re-running the comparison through Convex to try a different number would be absurd.
+
+**The blocking grid.** 21,665 bodies against 40,928 candidates is 887 million pairs, which is not a
+computation. NHD features are indexed into a 0.1° grid by bbox, so each body scores only what could
+possibly overlap it, and `bboxIntersects` rejects most of those before any geodesic area is computed.
+
+### The decision rule, and why each threshold is where it is
+
+| | |
+| --- | --- |
+| `RECONCILE_MIN_IOU` **0.5** | they share more area than they don't. Two catalogues tracing one shoreline land at 0.85–0.98; the measured OSM-vs-NHD median area disagreement is 2.4%. Below 0.5 is a bay against its parent, a reservoir against its river, or two neighbours in a chain. |
+| `RECONCILE_MIN_IOU_WITH_GNIS` **0.3** | both publishers independently naming the same place is real evidence — but not a bypass, because a lake NHD splits shares its GNIS id with both halves. |
+| `RECONCILE_MIN_MARGIN` **0.15** | when the top two are this close, geometry cannot separate them, and `ambiguous` sends it to a human rather than picking the marginally larger number. |
+
+**`ambiguous` and `none` are ordinary, successful outcomes.** A wrong match is worse than no match
+because it is invisible: a body silently carrying another lake's `nhdId` will later inherit that lake's
+geometry, depth and contours.
+
+**IoU, never containment — measured, not assumed.** North Bay's interior point sits inside NHD's
+Moosehead Lake, so a containment join hands a bay its parent's identity; Moosehead itself matches
+nothing, because `pointOnFeature` lands on the shoreline of any large irregular lake. A bay has high
+containment and *low* IoU, which is exactly the distinction that matters. Both cases are in the tests.
+
+> **One thing this pass cannot do yet, recorded rather than left as a silent no-op.** The stored
+> corpus carries **no GNIS id** — the OSM transform never captured `gnis:feature_id`, though the tag
+> is present on 35.3% of named Vermont water features. So the GNIS-assisted bar cannot fire on this
+> run: every match here is geometry alone. The bar is built and tested, and goes live the moment the
+> transform captures the tag — which belongs in step 5's re-import.
+
+---
+
 ## D103 — Known outlets and inlets: USGS seeds them, users extend them, USGS reclaims them ✅ **APPROVED**
 
 **Founder, 2026-08-03:** *"We use the 'known outlet' (and 'known inlet' if possible) terminology,
