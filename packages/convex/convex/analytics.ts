@@ -198,7 +198,8 @@ export const recordCatalogueSnapshot = internalMutation({
         }, and a second writer would make the series disagree with itself.`,
       );
     }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new Error(`date must be YYYY-MM-DD, got "${date}"`);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+      throw new Error(`date must be YYYY-MM-DD, got "${date}"`);
     await writeMetricSnapshot(ctx, metric as MetricKey, date, { scalar, meta });
     return { metric, date, scalar: scalar ?? null };
   },

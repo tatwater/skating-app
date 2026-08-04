@@ -223,13 +223,6 @@ export function belongsInCorpus(candidate: {
   name: string;
   surfaceAreaSqM: number;
   type?: WaterBodyType | undefined;
-  /**
-   * Required only for **unnamed wetland above five acres** — the one branch that consults it. Absent
-   * there means *"cannot prove it qualifies"* and the body is refused, which is the right answer for
-   * an **import**. It is the wrong answer for a **deleter**, so `pruneBelowAreaFloor` checks for the
-   * missing value explicitly and keeps the row rather than removing it on absence of evidence.
-   */
-  longAxisM?: number | undefined;
   includedByRequest?: boolean | undefined;
 }): boolean {
   // A request outranks every rule below it. Someone asking for a specific bog beats any classifier
@@ -244,38 +237,39 @@ export function belongsInCorpus(candidate: {
   // *narrow*, so the permissive default keeps existing callers behaving exactly as before.
   const isWetland = candidate.type === 'marsh';
 
-  if (candidate.surfaceAreaSqM >= MIN_SURFACE_AREA_SQM) {
-    // 3 + 4. Above five acres everything is in, except unnamed wetland…
-    if (!isWetland || named) return true;
-    // 5. …which needs to be long. See `WETLAND_MIN_LONG_AXIS_M`.
-    return candidate.longAxisM !== undefined && candidate.longAxisM >= WETLAND_MIN_LONG_AXIS_M;
-  }
+  // 3 + 4. Above five acres everything is in, except unnamed wetland — which is out.
+  if (candidate.surfaceAreaSqM >= MIN_SURFACE_AREA_SQM) return !isWetland || named;
 
   // 2. Between one and five acres: named, and not wetland.
   return named && !isWetland;
 }
 
 /**
- * How long an **unnamed wetland** must be to earn a place above five acres (D96, founder call
- * 2026-08-03).
+ * **A long-axis exemption for unnamed wetland was designed, measured, and then dropped** (founder,
+ * 2026-08-03). Recorded rather than deleted, because the measurement is the expensive part and the
+ * decision is explicitly *"for now"*.
  *
- * **This clause exists because D91 already argued that area is the wrong axis** — *"Keiser Pond is 36
- * acres and 909 m long: a 1.8 km out-and-back, better skating than a round 30-acre pond 390 m
- * across"* — and unnamed wetland is where that argument bites hardest. The corpus holds a 516-acre
- * unnamed marsh with a **3,027 m** long axis. That is a linear channel, and refusing it on the same
- * rule that refuses a 6-acre bog pocket would be the round-pond mistake in reverse.
+ * The case for it is real and is D91's own: *"Keiser Pond is 36 acres and 909 m long — a 1.8 km
+ * out-and-back, better skating than a round 30-acre pond 390 m across."* Area is the wrong axis, and
+ * unnamed wetland is where that bites hardest — the corpus holds a 516-acre unnamed marsh with a
+ * **3,027 m** long axis, which is a linear channel rather than a bog pocket.
  *
- * **Two kilometres and not one.** At 1 km the clause kept 120 of 728 sampled unnamed marshes (16%);
- * at 2 km it keeps 34 (4.7%). The founder chose the stricter bar, and the shape of the distribution
- * supports it — 608 of 728 sit under a kilometre, so 1 km sits mid-slope where a threshold is
- * arbitrary, while 2 km is out in the tail where the survivors are unambiguous channels.
+ * Measured over 728 sampled unnamed marshes: a 1 km bar kept 120 (16%), a 2 km bar kept 34 (4.7%),
+ * and 608 of the 728 sit under a kilometre.
  *
- * **It is the only place a shape statistic gates admission**, which is why it needs `longAxisM` to be
- * computed *before* the check rather than after. See `transform.ts` — the stats were deliberately
- * derived after the floor test to avoid running a convex hull over 124,000 features, so this branch
- * computes them on demand for the ~2% of features that reach it.
+ * **Why it was dropped anyway.** It would have been the only rule here gated on a *derived
+ * statistic*, and that cost more than it looked. `longAxisM` is computed after the admission test in
+ * `transform.ts` — deliberately, so a convex hull does not run over 124,000 features — so the clause
+ * forced the stats to be computed lazily mid-check. Worse, it split the correct behaviour in two: an
+ * import must refuse a body whose axis is unknown, and a prune must *keep* it, or it deletes the long
+ * channels the clause exists to protect on absence of evidence. Two opposite readings of one rule is
+ * how a silent deletion happens.
+ *
+ * **What makes dropping it safe is N7b.** `includedByRequest` overrides every rule here, so a real 3
+ * km channel someone actually skates has a way back in — one body at a time, with a human looking.
+ * That is a better answer than a threshold nobody can verify.
  */
-export const WETLAND_MIN_LONG_AXIS_M = 2000;
+export const WETLAND_LONG_AXIS_EXEMPTION_DROPPED = true;
 
 /**
  * **The wetland rules, stated once** (D96, founder call 2026-08-03) — the two clauses that make
@@ -305,5 +299,6 @@ export const WETLAND_MIN_LONG_AXIS_M = 2000;
  *
  * 1. **Wetland gets no 1–5 acre name tier.** A named 3-acre marsh is out, where a named 3-acre pond
  *    is in. Costs ~4 bodies corpus-wide, measured.
- * 2. **Unnamed wetland above five acres needs a long axis** — `WETLAND_MIN_LONG_AXIS_M`.
+ * 2. **Unnamed wetland is out entirely.** A long-axis exemption was designed and measured for it,
+ *    then dropped — see `WETLAND_LONG_AXIS_EXEMPTION_DROPPED` for the numbers and the reason.
  */

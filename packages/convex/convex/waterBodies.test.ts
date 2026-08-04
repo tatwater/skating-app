@@ -1320,19 +1320,16 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     return rows.map((r) => r.externalId ?? '(none)').sort();
   }
 
-  test('D96: removes unnamed wetland over five acres whose long axis is short', async () => {
+  test('D96: removes unnamed wetland over five acres, keeps named wetland and unnamed lakes', async () => {
     const t = convexTestWithGeo();
-    await seedBody(t, {
-      externalId: 'osm/bog-short',
-      type: 'marsh',
-      surfaceAreaSqM: BIG,
-      longAxisM: 800,
-    });
+    await seedBody(t, { externalId: 'osm/bog', type: 'marsh', surfaceAreaSqM: BIG });
+    // A long-axis exemption was designed and measured for this class, then dropped (founder,
+    // 2026-08-03, "for now"). N7b's includedByRequest is what makes dropping it recoverable.
     await seedBody(t, {
       externalId: 'osm/bog-long',
       type: 'marsh',
       surfaceAreaSqM: BIG,
-      longAxisM: 2400,
+      longAxisM: 3000,
     });
     await seedBody(t, {
       externalId: 'osm/bog-named',
@@ -1343,22 +1340,17 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     await seedBody(t, { externalId: 'osm/lake', surfaceAreaSqM: BIG });
 
     const res = await runPrune(t, true);
-    expect(res.deleted).toBe(1);
-    // The 3 km channels are exactly what the clause exists to protect (D91: area is the wrong axis).
-    expect(await remaining(t)).toEqual(['osm/bog-long', 'osm/bog-named', 'osm/lake']);
+    expect(res.deleted).toBe(2);
+    expect(await remaining(t)).toEqual(['osm/bog-named', 'osm/lake']);
   });
 
-  test('D96: NEVER deletes an unnamed wetland whose long axis was never computed', async () => {
-    // A deleter must not act on absence of evidence. belongsInCorpus refuses a body it cannot
-    // evaluate — right for an import, exactly wrong here, where it would silently remove the long
-    // channels the clause protects. Measured as 0 rows today; this is the guard for "should never
-    // fire" not being the same as "cannot fire".
+  test('D96: removes a NAMED wetland in the 1-5 acre band, where a named pond survives', async () => {
     const t = convexTestWithGeo();
-    await seedBody(t, { externalId: 'osm/bog-unknown', type: 'marsh', surfaceAreaSqM: BIG });
+    await seedBody(t, { externalId: 'osm/marsh-named-small', type: 'marsh', name: 'Little Bog' });
+    await seedBody(t, { externalId: 'osm/pond-named-small', type: 'pond', name: 'Keiser Pond' });
     const res = await runPrune(t, true);
-    expect(res.deleted).toBe(0);
-    expect(res.kept.axisUnknown).toBe(1);
-    expect(await remaining(t)).toEqual(['osm/bog-unknown']);
+    expect(res.deleted).toBe(1);
+    expect(await remaining(t)).toEqual(['osm/pond-named-small']);
   });
 
   test('N7b: keeps a body admitted by request, however far under the floor', async () => {

@@ -7,7 +7,7 @@ import {
   MIN_SURFACE_AREA_SQM,
   meetsAreaFloor,
   type OsmTags,
-  WETLAND_MIN_LONG_AXIS_M,
+  WETLAND_LONG_AXIS_EXEMPTION_DROPPED,
   waterBodyTypeFromOsmTags,
 } from './osm';
 import { WATER_BODY_TYPES } from './types';
@@ -232,41 +232,27 @@ describe('belongsInCorpus', () => {
   });
 });
 
-describe('the five admission rules (D91 + D96)', () => {
+describe('the four admission rules (D91 + D96)', () => {
   const big = MIN_SURFACE_AREA_SQM * 8;
   const mid = MIN_SURFACE_AREA_SQM / 2; // between one and five acres
   const tiny = HARD_MIN_SURFACE_AREA_SQM / 2;
-  const LONG = WETLAND_MIN_LONG_AXIS_M + 1;
-  const SHORT = WETLAND_MIN_LONG_AXIS_M - 1;
 
   it('1. refuses everything under an acre', () => {
     for (const type of ['lake', 'marsh'] as const) {
       expect(belongsInCorpus({ type, name: 'Named', surfaceAreaSqM: tiny })).toBe(false);
-      expect(belongsInCorpus({ type, name: '', surfaceAreaSqM: tiny, longAxisM: LONG })).toBe(
-        false,
-      );
+      expect(belongsInCorpus({ type, name: '', surfaceAreaSqM: tiny })).toBe(false);
     }
-    // Even a 2 km channel: a 2 km x 3 m ditch is under an acre, and D91 is absolute here. N7b's
-    // includedByRequest is the only way in.
+    // N7b's includedByRequest is the only way in below an acre.
     expect(
-      belongsInCorpus({
-        type: 'marsh',
-        name: '',
-        surfaceAreaSqM: tiny,
-        longAxisM: LONG,
-        includedByRequest: true,
-      }),
+      belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: tiny, includedByRequest: true }),
     ).toBe(true);
   });
 
   it('2. admits 1-5 acres only when named AND not wetland', () => {
     expect(belongsInCorpus({ type: 'pond', name: 'Keiser Pond', surfaceAreaSqM: mid })).toBe(true);
     expect(belongsInCorpus({ type: 'pond', name: '', surfaceAreaSqM: mid })).toBe(false);
-    // The clause that changed: a named 3-acre marsh is out where a named 3-acre pond is in.
+    // A named 3-acre marsh is out where a named 3-acre pond is in.
     expect(belongsInCorpus({ type: 'marsh', name: 'Little Bog', surfaceAreaSqM: mid })).toBe(false);
-    expect(belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: mid, longAxisM: LONG })).toBe(
-      false,
-    );
   });
 
   it('3. admits every NAMED body over five acres, wetland included', () => {
@@ -275,27 +261,25 @@ describe('the five admission rules (D91 + D96)', () => {
     }
   });
 
-  it('4. admits unnamed NON-wetland over five acres', () => {
+  it('4. admits unnamed NON-wetland over five acres, and refuses unnamed wetland at any size', () => {
     for (const type of ['lake', 'pond', 'reservoir', 'bay', 'other'] as const) {
       expect(belongsInCorpus({ type, name: '', surfaceAreaSqM: big })).toBe(true);
     }
-  });
-
-  it('5. admits unnamed wetland over five acres only past the long-axis bar', () => {
-    const marsh = { type: 'marsh' as const, name: '', surfaceAreaSqM: big };
-    expect(belongsInCorpus({ ...marsh, longAxisM: LONG })).toBe(true);
-    expect(belongsInCorpus({ ...marsh, longAxisM: SHORT })).toBe(false);
-    expect(belongsInCorpus({ ...marsh, longAxisM: WETLAND_MIN_LONG_AXIS_M })).toBe(true); // inclusive
-  });
-
-  it('5. refuses unnamed wetland whose axis is unknown — an import must not admit the unprovable', () => {
-    // The deleter takes the opposite view: pruneBelowAreaFloor keeps a row it cannot evaluate rather
-    // than removing it on absence of evidence. Strict predicate, conservative deleter.
+    // The long-axis exemption was designed, measured and dropped (founder, "for now"). Unnamed
+    // wetland is simply out — see WETLAND_LONG_AXIS_EXEMPTION_DROPPED for the numbers and why.
     expect(belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: big })).toBe(false);
+    expect(belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: big * 100 })).toBe(false);
+  });
+
+  it('needs no derived statistic — every rule reads name, area and type alone', () => {
+    // The point of dropping the axis clause. It was the only rule gated on a computed shape stat,
+    // which forced lazy stats in the transform and split the correct behaviour in two: an import
+    // must refuse an unprovable body, a prune must keep it. Two readings of one rule is how a
+    // silent deletion happens.
+    expect(WETLAND_LONG_AXIS_EXEMPTION_DROPPED).toBe(true);
   });
 
   it('treats a caller with no type as non-wetland, so existing callers are unaffected', () => {
-    // The wetland clauses can only ever narrow, so the permissive default is the safe one.
     expect(belongsInCorpus({ name: '', surfaceAreaSqM: big })).toBe(true);
     expect(belongsInCorpus({ name: 'X', surfaceAreaSqM: mid })).toBe(true);
   });
@@ -307,8 +291,6 @@ describe('the five admission rules (D91 + D96)', () => {
   });
 
   it('leaves meetsAreaFloor answering the size question alone', () => {
-    // The two must not be conflated: meetsAreaFloor is "is it big enough", belongsInCorpus is
-    // "does it belong". A named 3-acre marsh passes the first and fails the second.
     expect(meetsAreaFloor({ name: 'Little Bog', surfaceAreaSqM: mid })).toBe(true);
     expect(belongsInCorpus({ type: 'marsh', name: 'Little Bog', surfaceAreaSqM: mid })).toBe(false);
   });

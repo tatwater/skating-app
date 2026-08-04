@@ -1062,6 +1062,53 @@ containment and *low* IoU, which is exactly the distinction that matters. Both c
 
 ---
 
+## D96 — settled: the four admission rules ✅ **APPROVED**
+
+**Founder, 2026-08-03.** The complete rule set, verified across all nine size × class × named
+combinations before implementing — no gaps, no contradictions:
+
+| size | class | named | verdict |
+| --- | --- | --- | --- |
+| < 1 acre | any | any | **out** |
+| 1–5 acres | non-wetland | ✓ | **in** |
+| 1–5 acres | non-wetland | ✗ | out |
+| 1–5 acres | wetland | either | **out** — wetland gets no name tier here |
+| > 5 acres | non-wetland | either | **in** |
+| > 5 acres | wetland | ✓ | **in** |
+| > 5 acres | wetland | ✗ | **out** |
+
+Rules 1–3 are D91 unchanged. The wetland clauses are new, and **symmetric across catalogues on
+purpose** — OSM accepts `wetland=marsh`, NHD's FTYPE 466 lumps swamp with marsh under one code whose
+FCODEs do not separate them. A one-sided rule would make *which catalogue drew this lake* change
+*what kind of thing it is*.
+
+**Why wetland at all:** above the floor, LakePond runs 59–66% named and SwampMarsh 1–2%, consistently
+across states. Of the 19,610 unnamed bodies NHD would add to our region, **13,976 (71%) are
+SwampMarsh** and 82% are under 25 acres.
+
+### The long-axis exemption: designed, measured, dropped
+
+A fifth rule — *unnamed wetland over five acres with a long axis over 2 km* — was built and then
+removed at the founder's call (*"ditch the 2 km min axis for now, that way we keep this safer"*). The
+measurement is kept in `WETLAND_LONG_AXIS_EXEMPTION_DROPPED` because measuring was the expensive part.
+
+**The case for it was real and is D91's own** — area is the wrong axis, and the corpus holds a
+516-acre unnamed marsh with a **3,027 m** long axis. Of 728 sampled unnamed marshes, a 1 km bar kept
+120 (16%), a 2 km bar kept 34 (4.7%).
+
+**What it cost was more than it looked.** It was the only rule gated on a *derived statistic*, and
+that split the correct behaviour in two: an **import** must refuse a body whose axis is unknown, and a
+**prune** must keep it, or it deletes the long channels the clause exists to protect on absence of
+evidence. Two opposite readings of one rule is how a silent deletion happens. It also forced
+`lakeGeometryStats` to be computed lazily mid-check in `transform.ts`, where it is deliberately
+derived *after* admission so a convex hull does not run over 124,000 features.
+
+**Dropping it is safe because of N7b.** `includedByRequest` overrides every rule, so a real 3 km
+channel someone actually skates has a way back in — one body at a time, with a human looking. That is
+a better answer than a threshold nobody can verify.
+
+---
+
 ## D103 — Known outlets and inlets: USGS seeds them, users extend them, USGS reclaims them ✅ **APPROVED**
 
 **Founder, 2026-08-03:** *"We use the 'known outlet' (and 'known inlet' if possible) terminology,
