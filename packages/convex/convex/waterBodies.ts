@@ -687,6 +687,33 @@ export const importReconciliation = internalMutation({
  *
  * Paged and idempotent like the other backfills, so an interrupted run resumes rather than restarts.
  */
+/**
+ * A light projection for the D97 audit: what each body is, what it is called, and which catalogue
+ * rows it is tied to — **without the polygon** (N7).
+ *
+ * Separate from `listForReconcile`, which carries geometry and therefore pages at 100. The audit's
+ * questions are about *attributes* — how much of `other` could borrow a class from NHD, whether a
+ * name keyword agrees with the catalogue's own type — and answering them a hundred rows at a time
+ * because of polygons nobody reads would be the expensive way to be slow.
+ */
+export const listForClassificationAudit = internalQuery({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(2000, Math.max(1, batchSize ?? 1000));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    return {
+      rows: page.page.map((b) => ({
+        type: b.type,
+        name: b.name,
+        nhdId: b.nhdId ?? null,
+        acres: Math.round((b.surfaceAreaSqM ?? 0) / 4046.8564224),
+      })),
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
 export const backfillWaterBodyKeys = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {
