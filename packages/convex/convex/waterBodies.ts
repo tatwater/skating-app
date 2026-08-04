@@ -675,6 +675,43 @@ export const importReconciliation = internalMutation({
   },
 });
 
+/**
+ * Mint a `waterBodyKey` for every body that lacks one — campaign step 4 (N7 / D93).
+ *
+ * **Never overwrites.** A key that already exists is the identity other things have already been
+ * stamped with; re-minting it would be the exact failure the field exists to prevent.
+ *
+ * `wb_` prefix on an opaque UUID. The prefix costs three bytes and buys the thing an opaque id
+ * otherwise loses: when one turns up in a tile stamp, a log line or an export, you can tell what
+ * kind of thing it points at without a lookup.
+ *
+ * Paged and idempotent like the other backfills, so an interrupted run resumes rather than restarts.
+ */
+export const backfillWaterBodyKeys = internalMutation({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    let minted = 0;
+    let alreadySet = 0;
+    for (const body of page.page) {
+      if (body.waterBodyKey !== undefined) {
+        alreadySet++;
+        continue;
+      }
+      await ctx.db.patch(body._id, { waterBodyKey: `wb_${crypto.randomUUID()}` });
+      minted++;
+    }
+    return {
+      minted,
+      alreadySet,
+      scanned: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
 export const backfillCatalogueIds = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {

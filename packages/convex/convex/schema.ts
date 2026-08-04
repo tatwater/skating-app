@@ -377,6 +377,30 @@ export default defineSchema({
      * matched nothing at all, because `centroid` is `pointOnFeature` and lands on the shoreline of a
      * large irregular lake (D85 amendment). Both failures are silent.
      */
+    /**
+     * **Our own id for this lake, minted once and never changed** (N7 / D93).
+     *
+     * `externalId` is doing three unrelated jobs — upsert key, tile stamp, and identity — which is
+     * why changing a lake's geometry source is currently impossible without re-tiling five states.
+     * This takes the identity job.
+     *
+     * **Opaque, and that is the point.** Not derived from `osmId`, because a key that encodes its
+     * origin reads as a claim about provenance the moment the origin changes; not derived from the
+     * geometry, because D92's whole purpose is to possibly change which catalogue draws a lake, and
+     * a bbox-derived key would move at exactly the moment identity must not. (The useful half of
+     * that idea — a cheap spatial blocking key for dedup — is what `waterBodyCells` already is.)
+     *
+     * **Why it exists at all, given `_id` never moves.** The re-import patches in place and never
+     * delete-recreates, so the Convex `_id` is stable in practice. The narrower reason is the **tile
+     * stamp**: contour tiles are built offline and reference bodies by id, so a restore-from-export
+     * would mint fresh `_id`s and break every tile in the basemap bucket with no error — just blank
+     * lakes. Portability off Convex is the second-order version of the same thing.
+     *
+     * **Not the upsert key.** A minted id cannot be derived from an incoming feature, so a re-import
+     * finds its row through the catalogue ids below — see `resolveUpsert` in `@skating/core`, which
+     * also defines what happens when two of them point at different rows.
+     */
+    waterBodyKey: v.optional(v.string()),
     osmId: v.optional(v.string()), // `way/<id>` / `relation/<id>`
     nhdId: v.optional(v.string()), // NHD `Permanent_Identifier`
     /**
@@ -583,6 +607,10 @@ export default defineSchema({
     // sparse in Convex — every one of the 116,070 rows without an `nhdId` sits at the front under
     // `undefined` — so a bare range scan here would read the whole corpus. `.eq()` is safe; `.lte()`
     // is the trap.
+    // Point lookup for the tile stamp and any consumer holding a minted key. Like `by_nhd_id`, this
+    // index is NOT sparse — rows without a key sort first under `undefined` — so a lookup must always
+    // `eq()` a real value and never range-scan (see the `by_nhd_id` note below).
+    .index('by_water_body_key', ['waterBodyKey'])
     .index('by_nhd_id', ['nhdId'])
     // The curation list (N2). Until now there was NO index on `curatedBoost` and no query listing
     // boosted bodies — `WaterBodyModeratorControls` edits the boost on a body you already navigated
