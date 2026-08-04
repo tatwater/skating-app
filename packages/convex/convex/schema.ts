@@ -388,6 +388,27 @@ export default defineSchema({
      * Absent means "the same as `source`", which is true of every row imported so far.
      */
     geometrySource: v.optional(literals(WATER_BODY_SOURCES)),
+    /**
+     * **This body is in the corpus because somebody asked for it** — not because it cleared the D91
+     * area floor (N7b).
+     *
+     * A statement about **membership**, and deliberately nothing else. Not `curatedBoost`, which is a
+     * D2 *display* lever that gets tuned — the moment someone re-weighted prominence they would be
+     * silently changing what survives a prune, which is `externalId` doing three jobs all over again.
+     * And not "has this been skated?", even though that signal is durable (D62's second amendment
+     * keeps published observations forever, redacting only what a person typed) and is already
+     * honoured by the prune's attachment check.
+     *
+     * **Use cannot protect the moment that matters.** At the instant a body is admitted there is no
+     * report and no track, because the whole point is that someone is asking for a lake they *want*
+     * to skate. Protect it only by use and the next prune deletes it before anyone can use it — the
+     * feature would eat its own output.
+     *
+     * Read through `belongsInCorpus` (`@skating/core`), never directly, so the prune and the
+     * enrichment passes cannot drift apart again. Clearing it back to `false`/absent is a moderator
+     * reversing the decision, and must work.
+     */
+    includedByRequest: v.optional(v.boolean()),
     // Admin regions (2-letter US state codes) the body falls in, unioned from the per-state ETL
     // extracts at import — a border-spanning body (Lake Champlain) appears in multiple state
     // extracts and accumulates e.g. ["NY","VT"]. Powers the search-result location label +

@@ -3,7 +3,8 @@
  *
  * Turns raw `osmium export` water features into canonical bodies for
  * `waterBodies.importCanonical`: classify OSM tags → our `type` (dropping non-still-water), drop
- * what's below the surface-area floor (`meetsAreaFloor`), simplify to ~5 m fidelity (D48), then
+ * what does not belong in the corpus (`belongsInCorpus` — the D91 area floor plus D96's
+ * named-wetland rule), simplify to ~5 m fidelity (D48), then
  * compute `bbox` / on-water `centroid` / surface area
  * from the *simplified* geometry (what actually gets stored). Pure and framework-free — the
  * geometry + classification live in `@skating/core`; this composes them and adds the
@@ -11,6 +12,7 @@
  */
 
 import {
+  belongsInCorpus,
   fetchOrigin,
   HARD_MIN_SURFACE_AREA_ACRES,
   HARD_MIN_SURFACE_AREA_SQM,
@@ -46,6 +48,7 @@ export const SIMPLIFY_TOLERANCE_DEG = 0.00005;
  * transform's own module stays the one place to read about the pipeline.
  */
 export {
+  belongsInCorpus,
   HARD_MIN_SURFACE_AREA_ACRES,
   HARD_MIN_SURFACE_AREA_SQM,
   MIN_SURFACE_AREA_ACRES,
@@ -151,7 +154,8 @@ function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygo
  * Transform one OSM feature into a canonical body, or a skip:
  *  - `null` — **skipped by classification** (rivers / streams / generic wetland / … —
  *    `waterBodyTypeFromOsmTags` returns `null`).
- *  - `BELOW_AREA_FLOOR` — real still water, too small to be a destination (`meetsAreaFloor`).
+ *  - `BELOW_AREA_FLOOR` — real still water the corpus does not want (`belongsInCorpus`): too
+ *    small to be a destination, or unnamed wetland (D96).
  *
  * **Throws** on data we can't turn into a storable body: a missing `@type`/`@id`, a non-area
  * geometry, a degenerate polygon `representativePoint` can't place a point on, or a geometry
@@ -197,7 +201,8 @@ export function featureToCanonicalBody(
   // The two differ by well under a percent, so a body can in principle store an area a hair under
   // the floor it cleared. That is the right way round: the source is the more accurate measure, and
   // the alternative is doing the expensive work first to decide with a worse number.
-  if (!meetsAreaFloor({ name, surfaceAreaSqM: surfaceAreaSqM(geom) })) return BELOW_AREA_FLOOR;
+  if (!belongsInCorpus({ name, type, surfaceAreaSqM: surfaceAreaSqM(geom) }))
+    return BELOW_AREA_FLOOR;
 
   // ── D85: measure the SOURCE geometry, here, before anything touches it ──────────────────────
   //
@@ -311,7 +316,7 @@ export interface TransformSummary {
   /** Skipped by classification — non-still-water we defer this phase (rivers, wetland, …). */
   droppedByType: number;
   /**
-   * Skipped by the surface-area floor (`meetsAreaFloor`) — still water, too small and unnamed to be
+   * Skipped by `belongsInCorpus` — still water, too small and unnamed to be
    * anywhere. Expect this to be the **largest** number in the summary: ~4 of every 5 features.
    */
   droppedByAreaFloor: number;

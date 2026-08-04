@@ -1,12 +1,14 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  belongsInCorpus,
   HARD_MIN_SURFACE_AREA_SQM,
   isWaterBodyType,
   MIN_SURFACE_AREA_SQM,
   meetsAreaFloor,
   type OsmTags,
   waterBodyTypeFromOsmTags,
+  wetlandAdmitted,
 } from './osm';
 import { WATER_BODY_TYPES } from './types';
 
@@ -191,5 +193,77 @@ describe('meetsAreaFloor', () => {
         );
       }),
     );
+  });
+});
+
+describe('belongsInCorpus', () => {
+  // Expressed against the named thresholds rather than a magic acre constant, so the test still
+  // means what it says if D91's numbers ever move.
+  const tiny = { name: '', surfaceAreaSqM: HARD_MIN_SURFACE_AREA_SQM / 2 };
+  const big = { name: '', surfaceAreaSqM: MIN_SURFACE_AREA_SQM * 8 };
+
+  it('agrees with the floor when nothing was requested', () => {
+    expect(belongsInCorpus(tiny)).toBe(false);
+    expect(belongsInCorpus(big)).toBe(true);
+  });
+
+  it('admits a body a skater asked for, however small', () => {
+    // The whole point of N7b: someone long-pressed a pond the floor deleted. Sub-acre is exactly
+    // where D91 says nothing survives on any other evidence, which is why the flag has to be
+    // independent of size rather than a lower threshold.
+    expect(belongsInCorpus({ ...tiny, includedByRequest: true })).toBe(true);
+  });
+
+  it('treats an explicit false the same as absent, so the flag can be cleared', () => {
+    // Un-requesting is a moderator reversing a decision; it must not become sticky.
+    expect(belongsInCorpus({ ...tiny, includedByRequest: false })).toBe(false);
+  });
+
+  it('never demotes a body the floor already admits', () => {
+    // The flag only ever adds. A big lake nobody requested is still in the corpus.
+    expect(belongsInCorpus({ ...big, includedByRequest: false })).toBe(true);
+  });
+
+  it('is a membership question, not a size one — the two must not be conflated', () => {
+    // meetsAreaFloor asks "is it big enough"; belongsInCorpus asks "does it belong". Four passes
+    // were each answering the first when they meant the second, and one of them differently.
+    expect(meetsAreaFloor({ ...tiny, name: '' })).toBe(false);
+    expect(belongsInCorpus({ ...tiny, includedByRequest: true })).toBe(true);
+  });
+});
+
+describe('wetlandAdmitted (D96)', () => {
+  const big = MIN_SURFACE_AREA_SQM * 8;
+
+  it('refuses unnamed wetland at any size', () => {
+    // 71% of what NHD would have added to our region is unnamed SwampMarsh — 13,976 features,
+    // 82% under 25 acres. Measured naming rate for wetland is 1-2%, against 59-66% for lakes.
+    expect(wetlandAdmitted({ type: 'marsh', name: '' })).toBe(false);
+    expect(belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: big })).toBe(false);
+  });
+
+  it('keeps NAMED wetland — Great Bog and Ninemile Swamp are real places', () => {
+    expect(wetlandAdmitted({ type: 'marsh', name: 'Ninemile Swamp' })).toBe(true);
+    expect(belongsInCorpus({ type: 'marsh', name: 'Ninemile Swamp', surfaceAreaSqM: big })).toBe(
+      true,
+    );
+  });
+
+  it('touches no other class — an unnamed lake is still governed by area alone', () => {
+    for (const type of ['lake', 'pond', 'reservoir', 'bay', 'river', 'stream', 'other'] as const) {
+      expect(wetlandAdmitted({ type, name: '' })).toBe(true);
+      expect(belongsInCorpus({ type, name: '', surfaceAreaSqM: big })).toBe(true);
+    }
+  });
+
+  it('is overridden by a request, because a person naming a bog beats a classifier', () => {
+    expect(
+      belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: big, includedByRequest: true }),
+    ).toBe(true);
+  });
+
+  it('is skipped entirely when no type is supplied, so callers without one are unaffected', () => {
+    // `meetsAreaFloor`'s existing callers pass name + area only; the rule must not fire on them.
+    expect(belongsInCorpus({ name: '', surfaceAreaSqM: big })).toBe(true);
   });
 });

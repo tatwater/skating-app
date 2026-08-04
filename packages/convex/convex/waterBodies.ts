@@ -12,6 +12,7 @@
 
 import {
   bboxIntersects,
+  belongsInCorpus,
   bodiesCoveringPoint,
   canOverwriteElevation,
   classifyDedup,
@@ -33,7 +34,6 @@ import {
   MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
   matchDepthSource,
-  meetsAreaFloor,
   minVisibleZoom,
   nearestBodyForPoint,
   type ProfileRichness,
@@ -837,7 +837,7 @@ async function bodyAttachmentKind(
  * Delete the canonical bodies the D91 floor would never have imported — **paginated, dry by
  * default, and refusing anything with a claim on it.**
  *
- * The floor (`meetsAreaFloor`, `@skating/core`) governs what a *future* import writes; it cannot
+ * The rule (`belongsInCorpus`, `@skating/core`) governs what a *future* import writes; it cannot
  * reach the ~116,000 rows already stored, because `importCanonical` upserts and never deletes. This
  * is the other half: one pass that brings the stored corpus into agreement with the rule, driven
  * from `pnpm --filter @skating/etl prune-floor`.
@@ -894,7 +894,13 @@ export const pruneBelowAreaFloor = internalMutation({
         kept.areaUnknown++;
         continue;
       }
-      if (meetsAreaFloor({ name: body.name, surfaceAreaSqM: body.surfaceAreaSqM })) {
+      if (
+        belongsInCorpus({
+          name: body.name,
+          surfaceAreaSqM: body.surfaceAreaSqM,
+          includedByRequest: body.includedByRequest,
+        })
+      ) {
         kept.clearsFloor++;
         continue;
       }
@@ -1025,7 +1031,10 @@ export const listNeedingElevation = internalQuery({
     batchSize: v.optional(v.number()),
     refresh: v.optional(v.boolean()),
     /**
-     * Only return bodies the canonical import would keep — `meetsAreaFloor`, imported, not restated.
+     * Only return bodies the canonical import would keep — `belongsInCorpus`, imported, not restated.
+     * That predicate rather than the bare area floor, so a body admitted by request (N7b) gets its
+     * elevation like any other; before N7 this pass was stricter than the prune, so a below-floor
+     * body with a report on it would have survived forever with no elevation and nothing saying so.
      *
      * **Paging is free; API calls are not.** Open-Meteo's free tier counts each *coordinate* against
      * the quota, so a 100-coordinate request costs ~100 calls and a corpus-wide pass is ~12 days of
@@ -1045,7 +1054,11 @@ export const listNeedingElevation = internalQuery({
     const numItems = Math.min(1000, Math.max(1, batchSize ?? 500));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
     const belowFloor = (body: Doc<'waterBodies'>) =>
-      !meetsAreaFloor({ name: body.name ?? '', surfaceAreaSqM: body.surfaceAreaSqM ?? 0 });
+      !belongsInCorpus({
+        name: body.name ?? '',
+        surfaceAreaSqM: body.surfaceAreaSqM ?? 0,
+        includedByRequest: body.includedByRequest,
+      });
     const targets = page.page
       .filter((body) => {
         if (body.elevationSource === 'operator') return false;
@@ -1132,7 +1145,7 @@ export const listNeedingWindRose = internalQuery({
     /** Minimum longest-fetch to qualify; defaults to the caption's own floor. */
     minFetchM: v.optional(v.number()),
     /**
-     * The import floor, same predicate and same reason as `listNeedingElevation` — `meetsAreaFloor`,
+     * The import rule, same predicate and same reason as `listNeedingElevation` — `belongsInCorpus`,
      * imported rather than restated. A rose costs five WIND Toolkit requests against a 10,000/day
      * allowance, and a body `pruneBelowAreaFloor` is about to delete is not worth one of them.
      *
@@ -1152,7 +1165,11 @@ export const listNeedingWindRose = internalQuery({
         if (!refresh && body.windRose !== undefined) return false;
         if (
           importFloorOnly === true &&
-          !meetsAreaFloor({ name: body.name ?? '', surfaceAreaSqM: body.surfaceAreaSqM ?? 0 })
+          !belongsInCorpus({
+            name: body.name ?? '',
+            surfaceAreaSqM: body.surfaceAreaSqM ?? 0,
+            includedByRequest: body.includedByRequest,
+          })
         ) {
           belowFloor++;
           return false;

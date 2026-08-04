@@ -192,3 +192,78 @@ export function meetsAreaFloor(candidate: { name: string; surfaceAreaSqM: number
   if (candidate.surfaceAreaSqM < HARD_MIN_SURFACE_AREA_SQM) return false;
   return candidate.name.length > 0;
 }
+
+/**
+ * Does this body belong in the corpus at all? — **the question four passes were each answering
+ * separately, and one of them differently** (N7).
+ *
+ * `meetsAreaFloor` answers *"is it big enough"*. That is not the same question, and treating it as
+ * though it were is a live inconsistency: `pruneBelowAreaFloor` keeps a below-floor body that carries
+ * a report, a track or a favourite, while `listNeedingElevation` and `listNeedingWindRose` walk
+ * straight past it. So a lake somebody skated could survive forever with no elevation and no wind
+ * rose, and nothing would ever say so.
+ *
+ * Measured 2026-08-03: **zero such bodies exist today**, because the D91 prune was thorough. The
+ * inconsistency is latent — and N7b's promotion path is precisely what creates the class for the
+ * first time, which is why this lands before that feature rather than after it.
+ *
+ * **`includedByRequest` is a statement about membership, not about prominence.** It is deliberately
+ * not `curatedBoost` (a D2 display lever that gets tuned) and deliberately not "has this been
+ * skated?" — that signal is durable, already feeds prominence, and is already honoured by the prune's
+ * attachment check, but it **cannot protect the moment that matters**: at promotion there is no
+ * report and no track yet, because the whole point is that someone is asking for a lake they *want*
+ * to skate. Protect it only by use, and the next prune deletes it before anyone can use it.
+ *
+ * **One consequence, recorded rather than engineered around:** a body admitted this way is **not
+ * re-imported** by a later campaign, because the transform drops it at the floor before the loader
+ * ever sees it. The import is an upsert, so the row is simply left alone — it keeps the geometry it
+ * was admitted with until someone re-requests it. That is acceptable; it is not an accident.
+ */
+export function belongsInCorpus(candidate: {
+  name: string;
+  surfaceAreaSqM: number;
+  type?: WaterBodyType | undefined;
+  includedByRequest?: boolean | undefined;
+}): boolean {
+  // A request outranks every rule below it, including the wetland one. Someone asking for a specific
+  // bog by name is better evidence than any classifier.
+  if (candidate.includedByRequest === true) return true;
+  const { type } = candidate;
+  if (type !== undefined && !wetlandAdmitted({ type, name: candidate.name })) return false;
+  return meetsAreaFloor(candidate);
+}
+
+/**
+ * **Wetland is admitted only when it is named** (D96, founder call 2026-08-03).
+ *
+ * The measurement that settled it. Above the D91 floor, in the archives:
+ *
+ * | | LakePond | SwampMarsh |
+ * | --- | --- | --- |
+ * | Maine | 4,670 · **66% named** | 703 · **2% named** |
+ * | New Hampshire | 2,380 · **59% named** | 4,120 · **1% named** |
+ *
+ * Two things fall out. First, **SwampMarsh is 13% of Maine's post-floor set and 63% of New
+ * Hampshire's** — so the earlier "the mechanical part is small, 98.9% is LakePond variants" was a
+ * Maine fact that does not generalise, and D96 could not have been decided from one state. Second,
+ * the naming gradient is the discriminator and it is consistent: lakes are named more than half the
+ * time, wetland almost never.
+ *
+ * Of the 19,610 unnamed bodies NHD would have added to our region, **13,976 (71%) are SwampMarsh**,
+ * 82% of them under 25 acres. Admitting them would roughly double the corpus with water nobody
+ * drives to, and make `other` — already 46% of what we hold — a smaller share of a much larger
+ * unknown.
+ *
+ * **Symmetric across catalogues on purpose.** OSM's classifier accepts `wetland=marsh` and NHD's
+ * FTYPE 466 lumps swamp with marsh under one code whose FCODEs do not separate them (5,053 of NH's
+ * 5,138 post-floor are the unspecified `46600`). Applying the name rule to one side and not the other
+ * would make *which catalogue drew this lake* change *what kind of thing it is* — the exact confusion
+ * D93 exists to remove.
+ *
+ * **A name is the only signal available here, and D91 already leans on it**: a name is a human
+ * assertion that a place is a place. Named wetland stays — Great Bog and Ninemile Swamp are real
+ * destinations, and some bog channels run kilometres.
+ */
+export function wetlandAdmitted(candidate: { type: WaterBodyType; name: string }): boolean {
+  return candidate.type !== 'marsh' || candidate.name.length > 0;
+}
