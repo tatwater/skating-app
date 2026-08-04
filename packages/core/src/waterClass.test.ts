@@ -147,12 +147,10 @@ describe('name keywords', () => {
   // Every one of these is a real body in the corpus, and a plain "sounds like moving water" drop list
   // would have deleted all of them. Higley Flow is a New York State Park.
   it.each([
-    ['Higley Flow', 349],
-    ['Piercefield Flow', 457],
-    ['Kings Flow', 205],
-    ['Debsconeag Deadwater', 525],
-    ['Nesowadnehunk Deadwater', 175],
-  ])('keeps %s, a regional name for still water', (name) => {
+    'Higley Flow',
+    'Piercefield Flow',
+    'Kings Flow',
+  ])('keeps %s, a regional name for still water a drop-list would delete', (name) => {
     expect(classifyName(name)).toMatchObject({ cls: 'lakePond' });
   });
 
@@ -288,12 +286,43 @@ describe('regional vocabulary found by reading the unresolved list', () => {
     'Loch Sheldrake',
     'Lily Mere',
     'The Oxbow',
-    'Long Logan',
-    'Moose Bogan',
     'Dorset Quarry',
     'Benson Mines',
     'Streeter Fishpond',
   ])('%s is lakePond', (name) => {
+    expect(classifyName(name)).toMatchObject({ cls: 'lakePond' });
+  });
+
+  // A reach so slow the catalogues publish it as a waterbody. NHD calls every one of these
+  // `LakePond`; for a skater there is current under the ice, which is the distinction that matters.
+  it.each([
+    'Debsconeag Deadwater',
+    'Nesowadnehunk Deadwater',
+    'Cassidy Deadwater',
+    'Lower Stillwater',
+    'Long Logan',
+    'Moose Bogan',
+    'Soper Logan',
+    'Dead River',
+  ])('%s is river', (name) => {
+    expect(classifyName(name)).toMatchObject({ cls: 'river' });
+  });
+
+  it('resolves a name carrying both words to the cautious reading', () => {
+    // Six real names do this. `river` is checked before `lakePond`, matching CLASS_RANK.
+    expect(classifyName('Sewall Deadwater Pond')).toMatchObject({ cls: 'river' });
+    expect(classifyName('Stillwater Pond')).toMatchObject({ cls: 'river' });
+    // …but `reservoir` still outranks it: Stillwater Reservoir is a 6,233-acre impoundment.
+    expect(classifyName('Stillwater Reservoir')).toMatchObject({ cls: 'reservoir' });
+  });
+
+  // An Adirondack Flow is a dammed impoundment, not a reach. Cedar River Flow is NHD's own Reservoir.
+  it.each([
+    'Higley Flow',
+    'Crooked Brook Flowage',
+    'Kings Flow',
+    'Goodnow Flowage',
+  ])('%s is lakePond, not river', (name) => {
     expect(classifyName(name)).toMatchObject({ cls: 'lakePond' });
   });
 

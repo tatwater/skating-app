@@ -52,19 +52,39 @@ export type WaterBodyType = (typeof WATER_BODY_TYPES)[number];
  * | `lakePond` | NHD's own class is `LakePond` and 3DHP's is `Lake`; **neither separates a lake from a pond**, and no evidence-based definition does either. The one published attempt ([Richardson et al. 2022](https://www.nature.com/articles/s41598-022-14569-0): < 5 ha, < 5 m, < 30% emergent) would rename 4,283 New England "Ponds" into lakes, Great Pond's 8,520 acres among them. The regional name is the local truth and the limnology is not, so we stopped drawing the line. |
  * | `wetland` | plain English for what NHD calls `SwampMarsh` and OSM spreads across eight `wetland=*` values. **The one class with teeth**: it is the only value `belongsInCorpus` reads, because unnamed wetland is held to a much higher area bar. |
  * | `reservoir` | kept **not** because the catalogues agree — NHD classes 1,717 of our reservoirs as LakePond — but because a reservoir may carry use restrictions, access rules and cleanliness expectations a lake does not. That is a product concern, so the product keeps the class. |
- * | `bay` | an arm of a larger body. Freshwater ones (Alton Bay, North Bay, Melvin Bay) are destinations; tidal ones are not water we cover at all, and elevation separates the two cleanly. |
+ * | `bay` | an arm of a larger body. Freshwater ones (Alton Bay, North Bay, Melvin Bay) are destinations; tidal ones are not water we cover at all. **A bay must have a parent we also hold** — Half Moon Cove is 0.00 contained in anything and is a wetland despite its name. |
+ * | `river` | **a slow river reach, not a lake** — a Maine deadwater, a stillwater, a logan. See below; this is a safety distinction, not a taxonomic one. |
  * | `unclassified` | **the honest name for what used to be `other`.** `other` read as a decided category; it was 55% of the corpus and meant "nobody told us". Naming it accurately is what makes it a prompt for a moderator rather than a bucket that stops being looked at. |
+ *
+ * ## Why `river` exists, and why it holds so little
+ *
+ * **It is not "we import rivers now".** Flowing water is still dropped: 4,424 OSM `water=river`
+ * polygons and 4,101 3DHP `River` polygons above an acre are refused, exactly as before. `river` holds
+ * the narrow case the catalogues get wrong for our purposes — **a reach so slow it is published as a
+ * waterbody**. NHD classes all 58 in-region deadwaters, stillwaters and logans as `LakePond`
+ * (Debsconeag Deadwater at 537 acres, Nesowadnehunk at 183, Cassidy at 221), because hydrologically
+ * that is what they are.
+ *
+ * **For a skater they are not.** There is current under that ice even when the surface reads as a
+ * pond, and thickness varies with it. That is the same reason `reservoir` overrides the catalogue —
+ * what matters here is not what USGS classes it as but what it does to a person standing on it — and
+ * it is why a name asserting a deadwater outranks a catalogue calling it a lake.
+ *
+ * **`flow` and `flowage` are deliberately NOT in this class.** An Adirondack Flow is an impoundment
+ * behind a dam — Cedar River Flow is NHD's own `Reservoir`, Crooked Brook Flowage is 1,254 acres —
+ * and it behaves like a lake everywhere except at the dam. Only the reach words go here.
  *
  * **Migration.** `WATER_BODY_TYPES` above is the stored vocabulary until N7's re-import lands, and is
  * retained so nothing has to change in step with the ETL. `lake` and `pond` both fold into
- * `lakePond`, `marsh` into `wetland`, `other` into `unclassified`, and the never-written `river` /
- * `stream` values disappear — flowing water is dropped at classification, not stored and ignored.
+ * `lakePond`, `marsh` into `wetland`, `other` into `unclassified`; `river` is re-purposed from a value
+ * nothing ever wrote, and `stream` disappears.
  */
 export const WATER_BODY_CLASSES = [
   'lakePond',
   'wetland',
   'reservoir',
   'bay',
+  'river',
   'unclassified',
 ] as const;
 export type WaterBodyClass = (typeof WATER_BODY_CLASSES)[number];

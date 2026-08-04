@@ -6,6 +6,7 @@ export * from './bodyIdentity';
 export * from './bounties';
 export * from './coalesce';
 export * from './comment';
+export * from './confidence';
 export * from './contourLayer';
 export * from './dedup';
 export * from './depthMatch';

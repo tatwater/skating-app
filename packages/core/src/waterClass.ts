@@ -70,10 +70,13 @@ const silent = (token: string): SourceClaim => ({ outcome: 'silent', token });
  */
 const CLASS_RANK: Record<WaterBodyClass, number> = {
   reservoir: 0,
-  lakePond: 1,
-  bay: 2,
-  wetland: 3,
-  unclassified: 4,
+  // `river` sits high for the same reason `reservoir` does: it is the reading that makes a skater
+  // treat the ice more carefully, and "we called a deadwater a pond" is the costly direction.
+  river: 1,
+  lakePond: 2,
+  bay: 3,
+  wetland: 4,
+  unclassified: 5,
 };
 
 /** The stronger of two claims: a class beats a drop, and `CLASS_RANK` breaks a class-vs-class tie. */
@@ -384,9 +387,20 @@ export function classifyThreeDhp(featureType: number): SourceClaim {
 const NAME_KEEP: readonly (readonly [RegExp, WaterBodyClass])[] = [
   [/\breservoirs?\b/, 'reservoir'],
   [
-    // `flow`, `flowage`, `deadwater`, `logan` and `bogan` are the ones a plain "sounds like moving
-    // water" reading would delete, and every one is a regional word for still water. See NAME_DROP.
-    /\blacs?\b|\betangs?\b|\blakes?\b|\bponds?\b|\bfishponds?\b|\bmill ?ponds?\b|\bflowages?\b|\bflows?\b|\bdeadwaters?\b|\bimpoundments?\b|\btarns?\b|\blochs?\b|\bmeres?\b|\boxbows?\b|\blogans?\b|\bbogans?\b|\bquarry\b|\bquarries\b|\bmines?\b/,
+    // **A slow river reach, checked before `lakePond` on purpose.** "Sewall Deadwater Pond" and
+    // "Stillwater Pond" carry both words, NHD calls both `LakePond`, and there are six such names in
+    // the region. Resolving them to `river` is the cautious reading — there is current under that ice
+    // — and it keeps this list's order consistent with `CLASS_RANK`.
+    //
+    // `flow` and `flowage` are **not** here: an Adirondack Flow is an impoundment behind a dam and
+    // behaves like a lake. See `WATER_BODY_CLASSES`.
+    /\bdead ?waters?\b|\bstill ?waters?\b|\bdead river\b|\blogans?\b|\bbogans?\b/,
+    'river',
+  ],
+  [
+    // `flow`, `flowage` and `quarry` are the ones a plain "sounds like moving water or industry"
+    // reading would delete, and every one is a regional word for still water. See NAME_DROP.
+    /\blacs?\b|\betangs?\b|\blakes?\b|\bponds?\b|\bfishponds?\b|\bmill ?ponds?\b|\bflowages?\b|\bflows?\b|\bimpoundments?\b|\btarns?\b|\blochs?\b|\bmeres?\b|\boxbows?\b|\bquarry\b|\bquarries\b|\bmines?\b/,
     'lakePond',
   ],
   [/\bbaies?\b|\bbays?\b|\bcoves?\b|\banses?\b|\bharbou?rs?\b|\bestuar(?:y|ies)\b/, 'bay'],
