@@ -201,13 +201,12 @@ export function featureToCanonicalBody(
   // The two differ by well under a percent, so a body can in principle store an area a hair under
   // the floor it cleared. That is the right way round: the source is the more accurate measure, and
   // the alternative is doing the expensive work first to decide with a worse number.
-  if (!belongsInCorpus({ name, type, surfaceAreaSqM: surfaceAreaSqM(geom) }))
-    return BELOW_AREA_FLOOR;
+  const sourceArea = surfaceAreaSqM(geom);
 
   // ── D85: measure the SOURCE geometry, here, before anything touches it ──────────────────────
   //
   // This line is the whole of D85 and it is one line, which is exactly why it is easy to move by
-  // accident. `geom` is the full-resolution OSM ring; three lines down it becomes a ~5 m
+  // accident. `geom` is the full-resolution OSM ring; a few lines down it becomes a ~5 m
   // Douglas-Peucker approximation (~7 m for Champlain, coarsened to fit the D48 array cap).
   // Perimeter is resolution-dependent — the coastline paradox — so measuring after `simplify()`
   // under-reports systematically, and worst on the big crenellated lakes where a shoreline figure
@@ -215,7 +214,30 @@ export function featureToCanonicalBody(
   //
   // **Do not move this below `simplifyForStorage`.** The stats would still compute, still look
   // plausible, and be quietly short on precisely the bodies that matter most.
-  const stats = lakeGeometryStats(geom);
+  //
+  // **Computed lazily, because D96's long-axis clause needs it BEFORE the admission test and the
+  // admission test is what keeps this cheap.** A convex hull and longest-chord search over all
+  // ~124,000 features to serve the one branch that consults it — unnamed wetland above five acres,
+  // ~2% of the input — would be the expensive way to save nothing. So: only that branch pays.
+  let cachedStats: ReturnType<typeof lakeGeometryStats> | undefined;
+  const statsOf = () => {
+    cachedStats ??= lakeGeometryStats(geom);
+    return cachedStats;
+  };
+
+  const needsAxis = type === 'marsh' && name.length === 0 && sourceArea >= MIN_SURFACE_AREA_SQM;
+  if (
+    !belongsInCorpus({
+      name,
+      type,
+      surfaceAreaSqM: sourceArea,
+      ...(needsAxis ? { longAxisM: statsOf().longAxisM } : {}),
+    })
+  ) {
+    return BELOW_AREA_FLOOR;
+  }
+
+  const stats = statsOf();
   const interiorPoint = fetchOrigin(geom) ?? undefined;
 
   // Simplify, then derive bbox / centroid / area from the geometry we actually store.

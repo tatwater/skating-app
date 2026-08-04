@@ -7,8 +7,8 @@ import {
   MIN_SURFACE_AREA_SQM,
   meetsAreaFloor,
   type OsmTags,
+  WETLAND_MIN_LONG_AXIS_M,
   waterBodyTypeFromOsmTags,
-  wetlandAdmitted,
 } from './osm';
 import { WATER_BODY_TYPES } from './types';
 
@@ -232,38 +232,84 @@ describe('belongsInCorpus', () => {
   });
 });
 
-describe('wetlandAdmitted (D96)', () => {
+describe('the five admission rules (D91 + D96)', () => {
   const big = MIN_SURFACE_AREA_SQM * 8;
+  const mid = MIN_SURFACE_AREA_SQM / 2; // between one and five acres
+  const tiny = HARD_MIN_SURFACE_AREA_SQM / 2;
+  const LONG = WETLAND_MIN_LONG_AXIS_M + 1;
+  const SHORT = WETLAND_MIN_LONG_AXIS_M - 1;
 
-  it('refuses unnamed wetland at any size', () => {
-    // 71% of what NHD would have added to our region is unnamed SwampMarsh — 13,976 features,
-    // 82% under 25 acres. Measured naming rate for wetland is 1-2%, against 59-66% for lakes.
-    expect(wetlandAdmitted({ type: 'marsh', name: '' })).toBe(false);
-    expect(belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: big })).toBe(false);
+  it('1. refuses everything under an acre', () => {
+    for (const type of ['lake', 'marsh'] as const) {
+      expect(belongsInCorpus({ type, name: 'Named', surfaceAreaSqM: tiny })).toBe(false);
+      expect(belongsInCorpus({ type, name: '', surfaceAreaSqM: tiny, longAxisM: LONG })).toBe(
+        false,
+      );
+    }
+    // Even a 2 km channel: a 2 km x 3 m ditch is under an acre, and D91 is absolute here. N7b's
+    // includedByRequest is the only way in.
+    expect(
+      belongsInCorpus({
+        type: 'marsh',
+        name: '',
+        surfaceAreaSqM: tiny,
+        longAxisM: LONG,
+        includedByRequest: true,
+      }),
+    ).toBe(true);
   });
 
-  it('keeps NAMED wetland — Great Bog and Ninemile Swamp are real places', () => {
-    expect(wetlandAdmitted({ type: 'marsh', name: 'Ninemile Swamp' })).toBe(true);
-    expect(belongsInCorpus({ type: 'marsh', name: 'Ninemile Swamp', surfaceAreaSqM: big })).toBe(
-      true,
+  it('2. admits 1-5 acres only when named AND not wetland', () => {
+    expect(belongsInCorpus({ type: 'pond', name: 'Keiser Pond', surfaceAreaSqM: mid })).toBe(true);
+    expect(belongsInCorpus({ type: 'pond', name: '', surfaceAreaSqM: mid })).toBe(false);
+    // The clause that changed: a named 3-acre marsh is out where a named 3-acre pond is in.
+    expect(belongsInCorpus({ type: 'marsh', name: 'Little Bog', surfaceAreaSqM: mid })).toBe(false);
+    expect(belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: mid, longAxisM: LONG })).toBe(
+      false,
     );
   });
 
-  it('touches no other class — an unnamed lake is still governed by area alone', () => {
-    for (const type of ['lake', 'pond', 'reservoir', 'bay', 'river', 'stream', 'other'] as const) {
-      expect(wetlandAdmitted({ type, name: '' })).toBe(true);
+  it('3. admits every NAMED body over five acres, wetland included', () => {
+    for (const type of ['lake', 'pond', 'reservoir', 'bay', 'other', 'marsh'] as const) {
+      expect(belongsInCorpus({ type, name: 'Ninemile Swamp', surfaceAreaSqM: big })).toBe(true);
+    }
+  });
+
+  it('4. admits unnamed NON-wetland over five acres', () => {
+    for (const type of ['lake', 'pond', 'reservoir', 'bay', 'other'] as const) {
       expect(belongsInCorpus({ type, name: '', surfaceAreaSqM: big })).toBe(true);
     }
   });
 
-  it('is overridden by a request, because a person naming a bog beats a classifier', () => {
+  it('5. admits unnamed wetland over five acres only past the long-axis bar', () => {
+    const marsh = { type: 'marsh' as const, name: '', surfaceAreaSqM: big };
+    expect(belongsInCorpus({ ...marsh, longAxisM: LONG })).toBe(true);
+    expect(belongsInCorpus({ ...marsh, longAxisM: SHORT })).toBe(false);
+    expect(belongsInCorpus({ ...marsh, longAxisM: WETLAND_MIN_LONG_AXIS_M })).toBe(true); // inclusive
+  });
+
+  it('5. refuses unnamed wetland whose axis is unknown — an import must not admit the unprovable', () => {
+    // The deleter takes the opposite view: pruneBelowAreaFloor keeps a row it cannot evaluate rather
+    // than removing it on absence of evidence. Strict predicate, conservative deleter.
+    expect(belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: big })).toBe(false);
+  });
+
+  it('treats a caller with no type as non-wetland, so existing callers are unaffected', () => {
+    // The wetland clauses can only ever narrow, so the permissive default is the safe one.
+    expect(belongsInCorpus({ name: '', surfaceAreaSqM: big })).toBe(true);
+    expect(belongsInCorpus({ name: 'X', surfaceAreaSqM: mid })).toBe(true);
+  });
+
+  it('lets a request override every rule', () => {
     expect(
-      belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: big, includedByRequest: true }),
+      belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: mid, includedByRequest: true }),
     ).toBe(true);
   });
 
-  it('is skipped entirely when no type is supplied, so callers without one are unaffected', () => {
-    // `meetsAreaFloor`'s existing callers pass name + area only; the rule must not fire on them.
-    expect(belongsInCorpus({ name: '', surfaceAreaSqM: big })).toBe(true);
+  it('leaves meetsAreaFloor answering the size question alone', () => {
+    // The two must not be conflated: meetsAreaFloor is "is it big enough", belongsInCorpus is
+    // "does it belong". A named 3-acre marsh passes the first and fails the second.
+    expect(meetsAreaFloor({ name: 'Little Bog', surfaceAreaSqM: mid })).toBe(true);
+    expect(belongsInCorpus({ type: 'marsh', name: 'Little Bog', surfaceAreaSqM: mid })).toBe(false);
   });
 });

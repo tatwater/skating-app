@@ -1320,6 +1320,59 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
     return rows.map((r) => r.externalId ?? '(none)').sort();
   }
 
+  test('D96: removes unnamed wetland over five acres whose long axis is short', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, {
+      externalId: 'osm/bog-short',
+      type: 'marsh',
+      surfaceAreaSqM: BIG,
+      longAxisM: 800,
+    });
+    await seedBody(t, {
+      externalId: 'osm/bog-long',
+      type: 'marsh',
+      surfaceAreaSqM: BIG,
+      longAxisM: 2400,
+    });
+    await seedBody(t, {
+      externalId: 'osm/bog-named',
+      type: 'marsh',
+      surfaceAreaSqM: BIG,
+      name: 'Ninemile Swamp',
+    });
+    await seedBody(t, { externalId: 'osm/lake', surfaceAreaSqM: BIG });
+
+    const res = await runPrune(t, true);
+    expect(res.deleted).toBe(1);
+    // The 3 km channels are exactly what the clause exists to protect (D91: area is the wrong axis).
+    expect(await remaining(t)).toEqual(['osm/bog-long', 'osm/bog-named', 'osm/lake']);
+  });
+
+  test('D96: NEVER deletes an unnamed wetland whose long axis was never computed', async () => {
+    // A deleter must not act on absence of evidence. belongsInCorpus refuses a body it cannot
+    // evaluate — right for an import, exactly wrong here, where it would silently remove the long
+    // channels the clause protects. Measured as 0 rows today; this is the guard for "should never
+    // fire" not being the same as "cannot fire".
+    const t = convexTestWithGeo();
+    await seedBody(t, { externalId: 'osm/bog-unknown', type: 'marsh', surfaceAreaSqM: BIG });
+    const res = await runPrune(t, true);
+    expect(res.deleted).toBe(0);
+    expect(res.kept.axisUnknown).toBe(1);
+    expect(await remaining(t)).toEqual(['osm/bog-unknown']);
+  });
+
+  test('N7b: keeps a body admitted by request, however far under the floor', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, {
+      externalId: 'osm/requested',
+      surfaceAreaSqM: 0.4 * 4046.8564224, // sub-acre: nothing else would save it
+      includedByRequest: true,
+    });
+    const res = await runPrune(t, true);
+    expect(res.deleted).toBe(0);
+    expect(await remaining(t)).toEqual(['osm/requested']);
+  });
+
   test('deletes an unnamed sub-floor body and its cell rows, keeping named and large ones', async () => {
     const t = convexTestWithGeo();
     const doomed = await seedBody(t, { externalId: 'osm/puddle' });

@@ -223,18 +223,63 @@ export function belongsInCorpus(candidate: {
   name: string;
   surfaceAreaSqM: number;
   type?: WaterBodyType | undefined;
+  /**
+   * Required only for **unnamed wetland above five acres** — the one branch that consults it. Absent
+   * there means *"cannot prove it qualifies"* and the body is refused, which is the right answer for
+   * an **import**. It is the wrong answer for a **deleter**, so `pruneBelowAreaFloor` checks for the
+   * missing value explicitly and keeps the row rather than removing it on absence of evidence.
+   */
+  longAxisM?: number | undefined;
   includedByRequest?: boolean | undefined;
 }): boolean {
-  // A request outranks every rule below it, including the wetland one. Someone asking for a specific
-  // bog by name is better evidence than any classifier.
+  // A request outranks every rule below it. Someone asking for a specific bog beats any classifier
+  // (N7b) — this is the escape hatch that makes the rest of these rules safe to be strict.
   if (candidate.includedByRequest === true) return true;
-  const { type } = candidate;
-  if (type !== undefined && !wetlandAdmitted({ type, name: candidate.name })) return false;
-  return meetsAreaFloor(candidate);
+
+  // 1. Nothing under an acre, on any automatic evidence (D91).
+  if (candidate.surfaceAreaSqM < HARD_MIN_SURFACE_AREA_SQM) return false;
+
+  const named = candidate.name.length > 0;
+  // A caller that supplies no type is treated as non-wetland: the wetland rules can only ever
+  // *narrow*, so the permissive default keeps existing callers behaving exactly as before.
+  const isWetland = candidate.type === 'marsh';
+
+  if (candidate.surfaceAreaSqM >= MIN_SURFACE_AREA_SQM) {
+    // 3 + 4. Above five acres everything is in, except unnamed wetland…
+    if (!isWetland || named) return true;
+    // 5. …which needs to be long. See `WETLAND_MIN_LONG_AXIS_M`.
+    return candidate.longAxisM !== undefined && candidate.longAxisM >= WETLAND_MIN_LONG_AXIS_M;
+  }
+
+  // 2. Between one and five acres: named, and not wetland.
+  return named && !isWetland;
 }
 
 /**
- * **Wetland is admitted only when it is named** (D96, founder call 2026-08-03).
+ * How long an **unnamed wetland** must be to earn a place above five acres (D96, founder call
+ * 2026-08-03).
+ *
+ * **This clause exists because D91 already argued that area is the wrong axis** — *"Keiser Pond is 36
+ * acres and 909 m long: a 1.8 km out-and-back, better skating than a round 30-acre pond 390 m
+ * across"* — and unnamed wetland is where that argument bites hardest. The corpus holds a 516-acre
+ * unnamed marsh with a **3,027 m** long axis. That is a linear channel, and refusing it on the same
+ * rule that refuses a 6-acre bog pocket would be the round-pond mistake in reverse.
+ *
+ * **Two kilometres and not one.** At 1 km the clause kept 120 of 728 sampled unnamed marshes (16%);
+ * at 2 km it keeps 34 (4.7%). The founder chose the stricter bar, and the shape of the distribution
+ * supports it — 608 of 728 sit under a kilometre, so 1 km sits mid-slope where a threshold is
+ * arbitrary, while 2 km is out in the tail where the survivors are unambiguous channels.
+ *
+ * **It is the only place a shape statistic gates admission**, which is why it needs `longAxisM` to be
+ * computed *before* the check rather than after. See `transform.ts` — the stats were deliberately
+ * derived after the floor test to avoid running a convex hull over 124,000 features, so this branch
+ * computes them on demand for the ~2% of features that reach it.
+ */
+export const WETLAND_MIN_LONG_AXIS_M = 2000;
+
+/**
+ * **The wetland rules, stated once** (D96, founder call 2026-08-03) — the two clauses that make
+ * wetland different from every other class.
  *
  * The measurement that settled it. Above the D91 floor, in the archives:
  *
@@ -243,27 +288,22 @@ export function belongsInCorpus(candidate: {
  * | Maine | 4,670 · **66% named** | 703 · **2% named** |
  * | New Hampshire | 2,380 · **59% named** | 4,120 · **1% named** |
  *
- * Two things fall out. First, **SwampMarsh is 13% of Maine's post-floor set and 63% of New
- * Hampshire's** — so the earlier "the mechanical part is small, 98.9% is LakePond variants" was a
- * Maine fact that does not generalise, and D96 could not have been decided from one state. Second,
- * the naming gradient is the discriminator and it is consistent: lakes are named more than half the
- * time, wetland almost never.
+ * Two things fall out. **SwampMarsh is 13% of Maine's post-floor set and 63% of New Hampshire's** —
+ * so "the mechanical part is small, 98.9% is LakePond variants" was a Maine fact that does not
+ * generalise, and D96 could not have been decided from one state. And the naming gradient is the
+ * discriminator, consistently: lakes are named more than half the time, wetland almost never.
  *
- * Of the 19,610 unnamed bodies NHD would have added to our region, **13,976 (71%) are SwampMarsh**,
- * 82% of them under 25 acres. Admitting them would roughly double the corpus with water nobody
- * drives to, and make `other` — already 46% of what we hold — a smaller share of a much larger
- * unknown.
+ * Of the 19,610 unnamed bodies NHD would add to our region, **13,976 (71%) are SwampMarsh**, 82% of
+ * them under 25 acres. Admitting them would roughly double the corpus with water nobody drives to.
  *
- * **Symmetric across catalogues on purpose.** OSM's classifier accepts `wetland=marsh` and NHD's
- * FTYPE 466 lumps swamp with marsh under one code whose FCODEs do not separate them (5,053 of NH's
- * 5,138 post-floor are the unspecified `46600`). Applying the name rule to one side and not the other
- * would make *which catalogue drew this lake* change *what kind of thing it is* — the exact confusion
- * D93 exists to remove.
+ * **Symmetric across catalogues on purpose.** OSM accepts `wetland=marsh`; NHD's FTYPE 466 lumps
+ * swamp with marsh under one code whose FCODEs do not separate them (5,053 of NH's 5,138 post-floor
+ * are the unspecified `46600`). A one-sided rule would make *which catalogue drew this lake* change
+ * *what kind of thing it is* — the exact confusion D93 exists to remove.
  *
- * **A name is the only signal available here, and D91 already leans on it**: a name is a human
- * assertion that a place is a place. Named wetland stays — Great Bog and Ninemile Swamp are real
- * destinations, and some bog channels run kilometres.
+ * The two clauses, both live in `belongsInCorpus`:
+ *
+ * 1. **Wetland gets no 1–5 acre name tier.** A named 3-acre marsh is out, where a named 3-acre pond
+ *    is in. Costs ~4 bodies corpus-wide, measured.
+ * 2. **Unnamed wetland above five acres needs a long axis** — `WETLAND_MIN_LONG_AXIS_M`.
  */
-export function wetlandAdmitted(candidate: { type: WaterBodyType; name: string }): boolean {
-  return candidate.type !== 'marsh' || candidate.name.length > 0;
-}

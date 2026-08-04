@@ -880,6 +880,7 @@ export const pruneBelowAreaFloor = internalMutation({
     const kept = {
       clearsFloor: 0,
       areaUnknown: 0,
+      axisUnknown: 0,
       userCreated: 0,
       curated: 0,
       dedupOrMerged: 0,
@@ -897,11 +898,26 @@ export const pruneBelowAreaFloor = internalMutation({
       if (
         belongsInCorpus({
           name: body.name,
+          type: body.type,
           surfaceAreaSqM: body.surfaceAreaSqM,
+          longAxisM: body.longAxisM,
           includedByRequest: body.includedByRequest,
         })
       ) {
         kept.clearsFloor++;
+        continue;
+      }
+      // **A deleter must not act on absence of evidence.** D96's long-axis clause is the only rule
+      // here that needs a derived statistic, and `belongsInCorpus` refuses when it is missing —
+      // correct for an *import*, which must not admit the unprovable, and exactly wrong for a
+      // *prune*, which would then delete a body for a stat nobody had computed yet.
+      //
+      // Measured 2026-08-03: `longAxisM` is present on 6,000 of 6,000 sampled rows, so this branch
+      // should never fire. It is here because "should never fire" and "cannot fire" are different,
+      // and the failure mode is silent deletion of exactly the long channels the clause exists to
+      // protect. Counted, so a non-zero tally is visible rather than inferred.
+      if (body.type === 'marsh' && body.name.length === 0 && body.longAxisM === undefined) {
+        kept.axisUnknown++;
         continue;
       }
       if (body.source === 'user') {
