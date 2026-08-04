@@ -7,7 +7,8 @@ import {
   MIN_SURFACE_AREA_SQM,
   meetsAreaFloor,
   type OsmTags,
-  WETLAND_LONG_AXIS_EXEMPTION_DROPPED,
+  UNNAMED_WETLAND_MIN_ACRES,
+  UNNAMED_WETLAND_MIN_SQM,
   waterBodyTypeFromOsmTags,
 } from './osm';
 import { WATER_BODY_TYPES } from './types';
@@ -232,7 +233,7 @@ describe('belongsInCorpus', () => {
   });
 });
 
-describe('the four admission rules (D91 + D96)', () => {
+describe('the five admission rules (D91 + D96)', () => {
   const big = MIN_SURFACE_AREA_SQM * 8;
   const mid = MIN_SURFACE_AREA_SQM / 2; // between one and five acres
   const tiny = HARD_MIN_SURFACE_AREA_SQM / 2;
@@ -261,22 +262,30 @@ describe('the four admission rules (D91 + D96)', () => {
     }
   });
 
-  it('4. admits unnamed NON-wetland over five acres, and refuses unnamed wetland at any size', () => {
+  it('4. admits unnamed NON-wetland over five acres', () => {
     for (const type of ['lake', 'pond', 'reservoir', 'bay', 'other'] as const) {
       expect(belongsInCorpus({ type, name: '', surfaceAreaSqM: big })).toBe(true);
     }
-    // The long-axis exemption was designed, measured and dropped (founder, "for now"). Unnamed
-    // wetland is simply out — see WETLAND_LONG_AXIS_EXEMPTION_DROPPED for the numbers and why.
-    expect(belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: big })).toBe(false);
-    expect(belongsInCorpus({ type: 'marsh', name: '', surfaceAreaSqM: big * 100 })).toBe(false);
+  });
+
+  it('5. holds unnamed wetland to fifty acres, not five', () => {
+    // Measured over the whole corpus: 3,659 unnamed wetlands above five acres, of which 415 clear
+    // fifty. A 30-acre bar would have kept 733; the founder took the stricter one and N7b as the
+    // backstop for anything it cuts wrongly.
+    const marsh = { type: 'marsh' as const, name: '' };
+    expect(belongsInCorpus({ ...marsh, surfaceAreaSqM: UNNAMED_WETLAND_MIN_SQM })).toBe(true);
+    expect(belongsInCorpus({ ...marsh, surfaceAreaSqM: UNNAMED_WETLAND_MIN_SQM - 1 })).toBe(false);
+    // …and five acres, which admits every other class, is nowhere near enough for this one.
+    expect(belongsInCorpus({ ...marsh, surfaceAreaSqM: MIN_SURFACE_AREA_SQM })).toBe(false);
   });
 
   it('needs no derived statistic — every rule reads name, area and type alone', () => {
-    // The point of dropping the axis clause. It was the only rule gated on a computed shape stat,
-    // which forced lazy stats in the transform and split the correct behaviour in two: an import
-    // must refuse an unprovable body, a prune must keep it. Two readings of one rule is how a
-    // silent deletion happens.
-    expect(WETLAND_LONG_AXIS_EXEMPTION_DROPPED).toBe(true);
+    // This replaced a long-axis exemption, which was the only rule gated on a computed shape stat.
+    // That forced lazy stats in the transform AND split the correct behaviour in two: an import must
+    // refuse an unprovable body, a prune must keep it. Two readings of one rule is how a silent
+    // deletion happens. Area needs no such branch — assert the property, not just the behaviour.
+    expect(UNNAMED_WETLAND_MIN_ACRES).toBe(50);
+    expect(UNNAMED_WETLAND_MIN_SQM).toBeGreaterThan(MIN_SURFACE_AREA_SQM);
   });
 
   it('treats a caller with no type as non-wetland, so existing callers are unaffected', () => {

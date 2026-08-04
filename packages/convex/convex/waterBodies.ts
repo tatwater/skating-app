@@ -466,6 +466,9 @@ export const importCanonical = internalMutation({
  * than on the body — a property of the tileset, not of the lake — so counting it here would mean a
  * second scan inside a function whose whole job is to walk `waterBodies` once. Ask that table.
  */
+/** Square metres in an acre — local, so this query needs no extra import. */
+const SQ_M_PER_ACRE_LOCAL = 4046.8564224;
+
 export const corpusStats = internalQuery({
   args: {
     cursor: v.optional(v.string()),
@@ -489,9 +492,11 @@ export const corpusStats = internalQuery({
       withWindRose?: number;
       byState?: Record<string, number>;
       byType?: Record<string, number>;
+      unnamedWetlandBands?: Record<string, number>;
     };
     const byState: Record<string, number> = { ...(prior.byState ?? {}) };
     const byType: Record<string, number> = { ...(prior.byType ?? {}) };
+    const unnamedWetlandBands: Record<string, number> = { ...(prior.unnamedWetlandBands ?? {}) };
     let total = prior.total ?? 0;
     let listed = prior.listed ?? 0;
     let withOsmId = prior.withOsmId ?? 0;
@@ -511,6 +516,29 @@ export const corpusStats = internalQuery({
       if (body.elevationM !== undefined) withElevation++;
       if (body.windRose) withWindRose++;
       byType[body.type] = (byType[body.type] ?? 0) + 1;
+      // **The unnamed-wetland size distribution, because D96 is the rule most likely to be re-tuned.**
+      // "Omit unnamed wetland" removes 96% of the class, and whether that is the right trade depends
+      // on how much of it is big — which no whole-corpus aggregate answers. Banded here so a
+      // threshold can be chosen against the real distribution rather than a sample, which is how the
+      // first projection of this prune came out 40% low.
+      if (body.type === 'marsh' && body.name.length === 0 && body.surfaceAreaSqM !== undefined) {
+        const acres = body.surfaceAreaSqM / SQ_M_PER_ACRE_LOCAL;
+        if (acres >= 5) {
+          const band =
+            acres >= 100
+              ? '100+'
+              : acres >= 50
+                ? '50-100'
+                : acres >= 30
+                  ? '30-50'
+                  : acres >= 25
+                    ? '25-30'
+                    : acres >= 10
+                      ? '10-25'
+                      : '5-10';
+          unnamedWetlandBands[band] = (unnamedWetlandBands[band] ?? 0) + 1;
+        }
+      }
       // A border-spanning body counts once per state it touches, so these sum above `total` — which
       // is correct and is why they are reported separately rather than as a partition.
       for (const state of body.states ?? []) byState[state] = (byState[state] ?? 0) + 1;
@@ -528,6 +556,7 @@ export const corpusStats = internalQuery({
         withWindRose,
         byState,
         byType,
+        unnamedWetlandBands,
       },
       scanned: page.page.length,
       cursor: page.continueCursor,

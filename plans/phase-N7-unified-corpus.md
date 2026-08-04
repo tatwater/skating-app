@@ -1086,7 +1086,26 @@ FCODEs do not separate them. A one-sided rule would make *which catalogue drew t
 across states. Of the 19,610 unnamed bodies NHD would add to our region, **13,976 (71%) are
 SwampMarsh** and 82% are under 25 acres.
 
-### The long-axis exemption: designed, measured, dropped
+### Rule 5: unnamed wetland needs fifty acres
+
+**Chosen against the measured distribution of the class, not a guess.** The corpus holds **3,659**
+unnamed wetlands above five acres:
+
+| | 5–10 | 10–25 | 25–30 | 30–50 | 50–100 | 100+ |
+| --- | --- | --- | --- | --- | --- | --- |
+| count | 1,533 | 1,230 | 163 | 318 | 251 | 164 |
+
+| bar | kept | removed | corpus |
+| --- | --- | --- | --- |
+| named-only | 0 | 3,659 | 17,968 |
+| **≥ 50 acres** | **415 (11%)** | 3,244 | **18,383** |
+| ≥ 30 acres | 733 (20%) | 2,926 | 18,738 |
+
+**Area is knowingly the weaker proxy** — a 60-acre round bog gets in where a 12-acre channel does
+not, which is wrong on the merits. Accepted because the rule stays cheap and total, and because
+**N7b is the backstop**: *"rely on N7b to repopulate anything we rip out now"* (founder).
+
+### The long-axis exemption it replaced: designed, measured, dropped
 
 A fifth rule — *unnamed wetland over five acres with a long axis over 2 km* — was built and then
 removed at the founder's call (*"ditch the 2 km min axis for now, that way we keep this safer"*). The

@@ -237,39 +237,47 @@ export function belongsInCorpus(candidate: {
   // *narrow*, so the permissive default keeps existing callers behaving exactly as before.
   const isWetland = candidate.type === 'marsh';
 
-  // 3 + 4. Above five acres everything is in, except unnamed wetland — which is out.
-  if (candidate.surfaceAreaSqM >= MIN_SURFACE_AREA_SQM) return !isWetland || named;
+  if (candidate.surfaceAreaSqM >= MIN_SURFACE_AREA_SQM) {
+    // 3 + 4. Above five acres everything is in…
+    if (!isWetland || named) return true;
+    // 5. …except unnamed wetland, which has to be big. See `UNNAMED_WETLAND_MIN_SQM`.
+    return candidate.surfaceAreaSqM >= UNNAMED_WETLAND_MIN_SQM;
+  }
 
   // 2. Between one and five acres: named, and not wetland.
   return named && !isWetland;
 }
 
 /**
- * **A long-axis exemption for unnamed wetland was designed, measured, and then dropped** (founder,
- * 2026-08-03). Recorded rather than deleted, because the measurement is the expensive part and the
- * decision is explicitly *"for now"*.
+ * How big an **unnamed wetland** must be to earn a place (D96, founder call 2026-08-03).
  *
- * The case for it is real and is D91's own: *"Keiser Pond is 36 acres and 909 m long — a 1.8 km
- * out-and-back, better skating than a round 30-acre pond 390 m across."* Area is the wrong axis, and
- * unnamed wetland is where that bites hardest — the corpus holds a 516-acre unnamed marsh with a
- * **3,027 m** long axis, which is a linear channel rather than a bog pocket.
+ * Fifty acres, chosen against the measured distribution of the class rather than against a guess.
+ * The whole corpus holds **3,659** unnamed wetlands over five acres:
  *
- * Measured over 728 sampled unnamed marshes: a 1 km bar kept 120 (16%), a 2 km bar kept 34 (4.7%),
- * and 608 of the 728 sit under a kilometre.
+ * | | 5–10 | 10–25 | 25–30 | 30–50 | 50–100 | 100+ |
+ * | --- | --- | --- | --- | --- | --- | --- |
+ * | count | 1,533 | 1,230 | 163 | 318 | 251 | 164 |
  *
- * **Why it was dropped anyway.** It would have been the only rule here gated on a *derived
- * statistic*, and that cost more than it looked. `longAxisM` is computed after the admission test in
- * `transform.ts` — deliberately, so a convex hull does not run over 124,000 features — so the clause
- * forced the stats to be computed lazily mid-check. Worse, it split the correct behaviour in two: an
- * import must refuse a body whose axis is unknown, and a prune must *keep* it, or it deletes the long
- * channels the clause exists to protect on absence of evidence. Two opposite readings of one rule is
- * how a silent deletion happens.
+ * So this keeps **415 (11%)** and refuses 3,244. A 30-acre bar was the alternative and would have
+ * kept 733 (20%) — the extra 318 sit in the 30–50 band.
  *
- * **What makes dropping it safe is N7b.** `includedByRequest` overrides every rule here, so a real 3
- * km channel someone actually skates has a way back in — one body at a time, with a human looking.
- * That is a better answer than a threshold nobody can verify.
+ * **This replaced a long-axis exemption that was designed, measured and dropped**, and the reason is
+ * worth keeping. Axis is the better signal — D91 argues it at length, and the corpus holds a
+ * 516-acre unnamed marsh with a **3,027 m** axis — but it was the only rule here gated on a *derived
+ * statistic*, and that split the correct behaviour in two: an import must refuse a body whose axis is
+ * unknown, a prune must keep it, or it deletes on absence of evidence. Two opposite readings of one
+ * rule is how a silent deletion happens. Area needs no such branch.
+ *
+ * **Area is knowingly the weaker proxy.** A 60-acre round bog gets in where a 12-acre channel does
+ * not, and that is the wrong answer on the merits. It is accepted because the rule stays cheap and
+ * total, and because **N7b is the real backstop**: `includedByRequest` overrides every rule here, so
+ * anything this cuts that someone actually skates comes back one body at a time, with a human
+ * looking. The founder's framing: *"rely on N7b to repopulate anything we rip out now."*
  */
-export const WETLAND_LONG_AXIS_EXEMPTION_DROPPED = true;
+export const UNNAMED_WETLAND_MIN_ACRES = 50;
+
+/** `UNNAMED_WETLAND_MIN_ACRES` in the unit geometry is measured in. */
+export const UNNAMED_WETLAND_MIN_SQM = UNNAMED_WETLAND_MIN_ACRES * SQ_M_PER_ACRE;
 
 /**
  * **The wetland rules, stated once** (D96, founder call 2026-08-03) — the two clauses that make
@@ -299,6 +307,6 @@ export const WETLAND_LONG_AXIS_EXEMPTION_DROPPED = true;
  *
  * 1. **Wetland gets no 1–5 acre name tier.** A named 3-acre marsh is out, where a named 3-acre pond
  *    is in. Costs ~4 bodies corpus-wide, measured.
- * 2. **Unnamed wetland is out entirely.** A long-axis exemption was designed and measured for it,
- *    then dropped — see `WETLAND_LONG_AXIS_EXEMPTION_DROPPED` for the numbers and the reason.
+ * 2. **Unnamed wetland needs fifty acres**, not five — `UNNAMED_WETLAND_MIN_SQM`. That keeps 415 of
+ *    the corpus's 3,659 unnamed wetlands and refuses 3,244.
  */
