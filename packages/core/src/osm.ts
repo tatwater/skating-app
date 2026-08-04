@@ -10,7 +10,7 @@
  * to `null` so the ETL drops it. We import still water — lakes / ponds / reservoirs — only.
  */
 
-import { WATER_BODY_TYPES, type WaterBodyType } from './types';
+import { WATER_BODY_TYPES, type WaterBodyClass, type WaterBodyType } from './types';
 
 /** A raw OSM feature's tag bag (`key=value`), e.g. `{ natural: 'water', water: 'lake' }`. */
 export type OsmTags = Record<string, string | undefined>;
@@ -222,7 +222,7 @@ export function meetsAreaFloor(candidate: { name: string; surfaceAreaSqM: number
 export function belongsInCorpus(candidate: {
   name: string;
   surfaceAreaSqM: number;
-  type?: WaterBodyType | undefined;
+  type?: WaterBodyType | WaterBodyClass | undefined;
   includedByRequest?: boolean | undefined;
 }): boolean {
   // A request outranks every rule below it. Someone asking for a specific bog beats any classifier
@@ -233,9 +233,7 @@ export function belongsInCorpus(candidate: {
   if (candidate.surfaceAreaSqM < HARD_MIN_SURFACE_AREA_SQM) return false;
 
   const named = candidate.name.length > 0;
-  // A caller that supplies no type is treated as non-wetland: the wetland rules can only ever
-  // *narrow*, so the permissive default keeps existing callers behaving exactly as before.
-  const isWetland = candidate.type === 'marsh';
+  const isWetland = isWetlandClass(candidate.type);
 
   if (candidate.surfaceAreaSqM >= MIN_SURFACE_AREA_SQM) {
     // 3 + 4. Above five acres everything is in…
@@ -246,6 +244,28 @@ export function belongsInCorpus(candidate: {
 
   // 2. Between one and five acres: named, and not wetland.
   return named && !isWetland;
+}
+
+/**
+ * Is this the wetland class — **in either vocabulary**? (N7, D109 migration.)
+ *
+ * The one branch in `belongsInCorpus` that reads the class at all, so it is the one place the
+ * old→new enum rename could go wrong, and getting it wrong is invisible: `type === 'marsh'` against a
+ * body carrying the new `'wetland'` value returns `false`, the wetland gate never fires, and **every
+ * unnamed bog above five acres is silently admitted** — the exact opposite of what D96 decided,
+ * with no error anywhere.
+ *
+ * Both spellings are accepted for as long as both exist. `WATER_BODY_TYPES` is what is stored today
+ * and `WATER_BODY_CLASSES` is what the merge produces, and the campaign that renames them cannot be
+ * atomic across an ETL, a prune and 18,383 rows.
+ *
+ * **Everything else is non-wetland, and that includes `river` and `unclassified`** — a deadwater gets
+ * the ordinary still-water rules (founder call, 2026-08-04; the class carries the safety meaning, not
+ * the admission bar), and an unclassified body is treated permissively because absence of evidence is
+ * not evidence it should be deleted.
+ */
+export function isWetlandClass(type: WaterBodyType | WaterBodyClass | undefined): boolean {
+  return type === 'marsh' || type === 'wetland';
 }
 
 /**

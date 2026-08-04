@@ -4,6 +4,7 @@ import {
   belongsInCorpus,
   HARD_MIN_SURFACE_AREA_SQM,
   isWaterBodyType,
+  isWetlandClass,
   MIN_SURFACE_AREA_SQM,
   meetsAreaFloor,
   type OsmTags,
@@ -302,5 +303,44 @@ describe('the five admission rules (D91 + D96)', () => {
   it('leaves meetsAreaFloor answering the size question alone', () => {
     expect(meetsAreaFloor({ name: 'Little Bog', surfaceAreaSqM: mid })).toBe(true);
     expect(belongsInCorpus({ type: 'marsh', name: 'Little Bog', surfaceAreaSqM: mid })).toBe(false);
+  });
+});
+
+describe('belongsInCorpus across the enum rename (N7/D109)', () => {
+  const acres = (n: number) => n * 4046.8564224;
+
+  // The rename's one dangerous branch. `type === 'marsh'` against a body carrying `'wetland'` returns
+  // false, the gate never fires, and every unnamed bog above five acres is silently admitted.
+  it('applies the wetland rules to BOTH spellings', () => {
+    for (const type of ['marsh', 'wetland'] as const) {
+      expect(belongsInCorpus({ name: '', surfaceAreaSqM: acres(20), type })).toBe(false);
+      expect(belongsInCorpus({ name: '', surfaceAreaSqM: acres(60), type })).toBe(true);
+      expect(belongsInCorpus({ name: 'Kingdom Bog', surfaceAreaSqM: acres(3), type })).toBe(false);
+    }
+    expect(isWetlandClass('marsh')).toBe(true);
+    expect(isWetlandClass('wetland')).toBe(true);
+  });
+
+  // Founder call 2026-08-04: the class carries the safety meaning, the admission bar does not.
+  it('gives `river` the ordinary still-water rules', () => {
+    expect(belongsInCorpus({ name: '', surfaceAreaSqM: acres(20), type: 'river' })).toBe(true);
+    expect(
+      belongsInCorpus({ name: 'Nesowadnehunk Deadwater', surfaceAreaSqM: acres(3), type: 'river' }),
+    ).toBe(true);
+    expect(isWetlandClass('river')).toBe(false);
+  });
+
+  it('treats `unclassified` permissively — absence of evidence is not evidence to delete', () => {
+    expect(belongsInCorpus({ name: '', surfaceAreaSqM: acres(20), type: 'unclassified' })).toBe(
+      true,
+    );
+    expect(isWetlandClass('unclassified')).toBe(false);
+  });
+
+  it('leaves lakePond, reservoir and bay on the non-wetland path', () => {
+    for (const type of ['lakePond', 'reservoir', 'bay'] as const) {
+      expect(isWetlandClass(type)).toBe(false);
+      expect(belongsInCorpus({ name: '', surfaceAreaSqM: acres(20), type })).toBe(true);
+    }
   });
 });
