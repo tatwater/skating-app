@@ -69,8 +69,34 @@ describe('sameName', () => {
     expect(sameName(' Lake Champlain ', 'lake champlain')).toBe(true);
   });
 
+  // Every one of these is a real pair the first version flagged as a disagreement.
+  it.each([
+    ["Harvey's Lake", 'Harvey Lake'],
+    ["Leffert's Pond", 'Lefferts Pond'],
+    ["Thompson's Pond", 'Thompsons Pond'],
+    ['Clark Pond', 'Clarks Pond'],
+    ['Howes Pond', 'Howe Pond'],
+    ['Salem Lake', 'Lake Salem'],
+    ['Lake Sadawga', 'Sadawga Lake'],
+  ])('reads %s and %s as one name', (a, b) => {
+    expect(sameName(a, b)).toBe(true);
+  });
+
+  // The line: a structural difference is provably one name spelled twice; a one-character difference
+  // only looks like one. `Bear Pond` and `Bean Pond` are different lakes, so typos go to a human.
+  it.each([
+    ['Lake Runnemede', 'Lake Runnenede'],
+    ['Little Eligo Pond', 'Little Elligo Pond'],
+    ['Bear Pond', 'Bean Pond'],
+    ['Bourne Pond', 'Bourn Pond'],
+  ])('does NOT collapse %s and %s on a one-character difference', (a, b) => {
+    expect(sameName(a, b)).toBe(false);
+  });
+
   it('still separates two different lakes', () => {
     expect(sameName('Long Pond', 'Long Lake')).toBe(false);
+    expect(sameName('Winona Lake', 'Bristol Pond')).toBe(false);
+    expect(sameName('Sucker Pond', 'Lake Hancock')).toBe(false);
   });
 });
 
@@ -127,6 +153,46 @@ describe('scoreBody', () => {
 
   // 6,756 bodies had OSM silent and NHD saying LakePond. Scoring `unclassified` as a claim made every
   // one of them read as a conflict, and they were most of a 3,999-row queue nobody could have worked.
+  // Our vocabulary draws a distinction NHD does not, and we already wrote down how it resolves. It
+  // is not the catalogues contradicting each other, and scoring it `low` put 1,437 foregone
+  // conclusions in front of a moderator.
+  it('treats reservoir-vs-lakePond as agreement, not conflict', () => {
+    const out = scoreBody({
+      ...base,
+      classes: [c('osm', 'reservoir' as WaterBodyClass), c('nhd', 'lakePond' as WaterBodyClass)],
+    });
+    expect(out.cls).toBe('high');
+    expect(mergeReviewReasons({ confidence: { ...out, name: 'high', polygon: 'high' } })).toEqual(
+      [],
+    );
+  });
+
+  it('treats river-vs-lakePond the same way — a deadwater NHD publishes as a waterbody', () => {
+    expect(
+      scoreBody({
+        ...base,
+        classes: [c('osm', 'river' as WaterBodyClass), c('nhd', 'lakePond' as WaterBodyClass)],
+      }).cls,
+    ).toBe('high');
+  });
+
+  // The one class disagreement that is about the water rather than the vocabulary. D96's admission
+  // rules turn on it, and mis-resolving it deleted 123 bodies NHD calls LakePond.
+  it('still calls open-water-versus-wetland a conflict', () => {
+    for (const pair of [
+      ['lakePond', 'wetland'],
+      ['reservoir', 'wetland'],
+      ['bay', 'lakePond'],
+    ] as const) {
+      expect(
+        scoreBody({
+          ...base,
+          classes: [c('osm', pair[0] as WaterBodyClass), c('nhd', pair[1] as WaterBodyClass)],
+        }).cls,
+      ).toBe('low');
+    }
+  });
+
   it('does not let `unclassified` vote against a real class', () => {
     const out = scoreBody({
       ...base,

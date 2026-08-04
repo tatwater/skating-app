@@ -143,11 +143,75 @@ export function scorePolygonAgreement(claims: readonly AttributeClaim<number>[])
   return worst < POLYGON_DISAGREE_IOU ? 'low' : 'medium';
 }
 
-/** Two names are the same claim if they differ only by case, accent or surrounding space. */
+/**
+ * Two names are the same claim if they differ only in ways that are **structural rather than
+ * semantic** — case, accent, apostrophe, possessive or plural `s`, and word order.
+ *
+ * Read off the 507 pairs the first version flagged. Nearly all of them were spelling conventions,
+ * not disagreements:
+ *
+ * | | |
+ * | --- | --- |
+ * | apostrophe | `Harvey's Lake` / `Harvey Lake` · `Leffert's Pond` / `Lefferts Pond` |
+ * | possessive `s` | `Clark Pond` / `Clarks Pond` · `Howes Pond` / `Howe Pond` |
+ * | word order | `Salem Lake` / `Lake Salem` · `Lake Sadawga` / `Sadawga Lake` |
+ *
+ * **Typos are deliberately NOT normalised, and that line is the important part.** `Lake Runnemede` /
+ * `Lake Runnenede`, `Therman W. Dix` / `Thurman W. Dix` and `Little Eligo` / `Little Elligo` all
+ * differ by one character and would fall to an edit-distance rule — but so do **`Bear Pond` and
+ * `Bean Pond`**, which are two different lakes. A structural difference is provably the same name
+ * spelled twice; a one-character difference only looks like one. Those go to a human.
+ *
+ * Word order is sorted rather than compared in sequence because `Lake X` and `X Lake` are the same
+ * place in every one of these cases and in no case a different one.
+ */
 export function sameName(a: string, b: string): boolean {
   const fold = (s: string) =>
-    s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim().replace(/\s+/g, ' ');
+    s
+      .normalize('NFD')
+      .replace(/[̀-ͯ]/g, '') // accents
+      .toLowerCase()
+      .replace(/[’']/g, '') // Harvey's → harveys
+      .split(/[\s\-–]+/)
+      .filter((w) => w.length > 0)
+      .map((w) => w.replace(/s$/, '')) // harveys → harvey, ponds → pond
+      .sort()
+      .join(' ');
   return fold(a) === fold(b);
+}
+
+/**
+ * Class pairs that **look like a disagreement and are not** (founder call, 2026-08-04).
+ *
+ * Both entries have the same shape: **our vocabulary draws a distinction the federal catalogue does
+ * not, and we have already written down which way it resolves.** NHD classes a body by what it *is*;
+ * we class two kinds of body by what they *do to a person on the ice*. When NHD says `LakePond` and
+ * OSM says `reservoir`, the two are not contradicting each other — they are answering different
+ * questions, and both independently agree it is still water of a non-wetland kind.
+ *
+ * So these score as **agreement**, and the rank in `CLASS_RANK` picks the stored value. Scoring them
+ * `low` was measurably wrong in the way that matters: it put **1,437 rows** into a review queue where
+ * a moderator would have confirmed a rule we already trust, every time, and a queue that is 70%
+ * foregone conclusions is one nobody finishes.
+ *
+ * **`wetland` is deliberately absent from every pair.** Open-water-versus-bog is the one class
+ * disagreement that is about the substance of the water rather than about vocabulary, it is what
+ * D96's admission rules turn on, and mis-resolving it is what deleted 123 bodies NHD calls
+ * `LakePond`. Those 160 conflicts stay in the queue.
+ */
+const RECONCILABLE_CLASS_PAIRS: readonly (readonly [WaterBodyClass, WaterBodyClass])[] = [
+  // A dammed natural lake. NHD calls it what it is; we call it what it is used for, because that is
+  // what carries access rules. 1,419 bodies, in both directions.
+  ['reservoir', 'lakePond'],
+  // A deadwater or stillwater. NHD publishes it as a waterbody because hydrologically it is one; we
+  // separate it because there is current under the ice. 18 bodies.
+  ['river', 'lakePond'],
+];
+
+/** Do two class claims mean the same thing once our own precedence is applied? */
+export function classesReconcile(a: WaterBodyClass, b: WaterBodyClass): boolean {
+  if (a === b) return true;
+  return RECONCILABLE_CLASS_PAIRS.some(([x, y]) => (a === x && b === y) || (a === y && b === x));
 }
 
 /** The per-attribute scores carried on a merged body. */
@@ -180,7 +244,10 @@ export function scoreBody(input: {
     // scoring it as a claim made 6,756 bodies where OSM said nothing and NHD said `LakePond` read as
     // "the catalogues conflict", which was most of a 3,999-row review queue nobody could have worked.
     // Same principle as 3DHP's `silent` — a source with no opinion does not get a vote.
-    cls: scoreAttribute(input.classes.filter((c) => c.value !== 'unclassified')),
+    cls: scoreAttribute(
+      input.classes.filter((c) => c.value !== 'unclassified'),
+      classesReconcile,
+    ),
     depth: scoreAttribute(input.depths),
   };
 }
