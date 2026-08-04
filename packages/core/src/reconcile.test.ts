@@ -4,6 +4,7 @@ import { polygonBBox } from './geometry';
 import {
   decideMatch,
   findCollapsedDuplicates,
+  isNearMiss,
   RECONCILE_MIN_IOU,
   type ReconcileCandidate,
   reconcileOne,
@@ -236,5 +237,22 @@ describe('the area bound — an exact skip, not a heuristic', () => {
     expect(scoreCandidates(target(t), [candidate('c', c)], { minIouWithGnis: 0.1 })).toHaveLength(
       1,
     );
+  });
+});
+
+describe('isNearMiss', () => {
+  const cand = (iou: number) => ({ id: 'x', iou, gnisAgrees: false });
+
+  // 815 of the 9,022 unmatched bodies had a real candidate; 196 were within 0.05 of the bar. Today
+  // they are indistinguishable from "no catalogue has heard of this lake", which is a different fact.
+  it('separates a rejected candidate from nothing at all', () => {
+    expect(isNearMiss({ verdict: 'none', best: cand(0.47) })).toBe(true);
+    expect(isNearMiss({ verdict: 'none', best: cand(0.12) })).toBe(false);
+    expect(isNearMiss({ verdict: 'none' })).toBe(false);
+  });
+
+  it('is a reading of `none`, never of a match — nothing may be written on it', () => {
+    expect(isNearMiss({ verdict: 'matched', id: 'x', iou: 0.9, gnisAgrees: false })).toBe(false);
+    expect(isNearMiss({ verdict: 'ambiguous', candidates: [cand(0.6), cand(0.55)] })).toBe(false);
   });
 });

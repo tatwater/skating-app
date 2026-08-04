@@ -108,6 +108,29 @@ export type ReconcileOutcome =
   /** Nothing overlapped enough. Ordinary: NHD holds water OSM does not, and the reverse. */
   | { readonly verdict: 'none'; readonly best?: ScoredCandidate | undefined };
 
+/**
+ * A `none` that **very nearly wasn't** — a real candidate that fell just under the bar.
+ *
+ * Measured over the 2026-08-03 run: of 9,022 unmatched bodies, **815 had a best candidate scoring
+ * above zero**, 350 of them between 0.40 and the 0.50 bar and **196 within 0.05 of it**. Today all
+ * 9,022 look identical in the output, which conflates two completely different facts — *"no catalogue
+ * has ever heard of this lake"* and *"we found its counterpart and rejected it by two points"*. The
+ * first is coverage; the second is a threshold, and only one of them is worth a human's time.
+ *
+ * Deliberately **not a fourth verdict**. Nothing may be written on a near miss — the bar exists
+ * because below it a bay inherits its parent's identity — so promoting it to a verdict would invite
+ * exactly the write it must not license. It is a *reading* of `none`, for the ledger and the queue.
+ */
+export const RECONCILE_NEAR_MISS_IOU = 0.4;
+
+/** Did this `none` reject a genuine candidate rather than find nothing? */
+export function isNearMiss(
+  outcome: ReconcileOutcome,
+  threshold = RECONCILE_NEAR_MISS_IOU,
+): boolean {
+  return outcome.verdict === 'none' && (outcome.best?.iou ?? 0) >= threshold;
+}
+
 export interface ReconcileOptions {
   minIou?: number;
   minIouWithGnis?: number;
@@ -196,6 +219,16 @@ export function decideMatch(
   if (second && best.iou - second.iou < minMargin) {
     // Geometry cannot separate them. Picking the marginally larger number here is how a lake in a
     // chain acquires its neighbour's identity — and the error would be invisible afterwards.
+    //
+    // **This fired zero times across 21,665 bodies on the 2026-08-03 run, and the reason is not that
+    // the rule is dead.** Two candidates both clearing 0.50 against one target must overlap each
+    // other heavily, which a catalogue deduped on its own primary key does not produce. The case it
+    // was written for is the *split lake*, which clears the lower `minIouWithGnis` bar (0.30) — and
+    // that bar never applied, because the stored corpus carries **no GNIS ids at all**: the OSM
+    // transform never captured `gnis:feature_id`, though 35.3% of named features have one.
+    //
+    // So the precondition was missing, not the rule. Matching source-to-source rather than
+    // corpus-to-source puts GNIS on both sides for the first time, and this becomes reachable.
     return { verdict: 'ambiguous', candidates: viable };
   }
 
