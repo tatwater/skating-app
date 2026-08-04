@@ -705,8 +705,19 @@ export const listForClassificationAudit = internalQuery({
       rows: page.page.map((b) => ({
         type: b.type,
         name: b.name,
+        // The join key back to the offline artifacts — `.scratch/corpus.ndjson` carries the polygons
+        // this projection deliberately omits, and an audit that needs geometry (bay containment,
+        // say) joins the two rather than paging 18,383 polygons a hundred at a time.
+        externalId: b.externalId ?? null,
         nhdId: b.nhdId ?? null,
         acres: Math.round((b.surfaceAreaSqM ?? 0) / 4046.8564224),
+        // Depth rides along because the class rules now read it: an unnamed body deep enough to be
+        // unambiguously a lake is promoted out of `unclassified` rather than waiting for a moderator.
+        maxDepthM: b.maxDepthM ?? null,
+        meanDepthM: b.meanDepthM ?? null,
+        // Elevation separates a tidal bay from a lake bay better than geometry does: the ocean is at
+        // zero and every lake in the region is not.
+        elevationM: b.elevationM ?? null,
       })),
       cursor: page.continueCursor,
       isDone: page.isDone,

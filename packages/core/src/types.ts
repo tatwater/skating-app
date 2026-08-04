@@ -28,7 +28,7 @@ export type UserRole = (typeof USER_ROLES)[number];
 export const USER_STATUSES = ['active', 'suspended', 'banned', 'deleting', 'deleted'] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
 
-/** Water body kinds (D4/D14). */
+/** Water body kinds (D4/D14). **Superseded by `WATER_BODY_CLASSES`** — see there. */
 export const WATER_BODY_TYPES = [
   'lake',
   'pond',
@@ -40,6 +40,34 @@ export const WATER_BODY_TYPES = [
   'other',
 ] as const;
 export type WaterBodyType = (typeof WATER_BODY_TYPES)[number];
+
+/**
+ * What kind of water this is — **the vocabulary the three catalogues get mapped into** (N7, D109).
+ *
+ * Five values, and each one earned its place by being a distinction some source actually draws and
+ * some consumer actually needs:
+ *
+ * | | why it exists |
+ * | --- | --- |
+ * | `lakePond` | NHD's own class is `LakePond` and 3DHP's is `Lake`; **neither separates a lake from a pond**, and no evidence-based definition does either. The one published attempt ([Richardson et al. 2022](https://www.nature.com/articles/s41598-022-14569-0): < 5 ha, < 5 m, < 30% emergent) would rename 4,283 New England "Ponds" into lakes, Great Pond's 8,520 acres among them. The regional name is the local truth and the limnology is not, so we stopped drawing the line. |
+ * | `wetland` | plain English for what NHD calls `SwampMarsh` and OSM spreads across eight `wetland=*` values. **The one class with teeth**: it is the only value `belongsInCorpus` reads, because unnamed wetland is held to a much higher area bar. |
+ * | `reservoir` | kept **not** because the catalogues agree — NHD classes 1,717 of our reservoirs as LakePond — but because a reservoir may carry use restrictions, access rules and cleanliness expectations a lake does not. That is a product concern, so the product keeps the class. |
+ * | `bay` | an arm of a larger body. Freshwater ones (Alton Bay, North Bay, Melvin Bay) are destinations; tidal ones are not water we cover at all, and elevation separates the two cleanly. |
+ * | `unclassified` | **the honest name for what used to be `other`.** `other` read as a decided category; it was 55% of the corpus and meant "nobody told us". Naming it accurately is what makes it a prompt for a moderator rather than a bucket that stops being looked at. |
+ *
+ * **Migration.** `WATER_BODY_TYPES` above is the stored vocabulary until N7's re-import lands, and is
+ * retained so nothing has to change in step with the ETL. `lake` and `pond` both fold into
+ * `lakePond`, `marsh` into `wetland`, `other` into `unclassified`, and the never-written `river` /
+ * `stream` values disappear — flowing water is dropped at classification, not stored and ignored.
+ */
+export const WATER_BODY_CLASSES = [
+  'lakePond',
+  'wetland',
+  'reservoir',
+  'bay',
+  'unclassified',
+] as const;
+export type WaterBodyClass = (typeof WATER_BODY_CLASSES)[number];
 
 /** Coarse overall skating quality (D23) — never a safety verdict (D3). */
 export const SKATE_QUALITIES = ['great', 'good', 'fair', 'poor'] as const;

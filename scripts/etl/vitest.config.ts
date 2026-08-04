@@ -14,6 +14,9 @@ export default defineConfig({
       exclude: [
         'src/**/*.test.ts',
         'src/auditArchives.ts',
+        // Subprocess + file-I/O glue. Every classification decision it reports is made by
+        // `@skating/core`'s `waterClass`, which is tested there against named real bodies.
+        'src/classifyDryRun.ts',
         'src/cli.ts',
         'src/fetchExtract.ts',
         'src/fetch3dhp.ts',

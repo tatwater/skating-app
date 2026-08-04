@@ -73,6 +73,7 @@ export * from './trackQueue';
 export * from './types';
 export * from './units';
 export * from './visibility';
+export * from './waterClass';
 export * from './weather';
 export * from './weatherConditions';
 export * from './weatherStrip';
