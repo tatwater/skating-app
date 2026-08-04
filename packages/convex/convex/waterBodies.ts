@@ -566,6 +566,86 @@ export const listForReconcile = internalQuery({
   },
 });
 
+/**
+ * Apply the OSM ↔ NHD reconciliation — campaign step 2's write half (N7, D93).
+ *
+ * ## Why a match and a duplicate group are handled differently
+ *
+ * **A collapsed group must NOT receive the `nhdId`.** When two of our bodies both match one NHD
+ * feature, writing that id to both would put the corpus into precisely the state `resolveUpsert`
+ * refuses to work with — one identifier resolving to two rows — and the next import would return
+ * `conflict` for a lake we ourselves broke. So the id is withheld and the pair goes to the dedup
+ * queue instead.
+ *
+ * That is not a consolation prize: **the duplicate is the finding**. OSM cannot see that
+ * `way/150404999` and `relation/2602300` are both Long Pond; NHD can, because both land on one
+ * `Permanent_Identifier`. Fifty-five such groups exist, and the `nhdId` becomes writable on whichever
+ * row survives the merge.
+ *
+ * `near_certain` rather than `suspected_duplicate` because the evidence is unusually strong: two
+ * independent catalogues, plus a geometric proof that the two bodies overlap each other (to both
+ * clear 0.5 IoU against one candidate, each must cover more than half of it). D36's queue exists for
+ * exactly this decision, and merging is a moderator action, never an import's.
+ *
+ * ## What it will not overwrite
+ *
+ * An existing `nhdId` is left alone — it was either set by a later reconciliation or by hand, and both
+ * outrank a restatement. A body already marked `merged` keeps that status; re-opening a settled merge
+ * from an import would undo a moderator.
+ */
+export const importReconciliation = internalMutation({
+  args: {
+    matches: v.optional(v.array(v.object({ key: v.id('waterBodies'), nhdId: v.string() }))),
+    duplicateGroups: v.optional(v.array(v.array(v.id('waterBodies')))),
+  },
+  handler: async (ctx, { matches, duplicateGroups }) => {
+    let idWritten = 0;
+    let idAlreadySet = 0;
+    let missing = 0;
+    for (const { key, nhdId } of matches ?? []) {
+      const body = await ctx.db.get(key);
+      if (!body) {
+        missing++;
+        continue;
+      }
+      if (body.nhdId !== undefined) {
+        idAlreadySet++;
+        continue;
+      }
+      await ctx.db.patch(key, { nhdId });
+      idWritten++;
+    }
+
+    let flagged = 0;
+    let flagSkipped = 0;
+    for (const group of duplicateGroups ?? []) {
+      const present = (await Promise.all(group.map((id) => ctx.db.get(id)))).filter(
+        (b): b is NonNullable<typeof b> => b !== null,
+      );
+      if (present.length < 2) {
+        flagSkipped++;
+        continue;
+      }
+      for (const body of present) {
+        if (body.dedupStatus === 'merged') {
+          flagSkipped++;
+          continue;
+        }
+        const others = present.filter((o) => o._id !== body._id).map((o) => o._id);
+        await ctx.db.patch(body._id, {
+          dedupStatus: 'near_certain',
+          // Union rather than replace: a body may already have candidates from the D36 create-time
+          // check, and dropping those would lose a signal a moderator has not acted on yet.
+          duplicateCandidateIds: [...new Set([...(body.duplicateCandidateIds ?? []), ...others])],
+        });
+        flagged++;
+      }
+    }
+
+    return { idWritten, idAlreadySet, missing, flagged, flagSkipped };
+  },
+});
+
 export const backfillCatalogueIds = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {

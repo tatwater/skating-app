@@ -17,7 +17,8 @@
     "archive-3dhp": "tsx src/fetch3dhp.ts",
     "measure-3dhp": "tsx src/measure3dhp.ts",
     "audit-archives": "tsx src/auditArchives.ts",
-    "reconcile": "tsx src/reconcileNhd.ts"
+    "reconcile": "tsx src/reconcileNhd.ts",
+    "load-reconciliation": "tsx src/loadReconciliation.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",
