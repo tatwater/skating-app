@@ -1,247 +1,148 @@
-# HANDOFF — N7, where it stands and the classification proposal
+# HANDOFF — N7: the master list, and everything building it exposed
 
-> **Written 2026-08-04**, at the end of a long build thread. Companion to
-> [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md), which holds the decisions; this holds
-> **state, the open proposal, and the things it would be expensive to re-learn**.
+> **Rewritten 2026-08-05.** Supersedes the 2026-08-04 version, whose "open proposal: classification"
+> is now built and whose numbers are all superseded.
 >
-> Branch: **`phase-n7-unified-corpus`**, 23 commits, nothing pushed. Working tree clean at the last
-> commit; full suite green (11 packages).
+> Branch **`phase-n7-unified-corpus`**, 33 commits, nothing pushed. Ten commits this session
+> (`402bd71`…`bcbb108`). Full suite green: 11 packages, 1,522 core tests.
 >
-> Campaign id: **`n7-20260803`**. `/admin/imports` is the source of truth for what ran, not this doc.
+> **Convex writes this session were confined to `adminAreas`.** `waterBodies` was not touched — the
+> corpus is still the 18,383 rows the prune left. The master list exists only as a local artifact.
 
 ---
 
 ## Read this first
 
-**Convex data has been written.** Unlike the N6c handoff, this campaign is past the read-only stage:
-the prune deleted 3,282 bodies and three backfills wrote to every remaining row. **The corpus is
-18,383 bodies**, down from 21,665.
+**The merge is built and runs end to end, but nothing has been upserted.** `master.ndjson` holds
+27,074 bodies against a live corpus of 18,383, and the gap between those two numbers is `resolveUpsert`
+— which is still wired to nothing. That is the next piece.
 
-**Nothing is deployed to prod.** Everything is dev (`agile-bee-397`).
-
----
-
-## Campaign state
-
-| step | state | detail |
-| --- | --- | --- |
-| 0 · wipe the run ledger | ⬜ **never done** | the three orphaned `running` rows from N6c are still there |
-| 1 · acquire NHD | ✅ | 924 MiB, 5 states → `skating-raw-nhd` |
-| 1b · acquire 3DHP | ✅ | 409 MiB clip → `skating-raw-3dhp`; the 11.9 GB source was hashed and deleted per D102 |
-| 2 · reconcile OSM ↔ NHD | ✅ | 12,081 `nhdId` written · 100 bodies flagged `near_certain` |
-| 2b · reconcile ↔ 3DHP | ⬜ | **never run — see §The 3DHP lane** |
-| 3 · D92 bake-off | ⬜ | |
-| 4 · identity | ✅ | 18,383 `waterBodyKey` minted · `osmId` + `geometrySource` backfilled |
-| 5 · unified re-import | ⬜ | **the gap-fill; the phase's original point. See §What step 5 actually needs** |
-| 6 · prune | ✅ | 21,665 → 18,383 (moved early per D100) |
-| 7 · D97 audit report | ⬜ | partially done ad hoc; `listForClassificationAudit` is its data source |
-| 8 · admin areas | ⬜ | |
-| 9 · depth + elevation | ⬜ | elevation should move to 3DEP/EPQS per D101 |
-| 10 · bathymetry | ⬜ | |
-| 11 · wind climate | ⬜ | archive rebuild is a hard prerequisite; mirror is stood up, `.raw/` is not |
-| 12 · regionStats | ⬜ | **still zero rows** — this is a first computation, not a refresh |
-
-**Corpus today:** 18,383 — `other` 10,033 · pond 3,756 · reservoir 2,393 · lake 1,376 · marsh 572 ·
-bay 253. By state: NY 7,282 · ME 4,230 · MA 3,823 · NH 2,254 · VT 878.
+**Every number below balances.** 178,690 groups = 11,631 refused + 35,637 out of region + 104,348
+filtered + 27,074 kept. The first time the pipeline has been checkable that way.
 
 ---
 
-## The open proposal: classification
+## What exists now
 
-`other` is **55% of the corpus** and the largest unknown in it. Measured 2026-08-04.
-
-### What `other` actually means
-
-Traced through `waterBodyTypeFromOsmTags` and counted against the Vermont extract:
-
-| why a feature lands in `other` | count | reading |
-| --- | --- | --- |
-| `natural=water` with **no** `water=*` subtag | **3,326 (81%)** | *not yet categorised* — OSM didn't say |
-| `water=<value we don't map>` | 780 (19%) | *not in one of our classes* |
-
-So it is overwhelmingly **"not yet categorised"**, which by the founder's stated criterion means the
-wetland rules must **not** be applied to it wholesale.
-
-### 1. Borrow NHD's own class — the biggest win, and free
-
-**67% of `other` (6,756 of 10,033) carries an `nhdId` we can look up**, and NHD's own FTYPE says:
-
-| | count |
+| | |
 | --- | --- |
-| **390 LakePond** | **6,584** |
-| 466 SwampMarsh | 127 |
-| 436 Reservoir | 40 |
-| 493 Estuary | 5 |
+| `packages/core/src/waterClass.ts` | every OSM / NHD / 3DHP class value → our five-value enum, plus a bilingual name-keyword table |
+| `packages/core/src/confidence.ts` | per-attribute agreement scoring + the review-queue predicate |
+| `scripts/etl/src/merge.ts` | **the master list** — three catalogues, three matching lanes, one filter |
+| `scripts/etl/src/classifyDryRun.ts` | the read-only classification funnel over all three corpora |
+| `scripts/etl/src/gnisArchive.ts` | the GNIS gazetteer lane (D105) |
+| `scripts/admin-areas/src/fetchStates.ts` | Census TIGER boundaries, all three levels |
 
-Authoritative rather than inferred, no new data, and it resolves two thirds of the corpus's biggest
-unknown. **Do this first.**
-
-The FTYPE→our-enum mapping is D96's parity question and is already reasoned about in the phase doc.
-
-### 2. Name keywords — safe for two words, catastrophic for the rest
-
-**Tested against NHD's own class over 8,604 named bodies rather than assumed:**
-
-| keyword | n | agrees with NHD |
-| --- | --- | --- |
-| `lake` | 2,305 | **99.5%** ✅ |
-| `pond` | 5,737 | **99.1%** ✅ |
-| `reservoir` | 500 | **7.0%** ⛔ |
-| `marsh` | 28 | 32.1% ⛔ |
-| `swamp` | 15 | 46.7% ⛔ |
-| `bog` | 19 | **0.0%** ⛔ |
-
-**"Reservoir" is the trap.** Sugar Hill Reservoir, Gulf Brook Reservoir and Therman W. Dix Reservoir
-are all NHD `LakePond` — a named reservoir is usually a lake that was dammed, and NHD classes it by
-what it *is*. Shipping keyword classification without this test would have mis-typed ~465 bodies with
-total confidence.
-
-**Proposal:** keyword fallback for **`lake` and `pond` only**, only where no `nhdId` exists, and
-**into a moderator queue as a suggestion** rather than applied silently (founder's framing: *"a mod
-just says 'yep, that's what that is'"*). Never keyword-classify reservoir or wetland.
-
-> ⚠️ **A finding this raises about our existing data.** Moose Bog, Great Swamp and McDaniels Marsh are
-> all `LakePond` in NHD. That suggests **our own `marsh` class may be over-assigned**, which matters
-> because D96 now deletes unnamed wetland under 50 acres. Worth checking before leaning harder on the
-> class. Nothing has been deleted on a *name* basis — the prune used `type`, which comes from OSM's
-> `wetland=marsh` tag — but if that tag is unreliable, some of the 3,282 may have been lakes.
-
-### 3. Drop at the filter step
-
-Values seen in the VT extract that reach `other` through `water=<value>`:
-
-```
-basin 358 · wastewater 268 · oxbow 122 · pool 10 · stream_pool 8
-quarry_lake 2 · swamp 2 · waterfall 2 · fountain 2 · faucet 2 · high 2 · rapids 1
+```bash
+pnpm --filter @skating/etl merge                  # the master list → .scratch/merge/master.ndjson
+pnpm --filter @skating/etl classify-dry-run       # classification funnel, read-only
+pnpm --filter @skating/etl archive-gnis           # GNIS → .raw-gnis/ (mirrored)
+pnpm --filter @skating/admin-areas fetch-states   # TIGER → adminAreas
+scripts/etl/mirror-gnis-r2.sh push
 ```
 
-**Drop:** `wastewater`, `basin`, `waterfall`, `fountain`, `faucet`, `pool`, `stream_pool`.
-`pool` in OSM is usually a swimming pool; `stream_pool` is a widening in a stream, i.e. flowing water
-we already defer. **Keep:** `oxbow`, `quarry_lake`. **`swamp` follows the wetland rule** (named, or
-≥ 50 acres).
+## The master list, as it stands
 
-Put this in the **main filter step**, beside the class and area filters, so nothing downstream ever
-trips over a sewage lagoon. The corpus already contains `Rochester Sewage Lagoons`, `Lincoln Sewage
-Lagoons`, `Lagoon 1`, `Lagoon 2` and `Lagoon 3`.
+```
+groups            178,690
+refused outright   11,631   vetoed as ocean, or every catalogue said drop
+outside 5 states   35,637
+named by GNIS         526   → 306 ADMITTED by that name alone
+kept               27,074
 
----
-
-## The Meadow Lake class — solved, not yet built
-
-The one plan fixture that did not reproduce. It is **not one body and not a manual fix**.
-
-Same name + overlapping geometry + area ratio under the 0.30 skip floor, across the whole corpus:
-
-| pair | small | large | small-inside-large |
-| --- | --- | --- | --- |
-| **meadow lake** | 5 ac | 24 ac | **0.999** |
-| **washburn pond** | 2 ac | 8 ac | **1.000** |
-| great east lake | 59 ac | 1,764 ac | 0.000 |
-| melvin bay | 1 ac | 287 ac | 0.002 |
-| higley flow | 24 ac | 349 ac | 0.000 |
-
-**Two are real duplicates; three merely share a name — and containment separates them perfectly.**
-
-**Why IoU cannot catch these, ever:** a 5× area disagreement is indistinguishable from a bay inside
-its parent, which is precisely what `RECONCILE_MIN_IOU` exists to refuse. Containment is the
-complementary test, not a tuning of the same one.
-
-**Proposed rule:** *same name + smaller body ≥ 95% contained in the larger → duplicate → dedup
-queue.* Catches 2/2, rejects 3/3. **Queue it, never auto-merge** — same principle as the 55 groups
-already flagged.
+dropped  66,293 unnamed wetland <50ac · 37,896 unnamed 1–5ac · 159 named wetland under floor
+class    lakePond 18,794 · wetland 3,884 · reservoir 2,706 · unclassified 1,533 · bay 130 · river 27
+sources  1: 6,480 · 2: 6,310 · 3: 14,209 · 4: 75
+queue    1,388   class 664 · name 512 · bay-without-parent 159 · same-source-dup 92
+```
 
 ---
 
-## The 3DHP lane
+## The rule that governs everything here
 
-**Never run.** `threeDhpId` is empty on every row, and there is no schema field for it yet.
+**Merge first, filter once.** The campaign as originally built filtered each source *before* anything
+merged, which is how OSM's `wetland=marsh` tag deleted **123 bodies NHD calls `LakePond`**, 17 of them
+GNIS-named. The only rule safe to apply pre-merge is D96 rule 1 (nothing under an acre), because it is
+the only admission rule no other source can overturn.
 
-3DHP was measured *against NHD* — 7,878 lakes across ME/VT/NY, **zero disagreements ≥ 0.1%** — so it
-adds nothing as a geometry source today. But the founder's call stands and is right:
+**That principle recurs at three depths, and each one was a separate near-miss:**
 
-> *"We should do that before we re-import, no? Prove all the lanes & deduping work as intended, even
-> though the work is duplicative (this year)?"*
-
-Building a three-lane pipeline and only ever exercising two leaves the third untested until the year
-it matters. **The reconciler is already source-agnostic** — `reconcileOne` takes candidates, not "NHD
-candidates" — so the lane is cheap, and it re-validates the 3DHP≡NHD claim end-to-end rather than by
-area comparison alone.
-
----
-
-## What step 5 actually needs
-
-**"A named NHD lake with no body" means no row in our `waterBodies` table** — never that the NHD
-feature lacks geometry. Beau Lake is a complete 7.594 km² polygon sitting in the archive on disk; we
-know its size and its Québec span *because* we have it. What is missing is our row, because
-Geofabrik's OSM extract clips the border.
-
-**The gap:** `importCanonical` and the schema already support `source: 'nhd'`, and `catalogueIds`
-handles it — **but the transform only reads OSM.** There is no NHD → canonical lane. That is the
-substance of step 5, and it is what finally delivers the phase's original motivation:
-
-**~1,926 named NHD features in-region have no body.** (An earlier figure of 3,552 was wrong — it
-counted the state geodatabases' bleed into NJ/PA/Québec/New Brunswick, which we would never import.)
+1. **Class** — a body OSM calls wetland and NHD calls LakePond. Merge, then filter.
+2. **Region** — the state geodatabases are not clipped to their states. Clip the *merged* body.
+3. **Name** — GNIS must be read *before* the floor, because D96 admits a named wetland at 5 acres and
+   refuses an unnamed one under 50. **306 bodies exist solely because of that ordering.**
 
 ---
 
 ## Things it would be expensive to re-learn
 
-**Every identifier has more than one spelling, and every wrong rule fails silently.** Four found:
-NHD `permanent_identifier` is a GUID *or* a plain numeric (84.4% numeric — a GUID-only rule would
-have dropped five sixths of the join keys); GNIS is zero-padded in NHD and a bare int in 3DHP (joined
-raw: **0 of 3,031** matched); NHD field names are lower-case in the geodatabase and upper-case from
-REST; `ogr2ogr -spat` reads its envelope in the **source** SRS, so a degrees box against 3DHP's
-Albers metres clips an empty file and exits 0. The mechanism against this is **`DropLedger` +
-`expectAcceptance`** in `@skating/run-log`, and `pnpm --filter @skating/etl audit-archives`.
+**A refusal that survives a merge is worse than no refusal.** `null` means "not water we cover";
+`unclassified` means "water, nobody said what kind". Collapsing the first into the second admitted
+**Lake Huron and seven polygons of the Atlantic Ocean**. And some refusals must *veto* rather than be
+weighed — NHD publishes Lake Erie as FTYPE 390 LakePond and Long Island Sound as 493 Estuary.
 
-**NHD writes `gnis_id = -1` to mean "no GNIS entry"** — 1,032 rows, cross-border Québec lakes. Treated
-as an id it would collapse **855 unrelated lakes onto one body**. It is in `GNIS_SENTINELS`.
+**A threshold taken from prose is a guess.** The polygon-agreement bar was set at 0.85 from a sentence
+in the phase plan. The measured OSM-vs-NHD median over 12,643 pairs is **0.883** — the bar sat *below*
+the median and called 38.6% of all matched pairs a disagreement.
 
-**Do not extrapolate from a slice of the corpus.** Pagination is by creation order, which is import
-order, which is **by state**. A 6,000-row sample put marsh at 12.1% where the first page has 20.6%,
-and the first projection of the prune came out **40% low**. Scan the whole thing.
+**`unclassified` and `silent` are not votes.** Scoring `unclassified` as a class claim made 6,756
+bodies read as "the catalogues conflict" — most of a 3,999-row queue nobody could have worked. Same
+for 3DHP, which publishes **no wetland class at all**, so its silence is never dissent.
 
-**A predicate and a deleter want opposite answers on missing data.** An import must refuse what it
-cannot prove; a prune must keep it. Any rule needing a derived statistic carries that split — which
-is why D96's long-axis clause was dropped in favour of a plain area bar.
+**One source agreeing with itself is not corroboration.** NHD and 3DHP collapse to one vote (3DHP
+re-publishes NHD; 7,878 lakes, zero disagreements ≥ 0.1%). So does GNIS, because **NHD's `gnis_name`
+column IS GNIS**.
 
-**Convex limits that bit:** 16 MB read cap per function (not just 4,096 docs) — a full-corpus scan
-needs paging; 64 MB memory — an 8,000-row `paginate` with polygons blows it; only **one** `paginate`
-per function.
+**A control experiment over features only one source has measures coverage, not error.** The matcher
+error rate was reported as 15.53% before it was restricted to features *both* federal catalogues
+publish. The real figure is **1.14%**.
 
-**rclone issues a `CreateBucket` before its first upload**, which R2 refuses for any Object Read &
-Write token. Only bites an *empty* bucket. `--s3-no-check-bucket` is now in `scripts/lib/mirror-r2.sh`.
+**OSM relation assembly is silently unreliable.** State boundaries are relations whose member ways are
+shared with neighbours; a clipped extract cannot close the ring. `adminAreas` had **3 state rows and
+105 of 116 counties** for a year, and nothing said so. TIGER needs no assembly — and its vintage is in
+the URL, with TIGER2020 still served, which is why it is pinned rather than mirrored. GNIS is the
+opposite: **no vintage in the path, overwritten in place**, so it is archived and mirrored.
 
-**Prefer `Edit` against read content over scripted string-replace.** Three separate misses this
-thread: a doc section landed under the wrong heading, a runbook edit asserted and left the code
-committed without it, and a `sed`-generated mirror script pointed at the wrong bucket's `.env`.
+**OSM maps `admin_level` 7 AND 8 both to `town`.** In New York that is 999 towns plus 574 villages,
+and a village sits *inside* a town — so the town layer self-overlapped and containment was
+order-dependent.
+
+**`ogr2ogr -overwrite` does not replace a single-file datasource; it APPENDS.** Bit three times this
+session — a CSV, a GeoJSONSeq, and ten states from five. `rmSync` first.
+
+**`\b` is ASCII-only in JavaScript**, so `/\bétang\b/` matches nothing, silently. Names are folded
+through NFD before matching.
+
+**A drop-word list will delete real water.** `flow` names eight Adirondack impoundments including
+Higley Flow, a state park; `deadwater` names Debsconeag and Nesowadnehunk. A keep-word now outranks a
+drop-word in the same name.
+
+**Piping a long run through `tail` hides its progress** until the pipeline ends. Log to a file.
 
 ---
 
-## Commands
+## What is next, in order
 
-```bash
-pnpm --filter @skating/etl archive-nhd            # 5 state geodatabases → .raw-nhd/
-pnpm --filter @skating/etl archive-3dhp           # CONUS → clip → .raw-3dhp/waterbody/
-pnpm --filter @skating/etl measure-3dhp           # EDH coverage → /admin panel
-pnpm --filter @skating/etl audit-archives         # re-derive every id rule, fail loudly on drift
-pnpm --filter @skating/etl reconcile              # export + match + audit (read-only)
-pnpm --filter @skating/etl load-reconciliation    # write nhdId + dedup flags
-pnpm --filter @skating/etl prune-floor            # DRY by default; --apply to delete
-scripts/etl/mirror-nhd-r2.sh push
-scripts/etl/mirror-3dhp-r2.sh push
-```
+1. **`resolveUpsert` → `importCanonical`.** Still wired to nothing. `importCanonical` keys on
+   `(source, externalId)`, so an NHD feature would insert a duplicate of every OSM body we hold. This
+   is the only thing between `master.ndjson` and a corpus.
+2. **A clean merge run against committed code.** The current `master.ndjson` came from a build that
+   fetched GNIS inline to `.scratch/`; same 16,310 features, but re-run before trusting it.
+3. **The OSM↔NHD match-rate breakdown by class.** 30,283 of 91,315 (33%) and still unexplained.
+   Suspicion: wetland, where OSM traces vegetation and NHD traces hydrography, so IoU ≥ 0.5 fails
+   honestly. Unproven.
+4. **D92's bake-off.** The referee is our 2.4M soundings: `containedFraction` (a too-small polygon
+   loses) against D98's body-probed density (a too-big one loses). Geometry source is currently a
+   hardcoded OSM-first placeholder. Beau Lake merges at 2,457 acres from OSM against NHD's 1,876.6 —
+   a 31% disagreement on the phase's headline fixture.
+5. **Plan-doc revision** — `phase-N7-unified-corpus.md` still describes the old per-source ordering.
 
-**Local artifacts** (gitignored, regenerable): `scripts/etl/.raw-nhd/`, `.raw-3dhp/waterbody/`,
-`.scratch/corpus.ndjson` (**pre-prune**, 21,665 rows), `.scratch/nhd-postfloor.ndjson` (40,928),
-`.scratch/reconcile.ndjson` (the mapping — now partly stale, 452 of its bodies were pruned).
-
-**R2:** 4.31 GiB of 10 GB across seven buckets.
+**Deliberately not done:** Québec. It needs three new source lanes — StatCan boundaries, NHN/CanVec
+hydrography, CGNDB names. Only OSM crosses the border. The classifier's French keywords are already in.
 
 ---
 
 ## Related
 
 [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) · [`phase-N7b-corpus-by-request.md`](./phase-N7b-corpus-by-request.md) ·
-[`HANDOFF-wind-climate-archive.md`](./HANDOFF-wind-climate-archive.md) · [`01-decisions.md`](./01-decisions.md) (D91–D105)
+[`01-decisions.md`](./01-decisions.md) (D91–D110)
