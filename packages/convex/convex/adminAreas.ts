@@ -13,7 +13,7 @@ import { allLevels, bboxIntersects, cellForPoint, pointInPolygon } from '@skatin
 import { v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type QueryCtx, query } from './_generated/server';
+import { internalMutation, internalQuery, type QueryCtx, query } from './_generated/server';
 import { ADMIN_AREA_LADDER, syncAdminAreaCells } from './lib/cellIndex';
 import { ADMIN_AREA_LEVELS } from './lib/enums';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
@@ -189,4 +189,41 @@ export async function resolvePlaceForCoord(
 export const resolvePlace = query({
   args: { point: latLng },
   handler: (ctx, { point }) => resolvePlaceForCoord(ctx, point),
+});
+
+/**
+ * Page the boundary polygons out for an offline region clip — N7's merge step.
+ *
+ * **The five-state mask, and the only honest one we have.** The merge reads NHD and 3DHP from *state
+ * geodatabases that are not clipped to their states* — New Hampshire's reaches 46.09°N, into Maine
+ * and Québec — while OSM arrives as per-state extracts that are. Left unclipped the master list
+ * imports Québec (Grand lac Saint-François, Lac Aylmer), Ontario (Hamilton Harbor), New Jersey
+ * (Raritan Bay) and 1,300-odd others measured, purely because a neighbouring state's download
+ * happened to include them.
+ *
+ * **Counties and towns, not states.** Only three `state` rows exist — Vermont, Maine, Massachusetts
+ * — because New Hampshire's and New York's boundary relations reference ways outside their own
+ * extract and never close into a polygon. That failure is silent and it is why `resolvePlace`
+ * resolves those two through the finer levels instead. The 105 counties and 3,132 towns cover all
+ * five states, so their union is the mask.
+ *
+ * Paged at 100 like `listForReconcile`, for the same reason: a town polygon is not small, and
+ * Convex caps a transaction on read *bytes* well before it caps documents.
+ */
+export const listBoundariesForClip = internalQuery({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(200, Math.max(1, batchSize ?? 100));
+    const page = await ctx.db.query('adminAreas').paginate({ cursor: cursor ?? null, numItems });
+    return {
+      areas: page.page.map((a) => ({
+        level: a.level,
+        name: a.name,
+        bbox: a.bbox,
+        polygon: a.polygon,
+      })),
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
 });

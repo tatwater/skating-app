@@ -70,6 +70,7 @@ import {
   mergeReviewReasons,
   needsAttention,
   type OsmTagBag,
+  pointInPolygon,
   polygonBBox,
   RECONCILE_MIN_IOU,
   type ReconcileCandidate,
@@ -106,11 +107,37 @@ interface Feature {
   readonly id: string;
   readonly name: string;
   readonly cls: WaterBodyClass | null;
+  /** The classifier's token, e.g. `3dhp:featuretype=4`. Carried so a VETO can be recognised. */
+  readonly token: string;
   readonly gnisId?: string | undefined;
   readonly polygon: Polygon | MultiPolygon;
   readonly bbox: BBox;
   readonly areaSqM: number;
 }
+
+/** Flatten a verdict onto the fields a `Feature` carries. */
+function verdictFields(v: { cls: WaterBodyClass | null; token: string }) {
+  return { cls: v.cls, token: v.token };
+}
+
+/**
+ * Refusals that **no other catalogue may overrule** (founder call, 2026-08-04: no Great Lakes, no
+ * ocean, no Long Island Sound).
+ *
+ * The ordinary merge rule is that one source's refusal loses to another's class — that is what
+ * rescues a body OSM calls `wetland=marsh` and NHD calls `LakePond`, and it is the whole reason this
+ * file exists. But it is wrong here, and the first run proved it: NHD publishes **Lake Erie as FTYPE
+ * 390 LakePond** at 6.4 million acres and **Long Island Sound as FTYPE 493 Estuary** at 801,802,
+ * so a permissive merge hands the corpus an ocean on a technicality.
+ *
+ * `Ocean or Great Lake` is 3DHP's own dedicated class and there is no reading of it under which we
+ * want the body. A veto is the right shape precisely because it is *not* evidence to be weighed.
+ */
+const VETO_TOKENS: ReadonlySet<string> = new Set([
+  '3dhp:featuretype=4', // Ocean or Great Lake
+  'nhd:ftype=445', // SeaOcean
+  'nhd:ftype=493', // Estuary — tidal and saline; Long Island Sound is the fixture
+]);
 
 /** Applied to every lane before anything else: D96 rule 1, the only source-independent rule. */
 function admissible(areaSqM: number): boolean {
@@ -152,7 +179,7 @@ async function loadOsm(refresh: boolean): Promise<Feature[]> {
         source: 'osm',
         id,
         name,
-        cls: classifyWaterBody({ name, claim: classifyOsmTags(p) }).cls,
+        ...verdictFields(classifyWaterBody({ name, claim: classifyOsmTags(p) })),
         gnisId: gnis.ok ? gnis.value : undefined,
         polygon: f.geometry,
         bbox: polygonBBox(f.geometry),
@@ -272,10 +299,12 @@ function loadNhd(refresh: boolean): Feature[] {
         source: 'nhd',
         id: id.value,
         name,
-        cls: classifyWaterBody({
-          name,
-          claim: classifyNhd(Number(f.properties.ftype), Number(f.properties.fcode)),
-        }).cls,
+        ...verdictFields(
+          classifyWaterBody({
+            name,
+            claim: classifyNhd(Number(f.properties.ftype), Number(f.properties.fcode)),
+          }),
+        ),
         gnisId: gnis.ok ? gnis.value : undefined,
         polygon: f.geometry,
         bbox: polygonBBox(f.geometry),
@@ -335,8 +364,9 @@ function loadThreeDhp(refresh: boolean): Feature[] {
       source: '3dhp',
       id: String(f.properties.id3dhp),
       name,
-      cls: classifyWaterBody({ name, claim: classifyThreeDhp(Number(f.properties.featuretype)) })
-        .cls,
+      ...verdictFields(
+        classifyWaterBody({ name, claim: classifyThreeDhp(Number(f.properties.featuretype)) }),
+      ),
       gnisId: gnis.ok ? gnis.value : undefined,
       polygon: f.geometry,
       bbox: polygonBBox(f.geometry),
@@ -344,6 +374,79 @@ function loadThreeDhp(refresh: boolean): Feature[] {
     });
   }
   return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The region mask
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface Boundary {
+  readonly bbox: BBox;
+  readonly polygon: Polygon | MultiPolygon;
+}
+
+/**
+ * The five states, as counties and towns.
+ *
+ * Exported from `adminAreas` by `listBoundariesForClip` — see that function for why the mask is built
+ * from the finer levels rather than from `state` rows, and for what an unclipped merge imports.
+ */
+function loadBoundaries(): Boundary[] {
+  const file = join(SCRATCH, 'boundaries.ndjson');
+  if (!existsSync(file)) {
+    throw new Error(
+      `missing ${file} — export it first:\n` +
+        `  convex run adminAreas:listBoundariesForClip, paged into .scratch/merge/boundaries.ndjson`,
+    );
+  }
+  const out: Boundary[] = [];
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    const t = line.trim();
+    if (t.length === 0) continue;
+    const a = JSON.parse(t) as Boundary;
+    out.push(a);
+  }
+  return out;
+}
+
+/**
+ * Does any part of this body lie in our five states?
+ *
+ * **Any part, not its centre**, and that is the difference between keeping Beau Lake and losing it.
+ * Beau Lake is the phase's headline fixture — 1,875 acres, absent from the corpus because Geofabrik
+ * clips the Québec half — and a centre-based test on a body that straddles the border is a coin
+ * flip. Sampling the outline and keeping on the first hit answers the question we actually mean.
+ */
+function inRegion(
+  body: { polygon: Polygon | MultiPolygon; bbox: BBox },
+  grid: Map<string, Boundary[]>,
+): boolean {
+  const g = body.polygon;
+  const rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.coordinates.map((poly) => poly[0]);
+  const points: [number, number][] = [];
+  for (const ring of rings) {
+    if (!ring) continue;
+    const step = Math.max(1, Math.floor(ring.length / 8));
+    for (let i = 0; i < ring.length; i += step) {
+      const c = ring[i];
+      if (c) points.push([c[0] as number, c[1] as number]);
+    }
+  }
+  for (const [lng, lat] of points) {
+    const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
+    for (const b of grid.get(cell) ?? []) {
+      if (
+        lng < b.bbox.minLng ||
+        lng > b.bbox.maxLng ||
+        lat < b.bbox.minLat ||
+        lat > b.bbox.maxLat
+      ) {
+        continue;
+      }
+      if (pointInPolygon({ lat, lng }, b.polygon)) return true;
+    }
+  }
+  return false;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -491,6 +594,9 @@ function mergeGroup(members: Feature[]): Merged | null {
   // A group where SOME member refuses and another names a class keeps the class — that is the whole
   // point of merging before filtering, and it is what rescues a body OSM calls `wetland=marsh` and
   // NHD calls `LakePond`.
+  // A veto is not a vote — one source naming this the ocean ends the question. See VETO_TOKENS.
+  if (members.some((m) => VETO_TOKENS.has(m.token))) return null;
+
   const classes = members.map((m) => m.cls).filter((c): c is WaterBodyClass => c !== null);
   if (classes.length === 0) return null;
   const cls = CLASS_ORDER.find((c) => classes.includes(c)) ?? ('unclassified' as WaterBodyClass);
@@ -614,7 +720,20 @@ async function main(): Promise<void> {
   log(`grouped ${byId.size.toLocaleString()} features into ${groups.size.toLocaleString()} bodies`);
 
   // ── Merge, score, filter ──────────────────────────────────────────────────
+  log('loading the five-state mask…');
+  const boundaries = loadBoundaries();
+  const boundaryGrid = new Map<string, Boundary[]>();
+  for (const b of boundaries) {
+    for (const cell of cellsFor(b.bbox)) {
+      const bucket = boundaryGrid.get(cell);
+      if (bucket) bucket.push(b);
+      else boundaryGrid.set(cell, [b]);
+    }
+  }
+  log(`  ${boundaries.length.toLocaleString()} boundary polygons`);
+
   const refusedOutright = { count: 0 };
+  const outOfRegion = { count: 0 };
   const merged = [...groups.values()]
     .map((m) => {
       const out = mergeGroup(m);
@@ -663,6 +782,14 @@ async function main(): Promise<void> {
         bayWithoutParent = true;
         cls = 'unclassified';
       }
+    }
+
+    // **The region clip, applied to the merged body rather than to a lane.** A body only NHD knows
+    // about still has to be somewhere we cover; a body only OSM knows about already is, by
+    // construction. Testing once, after merging, is the same discipline as the floor.
+    if (!inRegion(group, boundaryGrid)) {
+      outOfRegion.count++;
+      continue;
     }
 
     if (!belongsInCorpus({ name: group.name, surfaceAreaSqM: group.areaSqM, type: cls })) {
@@ -725,7 +852,10 @@ async function main(): Promise<void> {
   lines.push('══ merged ═════════════════════════════════════════════════════');
   lines.push(`  groups            ${n(merged.length + refusedOutright.count)}`);
   lines.push(
-    `  refused outright  ${n(refusedOutright.count)}  (every catalogue said drop — ocean, river, canal, sewage)`,
+    `  refused outright  ${n(refusedOutright.count)}  (vetoed as ocean, or every catalogue said drop)`,
+  );
+  lines.push(
+    `  outside 5 states  ${n(outOfRegion.count)}  (the geodatabases are not clipped to their states)`,
   );
   lines.push(`  kept after filter ${n(kept.length)}`);
   lines.push('  dropped by the post-merge filter:');
