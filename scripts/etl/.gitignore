@@ -25,3 +25,11 @@
 # and is deleted after a successful clip; `waterbody/` holds the Northeast clip that IS mirrored.
 .raw-3dhp/
 .env.3dhp.local
+
+# The GNIS gazetteer archive (N7 / D105). Same rule as `.raw-nhd/` and more urgent than most: the
+# staged URL carries NO vintage and is overwritten in place, so this directory is the only version
+# record that exists. And a GNIS name decides admission, not just labelling — see `gnisArchive.ts`.
+.raw-gnis/
+
+# GNIS mirror config (holds no secrets, but stays local).
+.env.gnis.local

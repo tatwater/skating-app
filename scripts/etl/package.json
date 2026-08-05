@@ -20,7 +20,8 @@
     "merge": "tsx --max-old-space-size=12288 src/merge.ts",
     "classify-dry-run": "tsx src/classifyDryRun.ts",
     "reconcile": "tsx src/reconcileNhd.ts",
-    "load-reconciliation": "tsx src/loadReconciliation.ts"
+    "load-reconciliation": "tsx src/loadReconciliation.ts",
+    "archive-gnis": "tsx src/gnisArchive.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

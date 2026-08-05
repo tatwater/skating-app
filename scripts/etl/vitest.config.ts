@@ -21,6 +21,7 @@ export default defineConfig({
         'src/merge.ts',
         'src/fetchExtract.ts',
         'src/fetch3dhp.ts',
+        'src/gnisArchive.ts',
         'src/fetchNhd.ts',
         'src/load.ts',
         'src/loadReconciliation.ts',

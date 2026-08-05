@@ -44,7 +44,7 @@ export const CONFIDENCE_LEVELS = ['high', 'medium', 'low', 'none'] as const;
 export type Confidence = (typeof CONFIDENCE_LEVELS)[number];
 
 /** Which publisher a claim came from. */
-export const CLAIM_SOURCES = ['osm', 'nhd', '3dhp', 'name', 'user'] as const;
+export const CLAIM_SOURCES = ['osm', 'nhd', '3dhp', 'gnis', 'name', 'user'] as const;
 export type ClaimSource = (typeof CLAIM_SOURCES)[number];
 
 /**
@@ -53,6 +53,10 @@ export type ClaimSource = (typeof CLAIM_SOURCES)[number];
  * `nhd` and `3dhp` collapse to one; `name` is not a catalogue at all (it is the same string the
  * catalogue supplied, read a second way) and never corroborates the source it came from; `user` is a
  * moderator decision, which outranks the question rather than voting in it.
+ *
+ * **`gnis` gets no vote either, and that is not obvious.** It is a real independent authority — the
+ * body that assigns US place names — but NHD's own `gnis_name` column *is* GNIS, so counting them
+ * separately would be the NHD/3DHP mistake wearing a different hat: one source agreeing with itself.
  */
 export function independentVoices(sources: readonly ClaimSource[]): number {
   let federal = false;
@@ -86,8 +90,10 @@ export function scoreAttribute<T>(
   if (claims.some((c) => c.source === 'user')) return 'high';
   if (claims.length === 0) return 'none';
 
-  const catalogue = claims.filter((c) => c.source !== 'name');
-  // Nothing but a keyword read off the name. Better than silence, and never corroboration.
+  // `name` is a keyword read off a string a catalogue already supplied; `gnis` is where NHD's own
+  // name column comes from. Neither is a second opinion, so neither joins the vote.
+  const catalogue = claims.filter((c) => c.source !== 'name' && c.source !== 'gnis');
+  // Nothing but a keyword or a gazetteer lookup. Better than silence, and never corroboration.
   if (catalogue.length === 0) return 'medium';
 
   const [reference, ...rest] = catalogue;
@@ -133,7 +139,7 @@ export const POLYGON_DISAGREE_IOU = 0.7;
  */
 export function scorePolygonAgreement(claims: readonly AttributeClaim<number>[]): Confidence {
   if (claims.some((c) => c.source === 'user')) return 'high';
-  const catalogue = claims.filter((c) => c.source !== 'name');
+  const catalogue = claims.filter((c) => c.source !== 'name' && c.source !== 'gnis');
   if (catalogue.length === 0) return 'none';
   if (catalogue.length === 1 || independentVoices(catalogue.map((c) => c.source)) < 2) {
     return 'medium'; // one outline, uncorroborated — not a conflict, just unverified

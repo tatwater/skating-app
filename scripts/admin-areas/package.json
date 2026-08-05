@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual OSM \u2192 Convex administrative-boundary ETL (Phase 5). Not built or deployed.",
+  "description": "Manual OSM → Convex administrative-boundary ETL (Phase 5). Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
@@ -14,8 +14,12 @@
   },
   "dependencies": {
     "@skating/core": "workspace:*",
+    "@skating/run-log": "workspace:*",
+    "@turf/bbox": "^7.4.0",
+    "@turf/difference": "^7.4.0",
+    "@turf/helpers": "^7.3.5",
     "@turf/simplify": "^7.3.0",
-    "@skating/run-log": "workspace:*"
+    "@turf/union": "^7.3.5"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

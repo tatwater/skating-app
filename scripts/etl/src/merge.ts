@@ -80,6 +80,7 @@ import {
   type WaterBodyClass,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
+import { GNIS_STATE_CODES, GNIS_WATER_CLASSES, gnisTextPath, isNullIsland } from './gnisArchive';
 import { NHD_SOURCES, nhdArchiveKey, normalizeGnisId, normalizeNhdId } from './nhdArchive';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -374,6 +375,93 @@ function loadThreeDhp(refresh: boolean): Feature[] {
     });
   }
   return out;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GNIS — the gazetteer, consulted BEFORE the floor
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface GnisPoint {
+  readonly lng: number;
+  readonly lat: number;
+  readonly name: string;
+  readonly featureClass: string;
+}
+
+/**
+ * The Domestic Names gazetteer, per state — **the only lane whose output can change what is
+ * admitted, not just what is displayed.**
+ *
+ * A name here is not cosmetic. D96 admits a *named* wetland at five acres and refuses an unnamed one
+ * under fifty, so a GNIS name is the difference between Cicero Swamp existing and not. That is why
+ * this is read before `belongsInCorpus` rather than stamped on afterwards — the same ordering
+ * mistake, one level deeper, is what cost 123 LakePond bodies when each source filtered itself.
+ *
+ * Pipe-delimited text with a BOM, 2.77 MB for five states, public domain.
+ */
+function loadGnis(): Map<string, GnisPoint[]> {
+  const grid = new Map<string, GnisPoint[]>();
+  let n = 0;
+  for (const code of GNIS_STATE_CODES) {
+    const file = gnisTextPath(code);
+    if (!existsSync(file)) {
+      throw new Error(`missing ${file} — run \`pnpm --filter @skating/etl archive-gnis\` first`);
+    }
+    const text = readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
+    const lines = text.split('\n');
+    const header = (lines[0] ?? '').split('|');
+    const ix = (name: string) => header.indexOf(name);
+    const [iName, iClass, iLat, iLng] = [
+      ix('feature_name'),
+      ix('feature_class'),
+      ix('prim_lat_dec'),
+      ix('prim_long_dec'),
+    ];
+    if (iName < 0 || iClass < 0 || iLat < 0 || iLng < 0) {
+      throw new Error(`${code}: unexpected GNIS header — ${header.slice(0, 6).join('|')}`);
+    }
+    for (const line of lines.slice(1)) {
+      if (line.trim().length === 0) continue;
+      const cells = line.split('|');
+      const featureClass = cells[iClass] ?? '';
+      if (!GNIS_WATER_CLASSES.has(featureClass)) continue;
+      const lat = Number(cells[iLat]);
+      const lng = Number(cells[iLng]);
+      // `0,0` is GNIS's "no coordinate" and it is a real place — see `isNullIsland`.
+      if (!Number.isFinite(lat) || !Number.isFinite(lng) || isNullIsland(lat, lng)) continue;
+      const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
+      const bucket = grid.get(cell);
+      const point = { lng, lat, name: cells[iName] ?? '', featureClass };
+      if (bucket) bucket.push(point);
+      else grid.set(cell, [point]);
+      n++;
+    }
+  }
+  log(`  ${n.toLocaleString()} GNIS water features`);
+  return grid;
+}
+
+/**
+ * The single GNIS feature inside this outline, if there is exactly one.
+ *
+ * **Exactly one, or none.** A tidal bay swallows seven GNIS points (Great Bay contains Great Bay,
+ * plus six coves and inlets); picking the first would be arbitrary and picking the largest would need
+ * an area GNIS does not publish. Ambiguity here is a reason to stay unnamed, not to guess.
+ */
+function gnisNameFor(
+  body: { polygon: Polygon | MultiPolygon; bbox: BBox },
+  grid: Map<string, GnisPoint[]>,
+): string | undefined {
+  const found: GnisPoint[] = [];
+  for (const cell of cellsFor(body.bbox)) {
+    for (const p of grid.get(cell) ?? []) {
+      if (p.lng < body.bbox.minLng || p.lng > body.bbox.maxLng) continue;
+      if (p.lat < body.bbox.minLat || p.lat > body.bbox.maxLat) continue;
+      if (pointInPolygon({ lat: p.lat, lng: p.lng }, body.polygon)) found.push(p);
+      if (found.length > 1) return undefined;
+    }
+  }
+  return found[0]?.name;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -720,6 +808,9 @@ async function main(): Promise<void> {
   log(`grouped ${byId.size.toLocaleString()} features into ${groups.size.toLocaleString()} bodies`);
 
   // ── Merge, score, filter ──────────────────────────────────────────────────
+  log('loading the GNIS gazetteer…');
+  const gnisGrid = loadGnis();
+
   log('loading the five-state mask…');
   const boundaries = loadBoundaries();
   const boundaryGrid = new Map<string, Boundary[]>();
@@ -734,6 +825,7 @@ async function main(): Promise<void> {
 
   const refusedOutright = { count: 0 };
   const outOfRegion = { count: 0 };
+  const gnisNamed = { count: 0, rescued: 0 };
   const merged = [...groups.values()]
     .map((m) => {
       const out = mergeGroup(m);
@@ -792,7 +884,26 @@ async function main(): Promise<void> {
       continue;
     }
 
-    if (!belongsInCorpus({ name: group.name, surfaceAreaSqM: group.areaSqM, type: cls })) {
+    // **GNIS runs BEFORE the floor, and that ordering is the whole point of the lane.** D96 admits a
+    // *named* wetland at five acres and refuses an unnamed one under fifty, so a gazetteer name does
+    // not merely relabel a body — it decides whether the body exists. Stamping it afterwards would
+    // repeat, one level deeper, the mistake that cost 123 LakePond bodies.
+    let name = group.name;
+    let namedByGnis = false;
+    if (name.length === 0) {
+      const found = gnisNameFor(group, gnisGrid);
+      if (found !== undefined && found.length > 0) {
+        name = found;
+        namedByGnis = true;
+        gnisNamed.count++;
+        // Would the floor have refused this body without the name it just gained?
+        if (!belongsInCorpus({ name: '', surfaceAreaSqM: group.areaSqM, type: cls })) {
+          gnisNamed.rescued++;
+        }
+      }
+    }
+
+    if (!belongsInCorpus({ name, surfaceAreaSqM: group.areaSqM, type: cls })) {
       const acres = group.areaSqM / 4046.8564224;
       const reason =
         acres < 1
@@ -807,7 +918,10 @@ async function main(): Promise<void> {
     }
 
     const scores = scoreBody({
-      names: group.members.filter((m) => m.name).map((m) => ({ source: m.source, value: m.name })),
+      names: [
+        ...group.members.filter((m) => m.name).map((m) => ({ source: m.source, value: m.name })),
+        ...(namedByGnis ? [{ source: 'gnis' as ClaimSource, value: name }] : []),
+      ],
       polygons: polygonClaims(group, iou),
       classes: group.members
         .filter((m) => m.cls !== null)
@@ -827,7 +941,7 @@ async function main(): Promise<void> {
       for (const r of reasons) queue.set(r, (queue.get(r) ?? 0) + 1);
     }
     if (needsAttention(scores)) backlog++;
-    kept.push({ ...group, cls });
+    kept.push({ ...group, cls, name });
   }
 
   // ── Report ────────────────────────────────────────────────────────────────
@@ -856,6 +970,9 @@ async function main(): Promise<void> {
   );
   lines.push(
     `  outside 5 states  ${n(outOfRegion.count)}  (the geodatabases are not clipped to their states)`,
+  );
+  lines.push(
+    `  named by GNIS     ${n(gnisNamed.count)}  of which ADMITTED by that name alone: ${gnisNamed.rescued.toLocaleString()}`,
   );
   lines.push(`  kept after filter ${n(kept.length)}`);
   lines.push('  dropped by the post-merge filter:');

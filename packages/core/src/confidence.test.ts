@@ -277,3 +277,16 @@ describe('needsAttention', () => {
     );
   });
 });
+
+describe('GNIS is an authority but not a second opinion', () => {
+  // NHD's own `gnis_name` column IS GNIS. Counting them separately would be the NHD/3DHP mistake in
+  // a different hat: one source agreeing with itself and scoring `high` for it.
+  it('does not corroborate the federal name it is the source of', () => {
+    expect(scoreAttribute([c('nhd', 'Mud Pond'), c('gnis', 'Mud Pond')])).toBe('medium');
+  });
+
+  it('is still better than silence when nothing else names the body', () => {
+    expect(scoreAttribute([c('gnis', 'Cicero Swamp')])).toBe('medium');
+    expect(scoreAttribute([])).toBe('none');
+  });
+});
