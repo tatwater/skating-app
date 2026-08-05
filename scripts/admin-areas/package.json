@@ -3,13 +3,14 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual OSM → Convex administrative-boundary ETL (Phase 5). Not built or deployed.",
+  "description": "Manual OSM \u2192 Convex administrative-boundary ETL (Phase 5). Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "transform": "tsx src/cli.ts",
-    "load": "tsx src/load.ts"
+    "load": "tsx src/load.ts",
+    "fetch-states": "tsx src/fetchStates.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

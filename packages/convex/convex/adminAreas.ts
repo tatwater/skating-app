@@ -227,3 +227,56 @@ export const listBoundariesForClip = internalQuery({
     };
   },
 });
+
+/**
+ * Delete named admin areas **and their cell rows** — the superseded-duplicate path (N7).
+ *
+ * ## Why this needs to exist at all
+ *
+ * `adminAreas` had three state rows where it should have had five: New Hampshire's and New York's
+ * OSM boundary relations never close into a polygon from a per-state extract, so they were dropped
+ * silently at import. The fix imports all five from Census TIGER, which leaves Vermont, Maine and
+ * Massachusetts present **twice** — once as `relation/…`, once as `tiger/…`. Two polygons for one
+ * state in a containment table is worse than the gap it replaced: `resolvePlace` would resolve
+ * through whichever cell it happened to read first, and the two outlines are not identical.
+ *
+ * ## Why deleting the row is not enough
+ *
+ * Containment does not scan `adminAreas`; it goes through `adminAreaCells`, and nothing in this file
+ * ever removed one. Deleting a row on its own leaves cells pointing at an id that no longer loads —
+ * a dangling reference on the read path that resolves a coordinate to nothing, or throws. The cells
+ * go first, the row second.
+ *
+ * **Takes explicit `externalId`s, never a pattern.** A prefix match would have made this a one-line
+ * way to empty the table, and the blast radius of a wrong argument here is every place label in the
+ * app. Naming the three rows is the point.
+ */
+export const deleteByExternalIds = internalMutation({
+  args: { externalIds: v.array(v.string()) },
+  handler: async (ctx, { externalIds }) => {
+    let deleted = 0;
+    let cellsDeleted = 0;
+    const missing: string[] = [];
+    for (const externalId of externalIds) {
+      const row = await ctx.db
+        .query('adminAreas')
+        .withIndex('by_external_id', (q) => q.eq('externalId', externalId))
+        .unique();
+      if (!row) {
+        missing.push(externalId);
+        continue;
+      }
+      const cells = await ctx.db
+        .query('adminAreaCells')
+        .withIndex('by_area', (q) => q.eq('adminAreaId', row._id))
+        .collect();
+      for (const cell of cells) {
+        await ctx.db.delete(cell._id);
+        cellsDeleted++;
+      }
+      await ctx.db.delete(row._id);
+      deleted++;
+    }
+    return { deleted, cellsDeleted, missing };
+  },
+});
