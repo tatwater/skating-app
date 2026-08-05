@@ -123,19 +123,46 @@ drop-word in the same name.
 
 ## What is next, in order
 
-1. **`resolveUpsert` → `importCanonical`.** Still wired to nothing. `importCanonical` keys on
-   `(source, externalId)`, so an NHD feature would insert a duplicate of every OSM body we hold. This
-   is the only thing between `master.ndjson` and a corpus.
-2. **A clean merge run against committed code.** The current `master.ndjson` came from a build that
+> **Re-ordered 2026-08-05 after an audit against the live deployment and the plan doc.** Two things
+> changed: *"`resolveUpsert` → `importCanonical`"* turned out to be five gaps rather than one, and the
+> **bake-off moved ahead of the import** because the plan's own ordering (step 3 before step 5) is
+> right — `geometrySource` is a field, but the *polygon* moves with it, so deciding after the load
+> means loading 27,074 outlines twice.
+>
+> Also settled by that audit: **campaign steps 2 and 4 have already run.** Every sampled row carries
+> `waterBodyKey`, `osmId` and `geometrySource`; ~69% carry `nhdId`. Both the plan doc and this file
+> previously implied otherwise. That 69% is what makes the import safe — an NHD-only feature now meets
+> a corpus that already knows its NHD ids, so it patches instead of duplicating.
+
+1. ~~**Plan-doc revision.**~~ ✅ Done — `phase-N7-unified-corpus.md` now carries the corrected step
+   list, the five step-5 blockers, the post-step-2/4 baseline, and D109's vocabulary amendment.
+2. **Harden `merge.ts`.** It is excluded from coverage as "glue" and holds the phase's entire decision
+   logic — the veto set, class precedence, the name union, the union-find, the region clip, the GNIS
+   lane, the bay rule. Named fixtures, per the plan's verification section. Three specific suspicions:
+   the bay-parent test is **bbox containment only**; `inRegion` samples 8 outline vertices per ring
+   and could drop an in-state body through a boundary topology gap (35,637 were dropped this way);
+   name selection is longest-wins with nothing behind it.
+3. **The `WATER_BODY_CLASSES` migration** (D109 amendment, founder-approved 2026-08-05). ~45
+   production sites, ~132 test lines. Schema field + `canonicalBody` validator + ETL `CanonicalBody`
+   are one wire contract and flip together.
+4. **D92's bake-off** — *before* the import, not after. The referee is our 2.4M soundings:
+   `containedFraction` (a too-small polygon loses) against D98's body-probed density (a too-big one
+   loses). Geometry source is a hardcoded OSM-first placeholder, under which Beau Lake merges at 2,457
+   acres against NHD's measured 1,876.6 — a 31% error on the phase's headline fixture.
+5. **The emit stage + `resolveUpsert` wiring.** `master.ndjson` has **no geometry** — it is a report,
+   not a loadable artifact — so this needs a source-agnostic replacement for `featureToCanonicalBody`
+   (which is OSM-only and re-does its own classification). Plus: `threeDhpId`/`gnisId` are missing from
+   the schema along with a `by_three_dhp_id` index, `WATER_BODY_SOURCES` has no `3dhp`,
+   `catalogueIds()` derives ids instead of carrying them, and the `merge`/`conflict` verdicts have no
+   queue path.
+6. **A new step-6 prune.** `importCanonical` never deletes, so the 18,383 stored bodies include rows
+   the master list does not re-affirm — a vetoed class, an out-of-region body. `pruneBelowAreaFloor`
+   only sees area and cannot find them.
+7. **A clean merge run against committed code.** The current `master.ndjson` came from a build that
    fetched GNIS inline to `.scratch/`; same 16,310 features, but re-run before trusting it.
-3. **The OSM↔NHD match-rate breakdown by class.** 30,283 of 91,315 (33%) and still unexplained.
+8. **The OSM↔NHD match-rate breakdown by class.** 30,283 of 91,315 (33%) and still unexplained.
    Suspicion: wetland, where OSM traces vegetation and NHD traces hydrography, so IoU ≥ 0.5 fails
    honestly. Unproven.
-4. **D92's bake-off.** The referee is our 2.4M soundings: `containedFraction` (a too-small polygon
-   loses) against D98's body-probed density (a too-big one loses). Geometry source is currently a
-   hardcoded OSM-first placeholder. Beau Lake merges at 2,457 acres from OSM against NHD's 1,876.6 —
-   a 31% disagreement on the phase's headline fixture.
-5. **Plan-doc revision** — `phase-N7-unified-corpus.md` still describes the old per-source ordering.
 
 **Deliberately not done:** Québec. It needs three new source lanes — StatCan boundaries, NHN/CanVec
 hydrography, CGNDB names. Only OSM crosses the border. The classifier's French keywords are already in.

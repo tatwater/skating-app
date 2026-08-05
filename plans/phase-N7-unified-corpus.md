@@ -1,10 +1,19 @@
 # N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign on top
 
-> **Status:** 📋 Scoped, not built (2026-08-03). Written after a measurement session that corrected
-> four of its own findings; the numbers below are the survivors, and anything still marked
-> *unverified* is marked that way on purpose.
+> **Status:** 🔨 **Built through campaign step 4; step 5 (the canonical re-import) is where work now
+> sits** (2026-08-05, branch `phase-n7-unified-corpus`, 33 commits). Originally written 2026-08-03
+> after a measurement session that corrected four of its own findings; the numbers below are the
+> survivors, and anything still marked *unverified* is marked that way on purpose.
+>
+> **⚠ The architecture changed after this document was written.** It describes a campaign that
+> filters each source, reconciles against the *live corpus*, and imports on top of it. What got built
+> inverts that: `scripts/etl/src/merge.ts` reconciles the three archives **offline** and emits one
+> master list, on the rule **merge first, filter once**. Sections written against the old shape are
+> flagged inline. See [`HANDOFF-n7-classification.md`](./HANDOFF-n7-classification.md).
+>
 > **Depends on:** the D91 area floor and its prune (both landed, 2026-08-03), the N6b containment join
-> (landed, tiles **not** rebuilt), and the `osmId`/`nhdId`/`geometrySource` fields (landed, unbackfilled).
+> (landed, tiles **not** rebuilt), and the `osmId`/`nhdId`/`geometrySource` fields — **landed and now
+> backfilled**, see the step list.
 > **Touches:** every ETL package — `scripts/etl`, `scripts/admin-areas`, `scripts/lake-depth`,
 > `scripts/bathymetry`, `scripts/wind-climate` — plus `waterBodies` identity, and every downstream
 > that keys off `externalId`.
@@ -182,8 +191,11 @@ Maine's measured post-floor delta alone is ~450 bodies.
 
 | Landed | Where | State |
 | --- | --- | --- |
-| `osmId` / `nhdId` / `geometrySource` + `by_nhd_id` | `convex/schema.ts` | built, **undeployed, unbackfilled** |
-| `backfillCatalogueIds` — paginated, idempotent, never overwrites | `convex/waterBodies.ts` | built, unrun |
+| `osmId` / `nhdId` / `geometrySource` + `by_nhd_id` | `convex/schema.ts` | built, deployed, **backfilled** (2026-08-05) |
+| `backfillCatalogueIds` — paginated, idempotent, never overwrites | `convex/waterBodies.ts` | built, **run** |
+| `mintWaterBodyKeys` (D93) | `convex/waterBodies.ts` | built, **run** — every sampled row carries a `waterBodyKey` |
+| `resolveUpsert` / `requiresReview` (D93's upsert key) | `core/bodyIdentity.ts` | built + tested, **wired to nothing** |
+| `merge.ts` — the master list, three lanes, one filter | `scripts/etl` | built, run; **untested and excluded from coverage** |
 | Containment join — `containedFraction`, `MIN_SURVEY_CONTAINMENT = 0.5` | core + `matchBathymetryLakes` | built; re-run 2026-08-03 matched **2,415/2,491** |
 | `bodiesCoveringPoint` + `alsoCovers` + bay re-clip | core, convex, `build.ts` | built, tiles not rebuilt |
 | `BATHYMETRY_APPROACH_M = 25` | `convex/waterBodies.ts` | built |
@@ -972,13 +984,14 @@ prune"* — and under the order below, nothing does.
  0  wipe the run ledger; open one campaign id                  (D99)
  1  acquire NHD → .raw-nhd/ → R2                        ✅ done (no Convex writes)
  1b acquire 3DHP → clip → .raw-3dhp/waterbody/ → R2  ✅ done    (no Convex writes; divergence monitor, NOT a bake-off lane)
- 2  reconcile OSM ↔ NHD ↔ 3DHP by polygonIoU                   (writes catalogue ids only)
- 3  D92 bake-off, containment-passing keys only                (read-only; produces the rule)
- 4  mint waterBodyKey; backfill osmId / nhdId / geometrySource (D93)
- 5  canonical re-import: unified corpus, floor applied         (scripts/etl)
- 6  PRUNE — the corpus is now final                            (D100; nothing metered runs before it)
+ 1c acquire GNIS → .raw-gnis/ → R2                    ✅ done   (D105; the fourth lane, added after this list was written)
+ 1d admin areas from TIGER → adminAreas               ✅ done   (MOVED UP from step 8 — step 5 cannot run without it)
+ 2  reconcile OSM ↔ NHD ↔ 3DHP by polygonIoU          ✅ done   (writes catalogue ids only)
+ 3  D92 bake-off, containment-passing keys only          ← NEXT (read-only; produces the rule)
+ 4  mint waterBodyKey; backfill osmId / nhdId / geometrySource  ✅ done (D93)
+ 5  canonical re-import: the master list                       (scripts/etl — blocked, see below)
+ 6  PRUNE what step 5 did not re-affirm                        (D100; nothing metered runs before it)
  7  audit report of non-conforming bodies                      (D97, read-only)
- 8  admin areas                                                (scripts/admin-areas)
  9  depth + elevation                                          (scripts/lake-depth; D101 for elevation)
 10  bathymetry: re-key → join → build → tile → coverage        (D95, in this order, always)
 11  wind climate                                               (scripts/wind-climate — the 7.7 h fetch)
@@ -986,6 +999,32 @@ prune"* — and under the order below, nothing does.
 ```
 
 Steps 1–4 are safe against a live corpus. Step 5 onward are not.
+
+**Three corrections this list has already needed, recorded rather than folded in silently:**
+
+**Admin areas moved from 8 to 1d, and it is now a hard prerequisite of step 5.** `merge.ts` clips the
+merged corpus to the five states using `boundaries.ndjson`, exported from
+`adminAreas:listBoundariesForClip`. Without it there is no region mask and 35,637 out-of-region bodies
+import. It sat at position 8 because the old ordering filtered each source in its own extract, where
+the extract's own bbox was the only regional statement — which is exactly the assumption
+*merge first, filter once* removed.
+
+**Step 3 must precede step 5, and the temptation to reverse them should be resisted.** D93 says
+`geometrySource` is a field so D92's answer lands as an update rather than a migration — true, but the
+**polygon moves with it**, and re-importing 27,074 outlines is the expensive half. `merge.ts` currently
+hardcodes an OSM-first placeholder, under which **Beau Lake — the fixture this phase is named for —
+merges at 2,457 acres against NHD's measured 1,876.6.** Importing before the bake-off means importing
+the headline fixture wrong and then importing it again.
+
+**Step 6 is no longer the D91 area-floor prune, and nothing implements what it became.** Under the old
+ordering the corpus was filtered on the way in and step 6 re-applied the floor to what was stored —
+which is what `pruneBelowAreaFloor` does. Under *merge first, filter once*, the master list **is** the
+corpus, so step 6's real job is to remove the stored bodies that the master list does not re-affirm: a
+body the class veto now refuses, a body the region clip now excludes. `importCanonical` never deletes
+and `pruneBelowAreaFloor` can only see area, so neither can find them. **This needs a new prune keyed
+on campaign membership**, honouring the rule that a body carrying user content is never deleted (see
+D93's closing note). 18,383 stored against 27,074 in the master list, and neither set contains the
+other.
 
 **Step 6 is the change D100 makes, and its position is the whole point.** Every pass from 8 onward is
 priced per body — WTK requests, Convex transaction bytes, density probes — and under the old ordering
@@ -1000,6 +1039,42 @@ with `--dry-run` before committing to it.
 **Step 12 is D85's rule**: the deciles describe the corpus as loaded, so running them early describes
 the corpus as it *was*. Note this is a **first** computation, not a refresh — `regionStats` is empty on
 dev.
+
+---
+
+## What blocks step 5 (audited 2026-08-05)
+
+The handoff records this as one item — *"`resolveUpsert` → `importCanonical`"* — and that
+under-describes it. `resolveUpsert` is built and tested; wiring it is the smallest of five gaps, and
+three of the others are schema changes that have to ship in the same deploy.
+
+**1. `master.ndjson` carries no geometry.** `merge.ts` writes `key, name, cls, acres, geometrySource,
+sources` — a report, not a loadable artifact. `importCanonical` needs `polygon`, `bbox`, `centroid`,
+`surfaceAreaSqM` and the D85/N6c shape stats. All of that is produced today by
+`featureToCanonicalBody`, which takes an `OsmWaterFeature` and re-does its own classification and
+floor — so it is OSM-only *and* would overrule the merge. **A source-agnostic emit stage is the
+largest single piece of work left in this phase**, and it must keep D85's rule: measure the stats on
+the source geometry, simplify only for storage.
+
+**2. The stored vocabulary is the old one.** `merge.ts` emits `WaterBodyClass`; `waterBodies.type` is
+`literals(WATER_BODY_TYPES)`. **Founder call, 2026-08-05: migrate the schema to
+`WATER_BODY_CLASSES`** rather than mapping back — see D96 below.
+
+**3. Three of D93's identity fields do not exist in the schema.** `CATALOGUE_ID_FIELDS` is
+`['osmId','nhdId','threeDhpId']`, but the table has only `osmId` and `nhdId` — **no `threeDhpId`, no
+`gnisId`, and no `by_three_dhp_id` index**, so a third of `resolveUpsert`'s lookup cannot be
+performed. D93 states plainly that `threeDhpId` "is populated, not a parity placeholder"; it is not.
+Separately `WATER_BODY_SOURCES` is `['osm','nhd','user']`, while `merge.ts` can select a 3DHP feature
+as a group's outline and emit `geometrySource: '3dhp'`, which the validator rejects.
+
+**4. `catalogueIds()` derives ids instead of carrying them.** It infers `osmId`/`nhdId` from
+`source` + `externalId`, which is exactly the conflation D93 exists to undo. It has to accept the ids
+the merge already resolved.
+
+**5. `merge` and `conflict` have nowhere to land.** `requiresReview` gates both away from running
+unattended, and D93 says they belong in the dedup queue — but `importCanonical` has no queue path and
+no way to report a verdict back to the loader. **This is a design gap, not wiring**, and it is the one
+most likely to be discovered mid-import if it is not settled first.
 
 ---
 
@@ -1019,6 +1094,32 @@ answers:
   with 25,807 legitimate soundings) **must not** be touched by the re-key lane.
 - After D98's recalibration, the set of lakes that stop drawing **must** be enumerated and reviewed,
   not summarised.
+
+### The merge itself is now the piece most likely to fail quietly (2026-08-05)
+
+This section was written when reconciliation was the whole of the matching logic. It is not any more:
+`merge.ts` is ~1,000 lines that decide all 27,074 rows, and it is **excluded from coverage as
+"subprocess + file-I/O glue"**, which it stopped being the moment it grew a merge rule. The exclusion
+was accurate for `cli.ts` and `load.ts`; it is not accurate for a file containing the veto set, the
+class precedence order, the name union, a union-find, the region clip, the GNIS lane and the bay rule.
+
+Same discipline, applied to it — named answers, not a percentage:
+
+- **A group NHD calls `LakePond` and OSM tags `wetland=marsh` keeps `lakePond`.** This is the 123-body
+  rescue the whole file exists for; it must be a test, not a run report.
+- **A group containing Lake Erie (`nhd:ftype=390`, a LakePond claim at 6.4M acres) is refused**, and
+  refused by the *veto*, not by the area floor. Likewise Long Island Sound at `ftype=493`.
+- **A group every catalogue refused is `null`, never `unclassified`.** The distinction that admitted
+  Lake Huron and seven polygons of the Atlantic.
+- **Beau Lake is in region** — it straddles the Québec border, so an `inRegion` that samples the wrong
+  vertices drops the fixture this phase is named for.
+- **A named wetland at 5 acres is admitted; an unnamed one at 49 is refused** — and the named one is
+  admitted when the *only* source of the name is GNIS, which is the 306-body ordering claim.
+- **A bay whose only candidate parent merely shares a bounding box is demoted.** The parent test is
+  `covers()` on bboxes alone; Half Moon Cove is the fixture for the demotion, and a bbox-only test has
+  no fixture at all for the false-positive direction.
+- **A group holding two features from one catalogue queues rather than merging** — `sameSourceDuplicate`
+  is the only thing standing between a three-lane union-find and two distinct lakes chained into one.
 
 ---
 
@@ -1063,6 +1164,33 @@ containment and *low* IoU, which is exactly the distinction that matters. Both c
 ---
 
 ## D96 — settled: the four admission rules ✅ **APPROVED**
+
+> **D109 amendment — the stored vocabulary migrates, it does not map back ✅ APPROVED**
+> **(founder, 2026-08-05: *"we should use our latest, simplified schema, not the one that's live
+> now"*.)**
+>
+> `waterBodies.type` moves from `WATER_BODY_TYPES` (8 values) to `WATER_BODY_CLASSES` (6). The
+> alternative — mapping `WaterBodyClass` back at the loader — was rejected because it would
+> re-introduce the lake/pond split D109 refused on evidence, and would do it *silently*, inside the
+> ETL, where nothing reads it back.
+>
+> **It is a hard cut.** `schema.ts`'s field, `waterBodies.ts`'s `canonicalBody` validator and
+> `scripts/etl`'s `CanonicalBody` are one wire contract; flipping any one alone makes
+> `importCanonical` reject every batch. Scoped at ~45 production sites and ~132 test lines.
+>
+> Three things that bite, all found by audit rather than by compiler:
+>
+> 1. **`waterBodies.ts`'s `type === 'marsh'` check goes silently dead**, zeroing the
+>    `unnamedWetlandBands` tally — the distribution D96 says is the thing most likely to be re-tuned.
+>    It must route through `isWetlandClass`, which already accepts both spellings.
+> 2. **`humanizeEnum` cannot render `lakePond`** — it only swaps underscores and capitalises, so five
+>    user-facing sites across web and mobile would print "LakePond". Needs a label table.
+> 3. **`unclassified` reaches a human picker.** Mobile's new-water prompt maps the enum straight to
+>    chips, so migrating unreviewed would offer a skater "Unclassified" as a choice. The picker needs
+>    a curated subset, which is a product call rather than a rename.
+>
+> Nothing is indexed on `type`, no map style expression reads it, and no other table stores it — so
+> the migration is a value backfill, not an index rebuild.
 
 **Founder, 2026-08-03.** The complete rule set, verified across all nine size × class × named
 combinations before implementing — no gaps, no contradictions:
@@ -1293,7 +1421,7 @@ which D92's unified corpus should absorb. Re-measure after step 5.
 state's 215.1. One-to-many disagreements are not fixable by any id scheme and will need a rule or a
 human; quantify them during the bake-off rather than meeting them in production.
 
-**✅ The campaign baseline is now measured: 21,665 bodies** (`waterBodies:corpusStats`, paged,
+**✅ The campaign baseline was measured at 21,665 bodies** (`waterBodies:corpusStats`, paged,
 2026-08-03). **D91 predicted 21,660 of 123,940 — the floor landed within five rows of its own
 forecast.** Every "how much did this add" statement in this phase is measured against this number.
 
@@ -1309,14 +1437,36 @@ bay 253
 **by state** — NY 8,142 · MA 5,130 · ME 4,726 · NH 2,486 · VT 1,282 *(border bodies count in each,
 so these sum above the total)*
 
-Three things this measurement settles that were assumptions:
+Three things that measurement settled that were assumptions:
 
-- **The identity fields really are unbackfilled** — zero rows carry `osmId`, `nhdId` or
-  `geometrySource`. `backfillCatalogueIds` has never run, exactly as the header claims.
+- **The identity fields really were unbackfilled** — zero rows carried `osmId`, `nhdId` or
+  `geometrySource`. **Superseded — steps 2 and 4 have since run**, see below.
 - **Wind climate is at zero**, not ~2%. The N6c pass wrote nothing before it was stopped.
 - **`other` is the largest class in the corpus at 46%** — water OSM's classifier could not identify.
   That is a bigger unknown than the wetland question D96 has been agonising over, and nothing in this
-  plan has looked at it. Worth a pass before the bake-off treats classification as settled.
+  plan had looked at it. **Since addressed**: `waterClass.ts` maps all three catalogues into
+  `WATER_BODY_CLASSES`, where the honest name for this bucket is `unclassified` and it falls to
+  1,533 of 27,074 (5.7%) in the master list.
+
+### The baseline after steps 2 and 4 (2026-08-05)
+
+Sampled live against dev. **Re-measure with `corpusStats` before step 5 rather than quoting these** —
+the sample is the first 3,000 rows, and the total below is the handoff's figure, not a counted one.
+
+| | | | |
+| --- | --- | --- | --- |
+| total | **18,383** *(per the handoff; unconfirmed by a full page)* | `waterBodyKey` | **~100%** |
+| `osmId` | **~100%** | `nhdId` | **~69%** |
+| `geometrySource` | **~100%** | `source` | 100% `osm` |
+
+**`nhdId` at ~69% is the number that makes step 5 safe.** `resolveUpsert`'s `merge` verdict is rare
+only because reconciliation writes `nhdId` onto OSM bodies *before* any NHD geometry is imported —
+and that ordering has now actually happened. An NHD-only feature arriving in step 5 meets a corpus
+whose bodies already carry their NHD ids, so it patches instead of duplicating. The remaining ~31%
+are bodies NHD has no counterpart for; those insert cleanly, which is correct.
+
+**`source` is still 100% `osm` and `type` is still the old eight-value vocabulary.** Both are step 5's
+job to change — see the `WATER_BODY_CLASSES` migration under D96.
 
 **The N6c campaign's own passes are unfinished and this campaign subsumes them.** Elevation stopped at
 5,975 of ~11,000 on quota (now D101's problem); wind stopped at ~2% deliberately; `regionStats` never
