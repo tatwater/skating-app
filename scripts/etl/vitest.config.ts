@@ -18,6 +18,7 @@ export default defineConfig({
         // `@skating/core`'s `waterClass`, which is tested there against named real bodies.
         'src/classifyDryRun.ts',
         'src/cli.ts',
+        'src/merge.ts',
         'src/fetchExtract.ts',
         'src/fetch3dhp.ts',
         'src/fetchNhd.ts',

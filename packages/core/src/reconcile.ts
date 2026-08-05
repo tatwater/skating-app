@@ -67,8 +67,19 @@ export const RECONCILE_MIN_IOU_WITH_GNIS = 0.3;
  */
 export const RECONCILE_MIN_MARGIN = 0.15;
 
+/**
+ * A precomputed geodesic area, in square metres.
+ *
+ * **Optional, and purely an optimisation — but a load-bearing one at merge scale.** The area bound
+ * below is evaluated once per *pair*, so without this a candidate's area is recomputed for every
+ * target that comes near it, over its full vertex list. Lake Champlain is 10,755 vertices and sits in
+ * hundreds of grid cells; a three-lane merge over 264,000 features re-walks those vertices millions
+ * of times to reach a number that never changes. Callers that already know the area should say so.
+ */
+type PrecomputedArea = { areaSqM?: number | undefined };
+
 /** One catalogue feature offered as a possible match. */
-export interface ReconcileCandidate {
+export interface ReconcileCandidate extends PrecomputedArea {
   /** The catalogue's identifier — becomes `nhdId` when this candidate wins. */
   id: string;
   polygon: Polygon | MultiPolygon;
@@ -79,7 +90,7 @@ export interface ReconcileCandidate {
 }
 
 /** The body we are trying to find a counterpart for. */
-export interface ReconcileTarget {
+export interface ReconcileTarget extends PrecomputedArea {
   polygon: Polygon | MultiPolygon;
   bbox: BBox;
   gnisId?: string | undefined;
@@ -156,7 +167,7 @@ export function scoreCandidates(
     options.minIou ?? RECONCILE_MIN_IOU,
     options.minIouWithGnis ?? RECONCILE_MIN_IOU_WITH_GNIS,
   );
-  const targetArea = surfaceAreaSqM(target.polygon);
+  const targetArea = target.areaSqM ?? surfaceAreaSqM(target.polygon);
 
   const scored: ScoredCandidate[] = [];
   for (const candidate of candidates) {
@@ -172,7 +183,7 @@ export function scoreCandidates(
     // guaranteed to be rejected. Measured on the real run it turns ~79 minutes into a few, which is
     // what makes "export once, re-derive with different thresholds" an actual workflow rather than
     // an aspiration.
-    const candidateArea = surfaceAreaSqM(candidate.polygon);
+    const candidateArea = candidate.areaSqM ?? surfaceAreaSqM(candidate.polygon);
     const ceiling =
       Math.min(targetArea, candidateArea) / Math.max(targetArea, candidateArea, Number.EPSILON);
     if (ceiling < floor) continue;

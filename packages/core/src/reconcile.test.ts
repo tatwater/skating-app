@@ -1,6 +1,6 @@
 import type { Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { polygonBBox } from './geometry';
+import { polygonBBox, surfaceAreaSqM } from './geometry';
 import {
   decideMatch,
   findCollapsedDuplicates,
@@ -254,5 +254,36 @@ describe('isNearMiss', () => {
   it('is a reading of `none`, never of a match — nothing may be written on it', () => {
     expect(isNearMiss({ verdict: 'matched', id: 'x', iou: 0.9, gnisAgrees: false })).toBe(false);
     expect(isNearMiss({ verdict: 'ambiguous', candidates: [cand(0.6), cand(0.55)] })).toBe(false);
+  });
+});
+
+describe('precomputed area', () => {
+  // The area bound is evaluated once per PAIR, so a candidate near many targets has its full vertex
+  // list re-walked once per target. At merge scale that is millions of walks for a constant.
+  it('uses a supplied area instead of recomputing, and agrees with the computed answer', () => {
+    const square = (x: number, y: number, d: number): Polygon => ({
+      type: 'Polygon',
+      coordinates: [
+        [
+          [x, y],
+          [x + d, y],
+          [x + d, y + d],
+          [x, y + d],
+          [x, y],
+        ],
+      ],
+    });
+    const a = square(-72, 44, 0.01);
+    const b = square(-72.001, 44.001, 0.01);
+    const target = { polygon: a, bbox: polygonBBox(a) };
+    const candidate: ReconcileCandidate = { id: 'c', polygon: b, bbox: polygonBBox(b) };
+
+    const plain = scoreCandidates(target, [candidate]);
+    const hinted = scoreCandidates(
+      { ...target, areaSqM: surfaceAreaSqM(a) },
+      [{ ...candidate, areaSqM: surfaceAreaSqM(b) }],
+    );
+    expect(hinted).toEqual(plain);
+    expect(plain[0]?.iou).toBeGreaterThan(0);
   });
 });
