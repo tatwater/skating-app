@@ -110,7 +110,7 @@ describe('featureToCanonicalBody', () => {
       source: 'osm',
       externalId: 'way/42',
       name: 'Test Pond',
-      type: 'pond',
+      type: 'lakePond',
     });
     expect(body.surfaceAreaSqM).toBeGreaterThan(0);
     // The on-water centroid lies inside the polygon actually stored.
@@ -284,6 +284,11 @@ describe('featureToCanonicalBody', () => {
 describe('transformFeatures (batch resilience)', () => {
   it('transforms the real Vermont fixture: classifies, drops rivers/subtag-less wetland', () => {
     const { bodies, summary, errors } = transformFeatures(loadFixture());
+    // ⚠ **These totals are unchanged across the D109 classifier swap by coincidence, not because
+    // nothing moved.** Reeds Marsh entered the imported set and a snowmaking basin left it; a
+    // `natural=wetland` skip became a `water=basin` skip. Three features changed verdict and every
+    // count stayed put — which is exactly why the identity assertions below exist and why a summary
+    // `toEqual` is not on its own evidence that a classifier still does the same thing.
     expect(summary).toEqual({
       total: 10,
       imported: 6,
@@ -298,7 +303,7 @@ describe('transformFeatures (batch resilience)', () => {
     const byId = new Map(bodies.map((body) => [body.externalId, body]));
     // Lake Morey — the iconic Nordic lake — classifies as a lake with its real ~2.2 km² area.
     const morey = byId.get('way/47338349');
-    expect(morey).toMatchObject({ type: 'lake', name: 'Lake Morey' });
+    expect(morey).toMatchObject({ type: 'lakePond', name: 'Lake Morey' });
     expect(morey?.surfaceAreaSqM).toBeGreaterThan(2_000_000);
     expect(morey?.surfaceAreaSqM).toBeLessThan(2_500_000);
     // A relation keeps its `relation/<id>` externalId.
@@ -306,12 +311,24 @@ describe('transformFeatures (batch resilience)', () => {
       type: 'reservoir',
       name: 'Sugar Hill Reservoir',
     });
-    // wetland=marsh → marsh; unnamed but over the floor (14.8 ac) → kept with an empty name.
-    expect(byId.get('way/40089880')?.type).toBe('marsh');
-    expect(byId.get('way/30930914')).toMatchObject({ type: 'other', name: '' });
-    // The two deferred features are absent from the output.
+    // wetland=marsh → `wetland` (was `marsh` before D109's rename).
+    expect(byId.get('way/40089880')).toMatchObject({ type: 'wetland', name: 'Walker Swamp' });
+
+    // **Reeds Marsh — 103 acres, named, and this fixture used to drop it.** `natural=wetland` with
+    // no `wetland=*` subtag was a skip under the old OSM-only classifier, which accepted `marsh` and
+    // nothing else. That is the D96 asymmetry in miniature: NHD publishes the same ground as
+    // SwampMarsh and we accept it there, so refusing it here made *which catalogue drew the polygon*
+    // decide whether the lake existed. Switching to `classifyWaterBody` (D109) closes it.
+    expect(byId.get('way/43152092')).toMatchObject({ type: 'wetland', name: 'Reeds Marsh' });
+
+    // **A snowmaking basin at a ski resort is not water anyone skates.** `water=basin` used to fall
+    // through to `other` and be imported; it is now an explicit drop. The old assertion here read
+    // `{ type: 'other', name: '' }` — an unnamed 14.8-acre "water area of unrecognised kind", which
+    // is precisely the shape of thing `other` was hiding.
+    expect(byId.has('way/30930914')).toBe(false);
+
+    // Flowing water is still deferred.
     expect(byId.has('way/143518175')).toBe(false); // water=river
-    expect(byId.has('way/43152092')).toBe(false); // natural=wetland, no subtag
     // …as are the two under the floor: unnamed, and nowhere anyone is going.
     expect(byId.has('way/34856116')).toBe(false); // 1.9 ac, unnamed
     expect(byId.has('way/40420872')).toBe(false); // 3.2 ac, unnamed

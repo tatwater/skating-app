@@ -8,7 +8,7 @@ const HITS: LakeHit[] = [
     _id: 'a',
     waterBodyId: 'a',
     name: 'Lake George',
-    type: 'lake',
+    type: 'lakePond',
     centroid: { lat: 43.6, lng: -73.5 },
     bbox: { minLat: 43.4, minLng: -73.7, maxLat: 43.8, maxLng: -73.3 },
     states: ['NY'],
@@ -32,7 +32,7 @@ const BAY_HIT: LakeHit = {
   waterBodyId: 'champlain',
   name: 'Malletts Bay',
   parentName: 'Lake Champlain',
-  type: 'lake',
+  type: 'lakePond',
   centroid: { lat: 44.55, lng: -73.22 },
   bbox: { minLat: 44.5, minLng: -73.3, maxLat: 44.6, maxLng: -73.15 },
   states: ['VT'],
@@ -56,18 +56,19 @@ function renderBox(overrides: Partial<React.ComponentProps<typeof LakeSearchBox>
 }
 
 describe('LakeSearchBox', () => {
-  it('renders result rows with a humanized type + state label', () => {
+  it('renders result rows with a class label + state', () => {
     renderBox();
     expect(screen.getByText('Lake George')).toBeInTheDocument();
     expect(screen.getByText('Sebago Lake')).toBeInTheDocument();
-    expect(screen.getByText('Lake · NY')).toBeInTheDocument();
+    // 'Lake or pond', not 'LakePond' — `humanizeEnum` cannot render a camelCase enum (D109).
+    expect(screen.getByText('Lake or pond · NY')).toBeInTheDocument();
     expect(screen.getByText('Reservoir · ME')).toBeInTheDocument();
   });
 
   it('tells you which lake a named bay belongs to, not its (parent-inherited) type', () => {
     renderBox({ items: [...HITS, BAY_HIT] });
     expect(screen.getByText('Malletts Bay')).toBeInTheDocument();
-    // "Lake · VT" would be the parent's type and tells you nothing you didn't just read; where the
+    // "Lake or pond · VT" would be the parent's type and tells you nothing you didn't just read; where the
     // bay *is* is the disambiguation people need when three lakes have a South Bay.
     expect(screen.getByText('in Lake Champlain')).toBeInTheDocument();
   });

@@ -81,7 +81,7 @@ async function seedBody(t: ReturnType<typeof convexTest>, name = 'Lake Champlain
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name,
-      type: 'lake' as const,
+      type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: LAKE,
       bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 },
@@ -625,7 +625,7 @@ describe('system delists are visible where they get fixed', () => {
     const body = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Lake Champlain',
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         source: 'osm' as const,
         externalId: 'way/9',
         polygon: LAKE,
@@ -648,7 +648,7 @@ describe('system delists are visible where they get fixed', () => {
           source: 'osm' as const,
           externalId: 'way/9',
           name: 'Lake Champlain',
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           polygon: rect(-73.5, 44.0, -73.15, 45.0),
           bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -73.15 },
           centroid: { lat: 44.5, lng: -73.3 },
@@ -745,7 +745,7 @@ describe('the parent-listing cascade', () => {
     const body = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Someone Pond',
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         source: 'user' as const,
         polygon: LAKE,
         bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 },
@@ -823,7 +823,7 @@ describe('the parent-listing cascade', () => {
     return t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Lake Champlain',
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         source: 'osm' as const,
         externalId: 'way/1',
         polygon: LAKE,
@@ -848,7 +848,7 @@ describe('the parent-listing cascade', () => {
           source: 'osm' as const,
           externalId: 'way/1',
           name: 'Lake Champlain',
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           polygon,
           bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng },
           centroid: { lat: 44.5, lng: -73.3 },
@@ -1165,7 +1165,7 @@ describe('the merged search box', () => {
       await t.run((ctx) =>
         ctx.db.insert('waterBodies', {
           name,
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           polygon: rect(-70, 42, -69.99, 42.01),
           bbox: { minLat: 42, minLng: -70, maxLat: 42.01, maxLng: -69.99 },

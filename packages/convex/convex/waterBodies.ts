@@ -27,8 +27,11 @@ import {
   isMinor,
   isPlausibleElevationM,
   isPlausibleWindRose,
+  isWetlandClass,
   KNOWN_STATE_CODES,
   type LatLng,
+  LEGACY_TYPE_TO_CLASS,
+  type LegacyWaterBodyType,
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_SUGGESTED_SAMPLE_POINTS,
   MIN_FETCH_CLAUSE_M,
@@ -39,7 +42,8 @@ import {
   type ProfileRichness,
   pathToBody,
   pointInPolygon,
-  WATER_BODY_TYPES,
+  polygonBBox,
+  WATER_BODY_CLASSES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
@@ -148,7 +152,7 @@ const canonicalBody = v.object({
   source: literals(CANONICAL_SOURCES), // osm | nhd — never user (D14)
   externalId: v.string(),
   name: v.string(),
-  type: literals(WATER_BODY_TYPES),
+  type: literals(WATER_BODY_CLASSES),
   polygon: geoJson,
   bbox,
   centroid: latLng, // the on-water representative point (D48)
@@ -521,7 +525,14 @@ export const corpusStats = internalQuery({
       // on how much of it is big — which no whole-corpus aggregate answers. Banded here so a
       // threshold can be chosen against the real distribution rather than a sample, which is how the
       // first projection of this prune came out 40% low.
-      if (body.type === 'marsh' && body.name.length === 0 && body.surfaceAreaSqM !== undefined) {
+      // **`isWetlandClass`, not `type === 'marsh'`.** The D109 migration renames this value, and a
+      // literal comparison would not fail — it would return zero for every band, which reads exactly
+      // like "there is no unnamed wetland left" for the one rule most likely to be re-tuned.
+      if (
+        isWetlandClass(body.type) &&
+        body.name.length === 0 &&
+        body.surfaceAreaSqM !== undefined
+      ) {
         const acres = body.surfaceAreaSqM / SQ_M_PER_ACRE_LOCAL;
         if (acres >= 5) {
           const band =
@@ -687,6 +698,87 @@ export const importReconciliation = internalMutation({
  *
  * Paged and idempotent like the other backfills, so an interrupted run resumes rather than restarts.
  */
+/**
+ * Rewrite every stored `type` from the retired vocabulary into `WATER_BODY_CLASSES` (N7, D109).
+ *
+ * ## Why this is a separate pass rather than something the re-import does
+ *
+ * The canonical re-import would rewrite the OSM rows it touches — but it does not touch everything.
+ * A body a skater drew (`source: 'user'`) never passes through the ETL, and a body the merge no
+ * longer admits is never re-imported either; both would sit on the old vocabulary indefinitely, and
+ * the schema union that tolerates them cannot be narrowed while any remain. So the migration is its
+ * own pass, it runs before the re-import, and it is what lets the union close.
+ *
+ * ## It is pure restatement, which is what makes it safe to run against a live corpus
+ *
+ * Every new value is a function of the value already stored (`LEGACY_TYPE_TO_CLASS`), so this is
+ * idempotent, order-independent, and safe to interleave with anything else — a row already carrying
+ * a class is skipped rather than re-derived. Same shape as `backfillCatalogueIds` and
+ * `mintWaterBodyKeys`: hand back the cursor, call until `isDone`.
+ *
+ * **It does not touch `displayScore`, cells, or listing.** `type` feeds none of them — D49 scores on
+ * area and boost, N1 cells on bbox and prominence — so a body's position, visibility and ranking are
+ * bit-identical before and after. The one thing that *does* read the class is `belongsInCorpus`, and
+ * `isWetlandClass` deliberately understands both spellings precisely so the prune cannot disagree
+ * with the corpus mid-migration.
+ *
+ * `remaining` is the number this pass exists to drive to zero — when it reports zero, the schema
+ * union in `schema.ts` can be narrowed to `literals(WATER_BODY_CLASSES)`.
+ */
+export const backfillWaterBodyClasses = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    /** Actually write. Absent / false ⇒ count only, so the scope can be read before it moves. */
+    apply: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { cursor, batchSize, apply }) => {
+    // A body carries its polygon, so a page is bounded by the transaction's byte budget long before
+    // its document count — the same reason `pruneBelowAreaFloor` pages at 100 and the N6c depth
+    // loader blew 16 MB at a batch of 25 by counting documents instead.
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    let rewritten = 0;
+    let alreadyMigrated = 0;
+    let unmappable = 0;
+    const byMapping: Record<string, number> = {};
+
+    for (const body of page.page) {
+      const current = body.type as string;
+      if ((WATER_BODY_CLASSES as readonly string[]).includes(current)) {
+        alreadyMigrated++;
+        continue;
+      }
+      const next = LEGACY_TYPE_TO_CLASS[current as LegacyWaterBodyType];
+      if (next === undefined) {
+        // Neither vocabulary. Counted rather than thrown, because one unrecognised row must not
+        // stall a migration across 18,383 — but counted loudly, because it means a value reached the
+        // table that no validator should have admitted.
+        unmappable++;
+        continue;
+      }
+      // **ASCII, because this is a Convex object key.** Convex refuses a field name containing a
+      // non-control non-ASCII character, so the obvious `→` throws at return time — after the
+      // patches in this page have already been applied.
+      byMapping[`${current}->${next}`] = (byMapping[`${current}->${next}`] ?? 0) + 1;
+      if (apply === true) await ctx.db.patch(body._id, { type: next });
+      rewritten++;
+    }
+
+    return {
+      applied: apply === true,
+      scanned: page.page.length,
+      rewritten,
+      alreadyMigrated,
+      unmappable,
+      byMapping,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
 /**
  * A light projection for the D97 audit: what each body is, what it is called, and which catalogue
  * rows it is tied to — **without the polygon** (N7).
@@ -1060,6 +1152,136 @@ export const pruneBelowAreaFloor = internalMutation({
 });
 
 /**
+ * Delete water we no longer claim to cover — the corpus edge that is not the map's edge.
+ *
+ * ## Why there is anything to delete
+ *
+ * Coverage and rendering used to be one decision because the basemap was a bbox extract whose
+ * southern edge — 41.2°N, just above Manhattan — cut both off together. The map now renders all of
+ * New York, and the corpus deliberately does not follow it down (founder, 2026-08-05): Poughkeepsie
+ * should appear on the map, and we should not be telling anyone about the ice on Kensico Reservoir.
+ * Splitting the two left this residue, everything imported between 41.2°N and the county line while
+ * they were still one question.
+ *
+ * ## Why the shapes are an argument
+ *
+ * The first draft resolved each body's centroid through `adminAreas` and asked which county it was
+ * in. That is the *right* question and the wrong way to ask it at corpus scale: a place resolution
+ * reads town, county and state polygons, and a page dense with downstate bodies blew Convex's 16 MB
+ * per-execution read budget however small the page got. Taking the polygons as an argument makes
+ * the whole pass allocation-free — the caller reads `downstate-ny-coarse.geojson`, written by
+ * `pnpm --filter @skating/admin-areas build-region` from the same TIGER counties the map's mask is
+ * cut from, so the line in the corpus and the line on the map cannot drift apart.
+ *
+ * It also leaves this general: it prunes bodies inside whatever polygons it is handed, and the next
+ * coverage change is a different file rather than a different mutation.
+ *
+ * ## What it will not delete
+ *
+ * Exactly what `pruneBelowAreaFloor` will not, and for the same reason: a coverage decision is about
+ * *our* data, and a body someone has reported on, favourited, drawn a hazard on or created by hand
+ * has stopped being only ours. Those are kept and named in the summary, so the residue is visible
+ * rather than silently spared. Cell rows go through `syncWaterBodyCells` with `listed: false`, never
+ * a hand-rolled delete, or the ladder grid keeps pointing at bodies that no longer load.
+ *
+ * **Dry by default.** `apply` absent counts and writes nothing, which is the mode to run first and
+ * the mode a mistyped invocation lands in.
+ */
+export const pruneOutsideCoverage = internalMutation({
+  args: {
+    /** The areas to prune, as GeoJSON polygons — see above for where they come from. */
+    exclude: v.array(geoJson),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    /** Actually delete. Absent / false ⇒ count only, write nothing. */
+    apply: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { exclude, cursor, batchSize, apply }) => {
+    if (exclude.length === 0) throw new Error('pruneOutsideCoverage: no polygons to prune inside');
+    // One bbox over the whole exclusion set, so a body nowhere near it costs four comparisons rather
+    // than a point-in-polygon walk. Almost every body in a five-state corpus is nowhere near it.
+    const boxes = exclude.map((polygon) => polygonBBox(polygon as Polygon | MultiPolygon));
+    const gate = {
+      minLng: Math.min(...boxes.map((b) => b.minLng)),
+      minLat: Math.min(...boxes.map((b) => b.minLat)),
+      maxLng: Math.max(...boxes.map((b) => b.maxLng)),
+      maxLat: Math.max(...boxes.map((b) => b.maxLat)),
+    };
+
+    // Bounded by the transaction's byte budget, not its document count — see `pruneBelowAreaFloor`
+    // for the worked reasoning.
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 100));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    const kept = { inCoverage: 0, userCreated: 0, attached: 0 };
+    const attachedBy: Record<string, number> = {};
+    let deleted = 0;
+
+    for (const body of page.page) {
+      // `centroid` is `pointOnFeature` and can sit on the shoreline rather than inside the water
+      // (see its own note), which for a county-scale test is close enough — a body straddling the
+      // line is decided by whichever side its representative point landed, and either answer is
+      // within the rule we are enforcing.
+      const point = body.centroid;
+      const near =
+        point.lng >= gate.minLng &&
+        point.lng <= gate.maxLng &&
+        point.lat >= gate.minLat &&
+        point.lat <= gate.maxLat;
+      const inside =
+        near &&
+        exclude.some((polygon, i) => {
+          const box = boxes[i];
+          if (
+            box === undefined ||
+            point.lng < box.minLng ||
+            point.lng > box.maxLng ||
+            point.lat < box.minLat ||
+            point.lat > box.maxLat
+          ) {
+            return false;
+          }
+          return pointInPolygon(point, polygon as Polygon | MultiPolygon);
+        });
+      if (!inside) {
+        kept.inCoverage++;
+        continue;
+      }
+      if (body.source === 'user') {
+        kept.userCreated++;
+        continue;
+      }
+      const attachment = await bodyAttachmentKind(ctx, body._id);
+      if (attachment !== null) {
+        kept.attached++;
+        attachedBy[attachment] = (attachedBy[attachment] ?? 0) + 1;
+        continue;
+      }
+
+      if (apply === true) {
+        await syncWaterBodyCells(ctx, body._id, {
+          bbox: body.bbox,
+          minVisibleZoom: body.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
+          listed: false,
+        });
+        await ctx.db.delete(body._id);
+      }
+      deleted++;
+    }
+
+    return {
+      applied: apply === true,
+      scanned: page.page.length,
+      deleted,
+      kept,
+      attachedBy,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/**
  * How far our shoreline may differ from HydroLAKES' before the run says so (D85).
  *
  * **2×, and deliberately loose.** The two are measuring different polygons — different water mask,
@@ -1334,7 +1556,7 @@ export const importWindRoses = internalMutation({
 export const create = mutation({
   args: {
     name: v.string(),
-    type: literals(WATER_BODY_TYPES),
+    type: literals(WATER_BODY_CLASSES),
     /**
      * The recorded skate this body is derived from. **Required** — the geometry is computed
      * server-side from its trusted path, and the client cannot supply a polygon at all.

@@ -3,14 +3,18 @@ import {
   CONDITION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
+  LEGACY_TYPE_TO_CLASS,
+  LEGACY_WATER_BODY_TYPES,
   PRECIP_TYPES,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
   THICKNESS_METHODS,
   USER_ROLES,
+  USER_SELECTABLE_WATER_BODY_CLASSES,
   USER_STATUSES,
-  WATER_BODY_TYPES,
+  WATER_BODY_CLASSES,
+  waterBodyClassLabel,
 } from './types';
 
 /**
@@ -89,8 +93,22 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
     ]);
   });
 
-  it('water-body types match the confirmed list', () => {
-    expect([...WATER_BODY_TYPES]).toEqual([
+  it('water-body classes match the confirmed list (D109)', () => {
+    expect([...WATER_BODY_CLASSES]).toEqual([
+      'lakePond',
+      'wetland',
+      'reservoir',
+      'bay',
+      'river',
+      'unclassified',
+    ]);
+  });
+
+  it('retains the retired vocabulary only for the backfill, with a total map into the new one', () => {
+    // The legacy list is not a validator any more, but the backfill has to name what it is reading —
+    // and if a value here had no mapping, those rows would be silently skipped and left on a
+    // vocabulary nothing else understands.
+    expect([...LEGACY_WATER_BODY_TYPES]).toEqual([
       'lake',
       'pond',
       'river',
@@ -100,6 +118,32 @@ describe('shared vocabulary (06-data-model.md, confirmed terms)', () => {
       'marsh',
       'other',
     ]);
+    for (const legacy of LEGACY_WATER_BODY_TYPES) {
+      expect(WATER_BODY_CLASSES).toContain(LEGACY_TYPE_TO_CLASS[legacy]);
+    }
+    // The one lossy step, asserted rather than assumed: the lake/pond split does not survive.
+    expect(LEGACY_TYPE_TO_CLASS.lake).toBe('lakePond');
+    expect(LEGACY_TYPE_TO_CLASS.pond).toBe('lakePond');
+    expect(LEGACY_TYPE_TO_CLASS.marsh).toBe('wetland');
+    expect(LEGACY_TYPE_TO_CLASS.other).toBe('unclassified');
+    expect(LEGACY_TYPE_TO_CLASS.stream).toBe('unclassified');
+  });
+
+  it('never offers "unclassified" as something a person can pick', () => {
+    // It is the honest answer when the CATALOGUES said nothing. Asking a skater to assert it about
+    // water they are standing on records a shrug as if it were an observation.
+    expect(USER_SELECTABLE_WATER_BODY_CLASSES).not.toContain('unclassified');
+    for (const c of USER_SELECTABLE_WATER_BODY_CLASSES) expect(WATER_BODY_CLASSES).toContain(c);
+  });
+
+  it('gives every class a label humanizeEnum could not produce', () => {
+    // `humanizeEnum` renders 'lakePond' as 'LakePond'. Every class needs a real label, and two of
+    // them are not de-camel-cased spellings at all.
+    for (const c of WATER_BODY_CLASSES) expect(waterBodyClassLabel(c)).toBeTruthy();
+    expect(waterBodyClassLabel('lakePond')).toBe('Lake or pond');
+    expect(waterBodyClassLabel('unclassified')).toBe('Water');
+    // An unmigrated row still renders as something rather than blank.
+    expect(waterBodyClassLabel('marsh')).toBe('marsh');
   });
 
   it('roles and statuses match the account model (D37/D33)', () => {

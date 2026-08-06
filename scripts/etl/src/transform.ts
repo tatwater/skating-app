@@ -13,6 +13,8 @@
 
 import {
   belongsInCorpus,
+  classifyOsmTags,
+  classifyWaterBody,
   fetchOrigin,
   HARD_MIN_SURFACE_AREA_ACRES,
   HARD_MIN_SURFACE_AREA_SQM,
@@ -21,11 +23,10 @@ import {
   MIN_SURFACE_AREA_ACRES,
   MIN_SURFACE_AREA_SQM,
   meetsAreaFloor,
-  type OsmTags,
+  type OsmTagBag,
   polygonBBox,
   representativePoint,
   surfaceAreaSqM,
-  waterBodyTypeFromOsmTags,
 } from '@skating/core';
 import simplify from '@turf/simplify';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -152,8 +153,8 @@ function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygo
 
 /**
  * Transform one OSM feature into a canonical body, or a skip:
- *  - `null` — **skipped by classification** (rivers / streams / generic wetland / … —
- *    `waterBodyTypeFromOsmTags` returns `null`).
+ *  - `null` — **skipped by classification** (rivers / streams / the ocean / … — `classifyWaterBody`
+ *    returns a `null` class, meaning "not water we cover" rather than "water of unknown kind").
  *  - `BELOW_AREA_FLOOR` — real still water the corpus does not want (`belongsInCorpus`): too
  *    small to be a destination, or unnamed wetland (D96).
  *
@@ -163,11 +164,34 @@ function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygo
  * catch per feature (see `transformFeatures`) — raw data carries enough junk geometry that a
  * single throw must not kill the import (phase-1 plan / PR#1 review P2).
  */
+/**
+ * Keep only the string-valued tags, because `osmium export -a type,id` does not emit only strings.
+ *
+ * The old call site cast straight through (`props as OsmTags`) and got away with it: OSM tag values
+ * genuinely are strings, and the classifier only reads `water` / `wetland` / `landuse` / `natural` /
+ * `waterway`. But `@id` is emitted as a **number**, so the cast was asserting something false about
+ * the same object — and `readTag` calls `.split(';')` on whatever it is handed, which turns a
+ * numeric tag into a `TypeError` inside a per-feature try/catch, i.e. a silently skipped body.
+ */
+function stringTags(props: OsmWaterProperties): OsmTagBag {
+  const out: OsmTagBag = {};
+  for (const [k, v] of Object.entries(props)) if (typeof v === 'string') out[k] = v;
+  return out;
+}
+
 export function featureToCanonicalBody(
   feature: OsmWaterFeature,
 ): CanonicalBody | null | typeof BELOW_AREA_FLOOR {
   const props: OsmWaterProperties = feature.properties ?? {};
-  const type = waterBodyTypeFromOsmTags(props as OsmTags);
+  const rawName = typeof props.name === 'string' ? props.name : '';
+  // **One classifier, shared with the merge** (N7, D109 amendment). This used to call an OSM-only
+  // mapper into the retired vocabulary; `classifyWaterBody` reads the same tags into the stored one
+  // and additionally lets a name overrule a tag — which is what keeps Higley Flow out of the drop
+  // list and Debsconeag Deadwater in the `river` class.
+  const { cls: type } = classifyWaterBody({
+    name: rawName,
+    claim: classifyOsmTags(stringTags(props)),
+  });
   if (type === null) return null;
 
   const externalId = externalIdFromProperties(props);
@@ -180,7 +204,7 @@ export function featureToCanonicalBody(
     throw new Error(`unsupported geometry type "${geom.type}" (expected a polygon area)`);
   }
 
-  const name = typeof props.name === 'string' ? props.name : '';
+  const name = rawName;
 
   // Degenerate geometry has to fail **before** the floor, or it stops being visible. A closed linear
   // ring needs four positions; anything less measures as zero area, which the floor would happily

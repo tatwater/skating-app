@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { humanizeEnum, WATER_BODY_TYPES } from '@skating/core';
+import { USER_SELECTABLE_WATER_BODY_CLASSES, waterBodyClassLabel } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Button, Input, Paragraph, Text, XStack, YStack } from 'tamagui';
@@ -32,7 +32,7 @@ export function NewWaterPrompt({
   onDismiss: () => void;
 }) {
   const [name, setName] = useState('');
-  const [type, setType] = useState<(typeof WATER_BODY_TYPES)[number]>('lake');
+  const [type, setType] = useState<(typeof USER_SELECTABLE_WATER_BODY_CLASSES)[number]>('lakePond');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showingCreate, setShowingCreate] = useState(false);
@@ -133,7 +133,7 @@ export function NewWaterPrompt({
             accessibilityLabel="Name of the water"
           />
           <XStack gap="$2" flexWrap="wrap">
-            {WATER_BODY_TYPES.map((t) => (
+            {USER_SELECTABLE_WATER_BODY_CLASSES.map((t) => (
               <Button
                 key={t}
                 size="$2"
@@ -142,7 +142,7 @@ export function NewWaterPrompt({
                 borderWidth={1}
                 onPress={() => setType(t)}
               >
-                {humanizeEnum(t)}
+                {waterBodyClassLabel(t)}
               </Button>
             ))}
           </XStack>

@@ -38,7 +38,7 @@ async function seedBody(t: ReturnType<typeof convexTest>, centroid = { lat: 44.0
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Test Lake',
-      type: 'lake' as const,
+      type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: square(0.01),
       bbox: { minLat: 43.99, minLng: -72.01, maxLat: 44.01, maxLng: -71.99 },

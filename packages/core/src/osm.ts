@@ -1,83 +1,23 @@
 /**
- * OSM tag → domain vocabulary mapping for the Phase 1 water-body ETL (D5/D14).
+ * OSM tag → domain vocabulary mapping, and the corpus-admission floor (D5/D14/D91).
  *
- * Pure and framework-free so it's property-testable in `@skating/core` and reusable
- * from the ETL transform (and any future server-side OSM ingestion). Colocated with the
- * `WATER_BODY_TYPES` enum it targets so the mapping and its output stay single-sourced.
+ * Pure and framework-free so it's property-testable in `@skating/core` and reusable from the ETL
+ * transform (and any future server-side OSM ingestion).
  *
- * **Rivers are deferred this phase** (modeling reaches is a later release — see the phase-1
- * build plan): any flowing/linear water (`waterway=*`, `water=river|stream|canal|…`) maps
- * to `null` so the ETL drops it. We import still water — lakes / ponds / reservoirs — only.
+ * **The OSM classifier that used to live here is gone** (N7, D109 amendment). `waterBodyTypeFromOsmTags`
+ * mapped tags into the retired eight-value vocabulary, and `waterClass.ts` already did the same job
+ * into the stored one — across all three catalogues rather than just OSM, with a bilingual
+ * name-keyword table and a veto path this never had. Two classifiers for one feed is how a body ends
+ * up admitted by one rule and refused by another; see `classifyOsmTags` + `classifyWaterBody`.
+ *
+ * What remains here is the part `waterClass.ts` does *not* do: the admission floor, which is a
+ * question about area and name rather than about kind.
  */
 
-import { WATER_BODY_TYPES, type WaterBodyClass, type WaterBodyType } from './types';
+import type { LegacyWaterBodyType, WaterBodyClass } from './types';
 
 /** A raw OSM feature's tag bag (`key=value`), e.g. `{ natural: 'water', water: 'lake' }`. */
 export type OsmTags = Record<string, string | undefined>;
-
-/** `water=*` subtags that are **flowing / linear** — deferred (rivers) or drainage we skip. */
-const FLOWING_WATER = new Set([
-  'river',
-  'stream',
-  'canal',
-  'ditch',
-  'drain',
-  'tidal_channel',
-  'lock',
-  'moat',
-]);
-
-/** Direct `water=*` subtag → our enum, for the still-water types we recognize by name. */
-const WATER_SUBTYPE: Partial<Record<string, WaterBodyType>> = {
-  lake: 'lake',
-  pond: 'pond',
-  reservoir: 'reservoir',
-};
-
-/**
- * Map an OSM feature's tags to our `WaterBodyType`, or `null` to **skip** the feature.
- *
- * A **positive still-water classification wins over the flowing-water defer** heuristic: an
- * explicit `water=reservoir` / `landuse=reservoir` / `natural=bay` / `wetland=marsh` isn't
- * dropped just because the feature also carries a through-`waterway` tag (legacy/relation
- * tagging leaves `waterway=river` on some reservoir areas). Only *bare* flowing water — a
- * `waterway` (or `water=river|stream|canal|…`) with no still-water signal — is deferred.
- *
- * Returns `null` for anything that isn't still water we import this phase (non-water,
- * flowing/linear water — rivers deferred, and non-marsh wetlands like swamp/bog/fen). Returns
- * `'other'` once a feature is established as a water *area* of an unrecognized kind (e.g.
- * `natural=water` with a missing/odd `water` subtag), so the ETL imports it rather than losing
- * it — `other` is the safety net, not a skip.
- */
-export function waterBodyTypeFromOsmTags(tags: OsmTags): WaterBodyType | null {
-  const { natural, water, waterway, landuse, wetland } = tags;
-
-  // An explicit `water=*` subtag is the strongest signal and is checked first.
-  if (water !== undefined) {
-    if (FLOWING_WATER.has(water)) return null; // water=river|stream|canal|… — deferred
-    const mapped = WATER_SUBTYPE[water];
-    if (mapped !== undefined) return mapped; // water=lake|pond|reservoir
-    return 'other'; // a water area of an unrecognized kind (lagoon, oxbow, basin, …)
-  }
-
-  // Other positive still-water classifications — these beat the `waterway` defer below.
-  if (natural === 'bay') return 'bay';
-  if (landuse === 'reservoir') return 'reservoir';
-  if (wetland === 'marsh') return 'marsh'; // only marshes; swamp/bog/fen are skipped
-
-  // Bare flowing/linear water (a `waterway` with no still-water signal above) — deferred.
-  if (waterway !== undefined) return null;
-
-  // A `natural=water` area with no recognized `water=*` subtag — unknown kind, still imported.
-  if (natural === 'water') return 'other';
-
-  return null;
-}
-
-/** Type guard: is `value` one of our water-body types? (defensive validation in the ETL). */
-export function isWaterBodyType(value: string): value is WaterBodyType {
-  return (WATER_BODY_TYPES as readonly string[]).includes(value);
-}
 
 // ── The corpus-admission floor (D91) ─────────────────────────────────────────────────────────────
 //
@@ -222,7 +162,7 @@ export function meetsAreaFloor(candidate: { name: string; surfaceAreaSqM: number
 export function belongsInCorpus(candidate: {
   name: string;
   surfaceAreaSqM: number;
-  type?: WaterBodyType | WaterBodyClass | undefined;
+  type?: LegacyWaterBodyType | WaterBodyClass | undefined;
   includedByRequest?: boolean | undefined;
 }): boolean {
   // A request outranks every rule below it. Someone asking for a specific bog beats any classifier
@@ -255,16 +195,17 @@ export function belongsInCorpus(candidate: {
  * unnamed bog above five acres is silently admitted** — the exact opposite of what D96 decided,
  * with no error anywhere.
  *
- * Both spellings are accepted for as long as both exist. `WATER_BODY_TYPES` is what is stored today
- * and `WATER_BODY_CLASSES` is what the merge produces, and the campaign that renames them cannot be
- * atomic across an ETL, a prune and 18,383 rows.
+ * Both spellings are accepted for as long as both exist. `WATER_BODY_CLASSES` is now the stored
+ * vocabulary, but the campaign that renamed it **cannot be atomic across an ETL, a prune and 18,383
+ * rows** — so `'marsh'` keeps being understood until the backfill has provably finished, and this
+ * function is what lets the prune and the import agree in the meantime.
  *
  * **Everything else is non-wetland, and that includes `river` and `unclassified`** — a deadwater gets
  * the ordinary still-water rules (founder call, 2026-08-04; the class carries the safety meaning, not
  * the admission bar), and an unclassified body is treated permissively because absence of evidence is
  * not evidence it should be deleted.
  */
-export function isWetlandClass(type: WaterBodyType | WaterBodyClass | undefined): boolean {
+export function isWetlandClass(type: LegacyWaterBodyType | WaterBodyClass | undefined): boolean {
   return type === 'marsh' || type === 'wetland';
 }
 

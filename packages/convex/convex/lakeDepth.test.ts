@@ -37,7 +37,7 @@ async function seedBody(
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Test Lake',
-      type: 'lake' as const,
+      type: 'lakePond' as const,
       source: 'osm' as const,
       externalId,
       polygon: square(0.05),
@@ -403,7 +403,7 @@ describe('waterBodies.importDepths (the D68 ladder, enforced at the write bounda
       bodies: [
         {
           name: 'Test Lake (renamed upstream)',
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           externalId: 'way/42',
           polygon: square(0.06),
@@ -459,7 +459,7 @@ describe('waterBodies.matchAndImportDepths (the geometric join)', () => {
       bodies: [
         {
           name,
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           externalId,
           polygon,
@@ -700,7 +700,7 @@ describe('the depth pair is never left inverted', () => {
       bodies: [
         {
           name: 'Pair Lake',
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           externalId: 'way/pair',
           polygon: shifted,
@@ -895,7 +895,7 @@ describe("waterBodies.matchAndImportDepths — D85's shoreline cross-check", () 
       bodies: [
         {
           name: 'Cross-check Lake',
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           externalId: 'way/xc',
           polygon: POLYGON,

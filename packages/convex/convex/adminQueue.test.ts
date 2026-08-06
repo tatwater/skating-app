@@ -230,7 +230,7 @@ describe('waterBodies.listDedupCandidates (D36 queue)', () => {
     const { dup, survivor } = await t.run(async (ctx) => {
       const survivor = await ctx.db.insert('waterBodies', {
         name: 'Official Pond',
-        type: 'lake',
+        type: 'lakePond',
         source: 'osm',
         polygon: poly,
         bbox,
@@ -240,7 +240,7 @@ describe('waterBodies.listDedupCandidates (D36 queue)', () => {
       });
       const dup = await ctx.db.insert('waterBodies', {
         name: 'Pond (user drawn)',
-        type: 'lake',
+        type: 'lakePond',
         source: 'user',
         polygon: poly,
         bbox,

@@ -3,7 +3,7 @@
  * body record the transform produces (mirroring `waterBodies.importCanonical`).
  */
 
-import type { BBox, LatLng, WaterBodyType } from '@skating/core';
+import type { BBox, LatLng, WaterBodyClass } from '@skating/core';
 import type { Feature, Geometry, MultiPolygon, Polygon } from 'geojson';
 
 /**
@@ -31,7 +31,7 @@ export interface CanonicalBody {
   source: 'osm';
   externalId: string;
   name: string;
-  type: WaterBodyType;
+  type: WaterBodyClass;
   polygon: Polygon | MultiPolygon;
   bbox: BBox;
   centroid: LatLng;

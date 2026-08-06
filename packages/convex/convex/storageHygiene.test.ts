@@ -77,7 +77,7 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
         source: 'osm' as const,
         externalId: 'osm/hygiene-1',
         name: 'Shelburne Pond',
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         polygon: {
           type: 'Polygon' as const,
           coordinates: [

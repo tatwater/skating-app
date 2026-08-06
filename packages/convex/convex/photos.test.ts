@@ -32,7 +32,7 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
         source: 'osm',
         externalId: 'osm/1',
         name: 'Lake Morey',
-        type: 'lake',
+        type: 'lakePond',
         polygon: POLYGON,
         bbox: { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 },
         centroid: { lat: 0.5, lng: 0.5 },

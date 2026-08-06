@@ -74,6 +74,21 @@ describe('classifyOsmTags', () => {
     });
   });
 
+  it('lets a positive still-water tag beat a through-waterway tag', () => {
+    // Legacy relation tagging leaves `waterway=river` on some reservoir and lake areas. A bare
+    // `waterway` defers, but it must never delete a feature that also says plainly what it is —
+    // this precedence used to live in `waterBodyTypeFromOsmTags` and moved here with D109.
+    expect(
+      classifyOsmTags({ natural: 'water', water: 'reservoir', waterway: 'river' }),
+    ).toMatchObject({ cls: 'reservoir' });
+    expect(classifyOsmTags({ natural: 'bay', waterway: 'river' })).toMatchObject({ cls: 'bay' });
+    expect(classifyOsmTags({ landuse: 'reservoir', waterway: 'river' })).toMatchObject({
+      cls: 'reservoir',
+    });
+    // …while bare flowing water, with nothing else asserted, still drops.
+    expect(classifyOsmTags({ waterway: 'river' })).toMatchObject({ outcome: 'drop' });
+  });
+
   it('treats bare natural=water as silence, not as a class', () => {
     // 113,880 features. It is the single largest thing in the corpus and it means "nobody said".
     expect(classifyOsmTags({ natural: 'water' }).outcome).toBe('silent');

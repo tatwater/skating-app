@@ -36,7 +36,7 @@ describe('regionStats.recompute', () => {
       for (const [i, b] of bodies.entries()) {
         await ctx.db.insert('waterBodies', {
           name: `body${i}`,
-          type: 'lake',
+          type: 'lakePond',
           source: 'osm',
           externalId: `way/${i}`,
           states: b.states,

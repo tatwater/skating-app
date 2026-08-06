@@ -27,7 +27,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
   ) {
     return t.run((ctx) =>
       ctx.db.insert('waterBodies', {
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         source: 'osm' as const,
         externalId,
         dedupStatus: 'clean' as const,
@@ -79,7 +79,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
       bodies: [
         {
           name,
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           externalId,
           polygon,

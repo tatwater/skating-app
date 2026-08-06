@@ -529,7 +529,7 @@ describe('profiles.getPublicProfile (D13)', () => {
     const waterBodyId = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Lake Morey',
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         source: 'osm' as const,
         polygon: {
           type: 'Polygon' as const,
@@ -819,7 +819,7 @@ describe('profiles.backfillContributionCounts', () => {
     const waterBodyId = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Lake Morey',
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         source: 'osm' as const,
         polygon: {
           type: 'Polygon' as const,

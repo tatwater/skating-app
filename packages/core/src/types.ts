@@ -28,8 +28,16 @@ export type UserRole = (typeof USER_ROLES)[number];
 export const USER_STATUSES = ['active', 'suspended', 'banned', 'deleting', 'deleted'] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
 
-/** Water body kinds (D4/D14). **Superseded by `WATER_BODY_CLASSES`** — see there. */
-export const WATER_BODY_TYPES = [
+/**
+ * Water body kinds (D4/D14) — **retired as the stored vocabulary by N7's D109 amendment.**
+ *
+ * `waterBodies.type` now stores `WATER_BODY_CLASSES`. This list survives for exactly one job: the
+ * backfill that rewrites the rows written before the migration needs to name what it is reading.
+ * It is not a validator anywhere any more, nothing produces it, and no UI renders it.
+ *
+ * **Do not add a value here.** If a distinction is missing, it is missing from `WATER_BODY_CLASSES`.
+ */
+export const LEGACY_WATER_BODY_TYPES = [
   'lake',
   'pond',
   'river',
@@ -39,7 +47,27 @@ export const WATER_BODY_TYPES = [
   'marsh',
   'other',
 ] as const;
-export type WaterBodyType = (typeof WATER_BODY_TYPES)[number];
+export type LegacyWaterBodyType = (typeof LEGACY_WATER_BODY_TYPES)[number];
+
+/**
+ * The one-way map from the retired vocabulary into the stored one (D109 amendment).
+ *
+ * **`lake` and `pond` both become `lakePond`, and that is the migration's only lossy step** — which
+ * is the point rather than a regret: the distinction was never evidence-based, and 4,283 New England
+ * "Ponds" would have to be renamed lakes to make it so. `stream` maps to `unclassified` rather than
+ * `river` because nothing ever wrote it and `river` now means something specific and narrow (a slow
+ * reach, a deadwater), which a stream polygon is not evidence of.
+ */
+export const LEGACY_TYPE_TO_CLASS: Readonly<Record<LegacyWaterBodyType, WaterBodyClass>> = {
+  lake: 'lakePond',
+  pond: 'lakePond',
+  reservoir: 'reservoir',
+  bay: 'bay',
+  marsh: 'wetland',
+  river: 'river',
+  stream: 'unclassified',
+  other: 'unclassified',
+};
 
 /**
  * What kind of water this is — **the vocabulary the three catalogues get mapped into** (N7, D109).
@@ -74,10 +102,15 @@ export type WaterBodyType = (typeof WATER_BODY_TYPES)[number];
  * behind a dam — Cedar River Flow is NHD's own `Reservoir`, Crooked Brook Flowage is 1,254 acres —
  * and it behaves like a lake everywhere except at the dam. Only the reach words go here.
  *
- * **Migration.** `WATER_BODY_TYPES` above is the stored vocabulary until N7's re-import lands, and is
- * retained so nothing has to change in step with the ETL. `lake` and `pond` both fold into
- * `lakePond`, `marsh` into `wetland`, `other` into `unclassified`; `river` is re-purposed from a value
- * nothing ever wrote, and `stream` disappears.
+ * **Migration — done, 2026-08-05 (D109 amendment).** This is the stored vocabulary. `lake` and `pond`
+ * both folded into `lakePond`, `marsh` into `wetland`, `other` and `stream` into `unclassified`;
+ * `river` was re-purposed from a value nothing ever wrote. The retired list survives as
+ * `LEGACY_WATER_BODY_TYPES` for the backfill's benefit and nothing else, with `LEGACY_TYPE_TO_CLASS`
+ * as the one-way map.
+ *
+ * **`unclassified` is not offered to a user.** It is what we say when the catalogues did not tell us,
+ * which is a fine thing for a moderator to see and a meaningless thing to ask a skater to pick. See
+ * `USER_SELECTABLE_WATER_BODY_CLASSES`.
  */
 export const WATER_BODY_CLASSES = [
   'lakePond',
@@ -88,6 +121,46 @@ export const WATER_BODY_CLASSES = [
   'unclassified',
 ] as const;
 export type WaterBodyClass = (typeof WATER_BODY_CLASSES)[number];
+
+/**
+ * What a person is shown for each class.
+ *
+ * A table rather than `humanizeEnum`, which only swaps underscores and capitalises a first letter —
+ * it renders `lakePond` as "LakePond", and would have done so in five places across web and mobile.
+ * The labels are also not just de-camel-cased spellings: **`lakePond` reads "Lake or pond"** because
+ * the whole reason the class exists is that we decline to say which, and `unclassified` reads "Water"
+ * because a person looking at a lake does not need to be told we have no opinion about it.
+ */
+export const WATER_BODY_CLASS_LABELS: Readonly<Record<WaterBodyClass, string>> = {
+  lakePond: 'Lake or pond',
+  wetland: 'Wetland',
+  reservoir: 'Reservoir',
+  bay: 'Bay',
+  river: 'Slow river reach',
+  unclassified: 'Water',
+};
+
+/** The display label for a stored class, falling back to the raw value for an unmigrated row. */
+export function waterBodyClassLabel(value: string): string {
+  return WATER_BODY_CLASS_LABELS[value as WaterBodyClass] ?? value;
+}
+
+/**
+ * The classes a person may choose when they draw a body themselves (D37 / Phase 8).
+ *
+ * **`unclassified` is deliberately absent.** It is the honest answer when *the catalogues* said
+ * nothing, and offering it in a picker would invite a skater to select "we don't know" about water
+ * they are standing on — which is not a thing they can know on our behalf and not a thing we should
+ * record as if they had. Someone who cannot place their water picks the closest class; a moderator
+ * fixes it if it matters.
+ */
+export const USER_SELECTABLE_WATER_BODY_CLASSES = [
+  'lakePond',
+  'reservoir',
+  'bay',
+  'river',
+  'wetland',
+] as const satisfies readonly WaterBodyClass[];
 
 /** Coarse overall skating quality (D23) — never a safety verdict (D3). */
 export const SKATE_QUALITIES = ['great', 'good', 'fair', 'poor'] as const;

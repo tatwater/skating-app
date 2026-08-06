@@ -18,6 +18,7 @@ import {
   ELEVATION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
+  LEGACY_WATER_BODY_TYPES,
   PRECIP_TYPES,
   PROFILE_VISIBILITIES,
   RATING_TARGET_TYPES,
@@ -28,7 +29,7 @@ import {
   THICKNESS_METHODS,
   USER_ROLES,
   USER_STATUSES,
-  WATER_BODY_TYPES,
+  WATER_BODY_CLASSES,
   WIND_ROSE_SOURCES,
 } from '@skating/core';
 import { defineSchema, defineTable } from 'convex/server';
@@ -353,7 +354,21 @@ export default defineSchema({
 
   waterBodies: defineTable({
     name: v.string(),
-    type: literals(WATER_BODY_TYPES),
+    /**
+     * What kind of water this is (D109 amendment) — **mid-migration, and this union is the migration.**
+     *
+     * `WATER_BODY_CLASSES` is the vocabulary; `LEGACY_WATER_BODY_TYPES` is accepted alongside it only
+     * until `backfillWaterBodyClasses` has rewritten every stored row. **Convex validates existing
+     * documents on push**, so narrowing this field before the backfill runs does not produce a
+     * migration — it produces a deploy that fails, on a table with 18,383 rows, with the new function
+     * code already written and no way to run it. The order is: widen, deploy, backfill, narrow.
+     *
+     * ⚠ **Nothing writes a legacy value.** `canonicalBody` and `waterBodies.create` both validate
+     * classes only, so the legacy half of this union is drained by the backfill and never refilled.
+     * Narrow it — delete the union, keep `literals(WATER_BODY_CLASSES)` — once `backfillWaterBodyClasses`
+     * reports `remaining: 0`.
+     */
+    type: v.union(literals(WATER_BODY_CLASSES), literals(LEGACY_WATER_BODY_TYPES)),
     source: literals(WATER_BODY_SOURCES),
     externalId: v.optional(v.string()), // OSM/NHD id when source != user
     /**

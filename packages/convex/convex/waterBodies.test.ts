@@ -1,6 +1,6 @@
-import { meetsAreaFloor } from '@skating/core';
+import { belongsInCorpus, isWetlandClass, meetsAreaFloor } from '@skating/core';
 import { convexTest } from 'convex-test';
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, it, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import schema from './schema';
@@ -22,7 +22,7 @@ type Status = Doc<'profiles'>['status'];
 
 const SAMPLE_BODY = {
   name: 'Lake Morey',
-  type: 'lake' as const,
+  type: 'lakePond' as const,
   polygon: {
     type: 'Polygon' as const,
     coordinates: [
@@ -44,7 +44,7 @@ const CANONICAL_ITEM = {
   source: 'osm' as const,
   externalId: 'osm/way/1',
   name: 'Lake Champlain',
-  type: 'lake' as const,
+  type: 'lakePond' as const,
   polygon: SAMPLE_BODY.polygon,
   bbox: SAMPLE_BODY.bbox,
   centroid: SAMPLE_BODY.centroid,
@@ -141,7 +141,7 @@ async function seedTrackCreateArgs(
   );
   return {
     name: overrides.name ?? 'Lake Morey',
-    type: 'lake' as const,
+    type: 'lakePond' as const,
     activityId,
     confirmedNew: true,
   };
@@ -249,7 +249,7 @@ describe('waterBodies.create (path-only, D14/D36)', () => {
     const existing = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Known',
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         source: 'osm' as const,
         polygon: SAMPLE_BODY.polygon,
         bbox: SAMPLE_BODY.bbox,
@@ -469,7 +469,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
           source: 'osm',
           externalId: 'osm/big',
           name: 'Big Lake',
-          type: 'lake',
+          type: 'lakePond',
           polygon: {
             type: 'Polygon',
             coordinates: [
@@ -506,7 +506,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
           source: 'osm',
           externalId: 'osm/near',
           name: 'Near Pond',
-          type: 'pond',
+          type: 'lakePond',
           polygon: SAMPLE_BODY.polygon,
           bbox: { minLat: 0.11, minLng: 0.11, maxLat: 0.14, maxLng: 0.14 },
           centroid: { lat: 0.13, lng: 0.13 },
@@ -528,7 +528,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
           source: 'osm',
           externalId: 'osm/small',
           name: 'Small Pond',
-          type: 'pond',
+          type: 'lakePond',
           polygon: SAMPLE_BODY.polygon,
           bbox: { minLat: 0.04, minLng: 0.04, maxLat: 0.06, maxLng: 0.06 },
           centroid: { lat: 0.05, lng: 0.05 },
@@ -552,7 +552,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
           source: 'osm',
           externalId: 'osm/far-big',
           name: 'Far Big Lake',
-          type: 'lake',
+          type: 'lakePond',
           polygon: SAMPLE_BODY.polygon,
           bbox: { minLat: 40, minLng: 40, maxLat: 42, maxLng: 42 },
           centroid: { lat: 41, lng: 41 },
@@ -575,7 +575,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
         source: 'osm' as const,
         externalId: `osm/${c}`,
         name: `Body ${c}`,
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         polygon: SAMPLE_BODY.polygon,
         bbox: { minLat: c - 0.01, minLng: c - 0.01, maxLat: c + 0.01, maxLng: c + 0.01 },
         centroid: { lat: c, lng: c },
@@ -601,7 +601,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
         source: 'osm' as const,
         externalId: `osm/${c}`,
         name: `Body ${c}`,
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         polygon: SAMPLE_BODY.polygon,
         bbox: { minLat: c - 0.01, minLng: c - 0.01, maxLat: c + 0.01, maxLng: c + 0.01 },
         centroid: { lat: c, lng: c },
@@ -635,7 +635,7 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
           source: 'osm' as const,
           externalId: `osm/dense/${i}`,
           name: `Body ${i}`,
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           polygon: SAMPLE_BODY.polygon,
           bbox: { minLat: c - 0.0005, minLng: c - 0.0005, maxLat: c + 0.0005, maxLng: c + 0.0005 },
           centroid: { lat: c, lng: c },
@@ -1322,18 +1322,18 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
 
   test('D96: removes unnamed wetland over five acres, keeps named wetland and unnamed lakes', async () => {
     const t = convexTestWithGeo();
-    await seedBody(t, { externalId: 'osm/bog', type: 'marsh', surfaceAreaSqM: BIG });
+    await seedBody(t, { externalId: 'osm/bog', type: 'wetland', surfaceAreaSqM: BIG });
     // A long-axis exemption was designed and measured for this class, then dropped (founder,
     // 2026-08-03, "for now"). N7b's includedByRequest is what makes dropping it recoverable.
     await seedBody(t, {
       externalId: 'osm/bog-long',
-      type: 'marsh',
+      type: 'wetland',
       surfaceAreaSqM: BIG,
       longAxisM: 3000,
     });
     await seedBody(t, {
       externalId: 'osm/bog-named',
-      type: 'marsh',
+      type: 'wetland',
       surfaceAreaSqM: BIG,
       name: 'Ninemile Swamp',
     });
@@ -1346,8 +1346,12 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
 
   test('D96: removes a NAMED wetland in the 1-5 acre band, where a named pond survives', async () => {
     const t = convexTestWithGeo();
-    await seedBody(t, { externalId: 'osm/marsh-named-small', type: 'marsh', name: 'Little Bog' });
-    await seedBody(t, { externalId: 'osm/pond-named-small', type: 'pond', name: 'Keiser Pond' });
+    await seedBody(t, { externalId: 'osm/marsh-named-small', type: 'wetland', name: 'Little Bog' });
+    await seedBody(t, {
+      externalId: 'osm/pond-named-small',
+      type: 'lakePond',
+      name: 'Keiser Pond',
+    });
     const res = await runPrune(t, true);
     expect(res.deleted).toBe(1);
     expect(await remaining(t)).toEqual(['osm/pond-named-small']);
@@ -2084,7 +2088,7 @@ describe('waterBodies.searchByName (map search box)', () => {
     return t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name,
-        type: 'lake' as const,
+        type: 'lakePond' as const,
         source: 'osm' as const,
         externalId: `osm/way/${name}`,
         polygon: SAMPLE_BODY.polygon,
@@ -2104,7 +2108,7 @@ describe('waterBodies.searchByName (map search box)', () => {
     const results = await t.query(api.waterBodies.searchByName, { query: 'george' });
     const george = results.find((r) => r.name === 'Lake George');
     expect(george).toMatchObject({
-      type: 'lake',
+      type: 'lakePond',
       centroid: { lat: 0.5, lng: 0.5 },
       states: ['NY'],
     });
@@ -2148,7 +2152,7 @@ describe('waterBodies.applyCuratedBoostSeed (Phase 2.5 re-seed)', () => {
     source: 'osm' as const,
     externalId,
     name,
-    type: 'pond' as const,
+    type: 'lakePond' as const,
     polygon: SAMPLE_BODY.polygon,
     bbox: SAMPLE_BODY.bbox,
     centroid: SAMPLE_BODY.centroid,
@@ -2378,5 +2382,120 @@ describe('waterBodies catalogue identity', () => {
     const second = await t.mutation(internal.waterBodies.backfillCatalogueIds, {});
     expect(second.patched).toBe(0);
     expect(second.alreadySet).toBe(1);
+  });
+});
+
+describe('backfillWaterBodyClasses (D109)', () => {
+  /** Seed one body and force its stored `type` to a retired value, as a pre-migration row is. */
+  async function seedLegacy(
+    t: ReturnType<typeof convexTestWithGeo>,
+    legacy: string,
+    name = 'Legacy',
+  ) {
+    await t.run(async (ctx) => {
+      await ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        name,
+        // biome-ignore lint/suspicious/noExplicitAny: the point is to store a value the new validator refuses.
+        type: legacy as any,
+        source: 'osm',
+        externalId: `osm/way/${name}`,
+        dedupStatus: 'clean',
+        createdAt: Date.now(),
+      });
+    });
+  }
+
+  it('rewrites every retired value, and folds lake and pond onto one class', async () => {
+    const t = convexTestWithGeo();
+    await seedLegacy(t, 'lake', 'A');
+    await seedLegacy(t, 'pond', 'B');
+    await seedLegacy(t, 'marsh', 'C');
+    await seedLegacy(t, 'other', 'D');
+
+    const res = await t.mutation(internal.waterBodies.backfillWaterBodyClasses, { apply: true });
+    expect(res.rewritten).toBe(4);
+    expect(res.unmappable).toBe(0);
+    expect(res.isDone).toBe(true);
+
+    const types = await t.run(async (ctx) => {
+      const rows = await ctx.db.query('waterBodies').collect();
+      return Object.fromEntries(rows.map((r) => [r.name, r.type]));
+    });
+    // The one lossy step, and the one the whole class exists to make: lake and pond are one thing.
+    expect(types.A).toBe('lakePond');
+    expect(types.B).toBe('lakePond');
+    expect(types.C).toBe('wetland');
+    expect(types.D).toBe('unclassified');
+  });
+
+  it('writes nothing unless asked, so the scope can be read before it moves', async () => {
+    const t = convexTestWithGeo();
+    await seedLegacy(t, 'marsh', 'A');
+
+    const dry = await t.mutation(internal.waterBodies.backfillWaterBodyClasses, {});
+    expect(dry.applied).toBe(false);
+    expect(dry.rewritten).toBe(1);
+    expect(dry.byMapping['marsh->wetland']).toBe(1);
+
+    const stored = await t.run(
+      async (ctx) => (await ctx.db.query('waterBodies').collect())[0]?.type,
+    );
+    expect(stored).toBe('marsh');
+  });
+
+  it('is idempotent — a migrated row is skipped, not re-derived', async () => {
+    const t = convexTestWithGeo();
+    await seedLegacy(t, 'lake', 'A');
+
+    const first = await t.mutation(internal.waterBodies.backfillWaterBodyClasses, { apply: true });
+    expect(first.rewritten).toBe(1);
+    const second = await t.mutation(internal.waterBodies.backfillWaterBodyClasses, { apply: true });
+    expect(second.rewritten).toBe(0);
+    expect(second.alreadyMigrated).toBe(1);
+  });
+
+  it('cannot be handed a value in neither vocabulary — the schema union is the guard', async () => {
+    // The mutation counts an unmappable row rather than throwing, so one bad value cannot stall a
+    // migration across 18,383. That branch is deliberately unreachable through any supported path,
+    // and this is what makes it so: the union in `schema.ts` admits the two vocabularies and nothing
+    // else, so a third spelling is refused at write time rather than discovered at migration time.
+    const t = convexTestWithGeo();
+    await expect(seedLegacy(t, 'swimming_pool', 'A')).rejects.toThrow(/Validator error/);
+  });
+
+  it('leaves prominence and cells untouched, because `type` feeds neither', async () => {
+    // D49 scores on area and boost; N1 cells on bbox and prominence. A body must not move, change
+    // visibility or change rank because its class was renamed.
+    const t = convexTestWithGeo();
+    await seedLegacy(t, 'lake', 'A');
+    const before = await t.run(async (ctx) => {
+      const body = (await ctx.db.query('waterBodies').collect())[0];
+      const cells = await ctx.db.query('waterBodyCells').collect();
+      return { score: body?.displayScore, zoom: body?.minVisibleZoom, cells: cells.length };
+    });
+
+    await t.mutation(internal.waterBodies.backfillWaterBodyClasses, { apply: true });
+
+    const after = await t.run(async (ctx) => {
+      const body = (await ctx.db.query('waterBodies').collect())[0];
+      const cells = await ctx.db.query('waterBodyCells').collect();
+      return { score: body?.displayScore, zoom: body?.minVisibleZoom, cells: cells.length };
+    });
+    expect(after).toEqual(before);
+  });
+
+  it('keeps the wetland admission rule working during the migration, in both spellings', async () => {
+    // `isWetlandClass` understands 'marsh' and 'wetland' precisely so the prune cannot disagree with
+    // the corpus while the two coexist. If it ever stopped, every unnamed bog above five acres would
+    // be silently admitted — with no error anywhere.
+    expect(isWetlandClass('marsh')).toBe(true);
+    expect(isWetlandClass('wetland')).toBe(true);
+    expect(belongsInCorpus({ name: '', type: 'marsh', surfaceAreaSqM: 10 * 4046.8564224 })).toBe(
+      false,
+    );
+    expect(belongsInCorpus({ name: '', type: 'wetland', surfaceAreaSqM: 10 * 4046.8564224 })).toBe(
+      false,
+    );
   });
 });
