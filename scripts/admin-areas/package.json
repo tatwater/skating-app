@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "transform": "tsx src/cli.ts",
     "load": "tsx src/load.ts",
-    "fetch-states": "tsx src/fetchStates.ts"
+    "fetch-states": "tsx src/fetchStates.ts",
+    "build-region": "tsx src/buildRegion.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",
@@ -18,6 +19,7 @@
     "@turf/bbox": "^7.4.0",
     "@turf/difference": "^7.4.0",
     "@turf/helpers": "^7.3.5",
+    "@turf/intersect": "^7.3.5",
     "@turf/simplify": "^7.3.0",
     "@turf/union": "^7.3.5"
   },

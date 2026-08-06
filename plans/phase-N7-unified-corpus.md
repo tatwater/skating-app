@@ -1009,6 +1009,13 @@ import. It sat at position 8 because the old ordering filtered each source in it
 the extract's own bbox was the only regional statement — which is exactly the assumption
 *merge first, filter once* removed.
 
+**The region clip gained a second, different exclusion — D111.** New York south of I-84 is drawn on
+the map and left out of the corpus, because a basemap with a world made "what we render" and "what we
+claim to cover" two questions instead of one. It is counted apart from `outOfRegion` on purpose: that
+number is the geodatabases spilling over their own state lines, which should stay roughly constant,
+and at 35,637 it is large enough to hide a coverage decision inside. See
+[D111](./01-decisions.md#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7).
+
 **Step 3 must precede step 5, and the temptation to reverse them should be resisted.** D93 says
 `geometrySource` is a field so D92's answer lands as an update rather than a migration — true, but the
 **polygon moves with it**, and re-importing 27,074 outlines is the expensive half. `merge.ts` currently
