@@ -81,6 +81,24 @@ import {
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { GNIS_STATE_CODES, GNIS_WATER_CLASSES, gnisTextPath, isNullIsland } from './gnisArchive';
+import {
+  type Boundary,
+  CELL_DEG,
+  cellsFor,
+  dropReason,
+  type Feature,
+  type GnisPoint,
+  gnisNameFor,
+  hasBayParent,
+  inDownstate,
+  index,
+  inRegion,
+  type Merged,
+  mergeGroupWithReason,
+  polygonClaims,
+  SQ_M_PER_ACRE,
+  Union,
+} from './mergeRules';
 import { NHD_SOURCES, nhdArchiveKey, normalizeGnisId, normalizeNhdId } from './nhdArchive';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -92,8 +110,6 @@ const THREE_DHP_DIR = join(HERE, '..', '.raw-3dhp', 'waterbody');
 
 const OSM_STATES = ['me', 'nh', 'vt', 'ma', 'ny'] as const;
 const RECORD_SEPARATOR = String.fromCharCode(0x1e);
-/** 0.1° ≈ 11 km. A few candidates per cell in our region. */
-const CELL_DEG = 0.1;
 
 function log(message: string): void {
   process.stderr.write(`[merge] ${message}\n`);
@@ -103,42 +119,10 @@ function log(message: string): void {
 // Sources
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface Feature {
-  readonly source: ClaimSource;
-  readonly id: string;
-  readonly name: string;
-  readonly cls: WaterBodyClass | null;
-  /** The classifier's token, e.g. `3dhp:featuretype=4`. Carried so a VETO can be recognised. */
-  readonly token: string;
-  readonly gnisId?: string | undefined;
-  readonly polygon: Polygon | MultiPolygon;
-  readonly bbox: BBox;
-  readonly areaSqM: number;
-}
-
 /** Flatten a verdict onto the fields a `Feature` carries. */
 function verdictFields(v: { cls: WaterBodyClass | null; token: string }) {
   return { cls: v.cls, token: v.token };
 }
-
-/**
- * Refusals that **no other catalogue may overrule** (founder call, 2026-08-04: no Great Lakes, no
- * ocean, no Long Island Sound).
- *
- * The ordinary merge rule is that one source's refusal loses to another's class — that is what
- * rescues a body OSM calls `wetland=marsh` and NHD calls `LakePond`, and it is the whole reason this
- * file exists. But it is wrong here, and the first run proved it: NHD publishes **Lake Erie as FTYPE
- * 390 LakePond** at 6.4 million acres and **Long Island Sound as FTYPE 493 Estuary** at 801,802,
- * so a permissive merge hands the corpus an ocean on a technicality.
- *
- * `Ocean or Great Lake` is 3DHP's own dedicated class and there is no reading of it under which we
- * want the body. A veto is the right shape precisely because it is *not* evidence to be weighed.
- */
-const VETO_TOKENS: ReadonlySet<string> = new Set([
-  '3dhp:featuretype=4', // Ocean or Great Lake
-  'nhd:ftype=445', // SeaOcean
-  'nhd:ftype=493', // Estuary — tidal and saline; Long Island Sound is the fixture
-]);
 
 /** Applied to every lane before anything else: D96 rule 1, the only source-independent rule. */
 function admissible(areaSqM: number): boolean {
@@ -381,13 +365,6 @@ function loadThreeDhp(refresh: boolean): Feature[] {
 // GNIS — the gazetteer, consulted BEFORE the floor
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface GnisPoint {
-  readonly lng: number;
-  readonly lat: number;
-  readonly name: string;
-  readonly featureClass: string;
-}
-
 /**
  * The Domestic Names gazetteer, per state — **the only lane whose output can change what is
  * admitted, not just what is displayed.**
@@ -441,37 +418,9 @@ function loadGnis(): Map<string, GnisPoint[]> {
   return grid;
 }
 
-/**
- * The single GNIS feature inside this outline, if there is exactly one.
- *
- * **Exactly one, or none.** A tidal bay swallows seven GNIS points (Great Bay contains Great Bay,
- * plus six coves and inlets); picking the first would be arbitrary and picking the largest would need
- * an area GNIS does not publish. Ambiguity here is a reason to stay unnamed, not to guess.
- */
-function gnisNameFor(
-  body: { polygon: Polygon | MultiPolygon; bbox: BBox },
-  grid: Map<string, GnisPoint[]>,
-): string | undefined {
-  const found: GnisPoint[] = [];
-  for (const cell of cellsFor(body.bbox)) {
-    for (const p of grid.get(cell) ?? []) {
-      if (p.lng < body.bbox.minLng || p.lng > body.bbox.maxLng) continue;
-      if (p.lat < body.bbox.minLat || p.lat > body.bbox.maxLat) continue;
-      if (pointInPolygon({ lat: p.lat, lng: p.lng }, body.polygon)) found.push(p);
-      if (found.length > 1) return undefined;
-    }
-  }
-  return found[0]?.name;
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // The region mask
 // ─────────────────────────────────────────────────────────────────────────────
-
-interface Boundary {
-  readonly bbox: BBox;
-  readonly polygon: Polygon | MultiPolygon;
-}
 
 /**
  * The five states, as counties and towns.
@@ -498,70 +447,34 @@ function loadBoundaries(): Boundary[] {
 }
 
 /**
- * Does any part of this body lie in our five states?
+ * New York south of I-84 — in the five states, and deliberately not in the corpus.
  *
- * **Any part, not its centre**, and that is the difference between keeping Beau Lake and losing it.
- * Beau Lake is the phase's headline fixture — 1,875 acres, absent from the corpus because Geofabrik
- * clips the Québec half — and a centre-based test on a body that straddles the border is a coin
- * flip. Sampling the outline and keeping on the first hit answers the question we actually mean.
+ * The map draws downstate New York in full: it is one of our states, Poughkeepsie and Brooklyn are
+ * real places, and a user driving north deserves to see where they are starting from. What we do
+ * *not* do is claim to know anything about skating on the water down there (founder, 2026-08-05).
+ * Coverage and rendering had always been the same question because the basemap was a rectangle that
+ * cut them off together; giving the map a world made them two questions, and this is the second one.
+ *
+ * Generated by `pnpm --filter @skating/admin-areas build-region` — the same TIGER counties the map's
+ * mask is cut from, so the line on the map and the line in the corpus cannot drift apart.
  */
-function inRegion(
-  body: { polygon: Polygon | MultiPolygon; bbox: BBox },
-  grid: Map<string, Boundary[]>,
-): boolean {
-  const g = body.polygon;
-  const rings = g.type === 'Polygon' ? [g.coordinates[0]] : g.coordinates.map((poly) => poly[0]);
-  const points: [number, number][] = [];
-  for (const ring of rings) {
-    if (!ring) continue;
-    const step = Math.max(1, Math.floor(ring.length / 8));
-    for (let i = 0; i < ring.length; i += step) {
-      const c = ring[i];
-      if (c) points.push([c[0] as number, c[1] as number]);
-    }
+function loadDownstate(): Boundary[] {
+  const file = join(HERE, '..', '..', 'basemap', '.scratch', 'downstate-ny.geojson');
+  if (!existsSync(file)) {
+    throw new Error(
+      `missing ${file} — generate it first:\n` +
+        '  pnpm --filter @skating/admin-areas build-region',
+    );
   }
-  for (const [lng, lat] of points) {
-    const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
-    for (const b of grid.get(cell) ?? []) {
-      if (
-        lng < b.bbox.minLng ||
-        lng > b.bbox.maxLng ||
-        lat < b.bbox.minLat ||
-        lat > b.bbox.maxLat
-      ) {
-        continue;
-      }
-      if (pointInPolygon({ lat, lng }, b.polygon)) return true;
-    }
-  }
-  return false;
+  const fc = JSON.parse(readFileSync(file, 'utf8')) as {
+    features: { geometry: Polygon | MultiPolygon }[];
+  };
+  return fc.features.map((f) => ({ polygon: f.geometry, bbox: polygonBBox(f.geometry) }));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Matching
 // ─────────────────────────────────────────────────────────────────────────────
-
-function cellsFor(box: BBox): string[] {
-  const out: string[] = [];
-  for (let x = Math.floor(box.minLng / CELL_DEG); x <= Math.floor(box.maxLng / CELL_DEG); x++) {
-    for (let y = Math.floor(box.minLat / CELL_DEG); y <= Math.floor(box.maxLat / CELL_DEG); y++) {
-      out.push(`${x}:${y}`);
-    }
-  }
-  return out;
-}
-
-function index(features: readonly Feature[]): Map<string, Feature[]> {
-  const grid = new Map<string, Feature[]>();
-  for (const f of features) {
-    for (const cell of cellsFor(f.bbox)) {
-      const bucket = grid.get(cell);
-      if (bucket) bucket.push(f);
-      else grid.set(cell, [f]);
-    }
-  }
-  return grid;
-}
 
 interface MatchStats {
   matched: number;
@@ -608,122 +521,8 @@ function matchLane(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Grouping — union-find over every matched pair
-// ─────────────────────────────────────────────────────────────────────────────
-
-class Union {
-  private readonly parent = new Map<string, string>();
-  find(a: string): string {
-    let root = this.parent.get(a) ?? a;
-    if (root === a) return a;
-    root = this.find(root);
-    this.parent.set(a, root);
-    return root;
-  }
-  join(a: string, b: string): void {
-    const ra = this.find(a);
-    const rb = this.find(b);
-    if (ra !== rb) this.parent.set(ra, rb);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // The merged record
 // ─────────────────────────────────────────────────────────────────────────────
-
-/** Rank for picking the stored class when a group disagrees. Mirrors core's CLASS_RANK. */
-const CLASS_ORDER: WaterBodyClass[] = [
-  'reservoir',
-  'river',
-  'lakePond',
-  'bay',
-  'wetland',
-  'unclassified',
-];
-
-interface Merged {
-  key: string;
-  members: Feature[];
-  name: string;
-  cls: WaterBodyClass;
-  areaSqM: number;
-  bbox: BBox;
-  polygon: Polygon | MultiPolygon;
-  geometrySource: ClaimSource;
-  sameSourceDuplicate: boolean;
-}
-
-function mergeGroup(members: Feature[]): Merged | null {
-  const bySource = new Map<ClaimSource, Feature[]>();
-  for (const m of members) {
-    const list = bySource.get(m.source);
-    if (list) list.push(m);
-    else bySource.set(m.source, [m]);
-  }
-  // Two features from ONE catalogue in one group means either our matching chained two distinct
-  // lakes, or the catalogue carries a duplicate it cannot see. Both are findings; neither may merge
-  // unattended.
-  const sameSourceDuplicate = [...bySource.values()].some((v) => v.length > 1);
-
-  // **Name: union, preferring the more specific.** A name is a boolean assertion that a place is a
-  // place, so taking one over its absence biases nothing (D94).
-  const named = members
-    .filter((m) => m.name.length > 0)
-    .sort((a, b) => b.name.length - a.name.length);
-  const name = named[0]?.name ?? '';
-
-  // **A group every catalogue refused is refused — it is not `unclassified`.** `null` means "not
-  // water we cover"; `unclassified` means "water, but nobody said what kind". Collapsing the first
-  // into the second admitted **Lake Huron and seven polygons of the Atlantic Ocean** on the first
-  // real run, because 3DHP publishes ocean and river features that `classifyThreeDhp` drops and the
-  // merge then resurrected. A drop that survives a merge is worse than no drop at all: it launders a
-  // refusal into a shrug.
-  //
-  // A group where SOME member refuses and another names a class keeps the class — that is the whole
-  // point of merging before filtering, and it is what rescues a body OSM calls `wetland=marsh` and
-  // NHD calls `LakePond`.
-  // A veto is not a vote — one source naming this the ocean ends the question. See VETO_TOKENS.
-  if (members.some((m) => VETO_TOKENS.has(m.token))) return null;
-
-  const classes = members.map((m) => m.cls).filter((c): c is WaterBodyClass => c !== null);
-  if (classes.length === 0) return null;
-  const cls = CLASS_ORDER.find((c) => classes.includes(c)) ?? ('unclassified' as WaterBodyClass);
-
-  // **Geometry: OSM by default, pending D92.** Provisional and deliberately so — `geometrySource` is
-  // a field, so the bake-off's answer lands as an update rather than a migration.
-  const preferred =
-    members.find((m) => m.source === 'osm') ??
-    members.find((m) => m.source === 'nhd') ??
-    members[0];
-  if (preferred === undefined)
-    throw new Error('empty merge group — union-find produced no members');
-
-  return {
-    key: `${preferred.source}:${preferred.id}`,
-    members,
-    name,
-    cls,
-    // **Measured from the polygon we actually stored, never the larger of two claims** (D94).
-    areaSqM: preferred.areaSqM,
-    bbox: preferred.bbox,
-    polygon: preferred.polygon,
-    geometrySource: preferred.source,
-    sameSourceDuplicate,
-  };
-}
-
-/** IoU of each member against the group's chosen outline; 1 for the outline itself. */
-function polygonClaims(group: Merged, iou: Map<string, number>): AttributeClaim<number>[] {
-  return group.members.map((m) => ({
-    source: m.source,
-    value:
-      m.source === group.geometrySource
-        ? 1
-        : (iou.get(`${m.id}|${group.key.split(':').slice(1).join(':')}`) ??
-          iou.get(`${group.key.split(':').slice(1).join(':')}|${m.id}`) ??
-          RECONCILE_MIN_IOU),
-  }));
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main
@@ -822,15 +621,22 @@ async function main(): Promise<void> {
     }
   }
   log(`  ${boundaries.length.toLocaleString()} boundary polygons`);
+  const downstate = loadDownstate();
+  log(`  ${downstate.length} downstate NY counties, refused`);
 
-  const refusedOutright = { count: 0 };
+  // Two refusals, counted apart. `vetoed` is a rule firing correctly on the ocean; `no-class` is
+  // every catalogue independently declining to call this water. Adding them together — as the first
+  // version did — cannot tell "the veto is working" from "the classifier has a hole".
+  const refused = { vetoed: 0, noClass: 0 };
   const outOfRegion = { count: 0 };
+  const belowI84 = { count: 0 };
   const gnisNamed = { count: 0, rescued: 0 };
   const merged = [...groups.values()]
     .map((m) => {
-      const out = mergeGroup(m);
-      if (out === null) refusedOutright.count++;
-      return out;
+      const { body, reason } = mergeGroupWithReason(m);
+      if (reason === 'vetoed') refused.vetoed++;
+      else if (reason !== undefined) refused.noClass++;
+      return body;
     })
     .filter((m): m is Merged => m !== null);
   const kept: Merged[] = [];
@@ -844,43 +650,31 @@ async function main(): Promise<void> {
   let backlog = 0;
   let queued = 0;
 
-  // The bay rule needs the whole merged set, so it runs here rather than in the classifier.
-  const bayGrid = index(
-    merged
-      .filter((m) => m.cls !== 'bay')
-      .map(
-        (m) =>
-          ({
-            ...m,
-            source: m.geometrySource,
-            id: m.key,
-            cls: m.cls,
-            name: m.name,
-            areaSqM: m.areaSqM,
-          }) as unknown as Feature,
-      ),
-  );
+  // The bay rule needs the whole merged set, so it runs here rather than in the classifier. Indexed
+  // on the merged bodies themselves — the old version cast each one through `unknown` into a `Feature`
+  // purely to reuse the index, which cost the type check without changing a single field it read.
+  const bayGrid = index(merged.filter((m) => m.cls !== 'bay'));
 
   for (const group of merged) {
     let cls = group.cls;
-    let bayWithoutParent = false;
-    if (cls === 'bay') {
-      const parent = [...cellsFor(group.bbox)]
-        .flatMap((c) => bayGrid.get(c) ?? [])
-        .some((p) => p.areaSqM > group.areaSqM && covers(p.bbox, group.bbox));
-      if (!parent) {
-        // A bay is an arm OF something. With no parent we cannot support the claim — Half Moon Cove
-        // is 330 acres, named "Cove", and is a wetland. Demote and let a human look.
-        bayWithoutParent = true;
-        cls = 'unclassified';
-      }
-    }
+    // A bay is an arm OF something. With no parent we cannot support the claim — Half Moon Cove is
+    // 330 acres, named "Cove", and is a wetland. Demote and let a human look.
+    const bayWithoutParent = cls === 'bay' && !hasBayParent(group, bayGrid);
+    if (bayWithoutParent) cls = 'unclassified';
 
     // **The region clip, applied to the merged body rather than to a lane.** A body only NHD knows
     // about still has to be somewhere we cover; a body only OSM knows about already is, by
     // construction. Testing once, after merging, is the same discipline as the floor.
     if (!inRegion(group, boundaryGrid)) {
       outOfRegion.count++;
+      continue;
+    }
+
+    // In one of our five states and still not ours — see `inDownstate`. Counted separately from
+    // `outOfRegion` on purpose: one number is the geodatabases spilling over their state lines, the
+    // other is a coverage decision, and totalling them would hide the second inside the first.
+    if (inDownstate(group, downstate)) {
+      belowI84.count++;
       continue;
     }
 
@@ -904,15 +698,10 @@ async function main(): Promise<void> {
     }
 
     if (!belongsInCorpus({ name, surfaceAreaSqM: group.areaSqM, type: cls })) {
-      const acres = group.areaSqM / 4046.8564224;
-      const reason =
-        acres < 1
-          ? 'below 1 acre'
-          : cls === 'wetland'
-            ? group.name
-              ? 'wetland, named, under floor'
-              : 'unnamed wetland under 50 acres'
-            : 'unnamed, 1–5 acres';
+      // **`name`, not `group.name`.** The refusal was decided against the GNIS-augmented name, so
+      // labelling it with the catalogue name reported a wetland the gazetteer HAD named as "unnamed"
+      // — the one lane whose contribution this report exists to measure, described as absent.
+      const reason = dropReason({ name, cls, areaSqM: group.areaSqM });
       dropped.set(reason, (dropped.get(reason) ?? 0) + 1);
       continue;
     }
@@ -964,12 +753,18 @@ async function main(): Promise<void> {
   );
   lines.push('');
   lines.push('══ merged ═════════════════════════════════════════════════════');
-  lines.push(`  groups            ${n(merged.length + refusedOutright.count)}`);
+  lines.push(`  groups            ${n(merged.length + refused.vetoed + refused.noClass)}`);
   lines.push(
-    `  refused outright  ${n(refusedOutright.count)}  (vetoed as ocean, or every catalogue said drop)`,
+    `  vetoed as ocean   ${n(refused.vetoed)}  (a refusal no other catalogue may overrule)`,
+  );
+  lines.push(
+    `  no class at all   ${n(refused.noClass)}  (every catalogue independently declined to call it water)`,
   );
   lines.push(
     `  outside 5 states  ${n(outOfRegion.count)}  (the geodatabases are not clipped to their states)`,
+  );
+  lines.push(
+    `  NY below I-84     ${n(belowI84.count)}  (in New York, outside the coverage we claim)`,
   );
   lines.push(
     `  named by GNIS     ${n(gnisNamed.count)}  of which ADMITTED by that name alone: ${gnisNamed.rescued.toLocaleString()}`,
@@ -1016,7 +811,7 @@ async function main(): Promise<void> {
           key: k.key,
           name: k.name,
           cls: k.cls,
-          acres: Math.round(k.areaSqM / 4046.8564224),
+          acres: Math.round(k.areaSqM / SQ_M_PER_ACRE),
           geometrySource: k.geometrySource,
           sources: k.members.map((m) => `${m.source}:${m.id}`),
         }),
@@ -1024,16 +819,6 @@ async function main(): Promise<void> {
       .join('\n')}\n`,
   );
   log(`master list → ${join(SCRATCH, 'master.ndjson')}`);
-}
-
-/** Does `outer` fully contain `inner`? A cheap prefilter before the containment test. */
-function covers(outer: BBox, inner: BBox): boolean {
-  return (
-    outer.minLat <= inner.minLat &&
-    outer.minLng <= inner.minLng &&
-    outer.maxLat >= inner.maxLat &&
-    outer.maxLng >= inner.maxLng
-  );
 }
 
 main().catch((error: unknown) => {
