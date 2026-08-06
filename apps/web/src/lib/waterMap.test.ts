@@ -144,6 +144,30 @@ describe('buildMapStyle', () => {
     }
   });
 
+  it('never puts a `within` filter on a polygon-sourced label layer', () => {
+    // `within` supports Point and LineString only; given a polygon it warns and evaluates false, so
+    // the filter deletes the layer instead of filtering it. This shipped, and it took every lake
+    // name off the map inside our own region — the one label class this app can least afford to
+    // lose, since the basemap is the only thing that draws it (we label bays, not lakes).
+    //
+    // Asserted against the real flavour rather than a fixture, so a Protomaps change that moves a
+    // label onto a polygon source fails here rather than on a device.
+    const POLYGON_SOURCES = new Set(['water', 'earth', 'buildings', 'landuse']);
+    const filtered = style.layers.filter((l) =>
+      JSON.stringify((l as { filter?: unknown }).filter ?? null).includes('"within"'),
+    );
+    expect(filtered.length).toBeGreaterThan(0);
+    for (const layer of filtered) {
+      const source = (layer as { 'source-layer'?: string })['source-layer'];
+      expect(POLYGON_SOURCES.has(source ?? ''), `${layer.id} reads ${source}`).toBe(false);
+    }
+    // And the lake names specifically are still drawn, unfiltered, below the mask.
+    const lakes = style.layers.find((l) => l.id === 'water_label_lakes');
+    expect(lakes, 'the basemap still labels lakes').toBeDefined();
+    expect(JSON.stringify((lakes as { filter?: unknown }).filter ?? null)).not.toContain('within');
+    expect(ids().indexOf('water_label_lakes')).toBeLessThan(ids().indexOf('region-mask-land'));
+  });
+
   it('validates against the style spec — a bad filter blanks the whole map, not one layer', () => {
     // This test exists because a `["all", <legacy>, ["within", …]]` filter shipped once and MapLibre
     // rejected the entire style: no basemap, no water, nothing. A layer-level mistake is a layer

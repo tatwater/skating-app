@@ -10,7 +10,7 @@ import {
 /** A stand-in for what `layers()` returns — this module only ever reads id and zoom bounds. */
 const layer = (
   id: string,
-  bounds: { minzoom?: number; maxzoom?: number; type?: string; filter?: unknown } = {},
+  bounds: Partial<Omit<ZoomableLayer, 'id'>> = {},
 ): ZoomableLayer => ({ id, ...bounds });
 
 /** The handful of flavour layers the policy actually names, plus detail it should leave alone. */
@@ -23,8 +23,14 @@ const flavour = (): ZoomableLayer[] => [
   layer('roads_major_casing_early', { maxzoom: 12 }),
   layer('boundaries_country'),
   layer('boundaries'),
-  layer('places_locality', { type: 'symbol' }),
-  layer('roads_labels_major', { type: 'symbol', filter: ['==', 'kind', 'highway'] }),
+  layer('places_locality', { type: 'symbol', 'source-layer': 'places' }),
+  layer('roads_labels_major', {
+    type: 'symbol',
+    'source-layer': 'roads',
+    filter: ['==', 'kind', 'highway'],
+  }),
+  // Polygon-sourced, and therefore never liftable — see `REGION_LABEL_SOURCE_LAYERS`.
+  layer('water_label_lakes', { type: 'symbol', 'source-layer': 'water' }),
   layer('places_country'),
   layer('places_region'),
   layer('water_label_ocean'),
@@ -83,6 +89,17 @@ describe('composeBasemapLayers', () => {
         ['converted', ['==', 'kind', 'highway']],
         ['within', OUTLINE],
       ]);
+    });
+
+    it('leaves polygon-sourced labels under the mask, because `within` would delete them', () => {
+      // `within` supports Point and LineString only. Handed a polygon it evaluates false, so
+      // filtering the lake-name layer does not filter it — it removes every lake name on the map,
+      // inside our own region included. It stays below the mask, where nothing covers it in-region
+      // and the mask covers it outside.
+      const composed = withFilter();
+      const ids = composed.map((l) => l.id);
+      expect(ids.indexOf('water_label_lakes')).toBeLessThan(ids.indexOf('region-mask-land'));
+      expect(composed.find((l) => l.id === 'water_label_lakes')?.filter).toBeUndefined();
     });
 
     it('keeps every label beneath the mask when no outline is supplied', () => {

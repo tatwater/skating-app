@@ -21,8 +21,9 @@
  *      Water as well as land, because a label anchored on the Connecticut shore overhangs the Sound,
  *      and just short of opaque, because MapLibre draws opaque fills in a pass that runs *before*
  *      every symbol. See `maskLayers` in either app.
- *   4. **region labels** — the regional archive's symbol layers, above the mask and filtered to the
- *      region. See `REGION_LABEL_FILTER_NOTE`.
+ *   4. **region labels** — the regional archive's *point and line* symbol layers, above the mask and
+ *      filtered to the region. See `REGION_LABEL_FILTER_NOTE` and `REGION_LABEL_SOURCE_LAYERS`;
+ *      polygon-sourced labels stay at step 2, because `within` deletes rather than filters them.
  *   5. **world overlay** — boundary lines and country/state names, on top of the mask so a masked
  *      state still shows its border and its name.
  *
@@ -114,6 +115,27 @@ export const REGION_EXCLUDED_LAYER_IDS = [
  */
 export const REGION_LABEL_FILTER_NOTE = 'see composeBasemapLayers';
 
+/**
+ * The source layers whose labels may be filtered by `within`, and the hard reason the list is short.
+ *
+ * **`within` only supports Point and LineString features.** Handed a polygon it logs
+ * `within expression currently only support Point/LineString geometry type` and evaluates **false**
+ * — so filtering a polygon-sourced label layer does not filter it, it deletes it. That is not a
+ * MapLibre Native quirk either; the expression is specified that way and GL JS behaves the same,
+ * just more quietly.
+ *
+ * Decoded from real tiles rather than assumed: `places` and `pois` are Point, `roads` is LineString,
+ * while `water`, `earth` and `buildings` are Polygon. So lake names, island names and address labels
+ * stay *beneath* the mask — which is where they belong anyway. A lake label inside the region has
+ * nothing over it, and one outside is covered by the mask, so the only case they lose is a name
+ * overhanging the border, which for a lake is rare and for a building is meaningless.
+ *
+ * Keyed on the **source layer** rather than the style layer's id on purpose: geometry is a property
+ * of the source, so this survives the flavour renaming or adding a style layer, and a new
+ * point-based label layer is filtered automatically rather than silently escaping.
+ */
+export const REGION_LABEL_SOURCE_LAYERS = ['places', 'roads', 'pois'] as const;
+
 /** The minimum a MapLibre layer needs for this module to place it. */
 export interface ZoomableLayer {
   id: string;
@@ -121,6 +143,7 @@ export interface ZoomableLayer {
   filter?: unknown;
   minzoom?: number;
   maxzoom?: number;
+  'source-layer'?: string;
 }
 
 /**
@@ -185,20 +208,21 @@ export function composeBasemapLayers<L extends ZoomableLayer>(input: {
   }
 
   const { outline, convertFilter } = input.regionFilter;
-  const labels = regional
-    .filter((layer) => layer.type === 'symbol')
-    .map((layer) => ({
-      ...layer,
-      // ANDed rather than replacing: the flavour's own filters are what keep a locality layer from
-      // drawing every hamlet, and dropping them would trade one kind of clutter for another. Both
-      // sides go through `convertFilter` first — see the note on `regionFilter` for what happens
-      // when they don't.
-      filter:
-        layer.filter === undefined
-          ? ['within', outline]
-          : ['all', convertFilter(layer.filter), ['within', outline]],
-    }));
-  const painted = regional.filter((layer) => layer.type !== 'symbol');
+  const filterable = new Set<string>(REGION_LABEL_SOURCE_LAYERS);
+  const isFilterable = (layer: L) =>
+    layer.type === 'symbol' && filterable.has(layer['source-layer'] ?? '');
+  const labels = regional.filter(isFilterable).map((layer) => ({
+    ...layer,
+    // ANDed rather than replacing: the flavour's own filters are what keep a locality layer from
+    // drawing every hamlet, and dropping them would trade one kind of clutter for another. Both
+    // sides go through `convertFilter` first — see the note on `regionFilter` for what happens
+    // when they don't.
+    filter:
+      layer.filter === undefined
+        ? ['within', outline]
+        : ['all', convertFilter(layer.filter), ['within', outline]],
+  }));
+  const painted = regional.filter((layer) => !isFilterable(layer));
 
   return [...base, ...painted, ...input.mask, ...labels, ...overlay] as L[];
 }

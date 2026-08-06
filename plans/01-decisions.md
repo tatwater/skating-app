@@ -3138,12 +3138,16 @@ at Portland's shoreline eats half of "Portland".
 **Labels are filtered, not painted over, and this is the part that is easy to get wrong twice.** A
 mask cannot tell our labels from anyone else's: "New York" is anchored in Manhattan with half the word
 over New Jersey, and Seekonk and Rehoboth are Massachusetts towns whose names overhang Rhode Island.
-So the regional archive's symbol layers sit *above* the mask with a `["within", outline]` filter —
-theirs dropped rather than covered, ours legible over the flat fill. The outline is generated a
-kilometre **outside** the true border, because the failure modes are not symmetric: too small silently
-drops Vermont's own town names, too large shows one border town's name against flat fill.
+So the regional archive's **point- and line-sourced** symbol layers sit *above* the mask with a
+`["within", outline]` filter — theirs dropped rather than covered, ours legible over the flat fill.
+The outline is generated a kilometre **outside** the true border, because the failure modes are not
+symmetric: too small silently drops Vermont's own town names, too large shows one border town's name
+against flat fill.
 
-### ⚠ Two renderer facts this rests on, both learned the hard way
+**Polygon-sourced labels are deliberately left under the mask**, and that qualifier is load-bearing
+rather than fussy — see the third warning below.
+
+### ⚠ Three renderer facts this rests on, all learned the hard way
 
 **An opaque fill cannot hide a label.** MapLibre sends a fill to the *opaque* render pass only at
 exactly `fill-opacity: 1`; symbols render in the *translucent* pass, which runs afterwards with depth
@@ -3156,5 +3160,14 @@ not a legacy operator, and MapLibre rejects **the entire style** — not the lay
 on device. Every filter goes through the style spec's `convertFilter` first, and both app suites now
 run `validateStyleMin` over the composed style, because a filter-level mistake is a black screen
 rather than a wrong-looking layer.
+
+**`within` supports Point and LineString features only.** Handed a polygon it logs
+`within expression currently only support Point/LineString geometry type` and evaluates **false** — so
+filtering a polygon-sourced label layer does not filter it, it *deletes* it. Decoding real tiles says
+`places` and `pois` are Point and `roads` is LineString, while `water`, `earth` and `buildings` are
+Polygon. Filtering all symbol layers alike therefore took **every lake name off the map inside our own
+region**, which is the one label class this app can least afford to lose: the basemap is the only
+thing that draws it, since we label bays and not lakes. The filter is keyed on the *source layer*
+rather than the style layer's id, because geometry is a property of the source.
 
 **Related:** [D6](#d6--renderer-maplibre-gl-locked), [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
