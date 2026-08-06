@@ -987,9 +987,9 @@ prune"* — and under the order below, nothing does.
  1c acquire GNIS → .raw-gnis/ → R2                    ✅ done   (D105; the fourth lane, added after this list was written)
  1d admin areas from TIGER → adminAreas               ✅ done   (MOVED UP from step 8 — step 5 cannot run without it)
  2  reconcile OSM ↔ NHD ↔ 3DHP by polygonIoU          ✅ done   (writes catalogue ids only)
- 3  D92 bake-off, containment-passing keys only          ← NEXT (read-only; produces the rule)
+ 3  D92 bake-off, refereed by our own soundings          ✅ done (read-only; OSM by default, ties 63%)
  4  mint waterBodyKey; backfill osmId / nhdId / geometrySource  ✅ done (D93)
- 5  canonical re-import: the master list                       (scripts/etl — blocked, see below)
+ 5  canonical re-import: the master list                 ← NEXT (scripts/etl — blocked, see below)
  6  PRUNE what step 5 did not re-affirm                        (D100; nothing metered runs before it)
  7  audit report of non-conforming bodies                      (D97, read-only)
  9  depth + elevation                                          (scripts/lake-depth; D101 for elevation)
@@ -1016,12 +1016,15 @@ number is the geodatabases spilling over their own state lines, which should sta
 and at 35,637 it is large enough to hide a coverage decision inside. See
 [D111](./01-decisions.md#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7).
 
-**Step 3 must precede step 5, and the temptation to reverse them should be resisted.** D93 says
-`geometrySource` is a field so D92's answer lands as an update rather than a migration — true, but the
-**polygon moves with it**, and re-importing 27,074 outlines is the expensive half. `merge.ts` currently
-hardcodes an OSM-first placeholder, under which **Beau Lake — the fixture this phase is named for —
-merges at 2,457 acres against NHD's measured 1,876.6.** Importing before the bake-off means importing
-the headline fixture wrong and then importing it again.
+**Step 3 preceded step 5, and it was worth it — though not for the reason expected.** The worry was
+that importing first would mean importing 27,074 outlines twice. The bake-off's answer is that **the
+two catalogues are indistinguishable** (63.2% ties; 13.4% vs 12.6% on the least-confounded metric),
+so OSM-first stands as the default on D92's own tie-break — the cheaper pipeline. The placeholder
+turned out to be right, which is only knowable now. See
+[D92](./01-decisions.md#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-n7)
+for the numbers, the per-lake override, and — importantly — **what this result cannot say**: the
+referee set is built from the bathymetry join and therefore excludes every lake OSM is missing, Beau
+Lake among them.
 
 **Step 6 is no longer the D91 area-floor prune, and nothing implements what it became.** Under the old
 ordering the corpus was filtered on the way in and step 6 re-applied the floor to what was stored —

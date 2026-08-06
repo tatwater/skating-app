@@ -21,7 +21,8 @@
     "classify-dry-run": "tsx src/classifyDryRun.ts",
     "reconcile": "tsx src/reconcileNhd.ts",
     "load-reconciliation": "tsx src/loadReconciliation.ts",
-    "archive-gnis": "tsx src/gnisArchive.ts"
+    "archive-gnis": "tsx src/gnisArchive.ts",
+    "bake-off": "tsx --max-old-space-size=12288 src/bakeOff.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

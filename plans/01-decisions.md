@@ -3023,3 +3023,83 @@ rendering, admin areas, or drive-time: a user downstate still sees their own tow
 isochrones northward, and still searches the whole corpus.
 
 **Related:** [D5](#d5--regions-are-a-data-concern-not-a-code-concern), [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D92 — OSM draws the lakes, because the bake-off found no reason to prefer NHD (N7)
+
+**Decided (2026-08-06) by measurement, not precedent.** The referee was our own bathymetry: **21.9
+million measurements** across 2,359 surveyed lakes, physical, and drawn by neither publisher.
+
+```
+metric            OSM wins    NHD wins        tie
+containment         235 10.0%   385 16.3%   1,739 73.7%
+coverage gap        315 13.4%   297 12.6%   1,747 74.1%
+COMBINED            382 16.2%   485 20.6%   1,492 63.2%
+medians:  containment 1.0000 / 1.0000 · gap 88 m / 87 m · area 68 ac / 68 ac
+```
+
+**They are indistinguishable, and D92 said in advance that this was a legitimate outcome that "must
+not be dressed up".** Every median is a tie to three significant figures. On the metric least
+confounded by size — the coverage gap, which asks how much of a polygon's own area sits far from any
+measurement — it is 13.4% against 12.6%, a coin flip over 2,359 lakes.
+
+So the rule is **OSM by default**, on the tie-break D92 specified: *pick the one with the cheaper
+pipeline.* OSM is already ingested, is the identity spine (`Permanent_Identifier` is a field on our
+record, not our key), and is the only source for D72's access layer — put-ins, parking, trails are not
+in NHD at all. Switching would mean re-importing 27,074 outlines to buy a difference we could not
+measure.
+
+### Two metrics, because either alone can be gamed
+
+`containedFraction` punishes a polygon that is **too small** and is blind to one that is too large — a
+polygon covering the lake and the field beside it contains every sounding and scores a perfect 1.0.
+`probeCoverage` (D98, `@skating/core/bodyProbe.ts`) is the mirror: probe the polygon's *own* area and
+measure the distance from each probe to the nearest measurement, so an over-drawn lake has probes in
+the pasture. Bounded on both sides.
+
+### What the measurement actually says, stated carefully
+
+**Containment is substantially a proxy for "which catalogue draws larger."** The loser is usually the
+smaller polygon, because the survey pokes outside it. NHD runs ~3% larger in Maine and ~6% smaller in
+Massachusetts, which is the whole of the apparent state split — **MA 53.7% OSM against ME 24.7% NHD is
+a size-convention difference, not a quality difference.** Big area disagreements (>25%) are a flat
+5–6% in every state, so it is not segmentation either.
+
+**NHD wins small lakes and OSM wins large ones** — 43.2% NHD under 10 acres, 18.1% OSM above 1,000 —
+which is consistent with a 1:24,000 compilation resolving a small pond better than a volunteer tracing
+imagery, and worse on a shoreline long enough for that volunteer to have walked it.
+
+**The two metrics disagree on 140 lakes (5.9%)**, counted as ties. Where one outline contains the
+survey better and the other describes the water better, picking a winner would mean inventing a
+weighting the evidence does not support. Those are the per-lake override candidates.
+
+### The per-lake override stays, and this is what makes D93 worth having
+
+`geometrySource` remains a field. The default is OSM; the override is for named cases where the margin
+is large — and it costs a field update rather than a migration precisely because D93 minted our own
+key. **Beau Lake is the standing example**: 1,875 acres, absent from OSM entirely because Geofabrik
+clips the Québec half, present in NHD at 1,876.6.
+
+### ⚠ The limits of this result, recorded rather than buried
+
+**It cannot measure coverage, only shoreline quality where both catalogues have a polygon.** The
+referee set is built from the bathymetry join, which needed an OSM body to exist — so the lakes OSM is
+*missing* are excluded by construction. **Beau Lake is not in this sample.** The 15 OSM-only against 7
+NHD-only surveys found here are therefore not a coverage measurement, and must not be quoted as one;
+the coverage claim rests on the separately-measured 36 Maine surveys with no polygon at all.
+
+**The first run of this bake-off was wrong and the numbers looked fine.** It took the OSM side from
+the bathymetry join — which only accepts a body holding ≥ 0.5 of the survey — so every OSM polygon had
+already passed the exact test it was about to be scored on. `osmContained` had a hard floor at 0.524
+with **zero lakes below 0.5**, against 12 for NHD and 8 at exactly zero, and that tail was where every
+"OSM wins" came from. It then picked the NHD counterpart by matching *against the OSM polygon*, so the
+second catalogue was selected to resemble the first. Both are fixed by anchoring on the survey's
+medoid — a real measurement, so on water by construction — with each catalogue independently supplying
+the smallest feature containing it, and neither selection rule reading either scored metric.
+
+**MA and NH contribute contour vertices rather than point soundings.** Checked for the obvious
+confound: neither ships a zero-depth shoreline trace (MA's shallowest contour is 2 ft, NH's 1 ft), so
+these are in-water measurements and not a re-tracing of the agency's own shoreline.
+
+**Related:** [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7), [`phase-N7`](./phase-N7-unified-corpus.md).

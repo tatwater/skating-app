@@ -3,6 +3,7 @@ export * from './authRoute';
 export * from './badges';
 export * from './block';
 export * from './bodyIdentity';
+export * from './bodyProbe';
 export * from './bounties';
 export * from './coalesce';
 export * from './comment';
