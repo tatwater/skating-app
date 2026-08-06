@@ -65,6 +65,7 @@ async function seedBody(
       {
         source: 'osm',
         externalId,
+        osmId: externalId,
         name,
         type: 'lakePond',
         polygon: POLYGON,

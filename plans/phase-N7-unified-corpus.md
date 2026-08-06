@@ -1058,33 +1058,46 @@ The handoff records this as one item — *"`resolveUpsert` → `importCanonical`
 under-describes it. `resolveUpsert` is built and tested; wiring it is the smallest of five gaps, and
 three of the others are schema changes that have to ship in the same deploy.
 
-**1. `master.ndjson` carries no geometry.** `merge.ts` writes `key, name, cls, acres, geometrySource,
-sources` — a report, not a loadable artifact. `importCanonical` needs `polygon`, `bbox`, `centroid`,
-`surfaceAreaSqM` and the D85/N6c shape stats. All of that is produced today by
-`featureToCanonicalBody`, which takes an `OsmWaterFeature` and re-does its own classification and
-floor — so it is OSM-only *and* would overrule the merge. **A source-agnostic emit stage is the
-largest single piece of work left in this phase**, and it must keep D85's rule: measure the stats on
-the source geometry, simplify only for storage.
+**1. ~~`master.ndjson` carries no geometry.~~ ✅ FIXED.** `merge.ts` now writes a second artifact,
+`bodies.ndjson`, carrying full canonical records. The geometry half of `featureToCanonicalBody` was
+lifted into a source-agnostic `toCanonicalBody`, so the OSM lane and the merge share one
+implementation of D85's rule — measure the stats on the source geometry, simplify only for storage —
+and the merge's own classification and floor decisions are no longer overruled by a second classifier
+running inside the transform. `master.ndjson` remains, as the report it always was.
 
-**2. The stored vocabulary is the old one.** `merge.ts` emits `WaterBodyClass`; `waterBodies.type` is
-`literals(WATER_BODY_TYPES)`. **Founder call, 2026-08-05: migrate the schema to
-`WATER_BODY_CLASSES`** rather than mapping back — see D96 below.
+**2. ~~The stored vocabulary is the old one.~~ ✅ FIXED** by the D109 amendment — `waterBodies.type`
+is `WATER_BODY_CLASSES`, with a union in the schema until `backfillWaterBodyClasses` reports zero
+remaining. See D96 below.
 
-**3. Three of D93's identity fields do not exist in the schema.** `CATALOGUE_ID_FIELDS` is
-`['osmId','nhdId','threeDhpId']`, but the table has only `osmId` and `nhdId` — **no `threeDhpId`, no
-`gnisId`, and no `by_three_dhp_id` index**, so a third of `resolveUpsert`'s lookup cannot be
-performed. D93 states plainly that `threeDhpId` "is populated, not a parity placeholder"; it is not.
-Separately `WATER_BODY_SOURCES` is `['osm','nhd','user']`, while `merge.ts` can select a 3DHP feature
-as a group's outline and emit `geometrySource: '3dhp'`, which the validator rejects.
+**3. ~~Three of D93's identity fields do not exist in the schema.~~ ✅ FIXED.** `threeDhpId` and
+`gnisId` are columns; `by_three_dhp_id` and **`by_osm_id`** are indexes. That second one was not on
+the original list and turned out to matter most: the first draft looked `osmId` up through
+`by_external_id`, which holds the same string *today* and is exactly the coincidence D93 exists to
+end — it silently returned no match for a body whose two fields had diverged, and would have inserted
+a duplicate. A test caught it. `3dhp` is now a value in both `WATER_BODY_SOURCES` and the new
+`GEOMETRY_SOURCES`.
 
-**4. `catalogueIds()` derives ids instead of carrying them.** It infers `osmId`/`nhdId` from
-`source` + `externalId`, which is exactly the conflation D93 exists to undo. It has to accept the ids
-the merge already resolved.
+**4. ~~`catalogueIds()` derives ids instead of carrying them.~~ ✅ FIXED**, and the derivation
+survives under its own name (`deriveCatalogueIds`) for one caller only: the backfill of rows written
+before the identity fields existed, which genuinely has nowhere else to get them from.
 
-**5. `merge` and `conflict` have nowhere to land.** `requiresReview` gates both away from running
-unattended, and D93 says they belong in the dedup queue — but `importCanonical` has no queue path and
-no way to report a verdict back to the loader. **This is a design gap, not wiring**, and it is the one
-most likely to be discovered mid-import if it is not settled first.
+**The update path asserts rather than overwrites**, which is a rule worth stating. The obvious
+"incoming record is authoritative, write all of it" is wrong here because nothing in the mutation can
+tell a *complete* merged record from a partial one — load one state's OSM lane by itself and an
+overwriting rule silently wipes every `nhdId` in the corpus, 18,383 rows of geometric work destroyed
+by a load that reported success. So an id present overwrites; an id absent changes nothing.
+
+**5. ~~`merge` and `conflict` have nowhere to land.~~ ✅ FIXED.** Both are counted in the mutation's
+return value and itemized on the run row. A `merge` flags every row involved `near_certain` for D36's
+queue and performs nothing; a `conflict` writes nothing at all. **Neither throws**, because a batch of
+150 must not be lost to one lake whose identity is ambiguous — and because the ambiguity is itself a
+finding a moderator can act on.
+
+**One thing that was not on the list and had to be added: `states`.** The OSM lane got it free by
+importing one state extract at a time and letting the loader's `--state` flag tag each batch. A merged
+corpus loads in a single pass, so there are no per-state batches; `statesFor` computes it per body
+against the state-level admin areas, giving a border-spanning body every state it touches rather than
+the first.
 
 ---
 

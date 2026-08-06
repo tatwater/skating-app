@@ -39,6 +39,7 @@ describe('regionStats.recompute', () => {
           type: 'lakePond',
           source: 'osm',
           externalId: `way/${i}`,
+          osmId: `way/${i}`,
           states: b.states,
           polygon: POLYGON,
           bbox: { minLat: 44, minLng: -73, maxLat: 44.1, maxLng: -72.9 },

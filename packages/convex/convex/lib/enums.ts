@@ -32,11 +32,36 @@ export const ACTIVITY_PROVIDERS = [
 /** Lifecycle of a detected GPS skate → report prompt (D24). */
 export const ACTIVITY_PROMPT_STATES = ['pending', 'prompted', 'converted', 'dismissed'] as const;
 
-/** Where a water body came from (D14). */
-export const WATER_BODY_SOURCES = ['osm', 'nhd', 'user'] as const;
+/**
+ * Where a water body came from (D14).
+ *
+ * **`3dhp` is here for completeness rather than for traffic.** The merge's last run produced zero
+ * 3DHP-sourced bodies — 3DHP re-publishes NHD across the whole Northeast, so every 3DHP feature that
+ * survives the filter has an NHD counterpart that outranks it as identity (D92). But a 3DHP feature
+ * matching nothing is a lake neither other catalogue draws, and refusing to store it would mean the
+ * import silently dropping exactly the kind of body this phase exists to find.
+ */
+export const WATER_BODY_SOURCES = ['osm', 'nhd', '3dhp', 'user'] as const;
 
 /** Canonical (non-user) sources — the external feeds `importCanonical` upserts (D14). */
-export const CANONICAL_SOURCES = ['osm', 'nhd'] as const;
+export const CANONICAL_SOURCES = ['osm', 'nhd', '3dhp'] as const;
+
+/**
+ * Whose polygon a body actually draws — a superset of `WATER_BODY_SOURCES` (N7 / D92).
+ *
+ * **`3dhp` appears here and not in `WATER_BODY_SOURCES`**, and the asymmetry is the design. D92
+ * settled that 3DHP cannot be the identity spine — it carries no `Permanent_Identifier`, so it can
+ * hold neither the MIDAS bathymetry linkage nor the OSM duplicate collapse — but *geometry* is a
+ * separate question that `geometrySource` exists to answer per lake. A 3DHP-drawn body still has an
+ * OSM or NHD identity.
+ *
+ * It is empty in practice today: the merge's last run drew 19,455 bodies from OSM and 6,002 from NHD
+ * and **zero** from 3DHP, because 3DHP re-publishes NHD across the whole Northeast and every 3DHP
+ * feature that survives the filter has an NHD counterpart that outranks it. The value exists so that
+ * the day elevation-derived hydrography lands here, storing it is a field write rather than a
+ * migration — which is the entire argument for `geometrySource` being a field at all.
+ */
+export const GEOMETRY_SOURCES = ['osm', 'nhd', '3dhp', 'user'] as const;
 
 /** Moderation review lifecycle for user-created water bodies (D37). */
 export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const;

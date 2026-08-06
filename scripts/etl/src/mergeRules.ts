@@ -519,3 +519,79 @@ export function dropReason(body: { name: string; cls: WaterBodyClass; areaSqM: n
   }
   return 'unnamed, 1–5 acres';
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The emit stage
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The catalogue ids a merged group carries — **the upsert key `importCanonical` now runs on** (D93).
+ *
+ * One id per catalogue, and a group holding two features from the same catalogue takes the *first*
+ * — which is safe only because such a group is already flagged `sameSourceDuplicate` and queued for
+ * a human. Silently picking one of two OSM ids for a body that may be two lakes chained together is
+ * exactly the kind of guess that should not also decide identity, so the flag is what makes this
+ * tolerable rather than the tie-break being clever.
+ *
+ * `gnisId` is included and is **not** an upsert key: it proposes candidates, and 92 GNIS ids resolve
+ * to more than one NHD body. Taken from any member that has one, since all three catalogues publish
+ * the same gazetteer id for the same place.
+ */
+export function catalogueIdsOf(members: readonly Feature[]): {
+  osmId?: string;
+  nhdId?: string;
+  threeDhpId?: string;
+  gnisId?: string;
+} {
+  const out: { osmId?: string; nhdId?: string; threeDhpId?: string; gnisId?: string } = {};
+  for (const m of members) {
+    if (m.source === 'osm' && out.osmId === undefined) out.osmId = m.id;
+    if (m.source === 'nhd' && out.nhdId === undefined) out.nhdId = m.id;
+    if (m.source === '3dhp' && out.threeDhpId === undefined) out.threeDhpId = m.id;
+    if (out.gnisId === undefined && m.gnisId) out.gnisId = m.gnisId;
+  }
+  return out;
+}
+
+/** The five states we cover, by the name their TIGER boundary carries. */
+export const STATE_CODE_BY_NAME: Readonly<Record<string, string>> = {
+  Maine: 'ME',
+  'New Hampshire': 'NH',
+  Vermont: 'VT',
+  Massachusetts: 'MA',
+  'New York': 'NY',
+};
+
+/**
+ * Every state this body touches — **all of them, not the first.**
+ *
+ * A border-spanning body belongs to each state it reaches: Champlain is in both VT and NY, and
+ * filtering "lakes in Vermont" must find it. The OSM lane got this for free by importing one state
+ * extract at a time and letting `importCanonical` union a `--state` tag per batch; a merged corpus
+ * is loaded in a single pass, so there are no per-state batches and the answer has to be computed
+ * here instead.
+ *
+ * Tested against **state-level** boundaries only. The region mask is built from counties and towns
+ * because those are the finer, more reliable outlines, but a county does not know its state's code —
+ * so this is a second, coarser pass over a different set, and a body that clears the mask can still
+ * come back empty here if it sits in a gap between two state polygons. An empty result is left empty
+ * rather than guessed: a wrong state code is worse than a missing one, because it silently moves a
+ * lake into someone else's region filter.
+ */
+export function statesFor(
+  body: { polygon: Polygon | MultiPolygon; bbox: BBox },
+  stateGrid: Map<string, (Boundary & { name: string })[]>,
+): string[] {
+  const found = new Set<string>();
+  for (const [lng, lat] of sampleOutline(body.polygon)) {
+    const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
+    for (const b of stateGrid.get(cell) ?? []) {
+      const code = STATE_CODE_BY_NAME[b.name];
+      if (code === undefined || found.has(code)) continue;
+      if (lng < b.bbox.minLng || lng > b.bbox.maxLng) continue;
+      if (lat < b.bbox.minLat || lat > b.bbox.maxLat) continue;
+      if (pointInPolygon({ lat, lng }, b.polygon)) found.add(code);
+    }
+  }
+  return [...found].sort();
+}

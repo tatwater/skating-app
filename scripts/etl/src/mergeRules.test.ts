@@ -12,6 +12,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
   CELL_DEG,
+  catalogueIdsOf,
   cellsFor,
   chooseClass,
   chooseGeometry,
@@ -35,6 +36,7 @@ import {
   REGION_SAMPLE_POINTS,
   SQ_M_PER_ACRE,
   sampleOutline,
+  statesFor,
   Union,
 } from './mergeRules';
 
@@ -602,6 +604,66 @@ describe('polygon confidence claims', () => {
       '85383A01-DC89-47AA-BC5D-BE373FB0B5C3',
     );
     expect(idFromKey('3dhp:MLBCG')).toBe('MLBCG');
+  });
+});
+
+describe('the emit stage', () => {
+  it('takes one id per catalogue, and the gazetteer id from whoever has it', () => {
+    const ids = catalogueIdsOf([
+      feature('osm', 'way/1'),
+      feature('nhd', '141034078', { gnisId: '00869848' }),
+      feature('3dhp', 'MLBCG'),
+    ]);
+    expect(ids).toEqual({
+      osmId: 'way/1',
+      nhdId: '141034078',
+      threeDhpId: 'MLBCG',
+      gnisId: '00869848',
+    });
+  });
+
+  it('takes the first when one catalogue appears twice — safe only because that group is queued', () => {
+    // A group holding two OSM features is either a catalogue duplicate or two lakes our matching
+    // chained together. `sameSourceDuplicate` flags it for a human; this just must not throw or
+    // invent a third id.
+    const members = [feature('osm', 'way/1'), feature('osm', 'relation/2')];
+    expect(catalogueIdsOf(members).osmId).toBe('way/1');
+    expect(mergeGroup(members)?.sameSourceDuplicate).toBe(true);
+  });
+
+  it('omits an id no member carries', () => {
+    expect(catalogueIdsOf([feature('nhd', 'n1')])).toEqual({ nhdId: 'n1' });
+  });
+
+  it('gives a border-spanning body every state it touches, not the first', () => {
+    // Champlain is in VT and NY, and "lakes in Vermont" has to find it.
+    const vt = square(-73.4, 43.5, 1);
+    const ny = square(-74.4, 43.5, 1);
+    const grid = index([
+      { polygon: vt, bbox: bboxOf(vt), name: 'Vermont' },
+      { polygon: ny, bbox: bboxOf(ny), name: 'New York' },
+    ]);
+    const straddling = square(-73.5, 44.0, 0.4); // crosses the shared edge at -73.4
+    expect(statesFor({ polygon: straddling, bbox: bboxOf(straddling) }, grid)).toEqual([
+      'NY',
+      'VT',
+    ]);
+  });
+
+  it('returns empty rather than guessing when no state outline claims the body', () => {
+    // A wrong state code silently moves a lake into someone else's region filter; a missing one is
+    // visible. The mask is built from counties, so a body can clear it and still land in a gap here.
+    const vt = square(-73.4, 43.5, 1);
+    const grid = index([{ polygon: vt, bbox: bboxOf(vt), name: 'Vermont' }]);
+    const elsewhere = square(-60, 40, 0.1);
+    expect(statesFor({ polygon: elsewhere, bbox: bboxOf(elsewhere) }, grid)).toEqual([]);
+  });
+
+  it('ignores a boundary whose name is not one of the five', () => {
+    const qc = square(-73.4, 43.5, 1);
+    const grid = index([{ polygon: qc, bbox: bboxOf(qc), name: 'Québec' }]);
+    const body = square(-73.0, 44.0, 0.1);
+    expect(statesFor({ polygon: body, bbox: bboxOf(body) }, grid)).toEqual([]);
   });
 });
 

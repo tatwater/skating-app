@@ -628,6 +628,7 @@ describe('system delists are visible where they get fixed', () => {
         type: 'lakePond' as const,
         source: 'osm' as const,
         externalId: 'way/9',
+        osmId: 'way/9',
         polygon: LAKE,
         bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 },
         centroid: { lat: 44.5, lng: -73.0 },
@@ -647,6 +648,7 @@ describe('system delists are visible where they get fixed', () => {
         {
           source: 'osm' as const,
           externalId: 'way/9',
+          osmId: 'way/9',
           name: 'Lake Champlain',
           type: 'lakePond' as const,
           polygon: rect(-73.5, 44.0, -73.15, 45.0),
@@ -826,6 +828,7 @@ describe('the parent-listing cascade', () => {
         type: 'lakePond' as const,
         source: 'osm' as const,
         externalId: 'way/1',
+        osmId: 'way/1',
         polygon: LAKE,
         bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 },
         centroid: { lat: 44.5, lng: -73.0 },
@@ -847,6 +850,7 @@ describe('the parent-listing cascade', () => {
         {
           source: 'osm' as const,
           externalId: 'way/1',
+          osmId: 'way/1',
           name: 'Lake Champlain',
           type: 'lakePond' as const,
           polygon,

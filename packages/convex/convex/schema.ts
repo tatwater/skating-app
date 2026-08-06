@@ -48,6 +48,7 @@ import {
   FLAG_REASONS,
   FLAG_STATUSES,
   FLAG_TARGET_TYPES,
+  GEOMETRY_SOURCES,
   HAZARD_CONFIRM_VERDICTS,
   HAZARD_CONFIRM_VIA,
   HAZARD_GEOMETRY_KINDS,
@@ -419,6 +420,33 @@ export default defineSchema({
     osmId: v.optional(v.string()), // `way/<id>` / `relation/<id>`
     nhdId: v.optional(v.string()), // NHD `Permanent_Identifier`
     /**
+     * 3DHP's `id3dhp` — **the third upsert key, and the one D93 named but nothing created.**
+     *
+     * `resolveUpsert`'s `CATALOGUE_ID_FIELDS` has always been `['osmId', 'nhdId', 'threeDhpId']`, so
+     * without this field a third of the upsert lookup could not be performed and a 3DHP-only feature
+     * had no way to find the row it already was.
+     *
+     * **It is a monitor's key, not a geometry one.** D92 measured 3DHP against NHD over 7,878 lakes
+     * and found the same data — 68% byte-identical, the rest float round-trip through Albers — so
+     * 3DHP earns its place as the tripwire for the year elevation-derived hydrography actually
+     * reaches the Northeast, and that tripwire cannot ask "did this feature change" without an id.
+     */
+    threeDhpId: v.optional(v.string()),
+    /**
+     * GNIS Feature ID — **deliberately not an upsert key**, and the comment matters more than the
+     * field.
+     *
+     * It is the one identifier all three catalogues share, which makes it the cheapest exact-match
+     * bridge between them and an excellent *candidate generator* for reconciliation. It is a terrible
+     * identity: GNIS names **places**, and a catalogue may split one place into several features.
+     * Measured against the archives, **92 GNIS ids resolve to more than one NHD body** (0.8% of
+     * 10,984). Upserting on it would merge those lakes.
+     *
+     * So it is stored to propose, never to decide — see `GNIS_IS_NOT_AN_UPSERT_KEY` in
+     * `@skating/core/bodyIdentity.ts`, which exists to make that refusal greppable.
+     */
+    gnisId: v.optional(v.string()),
+    /**
      * Whose polygon `polygon` actually is — which `source` conflates with where the row came from.
      *
      * Separate so the two can diverge per lake without a migration: a body imported from OSM whose
@@ -426,7 +454,7 @@ export default defineSchema({
      * clips the Québec half) keeps its OSM identity and access layer while drawing from NHD.
      * Absent means "the same as `source`", which is true of every row imported so far.
      */
-    geometrySource: v.optional(literals(WATER_BODY_SOURCES)),
+    geometrySource: v.optional(literals(GEOMETRY_SOURCES)),
     /**
      * **This body is in the corpus because somebody asked for it** — not because it cleared the D91
      * area floor (N7b).
@@ -626,7 +654,15 @@ export default defineSchema({
     // index is NOT sparse — rows without a key sort first under `undefined` — so a lookup must always
     // `eq()` a real value and never range-scan (see the `by_nhd_id` note below).
     .index('by_water_body_key', ['waterBodyKey'])
+    // **`osmId` needs its own index; `by_external_id` is not it.** They hold the same string today
+    // and that is a coincidence D93 exists to end — `externalId` is where a row came from, `osmId` is
+    // who it is. Keying the OSM lookup on `externalId` worked until the two diverged and then
+    // silently inserted a duplicate, which is the exact failure the id-keyed upsert exists to
+    // prevent. NOT sparse, same as the others: `eq()` only, never a range scan.
+    .index('by_osm_id', ['osmId'])
     .index('by_nhd_id', ['nhdId'])
+    // The third catalogue id, same shape and same trap as `by_nhd_id`: NOT sparse, so `eq()` only.
+    .index('by_three_dhp_id', ['threeDhpId'])
     // The curation list (N2). Until now there was NO index on `curatedBoost` and no query listing
     // boosted bodies — `WaterBodyModeratorControls` edits the boost on a body you already navigated
     // to, and nothing told you which of 116k carry one. The five known Phase-2.5 mis-matches (South

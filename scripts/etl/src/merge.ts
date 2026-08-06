@@ -84,12 +84,14 @@ import { GNIS_STATE_CODES, GNIS_WATER_CLASSES, gnisTextPath, isNullIsland } from
 import {
   type Boundary,
   CELL_DEG,
+  catalogueIdsOf,
   cellsFor,
   dropReason,
   type Feature,
   type GnisPoint,
   gnisNameFor,
   hasBayParent,
+  idFromKey,
   inDownstate,
   index,
   inRegion,
@@ -97,9 +99,11 @@ import {
   mergeGroupWithReason,
   polygonClaims,
   SQ_M_PER_ACRE,
+  statesFor,
   Union,
 } from './mergeRules';
 import { NHD_SOURCES, nhdArchiveKey, normalizeGnisId, normalizeNhdId } from './nhdArchive';
+import { toCanonicalBody } from './transform';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch', 'merge');
@@ -428,7 +432,7 @@ function loadGnis(): Map<string, GnisPoint[]> {
  * Exported from `adminAreas` by `listBoundariesForClip` — see that function for why the mask is built
  * from the finer levels rather than from `state` rows, and for what an unclipped merge imports.
  */
-function loadBoundaries(): Boundary[] {
+function loadBoundaries(): (Boundary & { name: string; level: string })[] {
   const file = join(SCRATCH, 'boundaries.ndjson');
   if (!existsSync(file)) {
     throw new Error(
@@ -436,12 +440,11 @@ function loadBoundaries(): Boundary[] {
         `  convex run adminAreas:listBoundariesForClip, paged into .scratch/merge/boundaries.ndjson`,
     );
   }
-  const out: Boundary[] = [];
+  const out: (Boundary & { name: string; level: string })[] = [];
   for (const line of readFileSync(file, 'utf8').split('\n')) {
     const t = line.trim();
     if (t.length === 0) continue;
-    const a = JSON.parse(t) as Boundary;
-    out.push(a);
+    out.push(JSON.parse(t) as Boundary & { name: string; level: string });
   }
   return out;
 }
@@ -621,6 +624,20 @@ async function main(): Promise<void> {
     }
   }
   log(`  ${boundaries.length.toLocaleString()} boundary polygons`);
+  // A second, coarser index over STATE rows only. The mask is built from counties and towns because
+  // those are the finer outlines, but a county row does not carry its state's code — so `states` has
+  // to be answered against a different set. See `statesFor`.
+  const stateGrid = new Map<string, (Boundary & { name: string })[]>();
+  for (const b of boundaries.filter((x) => x.level === 'state')) {
+    for (const cell of cellsFor(b.bbox)) {
+      const bucket = stateGrid.get(cell);
+      if (bucket) bucket.push(b);
+      else stateGrid.set(cell, [b]);
+    }
+  }
+  log(
+    `  ${[...new Set(boundaries.filter((x) => x.level === 'state').map((x) => x.name))].length} state outlines for the states field`,
+  );
   const downstate = loadDownstate();
   log(`  ${downstate.length} downstate NY counties, refused`);
 
@@ -802,6 +819,48 @@ async function main(): Promise<void> {
   );
   lines.push(`  backlog      ${n(backlog)}`);
   process.stdout.write(`${lines.join('\n')}\n`);
+
+  // ── The emit stage — the artifact the loader actually consumes (N7 step 5) ────────────────
+  //
+  // `master.ndjson` below is a REPORT: name, class, acreage, provenance. It carried no geometry, and
+  // that gap was the largest single thing standing between this file and a corpus. This writes the
+  // loadable half: full canonical bodies, simplified for storage, with D85's stats measured on the
+  // source geometry first.
+  //
+  // Emitted here rather than as a separate command because the source polygons are in memory now and
+  // spilling 25,457 of them to disk to read straight back would cost more than the stats do.
+  const emitted: string[] = [];
+  const emitFailures = new Map<string, number>();
+  for (const k of kept) {
+    try {
+      emitted.push(
+        JSON.stringify(
+          toCanonicalBody({
+            source: k.geometrySource as 'osm' | 'nhd' | '3dhp',
+            // The arrival key stays the id of whichever catalogue drew the outline, so the existing
+            // contour tile stamps keep resolving through one more campaign (D93).
+            externalId: idFromKey(k.key),
+            name: k.name,
+            type: k.cls,
+            geometry: k.polygon,
+            geometrySource: k.geometrySource as 'osm' | 'nhd' | '3dhp',
+            states: statesFor(k, stateGrid),
+            ...catalogueIdsOf(k.members),
+          }),
+        ),
+      );
+    } catch (err) {
+      // A body whose geometry defeats the transform is one body, not the run. Tallied by reason so
+      // a class of failure is visible rather than a single example.
+      const reason = err instanceof Error ? err.message.slice(0, 60) : String(err);
+      emitFailures.set(reason, (emitFailures.get(reason) ?? 0) + 1);
+    }
+  }
+  writeFileSync(join(SCRATCH, 'bodies.ndjson'), `${emitted.join('\n')}\n`);
+  log(`canonical bodies → ${join(SCRATCH, 'bodies.ndjson')} (${emitted.length.toLocaleString()})`);
+  for (const [reason, count] of [...emitFailures].sort((a, b) => b[1] - a[1])) {
+    log(`  ! ${count} body/bodies could not be emitted: ${reason}`);
+  }
 
   writeFileSync(
     join(SCRATCH, 'master.ndjson'),

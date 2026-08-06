@@ -30,6 +30,10 @@ describe('waterBodies.matchBathymetryLakes', () => {
         type: 'lakePond' as const,
         source: 'osm' as const,
         externalId,
+        // The hand-inserted row has to look like an imported one, or the `importCanonical` call
+        // below inserts a SECOND body instead of patching this one — the upsert keys on the
+        // catalogue id now, and a row without one matches nothing (N7 / D93).
+        osmId: externalId,
         dedupStatus: 'clean' as const,
         createdAt: Date.now(),
         ...extra,
@@ -82,6 +86,7 @@ describe('waterBodies.matchBathymetryLakes', () => {
           type: 'lakePond' as const,
           source: 'osm' as const,
           externalId,
+          osmId: externalId,
           polygon,
           bbox,
           centroid: centre,

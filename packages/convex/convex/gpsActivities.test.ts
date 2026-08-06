@@ -83,6 +83,7 @@ async function seedBody(
       {
         source: 'osm' as const,
         externalId,
+        osmId: externalId,
         name: overrides.name ?? 'Shelburne Pond',
         type: 'lakePond' as const,
         polygon: {

@@ -31,6 +31,7 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
       {
         source: 'osm',
         externalId: 'osm/1',
+        osmId: 'osm/1',
         name: 'Lake Morey',
         type: 'lakePond',
         polygon: POLYGON,

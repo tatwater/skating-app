@@ -81,12 +81,19 @@ function chunk(lines: string[]): string[][] {
  */
 const MAX_CONSECUTIVE_BATCH_FAILURES = 5;
 
-function runImport(
-  bodies: unknown[],
-  state: string | undefined,
-): { inserted: number; updated: number } {
-  // `importCanonical` returns {inserted, updated}. Anything we can't read as that is a hard error —
-  // the mutation may well have committed, so reporting zeroes would mislead the operator.
+interface ImportResult {
+  inserted: number;
+  updated: number;
+  /** Ambiguous identity, flagged for the D36 queue rather than merged (N7 / D93). */
+  queuedForMerge: number;
+  /** One id resolving to two rows, or a record carrying no id at all. */
+  conflicts: number;
+  unresolved: { externalId: string; action: string; reason: string }[];
+}
+
+function runImport(bodies: unknown[], state: string | undefined): ImportResult {
+  // Anything we can't read as the expected shape is a hard error — the mutation may well have
+  // committed, so reporting zeroes would mislead the operator.
   const parsed = convexRun<unknown>(
     'waterBodies:importCanonical',
     state ? { bodies, state } : { bodies },
@@ -99,7 +106,14 @@ function runImport(
   ) {
     throw new Error(`convex run returned an unexpected response: ${JSON.stringify(parsed)}`);
   }
-  return parsed as { inserted: number; updated: number };
+  const r = parsed as Partial<ImportResult> & { inserted: number; updated: number };
+  return {
+    inserted: r.inserted,
+    updated: r.updated,
+    queuedForMerge: r.queuedForMerge ?? 0,
+    conflicts: r.conflicts ?? 0,
+    unresolved: r.unresolved ?? [],
+  };
 }
 
 /** Read a JSON sidecar (an extract manifest, a transform summary), or `undefined` if unreadable. */
@@ -276,6 +290,8 @@ function main(): void {
 
   let inserted = 0;
   let updated = 0;
+  let queuedForMerge = 0;
+  let conflicts = 0;
   let applied = 0;
   let failedBatches = 0;
   let bodiesInFailedBatches = 0;
@@ -290,6 +306,18 @@ function main(): void {
       );
       inserted += result.inserted;
       updated += result.updated;
+      queuedForMerge += result.queuedForMerge;
+      conflicts += result.conflicts;
+      // **An ambiguous identity is a failure of this run, itemized.** It is not a batch error — the
+      // other 149 bodies loaded — but it is a body that did not land, and the whole point of the
+      // ledger is that those stop scrolling past in a terminal.
+      for (const u of result.unresolved) {
+        logger.fail({
+          stage: 'load',
+          key: u.externalId,
+          reason: `${u.action}: ${u.reason}`,
+        });
+      }
       applied++;
       consecutiveFailures = 0;
       process.stderr.write(`[etl] batch ${index + 1}/${batches.length} done\n`);
@@ -330,6 +358,8 @@ function main(): void {
   logger.count('batchesFailed', failedBatches);
   logger.count('inserted', inserted);
   logger.count('updated', updated);
+  logger.count('queuedForMerge', queuedForMerge);
+  logger.count('conflicts', conflicts);
   // The denominator is the *polygon features the filter emitted*, not the bodies the transform
   // kept — otherwise "dropped as a river" disappears from the ledger and the pass looks perfect.
   const featuresIn = transform?.total ?? lines.length;
@@ -344,11 +374,21 @@ function main(): void {
       },
       { reason: 'threw during transform (see failures)', count: transform?.skipped ?? 0 },
       { reason: 'in a batch that failed and was skipped', count: bodiesInFailedBatches },
+      {
+        reason: 'ambiguous identity — two ids resolved to two rows, queued for the dedup review',
+        count: queuedForMerge,
+      },
+      {
+        reason: 'identity conflict — an id resolves to two rows, or no id at all',
+        count: conflicts,
+      },
     ].filter((o) => o.count > 0),
   });
   logger.stage({
     name: 'load',
-    detail: `waterBodies:importCanonical — idempotent upsert on (source, externalId), cell-indexed (N1)`,
+    detail:
+      'waterBodies:importCanonical — idempotent upsert keyed on the catalogue ids (D93), ' +
+      'cell-indexed (N1); merge/conflict verdicts are queued, never performed',
     input: inputPath,
     output: target.label,
     counts: [
@@ -356,6 +396,8 @@ function main(): void {
       { name: 'batchesFailed', value: failedBatches },
       { name: 'inserted', value: inserted },
       { name: 'updated', value: updated },
+      { name: 'queuedForMerge', value: queuedForMerge },
+      { name: 'conflicts', value: conflicts },
     ],
   });
 
@@ -372,6 +414,8 @@ function main(): void {
   const declined = logger.totalFailures;
   process.stderr.write(
     `[etl] load complete: ${inserted} inserted · ${updated} updated` +
+      `${queuedForMerge > 0 ? ` · ${queuedForMerge} queued for dedup review` : ''}` +
+      `${conflicts > 0 ? ` · ${conflicts} identity conflict(s)` : ''}` +
       `${failedBatches > 0 ? ` · ${failedBatches} batch(es) failed and were skipped` : ''}` +
       `${declined > 0 ? ` · ${declined} itemized failure(s) recorded` : ''}\n`,
   );

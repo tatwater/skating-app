@@ -28,8 +28,33 @@ export type OsmWaterFeature = Feature<Geometry, OsmWaterProperties>;
  * `canonicalBody` validator exactly — `source` is always `'osm'` this phase (rivers/NHD later).
  */
 export interface CanonicalBody {
-  source: 'osm';
+  /**
+   * Which catalogue this record arrived from. **No longer half the upsert key** (N7 / D93) — the
+   * ids below are — but still stored, because "where did this row come from" is a real question.
+   */
+  source: 'osm' | 'nhd' | '3dhp';
+  /**
+   * The arrival key, retained through one full campaign because the N6b contour tiles are stamped
+   * with it and D93 retires it only once every consumer reads `waterBodyKey`.
+   */
   externalId: string;
+  /**
+   * **What this lake is, in each catalogue that knows it** — the actual upsert key. At least one
+   * must be present or `importCanonical` refuses the record rather than inventing an identity.
+   */
+  osmId?: string;
+  nhdId?: string;
+  threeDhpId?: string;
+  /** Proposes candidates, never decides identity — 92 GNIS ids fan out across several NHD bodies. */
+  gnisId?: string;
+  /** Whose outline `polygon` is (D92); absent means "the same as `source`". */
+  geometrySource?: 'osm' | 'nhd' | '3dhp' | 'user';
+  /**
+   * The states this body touches, when the producer knows. The OSM lane leaves it unset and the
+   * loader's `--state` flag tags the batch; the merge computes it per body against the admin-area
+   * mask, because a merged corpus is loaded in one pass and has no per-state batches to tag.
+   */
+  states?: string[];
   name: string;
   type: WaterBodyClass;
   polygon: Polygon | MultiPolygon;

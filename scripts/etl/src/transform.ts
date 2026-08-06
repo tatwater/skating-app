@@ -27,6 +27,7 @@ import {
   polygonBBox,
   representativePoint,
   surfaceAreaSqM,
+  type WaterBodyClass,
 } from '@skating/core';
 import simplify from '@turf/simplify';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -179,6 +180,85 @@ function stringTags(props: OsmWaterProperties): OsmTagBag {
   return out;
 }
 
+/**
+ * Turn a **classified, admitted** body into the record `importCanonical` stores — source-agnostic
+ * (N7 step 5).
+ *
+ * ## Why this had to be lifted out of `featureToCanonicalBody`
+ *
+ * The geometry work below — D85's source-measured stats, ~5 m simplification, the Convex array cap,
+ * an on-water representative point — is identical whoever drew the polygon. It was welded to an
+ * `OsmWaterFeature`, which meant the merge had **no way to emit a loadable body at all**:
+ * `master.ndjson` carried a name, a class and an acreage and no geometry, so it was a report rather
+ * than an artifact. Re-using the OSM path was not an option either, because it re-runs its own
+ * classifier and floor and would have overruled the merge that just decided both.
+ *
+ * So the split is: **callers decide *whether* a body belongs and *what it is*; this decides what it
+ * looks like.** `featureToCanonicalBody` is now the OSM-only wrapper that classifies and applies the
+ * floor before calling in here.
+ *
+ * **Throws** on geometry we cannot store — a degenerate ring, or an array still over Convex's 8192
+ * cap after coarsening. Callers batching raw data must catch per body.
+ */
+export function toCanonicalBody(input: {
+  source: CanonicalBody['source'];
+  externalId: string;
+  name: string;
+  type: WaterBodyClass;
+  geometry: Polygon | MultiPolygon;
+  osmId?: string | undefined;
+  nhdId?: string | undefined;
+  threeDhpId?: string | undefined;
+  gnisId?: string | undefined;
+  geometrySource?: CanonicalBody['geometrySource'];
+  states?: string[] | undefined;
+}): CanonicalBody {
+  const geom = input.geometry;
+  if (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon') {
+    throw new Error(`unsupported geometry type "${(geom as { type: string }).type}"`);
+  }
+  // A closed linear ring needs four positions; anything less measures as zero area, which a floor
+  // would happily read as "a very small pond".
+  if (largestRingSize(geom) < 4) {
+    throw new Error('degenerate geometry: no ring with 4+ positions (cannot form a closed area)');
+  }
+
+  // ── D85: measure the SOURCE geometry, before anything touches it ────────────────────────────
+  // Perimeter is resolution-dependent — the coastline paradox — so measuring after `simplify()`
+  // under-reports systematically, worst on the big crenellated lakes where a shoreline figure is
+  // most interesting. **Do not move this below `simplifyForStorage`.**
+  const stats = lakeGeometryStats(geom);
+  const interiorPoint = fetchOrigin(geom) ?? undefined;
+
+  const polygon = simplifyForStorage(geom);
+  const maxArray = maxArrayLength(polygon);
+  if (maxArray > CONVEX_ARRAY_LIMIT) {
+    throw new Error(
+      `geometry array too large (${maxArray} > ${CONVEX_ARRAY_LIMIT}) after coarsening`,
+    );
+  }
+  const centroid = representativePoint(polygon); // throws on a collapsed / degenerate ring
+
+  return {
+    source: input.source,
+    externalId: input.externalId,
+    name: input.name,
+    type: input.type,
+    polygon,
+    bbox: polygonBBox(polygon),
+    centroid,
+    surfaceAreaSqM: surfaceAreaSqM(polygon),
+    ...(input.osmId ? { osmId: input.osmId } : {}),
+    ...(input.nhdId ? { nhdId: input.nhdId } : {}),
+    ...(input.threeDhpId ? { threeDhpId: input.threeDhpId } : {}),
+    ...(input.gnisId ? { gnisId: input.gnisId } : {}),
+    ...(input.geometrySource ? { geometrySource: input.geometrySource } : {}),
+    ...(input.states?.length ? { states: input.states } : {}),
+    ...(interiorPoint ? { interiorPoint } : {}),
+    ...stats,
+  };
+}
+
 export function featureToCanonicalBody(
   feature: OsmWaterFeature,
 ): CanonicalBody | null | typeof BELOW_AREA_FLOOR {
@@ -230,43 +310,18 @@ export function featureToCanonicalBody(
     return BELOW_AREA_FLOOR;
   }
 
-  // ── D85: measure the SOURCE geometry, here, before anything touches it ──────────────────────
-  //
-  // This line is the whole of D85 and it is one line, which is exactly why it is easy to move by
-  // accident. `geom` is the full-resolution OSM ring; a few lines down it becomes a ~5 m
-  // Douglas-Peucker approximation (~7 m for Champlain, coarsened to fit the D48 array cap).
-  // Perimeter is resolution-dependent — the coastline paradox — so measuring after `simplify()`
-  // under-reports systematically, and worst on the big crenellated lakes where a shoreline figure
-  // is most interesting. The stored polygon exists for drawing; these stats exist for describing.
-  //
-  // **Do not move this below `simplifyForStorage`.** The stats would still compute, still look
-  // plausible, and be quietly short on precisely the bodies that matter most.
-  const stats = lakeGeometryStats(geom);
-  const interiorPoint = fetchOrigin(geom) ?? undefined;
-
-  // Simplify, then derive bbox / centroid / area from the geometry we actually store.
-  const polygon = simplifyForStorage(geom);
-  // Coarsening thins ring positions but can't reduce component/hole counts; reject (→ skip)
-  // anything still over the array cap so one bad body never fails a whole loader batch.
-  const maxArray = maxArrayLength(polygon);
-  if (maxArray > CONVEX_ARRAY_LIMIT) {
-    throw new Error(
-      `geometry array too large (${maxArray} > ${CONVEX_ARRAY_LIMIT}) after coarsening`,
-    );
-  }
-  const centroid = representativePoint(polygon); // throws on a collapsed / degenerate ring
-  return {
+  // The geometry half is shared with the merge's emit stage — see `toCanonicalBody`. `osmId` is
+  // stated explicitly rather than left for the server to infer from `source`: an incoming record
+  // asserts its own identity (D93), and this path knows perfectly well what OSM calls it.
+  return toCanonicalBody({
     source: 'osm',
     externalId,
     name,
     type,
-    polygon,
-    bbox: polygonBBox(polygon),
-    centroid,
-    surfaceAreaSqM: surfaceAreaSqM(polygon),
-    ...(interiorPoint ? { interiorPoint } : {}),
-    ...stats,
-  };
+    geometry: geom,
+    osmId: externalId,
+    geometrySource: 'osm',
+  });
 }
 
 // ── OSM depth tags (N6a rung 7) ──────────────────────────────────────────────────────────────

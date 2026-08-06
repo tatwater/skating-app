@@ -23,6 +23,7 @@ import {
   type DedupShape,
   type DepthSource,
   displayScore,
+  type IdMatch,
   isKnownStateCode,
   isMinor,
   isPlausibleElevationM,
@@ -43,6 +44,7 @@ import {
   pathToBody,
   pointInPolygon,
   polygonBBox,
+  resolveUpsert,
   WATER_BODY_CLASSES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -66,7 +68,12 @@ import {
 } from './lib/auth';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
-import { CANONICAL_SOURCES, REMOVAL_REASONS, WATER_BODY_SOURCES } from './lib/enums';
+import {
+  CANONICAL_SOURCES,
+  GEOMETRY_SOURCES,
+  REMOVAL_REASONS,
+  WATER_BODY_SOURCES,
+} from './lib/enums';
 import { isListed } from './lib/listing';
 import { takeCapped } from './lib/scan';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
@@ -147,10 +154,35 @@ function unionState(
   return [...new Set([...(existing ?? []), state])].sort();
 }
 
-/** A canonical (OSM/NHD) body as prepared by the ETL, keyed by its `(source, externalId)`. */
+/**
+ * A canonical body as prepared by the ETL — **keyed by its catalogue ids, not by `(source,
+ * externalId)`** (N7 / D93).
+ *
+ * The ids are what changed. `externalId` is still carried and still written, because the contour
+ * tiles are stamped with it and D93 keeps it in step for one full campaign before retiring it — but
+ * it is no longer how a row is found. A merged record can hold three catalogue ids at once, and the
+ * pair `(source, externalId)` can only express one of them, which is why an NHD feature used to
+ * insert a duplicate of every OSM body we already held.
+ *
+ * **At least one catalogue id must be present.** `resolveUpsert` refuses a feature carrying none —
+ * it cannot be upserted, only counted as a drop — and the mutation surfaces that as a conflict
+ * rather than inventing an identity for it.
+ */
 const canonicalBody = v.object({
-  source: literals(CANONICAL_SOURCES), // osm | nhd — never user (D14)
+  source: literals(CANONICAL_SOURCES), // osm | nhd | 3dhp — never user (D14)
   externalId: v.string(),
+  /**
+   * The catalogue ids this record carries. **All optional, at least one required** — enforced by
+   * `resolveUpsert` rather than by the validator, because "which of these three" is a rule with a
+   * reason attached and a validator can only say `false`.
+   */
+  osmId: v.optional(v.string()),
+  nhdId: v.optional(v.string()),
+  threeDhpId: v.optional(v.string()),
+  /** Proposes, never decides — see the schema note and `GNIS_IS_NOT_AN_UPSERT_KEY`. */
+  gnisId: v.optional(v.string()),
+  /** Whose outline this is (D92). Absent means "the same as `source`". */
+  geometrySource: v.optional(literals(GEOMETRY_SOURCES)),
   name: v.string(),
   type: literals(WATER_BODY_CLASSES),
   polygon: geoJson,
@@ -307,15 +339,78 @@ function vertexCount(geometry: unknown): number {
 }
 
 /**
- * Internal, never client-callable: idempotently upsert a batch of canonical bodies (D14/D48).
+ * Look up every stored row each of an incoming record's catalogue ids resolves to (N7 / D93).
+ *
+ * One index read per id present, each on the id's **own** index. `osmId` deliberately does not go
+ * through `by_external_id`: the two fields hold the same string today and D93 exists to end that
+ * coincidence, so keying identity on the arrival field would re-create the bug one layer down — and
+ * it did, in the first draft of this function, which silently returned no match for a body whose
+ * `externalId` and `osmId` had diverged and would have inserted a duplicate.
+ *
+ * Returns the shape `resolveUpsert` consumes: the caller does the reads, the pure function makes the
+ * decision, and that split is what lets `merge` and `conflict` be tested exhaustively without a
+ * database.
+ *
+ * **`.collect()` and not `.unique()`.** A `unique()` here would *throw* on the one case the whole
+ * design exists to detect — an id resolving to two rows — and turn a finding we want queued into a
+ * failed batch.
+ */
+async function lookupByCatalogueIds(
+  ctx: MutationCtx,
+  ids: { osmId?: string; nhdId?: string; threeDhpId?: string },
+): Promise<IdMatch<Id<'waterBodies'>>[]> {
+  const out: IdMatch<Id<'waterBodies'>>[] = [];
+  if (ids.osmId) {
+    const rows = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_osm_id', (q) => q.eq('osmId', ids.osmId))
+      .collect();
+    out.push({ field: 'osmId', value: ids.osmId, keys: rows.map((r) => r._id) });
+  }
+  if (ids.nhdId) {
+    const rows = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_nhd_id', (q) => q.eq('nhdId', ids.nhdId))
+      .collect();
+    out.push({ field: 'nhdId', value: ids.nhdId, keys: rows.map((r) => r._id) });
+  }
+  if (ids.threeDhpId) {
+    const rows = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_three_dhp_id', (q) => q.eq('threeDhpId', ids.threeDhpId))
+      .collect();
+    out.push({ field: 'threeDhpId', value: ids.threeDhpId, keys: rows.map((r) => r._id) });
+  }
+  return out;
+}
+
+/**
+ * Internal, never client-callable: idempotently upsert a batch of canonical bodies (D14/D48/D93).
  * Load via `pnpm exec convex run` from the ETL (chunk batches for the mutation size limit).
- * Keyed on `by_external_id` (`(source, externalId)`), so OSM and NHD stay distinct even when a
- * feature shares an id across feeds:
- *  - **insert** a new body as `listed: true`;
- *  - **update** an existing body's geometry/name/area but **preserve** its `removed*` /
- *    `reviewStatus` / `dedupStatus`, re-deriving `listed` via `isListed` — so a re-import
- *    never resurrects a removed body (above all a landowner takedown, D48).
- * Re-running on unchanged data is a no-op on the final state (one row, same listing).
+ *
+ * ## Keyed on the catalogue ids, which is the change this phase exists to make
+ *
+ * It used to key on `(source, externalId)`. That worked while the corpus was one catalogue and fails
+ * the moment it is three: **an NHD feature would insert a duplicate of every OSM body we hold**,
+ * because the pair can only express one identity and the NHD row's is not the OSM row's.
+ * `resolveUpsert` (`@skating/core`) takes what each id resolved to and returns one of four verdicts:
+ *
+ *  - **insert** — no id matched. Mint a `waterBodyKey` and add it, `listed: true`.
+ *  - **patch** — exactly one stored row. Update in place; **`_id` never moves**, which is what keeps
+ *    user content attached and makes "change a lake's geometry source" a field write.
+ *  - **merge** — two ids, two *different* rows. Reconciliation missed a duplicate. **Queued, never
+ *    performed**: an automatic merge that is wrong is unrecoverable in a way a queued one is not.
+ *  - **conflict** — one id, two rows. The corpus already violates its own uniqueness. Refuse.
+ *
+ * **`merge` and `conflict` do not throw and do not write.** They mark the rows for the D36 dedup
+ * queue and are counted in the return value, because a batch of 150 must not be lost to one lake
+ * whose identity is ambiguous — and because the ambiguity is itself a finding a moderator can act on.
+ *
+ * ## What a re-import still preserves
+ *
+ * `removed*` / `reviewStatus` / `dedupStatus` / `curatedBoost` / depth survive, with `listed`
+ * re-derived through `isListed`, so a re-import **never resurrects a removed body** — above all a
+ * landowner takedown (D48). Re-running on unchanged data is a no-op on the final state.
  */
 export const importCanonical = internalMutation({
   // `state` (2-letter code) is the extract's source region; it's unioned into each body's `states`
@@ -331,13 +426,45 @@ export const importCanonical = internalMutation({
     }
     let inserted = 0;
     let updated = 0;
+    let queuedForMerge = 0;
+    let conflicts = 0;
+    const unresolved: { externalId: string; action: string; reason: string }[] = [];
+
     for (const item of bodies) {
-      const existing = await ctx.db
-        .query('waterBodies')
-        .withIndex('by_external_id', (q) =>
-          q.eq('source', item.source).eq('externalId', item.externalId),
-        )
-        .unique();
+      const verdict = resolveUpsert(
+        { osmId: item.osmId, nhdId: item.nhdId, threeDhpId: item.threeDhpId },
+        await lookupByCatalogueIds(ctx, item),
+      );
+
+      if (verdict.action === 'conflict') {
+        conflicts++;
+        unresolved.push({
+          externalId: item.externalId,
+          action: 'conflict',
+          reason: verdict.reason,
+        });
+        continue;
+      }
+
+      if (verdict.action === 'merge') {
+        // **Flag, never collapse.** D36's queue exists for exactly this decision and merging is a
+        // moderator action. Both sides are marked so whichever a human opens shows the other.
+        queuedForMerge++;
+        for (const key of [verdict.into, ...verdict.absorb]) {
+          const row = await ctx.db.get(key);
+          if (row && row.dedupStatus !== 'merged') {
+            await ctx.db.patch(key, { dedupStatus: 'near_certain' });
+          }
+        }
+        unresolved.push({
+          externalId: item.externalId,
+          action: 'merge',
+          reason: `${verdict.matchedBy.join('+')} resolve to ${1 + verdict.absorb.length} rows`,
+        });
+        continue;
+      }
+
+      const existing = verdict.action === 'patch' ? await ctx.db.get(verdict.key) : null;
 
       if (existing) {
         // Patch geometry/name/area + re-derived scores; removed*/reviewStatus/dedupStatus/
@@ -363,10 +490,13 @@ export const importCanonical = internalMutation({
           states: unionState(existing.states, state),
           ...scores,
           ...shapeFields(item),
-          // `osmId` only. **`nhdId` is deliberately absent from this patch**, which is what makes a
-          // reconciliation survive a canonical re-import — the same reason depth and `curatedBoost`
-          // are absent. An NHD match is something we worked out, not something OSM can restate.
-          ...catalogueIds(item),
+          // **Every id the record asserts, and nothing it merely fails to mention.** The old rule
+          // withheld `nhdId` entirely so a reconciliation survived a re-import; that was right when
+          // an incoming record was one catalogue's view, and too strict now that the merge resolves
+          // all three ids before emitting — it would freeze the corpus at whatever the first
+          // reconciliation guessed. Overwriting unconditionally is the opposite error and a far
+          // worse one; see `assertedCatalogueIds`.
+          ...assertedCatalogueIds(item),
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
         // body against its new geometry + prominence (N1).
@@ -408,6 +538,11 @@ export const importCanonical = internalMutation({
           type: item.type,
           source: item.source,
           externalId: item.externalId,
+          // **Minted at insert, so no row is ever without one.** `mintWaterBodyKeys` exists to
+          // backfill the rows that predate the field; a body created after it should not need that
+          // pass to have run, or the corpus acquires a second class of row whose tile stamp is
+          // pending. Same `wb_` prefix and opaque UUID (D93).
+          waterBodyKey: `wb_${crypto.randomUUID()}`,
           // Identity alongside the key. Set here so a fresh import needs no backfill to be
           // reconcilable, and so the day `externalId` stops being an OSM id, this still is one.
           ...catalogueIds(item),
@@ -430,7 +565,17 @@ export const importCanonical = internalMutation({
         inserted++;
       }
     }
-    return { inserted, updated };
+    // `unresolved` is capped: a batch is 150 bodies and a pathological run could make every one of
+    // them ambiguous, but the *counts* are what the loader reports and the samples are for a human
+    // reading a run row. Twenty is enough to recognise a pattern and small enough to never dominate
+    // the return value.
+    return {
+      inserted,
+      updated,
+      queuedForMerge,
+      conflicts,
+      unresolved: unresolved.slice(0, 20),
+    };
   },
 });
 
@@ -852,7 +997,7 @@ export const backfillCatalogueIds = internalMutation({
     let alreadySet = 0;
     let noExternalId = 0;
     for (const body of page.page) {
-      const want = catalogueIds(body);
+      const want = deriveCatalogueIds(body);
       if (Object.keys(want).length === 0) {
         noExternalId++;
         continue;
@@ -2610,10 +2755,40 @@ const BATHYMETRY_APPROACH_M = 25;
  * polygon, and knows nothing about NHD. `nhdId` is written by reconciliation, never by import —
  * keeping it out of here is what stops a re-import erasing it.
  */
-function catalogueIds(item: { source: string; externalId?: string }): {
+/**
+ * The identity fields an incoming record carries, **taken from the payload rather than derived**
+ * (N7 / D93).
+ *
+ * This used to infer `osmId` from `source === 'osm' && externalId`, which is `externalId` doing the
+ * identity job all over again — the exact conflation D93 exists to undo. A merged record knows all
+ * three of its catalogue ids because the merge worked them out; the import's job is to write them
+ * down, not to guess one of them back from where the row happened to arrive.
+ *
+ * **On insert every field is written; on patch, only the ones the record actually asserts** — see
+ * `assertedCatalogueIds`. The asymmetry is deliberate and it is a safety property, not tidiness.
+ *
+ * ⚠ **`geometrySource` falls back to `source`, never to nothing.** The schema says absent means "the
+ * same as `source`", so leaving it undefined is technically correct and practically a trap: a later
+ * reader has to know that rule to interpret the column, and D92's whole point is that the two can
+ * diverge. Write it down.
+ */
+/**
+ * Derive `osmId` / `nhdId` / `geometrySource` from `source` + `externalId` — **for the backfill of
+ * legacy rows only.**
+ *
+ * This is the rule `catalogueIds` used to apply to every import, and it is exactly the conflation
+ * D93 exists to undo — so it is deliberately *not* shared with the import path any more. It survives
+ * because a row written before the identity fields existed genuinely has nowhere else to get them
+ * from: `source: 'osm'` plus an `externalId` that is an OSM id is real evidence, just weaker than an
+ * assertion from the merge.
+ *
+ * ⚠ **Do not call this from `importCanonical`.** An incoming record states its own identity; guessing
+ * one back from where the row happened to arrive is how `externalId` ended up doing three jobs.
+ */
+function deriveCatalogueIds(item: { source: string; externalId?: string }): {
   osmId?: string;
   nhdId?: string;
-  geometrySource?: 'osm' | 'nhd' | 'user';
+  geometrySource?: 'osm' | 'nhd' | '3dhp' | 'user';
 } {
   if (item.source === 'osm' && item.externalId) {
     return { osmId: item.externalId, geometrySource: 'osm' };
@@ -2622,6 +2797,55 @@ function catalogueIds(item: { source: string; externalId?: string }): {
     return { nhdId: item.externalId, geometrySource: 'nhd' };
   }
   return {};
+}
+
+interface IncomingIds {
+  source: string;
+  externalId?: string;
+  osmId?: string;
+  nhdId?: string;
+  threeDhpId?: string;
+  gnisId?: string;
+  geometrySource?: (typeof GEOMETRY_SOURCES)[number];
+}
+
+function catalogueIds(item: IncomingIds) {
+  return {
+    osmId: item.osmId,
+    nhdId: item.nhdId,
+    threeDhpId: item.threeDhpId,
+    gnisId: item.gnisId,
+    geometrySource:
+      item.geometrySource ?? (item.source as (typeof GEOMETRY_SOURCES)[number] | undefined),
+  };
+}
+
+/**
+ * The same ids, **with the absent ones omitted rather than set to `undefined`** — the update path.
+ *
+ * ## Why a re-import may not clear an id it does not mention
+ *
+ * The obvious rule is "the incoming record is authoritative, write all of it", and it is wrong here
+ * in a way that is expensive exactly once. The merge resolves all three ids before emitting, so a
+ * *complete* record asserting no `nhdId` really does mean "this lake has no NHD counterpart" — but
+ * nothing in this mutation can tell a complete record from a partial one. Load a single state's OSM
+ * lane by itself, or an older export, and an overwriting rule silently wipes every reconciliation in
+ * the corpus. That is 18,383 rows of geometric work, destroyed by a load that reported success.
+ *
+ * So: **an id present is an assertion and overwrites; an id absent is silence and changes nothing.**
+ * A wrong `nhdId` is corrected by the next merge that asserts a different one, which is the case that
+ * actually happens. Withdrawing an id entirely — asserting that a match was wrong and has no
+ * replacement — is rare, consequential, and deliberately not something an import can do in passing;
+ * it is a moderator action, and `reconcileAudit` is where it would be found.
+ *
+ * `geometrySource` follows the same rule for the same reason: D92's per-lake override is a decision
+ * someone made, and an import that has no opinion about geometry must not erase one that does.
+ */
+function assertedCatalogueIds(item: IncomingIds): Record<string, string> {
+  const all = catalogueIds(item);
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(all)) if (v !== undefined) out[k] = v;
+  return out;
 }
 
 /**
