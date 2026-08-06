@@ -25,10 +25,21 @@ import { boundsToViewport, buildMapStyle, type MapFlavor, zoomForViewport } from
 
 export interface MapCanvasOptions {
   pmtilesUrl: string;
+  /**
+   * The whole-planet z0–6 overview archive, which draws the ocean and the continents everywhere the
+   * regional archive has nothing to say. Blank ⇒ single-source style, as before the two-archive
+   * basemap: the map renders, but stops dead at the regional archive's edge.
+   */
+  worldPmtilesUrl?: string;
   /** Basemap theme (D6/D34). A change re-creates the map; the shell preserves pan/zoom across it. */
   flavor: MapFlavor;
-  /** Pan limit. The whole region for the skater map; one lake's bbox for the editor (Decision 5). */
-  maxBounds: [[number, number], [number, number]];
+  /**
+   * Pan limit, or omitted for none. The lake editor pins it to one lake's bbox (Decision 5). The
+   * skater map no longer sets it at all: with a world overview under the map there is a whole planet
+   * to look at, and `ReturnToRegion` handles the getting-back rather than a fence handling the
+   * getting-away.
+   */
+  maxBounds?: [[number, number], [number, number]];
   initialCenter: [number, number];
   initialZoom: number;
   /**
@@ -77,6 +88,7 @@ export interface MapCanvas {
 export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
   const {
     pmtilesUrl,
+    worldPmtilesUrl,
     flavor,
     maxBounds,
     initialCenter,
@@ -127,11 +139,11 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
     const initialView = initialViewRef.current;
     const map = new maplibregl.Map({
       container,
-      style: buildMapStyle(pmtilesUrl, flavor),
+      style: buildMapStyle({ regionUrl: pmtilesUrl, worldUrl: worldPmtilesUrl, flavor }),
       // Restore pan/zoom across a theme-driven re-create; else the caller's initial framing.
       center: lastViewRef.current?.center ?? initialView.center,
       zoom: lastViewRef.current?.zoom ?? initialView.zoom,
-      maxBounds,
+      ...(maxBounds ? { maxBounds } : {}),
       ...(initialView.minZoom !== undefined ? { minZoom: initialView.minZoom } : {}),
       attributionControl: false, // replaced below with an always-visible (non-compact) control
     });
@@ -169,7 +181,7 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
       if (pmtilesUsers === 0) maplibregl.removeProtocol('pmtiles');
     };
     // `initialCenter` / `initialZoom` / `minZoom` are deliberately absent — see `initialViewRef`.
-  }, [pmtilesUrl, flavor, boundsKey, fitKey, navigationControl]);
+  }, [pmtilesUrl, worldPmtilesUrl, flavor, boundsKey, fitKey, navigationControl]);
 
   return { containerRef, mapRef, loaded };
 }

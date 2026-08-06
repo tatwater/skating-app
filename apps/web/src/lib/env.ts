@@ -15,6 +15,11 @@ export const env = {
   // Basemap vector tiles (D6). Blank → the Protomaps hosted demo (`waterMap.DEMO_PMTILES_URL`);
   // set to a self-built Vermont `.pmtiles` URL to swap the basemap (PR#5). Public.
   pmtilesUrl: import.meta.env.VITE_PMTILES_URL ?? '',
+  // The whole-planet z0–6 overview archive that sits *under* the regional one, so the map has an
+  // ocean and a set of continents everywhere rather than ending in a straight line at the regional
+  // archive's edge. ~45 MB, hosted alongside the basemap. Blank ⇒ the map falls back to the
+  // single-source style, which renders but stops dead outside the region. Public.
+  worldPmtilesUrl: import.meta.env.VITE_WORLD_PMTILES_URL ?? '',
   // Bathymetric contours (N6b). A SECOND `.pmtiles` archive, hosted alongside the basemap and added
   // to the style only while a lake's drawer is open (D81). Blank ⇒ the layer never mounts, which is
   // the correct behaviour rather than a degraded one: contours are decoration under D82, so an

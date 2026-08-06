@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!**/_generated", "!**/routeTree.gen.ts"]
+    "includes": ["**", "!**/_generated", "!**/routeTree.gen.ts", "!**/assets/regionMask.ts"]
   },
   "formatter": {
     "enabled": true,

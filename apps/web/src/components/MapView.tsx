@@ -5,6 +5,7 @@ import {
   type BBox,
   draftPlacementCount,
   isDraftSubmittable,
+  isRegionOffscreen,
   type LatLng,
   polygonShape,
   SUB_AREA_MIN_RENDER_ZOOM,
@@ -56,7 +57,6 @@ import {
   INITIAL_CENTER,
   INITIAL_ZOOM,
   MAP_FLAVORS,
-  NORTHEAST_MAX_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
   SUB_AREA_PALETTE,
@@ -66,6 +66,7 @@ import {
   waterBodiesToFeatureCollection,
 } from '../lib/waterMap';
 import { useMapSelection } from './MapSelectionContext';
+import { ReturnToRegion } from './ReturnToRegion';
 
 /**
  * Interactive MapLibre map — the read side of the Phase 2 loop (§D, D5/D6/D47/D49). Imperative
@@ -188,9 +189,19 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   };
 
   const pmtilesUrl = env.pmtilesUrl || DEMO_PMTILES_URL;
+  // No demo fallback for the overview: the Protomaps demo build IS a whole planet, so falling back
+  // to it would mean rendering the same archive twice. Blank simply means no overview.
+  const worldPmtilesUrl = env.worldPmtilesUrl;
 
   // The viewport bbox + zoom are the query key; 'skip' until the map's first `load` sets them.
-  const bodies = useQuery(api.waterBodies.listInViewport, queryArgs ?? 'skip');
+  // Skipped outright once the region is off screen. Panning to Kansas cannot turn up a lake we
+  // hold, so the query would be a subscription per viewport for an answer known in advance — the
+  // same reasoning `subAreaArgs` applies below its zoom floor.
+  const regionOffscreen = queryArgs ? isRegionOffscreen(queryArgs.viewport) : false;
+  const bodies = useQuery(
+    api.waterBodies.listInViewport,
+    queryArgs && !regionOffscreen ? queryArgs : 'skip',
+  );
 
   // Retain the last loaded features while the next query is in flight (Convex returns `undefined`
   // for a fresh key until it resolves) so bodies never blink off the map between pans.
@@ -307,8 +318,10 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // drawer navigation a tap resolves to.
   const { containerRef, mapRef, loaded } = useMapCanvas({
     pmtilesUrl,
+    worldPmtilesUrl,
     flavor,
-    maxBounds: NORTHEAST_MAX_BOUNDS,
+    // No `maxBounds`: the world overview means there is a whole planet worth looking at, and
+    // `ReturnToRegion` is what brings a wandering user home. See `REGION_BOUNDS` in core.
     initialCenter: INITIAL_CENTER,
     initialZoom: INITIAL_ZOOM,
     onViewport: setQueryArgs,
@@ -986,6 +999,12 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       <div
         ref={containerRef}
         className="h-[75vh] w-full overflow-hidden rounded-lg border border-border"
+      />
+      <ReturnToRegion
+        visible={regionOffscreen}
+        onReturn={() =>
+          mapRef.current?.flyTo({ center: INITIAL_CENTER, zoom: INITIAL_ZOOM, duration: 900 })
+        }
       />
       {/* The drawing bar. A circle needs one click and no controls, so it just says so; a polyline
           is a multi-click session and gets its own Undo/Done, kept on the map rather than in the

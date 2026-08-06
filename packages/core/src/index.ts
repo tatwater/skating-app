@@ -1,6 +1,7 @@
 export * from './age';
 export * from './authRoute';
 export * from './badges';
+export * from './basemapLayers';
 export * from './block';
 export * from './bodyIdentity';
 export * from './bodyProbe';
@@ -42,6 +43,7 @@ export * from './lakeDepth';
 export * from './lakeGeometry';
 export * from './lakeProfile';
 export * from './lakeSearch';
+export * from './mapRegion';
 export * from './metrics';
 export * from './oauthRedirect';
 export * from './oauthSession';

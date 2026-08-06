@@ -20,8 +20,11 @@
  * 2. **`region-data.geojson`** — the same union minus the New York counties south of I-84. This is
  *    the *data* region, the one the ETL clips the corpus to. The two differ on purpose: Poughkeepsie
  *    should draw on the map, it just should not have skateable water in our corpus.
- * 3. **`regionMask.ts`** — the land around us that is *not* ours, as flat fill. This is what turns
- *    New Jersey into an empty white shape while leaving its border and its name legible.
+ * 3. **`regionMask.ts`** — the neighbourhood around us that is *not* ours, as flat fill: sea, land
+ *    over it, and the big lakes on top. This is what turns New Jersey into an empty white shape
+ *    while leaving its border and its name legible. It covers water as well as land because a label
+ *    anchored on the Connecticut shore overhangs Long Island Sound, and a mask with no sea leaves
+ *    the tail of the word lying on the water.
  *
  * ## Why the mask's hole is cut by choosing polygons, not by subtracting them
  *
@@ -55,6 +58,7 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import bbox from '@turf/bbox';
+import buffer from '@turf/buffer';
 import difference from '@turf/difference';
 import { featureCollection } from '@turf/helpers';
 import intersect from '@turf/intersect';
@@ -161,7 +165,32 @@ const TOLERANCE = {
   lake: 0.01,
   sea: 0.005,
   cut: 0.0002,
+  /** The sea layer's own edge. Coarser than `cut`: it only ever meets water, where 90 m is nothing. */
+  seaHole: 0.001,
+  /**
+   * The label filter's outline — coarse on purpose, because this one is evaluated **per feature**.
+   *
+   * `["within", …]` runs a point-in-polygon test for every label in every tile, so the region's
+   * 27,000-vertex outline would be paid thousands of times a frame. At 0.002° the shape keeps its
+   * character at a couple of hundred metres, which is far below the zoom any of this is visible at.
+   */
+  labelFilter: 0.002,
 } as const;
+
+/**
+ * How far our own coastline is allowed to reach out to sea before the mask takes over, in km.
+ *
+ * **A label is wider than the ground it names.** The sea mask has to cover open water — that is where
+ * Madison's and New Haven's labels overhang, and covering only their land would leave the tails of
+ * the words lying on the Sound. But our *own* coastal labels overhang too, and at z10 a sixty-pixel
+ * word spans nine kilometres, so a mask that started exactly at Portland's shoreline would eat half
+ * of "Portland". Five kilometres of slack costs nothing — it is water only, and it is water within
+ * five kilometres of ground we cover, so anything labelled there is ours to label.
+ */
+const SEAWARD_ALLOWANCE_KM = 5;
+
+/** How far the label filter is grown past the border, so it can never drop one of our own names. */
+const LABEL_FILTER_ALLOWANCE_KM = 1;
 
 /** Connecticut, New Jersey, Pennsylvania, Rhode Island — the states that touch ours. */
 const NEIGHBOUR_FIPS = new Set(['09', '34', '42', '44']);
@@ -461,6 +490,46 @@ function main(): void {
       .filter((piece): piece is Poly => piece !== null),
   );
 
+  // ── The sea layer: everything that is not our land ────────────────────────
+  //
+  // **Because a fill cannot hide a label.** MapLibre renders an opaque fill in the *opaque* pass and
+  // every symbol in the *translucent* pass, which runs afterwards with depth testing off — so a
+  // label beneath an opaque fill draws straight over the top of it, whatever the layer order says.
+  // The layers themselves solve that by dropping to `fill-opacity: 0.999`, which moves them into the
+  // translucent pass where order is respected; see `maskLayers` in either app.
+  //
+  // Once fills can hide labels, the remaining hole is the water. Madison and New Haven sit on the
+  // Connecticut shore and their labels overhang Long Island Sound, which the land mask by definition
+  // does not cover — so the tails of the words lay on the water with nothing over them. This covers
+  // every drop of water that is not within `SEAWARD_ALLOWANCE_KM` of ground we actually cover.
+  //
+  // It is drawn *beneath* the land layer, so the two together tile the whole neighbourhood: water
+  // colour everywhere, land colour on top of it wherever there is land.
+  const regionCoarse = simplify(region, {
+    tolerance: TOLERANCE.seaHole,
+    highQuality: false,
+    mutate: false,
+  });
+  const ourLand = subtract(regionCoarse, sea);
+  if (ourLand === null) throw new Error('the sea swallowed the entire region');
+  const grown = buffer(ourLand, SEAWARD_ALLOWANCE_KM, { units: 'kilometers' }) as Poly | undefined;
+  // The allowance is intersected back with the sea so it can only ever grow into water. Growing it
+  // into Connecticut would unmask a five-kilometre strip of exactly the labels this exists to hide.
+  const marineBand = grown
+    ? (intersect(
+        featureCollection([grown, sea] as Feature<Polygon | MultiPolygon>[]),
+      ) as Poly | null)
+    : null;
+  const hole = marineBand ? unionAll([ourLand, marineBand]) : ourLand;
+  const seaMask = subtract(BLEED_POLYGON, hole);
+  if (seaMask === null) throw new Error('the region covers the entire bleed box');
+  push('sea', {
+    type: 'Feature',
+    properties: { kind: 'sea' },
+    geometry: roundCoords(seaMask.geometry),
+  } as Poly);
+  log(`  sea, less our land + ${SEAWARD_ALLOWANCE_KM} km of shore — ${kb('sea')}`);
+
   // The United States, from the same file our region came from — so the shared borders match to the
   // vertex and no subtraction is needed anywhere along them.
   const others = ogrFeatures(
@@ -535,12 +604,50 @@ function main(): void {
   }
   log(`  ${kept} major lakes in range of ${lakes.length} — ${kb('lakes')}`);
 
+  // ── The label filter ──────────────────────────────────────────────────────
+  //
+  // **Because a mask cannot tell our labels from theirs.** It hides whatever it covers, and "New
+  // York" is anchored in Manhattan with half the word lying over New Jersey — so a mask that hides
+  // Jersey City also eats the city we cover. The same thing happens along every border: Seekonk and
+  // Rehoboth are Massachusetts towns whose names overhang Rhode Island.
+  //
+  // So labels stop being a painting problem and become a filtering one. The regional archive's
+  // symbol layers move *above* the mask and take a `["within", …]` filter, which drops the ones
+  // outside the region rather than covering them. Ours then draw over the flat fill, legible.
+  //
+  // **Grown outward, never inward.** Simplification moves a border in whichever direction it likes,
+  // and a filter that has shrunk below Vermont's line would silently drop Vermont's own towns —
+  // the failure you would not notice. Growing it means the opposite error: a foreign label within a
+  // few hundred metres of the border may survive. The mask still covers that ground, so the worst
+  // case is one border town's name showing against flat fill.
+  //
+  // Buffered first and simplified second, which is the reverse of everywhere else in this file and
+  // deliberate: buffering rounds every corner into a fan of vertices, and the whole point of this
+  // outline is to be cheap. A kilometre out then a third of a kilometre of thinning still leaves it
+  // comfortably outside the border, which is the direction that matters.
+  const grownOutline = buffer(
+    simplify(region, { tolerance: TOLERANCE.labelFilter, highQuality: false, mutate: false }),
+    LABEL_FILTER_ALLOWANCE_KM,
+    { units: 'kilometers' },
+  );
+  if (!grownOutline) throw new Error('the label filter outline came back empty');
+  const filterGeometry = roundCoords(
+    simplify(grownOutline, { tolerance: 0.004, highQuality: false, mutate: false }).geometry,
+  );
+  log(
+    `label filter          ${sizeOf(filterGeometry)} (+${LABEL_FILTER_ALLOWANCE_KM} km, ${TOLERANCE.labelFilter}°)`,
+  );
+
   const collection: FeatureCollection = { type: 'FeatureCollection', features: mask as Feature[] };
   const module = [
     '// GENERATED by `pnpm --filter @skating/admin-areas build-region` — do not edit by hand.',
     '// The out-of-region mask: flat fill for every landmass near us that is not one of the five',
     '// states. Held as a JSON string rather than an object literal; see the generator for why.',
     `export const REGION_MASK_JSON = ${JSON.stringify(JSON.stringify(collection))};`,
+    '',
+    '// The region outline the basemap style filters labels against, so a name belonging to one of',
+    '// our five states draws over the mask instead of under it. See the generator for the shape.',
+    `export const REGION_FILTER_JSON = ${JSON.stringify(JSON.stringify(filterGeometry))};`,
     '',
   ].join('\n');
   for (const out of MASK_OUTPUTS) {

@@ -3103,3 +3103,58 @@ confound: neither ships a zero-depth shoreline trace (MA's shallowest contour is
 these are in-water measurements and not a re-tracing of the agency's own shoreline.
 
 **Related:** [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+## D112 — The map is two archives and a mask, and it stops drawing at our border rather than being fenced to it (N7)
+
+**Decided (2026-08-05, founder call.)**
+
+Zoom out and you see the whole world: oceans, continents, borders, a few country names. Zoom in and
+detail appears **only inside the five states** — towns, then highways and lakes. Everywhere else keeps
+its border and its name over flat, empty fill. And the camera is no longer fenced: you may pan to
+Australia, and a control offers the way back.
+
+**The old map was one `.pmtiles` extracted with `--bbox`, and both halves of that were wrong.** A
+rectangle cannot know where Connecticut starts, so Ottawa, Toronto and Hartford rendered in full; and
+its floor at 41.2°N is why the world ended in a straight line just above Manhattan. One cause, two
+complaints.
+
+**So: a whole-planet z0–6 overview beneath a polygon-clipped regional archive.** The overview is 43 MB
+and seven seconds to extract, and it is what gives the map an ocean everywhere. The regional archive
+is cut with `--region` against the five TIGER states, which also halved it (948 MB → 458 MB). Draw
+order and zoom policy live in `packages/core/src/basemapLayers.ts`, shared by both surfaces so they
+cannot drift.
+
+**`pmtiles extract --region` clips by *tile*, not by polygon**, so the mask is not optional. A tile
+grazing New York survives whole — a 2.4 km fringe at z14, and ~450 km at z6, which overzooming then
+drags across Québec at every higher zoom. `--region` is a size optimisation; the mask is what makes
+the border crisp.
+
+**The mask covers water as well as land**, in three layers — sea, land over it, then the big lakes.
+Land alone leaves the tail of "Madison" lying on Long Island Sound, because a label is wider than the
+ground it names. Its hole is our land grown five kilometres seaward, intersected back with the ocean
+so it can only ever grow into water and never into Connecticut; without that allowance a mask starting
+at Portland's shoreline eats half of "Portland".
+
+**Labels are filtered, not painted over, and this is the part that is easy to get wrong twice.** A
+mask cannot tell our labels from anyone else's: "New York" is anchored in Manhattan with half the word
+over New Jersey, and Seekonk and Rehoboth are Massachusetts towns whose names overhang Rhode Island.
+So the regional archive's symbol layers sit *above* the mask with a `["within", outline]` filter —
+theirs dropped rather than covered, ours legible over the flat fill. The outline is generated a
+kilometre **outside** the true border, because the failure modes are not symmetric: too small silently
+drops Vermont's own town names, too large shows one border town's name against flat fill.
+
+### ⚠ Two renderer facts this rests on, both learned the hard way
+
+**An opaque fill cannot hide a label.** MapLibre sends a fill to the *opaque* render pass only at
+exactly `fill-opacity: 1`; symbols render in the *translucent* pass, which runs afterwards with depth
+testing off. So an opaque mask is drawn *before* the labels beneath it and every town in Québec
+rendered straight through it. The mask sits at 0.999 for that reason and no other.
+
+**A filter is judged legacy-or-expression as a whole.** The Protomaps flavour writes eight of its
+symbol filters in legacy syntax, so `["all", <legacy>, ["within", …]]` is read as legacy, `within` is
+not a legacy operator, and MapLibre rejects **the entire style** — not the layer. The map went blank
+on device. Every filter goes through the style spec's `convertFilter` first, and both app suites now
+run `validateStyleMin` over the composed style, because a filter-level mistake is a black screen
+rather than a wrong-looking layer.
+
+**Related:** [D6](#d6--renderer-maplibre-gl-locked), [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7), [`phase-N7`](./phase-N7-unified-corpus.md).

@@ -1,3 +1,5 @@
+import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon';
 import { describe, expect, it } from 'vitest';
 import {
   boundsToViewport,
@@ -8,7 +10,7 @@ import {
   GEOLOCATION_FRAME_ZOOM,
   type MappableBody,
   type MappableSubArea,
-  NORTHEAST_MAX_BOUNDS,
+  NORTHEAST_REGION_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
   subAreasToFeatureCollection,
@@ -17,14 +19,16 @@ import {
 } from './waterMap';
 
 describe('buildMapStyle', () => {
-  const style = buildMapStyle('https://example.com/vt.pmtiles');
+  const REGION = 'https://example.com/vt.pmtiles';
+  const WORLD = 'https://example.com/world.pmtiles';
+  const style = buildMapStyle({ regionUrl: REGION, worldUrl: WORLD });
+  const ids = () => style.layers.map((l) => l.id);
 
   it('is a v8 style with the Protomaps pmtiles source', () => {
     expect(style.version).toBe(8);
-    const source = style.sources.protomaps;
-    expect(source).toMatchObject({
+    expect(style.sources.protomaps).toMatchObject({
       type: 'vector',
-      url: 'pmtiles://https://example.com/vt.pmtiles',
+      url: `pmtiles://${REGION}`,
     });
   });
 
@@ -44,7 +48,119 @@ describe('buildMapStyle', () => {
   });
 
   it('uses the dark sprite for the dark flavor', () => {
-    expect(buildMapStyle('https://example.com/vt.pmtiles', 'dark').sprite).toContain('/dark');
+    expect(buildMapStyle({ regionUrl: REGION, flavor: 'dark' }).sprite).toContain('/dark');
+  });
+
+  it('adds the whole-planet overview as a second source', () => {
+    expect(style.sources.world).toMatchObject({ type: 'vector', url: `pmtiles://${WORLD}` });
+  });
+
+  it('carries the region mask as a local geojson source, needing no network', () => {
+    const mask = style.sources['region-mask'] as { type: string; data: GeoJSON.FeatureCollection };
+    expect(mask.type).toBe('geojson');
+    expect(mask.data.features.length).toBeGreaterThan(0);
+    // Sea underneath, land over it, lakes on top — together they tile the neighbourhood, so a
+    // label overhanging Long Island Sound has something over it too.
+    const kinds = new Set(mask.data.features.map((f) => f.properties?.kind));
+    expect(kinds).toEqual(new Set(['sea', 'land', 'water']));
+  });
+
+  it('draws the mask over regional detail but under the borders and names', () => {
+    const at = (id: string) => ids().indexOf(id);
+    expect(at('world_earth')).toBeLessThan(at('roads_highway'));
+    expect(at('roads_highway')).toBeLessThan(at('region-mask-land'));
+    expect(at('region-mask-land')).toBeLessThan(at('world_boundaries'));
+  });
+
+  it("paints the mask in the flavour's own land and water colours, not a grey of its own", () => {
+    const light = buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'white' });
+    const fill = (style: ReturnType<typeof buildMapStyle>) =>
+      (
+        style.layers.find((l) => l.id === 'region-mask-land') as unknown as {
+          paint: Record<string, string>;
+        }
+      ).paint['fill-color'];
+    expect(fill(light)).toBe('#ffffff');
+    expect(fill(buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'dark' }))).not.toBe(
+      '#ffffff',
+    );
+  });
+
+  it('keeps the mask a thousandth short of opaque, or it cannot hide a label', () => {
+    // MapLibre sends a fill to the opaque render pass only at exactly opacity 1, and symbols render
+    // in the translucent pass afterwards with depth testing off — so an opaque mask draws *under*
+    // the labels it exists to cover, however late it sits in the layer order. Every town in Québec
+    // rendered straight through the first version of this.
+    const masks = style.layers.filter((l) => l.id.startsWith('region-mask-'));
+    expect(masks).toHaveLength(3);
+    for (const layer of masks) {
+      const opacity = (layer as unknown as { paint: Record<string, number> }).paint['fill-opacity'];
+      expect(opacity).toBeLessThan(1);
+      expect(opacity).toBeGreaterThan(0.99);
+    }
+  });
+
+  it('draws the sea beneath the land, so land reads as land and not as water', () => {
+    const at = (id: string) => ids().indexOf(id);
+    expect(at('region-mask-sea')).toBeLessThan(at('region-mask-land'));
+    expect(at('region-mask-land')).toBeLessThan(at('region-mask-water'));
+  });
+
+  it('admits our own border towns to the label filter and refuses the neighbours', () => {
+    // The one assertion that catches a filter outline generated inside-out or too tight: it is a
+    // real point-in-polygon test against the shipped geometry, not a shape check.
+    // The flavour gives this layer its own filter, so ours is ANDed on the end rather than alone.
+    const filter = (
+      style.layers.find((l) => l.id === 'places_locality') as unknown as { filter: unknown[] }
+    ).filter;
+    const within = (filter[0] === 'all' ? filter.slice(1) : [filter]).find(
+      (clause): clause is [string, GeoJSON.Polygon] =>
+        Array.isArray(clause) && clause[0] === 'within',
+    );
+    expect(within, 'the town-label layer carries a within filter').toBeDefined();
+    const outline = (within as [string, GeoJSON.Polygon])[1];
+    const inside = (lng: number, lat: number) =>
+      booleanPointInPolygon([lng, lat], outline as never);
+
+    // Ours, including the ones close enough to the line to be lost by a filter that shrank.
+    for (const [name, lng, lat] of [
+      ['Manhattan', -73.97, 40.78],
+      ['Burlington VT', -73.21, 44.48],
+      ['Pittsfield MA', -73.25, 42.45],
+      ['Port Jervis NY', -74.69, 41.37],
+      ['Calais ME', -67.28, 45.19],
+    ] as const) {
+      expect(inside(lng, lat), name).toBe(true);
+    }
+    // Theirs — the labels in the screenshots that started all this.
+    for (const [name, lng, lat] of [
+      ['Jersey City NJ', -74.08, 40.73],
+      ['Providence RI', -71.41, 41.82],
+      ['Hartford CT', -72.68, 41.76],
+      ['Trois-Rivieres QC', -72.55, 46.34],
+      ['Scranton PA', -75.66, 41.41],
+    ] as const) {
+      expect(inside(lng, lat), name).toBe(false);
+    }
+  });
+
+  it('validates against the style spec — a bad filter blanks the whole map, not one layer', () => {
+    // This test exists because a `["all", <legacy>, ["within", …]]` filter shipped once and MapLibre
+    // rejected the entire style: no basemap, no water, nothing. A layer-level mistake is a layer
+    // that looks wrong; a filter-level one is a black screen, so the composed style gets validated
+    // rather than eyeballed.
+    const errors = validateStyleMin(
+      buildMapStyle({ regionUrl: REGION, worldUrl: WORLD, flavor: 'dark' }) as never,
+    );
+    expect(errors.map((e) => `${e.message}`)).toEqual([]);
+  });
+
+  it('renders without an overview archive rather than failing', () => {
+    const alone = buildMapStyle({ regionUrl: REGION });
+    expect(alone.sources.world).toBeUndefined();
+    expect(alone.layers.length).toBeGreaterThan(0);
+    // The mask still ships — it is local data, and hiding the bleed does not need the overview.
+    expect(alone.layers.some((l) => l.id === 'region-mask-land')).toBe(true);
   });
 });
 
@@ -172,7 +288,7 @@ describe('frameForCoord', () => {
   });
 
   it('treats the region edge as inside', () => {
-    const [[minLng, minLat]] = NORTHEAST_MAX_BOUNDS;
+    const [[minLng, minLat]] = NORTHEAST_REGION_BOUNDS;
     expect(frameForCoord({ lat: minLat, lng: minLng })).not.toBeNull();
   });
 });

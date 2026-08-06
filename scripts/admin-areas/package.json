@@ -17,6 +17,7 @@
     "@skating/core": "workspace:*",
     "@skating/run-log": "workspace:*",
     "@turf/bbox": "^7.4.0",
+    "@turf/buffer": "^7.3.5",
     "@turf/difference": "^7.4.0",
     "@turf/helpers": "^7.3.5",
     "@turf/intersect": "^7.3.5",
