@@ -20,7 +20,6 @@ import {
   ELEVATION_SOURCES,
   HAZARD_TYPES,
   ICE_TYPES,
-  LEGACY_WATER_BODY_TYPES,
   PRECIP_TYPES,
   PROFILE_VISIBILITIES,
   RATING_TARGET_TYPES,
@@ -384,20 +383,26 @@ export default defineSchema({
      */
     searchText: v.optional(v.string()),
     /**
-     * What kind of water this is (D109 amendment) — **mid-migration, and this union is the migration.**
+     * What kind of water this is — **`WATER_BODY_CLASSES`, and the D109 migration is finished**.
      *
-     * `WATER_BODY_CLASSES` is the vocabulary; `LEGACY_WATER_BODY_TYPES` is accepted alongside it only
-     * until `backfillWaterBodyClasses` has rewritten every stored row. **Convex validates existing
-     * documents on push**, so narrowing this field before the backfill runs does not produce a
-     * migration — it produces a deploy that fails, on a table with 18,383 rows, with the new function
-     * code already written and no way to run it. The order is: widen, deploy, backfill, narrow.
+     * This was `v.union(WATER_BODY_CLASSES, LEGACY_WATER_BODY_TYPES)` for one campaign, because
+     * **Convex validates existing documents on push**: narrowing before the backfill would not have
+     * produced a migration, it would have produced a failed deploy on a table of 25,136 rows with the
+     * new code already written and no way to run it. The order was widen → deploy → backfill →
+     * narrow, and this is the last step.
      *
-     * ⚠ **Nothing writes a legacy value.** `canonicalBody` and `waterBodies.create` both validate
-     * classes only, so the legacy half of this union is drained by the backfill and never refilled.
-     * Narrow it — delete the union, keep `literals(WATER_BODY_CLASSES)` — once `backfillWaterBodyClasses`
-     * reports `remaining: 0`.
+     * `backfillWaterBodyClasses` rewrote the final 53 rows — the prune-protected ones, which the
+     * loader cannot reach by construction — and reports `unmappable: 0`. Measured on dev before
+     * narrowing: every one of the 25,136 rows carries a class value.
+     *
+     * ⚠ **`backfillWaterBodyClasses` was deleted with this change, not left in place.** Narrowing the
+     * validator makes it unreachable by construction — no row can hold a legacy value, and none can
+     * be written to test it or to restore one — so keeping it would keep a migration that cannot
+     * run. `LEGACY_TYPE_TO_CLASS` stays in `@skating/core`, where `isWetlandClass` still accepts
+     * both spellings; a restore from a pre-D109 export would need the union widened again first,
+     * which is the same four-step order this field just came through.
      */
-    type: v.union(literals(WATER_BODY_CLASSES), literals(LEGACY_WATER_BODY_TYPES)),
+    type: literals(WATER_BODY_CLASSES),
     source: literals(WATER_BODY_SOURCES),
     externalId: v.optional(v.string()), // OSM/NHD id when source != user
     /**

@@ -1,11 +1,6 @@
-import {
-  belongsInCorpus,
-  HARD_MIN_SURFACE_AREA_SQM,
-  isWetlandClass,
-  meetsAreaFloor,
-} from '@skating/core';
+import { HARD_MIN_SURFACE_AREA_SQM, meetsAreaFloor } from '@skating/core';
 import { convexTest } from 'convex-test';
-import { describe, expect, it, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import schema from './schema';
@@ -2625,122 +2620,6 @@ describe('waterBodies catalogue identity', () => {
     const second = await t.mutation(internal.waterBodies.backfillCatalogueIds, {});
     expect(second.patched).toBe(0);
     expect(second.alreadySet).toBe(1);
-  });
-});
-
-describe('backfillWaterBodyClasses (D109)', () => {
-  /** Seed one body and force its stored `type` to a retired value, as a pre-migration row is. */
-  async function seedLegacy(
-    t: ReturnType<typeof convexTestWithGeo>,
-    legacy: string,
-    name = 'Legacy',
-  ) {
-    await t.run(async (ctx) => {
-      await ctx.db.insert('waterBodies', {
-        ...SAMPLE_BODY,
-        name,
-        // biome-ignore lint/suspicious/noExplicitAny: the point is to store a value the new validator refuses.
-        type: legacy as any,
-        source: 'osm',
-        externalId: `osm/way/${name}`,
-        osmId: `osm/way/${name}`,
-        dedupStatus: 'clean',
-        createdAt: Date.now(),
-      });
-    });
-  }
-
-  it('rewrites every retired value, and folds lake and pond onto one class', async () => {
-    const t = convexTestWithGeo();
-    await seedLegacy(t, 'lake', 'A');
-    await seedLegacy(t, 'pond', 'B');
-    await seedLegacy(t, 'marsh', 'C');
-    await seedLegacy(t, 'other', 'D');
-
-    const res = await t.mutation(internal.waterBodies.backfillWaterBodyClasses, { apply: true });
-    expect(res.rewritten).toBe(4);
-    expect(res.unmappable).toBe(0);
-    expect(res.isDone).toBe(true);
-
-    const types = await t.run(async (ctx) => {
-      const rows = await ctx.db.query('waterBodies').collect();
-      return Object.fromEntries(rows.map((r) => [r.name, r.type]));
-    });
-    // The one lossy step, and the one the whole class exists to make: lake and pond are one thing.
-    expect(types.A).toBe('lakePond');
-    expect(types.B).toBe('lakePond');
-    expect(types.C).toBe('wetland');
-    expect(types.D).toBe('unclassified');
-  });
-
-  it('writes nothing unless asked, so the scope can be read before it moves', async () => {
-    const t = convexTestWithGeo();
-    await seedLegacy(t, 'marsh', 'A');
-
-    const dry = await t.mutation(internal.waterBodies.backfillWaterBodyClasses, {});
-    expect(dry.applied).toBe(false);
-    expect(dry.rewritten).toBe(1);
-    expect(dry.byMapping['marsh->wetland']).toBe(1);
-
-    const stored = await t.run(
-      async (ctx) => (await ctx.db.query('waterBodies').collect())[0]?.type,
-    );
-    expect(stored).toBe('marsh');
-  });
-
-  it('is idempotent — a migrated row is skipped, not re-derived', async () => {
-    const t = convexTestWithGeo();
-    await seedLegacy(t, 'lake', 'A');
-
-    const first = await t.mutation(internal.waterBodies.backfillWaterBodyClasses, { apply: true });
-    expect(first.rewritten).toBe(1);
-    const second = await t.mutation(internal.waterBodies.backfillWaterBodyClasses, { apply: true });
-    expect(second.rewritten).toBe(0);
-    expect(second.alreadyMigrated).toBe(1);
-  });
-
-  it('cannot be handed a value in neither vocabulary — the schema union is the guard', async () => {
-    // The mutation counts an unmappable row rather than throwing, so one bad value cannot stall a
-    // migration across 18,383. That branch is deliberately unreachable through any supported path,
-    // and this is what makes it so: the union in `schema.ts` admits the two vocabularies and nothing
-    // else, so a third spelling is refused at write time rather than discovered at migration time.
-    const t = convexTestWithGeo();
-    await expect(seedLegacy(t, 'swimming_pool', 'A')).rejects.toThrow(/Validator error/);
-  });
-
-  it('leaves prominence and cells untouched, because `type` feeds neither', async () => {
-    // D49 scores on area and boost; N1 cells on bbox and prominence. A body must not move, change
-    // visibility or change rank because its class was renamed.
-    const t = convexTestWithGeo();
-    await seedLegacy(t, 'lake', 'A');
-    const before = await t.run(async (ctx) => {
-      const body = (await ctx.db.query('waterBodies').collect())[0];
-      const cells = await ctx.db.query('waterBodyCells').collect();
-      return { score: body?.displayScore, zoom: body?.minVisibleZoom, cells: cells.length };
-    });
-
-    await t.mutation(internal.waterBodies.backfillWaterBodyClasses, { apply: true });
-
-    const after = await t.run(async (ctx) => {
-      const body = (await ctx.db.query('waterBodies').collect())[0];
-      const cells = await ctx.db.query('waterBodyCells').collect();
-      return { score: body?.displayScore, zoom: body?.minVisibleZoom, cells: cells.length };
-    });
-    expect(after).toEqual(before);
-  });
-
-  it('keeps the wetland admission rule working during the migration, in both spellings', async () => {
-    // `isWetlandClass` understands 'marsh' and 'wetland' precisely so the prune cannot disagree with
-    // the corpus while the two coexist. If it ever stopped, every unnamed bog above five acres would
-    // be silently admitted — with no error anywhere.
-    expect(isWetlandClass('marsh')).toBe(true);
-    expect(isWetlandClass('wetland')).toBe(true);
-    expect(belongsInCorpus({ name: '', type: 'marsh', surfaceAreaSqM: 10 * 4046.8564224 })).toBe(
-      false,
-    );
-    expect(belongsInCorpus({ name: '', type: 'wetland', surfaceAreaSqM: 10 * 4046.8564224 })).toBe(
-      false,
-    );
   });
 });
 
