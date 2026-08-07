@@ -1,23 +1,28 @@
 # HANDOFF — N7: the master list, and everything building it exposed
 
-> **Rewritten 2026-08-05, re-measured 2026-08-06** after two intake audits. The numbers below are
-> from a clean run against committed code; the earlier ones are kept only where they are the
-> comparison.
+> **Rewritten 2026-08-05, re-measured 2026-08-06, and the campaign RAN on 2026-08-07.** The numbers
+> below are from the run that was loaded; earlier ones are kept only where they are the comparison.
 >
-> Branch **`phase-n7-unified-corpus`**, nothing pushed. Full suite green: 11 packages, **3,754 tests**,
-> lint clean.
+> Branch **`phase-n7-unified-corpus`**, three commits for the audit and the load, nothing pushed.
+> Full suite green: 11 packages, **3,772 tests**, lint and typecheck clean.
 >
-> **Convex has still not been written to.** `waterBodies` is untouched — the corpus is the 18,383 rows
-> the prune left, and the master list exists only as a local artifact. Step 5 is what changes that.
+> **✅ The corpus is live on dev.** `waterBodies` holds **25,197** rows and `waterBodySubAreas` **120**,
+> under campaign `n7-2026-08-07`. Prod remains untouched and has never been deployed.
 
 ---
 
 ## Read this first
 
-> **⚠ Two intake audits changed the code under this document**, on 2026-08-05 (D113–D117) and
-> 2026-08-06 (D118–D124). Everything below describes the shape of the pipeline correctly. What
-> changed is that nine defects were found and fixed, every number was re-measured, and the merge now
+> **⚠ Two intake audits and a live load changed the code under this document** — 2026-08-05
+> (D113–D117), 2026-08-06 (D118–D125) and the campaign itself on 2026-08-07. Everything below
+> describes the shape of the pipeline correctly. What changed is that **thirteen defects were found
+> and fixed**, every number was re-measured against a run that was actually loaded, and the merge now
 > **refuses to finish** if its own arithmetic does not balance.
+>
+> **The lesson worth carrying out of it:** static review found the wire contracts; *everything else
+> came from interrogating artifacts.* `dropped.ndjson`, the manifest run-to-run delta and
+> `geometry-review.ndjson` were built as bookkeeping and turned out to be the bug-finders — the last
+> of them caught a fragment stored as a whole lake on its first run.
 
 ### The audit, in one screen (D113–D117)
 
@@ -213,64 +218,57 @@ drop-word in the same name.
 
 ## What is next, in order
 
-> **Re-ordered 2026-08-05 after an audit against the live deployment and the plan doc.** Two things
-> changed: *"`resolveUpsert` → `importCanonical`"* turned out to be five gaps rather than one, and the
-> **bake-off moved ahead of the import** because the plan's own ordering (step 3 before step 5) is
-> right — `geometrySource` is a field, but the *polygon* moves with it, so deciding after the load
-> means loading 27,074 outlines twice.
->
-> Also settled by that audit: **campaign steps 2 and 4 have already run.** Every sampled row carries
-> `waterBodyKey`, `osmId` and `geometrySource`; ~69% carry `nhdId`. Both the plan doc and this file
-> previously implied otherwise. That 69% is what makes the import safe — an NHD-only feature now meets
-> a corpus that already knows its NHD ids, so it patches instead of duplicating.
+> **Everything through campaign step 6 is done and live on dev** (2026-08-07). Items 1–8 of the old
+> list are all closed; the two that were still open — the `WATER_BODY_CLASSES` migration and D92's
+> bake-off — both landed, the migration finishing with `backfillWaterBodyClasses` reporting
+> `unmappable: 0` against the corpus.
 
-1. ~~**Plan-doc revision.**~~ ✅ Done — `phase-N7-unified-corpus.md` now carries the corrected step
-   list, the five step-5 blockers, the post-step-2/4 baseline, and D109's vocabulary amendment.
-2. ~~**Harden `merge.ts`.**~~ ✅ Done (2026-08-06). All three suspicions were correct and all three
-   are fixed: the bay-parent test now asks for polygon containment (it was wrong in **both**
-   directions — adopting bays in the empty corner of an L's bbox, and demoting bays that poked one
-   vertex past their parent's); `inRegion` escalates to every vertex before dropping anything, behind
-   a bbox gate so the 35,637 far-away bodies still exit in four comparisons; and name selection is
-   authority-ranked (`gnis > nhd > 3dhp > osm`) rather than longest-wins, which was preferring the
-   *wrong* name in exactly the case it was meant to arbitrate. The rules live in `mergeRules.ts`,
-   `extract.ts` and `gnisSource.ts`, all at 100% coverage.
-3. **The `WATER_BODY_CLASSES` migration** (D109 amendment, founder-approved 2026-08-05). ~45
-   production sites, ~132 test lines. Schema field + `canonicalBody` validator + ETL `CanonicalBody`
-   are one wire contract and flip together.
-4. **D92's bake-off** — *before* the import, not after. The referee is our 2.4M soundings:
-   `containedFraction` (a too-small polygon loses) against D98's body-probed density (a too-big one
-   loses). Geometry source is a hardcoded OSM-first placeholder, under which Beau Lake merges at 2,457
-   acres against NHD's measured 1,876.6 — a 31% error on the phase's headline fixture.
-5. ~~**The emit stage + `resolveUpsert` wiring.**~~ ✅ Done, and the wire contract now has a test that
-   validates a `toCanonicalBody` record against Convex's own validator — the single test that would
-   have caught the `states` break. Kept for the record: `master.ndjson` had **no geometry** — it is a report,
-   not a loadable artifact — so this needs a source-agnostic replacement for `featureToCanonicalBody`
-   (which is OSM-only and re-does its own classification). Plus: `threeDhpId`/`gnisId` are missing from
-   the schema along with a `by_three_dhp_id` index, `WATER_BODY_SOURCES` has no `3dhp`,
-   `catalogueIds()` derives ids instead of carrying them, and the `merge`/`conflict` verdicts have no
-   queue path.
-6. ~~**A new step-6 prune.**~~ ✅ Done — `waterBodies.pruneNotInCampaign`, keyed on a `lastCampaignId`
-   the loader stamps. Dry by default, names what it would delete, and never touches a body carrying
-   user content, a curated boost, a soft-delist, a dedup pointer or `includedByRequest`.
-7. **A clean merge run against committed code — now the top of the list.** The current
-   `master.ndjson` predates every fix above and three of its numbers will move. Note the cause of the
-   "fetched GNIS inline" oddity has been found: `merge.ts` imported a constant from `gnisArchive.ts`,
-   which runs its `main()` at module scope, so **every merge re-ran the entire five-state GNIS
-   download** as a side effect. Split into `gnisSource.ts` (D117) — the same trap
-   `admin-areas/tiger.ts` was extracted to escape.
-8. ~~**The OSM↔NHD match-rate breakdown by class.**~~ ✅ **Answered by the second audit, and the
-   suspicion was wrong.** It is not a wetland problem, it is an **area-ratio** problem:
-   `scoreCandidates` skips any pair whose exact IoU ceiling `min(area)/max(area)` falls under the
-   bar, so at `RECONCILE_MIN_IOU = 0.5` **every pair whose areas differ by more than 2× is rejected
-   before an intersection is computed** — and the catalogues differ by 2–3× on small ponds routinely,
-   because they disagree about where a marshy margin stops being water. The consequence is worse than
-   a low match rate: an unmatched federal feature becomes a **second row** for a lake we already have.
-   Measured: 632 overlapping pairs at IoU ≥ 0.3 in the master list, 408 sharing a name. Closed by the
-   name lane (D118) plus a duplicate sweep that flags whatever it still misses.
+1. **Narrow the schema's `type` union to `WATER_BODY_CLASSES`.** This is the last step of the
+   widen→deploy→backfill→narrow order and it is now *available*: the backfill rewrote the final 53
+   rows (the prune-protected ones, which the loader can never reach by construction) and reports zero
+   unmappable. Check every writer first — `waterBodies.create` takes its value from the mobile
+   picker, which is the one path that does not come through the ETL.
+2. **Work the 61-row dedup queue.** The prune spared them and they are all the losing halves of OSM
+   duplicate pairs — Long Pond, Lovell Lake, Duncan Lake among them. Two independent systems now
+   agree they are duplicates, so the merges are pre-answered; until somebody does them the corpus
+   renders 61 known duplicates. **Never auto-merge** (D36/D93). See the plan doc's open items.
+3. **Surface the review queue in `/admin`.** 2,010 rows — 812 duplicate-candidate, 652
+   class-conflict, 463 name-conflict, 93 same-source-duplicate, 43 bay-without-parent — are stored on
+   the rows and nothing shows them. `Lake Auburn` stored as `The Basin` is the clearest single
+   example of why the name half matters.
+4. **Decide `classDissent`** — 314 bodies one catalogue refused outright while another classified
+   them. Counted rather than queued on purpose, because NHD drops 43% of its reservoirs by FCODE and
+   the queue should not be buried before the volume is known. The volume is now known.
+5. **Step 7, D97's audit report**, then the metered passes: depth + elevation (9), bathymetry re-key
+   → join → build → tile → coverage (10), wind climate (11), `regionStats` (12). All of them now have
+   the stable post-prune corpus D100 said they should wait for.
+6. **Québec, still deliberately not done.** Three new source lanes — StatCan boundaries, NHN/CanVec
+   hydrography, CGNDB names. Only OSM crosses the border. The classifier's French keywords are in,
+   and `OCEAN_NAME_VETO_MIN_ACRES` was kept rather than deleted specifically for this.
+
+### What the load itself taught, which no test could
+
+Three limits that only bind on real data, all fixed, all worth remembering as a class:
+
+- **A page size that is safe on the first page is not a safe page size.** `pruneNotInCampaign`
+  advertised 500 rows while `bodyAttachmentKind` costs 10 index reads per *candidate* against
+  Convex's 4,096 cap. The first real page had 11 candidates and sailed through; the wall is wherever
+  the un-reaffirmed rows happen to cluster.
+- **A stored polygon is a stored polygon.** The sub-area artifact carried unsimplified source
+  geometry, which was wrong under D48 on its own terms and blew the mutation's 1-second budget when
+  clipped against Moosehead.
+- **A measurement in the file you are mirroring is still a measurement.** `importSeed` says a clip
+  against Champlain "is comfortable alone and blows a mutation's 1s budget at a dozen". The bay
+  loader shipped at 25, then 4, and the data settled it at 1.
+
+Plus two robustness gaps the failure exposed: the bay loader aborted the whole pass on one bad batch
+where `load.ts` survives them, and it had no top-level failure handler — so it left three
+`sub_area_seed` rows stuck in `running`, which is the exact D99 signature, produced by the loader
+written to honour D99.
 
 ---
 
-## The second intake audit, 2026-08-06 — D118–D124
+## The second intake audit, 2026-08-06 — D118–D125
 
 Requested before running the flow against real data. What changed, in one screen:
 
@@ -288,6 +286,16 @@ Requested before running the flow against real data. What changed, in one screen
 **Also fixed:** `boundaries.ndjson` had no producer (a prose instruction in an error message) and cost
 fidelity through Convex's array cap — `build-region` writes it from TIGER now; the merge asserts it
 found five state outlines; and the id namespaces are asserted not to collide.
+
+### The 61 the prune spared
+
+All of them are the **losing halves of OSM duplicate pairs** — Long Pond, Lovell Lake and Duncan Lake
+among them, i.e. the five pairs §Why this phase exists names. The merge collapsed each pair onto one
+body via NHD's shared `Permanent_Identifier`; the winner carries `lastCampaignId` and the loser does
+not, and the prune spared the loser because a D36 match-on-create pass had already flagged it
+`near_certain` for a human. Two independent systems reached the same verdict, so the queue's items are
+pre-answered — and until somebody works them the corpus renders 61 known duplicates. Never auto-merge
+(D36/D93). Full write-up in the plan doc's open items, including `Lake Auburn` stored as `The Basin`.
 
 ### And four more that only running it could find (D125 + three)
 

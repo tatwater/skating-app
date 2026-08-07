@@ -1,9 +1,37 @@
 # N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign on top
 
-> **Status:** 🔨 **Built through campaign step 4. Step 5 is unblocked and step 6 now exists**
-> (2026-08-06). Originally written 2026-08-03 after a measurement session that corrected four of its
+> **Status:** ✅ **The corpus is LIVE on dev — campaign `n7-2026-08-07`, steps 0–6 complete**
+> (2026-08-07). Originally written 2026-08-03 after a measurement session that corrected four of its
 > own findings; the numbers below are the survivors, and anything still marked *unverified* is marked
 > that way on purpose.
+>
+> ### ✅ The campaign, as run — steps 5, 5b and 6 (2026-08-07)
+>
+> ```
+> 25,133 bodies loaded    9,136 inserted · 15,997 updated · 175/175 batches
+>                         0 failed · 0 conflicts · 0 queued for merge
+>    111 sub-areas        120 total on dev, 0 orphaned
+>  2,322 pruned           8.4% of 27,519 · 64 protected · 0 deletable rows remain
+> ─────────────────────
+> 25,197 stored           25,133 re-affirmed + 64 protected
+> ```
+>
+> **`resolveUpsert` returned zero conflicts and zero merge verdicts across 25,133 bodies**, which is
+> D93's ordering rule (reconcile at step 2, import at step 5) validated against real data rather than
+> argued. 15,997 bodies were **patched in place**, so their `_id`s never moved and every attachment
+> survived.
+>
+> **D109's vocabulary migration is finished**: `backfillWaterBodyClasses` rewrote the last 53 rows —
+> the protected ones, which by definition the loader can never reach — and reports `unmappable: 0`.
+> The schema's `type` union may now be **narrowed** to `WATER_BODY_CLASSES`; that is the one step of
+> the widen→deploy→backfill→narrow order still outstanding.
+>
+> **Three limits that only bind on real data**, all found by the load and all fixed:
+> `pruneNotInCampaign` advertised a 500-row page while `bodyAttachmentKind` costs **10 index reads**
+> per candidate against Convex's 4,096 cap (capped at 250); the sub-area artifact carried
+> **unsimplified** geometry, so a clip against Moosehead blew the 1-second mutation budget; and the
+> bay batch size ignored a measurement sitting in the file it was written to mirror — `importSeed`'s
+> *"comfortable alone"* — settling at **1**.
 >
 > ### 🔍 The intake audit, 2026-08-06 — D113–D117
 >
@@ -232,14 +260,30 @@ recoverable into **217 bodies that would draw** and that we currently render bla
 
 ## The corpus as it actually stands
 
-**Correcting a figure used throughout the earlier N6 work.** "116,070 bodies" described the corpus
-*before* the D91 floor. Today's re-import produced **over 120,000** features, and the prune brought
-the stored corpus to **~21,000** (D91 predicted 21,660 kept of 123,940 — confirm the exact survivor
-count at kickoff and use it as the campaign baseline).
+**✅ Measured on dev after the campaign, 2026-08-07.** This is the number every later claim is against.
 
-That changes the arithmetic of everything below. Against a 116k corpus an NHD gap-fill is a rounding
-error; against **~21,000**, adding on the order of a thousand real lakes is a **~5% expansion**, and
-Maine's measured post-floor delta alone is ~450 bodies.
+| | | | |
+| --- | --- | --- | --- |
+| **total** | **25,197** | listed | 25,197 |
+| `geometrySource` | 25,197 (100%) | `nhdId` | 20,467 (81%) |
+| `osmId` | 19,289 (77%) | wind rose | 0 |
+| depth | 5,662 (22%) | elevation | 5,716 (23%) |
+| sub-areas | 120 | of which N7-seeded | 111 |
+
+**by class** — `lakePond` 17,637 · wetland 3,838 · reservoir 2,471 · unclassified 1,223 · river 26 ·
+bay 2
+**by state** — NY 9,483 · MA 5,799 · ME 5,521 · NH 3,097 · VT 1,347 *(border bodies count in each)*
+
+**`bay` is now effectively unreachable for a canonical body** and the two survivors are legacy rows.
+D121 sends a bay with a parent to `waterBodySubAreas` and demotes one without a parent to
+`unclassified`, so the merge cannot emit the class at all. It remains in `WATER_BODY_CLASSES` for
+user-created water and for the picker.
+
+### The figure this replaced, kept because the arithmetic below still leans on it
+
+"116,070 bodies" described the corpus *before* the D91 floor; the floor brought it to **18,383**, and
+the campaign took it to 25,197 — a **+37% expansion**, most of it NHD lakes OSM has never carried.
+Against a 116k corpus an NHD gap-fill was a rounding error; against 18k it is the phase.
 
 ---
 
@@ -1045,10 +1089,10 @@ prune"* — and under the order below, nothing does.
  2  reconcile OSM ↔ NHD ↔ 3DHP by polygonIoU          ✅ done   (writes catalogue ids only)
  3  D92 bake-off, refereed by our own soundings          ✅ done (read-only; OSM by default, ties 63%)
  4  mint waterBodyKey; backfill osmId / nhdId / geometrySource  ✅ done (D93)
- 5  canonical re-import: the master list                 ← NEXT (scripts/etl)
- 5b bays → waterBodySubAreas                                   (D121; AFTER 5 — the parent must exist)
- 6  PRUNE what step 5 did not re-affirm                        (D100; nothing metered runs before it)
- 7  audit report of non-conforming bodies                      (D97, read-only)
+ 5  canonical re-import: the master list                 ✅ done (25,133 bodies, 0 conflicts)
+ 5b bays → waterBodySubAreas                            ✅ done (111 created; AFTER 5, BEFORE 6)
+ 6  PRUNE what step 5 did not re-affirm                 ✅ done (2,322 deleted, 64 protected)
+ 7  audit report of non-conforming bodies                      (D97, read-only)          ← NEXT
  9  depth + elevation                                          (scripts/lake-depth; D101 for elevation)
 10  bathymetry: re-key → join → build → tile → coverage        (D95, in this order, always)
 11  wind climate                                               (scripts/wind-climate — the 7.7 h fetch)
@@ -1056,6 +1100,13 @@ prune"* — and under the order below, nothing does.
 ```
 
 Steps 1–4 are safe against a live corpus. Step 5 onward are not.
+
+> **⚠ 5b sits between 5 and 6 and the order is load-bearing** (learned by nearly getting it wrong,
+> 2026-08-07). The prune deletes the 112 bays *on the assumption that they exist as sub-areas*. Run
+> it before 5b and they exist nowhere: Spencer Bay, Meredith Bay, North Bay and Alton Bay all appear
+> in the prune's deletion manifest, and the manifest is the only thing that shows it. This is D100's
+> ordering trap in a third place, and the reason the prune's dry run had to be made a *complete*
+> list rather than a twenty-row sample.
 
 **Three corrections this list has already needed, recorded rather than folded in silently:**
 
@@ -1605,6 +1656,52 @@ known and wasted if it isn't.
 ---
 
 ## Open items, flagged rather than buried
+
+### 🔁 The 61 the prune spared, and why they are a queue rather than a bug (2026-08-07)
+
+The step-6 prune protected 64 bodies the master list did not re-affirm: 1 carrying a hazard, 2 with a
+curated boost, and **61 carrying a dedup pointer**. That last group turned out to be the most
+interesting thing the campaign produced, because it is this phase's own headline finding coming back
+around.
+
+**All 61 are the losing halves of OSM duplicate pairs**, every one flagged `near_certain` with
+exactly one `duplicateCandidateId`, and all still `listed`:
+
+| the orphan | its partner, re-affirmed |
+| --- | --- |
+| `Long Pond` relation/2602300, 2,532 ac | `Long Pond` way/150404999, 2,552 ac |
+| `Lovell Lake` relation/3862940, 540 ac | `Lovell Lake` way/290716119, 553 ac |
+| `Duncan Lake` relation/11825915, 83 ac | `Duncan Lake` way/226732026, 85 ac |
+| `Lake Auburn` relation/11198619, 2,263 ac | **`The Basin`** way/130101481, 2,263 ac |
+
+Those are the five pairs §Why this phase exists names — *"OSM cannot see its own duplicates, and NHD
+can… all five pairs collapse onto a single `Permanent_Identifier`, tested 5/5"*. The merge did exactly
+that: it collapsed each pair onto one body and named the loser in `absorbedIds`. So the winner is in
+the master list, the loser is not, and the prune spared the loser because a **D36 match-on-create pass
+had already flagged it for a human** — and the prune's rule is that a body under review is not
+deleted out from under the person reviewing it.
+
+**That protection is right and is now redundant, which is the useful part.** Two independent systems —
+D36's geometric match-on-create and the N7 merge's federal-id collapse — reached the same conclusion
+about the same 61 rows. The queue's items are pre-answered; a moderator merging them is confirming a
+finding rather than making one.
+
+**What it costs until somebody does.** All 61 are listed, so the corpus renders 61 known duplicate
+lakes and search returns both halves. That is visible rather than silent, which is the design working,
+but it is not free.
+
+**Do not auto-merge them.** D36 and D93 both hold that an automatic merge which is wrong is
+unrecoverable in a way a queued one is not, and `resolveUpsert` deliberately refuses to perform one.
+The available moves are: work the 61 through `/admin`'s dedup queue, or build a pass that *proposes*
+the merge direction from the master list (the survivor is knowable — it is the row carrying
+`lastCampaignId`) and still asks a human to confirm.
+
+**And the fourth row above is a second finding.** The 2,263-acre body is stored as **`The Basin`**,
+because name selection is authority-ranked (`gnis > nhd > 3dhp > osm`) and NHD's `gnis_name` for that
+feature is "The Basin" while OSM calls it "Lake Auburn" — Auburn's own water supply, and one of the
+lakes D95 recovers soundings for. It carries `confidence.name: 'low'` and sits in the 463-row
+name-conflict queue, so the machinery caught it. It is the clearest example available of what that
+queue is for, and of what D93's *"OSM ranking last is a real trade"* costs in practice.
 
 **The count of wrong matches in the first bathymetry build is unverified and was overstated.** An
 earlier "21 violations, 9 shipped wrong" rested on taking the first state row per `MIDAS_NUM`. Maine
