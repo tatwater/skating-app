@@ -327,6 +327,37 @@ function mergeFields(item: {
 // every re-import, which is precisely the failure `nameFields` exists to prevent.
 
 /**
+ * Flag a set of rows as duplicates **of each other** — status *and* pointers (N7, 2026-08-07).
+ *
+ * `importCanonical`'s `merge` and `conflict` branches both said, in a comment, *"Both sides are
+ * marked so whichever a human opens shows the other"*. Only the first half was true: they patched
+ * `dedupStatus` and never wrote `duplicateCandidateIds`, so opening either row showed nothing about
+ * the other and the queue could not be worked at all.
+ *
+ * Measured on the run-7 load: **220 rows flagged `near_certain`, 0 carrying a partner**. That is not
+ * only a UI gap — `resolveCampaignDuplicates` finds its survivor by walking
+ * `duplicateCandidateIds`, so every one of them came back `no-surviving-partner`. The pass built to
+ * clear this queue could not see a single pair in it.
+ *
+ * Additive: a row already pointing at something keeps that pointer. D36's match-on-create and this
+ * are two independent systems reaching the same conclusion, and *both* verdicts are evidence — it is
+ * exactly the agreement between them that made the last one-time resolution safe.
+ */
+async function flagAsDuplicates(
+  ctx: { db: MutationCtx['db'] },
+  keys: readonly Id<'waterBodies'>[],
+): Promise<void> {
+  for (const key of keys) {
+    const row = await ctx.db.get(key);
+    // `merged` is terminal — a tombstone must not be dragged back into the queue.
+    if (!row || row.dedupStatus === 'merged') continue;
+    const others = keys.filter((k) => k !== key);
+    const partners = [...new Set([...(row.duplicateCandidateIds ?? []), ...others])];
+    await ctx.db.patch(key, { dedupStatus: 'near_certain', duplicateCandidateIds: partners });
+  }
+}
+
+/**
  * The stored name and the string search covers — **and a moderator's choice outranks the import.**
  *
  * `importCanonical` overwrites `name` on every touch, which is right for a value the catalogues own.
@@ -598,12 +629,7 @@ export const importCanonical = internalMutation({
         // So the rows are marked for the same D36 queue a `merge` verdict uses. That is what the
         // dedup status is for, and it is also what the prune's protection list already honours.
         for (const match of matches) {
-          for (const key of match.keys) {
-            const row = await ctx.db.get(key);
-            if (row && row.dedupStatus !== 'merged') {
-              await ctx.db.patch(key, { dedupStatus: 'near_certain' });
-            }
-          }
+          await flagAsDuplicates(ctx, match.keys);
         }
         continue;
       }
@@ -612,12 +638,7 @@ export const importCanonical = internalMutation({
         // **Flag, never collapse.** D36's queue exists for exactly this decision and merging is a
         // moderator action. Both sides are marked so whichever a human opens shows the other.
         queuedForMerge++;
-        for (const key of [verdict.into, ...verdict.absorb]) {
-          const row = await ctx.db.get(key);
-          if (row && row.dedupStatus !== 'merged') {
-            await ctx.db.patch(key, { dedupStatus: 'near_certain' });
-          }
-        }
+        await flagAsDuplicates(ctx, [verdict.into, ...verdict.absorb]);
         unresolved.push({
           externalId: item.externalId,
           action: 'merge',

@@ -4079,3 +4079,74 @@ describe('the review queue (N7)', () => {
     ).rejects.toThrow();
   });
 });
+
+describe('importCanonical duplicate flagging (N7)', () => {
+  // The run-7 load flagged 220 rows `near_certain` and 0 of them carried a partner, so
+  // `resolveCampaignDuplicates` — which finds its survivor by walking `duplicateCandidateIds` —
+  // reported `no-surviving-partner` for every pair in the queue it was built to clear.
+  test('a merge verdict records WHICH rows are duplicates, not just that they are', async () => {
+    const t = convexTestWithGeo();
+    // Two stored rows, one carrying the OSM id and one the NHD id — the shape run 6 left behind.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        { ...CANONICAL_ITEM, externalId: 'way/1', osmId: 'way/1', nhdId: undefined },
+        {
+          ...CANONICAL_ITEM,
+          source: 'nhd' as const,
+          externalId: 'nhd-1',
+          osmId: undefined,
+          nhdId: 'nhd-1',
+        },
+      ],
+    });
+    const before = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    expect(before).toHaveLength(2);
+
+    // The new master list emits ONE record carrying both ids.
+    const result = await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, externalId: 'way/1', osmId: 'way/1', nhdId: 'nhd-1' }],
+    });
+    expect(result).toMatchObject({ queuedForMerge: 1 });
+
+    const after = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    // Flag, never collapse (D93): nothing is deleted and no third row is created.
+    expect(after).toHaveLength(2);
+    for (const row of after) {
+      expect(row.dedupStatus).toBe('near_certain');
+      // …and each one points at the other, which is what makes the queue workable.
+      expect(row.duplicateCandidateIds).toHaveLength(1);
+      const partner = after.find((r) => r._id !== row._id);
+      expect(row.duplicateCandidateIds?.[0]).toBe(partner?._id);
+    }
+  });
+
+  test('is additive — a pointer D36 already wrote survives', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        { ...CANONICAL_ITEM, externalId: 'way/1', osmId: 'way/1', nhdId: undefined },
+        {
+          ...CANONICAL_ITEM,
+          source: 'nhd' as const,
+          externalId: 'nhd-1',
+          osmId: undefined,
+          nhdId: 'nhd-1',
+        },
+      ],
+    });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    const [first, second] = rows;
+    if (!first || !second) throw new Error('expected two seeded bodies');
+    const stranger = first._id;
+    // A pointer from the other independent system, at the row that is about to be flagged.
+    await t.run((ctx) => ctx.db.patch(second._id, { duplicateCandidateIds: [stranger] }));
+
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, externalId: 'way/1', osmId: 'way/1', nhdId: 'nhd-1' }],
+    });
+    const after = await t.run((ctx) => ctx.db.get(second._id));
+    // Two systems agreeing is the evidence that made the last one-time resolution safe; dropping
+    // either verdict would throw half of it away.
+    expect(after?.duplicateCandidateIds).toEqual([stranger]);
+  });
+});
