@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { aliasesFor, distinctNameClaims, type NameClaim, searchTextFor } from './nameClaims';
+import {
+  aliasesFor,
+  composeNameClaims,
+  distinctNameClaims,
+  type NameClaim,
+  searchTextFor,
+} from './nameClaims';
 
 const claim = (source: NameClaim['source'], value: string): NameClaim => ({ source, value });
 
@@ -38,6 +44,42 @@ describe('distinctNameClaims', () => {
     ] as const) {
       expect(distinctNameClaims([claim('nhd', pair[0]), claim('osm', pair[1])])).toHaveLength(2);
     }
+  });
+});
+
+describe('composeNameClaims', () => {
+  // The bug this exists for, and it fails quietly: a moderator preferring "Lake Auburn" creates a
+  // `user` claim with OSM's value, so a single dedupe drops OSM's — and clearing the override then
+  // restores "The Basin" with NO alias, destroying the very name the pick was made to keep.
+  it('keeps the catalogue claim the moderator pick mirrors', () => {
+    const composed = composeNameClaims(
+      [claim('user', 'Lake Auburn')],
+      [claim('nhd', 'The Basin'), claim('osm', 'Lake Auburn')],
+    );
+    expect(composed).toEqual([
+      claim('user', 'Lake Auburn'),
+      claim('nhd', 'The Basin'),
+      claim('osm', 'Lake Auburn'),
+    ]);
+    // …so clearing the override still has an alias to restore.
+    const catalogue = composed.filter((c) => c.source !== 'user');
+    expect(aliasesFor(catalogue, 'The Basin')).toEqual(['Lake Auburn']);
+  });
+
+  it('still dedupes within each side', () => {
+    expect(composeNameClaims([], [claim('nhd', 'Long Pond'), claim('3dhp', 'Long Pond')])).toEqual([
+      claim('nhd', 'Long Pond'),
+    ]);
+  });
+
+  it('does not double the alias in searchText, because aliasesFor folds the repetition', () => {
+    const composed = composeNameClaims(
+      [claim('user', 'Lake Auburn')],
+      [claim('nhd', 'The Basin'), claim('osm', 'Lake Auburn')],
+    );
+    expect(searchTextFor('Lake Auburn', aliasesFor(composed, 'Lake Auburn'))).toBe(
+      'Lake Auburn The Basin',
+    );
   });
 });
 

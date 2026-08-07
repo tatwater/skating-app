@@ -19,6 +19,7 @@ import {
   CONFIDENCE_LEVELS,
   canOverwriteElevation,
   classifyDedup,
+  composeNameClaims,
   containedFraction,
   DEPTH_SOURCE_RANK,
   DEPTH_SOURCES,
@@ -342,12 +343,14 @@ function nameFields(
   existing: Doc<'waterBodies'> | undefined,
   item: { name: string; nameClaims?: { source: string; value: string }[] },
 ) {
-  const claims = distinctNameClaims([
-    // A moderator's pick first, so it survives and so it wins the dedupe against the same string
-    // arriving from a catalogue.
-    ...((existing?.nameClaims ?? []).filter((c) => c.source === 'user') as NameClaim[]),
-    ...((item.nameClaims ?? []) as NameClaim[]),
-  ]);
+  // **`composeNameClaims`, not a single dedupe.** A moderator's pick has the same *value* as the
+  // catalogue claim it prefers, so deduping the two together deletes that catalogue claim — and then
+  // clearing the override restores the ranked name with no alias, losing the very name the pick was
+  // made to keep. See `composeNameClaims`.
+  const claims = composeNameClaims(
+    (existing?.nameClaims ?? []).filter((c) => c.source === 'user') as NameClaim[],
+    (item.nameClaims ?? []) as NameClaim[],
+  );
   const chosen = claims.find((c) => c.source === 'user')?.value ?? item.name;
   return {
     name: chosen,
@@ -2914,6 +2917,111 @@ export const setDepth = mutation({
           depthSourceNote: body.depthSourceNote,
         },
       },
+      createdAt: Date.now(),
+    });
+    return waterBodyId;
+  },
+});
+
+/**
+ * Moderator: choose which publisher's name a body displays (N7).
+ *
+ * ## Why this needs a mutation rather than a text field
+ *
+ * `NAME_SOURCE_RANK` stores the most *authoritative* name — `gnis > nhd > 3dhp > osm` — and that rule
+ * is right and costs 463 bodies their local name. Auburn, Maine's own water supply is stored as
+ * `The Basin`, because that is NHD's `gnis_name`, while everyone including OSM calls it `Lake
+ * Auburn`. The moderator is picking between claims the catalogues actually made, not typing a name,
+ * so the argument is **which claim wins**, and a free-text field would invite inventing a third.
+ *
+ * ## The pick has to survive the next campaign
+ *
+ * `importCanonical` rewrites `name` on every touch. Left alone, the authority ranking would re-impose
+ * `The Basin` on the next run — silently, every run, for ever. The choice is therefore stored as a
+ * `nameClaims` entry with `source: 'user'`, which `nameFields` merges *ahead* of the incoming
+ * catalogue claims. **The override is the evidence**: no second column, nothing to keep in step.
+ * Same shape as `curatedBoost` and the depth override, and `NAME_SOURCE_RANK` already ranks `user`
+ * first for exactly this day.
+ *
+ * ## Choosing a name never costs a name
+ *
+ * `searchText` is rebuilt from the winner **plus every other claim**, so the refused name stays
+ * findable. What displays and what is searchable are different questions, and conflating them is the
+ * outage this whole field exists to end.
+ */
+export const setWaterBodyName = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /** One of the body's existing claims. `null` clears the override back to the ranked default. */
+    name: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, { waterBodyId, name }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+
+    // **Split before deduping, never after.** A stored row holds the moderator's claim *and* the
+    // catalogue claim it mirrors, with the same value — so deduping the combined list drops the
+    // catalogue one, and Clear then restores the ranked name with no alias. Same trap
+    // `composeNameClaims` exists for, one layer up.
+    const stored = (body.nameClaims ?? []) as NameClaim[];
+    const catalogue = distinctNameClaims(stored.filter((c) => c.source !== 'user'));
+    const claims = composeNameClaims(
+      stored.filter((c) => c.source === 'user'),
+      catalogue,
+    );
+
+    if (name === null) {
+      // Back to whatever the catalogues rank first. Nothing to do if no override was ever set —
+      // returning quietly rather than throwing, because a double-click on Clear is not an error.
+      if (!claims.some((c) => c.source === 'user')) return waterBodyId;
+      const restored = catalogue[0]?.value ?? body.name;
+      await ctx.db.patch(waterBodyId, {
+        name: restored,
+        nameClaims: catalogue.length > 0 ? catalogue : undefined,
+        searchText: searchTextFor(restored, aliasesFor(catalogue, restored)),
+      });
+      await ctx.db.insert('moderationActions', {
+        actorId: actor._id,
+        action: 'set_water_body_name',
+        targetType: 'waterbody',
+        targetId: waterBodyId,
+        reason: `Cleared the name override; back to "${restored}"`,
+        metadata: { name: restored, prev: { name: body.name } },
+        createdAt: Date.now(),
+      });
+      return waterBodyId;
+    }
+
+    const chosen = name.trim();
+    // **Must be a claim some publisher actually made.** The whole value of this field is that every
+    // name on the row is traceable to a source; accepting free text would put an unattributable
+    // string in the one place that promises attribution — and it is also how a typo becomes the
+    // stored name of a lake with no way to tell it from a real variant.
+    const match = claims.find((c) => c.value.toLowerCase() === chosen.toLowerCase());
+    if (match === undefined) {
+      throw new ConvexError(
+        `"${chosen}" is not one of this body's recorded names (${
+          claims.map((c) => `${c.value} [${c.source}]`).join(', ') || 'none'
+        }). Pick a claim rather than typing a new name.`,
+      );
+    }
+
+    // The moderator's claim first, then every catalogue claim — including the one just chosen, under
+    // its original source, so the audit trail still shows who published it.
+    const next = composeNameClaims([{ source: 'user', value: match.value }], catalogue);
+    await ctx.db.patch(waterBodyId, {
+      name: match.value,
+      nameClaims: next,
+      searchText: searchTextFor(match.value, aliasesFor(next, match.value)),
+    });
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_water_body_name',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason: `Display "${match.value}" (${match.source}) instead of "${body.name}"`,
+      metadata: { name: match.value, source: match.source, prev: { name: body.name } },
       createdAt: Date.now(),
     });
     return waterBodyId;

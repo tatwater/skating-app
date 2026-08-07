@@ -234,6 +234,10 @@ export const MODERATION_ACTIONS = [
   'create_sub_area',
   'redraw_sub_area', // geometry changed — schedules a re-stamp of the parent's reports + hazards
   'rename_sub_area', // name or aliases changed — also a re-stamp, since the name is denormalized
+  // Chose which publisher's name a body displays (N7). Audited because it **overrides the import**:
+  // `NAME_SOURCE_RANK` would otherwise re-impose `gnis > nhd > 3dhp > osm` on the next campaign, and
+  // the stored `user` claim is the only thing standing between a moderator's decision and that.
+  'set_water_body_name',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',

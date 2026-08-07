@@ -774,6 +774,51 @@ describe('waterBodies name claims and searchText (N7)', () => {
     expect(body?.nameClaims).toEqual([{ source: 'nhd', value: 'Long Pond' }]);
   });
 
+  test('a moderator can pick which claim displays, and it survives the next import', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
+    const bodyId = await onlyBodyId(t);
+    const asMod = await seedUser(t, 'clerk_name_mod', 'moderator');
+
+    await asMod.mutation(api.waterBodies.setWaterBodyName, {
+      waterBodyId: bodyId,
+      name: 'Lake Auburn',
+    });
+
+    const picked = await t.run((ctx) => ctx.db.get(bodyId));
+    expect(picked?.name).toBe('Lake Auburn');
+    expect(picked?.nameClaims?.[0]).toEqual({ source: 'user', value: 'Lake Auburn' });
+    // Choosing what displays must never cost a name — both stay searchable.
+    expect(picked?.searchText).toBe('Lake Auburn The Basin');
+
+    // The catalogue insists on "The Basin" again; the moderator's decision wins.
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.name).toBe('Lake Auburn');
+
+    // …and Clear hands it back to the authority ranking.
+    await asMod.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: bodyId, name: null });
+    const cleared = await t.run((ctx) => ctx.db.get(bodyId));
+    expect(cleared?.name).toBe('The Basin');
+    expect(cleared?.nameClaims?.some((c) => c.source === 'user')).toBe(false);
+    expect(cleared?.searchText).toBe('The Basin Lake Auburn');
+  });
+
+  // Every name on the row promises attribution. Free text would put an unattributable string in the
+  // one field that guarantees one — and a typo would become the stored name of a lake with nothing
+  // to distinguish it from a real variant.
+  test('refuses a name no publisher claimed', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
+    const bodyId = await onlyBodyId(t);
+    const asMod = await seedUser(t, 'clerk_typo_mod', 'moderator');
+    await expect(
+      asMod.mutation(api.waterBodies.setWaterBodyName, {
+        waterBodyId: bodyId,
+        name: 'Lake Aubrun',
+      }),
+    ).rejects.toThrow(/not one of this body's recorded names/);
+  });
+
   test('backfillSearchText fills a pre-field row and is idempotent', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });

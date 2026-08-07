@@ -76,6 +76,25 @@ export function distinctNameClaims(claims: readonly NameClaim[]): NameClaim[] {
 }
 
 /**
+ * A moderator's pick, ahead of the catalogue claims — **without erasing the one it mirrors**.
+ *
+ * The obvious `distinctNameClaims([user, ...catalogue])` is wrong and fails quietly. A moderator
+ * choosing `Lake Auburn` creates a `user` claim whose *value* equals OSM's, so the dedupe drops the
+ * OSM claim — and then clearing the override restores `The Basin` with **no alias at all**, because
+ * the claim that would have become one no longer exists. The name the whole field was built to keep
+ * is destroyed by the act of preferring it.
+ *
+ * So the two sets are deduped separately and concatenated. `aliasesFor` folds the resulting
+ * repetition, and every catalogue claim survives a pick and a clear intact.
+ */
+export function composeNameClaims(
+  user: readonly NameClaim[],
+  catalogue: readonly NameClaim[],
+): NameClaim[] {
+  return [...distinctNameClaims(user), ...distinctNameClaims(catalogue)];
+}
+
+/**
  * The other names this body goes by — every distinct claim except the one being displayed.
  *
  * Excluded case-insensitively rather than by identity, because the stored `name` has been through
