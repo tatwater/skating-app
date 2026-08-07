@@ -46,6 +46,7 @@ import {
   reconcileOne,
   sameName,
   scoreBody,
+  settledWetlandDissent,
   type WaterBodyClass,
 } from '@skating/core';
 import {
@@ -176,6 +177,19 @@ export interface MasterListStats {
    */
   classDissent: number;
   classDissentSamples: string[];
+  /**
+   * Groups where a federal open-water class beat an OSM `wetland` tag — **resolved rather than
+   * queued**, and counted here because it is (founder, 2026-08-07).
+   *
+   * 520 of run 6's 652 `class-conflict` rows, measured by joining every one to its NHD FTYPE. See
+   * `settledWetlandDissent`: this is the 123-body rescue, and asking a moderator to confirm it 520
+   * times is the 1,437-row mistake `RECONCILABLE_CLASS_PAIRS` already had to undo once.
+   *
+   * **The number is the point.** If it moves sharply between runs, a catalogue has changed under us
+   * — and the original 123-body deletion went unnoticed precisely because the rule that caused it
+   * left no count behind.
+   */
+  settledWetland: number;
   lanes: { label: string; stats: LaneStats }[];
   nameLane: { pairs: number; ambiguous: string[] };
   matcher: { onlyNhd: number; onlyDhp: number; nhdHits: number; dhpHits: number };
@@ -379,6 +393,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     duplicatePairs: 0,
     classDissent: 0,
     classDissentSamples: [],
+    settledWetland: 0,
     lanes: [
       { label: '3dhp→nhd', stats: federal.stats },
       { label: 'osm→nhd', stats: osmNhd.stats },
@@ -558,15 +573,18 @@ export function buildMasterList(input: MasterListInput): MasterList {
       continue;
     }
 
+    const classClaims = group.members
+      .filter((m) => m.cls !== null)
+      .map((m) => ({ source: m.source, value: m.cls as WaterBodyClass }));
+    // Counted before `scoreBody` swallows it — see `MasterListStats.settledWetland`.
+    if (settledWetlandDissent(classClaims)) stats.settledWetland++;
     const scores = scoreBody({
       names: [
         ...group.members.filter((m) => m.name).map((m) => ({ source: m.source, value: m.name })),
         ...(namedByGnis ? [{ source: 'gnis' as ClaimSource, value: name }] : []),
       ],
       polygons: polygonClaims(group, iou),
-      classes: group.members
-        .filter((m) => m.cls !== null)
-        .map((m) => ({ source: m.source, value: m.cls as WaterBodyClass })),
+      classes: classClaims,
       depths: [],
     });
     for (const k of ['name', 'cls', 'polygon'] as const) {

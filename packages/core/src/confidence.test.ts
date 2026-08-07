@@ -7,8 +7,10 @@ import {
   mergeReviewReasons,
   needsAttention,
   sameName,
+  scorableClassClaims,
   scoreAttribute,
   scoreBody,
+  settledWetlandDissent,
 } from './confidence';
 import type { WaterBodyClass } from './types';
 
@@ -178,7 +180,10 @@ describe('scoreBody', () => {
 
   // The one class disagreement that is about the water rather than the vocabulary. D96's admission
   // rules turn on it, and mis-resolving it deleted 123 bodies NHD calls LakePond.
-  it('still calls open-water-versus-wetland a conflict', () => {
+  //
+  // **Direction matters, and these are the direction that is NOT settled**: the federal catalogue is
+  // the one saying "bog". See the pair below for the mirror case.
+  it('still calls a FEDERAL wetland claim against open water a conflict', () => {
     for (const pair of [
       ['lakePond', 'wetland'],
       ['reservoir', 'wetland'],
@@ -191,6 +196,95 @@ describe('scoreBody', () => {
         }).cls,
       ).toBe('low');
     }
+  });
+
+  // 520 of the 652 class conflicts on the n7-2026-08-07 master list, measured by joining every one to
+  // its NHD FTYPE. NHD compiled the northeast at 1:24,000 and calls this open water; one mapper
+  // tagged the same polygon a marsh. D96 already decided that direction, so queueing it asks a
+  // moderator to confirm a rule we trust, 520 times.
+  it('treats a federal open-water class beating an OSM wetland tag as settled', () => {
+    for (const federal of ['lakePond', 'reservoir'] as const) {
+      const out = scoreBody({
+        ...base,
+        classes: [c('osm', 'wetland' as WaterBodyClass), c('nhd', federal as WaterBodyClass)],
+      });
+      expect(out.cls).toBe('medium');
+      expect(mergeReviewReasons({ confidence: { ...out, name: 'high', polygon: 'high' } })).toEqual(
+        [],
+      );
+    }
+  });
+
+  // 3DHP republishes NHD, so it can carry the open-water half of a group whose NHD half says bog.
+  // One federal wetland claim disqualifies the whole group, or this rule would silence exactly the
+  // 132 rows it exists to leave alone.
+  it('refuses to settle when ANY federal claim is wetland', () => {
+    expect(
+      scoreBody({
+        ...base,
+        classes: [
+          c('osm', 'wetland' as WaterBodyClass),
+          c('nhd', 'wetland' as WaterBodyClass),
+          c('3dhp', 'lakePond' as WaterBodyClass),
+        ],
+      }).cls,
+    ).toBe('low');
+  });
+
+  // Drops the OSM wetland claim, not the group. A body where OSM also disagrees about something else
+  // still scores that disagreement — losing a real conflict to a rule aimed at a different one is
+  // the failure the claim-level filter avoids.
+  it('does not settle a second, unrelated disagreement along with it', () => {
+    expect(
+      scoreBody({
+        ...base,
+        classes: [
+          c('osm', 'wetland' as WaterBodyClass),
+          c('osm', 'bay' as WaterBodyClass),
+          c('nhd', 'lakePond' as WaterBodyClass),
+        ],
+      }).cls,
+    ).toBe('low');
+  });
+
+  // Two OSM features in one group both tagged marsh is still one OSM voice, not two.
+  it('settles regardless of how many times OSM says wetland', () => {
+    expect(
+      scoreBody({
+        ...base,
+        classes: [
+          c('osm', 'wetland' as WaterBodyClass),
+          c('osm', 'wetland' as WaterBodyClass),
+          c('nhd', 'lakePond' as WaterBodyClass),
+          c('3dhp', 'lakePond' as WaterBodyClass),
+        ],
+      }).cls,
+    ).toBe('medium');
+  });
+
+  // An OSM wetland tag with nothing federal to beat it is not settled — it is the only claim there
+  // is, and it is what D96 refuses under fifty acres.
+  it('needs a federal open-water claim, not merely the absence of a federal wetland one', () => {
+    expect(settledWetlandDissent([c('osm', 'wetland' as WaterBodyClass)])).toBe(false);
+    expect(
+      settledWetlandDissent([
+        c('osm', 'wetland' as WaterBodyClass),
+        c('nhd', 'lakePond' as WaterBodyClass),
+      ]),
+    ).toBe(true);
+  });
+
+  // The merge counts collapses so a volume shift between runs stays visible — a rule that resolves
+  // rows without leaving a number behind is how the original 123-body deletion went unnoticed.
+  it('exposes the collapse as a claim filter the merge can count', () => {
+    const classes = [c('osm', 'wetland' as WaterBodyClass), c('nhd', 'lakePond' as WaterBodyClass)];
+    expect(scorableClassClaims(classes)).toEqual([c('nhd', 'lakePond' as WaterBodyClass)]);
+    // Untouched when the rule does not apply — same array, not a copy that drifts.
+    const contested = [
+      c('osm', 'lakePond' as WaterBodyClass),
+      c('nhd', 'wetland' as WaterBodyClass),
+    ];
+    expect(scorableClassClaims(contested)).toBe(contested);
   });
 
   it('does not let `unclassified` vote against a real class', () => {

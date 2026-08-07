@@ -631,6 +631,12 @@ async function main(): Promise<void> {
     `  overlapping survivors ${n(stats.duplicatePairs)} pairs — flagged duplicate-candidate, never merged`,
   );
   lines.push(
+    `  settled wetland ${n(stats.settledWetland)}  a federal open-water class beating an OSM wetland tag —`,
+  );
+  lines.push(
+    '    resolved, not queued (the 123-body rescue). Watch this number move between runs.',
+  );
+  lines.push(
     `  class dissent ${n(stats.classDissent)}  one catalogue refused this outright, another classed it;`,
   );
   lines.push(
@@ -727,6 +733,7 @@ async function main(): Promise<void> {
     reviewQueue: stats.queued,
     duplicatePairs: stats.duplicatePairs,
     classDissent: stats.classDissent,
+    settledWetland: stats.settledWetland,
   };
   writeFileSync(
     manifestPath,

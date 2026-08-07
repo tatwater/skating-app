@@ -285,6 +285,38 @@ describe('what the corpus must and must not contain', () => {
     expect(keys(result.bodies)).toEqual(['osm:way/named']);
   });
 
+  // 520 of run 6's 652 class conflicts. The body is kept as open water either way — that half was
+  // always right — but it stopped being queued, because asking a moderator to confirm D96 five
+  // hundred times is how a queue stops being worked. See `settledWetlandDissent`.
+  it('resolves a federal open-water class against an OSM wetland tag without queueing it', () => {
+    const shape = square(-70.6, 44.6, sideForAcres(30));
+    const result = buildMasterList(
+      inputFor({
+        osm: [feat('osm', 'way/marsh', { name: 'Colby Marsh', cls: 'wetland', polygon: shape })],
+        nhd: [feat('nhd', 'nhd-390', { name: 'Colby Marsh', cls: 'lakePond', polygon: shape })],
+      }),
+    );
+    expect(result.bodies).toHaveLength(1);
+    expect(result.bodies[0]?.cls).toBe('lakePond');
+    expect(result.bodies[0]?.reviewReasons).not.toContain('class-conflict');
+    // Resolved is not silent — the count is what makes a volume shift between runs visible.
+    expect(result.stats.settledWetland).toBe(1);
+  });
+
+  // The mirror, and the reason the rule is directional: here the FEDERAL catalogue is the one saying
+  // bog, which is what D96's admission floor turns on. 132 of the 652, and they stay in the queue.
+  it('still queues an OSM open-water claim against a federal wetland one', () => {
+    const shape = square(-70.7, 44.7, sideForAcres(30));
+    const result = buildMasterList(
+      inputFor({
+        osm: [feat('osm', 'way/pond', { name: 'Mud Pond', cls: 'lakePond', polygon: shape })],
+        nhd: [feat('nhd', 'nhd-466', { name: 'Mud Pond', cls: 'wetland', polygon: shape })],
+      }),
+    );
+    expect(result.bodies[0]?.reviewReasons).toContain('class-conflict');
+    expect(result.stats.settledWetland).toBe(0);
+  });
+
   it('admits a wetland the GAZETTEER named, because GNIS runs before the floor', () => {
     // The 306-body ordering claim: stamping the name on afterwards would have deleted these first.
     const bog = feat('osm', 'way/bog', {

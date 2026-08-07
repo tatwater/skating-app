@@ -200,10 +200,13 @@ export function sameName(a: string, b: string): boolean {
  * a moderator would have confirmed a rule we already trust, every time, and a queue that is 70%
  * foregone conclusions is one nobody finishes.
  *
- * **`wetland` is deliberately absent from every pair.** Open-water-versus-bog is the one class
- * disagreement that is about the substance of the water rather than about vocabulary, it is what
- * D96's admission rules turn on, and mis-resolving it is what deleted 123 bodies NHD calls
- * `LakePond`. Those 160 conflicts stay in the queue.
+ * **`wetland` is deliberately absent from every pair, and it has to stay absent.**
+ * Open-water-versus-bog is the one class disagreement that is about the substance of the water rather
+ * than about vocabulary, it is what D96's admission rules turn on, and mis-resolving it is what
+ * deleted 123 bodies NHD calls `LakePond`.
+ *
+ * It does not follow that *every* wetland disagreement needs a human, and the difference is
+ * **direction** — which a symmetric pair list cannot express. See `settledWetlandDissent`.
  */
 const RECONCILABLE_CLASS_PAIRS: readonly (readonly [WaterBodyClass, WaterBodyClass])[] = [
   // A dammed natural lake. NHD calls it what it is; we call it what it is used for, because that is
@@ -218,6 +221,66 @@ const RECONCILABLE_CLASS_PAIRS: readonly (readonly [WaterBodyClass, WaterBodyCla
 export function classesReconcile(a: WaterBodyClass, b: WaterBodyClass): boolean {
   if (a === b) return true;
   return RECONCILABLE_CLASS_PAIRS.some(([x, y]) => (a === x && b === y) || (a === y && b === x));
+}
+
+/** Water we cover that is not a bog. The claim a wetland tag has to beat to be a disagreement. */
+const OPEN_WATER_CLASSES: ReadonlySet<WaterBodyClass> = new Set(['lakePond', 'reservoir']);
+
+/**
+ * **A federal open-water class against an OSM wetland tag is a settled resolution, not a conflict**
+ * (founder call, 2026-08-07, on the measured volume).
+ *
+ * This is the 123-body rescue — the thing *merge first, filter once* exists for — and it is the
+ * single largest population in the review queue. Measured on the `n7-2026-08-07` master list by
+ * joining all 652 `class-conflict` bodies to the NHD feature they merged with:
+ *
+ * | the federal catalogue says | we stored | | |
+ * | --- | --- | --- | --- |
+ * | `390 LakePond` / `436 Reservoir` | open water | **520** | OSM's mapper tagged it `wetland` |
+ * | `466 SwampMarsh` | open water | **132** | the *federal* catalogue is the dissenter |
+ *
+ * **Only the first row is settled, and the asymmetry is the whole point.** NHD compiled the
+ * northeast at 1:24,000 and calls this open water; one mapper tagged the same polygon a marsh. We
+ * already decided that direction, in D96, on evidence — so queueing it asks a moderator to confirm a
+ * rule we trust, 520 times, which is exactly the 1,437-row mistake `RECONCILABLE_CLASS_PAIRS` was
+ * written to undo. The **reverse** direction is where the federal catalogue is the one saying "bog",
+ * it is the direction D96's admission floor turns on, and those 132 stay in the queue.
+ *
+ * **Settled is not silent.** The merge counts every collapse and reports it, because the *volume* of
+ * this pattern moving between runs is a real signal about a catalogue changing under us — and a rule
+ * that resolves rows without leaving a number behind is how the original 123-body deletion went
+ * unnoticed in the first place.
+ *
+ * Not expressible as a `RECONCILABLE_CLASS_PAIRS` entry: that list is compared value-to-value and
+ * both directions of `wetland` ↔ `lakePond` would collapse together, taking the 132 with them.
+ */
+export function settledWetlandDissent(classes: readonly AttributeClaim<WaterBodyClass>[]): boolean {
+  let federalOpenWater = false;
+  let osmWetland = false;
+  for (const claim of classes) {
+    const federal = claim.source === 'nhd' || claim.source === '3dhp';
+    if (federal && OPEN_WATER_CLASSES.has(claim.value)) federalOpenWater = true;
+    // A federal wetland claim is the direction that is NOT settled, and one is enough to disqualify
+    // the whole group — otherwise NHD saying `SwampMarsh` while 3DHP republishes it as `LakePond`
+    // would silence the case this rule most needs to leave alone.
+    if (federal && claim.value === 'wetland') return false;
+    if (claim.source === 'osm' && claim.value === 'wetland') osmWetland = true;
+  }
+  return federalOpenWater && osmWetland;
+}
+
+/**
+ * The class claims worth scoring — the settled wetland dissent removed, everything else untouched.
+ *
+ * Drops **only** the OSM wetland claim rather than the whole group, so a body where OSM *also*
+ * disagrees about something else still scores that disagreement. Losing a real conflict to a rule
+ * aimed at a different one is the failure this shape avoids.
+ */
+export function scorableClassClaims(
+  classes: readonly AttributeClaim<WaterBodyClass>[],
+): readonly AttributeClaim<WaterBodyClass>[] {
+  if (!settledWetlandDissent(classes)) return classes;
+  return classes.filter((c) => !(c.source === 'osm' && c.value === 'wetland'));
 }
 
 /** The per-attribute scores carried on a merged body. */
@@ -250,8 +313,11 @@ export function scoreBody(input: {
     // scoring it as a claim made 6,756 bodies where OSM said nothing and NHD said `LakePond` read as
     // "the catalogues conflict", which was most of a 3,999-row review queue nobody could have worked.
     // Same principle as 3DHP's `silent` — a source with no opinion does not get a vote.
+    // **…and a federal open-water class beating an OSM wetland tag is settled, not contested.** See
+    // `settledWetlandDissent` — 520 of the queue's 652 class conflicts, all of them our own rule
+    // firing correctly.
     cls: scoreAttribute(
-      input.classes.filter((c) => c.value !== 'unclassified'),
+      scorableClassClaims(input.classes).filter((c) => c.value !== 'unclassified'),
       classesReconcile,
     ),
     depth: scoreAttribute(input.depths),
