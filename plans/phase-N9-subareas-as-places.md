@@ -50,7 +50,7 @@ that resolves into three different answers, and the differences are the interest
 | **put-ins, parking, toilets, outlets, hazards, reports, tracks** | stored on the **parent**, tagged with `subAreaId` **at write time** by point-in-polygon; re-derived on redraw | Already the shape of `reports.subAreaId`. **Tag-at-write rather than derive-at-read, because a derived value cannot be indexed** — the schema already calls out wanting `['subAreaId', 'moderationStatus', 'skateEndTime']` for the bounty gate. |
 | **favourites** | its own `subAreaId` on `waterBodyFavorites` | A favourite is not derived from anything: wanting alerts about Malletts Bay is a *different* statement from wanting alerts about all of Champlain, and only the user can make it. |
 | **elevation** | **inherit, never fetch** | It is the same water surface. Fetching it would spend quota to reproduce a number by definition equal to one we hold. |
-| **wind rose** | **inherit the parent's rose**; compute the bay's **own `fetchProfileM`** from its own polygon | Wind climate is a 2 km grid, so a bay and its lake are the same cell and the rose is genuinely shared. **Fetch is what differs**, and fetch is the thing that drives pressure ridges and wind holes — so the derived half is the half that matters. Costs no WTK requests at all. |
+| **wind rose** | **inherit the parent's rose, and say that is what it is**; compute the bay's **own `fetchProfileM`** from its own polygon | ⚠ **Inherited because our data has no finer answer, NOT because the wind is the same.** See §Wind in a cove — the honest statement is a limitation, and it must not be written down as a fact. Fetch is the one bay-specific signal we can compute for free, and it is real. |
 | **max / mean depth** | **derive** by clipping the parent's soundings to the bay polygon, then **store** | ⚠ **Inheriting would be a safety-relevant lie.** Malletts Bay is not as deep as Champlain's broad lake, and a bay page reading "max depth 122 m" is worse than one reading nothing (D3). Expensive to recompute per read, so it is stored — which makes it a derived-and-cached value with an invalidation rule, see §The redraw problem. |
 | **contours** | crop the parent's at **build** time | `clipDrawnToBody` already does exactly this for the 9 nested bodies `alsoCovers` found. |
 | **drive-time** | from the bay's **own** put-ins where it has any, else inherit the parent's bands | This is the point of the ask: the bay's parking is closer than the lake's nominal representative point, and a drive-time computed from the lake under-serves the bay. |
@@ -59,6 +59,50 @@ that resolves into three different answers, and the differences are the interest
 brings. Everything that follows from geometry (fetch, depth-within-the-outline, contour crop, which
 put-in is inside it) is derived; everything that does not (wind climate, elevation) is inherited;
 and the one thing that is neither (a favourite) is stored.
+
+---
+
+## Wind in a cove — the inheritance is a limitation, not a finding
+
+**Founder correction, 2026-08-07:** *"In a bay/cove, wind will almost certainly behave differently
+than out in the middle of a large lake, because of the relative position of trees & terrain. But if
+we don't have a way to get bay-location-specific data, then we only have the wind data we have!"*
+
+**That is right, and the first draft of the table above had it backwards.** It said a bay and its
+lake are "genuinely" the same cell, which reads as a claim about the wind. It is a claim about
+**WTK's grid**. A cove ringed by 25 m pines with 300 m of fetch does not experience the open lake's
+wind, and nothing in a 2 km reanalysis cell can see that.
+
+**And the problem is much bigger than bays.** The corpus is 25,136 bodies with a **median of 12
+acres** — a square of about 220 m a side. Almost every body in it is smaller than a *tenth* of one
+WTK cell, so the same over-claim applies to the whole corpus, not to the ~120 sub-areas. The bay
+question just made it visible.
+
+**Nothing finer exists as a gridded product**, and that is worth recording so it is not re-searched:
+WTK is **2 km** and is the finest public reanalysis for CONUS; HRRR is 3 km, NAM 3 km, ERA5 25 km.
+There is no sub-kilometre wind climatology to buy or download.
+
+So there are exactly three honest moves, and the first two are free:
+
+1. **Say what it is.** The rose is the 2 km cell's, wherever it is shown — for a bay *and* for a
+   12-acre pond. D3's rule against implying knowledge we do not have applies to a wind rose as much
+   as to an ice condition, and this is the first place in the phase where the copy has to carry a
+   caveat the data cannot remove.
+2. **Fetch is genuinely local, and we already compute it.** `fetchProfileM` is 16 sectors measured
+   off the body's own outline, so a cove's 300 m and the broad lake's 15 km are already distinguished
+   per body and per sub-area, at zero cost. It is a real answer to *part* of the question — the part
+   about how far the wind runs before it reaches you.
+3. 📌 **A terrain-and-canopy shelter index is the part fetch cannot answer, and it is buildable.**
+   Fetch measures open water; it says nothing about the 25 m pines on the shore. A per-sector
+   topographic-and-canopy exposure index over a **30 m DEM** plus **NLCD tree-canopy cover** would,
+   and both are free, public-domain and un-metered. **The DEM is the interesting part: D104 chose the
+   EPQS point service over the 3DEP raster tiles specifically to avoid a ~4 GB download** — and this
+   is the second use that would justify taking the raster after all. Nothing needs mirroring to R2;
+   the index is computed once locally and only the 16 numbers are stored.
+   **Not scoped here.** It belongs with the wind pass (N7 step 11), it should be priced against a
+   measured sample rather than an estimate, and it is a *modelled* signal — so if it ships it is
+   labelled as one, and it never turns into a safety claim (cf. D82, where bathymetry was ruled
+   "context, not counsel").
 
 ---
 
