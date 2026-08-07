@@ -6,7 +6,7 @@
 > Branch **`phase-n7-unified-corpus`**, three commits for the audit and the load, nothing pushed.
 > Full suite green: 11 packages, **3,772 tests**, lint and typecheck clean.
 >
-> **✅ The corpus is live on dev.** `waterBodies` holds **25,197** rows and `waterBodySubAreas` **120**,
+> **✅ The corpus is live on dev.** `waterBodies` holds **25,136** rows and `waterBodySubAreas` **120**,
 > under campaign `n7-2026-08-07`. Prod remains untouched and has never been deployed.
 
 ---
@@ -287,15 +287,23 @@ Requested before running the flow against real data. What changed, in one screen
 fidelity through Convex's array cap — `build-region` writes it from TIGER now; the merge asserts it
 found five state outlines; and the id namespaces are asserted not to collide.
 
-### The 61 the prune spared
+### ✅ The 61 the prune spared — resolved, queue empty
 
 All of them are the **losing halves of OSM duplicate pairs** — Long Pond, Lovell Lake and Duncan Lake
 among them, i.e. the five pairs §Why this phase exists names. The merge collapsed each pair onto one
 body via NHD's shared `Permanent_Identifier`; the winner carries `lastCampaignId` and the loser does
 not, and the prune spared the loser because a D36 match-on-create pass had already flagged it
 `near_certain` for a human. Two independent systems reached the same verdict, so the queue's items are
-pre-answered — and until somebody works them the corpus renders 61 known duplicates. Never auto-merge
-(D36/D93). Full write-up in the plan doc's open items, including `Lake Auburn` stored as `The Basin`.
+pre-answered, so `resolveCampaignDuplicates` took them: **34 deleted outright, 5 more once the
+founder confirmed a bathymetry pass was coming, and 22 handed to `pruneOutsideCoverage`** because
+they were never a duplicate question — both halves had been refused by the D111 downstate cut, which
+is a region rule rather than a queue one.
+
+**The dedup queue is empty**: 0 `near_certain`, 0 `suspected_duplicate`, 0 tombstones, 0 dangling
+pointers, 0 orphaned sub-areas. Corpus: **25,136 bodies · 120 sub-areas**. Never auto-merge on a
+single system's say-so (D36/D93) — what made this safe is that two independent systems had already
+agreed and the pass verifies that agreement per row. Full write-up in the plan doc's open items,
+including `Lake Auburn` stored as `The Basin`.
 
 ### And four more that only running it could find (D125 + three)
 

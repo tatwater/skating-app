@@ -264,7 +264,7 @@ recoverable into **217 bodies that would draw** and that we currently render bla
 
 | | | | |
 | --- | --- | --- | --- |
-| **total** | **25,197** | listed | 25,197 |
+| **total** | **25,136** | listed | 25,136 |
 | `geometrySource` | 25,197 (100%) | `nhdId` | 20,467 (81%) |
 | `osmId` | 19,289 (77%) | wind rose | 0 |
 | depth | 5,662 (22%) | elevation | 5,716 (23%) |
@@ -1657,7 +1657,7 @@ known and wasted if it isn't.
 
 ## Open items, flagged rather than buried
 
-### 🔁 The 61 the prune spared, and why they are a queue rather than a bug (2026-08-07)
+### ✅ The 61 the prune spared — resolved, and the dedup queue is empty (2026-08-07)
 
 The step-6 prune protected 64 bodies the master list did not re-affirm: 1 carrying a hazard, 2 with a
 curated boost, and **61 carrying a dedup pointer**. That last group turned out to be the most
@@ -1690,11 +1690,28 @@ finding rather than making one.
 lakes and search returns both halves. That is visible rather than silent, which is the design working,
 but it is not free.
 
-**Do not auto-merge them.** D36 and D93 both hold that an automatic merge which is wrong is
-unrecoverable in a way a queued one is not, and `resolveUpsert` deliberately refuses to perform one.
-The available moves are: work the 61 through `/admin`'s dedup queue, or build a pass that *proposes*
-the merge direction from the master list (the survivor is knowable — it is the row carrying
-`lastCampaignId`) and still asks a human to confirm.
+**They were resolved by a one-time pass rather than by hand** (founder call, 2026-08-07):
+`waterBodies.resolveCampaignDuplicates`. `merge` is the wrong tool — it exists to re-point children
+and leave a tombstone reads can chase, and with zero user content it would move nothing and preserve
+a pointer nobody holds. So the pass deletes the loser and clears the flag at the other end, and it
+refuses three things: a body carrying user content (re-checked, **not** inherited from the prune,
+which tests `dedupOrMerged` *before* `attached` and so had never checked these at all), a body whose
+survivor is not in the corpus, and a body a contour tileset points at.
+
+| | |
+| --- | --- |
+| 34 | deleted outright — a surviving partner, nothing attached, nothing pointing at them |
+| 5 | held, then deleted on the founder's call: a full bathymetry pass is coming, and in every case the *survivor* had no coverage because the N6b join had matched the survey to the duplicate |
+| 22 | **not a duplicate question at all** — pairs where *both* halves were refused by the D111 cut. They fail the region rule, which is a property of the body rather than of the queue, so `pruneOutsideCoverage` took them. It found exactly those 22 and nothing else, which also confirms no other downstate residue survived the campaign. |
+
+**The dedup queue is now empty**: 0 `near_certain`, 0 `suspected_duplicate`, 0 tombstones, 0 dangling
+candidate pointers, 0 orphaned sub-areas. The corpus stands at **25,136 bodies and 120 sub-areas**.
+
+**The rule that survived, and it is the one worth keeping.** D36 and D93 both hold that an automatic
+merge which is wrong is unrecoverable in a way a queued one is not, and `resolveUpsert` still refuses
+to perform one. What made this pass safe was not that the rule was relaxed — it is that *two
+independent systems had already agreed*, and the pass verifies that agreement per row rather than
+assuming it.
 
 **And the fourth row above is a second finding.** The 2,263-acre body is stored as **`The Basin`**,
 because name selection is authority-ranked (`gnis > nhd > 3dhp > osm`) and NHD's `gnis_name` for that
