@@ -1165,6 +1165,37 @@ pnpm exec convex run waterBodies:pruneNotInCampaign '{"campaignId":"<id>"}'     
 pnpm exec convex run waterBodies:pruneNotInCampaign '{"campaignId":"<id>","apply":true}'
 ```
 
+### ⚠ The region rule and the prune: what is automatic, and the one gap that is not
+
+**Asked and answered on 2026-08-07, because the answer is not obvious from either pass.**
+
+**In the normal case it is automatic.** An out-of-region body never enters the master list — the
+merge's `inRegion` and `inDownstate` cuts happen before the emit — so it never receives a
+`lastCampaignId`, so `pruneNotInCampaign` deletes it. Nothing extra to remember. This run:
+35,620 out-of-region and 6,988 downstate bodies never reached `bodies.ndjson`, and the residue
+already stored (Musquash Lake, Mashapaug Pond, Lac Arnold) went out with the 2,322.
+
+**The gap is a body that is out of region *and* protected.** The prune spares six categories —
+user-created, `includedByRequest`, curated, dedup-flagged, soft-delisted, and anything with an
+attachment — and it checks them *before* it would delete. So a protected body never has the region
+rule applied to it at all. That is exactly what the 22 downstate rows were: out of coverage **and**
+dedup-flagged, and the flag won for two campaigns running.
+
+**`pruneOutsideCoverage` is the backstop**, and its protection list is deliberately narrower — only
+user-created and attached, because a *coverage* decision should not be overridden by a curated boost
+or a dedup pointer. So the campaign is not finished until it has run and reported zero:
+
+```bash
+# after step 6, with the downstate mask build-region writes
+pnpm exec convex run waterBodies:pruneOutsideCoverage "$(node -e '…downstate-ny-coarse.geojson…')"
+```
+
+**And one gap remains open, recorded rather than fixed.** `pruneOutsideCoverage` deletes what is
+*inside* the polygons it is handed, so it covers the downstate cut and cannot express "outside the
+five states entirely". A body that is both **outside the region** and **protected** is therefore
+caught by neither pass. None exist today; if one ever does, the fix is an inclusion-mode argument on
+that mutation (delete what is *not* inside), not a new pass.
+
 > ⚠ **Do not run it after a load that reported failed batches** (D124). `load.ts` deliberately
 > survives isolated batch failures, and every body in a skipped batch of ~150 is left unstamped —
 > indistinguishable from a body the new rules refuse, and therefore deleted. The loader now says so
