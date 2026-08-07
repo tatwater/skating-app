@@ -1566,7 +1566,20 @@ export const pruneNotInCampaign = internalMutation({
         kept.includedByRequest++;
         continue;
       }
-      if (body.curatedBoost !== undefined) {
+      // **A boost of zero is not a curation decision** (2026-08-07), and this used to read
+      // `!== undefined`, which meant the field merely being *present* shielded a body from every
+      // future prune. `pruneBelowAreaFloor` — written first — already had it right, so the two
+      // passes disagreed about what "curated" means, which is the drift this codebase exists to
+      // object to.
+      //
+      // Measured on dev: of 20 boosted bodies, 16 carry a real `0.3` and 4 carry a no-op `0`. Two of
+      // those four were **South Bay** and **Half Moon Cove** on Cobscook Bay — tidal water the salt
+      // veto had correctly refused, surviving two campaigns on a value that changes nothing about
+      // how they draw.
+      //
+      // A **negative** boost is still a real decision (an admin demoting a body), which is why the
+      // test is `!== 0` rather than `> 0`.
+      if ((body.curatedBoost ?? 0) !== 0) {
         kept.curated++;
         continue;
       }
@@ -4645,5 +4658,71 @@ export const resolveCampaignDuplicates = internalMutation({
       deletedRows: deleted,
       skippedRows: skipped,
     };
+  },
+});
+
+/**
+ * Mark a body as **wanted, whatever the rules say** — N7b's primitive, seeded early (2026-08-07).
+ *
+ * ## Why this exists before N7b does
+ *
+ * `includedByRequest` is already read in three places — `belongsInCorpus` short-circuits on it,
+ * and both prunes protect it — and until now **nothing could set it**. A field every deletion path
+ * honours and no path writes is a rule that cannot actually be used, and the campaign produced the
+ * first body that needs it: a 5-acre unnamed wetland near Albany carrying an **active `open_water`
+ * hazard**. D96 refuses it (an unnamed wetland needs fifty acres) and it is right to; but somebody
+ * stood on that ice and marked open water, which is exactly the evidence N7b's request path is meant
+ * to act on.
+ *
+ * Without this the body survives only because the prune spares anything with an attachment — a
+ * technicality that gets re-proposed for deletion every single campaign and has to be re-argued
+ * every time. The flag turns it into a decision somebody made once.
+ *
+ * **Keyed by catalogue id, not by Convex `_id`**, so an operator can name the body the way every
+ * other artifact in this phase names it, and so the same command is re-runnable across a re-import.
+ * Audited like every other moderator-scale write, because it overrides a corpus rule.
+ */
+export const setIncludedByRequest = internalMutation({
+  args: {
+    /** Whose decision this is — every write that overrides a corpus rule is attributable. */
+    actorUserId: v.id('profiles'),
+    osmId: v.optional(v.string()),
+    nhdId: v.optional(v.string()),
+    included: v.boolean(),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, { actorUserId, osmId, nhdId, included, reason }) => {
+    if (osmId === undefined && nhdId === undefined) {
+      throw new ConvexError('setIncludedByRequest: name the body by osmId or nhdId');
+    }
+    const matches = await lookupByCatalogueIds(ctx, { osmId, nhdId });
+    const keys = [...new Set(matches.flatMap((m) => m.keys))];
+    if (keys.length === 0) throw new ConvexError('setIncludedByRequest: no body carries that id');
+    if (keys.length > 1) {
+      // The same refusal `resolveUpsert` makes: an id resolving to two rows is a corpus-level
+      // finding, and guessing which one somebody meant would bury it.
+      throw new ConvexError(
+        `setIncludedByRequest: that id resolves to ${keys.length} bodies — resolve the duplicate first`,
+      );
+    }
+    const key = keys[0] as Id<'waterBodies'>;
+    const body = await ctx.db.get(key);
+    if (!body) throw new ConvexError('setIncludedByRequest: body not found');
+
+    await ctx.db.patch(key, { includedByRequest: included ? true : undefined });
+    await ctx.db.insert('moderationActions', {
+      actorId: actorUserId,
+      action: 'set_included_by_request',
+      targetType: 'waterbody',
+      targetId: key,
+      reason:
+        reason?.trim() ||
+        (included
+          ? 'Kept in the corpus by request, against the admission rules'
+          : 'No longer kept by request'),
+      metadata: { includedByRequest: included },
+      createdAt: Date.now(),
+    });
+    return { waterBodyId: key, name: body.name, includedByRequest: included };
   },
 });

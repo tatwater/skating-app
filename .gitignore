@@ -19,18 +19,10 @@ web-build/
 /apps/*/android/
 *.orig.*
 
-# Convex — `convex/_generated/` is deliberately COMMITTED, per Convex's own guidance
-# ("should be committed to the repo ... your code won't typecheck without it").
-# Do NOT re-ignore it: cloud EAS builds upload via git, so ignoring it breaks the
-# JS bundle with `Unable to resolve module @skating/convex/api`.
-
 # Environment / secrets — never commit real values
 .env
 .env.*
 !.env.example
-# A package with two archives needs two mirror configs (scripts/etl: OSM and NHD), so the template
-# for the second one has to be spelled out — `.env.*` swallows anything that is not literally
-# `.env.example`, which is how a committed template silently goes missing.
 !.env.*.example
 
 # Logs

@@ -192,6 +192,11 @@ export const MODERATION_ACTIONS = [
   'approve_waterbody',
   'reject_waterbody',
   'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 2)
+  // Keep a body the admission rules refuse, or stop keeping one (N7b's primitive, seeded in N7).
+  // Distinct from `set_curated_boost` because it is a statement about **membership** rather than
+  // prominence — it overrides `belongsInCorpus` and both prunes, where a boost only moves a body up
+  // and down the zoom ladder.
+  'set_included_by_request',
   'set_put_in', // admin placed an official put-in marker (Phase 4, decision #7)
   'resolve_flag',
   'dismiss_flag',

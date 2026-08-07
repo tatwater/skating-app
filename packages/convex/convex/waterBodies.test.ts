@@ -3793,3 +3793,184 @@ describe('the remaining edges of the corpus tooling', () => {
     ).toBe(false);
   });
 });
+
+describe('a boost of zero is not a curation decision', () => {
+  const CAMPAIGN = 'n7-2026-08-07';
+
+  test('a no-op boost no longer shields a body from the campaign prune', async () => {
+    // It used to read `curatedBoost !== undefined`, so the field merely being *present* protected a
+    // body for ever. `pruneBelowAreaFloor` — written first — already tested `!== 0`, so the two
+    // prunes disagreed about what "curated" means. Measured on dev: South Bay (3,737 ac) and Half
+    // Moon Cove (330 ac), both tidal water the salt veto had refused, survived two campaigns on a
+    // value that changes nothing about how they draw.
+    const t = convexTestWithGeo();
+    const id = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        source: 'osm' as const,
+        externalId: 'relation/13332188',
+        name: 'South Bay',
+        curatedBoost: 0,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+    });
+    expect(res).toMatchObject({ deleted: 1, kept: expect.objectContaining({ curated: 0 }) });
+    expect(await t.run((ctx) => ctx.db.get(id))).toBeNull();
+  });
+
+  test('a real boost still protects, and so does a NEGATIVE one', async () => {
+    // A negative boost is an admin demoting a body — a decision, not an absence. Hence `!== 0`
+    // rather than `> 0`.
+    const t = convexTestWithGeo();
+    await t.run(async (ctx) => {
+      for (const [i, boost] of [0.3, -0.5].entries()) {
+        await ctx.db.insert('waterBodies', {
+          ...SAMPLE_BODY,
+          source: 'osm' as const,
+          externalId: `way/${i}`,
+          curatedBoost: boost,
+          dedupStatus: 'clean' as const,
+          createdAt: Date.now(),
+        });
+      }
+    });
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+    });
+    expect(res).toMatchObject({ deleted: 0, kept: expect.objectContaining({ curated: 2 }) });
+  });
+});
+
+describe('setIncludedByRequest — N7b’s primitive', () => {
+  /** A minimal admin profile — the audit row needs a real `profiles` id to attribute the write to. */
+  const actor = (t: ReturnType<typeof convexTestWithGeo>) =>
+    t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'user_test',
+        displayName: 'Admin',
+        username: 'admin',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyFulfilled: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: false,
+          greatReportNearby: false,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'admin' as const,
+        status: 'active' as const,
+        createdAt: Date.now(),
+      }),
+    );
+
+  test('keeps a body the admission rules refuse, and audits the decision', async () => {
+    const t = convexTestWithGeo();
+    const actorUserId = await actor(t);
+    const id = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        source: 'osm' as const,
+        externalId: 'way/1304098167',
+        osmId: 'way/1304098167',
+        name: '',
+        type: 'wetland' as const,
+        surfaceAreaSqM: 5 * 4046.8564224, // an unnamed wetland D96 refuses under fifty acres
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    const res = await t.mutation(internal.waterBodies.setIncludedByRequest, {
+      actorUserId,
+      osmId: 'way/1304098167',
+      included: true,
+      reason: 'Carries an active open-water hazard',
+    });
+    expect(res).toMatchObject({ waterBodyId: id, includedByRequest: true });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.includedByRequest).toBe(true);
+
+    // …and the prune now spares it by decision rather than by the attachment technicality.
+    const prune = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: 'n7-2026-08-07',
+      apply: true,
+    });
+    expect(prune).toMatchObject({
+      deleted: 0,
+      kept: expect.objectContaining({ includedByRequest: 1 }),
+    });
+
+    const audit = await t.run((ctx) => ctx.db.query('moderationActions').first());
+    expect(audit).toMatchObject({ action: 'set_included_by_request', targetId: id });
+  });
+
+  test('clears the flag when asked, so the decision is reversible', async () => {
+    const t = convexTestWithGeo();
+    const actorUserId = await actor(t);
+    const id = await t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        source: 'osm' as const,
+        externalId: 'way/1',
+        osmId: 'way/1',
+        includedByRequest: true,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    await t.mutation(internal.waterBodies.setIncludedByRequest, {
+      actorUserId,
+      osmId: 'way/1',
+      included: false,
+    });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.includedByRequest).toBeUndefined();
+  });
+
+  test('refuses to guess: no id, an unknown id, or an id on two rows', async () => {
+    const t = convexTestWithGeo();
+    const actorUserId = await actor(t);
+    await expect(
+      t.mutation(internal.waterBodies.setIncludedByRequest, { actorUserId, included: true }),
+    ).rejects.toThrow(/osmId or nhdId/);
+    await expect(
+      t.mutation(internal.waterBodies.setIncludedByRequest, {
+        actorUserId,
+        osmId: 'way/nope',
+        included: true,
+      }),
+    ).rejects.toThrow(/no body carries that id/);
+
+    // The same refusal `resolveUpsert` makes — an id on two rows is a finding, not a coin toss.
+    await t.run(async (ctx) => {
+      for (const externalId of ['a', 'b']) {
+        await ctx.db.insert('waterBodies', {
+          ...SAMPLE_BODY,
+          source: 'osm' as const,
+          externalId,
+          osmId: 'way/dup',
+          dedupStatus: 'clean' as const,
+          createdAt: Date.now(),
+        });
+      }
+    });
+    await expect(
+      t.mutation(internal.waterBodies.setIncludedByRequest, {
+        actorUserId,
+        osmId: 'way/dup',
+        included: true,
+      }),
+    ).rejects.toThrow(/resolves to 2 bodies/);
+  });
+});
