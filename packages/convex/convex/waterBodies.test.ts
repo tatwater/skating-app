@@ -1,4 +1,4 @@
-import { HARD_MIN_SURFACE_AREA_SQM, meetsAreaFloor } from '@skating/core';
+import { HARD_MIN_SURFACE_AREA_SQM, meetsAreaFloor, type ReviewReason } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -3989,5 +3989,93 @@ describe('setIncludedByRequest — N7b’s primitive', () => {
         included: true,
       }),
     ).rejects.toThrow(/resolves to 2 bodies/);
+  });
+});
+
+describe('the review queue (N7)', () => {
+  /** A queued body, as the merge emits one. */
+  const queued = (
+    id: string,
+    reviewReasons: ReviewReason[],
+    over: Record<string, unknown> = {},
+  ) => ({
+    source: 'osm' as const,
+    externalId: id,
+    osmId: id,
+    name: `Body ${id}`,
+    type: 'lakePond' as const,
+    polygon: SAMPLE_BODY.polygon,
+    bbox: SAMPLE_BODY.bbox,
+    centroid: SAMPLE_BODY.centroid,
+    surfaceAreaSqM: 1_000_000,
+    reviewReasons,
+    ...over,
+  });
+
+  test('files a body under the worst thing wrong with it, and lists it there', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        queued('a', ['name-conflict', 'duplicate-candidate']),
+        queued('b', ['class-conflict']),
+        queued('c', []),
+      ],
+    });
+    const asMod = await seedUser(t, 'clerk_queue_mod', 'moderator');
+
+    const dupes = await asMod.query(api.waterBodies.listReviewQueue, {
+      reason: 'duplicate-candidate',
+    });
+    expect(dupes.rows.map((r) => r.name)).toEqual(['Body a']);
+    // …and NOT under its lesser reason, or the same body is work twice.
+    expect(
+      (await asMod.query(api.waterBodies.listReviewQueue, { reason: 'name-conflict' })).rows,
+    ).toHaveLength(0);
+    // A body with nothing wrong never enters the index at all — which is what keeps it small.
+    const counts = await asMod.query(api.waterBodies.reviewQueueCounts, {});
+    expect(counts['duplicate-candidate']).toMatchObject({ count: 1, capped: false });
+    expect(counts['class-conflict']).toMatchObject({ count: 1 });
+    expect(counts['same-source-duplicate']).toMatchObject({ count: 0 });
+  });
+
+  // The harm behind a name conflict is fixed the moment every claim is stored and searchable, so it
+  // is a curation list rather than a repair list — and 463 rows of optional work buried inside 2,010
+  // rows of repair is how a queue stops being opened.
+  test('separates advisory work from repair', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [queued('n', ['name-conflict'])],
+    });
+    const asMod = await seedUser(t, 'clerk_advisory_mod', 'moderator');
+    const counts = await asMod.query(api.waterBodies.reviewQueueCounts, {});
+    expect(counts['name-conflict']).toMatchObject({ count: 1, advisory: true });
+    expect(counts['class-conflict']).toMatchObject({ advisory: false });
+  });
+
+  test('a re-import that resolves the conflict takes the body out of the queue', async () => {
+    // `mergeFields` writes explicit `undefined`s so a re-import can CLEAR a value the new evidence no
+    // longer supports — the stored scalar has to follow the array, or the queue keeps a row nobody
+    // can act on.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [queued('r', ['class-conflict'])],
+    });
+    const asMod = await seedUser(t, 'clerk_resolve_mod', 'moderator');
+    expect(
+      (await asMod.query(api.waterBodies.listReviewQueue, { reason: 'class-conflict' })).rows,
+    ).toHaveLength(1);
+
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [queued('r', [])] });
+    expect(
+      (await asMod.query(api.waterBodies.listReviewQueue, { reason: 'class-conflict' })).rows,
+    ).toHaveLength(0);
+  });
+
+  test('is moderator-only', async () => {
+    const t = convexTestWithGeo();
+    const asMember = await seedUser(t, 'clerk_queue_member', 'member');
+    await expect(
+      asMember.query(api.waterBodies.listReviewQueue, { reason: 'class-conflict' }),
+    ).rejects.toThrow();
   });
 });

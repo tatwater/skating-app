@@ -29,6 +29,7 @@ import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
 import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
 import { Route as AdminWaterIndexRouteImport } from './routes/admin.water.index'
 import { Route as AdminUsersIndexRouteImport } from './routes/admin.users.index'
+import { Route as AdminWaterReviewRouteImport } from './routes/admin.water.review'
 import { Route as AdminWaterIdRouteImport } from './routes/admin.water.$id'
 import { Route as AdminUsersIdRouteImport } from './routes/admin.users.$id'
 import { Route as MapWaterIdRouteImport } from './routes/_map.water.$id'
@@ -135,6 +136,11 @@ const AdminUsersIndexRoute = AdminUsersIndexRouteImport.update({
   path: '/users/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminWaterReviewRoute = AdminWaterReviewRouteImport.update({
+  id: '/water/review',
+  path: '/water/review',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminWaterIdRoute = AdminWaterIdRouteImport.update({
   id: '/water/$id',
   path: '/water/$id',
@@ -190,6 +196,7 @@ export interface FileRoutesByFullPath {
   '/water/$id': typeof MapWaterIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
+  '/admin/water/review': typeof AdminWaterReviewRoute
   '/admin/users/': typeof AdminUsersIndexRoute
   '/admin/water/': typeof AdminWaterIndexRoute
 }
@@ -216,6 +223,7 @@ export interface FileRoutesByTo {
   '/water/$id': typeof MapWaterIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
+  '/admin/water/review': typeof AdminWaterReviewRoute
   '/admin/users': typeof AdminUsersIndexRoute
   '/admin/water': typeof AdminWaterIndexRoute
 }
@@ -245,6 +253,7 @@ export interface FileRoutesById {
   '/_map/water/$id': typeof MapWaterIdRoute
   '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
+  '/admin/water/review': typeof AdminWaterReviewRoute
   '/admin/users/': typeof AdminUsersIndexRoute
   '/admin/water/': typeof AdminWaterIndexRoute
 }
@@ -274,6 +283,7 @@ export interface FileRouteTypes {
     | '/water/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
+    | '/admin/water/review'
     | '/admin/users/'
     | '/admin/water/'
   fileRoutesByTo: FileRoutesByTo
@@ -300,6 +310,7 @@ export interface FileRouteTypes {
     | '/water/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
+    | '/admin/water/review'
     | '/admin/users'
     | '/admin/water'
   id:
@@ -328,6 +339,7 @@ export interface FileRouteTypes {
     | '/_map/water/$id'
     | '/admin/users/$id'
     | '/admin/water/$id'
+    | '/admin/water/review'
     | '/admin/users/'
     | '/admin/water/'
   fileRoutesById: FileRoutesById
@@ -487,6 +499,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminUsersIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/water/review': {
+      id: '/admin/water/review'
+      path: '/water/review'
+      fullPath: '/admin/water/review'
+      preLoaderRoute: typeof AdminWaterReviewRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/water/$id': {
       id: '/admin/water/$id'
       path: '/water/$id'
@@ -560,6 +579,7 @@ interface AdminRouteChildren {
   AdminIndexRoute: typeof AdminIndexRoute
   AdminUsersIdRoute: typeof AdminUsersIdRoute
   AdminWaterIdRoute: typeof AdminWaterIdRoute
+  AdminWaterReviewRoute: typeof AdminWaterReviewRoute
   AdminUsersIndexRoute: typeof AdminUsersIndexRoute
   AdminWaterIndexRoute: typeof AdminWaterIndexRoute
 }
@@ -574,6 +594,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminIndexRoute: AdminIndexRoute,
   AdminUsersIdRoute: AdminUsersIdRoute,
   AdminWaterIdRoute: AdminWaterIdRoute,
+  AdminWaterReviewRoute: AdminWaterReviewRoute,
   AdminUsersIndexRoute: AdminUsersIndexRoute,
   AdminWaterIndexRoute: AdminWaterIndexRoute,
 }

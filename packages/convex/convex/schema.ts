@@ -550,6 +550,19 @@ export default defineSchema({
      */
     reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
     /**
+     * The one reason this body is filed under — **stored because an array cannot be indexed** (N7).
+     *
+     * `reviewReasons` is what a moderator reads; this is what `/admin/water/review` ranges over.
+     * Convex has no index over array membership, and the alternative is scanning 25,136 rows to find
+     * ~2,000 — the read-cap failure N1 exists to have ended. Derived by `primaryReviewReason`, so a
+     * body that is both a duplicate and a name conflict is filed as the duplicate: the one a skater
+     * can see going wrong.
+     *
+     * Absent for a body with nothing to review, which is most of them, and which is what keeps the
+     * index small enough to page prominence-first.
+     */
+    reviewReason: v.optional(literals(REVIEW_REASONS)),
+    /**
      * The last import campaign that **re-affirmed** this body — campaign membership (N7 step 6).
      *
      * `importCanonical` upserts and never deletes, so after a re-import the corpus is the *union* of
@@ -780,6 +793,10 @@ export default defineSchema({
     // rows and nothing else: `undefined` sorts before every number, so unboosted bodies are excluded
     // by the range rather than filtered after the read.
     .index('by_curated_boost', ['curatedBoost'])
+    // **Reason first, then prominence**, so the queue opens on the lakes anybody has heard of. An
+    // `.eq()` on the reason never reads the rows that carry none — `undefined` sorts before every
+    // value, but an equality range simply does not include it, which is what makes this cheap.
+    .index('by_review_reason', ['reviewReason', 'displayScore'])
     .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
 
   // Which bodies the N6b contour tileset actually draws lines for (N6c-1 / D2).

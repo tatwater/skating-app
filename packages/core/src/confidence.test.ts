@@ -4,8 +4,12 @@ import {
   type AttributeClaim,
   type BodyConfidence,
   independentVoices,
+  isAdvisoryReviewReason,
   mergeReviewReasons,
   needsAttention,
+  primaryReviewReason,
+  REVIEW_REASON_PRIORITY,
+  REVIEW_REASONS,
   sameName,
   scorableClassClaims,
   scoreAttribute,
@@ -382,5 +386,37 @@ describe('GNIS is an authority but not a second opinion', () => {
   it('is still better than silence when nothing else names the body', () => {
     expect(scoreAttribute([c('gnis', 'Cicero Swamp')])).toBe('medium');
     expect(scoreAttribute([])).toBe('none');
+  });
+});
+
+describe('the queue ordering', () => {
+  it('files a body under the worst thing wrong with it', () => {
+    // A body that is both a duplicate and a name conflict renders as two lakes; the name is stored
+    // either way. So it is a duplicate first.
+    expect(primaryReviewReason(['name-conflict', 'duplicate-candidate'])).toBe(
+      'duplicate-candidate',
+    );
+    expect(primaryReviewReason(['class-conflict', 'bay-without-parent'])).toBe(
+      'bay-without-parent',
+    );
+  });
+
+  it('is undefined for a body with nothing to review, which is what keeps the index small', () => {
+    expect(primaryReviewReason(undefined)).toBeUndefined();
+    expect(primaryReviewReason([])).toBeUndefined();
+  });
+
+  // A reason missing from the priority list would file every body carrying it as `undefined` — i.e.
+  // silently out of the queue, which is the one failure a queue must not have.
+  it('ranks every reason there is', () => {
+    expect([...REVIEW_REASON_PRIORITY].sort()).toEqual([...REVIEW_REASONS].sort());
+    for (const reason of REVIEW_REASONS) expect(primaryReviewReason([reason])).toBe(reason);
+  });
+
+  it('marks only name-conflict advisory, because only it costs nothing', () => {
+    expect(isAdvisoryReviewReason('name-conflict')).toBe(true);
+    for (const reason of REVIEW_REASONS.filter((r) => r !== 'name-conflict')) {
+      expect(isAdvisoryReviewReason(reason)).toBe(false);
+    }
   });
 });

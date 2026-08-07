@@ -365,6 +365,64 @@ export const REVIEW_REASONS = [
 export type ReviewReason = (typeof REVIEW_REASONS)[number];
 
 /**
+ * The order a moderator should meet these in — **worst first, and "worst" means visible to a user**
+ * (N7, 2026-08-07).
+ *
+ * | | | |
+ * | --- | --- | --- |
+ * | `duplicate-candidate` | the corpus renders **two lakes where there is one** | search returns both |
+ * | `same-source-duplicate` | one catalogue carrying a lake twice | same, one layer up |
+ * | `bay-without-parent` | an arm of something, stored as `unclassified` | a wrong label |
+ * | `class-conflict` | the catalogues disagree about what kind of water it is | a wrong label |
+ * | `name-conflict` | two publishers, two names, **both stored and both searchable** | nothing |
+ *
+ * The top two are the only ones a skater can see going wrong. The bottom one, since `nameClaims`
+ * landed, costs nothing at all — which is why it is *advisory* rather than dropped: it is still the
+ * work list the `/admin/water/$id` name picker reads, and 463 rows of optional curation buried
+ * inside 2,010 rows of repair is how a queue stops being opened.
+ */
+export const REVIEW_REASON_PRIORITY: readonly ReviewReason[] = [
+  'duplicate-candidate',
+  'same-source-duplicate',
+  'bay-without-parent',
+  'class-conflict',
+  'name-conflict',
+];
+
+/**
+ * Reasons where nothing is *wrong* — the body is correct and could be better.
+ *
+ * `name-conflict` became advisory the moment every claim was stored and searchable: choosing which
+ * name displays is a preference, and the alternative is still findable either way. Kept in the queue
+ * rather than removed because the name picker needs a work list; separated from the rest because a
+ * moderator's first question is "what is broken", and a count that answers a different question is
+ * worse than no count.
+ */
+export const ADVISORY_REVIEW_REASONS: readonly ReviewReason[] = ['name-conflict'];
+
+export function isAdvisoryReviewReason(reason: ReviewReason): boolean {
+  return ADVISORY_REVIEW_REASONS.includes(reason);
+}
+
+/**
+ * The one reason this body is filed under — **a stored scalar, because an array cannot be indexed.**
+ *
+ * `reviewReasons` is what a moderator reads; this is what the queue query ranges over. Convex has no
+ * index over array membership, and the alternative — scanning 25,136 rows to find 2,010 — is the
+ * read-cap failure N1 exists to have ended. Highest-priority reason wins, so a body that is both a
+ * duplicate and a name conflict is filed as the duplicate, which is the one that renders wrong.
+ *
+ * `undefined` for a body with nothing to review, which is most of them, and which is what keeps the
+ * index small.
+ */
+export function primaryReviewReason(
+  reasons: readonly ReviewReason[] | undefined,
+): ReviewReason | undefined {
+  if (reasons === undefined || reasons.length === 0) return undefined;
+  return REVIEW_REASON_PRIORITY.find((r) => reasons.includes(r));
+}
+
+/**
  * Does this body need a human before it ships?
  *
  * Two triggers that are **not** confidence scores, because they are structural rather than

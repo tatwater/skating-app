@@ -30,6 +30,7 @@ import {
   distinctNameClaims,
   haversineMeters,
   type IdMatch,
+  isAdvisoryReviewReason,
   isKnownStateCode,
   isMinor,
   isPlausibleElevationM,
@@ -37,8 +38,6 @@ import {
   isWetlandClass,
   KNOWN_STATE_CODES,
   type LatLng,
-  LEGACY_TYPE_TO_CLASS,
-  type LegacyWaterBodyType,
   MAX_PLAUSIBLE_DEPTH_M,
   MAX_SUGGESTED_SAMPLE_POINTS,
   MIN_FETCH_CLAUSE_M,
@@ -52,7 +51,9 @@ import {
   pointInPolygon,
   polygonBBox,
   polygonIoU,
+  primaryReviewReason,
   REVIEW_REASONS,
+  type ReviewReason,
   resolveUpsert,
   searchTextFor,
   WATER_BODY_CLASSES,
@@ -315,6 +316,9 @@ function mergeFields(item: {
     inRegionFraction: item.inRegionFraction,
     confidence: item.confidence as Doc<'waterBodies'>['confidence'],
     reviewReasons: item.reviewReasons as Doc<'waterBodies'>['reviewReasons'],
+    // Derived here rather than sent, so the stored scalar cannot disagree with the array it indexes
+    // — two spellings of one fact is how a queue starts missing rows nothing can see are missing.
+    reviewReason: primaryReviewReason(item.reviewReasons as ReviewReason[] | undefined),
   };
 }
 // ⚠ `nameClaims` is deliberately NOT here. It belongs to `nameFields`, which merges the incoming
@@ -2840,6 +2844,92 @@ export const setDepth = mutation({
       createdAt: Date.now(),
     });
     return waterBodyId;
+  },
+});
+
+/** Rows per page of the review queue. Bodies carry polygons, so the byte cap binds before the doc cap. */
+const REVIEW_QUEUE_PAGE = 40;
+/**
+ * How many rows per reason the counter will read before giving up and saying "more".
+ *
+ * **A cap, stated rather than hidden.** An exact total means reading every queued row *with its
+ * polygon* on every page load, which is the shape of read-cap failure this codebase keeps meeting.
+ * `200+` is as useful to a moderator as `2,010` and costs a bounded read — but it is reported as
+ * `capped: true` rather than as a number that quietly stops growing, because a count that silently
+ * plateaus reads as progress.
+ */
+const REVIEW_COUNT_CAP = 200;
+
+/**
+ * The review queue — **2,010 rows that were stored and shown to nobody** (N7).
+ *
+ * `confidence.ts` scored every body, `merge.ts` wrote the reasons onto the rows, and there the trail
+ * ended: the first intake audit found the queue computed and discarded, and fixing that stored it
+ * without ever giving it a surface. This is the surface.
+ *
+ * **Prominence-ordered inside each reason** (`by_review_reason` is `['reviewReason', 'displayScore']`),
+ * because a queue that opens on an unnamed four-acre pond is one nobody finishes. Descending, so
+ * Champlain-scale bodies come first.
+ */
+export const listReviewQueue = query({
+  args: {
+    reason: literals(REVIEW_REASONS),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, { reason, cursor }) => {
+    await requireContributorRole(ctx, 'moderator');
+    const page = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_review_reason', (q) => q.eq('reviewReason', reason))
+      .order('desc')
+      .paginate({ cursor: cursor ?? null, numItems: REVIEW_QUEUE_PAGE });
+    return {
+      rows: page.page.map((b) => ({
+        _id: b._id,
+        name: b.name,
+        type: b.type,
+        states: b.states ?? [],
+        acres: Math.round((b.sourceAreaSqM ?? b.surfaceAreaSqM ?? 0) / SQ_M_PER_ACRE_LOCAL),
+        reviewReasons: b.reviewReasons ?? [],
+        // What the moderator is actually adjudicating, so the row is decidable without a click:
+        // the competing names for a name conflict, the catalogues present for a class one.
+        nameClaims: b.nameClaims ?? [],
+        confidence: b.confidence,
+        osmId: b.osmId,
+        nhdId: b.nhdId,
+      })),
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/**
+ * How much is left, per reason — **capped, and honest about being capped**.
+ *
+ * Split from the list because the two answer different questions and want different budgets: the
+ * list pages 40 rows, this touches up to `REVIEW_COUNT_CAP` per reason so a moderator can see where
+ * the work is without loading it.
+ */
+export const reviewQueueCounts = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireContributorRole(ctx, 'moderator');
+    const counts: Record<string, { count: number; capped: boolean; advisory: boolean }> = {};
+    for (const reason of REVIEW_REASONS) {
+      const rows = await ctx.db
+        .query('waterBodies')
+        .withIndex('by_review_reason', (q) => q.eq('reviewReason', reason))
+        .take(REVIEW_COUNT_CAP + 1);
+      counts[reason] = {
+        count: Math.min(rows.length, REVIEW_COUNT_CAP),
+        capped: rows.length > REVIEW_COUNT_CAP,
+        // Separated at the source rather than in the UI: "what is broken" and "what could be better"
+        // are different questions, and one number answering both is what made 2,010 unopenable.
+        advisory: isAdvisoryReviewReason(reason),
+      };
+    }
+    return counts;
   },
 });
 
