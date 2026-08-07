@@ -94,6 +94,16 @@ export interface CanonicalBody {
    */
   reviewReasons?: string[];
   /**
+   * **Every publisher's name for this water, the losers included** (N7).
+   *
+   * `chooseName` stores one by authority (`gnis > nhd > 3dhp > osm`) and, until now, the merge threw
+   * the rest away — which cost 463 bodies their local name and left them unsearchable under it, the
+   * fixture being Auburn's water supply stored as NHD's `The Basin` while OSM calls it `Lake
+   * Auburn`. The claims carry their source because that is what a moderator picking between them
+   * needs to know, and because a moderator's own choice is stored as one with `source: 'user'`.
+   */
+  nameClaims?: { source: string; value: string }[];
+  /**
    * A point genuinely inside the water (N6c) — see `waterBodies.interiorPoint`. Absent only when
    * the geometry has no locatable interior, which is a body the transform is about to skip anyway.
    */

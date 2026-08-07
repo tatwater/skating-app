@@ -66,6 +66,7 @@ import {
   isFreshwaterException,
   type Merged,
   mergeGroupWithReason,
+  nameClaimsOf,
   nameMatchPairs,
   overlapDuplicates,
   polygonClaims,
@@ -94,6 +95,8 @@ export type KeptBody = Merged & {
   gnisIdFromGazetteer?: string | undefined;
   /** Other kept bodies this one overlaps — the duplicate sweep's finding. */
   duplicateOf?: string[] | undefined;
+  /** Every publisher's name for this water, winner first — see `nameClaimsOf`. */
+  nameClaims: { source: ClaimSource; value: string }[];
 };
 
 /**
@@ -613,6 +616,9 @@ export function buildMasterList(input: MasterListInput): MasterList {
       // Filled in after the sweep below, which needs the whole surviving set.
       reviewReasons: [],
       gnisIdFromGazetteer,
+      // The losing names, kept. `namedByGnis` rather than `name`, so the gazetteer is only credited
+      // where it actually supplied the name rather than where it merely agreed with a catalogue.
+      nameClaims: nameClaimsOf(group.members, namedByGnis ? name : undefined),
       inRegionFraction: inRegionFraction(group, boundaryGrid),
     });
     pending.set(group.key, {
@@ -750,6 +756,7 @@ export function emitCanonicalBodies(
           inRegionFraction: k.inRegionFraction,
           confidence: k.confidence as never,
           reviewReasons: k.reviewReasons,
+          nameClaims: k.nameClaims,
           ...catalogueIdsOf(k.members, k.gnisIdFromGazetteer),
         }),
       );

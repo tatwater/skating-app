@@ -26,6 +26,7 @@ import {
   representativePoint,
   SUB_AREA_CLIP_MESSAGES,
   SUB_AREA_MIN_RENDER_ZOOM,
+  searchTextFor,
   smallestContainingSubArea,
   surfaceAreaSqM,
 } from '@skating/core';
@@ -62,13 +63,14 @@ const SEED_MIN_RETAINED_FRACTION = 0.35;
 const RESTAMP_TABLES = ['reports', 'hazards'] as const;
 type RestampTable = (typeof RESTAMP_TABLES)[number];
 
-/** `[name, ...aliases]` as the one searchable string — Convex search indexes a single field. */
-export function subAreaSearchText(name: string, aliases: readonly string[] | undefined): string {
-  return [name, ...(aliases ?? [])]
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .join(' ');
-}
+/**
+ * `[name, ...aliases]` as the one searchable string — Convex search indexes a single field.
+ *
+ * **Now `@skating/core`'s `searchTextFor`, because `waterBodies` needs the same join** (N7). Kept as
+ * a named re-export rather than replaced at four call sites: the name says which table it is for,
+ * and two tables silently sharing a rule is worth one line to make visible.
+ */
+export const subAreaSearchText = searchTextFor;
 
 /** Trim, drop blanks, dedupe case-insensitively, and keep the operator's casing for the survivor. */
 function normalizeAliases(aliases: readonly string[] | undefined): string[] {

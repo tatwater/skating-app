@@ -11,9 +11,11 @@
  */
 
 import {
+  aliasesFor,
   bboxIntersects,
   belongsInCorpus,
   bodiesCoveringPoint,
+  CLAIM_SOURCES,
   CONFIDENCE_LEVELS,
   canOverwriteElevation,
   classifyDedup,
@@ -24,6 +26,7 @@ import {
   type DedupShape,
   type DepthSource,
   displayScore,
+  distinctNameClaims,
   haversineMeters,
   type IdMatch,
   isKnownStateCode,
@@ -41,6 +44,7 @@ import {
   MIN_VISIBLE_ZOOM_FLOOR,
   matchDepthSource,
   minVisibleZoom,
+  type NameClaim,
   nearestBodyForPoint,
   type ProfileRichness,
   pathToBody,
@@ -49,6 +53,7 @@ import {
   polygonIoU,
   REVIEW_REASONS,
   resolveUpsert,
+  searchTextFor,
   WATER_BODY_CLASSES,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
@@ -244,6 +249,8 @@ const canonicalBody = v.object({
   ),
   /** Why this body wants a human (D110). Empty is normal and is omitted rather than stored. */
   reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
+  /** Every publisher's name for this water, winner included — see the schema note on `nameClaims`. */
+  nameClaims: v.optional(v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() }))),
   // A genuinely-interior point + the D85 shape stats, measured by the ETL on the source geometry
   // before it was simplified. All optional: a body whose geometry defeats one of them still loads.
   interiorPoint: v.optional(latLng),
@@ -307,6 +314,45 @@ function mergeFields(item: {
     inRegionFraction: item.inRegionFraction,
     confidence: item.confidence as Doc<'waterBodies'>['confidence'],
     reviewReasons: item.reviewReasons as Doc<'waterBodies'>['reviewReasons'],
+  };
+}
+// ⚠ `nameClaims` is deliberately NOT here. It belongs to `nameFields`, which merges the incoming
+// claims with a moderator's stored pick — and both are spread into the same patch object, with
+// `mergeFields` *after*. A copy here would win that spread and silently discard the override on
+// every re-import, which is precisely the failure `nameFields` exists to prevent.
+
+/**
+ * The stored name and the string search covers — **and a moderator's choice outranks the import.**
+ *
+ * `importCanonical` overwrites `name` on every touch, which is right for a value the catalogues own.
+ * It is wrong the moment a human has picked between them: `/admin/water/$id` lets a moderator choose
+ * `Lake Auburn` over NHD's `The Basin`, and a rule that re-imposed the authority ranking next
+ * campaign would undo that choice silently, every campaign, for ever. Exactly the shape of the
+ * `curatedBoost` and depth-override rules already in this file.
+ *
+ * The choice is recorded as a `nameClaims` entry with `source: 'user'`, so it needs no second column
+ * and no flag to keep in step — **the override is the evidence**. `NAME_SOURCE_RANK` already ranks
+ * `user` above every catalogue.
+ *
+ * `searchText` is rebuilt from whichever name wins plus every other claim, so a moderator's pick
+ * changes what is *displayed* and never what is *findable*. Losing a name to a preference would be
+ * the same outage this whole field exists to end.
+ */
+function nameFields(
+  existing: Doc<'waterBodies'> | undefined,
+  item: { name: string; nameClaims?: { source: string; value: string }[] },
+) {
+  const claims = distinctNameClaims([
+    // A moderator's pick first, so it survives and so it wins the dedupe against the same string
+    // arriving from a catalogue.
+    ...((existing?.nameClaims ?? []).filter((c) => c.source === 'user') as NameClaim[]),
+    ...((item.nameClaims ?? []) as NameClaim[]),
+  ]);
+  const chosen = claims.find((c) => c.source === 'user')?.value ?? item.name;
+  return {
+    name: chosen,
+    nameClaims: claims.length > 0 ? claims : undefined,
+    searchText: searchTextFor(chosen, aliasesFor(claims, chosen)),
   };
 }
 
@@ -589,7 +635,9 @@ export const importCanonical = internalMutation({
           curatedBoost: existing.curatedBoost,
         });
         await ctx.db.patch(existing._id, {
-          name: item.name,
+          // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
+          // import and the three must never disagree. See `nameFields`.
+          ...nameFields(existing, item),
           type: item.type,
           // **`source` is deliberately NOT patched, and it is not the same question as
           // `geometrySource`** (second audit, 2026-08-06 — noted because this was "fixed" and then
@@ -663,7 +711,7 @@ export const importCanonical = internalMutation({
         const now = Date.now();
         const scores = scoreFields({ surfaceAreaSqM: item.surfaceAreaSqM }); // no boost on import
         const id = await ctx.db.insert('waterBodies', {
-          name: item.name,
+          ...nameFields(undefined, item),
           type: item.type,
           source: item.source,
           externalId: item.externalId,
@@ -1052,6 +1100,61 @@ export const backfillWaterBodyClasses = internalMutation({
       alreadyMigrated,
       unmappable,
       byMapping,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/**
+ * Fill `searchText` on the rows written before it existed — **step 3 of 4** (N7).
+ *
+ * The order is the one `type` had to follow and for the same reason: Convex validates existing
+ * documents on push, so `searchText` ships **optional**, this fills it, and only then does
+ * `search_name` move off `name` onto it. Flipping the index first would take search down for every
+ * row this has not reached yet — 25,136 of them at the moment it deployed.
+ *
+ * Idempotent and re-runnable: a row whose `searchText` already matches what it should be is skipped,
+ * so this can chase the loader rather than racing it.
+ */
+export const backfillSearchText = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    /** Actually write. Absent / false ⇒ count only, the same dry-by-default rule the prunes use. */
+    apply: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { cursor, batchSize, apply }) => {
+    // A body carries its polygon, so the byte cap binds long before the document cap.
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    let written = 0;
+    let alreadyCorrect = 0;
+    let withAliases = 0;
+
+    for (const body of page.page) {
+      const claims = distinctNameClaims((body.nameClaims ?? []) as NameClaim[]);
+      const aliases = aliasesFor(claims, body.name);
+      const searchText = searchTextFor(body.name, aliases);
+      if (aliases.length > 0) withAliases++;
+      if (body.searchText === searchText) {
+        alreadyCorrect++;
+        continue;
+      }
+      if (apply === true) await ctx.db.patch(body._id, { searchText });
+      written++;
+    }
+
+    return {
+      applied: apply === true,
+      scanned: page.page.length,
+      written,
+      alreadyCorrect,
+      // Zero until the merge has re-run and actually emitted claims — which is the point of
+      // reporting it: a backfill that says "0 with aliases" after the re-import means the ETL half
+      // never landed, and that is otherwise invisible until someone searches for a lost name.
+      withAliases,
       cursor: page.continueCursor,
       isDone: page.isDone,
     };

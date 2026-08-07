@@ -13,6 +13,7 @@
  */
 
 import {
+  CLAIM_SOURCES,
   CONDITION_SOURCES,
   CONFIDENCE_LEVELS,
   DEPTH_SOURCES,
@@ -357,6 +358,31 @@ export default defineSchema({
 
   waterBodies: defineTable({
     name: v.string(),
+    /**
+     * **Every name a publisher gave this water, including the ones that lost** (N7).
+     *
+     * `name` is chosen by authority — `gnis > nhd > 3dhp > osm` — and that rule costs **463 bodies**
+     * their local name. Auburn, Maine's water supply is stored as `The Basin` because that is NHD's
+     * `gnis_name`, while OSM calls it `Lake Auburn`; with a search index over `name` alone, typing
+     * "Lake Auburn" found nothing. The losing name was in the merge the whole time.
+     *
+     * **Claims, not strings, because the source is the content of the decision.** A moderator
+     * choosing between the two needs to know one is a gazetteer entry and the other a mapper's free
+     * text — `/admin/water/$id`'s name picker reads exactly this. A moderator's own alias is a claim
+     * with `source: 'user'`, which is why there is one field here and not two.
+     */
+    nameClaims: v.optional(
+      v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() })),
+    ),
+    /**
+     * `[name, ...aliases]` joined — **the field the search index actually covers.**
+     *
+     * Denormalised on every name write, never set by a client, same shape and same
+     * `@skating/core`'s `searchTextFor` as `waterBodySubAreas`. Optional only because 25,136 rows
+     * predate it: Convex validates existing documents on push, so this ships optional, gets
+     * backfilled, and the search index moves off `name` after — widen, deploy, backfill, narrow.
+     */
+    searchText: v.optional(v.string()),
     /**
      * What kind of water this is (D109 amendment) — **mid-migration, and this union is the migration.**
      *

@@ -707,6 +707,99 @@ describe('waterBodies.listInViewport (the ladder-grid read path, D5/N1)', () => 
   });
 });
 
+describe('waterBodies name claims and searchText (N7)', () => {
+  /** Auburn's own water supply: NHD's `gnis_name` is "The Basin", OSM says "Lake Auburn". */
+  const AUBURN = {
+    ...CANONICAL_ITEM,
+    name: 'The Basin',
+    nameClaims: [
+      { source: 'nhd' as const, value: 'The Basin' },
+      { source: 'osm' as const, value: 'Lake Auburn' },
+    ],
+  };
+
+  test('keeps the losing name, so the lake stays findable under it', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
+    const body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.name).toBe('The Basin');
+    // The whole point: the string search covers is not the stored name.
+    expect(body?.searchText).toBe('The Basin Lake Auburn');
+  });
+
+  // The rule the depth override and `curatedBoost` already follow: a human's decision is not
+  // something the next campaign gets to undo. Without this, re-imposing the authority ranking would
+  // silently revert the moderator's pick every campaign, for ever.
+  test('a moderator pick outranks the import and survives a re-import', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
+    const bodyId = await onlyBodyId(t);
+
+    // The picker's write, as `/admin/water/$id` makes it.
+    await t.run((ctx) =>
+      ctx.db.patch(bodyId, {
+        name: 'Lake Auburn',
+        nameClaims: [
+          { source: 'user', value: 'Lake Auburn' },
+          { source: 'nhd', value: 'The Basin' },
+        ],
+      }),
+    );
+
+    // The very same catalogue record arrives again, still insisting on "The Basin".
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
+    const after = await t.run((ctx) => ctx.db.get(bodyId));
+    expect(after?.name).toBe('Lake Auburn');
+    // …and the refused name is still searchable, because a display preference must not cost a name.
+    expect(after?.searchText).toBe('Lake Auburn The Basin');
+    expect(after?.nameClaims?.[0]).toEqual({ source: 'user', value: 'Lake Auburn' });
+  });
+
+  test('a body every publisher agrees on carries no aliases at all', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          name: 'Long Pond',
+          nameClaims: [
+            { source: 'nhd' as const, value: 'Long Pond' },
+            { source: 'osm' as const, value: 'Long Pond' },
+          ],
+        },
+      ],
+    });
+    const body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.searchText).toBe('Long Pond');
+    expect(body?.nameClaims).toEqual([{ source: 'nhd', value: 'Long Pond' }]);
+  });
+
+  test('backfillSearchText fills a pre-field row and is idempotent', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
+    const bodyId = await onlyBodyId(t);
+    await t.run((ctx) => ctx.db.patch(bodyId, { searchText: undefined }));
+
+    // Dry by default — the scope is readable before it moves, like every other prune and backfill.
+    expect(await t.mutation(internal.waterBodies.backfillSearchText, {})).toMatchObject({
+      applied: false,
+      written: 1,
+      withAliases: 1,
+    });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.searchText).toBeUndefined();
+
+    expect(
+      await t.mutation(internal.waterBodies.backfillSearchText, { apply: true }),
+    ).toMatchObject({ applied: true, written: 1, isDone: true });
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.searchText).toBe('The Basin Lake Auburn');
+
+    // Re-running costs reads and no writes, so it can chase the loader rather than race it.
+    expect(
+      await t.mutation(internal.waterBodies.backfillSearchText, { apply: true }),
+    ).toMatchObject({ written: 0, alreadyCorrect: 1 });
+  });
+});
+
 describe('waterBodies.backfillRepresentativePoint (the centroid rename transition)', () => {
   test('fills the new field from the old one, and is idempotent', async () => {
     // The rename cannot be atomic: Convex validates the schema against existing data on push, and

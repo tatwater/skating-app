@@ -33,6 +33,7 @@ import {
   classifyThreeDhp,
   classifyWaterBody,
   distanceToPolygonMeters,
+  distinctNameClaims,
   exceedsAreaCeiling,
   expandBBox,
   HARD_MIN_SURFACE_AREA_SQM,
@@ -450,6 +451,35 @@ export function chooseName(members: readonly Feature[]): string {
     if (delta < 0 || (delta === 0 && m.name.length > best.name.length)) best = m;
   }
   return best?.name ?? '';
+}
+
+/**
+ * Every publisher's name for a group, **in authority order** — the winner and the losers alike (N7).
+ *
+ * `chooseName` returns one string and the rest used to be dropped on the floor. That cost 463 bodies
+ * their local name and made them unfindable under it: Auburn's water supply is stored as NHD's
+ * `The Basin` while OSM — and every skater — calls it `Lake Auburn`.
+ *
+ * **Sorted by `NAME_SOURCE_RANK`, because `distinctNameClaims` keeps the first source it sees for a
+ * given spelling.** Hand it member order and a spelling both NHD and 3DHP publish would be credited
+ * to whichever feature happened to be first in the group, which is grid iteration order — the same
+ * nondeterminism `chooseName`'s own rank exists to remove.
+ *
+ * The gazetteer name is appended as a `gnis` claim rather than merged into a member, because it has
+ * no member to belong to: it is what `resolveGnisNames` supplied for a body no catalogue named.
+ */
+export function nameClaimsOf(
+  members: readonly Feature[],
+  gnisName?: string | undefined,
+): { source: ClaimSource; value: string }[] {
+  const claims: { source: ClaimSource; value: string }[] = members
+    .filter((m) => m.name.length > 0)
+    .map((m) => ({ source: m.source, value: m.name }));
+  if (gnisName !== undefined && gnisName.length > 0)
+    claims.push({ source: 'gnis', value: gnisName });
+  return distinctNameClaims(
+    claims.sort((a, b) => NAME_SOURCE_RANK[a.source] - NAME_SOURCE_RANK[b.source]),
+  );
 }
 
 /**

@@ -46,6 +46,7 @@ import {
   mergeGroup,
   mergeGroupWithReason,
   NAME_MATCH_MIN_IOU,
+  nameClaimsOf,
   nameMatchPairs,
   outerRings,
   overlapDuplicates,
@@ -326,6 +327,72 @@ describe('name selection', () => {
 
   it('is empty when nobody named it — the 92% case', () => {
     expect(chooseName([feature('osm', 'a'), feature('nhd', 'b')])).toBe('');
+  });
+});
+
+describe('nameClaimsOf', () => {
+  // Auburn's own water supply, and the fixture for the whole change: NHD's `gnis_name` is
+  // "The Basin", OSM calls it "Lake Auburn", authority stores the former — and until the losing
+  // claim was kept, a skater typing "Lake Auburn" found nothing at all.
+  it('keeps the losing name beside the winning one', () => {
+    expect(
+      nameClaimsOf([
+        feature('osm', 'a', { name: 'Lake Auburn' }),
+        feature('nhd', 'b', { name: 'The Basin' }),
+      ]),
+    ).toEqual([
+      { source: 'nhd', value: 'The Basin' },
+      { source: 'osm', value: 'Lake Auburn' },
+    ]);
+  });
+
+  // The reason this sorts before deduping. `distinctNameClaims` keeps the FIRST source it sees for a
+  // spelling, so member order would credit a name both federal lanes publish to whichever feature
+  // the union-find happened to put first — grid iteration order, which is the exact nondeterminism
+  // `NAME_SOURCE_RANK` was introduced to remove from `chooseName`.
+  it('credits a shared spelling to the most authoritative source, whatever the input order', () => {
+    const members = [
+      feature('3dhp', 'a', { name: 'Long Pond' }),
+      feature('nhd', 'b', { name: 'Long Pond' }),
+    ];
+    expect(nameClaimsOf(members)).toEqual([{ source: 'nhd', value: 'Long Pond' }]);
+    expect(nameClaimsOf([...members].reverse())).toEqual([{ source: 'nhd', value: 'Long Pond' }]);
+  });
+
+  it('appends the gazetteer name as a gnis claim, ranked first', () => {
+    // It has no member to belong to: it is what `resolveGnisNames` supplied for a body no catalogue
+    // named, and the ordering rule still has to place it.
+    expect(nameClaimsOf([feature('osm', 'a', { name: 'The Bog' })], 'Cicero Swamp')).toEqual([
+      { source: 'gnis', value: 'Cicero Swamp' },
+      { source: 'osm', value: 'The Bog' },
+    ]);
+  });
+
+  it('ignores a gazetteer name that was not used', () => {
+    expect(nameClaimsOf([feature('osm', 'a', { name: 'Mud Pond' })], undefined)).toEqual([
+      { source: 'osm', value: 'Mud Pond' },
+    ]);
+    expect(nameClaimsOf([feature('osm', 'a', { name: 'Mud Pond' })], '')).toEqual([
+      { source: 'osm', value: 'Mud Pond' },
+    ]);
+  });
+
+  it('is empty for the 92% of bodies nobody named', () => {
+    expect(nameClaimsOf([feature('osm', 'a'), feature('nhd', 'b')])).toEqual([]);
+  });
+
+  // Two OSM features in one `sameSourceDuplicate` group can carry two real spellings, and both are
+  // worth searching under — this is not the same question as which one displays.
+  it('keeps two spellings from one catalogue', () => {
+    expect(
+      nameClaimsOf([
+        feature('osm', 'a', { name: 'Moose Pond' }),
+        feature('osm', 'b', { name: 'Little Moose Pond' }),
+      ]),
+    ).toEqual([
+      { source: 'osm', value: 'Moose Pond' },
+      { source: 'osm', value: 'Little Moose Pond' },
+    ]);
   });
 });
 
