@@ -209,6 +209,11 @@ export const MODERATION_ACTIONS = [
   // mechanism nobody can check, and this one is meant to be watched before it is trusted.
   'merge_hazards',
   'unmerge_hazards',
+  // A flagged duplicate group a moderator judged to be distinct bodies (D36, N7 review queue). The
+  // counterpart to `merge_waterbody`, and the reason the queue has an outcome other than "yes": a
+  // `same-source-duplicate` group can be two real lakes our matching chained together, and without a
+  // recorded "no" the only way to clear the card was to merge them.
+  'dismiss_duplicate',
   // A cross-season pattern a moderator judged not to be one (N5c / §7.3) — three pins in one cove
   // across three winters that are three people misreading the same shadow. Never a delete: the
   // cluster stops being suggested and stops being publicly advisable, and the reason stays readable.

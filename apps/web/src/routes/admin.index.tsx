@@ -53,8 +53,10 @@ function AdminDashboard() {
         />
         <StatTile
           label="Dedup candidates"
-          value={dedup ? dedup.length : '—'}
-          hint="suspected duplicates"
+          value={dedup ? dedup.total : '—'}
+          // Decisions, not flagged rows — reconciliation flags both ends of every pair, so the row
+          // count is double the work and the tile would read as twice the backlog that exists.
+          hint={dedup ? `${dedup.flaggedRows} flagged rows` : 'suspected duplicates'}
         />
       </div>
 

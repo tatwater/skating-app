@@ -6,6 +6,7 @@ import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import type { MutationCtx } from './_generated/server';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -209,52 +210,173 @@ describe('support.list (admin-only inbox, D37 PII)', () => {
   });
 });
 
+/**
+ * The dedup queue (D36, regrouped for the N7 corpus).
+ *
+ * Every test here is about the queue being **one card per decision**. The reconciliation pass flags
+ * both ends of a duplicate group, so a queue that counts rows shows a moderator twice as much work
+ * as exists, in pairs they cannot tell apart — and, before the flag-clearing below, half of those
+ * cards could never be cleared at all.
+ */
 describe('waterBodies.listDedupCandidates (D36 queue)', () => {
-  test('returns suspected duplicates with resolved candidate names; empty otherwise', async () => {
+  const poly = {
+    type: 'Polygon' as const,
+    coordinates: [
+      [
+        [0, 0],
+        [0, 1],
+        [1, 1],
+        [1, 0],
+        [0, 0],
+      ],
+    ],
+  };
+  const bbox = { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 };
+  const centroid = { lat: 0.5, lng: 0.5 };
+
+  type NewBody = Omit<Doc<'waterBodies'>, '_id' | '_creationTime'>;
+  const seedBody = (ctx: MutationCtx, doc: Partial<NewBody> & Pick<NewBody, 'name'>) =>
+    ctx.db.insert('waterBodies', {
+      type: 'lakePond',
+      source: 'osm',
+      polygon: poly,
+      bbox,
+      centroid,
+      dedupStatus: 'clean',
+      createdAt: Date.now(),
+      ...doc,
+    });
+
+  test('returns one group per decision, naming a clean candidate that carries no flag of its own', async () => {
     const t = harness();
     await seedProfile(t, 'mod', { role: 'moderator' });
-    const poly = {
-      type: 'Polygon' as const,
-      coordinates: [
-        [
-          [0, 0],
-          [0, 1],
-          [1, 1],
-          [1, 0],
-          [0, 0],
-        ],
-      ],
-    };
-    const bbox = { minLat: 0, minLng: 0, maxLat: 1, maxLng: 1 };
-    const centroid = { lat: 0.5, lng: 0.5 };
     const { dup, survivor } = await t.run(async (ctx) => {
-      const survivor = await ctx.db.insert('waterBodies', {
-        name: 'Official Pond',
-        type: 'lakePond',
-        source: 'osm',
-        polygon: poly,
-        bbox,
-        centroid,
-        dedupStatus: 'clean',
-        createdAt: Date.now(),
-      });
-      const dup = await ctx.db.insert('waterBodies', {
+      const survivor = await seedBody(ctx, { name: 'Official Pond' });
+      const dup = await seedBody(ctx, {
         name: 'Pond (user drawn)',
-        type: 'lakePond',
         source: 'user',
-        polygon: poly,
-        bbox,
-        centroid,
         dedupStatus: 'suspected_duplicate',
         duplicateCandidateIds: [survivor],
-        createdAt: Date.now(),
       });
       return { dup, survivor };
     });
 
     const queue = await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {});
-    expect(queue).toHaveLength(1);
-    expect(queue[0]?.body._id).toBe(dup);
-    expect(queue[0]?.candidates).toEqual([{ id: survivor, name: 'Official Pond' }]);
+    expect(queue.total).toBe(1);
+    expect(queue.flaggedRows).toBe(1);
+    expect(queue.groups[0]?.members.map((m) => m._id).sort()).toEqual([dup, survivor].sort());
+    // The heavy fields never ride the list payload — that's what `getDedupGroup` is for.
+    expect(queue.groups[0]?.members[0]).not.toHaveProperty('polygon');
+  });
+
+  test('folds a mutually-flagged pair into ONE card, not two', async () => {
+    const t = harness();
+    await seedProfile(t, 'mod', { role: 'moderator' });
+    await t.run(async (ctx) => {
+      const a = await seedBody(ctx, { name: 'Duncan Lake', dedupStatus: 'near_certain' });
+      const b = await seedBody(ctx, { name: 'Duncan Lake', dedupStatus: 'near_certain' });
+      await ctx.db.patch(a, { duplicateCandidateIds: [b] });
+      await ctx.db.patch(b, { duplicateCandidateIds: [a] });
+    });
+
+    const queue = await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {});
+    expect(queue.total).toBe(1);
+    expect(queue.flaggedRows).toBe(2);
+    expect(queue.groups[0]?.members).toHaveLength(2);
+  });
+
+  test('a merge clears the flag at the other end, so the card cannot come back forever', async () => {
+    const t = harness();
+    await seedProfile(t, 'mod', { role: 'moderator' });
+    const { a, b } = await t.run(async (ctx) => {
+      const a = await seedBody(ctx, { name: 'Lovell Lake', dedupStatus: 'near_certain' });
+      const b = await seedBody(ctx, { name: 'Lovell Lake', dedupStatus: 'near_certain' });
+      await ctx.db.patch(a, { duplicateCandidateIds: [b] });
+      await ctx.db.patch(b, { duplicateCandidateIds: [a] });
+      return { a, b };
+    });
+
+    await as(t, 'mod').mutation(api.waterBodies.merge, { survivorId: a, loserId: b });
+
+    const survivor = await t.run((ctx) => ctx.db.get(a));
+    expect(survivor?.dedupStatus).toBe('clean');
+    expect(survivor?.duplicateCandidateIds).toBeUndefined();
+    const queue = await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {});
+    expect(queue.total).toBe(0);
+  });
+
+  test('a survivor with another live candidate stays flagged after a merge', async () => {
+    const t = harness();
+    await seedProfile(t, 'mod', { role: 'moderator' });
+    const { a, b } = await t.run(async (ctx) => {
+      const a = await seedBody(ctx, { name: 'Mud Pond', dedupStatus: 'near_certain' });
+      const b = await seedBody(ctx, { name: 'Mud Pond', dedupStatus: 'near_certain' });
+      const c = await seedBody(ctx, { name: 'Mud Pond', dedupStatus: 'near_certain' });
+      await ctx.db.patch(a, { duplicateCandidateIds: [b, c] });
+      await ctx.db.patch(b, { duplicateCandidateIds: [a, c] });
+      await ctx.db.patch(c, { duplicateCandidateIds: [a, b] });
+      return { a, b };
+    });
+
+    await as(t, 'mod').mutation(api.waterBodies.merge, { survivorId: a, loserId: b });
+
+    const survivor = await t.run((ctx) => ctx.db.get(a));
+    expect(survivor?.dedupStatus).toBe('near_certain');
+    expect(survivor?.duplicateCandidateIds).toHaveLength(1);
+  });
+
+  test('dismissing a group clears both flags, leaves both bodies standing, and is audited', async () => {
+    const t = harness();
+    await seedProfile(t, 'mod', { role: 'moderator' });
+    const { a, b } = await t.run(async (ctx) => {
+      const a = await seedBody(ctx, { name: 'North Bay', dedupStatus: 'near_certain' });
+      const b = await seedBody(ctx, { name: 'Moosehead Lake', dedupStatus: 'near_certain' });
+      await ctx.db.patch(a, { duplicateCandidateIds: [b] });
+      await ctx.db.patch(b, { duplicateCandidateIds: [a] });
+      return { a, b };
+    });
+
+    const cleared = await as(t, 'mod').mutation(api.waterBodies.dismissDuplicates, {
+      waterBodyIds: [a, b],
+      reason: 'A bay and its parent, not a duplicate',
+    });
+
+    expect(cleared).toBe(2);
+    const rows = await t.run(async (ctx) => [await ctx.db.get(a), await ctx.db.get(b)]);
+    expect(rows.map((r) => r?.dedupStatus)).toEqual(['clean', 'clean']);
+    // Not a delete: both rows survive with their merge pointers untouched.
+    expect(rows.every((r) => r?.mergedIntoId === undefined)).toBe(true);
+    const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(actions.map((x) => x.action)).toContain('dismiss_duplicate');
+
+    const queue = await as(t, 'mod').query(api.waterBodies.listDedupCandidates, {});
+    expect(queue.total).toBe(0);
+  });
+
+  test('getDedupGroup carries the outlines, the overlap, and what is attached to each row', async () => {
+    const t = harness();
+    await seedProfile(t, 'mod', { role: 'moderator' });
+    const { a, b } = await t.run(async (ctx) => {
+      const a = await seedBody(ctx, { name: 'Long Pond', dedupStatus: 'near_certain' });
+      const b = await seedBody(ctx, {
+        name: 'Long Pond',
+        dedupStatus: 'near_certain',
+        surfaceAreaSqM: 1000,
+      });
+      await ctx.db.patch(a, { duplicateCandidateIds: [b], surfaceAreaSqM: 2000 });
+      await ctx.db.patch(b, { duplicateCandidateIds: [a] });
+      return { a, b };
+    });
+
+    const detail = await as(t, 'mod').query(api.waterBodies.getDedupGroup, {
+      waterBodyIds: [a, b],
+    });
+    expect(detail.members).toHaveLength(2);
+    expect(detail.members[0]?.polygon).toEqual(poly);
+    expect(detail.members[0]?.attachments.reports).toEqual({ n: 0, atLeast: false });
+    // Identical outlines, so the overlap is total and the stored areas are what disagree.
+    expect(detail.pairs[0]?.iou).toBeCloseTo(1, 5);
+    expect(detail.pairs[0]?.centroidDistanceM).toBe(0);
+    expect(detail.pairs[0]?.areaRatio).toBe(2);
   });
 });

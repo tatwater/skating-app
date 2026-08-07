@@ -24,6 +24,7 @@ import {
   type DedupShape,
   type DepthSource,
   displayScore,
+  haversineMeters,
   type IdMatch,
   isKnownStateCode,
   isMinor,
@@ -45,6 +46,7 @@ import {
   pathToBody,
   pointInPolygon,
   polygonBBox,
+  polygonIoU,
   REVIEW_REASONS,
   resolveUpsert,
   WATER_BODY_CLASSES,
@@ -77,7 +79,7 @@ import {
   WATER_BODY_SOURCES,
 } from './lib/enums';
 import { isListed } from './lib/listing';
-import { takeCapped } from './lib/scan';
+import { takeCapped, takeCappedResult } from './lib/scan';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
 import {
   reclipSubAreasToParent,
@@ -2516,6 +2518,18 @@ export const merge = mutation({
     // Soft-tombstone the loser: reads chase `mergedIntoId` to the survivor; `isListed` treats
     // `merged` as unlisted, so drop its cell rows too.
     await ctx.db.patch(loserId, { dedupStatus: 'merged', mergedIntoId: survivorId });
+    // …and clear the flag at the **other end of the pair**, which nothing used to do. N7's
+    // reconciliation flags every member of a duplicate group mutually, so the survivor is normally
+    // itself `near_certain` naming the body just merged — a candidate `merge` would now refuse as
+    // "already merged". Left alone, every merge cleared one card and left a permanent, unclearable
+    // one behind, and the queue could never reach zero. Only the loser is resolved here: a survivor
+    // with other live candidates stays flagged, which is correct for a group of three.
+    const resolved = new Set<Id<'waterBodies'>>([loserId]);
+    for (const id of new Set([survivorId, ...(loser.duplicateCandidateIds ?? [])])) {
+      if (id === loserId) continue;
+      const partner = await ctx.db.get(id);
+      if (partner) await clearDuplicateFlag(ctx, partner, resolved);
+    }
     await syncWaterBodyCells(ctx, loserId, {
       bbox: loser.bbox,
       minVisibleZoom: zoomSortKey(loser),
@@ -4135,11 +4149,48 @@ export const listPendingReview = query({
   },
 });
 
+/** How many flagged rows the queue reads before it says so. Two per pair, so this is ~125 pairs. */
+const DEDUP_QUEUE_CAP = 250;
+/** The most bodies one card may hold. A component larger than this is a matcher bug, not a merge. */
+const DEDUP_GROUP_CAP = 6;
+
 /**
- * Moderator: the dedup-review queue (D36) — bodies marked `suspected_duplicate`, off `by_dedup_status`.
- * Each row resolves its `duplicateCandidateIds` to `{ id, name }` pairs so the merge UI can show the
- * candidate survivors without a second round-trip. **Expect ~zero rows until Phase 8** wires
- * match-on-create; the queue degrades gracefully to empty. Bounded — never scans the corpus.
+ * Everything about a flagged body **except its outline** — the comparison table's input.
+ *
+ * The polygon is the one field that makes this payload unbounded (Champlain's outline alone is
+ * larger than every other field on every row of the queue combined), and it is not needed to
+ * *rank* a pair — only to look at one. `getDedupGroup` fetches it for the card the operator opened.
+ */
+function dedupSummary(body: Doc<'waterBodies'>) {
+  const {
+    polygon: _polygon,
+    fetchProfileM: _fetch,
+    windRose: _rose,
+    weatherSamplePoints: _samples,
+    ...rest
+  } = body;
+  return rest;
+}
+export type DedupSummary = ReturnType<typeof dedupSummary>;
+
+/**
+ * Moderator: the dedup-review queue (D36) — **grouped into one card per set of duplicates**.
+ *
+ * The queue used to return one row per flagged body, which was right when the only producer was
+ * D36's match-on-create: a user drew a pond over an OSM lake, one row got stamped, and the other end
+ * of the pair was a clean canonical body that never appeared. N7's reconciliation pass produces the
+ * opposite shape — it flags **every member of a duplicate group**, mutually — so a queue of 50 real
+ * decisions rendered as 100 cards, each pair appearing twice with the survivor and loser swapped,
+ * and nothing on either card saying they were the same decision seen from two ends.
+ *
+ * So the rows are folded into connected components over `duplicateCandidateIds` and returned as
+ * groups. `total` is the number of *decisions*; `flaggedRows` is the number of rows behind them, and
+ * the two are printed together because a heading that says 50 over a table built from 100 rows is
+ * the kind of quiet disagreement that makes an operator distrust the whole surface.
+ *
+ * Edges are followed **only out of rows that are themselves flagged**. A candidate that is clean (or
+ * already merged) is pulled in so the card can name it, but its own candidate list is not walked —
+ * that bound is what keeps one mis-scored chain from swallowing the corpus into a single card.
  */
 export const listDedupCandidates = query({
   args: {},
@@ -4148,25 +4199,451 @@ export const listDedupCandidates = query({
     // Both match-on-create tiers land in the queue, near-certain first (D36) — a body flagged as
     // almost certainly a duplicate is the one a moderator should merge before anything else, and
     // before more reports accumulate on the wrong row.
-    const nearCertain = await ctx.db
+    const near = await takeCappedResult(
+      ctx.db
+        .query('waterBodies')
+        .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'near_certain')),
+      DEDUP_QUEUE_CAP,
+      'waterBodies.listDedupCandidates (near_certain)',
+    );
+    const suspected = await takeCappedResult(
+      ctx.db
+        .query('waterBodies')
+        .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'suspected_duplicate')),
+      Math.max(0, DEDUP_QUEUE_CAP - near.rows.length),
+      'waterBodies.listDedupCandidates (suspected_duplicate)',
+    );
+    const flagged = [...near.rows, ...suspected.rows];
+
+    // Every body the card has to name, flagged or not — a candidate may be a clean canonical body
+    // (D36's original case) that never carries a flag of its own.
+    const byId = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>(flagged.map((b) => [b._id, b]));
+    for (const body of flagged) {
+      for (const id of body.duplicateCandidateIds ?? []) {
+        if (byId.has(id)) continue;
+        const other = await ctx.db.get(id);
+        if (other) byId.set(id, other);
+      }
+    }
+
+    // Connected components, walking edges out of flagged rows only (both directions: a mutual pair
+    // and a one-way D36 stamp must both come out as one card).
+    const neighbours = new Map<Id<'waterBodies'>, Set<Id<'waterBodies'>>>();
+    const link = (a: Id<'waterBodies'>, b: Id<'waterBodies'>) => {
+      if (!byId.has(a) || !byId.has(b)) return;
+      for (const [from, to] of [
+        [a, b],
+        [b, a],
+      ] as const) {
+        const set = neighbours.get(from) ?? new Set<Id<'waterBodies'>>();
+        set.add(to);
+        neighbours.set(from, set);
+      }
+    };
+    for (const body of flagged) {
+      for (const id of body.duplicateCandidateIds ?? []) link(body._id, id);
+    }
+
+    const seen = new Set<Id<'waterBodies'>>();
+    const groups: { key: string; members: DedupSummary[]; truncated: boolean }[] = [];
+    for (const body of flagged) {
+      if (seen.has(body._id)) continue;
+      const members: Doc<'waterBodies'>[] = [];
+      const stack = [body._id];
+      let truncated = false;
+      while (stack.length > 0) {
+        const id = stack.pop();
+        if (id === undefined || seen.has(id)) continue;
+        seen.add(id);
+        const doc = byId.get(id);
+        if (!doc) continue;
+        if (members.length >= DEDUP_GROUP_CAP) {
+          truncated = true;
+          continue;
+        }
+        members.push(doc);
+        for (const next of neighbours.get(id) ?? []) stack.push(next);
+      }
+      // A flag whose only candidate has since been deleted leaves a group of one. It still belongs
+      // in the queue — the flag is real and someone has to clear it — and the card says so.
+      const key = members
+        .map((m) => m._id)
+        .sort()
+        .join('+');
+      groups.push({ key, members: members.map(dedupSummary), truncated });
+    }
+
+    // Near-certain groups first (D36), then the biggest — a three-body group is either the matcher
+    // chaining two lakes together or a genuinely messy piece of the corpus, and both want a human
+    // sooner than a routine pair does.
+    groups.sort((a, b) => {
+      const tier = (g: (typeof groups)[number]) =>
+        g.members.some((m) => m.dedupStatus === 'near_certain') ? 0 : 1;
+      return tier(a) - tier(b) || b.members.length - a.members.length;
+    });
+
+    return {
+      groups,
+      total: groups.length,
+      flaggedRows: flagged.length,
+      truncated: near.truncated || suspected.truncated,
+    };
+  },
+});
+
+/**
+ * Moderator: the **expensive half** of one dedup card — outlines, overlap, and what is attached.
+ *
+ * Split from the queue query on payload rather than on principle. The list is subscribed to and
+ * re-runs whenever any flagged body changes; carrying every outline through it would make a routine
+ * page load megabytes of polygon to render a table of ids. This runs once, for the one group whose
+ * shapes an operator asked to see.
+ *
+ * **The attachment counts are the survivor argument, not the duplicate argument.** `merge` re-points
+ * every report, hazard, bounty, put-in, feature and favourite from loser to survivor, so nothing is
+ * lost either way — but the row the community has actually been filing against is the one whose
+ * `_id` is in people's links and caches, and that is worth knowing before choosing which id dies.
+ */
+export const getDedupGroup = query({
+  args: { waterBodyIds: v.array(v.id('waterBodies')) },
+  handler: async (ctx, { waterBodyIds }) => {
+    await requireRole(ctx, 'moderator');
+    if (waterBodyIds.length > DEDUP_GROUP_CAP) {
+      throw new ConvexError(`A dedup group holds at most ${DEDUP_GROUP_CAP} bodies`);
+    }
+    const docs = (await Promise.all(waterBodyIds.map((id) => ctx.db.get(id)))).filter(
+      (b): b is Doc<'waterBodies'> => b !== null,
+    );
+
+    const members = await Promise.all(
+      docs.map(async (body) => ({
+        _id: body._id,
+        polygon: body.polygon,
+        vertices: countVertices(body.polygon as Polygon | MultiPolygon),
+        attachments: await countAttachments(ctx, body._id),
+      })),
+    );
+
+    // Pairwise agreement, both orders folded into one entry. `polygonIoU` is the same measure the
+    // matcher scored these on — restated here as *evidence for a person*, next to the outlines it
+    // came from, rather than as the verdict it was when nobody could see it.
+    const pairs: {
+      aId: Id<'waterBodies'>;
+      bId: Id<'waterBodies'>;
+      iou: number | null;
+      centroidDistanceM: number;
+      areaRatio: number | null;
+    }[] = [];
+    for (let i = 0; i < docs.length; i++) {
+      for (let j = i + 1; j < docs.length; j++) {
+        const a = docs[i];
+        const b = docs[j];
+        if (!a || !b) continue;
+        const areaA = a.surfaceAreaSqM;
+        const areaB = b.surfaceAreaSqM;
+        pairs.push({
+          aId: a._id,
+          bId: b._id,
+          // Fail soft: the clipper can refuse near-coincident edges, which is exactly this case, and
+          // a card that renders without an overlap number is far better than one that doesn't render.
+          iou: safeIoU(a.polygon as Polygon | MultiPolygon, b.polygon as Polygon | MultiPolygon),
+          centroidDistanceM: haversineMeters(a.centroid, b.centroid),
+          areaRatio:
+            areaA === undefined || areaB === undefined || areaA <= 0 || areaB <= 0
+              ? null
+              : Math.max(areaA, areaB) / Math.min(areaA, areaB),
+        });
+      }
+    }
+
+    return { members, pairs };
+  },
+});
+
+function safeIoU(a: Polygon | MultiPolygon, b: Polygon | MultiPolygon): number | null {
+  try {
+    return polygonIoU(a, b);
+  } catch {
+    return null;
+  }
+}
+
+function countVertices(geom: Polygon | MultiPolygon): number {
+  const rings = geom.type === 'Polygon' ? geom.coordinates : geom.coordinates.flat();
+  return rings.reduce((sum, ring) => sum + ring.length, 0);
+}
+
+/** What is attached to one body — capped, and honest about the cap. */
+async function countAttachments(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
+  const cap = 100;
+  const count = async (rows: Promise<unknown[]>) => {
+    const list = await rows;
+    return { n: Math.min(list.length, cap), atLeast: list.length > cap };
+  };
+  return {
+    reports: await count(
+      ctx.db
+        .query('reports')
+        .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', waterBodyId))
+        .take(cap + 1),
+    ),
+    hazards: await count(
+      ctx.db
+        .query('hazards')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+        .take(cap + 1),
+    ),
+    bounties: await count(
+      ctx.db
+        .query('bounties')
+        .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', waterBodyId))
+        .take(cap + 1),
+    ),
+    putIns: await count(
+      ctx.db
+        .query('putIns')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+        .take(cap + 1),
+    ),
+    bodyFeatures: await count(
+      ctx.db
+        .query('bodyFeatures')
+        .withIndex('by_water_body_active', (q) => q.eq('waterBodyId', waterBodyId))
+        .take(cap + 1),
+    ),
+    favorites: await count(
+      ctx.db
+        .query('waterBodyFavorites')
+        .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+        .take(cap + 1),
+    ),
+    subAreas: await count(
+      ctx.db
+        .query('waterBodySubAreas')
+        .withIndex('by_parent', (q) => q.eq('waterBodyId', waterBodyId))
+        .take(cap + 1),
+    ),
+  };
+}
+
+/**
+ * Moderator: **these are not duplicates** — clear the flag and leave both rows standing.
+ *
+ * The queue could previously only be emptied by merging, which meant the only recorded outcome of a
+ * review was "yes". That is a bad shape for any queue and a dangerous one for this queue: the
+ * matcher's own audit found nine wrong matches in the bathymetry join, N7's `same-source-duplicate`
+ * reason exists precisely because a flagged group can be two *distinct* lakes our matching chained
+ * together, and a moderator who reached that conclusion had nowhere to put it. The card stayed, and
+ * the pressure was always toward the irreversible button.
+ *
+ * Each body drops the others from its candidate list, and any body left with no live candidate goes
+ * back to `clean`. `isListed` treats `clean` and the two flag tiers identically (a suspected
+ * duplicate still draws — hiding it would take reports off the map on a machine's guess), so nothing
+ * about visibility changes here and the cell index does not need re-stamping.
+ */
+export const dismissDuplicates = mutation({
+  args: { waterBodyIds: v.array(v.id('waterBodies')), reason: v.optional(v.string()) },
+  handler: async (ctx, { waterBodyIds, reason }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    if (waterBodyIds.length < 1) throw new ConvexError('Nothing to dismiss');
+    if (waterBodyIds.length > DEDUP_GROUP_CAP) {
+      throw new ConvexError(`A dedup group holds at most ${DEDUP_GROUP_CAP} bodies`);
+    }
+    const ids = new Set(waterBodyIds);
+    const cleared: Id<'waterBodies'>[] = [];
+    for (const id of ids) {
+      const body = await ctx.db.get(id);
+      if (!body) continue;
+      // A merged tombstone keeps its status: `mergedIntoId` is what read paths follow, and moving it
+      // back to `clean` would strand every link that resolves through it.
+      if (body.dedupStatus === 'merged') continue;
+      await clearDuplicateFlag(ctx, body, ids);
+      cleared.push(id);
+    }
+    const first = cleared[0];
+    if (first === undefined) {
+      throw new ConvexError('Nothing to dismiss — every body in this group is already merged');
+    }
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'dismiss_duplicate',
+      targetType: 'waterbody',
+      // The first body carries the action; the rest are in the metadata. `moderationActions` is
+      // one-target by construction and this decision genuinely covers a set.
+      targetId: first,
+      reason: reason?.trim() || 'Reviewed and judged distinct bodies',
+      metadata: { waterBodyIds: cleared },
+      createdAt: Date.now(),
+    });
+    return cleared.length;
+  },
+});
+
+/**
+ * Drop `resolved` from one body's candidate list, and unflag it if nothing live is left.
+ *
+ * Shared by `dismissDuplicates` and `merge` because both leave the *other* end of a pair holding a
+ * flag that points at a decision already made — the bug that made this queue un-emptiable: merging
+ * B into A tombstoned B and left A `near_certain`, naming a candidate that `merge` now refuses as
+ * "already merged". Fifty merges cleared fifty cards and left fifty behind.
+ */
+async function clearDuplicateFlag(
+  ctx: MutationCtx,
+  body: Doc<'waterBodies'>,
+  resolved: ReadonlySet<Id<'waterBodies'>>,
+) {
+  const remaining: Id<'waterBodies'>[] = [];
+  for (const id of body.duplicateCandidateIds ?? []) {
+    if (id === body._id || resolved.has(id)) continue;
+    const other = await ctx.db.get(id);
+    if (other && other.dedupStatus !== 'merged') remaining.push(id);
+  }
+  await ctx.db.patch(body._id, {
+    duplicateCandidateIds: remaining.length > 0 ? remaining : undefined,
+    ...(remaining.length === 0 && body.dedupStatus !== 'merged'
+      ? { dedupStatus: 'clean' as const }
+      : {}),
+  });
+}
+
+/**
+ * **Resolve the duplicate pairs the campaign already answered** — a one-time pass (N7, 2026-08-07).
+ *
+ * ## What it is for, and why it is not the moderator merge
+ *
+ * Step 6's prune spared 61 bodies carrying a dedup pointer, on the rule that a body under human
+ * review is not deleted out from under the person reviewing it. Every one of them turned out to be
+ * the **losing half of an OSM duplicate pair** — Long Pond, Lovell Lake, Duncan Lake among them, the
+ * pairs this phase opens by naming. Two independent systems had reached the same verdict: D36's
+ * geometric match-on-create flagged them, and the N7 merge collapsed each pair onto one body through
+ * NHD's shared `Permanent_Identifier`. The queue's 61 cards were pre-answered.
+ *
+ * `merge` is the right tool when there is content to move and a pointer worth keeping: it re-points
+ * every child and leaves a `mergedIntoId` tombstone so reads chase the survivor. **Neither applies
+ * here.** These are ETL rows with *zero* user content — measured, all ten attachment types, before
+ * this function was written — so a merge would move nothing and the tombstone would preserve a
+ * pointer nobody holds. The founder's call: remove the rows.
+ *
+ * ## The three things it refuses to do
+ *
+ * 1. **It never deletes a body carrying user content.** The ten attachment types `bodyAttachmentKind`
+ *    knows are re-checked per body, and anything with a report, hazard, bounty, favourite, put-in,
+ *    track, feature, sub-area, recurrence row or gate event is skipped and named. That check is not
+ *    inherited from the prune: the prune tests `dedupOrMerged` *before* `attached`, so these 61 short
+ *    circuited out of it and had never been attachment-checked at all.
+ * 2. **It never deletes a body whose survivor is not in the corpus.** The justification for deleting
+ *    is "the lake still exists under another row", so the pass verifies exactly that — a
+ *    `duplicateCandidateIds` partner carrying this campaign's stamp. A pair where *both* halves are
+ *    orphans is a lake the master list refused outright; that is the prune's business, not this
+ *    function's, and it is reported rather than swept up.
+ * 3. **It never deletes a body a contour tileset points at**, unless told to. `bathymetryCoverage` is
+ *    keyed on `(source, externalId)` rather than `waterBodyId`, so no `waterBodyId` check can see it
+ *    — five of the 61 carry one, and in every case the *survivor* does not, because the N6b join
+ *    matched the survey to the duplicate. Deleting them is what lets the next join find the right
+ *    body; `includeCoverageReferenced` is the deliberate opt-in.
+ *
+ * **Dry by default**, and it names every row in all four outcomes rather than counting them.
+ */
+export const resolveCampaignDuplicates = internalMutation({
+  args: {
+    /** The campaign whose master list decides which half of a pair survives. */
+    campaignId: v.string(),
+    apply: v.optional(v.boolean()),
+    /** Also delete rows a `bathymetryCoverage` row points at — see the docstring's rule 3. */
+    includeCoverageReferenced: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, { campaignId, apply, includeCoverageReferenced, limit }) => {
+    if (campaignId.trim().length === 0) {
+      throw new ConvexError('resolveCampaignDuplicates: campaignId must not be empty');
+    }
+    const flagged = await ctx.db
       .query('waterBodies')
       .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'near_certain'))
-      .take(100);
-    const suspected = await ctx.db
-      .query('waterBodies')
-      .withIndex('by_dedup_status', (q) => q.eq('dedupStatus', 'suspected_duplicate'))
-      .take(100 - nearCertain.length);
-    const rows = [...nearCertain, ...suspected];
-    return Promise.all(
-      rows.map(async (body) => {
-        const candidates = await Promise.all(
-          (body.duplicateCandidateIds ?? []).map(async (id) => {
-            const c = await ctx.db.get(id);
-            return c ? { id: c._id, name: c.name } : null;
-          }),
-        );
-        return { body, candidates: candidates.filter((c) => c !== null) };
-      }),
-    );
+      .take(Math.min(200, Math.max(1, limit ?? 120)));
+
+    const deleted: { name: string; externalId?: string; acres: number; survivor: string }[] = [];
+    const skipped: { name: string; externalId?: string; reason: string; detail?: string }[] = [];
+
+    for (const body of flagged) {
+      // Re-affirmed rows are the survivors, not the losers — they are the whole point.
+      if (body.lastCampaignId === campaignId) continue;
+      const label = body.name || '(unnamed)';
+      const acres = Math.round((body.surfaceAreaSqM ?? 0) / SQ_M_PER_ACRE_LOCAL);
+
+      const attachment = await bodyAttachmentKind(ctx, body._id);
+      if (attachment !== null) {
+        skipped.push({
+          name: label,
+          externalId: body.externalId,
+          reason: 'attached',
+          detail: attachment,
+        });
+        continue;
+      }
+
+      // The survivor: a candidate partner this campaign re-affirmed.
+      let survivor: Doc<'waterBodies'> | null = null;
+      for (const id of body.duplicateCandidateIds ?? []) {
+        const partner = await ctx.db.get(id);
+        if (partner?.lastCampaignId === campaignId) {
+          survivor = partner;
+          break;
+        }
+      }
+      if (survivor === null) {
+        skipped.push({ name: label, externalId: body.externalId, reason: 'no-surviving-partner' });
+        continue;
+      }
+
+      const coverage = await ctx.db
+        .query('bathymetryCoverage')
+        .withIndex('by_external_id', (q) =>
+          q
+            .eq('source', body.source === 'nhd' ? 'nhd' : 'osm')
+            .eq('externalId', body.externalId ?? ''),
+        )
+        .take(1);
+      if (coverage.length > 0 && includeCoverageReferenced !== true) {
+        skipped.push({
+          name: label,
+          externalId: body.externalId,
+          reason: 'bathymetry-coverage',
+          detail: `survivor ${survivor.externalId ?? survivor._id} has none`,
+        });
+        continue;
+      }
+
+      deleted.push({
+        name: label,
+        externalId: body.externalId,
+        acres,
+        survivor: `${survivor.name || '(unnamed)'} ${survivor.externalId ?? survivor._id}`,
+      });
+      if (apply !== true) continue;
+
+      // Clear the flag at the OTHER end of the pair before the row goes, or the survivor is left
+      // pointing at an id that no longer loads — the dangling reference `merge` learned to avoid.
+      await clearDuplicateFlag(ctx, survivor, new Set([body._id]));
+      await syncWaterBodyCells(ctx, body._id, {
+        bbox: body.bbox,
+        minVisibleZoom: body.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
+        listed: false,
+      });
+      await ctx.db.delete(body._id);
+    }
+
+    return {
+      applied: apply === true,
+      scanned: flagged.length,
+      deleted: deleted.length,
+      skipped: skipped.length,
+      skippedBy: skipped.reduce<Record<string, number>>((acc, s) => {
+        acc[s.reason] = (acc[s.reason] ?? 0) + 1;
+        return acc;
+      }, {}),
+      deletedRows: deleted,
+      skippedRows: skipped,
+    };
   },
 });

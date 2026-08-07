@@ -3,6 +3,7 @@ export * from './authRoute';
 export * from './badges';
 export * from './basemapLayers';
 export * from './block';
+export * from './bodyCompare';
 export * from './bodyIdentity';
 export * from './bodyProbe';
 export * from './bounties';
