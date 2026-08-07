@@ -317,6 +317,73 @@ describe('what the corpus must and must not contain', () => {
     expect(result.stats.settledWetland).toBe(0);
   });
 
+  // **Kelly Bog, as the archives actually hold it** — the fixture for a bar that had never fired.
+  //
+  //   OSM  way/119692346  name=""          gnisId=(none)   4 ac
+  //   NHD  145081714      name="Kelly Bog" gnisId=569072   4 ac
+  //   scored: iou=0.358  gnisAgrees=FALSE  →  verdict: none
+  //
+  // 0.358 clears the 0.30 GNIS bar and misses the 0.50 geometric one, so the pair stayed two bodies
+  // — and then the gazetteer named the OSM half "Kelly Bog" and stamped it 569072, leaving two rows
+  // agreeing on name AND federal id. 126 such pairs on run 6, every one queued for a human.
+  describe('the gazetteer settles the id before the lanes run', () => {
+    // Two outlines of one bog overlapping at ~0.38 — above the GNIS bar, below the geometric one.
+    // **Ten acres rather than the real four**, so that both halves clear D96's floor unnamed: at four
+    // the OSM half is refused as an unnamed 1–5 acre body and the "without the gazetteer" case would
+    // pass for the wrong reason, testing the floor instead of the matcher.
+    const side = sideForAcres(10);
+    const osmBog = feat('osm', 'way/119692346', {
+      polygon: square(-70.3, 44.3, side),
+    });
+    const nhdBog = feat('nhd', '145081714', {
+      name: 'Kelly Bog',
+      gnisId: '569072',
+      polygon: square(-70.3 + side * 0.45, 44.3, side),
+    });
+    /** One gazetteer point, inside the OSM outline — which is the only side lacking an id. */
+    const gnisGrid = () => {
+      const grid = new Map<string, GnisPoint[]>();
+      const p = { lng: -70.3 + side * 0.2, lat: 44.3 + side * 0.5 };
+      grid.set(`${Math.floor(p.lng / 0.1)}:${Math.floor(p.lat / 0.1)}`, [
+        { ...p, name: 'Kelly Bog', featureClass: 'Swamp', featureId: '569072' },
+      ]);
+      return grid;
+    };
+
+    it('merges the pair the 0.3 bar was written for', () => {
+      const result = buildMasterList(
+        inputFor({ osm: [osmBog], nhd: [nhdBog], gnisGrid: gnisGrid() }),
+      );
+      expect(result.stats.gazetteerIdsAttached).toBe(1);
+      expect(result.bodies).toHaveLength(1);
+      expect(result.bodies[0]?.name).toBe('Kelly Bog');
+      // One body, so nothing for the duplicate sweep to flag.
+      expect(result.stats.duplicatePairs).toBe(0);
+    });
+
+    it('leaves them as two queued bodies when the gazetteer has nothing to say', () => {
+      // The regression this guards: without the id, 0.358 is simply a miss, and the pair reaches the
+      // corpus as two rows that agree on everything a human can see.
+      const result = buildMasterList(inputFor({ osm: [osmBog], nhd: [nhdBog] }));
+      expect(result.stats.gazetteerIdsAttached).toBe(0);
+      expect(result.bodies).toHaveLength(2);
+      expect(result.stats.duplicatePairs).toBe(1);
+    });
+
+    it('assigns the id but never the name, which still waits for the merge', () => {
+      // `resolveGnisNames` refuses a point that could name more than one BODY, and that rule took
+      // `gnisRescued` from 1,771 to 921. It cannot move earlier: before the merge one lake is several
+      // features and a point legitimately falls inside both catalogues' polygons — which the
+      // cross-body rule would read as ambiguity and refuse. Ids only.
+      const lonely = feat('osm', 'way/lonely', { polygon: square(-70.3, 44.3, side) });
+      const result = buildMasterList(inputFor({ osm: [lonely], gnisGrid: gnisGrid() }));
+      expect(result.stats.gazetteerIdsAttached).toBe(1);
+      // Named by the post-merge lane, exactly as before — the two halves stay separate.
+      expect(result.bodies[0]?.name).toBe('Kelly Bog');
+      expect(result.stats.gnisNamed).toBe(1);
+    });
+  });
+
   it('admits a wetland the GAZETTEER named, because GNIS runs before the floor', () => {
     // The 306-body ordering claim: stamping the name on afterwards would have deleted these first.
     const bog = feat('osm', 'way/bog', {

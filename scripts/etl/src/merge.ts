@@ -631,6 +631,10 @@ async function main(): Promise<void> {
     `  overlapping survivors ${n(stats.duplicatePairs)} pairs — flagged duplicate-candidate, never merged`,
   );
   lines.push(
+    `  gazetteer ids  ${n(stats.gazetteerIdsAttached)}  attached BEFORE the lanes, which is what makes the`,
+  );
+  lines.push('    0.3 GNIS matching bar reachable at all. Zero here means it is dead again.');
+  lines.push(
     `  great-lake arms ${n(stats.greatLakeArms)}  bays kept as bodies because their parent is Erie or Ontario,`,
   );
   lines.push('    which we render from the basemap and deliberately do not store as bodies.');
@@ -739,6 +743,7 @@ async function main(): Promise<void> {
     classDissent: stats.classDissent,
     settledWetland: stats.settledWetland,
     greatLakeArms: stats.greatLakeArms,
+    gazetteerIdsAttached: stats.gazetteerIdsAttached,
   };
   writeFileSync(
     manifestPath,

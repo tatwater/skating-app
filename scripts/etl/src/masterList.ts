@@ -50,6 +50,7 @@ import {
   type WaterBodyClass,
 } from '@skating/core';
 import {
+  attachGazetteerIds,
   type Boundary,
   bayParent,
   catalogueIdsOf,
@@ -203,6 +204,14 @@ export interface MasterListStats {
    * consequence of the choice not to store Erie and Ontario — if it ever moves, that choice moved.
    */
   greatLakeArms: number;
+  /**
+   * GNIS ids the gazetteer supplied to features that carried none — **before** the lanes ran.
+   *
+   * The number matters because it is the precondition for `RECONCILE_MIN_IOU_WITH_GNIS`, a bar
+   * `reconcile.ts` recorded as having *"fired zero times"*. If this is 0, the 0.3 bar is dead again
+   * and every pair it would have merged is back in the duplicate queue. See `attachGazetteerIds`.
+   */
+  gazetteerIdsAttached: number;
   lanes: { label: string; stats: LaneStats }[];
   nameLane: { pairs: number; ambiguous: string[] };
   matcher: { onlyNhd: number; onlyDhp: number; nhdHits: number; dhpHits: number };
@@ -302,8 +311,25 @@ export interface MasterListInput {
  * than discovered in a twenty-minute run.
  */
 export function buildMasterList(input: MasterListInput): MasterList {
-  const { osm, nhd, dhp, gnisGrid, boundaryGrid, downstate } = input;
+  const { gnisGrid, boundaryGrid, downstate } = input;
   const log = input.log ?? (() => undefined);
+
+  // ── Stage 0: the gazetteer settles the IDS, before anything matches ───────
+  //
+  // **Ids only, never names** — the naming lane still runs after the merge, where its ambiguity rule
+  // can compare bodies rather than features. See `attachGazetteerIds` for why the two halves cannot
+  // run at the same time, and for the 126 pairs the old ordering cost.
+  const osmIds = attachGazetteerIds(input.osm, gnisGrid);
+  const nhdIds = attachGazetteerIds(input.nhd, gnisGrid);
+  const dhpIds = attachGazetteerIds(input.dhp, gnisGrid);
+  const osm = osmIds.features;
+  const nhd = nhdIds.features;
+  const dhp = dhpIds.features;
+  const gazetteerIdsAttached = osmIds.attached + nhdIds.attached + dhpIds.attached;
+  log(
+    `stage 0: ${gazetteerIdsAttached.toLocaleString()} GNIS ids attached from the gazetteer ` +
+      '(the 0.3 matching bar is now reachable)',
+  );
 
   // ── Stage 1–3: the geometric lanes ────────────────────────────────────────
   // The federal pair first: 3DHP re-publishes NHD across the whole Northeast, so collapsing them
@@ -408,6 +434,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     classDissentSamples: [],
     settledWetland: 0,
     greatLakeArms: 0,
+    gazetteerIdsAttached,
     lanes: [
       { label: '3dhp→nhd', stats: federal.stats },
       { label: 'osm→nhd', stats: osmNhd.stats },

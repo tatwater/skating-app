@@ -1478,6 +1478,63 @@ export function resolveGnisNames<
   return out;
 }
 
+/**
+ * Give every feature its GNIS id **before the lanes run**, so `RECONCILE_MIN_IOU_WITH_GNIS` can fire
+ * (N7, 2026-08-07).
+ *
+ * ## The bar that had never once been reachable
+ *
+ * `decideMatch` lowers its threshold from 0.50 to **0.30** when both sides name the same GNIS
+ * feature, on D93's reasoning that *"both publishers independently naming the same place is real
+ * evidence"*. `reconcile.ts` even records that the rule appeared dead — *"this fired zero times
+ * across 21,665 bodies… the precondition was missing, not the rule"* — and expected
+ * source-to-source matching to fix it. It did not, and the reason is **ordering**: the gazetteer lane
+ * runs in phase 2 of `buildMasterList`, long after the lanes have matched in stage 1.
+ *
+ * Reproduced against the archives, for `Kelly Bog`:
+ *
+ * ```
+ * OSM   way/119692346   name=""          gnisId=(none)   4 ac
+ * NHD   145081714       name="Kelly Bog" gnisId=569072   4 ac
+ * scored: iou=0.358  gnisAgrees=FALSE  →  verdict: none
+ * ```
+ *
+ * 0.358 clears the GNIS bar and misses the geometric one, so the pair stayed two bodies — and then
+ * the gazetteer named the OSM half `Kelly Bog` and stamped it `569072`, producing two rows agreeing
+ * on name **and** federal id. **126 such pairs** on run 6, each one flagged `duplicate-candidate` for
+ * a moderator to resolve by hand: our own rule, arriving too late to be used.
+ *
+ * ## Why this is safe where a pre-merge gazetteer *name* would not be
+ *
+ * `resolveGnisNames` refuses a point that could name more than one **body**, and that rule is load-
+ * bearing — it took `gnisRescued` from 1,771 to 921. It cannot be moved earlier, because before the
+ * merge one real lake is several features and a point legitimately falls inside OSM's polygon *and*
+ * NHD's; the cross-body rule would read that as ambiguity and refuse both. **That is precisely the
+ * agreement we want.**
+ *
+ * So this assigns only the **id**, never the name, and keeps `gnisPointFor`'s own rule (a feature
+ * with two points inside is ambiguous and gets nothing). The name lane, the floor rescue and the
+ * ambiguity accounting all still happen after the merge, untouched.
+ *
+ * **And an id is not a merge.** It lowers a threshold; `polygonIoU` still adjudicates, which is
+ * D93's stated division of labour — *"it proposes; `polygonIoU` decides"*.
+ */
+export function attachGazetteerIds(
+  features: readonly Feature[],
+  grid: Map<string, GnisPoint[]>,
+): { features: Feature[]; attached: number } {
+  let attached = 0;
+  const out = features.map((f) => {
+    if (f.gnisId !== undefined) return f;
+    const point = gnisPointFor(f, grid);
+    const id = point?.featureId;
+    if (id === undefined) return f;
+    attached++;
+    return { ...f, gnisId: id };
+  });
+  return { features: out, attached };
+}
+
 export function gnisNameFor(
   body: { polygon: Polygon | MultiPolygon; bbox: BBox },
   grid: Map<string, GnisPoint[]>,
