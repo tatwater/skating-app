@@ -1,9 +1,65 @@
 # N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign on top
 
-> **Status:** 🔨 **Built through campaign step 4; step 5 (the canonical re-import) is where work now
-> sits** (2026-08-05, branch `phase-n7-unified-corpus`, 33 commits). Originally written 2026-08-03
-> after a measurement session that corrected four of its own findings; the numbers below are the
-> survivors, and anything still marked *unverified* is marked that way on purpose.
+> **Status:** 🔨 **Built through campaign step 4. Step 5 is unblocked and step 6 now exists**
+> (2026-08-06). Originally written 2026-08-03 after a measurement session that corrected four of its
+> own findings; the numbers below are the survivors, and anything still marked *unverified* is marked
+> that way on purpose.
+>
+> ### 🔍 The intake audit, 2026-08-06 — D113–D117
+>
+> A full audit of the path from three archives to one master list, requested because it is the most
+> load-bearing pathway in the project. It found **five things that would have failed or silently lost
+> data on the next run**, and they are all fixed:
+>
+> | | |
+> | --- | --- |
+> | **The wire contract was broken.** `merge.ts` emitted `states`, `CanonicalBody` declared it, and Convex's validator did not have the field — and Convex object validators are exact, so **every batch of a merged load would have been rejected**. Adding the field alone was not enough: the handler read a `--state` CLI flag a single-pass load does not have, so it would have written 27,000 rows with no state and emptied every regional filter. | D116 |
+> | **`confidence.ts`'s entire output was discarded.** The merge computed D110's per-attribute scores and the review reasons, tallied them into three lines of terminal text, and stored nothing — so a **1,388-body review queue** could never be opened by anybody. | D115 |
+> | **The merge kept no ledger and wrote no run row.** D99 says every pass is run-logged; the pass that decides all 27,074 rows was the one that was not. Eight exits dropped records uncounted, the largest being the one-acre floor — ~64% of raw OSM, with no number at all. | D113 |
+> | **Step 6 had no implementation.** `importCanonical` never deletes, so a re-import leaves the corpus as the *union* of the master list and whatever was there before. Every stored body the current rules refuse survives forever. | D115 |
+> | **Beau Lake, the phase's own fixture, was wrong.** It merged at 2,457 acres against Maine's published 1,788 — and D92's per-lake override, named as the fix, **had no producer**: the bake-off's scores went to a scratch file nothing read. | D117 |
+>
+> …plus the veto that depended on a match succeeding, an explicit refusal losing to another source's
+> silence, a floor and a prune reading two different areas, `inRegion` dropping 35,637 bodies on an
+> eight-vertex sample, a bbox-only bay-parent test wrong in both directions, and `merge.ts` re-running
+> the entire five-state GNIS download on every run because it imported a constant from a module with a
+> `main()`. See **D113–D117** in [`01-decisions.md`](./01-decisions.md).
+>
+> ### 🔍 The second intake audit, 2026-08-06 — D118–D124
+>
+> Requested because the first pass was significant enough to be worth a second one before the flow
+> runs against real data. It found **four things that would have lost data on the next run** and three
+> that were already wrong in the output, all now fixed:
+>
+> | | |
+> | --- | --- |
+> | **A missed match is a duplicate, not a gap.** Identity is keyed on catalogue ids, so a group with no OSM member inserts a *second row* beside the lake we already had. Measured on the master list: **632 overlapping pairs at IoU ≥ 0.3, 408 of them sharing a name** — `Peabody Pond` 7 ac beside `Peabody Pond` 16 ac. The cause is structural: `scoreCandidates` skips any pair whose areas differ by more than 2×, which is most small-pond disagreements — and is also the measured answer to the long-open *"OSM↔NHD matches 33% and nobody knows why"*. | D118 |
+> | **Salt water was in the corpus** — Great Bay 4,301 ac, Little Bay 1,826, Waquoit Bay, New Bedford Harbor, ~360 bodies. The token veto only fires when the federal estuary polygon lands in the group, and one estuary against forty OSM coves never does; the bay rule then demoted each cove to `unclassified` and admitted it. The veto is now **spatial**. | D119 |
+> | **The name veto deleted two real New York lakes.** `Lake Superior` (179 ac, Sullivan County) and `Little Lake Erie` (4 ac) both match a substring rule aimed at the Great Lakes. Gated on area. | D120 |
+> | **A `conflict` verdict plus step 6 deleted both rows.** `importCanonical` wrote nothing on conflict, so neither row was stamped and the prune removed the evidence of the uniqueness violation. Plus: a load with failed batches leaves ~150 real lakes unstamped per batch, and the prune would delete them. | D124 |
+> | **Bays were bodies.** `West Branch Keuka Lake`, `Spencer Bay`, `Alton`/`Paugus`/`Meredith` Bay — all stored as rows overlapping the lakes they are arms of. They are sub-areas now. | D121 |
+> | **The counts balanced and the identities were nowhere.** ~100,000 floor-refused groups and 35,637 out-of-region ones left no names at all, and nothing compared one run to the last. `dropped.ndjson`, a manifest delta, and `geometry-review.ndjson`. | D123 |
+> | **The extraction had stopped at the rules.** `merge.ts` was still excluded from coverage while holding the *order* the rules run in — which is where every ordering bug in this phase has lived. `masterList.ts` is the second extraction, covered end to end. | D123 |
+>
+> Settled and deliberately **not** changed: cross-border bodies still enter whole, with
+> `inRegionFraction` stored as evidence rather than used as a gate (**D122**), and the 26
+> `river`-class bodies (deadwaters, stillwaters) stay.
+>
+> **✅ Run 6, 2026-08-07 — and runs 2–6 each found something the one before could not.** The master
+> list is **25,133 bodies + 112 sub-areas + 153,211 named drops = 178,456 groups**, asserted rather
+> than printed. Pre-load checks clean: **0 bodies with no state, 0 duplicate catalogue ids**, so the
+> load cannot silently collapse two bodies into one row. The headline find of the later rounds:
+> **`gnisRescued` fell 1,771 → 921 — 850 bodies were being admitted on a neighbouring pond's name**,
+> because the gazetteer's ambiguity rule only refused *many points → one body* and never the mirror.
+> See D118–D125. Superseded numbers from the first re-run:
+>
+> **~~Re-run clean against committed code, 2026-08-06.~~** The master list is now **25,472 bodies +
+> 113 sub-areas + 152,736 named drops = 178,321 groups**, and that equation is asserted rather than
+> printed. 943 tidal bodies refused; the name lane recovered 369 pairs the area-ratio ceiling had
+> rejected; 497 overlapping pairs remain and are flagged for the queue; 322 bodies carry a
+> `classDissent` that nothing could previously see. Every named fixture verified in the output —
+> **Beau Lake now arrives at 1,871 ac from NHD**, `Lake Superior` NY and `Little Lake Erie` survive,
+> Braddock Bay survives, and Great Bay / Saco Bay / Cobscook Bay / Merrymeeting Bay are gone.
 >
 > **⚠ The architecture changed after this document was written.** It describes a campaign that
 > filters each source, reconciles against the *live corpus*, and imports on top of it. What got built
@@ -989,7 +1045,8 @@ prune"* — and under the order below, nothing does.
  2  reconcile OSM ↔ NHD ↔ 3DHP by polygonIoU          ✅ done   (writes catalogue ids only)
  3  D92 bake-off, refereed by our own soundings          ✅ done (read-only; OSM by default, ties 63%)
  4  mint waterBodyKey; backfill osmId / nhdId / geometrySource  ✅ done (D93)
- 5  canonical re-import: the master list                 ← NEXT (scripts/etl — blocked, see below)
+ 5  canonical re-import: the master list                 ← NEXT (scripts/etl)
+ 5b bays → waterBodySubAreas                                   (D121; AFTER 5 — the parent must exist)
  6  PRUNE what step 5 did not re-affirm                        (D100; nothing metered runs before it)
  7  audit report of non-conforming bodies                      (D97, read-only)
  9  depth + elevation                                          (scripts/lake-depth; D101 for elevation)
@@ -1003,9 +1060,19 @@ Steps 1–4 are safe against a live corpus. Step 5 onward are not.
 **Three corrections this list has already needed, recorded rather than folded in silently:**
 
 **Admin areas moved from 8 to 1d, and it is now a hard prerequisite of step 5.** `merge.ts` clips the
-merged corpus to the five states using `boundaries.ndjson`, exported from
-`adminAreas:listBoundariesForClip`. Without it there is no region mask and 35,637 out-of-region bodies
-import. It sat at position 8 because the old ordering filtered each source in its own extract, where
+merged corpus to the five states using `boundaries.ndjson`. Without it there is no region mask and
+35,637 out-of-region bodies import.
+
+> **✅ That file now has a producer** (second audit, 2026-08-06). It had none: the only instruction
+> for building the mask that decides 35,637 exclusions was a sentence inside `merge.ts`'s own error
+> message, telling the operator to hand-page `adminAreas:listBoundariesForClip` out of Convex. That
+> route also cost fidelity twice — TIGER outlines are simplified on the way *into* Convex to fit the
+> 8,192-element array cap (Maine's is 18,932 vertices raw), so the corpus was being clipped against a
+> coarsened copy of a boundary we hold verbatim on disk. `build-region` now writes it from the same
+> TIGER archive at full fidelity, beside the two masks it already produced; the Convex export remains
+> as a fallback and is the second choice. **The merge also asserts it found five state outlines** —
+> `adminAreas` carried three for a year and nothing said so, and a mask short of a state still clips
+> correctly, so the only symptom would have been tens of thousands of rows with no `states` value. It sat at position 8 because the old ordering filtered each source in its own extract, where
 the extract's own bbox was the only regional statement — which is exactly the assumption
 *merge first, filter once* removed.
 
@@ -1026,15 +1093,33 @@ for the numbers, the per-lake override, and — importantly — **what this resu
 referee set is built from the bathymetry join and therefore excludes every lake OSM is missing, Beau
 Lake among them.
 
-**Step 6 is no longer the D91 area-floor prune, and nothing implements what it became.** Under the old
-ordering the corpus was filtered on the way in and step 6 re-applied the floor to what was stored —
+**Step 6 is no longer the D91 area-floor prune — ✅ and it is now built** (D115, 2026-08-06). Under the
+old ordering the corpus was filtered on the way in and step 6 re-applied the floor to what was stored,
 which is what `pruneBelowAreaFloor` does. Under *merge first, filter once*, the master list **is** the
-corpus, so step 6's real job is to remove the stored bodies that the master list does not re-affirm: a
-body the class veto now refuses, a body the region clip now excludes. `importCanonical` never deletes
-and `pruneBelowAreaFloor` can only see area, so neither can find them. **This needs a new prune keyed
-on campaign membership**, honouring the rule that a body carrying user content is never deleted (see
-D93's closing note). 18,383 stored against 27,074 in the master list, and neither set contains the
-other.
+corpus, so step 6's real job is to remove the stored bodies the master list does not re-affirm: a body
+the class veto now refuses, a body the region clip now excludes. `importCanonical` never deletes and
+`pruneBelowAreaFloor` can only see area, so neither could find them. 18,383 stored against 27,074 in
+the master list, and neither set contains the other.
+
+`waterBodies.pruneNotInCampaign` is that pass. `importCanonical` stamps `lastCampaignId` on every row
+it touches, so membership is **asserted by the loader** rather than re-derived — a second copy of the
+rules is how a prune and an import come to disagree at the edges, which is the failure D97 names. It
+is dry by default, names the bodies it would delete rather than only counting them, and honours every
+protection `pruneBelowAreaFloor` does: user-created, `includedByRequest`, a curated boost, a dedup or
+merge pointer, a soft-delist, and any attachment.
+
+```bash
+# after step 5, with the same --campaign the load used
+pnpm exec convex run waterBodies:pruneNotInCampaign '{"campaignId":"<id>"}'          # dry
+pnpm exec convex run waterBodies:pruneNotInCampaign '{"campaignId":"<id>","apply":true}'
+```
+
+> ⚠ **Do not run it after a load that reported failed batches** (D124). `load.ts` deliberately
+> survives isolated batch failures, and every body in a skipped batch of ~150 is left unstamped —
+> indistinguishable from a body the new rules refuse, and therefore deleted. The loader now says so
+> at the moment you can still act on it, and the prune refuses any page more than a third deletions
+> (`maxDeleteFraction`, default 0.33) as a backstop. The upsert is idempotent: re-run the load until
+> it is clean.
 
 **Step 6 is the change D100 makes, and its position is the whole point.** Every pass from 8 onward is
 priced per body — WTK requests, Convex transaction bytes, density probes — and under the old ordering
@@ -1052,7 +1137,24 @@ dev.
 
 ---
 
-## What blocks step 5 (audited 2026-08-05)
+## ✅ What blocked step 5 — cleared (2026-08-06)
+
+The five gaps below were closed on 2026-08-05. The intake audit then found **five more**, all of
+which would have surfaced during or after the load rather than before it, and all of which are now
+fixed — see the status block at the top and D113–D117. The two that would have stopped the run
+outright:
+
+- **`states` was not in the `canonicalBody` validator** while the ETL emitted it. Convex object
+  validators are exact, so every batch would have been rejected. And the handler ignored the field
+  even once added, writing from a `--state` flag a single-pass load does not have.
+- **The merge asserted nothing.** Two balance equations now run before it writes — `seen == kept +
+  dropped` per lane, and `kept == emitted + emitFailed` across the two artifacts — and they throw.
+
+The rest were silent rather than fatal: a discarded review queue, a missing step-6 prune, a per-lake
+geometry override with no producer, a veto contingent on a match, and an admission floor reading a
+different area from the prune that enforces it.
+
+## What blocked step 5 (audited 2026-08-05)
 
 The handoff records this as one item — *"`resolveUpsert` → `importCanonical`"* — and that
 under-describes it. `resolveUpsert` is built and tested; wiring it is the smallest of five gaps, and
@@ -1117,6 +1219,80 @@ answers:
   with 25,807 legitimate soundings) **must not** be touched by the re-key lane.
 - After D98's recalibration, the set of lakes that stop drawing **must** be enumerated and reviewed,
   not summarised.
+
+### ✅ The merge's named fixtures, as built (2026-08-06)
+
+Every case the section below asks for is now a test in `scripts/etl/src/mergeRules.test.ts`, and
+three of them **changed answer** because the audit closed a hole the old test pinned:
+
+| fixture | before | now |
+| --- | --- | --- |
+| a group NHD calls `LakePond` and OSM tags `wetland=marsh` keeps `lakePond` | ✅ | ✅ |
+| Lake Erie, published by NHD alone as FTYPE 390 | ⚠ **admitted** — the test pinned the hole | refused by name (D114) |
+| an unnamed ocean-sized polygon | ⚠ admitted | refused on the 100,000-acre ceiling |
+| Lake Champlain at ~271,000 acres | ✅ | ✅ — the allow-list's only entry |
+| a group every catalogue refused is `null`, never `unclassified` | ✅ | ✅, and an explicit drop now beats silence too |
+| Beau Lake is in region | ✅ | ✅ — and now drawn by NHD at 1,876.6 ac, within 5% of the published 1,788 |
+| a named wetland at 5 ac in, an unnamed one at 49 out | ✅ | ✅ |
+| a bay whose only candidate parent shares a bounding box | ⚠ **adopted** — pinned false positive | demoted; and a bay poking one vertex past its parent is no longer demoted |
+| a group holding two features from one catalogue queues | ✅ | ✅ — and the queue is now *stored* |
+| `inRegion` on a body whose in-region sliver falls between samples | ⚠ **dropped** — pinned false negative | found, by escalating to every vertex |
+
+### ✅ The pipeline's own fixtures, as built (second audit, 2026-08-06)
+
+`masterList.test.ts` runs the **whole flow** — three lanes, the name lane, grouping, the merge, the
+bay rule, the region clip, the downstate cut, the salt veto, GNIS, the floor, the duplicate sweep and
+the emit stage — against hand-built features. Every rule in `mergeRules.test.ts` passed while the
+pipeline still admitted the ocean and deleted two real lakes, because none of those is a property of
+a rule: they are properties of the **order**, of what one stage hands the next, and of what happens
+to a body that satisfies two rules at once.
+
+| fixture | asserts |
+| --- | --- |
+| Lake Erie, published by NHD as `LakePond` | refused — by name, needing no match |
+| **Lake Superior, NY (179 ac)** and **Little Lake Erie (4 ac)** | **kept** — the area gate on the name veto |
+| a cove inside a federal estuary that matched nothing | refused as salt water |
+| **Braddock Bay**, a freshwater arm of Lake Ontario | **kept** — Great Lakes are not the sea |
+| Beau Lake, straddling the border | kept, with `inRegionFraction` between 0 and 1 |
+| a named wetland above 5 ac / an unnamed one at 49 | in / out |
+| a wetland only the gazetteer named | kept — GNIS runs before the floor |
+| Kensico Reservoir | refused, counted apart from `outOfRegion` |
+| Peabody Pond at 7 ac vs 16 ac | **one** body, via the name lane |
+| the same pair renamed | two bodies, **both flagged `duplicate-candidate`** |
+| Mud Pond, ME vs Mud Pond, NY | never merged — overlap is required |
+| Alton Bay on Winnipesaukee | a **sub-area**, not a body |
+| a bay whose parent was refused | a queued body, never a dangling sub-area |
+| Half Moon Cove | demoted and queued |
+| the Long Pond duplicate pair | one body, the absorbed id **named** |
+| two catalogues sharing an id namespace | throws |
+| a body whose geometry defeats the transform | counted, run survives |
+
+### 📌 Deferred, with the setup written down: the regression corpus
+
+**Founder call, 2026-08-06 — worth doing, not now.** The one test the fixture suite cannot be is a
+run against *real* data, where the failure modes are the ones nobody thought to write a fixture for.
+Everything above is synthetic; the archives are 924 MiB and gitignored.
+
+When it is wanted, this is the shape:
+
+1. **Cut a sample, deterministically.** From each archive, every feature whose bbox falls in two or
+   three small, dense, *named* windows — say Moosehead and its bays (ME), the Winnipesaukee basin
+   (NH), and the Great Bay estuary (NH) for the salt case. Roughly 2,000 features, a few MB, which
+   commits comfortably. Pick the windows by *coordinate*, never by a count or a `head -n`, or the
+   sample changes when the source does.
+2. **Commit it under `scripts/etl/fixtures/regression/`** with a manifest naming the source archives'
+   sha256s, so "which release is this cut from" is answerable — the same discipline `.raw-*/` uses.
+3. **Run `buildMasterList` over it and snapshot the summary**, not the bodies: counts by class, by
+   geometry source, by refusal reason, plus the full `dropped.ndjson` key list. A body-by-body
+   snapshot would churn on every tolerance change and get regenerated without being read.
+4. **Review the diff, never accept it blind.** The value is entirely in a human looking at *"−37
+   lakePond, +37 wetland"* and deciding whether that is the change they meant to make.
+5. **Give it a longer timeout** — see the `ci-test-timeout-5s` note; this is a legitimately heavy
+   test and CI runs it ~8× slower than local.
+
+The cost of not having it is bounded: `masterList.test.ts` covers the decisions, and
+`dropped.ndjson` plus the manifest delta (D123) make a *real* run diffable by hand, which is where
+this would have been read anyway.
 
 ### The merge itself is now the piece most likely to fail quietly (2026-08-05)
 
@@ -1394,6 +1570,13 @@ It is the resolver behind the `gnisId` bridge D93 adds: feature ids, official na
 feature classes, from the body that assigns them. Two jobs it does that the inline ids cannot:
 settling a GNIS id where OSM, NHD and 3DHP disagree, and supplying **names and variant names** for
 search on bodies whose catalogue entry is unnamed.
+
+> **⚠ The variant-name half is still not built** (noted by the second audit, 2026-08-06). The lane
+> supplies a *name* where a body has none, and it resolves the *feature id* — both live. Variant
+> names are neither read from the gazetteer nor stored, so a body findable in GNIS under a second
+> spelling is not findable in our search under it. `waterBodySubAreas` already models this
+> (`aliases` + `searchText`); `waterBodies` has no equivalent field, which is what makes it a schema
+> change rather than an ETL one, and why it is filed rather than folded in here.
 
 Cheapest lane in the phase by a wide margin, and it needs no new bucket — it belongs beside the
 catalogues it resolves.

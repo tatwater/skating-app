@@ -6,16 +6,15 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
-      // The transform is the tested logic. `cli.ts`/`load.ts` are subprocess + file-I/O glue
-      // (untestable shells; all real work is in the covered transform + `@skating/core`), and
-      // `types.ts` is type-only. Mirrors the water ETL's coverage config (Phase 1).
+      // Only files whose every remaining line is `ogr2ogr`, file I/O or a CLI shell. Mirrors the
+      // water ETL's config, including its rule: **if a file holds a decision, extract the decision.**
       //
-      // ⚠ `buildRegion.ts` is excluded on the same grounds — `ogr2ogr` plus file writes — but it is
-      // the largest file in the package and it does carry decisions: `nearRegion`, `needsClipping`,
-      // `maskFeature` and the union/subtract pair all choose what the region *is*. `merge.ts` in the
-      // water ETL was excluded for exactly this reason, grew a merge rule, and ended up deciding
-      // 27,074 rows untested (see `mergeRules.ts`, extracted 2026-08-05). If this file keeps
-      // growing, split its geometry rules out and drop the exclusion rather than widening it.
+      // ✅ The warning this comment used to carry has been acted on (N7 audit, 2026-08-06).
+      // `buildRegion.ts` was excluded as `ogr2ogr` glue while holding `nearRegion`, `needsClipping`,
+      // `roundCoords`, the bleed box and the downstate county list — and that last one is not
+      // scenery: `scripts/etl`'s merge reads `downstate-ny.geojson` as the D111 corpus cut, so a
+      // county on or off that list adds or removes **water bodies**. Those rules now live in
+      // `regionRules.ts` and are covered; what is left here is the turf/`ogr2ogr` pipeline.
       exclude: [
         'src/**/*.test.ts',
         'src/buildRegion.ts',

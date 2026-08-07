@@ -93,6 +93,59 @@ export const HARD_MIN_SURFACE_AREA_ACRES = 1;
 /** `HARD_MIN_SURFACE_AREA_ACRES` in square metres. */
 export const HARD_MIN_SURFACE_AREA_SQM = HARD_MIN_SURFACE_AREA_ACRES * SQ_M_PER_ACRE;
 
+// ── The corpus-admission CEILING (N7 audit, founder call 2026-08-06) ─────────────────────────────
+
+/**
+ * Above this, a body needs an explicit allow-list entry — **the veto that needs no match**.
+ *
+ * ## Why a ceiling exists at all
+ *
+ * The merge's ocean veto is keyed on a catalogue's own class token, so it only fires when the
+ * vetoing feature lands in the merged group — which depends on a cross-catalogue `polygonIoU` match
+ * succeeding over the largest, most awkwardly-clipped polygons in the archive. NHD publishes **Lake
+ * Erie as FTYPE 390 `LakePond`**, so nothing in NHD alone refuses it; the refusal was contingent on
+ * 3DHP's counterpart matching. `assertsOceanOrGreatLake` closes the named half of that hole. This
+ * closes the unnamed half: an ocean polygon nobody named, a bay of the Gulf of Maine, an unnamed
+ * fragment of a Great Lake.
+ *
+ * **One hundred thousand acres**, chosen against what is actually in our five states. Lake Champlain
+ * is ~271,000 acres and is the *only* body in the region above the bar — Moosehead is ~75,000,
+ * Winnipegsaukee ~45,000, Oneida ~51,000, Sebago ~28,000. So the allow-list has one entry, which is
+ * exactly the property that makes a ceiling honest: if it needed twenty exceptions it would be
+ * measuring the wrong thing.
+ *
+ * **Deliberately NOT read by `belongsInCorpus`.** The floor is enforced in two places (the import and
+ * `pruneBelowAreaFloor`) and must mean the same thing in both; a ceiling wired into it would give the
+ * prune the power to delete Champlain the first time somebody edited this list. It is a *merge* veto,
+ * consulted by `isVetoed`, and the stored corpus is cleaned by the campaign-membership prune instead.
+ */
+export const MAX_BODY_SURFACE_AREA_ACRES = 100_000;
+
+/** `MAX_BODY_SURFACE_AREA_ACRES` in square metres. */
+export const MAX_BODY_SURFACE_AREA_SQM = MAX_BODY_SURFACE_AREA_ACRES * SQ_M_PER_ACRE;
+
+/**
+ * The bodies genuinely larger than the ceiling that we genuinely want.
+ *
+ * Matched on the **folded** name (see `waterClass`'s `fold`) so accents and case cannot smuggle a
+ * body past. One entry today; each future one should arrive with its measured acreage in the comment.
+ */
+const AREA_CEILING_ALLOW_LIST: ReadonlySet<string> = new Set([
+  'lake champlain', // ~271,000 ac — VT/NY, the largest body we cover and the reason the list exists
+]);
+
+/**
+ * Is this body over the ceiling without an allow-list entry?
+ *
+ * Takes the name already folded by the caller is *not* the contract — it folds here, so there is one
+ * spelling of the rule and callers cannot forget.
+ */
+export function exceedsAreaCeiling(candidate: { name: string; surfaceAreaSqM: number }): boolean {
+  if (candidate.surfaceAreaSqM <= MAX_BODY_SURFACE_AREA_SQM) return false;
+  const folded = candidate.name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  return !AREA_CEILING_ALLOW_LIST.has(folded);
+}
+
 /**
  * Does this candidate clear the corpus floor?
  *

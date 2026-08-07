@@ -212,6 +212,11 @@ export function toCanonicalBody(input: {
   gnisId?: string | undefined;
   geometrySource?: CanonicalBody['geometrySource'];
   states?: string[] | undefined;
+  /** The admitting area — see `CanonicalBody.sourceAreaSqM`. */
+  sourceAreaSqM?: number | undefined;
+  inRegionFraction?: number | undefined;
+  confidence?: CanonicalBody['confidence'];
+  reviewReasons?: readonly string[] | undefined;
 }): CanonicalBody {
   const geom = input.geometry;
   if (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon') {
@@ -254,6 +259,16 @@ export function toCanonicalBody(input: {
     ...(input.gnisId ? { gnisId: input.gnisId } : {}),
     ...(input.geometrySource ? { geometrySource: input.geometrySource } : {}),
     ...(input.states?.length ? { states: input.states } : {}),
+    // **The area the admission decision was actually made on.** `surfaceAreaSqM` above is measured
+    // from the simplified polygon, because that is what we draw; the floor is applied to the source
+    // geometry, because that is the more accurate measure. They differ by well under a percent — and
+    // that is enough to put a body admitted at 1.0001 acres under `pruneBelowAreaFloor`'s 1-acre
+    // bar, so the import adds it and the next prune deletes it, forever. Carrying both lets the two
+    // passes agree; see `waterBodies.sourceAreaSqM`.
+    ...(input.sourceAreaSqM !== undefined ? { sourceAreaSqM: input.sourceAreaSqM } : {}),
+    ...(input.inRegionFraction !== undefined ? { inRegionFraction: input.inRegionFraction } : {}),
+    ...(input.confidence ? { confidence: input.confidence } : {}),
+    ...(input.reviewReasons?.length ? { reviewReasons: [...input.reviewReasons] } : {}),
     ...(interiorPoint ? { interiorPoint } : {}),
     ...stats,
   };

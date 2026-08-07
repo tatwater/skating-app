@@ -60,6 +60,7 @@ import {
   type WaterBodyClass,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
+import { osmExportArgs, osmFilterArgs } from './extract';
 import { NHD_SOURCES, nhdArchiveKey, normalizeNhdId } from './nhdArchive';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -155,43 +156,15 @@ function osmFeatures(state: string, refresh: boolean): string {
   };
   const filtered = join(SCRATCH, `osm-${state}.pbf`);
   log(`${state}: filtering water features…`);
-  const step1 = spawnSync(
-    'osmium',
-    [
-      'tags-filter',
-      '-t',
-      join(dir, filename),
-      'natural=water',
-      'landuse=reservoir',
-      'natural=bay',
-      'natural=wetland',
-      'water',
-      '-o',
-      filtered,
-      '--overwrite',
-    ],
-    { encoding: 'utf8' },
-  );
+  // Shared argv (`./extract`), because the dry run's whole job is to report what the merge will do —
+  // and it cannot do that if the two extract different features. The NHD read below is deliberately
+  // *not* shared: it wants attributes with no floor, which is a different question.
+  const step1 = spawnSync('osmium', osmFilterArgs(join(dir, filename), filtered), {
+    encoding: 'utf8',
+  });
   if (step1.status !== 0) throw new Error(`${state}: osmium tags-filter exited ${step1.status}`);
 
-  const step2 = spawnSync(
-    'osmium',
-    [
-      'export',
-      filtered,
-      '--geometry-types=polygon',
-      '-a',
-      'type,id',
-      '-f',
-      'geojsonseq',
-      '-x',
-      'print_record_separator=false',
-      '-o',
-      out,
-      '--overwrite',
-    ],
-    { encoding: 'utf8' },
-  );
+  const step2 = spawnSync('osmium', osmExportArgs(filtered, out), { encoding: 'utf8' });
   if (step2.status !== 0) throw new Error(`${state}: osmium export exited ${step2.status}`);
   return out;
 }

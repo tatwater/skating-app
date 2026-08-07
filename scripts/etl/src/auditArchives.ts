@@ -50,6 +50,7 @@ import {
   RunLogger,
   resolveDeployment,
 } from '@skating/run-log';
+import { ONE_ACRE_SQ_KM } from './extract';
 import {
   GNIS_ID_CENSUS,
   NHD_ID_CENSUS,
@@ -64,8 +65,29 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const NHD_DIR = join(HERE, '..', '.raw-nhd');
 const CLIP_DIR = join(HERE, '..', '.raw-3dhp', 'waterbody');
 
-/** The D91 floor in km², so the audit measures the rows that will actually become bodies. */
-const FLOOR_SQKM = 0.020234;
+/**
+ * The floor the audit measures at — **the same one the merge extracts at, imported not restated**
+ * (second audit, 2026-08-06).
+ *
+ * It was `0.020234` km², which is *five* acres, while `merge.ts` has extracted at **one** since the
+ * lanes were unified. So the census this file produces described a set 2.6× smaller than the one the
+ * pipeline actually reads — 53,130 rows against the merge's 138,555 — and the merge printed the two
+ * side by side as though they were comparable:
+ *
+ * ```
+ * nhdId: 138,555/138,555 accepted
+ *     census expected 53,130 post-floor rows, 40,928 distinct
+ * ```
+ *
+ * The acceptance *rate* was still asserted correctly, so nothing broke; what was lost is the census's
+ * actual job. It exists as a tripwire for "the source changed shape", and a tripwire strung across a
+ * different set cannot detect that.
+ *
+ * This is the very drift `extract.ts` was created to end, and its docstring names this exact pair —
+ * *"`merge.ts` extracts NHD at the one-acre floor while the standalone reconciler exported at five
+ * acres"* — while this file went on restating the number locally. So it now imports it.
+ */
+const FLOOR_SQKM = ONE_ACRE_SQ_KM;
 
 /**
  * How much of a *present, non-sentinel* identifier we require to parse.

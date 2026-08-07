@@ -91,13 +91,23 @@ interface ImportResult {
   unresolved: { externalId: string; action: string; reason: string }[];
 }
 
-function runImport(bodies: unknown[], state: string | undefined): ImportResult {
+function runImport(
+  bodies: unknown[],
+  state: string | undefined,
+  campaignId: string | undefined,
+): ImportResult {
   // Anything we can't read as the expected shape is a hard error — the mutation may well have
   // committed, so reporting zeroes would mislead the operator.
-  const parsed = convexRun<unknown>(
-    'waterBodies:importCanonical',
-    state ? { bodies, state } : { bodies },
-  );
+  //
+  // `campaignId` rides along because step 6's prune keys on it: a row this load did not touch is a
+  // row the master list did not contain, and that is the only question that can find a stored body
+  // the new rules refuse. Passing it here rather than deriving it server-side keeps "which campaign
+  // was this?" a statement the operator makes once, on the command line, for every pass at once.
+  const parsed = convexRun<unknown>('waterBodies:importCanonical', {
+    bodies,
+    ...(state ? { state } : {}),
+    ...(campaignId ? { campaignId } : {}),
+  });
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
@@ -303,6 +313,7 @@ function main(): void {
       const result = runImport(
         batch.map((line) => JSON.parse(line)),
         state,
+        campaignId,
       );
       inserted += result.inserted;
       updated += result.updated;
@@ -424,6 +435,17 @@ function main(): void {
   if (failedBatches > 0) {
     logger.failed(
       new Error(`${failedBatches} of ${batches.length} batches failed and were skipped`),
+    );
+    // **The one consequence that is not obvious from "some batches failed"** (N7 second audit).
+    // Every body in a skipped batch is missing its `lastCampaignId` stamp, and step 6 deletes
+    // precisely the rows that lack it — so a partial load followed by a prune deletes real lakes
+    // that were never refused by any rule. `pruneNotInCampaign` has a blast-radius guard for the
+    // gross case; this is the specific warning, at the moment the operator can still act on it.
+    process.stderr.write(
+      `[etl] ⚠ DO NOT RUN waterBodies:pruneNotInCampaign after this load. ` +
+        `${bodiesInFailedBatches} bodies in ${failedBatches} skipped batch(es) carry no ` +
+        `lastCampaignId, and the prune would delete them as "not in the master list". ` +
+        `Re-run this load (the upsert is idempotent) until it reports zero failed batches.\n`,
     );
     process.exitCode = 1;
   } else {

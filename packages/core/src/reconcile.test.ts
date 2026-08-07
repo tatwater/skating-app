@@ -279,10 +279,9 @@ describe('precomputed area', () => {
     const candidate: ReconcileCandidate = { id: 'c', polygon: b, bbox: polygonBBox(b) };
 
     const plain = scoreCandidates(target, [candidate]);
-    const hinted = scoreCandidates(
-      { ...target, areaSqM: surfaceAreaSqM(a) },
-      [{ ...candidate, areaSqM: surfaceAreaSqM(b) }],
-    );
+    const hinted = scoreCandidates({ ...target, areaSqM: surfaceAreaSqM(a) }, [
+      { ...candidate, areaSqM: surfaceAreaSqM(b) },
+    ]);
     expect(hinted).toEqual(plain);
     expect(plain[0]?.iou).toBeGreaterThan(0);
   });

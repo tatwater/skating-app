@@ -50,6 +50,9 @@ import {
 import type { MultiPolygon, Polygon } from 'geojson';
 import { NHD_SOURCES, nhdArchiveKey, normalizeGnisId, normalizeNhdId } from './nhdArchive';
 
+/** RFC 7464's record separator, which `ogr2ogr`'s GeoJSONSeq output may prefix each line with. */
+const RECORD_SEPARATOR = String.fromCharCode(0x1e);
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch');
 const NHD_DIR = join(HERE, '..', '.raw-nhd');
@@ -172,7 +175,12 @@ function exportNhd(): number {
     if (res.status !== 0) throw new Error(`${source.state}: ogr2ogr exited ${res.status}`);
 
     for (const line of readFileSync(geojson, 'utf8').split('\n')) {
-      const trimmed = line.trim().replace(/^/, '');
+      // RFC 7464's record separator, written as a code point rather than as a literal control
+      // character inside a regex — the literal form is invisible in every editor and diff, which
+      // is how it survives a copy-paste into a pattern that then silently matches nothing. Same
+      // spelling `merge.ts` uses.
+      const t = line.trim();
+      const trimmed = t.startsWith(RECORD_SEPARATOR) ? t.slice(1) : t;
       if (!trimmed) continue;
       const f = JSON.parse(trimmed) as {
         properties: Record<string, unknown>;

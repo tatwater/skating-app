@@ -144,13 +144,17 @@ export function normalizeNhdId(raw: string | null | undefined): Normalized {
  * 84.4% of the corpus.
  */
 export const NHD_ID_CENSUS = {
-  postFloorRows: 53_130,
-  numeric: 44_862, // 84.4%
-  guid: 8_268, // 15.6%
+  // ⚠ **Re-derived at the ONE-acre floor, 2026-08-06** (second audit). The previous figures —
+  // 53,130 rows, 40,928 distinct — were taken at *five* acres while `merge.ts` has extracted at one
+  // since the lanes were unified, so the census described a set 2.6× smaller than the pipeline
+  // reads and could not have detected a change in it. See `auditArchives.FLOOR_SQKM`.
+  postFloorRows: 138_555,
+  numeric: 110_197, // 79.5%
+  guid: 28_358, // 20.5%
   empty: 0,
   other: 0,
   /** Distinct ids, after the five state files' overlap collapses. */
-  distinct: 40_928,
+  distinct: 107_990,
 } as const;
 
 /**
@@ -201,14 +205,21 @@ export const GNIS_SENTINELS: ReadonlySet<string> = new Set(['-1', '0']);
 
 /** The GNIS census behind the rule and the floor. Same discipline as `NHD_ID_CENSUS`. */
 export const GNIS_ID_CENSUS = {
-  postFloorRows: 53_130,
-  absent: 38_107, // 71.7% — normal; most NHD features are unnamed and carry no GNIS entry
-  zeroPadded: 13_989, // 26.3%
+  // ⚠ Re-derived at the one-acre floor alongside `NHD_ID_CENSUS` — see the note there.
+  postFloorRows: 138_555,
+  absent: 120_202, // 86.8% — normal, and MORE so at one acre: small water is rarely named
+  zeroPadded: 17_134, // 12.4%
   bareDigits: 2, // both spellings exist inside NHD itself
-  sentinel: 1_032, // 1.9% — `-1`
-  distinct: 10_985,
-  /** GNIS ids resolving to more than one NHD body, excluding the sentinel: a split lake. */
-  multiBody: 92,
+  sentinel: 1_217, // 0.9% — `-1`, the cross-border Québec lakes
+  distinct: 13_322,
+  /**
+   * GNIS ids resolving to more than one NHD body, excluding the sentinel: a split lake.
+   *
+   * **158 at one acre against 92 at five**, i.e. 1.2% of the distinct ids. The rate barely moved;
+   * the count did, because the denominator did. This is the measurement behind
+   * `GNIS_IS_NOT_AN_UPSERT_KEY`.
+   */
+  multiBody: 158,
 } as const;
 
 /** What a `.raw-nhd/<state>/manifest.json` records. */

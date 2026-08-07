@@ -65,7 +65,18 @@ import intersect from '@turf/intersect';
 import simplify from '@turf/simplify';
 import union from '@turf/union';
 import type { Feature, FeatureCollection, MultiPolygon, Polygon } from 'geojson';
+import {
+  bleedBoxRing,
+  DOWNSTATE_NY_COUNTIES,
+  NEIGHBOUR_FIPS,
+  nearRegion as nearRegionBox,
+  needsClipping as needsClippingBox,
+  roundCoords,
+} from './regionRules';
 import { archive, makeLog, RAW, STATES, TIGER_COUNTIES, TIGER_STATES } from './tiger';
+
+/** Re-exported for the CLI's other readers; the rule itself lives in `./regionRules`. */
+export { DOWNSTATE_NY_COUNTIES };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..', '..', '..');
@@ -118,31 +129,8 @@ const NATURAL_EARTH = {
   },
 } as const;
 
-/**
- * New York south of I-84, by county — the corpus cut (founder, 2026-08-05).
- *
- * **Counties rather than a latitude line**, because a lake that straddles 41.5°N would otherwise be
- * half in the corpus and half out, and because these are boundaries we already hold. The fit is
- * deliberately imperfect at both ends: I-84 runs through the middle of Orange County, which is
- * dropped whole, and clips the southern tip of Dutchess, which is kept whole. The rule a user can be
- * told — "we cover New York north of I-84" — survives both.
- */
-export const DOWNSTATE_NY_COUNTIES = [
-  // The five boroughs.
-  'Bronx',
-  'Kings',
-  'New York',
-  'Queens',
-  'Richmond',
-  // Long Island.
-  'Nassau',
-  'Suffolk',
-  // The lower Hudson, up to and including the county I-84 crosses.
-  'Westchester',
-  'Rockland',
-  'Putnam',
-  'Orange',
-] as const;
+// `DOWNSTATE_NY_COUNTIES`, `NEIGHBOUR_FIPS`, `BLEED_BOX`, `nearRegion`, `needsClipping` and
+// `roundCoords` now live in `./regionRules`, where they can be tested — see that file's header.
 
 /**
  * How hard each piece of the mask is simplified, in degrees.
@@ -192,79 +180,26 @@ const SEAWARD_ALLOWANCE_KM = 5;
 /** How far the label filter is grown past the border, so it can never drop one of our own names. */
 const LABEL_FILTER_ALLOWANCE_KM = 1;
 
-/** Connecticut, New Jersey, Pennsylvania, Rhode Island — the states that touch ours. */
-const NEIGHBOUR_FIPS = new Set(['09', '34', '42', '44']);
-
-/**
- * How far the mask has to reach, and why it does not have to reach further.
- *
- * The mask exists to cover **tile bleed** — the whole tiles `pmtiles extract --region` keeps because
- * they graze our border, Connecticut and all. Bleed cannot travel further than one tile at the
- * lowest zoom the regional layers draw, which is one z6 tile, about 450 km. Past that the regional
- * archive holds nothing at all, and the world overview is already drawing exactly what we want out
- * there: flat land, a border line, a name.
- *
- * So masking Africa is 875 KB spent to paint white over white. The first build did it anyway and the
- * file was 1.5 MB; scoping to this box is most of the difference. The numbers are the five-state
- * bounds plus roughly one z6 tile on each side.
- */
-const BLEED_BOX = { minLng: -86, minLat: 36, maxLng: -60, maxLat: 52 } as const;
-
-/**
- * Whether a feature's bbox overlaps the bleed neighbourhood at all — the cheap keep/drop test.
- *
- * **Cheap, and therefore wrong for anything that crosses the antimeridian.** Alaska's bbox runs from
- * -180 to 180 because the Aleutians straddle the date line, so this returns true for a state two
- * time zones past Siberia — and the first build duly shipped the whole of it, which is how a mask
- * scoped to the Northeast came out with a bbox spanning the globe. That is what `needsClipping`
- * below is for: the box test admits, the clip disposes.
- */
-function nearRegion(feature: Poly): boolean {
-  const [minLng, minLat, maxLng, maxLat] = bbox(feature);
-  return (
-    minLng <= BLEED_BOX.maxLng &&
-    maxLng >= BLEED_BOX.minLng &&
-    minLat <= BLEED_BOX.maxLat &&
-    maxLat >= BLEED_BOX.minLat
-  );
-}
-
-/**
- * Whether a feature spills outside the bleed box and so has to be clipped rather than taken whole.
- *
- * Asked per feature rather than clipping everything, because clipping is a boolean operation and the
- * shared TIGER borders are the one thing in this file worth not running through one. Connecticut sits
- * wholly inside the box and comes through untouched, vertex for vertex; Michigan and Canada do not.
- */
-function needsClipping(feature: Poly): boolean {
-  const [minLng, minLat, maxLng, maxLat] = bbox(feature);
-  return (
-    minLng < BLEED_BOX.minLng ||
-    maxLng > BLEED_BOX.maxLng ||
-    minLat < BLEED_BOX.minLat ||
-    maxLat > BLEED_BOX.maxLat
-  );
-}
-
 /** `BLEED_BOX` as a polygon, for the features big enough to be worth clipping rather than dropping. */
 const BLEED_POLYGON: Poly = {
   type: 'Feature',
   properties: {},
-  geometry: {
-    type: 'Polygon',
-    coordinates: [
-      [
-        [BLEED_BOX.minLng, BLEED_BOX.minLat],
-        [BLEED_BOX.maxLng, BLEED_BOX.minLat],
-        [BLEED_BOX.maxLng, BLEED_BOX.maxLat],
-        [BLEED_BOX.minLng, BLEED_BOX.maxLat],
-        [BLEED_BOX.minLng, BLEED_BOX.minLat],
-      ],
-    ],
-  },
+  geometry: { type: 'Polygon', coordinates: [bleedBoxRing()] },
 };
 
 type Poly = Feature<Polygon | MultiPolygon, Record<string, unknown>>;
+
+/** `regionRules.nearRegion`, over a turf feature. See there for the antimeridian caveat. */
+function nearRegion(feature: Poly): boolean {
+  const [minLng, minLat, maxLng, maxLat] = bbox(feature);
+  return nearRegionBox({ minLng, minLat, maxLng, maxLat });
+}
+
+/** `regionRules.needsClipping`, over a turf feature. */
+function needsClipping(feature: Poly): boolean {
+  const [minLng, minLat, maxLng, maxLat] = bbox(feature);
+  return needsClippingBox({ minLng, minLat, maxLng, maxLat });
+}
 
 /**
  * Pull one layer out of a zipped shapefile as GeoJSON features, via `/vsizip/` so nothing is unpacked
@@ -322,25 +257,6 @@ function subtract(a: Poly, b: Poly): Poly | null {
 }
 
 /**
- * Round every coordinate to four decimals — about eleven metres at this latitude.
- *
- * TIGER emits seven, which is centimetres: a precision no consumer of this file can render and every
- * consumer has to download. Applied after simplification, so it only trims digits rather than moving
- * any vertex a renderer would have kept — and four decimals is finer than the finest tolerance above.
- */
-function roundCoords<T>(geometry: T): T {
-  const round = (n: number) => Math.round(n * 1e4) / 1e4;
-  const walk = (node: unknown): unknown =>
-    Array.isArray(node)
-      ? typeof node[0] === 'number'
-        ? (node as number[]).map(round)
-        : node.map(walk)
-      : node;
-  const g = geometry as { coordinates?: unknown };
-  return g.coordinates ? ({ ...g, coordinates: walk(g.coordinates) } as T) : geometry;
-}
-
-/**
  * Simplify, optionally cut the region out, round, and strip to the one property the style filters on.
  *
  * **Simplify first, cut second, and the order is the whole trick.** Cutting first and simplifying
@@ -380,6 +296,23 @@ function maskFeature(
 /** Bytes of a JSON payload, for the log line that tells you whether the mask got out of hand. */
 function sizeOf(value: unknown): string {
   return `${(JSON.stringify(value).length / 1024).toFixed(0)} KB`;
+}
+
+/**
+ * A geometry's envelope in the `{minLat, minLng, maxLat, maxLng}` shape the rest of the repo uses.
+ *
+ * Turf's `bbox` returns a positional `[west, south, east, north]` tuple, and the two spellings differ
+ * by the *order of the pair* — which is the one kind of mistake that produces a plausible box rather
+ * than an error. Written out once, here, rather than at the call site.
+ */
+function bboxOf(geometry: Polygon | MultiPolygon): {
+  minLng: number;
+  minLat: number;
+  maxLng: number;
+  maxLat: number;
+} {
+  const [minLng, minLat, maxLng, maxLat] = bbox(geometry);
+  return { minLng, minLat, maxLng, maxLat };
 }
 
 function main(): void {
@@ -454,6 +387,49 @@ function main(): void {
   const coarseFile = join(BASEMAP_SCRATCH, 'downstate-ny-coarse.geojson');
   writeFileSync(coarseFile, JSON.stringify({ type: 'FeatureCollection', features: coarse }));
   log(`downstate-ny-coarse   ${sizeOf(coarse)}, for waterBodies:pruneOutsideCoverage`);
+
+  // ── 2b. the corpus clip mask, for the water ETL ───────────────────────────
+  //
+  // **The mask that decides whether a lake is ours, and until now it had no producer** (N7 second
+  // audit). `scripts/etl`'s merge clips every merged body against `boundaries.ndjson`, and the only
+  // instruction for creating that file was a sentence inside an error message: hand-page
+  // `adminAreas:listBoundariesForClip` out of Convex. That route is worse than manual — the outlines
+  // in Convex are *simplified* to fit the 8,192-element array cap (Maine's TIGER outline is 18,932
+  // vertices), so 35,637 exclusions were being decided against a coarsened copy of a boundary this
+  // script already holds verbatim, from the same download, one function away.
+  //
+  // States **and** counties: the states answer "is it ours" and carry the two-letter code that
+  // becomes `waterBodies.states`; the counties are the finer outline and the reason the ETL indexes
+  // the mask by cell at all. Rounded to four decimals (~11 m), which is finer than any question asked
+  // of it and keeps the file readable.
+  const countyMask = ogrFeatures(
+    countyZip,
+    TIGER_COUNTIES.layer,
+    'STATEFP,NAME,GEOID',
+    `STATEFP IN (${fipsList})`,
+  );
+  const boundaryRows = [
+    ...ours.map((f) => ({
+      level: 'state',
+      name: String(f.properties.NAME ?? ''),
+      geometry: roundCoords(f.geometry),
+    })),
+    ...countyMask.map((f) => ({
+      level: 'county',
+      name: String(f.properties.NAME ?? ''),
+      geometry: roundCoords(f.geometry),
+    })),
+  ].map((row) => ({
+    level: row.level,
+    name: row.name,
+    bbox: bboxOf(row.geometry),
+    polygon: row.geometry,
+  }));
+  const boundariesFile = join(BASEMAP_SCRATCH, 'boundaries.ndjson');
+  writeFileSync(boundariesFile, `${boundaryRows.map((r) => JSON.stringify(r)).join('\n')}\n`);
+  log(
+    `boundaries.ndjson     ${ours.length} states + ${countyMask.length} counties, for the water ETL's region clip`,
+  );
 
   // ── 3. the mask: the rest of the world, flat ──────────────────────────────
   const mask: Poly[] = [];

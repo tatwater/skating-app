@@ -66,10 +66,18 @@ describe('normalizeNhdId', () => {
   });
 
   // The format a single-example rule missed. 84.4% of the five-state post-floor corpus is numeric.
-  it('accepts the LEGACY NUMERIC ids, which are five sixths of the corpus', () => {
+  it('accepts the LEGACY NUMERIC ids, which are four fifths of the corpus', () => {
     expect(val('141034078')).toBe('141034078'); // Dead Pond
     expect(val('118181968')).toBe('118181968'); // Sessions Pond
-    expect(NHD_ID_CENSUS.numeric).toBeGreaterThan(NHD_ID_CENSUS.guid * 4);
+    // The claim this pins is the one that matters: **a GUID-only rule would drop most of the
+    // archive**, silently, which is what the first version of `normalizeNhdId` did.
+    //
+    // The ratio itself moved with the floor — 84.4/15.6 at five acres, 79.5/20.5 at one — because
+    // the band between them is disproportionately GUID-keyed. That is a fact about NHD's own
+    // re-keying history rather than about this rule, and it is why the assertion is a margin and
+    // not a percentage.
+    expect(NHD_ID_CENSUS.numeric).toBeGreaterThan(NHD_ID_CENSUS.guid * 3);
+    expect(NHD_ID_CENSUS.numeric + NHD_ID_CENSUS.guid).toBe(NHD_ID_CENSUS.postFloorRows);
   });
 
   it('does not strip leading zeros off a numeric id', () => {

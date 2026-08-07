@@ -74,7 +74,7 @@ import {
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { CELL_DEG, index, SQ_M_PER_ACRE } from './mergeRules';
-import { NHD_SOURCES, nhdArchiveKey, normalizeGnisId, normalizeNhdId } from './nhdArchive';
+import { NHD_SOURCES, nhdArchiveKey, normalizeNhdId } from './nhdArchive';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MERGE_SCRATCH = join(HERE, '..', '.scratch', 'merge');

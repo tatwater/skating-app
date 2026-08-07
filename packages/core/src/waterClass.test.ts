@@ -1,14 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  assertsOceanOrGreatLake,
   classifyName,
   classifyNhd,
   classifyOsmTags,
   classifyThreeDhp,
   classifyWaterBody,
   nameAssertsReservoir,
+  OCEAN_NAME_VETO_MIN_ACRES,
   type SourceClaim,
 } from './waterClass';
+
+/** Local, so this file needs no import for the one unit its area cases are written in. */
+const SQ_M_PER_ACRE_TEST = 4046.8564224;
 
 /** Shorthand: run the whole ladder for an OSM feature. */
 const osm = (name: string, tags: Record<string, string | undefined>) =>
@@ -347,5 +352,94 @@ describe('regional vocabulary found by reading the unresolved list', () => {
     'Fountain of the Continents',
   ])('%s is dropped', (name) => {
     expect(classifyName(name)?.outcome).toBe('drop');
+  });
+});
+
+describe('assertsOceanOrGreatLake (N7 audit)', () => {
+  /** An area comfortably over the gate, so these cases test the *name* half of the rule. */
+  const OCEANIC = 1_000_000 * SQ_M_PER_ACRE_TEST;
+
+  it('names the Great Lakes New York borders', () => {
+    // NHD publishes Erie as FTYPE 390 `LakePond`, so no class rule refuses it, and the merge's token
+    // veto could only fire if 3DHP's counterpart matched geometrically. A name needs no match.
+    expect(assertsOceanOrGreatLake('Lake Erie', OCEANIC)).toBe(true);
+    expect(assertsOceanOrGreatLake('Lake Ontario', OCEANIC)).toBe(true);
+  });
+
+  it('names Long Island Sound and the Atlantic', () => {
+    expect(assertsOceanOrGreatLake('Long Island Sound', OCEANIC)).toBe(true);
+    expect(assertsOceanOrGreatLake('Atlantic Ocean', OCEANIC)).toBe(true);
+    expect(assertsOceanOrGreatLake('Gulf of Maine', OCEANIC)).toBe(true);
+  });
+
+  it('is case- and accent-insensitive, because `\\b` is ASCII-only in JavaScript', () => {
+    expect(assertsOceanOrGreatLake('LAKE ERIE', OCEANIC)).toBe(true);
+  });
+
+  it('does NOT refuse the many New England places named after the sea', () => {
+    // A bare `ocean` would delete real bodies, which is why it is not in the pattern. Same asymmetry
+    // `NAME_DROP` lives by: keeping one body nobody skates is cheap, deleting a real one is not.
+    expect(assertsOceanOrGreatLake('Ocean Pond', OCEANIC)).toBe(false);
+    expect(assertsOceanOrGreatLake('Ocean Point Cove', OCEANIC)).toBe(false);
+    expect(assertsOceanOrGreatLake('Great Pond', OCEANIC)).toBe(false);
+    expect(assertsOceanOrGreatLake('Sound Pond', OCEANIC)).toBe(false);
+  });
+
+  // ── The area gate (N7 second audit, 2026-08-06) ────────────────────────────
+  //
+  // The name-only rule was measured against the master list and it deleted **two real New York
+  // lakes**. Both are in the region, both are the size of an ordinary pond, and the only trace either
+  // would have left is `+2` on a `vetoed-name` counter.
+
+  it('keeps Lake Superior, New York — a 179-acre lake in Sullivan County', () => {
+    expect(assertsOceanOrGreatLake('Lake Superior', 179 * SQ_M_PER_ACRE_TEST)).toBe(false);
+  });
+
+  it('keeps Little Lake Erie, a 4-acre reservoir the substring rule matched', () => {
+    expect(assertsOceanOrGreatLake('Little Lake Erie', 4 * SQ_M_PER_ACRE_TEST)).toBe(false);
+  });
+
+  it('still refuses the real Lake Erie, which is 6.4 million acres', () => {
+    expect(assertsOceanOrGreatLake('Lake Erie', 6_400_000 * SQ_M_PER_ACRE_TEST)).toBe(true);
+  });
+
+  it('refuses to fire at all without an area, because the name is not the rule', () => {
+    expect(assertsOceanOrGreatLake('Lake Erie')).toBe(false);
+  });
+
+  it('sits below the smallest body the list names', () => {
+    // Long Island Sound, 801,802 ac, is the smallest entry — so the gate can never shield one of
+    // them. It does not have to sit above the bodies we cover: Moosehead (75,416 ac) and Champlain
+    // (~271,000) clear the gate and are refused by neither, because the **name** still has to match.
+    expect(OCEAN_NAME_VETO_MIN_ACRES).toBeLessThan(801_802);
+    expect(assertsOceanOrGreatLake('Moosehead Lake', 75_416 * SQ_M_PER_ACRE_TEST)).toBe(false);
+    expect(assertsOceanOrGreatLake('Lake Champlain', 271_000 * SQ_M_PER_ACRE_TEST)).toBe(false);
+  });
+});
+
+describe('the source token survives the classification ladder', () => {
+  it('keeps the catalogue token when a name overrules the class', () => {
+    // The veto is keyed on the catalogue's own token. Rung 1 returns early with `name:reservoir`,
+    // which used to discard the only evidence that a feature was a tidal estuary — so a vetoed body
+    // whose name happened to say "Reservoir" entered the corpus on a technicality.
+    const v = classifyWaterBody({
+      name: 'Tidewater Reservoir',
+      claim: classifyNhd(493),
+    });
+    expect(v.cls).toBe('reservoir');
+    expect(v.token).toBe('name:reservoir');
+    expect(v.sourceToken).toBe('nhd:ftype=493');
+  });
+
+  it('keeps it when a name keyword decides a silent catalogue', () => {
+    const v = classifyWaterBody({ name: 'Mud Pond', claim: classifyOsmTags({ natural: 'water' }) });
+    expect(v.token).toBe('name:lakePond');
+    expect(v.sourceToken).toBe('osm:natural=water');
+  });
+
+  it('keeps it on an ordinary source-class verdict, where the two agree', () => {
+    const v = classifyWaterBody({ name: '', claim: classifyThreeDhp(4) });
+    expect(v.sourceToken).toBe('3dhp:featuretype=4');
+    expect(v.token).toBe(v.sourceToken);
   });
 });

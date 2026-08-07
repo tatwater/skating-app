@@ -275,8 +275,17 @@ const NHD_FTYPE: Readonly<Record<number, WaterBodyClass | null>> = {
   390: 'lakePond', // LakePond   62,809
   436: 'reservoir', // Reservoir     771 — but see NHD_RESERVOIR_DROP_FCODES
   466: 'wetland', // SwampMarsh 44,295
-  // An estuary is a tidal arm, which is the same shape of thing as a bay and is filtered the same
-  // way — by elevation, not by class. 115 features.
+  // An estuary is a tidal arm, the same shape of thing as a bay. **This mapping is unreachable in
+  // practice** — `VETO_TOKENS` refuses `nhd:ftype=493` outright, and the run confirms it: zero
+  // `bay`-class bodies come from NHD. Kept so the table describes the catalogue completely.
+  //
+  // ⚠ **"Filtered by elevation, not by class" was this comment's original claim, and elevation does
+  // not work.** Measured 2026-08-06 over the salt-refused set: of the 12 bodies OSM tags `ele >= 3`
+  // m — high enough that tidal is impossible — only *one* is actually fresh. The rest are Maine
+  // coves carrying an `ele` anyway (Gleason Cove 13 m, Federal Harbor 14 m), and **Crows Pond settles
+  // it with `ele=5` and `tidal=yes` on the same feature.** Whatever mappers put there, it is not the
+  // water surface. What replaced it is a spatial veto against the federal sea polygons plus a
+  // two-entry allow-list; see `FRESHWATER_ALLOW_LIST` in `scripts/etl/src/mergeRules.ts`.
   493: 'bay', // Estuary       115
   445: null, // SeaOcean        0 in-region
   361: null, // Playa           0 in-region
@@ -471,6 +480,16 @@ export interface ClassVerdict {
   readonly basis: ClassBasis;
   /** Stable token for the ledger, e.g. `osm:water=wastewater` or `name:lakePond`. */
   readonly token: string;
+  /**
+   * The **catalogue's own** token, whatever the ladder above decided — never a `name:` token.
+   *
+   * The two used to be one field, and that was a live hole in the merge's ocean veto. `VETO_TOKENS`
+   * is keyed on `nhd:ftype=493` / `3dhp:featuretype=4`, but rung 1 of the ladder returns early with
+   * `name:reservoir` and rung 3 replaces the token with `name:<class>` — so any vetoed feature whose
+   * name happened to say "Reservoir" would have shed the only evidence that it was the ocean, and
+   * entered the corpus on a technicality. A veto must not be overwritable by a naming rule.
+   */
+  readonly sourceToken: string;
 }
 
 /**
@@ -492,12 +511,16 @@ export interface ClassVerdict {
  */
 export function classifyWaterBody(input: { name: string; claim: SourceClaim }): ClassVerdict {
   const { name, claim: sourceClaim } = input;
+  // Carried through **every** return below, so the merge's ocean veto reads what the catalogue said
+  // rather than what the ladder concluded. See `ClassVerdict.sourceToken`.
+  const sourceToken = sourceClaim.token;
 
   if (nameAssertsReservoir(name))
     return {
       cls: 'reservoir',
       basis: 'name-reservoir',
       token: 'name:reservoir',
+      sourceToken,
     };
 
   if (sourceClaim.outcome === 'class') {
@@ -505,23 +528,106 @@ export function classifyWaterBody(input: { name: string; claim: SourceClaim }): 
       cls: sourceClaim.cls,
       basis: 'source-class',
       token: sourceClaim.token,
+      sourceToken,
     };
   }
   if (sourceClaim.outcome === 'drop') {
-    return { cls: null, basis: 'dropped-by-class', token: sourceClaim.token };
+    return { cls: null, basis: 'dropped-by-class', token: sourceClaim.token, sourceToken };
   }
 
   const fromName = classifyName(name);
   if (fromName?.outcome === 'class') {
-    return { cls: fromName.cls, basis: 'name-keyword', token: fromName.token };
+    return { cls: fromName.cls, basis: 'name-keyword', token: fromName.token, sourceToken };
   }
   if (fromName?.outcome === 'drop') {
-    return { cls: null, basis: 'dropped-by-name', token: fromName.token };
+    return { cls: null, basis: 'dropped-by-name', token: fromName.token, sourceToken };
   }
 
   return {
     cls: 'unclassified',
     basis: name.trim().length > 0 ? 'unresolved-named' : 'unresolved-unnamed',
     token: sourceClaim.token,
+    sourceToken,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Absolute refusals — the veto that needs no cross-catalogue match
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Water we refuse **by name**, whatever any catalogue calls it (N7 audit, founder call 2026-08-06).
+ *
+ * ## Why a name list, when there is already a token veto
+ *
+ * `VETO_TOKENS` in the merge is keyed on a catalogue's own class — `3dhp:featuretype=4`
+ * (*Ocean or Great Lake*), `nhd:ftype=445` (*SeaOcean*), `nhd:ftype=493` (*Estuary*). It works only
+ * when the vetoing feature **is in the merged group**, which means it depends on a cross-catalogue
+ * `polygonIoU` match succeeding. **NHD publishes Lake Erie as FTYPE 390 `LakePond`**, so Erie's and
+ * Ontario's exclusion rested entirely on the 3DHP counterpart matching at IoU ≥ 0.5 — over polygons
+ * that are enormous, multi-part, and clipped differently between a state geodatabase and a Northeast
+ * bbox clip. And `inRegion` would not have caught the escape: TIGER's state outlines include New
+ * York's share of both lakes.
+ *
+ * So this is the belt to the token veto's braces: it needs no match, no second catalogue, and no
+ * geometry. A refusal this categorical should not be contingent on anything.
+ *
+ * **The list is small and closed on purpose.** Every entry is a body that is unambiguously not
+ * skateable inland water and that borders one of our five states. Adding a name here deletes every
+ * body carrying it, so it is not a place for heuristics — the area ceiling below is the general rule.
+ *
+ * **A bare `ocean` is deliberately not in it.** New England names a great many small things after the
+ * sea — Ocean Point, Ocean Pond, Ocean Cove — and a substring rule would delete them. The same
+ * asymmetry `NAME_DROP` already lives by: keeping one body nobody skates is cheap, deleting a real
+ * one is not.
+ */
+const VETOED_NAME_PATTERN =
+  /\blake (?:erie|ontario|huron|michigan|superior)\b|\bgreat lakes?\b|\blong island sound\b|\batlantic ocean\b|\bgulf of (?:maine|st\.? lawrence)\b/;
+
+/**
+ * How big a body has to be before its *name* is allowed to condemn it (N7 second audit, 2026-08-06).
+ *
+ * **The list above is a substring rule, and the second audit measured what that costs.** Run against
+ * the master list as it stood, `VETOED_NAME_PATTERN` matched two real inland bodies:
+ *
+ * | | | |
+ * | --- | --- | --- |
+ * | **Lake Superior** | 179 ac, `lakePond`, **New York** | a real lake in Sullivan County, with a state park on it |
+ * | **Little Lake Erie** | 4 ac, `reservoir`, **New York** | matches because `\blake erie\b` sits inside "Little Lake Erie" |
+ *
+ * Both would have been deleted, and the only trace would have been `+2` on a `vetoed-name` counter.
+ * That is the exact failure the file's own docstring rejects a bare `ocean` rule for, one paragraph
+ * up, and then walks into.
+ *
+ * **Fifty thousand acres**, which is the size of the smallest thing on the list by orders of
+ * magnitude: Lake Ontario is 4.7 million acres, Long Island Sound 801,802, the Gulf of Maine larger
+ * than either. Nothing the list is aimed at is remotely near the bar, and nothing under the bar can
+ * be one of them. The largest body we actually cover, Lake Champlain, is ~271,000 acres and is
+ * allowed by name (`AREA_CEILING_ALLOW_LIST`), so this gate never has to adjudicate it.
+ *
+ * **Kept rather than deleted, because the veto has to survive new regions.** `MAX_BODY_SURFACE_AREA`
+ * already refuses everything on this list on size alone today — which is precisely why the *name*
+ * rule was near-redundant and all cost. But the ceiling is a general rule and this is a specific
+ * refusal, and the founder's call (2026-08-06) is that Québec and Alaska are coming: the Gulf of
+ * St. Lawrence and Lake Huron arrive as *our* neighbours the moment Québec does, and a named veto
+ * that needs no cross-catalogue match is worth keeping for that. Gated on area it costs nothing.
+ */
+export const OCEAN_NAME_VETO_MIN_ACRES = 50_000;
+
+/** `OCEAN_NAME_VETO_MIN_ACRES` in square metres. Local so this module keeps standing alone. */
+const OCEAN_NAME_VETO_MIN_SQM = OCEAN_NAME_VETO_MIN_ACRES * 4046.8564224;
+
+/**
+ * Does this name assert a body we refuse outright — an ocean, a Great Lake, Long Island Sound?
+ *
+ * **Takes the area, and refuses to fire without it.** The name alone is not the rule: see
+ * `OCEAN_NAME_VETO_MIN_ACRES` for the two real New York lakes the name-only version deleted. A
+ * caller with no area is asking a question this function cannot answer, and `false` is the safe
+ * reading — the area ceiling and the token veto both still apply.
+ *
+ * Folded through NFD like every other name rule here, because `\b` is ASCII-only in JavaScript.
+ */
+export function assertsOceanOrGreatLake(name: string, surfaceAreaSqM?: number): boolean {
+  if (surfaceAreaSqM === undefined || surfaceAreaSqM < OCEAN_NAME_VETO_MIN_SQM) return false;
+  return VETOED_NAME_PATTERN.test(fold(name));
 }

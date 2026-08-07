@@ -1,4 +1,9 @@
-import { belongsInCorpus, isWetlandClass, meetsAreaFloor } from '@skating/core';
+import {
+  belongsInCorpus,
+  HARD_MIN_SURFACE_AREA_SQM,
+  isWetlandClass,
+  meetsAreaFloor,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, it, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -2726,6 +2731,40 @@ describe('importCanonical keyed on catalogue ids (N7 / D93)', () => {
     expect(all.map((b) => b.name)).toContain('Fine');
   });
 
+  test('a conflict marks both rows for review, so step 6 cannot delete the evidence', async () => {
+    // **The N7 second audit's hole.** The conflict branch wrote nothing at all, which was right
+    // about the body and catastrophic next to step 6: neither row got a `lastCampaignId`, so
+    // `pruneNotInCampaign` then saw two clean, unattached, un-reaffirmed rows and deleted BOTH —
+    // resolving a corpus-uniqueness violation by destroying the evidence of it.
+    const t = convexTestWithGeo();
+    await t.run(async (ctx) => {
+      for (const name of ['dup1', 'dup2']) {
+        await ctx.db.insert('waterBodies', {
+          ...SAMPLE_BODY,
+          name,
+          source: 'nhd',
+          externalId: name,
+          nhdId: 'same-id',
+          dedupStatus: 'clean',
+          createdAt: Date.now(),
+        });
+      }
+    });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: undefined, nhdId: 'same-id', name: 'ambiguous' }],
+      campaignId: 'n7-2026-08-06',
+    });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    expect(rows.map((r) => r.dedupStatus)).toEqual(['near_certain', 'near_certain']);
+
+    // …and the prune's own protection list is what that buys: a flagged row is never deleted.
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: 'n7-2026-08-06',
+      apply: true,
+    });
+    expect(res).toMatchObject({ deleted: 0, kept: expect.objectContaining({ dedupOrMerged: 2 }) });
+  });
+
   test('a 3dhp-only feature can be stored — the lake neither other catalogue draws', async () => {
     const t = convexTestWithGeo();
     const res = await t.mutation(internal.waterBodies.importCanonical, {
@@ -2766,5 +2805,326 @@ describe('importCanonical keyed on catalogue ids (N7 / D93)', () => {
     // vacuously over an empty array. A typecheck caught it; the test never would have.)
     const cells = await t.run((ctx) => ctx.db.query('waterBodyCells').collect());
     expect(cells).toHaveLength(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The wire contract between the merge and the loader (N7 audit)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the merged record is accepted and stored whole', () => {
+  /**
+   * Everything `scripts/etl`'s `toCanonicalBody` can emit, in one record.
+   *
+   * **This test exists because the contract was broken and nothing noticed.** `merge.ts` emitted
+   * `states`, `CanonicalBody` declared it — and the `canonicalBody` validator did not have the field.
+   * Convex object validators are exact, so a merged load would have been rejected batch by batch,
+   * 27,074 bodies deep into a campaign, on a field the plan had already recorded as "the one thing
+   * that was not on the list and had to be added".
+   */
+  const MERGED_ITEM = {
+    ...CANONICAL_ITEM,
+    osmId: 'way/1',
+    nhdId: '141034078',
+    threeDhpId: 'MLBCG',
+    gnisId: '869848',
+    geometrySource: 'nhd' as const,
+    states: ['NY', 'VT'],
+    sourceAreaSqM: 123_456,
+    inRegionFraction: 0.42,
+    confidence: { name: 'high' as const, polygon: 'medium' as const, cls: 'low' as const },
+    reviewReasons: ['class-conflict' as const],
+  };
+
+  test('the validator accepts every field the merge emits', async () => {
+    const t = convexTestWithGeo();
+    await expect(
+      t.mutation(internal.waterBodies.importCanonical, { bodies: [MERGED_ITEM] }),
+    ).resolves.toMatchObject({ inserted: 1 });
+  });
+
+  test('stores the merge’s own states rather than waiting for a --state flag', async () => {
+    // A merged corpus loads in **one pass**, so there are no per-state batches to tag. Adding the
+    // field to the validator without teaching the handler to read it would have accepted the record
+    // and written nothing from it: 27,074 rows with no state, and every regional filter silently
+    // empty.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [MERGED_ITEM] });
+    const body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.states).toEqual(['NY', 'VT']);
+  });
+
+  test('an explicit list replaces, where a --state tag still unions', async () => {
+    const t = convexTestWithGeo();
+    // The OSM lane's behaviour, unchanged: one extract at a time, accumulating.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
+      state: 'VT',
+    });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
+      state: 'NY',
+    });
+    let body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.states).toEqual(['NY', 'VT']);
+
+    // The merge knows the whole answer, so it replaces — otherwise a state a body no longer touches
+    // could never be removed.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1', states: ['ME'] }],
+    });
+    body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.states).toEqual(['ME']);
+  });
+
+  test('persists the confidence scores and review reasons instead of discarding them', async () => {
+    // `@skating/core`'s `confidence.ts` is fully tested and, until this landed, had no consumer:
+    // the merge computed the scores, tallied them into three lines of terminal output and dropped
+    // them, so a 1,388-body review queue could never be opened by anybody.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [MERGED_ITEM] });
+    const body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.confidence).toEqual({ name: 'high', polygon: 'medium', cls: 'low' });
+    expect(body?.reviewReasons).toEqual(['class-conflict']);
+    expect(body?.inRegionFraction).toBeCloseTo(0.42);
+  });
+
+  test('a re-import CLEARS a review reason the new evidence no longer supports', async () => {
+    // Written as explicit `undefined`s rather than omitted keys, like `shapeFields`: a stale
+    // `reviewReasons` would keep a moderator looking at a conflict that has since resolved.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, { bodies: [MERGED_ITEM] });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...MERGED_ITEM, reviewReasons: undefined, confidence: undefined }],
+    });
+    const body = await t.run(async (ctx) => ctx.db.get(await onlyBodyIdIn(ctx)));
+    expect(body?.reviewReasons).toBeUndefined();
+    expect(body?.confidence).toBeUndefined();
+  });
+});
+
+describe('pruneNotInCampaign — campaign step 6', () => {
+  const CAMPAIGN = 'n7-2026-08-06';
+
+  test('deletes a stored body the master list did not re-affirm', async () => {
+    // `importCanonical` never deletes, so after a re-import the corpus is the UNION of the new master
+    // list and whatever was there before — and neither set contains the other. A body the new rules
+    // now refuse (a vetoed Great Lake, an out-of-region row, an unnamed wetland under the 50-acre
+    // bar) survives forever: `pruneBelowAreaFloor` only sees area, `pruneOutsideCoverage` only sees
+    // polygons handed to it.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1', externalId: 'way/1' }],
+    });
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+    });
+    expect(res).toMatchObject({ deleted: 1 });
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(0);
+  });
+
+  test('keeps a body this campaign re-affirmed', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
+      campaignId: CAMPAIGN,
+    });
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+    });
+    expect(res).toMatchObject({ deleted: 0, kept: expect.objectContaining({ reaffirmed: 1 }) });
+  });
+
+  test('is dry by default, and the tallies are identical either way', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
+    });
+    const dry = await t.mutation(internal.waterBodies.pruneNotInCampaign, { campaignId: CAMPAIGN });
+    expect(dry).toMatchObject({ applied: false, deleted: 1 });
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(1);
+    expect(dry.sample[0]).toMatchObject({ externalId: CANONICAL_ITEM.externalId });
+  });
+
+  test('never deletes a body carrying user content, whatever the master list says', async () => {
+    // D93's closing rule, and the reason the whole campaign patches in place: user content keys off
+    // the Convex `_id`. A prune that can delete an attached body makes "change a lake's geometry
+    // source" a migration again.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
+    });
+    const bodyId = await t.run((ctx) => onlyBodyIdIn(ctx));
+    await t.run(async (ctx) => {
+      await ctx.db.insert('putIns', {
+        waterBodyId: bodyId,
+        coord: { lat: 44, lng: -70 },
+        status: 'visible',
+        source: 'official',
+        createdAt: Date.now(),
+      });
+    });
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+    });
+    expect(res).toMatchObject({ deleted: 0, kept: expect.objectContaining({ attached: 1 }) });
+  });
+
+  test('never deletes a body somebody asked for — N7b’s whole point', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
+    });
+    const bodyId = await t.run((ctx) => onlyBodyIdIn(ctx));
+    await t.run((ctx) => ctx.db.patch(bodyId, { includedByRequest: true }));
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+    });
+    expect(res).toMatchObject({
+      deleted: 0,
+      kept: expect.objectContaining({ includedByRequest: 1 }),
+    });
+  });
+
+  test('refuses an empty campaignId rather than deleting the corpus', async () => {
+    const t = convexTestWithGeo();
+    await expect(
+      t.mutation(internal.waterBodies.pruneNotInCampaign, { campaignId: '  ', apply: true }),
+    ).rejects.toThrow(/campaignId/);
+  });
+
+  // ── The blast radius (N7 second audit) ──────────────────────────────────────
+  //
+  // The prune's premise is that an unstamped row is a row the master list did not contain. That
+  // premise has one likely failure: `load.ts` deliberately survives isolated batch failures, and
+  // every body in a skipped batch of ~150 is left unstamped and indistinguishable from a body the
+  // rules now refuse. A load that reported success with three failed batches would hand this pass
+  // 450 real lakes to delete, named twenty at a time in a summary nobody reads to the end.
+
+  test('refuses a page that is mostly deletions — that is a failed load, not a rule change', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: Array.from({ length: 30 }, (_, i) => ({
+        ...CANONICAL_ITEM,
+        externalId: `way/${i}`,
+        osmId: `way/${i}`,
+      })),
+    });
+    await expect(
+      t.mutation(internal.waterBodies.pruneNotInCampaign, { campaignId: CAMPAIGN, apply: true }),
+    ).rejects.toThrow(/whole-corpus replacement/);
+    // Nothing was deleted, and the refusal happened before any write.
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(30);
+  });
+
+  test('refuses in DRY mode too, so the number is never printed for someone to act on', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: Array.from({ length: 30 }, (_, i) => ({
+        ...CANONICAL_ITEM,
+        externalId: `way/${i}`,
+        osmId: `way/${i}`,
+      })),
+    });
+    await expect(
+      t.mutation(internal.waterBodies.pruneNotInCampaign, { campaignId: CAMPAIGN }),
+    ).rejects.toThrow(/whole-corpus replacement/);
+  });
+
+  test('allows the ordinary case: a few percent of a page, which is what step 6 is for', async () => {
+    const t = convexTestWithGeo();
+    // 29 re-affirmed, 1 not — the shape of a real difference between two master lists.
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: Array.from({ length: 29 }, (_, i) => ({
+        ...CANONICAL_ITEM,
+        externalId: `way/${i}`,
+        osmId: `way/${i}`,
+      })),
+      campaignId: CAMPAIGN,
+    });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, externalId: 'way/stale', osmId: 'way/stale' }],
+    });
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+    });
+    expect(res).toMatchObject({ deleted: 1, deleteFraction: 0.033 });
+  });
+
+  test('an operator can raise the cap deliberately, per invocation', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: Array.from({ length: 30 }, (_, i) => ({
+        ...CANONICAL_ITEM,
+        externalId: `way/${i}`,
+        osmId: `way/${i}`,
+      })),
+    });
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+      maxDeleteFraction: 1,
+    });
+    expect(res).toMatchObject({ deleted: 30 });
+  });
+
+  test('does not fire on a page too small for a fraction to mean anything', async () => {
+    // The tail page of any paginated run is short by construction, and a guard that fires there is
+    // one somebody switches off.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, osmId: 'way/1' }],
+    });
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      apply: true,
+    });
+    expect(res).toMatchObject({ deleted: 1 });
+  });
+});
+
+describe('the floor reads the area the import decided on', () => {
+  test('a body admitted on its source area is not deleted on its simplified one', async () => {
+    // The two differ by a fraction of a percent — the floor is applied to the source geometry, the
+    // stored area is measured from the simplified polygon — and that was enough to make a body just
+    // over a bar in one measure and just under it in the other. It was added by every import and
+    // deleted by every prune, forever, with nothing to show for it but a row count that never settled.
+    const t = convexTestWithGeo();
+    const justOver = HARD_MIN_SURFACE_AREA_SQM * 1.0002;
+    const justUnder = HARD_MIN_SURFACE_AREA_SQM * 0.9998;
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          osmId: 'way/1',
+          name: 'Marginal Pond',
+          surfaceAreaSqM: justUnder,
+          sourceAreaSqM: justOver,
+        },
+      ],
+    });
+    const res = await t.mutation(internal.waterBodies.pruneBelowAreaFloor, { apply: true });
+    expect(res).toMatchObject({ deleted: 0 });
+  });
+
+  test('falls back to the stored area for rows written before sourceAreaSqM existed', async () => {
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          ...CANONICAL_ITEM,
+          osmId: 'way/1',
+          name: '',
+          surfaceAreaSqM: HARD_MIN_SURFACE_AREA_SQM * 0.5,
+        },
+      ],
+    });
+    const res = await t.mutation(internal.waterBodies.pruneBelowAreaFloor, { apply: true });
+    expect(res).toMatchObject({ deleted: 1 });
   });
 });

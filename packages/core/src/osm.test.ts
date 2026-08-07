@@ -2,8 +2,10 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
   belongsInCorpus,
+  exceedsAreaCeiling,
   HARD_MIN_SURFACE_AREA_SQM,
   isWetlandClass,
+  MAX_BODY_SURFACE_AREA_SQM,
   MIN_SURFACE_AREA_SQM,
   meetsAreaFloor,
   UNNAMED_WETLAND_MIN_ACRES,
@@ -224,5 +226,51 @@ describe('belongsInCorpus across the enum rename (N7/D109)', () => {
       expect(isWetlandClass(type)).toBe(false);
       expect(belongsInCorpus({ name: '', surfaceAreaSqM: acres(20), type })).toBe(true);
     }
+  });
+});
+
+describe('exceedsAreaCeiling (N7 audit)', () => {
+  const acres = (n: number) => n * 4046.8564224;
+
+  it('lets an ordinary lake through', () => {
+    // Moosehead is ~75,000 acres — the largest body in our region bar one, and nowhere near the bar.
+    expect(exceedsAreaCeiling({ name: 'Moosehead Lake', surfaceAreaSqM: acres(75_000) })).toBe(
+      false,
+    );
+  });
+
+  it('refuses an ocean-sized polygon nobody named', () => {
+    // The unnamed half of the Great Lakes hole. NHD publishes Lake Erie as an ordinary FTYPE 390
+    // `LakePond`, so nothing about its *class* refuses it, and TIGER's New York outline includes the
+    // state's share of Erie and Ontario, so the region clip passes it too.
+    expect(exceedsAreaCeiling({ name: '', surfaceAreaSqM: acres(6_400_000) })).toBe(true);
+  });
+
+  it('lets Lake Champlain through, which is the only reason the allow-list exists', () => {
+    expect(exceedsAreaCeiling({ name: 'Lake Champlain', surfaceAreaSqM: acres(271_000) })).toBe(
+      false,
+    );
+  });
+
+  it('matches the allow-list on a folded name, so accents and case cannot smuggle a body past', () => {
+    expect(exceedsAreaCeiling({ name: 'LAKE CHAMPLAIN', surfaceAreaSqM: acres(271_000) })).toBe(
+      false,
+    );
+  });
+
+  it('is exclusive at the bar — exactly 100,000 acres is not over it', () => {
+    expect(exceedsAreaCeiling({ name: '', surfaceAreaSqM: MAX_BODY_SURFACE_AREA_SQM })).toBe(false);
+  });
+
+  it('does not touch `belongsInCorpus`, so a prune can never delete Champlain on it', () => {
+    // Deliberate: the floor is enforced in two places and must mean the same thing in both. A ceiling
+    // wired into it would give `pruneBelowAreaFloor` the power to delete the largest body we cover
+    // the first time somebody edited the allow-list.
+    expect(
+      belongsInCorpus({ name: 'Lake Champlain', surfaceAreaSqM: acres(271_000), type: 'lakePond' }),
+    ).toBe(true);
+    expect(belongsInCorpus({ name: '', surfaceAreaSqM: acres(6_400_000), type: 'lakePond' })).toBe(
+      true,
+    );
   });
 });

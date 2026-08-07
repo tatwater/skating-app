@@ -8,10 +8,10 @@ import {
 } from './basemapLayers';
 
 /** A stand-in for what `layers()` returns — this module only ever reads id and zoom bounds. */
-const layer = (
-  id: string,
-  bounds: Partial<Omit<ZoomableLayer, 'id'>> = {},
-): ZoomableLayer => ({ id, ...bounds });
+const layer = (id: string, bounds: Partial<Omit<ZoomableLayer, 'id'>> = {}): ZoomableLayer => ({
+  id,
+  ...bounds,
+});
 
 /** The handful of flavour layers the policy actually names, plus detail it should leave alone. */
 const flavour = (): ZoomableLayer[] => [

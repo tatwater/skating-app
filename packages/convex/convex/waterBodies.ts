@@ -14,6 +14,7 @@ import {
   bboxIntersects,
   belongsInCorpus,
   bodiesCoveringPoint,
+  CONFIDENCE_LEVELS,
   canOverwriteElevation,
   classifyDedup,
   containedFraction,
@@ -44,6 +45,7 @@ import {
   pathToBody,
   pointInPolygon,
   polygonBBox,
+  REVIEW_REASONS,
   resolveUpsert,
   WATER_BODY_CLASSES,
 } from '@skating/core';
@@ -145,11 +147,32 @@ function sanitizeLimit(limit: number | undefined): number {
   return Math.min(limit, MAX_VIEWPORT_LIMIT);
 }
 
-/** Union a state code into a body's `states` (sorted + deduped); unchanged when no state is given. */
-function unionState(
+/**
+ * A body's `states`, from whichever producer actually knows.
+ *
+ * ## Two producers, and only one of them used to be heard
+ *
+ * The **OSM lane** imports one state extract at a time, so it knows only "this batch came from
+ * Vermont" — and a border-spanning body accumulates its states by being imported once per extract,
+ * which is what `--state` and the union are for. The **merge** loads a single pass with no per-state
+ * batches, computes `statesFor` per body against the state-level admin areas, and knows the whole
+ * answer at once.
+ *
+ * The handler only ever read the first of those. Adding `states` to the validator without this would
+ * have accepted the field and then written nothing from it: 27,074 rows with no state at all, and
+ * every regional filter in the app — the feed, drive-time, the state chips — silently empty.
+ *
+ * So: **an explicit list from the producer is authoritative and replaces**; a `--state` tag is a
+ * partial observation and unions. The rule is the same one `assertedCatalogueIds` follows for the
+ * catalogue ids, and for the same reason — the difference between a complete record and a partial one
+ * has to be expressed by the caller, because nothing in here can tell them apart.
+ */
+function resolveStates(
   existing: string[] | undefined,
+  incoming: string[] | undefined,
   state: string | undefined,
 ): string[] | undefined {
+  if (incoming?.length) return [...new Set(incoming)].sort();
   if (!state) return existing;
   return [...new Set([...(existing ?? []), state])].sort();
 }
@@ -185,10 +208,40 @@ const canonicalBody = v.object({
   geometrySource: v.optional(literals(GEOMETRY_SOURCES)),
   name: v.string(),
   type: literals(WATER_BODY_CLASSES),
+  /**
+   * The states this body touches — **computed by the producer, not by the loader's `--state` flag.**
+   *
+   * The OSM lane got this for free by importing one state extract at a time and letting the loader
+   * tag each batch. A merged corpus is loaded in a *single pass*, so there are no per-state batches
+   * and `statesFor` computes it per body against the state-level admin areas — giving a
+   * border-spanning body every state it touches rather than the first.
+   *
+   * **This field was missing from this validator while the ETL emitted it**, which is a wire break
+   * rather than an omission: Convex object validators are exact, so every batch of a merged load
+   * would have been rejected outright. And adding the field alone was not enough — the handler
+   * ignored it and wrote `unionState(existing.states, state)` from a CLI flag a single-pass load does
+   * not have, which would have produced 27,000 rows with no state at all and silently broken every
+   * regional filter in the app.
+   */
+  states: v.optional(v.array(v.string())),
   polygon: geoJson,
   bbox,
   centroid: latLng, // the on-water representative point (D48)
   surfaceAreaSqM: v.optional(v.number()),
+  /** The area the admission decision was made on — see the schema note on `sourceAreaSqM`. */
+  sourceAreaSqM: v.optional(v.number()),
+  /** Share of the outline inside our five states, `[0, 1]` — see the schema note. */
+  inRegionFraction: v.optional(v.number()),
+  /** Per-attribute agreement between the catalogues (D110) — see the schema note. */
+  confidence: v.optional(
+    v.object({
+      name: literals(CONFIDENCE_LEVELS),
+      polygon: literals(CONFIDENCE_LEVELS),
+      cls: literals(CONFIDENCE_LEVELS),
+    }),
+  ),
+  /** Why this body wants a human (D110). Empty is normal and is omitted rather than stored. */
+  reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
   // A genuinely-interior point + the D85 shape stats, measured by the ETL on the source geometry
   // before it was simplified. All optional: a body whose geometry defeats one of them still loads.
   interiorPoint: v.optional(latLng),
@@ -225,6 +278,33 @@ function shapeFields(item: {
     longAxisBearingDeg: item.longAxisBearingDeg,
     shortAxisM: item.shortAxisM,
     fetchProfileM: item.fetchProfileM,
+  };
+}
+
+/**
+ * What the **merge** knew and the loader used to discard (N7 audit).
+ *
+ * Written as explicit `undefined`s rather than omitted keys, for the same reason `shapeFields` is:
+ * a re-import must be able to *clear* a value the new evidence no longer supports. A stale
+ * `confidence: high` beside a body whose second catalogue just disappeared is worse than none, and a
+ * stale `reviewReasons` would keep a moderator looking at a conflict that has since resolved.
+ *
+ * **The one asymmetry is `sourceAreaSqM`.** It is an area, and the D91 floor is decided on it, so
+ * clearing it silently moves a body from "admitted at 1.0001 acres" to "unknown area" — which
+ * `pruneBelowAreaFloor` treats as a keep. That is the safe direction, and it is the direction the
+ * prune already takes for an unknown area, so the explicit `undefined` is correct here too.
+ */
+function mergeFields(item: {
+  sourceAreaSqM?: number;
+  inRegionFraction?: number;
+  confidence?: { name: string; polygon: string; cls: string };
+  reviewReasons?: string[];
+}) {
+  return {
+    sourceAreaSqM: item.sourceAreaSqM,
+    inRegionFraction: item.inRegionFraction,
+    confidence: item.confidence as Doc<'waterBodies'>['confidence'],
+    reviewReasons: item.reviewReasons as Doc<'waterBodies'>['reviewReasons'],
   };
 }
 
@@ -415,8 +495,16 @@ async function lookupByCatalogueIds(
 export const importCanonical = internalMutation({
   // `state` (2-letter code) is the extract's source region; it's unioned into each body's `states`
   // so a border-spanning body imported from multiple state extracts accumulates them all (D5/2.5).
-  args: { bodies: v.array(canonicalBody), state: v.optional(v.string()) },
-  handler: async (ctx, { bodies, state }) => {
+  args: {
+    bodies: v.array(canonicalBody),
+    state: v.optional(v.string()),
+    /**
+     * The campaign this load belongs to. Stamped on every row it inserts or patches, so step 6's
+     * prune can ask "did the master list re-affirm this body?" without re-deriving any rule.
+     */
+    campaignId: v.optional(v.string()),
+  },
+  handler: async (ctx, { bodies, state, campaignId }) => {
     // Defense-in-depth against the ETL's `--state` guard: reject an unknown region code before any
     // write so a bad tag can never be unioned into a body's `states` (Phase 2.5 review).
     if (state !== undefined && !isKnownStateCode(state)) {
@@ -431,9 +519,12 @@ export const importCanonical = internalMutation({
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
 
     for (const item of bodies) {
+      // Held rather than inlined: the `conflict` branch needs the same rows back, and re-reading
+      // them would double the index reads in the heaviest mutation in the app.
+      const matches = await lookupByCatalogueIds(ctx, item);
       const verdict = resolveUpsert(
         { osmId: item.osmId, nhdId: item.nhdId, threeDhpId: item.threeDhpId },
-        await lookupByCatalogueIds(ctx, item),
+        matches,
       );
 
       if (verdict.action === 'conflict') {
@@ -443,6 +534,22 @@ export const importCanonical = internalMutation({
           action: 'conflict',
           reason: verdict.reason,
         });
+        // **A conflict must not become a deletion** (N7 second audit). This used to write nothing at
+        // all, which was right about the *body* and catastrophic in combination with step 6: the rows
+        // an id resolved ambiguously to never got a `lastCampaignId`, so `pruneNotInCampaign` then
+        // saw two clean, unattached, un-reaffirmed rows and **deleted both** — resolving a
+        // corpus-uniqueness violation by destroying the evidence of it.
+        //
+        // So the rows are marked for the same D36 queue a `merge` verdict uses. That is what the
+        // dedup status is for, and it is also what the prune's protection list already honours.
+        for (const match of matches) {
+          for (const key of match.keys) {
+            const row = await ctx.db.get(key);
+            if (row && row.dedupStatus !== 'merged') {
+              await ctx.db.patch(key, { dedupStatus: 'near_certain' });
+            }
+          }
+        }
         continue;
       }
 
@@ -482,14 +589,34 @@ export const importCanonical = internalMutation({
         await ctx.db.patch(existing._id, {
           name: item.name,
           type: item.type,
+          // **`source` is deliberately NOT patched, and it is not the same question as
+          // `geometrySource`** (second audit, 2026-08-06 — noted because this was "fixed" and then
+          // un-fixed within the hour).
+          //
+          // The audit flagged that a body first imported from OSM and now drawn by NHD keeps
+          // `source: 'osm'` for ever, which reads like staleness. It is not: **`source` and
+          // `externalId` are one pair**, describing where this row *arrived* from, and `externalId`
+          // cannot move — the contour tiles are stamped with it (D93). Patching `source` alone
+          // separates the pair, and `richnessFor` reads exactly that pair to find a body's contour
+          // coverage — so "correcting" it would look up `('nhd', 'way/123')`, match nothing, and
+          // silently drop `hasContours` from the D2 prominence score of every body whose geometry
+          // source changed.
+          //
+          // Whose outline we drew is `geometrySource`, which IS patched, three lines down. The two
+          // disagreeing is the design working, not drift.
           polygon: item.polygon,
           bbox: item.bbox,
           centroid: item.centroid,
           representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
-          states: unionState(existing.states, state),
+          states: resolveStates(existing.states, item.states, state),
           ...scores,
           ...shapeFields(item),
+          ...mergeFields(item),
+          // Stamped on every touch, so step 6 can find the rows this campaign never mentioned.
+          // Left alone when the caller names no campaign: a partial load must not make the whole
+          // corpus look re-affirmed by a run that only saw one state.
+          ...(campaignId ? { lastCampaignId: campaignId } : {}),
           // **Every id the record asserts, and nothing it merely fails to mention.** The old rule
           // withheld `nhdId` entirely so a reconciliation survived a re-import; that was right when
           // an incoming record was one catalogue's view, and too strict now that the merge resolves
@@ -551,9 +678,14 @@ export const importCanonical = internalMutation({
           centroid: item.centroid,
           representativePoint: item.centroid,
           surfaceAreaSqM: item.surfaceAreaSqM,
-          states: unionState(undefined, state),
+          states: resolveStates(undefined, item.states, state),
           ...scores,
           ...shapeFields(item),
+          ...mergeFields(item),
+          // Stamped on every touch, so step 6 can find the rows this campaign never mentioned.
+          // Left alone when the caller names no campaign: a partial load must not make the whole
+          // corpus look re-affirmed by a run that only saw one state.
+          ...(campaignId ? { lastCampaignId: campaignId } : {}),
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
         });
@@ -1231,7 +1363,13 @@ export const pruneBelowAreaFloor = internalMutation({
     let deleted = 0;
 
     for (const body of page.page) {
-      if (body.surfaceAreaSqM === undefined) {
+      // **The area the import decided on, not the one we draw.** `surfaceAreaSqM` is measured from
+      // the simplified polygon; the floor was applied to the source geometry. They differ by a
+      // fraction of a percent, which is enough to make a body just over a bar in one measure and
+      // just under it in the other — so the import added it and this deleted it, every campaign,
+      // forever. `sourceAreaSqM` is that number; the fallback is for rows written before it existed.
+      const floorArea = body.sourceAreaSqM ?? body.surfaceAreaSqM;
+      if (floorArea === undefined) {
         kept.areaUnknown++;
         continue;
       }
@@ -1239,7 +1377,7 @@ export const pruneBelowAreaFloor = internalMutation({
         belongsInCorpus({
           name: body.name,
           type: body.type,
-          surfaceAreaSqM: body.surfaceAreaSqM,
+          surfaceAreaSqM: floorArea,
           includedByRequest: body.includedByRequest,
         })
       ) {
@@ -1295,6 +1433,216 @@ export const pruneBelowAreaFloor = internalMutation({
     };
   },
 });
+
+/**
+ * Delete the stored bodies the campaign's master list did **not** re-affirm — campaign step 6 (N7).
+ *
+ * ## The gap this closes, and why the two existing prunes cannot
+ *
+ * `importCanonical` upserts and never deletes. So after a re-import the corpus is the **union** of
+ * what the master list says and whatever was there before — and the two sets do not contain each
+ * other: 18,383 stored against 27,074 merged, with real rows on both sides of the difference.
+ *
+ * Every stored body the new rules now refuse survives that load forever:
+ *
+ * - a body the ocean veto now catches (a Great Lake, an unnamed 100,000-acre polygon);
+ * - a body outside the region mask, or in New York below I-84 (D111);
+ * - an unnamed wetland under the 50-acre bar D96 settled after it was imported;
+ * - a `salt_pool` or a river that the old classifier dropped into `other` and the new one refuses.
+ *
+ * **`pruneBelowAreaFloor` can find none of them**, because it only ever asks about area, and
+ * `pruneOutsideCoverage` only about a polygon you hand it. This asks the one question that covers
+ * every case at once: *did this campaign's master list re-affirm this body?*
+ *
+ * ## Membership is asserted by the loader, not inferred here
+ *
+ * `importCanonical` stamps `lastCampaignId` on every row it inserts or patches. A row whose stamp is
+ * not the campaign we just ran is a row the master list did not contain — which is exactly the
+ * statement we want, and it needs no geometry, no reclassification and no second copy of the rules.
+ * Getting it from the data rather than re-deriving it is also what keeps this pass from disagreeing
+ * with the import at the edges, which is the failure D97 named: *one deleter, one reporter.*
+ *
+ * ## Every protection `pruneBelowAreaFloor` honours, honoured identically
+ *
+ * A body carrying user content is **never** deleted, whatever the master list says — that is D93's
+ * closing rule and it is the reason the whole campaign patches in place. `source: 'user'`, a
+ * `curatedBoost`, a soft-delist, a dedup or merge pointer, `includedByRequest` (N7b's whole point),
+ * and any attachment all keep a row. The shared predicate is `protectedFromPrune`, so the two passes
+ * cannot drift.
+ *
+ * **Dry by default**, like both of its siblings: the tallies are identical either way.
+ */
+export const pruneNotInCampaign = internalMutation({
+  args: {
+    /** The campaign whose master list defines membership. Required — there is no sane default. */
+    campaignId: v.string(),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    apply: v.optional(v.boolean()),
+    /**
+     * How much of a page this pass is allowed to delete before it refuses — **the blast radius**
+     * (N7 second audit).
+     *
+     * The prune's whole premise is that a row the campaign did not stamp is a row the master list did
+     * not contain. That premise fails silently in one specific, likely way: `load.ts` deliberately
+     * survives isolated batch failures (`MAX_CONSECUTIVE_BATCH_FAILURES = 5`), and every body in a
+     * failed batch of ~150 is left unstamped. Nothing distinguishes those from bodies the rules now
+     * refuse, so a load that reported success with three failed batches would hand this pass 450 real
+     * lakes to delete, named twenty at a time in a summary nobody reads to the end.
+     *
+     * A whole-corpus replacement is not what step 6 is for — the expected deletion is the difference
+     * between two master lists, which is a few percent. So a page that is mostly deletions is
+     * evidence the premise broke, and the pass stops and says so.
+     *
+     * **Check the load's run row first.** This is the mechanical backstop, not the check: `load.ts`
+     * records `batchFailures`, and a non-zero count there means do not run this at all.
+     */
+    maxDeleteFraction: v.optional(v.number()),
+  },
+  handler: async (ctx, { campaignId, cursor, batchSize, apply, maxDeleteFraction }) => {
+    if (campaignId.trim().length === 0) {
+      throw new ConvexError('pruneNotInCampaign: campaignId must not be empty');
+    }
+    const deleteCap =
+      maxDeleteFraction === undefined
+        ? DEFAULT_MAX_DELETE_FRACTION
+        : Math.min(1, Math.max(0, maxDeleteFraction));
+    // Same byte-budget reasoning as `pruneBelowAreaFloor` — a page is bounded by polygon bytes.
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 100));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    const kept = {
+      reaffirmed: 0,
+      userCreated: 0,
+      curated: 0,
+      includedByRequest: 0,
+      dedupOrMerged: 0,
+      delisted: 0,
+      attached: 0,
+    };
+    const attachedBy: Record<string, number> = {};
+    /** Named, not just counted — a deletion nobody can inspect is one nobody can veto. */
+    const sample: { name: string; externalId?: string; acres: number }[] = [];
+    /**
+     * Classified first, deleted second — so the blast-radius guard can see the whole page.
+     *
+     * The first version deleted inline, which meant a page that turned out to be 90% deletions had
+     * already destroyed 90% of itself by the time anything could object.
+     */
+    const doomed: Doc<'waterBodies'>[] = [];
+
+    for (const body of page.page) {
+      if (body.lastCampaignId === campaignId) {
+        kept.reaffirmed++;
+        continue;
+      }
+      if (body.source === 'user') {
+        kept.userCreated++;
+        continue;
+      }
+      if (body.includedByRequest === true) {
+        kept.includedByRequest++;
+        continue;
+      }
+      if (body.curatedBoost !== undefined) {
+        kept.curated++;
+        continue;
+      }
+      if (
+        body.dedupStatus !== 'clean' ||
+        body.mergedIntoId !== undefined ||
+        (body.duplicateCandidateIds?.length ?? 0) > 0
+      ) {
+        kept.dedupOrMerged++;
+        continue;
+      }
+      if (body.removedAt !== undefined) {
+        kept.delisted++;
+        continue;
+      }
+      const attachment = await bodyAttachmentKind(ctx, body._id);
+      if (attachment !== null) {
+        kept.attached++;
+        attachedBy[attachment] = (attachedBy[attachment] ?? 0) + 1;
+        continue;
+      }
+
+      if (sample.length < PRUNE_SAMPLE_CAP) {
+        sample.push({
+          name: body.name,
+          externalId: body.externalId,
+          acres: Math.round((body.surfaceAreaSqM ?? 0) / SQ_M_PER_ACRE_LOCAL),
+        });
+      }
+      doomed.push(body);
+    }
+
+    const deleted = doomed.length;
+    const fraction = page.page.length === 0 ? 0 : deleted / page.page.length;
+    // **The guard fires in both modes**, so a dry run reports the refusal instead of quietly
+    // printing a number the operator would then apply. It does **not** fire on a page too small for
+    // a fraction to mean anything: three rows of which two are unstamped is 67% and no evidence at
+    // all, and a guard that cries wolf on the tail page of every run is one somebody switches off.
+    if (page.page.length >= PRUNE_GUARD_MIN_PAGE && fraction > deleteCap) {
+      throw new ConvexError(
+        `pruneNotInCampaign: ${deleted} of ${page.page.length} rows on this page are not in ` +
+          `campaign "${campaignId}" (${Math.round(fraction * 100)}% > ${Math.round(deleteCap * 100)}%). ` +
+          'That is a whole-corpus replacement, not a difference between two master lists — check the ' +
+          'load run row for failed batches before raising maxDeleteFraction.',
+      );
+    }
+
+    if (apply === true) {
+      for (const body of doomed) {
+        await syncWaterBodyCells(ctx, body._id, {
+          bbox: body.bbox,
+          minVisibleZoom: body.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
+          listed: false,
+        });
+        await ctx.db.delete(body._id);
+      }
+    }
+
+    return {
+      applied: apply === true,
+      scanned: page.page.length,
+      deleted,
+      deleteFraction: Math.round(fraction * 1000) / 1000,
+      kept,
+      attachedBy,
+      sample,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/** Bodies named per page by `pruneNotInCampaign`, so a dry run is reviewable rather than a number. */
+const PRUNE_SAMPLE_CAP = 20;
+
+/**
+ * The default blast radius for `pruneNotInCampaign` — **a third of a page**.
+ *
+ * Set against what step 6 is actually for: the difference between two master lists. The last measured
+ * gap was 18,383 stored against ~25,500 in the list with neither containing the other, so the
+ * expected deletion is single-digit percent and clusters (out-of-region residue, a class the veto now
+ * refuses). A page where a third of the rows went unstamped is not that shape — it is a load that did
+ * not finish, and the founder's own framing for the corpus applies: trim later, never delete on
+ * absence of evidence.
+ *
+ * Raise it deliberately, per invocation, once the load's run row shows zero failed batches.
+ */
+const DEFAULT_MAX_DELETE_FRACTION = 0.33;
+
+/**
+ * How many rows a page needs before its deletion *fraction* is evidence of anything.
+ *
+ * Twenty-five. Below that the ratio is dominated by its own denominator — a page of three rows of
+ * which two are unstamped reads as 67% and means nothing — and the last page of any paginated run is
+ * short by construction. A guard that fires on the tail of every campaign is a guard somebody
+ * disables, which would cost more than the one it protects against.
+ */
+const PRUNE_GUARD_MIN_PAGE = 25;
 
 /**
  * Delete water we no longer claim to cover — the corpus edge that is not the map's edge.

@@ -349,6 +349,16 @@ export const POINT_EVENT_REASONS = [
  */
 export const IMPORT_RUN_KINDS = [
   'canonical_water', // scripts/etl — OSM extract → waterBodies
+  // scripts/etl merge — the three archives reconciled offline into one master list (N7). Distinct
+  // from `canonical_water`, which is the *load*: this pass writes nothing to Convex and is where
+  // every admission decision is actually made, so "how many bodies did the corpus lose and why" is
+  // a question only this row can answer.
+  'corpus_merge',
+  // scripts/etl load-sub-areas — the bays the merge found a parent for (N7 second audit). A bay
+  // with a parent is an arm of it, not a lake beside it, so it lands in `waterBodySubAreas` and not
+  // in the corpus. Its own kind because it fails differently: a bay that cannot find its parent is
+  // an ordering error in the campaign, not a body that failed a rule.
+  'sub_area_seed',
   'osm_depths', // scripts/etl load-depths — the N6a rung-7 tag stream
   'admin_areas', // scripts/admin-areas
   'lake_depth', // scripts/lake-depth — HydroLAKES/GLOBathy/LAGOS-US join

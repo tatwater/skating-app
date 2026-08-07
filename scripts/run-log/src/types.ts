@@ -8,6 +8,16 @@
 /** One member of `IMPORT_RUN_KINDS` (`packages/convex/convex/lib/enums.ts`). Keep in step. */
 export type ImportRunKind =
   | 'canonical_water'
+  /** `scripts/etl merge` — the offline three-archive reconciliation that decides the corpus (N7). */
+  | 'corpus_merge'
+  /**
+   * `scripts/etl load-sub-areas` — the bays the merge found a parent for (N7 second audit).
+   *
+   * Its own kind rather than a `canonical_water` variant, because it writes a different table and
+   * fails differently: a bay that cannot find its parent is an ordering error in the campaign, not a
+   * body that failed a rule.
+   */
+  | 'sub_area_seed'
   | 'osm_depths'
   | 'admin_areas'
   | 'lake_depth'

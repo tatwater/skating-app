@@ -1196,3 +1196,181 @@ export const listForBody = query({
       }));
   },
 });
+
+/**
+ * **Bays from the master list** — the N7 campaign's sub-area lane (second intake audit, 2026-08-06).
+ *
+ * ## Why the ETL now produces these at all
+ *
+ * A `bay` that the merge found a *parent* for is an arm of that parent, and emitting it as a
+ * top-level water body double-counts the water: the corpus carried `West Branch Keuka Lake` (2,707
+ * ac), `Spencer Bay` (4,742 ac, on Moosehead) and Winnipesaukee's `Alton`, `Paugus` and `Meredith`
+ * bays as rows overlapping the very lakes they are part of. A search for the lake returned it twice,
+ * and the D2 deciles counted its water twice. The founder's call: **sub-area, not body.**
+ *
+ * ## How this differs from `importSeed`, and why both exist
+ *
+ * `importSeed` takes a **bounding box** a curator drew around a bay on a map and clips it to the
+ * parent. This takes the **traced outline** OSM already has, which is a far better shape and needs no
+ * `minRetainedFraction` latitude — a bay's own polygon should survive a clip to its parent almost
+ * entirely, and one that does not is evidence the merge's parent test was wrong rather than evidence
+ * the box was coarse. So the bar is the strict interactive one.
+ *
+ * The parent is resolved by **catalogue id**, the same way `waterBodies.importCanonical` resolves
+ * anything (D93) — never by name, and never by a Convex id the ETL cannot know.
+ *
+ * **Dry by default**, like every other pass in this campaign that writes.
+ */
+export const importBaySubAreas = internalMutation({
+  args: {
+    /** Whose name goes on the audit rows — the operator running the campaign. */
+    actorUserId: v.id('profiles'),
+    bays: v.array(
+      v.object({
+        name: v.string(),
+        /** The bay's own traced outline, from whichever catalogue drew it. */
+        polygon: geoJson,
+        /** The parent's catalogue ids — at least one, resolved the way D93 resolves identity. */
+        parentIds: v.object({
+          osmId: v.optional(v.string()),
+          nhdId: v.optional(v.string()),
+          threeDhpId: v.optional(v.string()),
+        }),
+      }),
+    ),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { actorUserId, bays, dryRun }) => {
+    const results: Array<Record<string, unknown>> = [];
+    const restamp = new Set<Id<'waterBodies'>>();
+    let created = 0;
+
+    for (const bay of bays) {
+      const name = bay.name.trim();
+      if (name.length === 0) {
+        results.push({ name: bay.name, ok: false, reason: 'unnamed' });
+        continue;
+      }
+      const parent = await resolveParentByCatalogueIds(ctx, bay.parentIds);
+      if (!parent || !isListed(parent)) {
+        // The ETL only emits a sub-area whose parent is in the same master list, so this means the
+        // load order was wrong (bodies first, then bays) — worth naming rather than counting.
+        results.push({ name, ok: false, reason: 'parent_unavailable' });
+        continue;
+      }
+      const clip = clipSubAreaToParent(
+        bay.polygon as unknown as Polygon | MultiPolygon,
+        parent.polygon as unknown as Polygon | MultiPolygon,
+      );
+      if (!clip.ok) {
+        results.push({
+          name,
+          ok: false,
+          reason: clip.reason,
+          parent: parent.name,
+          retained: Math.round(clip.retainedFraction * 100) / 100,
+        });
+        continue;
+      }
+      const existing = (await subAreasForBody(ctx, parent._id)).find(
+        (s) => s.removedAt === undefined && s.name.toLowerCase() === name.toLowerCase(),
+      );
+      if (existing) {
+        // Idempotent, like every other pass in the campaign: a re-run must be a no-op.
+        results.push({ name, ok: true, parent: parent.name, alreadyPresent: true });
+        continue;
+      }
+      const area = surfaceAreaSqM(clip.polygon);
+      const score = displayScore({ surfaceAreaSqM: area });
+      const summary = {
+        name,
+        ok: true,
+        parent: parent.name,
+        areaKm2: Math.round((area / 1e6) * 100) / 100,
+        retained: Math.round(clip.retainedFraction * 100) / 100,
+      };
+      if (dryRun !== false) {
+        results.push({ ...summary, dryRun: true });
+        continue;
+      }
+      const now = Date.now();
+      const subAreaId = await ctx.db.insert('waterBodySubAreas', {
+        waterBodyId: parent._id,
+        name,
+        searchText: subAreaSearchText(name, []),
+        polygon: clip.polygon,
+        bbox: polygonBBox(clip.polygon),
+        centroid: representativePoint(clip.polygon),
+        representativePoint: representativePoint(clip.polygon),
+        surfaceAreaSqM: area,
+        displayScore: score,
+        minVisibleZoom: minVisibleZoom(score),
+        createdByUserId: actorUserId,
+        createdAt: now,
+        updatedAt: now,
+      });
+      await syncSubAreaCells(ctx, subAreaId, {
+        bbox: polygonBBox(clip.polygon),
+        minVisibleZoom: minVisibleZoom(score),
+        listed: true,
+      });
+      await ctx.db.insert('moderationActions', {
+        actorId: actorUserId,
+        action: 'create_sub_area',
+        targetType: 'waterBodySubArea',
+        targetId: subAreaId,
+        reason: `N7 campaign: "${name}" is an arm of ${parent.name}, not a lake beside it`,
+        metadata: { waterBodyId: parent._id, retainedFraction: clip.retainedFraction },
+        createdAt: now,
+      });
+      restamp.add(parent._id);
+      created++;
+      results.push({ ...summary, subAreaId });
+    }
+
+    for (const waterBodyId of restamp) await scheduleRestamp(ctx, waterBodyId);
+    return {
+      applied: dryRun === false,
+      created,
+      refused: results.filter((r) => r.ok === false).length,
+      results: results.slice(0, 50),
+    };
+  },
+});
+
+/**
+ * The parent body an incoming sub-area names, by catalogue id.
+ *
+ * The same three indexes `waterBodies.importCanonical` upserts through, and the same reason: a
+ * catalogue id is what an ETL record can assert about itself, where a Convex `_id` is something only
+ * the database knows. **First id that resolves wins**, in the fixed order — an OSM-keyed row outranks
+ * an NHD-keyed one because the OSM lane has been the corpus since Phase 1 and its rows are the ones
+ * carrying user content.
+ */
+async function resolveParentByCatalogueIds(
+  ctx: MutationCtx,
+  ids: { osmId?: string; nhdId?: string; threeDhpId?: string },
+): Promise<Doc<'waterBodies'> | null> {
+  if (ids.osmId) {
+    const row = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_osm_id', (q) => q.eq('osmId', ids.osmId))
+      .first();
+    if (row) return row;
+  }
+  if (ids.nhdId) {
+    const row = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_nhd_id', (q) => q.eq('nhdId', ids.nhdId))
+      .first();
+    if (row) return row;
+  }
+  if (ids.threeDhpId) {
+    const row = await ctx.db
+      .query('waterBodies')
+      .withIndex('by_three_dhp_id', (q) => q.eq('threeDhpId', ids.threeDhpId))
+      .first();
+    if (row) return row;
+  }
+  return null;
+}

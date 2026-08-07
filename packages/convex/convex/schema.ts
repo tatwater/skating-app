@@ -14,6 +14,7 @@
 
 import {
   CONDITION_SOURCES,
+  CONFIDENCE_LEVELS,
   DEPTH_SOURCES,
   ELEVATION_SOURCES,
   HAZARD_TYPES,
@@ -23,6 +24,7 @@ import {
   PROFILE_VISIBILITIES,
   RATING_TARGET_TYPES,
   RECURRENCE_FAMILIES,
+  REVIEW_REASONS,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
@@ -455,6 +457,82 @@ export default defineSchema({
      * Absent means "the same as `source`", which is true of every row imported so far.
      */
     geometrySource: v.optional(literals(GEOMETRY_SOURCES)),
+    /**
+     * The area the **admission decision** was made on, before simplification (N7 audit).
+     *
+     * `surfaceAreaSqM` is measured from the polygon we store, because that is what we draw. The D91
+     * floor is applied to the *source* geometry, because that is the more accurate measure. The two
+     * differ by well under a percent — and that was enough to be a live defect: `pruneBelowAreaFloor`
+     * reads the stored number, so a body admitted at 1.0001 acres and stored at 0.9999 was **added by
+     * every import and deleted by every prune, forever**, with nothing to show for it but a row count
+     * that never settled.
+     *
+     * The rule that osm.ts's floor comment states — *"two copies would drift into a prune that
+     * deletes what the next import re-adds"* — was being broken not by two copies of the rule but by
+     * two copies of the *input*. This is the one the rule was decided on; the prune prefers it and
+     * falls back to `surfaceAreaSqM` for rows written before it existed.
+     */
+    sourceAreaSqM: v.optional(v.number()),
+    /**
+     * What share of this body's outline lies inside our five states, in `[0, 1]` (N7 audit).
+     *
+     * The region clip is deliberately generous: **one** in-region vertex admits the whole polygon,
+     * which is what keeps Beau Lake — 1,875 acres, most of them in Québec, and the fixture this phase
+     * is named for. The cost of that generosity is that the corpus also holds bodies that are mostly
+     * somewhere else, at their full area, feeding the D85 deciles and every "lakes in Vermont" count,
+     * with nothing on the row saying so.
+     *
+     * **Recorded, not acted on.** It is the number a future rule would be set against, and measuring
+     * before deciding is the same discipline D96's wetland call used.
+     */
+    inRegionFraction: v.optional(v.number()),
+    /**
+     * How well corroborated each attribute is (D110): `high` · `medium` · `low` · `none`.
+     *
+     * `high` means two **independent** catalogues agree (NHD and 3DHP count as one — 3DHP
+     * re-publishes NHD, zero area disagreements ≥ 0.1% over 7,878 lakes). `medium` is one
+     * uncontested claim. `low` is a genuine conflict a precedence rule broke. `none` is silence.
+     *
+     * **Stored because it was computed and thrown away.** `@skating/core`'s `confidence.ts` is a
+     * fully tested module whose entire output existed as three lines of terminal text in a merge run
+     * that had already ended — so a 1,388-body review queue could never be opened by anyone, and the
+     * per-attribute design that makes the queue workable had no consumer at all.
+     */
+    confidence: v.optional(
+      v.object({
+        name: literals(CONFIDENCE_LEVELS),
+        polygon: literals(CONFIDENCE_LEVELS),
+        cls: literals(CONFIDENCE_LEVELS),
+      }),
+    ),
+    /**
+     * Why this body wants a human before it ships (D110).
+     *
+     * Distinct from `confidence` because two of the four are **structural rather than evidential**:
+     * `bay-without-parent` is a bay with nothing to be an arm of (Half Moon Cove: 330 acres, named
+     * "Cove", and a wetland), and `same-source-duplicate` is one merge group holding two features
+     * from one catalogue — which means our matching chained two lakes, or OSM carries a duplicate it
+     * cannot see. Neither is a confidence score and neither may merge unattended.
+     *
+     * Absent is the normal case: a low-confidence *polygon* deliberately does not queue anyone, since
+     * nobody can adjudicate "these outlines differ by 20%" by eye — that is D92's job, not a person's.
+     */
+    reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
+    /**
+     * The last import campaign that **re-affirmed** this body — campaign membership (N7 step 6).
+     *
+     * `importCanonical` upserts and never deletes, so after a re-import the corpus is the *union* of
+     * the new master list and whatever was there before. Neither set contains the other (18,383
+     * stored against 27,074 merged), and every stored body the current rules now refuse — a vetoed
+     * Great Lake, an out-of-region row, an unnamed wetland under the 50-acre bar that was imported
+     * before D96 settled — survives forever, because `pruneBelowAreaFloor` can only see area and
+     * `pruneOutsideCoverage` only sees polygons handed to it.
+     *
+     * A stamp makes "was this body in the list?" a fact on the row rather than a rule re-derived by a
+     * second pass — and a second copy of the rules is precisely how a prune and an import come to
+     * disagree at the edges. See `pruneNotInCampaign`.
+     */
+    lastCampaignId: v.optional(v.string()),
     /**
      * **This body is in the corpus because somebody asked for it** — not because it cleared the D91
      * area floor (N7b).

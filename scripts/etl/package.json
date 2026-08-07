@@ -11,6 +11,7 @@
     "transform": "tsx src/cli.ts",
     "load": "tsx src/load.ts",
     "load-depths": "tsx src/loadDepths.ts",
+    "load-sub-areas": "tsx src/loadSubAreas.ts",
     "prune-floor": "tsx src/pruneFloor.ts",
     "archive": "tsx src/fetchExtract.ts",
     "archive-nhd": "tsx src/fetchNhd.ts",

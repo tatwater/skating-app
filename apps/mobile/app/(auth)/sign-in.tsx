@@ -1,6 +1,6 @@
 import { useSignIn, useSSO } from '@clerk/clerk-expo';
-import { Link } from 'expo-router';
 import * as AuthSession from 'expo-auth-session';
+import { Link } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useCallback, useEffect, useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -52,11 +52,15 @@ export default function SignInScreen() {
     setBusy(true);
     setError(null);
     try {
-      const { createdSessionId, setActive: setActiveSSO, authSessionResult, signUp } =
-        await startSSOFlow({
-          strategy: 'oauth_google',
-          redirectUrl: AuthSession.makeRedirectUri(),
-        });
+      const {
+        createdSessionId,
+        setActive: setActiveSSO,
+        authSessionResult,
+        signUp,
+      } = await startSSOFlow({
+        strategy: 'oauth_google',
+        redirectUrl: AuthSession.makeRedirectUri(),
+      });
 
       if (createdSessionId && setActiveSSO) {
         // Same handoff as the code path: activating flips `isSignedIn` and the root gate
@@ -121,7 +125,9 @@ export default function SignInScreen() {
         await setActive({ session: attempt.createdSessionId });
       } else if (attempt.status === 'needs_second_factor') {
         // Instance-level 2FA is off, but a user can still enrol a phone individually.
-        setError('This account has two-factor authentication on, which this build doesn’t handle yet.');
+        setError(
+          'This account has two-factor authentication on, which this build doesn’t handle yet.',
+        );
       } else {
         // Say what the blocking status is — re-entering the code just fails as "already
         // verified" and buries the real cause.

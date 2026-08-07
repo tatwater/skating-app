@@ -277,12 +277,26 @@ export function scoreBody(input: {
  */
 export const REVIEWABLE_ATTRIBUTES = ['cls', 'name'] as const;
 
-/** Why a body is in the review queue — shown to the moderator, and bulk-filterable. */
-export type ReviewReason =
-  | 'class-conflict'
-  | 'name-conflict'
-  | 'bay-without-parent'
-  | 'same-source-duplicate';
+/**
+ * Why a body is in the review queue — shown to the moderator, and bulk-filterable.
+ *
+ * A `const` array rather than a bare union because the values are now **stored**, so a Convex
+ * validator has to name them — and two hand-maintained spellings of one vocabulary is how a reason
+ * gets written that nothing can read back.
+ */
+export const REVIEW_REASONS = [
+  'class-conflict',
+  'name-conflict',
+  'bay-without-parent',
+  'same-source-duplicate',
+  /**
+   * Two **separate** bodies in the master list whose outlines overlap — the failure the second N7
+   * audit measured and nothing could previously see. See `overlapDuplicate` in `mergeRules.ts`.
+   */
+  'duplicate-candidate',
+] as const;
+
+export type ReviewReason = (typeof REVIEW_REASONS)[number];
 
 /**
  * Does this body need a human before it ships?
@@ -297,17 +311,23 @@ export type ReviewReason =
  * - **`sameSourceDuplicate`** — one merge group holding two features from one catalogue means our
  *   matching chained two distinct lakes together, or found a real duplicate OSM cannot see. Both are
  *   findings; neither may be merged unattended.
+ * - **`overlapDuplicate`** — two bodies that never shared a group and yet cover the same water. This
+ *   is the one the matcher cannot self-report: a missed match produces *two rows*, and the upsert
+ *   key is a catalogue id, so nothing downstream can tell them from two real lakes. Measured at 632
+ *   overlapping pairs (≥ 0.3 IoU) in the pre-fix master list, 408 of which shared a name.
  */
 export function mergeReviewReasons(input: {
   confidence: BodyConfidence;
   bayWithoutParent?: boolean;
   sameSourceDuplicate?: boolean;
+  overlapDuplicate?: boolean;
 }): ReviewReason[] {
   const reasons: ReviewReason[] = [];
   if (input.confidence.cls === 'low') reasons.push('class-conflict');
   if (input.confidence.name === 'low') reasons.push('name-conflict');
   if (input.bayWithoutParent) reasons.push('bay-without-parent');
   if (input.sameSourceDuplicate) reasons.push('same-source-duplicate');
+  if (input.overlapDuplicate) reasons.push('duplicate-candidate');
   return reasons;
 }
 

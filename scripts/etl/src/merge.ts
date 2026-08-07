@@ -44,6 +44,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   createReadStream,
   existsSync,
@@ -56,54 +57,46 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { polygonBBox } from '@skating/core';
 import {
-  type AttributeClaim,
-  type BBox,
-  belongsInCorpus,
-  type ClaimSource,
-  classifyNhd,
-  classifyOsmTags,
-  classifyThreeDhp,
-  classifyWaterBody,
-  HARD_MIN_SURFACE_AREA_SQM,
-  isNearMiss,
-  mergeReviewReasons,
-  needsAttention,
-  type OsmTagBag,
-  pointInPolygon,
-  polygonBBox,
-  RECONCILE_MIN_IOU,
-  type ReconcileCandidate,
-  reconcileOne,
-  scoreBody,
-  surfaceAreaSqM,
-  type WaterBodyClass,
-} from '@skating/core';
+  convexRun,
+  DropLedger,
+  expectAcceptance,
+  formatLedger,
+  RunLogger,
+  resolveDeployment,
+} from '@skating/run-log';
 import type { MultiPolygon, Polygon } from 'geojson';
-import { GNIS_STATE_CODES, GNIS_WATER_CLASSES, gnisTextPath, isNullIsland } from './gnisArchive';
+import { nhdExtractArgs, osmExportArgs, osmFilterArgs, threeDhpExtractArgs } from './extract';
+// **`./gnisSource`, never `./gnisArchive`.** That module runs its `main()` at import, so importing a
+// constant from it re-ran the entire five-state GNIS download as a side effect of starting a merge —
+// six curls and six unzips before a single lake was read. Same trap `admin-areas/tiger.ts` was split
+// out to escape, one package over.
+import {
+  GNIS_STATE_CODES,
+  GNIS_WATER_CLASSES,
+  gnisColumnIndexes,
+  gnisTextPath,
+  isNullIsland,
+} from './gnisSource';
+import { buildMasterList, emitCanonicalBodies, type LaneStats } from './masterList';
 import {
   type Boundary,
   CELL_DEG,
-  catalogueIdsOf,
   cellsFor,
-  dropReason,
   type Feature,
   type GnisPoint,
-  gnisNameFor,
-  hasBayParent,
-  idFromKey,
-  inDownstate,
-  index,
-  inRegion,
-  type Merged,
-  mergeGroupWithReason,
-  polygonClaims,
+  LaneLedger,
+  parseLine,
+  parseNhdFeature,
+  parseOsmFeature,
+  parseThreeDhpFeature,
+  type RawNhdFeature,
+  type RawOsmFeature,
+  type RawThreeDhpFeature,
   SQ_M_PER_ACRE,
-  statesFor,
-  Union,
 } from './mergeRules';
-import { NHD_SOURCES, nhdArchiveKey, normalizeGnisId, normalizeNhdId } from './nhdArchive';
-import { toCanonicalBody } from './transform';
+import { NHD_ID_CENSUS, NHD_SOURCES, nhdArchiveKey, normalizeGnisId } from './nhdArchive';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch', 'merge');
@@ -115,65 +108,69 @@ const THREE_DHP_DIR = join(HERE, '..', '.raw-3dhp', 'waterbody');
 const OSM_STATES = ['me', 'nh', 'vt', 'ma', 'ny'] as const;
 const RECORD_SEPARATOR = String.fromCharCode(0x1e);
 
+/**
+ * The downstate mask, produced by `@skating/admin-areas build-region` from the same TIGER counties
+ * the basemap's mask is cut from — so the line on the map and the line in the corpus cannot drift.
+ */
+const DOWNSTATE_FILE = join(HERE, '..', '..', 'basemap', '.scratch', 'downstate-ny.geojson');
+
+/**
+ * How well-formed `permanent_identifier` has to be before the pass refuses to continue.
+ *
+ * `NHD_ID_CENSUS` says the archive is **100% accepted** across all five states (44,862 numeric +
+ * 8,268 GUID of 53,130, zero malformed), so anything below this is the source having changed shape
+ * or the rule having been narrowed — both worth stopping for, and neither worth discovering three
+ * passes downstream. Set just under 1 rather than at it so a handful of new rows cannot fail a
+ * campaign, which is the failure mode that trains people to remove the floor.
+ */
+const NHD_ID_ACCEPTANCE_FLOOR = 0.99;
+
 function log(message: string): void {
   process.stderr.write(`[merge] ${message}\n`);
 }
+
+/** Set once `main` has opened its run row, so the top-level catch can close it as failed. */
+let activeLogger: RunLogger | undefined;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sources
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Flatten a verdict onto the fields a `Feature` carries. */
-function verdictFields(v: { cls: WaterBodyClass | null; token: string }) {
-  return { cls: v.cls, token: v.token };
+/**
+ * Read an NDJSON / GeoJSONSeq file a line at a time.
+ *
+ * **Streamed, not slurped.** The NHD and 3DHP lanes used to do
+ * `readFileSync(file, 'utf8').split('\n')` on files of several hundred megabytes, materialising the
+ * whole thing as one string and then again as an array of them — which is the same shape of problem
+ * that already forces `NODE_OPTIONS=--max-old-space-size=8192` on the per-state transform. The OSM
+ * lane always streamed; now all three do.
+ *
+ * Strips `osmium`'s RFC 7464 record separator, which only its output carries and which is harmless
+ * to look for everywhere.
+ */
+async function* readLines(file: string): AsyncGenerator<string> {
+  const rl = createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity });
+  for await (const raw of rl) {
+    const t = raw.trim();
+    const line = t.startsWith(RECORD_SEPARATOR) ? t.slice(1) : t;
+    if (line.length > 0) yield line;
+  }
 }
 
-/** Applied to every lane before anything else: D96 rule 1, the only source-independent rule. */
-function admissible(areaSqM: number): boolean {
-  return areaSqM >= HARD_MIN_SURFACE_AREA_SQM;
-}
-
-async function loadOsm(refresh: boolean): Promise<Feature[]> {
+async function loadOsm(refresh: boolean, ledger: LaneLedger): Promise<Feature[]> {
   const out: Feature[] = [];
   const seen = new Set<string>();
   for (const state of OSM_STATES) {
     const file = join(CLASSIFY_SCRATCH, `osm-${state}.geojsonseq`);
     if (!existsSync(file) || refresh) extractOsm(state, file);
-    const rl = createInterface({ input: createReadStream(file, 'utf8'), crlfDelay: Infinity });
-    for await (const raw of rl) {
-      const t = raw.trim();
-      const line = t.startsWith(RECORD_SEPARATOR) ? t.slice(1) : t;
-      if (line.length === 0) continue;
-      let f: {
-        properties: OsmTagBag & { '@type'?: string; '@id'?: string | number; name?: string };
-        geometry: Polygon | MultiPolygon | null;
-      };
-      try {
-        f = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const p = f.properties;
-      if (!p['@type'] || p['@id'] === undefined || !f.geometry) continue;
-      const id = `${p['@type']}/${p['@id']}`;
-      if (seen.has(id)) continue; // the five extracts overlap at every border
-      seen.add(id);
-      const areaSqM = surfaceAreaSqM(f.geometry);
-      if (!admissible(areaSqM)) continue;
-      const name = p.name ?? '';
-      // **`gnis:feature_id`, captured for the first time.** The stored corpus has none, which is why
-      // the GNIS-assisted bar has never once fired; 35.3% of named OSM water features carry one.
-      const gnis = normalizeGnisId(p['gnis:feature_id']);
-      out.push({
-        source: 'osm',
-        id,
-        name,
-        ...verdictFields(classifyWaterBody({ name, claim: classifyOsmTags(p) })),
-        gnisId: gnis.ok ? gnis.value : undefined,
-        polygon: f.geometry,
-        bbox: polygonBBox(f.geometry),
-        areaSqM,
-      });
+    for await (const line of readLines(file)) {
+      const parsed = parseLine<RawOsmFeature>(line);
+      // Every exit is counted. `parseLine` failing used to be `catch { continue }` — invisible, and
+      // exactly how a truncated extract would report as a region with fewer lakes.
+      const feature = parsed.ok
+        ? ledger.record(parseOsmFeature(parsed.value, seen))
+        : ledger.record(parsed);
+      if (feature) out.push(feature);
     }
   }
   return out;
@@ -186,42 +183,12 @@ function extractOsm(state: string, out: string): void {
   };
   const filtered = join(CLASSIFY_SCRATCH, `osm-${state}.pbf`);
   log(`${state}: filtering…`);
-  const a = spawnSync(
-    'osmium',
-    [
-      'tags-filter',
-      '-t',
-      join(dir, filename),
-      'natural=water',
-      'landuse=reservoir',
-      'natural=bay',
-      'natural=wetland',
-      'water',
-      '-o',
-      filtered,
-      '--overwrite',
-    ],
-    { encoding: 'utf8' },
-  );
+  // The argv lives in `./extract` so the dry run, the merge and the canonical loader cannot drift
+  // apart on which tags an extract keeps — a narrower filter here would not error, it would just
+  // produce fewer lakes.
+  const a = spawnSync('osmium', osmFilterArgs(join(dir, filename), filtered), { encoding: 'utf8' });
   if (a.status !== 0) throw new Error(`${state}: osmium tags-filter exited ${a.status}`);
-  const b = spawnSync(
-    'osmium',
-    [
-      'export',
-      filtered,
-      '--geometry-types=polygon',
-      '-a',
-      'type,id',
-      '-f',
-      'geojsonseq',
-      '-x',
-      'print_record_separator=false',
-      '-o',
-      out,
-      '--overwrite',
-    ],
-    { encoding: 'utf8' },
-  );
+  const b = spawnSync('osmium', osmExportArgs(filtered, out), { encoding: 'utf8' });
   if (b.status !== 0) throw new Error(`${state}: osmium export exited ${b.status}`);
 }
 
@@ -232,7 +199,7 @@ function extractOsm(state: string, out: string): void {
  * was scored against an empty candidate set — 2,060 of them, measured, indistinguishable in the
  * output from a lake NHD has never heard of.
  */
-function loadNhd(refresh: boolean): Feature[] {
+async function loadNhd(refresh: boolean, ledger: LaneLedger, ids: DropLedger): Promise<Feature[]> {
   const out: Feature[] = [];
   const seen = new Set<string>();
   for (const source of NHD_SOURCES) {
@@ -246,65 +213,28 @@ function loadNhd(refresh: boolean): Feature[] {
       log(`${key}: extracting NHD polygons at the 1-acre floor…`);
       const res = spawnSync(
         'ogr2ogr',
-        [
-          '-f',
-          'GeoJSONSeq',
-          geojson,
-          `/vsizip/${join(NHD_DIR, key, filename)}`,
-          'NHDWaterbody',
-          '-select',
-          'permanent_identifier,gnis_id,gnis_name,ftype,fcode,areasqkm',
-          '-where',
-          'areasqkm >= 0.0040468564224',
-          '-t_srs',
-          'EPSG:4326',
-          '-dim',
-          'XY',
-          '-overwrite',
-        ],
+        nhdExtractArgs(`/vsizip/${join(NHD_DIR, key, filename)}`, geojson),
         { encoding: 'utf8' },
       );
       if (res.status !== 0) throw new Error(`${key}: ogr2ogr exited ${res.status}`);
     }
-    for (const line of readFileSync(geojson, 'utf8').split('\n')) {
-      const t = line.trim();
-      if (t.length === 0) continue;
-      let f: { properties: Record<string, unknown>; geometry: Polygon | MultiPolygon | null };
-      try {
-        f = JSON.parse(t);
-      } catch {
-        continue;
-      }
-      if (!f.geometry) continue;
-      const id = normalizeNhdId(f.properties.permanent_identifier as string);
-      // The five geodatabases overlap heavily; audited as area-identical, so first-writer-wins.
-      if (!id.ok || seen.has(id.value)) continue;
-      seen.add(id.value);
-      const areaSqM = surfaceAreaSqM(f.geometry);
-      if (!admissible(areaSqM)) continue;
-      const name = (f.properties.gnis_name as string) ?? '';
-      const gnis = normalizeGnisId(f.properties.gnis_id as string);
-      out.push({
-        source: 'nhd',
-        id: id.value,
-        name,
-        ...verdictFields(
-          classifyWaterBody({
-            name,
-            claim: classifyNhd(Number(f.properties.ftype), Number(f.properties.fcode)),
-          }),
-        ),
-        gnisId: gnis.ok ? gnis.value : undefined,
-        polygon: f.geometry,
-        bbox: polygonBBox(f.geometry),
-        areaSqM,
-      });
+    for await (const line of readLines(geojson)) {
+      const parsed = parseLine<RawNhdFeature>(line);
+      const feature = parsed.ok
+        ? // The id normalizer gets its own `DropLedger` so `expectAcceptance` can assert it against
+          // `NHD_ID_CENSUS` — that is a claim about the *rule*, and a different question from where
+          // the rows went, which is what the `LaneLedger` answers.
+          ledger.record(
+            parseNhdFeature(parsed.value, seen, (raw, outcome) => ids.record(outcome, raw)),
+          )
+        : ledger.record(parsed);
+      if (feature) out.push(feature);
     }
   }
   return out;
 }
 
-function loadThreeDhp(refresh: boolean): Feature[] {
+async function loadThreeDhp(refresh: boolean, ledger: LaneLedger): Promise<Feature[]> {
   const { filename } = JSON.parse(readFileSync(join(THREE_DHP_DIR, 'manifest.json'), 'utf8')) as {
     filename: string;
   };
@@ -312,55 +242,19 @@ function loadThreeDhp(refresh: boolean): Feature[] {
   if (!existsSync(geojson) || refresh) {
     rmSync(geojson, { force: true });
     log('3dhp: extracting polygons at the 1-acre floor…');
-    const res = spawnSync(
-      'ogr2ogr',
-      [
-        '-f',
-        'GeoJSONSeq',
-        geojson,
-        join(THREE_DHP_DIR, filename),
-        'waterbody',
-        '-select',
-        'id3dhp,gnisid,gnisidlabel,featuretype,areasqkm',
-        '-where',
-        'areasqkm >= 0.0040468564224',
-        '-t_srs',
-        'EPSG:4326',
-        '-dim',
-        'XY',
-        '-overwrite',
-      ],
-      { encoding: 'utf8' },
-    );
+    const res = spawnSync('ogr2ogr', threeDhpExtractArgs(join(THREE_DHP_DIR, filename), geojson), {
+      encoding: 'utf8',
+    });
     if (res.status !== 0) throw new Error(`3dhp: ogr2ogr exited ${res.status}`);
   }
   const out: Feature[] = [];
-  for (const line of readFileSync(geojson, 'utf8').split('\n')) {
-    const t = line.trim();
-    if (t.length === 0) continue;
-    let f: { properties: Record<string, unknown>; geometry: Polygon | MultiPolygon | null };
-    try {
-      f = JSON.parse(t);
-    } catch {
-      continue;
-    }
-    if (!f.geometry) continue;
-    const areaSqM = surfaceAreaSqM(f.geometry);
-    if (!admissible(areaSqM)) continue;
-    const name = (f.properties.gnisidlabel as string) ?? '';
-    const gnis = normalizeGnisId(f.properties.gnisid as number);
-    out.push({
-      source: '3dhp',
-      id: String(f.properties.id3dhp),
-      name,
-      ...verdictFields(
-        classifyWaterBody({ name, claim: classifyThreeDhp(Number(f.properties.featuretype)) }),
-      ),
-      gnisId: gnis.ok ? gnis.value : undefined,
-      polygon: f.geometry,
-      bbox: polygonBBox(f.geometry),
-      areaSqM,
-    });
+  const seen = new Set<string>();
+  for await (const line of readLines(geojson)) {
+    const parsed = parseLine<RawThreeDhpFeature>(line);
+    const feature = parsed.ok
+      ? ledger.record(parseThreeDhpFeature(parsed.value, seen))
+      : ledger.record(parsed);
+    if (feature) out.push(feature);
   }
   return out;
 }
@@ -391,28 +285,39 @@ function loadGnis(): Map<string, GnisPoint[]> {
     const text = readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
     const lines = text.split('\n');
     const header = (lines[0] ?? '').split('|');
-    const ix = (name: string) => header.indexOf(name);
-    const [iName, iClass, iLat, iLng] = [
-      ix('feature_name'),
-      ix('feature_class'),
-      ix('prim_lat_dec'),
-      ix('prim_long_dec'),
-    ];
-    if (iName < 0 || iClass < 0 || iLat < 0 || iLng < 0) {
+    // **D105's other half.** The lane was specified to settle a GNIS id where the catalogues
+    // disagree, and read only the name — so the gazetteer could not resolve the one identifier it is
+    // the authority for. The id is optional: a missing id costs a bridge, a missing coordinate costs
+    // the whole lane, and only the latter is worth refusing to run over.
+    const col = gnisColumnIndexes(header);
+    if (col === null) {
       throw new Error(`${code}: unexpected GNIS header — ${header.slice(0, 6).join('|')}`);
+    }
+    if (col.id === undefined) {
+      log(`  ⚠ ${code}: no feature_id column — the GNIS id bridge will be empty`);
     }
     for (const line of lines.slice(1)) {
       if (line.trim().length === 0) continue;
       const cells = line.split('|');
-      const featureClass = cells[iClass] ?? '';
+      const featureClass = cells[col.class] ?? '';
       if (!GNIS_WATER_CLASSES.has(featureClass)) continue;
-      const lat = Number(cells[iLat]);
-      const lng = Number(cells[iLng]);
+      const lat = Number(cells[col.lat]);
+      const lng = Number(cells[col.lng]);
       // `0,0` is GNIS's "no coordinate" and it is a real place — see `isNullIsland`.
       if (!Number.isFinite(lat) || !Number.isFinite(lng) || isNullIsland(lat, lng)) continue;
       const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
       const bucket = grid.get(cell);
-      const point = { lng, lat, name: cells[iName] ?? '', featureClass };
+      // Normalised the same way every other lane's is, because NHD zero-pads this id to a string
+      // and 3DHP stores it as a bare int — joining them raw over Maine matched 0 of 3,031.
+      const rawId = col.id === undefined ? undefined : cells[col.id];
+      const featureId = normalizeGnisId(rawId);
+      const point = {
+        lng,
+        lat,
+        name: cells[col.name] ?? '',
+        featureClass,
+        featureId: featureId.ok ? featureId.value : undefined,
+      };
       if (bucket) bucket.push(point);
       else grid.set(cell, [point]);
       n++;
@@ -427,17 +332,33 @@ function loadGnis(): Map<string, GnisPoint[]> {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * The five states, as counties and towns.
+ * Where the region mask comes from — **`build-region`'s local file first** (N7 second audit).
  *
- * Exported from `adminAreas` by `listBoundariesForClip` — see that function for why the mask is built
- * from the finer levels rather than from `state` rows, and for what an unclipped merge imports.
+ * The mask decides tens of thousands of exclusions and used to have **no producer at all**: the only
+ * instruction for building it was a sentence inside this file's own error message telling the
+ * operator to hand-page `adminAreas:listBoundariesForClip` into a scratch file. That route also cost
+ * fidelity twice over — TIGER outlines are simplified on the way *into* Convex to fit the
+ * 8,192-element array cap (Maine's is 18,932 vertices raw), so the corpus was being clipped against a
+ * coarsened copy of a boundary we already hold verbatim on disk.
+ *
+ * `pnpm --filter @skating/admin-areas build-region` now writes `boundaries.ndjson` beside the two
+ * masks it already produced, from the same TIGER archive, at full fidelity. The Convex export stays
+ * as a fallback so an existing scratch file keeps working, and it is the *second* choice on purpose.
  */
+function boundariesPath(): string {
+  const built = join(dirname(DOWNSTATE_FILE), 'boundaries.ndjson');
+  return existsSync(built) ? built : join(SCRATCH, 'boundaries.ndjson');
+}
+
+/** The five states, as states and counties — the mask the merged corpus is clipped to. */
 function loadBoundaries(): (Boundary & { name: string; level: string })[] {
-  const file = join(SCRATCH, 'boundaries.ndjson');
+  const file = boundariesPath();
   if (!existsSync(file)) {
     throw new Error(
-      `missing ${file} — export it first:\n` +
-        `  convex run adminAreas:listBoundariesForClip, paged into .scratch/merge/boundaries.ndjson`,
+      `missing ${file} — build it first:\n` +
+        '  pnpm --filter @skating/admin-areas build-region\n' +
+        '(legacy fallback: convex run adminAreas:listBoundariesForClip, paged into ' +
+        '.scratch/merge/boundaries.ndjson)',
     );
   }
   const out: (Boundary & { name: string; level: string })[] = [];
@@ -462,7 +383,7 @@ function loadBoundaries(): (Boundary & { name: string; level: string })[] {
  * mask is cut from, so the line on the map and the line in the corpus cannot drift apart.
  */
 function loadDownstate(): Boundary[] {
-  const file = join(HERE, '..', '..', 'basemap', '.scratch', 'downstate-ny.geojson');
+  const file = DOWNSTATE_FILE;
   if (!existsSync(file)) {
     throw new Error(
       `missing ${file} — generate it first:\n` +
@@ -475,141 +396,85 @@ function loadDownstate(): Boundary[] {
   return fc.features.map((f) => ({ polygon: f.geometry, bbox: polygonBBox(f.geometry) }));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Matching
-// ─────────────────────────────────────────────────────────────────────────────
-
-interface MatchStats {
-  matched: number;
-  ambiguous: number;
-  none: number;
-  nearMiss: number;
-}
-
-/** Match every feature in `targets` against `candidates`, returning id→id pairs and a tally. */
-function matchLane(
-  targets: readonly Feature[],
-  candidates: readonly Feature[],
-  label: string,
-): { pairs: [string, string][]; stats: MatchStats; iou: Map<string, number> } {
-  const grid = index(candidates);
-  const pairs: [string, string][] = [];
-  const iou = new Map<string, number>();
-  const stats: MatchStats = { matched: 0, ambiguous: 0, none: 0, nearMiss: 0 };
-  let done = 0;
-  for (const target of targets) {
-    if (++done % 20000 === 0)
-      log(`  ${label}: ${done.toLocaleString()} / ${targets.length.toLocaleString()}`);
-    const nearby = new Map<string, Feature>();
-    for (const cell of cellsFor(target.bbox)) {
-      for (const c of grid.get(cell) ?? []) nearby.set(c.id, c);
-    }
-    if (nearby.size === 0) {
-      stats.none++;
-      continue;
-    }
-    const outcome = reconcileOne(target, [...nearby.values()] as unknown as ReconcileCandidate[]);
-    if (outcome.verdict === 'matched') {
-      stats.matched++;
-      pairs.push([target.id, outcome.id]);
-      iou.set(`${target.id}|${outcome.id}`, outcome.iou);
-    } else if (outcome.verdict === 'ambiguous') {
-      stats.ambiguous++;
-    } else {
-      stats.none++;
-      if (isNearMiss(outcome)) stats.nearMiss++;
-    }
-  }
-  return { pairs, stats, iou };
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// The merged record
-// ─────────────────────────────────────────────────────────────────────────────
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Main
-// ─────────────────────────────────────────────────────────────────────────────
-
 async function main(): Promise<void> {
   const refresh = process.argv.includes('--refresh');
+  const campaignId = process.argv
+    .find((a) => a.startsWith('--campaign='))
+    ?.slice('--campaign='.length);
+  const runLogEnabled = !process.argv.includes('--no-run-log');
   mkdirSync(SCRATCH, { recursive: true });
   mkdirSync(CLASSIFY_SCRATCH, { recursive: true });
 
+  // **D99: every pass in the campaign is run-logged.** This one was not, and it is the pass that
+  // decides all 27,074 rows — `reconcileNhd` and `auditArchives` both carried a logger while the
+  // merge, which makes every admission decision in the phase, reported to a terminal that scrolls.
+  //
+  // It writes nothing else to Convex, so the row is the only trace it leaves there; `--no-run-log`
+  // opts out for a local experiment, and a logger whose `start` fails degrades every later call to a
+  // no-op rather than taking the run down with it.
+  const logger = new RunLogger({
+    kind: 'corpus_merge',
+    label: 'N7 master list — three catalogues, one filter',
+    campaignId,
+    target: resolveDeployment(),
+    call: runLogEnabled ? convexRun : () => undefined as never,
+    notes: [
+      'Read-only against Convex: this pass writes only .scratch/merge/.',
+      `sources: OSM ${OSM_STATES.join('/')} · NHD ${NHD_SOURCES.length} states · 3DHP clip · GNIS`,
+    ],
+  });
+  if (runLogEnabled) logger.start();
+  activeLogger = logger;
+
+  // Every lane keeps its own ledger, so "where did the rows go" is answerable per catalogue rather
+  // than as one number that could mean anything. See `LaneLedger`.
+  const lanes = {
+    osm: new LaneLedger(),
+    nhd: new LaneLedger(),
+    '3dhp': new LaneLedger(),
+  } as const;
+  const nhdIds = new DropLedger('nhdId');
+
   log('loading sources at the 1-acre floor…');
-  const osm = await loadOsm(refresh);
+  const osm = await loadOsm(refresh, lanes.osm);
   log(`  osm   ${osm.length.toLocaleString()}`);
-  const nhd = loadNhd(refresh);
+  const nhd = await loadNhd(refresh, lanes.nhd, nhdIds);
   log(`  nhd   ${nhd.length.toLocaleString()}`);
-  const dhp = loadThreeDhp(refresh);
+  const dhp = await loadThreeDhp(refresh, lanes['3dhp']);
   log(`  3dhp  ${dhp.length.toLocaleString()}`);
 
-  // Stage 1 — the federal pair, matched to each other first.
-  log('stage 1: NHD ↔ 3DHP…');
-  const federal = matchLane(dhp, nhd, '3dhp→nhd');
-  // Stage 2 — OSM against the federal set. NHD is the federal spine because 3DHP has no
-  // Permanent_Identifier and cannot carry the MIDAS linkage.
-  log('stage 2: OSM ↔ NHD…');
-  const osmNhd = matchLane(osm, nhd, 'osm→nhd');
-  log('stage 3: OSM ↔ 3DHP…');
-  const osmDhp = matchLane(osm, dhp, 'osm→3dhp');
-
-  // ── Our own error rate, measured ──────────────────────────────────────────
-  // 3DHP and NHD are the same polygons here, so a body matching one lane and not the other is OUR
-  // matcher erring — the only false-negative estimate available without hand-labelling. It is a set
-  // difference over what each lane matched, so both lanes still feed the merge.
-  // **Restricted to features BOTH federal catalogues publish, or the number is meaningless.** The
-  // first run reported a 15.53% "matcher error rate" that was almost entirely 3DHP simply not
-  // carrying the feature: it holds 65,048 features against NHD's 107,955 and publishes **no wetland
-  // class at all**. Comparing lanes over features only one of them has measures coverage and calls
-  // it error. `federal.pairs` names exactly the NHD features 3DHP also publishes, so the comparison
-  // runs over those and nothing else.
-  const dualPublished = new Set(federal.pairs.map(([, nhdId]) => nhdId));
-  const eligible = new Set(
-    osmNhd.pairs.filter(([, nhdId]) => dualPublished.has(nhdId)).map(([a]) => a),
-  );
-  const dhpHits = new Set(osmDhp.pairs.map(([a]) => a));
-  const onlyNhd = [...eligible].filter((a) => !dhpHits.has(a)).length;
-  const onlyDhp = [...dhpHits].filter(
-    (a) => !eligible.has(a) && osm.some((f) => f.id === a),
-  ).length;
-  const nhdHits = eligible;
-
-  const iou = new Map([...federal.iou, ...osmNhd.iou, ...osmDhp.iou]);
-  const union = new Union();
-  // **Every lane contributes identity; none of them is a discarded control** (founder, 2026-08-04).
+  // ── The first balance: every raw record is accounted for ──────────────────
   //
-  // An earlier draft unioned only the federal pair and OSM↔NHD, treating OSM↔3DHP as a diagnostic
-  // whose output was thrown away. That is evidence we paid for and then binned: a 3DHP feature with
-  // no NHD counterpart could never reach OSM at all. The false-negative measurement does not need a
-  // sacrificial lane — it is a set difference over what each lane matched, computed above.
-  //
-  // **Why NHD is nonetheless the identity spine, and 3DHP cannot be.** 3DHP carries no
-  // `Permanent_Identifier`, so it cannot hold the MIDAS bathymetry linkage or collapse the OSM
-  // duplicate pairs; and it publishes **no wetland class at all**, against NHD's 44,295 SwampMarsh
-  // features above an acre. A 3DHP-primary merge would fail to match every wetland in the region.
-  // Currency still points the other way — NHD is frozen at 2023 and 3DHP improves yearly — but that
-  // is a question about *geometry*, which `geometrySource` answers as a field, not about identity.
-  //
-  // Unioning all three can in principle chain two distinct lakes into one group. It is not guarded
-  // against here because it does not need to be: two features from one catalogue in one group is
-  // exactly what `sameSourceDuplicate` detects, and such a group queues rather than merging.
-  for (const [a, b] of [...federal.pairs, ...osmNhd.pairs, ...osmDhp.pairs]) union.join(a, b);
-
-  const byId = new Map<string, Feature>();
-  for (const f of [...osm, ...nhd, ...dhp]) byId.set(f.id, f);
-  const groups = new Map<string, Feature[]>();
-  for (const f of [...osm, ...nhd, ...dhp]) {
-    // A feature that matched nothing in any lane is genuinely new and joins as a singleton — which
-    // is the case this whole phase exists to capture, and is where Beau Lake arrives from.
-    const root = union.find(f.id);
-    const g = groups.get(root);
-    if (g) g.push(f);
-    else groups.set(root, [f]);
+  // **This is what the audit found missing.** The report's headline claim has always been that its
+  // numbers balance — and they balanced only from the grouping stage onward. Upstream, the one-acre
+  // floor (the largest single filter in the pipeline) and four other exits emitted nothing at all, so
+  // "we read 400,000 records and grouped 264,000" had no explanation for the difference.
+  for (const [label, ledger] of Object.entries(lanes)) {
+    if (!ledger.balances()) {
+      throw new Error(`${label}: lane ledger does not balance — a drop path is uncounted`);
+    }
+    log(`  ${label}: ${ledger.kept.toLocaleString()} kept of ${ledger.seen.toLocaleString()}`);
+    for (const e of ledger.entries()) {
+      log(`      ${e.count.toLocaleString().padStart(9)} ${e.reason}  e.g. ${e.samples[0] ?? ''}`);
+    }
   }
-  log(`grouped ${byId.size.toLocaleString()} features into ${groups.size.toLocaleString()} bodies`);
+  log(`  ${formatLedger(nhdIds.report())}`);
+  // The census this rule was derived from, printed beside what the archive actually produced. A
+  // drift is either a re-published source or a narrowed rule, and both are worth seeing without
+  // going to look — `auditArchives` asserts it, this reports it.
+  log(
+    `      census expected ${NHD_ID_CENSUS.postFloorRows.toLocaleString()} post-floor rows, ` +
+      `${NHD_ID_CENSUS.distinct.toLocaleString()} distinct`,
+  );
+  // The id rule's own floor, asserted against the census stored beside it. `absent` and `sentinel`
+  // are properties of the data and are excluded by default; only `malformed` indicts the rule.
+  expectAcceptance(nhdIds.report(), NHD_ID_ACCEPTANCE_FLOOR);
 
-  // ── Merge, score, filter ──────────────────────────────────────────────────
+  // ── The decision ──────────────────────────────────────────────────────────
+  //
+  // Every rule from here to the master list now lives in `masterList.ts`, which takes data and
+  // returns data. What is left in this file is the archives, the artifacts and the report — see that
+  // module for why the extraction had to go one layer deeper than `mergeRules.ts` did.
   log('loading the GNIS gazetteer…');
   const gnisGrid = loadGnis();
 
@@ -628,167 +493,111 @@ async function main(): Promise<void> {
   // those are the finer outlines, but a county row does not carry its state's code — so `states` has
   // to be answered against a different set. See `statesFor`.
   const stateGrid = new Map<string, (Boundary & { name: string })[]>();
-  for (const b of boundaries.filter((x) => x.level === 'state')) {
+  const stateRows = boundaries.filter((x) => x.level === 'state');
+  for (const b of stateRows) {
     for (const cell of cellsFor(b.bbox)) {
       const bucket = stateGrid.get(cell);
       if (bucket) bucket.push(b);
       else stateGrid.set(cell, [b]);
     }
   }
-  log(
-    `  ${[...new Set(boundaries.filter((x) => x.level === 'state').map((x) => x.name))].length} state outlines for the states field`,
-  );
+  const stateNames = [...new Set(stateRows.map((x) => x.name))];
+  log(`  ${stateNames.length} state outlines for the states field`);
+  // **Five, or the `states` field is quietly wrong for a whole state.** `adminAreas` carried three
+  // state rows for a year and nothing said so (the OSM relations do not close from a per-state
+  // extract), which is the entire reason the TIGER lane exists. A mask short of a state still clips
+  // fine — the counties cover it — so the only symptom would be tens of thousands of bodies with no
+  // `states` value and an empty regional filter in the app.
+  if (stateNames.length !== OSM_STATES.length) {
+    throw new Error(
+      `expected ${OSM_STATES.length} state outlines in the mask, found ${stateNames.length}: ` +
+        `${stateNames.join(', ') || '(none)'} — re-export boundaries.ndjson`,
+    );
+  }
   const downstate = loadDownstate();
   log(`  ${downstate.length} downstate NY counties, refused`);
 
-  // Two refusals, counted apart. `vetoed` is a rule firing correctly on the ocean; `no-class` is
-  // every catalogue independently declining to call this water. Adding them together — as the first
-  // version did — cannot tell "the veto is working" from "the classifier has a hole".
-  const refused = { vetoed: 0, noClass: 0 };
-  const outOfRegion = { count: 0 };
-  const belowI84 = { count: 0 };
-  const gnisNamed = { count: 0, rescued: 0 };
-  const merged = [...groups.values()]
-    .map((m) => {
-      const { body, reason } = mergeGroupWithReason(m);
-      if (reason === 'vetoed') refused.vetoed++;
-      else if (reason !== undefined) refused.noClass++;
-      return body;
-    })
-    .filter((m): m is Merged => m !== null);
-  const kept: Merged[] = [];
-  const dropped = new Map<string, number>();
-  const conf = {
-    name: new Map<string, number>(),
-    cls: new Map<string, number>(),
-    polygon: new Map<string, number>(),
-  };
-  const queue = new Map<string, number>();
-  let backlog = 0;
-  let queued = 0;
+  const master = buildMasterList({
+    osm,
+    nhd,
+    dhp,
+    gnisGrid,
+    boundaryGrid,
+    downstate,
+    log,
+  });
+  const { bodies: kept, subAreas, dropped, stats } = master;
 
-  // The bay rule needs the whole merged set, so it runs here rather than in the classifier. Indexed
-  // on the merged bodies themselves — the old version cast each one through `unknown` into a `Feature`
-  // purely to reuse the index, which cost the type check without changing a single field it read.
-  const bayGrid = index(merged.filter((m) => m.cls !== 'bay'));
-
-  for (const group of merged) {
-    let cls = group.cls;
-    // A bay is an arm OF something. With no parent we cannot support the claim — Half Moon Cove is
-    // 330 acres, named "Cove", and is a wetland. Demote and let a human look.
-    const bayWithoutParent = cls === 'bay' && !hasBayParent(group, bayGrid);
-    if (bayWithoutParent) cls = 'unclassified';
-
-    // **The region clip, applied to the merged body rather than to a lane.** A body only NHD knows
-    // about still has to be somewhere we cover; a body only OSM knows about already is, by
-    // construction. Testing once, after merging, is the same discipline as the floor.
-    if (!inRegion(group, boundaryGrid)) {
-      outOfRegion.count++;
-      continue;
-    }
-
-    // In one of our five states and still not ours — see `inDownstate`. Counted separately from
-    // `outOfRegion` on purpose: one number is the geodatabases spilling over their state lines, the
-    // other is a coverage decision, and totalling them would hide the second inside the first.
-    if (inDownstate(group, downstate)) {
-      belowI84.count++;
-      continue;
-    }
-
-    // **GNIS runs BEFORE the floor, and that ordering is the whole point of the lane.** D96 admits a
-    // *named* wetland at five acres and refuses an unnamed one under fifty, so a gazetteer name does
-    // not merely relabel a body — it decides whether the body exists. Stamping it afterwards would
-    // repeat, one level deeper, the mistake that cost 123 LakePond bodies.
-    let name = group.name;
-    let namedByGnis = false;
-    if (name.length === 0) {
-      const found = gnisNameFor(group, gnisGrid);
-      if (found !== undefined && found.length > 0) {
-        name = found;
-        namedByGnis = true;
-        gnisNamed.count++;
-        // Would the floor have refused this body without the name it just gained?
-        if (!belongsInCorpus({ name: '', surfaceAreaSqM: group.areaSqM, type: cls })) {
-          gnisNamed.rescued++;
-        }
-      }
-    }
-
-    if (!belongsInCorpus({ name, surfaceAreaSqM: group.areaSqM, type: cls })) {
-      // **`name`, not `group.name`.** The refusal was decided against the GNIS-augmented name, so
-      // labelling it with the catalogue name reported a wetland the gazetteer HAD named as "unnamed"
-      // — the one lane whose contribution this report exists to measure, described as absent.
-      const reason = dropReason({ name, cls, areaSqM: group.areaSqM });
-      dropped.set(reason, (dropped.get(reason) ?? 0) + 1);
-      continue;
-    }
-
-    const scores = scoreBody({
-      names: [
-        ...group.members.filter((m) => m.name).map((m) => ({ source: m.source, value: m.name })),
-        ...(namedByGnis ? [{ source: 'gnis' as ClaimSource, value: name }] : []),
-      ],
-      polygons: polygonClaims(group, iou),
-      classes: group.members
-        .filter((m) => m.cls !== null)
-        .map((m) => ({ source: m.source, value: m.cls as WaterBodyClass })),
-      depths: [],
-    });
-    for (const k of ['name', 'cls', 'polygon'] as const) {
-      conf[k].set(scores[k], (conf[k].get(scores[k]) ?? 0) + 1);
-    }
-    const reasons = mergeReviewReasons({
-      confidence: scores,
-      bayWithoutParent,
-      sameSourceDuplicate: group.sameSourceDuplicate,
-    });
-    if (reasons.length > 0) {
-      queued++;
-      for (const r of reasons) queue.set(r, (queue.get(r) ?? 0) + 1);
-    }
-    if (needsAttention(scores)) backlog++;
-    kept.push({ ...group, cls, name });
+  // ── The emit stage — the artifact the loader actually consumes (N7 step 5) ────────────────
+  const emit = emitCanonicalBodies(kept, stateGrid);
+  const failedCount = [...emit.failures.values()].reduce((a, b) => a + b, 0);
+  if (emit.emitted.length + failedCount !== kept.length) {
+    throw new Error(
+      `emit does not balance: ${emit.emitted.length} + ${failedCount} != ${kept.length} kept`,
+    );
   }
 
   // ── Report ────────────────────────────────────────────────────────────────
   const n = (v: number) => v.toLocaleString().padStart(9);
   const lines: string[] = [];
-  const lane = (label: string, s: MatchStats) =>
+  const lane = (label: string, s: LaneStats) =>
     `  ${label.padEnd(12)} matched ${n(s.matched)}  ambiguous ${n(s.ambiguous)}  none ${n(s.none)}  (near-miss ${s.nearMiss.toLocaleString()})`;
   lines.push('');
   lines.push('══ matching ═══════════════════════════════════════════════════');
-  lines.push(lane('3dhp→nhd', federal.stats));
-  lines.push(lane('osm→nhd', osmNhd.stats));
-  lines.push(lane('osm→3dhp', osmDhp.stats));
+  for (const l of stats.lanes) lines.push(lane(l.label, l.stats));
+  lines.push(
+    `  ${'osm→nhd by NAME'.padEnd(12)} matched ${n(stats.nameLane.pairs)}  ` +
+      `(pairs the area-ratio ceiling refused; overlap still required)`,
+  );
+  for (const sample of stats.nameLane.ambiguous.slice(0, 5)) {
+    lines.push(`      ambiguous by name, left unmatched: ${sample}`);
+  }
   lines.push('');
   lines.push('  matcher error rate — 3DHP and NHD are the same polygons here, so a');
   lines.push('  body one lane matched and the other missed is OUR error:');
-  lines.push(`    matched NHD only   ${n(onlyNhd)}`);
-  lines.push(`    matched 3DHP only  ${n(onlyDhp)}`);
+  lines.push(`    matched NHD only   ${n(stats.matcher.onlyNhd)}`);
+  lines.push(`    matched 3DHP only  ${n(stats.matcher.onlyDhp)}`);
   lines.push(
-    `    disagreement rate  ${(((onlyNhd + onlyDhp) / Math.max(1, nhdHits.size + dhpHits.size)) * 100).toFixed(2)}%`,
+    `    disagreement rate  ${(((stats.matcher.onlyNhd + stats.matcher.onlyDhp) / Math.max(1, stats.matcher.nhdHits + stats.matcher.dhpHits)) * 100).toFixed(2)}%`,
   );
+  for (const { label, stats: s } of stats.lanes) {
+    if (s.ambiguousIds.length === 0) continue;
+    lines.push(`  ${label} ambiguous — geometry could not separate these; each stays a SINGLETON,`);
+    lines.push('  i.e. a possible duplicate in the corpus that nothing downstream can detect:');
+    for (const sample of s.ambiguousIds) lines.push(`    ${sample}`);
+  }
+  lines.push('');
+  lines.push('══ intake ═════════════════════════════════════════════════════');
+  lines.push('  every raw record, accounted for (the balance the old report did not have):');
+  for (const [label, ledger] of Object.entries(lanes)) {
+    lines.push(`    ${label.padEnd(6)} seen ${n(ledger.seen)}  kept ${n(ledger.kept)}`);
+    for (const e of ledger.entries()) {
+      lines.push(`      ${n(e.count)}  ${e.reason.padEnd(18)} e.g. ${e.samples[0] ?? ''}`);
+    }
+  }
+  lines.push(`    ${formatLedger(nhdIds.report())}`);
   lines.push('');
   lines.push('══ merged ═════════════════════════════════════════════════════');
-  lines.push(`  groups            ${n(merged.length + refused.vetoed + refused.noClass)}`);
+  lines.push(`  groups            ${n(stats.groups)}`);
+  for (const [reason, count] of [...stats.refused.entries()].sort((a, b) => b[1] - a[1])) {
+    lines.push(`  refused ${reason.padEnd(21)} ${n(count)}`);
+    for (const sample of stats.refusedSamples.get(reason) ?? []) lines.push(`      ${sample}`);
+  }
   lines.push(
-    `  vetoed as ocean   ${n(refused.vetoed)}  (a refusal no other catalogue may overrule)`,
+    `  outside 5 states  ${n(stats.outOfRegion)}  (the geodatabases are not clipped to their states)`,
   );
   lines.push(
-    `  no class at all   ${n(refused.noClass)}  (every catalogue independently declined to call it water)`,
+    `  NY below I-84     ${n(stats.belowI84)}  (in New York, outside the coverage we claim)`,
   );
   lines.push(
-    `  outside 5 states  ${n(outOfRegion.count)}  (the geodatabases are not clipped to their states)`,
+    `  sub-areas         ${n(stats.subAreas)}  (bays with a parent — an arm is not a lake)`,
   );
   lines.push(
-    `  NY below I-84     ${n(belowI84.count)}  (in New York, outside the coverage we claim)`,
-  );
-  lines.push(
-    `  named by GNIS     ${n(gnisNamed.count)}  of which ADMITTED by that name alone: ${gnisNamed.rescued.toLocaleString()}`,
+    `  named by GNIS     ${n(stats.gnisNamed)}  of which ADMITTED by that name alone: ${stats.gnisRescued.toLocaleString()}`,
   );
   lines.push(`  kept after filter ${n(kept.length)}`);
   lines.push('  dropped by the post-merge filter:');
-  for (const [r, c] of [...dropped.entries()].sort((a, b) => b[1] - a[1])) {
+  for (const [r, c] of [...stats.droppedByFloor.entries()].sort((a, b) => b[1] - a[1])) {
     lines.push(`    ${n(c)}  ${r}`);
   }
   const byClass = new Map<string, number>();
@@ -810,77 +619,231 @@ async function main(): Promise<void> {
   lines.push('══ confidence ═════════════════════════════════════════════════');
   for (const k of ['cls', 'name', 'polygon'] as const) {
     lines.push(
-      `  ${k.padEnd(8)} ${['high', 'medium', 'low', 'none'].map((l) => `${l} ${String(conf[k].get(l) ?? 0).padStart(6)}`).join('  ')}`,
+      `  ${k.padEnd(8)} ${['high', 'medium', 'low', 'none'].map((l) => `${l} ${String(stats.confidence[k].get(l) ?? 0).padStart(6)}`).join('  ')}`,
     );
   }
   lines.push('');
   lines.push(
-    `  review queue ${n(queued)}   ${[...queue].map(([k, v]) => `${k}=${v}`).join(' · ')}`,
+    `  review queue ${n(stats.queued)}   ${[...stats.queue].map(([k, v]) => `${k}=${v}`).join(' · ')}`,
   );
-  lines.push(`  backlog      ${n(backlog)}`);
+  lines.push(`  backlog      ${n(stats.backlog)}`);
+  lines.push(
+    `  overlapping survivors ${n(stats.duplicatePairs)} pairs — flagged duplicate-candidate, never merged`,
+  );
+  lines.push(
+    `  class dissent ${n(stats.classDissent)}  one catalogue refused this outright, another classed it;`,
+  );
+  lines.push(
+    '    a real class beats a drop (the 123-body rescue), so these resolve SILENTLY today:',
+  );
+  for (const sample of stats.classDissentSamples) lines.push(`      ${sample}`);
   process.stdout.write(`${lines.join('\n')}\n`);
 
-  // ── The emit stage — the artifact the loader actually consumes (N7 step 5) ────────────────
-  //
-  // `master.ndjson` below is a REPORT: name, class, acreage, provenance. It carried no geometry, and
-  // that gap was the largest single thing standing between this file and a corpus. This writes the
-  // loadable half: full canonical bodies, simplified for storage, with D85's stats measured on the
-  // source geometry first.
-  //
-  // Emitted here rather than as a separate command because the source polygons are in memory now and
-  // spilling 25,457 of them to disk to read straight back would cost more than the stats do.
-  const emitted: string[] = [];
-  const emitFailures = new Map<string, number>();
-  for (const k of kept) {
-    try {
-      emitted.push(
-        JSON.stringify(
-          toCanonicalBody({
-            source: k.geometrySource as 'osm' | 'nhd' | '3dhp',
-            // The arrival key stays the id of whichever catalogue drew the outline, so the existing
-            // contour tile stamps keep resolving through one more campaign (D93).
-            externalId: idFromKey(k.key),
-            name: k.name,
-            type: k.cls,
-            geometry: k.polygon,
-            geometrySource: k.geometrySource as 'osm' | 'nhd' | '3dhp',
-            states: statesFor(k, stateGrid),
-            ...catalogueIdsOf(k.members),
-          }),
-        ),
-      );
-    } catch (err) {
-      // A body whose geometry defeats the transform is one body, not the run. Tallied by reason so
-      // a class of failure is visible rather than a single example.
-      const reason = err instanceof Error ? err.message.slice(0, 60) : String(err);
-      emitFailures.set(reason, (emitFailures.get(reason) ?? 0) + 1);
-    }
-  }
-  writeFileSync(join(SCRATCH, 'bodies.ndjson'), `${emitted.join('\n')}\n`);
-  log(`canonical bodies → ${join(SCRATCH, 'bodies.ndjson')} (${emitted.length.toLocaleString()})`);
-  for (const [reason, count] of [...emitFailures].sort((a, b) => b[1] - a[1])) {
+  // ── The artifacts ─────────────────────────────────────────────────────────
+  writeNdjson(join(SCRATCH, 'bodies.ndjson'), emit.emitted);
+  log(
+    `canonical bodies → ${join(SCRATCH, 'bodies.ndjson')} (${emit.emitted.length.toLocaleString()})`,
+  );
+  for (const [reason, count] of [...emit.failures].sort((a, b) => b[1] - a[1])) {
     log(`  ! ${count} body/bodies could not be emitted: ${reason}`);
   }
+  if (emit.failureKeys.length > 0) log(`  ! e.g. ${emit.failureKeys.join(', ')}`);
 
-  writeFileSync(
+  writeNdjson(join(SCRATCH, 'sub-areas.ndjson'), subAreas);
+  log(`sub-areas → ${join(SCRATCH, 'sub-areas.ndjson')} (${subAreas.length.toLocaleString()})`);
+
+  // **Every group that did not become a body, by name** (N7 second audit). The counts always
+  // balanced; the *identities* were never written down, so "what happened to Lake X" had no answer
+  // and two runs could not be diffed. The largest bucket alone — the post-merge floor — is ~100,000
+  // groups, and a rule change that silently moved a thousand of them looked like a slightly
+  // different number in a run row.
+  writeNdjson(join(SCRATCH, 'dropped.ndjson'), dropped);
+  log(`dropped → ${join(SCRATCH, 'dropped.ndjson')} (${dropped.length.toLocaleString()})`);
+
+  // `master.ndjson` is the REPORT half: no geometry, one line per body, readable by eye.
+  writeNdjson(
     join(SCRATCH, 'master.ndjson'),
-    `${kept
-      .map((k) =>
-        JSON.stringify({
-          key: k.key,
-          name: k.name,
-          cls: k.cls,
-          acres: Math.round(k.areaSqM / SQ_M_PER_ACRE),
-          geometrySource: k.geometrySource,
-          sources: k.members.map((m) => `${m.source}:${m.id}`),
-        }),
-      )
-      .join('\n')}\n`,
+    kept.map((k) => ({
+      key: k.key,
+      name: k.name,
+      cls: k.cls,
+      acres: Math.round(k.areaSqM / SQ_M_PER_ACRE),
+      geometrySource: k.geometrySource,
+      sources: k.members.map((m) => `${m.source}:${m.id}`),
+      absorbed: k.absorbedIds,
+      confidence: k.confidence,
+      reviewReasons: k.reviewReasons,
+      duplicateOf: k.duplicateOf,
+      inRegionFraction: Number(k.inRegionFraction.toFixed(3)),
+      emitted: emit.emittedKeys.has(k.key),
+    })),
   );
   log(`master list → ${join(SCRATCH, 'master.ndjson')}`);
+
+  // **The candidate pool for D92's per-lake override**, which until now had no producer at all: the
+  // bake-off wrote per-lake scores to a scratch file nothing read, and `GEOMETRY_OVERRIDES` was one
+  // hand-typed line. A body whose chosen outline disagrees materially with another catalogue's is
+  // exactly the Beau Lake shape — OSM merged it at 2,457 acres against NHD's 1,876.6 — and the
+  // polygon confidence score already knows, it just summons nobody (D110: no human can adjudicate
+  // "these outlines differ by 20%" by eye, but they CAN check a lake against its published acreage).
+  const geometryReview = kept
+    .filter((k) => k.confidence.polygon === 'low' && k.members.length > 1)
+    .map((k) => ({
+      key: k.key,
+      name: k.name,
+      geometrySource: k.geometrySource,
+      acres: Math.round(k.areaSqM / SQ_M_PER_ACRE),
+      claims: k.members.map((m) => ({
+        source: m.source,
+        id: m.id,
+        acres: Math.round(m.areaSqM / SQ_M_PER_ACRE),
+      })),
+      spread: Number(
+        (
+          Math.max(...k.members.map((m) => m.areaSqM)) /
+          Math.max(Math.min(...k.members.map((m) => m.areaSqM)), 1)
+        ).toFixed(2),
+      ),
+    }))
+    .sort((a, b) => b.spread - a.spread);
+  writeNdjson(join(SCRATCH, 'geometry-review.ndjson'), geometryReview);
+  log(
+    `geometry review → ${join(SCRATCH, 'geometry-review.ndjson')} (${geometryReview.length.toLocaleString()})`,
+  );
+
+  // ── The manifest: what produced this corpus ───────────────────────────────
+  const manifestPath = join(SCRATCH, 'merge-manifest.json');
+  const previous = readManifest(manifestPath);
+  const outputs = {
+    groups: stats.groups,
+    kept: kept.length,
+    emitted: emit.emitted.length,
+    emitFailures: failedCount,
+    subAreas: subAreas.length,
+    dropped: dropped.length,
+    outOfRegion: stats.outOfRegion,
+    belowI84: stats.belowI84,
+    saltWater: stats.saltWater,
+    reviewQueue: stats.queued,
+    duplicatePairs: stats.duplicatePairs,
+    classDissent: stats.classDissent,
+  };
+  writeFileSync(
+    manifestPath,
+    `${JSON.stringify(
+      {
+        producedAt: new Date().toISOString(),
+        campaignId,
+        inputs: {
+          osm: OSM_STATES.map((s) => manifestOf(join(OSM_DIR, s, 'manifest.json'))),
+          nhd: NHD_SOURCES.map((s) => manifestOf(join(NHD_DIR, nhdArchiveKey(s), 'manifest.json'))),
+          threeDhp: manifestOf(join(THREE_DHP_DIR, 'manifest.json')),
+          gnis: manifestOf(join(HERE, '..', '.raw-gnis', 'manifest.json')),
+          boundaries: fingerprint(boundariesPath()),
+          downstate: fingerprint(DOWNSTATE_FILE),
+        },
+        outputs,
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  log(`manifest → ${manifestPath}`);
+
+  // ── This run against the last one ─────────────────────────────────────────
+  //
+  // A campaign is re-run whenever a rule moves, and until now nothing compared the two: a change
+  // that removed three thousand lakes and a change that removed three looked identical in the
+  // output. The previous manifest is already on disk; reading it costs nothing and turns every
+  // re-run into a diff.
+  if (previous) {
+    const delta: string[] = [];
+    for (const [key, value] of Object.entries(outputs)) {
+      const before = (previous.outputs as Record<string, number> | undefined)?.[key];
+      if (typeof before !== 'number' || before === value) continue;
+      const change = value - before;
+      const pct = before === 0 ? '—' : `${((change / before) * 100).toFixed(1)}%`;
+      delta.push(
+        `    ${key.padEnd(16)} ${before.toLocaleString()} → ${value.toLocaleString()}  (${change > 0 ? '+' : ''}${change.toLocaleString()}, ${pct})`,
+      );
+    }
+    process.stdout.write(
+      delta.length > 0
+        ? `\n══ against the previous run (${String(previous.producedAt ?? 'unknown')}) ═══\n${delta.join('\n')}\n`
+        : `\n  identical to the previous run (${String(previous.producedAt ?? 'unknown')})\n`,
+    );
+  }
+
+  for (const [name, value] of Object.entries(outputs)) logger.count(name, value);
+  logger.count('gnisNamed', stats.gnisNamed);
+  logger.count('gnisRescued', stats.gnisRescued);
+  logger.count('backlog', stats.backlog);
+  logger.count('nameLaneMatches', stats.nameLane.pairs);
+  for (const [reason, count] of stats.refused) logger.count(`refused.${reason}`, count);
+  for (const [reason, count] of stats.droppedByFloor) logger.count(`floor.${reason}`, count);
+  for (const [reason, count] of stats.queue) logger.count(`queue.${reason}`, count);
+  for (const [label, ledger] of Object.entries(lanes)) {
+    for (const c of ledger.counts_(label)) logger.count(c.name, c.value);
+  }
+  for (const c of nhdIds.counts_()) logger.count(c.name, c.value);
+  logger.succeed([
+    `master list ${kept.length} bodies; ${emit.emitted.length} loadable; ${subAreas.length} sub-areas`,
+  ]);
+}
+
+/** One JSON object per line, with a trailing newline — the shape every artifact here uses. */
+function writeNdjson(path: string, rows: readonly unknown[]): void {
+  writeFileSync(
+    path,
+    rows.length === 0 ? '' : `${rows.map((r) => JSON.stringify(r)).join('\n')}\n`,
+  );
+}
+
+/** The previous run's manifest, for the delta. A missing or unreadable one is not an error. */
+function readManifest(path: string): { producedAt?: unknown; outputs?: unknown } | undefined {
+  if (!existsSync(path)) return undefined;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as { producedAt?: unknown; outputs?: unknown };
+  } catch {
+    return undefined;
+  }
+}
+
+/** A source archive's manifest, or a marker saying it was missing — never a silent absence. */
+function manifestOf(path: string): Record<string, unknown> {
+  if (!existsSync(path)) return { path, missing: true };
+  try {
+    const m = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    // Only the provenance fields; a manifest can be large and this is a record, not a copy.
+    const { url, filename, bytes, sha256, lastModified, fetchedAt, vintage } = m;
+    return { path, url, filename, bytes, sha256, lastModified, fetchedAt, vintage };
+  } catch {
+    return { path, unreadable: true };
+  }
+}
+
+/**
+ * Size + digest of an input that has no manifest of its own — the two region masks.
+ *
+ * They are derived artifacts rather than archives, so there is nothing upstream to checksum against.
+ * Recording what we actually read at least makes "was this the same mask?" answerable, which is the
+ * question a surprising `outOfRegion` count raises.
+ */
+function fingerprint(path: string): Record<string, unknown> {
+  if (!existsSync(path)) return { path, missing: true };
+  const bytes = readFileSync(path);
+  return {
+    path,
+    bytes: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
 }
 
 main().catch((error: unknown) => {
   log(`FAILED: ${error instanceof Error ? error.message : String(error)}`);
+  // **The run row must not be left `running`.** D99 records that the abandoned N6c campaign left
+  // three rows in that state, which is the signature of a pass that died before it could say so —
+  // and a balance assertion throwing is exactly the case where the row is worth having.
+  activeLogger?.failed(error);
   process.exitCode = 1;
 });

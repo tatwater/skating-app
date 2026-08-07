@@ -95,7 +95,10 @@ export class DropLedger {
       return outcome;
     }
     this.counts[outcome.reason] += 1;
-    const bucket = (this.samples[outcome.reason] ??= []);
+    // Two statements rather than an assignment inside the expression: `??=` in a `const` initialiser
+    // reads as a lookup and is a write, which is the one place a reader's eye skips over a mutation.
+    const bucket = this.samples[outcome.reason] ?? [];
+    this.samples[outcome.reason] = bucket;
     if (bucket.length < LEDGER_SAMPLE_CAP) bucket.push(String(raw ?? ''));
     return outcome;
   }

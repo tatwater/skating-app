@@ -152,8 +152,7 @@ export function probeCoverage(
   let maxLng = Number.NEGATIVE_INFINITY;
   let minLat = Number.POSITIVE_INFINITY;
   let maxLat = Number.NEGATIVE_INFINITY;
-  const rings =
-    polygon.type === 'Polygon' ? polygon.coordinates : polygon.coordinates.flatMap((p) => p);
+  const rings = polygon.type === 'Polygon' ? polygon.coordinates : polygon.coordinates.flat();
   for (const ring of rings) {
     for (const c of ring) {
       const lng = c[0] as number;

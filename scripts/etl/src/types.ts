@@ -62,6 +62,38 @@ export interface CanonicalBody {
   centroid: LatLng;
   surfaceAreaSqM: number;
   /**
+   * The area the **admission decision** was made on — the source geometry, before simplification.
+   *
+   * `surfaceAreaSqM` above is measured from the stored polygon, because that is what we draw. The
+   * floor is applied to the source, because that is the more accurate measure. The two differ by well
+   * under a percent, and that was enough to matter: `pruneBelowAreaFloor` reads the *stored* number,
+   * so a body admitted at 1.0001 acres and stored at 0.9999 was added by every import and deleted by
+   * every prune — the exact drift the "one floor, in core" rule exists to prevent, arriving through
+   * the one door it did not cover.
+   */
+  sourceAreaSqM?: number;
+  /**
+   * What share of the outline lies inside our five states, in `[0, 1]` (N7 audit).
+   *
+   * The region clip admits on a **single** in-region vertex, which is what keeps Beau Lake — most of
+   * which is in Québec. The cost is that the corpus holds bodies that are mostly somewhere else and
+   * nothing said so. Recorded, not acted on: it is the number a future rule would be set against.
+   */
+  inRegionFraction?: number;
+  /**
+   * How well corroborated each attribute is (D110) — `high` / `medium` / `low` / `none`.
+   *
+   * Computed by `@skating/core`'s `scoreBody` and, until the N7 audit, **discarded**: the merge
+   * tallied the distribution into three lines of terminal output and stored nothing, so a fully
+   * tested core module had no consumer and the review queue it feeds could never be opened.
+   */
+  confidence?: { name: string; polygon: string; cls: string };
+  /**
+   * Why this body wants a human — `class-conflict`, `name-conflict`, `bay-without-parent`,
+   * `same-source-duplicate`. Empty is the normal case and is omitted rather than stored empty.
+   */
+  reviewReasons?: string[];
+  /**
    * A point genuinely inside the water (N6c) — see `waterBodies.interiorPoint`. Absent only when
    * the geometry has no locatable interior, which is a body the transform is about to skip anyway.
    */

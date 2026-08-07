@@ -31,48 +31,32 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
-/** Permanent, mirrored, never `.scratch/`. See the header. */
-export const GNIS_DIR = join(HERE, '..', '.raw-gnis');
-
-/** The five states, by the code the staged filenames use. */
-export const GNIS_STATE_CODES = ['ME', 'NH', 'VT', 'MA', 'NY'] as const;
-
-export const gnisUrl = (code: string) =>
-  `https://prd-tnm.s3.amazonaws.com/StagedProducts/GeographicNames/DomesticNames/DomesticNames_${code}_Text.zip`;
-
-/** Where the extracted text lands, and what `merge` reads. */
-export const gnisTextPath = (code: string) => join(GNIS_DIR, `DomesticNames_${code}.txt`);
+import {
+  GNIS_DIR,
+  GNIS_STATE_CODES,
+  GNIS_WATER_CLASSES,
+  gnisTextPath,
+  gnisUrl,
+} from './gnisSource';
 
 /**
- * GNIS classes that describe a **body of water** rather than a line or a point.
- *
- * `Stream` and `Spring` are excluded deliberately: GNIS gives one coordinate per feature, and for a
- * stream that point is somewhere along its length. Letting it name the polygon it happens to fall
- * inside would christen a lake after the brook running through it.
+ * **The constants live in `./gnisSource`, and that split is load-bearing.** This module runs its
+ * `main()` at import, so anything exported from here is a five-state download the importer did not
+ * ask for — which is exactly what `merge.ts` was triggering on every run. Re-exported for the CLI's
+ * own readers; nobody else should import from this file.
  */
-export const GNIS_WATER_CLASSES: ReadonlySet<string> = new Set([
-  'Lake',
-  'Reservoir',
-  'Swamp',
-  'Bay',
-]);
-
-/**
- * GNIS's "no coordinate" — and it is a **location**, not a blank.
- *
- * `0.0, 0.0` is in the Gulf of Guinea. Read as a position it would pile every unplaced feature into
- * one grid cell off the coast of Africa; read as a name source it would silently do nothing, which
- * is worse because nothing would say so. Same shape as NHD's `gnis_id = -1`, which would have
- * collapsed 855 unrelated lakes onto one body.
- */
-export function isNullIsland(lat: number, lng: number): boolean {
-  return lat === 0 && lng === 0;
-}
+export {
+  GNIS_COLUMNS,
+  GNIS_DIR,
+  GNIS_STATE_CODES,
+  GNIS_WATER_CLASSES,
+  gnisColumnIndexes,
+  gnisTextPath,
+  gnisUrl,
+  isNullIsland,
+} from './gnisSource';
 
 function log(message: string): void {
   process.stderr.write(`[gnis] ${message}\n`);
