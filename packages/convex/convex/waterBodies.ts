@@ -1637,9 +1637,6 @@ export const pruneNotInCampaign = internalMutation({
   },
 });
 
-/** Bodies named per page by `pruneNotInCampaign`, so a dry run is reviewable rather than a number. */
-const PRUNE_SAMPLE_CAP = 20;
-
 /**
  * The largest page `pruneNotInCampaign` will take — **derived from the read budget, not chosen**.
  *
@@ -1648,6 +1645,20 @@ const PRUNE_SAMPLE_CAP = 20;
  * 500 this used to allow, it is 5,500 and the mutation dies mid-campaign. See the handler.
  */
 const PRUNE_MAX_PAGE = 250;
+
+/**
+ * Bodies named per page by `pruneNotInCampaign` — **all of them, not a sample**.
+ *
+ * This was 20, which made a dry run a *sample* of what it would delete rather than a manifest of it.
+ * The docstring's own justification is *"a deletion nobody can inspect is one nobody can veto"*, and
+ * you cannot veto what you were not shown: at ~21 deletions per page on the real run, a cap of 20 was
+ * quietly withholding the tail of most pages.
+ *
+ * Set to the page ceiling so every candidate on a page is named. The cost is a return value of at
+ * most 250 short objects — about 20 KB, for the one call in this campaign whose output somebody is
+ * meant to read line by line before saying yes.
+ */
+const PRUNE_SAMPLE_CAP = PRUNE_MAX_PAGE;
 
 /**
  * The default blast radius for `pruneNotInCampaign` — **a third of a page**.
