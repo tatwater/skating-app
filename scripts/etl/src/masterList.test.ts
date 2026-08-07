@@ -477,6 +477,42 @@ describe('a bay is an arm, not a lake', () => {
     expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
   });
 
+  // Six real arms of real lakes were demoted because the catalogue that knew the relationship was
+  // not the catalogue that won the outline. Sebago Cove is **0.81 contained in NHD's Sebago Lake and
+  // 0.00 in OSM's**, and D92 makes OSM draw by default — so the test asked the one outline that says
+  // no. Same for Ampersand Bay in Lower Saranac, Noisey Inlet, Pillsbury Bay, Leavitt Bay and
+  // Cram's Cove.
+  it('finds a parent through a member outline the merge did not choose to draw', () => {
+    // OSM draws the lake without the cove; NHD draws it with. The merged body carries OSM's.
+    const osmLake = feat('osm', 'way/sebago', {
+      name: 'Sebago Lake',
+      polygon: square(-70.5, 44.5, sideForAcres(30_000)),
+    });
+    const nhdLake = feat('nhd', 'nhd-sebago', {
+      name: 'Sebago Lake',
+      // Extends north far enough to swallow the cove that sits off OSM's outline.
+      polygon: square(-70.5, 44.5, sideForAcres(30_000) * 1.15),
+    });
+    const cove = feat('osm', 'way/sebagocove', {
+      name: 'Sebago Cove',
+      cls: 'bay',
+      // Beyond OSM's northern edge, inside NHD's.
+      polygon: square(-70.5, 44.5 + sideForAcres(30_000) * 1.02, sideForAcres(190)),
+    });
+    const result = buildMasterList(inputFor({ osm: [osmLake, cove], nhd: [nhdLake] }));
+    expect(result.subAreas).toHaveLength(1);
+    expect(result.subAreas[0]).toMatchObject({
+      key: 'osm:way/sebagocove',
+      name: 'Sebago Cove',
+      parentKey: 'osm:way/sebago',
+    });
+    // …and the merged parent still draws from OSM. Reading a member's outline is evidence, not a
+    // geometry change — enlarging the stored polygon would invent water no publisher shows and move
+    // `surfaceAreaSqM`, which the D91 floor and the D49/D2 scores are calibrated on.
+    expect(result.bodies[0]?.geometrySource).toBe('osm');
+    expect(result.bodies[0]?.polygon).toEqual(osmLake.polygon);
+  });
+
   it('demotes and queues Half Moon Cove, which is contained in nothing', () => {
     const cove = feat('osm', 'way/halfmoon', {
       name: 'Half Moon Cove',

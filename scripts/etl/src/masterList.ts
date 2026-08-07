@@ -479,7 +479,13 @@ export function buildMasterList(input: MasterListInput): MasterList {
     }
   >();
   // The bay rule needs the whole merged set, so it runs here rather than in the classifier.
-  const bayGrid = index(merged.filter((m) => m.cls !== 'bay'));
+  // **Indexed on `memberBBox`, not `bbox`.** `index` reads `.bbox`, which is the outline we chose to
+  // draw — so a candidate whose losing member reaches further than its winning one would not be in
+  // the bay's cells at all and the member test in `bayParent` could never run. Sebago Cove is that
+  // case: off OSM's Sebago Lake, inside NHD's.
+  const bayGrid = index(
+    merged.filter((m) => m.cls !== 'bay').map((m) => ({ ...m, bbox: m.memberBBox })),
+  );
   // **The parents we deliberately do not carry.** Built from the same features already in memory as
   // `saltMask`, and for the mirror reason: the Great Lakes are refused as bodies but their geometry
   // still answers a question. See `greatLakeMask`.

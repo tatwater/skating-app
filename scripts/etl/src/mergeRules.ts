@@ -85,6 +85,8 @@ export interface Merged {
   cls: WaterBodyClass;
   areaSqM: number;
   bbox: BBox;
+  /** Union of every member's bbox — see `bayParent`. Always contains `bbox`. */
+  memberBBox: BBox;
   polygon: Polygon | MultiPolygon;
   geometrySource: ClaimSource;
   sameSourceDuplicate: boolean;
@@ -769,6 +771,20 @@ export function mergeGroupWithReason(members: Feature[]): {
       // **Measured from the polygon we actually stored, never the larger of two claims** (D94).
       areaSqM: preferred.areaSqM,
       bbox: preferred.bbox,
+      // **The union of every member's box, which is bigger than the one we draw.** `bbox` describes
+      // the outline we chose to store, and `bayParent` reads *all* the group's outlines — so a
+      // candidate whose losing member reaches further than its winning one has to be findable in the
+      // grid and survive the prefilter, or the member test can never run. Sebago Cove sits off OSM's
+      // Sebago Lake and inside NHD's, which is exactly this case.
+      memberBBox: members.reduce<BBox>(
+        (box, m) => ({
+          minLng: Math.min(box.minLng, m.bbox.minLng),
+          maxLng: Math.max(box.maxLng, m.bbox.maxLng),
+          minLat: Math.min(box.minLat, m.bbox.minLat),
+          maxLat: Math.max(box.maxLat, m.bbox.maxLat),
+        }),
+        preferred.bbox,
+      ),
       polygon: preferred.polygon,
       geometrySource: preferred.source,
       sameSourceDuplicate,
@@ -1050,12 +1066,34 @@ export function bayParent(
       seen.add(candidate);
       if (candidate.areaSqM <= bay.areaSqM) continue;
       if (best !== undefined && candidate.areaSqM >= best.areaSqM) continue;
-      if (!bboxIntersects(candidate.bbox, bay.bbox)) continue;
-      let inside = 0;
-      for (const [lng, lat] of samples) {
-        if (pointInPolygon({ lat, lng }, candidate.polygon)) inside++;
+      if (!bboxIntersects(candidate.memberBBox, bay.bbox)) continue;
+      // **Every outline the group holds, not just the one we chose to draw** (N7, 2026-08-07).
+      //
+      // `chooseGeometry` picks one member's polygon and D92 makes that OSM by default, so this used
+      // to ask *only* OSM whether the bay was inside — and OSM and NHD disagree about exactly this,
+      // routinely. Measured on run 6's parentless bays: **Sebago Cove is 0.81 contained in NHD's
+      // Sebago Lake and 0.00 in OSM's**, and the same for Ampersand Bay in Lower Saranac (0.77),
+      // Noisey Inlet (0.81), Pillsbury Bay (0.76), Leavitt Bay in Ossipee (0.50) and Cram's Cove
+      // (0.50). Six real arms of real lakes, demoted to `unclassified` because the catalogue that
+      // knew the relationship was not the catalogue that won the outline.
+      //
+      // Asking every member is not a looser rule, it is the *evidence we already paid for*: all
+      // members of a group are the same lake, so "does any catalogue that drew this lake draw it as
+      // containing that bay" is the honest form of the question. The alternative — enlarging the
+      // parent's stored polygon to swallow the bay — would invent water no publisher shows, break
+      // `geometrySource`'s "one catalogue drew this", and silently move `surfaceAreaSqM`, which the
+      // D91 floor and the D49/D2 scores are all calibrated on.
+      const outlines = [candidate.polygon, ...candidate.members.map((m) => m.polygon)];
+      let held = 0;
+      for (const outline of outlines) {
+        let inside = 0;
+        for (const [lng, lat] of samples) {
+          if (pointInPolygon({ lat, lng }, outline)) inside++;
+        }
+        held = Math.max(held, inside / samples.length);
+        if (held >= BAY_PARENT_MIN_CONTAINMENT) break;
       }
-      if (inside / samples.length >= BAY_PARENT_MIN_CONTAINMENT) best = candidate;
+      if (held >= BAY_PARENT_MIN_CONTAINMENT) best = candidate;
     }
   }
   return best;

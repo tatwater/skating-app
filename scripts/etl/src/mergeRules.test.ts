@@ -131,6 +131,9 @@ function merged(over: Partial<Merged> = {}): Merged {
     cls: 'lakePond',
     areaSqM: 100_000,
     bbox: over.bbox ?? bboxOf(polygon),
+    // Defaults to the drawn box, which is what it is for any group whose members agree. A test that
+    // needs a losing member to reach further — the Sebago Cove case — passes it explicitly.
+    memberBBox: over.memberBBox ?? over.bbox ?? bboxOf(polygon),
     polygon,
     geometrySource: 'osm',
     sameSourceDuplicate: false,
