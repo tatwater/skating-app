@@ -3073,6 +3073,27 @@ describe('pruneNotInCampaign — campaign step 6', () => {
     expect(res).toMatchObject({ deleted: 30 });
   });
 
+  test('caps the page at the READ budget, not at the caller’s number', async () => {
+    // `bodyAttachmentKind` costs 10 index reads per un-reaffirmed body against Convex's 4,096-read
+    // limit, so a 500-row page of candidates asks for 5,500 and dies mid-campaign. Found by running
+    // it: the first real page had 11 candidates and sailed through, which is how a data-dependent
+    // limit teaches an operator the wrong lesson.
+    const t = convexTestWithGeo();
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: Array.from({ length: 30 }, (_, i) => ({
+        ...CANONICAL_ITEM,
+        externalId: `way/${i}`,
+        osmId: `way/${i}`,
+      })),
+      campaignId: CAMPAIGN,
+    });
+    const res = await t.mutation(internal.waterBodies.pruneNotInCampaign, {
+      campaignId: CAMPAIGN,
+      batchSize: 5000,
+    });
+    expect(res.scanned).toBeLessThanOrEqual(250);
+  });
+
   test('does not fire on a page too small for a fraction to mean anything', async () => {
     // The tail page of any paginated run is short by construction, and a guard that fires there is
     // one somebody switches off.

@@ -77,7 +77,7 @@ import {
   statesFor,
   Union,
 } from './mergeRules';
-import { toCanonicalBody } from './transform';
+import { simplifyForStorage, toCanonicalBody } from './transform';
 import type { CanonicalBody } from './types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -633,7 +633,13 @@ export function buildMasterList(input: MasterListInput): MasterList {
       parentKey,
       parentIds: catalogueIdsOf(parent?.members ?? [], parent?.gnisIdFromGazetteer),
       areaSqM: body.areaSqM,
-      polygon: body.polygon,
+      // **Simplified, like every other geometry we store** (D48) — and this was emitting the raw
+      // source outline. A sub-area's polygon is a stored render payload under the same ~5 m rule and
+      // the same 8,192-element cap as a body's, so the artifact was wrong on its own terms; it also
+      // made the loader's clip run at full resolution against a parent that is, by construction, one
+      // of the largest bodies in the corpus. Spencer Bay against Moosehead timed the mutation out at
+      // its 1-second limit.
+      polygon: simplifyForStorage(body.polygon),
       bbox: body.bbox,
       sources: body.members.map((m) => `${m.source}:${m.id}`),
     });

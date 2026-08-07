@@ -140,7 +140,7 @@ export function externalIdFromProperties(
  * the least coarsening that fits, rather than a blunt doubling. Fidelity-first everywhere else;
  * this is the hard-limit escape hatch, realistically hit by Lake Champlain alone (settles ~7 m).
  */
-function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygon {
+export function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygon {
   let tolerance = SIMPLIFY_TOLERANCE_DEG;
   let simplified = simplify(geom, { tolerance, highQuality: false, mutate: false });
   // Douglas–Peucker is monotonic in tolerance (a coarser pass never adds vertices), so stepping

@@ -1507,8 +1507,28 @@ export const pruneNotInCampaign = internalMutation({
       maxDeleteFraction === undefined
         ? DEFAULT_MAX_DELETE_FRACTION
         : Math.min(1, Math.max(0, maxDeleteFraction));
-    // Same byte-budget reasoning as `pruneBelowAreaFloor` — a page is bounded by polygon bytes.
-    const numItems = Math.min(500, Math.max(1, batchSize ?? 100));
+    // **Bounded by READS, not by bytes — and the first version got this wrong** (N7, found by
+    // running it 2026-08-07).
+    //
+    // `pruneBelowAreaFloor`'s page limit is about polygon bytes, and this mutation inherited the
+    // number without inheriting the arithmetic. The binding constraint here is different:
+    // `bodyAttachmentKind` runs on every body the campaign did **not** re-affirm and costs **10
+    // index reads** (reports, hazards, recurrence, bounties, tracks, favourites, put-ins, features,
+    // sub-areas, gate events). Convex allows 4,096 reads per execution, so a page of 500 whose rows
+    // are mostly deletion candidates asks for 5,000+ and dies:
+    //
+    // ```
+    // Uncaught Error: Too many reads in a single function execution (limit: 4096)
+    //     at async bodyAttachmentKind
+    // ```
+    //
+    // It is the worst shape of limit to advertise, because it depends on the *data* rather than the
+    // page: the first page of the real run had 11 candidates and sailed through at 500, so an
+    // operator learns that 500 works and then hits the wall somewhere in the middle of a campaign,
+    // where the un-reaffirmed rows happen to cluster.
+    //
+    // 250 leaves the worst case — every row on the page a candidate — at 2,750 reads.
+    const numItems = Math.min(PRUNE_MAX_PAGE, Math.max(1, batchSize ?? 100));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
 
     const kept = {
@@ -1619,6 +1639,15 @@ export const pruneNotInCampaign = internalMutation({
 
 /** Bodies named per page by `pruneNotInCampaign`, so a dry run is reviewable rather than a number. */
 const PRUNE_SAMPLE_CAP = 20;
+
+/**
+ * The largest page `pruneNotInCampaign` will take — **derived from the read budget, not chosen**.
+ *
+ * `bodyAttachmentKind` costs 10 index reads per un-reaffirmed body and Convex allows 4,096 per
+ * execution, so the worst case (every row a candidate) is `10 × n + n`. At 250 that is 2,750; at the
+ * 500 this used to allow, it is 5,500 and the mutation dies mid-campaign. See the handler.
+ */
+const PRUNE_MAX_PAGE = 250;
 
 /**
  * The default blast radius for `pruneNotInCampaign` — **a third of a page**.
