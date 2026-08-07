@@ -631,6 +631,10 @@ async function main(): Promise<void> {
     `  overlapping survivors ${n(stats.duplicatePairs)} pairs — flagged duplicate-candidate, never merged`,
   );
   lines.push(
+    `  great-lake arms ${n(stats.greatLakeArms)}  bays kept as bodies because their parent is Erie or Ontario,`,
+  );
+  lines.push('    which we render from the basemap and deliberately do not store as bodies.');
+  lines.push(
     `  settled wetland ${n(stats.settledWetland)}  a federal open-water class beating an OSM wetland tag —`,
   );
   lines.push(
@@ -734,6 +738,7 @@ async function main(): Promise<void> {
     duplicatePairs: stats.duplicatePairs,
     classDissent: stats.classDissent,
     settledWetland: stats.settledWetland,
+    greatLakeArms: stats.greatLakeArms,
   };
   writeFileSync(
     manifestPath,

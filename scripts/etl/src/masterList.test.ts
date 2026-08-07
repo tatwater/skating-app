@@ -490,6 +490,94 @@ describe('a bay is an arm, not a lake', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// The parents we deliberately do not carry
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('a bay of a Great Lake', () => {
+  /**
+   * Lake Ontario as the archives publish it — refused as a body by the name veto and the area
+   * ceiling, and still in memory, which is what makes the arm rule free.
+   */
+  const ontario = feat('nhd', 'nhd-ontario', {
+    name: 'Lake Ontario',
+    cls: null,
+    polygon: square(-70.5, 44.5, sideForAcres(4_700_000)),
+    sourceToken: 'nhd:ftype=390',
+  });
+
+  /** Braddock Bay: 0.28 contained on the real run — the lowest of the eleven, and the threshold. */
+  const braddock = (over: Record<string, unknown> = {}) =>
+    feat('osm', 'way/braddock', {
+      name: 'Braddock Bay',
+      cls: 'bay',
+      // Straddles Ontario's northern edge, so roughly a third of its outline is inside — which is
+      // how a Great Lakes bay is drawn: across the mouth, half of it inland water the lake does not
+      // cover. An ordinary bay is drawn *inside* its parent and scores near 1.
+      polygon: square(
+        -70.4,
+        44.5 + sideForAcres(4_700_000) - sideForAcres(343) / 3,
+        sideForAcres(343),
+      ),
+      ...over,
+    });
+
+  it('stays a BODY classed bay, rather than being demoted for having no parent', () => {
+    const result = buildMasterList(inputFor({ osm: [braddock()], nhd: [ontario] }));
+    expect(keys(result.bodies)).toEqual(['osm:way/braddock']);
+    expect(result.bodies[0]?.cls).toBe('bay');
+    expect(result.bodies[0]?.reviewReasons).not.toContain('bay-without-parent');
+    expect(result.stats.greatLakeArms).toBe(1);
+    // Never a sub-area: the parent is not in the corpus, so there is nothing to attach it to.
+    expect(result.subAreas).toHaveLength(0);
+  });
+
+  it('is still demoted when there is no Great Lake either', () => {
+    const result = buildMasterList(inputFor({ osm: [braddock()] }));
+    expect(result.bodies[0]?.cls).toBe('unclassified');
+    expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
+    expect(result.stats.greatLakeArms).toBe(0);
+  });
+
+  // `isGreatLakeFeature` is a name test, and `Huron Pond` is a real pond in the Maine archive. Without
+  // the area floor it would adopt every cove near it — the trap D120 already met from the other
+  // direction, when a substring rule aimed at the Great Lakes nearly deleted `Lake Superior`, NY.
+  it('is not fooled by Huron Pond', () => {
+    const huronPond = feat('nhd', 'nhd-huronpond', {
+      name: 'Huron Pond',
+      cls: 'lakePond',
+      polygon: square(-70.5, 44.5, sideForAcres(600)),
+    });
+    const cove = feat('osm', 'way/cove', {
+      name: 'Little Cove',
+      cls: 'bay',
+      polygon: square(-70.5, 44.5, sideForAcres(20)),
+    });
+    const result = buildMasterList(inputFor({ osm: [cove], nhd: [huronPond] }));
+    expect(result.stats.greatLakeArms).toBe(0);
+    // It is inside a real corpus body, so the ordinary bay rule takes it — as a sub-area.
+    expect(result.subAreas).toHaveLength(1);
+  });
+
+  // Ordering: a bay of a body we DO carry is a sub-area, and the Great Lake must not outrank that.
+  // Checked because the rule is a fallback and a fallback that fires first is invisible.
+  it('never outranks a real corpus parent', () => {
+    const lake = feat('osm', 'way/lake', {
+      name: 'Shore Lake',
+      polygon: square(-70.5, 44.5, sideForAcres(5_000)),
+    });
+    const arm = feat('osm', 'way/arm', {
+      name: 'North Arm',
+      cls: 'bay',
+      polygon: square(-70.5, 44.5, sideForAcres(400)),
+    });
+    const result = buildMasterList(inputFor({ osm: [lake, arm], nhd: [ontario] }));
+    expect(result.subAreas).toHaveLength(1);
+    expect(result.subAreas[0]?.parentKey).toBe('osm:way/lake');
+    expect(result.stats.greatLakeArms).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // The wire contract
 // ─────────────────────────────────────────────────────────────────────────────
 

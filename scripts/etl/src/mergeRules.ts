@@ -37,6 +37,7 @@ import {
   exceedsAreaCeiling,
   expandBBox,
   HARD_MIN_SURFACE_AREA_SQM,
+  OCEAN_NAME_VETO_MIN_ACRES,
   type OsmTagBag,
   pointInPolygon,
   polygonBBox,
@@ -1080,6 +1081,67 @@ export function hasBayParent(
  * judged the same way — the same reasoning as `MIN_SURVEY_CONTAINMENT` in the bathymetry join.
  */
 export const BAY_PARENT_MIN_CONTAINMENT = 0.5;
+
+/**
+ * The Great Lakes as parents — **the bodies we deliberately do not carry** (founder, 2026-08-07).
+ *
+ * Lake Ontario is not in the corpus and is never going to be: it draws from the basemap, and putting
+ * a 4.7-million-acre polygon in `waterBodies` would pull a Great Lake into every viewport query for
+ * 300 miles of shoreline. So `bayParent` cannot find it, and eleven of the largest freshwater bays
+ * in New York — **Chaumont Bay 9,169 ac, Black River Bay 4,455, Braddock, Little Sodus, Blind Sodus,
+ * Three Mile, Muskellunge, Sherwin, Sawmill, Long Carrying Place, Long Bay** — were demoted to
+ * `unclassified` for having no parent, when what they have is a parent we chose not to carry.
+ *
+ * They are skated. Braddock Bay is the body D119 already had to rescue from the salt veto for exactly
+ * this reason: *"freshwater embayments of Lake Ontario, and they are skated."*
+ *
+ * **An area floor, because `isGreatLakeFeature` is a name test and `Huron Pond` is a real pond in
+ * Maine** — it appears in the archive and would otherwise adopt every cove near it. `OCEAN_NAME_VETO_MIN_ACRES`
+ * is the bar D120 already set for the same trap, where a substring rule aimed at the Great Lakes was
+ * about to delete `Lake Superior`, NY (179 ac) and `Little Lake Erie` (4 ac).
+ */
+export function greatLakeMask(features: readonly Feature[]): Feature[] {
+  return features.filter(
+    (f) => isGreatLakeFeature(f) && f.areaSqM >= OCEAN_NAME_VETO_MIN_ACRES * SQ_M_PER_ACRE,
+  );
+}
+
+/**
+ * How much of a bay's outline must lie inside a Great Lake before it counts as an arm of one.
+ *
+ * **A quarter, and much lower than `BAY_PARENT_MIN_CONTAINMENT` on purpose.** A bay of an ordinary
+ * lake is drawn *inside* its parent's outline and scores near 1. A Great Lakes bay is drawn across
+ * the mouth: half of it is inland water the lake polygon does not cover, and the measured spread over
+ * the eleven is **0.28 – 0.76**, with Braddock Bay at the bottom. A half would keep four of eleven.
+ *
+ * Safe at this bar only because the candidate set is two lakes rather than the whole corpus — the
+ * "next lake in a chain adopts it" failure that forces 0.5 above cannot happen when the only
+ * candidates are Erie and Ontario.
+ */
+export const GREAT_LAKE_ARM_MIN_CONTAINMENT = 0.25;
+
+/** The Great Lake this bay is an arm of, if any — same sampling as `bayParent`. */
+export function greatLakeParent(
+  bay: Pick<Merged, 'bbox' | 'polygon'>,
+  grid: Map<string, Feature[]>,
+): Feature | undefined {
+  const samples = sampleOutline(bay.polygon);
+  if (samples.length === 0) return undefined;
+  const seen = new Set<Feature>();
+  for (const cell of cellsFor(bay.bbox)) {
+    for (const lake of grid.get(cell) ?? []) {
+      if (seen.has(lake)) continue;
+      seen.add(lake);
+      if (!bboxIntersects(lake.bbox, bay.bbox)) continue;
+      let inside = 0;
+      for (const [lng, lat] of samples) {
+        if (pointInPolygon({ lat, lng }, lake.polygon)) inside++;
+      }
+      if (inside / samples.length >= GREAT_LAKE_ARM_MIN_CONTAINMENT) return lake;
+    }
+  }
+  return undefined;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // The region clip

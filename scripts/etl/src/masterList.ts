@@ -58,6 +58,8 @@ import {
   dropReason,
   type Feature,
   type GnisPoint,
+  greatLakeMask,
+  greatLakeParent,
   idFromKey,
   inDownstate,
   index,
@@ -193,6 +195,14 @@ export interface MasterListStats {
    * left no count behind.
    */
   settledWetland: number;
+  /**
+   * Bays kept as bodies because their parent is a **Great Lake we deliberately do not carry**.
+   *
+   * Eleven on run 6, and they are not marginal: Chaumont Bay is 9,169 acres and Black River Bay
+   * 4,455. See `greatLakeParent`. Counted rather than silent because the number is a direct
+   * consequence of the choice not to store Erie and Ontario — if it ever moves, that choice moved.
+   */
+  greatLakeArms: number;
   lanes: { label: string; stats: LaneStats }[];
   nameLane: { pairs: number; ambiguous: string[] };
   matcher: { onlyNhd: number; onlyDhp: number; nhdHits: number; dhpHits: number };
@@ -397,6 +407,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     classDissent: 0,
     classDissentSamples: [],
     settledWetland: 0,
+    greatLakeArms: 0,
     lanes: [
       { label: '3dhp→nhd', stats: federal.stats },
       { label: 'osm→nhd', stats: osmNhd.stats },
@@ -469,13 +480,27 @@ export function buildMasterList(input: MasterListInput): MasterList {
   >();
   // The bay rule needs the whole merged set, so it runs here rather than in the classifier.
   const bayGrid = index(merged.filter((m) => m.cls !== 'bay'));
+  // **The parents we deliberately do not carry.** Built from the same features already in memory as
+  // `saltMask`, and for the mirror reason: the Great Lakes are refused as bodies but their geometry
+  // still answers a question. See `greatLakeMask`.
+  const greatLakes = greatLakeMask([...nhd, ...dhp]);
+  const greatLakeGrid = index(greatLakes);
+  log(`  ${greatLakes.length} Great Lake polygons for the arm rule`);
 
   for (const group of merged) {
     let cls = group.cls;
     // A bay is an arm OF something. With a parent it is a sub-area (N2); without one we cannot
     // support the claim at all, so it is demoted and queued — Half Moon Cove is the fixture.
     const parent = cls === 'bay' ? bayParent(group, bayGrid) : undefined;
-    const bayWithoutParent = cls === 'bay' && parent === undefined;
+    // **A bay whose only parent is a Great Lake keeps the class and stays a body** (founder,
+    // 2026-08-07). It is not parentless — its parent is one we chose not to carry, and demoting
+    // Chaumont Bay's 9,169 acres to `unclassified` records our storage decision as a fact about the
+    // water. Checked only when `bayParent` found nothing, so an arm of a real corpus body is still a
+    // sub-area and this can never outrank that.
+    const greatLake =
+      cls === 'bay' && parent === undefined ? greatLakeParent(group, greatLakeGrid) : undefined;
+    if (greatLake !== undefined) stats.greatLakeArms++;
+    const bayWithoutParent = cls === 'bay' && parent === undefined && greatLake === undefined;
     if (bayWithoutParent) cls = 'unclassified';
 
     // The region clip, applied to the merged body rather than to a lane.
