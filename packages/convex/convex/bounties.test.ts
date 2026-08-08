@@ -83,6 +83,7 @@ async function seedBody(t: ReturnType<typeof harness>) {
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: `Pond ${offset}`,
+      searchText: `Pond ${offset}`,
       type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: {

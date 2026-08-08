@@ -1055,15 +1055,19 @@ export const importReconciliation = internalMutation({
  */
 
 /**
- * Fill `searchText` on the rows written before it existed — **step 3 of 4** (N7).
+ * Recompute `searchText` across the corpus — **the repair pass** (N7).
  *
- * The order is the one `type` had to follow and for the same reason: Convex validates existing
- * documents on push, so `searchText` ships **optional**, this fills it, and only then does
- * `search_name` move off `name` onto it. Flipping the index first would take search down for every
- * row this has not reached yet — 25,136 of them at the moment it deployed.
+ * It was written as step 3 of the four `searchText` had to come through (widen, deploy, backfill,
+ * narrow): the field shipped optional, this filled 25,052 rows, the index moved off `name`, and the
+ * field became required. That last step means **no row can lack a `searchText` any more**, so this
+ * can no longer be a fill.
  *
- * Idempotent and re-runnable: a row whose `searchText` already matches what it should be is skipped,
- * so this can chase the loader rather than racing it.
+ * What it still is, and why it stays: a *stale* value is reachable in exactly one way — a change to
+ * `searchTextFor` or to how claims become aliases, after which every stored string is one rule
+ * behind. Recomputing 25,052 rows is then a paged mutation rather than a re-import.
+ *
+ * Idempotent and re-runnable: a row already holding what it should is skipped, so this can chase a
+ * loader rather than racing it.
  */
 export const backfillSearchText = internalMutation({
   args: {
@@ -2214,6 +2218,9 @@ export const create = mutation({
     const scores = scoreFields({ surfaceAreaSqM: derived.surfaceAreaSqM }); // no boost on a new body
     const id = await ctx.db.insert('waterBodies', {
       name: args.name,
+      // A user-drawn body has one name and no catalogue claims — but `searchText` is required, so
+      // that a row cannot exist which search is structurally unable to reach.
+      searchText: searchTextFor(args.name, []),
       type: args.type,
       source: 'user',
       polygon: derived.polygon,
@@ -3875,7 +3882,7 @@ export const applyCuratedBoostSeed = internalMutation({
       const candidates = (
         await ctx.db
           .query('waterBodies')
-          .withSearchIndex('search_name', (s) => s.search('name', name))
+          .withSearchIndex('search_name', (s) => s.search('searchText', name))
           .take(50)
       ).filter((b) => b.name.toLowerCase() === name.toLowerCase() && isListed(b));
       // A malformed `state` hint (typo, non-code) is ignored rather than silently matching nothing,
@@ -4211,7 +4218,7 @@ export const searchByName = query({
     const max = Math.min(Math.max(limit ?? 8, 1), 20);
     const raw = await ctx.db
       .query('waterBodies')
-      .withSearchIndex('search_name', (s) => s.search('name', term))
+      .withSearchIndex('search_name', (s) => s.search('searchText', term))
       .take(max * 4);
     // Sub-areas share the box (N2/D60). Searching a bay must reach it: S2 found Malletts under ten
     // spellings, and the northeast arm of Champlain is "the Inland Sea" — a name sharing no token

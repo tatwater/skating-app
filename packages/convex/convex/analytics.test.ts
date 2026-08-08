@@ -64,6 +64,7 @@ async function seedBody(t: ReturnType<typeof harness>): Promise<Id<'waterBodies'
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Pond',
+      searchText: 'Pond',
       type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: {

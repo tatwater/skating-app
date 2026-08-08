@@ -23,6 +23,7 @@ type Status = Doc<'profiles'>['status'];
 
 const SAMPLE_BODY = {
   name: 'Lake Morey',
+  searchText: 'Lake Morey',
   type: 'lakePond' as const,
   polygon: {
     type: 'Polygon' as const,
@@ -258,6 +259,7 @@ describe('waterBodies.create (path-only, D14/D36)', () => {
     const existing = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Known',
+        searchText: 'Known',
         type: 'lakePond' as const,
         source: 'osm' as const,
         polygon: SAMPLE_BODY.polygon,
@@ -814,11 +816,14 @@ describe('waterBodies name claims and searchText (N7)', () => {
     ).rejects.toThrow(/not one of this body's recorded names/);
   });
 
-  test('backfillSearchText fills a pre-field row and is idempotent', async () => {
+  // **A stale value, not an absent one.** `searchText` is required now, so no row can lack it — the
+  // backfill's remaining job is repair: recomputing every row after `searchTextFor` changes, which
+  // is the one way the stored string can stop matching the claims beside it.
+  test('backfillSearchText repairs a stale value and is idempotent', async () => {
     const t = convexTestWithGeo();
     await t.mutation(internal.waterBodies.importCanonical, { bodies: [AUBURN] });
     const bodyId = await onlyBodyId(t);
-    await t.run((ctx) => ctx.db.patch(bodyId, { searchText: undefined }));
+    await t.run((ctx) => ctx.db.patch(bodyId, { searchText: 'stale' }));
 
     // Dry by default — the scope is readable before it moves, like every other prune and backfill.
     expect(await t.mutation(internal.waterBodies.backfillSearchText, {})).toMatchObject({
@@ -826,7 +831,7 @@ describe('waterBodies name claims and searchText (N7)', () => {
       written: 1,
       withAliases: 1,
     });
-    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.searchText).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(bodyId)))?.searchText).toBe('stale');
 
     expect(
       await t.mutation(internal.waterBodies.backfillSearchText, { apply: true }),
@@ -1473,6 +1478,7 @@ describe('waterBodies.pruneBelowAreaFloor (bringing the stored corpus to D91)', 
       ctx.db.insert('waterBodies', {
         ...SAMPLE_BODY,
         name: '',
+        searchText: '',
         source: 'osm',
         dedupStatus: 'clean',
         surfaceAreaSqM: SMALL,
@@ -2297,6 +2303,7 @@ describe('waterBodies.searchByName (map search box)', () => {
     return t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name,
+        searchText: name,
         type: 'lakePond' as const,
         source: 'osm' as const,
         externalId: `osm/way/${name}`,
@@ -3181,6 +3188,7 @@ describe('resolveCampaignDuplicates — the 61 the prune spared', () => {
         ...SAMPLE_BODY,
         source: 'osm' as const,
         name: 'Long Pond',
+        searchText: 'Long Pond',
         externalId: 'way/150404999',
         osmId: 'way/150404999',
         dedupStatus: 'near_certain',
@@ -3191,6 +3199,7 @@ describe('resolveCampaignDuplicates — the 61 the prune spared', () => {
         ...SAMPLE_BODY,
         source: 'osm' as const,
         name: 'Long Pond',
+        searchText: 'Long Pond',
         externalId: 'relation/2602300',
         osmId: 'relation/2602300',
         dedupStatus: 'near_certain',
@@ -3301,6 +3310,7 @@ describe('resolveCampaignDuplicates — the 61 the prune spared', () => {
         ...SAMPLE_BODY,
         source: 'nhd' as const,
         name: '',
+        searchText: '',
         externalId: '141034078',
         nhdId: '141034078',
         dedupStatus: 'near_certain' as const,
@@ -3311,6 +3321,7 @@ describe('resolveCampaignDuplicates — the 61 the prune spared', () => {
         ...SAMPLE_BODY,
         source: 'nhd' as const,
         name: '',
+        searchText: '',
         externalId: '141034079',
         nhdId: '141034079',
         dedupStatus: 'near_certain' as const,
@@ -3341,6 +3352,7 @@ describe('resolveCampaignDuplicates — the 61 the prune spared', () => {
         ...SAMPLE_BODY,
         source: 'osm' as const,
         name: 'No Candidates',
+        searchText: 'No Candidates',
         externalId: 'way/1',
         dedupStatus: 'near_certain' as const,
         createdAt: Date.now(),
@@ -3349,6 +3361,7 @@ describe('resolveCampaignDuplicates — the 61 the prune spared', () => {
         ...SAMPLE_BODY,
         source: 'osm' as const,
         name: 'Idless Survivor',
+        searchText: 'Idless Survivor',
         dedupStatus: 'near_certain' as const,
         lastCampaignId: CAMPAIGN,
         createdAt: Date.now(),
@@ -3357,6 +3370,7 @@ describe('resolveCampaignDuplicates — the 61 the prune spared', () => {
         ...SAMPLE_BODY,
         source: 'osm' as const,
         name: 'Idless Survivor',
+        searchText: 'Idless Survivor',
         externalId: 'way/2',
         dedupStatus: 'near_certain' as const,
         duplicateCandidateIds: [survivor],
@@ -3418,6 +3432,7 @@ describe('corpusStats — the paged census the campaign is measured against', ()
         ...SAMPLE_BODY,
         ...at(-70, 44),
         name: 'Named Lake',
+        searchText: 'Named Lake',
         type: 'lakePond' as const,
         source: 'osm' as const,
         externalId: 'way/1',
@@ -3435,6 +3450,7 @@ describe('corpusStats — the paged census the campaign is measured against', ()
         ...SAMPLE_BODY,
         ...at(-71, 44),
         name: '',
+        searchText: '',
         type: 'wetland' as const,
         source: 'nhd' as const,
         externalId: 'n2',
@@ -3760,6 +3776,7 @@ describe('the remaining edges of the corpus tooling', () => {
         await ctx.db.insert('waterBodies', {
           ...SAMPLE_BODY,
           name: '',
+          searchText: '',
           type: 'wetland' as const,
           source: 'osm' as const,
           externalId: `way/${i}`,
@@ -3827,6 +3844,7 @@ describe('a boost of zero is not a curation decision', () => {
         source: 'osm' as const,
         externalId: 'relation/13332188',
         name: 'South Bay',
+        searchText: 'South Bay',
         curatedBoost: 0,
         dedupStatus: 'clean' as const,
         createdAt: Date.now(),
@@ -3904,6 +3922,7 @@ describe('setIncludedByRequest — N7b’s primitive', () => {
         externalId: 'way/1304098167',
         osmId: 'way/1304098167',
         name: '',
+        searchText: '',
         type: 'wetland' as const,
         surfaceAreaSqM: 5 * 4046.8564224, // an unnamed wetland D96 refuses under fifty acres
         dedupStatus: 'clean' as const,

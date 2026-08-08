@@ -37,6 +37,7 @@ async function seedBody(
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Test Lake',
+      searchText: 'Test Lake',
       type: 'lakePond' as const,
       source: 'osm' as const,
       externalId,

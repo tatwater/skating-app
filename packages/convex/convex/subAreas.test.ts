@@ -81,6 +81,7 @@ async function seedBody(t: ReturnType<typeof convexTest>, name = 'Lake Champlain
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name,
+      searchText: name,
       type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: LAKE,
@@ -625,6 +626,7 @@ describe('system delists are visible where they get fixed', () => {
     const body = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Lake Champlain',
+        searchText: 'Lake Champlain',
         type: 'lakePond' as const,
         source: 'osm' as const,
         externalId: 'way/9',
@@ -747,6 +749,7 @@ describe('the parent-listing cascade', () => {
     const body = await t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Someone Pond',
+        searchText: 'Someone Pond',
         type: 'lakePond' as const,
         source: 'user' as const,
         polygon: LAKE,
@@ -825,6 +828,7 @@ describe('the parent-listing cascade', () => {
     return t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Lake Champlain',
+        searchText: 'Lake Champlain',
         type: 'lakePond' as const,
         source: 'osm' as const,
         externalId: 'way/1',
@@ -1169,6 +1173,7 @@ describe('the merged search box', () => {
       await t.run((ctx) =>
         ctx.db.insert('waterBodies', {
           name,
+          searchText: name,
           type: 'lakePond' as const,
           source: 'osm' as const,
           polygon: rect(-70, 42, -69.99, 42.01),

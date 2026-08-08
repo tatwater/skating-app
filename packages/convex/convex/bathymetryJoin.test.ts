@@ -30,6 +30,8 @@ describe('waterBodies.matchBathymetryLakes', () => {
         type: 'lakePond' as const,
         source: 'osm' as const,
         externalId,
+        // Required, so no row can exist that search is structurally unable to reach (N7).
+        searchText: String(extra.name ?? ''),
         // The hand-inserted row has to look like an imported one, or the `importCanonical` call
         // below inserts a SECOND body instead of patching this one — the upsert keys on the
         // catalogue id now, and a row without one matches nothing (N7 / D93).

@@ -237,6 +237,7 @@ describe('waterBodies.listDedupCandidates (D36 queue)', () => {
   type NewBody = Omit<Doc<'waterBodies'>, '_id' | '_creationTime'>;
   const seedBody = (ctx: MutationCtx, doc: Partial<NewBody> & Pick<NewBody, 'name'>) =>
     ctx.db.insert('waterBodies', {
+      searchText: doc.name,
       type: 'lakePond',
       source: 'osm',
       polygon: poly,

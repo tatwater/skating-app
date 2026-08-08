@@ -42,6 +42,7 @@ async function seedBody(t: ReturnType<typeof convexTest>) {
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Lake Morey',
+      searchText: 'Lake Morey',
       type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: {

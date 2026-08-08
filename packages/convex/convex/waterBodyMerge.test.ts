@@ -72,6 +72,7 @@ function seedBody(
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name,
+      searchText: name,
       type: 'lakePond',
       source: opts.source ?? 'osm',
       polygon: POLY,

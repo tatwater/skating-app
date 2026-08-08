@@ -71,6 +71,7 @@ async function seedBody(t: ReturnType<typeof convexTest>, overrides: Record<stri
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Shelburne Pond',
+      searchText: 'Shelburne Pond',
       type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: {
@@ -859,6 +860,7 @@ describe('the job’s own machinery', () => {
       for (let i = 0; i < 250; i++) {
         const dead = await ctx.db.insert('waterBodies', {
           name: `Skipped ${i}`,
+          searchText: `Skipped ${i}`,
           type: 'lakePond' as const,
           source: 'osm' as const,
           polygon: {

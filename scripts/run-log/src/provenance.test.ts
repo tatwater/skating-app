@@ -6,6 +6,7 @@ import {
   nhdStage,
   parseBuildDate,
   parseHttpDate,
+  STAGE_SEPARATOR,
   stageName,
   threeDhpClipStage,
   threeDhpSourceStage,
@@ -187,5 +188,44 @@ describe('derivedFileStage', () => {
     });
     expect(stage.checksumVerified).toBeUndefined();
     expect(stage.command).toMatch(/build-region/);
+  });
+});
+
+// A manifest written by an older fetcher must degrade to a stage with holes, never a throw — a hole
+// in the path is a worse record, a crash is no record at all. Each of these exercises the absent
+// side of a field the happy-path tests always supply.
+describe('a manifest with nothing optional in it', () => {
+  it('builds an NHD stage without a URL, size or freeze date', () => {
+    const stage = nhdStage({}, 'nhd · me');
+    expect(stage.name).toBe('nhd · me');
+    expect(stage.bytes).toBeUndefined();
+    expect(stage.sha256).toBeUndefined();
+    expect(stage.checksumVerified).toBeUndefined();
+  });
+
+  it('builds a 3DHP clip stage with no feature count', () => {
+    // `features` is the only count this stage carries; absent, it must omit `counts` rather than
+    // publish an empty array, which reads as "we counted, and it was nothing".
+    expect(threeDhpClipStage({}, '3dhp · clip').counts).toBeUndefined();
+    expect(threeDhpSourceStage({}, '3dhp · source').counts).toBeUndefined();
+  });
+
+  it('builds a GNIS stage for a state whose manifest has no rows recorded', () => {
+    expect(gnisStage({}, 'gnis · vt').counts).toBeUndefined();
+  });
+
+  it('builds an OSM extract stage with no build date and no path', () => {
+    const stage = extractStage({});
+    expect(stage.name).toBe('extract');
+    expect(stage.sourceAt).toBeUndefined();
+  });
+});
+
+describe('stageName', () => {
+  // The five OSM extracts are one step conceptually and five files in fact; the separator is what
+  // lets `/admin/imports` group them without the loader inventing a nesting level.
+  it('joins a family and a key, and leaves a lone family alone', () => {
+    expect(stageName('source', 'osm/vt')).toBe(`source${STAGE_SEPARATOR}osm/vt`);
+    expect(stageName('merge')).toBe('merge');
   });
 });

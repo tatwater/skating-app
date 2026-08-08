@@ -210,6 +210,10 @@ export interface GnisStateManifest {
  * by the area floor as unnamed. That failure has no other symptom.
  */
 export function gnisStage(state: GnisStateManifest, name: string): RunStage {
+  const counts = [
+    ...(state.rows === undefined ? [] : [{ name: 'rows', value: state.rows }]),
+    ...(state.waterRows === undefined ? [] : [{ name: 'waterRows', value: state.waterRows }]),
+  ];
   return {
     name,
     detail:
@@ -218,10 +222,11 @@ export function gnisStage(state: GnisStateManifest, name: string): RunStage {
     sourceUrl: state.url,
     bytes: state.bytes,
     sha256: state.sha256,
-    counts: [
-      ...(state.rows === undefined ? [] : [{ name: 'rows', value: state.rows }]),
-      ...(state.waterRows === undefined ? [] : [{ name: 'waterRows', value: state.waterRows }]),
-    ],
+    // **Omitted when there is nothing to count, not `[]`** — the same rule the 3DHP stages already
+    // follow, and the reason is that the two read differently: an empty array says *we counted, and
+    // it was nothing*, which for a gazetteer is the exact symptom this stage exists to make visible.
+    // A manifest from an older fetcher has no row counts; that is a hole in the record, not a zero.
+    counts: counts.length > 0 ? counts : undefined,
   };
 }
 

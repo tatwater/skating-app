@@ -377,11 +377,15 @@ export default defineSchema({
      * `[name, ...aliases]` joined — **the field the search index actually covers.**
      *
      * Denormalised on every name write, never set by a client, same shape and same
-     * `@skating/core`'s `searchTextFor` as `waterBodySubAreas`. Optional only because 25,136 rows
-     * predate it: Convex validates existing documents on push, so this ships optional, gets
-     * backfilled, and the search index moves off `name` after — widen, deploy, backfill, narrow.
+     * `@skating/core`'s `searchTextFor` as `waterBodySubAreas` — **and required, like that one.**
+     *
+     * It shipped optional for one campaign because Convex validates existing documents on push and
+     * 25,136 rows predated it; `backfillSearchText` filled them (25,049 already correct from the
+     * loader, 3 written for the prune-protected rows it cannot reach) and the index then moved off
+     * `name`. Required is the last step, and it is the one that matters: an optional search field is
+     * a field a row can lack, and a row lacking it is **a lake search cannot reach, silently**.
      */
-    searchText: v.optional(v.string()),
+    searchText: v.string(),
     /**
      * What kind of water this is — **`WATER_BODY_CLASSES`, and the D109 migration is finished**.
      *
@@ -797,7 +801,15 @@ export default defineSchema({
     // `.eq()` on the reason never reads the rows that carry none — `undefined` sorts before every
     // value, but an equality range simply does not include it, which is what makes this cheap.
     .index('by_review_reason', ['reviewReason', 'displayScore'])
-    .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
+    // **`searchText`, not `name` — the last step of the four** (N7). `[name, ...aliases]` joined, so
+    // a lake is findable under every name a publisher gave it: Auburn's water supply stores as NHD's
+    // `The Basin` and a skater types "Lake Auburn". 583 bodies carry a distinct second name.
+    //
+    // The order was widen → deploy → backfill → narrow, the same as `type`: the field shipped
+    // optional, `backfillSearchText` filled it (25,049 already correct from the loader, 3 written
+    // for the prune-protected rows it cannot reach), and only then did the index move. Flipping
+    // first would have taken search down for every row the backfill had not yet reached.
+    .searchIndex('search_name', { searchField: 'searchText' }),
 
   // Which bodies the N6b contour tileset actually draws lines for (N6c-1 / D2).
   //
