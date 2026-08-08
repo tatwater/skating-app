@@ -96,6 +96,7 @@ import {
   type RawOsmFeature,
   type RawThreeDhpFeature,
   SQ_M_PER_ACRE,
+  TIDAL_MAX_ELEVATION_M,
 } from './mergeRules';
 import { NHD_ID_CENSUS, NHD_SOURCES, nhdArchiveKey, normalizeGnisId } from './nhdArchive';
 
@@ -351,6 +352,31 @@ function boundariesPath(): string {
   return existsSync(built) ? built : join(SCRATCH, 'boundaries.ndjson');
 }
 
+/**
+ * The 3DEP archive, by coordinate key — the tidal referee's evidence (D104).
+ *
+ * Lives in `scripts/lake-depth`, which is where the fetcher that wrote it lives, and is read here
+ * rather than re-fetched: the merge is offline by construction and this file is the reason the
+ * four-hour pass happens once.
+ *
+ * **Absent is a legitimate state and reads as a warning, not an error.** A contributor without the
+ * archive still gets a merge — one whose salt handling falls back to the spatial veto alone, which
+ * is what the pipeline did until 2026-08-08. Refusing to run would make an optional referee a hard
+ * dependency on a 5 MB file nobody has yet.
+ */
+function loadElevationArchive(): Map<string, number> {
+  const file = join(HERE, '..', '..', 'lake-depth', '.raw-elevation', 'readings.ndjson');
+  const out = new Map<string, number>();
+  if (!existsSync(file)) return out;
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    const t = line.trim();
+    if (t.length === 0) continue;
+    const e = JSON.parse(t) as { key: string; elevationM: number };
+    out.set(e.key, e.elevationM);
+  }
+  return out;
+}
+
 /** The five states, as states and counties — the mask the merged corpus is clipped to. */
 function loadBoundaries(): (Boundary & { name: string; level: string })[] {
   const file = boundariesPath();
@@ -541,6 +567,14 @@ async function main(): Promise<void> {
   const downstate = loadDownstate();
   log(`  ${downstate.length} downstate NY counties, refused`);
 
+  const elevation = loadElevationArchive();
+  log(
+    elevation.size > 0
+      ? `  ${elevation.size.toLocaleString()} 3DEP readings for the tidal referee`
+      : '  ! no elevation archive — the tidal referee is OFF, spatial salt veto only ' +
+          '(build it: pnpm --filter @skating/lake-depth snapshot-elevation)',
+  );
+
   const master = buildMasterList({
     osm,
     nhd,
@@ -548,6 +582,7 @@ async function main(): Promise<void> {
     gnisGrid,
     boundaryGrid,
     downstate,
+    elevation,
     log,
   });
   const { bodies: kept, subAreas, dropped, stats } = master;
@@ -607,6 +642,13 @@ async function main(): Promise<void> {
     lines.push(`  refused ${reason.padEnd(21)} ${n(count)}`);
     for (const sample of stats.refusedSamples.get(reason) ?? []) lines.push(`      ${sample}`);
   }
+  lines.push(
+    `  of which by ELEVATION ${n(stats.tidalByElevation)} — bodies at or under ` +
+      `${TIDAL_MAX_ELEVATION_M} m that a catalogue called a bay or tagged salt, and that no federal`,
+  );
+  lines.push(
+    '    estuary polygon covers. Zero here means the 3DEP archive is missing, not that the sea is.',
+  );
   lines.push(
     `  outside 5 states  ${n(stats.outOfRegion)}  (the geodatabases are not clipped to their states)`,
   );

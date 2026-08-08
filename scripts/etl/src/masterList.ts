@@ -38,6 +38,7 @@
 import {
   belongsInCorpus,
   type ClaimSource,
+  fetchOrigin,
   isNearMiss,
   mergeReviewReasons,
   needsAttention,
@@ -68,6 +69,8 @@ import {
   inRegion,
   inRegionFraction,
   isFreshwaterException,
+  isTidalByElevation,
+  isTidalCandidate,
   type Merged,
   mergeGroupWithReason,
   nameClaimsOf,
@@ -155,6 +158,15 @@ export interface MasterListStats {
   outOfRegion: number;
   belowI84: number;
   saltWater: number;
+  /**
+   * Of the salt refusals, how many the **elevation referee** took rather than the spatial veto.
+   *
+   * Counted apart because the two are different instruments answering the same question: one is a
+   * federal estuary polygon covering the body, the other is a 1 m DEM reading at its interior point.
+   * A single `saltWater` total could not say which moved, and they move for different reasons — the
+   * first when a catalogue redraws, the second when the corpus does.
+   */
+  tidalByElevation: number;
   subAreas: number;
   gnisNamed: number;
   gnisRescued: number;
@@ -327,6 +339,24 @@ export function matchLane(
 // The master list
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Decimal places in an elevation-archive key — **must match `COORDINATE_KEY_PLACES`** in
+ * `scripts/lake-depth/src/epqs.ts`, which is what wrote the archive.
+ *
+ * Restated rather than imported because the two packages do not depend on each other, and a lookup
+ * that silently misses is the failure mode here: every candidate would come back `undefined` and the
+ * referee would quietly do nothing at all. `merge.ts` asserts the archive resolves for a known body
+ * before the run starts, so a drift fails loudly instead.
+ */
+export const ELEVATION_KEY_PLACES = 5;
+
+/** The archive key for a body's interior point — the same point `toCanonicalBody` stores. */
+export function elevationKeyFor(polygon: Merged['polygon']): string {
+  const point = fetchOrigin(polygon);
+  if (point === null) return '';
+  return `${point.lat.toFixed(ELEVATION_KEY_PLACES)},${point.lng.toFixed(ELEVATION_KEY_PLACES)}`;
+}
+
 export interface MasterListInput {
   osm: readonly Feature[];
   nhd: readonly Feature[];
@@ -334,6 +364,15 @@ export interface MasterListInput {
   gnisGrid: Map<string, GnisPoint[]>;
   boundaryGrid: Map<string, Boundary[]>;
   downstate: readonly Boundary[];
+  /**
+   * 3DEP elevation by coordinate key — the tidal referee's evidence (D104 archive).
+   *
+   * Optional, and an empty map is a legitimate state: a merge run with no archive present simply
+   * gets no elevation referee and falls back to the spatial salt veto alone. That is the honest
+   * degradation — better than refusing to run, and better than pretending a missing reading means
+   * "not tidal", which is what a default would do.
+   */
+  elevation?: ReadonlyMap<string, number>;
   /**
    * The **state** outlines are deliberately not here: `statesFor` runs in `emitCanonicalBodies`,
    * where the record is built, and nothing in the admission decision reads a state code. Passing a
@@ -351,6 +390,7 @@ export interface MasterListInput {
  */
 export function buildMasterList(input: MasterListInput): MasterList {
   const { gnisGrid, boundaryGrid, downstate } = input;
+  const elevation = input.elevation ?? new Map<string, number>();
   const log = input.log ?? (() => undefined);
 
   // ── Stage 0: the gazetteer settles the IDS, before anything matches ───────
@@ -460,6 +500,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     outOfRegion: 0,
     belowI84: 0,
     saltWater: 0,
+    tidalByElevation: 0,
     subAreas: 0,
     gnisNamed: 0,
     gnisRescued: 0,
@@ -627,9 +668,26 @@ export function buildMasterList(input: MasterListInput): MasterList {
     // still rescued by whichever catalogue named it. See `FRESHWATER_ALLOW_LIST` — two lakes dammed
     // above a tidal inlet of the same name, which no threshold can separate from the salt ponds
     // sitting either side of them.
+    // **The elevation referee, for what the federal polygons cannot see** (founder, 2026-08-08).
+    //
+    // The spatial veto above asks "is this body inside water a federal catalogue calls the sea",
+    // which settles 941 bodies and says nothing about the ones those polygons never cover — Salt
+    // Bay, The Pool at Biddeford, 100 Acre Cove. Tested against 4,794 `NHDArea` polygons, only 3
+    // hit. So the second question is one no catalogue had to answer: **how high is it?** Tidal water
+    // is at sea level by definition; Paugus Bay is a 153 m arm of Winnipesaukee.
+    //
+    // Runs after the containment test, because containment is the stronger claim — a federal
+    // estuary polygon covering the body is direct evidence, where elevation is an inference from a
+    // DEM. Both are gated on the same allow-list.
+    const tidal =
+      !isFreshwaterException(group.name) && isTidalCandidate(group.members, cls)
+        ? isTidalByElevation(elevationKeyFor(group.polygon), elevation)
+        : undefined;
+    if (tidal === true) stats.tidalByElevation++;
+
     if (
       !isFreshwaterException(group.name) &&
-      saltContainment(group, saltGrid) >= SALT_MIN_CONTAINMENT
+      (tidal === true || saltContainment(group, saltGrid) >= SALT_MIN_CONTAINMENT)
     ) {
       stats.saltWater++;
       stats.refused.set('salt-water', (stats.refused.get('salt-water') ?? 0) + 1);
@@ -643,7 +701,10 @@ export function buildMasterList(input: MasterListInput): MasterList {
       dropped.push({
         ...describe(group.members, group.name, cls, group.areaSqM),
         key: group.key,
-        reason: 'salt-water',
+        // Named apart from the containment refusal: one is a federal polygon covering the body,
+        // the other is a DEM reading. If either count moves sharply, they moved for different
+        // reasons and a single `salt-water` label could not say which.
+        reason: tidal === true ? 'salt-water-elevation' : 'salt-water',
       });
       continue;
     }

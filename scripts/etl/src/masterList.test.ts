@@ -12,7 +12,12 @@
 
 import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { buildMasterList, emitCanonicalBodies, type MasterListInput } from './masterList';
+import {
+  buildMasterList,
+  elevationKeyFor,
+  emitCanonicalBodies,
+  type MasterListInput,
+} from './masterList';
 import {
   type Boundary,
   type Feature,
@@ -111,7 +116,9 @@ const MAINE: Boundary & { name: string; level: string } = {
 };
 
 function inputFor(
-  parts: Partial<Pick<MasterListInput, 'osm' | 'nhd' | 'dhp' | 'gnisGrid' | 'downstate'>> = {},
+  parts: Partial<
+    Pick<MasterListInput, 'osm' | 'nhd' | 'dhp' | 'gnisGrid' | 'downstate' | 'elevation'>
+  > = {},
 ): MasterListInput {
   const boundaries = [MAINE];
   return {
@@ -121,14 +128,115 @@ function inputFor(
     gnisGrid: parts.gnisGrid ?? new Map<string, GnisPoint[]>(),
     boundaryGrid: index(boundaries) as Map<string, Boundary[]>,
     downstate: parts.downstate ?? [],
+    ...(parts.elevation ? { elevation: parts.elevation } : {}),
   };
 }
 
 const keys = (bodies: { key: string }[]) => bodies.map((b) => b.key).sort();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Every group is accounted for
+// The tidal referee, in the order it actually runs
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe('elevation as the tidal referee (founder, 2026-08-08)', () => {
+  /** Where `elevationKeyFor` will look this body up — the same interior point the emit stage uses. */
+  const keyOf = (f: Feature) => elevationKeyFor(f.polygon);
+
+  const saltBay = () =>
+    feat('osm', 'way/saltbay', {
+      name: 'Salt Bay',
+      cls: 'bay',
+      polygon: square(-70.4, 44.4, sideForAcres(542)),
+    });
+
+  it('refuses a bay at sea level that no federal estuary polygon covers', () => {
+    // Salt Bay, Damariscotta — 542 acres, measured at 0.3 m. The spatial veto never saw it: tested
+    // against 4,794 NHDArea polygons, only 3 hit.
+    const bay = saltBay();
+    const result = buildMasterList(
+      inputFor({ osm: [bay], elevation: new Map([[keyOf(bay), 0.3]]) }),
+    );
+    expect(result.bodies).toHaveLength(0);
+    expect(result.stats.tidalByElevation).toBe(1);
+    expect(result.dropped[0]?.reason).toBe('salt-water-elevation');
+  });
+
+  it('keeps Paugus Bay, which is 153 m of Winnipesaukee', () => {
+    const bay = feat('osm', 'way/paugus', {
+      name: 'Paugus Bay',
+      cls: 'bay',
+      polygon: square(-70.4, 44.4, sideForAcres(1241)),
+    });
+    const result = buildMasterList(
+      inputFor({ osm: [bay], elevation: new Map([[keyOf(bay), 153.1]]) }),
+    );
+    expect(keys(result.bodies)).toEqual(['osm:way/paugus']);
+    expect(result.stats.tidalByElevation).toBe(0);
+  });
+
+  it('refuses a low body a catalogue tagged saltmarsh, whatever class won the vote', () => {
+    // The 92 the `classDissent` split found: OSM says saltmarsh, a federal catalogue says LakePond,
+    // and `chooseClass` lets the class win — correctly, since that rule is the wetland rescue. The
+    // referee is what stops that from quietly admitting tidal water.
+    const marsh = feat('osm', 'way/marsh', {
+      name: 'Broad Marsh',
+      cls: 'wetland',
+      sourceToken: 'osm:wetland=saltmarsh',
+      polygon: square(-70.4, 44.4, sideForAcres(200)),
+    });
+    const federal = feat('nhd', 'n-marsh', {
+      name: 'Broad Marsh',
+      cls: 'lakePond',
+      polygon: square(-70.4, 44.4, sideForAcres(200)),
+    });
+    const result = buildMasterList(
+      inputFor({ osm: [marsh], nhd: [federal], elevation: new Map([[keyOf(marsh), 1.2]]) }),
+    );
+    expect(result.bodies).toHaveLength(0);
+    expect(result.stats.tidalByElevation).toBe(1);
+  });
+
+  it('spares Nequasset Lake, which is on the allow-list AND under five metres', () => {
+    // **The measurement that forced the scoping.** 1,002 corpus bodies sit at or under 5 m and only
+    // 81 are bay-class or tidally named — so a general rule would delete ~920 freshwater bodies,
+    // starting with the two that FRESHWATER_ALLOW_LIST was hand-built to protect. Nequasset is
+    // 4.8 m; Winnegance is 1.1 m.
+    const lake = feat('osm', 'way/nequasset', {
+      name: 'Nequasset Lake',
+      cls: 'bay',
+      polygon: square(-70.4, 44.4, sideForAcres(449)),
+    });
+    const result = buildMasterList(
+      inputFor({ osm: [lake], elevation: new Map([[keyOf(lake), 4.8]]) }),
+    );
+    expect(keys(result.bodies)).toEqual(['osm:way/nequasset']);
+  });
+
+  it('leaves an ordinary low-lying pond alone, because it is not a candidate', () => {
+    // `Fresh Pond`, Maine, 2.9 m and 102 acres. No catalogue called it a bay or tagged it salt, so
+    // the referee never looks at it — which is the whole reason this rule is scoped.
+    const pond = feat('osm', 'way/fresh', {
+      name: 'Fresh Pond',
+      polygon: square(-70.4, 44.4, sideForAcres(102)),
+    });
+    const result = buildMasterList(
+      inputFor({ osm: [pond], elevation: new Map([[keyOf(pond), 2.9]]) }),
+    );
+    expect(keys(result.bodies)).toEqual(['osm:way/fresh']);
+    expect(result.stats.tidalByElevation).toBe(0);
+  });
+
+  it('runs at all with no archive, and simply takes nobody', () => {
+    // A contributor without the 3DEP archive still gets a merge — one whose salt handling is the
+    // spatial veto alone, which is what the pipeline did until 2026-08-08. A missing reading must
+    // never read as "tidal", and must never read as "fresh" either; it leaves the body where the
+    // other rules put it.
+    const bay = saltBay();
+    const result = buildMasterList(inputFor({ osm: [bay] }));
+    expect(keys(result.bodies)).toEqual(['osm:way/saltbay']);
+    expect(result.stats.tidalByElevation).toBe(0);
+  });
+});
 
 describe('the balance', () => {
   it('accounts for every group as a body, a sub-area or a named drop', () => {

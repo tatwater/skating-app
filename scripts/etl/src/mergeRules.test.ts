@@ -41,6 +41,8 @@ import {
   inRegion,
   inRegionFraction,
   isFreshwaterException,
+  isTidalByElevation,
+  isTidalCandidate,
   isVetoed,
   type LaneDrop,
   LaneLedger,
@@ -68,6 +70,7 @@ import {
   sampleOutline,
   sampleOutlineDense,
   statesFor,
+  TIDAL_MAX_ELEVATION_M,
   Union,
   vetoReason,
 } from './mergeRules';
@@ -1679,6 +1682,63 @@ describe('dense outline sampling', () => {
 
   it('is empty for a geometry with no positions', () => {
     expect(sampleOutlineDense({ type: 'Polygon', coordinates: [[]] }, 8)).toEqual([]);
+  });
+});
+
+describe('the tidal referee — elevation, where the federal polygons say nothing', () => {
+  const salty = (token: string) =>
+    feature('osm', 'way/1', { sourceToken: token, areaSqM: 100 * SQ_M_PER_ACRE });
+
+  it('judges a bay-class body, because a bay is an arm and the sea is often the something', () => {
+    expect(isTidalCandidate([feature('osm', 'way/1')], 'bay')).toBe(true);
+  });
+
+  it('judges a body a catalogue tagged salt outright, whatever class won', () => {
+    // The `classDissent` split found 92 of these: `chooseClass` lets a real class beat a drop, so a
+    // mapper writing `wetland=saltmarsh` is silently outvoted by a federal `LakePond`.
+    for (const token of ['osm:wetland=saltmarsh', 'osm:wetland=tidalflat', 'osm:water=salt_pool']) {
+      expect(isTidalCandidate([salty(token)], 'lakePond')).toBe(true);
+    }
+  });
+
+  it('judges NOTHING on a name, which is the trap this rule must not fall into', () => {
+    // `bay` is a class somebody assigned and `saltmarsh` is a tag somebody typed about the water.
+    // A name is a string — and "Estuary" is a 32 m oxbow in Northampton, 150 km inland.
+    expect(isTidalCandidate([feature('osm', 'way/1', { name: 'Salt Bay' })], 'lakePond')).toBe(
+      false,
+    );
+    expect(isTidalCandidate([feature('nhd', 'n1', { name: 'Estuary' })], 'lakePond')).toBe(false);
+  });
+
+  it('calls a body at sea level tidal, and one on Winnipesaukee fresh', () => {
+    // Measured 2026-08-08 at 1 m LiDAR: Salt Bay 0.3 m, Paugus Bay 153.1 m — the same figure Melvin
+    // Bay returns from an independent point on the same lake.
+    const elevation = new Map([
+      ['43.99349,-69.91340', 0.3],
+      ['43.55860,-71.46610', 153.1],
+    ]);
+    expect(isTidalByElevation('43.99349,-69.91340', elevation)).toBe(true);
+    expect(isTidalByElevation('43.55860,-71.46610', elevation)).toBe(false);
+  });
+
+  it('keeps Lake Ontario’s arms, which sit at the lake’s own surface', () => {
+    // All eleven returned 74.9 m — Ontario's surface. Braddock Bay is skated, and D119 already had
+    // to rescue it from the spatial veto once.
+    expect(isTidalByElevation('k', new Map([['k', 74.9]]))).toBe(false);
+  });
+
+  it('returns undefined for a body with no reading, never a default', () => {
+    // "We have no elevation" must not read as "it is high up" OR as "it is tidal". A missing reading
+    // leaves the body exactly where the other rules put it — and a whole-archive miss (a key-format
+    // drift, say) then shows up as a referee that took nobody, rather than one that took everybody.
+    expect(isTidalByElevation('absent', new Map())).toBeUndefined();
+  });
+
+  it('sits above every astronomical tide in the region and below the lowest fresh body', () => {
+    // The gap the probe measured: nothing between 2.6 m (Frost Cove, tidal) and 9.7 m (Snow's Cove,
+    // fresh). Eastern Maine's highest astronomical tide is ~3.5 m above NAVD88.
+    expect(TIDAL_MAX_ELEVATION_M).toBeGreaterThan(3.5);
+    expect(TIDAL_MAX_ELEVATION_M).toBeLessThan(9.7);
   });
 });
 

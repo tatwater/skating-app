@@ -334,6 +334,96 @@ export function isFreshwaterException(name: string): boolean {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// The tidal referee — elevation, where the federal polygons say nothing
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A catalogue **explicitly calling this salt**, where our classifier then let another one overrule it.
+ *
+ * Surfaced by the `classDissent` split (N7-2): 92 kept bodies carry one of these tags. `chooseClass`
+ * lets a real class beat a drop — that rule is load-bearing, it is the 123-body wetland rescue — but
+ * it means an OSM mapper writing `wetland=saltmarsh` is silently outvoted by a federal `LakePond`,
+ * under a founder rule of *no salt water*.
+ *
+ * These are publisher **claims**, which is why they are a candidate set and a name is not. `bay` is a
+ * class somebody assigned; `saltmarsh` is a tag somebody typed about the water itself. A body called
+ * "Mill Creek" is a string.
+ */
+export const SALT_CLAIM_TOKENS: ReadonlySet<string> = new Set([
+  'osm:wetland=saltmarsh',
+  'osm:wetland=tidalflat',
+  'osm:water=salt_pool',
+]);
+
+/**
+ * Highest a body may sit and still be judged tidal — **five metres above the vertical datum**.
+ *
+ * ## The measurement, which for once handed over a threshold rather than a judgement call
+ *
+ * The salt-containment histogram was *"smooth from 0 to 1 with no gap to cut at"* and had to be set
+ * by reading names in each band. This one is the opposite. Probed against 3DEP at 1 m LiDAR over
+ * every bay-class body (2026-08-08):
+ *
+ * | | |
+ * | --- | --- |
+ * | Lake Ontario's eleven arms | **74.9 m** — Ontario's own surface, all eleven |
+ * | Paugus Bay and Melvin Bay | **153.1 m** — Winnipesaukee's surface, from two independent points |
+ * | Wares / Cram's Cove, on the Charles | 10.4 m |
+ * | Snow's Cove | 9.7 m |
+ * | *— nothing at all in between —* | |
+ * | Frost Cove, on the St. Croix estuary | 2.6 m |
+ * | Salt Bay · The Pool · 100 Acre Cove · Mill Cove | 0.3 · −2.5 · −0.7 · −2.8 m |
+ *
+ * Five sits inside that gap and above every astronomical tide in the region — eastern Maine's runs to
+ * ~3.5 m above NAVD88, and it is the largest in the region by a distance.
+ *
+ * ## ⚠ Only ever applied to a body a publisher already called salt or called a bay
+ *
+ * **Measured, because the temptation is to make it general and that would be a catastrophe.** 1,002
+ * bodies in the corpus sit at or below five metres and only 81 are bay-class or tidally named. A
+ * corpus-wide rule would delete ~920 freshwater bodies — including **Nequasset Lake** (449 ac) and
+ * **Winnegance Lake** (187 ac), which are the *entire contents of `FRESHWATER_ALLOW_LIST`*, plus two
+ * separate ponds named **Fresh Pond**. Coastal Maine and Cape Cod are full of freshwater kettle
+ * ponds and impoundments sitting a metre or two above the sea.
+ *
+ * So elevation is a **referee between two publishers**, never an admission rule of its own.
+ */
+export const TIDAL_MAX_ELEVATION_M = 5;
+
+/**
+ * Is this group one the elevation referee is entitled to judge?
+ *
+ * Two ways in, both of them a publisher asserting something about the water: a catalogue classed it
+ * a `bay` (an arm of something, and the something is often the sea), or a catalogue tagged it salt
+ * outright. See `SALT_CLAIM_TOKENS`.
+ */
+export function isTidalCandidate(members: readonly Feature[], cls: WaterBodyClass): boolean {
+  if (cls === 'bay') return true;
+  return members.some((m) => SALT_CLAIM_TOKENS.has(m.sourceToken));
+}
+
+/**
+ * The referee: does 3DEP put this candidate at sea level?
+ *
+ * `undefined` when the archive has no reading for the body's interior point — and that is returned
+ * rather than defaulted, because "we have no elevation" must not read as "it is high up" *or* as "it
+ * is tidal". A missing reading leaves the body exactly where the other rules put it.
+ *
+ * Keyed on the interior point rather than `representativePoint`, and the caller must use the same
+ * function the emit stage does, or the key will not be found — see `snapshotElevation.ts`, where
+ * sampling the shoreline instead read a bank 17 m above the lake.
+ */
+export function isTidalByElevation(
+  key: string,
+  elevation: ReadonlyMap<string, number>,
+  maxElevationM = TIDAL_MAX_ELEVATION_M,
+): boolean | undefined {
+  const metres = elevation.get(key);
+  if (metres === undefined) return undefined;
+  return metres <= maxElevationM;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Grouping
 // ─────────────────────────────────────────────────────────────────────────────
 
