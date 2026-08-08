@@ -631,3 +631,119 @@ export function assertsOceanOrGreatLake(name: string, surfaceAreaSqM?: number): 
   if (surfaceAreaSqM === undefined || surfaceAreaSqM < OCEAN_NAME_VETO_MIN_SQM) return false;
   return VETOED_NAME_PATTERN.test(fold(name));
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Why a catalogue refused — the classDissent triage
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The families of refusal our own rules **deliberately overrule**, so a dissent can be triaged.
+ *
+ * ## The problem this solves
+ *
+ * `chooseClass` lets a real class beat a drop. That rule is load-bearing — it is the 123-body rescue
+ * where OSM tags a body `wetland=marsh` and NHD calls the same polygon `LakePond` — but it means an
+ * *explicit* contradiction between two catalogues resolves in silence. The merge counts those as
+ * `classDissent`, and on the 2026-08-08 run there were **354** of them, which is a number and not a
+ * queue: nobody can work 354 rows without knowing which are a rule firing correctly.
+ *
+ * The class-conflict queue met exactly this and was settled exactly this way — joining its 652 rows
+ * to the NHD FTYPE behind each split them **520 settled / 132 real**. This is the same move one
+ * layer along.
+ *
+ * ## The two families, measured
+ *
+ * **`flowing`** — a catalogue calls it moving water and another calls it a lake. This is the
+ * impoundment and deadwater case, which D96 already settles in our favour: we carry 26 `river`-class
+ * bodies on purpose, and `classifyName` keeps `Higley Flow` and `Debsconeag Deadwater` by name. 164
+ * bodies on the measured run, dominated by `osm:water=river` (109) and `3dhp:featuretype=1` (43).
+ * The fixture is **Lac Saint-François**, 87,927 acres of the St. Lawrence: OSM `water=lake`, 3DHP
+ * `River`.
+ *
+ * **`engineered`** — a catalogue refuses it as built infrastructure: wastewater, settling, cooling,
+ * a basin. NHD drops **43% of its reservoirs** by FCODE for this reason, which is the volume D96
+ * warned would bury the queue. ~87 bodies, split between the NHD 436xx family and OSM's
+ * `water=wastewater` / `water=basin`.
+ *
+ * ## What is deliberately NOT a family
+ *
+ * **Salt.** `wetland=saltmarsh`, `wetland=tidalflat` and `water=salt_pool` are explicit tidal claims
+ * and they are *not* settled by being outvoted — they are settled by the elevation referee, which
+ * refuses them (98 bodies, 2026-08-08). Adding them here would launder the exact thing that rule
+ * exists to catch. See `mergeRules.isTidalCandidate`.
+ *
+ * ⚠ **The residue count is the tripwire, not this table.** Token strings drift with the catalogues;
+ * what does not drift is that a sharp move in the *unsettled* count means a source changed shape.
+ * The merge reports both.
+ */
+export type RefusalFamily = 'flowing' | 'engineered' | 'unsettled';
+
+/** Value fragments that mean moving water, in any catalogue's token. */
+const FLOWING_VALUES = [
+  'river',
+  'stream',
+  'canal',
+  'ditch',
+  'drain',
+  'rapids',
+  'brook',
+  'creek',
+] as const;
+
+/** Value fragments that mean built infrastructure rather than a natural water body. */
+const ENGINEERED_VALUES = [
+  'wastewater',
+  'basin',
+  'sewage',
+  'treatment',
+  'settling',
+  'cooling',
+  'reflecting',
+  'evaporator',
+  'tailings',
+  'fish_pass',
+] as const;
+
+/**
+ * NHD FCODEs whose refusal is the reservoir-by-purpose drop — the 43% D96 names.
+ *
+ * Matched on the **436** prefix rather than enumerated, because the family is
+ * `Reservoir: <purpose>` and the purposes run to a dozen codes that NHD extends between releases.
+ * A new purpose code is the same finding as an existing one.
+ */
+const NHD_RESERVOIR_PURPOSE_PREFIX = 'nhd:fcode=436';
+
+/**
+ * Which family a refusing catalogue's token belongs to.
+ *
+ * Reads the token's **value**, after the `=`, so it works across all three catalogues without a
+ * per-source table: `osm:water=river`, `3dhp:featuretype=1` and `nhd:fcode=46006` are the same
+ * finding wearing three vocabularies. The 3DHP and NHD numeric codes are named explicitly because a
+ * number carries no meaning to match on.
+ */
+export function refusalFamily(sourceToken: string): RefusalFamily {
+  const token = sourceToken.toLowerCase();
+  if (token.startsWith(NHD_RESERVOIR_PURPOSE_PREFIX)) return 'engineered';
+  // 3DHP's `featuretype=1` is its River class; NHD's 460xx are StreamRiver. Both are "flowing",
+  // and both are opaque integers, so they cannot be read off the value the way a word can.
+  if (token === '3dhp:featuretype=1' || token.startsWith('nhd:ftype=460')) return 'flowing';
+  const value = token.slice(token.indexOf('=') + 1);
+  if (FLOWING_VALUES.some((v) => value.includes(v))) return 'flowing';
+  if (ENGINEERED_VALUES.some((v) => value.includes(v))) return 'engineered';
+  return 'unsettled';
+}
+
+/**
+ * Is every refusal in this group one our rules deliberately overrule?
+ *
+ * **Every one, not any** — a group where 3DHP says River (settled) and OSM says something we have
+ * never seen (unsettled) is a group with an open question in it, and answering the settled half does
+ * not close it. The same "one is enough to disqualify" shape `settledWetlandDissent` uses, for the
+ * same reason.
+ *
+ * Takes the tokens of the members that refused; a group with none is not a dissent at all.
+ */
+export function settledClassDissent(refusingTokens: readonly string[]): boolean {
+  if (refusingTokens.length === 0) return false;
+  return refusingTokens.every((t) => refusalFamily(t) !== 'unsettled');
+}

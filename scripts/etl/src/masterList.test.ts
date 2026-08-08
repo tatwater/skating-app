@@ -955,3 +955,62 @@ describe('the conflict nothing else can see', () => {
     expect(result.stats.classDissent).toBe(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The classDissent triage
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('class dissent, triaged rather than counted (founder, 2026-08-08)', () => {
+  /** A federal body that says `lakePond`, against an OSM feature that refuses outright. */
+  const contested = (sourceToken: string) => ({
+    osm: [
+      feat('osm', 'way/x', {
+        name: 'Contested Pond',
+        cls: null,
+        sourceToken,
+        polygon: square(-70.4, 44.4, sideForAcres(300)),
+      }),
+    ],
+    nhd: [
+      feat('nhd', 'n-x', {
+        name: 'Contested Pond',
+        cls: 'lakePond',
+        polygon: square(-70.4, 44.4, sideForAcres(300)),
+      }),
+    ],
+  });
+
+  it('settles an impoundment a catalogue calls a river, and does not queue it', () => {
+    // The largest measured pattern (109 bodies) and the one D96 already settles in our favour — we
+    // carry 26 `river`-class bodies on purpose. Queueing these repeats the 1,437-row mistake
+    // `RECONCILABLE_CLASS_PAIRS` had to undo.
+    const result = buildMasterList(inputFor(contested('osm:water=river')));
+    expect(result.stats.classDissent).toBe(1);
+    expect(result.stats.classDissentSettled).toBe(1);
+    expect(result.stats.classDissentUnsettled).toBe(0);
+    expect(result.bodies[0]?.reviewReasons).not.toContain('class-dissent');
+  });
+
+  it('settles a treatment pond NHD drops by purpose code', () => {
+    // "NHD drops 43% of its reservoirs by FCODE" — the volume D96 warned would bury the queue.
+    const result = buildMasterList(inputFor(contested('nhd:fcode=43612')));
+    expect(result.stats.classDissentSettled).toBe(1);
+    expect(result.bodies[0]?.reviewReasons).not.toContain('class-dissent');
+  });
+
+  it('QUEUES a refusal nothing in our rules explains', () => {
+    // `osm:natural=water` refusing at all was a surprise on the run (18 bodies). A contradiction we
+    // cannot account for is the whole reason the queue exists.
+    const result = buildMasterList(inputFor(contested('osm:natural=water')));
+    expect(result.stats.classDissentUnsettled).toBe(1);
+    expect(result.bodies[0]?.reviewReasons).toContain('class-dissent');
+  });
+
+  it('counts no dissent at all when every catalogue agrees it is water', () => {
+    const result = buildMasterList(
+      inputFor({ osm: [feat('osm', 'way/y', { name: 'Plain Pond' })] }),
+    );
+    expect(result.stats.classDissent).toBe(0);
+    expect(result.stats.classDissentUnsettled).toBe(0);
+  });
+});

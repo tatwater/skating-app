@@ -102,9 +102,17 @@ describe('the ALSC rung — measured, and older than everything', () => {
     expect(terms?.requiresAttribution).toBe(true);
     expect(terms?.credit).toContain('Adirondack Lakes Survey');
     expect(terms?.credit).toContain('New York State Department of Environmental Conservation');
-    // A credit that exists discharges the obligation; one that does not is a gap. See
-    // `attributionGaps` — the distinction this file exists to keep.
-    expect(attributionGaps(['alsc_1987'])).toEqual([]);
+    // A credit that exists discharges the obligation; one that does not is a gap. So adding a
+    // source that *requires* attribution must not open one — `attributionGaps` walks the whole
+    // registry and `alsc_1987` must not appear in it.
+    expect(attributionGaps()).not.toContain('alsc_1987');
+    // …and the check is meaningful: strip the credit and it does appear.
+    expect(
+      attributionGaps({
+        ...DEPTH_SOURCE_TERMS,
+        alsc_1987: { licence: 'No published terms', requiresAttribution: true },
+      }),
+    ).toContain('alsc_1987');
   });
 });
 

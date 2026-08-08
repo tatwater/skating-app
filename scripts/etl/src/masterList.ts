@@ -47,6 +47,7 @@ import {
   reconcileOne,
   sameName,
   scoreBody,
+  settledClassDissent,
   settledWetlandDissent,
   type WaterBodyClass,
 } from '@skating/core';
@@ -79,6 +80,7 @@ import {
   overrideGeometryForContainedBays,
   polygonClaims,
   type RefusalReason,
+  refereedDuplicatePairs,
   resolveGnisNames,
   SALT_MIN_CONTAINMENT,
   SQ_M_PER_ACRE,
@@ -196,6 +198,20 @@ export interface MasterListStats {
    * a review reason without knowing the volume could bury the queue. Measure, then decide.
    */
   classDissent: number;
+  /**
+   * The dissents our own rules deliberately overrule — `flowing` and `engineered`. See
+   * `settledClassDissent`. Counted rather than queued, and watched: a sharp move here means a
+   * catalogue changed shape, the same tripwire `settledWetland` provides one layer up.
+   */
+  classDissentSettled: number;
+  /**
+   * The dissents nobody has ruled on — **the ones that become a review reason.**
+   *
+   * This is the number the queue is sized by, and the reason the split was worth doing: 354 rows of
+   * "two catalogues disagree" is not workable, where the residue after subtracting the known
+   * patterns is.
+   */
+  classDissentUnsettled: number;
   classDissentSamples: string[];
   /**
    * `classDissent`, **split by which catalogue code did the refusing** (N7-2, founder 2026-08-08).
@@ -454,9 +470,21 @@ export function buildMasterList(input: MasterListInput): MasterList {
   // ── Grouping ──────────────────────────────────────────────────────────────
   const iou = new Map([...federal.iou, ...osmNhd.iou, ...osmDhp.iou]);
   const union = new Union();
-  for (const [a, b] of [...federal.pairs, ...osmNhd.pairs, ...osmDhp.pairs, ...named.pairs]) {
+  // **The refereed pairs join alongside the lanes' own**, not as a later correction. Nine pairs the
+  // 2.4M soundings confirmed are one lake drawn twice — see `REFEREED_DUPLICATES` for why the
+  // threshold did NOT move with them. Joining here means the class, name and geometry rules see one
+  // group and decide its content normally; the table asserts identity and nothing else.
+  const refereed = refereedDuplicatePairs();
+  for (const [a, b] of [
+    ...federal.pairs,
+    ...osmNhd.pairs,
+    ...osmDhp.pairs,
+    ...named.pairs,
+    ...refereed,
+  ]) {
     union.join(a, b);
   }
+  log(`  ${refereed.length} refereed duplicate pair(s) joined on sounding evidence`);
 
   const all = [...osm, ...nhd, ...dhp];
   // **The three id namespaces must not collide**, and nothing used to say so. They happen not to
@@ -511,6 +539,8 @@ export function buildMasterList(input: MasterListInput): MasterList {
     backlog: 0,
     duplicatePairs: 0,
     classDissent: 0,
+    classDissentSettled: 0,
+    classDissentUnsettled: 0,
     classDissentSamples: [],
     classDissentByToken: new Map(),
     duplicatePairList: [],
@@ -575,6 +605,8 @@ export function buildMasterList(input: MasterListInput): MasterList {
     parent: Merged | undefined;
   }[] = [];
   const kept: KeptBody[] = [];
+  /** Bodies whose class dissent nothing explains — they become a review reason after the sweep. */
+  const unsettledDissent = new Set<string>();
   /**
    * What each survivor needs in order to have its review reasons computed — held **beside** the
    * bodies rather than on them, because `duplicate-candidate` cannot be decided until the whole
@@ -778,6 +810,16 @@ export function buildMasterList(input: MasterListInput): MasterList {
     // One catalogue refused this outright while another named a class. See `classDissent`.
     if (group.members.some((m) => m.cls === null) && group.members.some((m) => m.cls !== null)) {
       stats.classDissent++;
+      // **Triaged, not just counted** (founder, 2026-08-08). 354 rows is a number, not a queue —
+      // nobody can work it without knowing which are our own rules firing correctly. `flowing` is
+      // the impoundment case D96 already settles in our favour; `engineered` is NHD dropping 43% of
+      // its reservoirs by purpose code. What is left is a contradiction nobody has ruled on.
+      const refusingTokens = group.members.filter((m) => m.cls === null).map((m) => m.sourceToken);
+      if (settledClassDissent(refusingTokens)) stats.classDissentSettled++;
+      else {
+        stats.classDissentUnsettled++;
+        unsettledDissent.add(group.key);
+      }
       // **Which code refused, not just that something did.** A count cannot distinguish "NHD drops
       // 43% of its reservoirs by FCODE" — systematic, settled, and no business in a queue — from a
       // catalogue genuinely contradicting another about what a body is. Tallied per refusing token
@@ -884,6 +926,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       bayWithoutParent: state.bayWithoutParent,
       sameSourceDuplicate: body.sameSourceDuplicate,
       overlapDuplicate: overlaps !== undefined,
+      classDissent: unsettledDissent.has(body.key),
     });
     if (body.reviewReasons.length > 0) {
       stats.queued++;

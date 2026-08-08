@@ -1063,6 +1063,79 @@ export interface DuplicatePair {
   sameName: boolean;
 }
 
+/**
+ * **The nine pairs the soundings refereed** — merged on evidence, not on a lowered threshold
+ * (founder call, 2026-08-08).
+ *
+ * ## The question, and why the threshold did not move
+ *
+ * 292 flagged pairs sit at IoU 0.30–0.49, below `RECONCILE_MIN_IOU`. D92 was settled by refereeing
+ * against 2.4M soundings, so the same referee was asked a different question: *a survey is taken over
+ * one lake, so does a single survey's points fall inside **both** halves of a pair?*
+ *
+ * | | |
+ * | --- | --- |
+ * | one lake drawn twice | **9** |
+ * | two distinct lakes | **0** |
+ * | no survey reaches it | **283** |
+ *
+ * The evidence is one-sided and it is also **3% of the band**. The archive covers 2,383 prominent
+ * lakes and the rest of the band is unsurveyed water, so lowering the bar would act on 292 pairs
+ * using evidence from nine — and the 283 unreached ones are exactly where D93's warning lives:
+ * *"accepting those merges a real lake into a fragment"*. A wrong merge is unrecoverable; a queued
+ * duplicate is visible. **`RECONCILE_MIN_IOU` stays at 0.5** and the other 283 stay queued.
+ *
+ * ## Why these nine may merge anyway
+ *
+ * Two independent systems agree **per row**: the geometric sweep flagged the pair, and a state survey
+ * crossed both halves. That is the exact standard that licensed `resolveCampaignDuplicates` to delete
+ * 34 rows last campaign — *"what made this safe is that two independent systems had already agreed,
+ * and the pass verifies that agreement per row"* — rather than a rule being relaxed.
+ *
+ * **Every one is an OSM body against an NHD one, and every one is named-whole against unnamed-part.**
+ * That is D118's structural miss with a face on it: `scoreCandidates` refuses any pair whose areas
+ * differ by more than 2×, which is most of these, so the matcher never compared them and the corpus
+ * got two rows. The name lane cannot reach them either, because the NHD half is unnamed.
+ *
+ * ⚠ A pair here is joined **before** the class, name and geometry rules run, so the merged body is
+ * whatever those rules make of the union — this asserts identity, never content.
+ *
+ * Regenerate with `scripts/etl/.scratch/referee-iou.mts`; the comments are its output verbatim.
+ */
+export const REFEREED_DUPLICATES: readonly (readonly [string, string])[] = [
+  // Bellamy Reservoir 310 ac + (unnamed) 122 ac at IoU 34%, one survey across both: nh-granit-contours:NHLAK600030903-02
+  ['osm:way/46912541', 'nhd:141033525'],
+  // Hamilton Reservoir 407 ac + (unnamed) 164 ac at IoU 36%, one survey across both: ma-massgis-contours:41019
+  ['osm:way/212398609', 'nhd:122374027'],
+  // Buffumville Lake 202 ac + (unnamed) 93 ac at IoU 42%, one survey across both: ma-massgis-contours:42005
+  ['osm:relation/3406018', 'nhd:122373728'],
+  // Daigle Pond 37 ac + (unnamed) 16 ac at IoU 42%, one survey across both: me-dep-soundings:1665
+  ['osm:relation/12483763', 'nhd:142978553'],
+  // Ashmere Lake 277 ac + (unnamed) 134 ac at IoU 43%, one survey across both: ma-massgis-contours:21005
+  ['osm:relation/309305', 'nhd:122985595'],
+  // Moosehorn Pond 118 ac + (unnamed) 55 ac at IoU 43%, one survey across both: ma-massgis-contours:36097
+  ['osm:relation/12462742', 'nhd:9e764f5d-d8dd-4836-81ea-f46365e904f9'],
+  // (unnamed) 7 ac + (unnamed) 9 ac at IoU 44%, one survey across both: ma-massgis-contours:82020
+  ['osm:way/180999064', 'nhd:129735311'],
+  // Little Black Ponds 17 ac + (unnamed) 9 ac at IoU 46%, one survey across both: me-dep-soundings:1510
+  ['osm:relation/11589189', 'nhd:142978841'],
+  // Scott Pond 146 ac + (unnamed) 71 ac at IoU 49%, one survey across both: nh-granit-contours:NHLAK802020102-01
+  ['osm:relation/8035915', 'nhd:136017581'],
+];
+
+/**
+ * The refereed pairs as bare feature ids, ready for the union-find.
+ *
+ * The table is keyed `<source>:<id>` because that is what a `Merged.key` looks like and what the
+ * referee's artifact prints; the union operates on the bare ids the lanes emit. Converting here
+ * rather than storing both keeps the table in the form a human can check against the artifact.
+ */
+export function refereedDuplicatePairs(
+  table: readonly (readonly [string, string])[] = REFEREED_DUPLICATES,
+): [string, string][] {
+  return table.map(([a, b]) => [idFromKey(a), idFromKey(b)]);
+}
+
 export function overlapDuplicates(
   bodies: readonly Merged[],
   minIou = DUPLICATE_SWEEP_MIN_IOU,

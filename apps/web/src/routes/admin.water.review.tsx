@@ -34,6 +34,7 @@ const REASON_LABELS: Record<ReviewReason, string> = {
   'duplicate-candidate': 'Duplicate candidates',
   'same-source-duplicate': 'One catalogue, twice',
   'bay-without-parent': 'Bays with no parent',
+  'class-dissent': 'Contested as water at all',
   'class-conflict': 'Class conflicts',
   'name-conflict': 'Name conflicts',
 };
@@ -45,6 +46,8 @@ const REASON_BLURBS: Record<ReviewReason, string> = {
     'One catalogue carrying the same lake twice — the case OSM cannot see about itself and NHD can.',
   'bay-without-parent':
     'An arm of something larger, with nothing in the corpus to attach it to, so it is stored as `unclassified` rather than as a bay.',
+  'class-dissent':
+    'One catalogue refused this outright as water we cover while another classified it, and nothing in our rules explains the disagreement. A refusal we DO overrule on purpose is not here — an impoundment a catalogue calls a river, or a treatment pond it drops by purpose code, are both settled.',
   'class-conflict':
     'The catalogues disagree about what kind of water this is, and our own rules did not settle it. A federal open-water class beating an OSM wetland tag is NOT here — that one is settled.',
   'name-conflict':

@@ -726,6 +726,10 @@ async function main(): Promise<void> {
   // queue was settled exactly this way — joining its 652 rows to the NHD FTYPE behind each split
   // them 520 settled / 132 real. A code that accounts for hundreds of rows is a systematic property
   // of that catalogue; one that accounts for three is a body worth looking at.
+  lines.push(
+    `    settled ${n(stats.classDissentSettled)} (flowing / engineered — our own rules overruling a ` +
+      `catalogue) · UNSETTLED ${n(stats.classDissentUnsettled)} → queued as class-dissent`,
+  );
   lines.push('    by refusing code → class kept:');
   for (const [token, count] of [...stats.classDissentByToken].sort((a, b) => b[1] - a[1])) {
     lines.push(`      ${String(count).padStart(6)}  ${token}`);

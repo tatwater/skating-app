@@ -412,6 +412,19 @@ export const REVIEW_REASONS = [
    * audit measured and nothing could previously see. See `overlapDuplicate` in `mergeRules.ts`.
    */
   'duplicate-candidate',
+  /**
+   * **Two catalogues contradicting each other outright**, where nothing in our rules explains it.
+   *
+   * Distinct from `class-conflict`, which is two catalogues asserting *different classes*: this is
+   * one catalogue asserting a class while another refuses the body as water we cover at all.
+   * `chooseClass` lets the class win — that is the 123-body wetland rescue — so the disagreement
+   * resolves in silence and `scoreBody` cannot see it either, because a refusal contributes no claim.
+   *
+   * **Only the residue reaches here.** The measured 354 are dominated by refusals our own rules
+   * deliberately overrule (`flowing`, `engineered` — see `settledClassDissent`), and queueing those
+   * would repeat the 1,437-row mistake `RECONCILABLE_CLASS_PAIRS` already had to undo.
+   */
+  'class-dissent',
 ] as const;
 
 export type ReviewReason = (typeof REVIEW_REASONS)[number];
@@ -437,6 +450,9 @@ export const REVIEW_REASON_PRIORITY: readonly ReviewReason[] = [
   'duplicate-candidate',
   'same-source-duplicate',
   'bay-without-parent',
+  // Above `class-conflict`: a body one catalogue says is not water we cover is a *bigger* question
+  // than two catalogues disagreeing about which kind of water it is, and it is rarer.
+  'class-dissent',
   'class-conflict',
   'name-conflict',
 ];
@@ -497,6 +513,8 @@ export function mergeReviewReasons(input: {
   bayWithoutParent?: boolean;
   sameSourceDuplicate?: boolean;
   overlapDuplicate?: boolean;
+  /** An unexplained refusal from one catalogue against another's class — see `class-dissent`. */
+  classDissent?: boolean;
 }): ReviewReason[] {
   const reasons: ReviewReason[] = [];
   if (input.confidence.cls === 'low') reasons.push('class-conflict');
@@ -504,6 +522,7 @@ export function mergeReviewReasons(input: {
   if (input.bayWithoutParent) reasons.push('bay-without-parent');
   if (input.sameSourceDuplicate) reasons.push('same-source-duplicate');
   if (input.overlapDuplicate) reasons.push('duplicate-candidate');
+  if (input.classDissent) reasons.push('class-dissent');
   return reasons;
 }
 

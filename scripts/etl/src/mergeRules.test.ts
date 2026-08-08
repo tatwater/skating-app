@@ -61,7 +61,9 @@ import {
   parseThreeDhpFeature,
   polygonClaims,
   type RawOsmFeature,
+  REFEREED_DUPLICATES,
   REGION_SAMPLE_POINTS,
+  refereedDuplicatePairs,
   resolveGnisNames,
   SQ_M_PER_ACRE,
   STATE_SAMPLE_POINTS,
@@ -2071,5 +2073,39 @@ describe('the gazetteer resolves globally — a point names at most one body', (
 
   it('leaves a body the gazetteer has never heard of unnamed', () => {
     expect(resolveGnisNames([body('osm:way/1', -70, 44)], gridOf([])).size).toBe(0);
+  });
+});
+
+describe('the refereed duplicates — evidence, not a lowered threshold', () => {
+  it('leaves RECONCILE_MIN_IOU where it was', () => {
+    // The referee reached 9 of 292 pairs. One-sided evidence over 3% of a band does not move a bar
+    // that governs all of it — and the 283 it could not reach are unsurveyed water, which is exactly
+    // where D93's "merges a real lake into a fragment" would hide.
+    expect(NAME_MATCH_MIN_IOU).toBe(RECONCILE_MIN_IOU_WITH_GNIS);
+    expect(DUPLICATE_SWEEP_MIN_IOU).toBeLessThan(0.5);
+  });
+
+  it('converts the table to the bare ids the union-find joins on', () => {
+    // The table is written `<source>:<id>` so a human can check it against the referee's artifact;
+    // the lanes emit bare ids. Converting at the boundary keeps both readable.
+    expect(refereedDuplicatePairs([['osm:way/1', 'nhd:abc-123']])).toEqual([['way/1', 'abc-123']]);
+  });
+
+  it('pairs an OSM body with an NHD one every time, which is the structural miss it fixes', () => {
+    // D118: `scoreCandidates` refuses any pair whose areas differ by more than 2×, so the matcher
+    // never compared these — and the name lane cannot reach them either, because in every case the
+    // NHD half is unnamed. If a future entry is OSM↔OSM, it is a different finding wearing this
+    // table's clothes and deserves its own reasoning.
+    for (const [a, b] of REFEREED_DUPLICATES) {
+      expect(a.startsWith('osm:')).toBe(true);
+      expect(b.startsWith('nhd:')).toBe(true);
+    }
+  });
+
+  it('names no body twice, so one lake cannot be chained through the table', () => {
+    // A key appearing in two rows would union three bodies transitively on evidence gathered about
+    // two — the same shape as the name lane swallowing Indian Lake's lobe at 0.1.
+    const seen = REFEREED_DUPLICATES.flat();
+    expect(new Set(seen).size).toBe(seen.length);
   });
 });
