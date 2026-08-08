@@ -524,14 +524,15 @@ describe('a bay is an arm, not a lake', () => {
     });
   });
 
+  /** An unnamed 40-acre wetland: big enough to be a parent, refused by D96's fifty-acre bar. */
+  const bog = feat('osm', 'way/bog', {
+    cls: 'wetland',
+    polygon: square(-70.5, 44.5, sideForAcres(40)),
+  });
+
   it('falls back to a queued body when the parent itself did not survive', () => {
     // A sub-area pointing at a body the loader will never create fails at *load* time rather than
-    // here, which is the one outcome that must not happen. The parent here is an unnamed 40-acre
-    // wetland — big enough to be a parent, and refused by D96's fifty-acre bar.
-    const bog = feat('osm', 'way/bog', {
-      cls: 'wetland',
-      polygon: square(-70.5, 44.5, sideForAcres(40)),
-    });
+    // here, which is the one outcome that must not happen.
     const coveInIt = feat('osm', 'way/cove', {
       name: 'Bog Cove',
       cls: 'bay',
@@ -540,6 +541,23 @@ describe('a bay is an arm, not a lake', () => {
     const result = buildMasterList(inputFor({ osm: [bog, coveInIt] }));
     expect(result.subAreas).toHaveLength(0);
     expect(keys(result.bodies)).toEqual(['osm:way/cove']);
+    expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
+    // **Named, so it keeps `bay`** — the same answer a bay whose parent was never *found* gets.
+    //
+    // ⚠ This asserted `unclassified` until the N7-2 audit, and that was the rule twenty lines up
+    // inverted: `Paugus Bay` keeps its class because no catalogue draws it inside anything, while a
+    // bay whose parent was found and then refused — for region, salt or the floor — was relabelled.
+    // Same epistemic position, and the answer was decided by which way the parent happened to die.
+    expect(result.bodies[0]?.cls).toBe('bay');
+  });
+
+  it('demotes an UNNAMED bay whose parent did not survive, where there is nothing to go on', () => {
+    const nameless = feat('osm', 'way/namelesscove', {
+      cls: 'bay',
+      polygon: square(-70.5, 44.5, sideForAcres(10)),
+    });
+    const result = buildMasterList(inputFor({ osm: [bog, nameless] }));
+    expect(result.subAreas).toHaveLength(0);
     expect(result.bodies[0]?.cls).toBe('unclassified');
     expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
   });

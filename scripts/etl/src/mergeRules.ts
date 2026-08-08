@@ -158,9 +158,8 @@ export function vetoReason(members: readonly Feature[]): VetoReason | undefined 
   // `Lake Superior` is a 179-acre body in Sullivan County, New York, and `Little Lake Erie` a
   // 4-acre reservoir. See `OCEAN_NAME_VETO_MIN_ACRES`. Measured against the *largest* member for the
   // same reason the ceiling is: the group's own outline has not been chosen yet.
-  const biggest = members.reduce((max, m) => Math.max(max, m.areaSqM), 0);
-  if (members.some((m) => assertsOceanOrGreatLake(m.name, biggest))) return 'name';
   const largest = members.reduce((max, m) => Math.max(max, m.areaSqM), 0);
+  if (members.some((m) => assertsOceanOrGreatLake(m.name, largest))) return 'name';
   // **Every name any member offers**, not the first one. Champlain is the allow-list's only entry and
   // three catalogues spell it three ways; testing only the first named member would veto the largest
   // body we cover on whichever ordering the union-find happened to produce.
@@ -1184,10 +1183,20 @@ export function overrideGeometryForContainedBays(
         };
         // Already contains it — nothing to correct, and `bayParent` will find it unaided.
         if (held(candidate.polygon) >= BAY_PARENT_MIN_CONTAINMENT) continue;
-        const better = candidate.members.find(
-          (f) =>
-            f.source !== candidate.geometrySource && held(f.polygon) >= BAY_PARENT_MIN_CONTAINMENT,
-        );
+        // **The largest qualifying member, never the first** — `representativeOf`'s rule, and the
+        // reason it exists (N7-2 audit, 2026-08-08). This shipped as `.find()`, which is precisely
+        // the pattern D125 removed from `chooseGeometry` after `Indian Lake` was stored at 534 acres
+        // with a 3,743-acre member in the same group. A catalogue can put several features in one
+        // group, more than one of them can contain the bay, and array order is the order the
+        // extracts happened to stream in. Harmless on the four overrides this fires on today, which
+        // is exactly when a latent ordering bug is cheapest to remove.
+        let better: Feature | undefined;
+        for (const f of candidate.members) {
+          if (f.source === candidate.geometrySource) continue;
+          if (better !== undefined && f.areaSqM <= better.areaSqM) continue;
+          if (held(f.polygon) < BAY_PARENT_MIN_CONTAINMENT) continue;
+          better = f;
+        }
         if (better === undefined) continue;
         moved.push({
           name: candidate.name || '(unnamed)',
@@ -2095,9 +2104,8 @@ export function statesFor(
   stateGrid: Map<string, (Boundary & { name: string })[]>,
 ): string[] {
   const found = collectStates(sampleOutline(body.polygon), stateGrid);
-  if (found.size > 0) return [...found].sort();
 
-  // ── The escalation, and why a sampled empty was never good enough ────────────────────────────
+  // ── The escalation, and why a sampled answer was never good enough ───────────────────────────
   //
   // **`inRegion` walks every vertex before it drops a body; this used to walk eight per ring.** Two
   // functions asking nearly the same question at different rigour, and the gap between them is a
@@ -2108,14 +2116,57 @@ export function statesFor(
   // single vertex the sparse sample missed — Greenwood Lake on the NY/NJ line, 100 Acre Cove and
   // Central Pond on the MA/RI line, a Québec-border pond in northern Maine.
   //
-  // Only paid when the cheap pass found nothing, which is those nine bodies and not the other
-  // 25,463.
+  // ## …and the first version of the escalation fixed only half of it (N7-2 audit, 2026-08-08)
+  //
+  // It escalated when the sample found **nothing**, which is the "belongs to no state" case. But a
+  // sparse `[NY]` is exactly as unproven as a sparse `[]`: eight points per ring that all land in New
+  // York say nothing about the 3% of the outline sitting in Vermont. The body is admitted, carries
+  // one state, and is invisible in the *other* one's filter — the same failure, one state along.
+  //
+  // Measured against the loaded corpus: **7 bodies**, and they are not obscure. `Province Lake` is
+  // 976 acres on the ME/NH line and was stored as New Hampshire's alone. (A floor, not a ceiling —
+  // the re-measure ran against the stored simplified outline, where the merge sees the full one.)
+  //
+  // So the trigger is *completeness*, not emptiness: escalate whenever a state is **reachable** from
+  // the body's own cells and the cheap pass did not find it. That is the same shape as
+  // `nearRegionCells` and costs the same nothing — a body in central Maine touches only cells that
+  // hold Maine, so `reachable` equals `found` and the walk is skipped. Only bodies genuinely near a
+  // border pay, which is what the cheap pass was for in the first place.
+  const reachable = reachableStates(body.bbox, stateGrid);
+  let missing = false;
+  for (const code of reachable) if (!found.has(code)) missing = true;
+  if (!missing) return [...found].sort();
+
+  // **Union across every ring, never `return` on the first that answers.** An archipelago's second
+  // component can be the one in the other state, and this function's own headline is "all of them,
+  // not the first".
+  const all = new Set(found);
   for (const ring of outerRings(body.polygon)) {
     if (!ring) continue;
-    const all = collectStates(ring as [number, number][], stateGrid);
-    if (all.size > 0) return [...all].sort();
+    for (const code of collectStates(ring as [number, number][], stateGrid)) all.add(code);
   }
-  return [];
+  return [...all].sort();
+}
+
+/**
+ * Which of the five states are even *reachable* from this body's cells — the escalation's cheap gate.
+ *
+ * Deliberately over-generous: it asks which states have a boundary indexed in a cell the body's
+ * bounding box touches, which is a ~11 km neighbourhood rather than a containment test. Erring wide
+ * here costs one full vertex walk on a body near a border; erring tight silently loses a state.
+ */
+function reachableStates(
+  box: BBox,
+  stateGrid: Map<string, (Boundary & { name: string })[]>,
+): Set<string> {
+  const out = new Set<string>();
+  for (const cell of cellsFor(box)) {
+    for (const b of stateGrid.get(cell) ?? []) {
+      const code = STATE_CODE_BY_NAME[b.name];
+      if (code !== undefined) out.add(code);
+    }
+  }
+  return out;
 }
 
 /** Which of the five states these points fall in. The shared inner loop of `statesFor`'s two passes. */

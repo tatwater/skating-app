@@ -10,6 +10,7 @@
 import {
   type BBox,
   type ClaimSource,
+  pointInPolygon,
   RECONCILE_MIN_IOU_WITH_GNIS,
   sameName,
   type WaterBodyClass,
@@ -50,6 +51,7 @@ import {
   nameMatchPairs,
   outerRings,
   overlapDuplicates,
+  overrideGeometryForContainedBays,
   parseLine,
   parseNhdFeature,
   parseOsmFeature,
@@ -1642,6 +1644,83 @@ describe('dense outline sampling', () => {
   });
 });
 
+describe("D92's override picks the largest qualifying member, not the first", () => {
+  it('takes the bigger of two same-source outlines that both contain the bay', () => {
+    // **The same latent bug D125 removed from `chooseGeometry`, sitting in the file written to fix
+    // it** (N7-2 audit, 2026-08-08). This was `.find()`, so when one catalogue puts several features
+    // in a group and more than one of them contains the bay, the stored outline was decided by the
+    // order the extracts happened to stream in. That is exactly how `Indian Lake` came to be stored
+    // at 534 acres with a 3,743-acre member beside it.
+    //
+    // Driven against the function rather than through `buildMasterList`, because the lanes cannot
+    // produce a two-NHD-member group from two NHD features alone — it takes a transitive chain
+    // through 3DHP — and the rule under test has nothing to do with how the group formed.
+    const bayPoly = square(-70.3, 44.9, 0.02);
+    const bay = merged({
+      key: 'osm:way/cove',
+      name: 'Draft Cove',
+      cls: 'bay',
+      polygon: bayPoly,
+      areaSqM: 1_000,
+    });
+    /** OSM draws the lake short of the cove; both NHD members reach past it. */
+    const osmShort = square(-70.5, 44.5, 0.3);
+    const nhdSmall = square(-70.5, 44.5, 0.45);
+    const nhdWhole = square(-70.5, 44.5, 0.6);
+    const lake = merged({
+      key: 'osm:way/lake',
+      name: 'Two Draft Lake',
+      polygon: osmShort,
+      areaSqM: 900_000,
+      geometrySource: 'osm',
+      members: [
+        feature('osm', 'way/lake', { polygon: osmShort, areaSqM: 900_000 }),
+        // The SMALLER federal outline first in array order — the trap the old `.find()` fell into.
+        feature('nhd', 'nhd-small', { polygon: nhdSmall, areaSqM: 1_100_000 }),
+        feature('nhd', 'nhd-whole', { polygon: nhdWhole, areaSqM: 1_400_000 }),
+      ],
+    });
+
+    const moved = overrideGeometryForContainedBays([lake, bay]);
+    expect(moved).toHaveLength(1);
+    expect(moved[0]).toMatchObject({ name: 'Two Draft Lake', from: 'osm', to: 'nhd' });
+    expect(lake.polygon).toEqual(nhdWhole);
+    expect(lake.areaSqM).toBe(1_400_000);
+  });
+
+  it('re-points a lake at most once per run, however many bays it holds', () => {
+    // Two bays would otherwise re-test an outline just chosen for exactly this reason, and the lake
+    // would end up drawn by whichever bay happened to be iterated last.
+    const osmShort = square(-70.5, 44.5, 0.3);
+    const nhdWhole = square(-70.5, 44.5, 0.6);
+    const lake = merged({
+      key: 'osm:way/lake',
+      name: 'Two Bay Lake',
+      polygon: osmShort,
+      areaSqM: 900_000,
+      members: [
+        feature('osm', 'way/lake', { polygon: osmShort, areaSqM: 900_000 }),
+        feature('nhd', 'nhd-whole', { polygon: nhdWhole, areaSqM: 1_400_000 }),
+      ],
+    });
+    const bayA = merged({
+      key: 'osm:way/a',
+      name: 'North Arm',
+      cls: 'bay',
+      polygon: square(-70.3, 44.9, 0.02),
+      areaSqM: 1_000,
+    });
+    const bayB = merged({
+      key: 'osm:way/b',
+      name: 'South Arm',
+      cls: 'bay',
+      polygon: square(-70.2, 44.85, 0.02),
+      areaSqM: 1_000,
+    });
+    expect(overrideGeometryForContainedBays([lake, bayA, bayB])).toHaveLength(1);
+  });
+});
+
 describe('statesFor escalates the way inRegion does', () => {
   /** A state whose eastern edge is at -71: everything west of it is out. */
   const state = (name: string, poly: Polygon) => ({
@@ -1650,6 +1729,28 @@ describe('statesFor escalates the way inRegion does', () => {
     polygon: poly,
     bbox: bboxOf(poly),
   });
+
+  /**
+   * What the sparse first pass alone would answer — `statesFor` without its escalation.
+   *
+   * Written out rather than exported from the module, so a test asserting "the cheap pass was
+   * wrong here" keeps saying that even if the escalation's trigger changes.
+   */
+  const collectStatesSparsely = (
+    body: { polygon: Polygon | MultiPolygon },
+    grid: Map<string, (Boundary & { name: string })[]>,
+  ): string[] => {
+    const found = new Set<string>();
+    for (const [lng, lat] of sampleOutline(body.polygon)) {
+      const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
+      for (const b of grid.get(cell) ?? []) {
+        if (pointInPolygon({ lat, lng }, b.polygon)) {
+          found.add(b.name === 'Maine' ? 'ME' : b.name === 'New Hampshire' ? 'NH' : b.name);
+        }
+      }
+    }
+    return [...found].sort();
+  };
 
   it('finds the state a body reaches on ONE vertex the sparse sample missed', () => {
     // **`inRegion` walks every vertex before it drops a body; this used to walk eight per ring.**
@@ -1680,6 +1781,54 @@ describe('statesFor escalates the way inRegion does', () => {
     const maine = state('Maine', square(-71, 44, 2));
     const inside = merged({ polygon: square(-70, 45, 0.01) });
     expect(statesFor(inside, index([maine]))).toEqual(['ME']);
+  });
+
+  it('finds the SECOND state a body reaches on one vertex, not just the first', () => {
+    // **The half the first escalation missed** (N7-2 audit, 2026-08-08). It triggered on an *empty*
+    // answer, which covers "belongs to no state" and not "belongs to one state and also another".
+    // A sparse `[NH]` is exactly as unproven as a sparse `[]`.
+    //
+    // Measured against the loaded corpus: 7 bodies, `Province Lake` (976 ac, ME/NH) among them,
+    // stored as New Hampshire's alone.
+    const nh = state('New Hampshire', square(-72, 44, 1)); // -72..-71
+    const me = state('Maine', square(-71, 44, 1)); //        -71..-70
+    const grid = index([nh, me]);
+    // Overwhelmingly in New Hampshire, with a single vertex across the -71 line into Maine.
+    // 41 points a side puts that vertex at index 41, which the 8-per-ring stride of 10 steps over —
+    // the whole point of the fixture is that the cheap pass cannot see it.
+    const ring: [number, number][] = [];
+    for (let i = 0; i < 41; i++) ring.push([-71.9 + i * 0.02, 44.5]);
+    ring.push([-70.95, 44.6]); // the one vertex in Maine
+    for (let i = 40; i >= 0; i--) ring.push([-71.9 + i * 0.02, 44.7]);
+    ring.push(ring[0] as [number, number]);
+    const polygon = { type: 'Polygon' as const, coordinates: [ring] };
+    const body = { polygon, bbox: bboxOf(polygon) };
+
+    // The sparse pass alone sees only New Hampshire — this is the bug, stated as a precondition.
+    expect(collectStatesSparsely(body, grid)).toEqual(['NH']);
+    expect(statesFor(body, grid)).toEqual(['ME', 'NH']);
+  });
+
+  it('unions every ring rather than returning on the first that answers', () => {
+    // An archipelago's second component can be the one in the other state. The escalation used to
+    // `return` on the first productive ring, which is this function's own headline inverted.
+    const nh = state('New Hampshire', square(-72, 44, 1));
+    const me = state('Maine', square(-71, 44, 1));
+    const grid = index([nh, me]);
+    const inNh = square(-71.5, 44.5, 0.01).coordinates[0] as number[][];
+    const inMe = square(-70.5, 44.5, 0.01).coordinates[0] as number[][];
+    const polygon = { type: 'MultiPolygon' as const, coordinates: [[inNh], [inMe]] };
+    expect(statesFor({ polygon, bbox: bboxOf(polygon) }, grid)).toEqual(['ME', 'NH']);
+  });
+
+  it('skips the walk when no other state is even reachable from the body cells', () => {
+    // The gate that keeps the fix free: a body in the middle of Maine touches only cells holding
+    // Maine, so `reachable` equals `found` and no vertex walk happens. Asserted through behaviour —
+    // a body whose sparse sample answers is unchanged by a second state 300 km away.
+    const me = state('Maine', square(-71, 44, 2));
+    const ny = state('New York', square(-76, 42, 1));
+    const inside = merged({ polygon: square(-70, 45, 0.01) });
+    expect(statesFor(inside, index([me, ny]))).toEqual(['ME']);
   });
 });
 

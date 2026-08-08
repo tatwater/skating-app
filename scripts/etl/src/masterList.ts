@@ -737,8 +737,18 @@ export function buildMasterList(input: MasterListInput): MasterList {
     const parentKey = state?.bayParentKey;
     if (parentKey === undefined || !keptKeys.has(parentKey)) {
       if (parentKey !== undefined && state) {
-        // The parent did not survive: this is a bay without a parent after all.
-        body.cls = 'unclassified';
+        // The parent did not survive: this is a bay without a parent after all — so it takes the
+        // **same** branch as one whose parent was never found, rather than a stricter one.
+        //
+        // ⚠ It used to demote unconditionally, which contradicted the rule twenty lines up: a named
+        // bay the grid never found a parent for keeps `bay` (the Paugus Bay call, founder
+        // 2026-08-07), while a named bay whose parent was found and *then* refused — for being out
+        // of region, tidal, or under the floor — was relabelled `unclassified`. Those are the same
+        // epistemic position, "a named arm of something we do not carry", and the answer was being
+        // decided by which way the parent happened to die.
+        //
+        // Unnamed, we still have nothing to go on and the demotion stands.
+        if (body.name.length === 0) body.cls = 'unclassified';
         state.bayWithoutParent = true;
       }
       bodies.push(body);
