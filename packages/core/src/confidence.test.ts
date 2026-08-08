@@ -10,6 +10,7 @@ import {
   primaryReviewReason,
   REVIEW_REASON_PRIORITY,
   REVIEW_REASONS,
+  sameDisplayName,
   sameName,
   scorableClassClaims,
   scoreAttribute,
@@ -418,5 +419,41 @@ describe('the queue ordering', () => {
     for (const reason of REVIEW_REASONS.filter((r) => r !== 'name-conflict')) {
       expect(isAdvisoryReviewReason(reason)).toBe(false);
     }
+  });
+});
+
+describe('sameDisplayName', () => {
+  // Folded: spacing inside a proper noun, and a parenthesised alternate. 44 of run 8's 475 name
+  // conflicts, and no pair of *different* lakes is spelled the same once spaces come out.
+  it.each([
+    ['LaCoute Lake', 'La Coute Lake'],
+    ['Lower LaPomkeag Lake', 'Lower La Pomkeag Lake'],
+    ['Wesserunsett Lake', 'Wesserunsett (Hayden) Lake'],
+    ['Lonely Lake', 'Lonely Lake (Heron Pond)'],
+  ])('folds %s and %s', (a, b) => {
+    expect(sameDisplayName(a, b)).toBe(true);
+  });
+
+  // **The line, and it is the same line `sameName` draws.** These are the largest foldable-LOOKING
+  // group in the queue (97 rows) and the one where folding would quietly merge two real ponds.
+  it.each([
+    ['Tuttle Pond', 'Turtle Pond'],
+    ['Back Settlement Pond', 'Black Settlement Pond'],
+    ['Bear Pond', 'Bean Pond'],
+    ['Grand Lake', 'East Grand Lake'],
+    ['Fitts Pond', 'Little Fitts Pond'],
+    ['Silver Lake', 'Mattakeunk Pond'],
+  ])('does NOT fold %s and %s', (a, b) => {
+    expect(sameDisplayName(a, b)).toBe(false);
+  });
+
+  it('still folds everything sameName does, word order included', () => {
+    expect(sameDisplayName('Salem Lake', 'Lake Salem')).toBe(true);
+    expect(sameDisplayName("Harvey's Lake", 'Harveys Lake')).toBe(true);
+  });
+
+  it('does not fold two unnamed bodies into agreement', () => {
+    expect(sameDisplayName('', '')).toBe(true); // sameName's own answer; no claim is stored for it
+    expect(sameDisplayName('()', 'Long Pond')).toBe(false);
   });
 });

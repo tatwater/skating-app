@@ -187,6 +187,56 @@ export function sameName(a: string, b: string): boolean {
 }
 
 /**
+ * Two names a **reader** would not notice differ — a looser bar than `sameName`, for the queue only.
+ *
+ * ## Why there are two bars rather than one
+ *
+ * `sameName` decides *identity*: it feeds the name lane, where a wrong match merges two lakes and is
+ * unrecoverable. It therefore refuses anything short of a provable respelling, and its docstring is
+ * explicit that a one-character difference stays a conflict because **`Bear Pond` and `Bean Pond`
+ * are different lakes**. That is right and it does not change.
+ *
+ * This one decides *whether to bother a human*, where the cost of being wrong is that we display one
+ * of two names and store both — and both stay searchable either way. A stricter-than-necessary bar
+ * there does not protect anything; it just fills the queue.
+ *
+ * ## Measured on the 475 name conflicts of run 8
+ *
+ * | | | |
+ * | --- | --- | --- |
+ * | 275 | genuinely different names | `Silver Lake` / `Mattakeunk Pond` — stays |
+ * | 97 | one-character difference | `Tuttle Pond` / `Turtle Pond` — **stays**, this is the Bear/Bean case |
+ * | 79 | one contains the other | `Grand Lake` / `East Grand Lake` — stays; a real disagreement about the qualifier |
+ * | **33** | **spacing inside a proper noun** | `LaCoute Lake` / `La Coute Lake` |
+ * | **11** | **a parenthesised alternate** | `Wesserunsett Lake` / `Wesserunsett (Hayden) Lake` |
+ *
+ * Only the last two are folded, and each is unambiguous: no pair of *different* lakes is spelled the
+ * same once spaces are removed, and a parenthetical is a publisher annotating one name rather than
+ * offering another. 44 rows, ~3% of the queue.
+ *
+ * **The 97 typos are deliberately left in.** They are the largest foldable-looking group and the one
+ * where folding would silently merge two real ponds' names.
+ */
+export function sameDisplayName(a: string, b: string): boolean {
+  if (sameName(a, b)) return true;
+  // A publisher annotating a name — `Lonely Lake (Heron Pond)` — rather than offering a second one.
+  const stripParens = (s: string) => s.replace(/\s*\([^)]*\)/g, ' ');
+  if (sameName(stripParens(a), stripParens(b))) return true;
+  // Spacing and punctuation inside a proper noun: `LaPomkeag` / `La Pomkeag`. Compared *after*
+  // `sameName` rather than instead of it, because this cannot see word order — `Salem Lake` and
+  // `Lake Salem` fold there and must not stop folding here.
+  const squash = (s: string) =>
+    s
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '');
+  const sa = squash(stripParens(a));
+  const sb = squash(stripParens(b));
+  return sa.length > 0 && sa === sb;
+}
+
+/**
  * Class pairs that **look like a disagreement and are not** (founder call, 2026-08-04).
  *
  * Both entries have the same shape: **our vocabulary draws a distinction the federal catalogue does
@@ -306,7 +356,9 @@ export function scoreBody(input: {
   depths: readonly AttributeClaim<number>[];
 }): BodyConfidence {
   return {
-    name: scoreAttribute(input.names, sameName),
+    // `sameDisplayName`, not `sameName` — the queue's bar is looser than the matcher's on purpose;
+    // see its docstring for the measured split and for why the 97 one-character pairs stay.
+    name: scoreAttribute(input.names, sameDisplayName),
     // Each polygon claim carries its IoU against the reference outline; the reference itself is 1.
     polygon: scorePolygonAgreement(input.polygons),
     // **`unclassified` is silence, not a dissenting vote**, and dropping it here is not a nicety:
