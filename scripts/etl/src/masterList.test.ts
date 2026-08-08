@@ -544,12 +544,15 @@ describe('a bay is an arm, not a lake', () => {
     expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
   });
 
-  // Six real arms of real lakes were demoted because the catalogue that knew the relationship was
-  // not the catalogue that won the outline. Sebago Cove is **0.81 contained in NHD's Sebago Lake and
-  // 0.00 in OSM's**, and D92 makes OSM draw by default — so the test asked the one outline that says
-  // no. Same for Ampersand Bay in Lower Saranac, Noisey Inlet, Pillsbury Bay, Leavitt Bay and
-  // Cram's Cove.
-  it('finds a parent through a member outline the merge did not choose to draw', () => {
+  // Six real arms of real lakes had no parent because the catalogue that knew the relationship was
+  // not the one that won the outline: Sebago Cove is **0.81 contained in NHD's Sebago Lake and 0.00
+  // in OSM's**, and D92 makes OSM draw by default.
+  //
+  // The first fix taught `bayParent` to read every member outline. It found the relationship and
+  // could not express it — a sub-area is stored clipped to its parent's STORED polygon, so all six
+  // clipped to nothing and, having been counted as sub-areas, landed in no table at all. The fix is
+  // one layer up: correct the outline (D92's per-lake override), then ask the corrected one.
+  it('re-draws the lake from the catalogue that contains its own named bay', () => {
     // OSM draws the lake without the cove; NHD draws it with. The merged body carries OSM's.
     const osmLake = feat('osm', 'way/sebago', {
       name: 'Sebago Lake',
@@ -573,18 +576,50 @@ describe('a bay is an arm, not a lake', () => {
       name: 'Sebago Cove',
       parentKey: 'osm:way/sebago',
     });
-    // …and the merged parent still draws from OSM. Reading a member's outline is evidence, not a
-    // geometry change — enlarging the stored polygon would invent water no publisher shows and move
-    // `surfaceAreaSqM`, which the D91 floor and the D49/D2 scores are calibrated on.
-    expect(result.bodies[0]?.geometrySource).toBe('osm');
-    expect(result.bodies[0]?.polygon).toEqual(osmLake.polygon);
+    // **The parent is now drawn by NHD** — the catalogue whose outline actually contains the arm.
+    // Nothing is invented: this is one publisher's polygon chosen over another's, which is what
+    // `geometrySource` is a field FOR (D92), and the margin is the containment itself.
+    expect(result.bodies[0]?.geometrySource).toBe('nhd');
+    expect(result.bodies[0]?.polygon).toEqual(nhdLake.polygon);
+    // The KEY does not move: `externalId` is the arrival key and the contour tile stamp (D93).
+    expect(result.bodies[0]?.key).toBe('osm:way/sebago');
+    expect(result.stats.geometryOverridden).toBe(1);
   });
 
-  it('demotes and queues Half Moon Cove, which is contained in nothing', () => {
+  it('leaves a lake alone when its own outline already contains the bay', () => {
+    const lake = feat('osm', 'way/lake', {
+      name: 'Shore Lake',
+      polygon: square(-70.5, 44.5, sideForAcres(5_000)),
+    });
+    const arm = feat('osm', 'way/arm', {
+      name: 'North Arm',
+      cls: 'bay',
+      polygon: square(-70.5, 44.5, sideForAcres(400)),
+    });
+    const result = buildMasterList(inputFor({ osm: [lake, arm] }));
+    expect(result.stats.geometryOverridden).toBe(0);
+    expect(result.subAreas).toHaveLength(1);
+  });
+
+  // **A named bay with no parent keeps the class** (founder, 2026-08-07). Demoting it recorded our
+  // matching failure as a fact about the lake: `Paugus Bay` is 1,241 acres of named water on
+  // Winnipesaukee that no catalogue draws inside anything. It is still queued — keeping the class is
+  // not the same as claiming to know what it is an arm of.
+  it('keeps a NAMED parentless bay as a bay body, and still queues it', () => {
     const cove = feat('osm', 'way/halfmoon', {
       name: 'Half Moon Cove',
       cls: 'bay',
       polygon: square(-70.6, 44.6, sideForAcres(330)),
+    });
+    const result = buildMasterList(inputFor({ osm: [cove] }));
+    expect(result.bodies[0]?.cls).toBe('bay');
+    expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
+  });
+
+  it('still demotes an UNNAMED parentless bay, where there is nothing to go on', () => {
+    const cove = feat('osm', 'way/nameless', {
+      cls: 'bay',
+      polygon: square(-70.7, 44.7, sideForAcres(330)),
     });
     const result = buildMasterList(inputFor({ osm: [cove] }));
     expect(result.bodies[0]?.cls).toBe('unclassified');
@@ -634,9 +669,12 @@ describe('a bay of a Great Lake', () => {
     expect(result.subAreas).toHaveLength(0);
   });
 
-  it('is still demoted when there is no Great Lake either', () => {
+  // Without the lake it is still a named bay, so it keeps the class — but it is **queued**, because
+  // nothing supports the claim about what it is an arm of. That difference is the whole value of the
+  // Great Lake rule: not the class, but knowing the answer and not needing a human.
+  it('is queued when there is no Great Lake to be an arm of', () => {
     const result = buildMasterList(inputFor({ osm: [braddock()] }));
-    expect(result.bodies[0]?.cls).toBe('unclassified');
+    expect(result.bodies[0]?.cls).toBe('bay');
     expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
     expect(result.stats.greatLakeArms).toBe(0);
   });

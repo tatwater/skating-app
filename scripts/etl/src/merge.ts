@@ -655,6 +655,11 @@ async function main(): Promise<void> {
     `  overlapping survivors ${n(stats.duplicatePairs)} pairs — flagged duplicate-candidate, never merged`,
   );
   lines.push(
+    `  re-drawn lakes ${n(stats.geometryOverridden)}  D92's per-lake override, on evidence: the stored`,
+  );
+  lines.push("    outline excluded the lake's own named bay and a member outline contained it.");
+  for (const sample of stats.geometryOverriddenSamples) lines.push(`      ${sample}`);
+  lines.push(
     `  gazetteer ids  ${n(stats.gazetteerIdsAttached)}  attached BEFORE the lanes, which is what makes the`,
   );
   lines.push('    0.3 GNIS matching bar reachable at all. Zero here means it is dead again.');
@@ -778,6 +783,7 @@ async function main(): Promise<void> {
     settledWetland: stats.settledWetland,
     greatLakeArms: stats.greatLakeArms,
     gazetteerIdsAttached: stats.gazetteerIdsAttached,
+    geometryOverridden: stats.geometryOverridden,
   };
   // The merge's own step, closing the path the archives opened. Everything before it describes a
   // file we downloaded; this one describes the decision, and its counts are the three numbers the

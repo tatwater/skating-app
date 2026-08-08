@@ -85,8 +85,6 @@ export interface Merged {
   cls: WaterBodyClass;
   areaSqM: number;
   bbox: BBox;
-  /** Union of every member's bbox — see `bayParent`. Always contains `bbox`. */
-  memberBBox: BBox;
   polygon: Polygon | MultiPolygon;
   geometrySource: ClaimSource;
   sameSourceDuplicate: boolean;
@@ -771,20 +769,6 @@ export function mergeGroupWithReason(members: Feature[]): {
       // **Measured from the polygon we actually stored, never the larger of two claims** (D94).
       areaSqM: preferred.areaSqM,
       bbox: preferred.bbox,
-      // **The union of every member's box, which is bigger than the one we draw.** `bbox` describes
-      // the outline we chose to store, and `bayParent` reads *all* the group's outlines — so a
-      // candidate whose losing member reaches further than its winning one has to be findable in the
-      // grid and survive the prefilter, or the member test can never run. Sebago Cove sits off OSM's
-      // Sebago Lake and inside NHD's, which is exactly this case.
-      memberBBox: members.reduce<BBox>(
-        (box, m) => ({
-          minLng: Math.min(box.minLng, m.bbox.minLng),
-          maxLng: Math.max(box.maxLng, m.bbox.maxLng),
-          minLat: Math.min(box.minLat, m.bbox.minLat),
-          maxLat: Math.max(box.maxLat, m.bbox.maxLat),
-        }),
-        preferred.bbox,
-      ),
       polygon: preferred.polygon,
       geometrySource: preferred.source,
       sameSourceDuplicate,
@@ -1066,34 +1050,28 @@ export function bayParent(
       seen.add(candidate);
       if (candidate.areaSqM <= bay.areaSqM) continue;
       if (best !== undefined && candidate.areaSqM >= best.areaSqM) continue;
-      if (!bboxIntersects(candidate.memberBBox, bay.bbox)) continue;
-      // **Every outline the group holds, not just the one we chose to draw** (N7, 2026-08-07).
+      if (!bboxIntersects(candidate.bbox, bay.bbox)) continue;
+      // **The outline we STORE, not every outline the group holds** — reverted 2026-08-07, and the
+      // reason is worth keeping because the evidence pointed the other way.
       //
-      // `chooseGeometry` picks one member's polygon and D92 makes that OSM by default, so this used
-      // to ask *only* OSM whether the bay was inside — and OSM and NHD disagree about exactly this,
-      // routinely. Measured on run 6's parentless bays: **Sebago Cove is 0.81 contained in NHD's
-      // Sebago Lake and 0.00 in OSM's**, and the same for Ampersand Bay in Lower Saranac (0.77),
-      // Noisey Inlet (0.81), Pillsbury Bay (0.76), Leavitt Bay in Ossipee (0.50) and Cram's Cove
-      // (0.50). Six real arms of real lakes, demoted to `unclassified` because the catalogue that
-      // knew the relationship was not the catalogue that won the outline.
+      // NHD draws Sebago Lake as containing Sebago Cove (0.81) and OSM draws them apart; D92 makes
+      // OSM the stored outline. Reading the member outlines found six such arms — Sebago Cove,
+      // Ampersand Bay, Leavitt Bay, Berry Bay, Pillsbury Bay, Noisey Inlet — and they are *real
+      // relationships*. They are just not ones this corpus can express: a sub-area is stored
+      // **clipped to its parent's stored polygon** (D48 / Decision 10, "inside its parent by
+      // construction"), so a bay outside that polygon clips to nothing. The loader refused all six
+      // as `disjoint`, and because the master list had already counted them as sub-areas they
+      // landed in **no table at all**.
       //
-      // Asking every member is not a looser rule, it is the *evidence we already paid for*: all
-      // members of a group are the same lake, so "does any catalogue that drew this lake draw it as
-      // containing that bay" is the honest form of the question. The alternative — enlarging the
-      // parent's stored polygon to swallow the bay — would invent water no publisher shows, break
-      // `geometrySource`'s "one catalogue drew this", and silently move `surfaceAreaSqM`, which the
-      // D91 floor and the D49/D2 scores are all calibrated on.
-      const outlines = [candidate.polygon, ...candidate.members.map((m) => m.polygon)];
-      let held = 0;
-      for (const outline of outlines) {
-        let inside = 0;
-        for (const [lng, lat] of samples) {
-          if (pointInPolygon({ lat, lng }, outline)) inside++;
-        }
-        held = Math.max(held, inside / samples.length);
-        if (held >= BAY_PARENT_MIN_CONTAINMENT) break;
+      // So the containment test has to ask the outline the next stage will actually clip against.
+      // A rule may only decide something the storage model can express; the federal catalogue
+      // knowing a relationship we do not draw is a D92 consequence, recorded here and surfaced as
+      // `bay-without-parent` rather than acted on.
+      let inside = 0;
+      for (const [lng, lat] of samples) {
+        if (pointInPolygon({ lat, lng }, candidate.polygon)) inside++;
       }
-      if (held >= BAY_PARENT_MIN_CONTAINMENT) best = candidate;
+      if (inside / samples.length >= BAY_PARENT_MIN_CONTAINMENT) best = candidate;
     }
   }
   return best;
@@ -1119,6 +1097,118 @@ export function hasBayParent(
  * judged the same way — the same reasoning as `MIN_SURVEY_CONTAINMENT` in the bathymetry join.
  */
 export const BAY_PARENT_MIN_CONTAINMENT = 0.5;
+
+/**
+ * **A lake whose stored outline excludes its own named bay is drawn from the wrong catalogue** —
+ * D92's per-lake `geometrySource` override, applied on evidence (founder, 2026-08-07).
+ *
+ * ## Why this is an override rather than a matching rule
+ *
+ * NHD draws Sebago Lake as containing Sebago Cove and OSM draws them apart. The first attempt at
+ * this read *every* member outline inside `bayParent`, which found the relationship and could not
+ * express it: a sub-area is stored **clipped to its parent's stored polygon** (D48 / Decision 10),
+ * so a bay outside that polygon clips to nothing. The loader refused all six as `disjoint` and —
+ * because the master list had already counted them as sub-areas — they landed in **no table at all**.
+ *
+ * The founder's question is the right one: *if NHD's polygon includes the bay, and we know the bay
+ * is in the lake, shouldn't we prefer NHD's polygon?* Yes. D92 settled OSM as the default on a
+ * **tie-break, not on merit** — 63.2% of lakes scored identically and OSM won for having the cheaper
+ * pipeline — and it explicitly asks for *"a per-lake override rule where the default loses by a
+ * margin"*. A polygon that contains a named arm of the lake, against one that does not, is that
+ * margin: the containment is a fact about completeness, not a preference.
+ *
+ * So the choice is corrected **before** anything downstream reads it, rather than a containment test
+ * being taught to see past it. `bayParent` then asks the outline the loader will actually clip
+ * against, and the answer is the same one — which is the property the first attempt lacked.
+ *
+ * ## What moves
+ *
+ * The polygon, its bbox, its measured area and `geometrySource`. **Not the key**: `externalId` is the
+ * arrival key and the contour tile stamp (D93), and the entire point of `geometrySource` being a
+ * field is that whose outline we drew and who this lake *is* are separate questions.
+ *
+ * Area moves with the polygon because D94 requires it — *"measured from the polygon we actually
+ * stored, never the larger of two claims"* — and these are large named lakes, far above any floor.
+ *
+ * Returns the bodies it re-pointed, named, because a silent change of outline is the one thing this
+ * must not be.
+ */
+export function overrideGeometryForContainedBays(
+  merged: readonly Merged[],
+): { name: string; key: string; from: ClaimSource; to: ClaimSource; bay: string }[] {
+  const bays = merged.filter((m) => m.cls === 'bay' && m.name.length > 0);
+  if (bays.length === 0) return [];
+  const candidates = merged.filter((m) => m.cls !== 'bay' && m.members.length > 1);
+  // Indexed on the union of every member box, because the whole case is a member reaching further
+  // than the outline we chose — the drawn box would not even find the bay.
+  const grid = new Map<string, Merged[]>();
+  const unionBox = (m: Merged) =>
+    m.members.reduce<BBox>(
+      (box, f) => ({
+        minLng: Math.min(box.minLng, f.bbox.minLng),
+        maxLng: Math.max(box.maxLng, f.bbox.maxLng),
+        minLat: Math.min(box.minLat, f.bbox.minLat),
+        maxLat: Math.max(box.maxLat, f.bbox.maxLat),
+      }),
+      m.bbox,
+    );
+  const boxes = new Map<Merged, BBox>();
+  for (const m of candidates) {
+    const box = unionBox(m);
+    boxes.set(m, box);
+    for (const cell of cellsFor(box)) {
+      const bucket = grid.get(cell);
+      if (bucket) bucket.push(m);
+      else grid.set(cell, [m]);
+    }
+  }
+
+  const moved: { name: string; key: string; from: ClaimSource; to: ClaimSource; bay: string }[] =
+    [];
+  const done = new Set<Merged>();
+  for (const bay of bays) {
+    const samples = sampleOutline(bay.polygon);
+    if (samples.length === 0) continue;
+    const seen = new Set<Merged>();
+    for (const cell of cellsFor(bay.bbox)) {
+      for (const candidate of grid.get(cell) ?? []) {
+        if (seen.has(candidate) || done.has(candidate)) continue;
+        seen.add(candidate);
+        if (candidate.areaSqM <= bay.areaSqM) continue;
+        const box = boxes.get(candidate);
+        if (box === undefined || !bboxIntersects(box, bay.bbox)) continue;
+        const held = (poly: Polygon | MultiPolygon) => {
+          let inside = 0;
+          for (const [lng, lat] of samples) if (pointInPolygon({ lat, lng }, poly)) inside++;
+          return inside / samples.length;
+        };
+        // Already contains it — nothing to correct, and `bayParent` will find it unaided.
+        if (held(candidate.polygon) >= BAY_PARENT_MIN_CONTAINMENT) continue;
+        const better = candidate.members.find(
+          (f) =>
+            f.source !== candidate.geometrySource && held(f.polygon) >= BAY_PARENT_MIN_CONTAINMENT,
+        );
+        if (better === undefined) continue;
+        moved.push({
+          name: candidate.name || '(unnamed)',
+          key: candidate.key,
+          from: candidate.geometrySource,
+          to: better.source,
+          bay: bay.name,
+        });
+        candidate.polygon = better.polygon;
+        candidate.bbox = better.bbox;
+        candidate.areaSqM = better.areaSqM;
+        candidate.geometrySource = better.source;
+        // One correction per lake per run: a second bay would re-test an outline we just chose for
+        // exactly this reason, and re-pointing twice is how a body ends up drawn by whichever bay
+        // happened to be iterated last.
+        done.add(candidate);
+      }
+    }
+  }
+  return moved;
+}
 
 /**
  * The Great Lakes as parents — **the bodies we deliberately do not carry** (founder, 2026-08-07).

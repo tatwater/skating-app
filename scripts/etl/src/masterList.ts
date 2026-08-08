@@ -72,6 +72,7 @@ import {
   nameClaimsOf,
   nameMatchPairs,
   overlapDuplicates,
+  overrideGeometryForContainedBays,
   polygonClaims,
   type RefusalReason,
   resolveGnisNames,
@@ -205,6 +206,18 @@ export interface MasterListStats {
    */
   greatLakeArms: number;
   /**
+   * Lakes re-drawn from the catalogue that contains their own named bay — **D92's per-lake
+   * `geometrySource` override, applied on evidence** (founder, 2026-08-07).
+   *
+   * D92 settled OSM as the default on a *tie-break* (63.2% of lakes scored identically; OSM won for
+   * the cheaper pipeline) and asked for an override *"where the default loses by a margin"*. A
+   * polygon that contains a named arm of the lake, against one that does not, is that margin.
+   *
+   * Counted and sampled because a silently changed outline is the one thing this must not be.
+   */
+  geometryOverridden: number;
+  geometryOverriddenSamples: string[];
+  /**
    * GNIS ids the gazetteer supplied to features that carried none — **before** the lanes ran.
    *
    * The number matters because it is the precondition for `RECONCILE_MIN_IOU_WITH_GNIS`, a bar
@@ -228,6 +241,8 @@ export interface MasterList {
 export const REFUSAL_SAMPLE_CAP = 5;
 /** Samples of the one conflict nothing else can see. See `MasterListStats.classDissent`. */
 export const CLASS_DISSENT_SAMPLE_CAP = 10;
+/** Samples of lakes re-drawn by D92's override. Small — the whole set is single digits. */
+export const GEOMETRY_OVERRIDE_SAMPLE_CAP = 10;
 /** Samples kept per lane of targets geometry could not separate. Each is a possible duplicate. */
 export const AMBIGUOUS_SAMPLE_CAP = 10;
 
@@ -434,6 +449,8 @@ export function buildMasterList(input: MasterListInput): MasterList {
     classDissentSamples: [],
     settledWetland: 0,
     greatLakeArms: 0,
+    geometryOverridden: 0,
+    geometryOverriddenSamples: [],
     gazetteerIdsAttached,
     lanes: [
       { label: '3dhp→nhd', stats: federal.stats },
@@ -505,14 +522,23 @@ export function buildMasterList(input: MasterListInput): MasterList {
       bayParentKey?: string;
     }
   >();
+  // ── D92's per-lake override, on evidence ──────────────────────────────────
+  //
+  // Before anything asks which lake a bay belongs to, correct the lakes we are drawing from the
+  // wrong catalogue: a stored outline that excludes its own named arm, where a member outline
+  // contains it. Runs *first* so every later stage — the bay rule, the region clip, the floor, the
+  // emit — reads one outline, and the loader clips against the same one the parent test accepted.
+  const regeometried = overrideGeometryForContainedBays(merged);
+  stats.geometryOverridden = regeometried.length;
+  stats.geometryOverriddenSamples = regeometried
+    .slice(0, GEOMETRY_OVERRIDE_SAMPLE_CAP)
+    .map((m) => `${m.name} ${m.from}→${m.to} (contains ${m.bay})`);
+  if (regeometried.length > 0) {
+    log(`  ${regeometried.length} lake(s) re-drawn from the catalogue that contains their own bay`);
+  }
+
   // The bay rule needs the whole merged set, so it runs here rather than in the classifier.
-  // **Indexed on `memberBBox`, not `bbox`.** `index` reads `.bbox`, which is the outline we chose to
-  // draw — so a candidate whose losing member reaches further than its winning one would not be in
-  // the bay's cells at all and the member test in `bayParent` could never run. Sebago Cove is that
-  // case: off OSM's Sebago Lake, inside NHD's.
-  const bayGrid = index(
-    merged.filter((m) => m.cls !== 'bay').map((m) => ({ ...m, bbox: m.memberBBox })),
-  );
+  const bayGrid = index(merged.filter((m) => m.cls !== 'bay'));
   // **The parents we deliberately do not carry.** Built from the same features already in memory as
   // `saltMask`, and for the mirror reason: the Great Lakes are refused as bodies but their geometry
   // still answers a question. See `greatLakeMask`.
@@ -534,7 +560,17 @@ export function buildMasterList(input: MasterListInput): MasterList {
       cls === 'bay' && parent === undefined ? greatLakeParent(group, greatLakeGrid) : undefined;
     if (greatLake !== undefined) stats.greatLakeArms++;
     const bayWithoutParent = cls === 'bay' && parent === undefined && greatLake === undefined;
-    if (bayWithoutParent) cls = 'unclassified';
+    // **A named bay with no parent stays a bay, and stays a BODY** (founder, 2026-08-07).
+    //
+    // It used to be demoted to `unclassified`, on the reasoning that without a parent we cannot
+    // support the claim. But the claim a *name* makes is its own: `Paugus Bay` is 1,241 acres of
+    // named water on Winnipesaukee that no catalogue draws inside anything, and storing it as
+    // `unclassified` records our matching failure as a fact about the lake. Unnamed, we have nothing
+    // to go on and the demotion stands.
+    //
+    // ⚠ It is still queued `bay-without-parent`. Keeping the class is not the same as claiming to
+    // know what it is an arm of.
+    if (bayWithoutParent && group.name.length === 0) cls = 'unclassified';
 
     // The region clip, applied to the merged body rather than to a lane.
     if (!inRegion(group, boundaryGrid)) {
