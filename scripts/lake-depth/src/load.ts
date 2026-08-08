@@ -11,22 +11,55 @@
  * repeated run never downgrades a value and never overwrites an operator's.
  */
 
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
+import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 
 /**
- * Batch size, chosen against the **read** cap rather than the byte budget that binds the other loaders.
- * Each lake costs a cell scan plus a handful of body reads, so a 4096-read mutation budget divided by a
- * pessimistic ~100 reads per dense lookup leaves room for ~40. 25 keeps headroom for the densest corner
- * of the corpus (eastern Maine returns 513 bodies in one viewport), and the records themselves are tiny
- * — a point and two numbers — so bytes never bind here.
+ * Batch size.
+ *
+ * **The original 25 was reasoned against the wrong limit, and the first real run proved it.** The note
+ * here used to say bytes "never bind" because the *records* are tiny — a point and two numbers. True,
+ * and irrelevant: what the mutation reads is the corpus, not the input. Each lake pulls every listed
+ * body whose bbox covers its neighbourhood, and Convex counts **16 MB of reads per transaction**. A
+ * body averages 1.8 KB, but the cell index files large bodies at coarse rungs, so a lookup anywhere
+ * near Champlain or Ontario drags a ~300 KB polygon in with it. Twenty-five such lookups in one
+ * transaction blew the byte cap at batch 8 of 1,611 on 2026-08-02.
+ *
+ * **8 turned out to be marginal, not conservative — measured, not guessed.** The 2026-08-02 run
+ * completed with zero failures, but Convex emitted near-cap warnings on five batches, peaking at
+ * **16.2 MB against the 16.8 MB ceiling**. Within 4%. So 8 is the number that *happens to fit this
+ * corpus today*, and the corpus only grows; a denser neighbourhood or one more large polygon indexed
+ * at a coarse rung tips it over.
+ *
+ * **4 is the number that deserves the word conservative**, and it is what a first run against prod
+ * should use — there, a half-loaded pass costs more than the extra wall clock (roughly 2× on a
+ * ~3-hour job). 8 is kept as the default because dev has now demonstrably survived it and the loader
+ * degrades gracefully: an over-cap batch is recorded, skipped, and named by lake key for a targeted
+ * `--batch=1` retry, rather than killing the run.
+ *
+ * Override with `--batch=N`. Lower it on any `Too many bytes read` error.
  */
-const MAX_BATCH_COUNT = 25;
+const DEFAULT_BATCH_COUNT = 8;
+
+/**
+ * How many batches may fail back-to-back before the load gives up.
+ *
+ * Matches the water ETL, and for the reason that loader learned first: this pass is thousands of
+ * `convex run` calls, a single dense neighbourhood blowing the read cap is a *local* fact about the
+ * corpus rather than a broken run, and the ladder is enforced server-side so retrying is free. A
+ * streak means something systemic. **This loader used to rethrow on the first failure**, which is why
+ * the 2026-08-02 run stopped at batch 8 with 1,603 batches of perfectly loadable depth behind it.
+ */
+const MAX_CONSECUTIVE_BATCH_FAILURES = 5;
 
 interface MatchResult {
   updated: number;
   unmatched: number;
+  /** Matched by proximity + corroboration rather than containment — a weaker claim, counted apart. */
+  matchedByProximity: number;
+  /** A body was in range but nothing corroborated it. Distinct from "nothing here". */
+  proximityUnconfirmed: number;
   areaRejected: number;
   skipped: number;
   /** Matches the area gate could not run on, because one side reported no area. */
@@ -49,60 +82,29 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 function runImport(lakes: unknown[]): MatchResult {
-  const args = JSON.stringify({ lakes });
-  const stdout = execFileSync(
-    'pnpm',
-    [
-      '--filter',
-      '@skating/convex',
-      'exec',
-      'convex',
-      'run',
-      'waterBodies:matchAndImportDepths',
-      args,
-    ],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 64 * 1024 * 1024 },
-  );
-  const trimmed = stdout.trim();
-  const candidate = trimmed.startsWith('{') ? trimmed : trimmed.match(/\{[\s\S]*\}/)?.[0];
-  const parsed: unknown = candidate ? JSON.parse(candidate) : undefined;
+  const parsed = convexRun<unknown>('waterBodies:matchAndImportDepths', { lakes });
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
     typeof (parsed as { updated?: unknown }).updated !== 'number'
   ) {
-    throw new Error(`convex run returned an unexpected response: ${trimmed || '(empty)'}`);
+    throw new Error(`convex run returned an unexpected response: ${JSON.stringify(parsed)}`);
   }
   return parsed as MatchResult;
-}
-
-/** Best-effort read of the target deployment, mirroring the other two loaders' resolution order. */
-function resolveDeployment(): { label: string; isDev: boolean } {
-  if (process.env.CONVEX_DEPLOY_KEY)
-    return { label: 'CONVEX_DEPLOY_KEY (target unknown)', isDev: false };
-  let deployment = process.env.CONVEX_DEPLOYMENT;
-  if (!deployment) {
-    try {
-      const envLocal = readFileSync(
-        new URL('../../../packages/convex/.env.local', import.meta.url),
-        'utf8',
-      );
-      deployment = envLocal.match(/^CONVEX_DEPLOYMENT=(.+)$/m)?.[1]?.trim();
-    } catch {
-      // no .env.local reachable — fall through to unknown (treated as non-dev)
-    }
-  }
-  if (!deployment) return { label: 'unknown', isDev: false };
-  return { label: deployment, isDev: deployment.startsWith('dev:') };
 }
 
 function main(): void {
   const args = process.argv.slice(2);
   const allowNonDev = args.includes('--prod');
+  const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
+  const batchArg = Number(args.find((a) => a.startsWith('--batch='))?.slice('--batch='.length));
+  const batchSize =
+    Number.isFinite(batchArg) && batchArg > 0 ? Math.floor(batchArg) : DEFAULT_BATCH_COUNT;
   const inputPath = args.find((arg) => !arg.startsWith('--'));
   if (!inputPath) {
     process.stderr.write(
-      'usage: pnpm --filter @skating/lake-depth load <depths.ndjson> [--prod]\n',
+      'usage: pnpm --filter @skating/lake-depth load <depths.ndjson> [--prod] [--campaign=<id>]\n' +
+        '       [--batch=N]   (lower it if a dense region blows the 16 MB read cap)\n',
     );
     process.exit(1);
   }
@@ -121,14 +123,16 @@ function main(): void {
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .map((line) => JSON.parse(line) as unknown);
-  const batches = chunk(lakes, MAX_BATCH_COUNT);
+  const batches = chunk(lakes, batchSize);
   process.stderr.write(
-    `[lake-depth] matching ${lakes.length} source lakes in ${batches.length} batch(es)…\n`,
+    `[lake-depth] matching ${lakes.length} source lakes in ${batches.length} batch(es) of ${batchSize}…\n`,
   );
 
   const totals = {
     updated: 0,
     unmatched: 0,
+    matchedByProximity: 0,
+    proximityUnconfirmed: 0,
     areaRejected: 0,
     skipped: 0,
     noAreaGate: 0,
@@ -139,11 +143,37 @@ function main(): void {
   };
   const rejects: { key: string; reason: string }[] = [];
   let applied = 0;
-  try {
-    for (const [index, batch] of batches.entries()) {
+
+  const logger = new RunLogger({
+    kind: 'lake_depth',
+    label: 'lake depth join (HydroLAKES / GLOBathy / LAGOS-US)',
+    campaignId,
+    target,
+    call: convexRun,
+    stages: [
+      {
+        name: 'match',
+        detail:
+          'waterBodies:matchAndImportDepths — spatial match then the D68 precedence ladder, enforced server-side so nothing downgrades',
+        input: inputPath,
+        output: target.label,
+      },
+    ],
+  });
+  logger.start();
+
+  let failedBatches = 0;
+  let lakesInFailedBatches = 0;
+  let consecutiveFailures = 0;
+  let aborted: Error | undefined;
+
+  for (const [index, batch] of batches.entries()) {
+    try {
       const result = runImport(batch);
       totals.updated += result.updated;
       totals.unmatched += result.unmatched;
+      totals.matchedByProximity += result.matchedByProximity ?? 0;
+      totals.proximityUnconfirmed += result.proximityUnconfirmed ?? 0;
       totals.areaRejected += result.areaRejected;
       totals.skipped += result.skipped;
       totals.noAreaGate += result.noAreaGate ?? 0;
@@ -153,16 +183,57 @@ function main(): void {
       totals.shorelineDisagreed += result.shorelineDisagreed ?? 0;
       rejects.push(...(result.rejects ?? []));
       applied++;
+      consecutiveFailures = 0;
       if ((index + 1) % 20 === 0 || index + 1 === batches.length) {
         process.stderr.write(`[lake-depth] batch ${index + 1}/${batches.length} done\n`);
+        // Push progress to the run row too, not just the terminal. This pass is ~5,000 batches and
+        // hours long; without it `/admin/imports` shows a `running` row with no counts for the whole
+        // run, which is exactly the window an operator most wants to look at it. The water ETL
+        // already did this — the omission here was the third variant of the same oversight.
+        for (const [name, value] of Object.entries(totals)) logger.count(name, value);
+        logger.count('batchesApplied', applied);
+        logger.count('batchesFailed', failedBatches);
+        logger.flush();
+      }
+    } catch (err) {
+      failedBatches++;
+      lakesInFailedBatches += batch.length;
+      consecutiveFailures++;
+      const message = err instanceof Error ? err.message : String(err);
+      // Name the lakes, not the batch index: a batch number is meaningless once the scratch file is
+      // gone, and these are exactly the ones worth retrying at a smaller --batch.
+      const keys = batch
+        .map((l) => (l as { key?: string }).key)
+        .filter(Boolean)
+        .join(' ');
+      logger.fail({
+        stage: 'match',
+        key: keys || `batch ${index + 1}/${batches.length}`,
+        reason: message.slice(0, 400),
+      });
+      process.stderr.write(
+        `[lake-depth] batch ${index + 1}/${batches.length} FAILED (${consecutiveFailures} in a row): ` +
+          `${message.split('\n')[0]}\n`,
+      );
+      if (consecutiveFailures >= MAX_CONSECUTIVE_BATCH_FAILURES) {
+        aborted = err instanceof Error ? err : new Error(message);
+        break;
       }
     }
-  } catch (err) {
+  }
+
+  if (aborted) {
     process.stderr.write(
-      `[lake-depth] FAILED on batch ${applied + 1}/${batches.length}; ${applied} batch(es) applied. ` +
-        'Re-running is safe (the ladder is enforced server-side, so nothing downgrades).\n',
+      `[lake-depth] ABORTED after ${MAX_CONSECUTIVE_BATCH_FAILURES} consecutive failures; ` +
+        `${applied}/${batches.length} applied. Re-running is safe (the ladder is server-side).\n`,
     );
-    throw err;
+    for (const [name, value] of Object.entries(totals)) logger.count(name, value);
+    logger.count('batchesApplied', applied);
+    logger.count('batchesFailed', failedBatches);
+    logger.failed(aborted, [
+      `Partial join: ${applied}/${batches.length} batches applied. Re-running is safe and idempotent.`,
+    ]);
+    throw aborted;
   }
 
   // The match rate is the number worth reading, so it goes first and it is a rate, not a count. A join
@@ -196,6 +267,63 @@ function main(): void {
       `[lake-depth] …and ${rejects.length - SHOWN} more rejections (not shown)\n`,
     );
   }
+
+  // Every reject itemized on the run row — this is the loader whose *whole* interesting output is
+  // which lakes it declined and why, and until now that scrolled past 30 lines at a time.
+  for (const r of rejects) logger.fail({ stage: 'match', key: r.key, reason: r.reason });
+
+  for (const [name, value] of Object.entries(totals)) logger.count(name, value);
+  logger.count('sourceLakes', lakes.length);
+  logger.count('batchesApplied', applied);
+  // The omissions are the D68 ladder and the area gate doing their jobs — every one of these is a
+  // deliberate decline, and naming them is what stops the match rate reading as a shortfall.
+  logger.count('batchesFailed', failedBatches);
+  logger.coverage({
+    unit: 'source lakes',
+    eligible: lakes.length,
+    covered: totals.updated,
+    omissions: [
+      { reason: 'already had a higher-precedence source (D68)', count: totals.skipped },
+      { reason: 'no body within 500 m — not in our corpus', count: totals.unmatched },
+      {
+        reason: 'a body was near but nothing corroborated it (area and name both disagreed)',
+        count: totals.proximityUnconfirmed,
+      },
+      { reason: 'rejected on the area gate', count: totals.areaRejected },
+      { reason: "held by a moderator's override", count: totals.operatorHeld },
+      { reason: 'in a batch that blew the read cap and was skipped', count: lakesInFailedBatches },
+    ].filter((o) => o.count > 0),
+  });
+  logger.stage({
+    name: 'match',
+    detail:
+      'waterBodies:matchAndImportDepths — spatial match then the D68 precedence ladder, enforced server-side so nothing downgrades',
+    input: inputPath,
+    output: target.label,
+    counts: Object.entries(totals).map(([name, value]) => ({ name, value })),
+  });
+  if (failedBatches > 0) {
+    process.stderr.write(
+      `[lake-depth] ${failedBatches} batch(es) failed and were skipped (${lakesInFailedBatches} lakes). ` +
+        'Retry those at a smaller --batch; every one is named on the run row.\n',
+    );
+    logger.failed(
+      new Error(
+        `${failedBatches} of ${batches.length} batches failed and were skipped (${lakesInFailedBatches} lakes)`,
+      ),
+      [`Retry with a smaller --batch=N. The lakes are named in this run's failures.`],
+    );
+    process.exitCode = 1;
+    return;
+  }
+
+  logger.succeed([
+    `match rate ${rate}% (${totals.updated}/${lakes.length} source lakes stamped)`,
+    `${totals.matchedByProximity} matched by proximity + corroboration rather than containment`,
+    `${totals.noAreaGate} matched with no area gate (one side reported no area)`,
+    `${totals.inverted} contradictory mean/max pairs resolved`,
+    `D85 shoreline cross-check: ${totals.shorelineCompared} comparable, ${totals.shorelineDisagreed} disagreed by >2x (ours stored either way)`,
+  ]);
 }
 
 main();

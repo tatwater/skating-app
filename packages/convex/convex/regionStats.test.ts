@@ -36,9 +36,11 @@ describe('regionStats.recompute', () => {
       for (const [i, b] of bodies.entries()) {
         await ctx.db.insert('waterBodies', {
           name: `body${i}`,
-          type: 'lake',
+          searchText: `body${i}`,
+          type: 'lakePond',
           source: 'osm',
           externalId: `way/${i}`,
+          osmId: `way/${i}`,
           states: b.states,
           polygon: POLYGON,
           bbox: { minLat: 44, minLng: -73, maxLat: 44.1, maxLng: -72.9 },

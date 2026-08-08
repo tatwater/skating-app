@@ -35,9 +35,9 @@ import {
 } from '@skating/core';
 import { v } from 'convex/values';
 import type { Doc } from './_generated/dataModel';
-import { mutation, query } from './_generated/server';
+import { internalMutation, mutation, query } from './_generated/server';
 import { requireProfile, requireRole } from './lib/auth';
-import { bumpMetricCounter } from './lib/metrics';
+import { bumpMetricCounter, writeMetricSnapshot } from './lib/metrics';
 
 /**
  * The only metrics a client may report. Kept as an explicit allowlist rather than "any counter key" so
@@ -161,6 +161,88 @@ export const latest = query({
       out[metric] = newest ? toPoint(newest.date, newest) : null;
     }
     return out;
+  },
+});
+
+/**
+ * Record one measurement of a third-party catalogue (N7).
+ *
+ * **`internalMutation`, so it is reachable only from `convex run` with an admin key** — the same
+ * channel `@skating/run-log` already uses. The measurement is taken by an ETL pass against an archive
+ * on disk, so there is no server-side path that could compute it and no client that should be able to
+ * assert it.
+ *
+ * **Refuses anything that is not an `external` metric.** A rollup or a counter arriving here would be
+ * a number the cron or the event site also writes, and two writers on one series is how a chart starts
+ * disagreeing with itself. The rejection is loud (throws) rather than a warn-and-drop, because unlike
+ * a fire-and-forget client signal this is a deliberate operator action whose silent failure would look
+ * exactly like "the catalogue hasn't changed".
+ *
+ * Idempotent per `date` — `writeMetricSnapshot` replaces. Re-measuring the same release overwrites
+ * rather than accumulating, so a corrected run is just a re-run.
+ */
+export const recordCatalogueSnapshot = internalMutation({
+  args: {
+    metric: v.string(),
+    date: v.string(),
+    scalar: v.optional(v.number()),
+    meta: v.optional(v.any()),
+  },
+  handler: async (ctx, { metric, date, scalar, meta }) => {
+    const spec = METRIC_SPECS[metric as MetricKey];
+    if (!spec) throw new Error(`unknown metric "${metric}"`);
+    if (spec.kind !== 'external') {
+      throw new Error(
+        `metric "${metric}" is a ${spec.kind}, not an external catalogue measurement — it is written by ${
+          spec.kind === 'counter' ? 'the event site' : 'the daily cron'
+        }, and a second writer would make the series disagree with itself.`,
+      );
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date))
+      throw new Error(`date must be YYYY-MM-DD, got "${date}"`);
+    await writeMetricSnapshot(ctx, metric as MetricKey, date, { scalar, meta });
+    return { metric, date, scalar: scalar ?? null };
+  },
+});
+
+/**
+ * Hard ceiling on a `catalogueHistory` read.
+ *
+ * An `external` metric gets one row per third-party release — 3DHP publishes annually — so 200 rows is
+ * two centuries of a yearly cadence, or a decade if something starts publishing monthly. It is a
+ * backstop against a mis-scoped writer, not a real limit anyone will reach.
+ */
+const MAX_CATALOGUE_HISTORY = 200;
+
+/**
+ * The full history of an `external` metric — every snapshot, oldest first, with no day-range
+ * densification.
+ *
+ * **Separate from `series` because the shape of the data is different, not because it is convenient.**
+ * `series` generates a dense run of `YYYY-MM-DD` keys and fills the gaps with nulls, which is right
+ * for a daily rollup: a quiet day is a real zero. An external catalogue is measured **when its
+ * publisher ships a release**, so the gaps between rows are years of nothing happening, not years of
+ * zeroes. Rendering them through `series` would either cap at `MAX_SERIES_DAYS` (365 — losing every
+ * prior year, which is the entire point of the metric) or draw 730 empty days between two points.
+ *
+ * Returns the rows as measured. The chart plots the points and connects them; it does not pretend to
+ * know what the value was in between.
+ */
+export const catalogueHistory = query({
+  args: { metric: v.string() },
+  handler: async (ctx, { metric }) => {
+    await requireRole(ctx, 'admin');
+    if (!(metric in METRICS)) return [];
+    const rows = await ctx.db
+      .query('metricSnapshots')
+      .withIndex('by_metric_date', (q) => q.eq('metric', metric))
+      .take(MAX_CATALOGUE_HISTORY);
+    // The index orders by date ascending, and dates are `YYYY-MM-DD`, so this is chronological.
+    return rows.map((row) => ({
+      date: row.date,
+      scalar: row.scalar ?? null,
+      meta: (row.meta ?? null) as Record<string, unknown> | null,
+    }));
   },
 });
 

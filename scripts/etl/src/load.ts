@@ -8,14 +8,39 @@
  * target unless `--prod` is passed. Thin subprocess + file I/O — excluded from coverage; all
  * real work is in the tested transform.
  *
- *   pnpm --filter @skating/etl load <bodies.ndjson> [--prod]
+ *   pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]
+ *     [--campaign=<id>] [--label=<text>] [--manifest=<manifest.json>]
+ *     [--transform-summary=<run.json>] [--filter-command=<text>]
+ *     [--merge-manifest=<merge-manifest.json>] [--no-run-log]
+ *
+ * The second block of flags is the run history (N6c F2): the loader writes one `importRuns` row
+ * carrying the **whole path** — the archived extract's URL/checksum/build date, the `osmium`
+ * filter, the transform's own summary and itemized skips, and its own batch outcomes — so an
+ * admin can answer "how did the last import go" and "which features did it decline" without
+ * re-running it. `--no-run-log` opts out; nothing else about the load changes.
+ *
+ * **A full record is the default, not a flag.** Those sidecars describe the *OSM* path, and the N7
+ * corpus does not take it: `merge` reads seventeen archives and emits one NDJSON, so every flag
+ * above was inapplicable and the campaign was run with `--campaign=` alone — producing a run row
+ * labelled "unscoped canonical water" with an empty path, for the load of the entire corpus. The
+ * loader now looks for a `merge-manifest.json` beside its input and replays the merge's stages,
+ * campaign and label from it without being asked. See `mergeProvenance.loadMergeProvenance`.
  */
 
-import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import { isKnownStateCode, KNOWN_STATE_CODES } from '@skating/core';
+import {
+  convexRun,
+  type ExtractManifest,
+  extractStage,
+  RunLogger,
+  type RunStage,
+  resolveDeployment,
+} from '@skating/run-log';
+import { loadMergeProvenance } from './mergeProvenance';
 
 /**
  * Batches are bounded by two Convex/OS limits:
@@ -54,56 +79,106 @@ function chunk(lines: string[]): string[][] {
   return batches;
 }
 
+/**
+ * How many batches may fail back-to-back before the load gives up.
+ *
+ * A single bad batch is worth surviving: at ~150 bodies a batch, a five-state run is hundreds of
+ * `convex run` calls and thirty-odd minutes, and dying at batch 700 over one malformed body throws
+ * away everything after it for nothing (the upsert is idempotent, so the work is not *lost* — but
+ * the wall clock is). A *streak* of failures is different: that is a schema mismatch or a dead
+ * deployment, and grinding through 600 more doomed batches would turn a clear error into a slow
+ * one. Isolated failures are recorded on the run row and the load continues; a streak aborts.
+ */
+const MAX_CONSECUTIVE_BATCH_FAILURES = 5;
+
+interface ImportResult {
+  inserted: number;
+  updated: number;
+  /** Ambiguous identity, flagged for the D36 queue rather than merged (N7 / D93). */
+  queuedForMerge: number;
+  /** One id resolving to two rows, or a record carrying no id at all. */
+  conflicts: number;
+  unresolved: { externalId: string; action: string; reason: string }[];
+}
+
 function runImport(
   bodies: unknown[],
   state: string | undefined,
-): { inserted: number; updated: number } {
-  const args = JSON.stringify(state ? { bodies, state } : { bodies });
-  const stdout = execFileSync(
-    'pnpm',
-    ['--filter', '@skating/convex', 'exec', 'convex', 'run', 'waterBodies:importCanonical', args],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 64 * 1024 * 1024 },
-  );
-  // convex run pretty-prints the function's return value as a multi-line JSON object on stdout
-  // (function logs go to the inherited stderr). Parse it; fall back to the last {...} block if
-  // anything else slipped onto stdout. Anything we can't read as {inserted, updated} is a hard
-  // error — the mutation may well have committed, so reporting zeroes would mislead the operator.
-  const trimmed = stdout.trim();
-  const candidate = trimmed.startsWith('{') ? trimmed : trimmed.match(/\{[\s\S]*\}/)?.[0];
-  const parsed: unknown = candidate ? JSON.parse(candidate) : undefined;
+  campaignId: string | undefined,
+): ImportResult {
+  // Anything we can't read as the expected shape is a hard error — the mutation may well have
+  // committed, so reporting zeroes would mislead the operator.
+  //
+  // `campaignId` rides along because step 6's prune keys on it: a row this load did not touch is a
+  // row the master list did not contain, and that is the only question that can find a stored body
+  // the new rules refuse. Passing it here rather than deriving it server-side keeps "which campaign
+  // was this?" a statement the operator makes once, on the command line, for every pass at once.
+  const parsed = convexRun<unknown>('waterBodies:importCanonical', {
+    bodies,
+    ...(state ? { state } : {}),
+    ...(campaignId ? { campaignId } : {}),
+  });
   if (
     typeof parsed !== 'object' ||
     parsed === null ||
     typeof (parsed as { inserted?: unknown }).inserted !== 'number' ||
     typeof (parsed as { updated?: unknown }).updated !== 'number'
   ) {
-    throw new Error(`convex run returned an unexpected response: ${trimmed || '(empty)'}`);
+    throw new Error(`convex run returned an unexpected response: ${JSON.stringify(parsed)}`);
   }
-  return parsed as { inserted: number; updated: number };
+  const r = parsed as Partial<ImportResult> & { inserted: number; updated: number };
+  return {
+    inserted: r.inserted,
+    updated: r.updated,
+    queuedForMerge: r.queuedForMerge ?? 0,
+    conflicts: r.conflicts ?? 0,
+    unresolved: r.unresolved ?? [],
+  };
+}
+
+/** Read a JSON sidecar (an extract manifest, a transform summary), or `undefined` if unreadable. */
+function readJson<T>(path: string | undefined, what: string): T | undefined {
+  if (!path) return undefined;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as T;
+  } catch (err) {
+    // A missing sidecar costs provenance, never the import — warn and carry on with a hole in the
+    // path, which is more honest than refusing to load because the bookkeeping was incomplete.
+    process.stderr.write(
+      `[etl] could not read ${what} at ${path}: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    return undefined;
+  }
 }
 
 /**
- * Best-effort read of the Convex deployment `convex run` will target, mirroring the CLI's
- * resolution order: a `CONVEX_DEPLOY_KEY` (points anywhere — treated as non-dev so it needs
- * opt-in), then `CONVEX_DEPLOYMENT` in the env, then the convex package's `.env.local`.
+ * The first body's `externalId` in a batch, for naming a failed batch on the run row.
+ *
+ * Defensive to the point of paranoia because it runs **inside a catch block**: a throw here would
+ * replace the batch's real error with a parse error about the bookkeeping, losing the diagnosis.
  */
-function resolveDeployment(): { label: string; isDev: boolean } {
-  if (process.env.CONVEX_DEPLOY_KEY)
-    return { label: 'CONVEX_DEPLOY_KEY (target unknown)', isDev: false };
-  let deployment = process.env.CONVEX_DEPLOYMENT;
-  if (!deployment) {
-    try {
-      const envLocal = readFileSync(
-        new URL('../../../packages/convex/.env.local', import.meta.url),
-        'utf8',
-      );
-      deployment = envLocal.match(/^CONVEX_DEPLOYMENT=(.+)$/m)?.[1]?.trim();
-    } catch {
-      // no .env.local reachable — fall through to unknown (treated as non-dev)
-    }
+function firstExternalId(batch: string[]): string | undefined {
+  const first = batch[0];
+  if (first === undefined) return undefined;
+  try {
+    return (JSON.parse(first) as { externalId?: string }).externalId;
+  } catch {
+    return undefined;
   }
-  if (!deployment) return { label: 'unknown', isDev: false };
-  return { label: deployment, isDev: deployment.startsWith('dev:') };
+}
+
+/** The transform's `--summary=` sidecar (see `cli.ts`). */
+interface TransformSummaryFile {
+  input?: string;
+  output?: string;
+  total?: number;
+  imported?: number;
+  droppedByType?: number;
+  droppedByAreaFloor?: number;
+  skipped?: number;
+  depthsTagged?: number;
+  densestRing?: { externalId: string; name?: string; vertices: number; cap: number };
+  errors?: { externalId?: string; message: string }[];
 }
 
 function main(): void {
@@ -116,10 +191,26 @@ function main(): void {
     .find((arg) => arg.startsWith('--state='))
     ?.slice('--state='.length)
     .toUpperCase();
+  const flag = (name: string) =>
+    args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
+  const label = flag('label');
+  const manifestPath = flag('manifest');
+  const transformSummaryPath = flag('transform-summary');
+  const filterCommand = flag('filter-command');
+  const mergeManifestFlag = flag('merge-manifest');
+  const runLogEnabled = !args.includes('--no-run-log');
+
   const inputPath = args.find((arg) => !arg.startsWith('--'));
   if (!inputPath) {
     process.stderr.write(
-      'usage: pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]\n',
+      'usage: pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]\n' +
+        '       [--campaign=<id>] [--label=<text>] [--manifest=<manifest.json>]\n' +
+        '       [--transform-summary=<run.json>] [--filter-command=<text>]\n' +
+        '       [--merge-manifest=<merge-manifest.json>] [--no-run-log]\n' +
+        '\n' +
+        'A merge-manifest.json sitting beside <bodies.ndjson> is read automatically: its stages,\n' +
+        "campaign id and label become this run's, so the corpus load carries the same path the\n" +
+        'merge did. --merge-manifest= overrides the location; --no-run-log opts out entirely.\n',
     );
     process.exit(1);
   }
@@ -150,35 +241,291 @@ function main(): void {
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
   const batches = chunk(lines);
+  /**
+   * Every record by its arrival key, so an unresolved verdict can be written back out whole.
+   *
+   * The parse is one the batches already pay for; this only keeps the index.
+   */
+  const byExternalId = new Map<string, string>();
+  for (const line of lines) {
+    const id = firstExternalId([line]);
+    if (id !== undefined) byExternalId.set(id, line);
+  }
+  /** Records the loader declined to write — see the `unresolved` handling below. */
+  const unresolvedRecords: string[] = [];
   process.stderr.write(
     `[etl] loading ${lines.length} bodies in ${batches.length} batch(es)` +
       `${state ? ` (state: ${state})` : ''}…\n`,
   );
 
+  // ---- Run history (N6c F2) -------------------------------------------------------------------
+  // Assembled before the first batch so a killed process still leaves a row naming what it was
+  // doing. Everything here is best-effort: `RunLogger` swallows its own failures by design.
+  const manifest = readJson<ExtractManifest>(manifestPath, 'extract manifest');
+  const transform = readJson<TransformSummaryFile>(transformSummaryPath, 'transform summary');
+  const found = loadMergeProvenance(inputPath, mergeManifestFlag);
+  const merge = found?.manifest;
+  if (found) {
+    process.stderr.write(
+      `[etl] provenance: replaying ${merge?.stages?.length ?? 0} upstream stage(s) from ${found.path}\n`,
+    );
+  }
+
+  const stages: RunStage[] = [];
+  // **The merge's path, replayed verbatim.** Not summarised: an operator looking at the load run
+  // asks the same question as one looking at the merge run — "which files became these rows" — and
+  // a load row that answers it only by cross-reference to another row is a row that answers it
+  // eventually, in a different tab, if the campaign id happened to be passed.
+  stages.push(...(merge?.stages ?? []));
+  if (manifest) stages.push(extractStage(manifest));
+  if (filterCommand) {
+    stages.push({
+      name: 'filter',
+      detail:
+        'osmium tags-filter + export — a superset of what we import; the transform classifies',
+      command: filterCommand,
+      output: transform?.input,
+      counts:
+        transform?.total === undefined
+          ? undefined
+          : [{ name: 'polygonFeatures', value: transform.total }],
+    });
+  }
+  if (transform) {
+    stages.push({
+      name: 'transform',
+      detail:
+        'classify, apply the surface-area floor, simplify to ~5 m (D48), measure shoreline/axes/' +
+        'fetch on the source geometry (D85)',
+      input: transform.input,
+      output: transform.output ?? inputPath,
+      counts: [
+        { name: 'features', value: transform.total ?? 0 },
+        { name: 'imported', value: transform.imported ?? 0 },
+        { name: 'droppedByType', value: transform.droppedByType ?? 0 },
+        // Named even when the sidecar predates the floor (⇒ 0): a run row that doesn't say how many
+        // bodies the floor removed can't be told apart from one where the floor wasn't applied.
+        { name: 'droppedByAreaFloor', value: transform.droppedByAreaFloor ?? 0 },
+        { name: 'skipped', value: transform.skipped ?? 0 },
+        { name: 'osmDepthTagged', value: transform.depthsTagged ?? 0 },
+        ...(transform.densestRing
+          ? [{ name: 'densestRingVertices', value: transform.densestRing.vertices }]
+          : []),
+      ],
+    });
+  }
+
+  // **The campaign and the label are inherited when they weren't given.** An explicit flag always
+  // wins; the fallback exists because the merge already knows both, and a load row that says
+  // "unscoped canonical water" with no campaign cannot be grouped with the pass that produced its
+  // input — which is precisely how the N7 corpus load ended up sitting alone in the list.
+  const campaignId = flag('campaign') ?? merge?.campaignId;
+  const mergedLabel =
+    merge === undefined
+      ? undefined
+      : `N7 unified corpus — the master list${merge.producedAt ? `, merged ${merge.producedAt.slice(0, 10)}` : ''}`;
+
+  const logger = new RunLogger({
+    kind: 'canonical_water',
+    label: label ?? mergedLabel ?? `${state ?? 'unscoped'} canonical water`,
+    campaignId,
+    target,
+    stages,
+    call: convexRun,
+    notes: [
+      ...(found
+        ? [
+            `path replayed from ${found.path}` +
+              (merge?.producedAt ? ` (merged ${merge.producedAt})` : ''),
+          ]
+        : []),
+      ...(transform?.densestRing
+        ? [
+            `densest ring: ${transform.densestRing.externalId} "${transform.densestRing.name ?? ''}" — ` +
+              `${transform.densestRing.vertices} vertices (cap ${transform.densestRing.cap})`,
+          ]
+        : []),
+    ].filter((note) => note.length > 0),
+  });
+  if (runLogEnabled) logger.start();
+
+  // The transform's own skips are failures of this run, itemized — they are the features that
+  // silently never became lakes, and until now they scrolled past in a terminal.
+  for (const err of transform?.errors ?? []) {
+    logger.fail({ stage: 'transform', key: err.externalId, reason: err.message });
+  }
+
   let inserted = 0;
   let updated = 0;
+  let queuedForMerge = 0;
+  let conflicts = 0;
   let applied = 0;
-  try {
-    for (const [index, batch] of batches.entries()) {
+  let failedBatches = 0;
+  let bodiesInFailedBatches = 0;
+  let consecutiveFailures = 0;
+  let aborted: Error | undefined;
+
+  for (const [index, batch] of batches.entries()) {
+    try {
       const result = runImport(
         batch.map((line) => JSON.parse(line)),
         state,
+        campaignId,
       );
       inserted += result.inserted;
       updated += result.updated;
+      queuedForMerge += result.queuedForMerge;
+      conflicts += result.conflicts;
+      // **An ambiguous identity is a failure of this run, itemized.** It is not a batch error — the
+      // other 149 bodies loaded — but it is a body that did not land, and the whole point of the
+      // ledger is that those stop scrolling past in a terminal.
+      for (const u of result.unresolved) {
+        logger.fail({
+          stage: 'load',
+          key: u.externalId,
+          reason: `${u.action}: ${u.reason}`,
+        });
+        // **Kept as records, not just as reasons.** A run-row failure names the body; resolving one
+        // needs its *identity fields*, because the survivor is the stored row whose `externalId`
+        // matches the incoming key. Re-deriving that from a log meant joining a run row back to a
+        // 65 MB artifact by hand, so the loader writes the artifact itself — the same discipline
+        // `dropped.ndjson` applies to the merge.
+        const record = byExternalId.get(u.externalId);
+        if (record) unresolvedRecords.push(record);
+      }
       applied++;
+      consecutiveFailures = 0;
       process.stderr.write(`[etl] batch ${index + 1}/${batches.length} done\n`);
+    } catch (err) {
+      failedBatches++;
+      bodiesInFailedBatches += batch.length;
+      consecutiveFailures++;
+      const message = err instanceof Error ? err.message : String(err);
+      // Name the batch by its first body, so "which lakes did it decline" has an answer that
+      // survives the run — a bare batch index is meaningless once the scratch files are gone.
+      const firstId = firstExternalId(batch);
+      logger.fail({
+        stage: 'load',
+        key: `batch ${index + 1}/${batches.length} (from ${firstId ?? 'unknown'}, ${batch.length} bodies)`,
+        reason: message,
+      });
+      process.stderr.write(
+        `[etl] batch ${index + 1}/${batches.length} FAILED (${consecutiveFailures} in a row): ${message}\n`,
+      );
+      if (consecutiveFailures >= MAX_CONSECUTIVE_BATCH_FAILURES) {
+        aborted = err instanceof Error ? err : new Error(message);
+        break;
+      }
     }
-  } catch (err) {
-    // A batch threw; earlier batches are already committed. Report progress so the operator
-    // can recover (a re-run is safe — importCanonical upserts idempotently) before rethrowing.
-    process.stderr.write(
-      `[etl] FAILED on batch ${applied + 1}/${batches.length}; ${applied} batch(es) applied ` +
-        `(${inserted} inserted · ${updated} updated). Re-running is safe (idempotent upsert).\n`,
-    );
-    throw err;
+
+    if ((index + 1) % 25 === 0) {
+      logger.count('inserted', inserted);
+      logger.count('updated', updated);
+      logger.count('batchesApplied', applied);
+      logger.count('batchesFailed', failedBatches);
+      logger.flush();
+    }
   }
-  process.stderr.write(`[etl] load complete: ${inserted} inserted · ${updated} updated\n`);
+
+  logger.count('bodiesRead', lines.length);
+  logger.count('batchesTotal', batches.length);
+  logger.count('batchesApplied', applied);
+  logger.count('batchesFailed', failedBatches);
+  logger.count('inserted', inserted);
+  logger.count('updated', updated);
+  logger.count('queuedForMerge', queuedForMerge);
+  logger.count('conflicts', conflicts);
+  // The denominator is the *polygon features the filter emitted*, not the bodies the transform
+  // kept — otherwise "dropped as a river" disappears from the ledger and the pass looks perfect.
+  const featuresIn = transform?.total ?? lines.length;
+  logger.coverage({
+    unit: 'polygon features',
+    eligible: featuresIn,
+    covered: inserted + updated,
+    omissions: [
+      {
+        reason: 'not still water (river, stream, generic wetland) — dropped by the classifier',
+        count: transform?.droppedByType ?? 0,
+      },
+      { reason: 'threw during transform (see failures)', count: transform?.skipped ?? 0 },
+      { reason: 'in a batch that failed and was skipped', count: bodiesInFailedBatches },
+      {
+        reason: 'ambiguous identity — two ids resolved to two rows, queued for the dedup review',
+        count: queuedForMerge,
+      },
+      {
+        reason: 'identity conflict — an id resolves to two rows, or no id at all',
+        count: conflicts,
+      },
+    ].filter((o) => o.count > 0),
+  });
+  logger.stage({
+    name: 'load',
+    detail:
+      'waterBodies:importCanonical — idempotent upsert keyed on the catalogue ids (D93), ' +
+      'cell-indexed (N1); merge/conflict verdicts are queued, never performed',
+    input: inputPath,
+    output: target.label,
+    counts: [
+      { name: 'batchesApplied', value: applied },
+      { name: 'batchesFailed', value: failedBatches },
+      { name: 'inserted', value: inserted },
+      { name: 'updated', value: updated },
+      { name: 'queuedForMerge', value: queuedForMerge },
+      { name: 'conflicts', value: conflicts },
+    ],
+  });
+
+  if (aborted) {
+    process.stderr.write(
+      `[etl] ABORTED after ${MAX_CONSECUTIVE_BATCH_FAILURES} consecutive batch failures; ` +
+        `${applied}/${batches.length} batch(es) applied (${inserted} inserted · ${updated} updated). ` +
+        'Re-running is safe (idempotent upsert).\n',
+    );
+    logger.failed(aborted);
+    throw aborted;
+  }
+
+  // **The records the loader declined, as records** — beside the artifact they came from, so
+  // resolving them is a file read rather than a hand-join of a run row against 65 MB of NDJSON.
+  if (unresolvedRecords.length > 0) {
+    const path = join(dirname(inputPath), 'unresolved.ndjson');
+    writeFileSync(path, `${unresolvedRecords.join('\n')}\n`);
+    process.stderr.write(
+      `[etl] ${unresolvedRecords.length} unresolved → ${path}\n` +
+        '[etl]   resolve with `pnpm --filter @skating/etl resolve-merge-duplicates` (dry by default)\n',
+    );
+  }
+
+  const declined = logger.totalFailures;
+  process.stderr.write(
+    `[etl] load complete: ${inserted} inserted · ${updated} updated` +
+      `${queuedForMerge > 0 ? ` · ${queuedForMerge} queued for dedup review` : ''}` +
+      `${conflicts > 0 ? ` · ${conflicts} identity conflict(s)` : ''}` +
+      `${failedBatches > 0 ? ` · ${failedBatches} batch(es) failed and were skipped` : ''}` +
+      `${declined > 0 ? ` · ${declined} itemized failure(s) recorded` : ''}\n`,
+  );
+  // A run with skipped batches did not succeed, even though it got to the end — saying otherwise on
+  // the admin page is the exact dishonesty this table was built to remove.
+  if (failedBatches > 0) {
+    logger.failed(
+      new Error(`${failedBatches} of ${batches.length} batches failed and were skipped`),
+    );
+    // **The one consequence that is not obvious from "some batches failed"** (N7 second audit).
+    // Every body in a skipped batch is missing its `lastCampaignId` stamp, and step 6 deletes
+    // precisely the rows that lack it — so a partial load followed by a prune deletes real lakes
+    // that were never refused by any rule. `pruneNotInCampaign` has a blast-radius guard for the
+    // gross case; this is the specific warning, at the moment the operator can still act on it.
+    process.stderr.write(
+      `[etl] ⚠ DO NOT RUN waterBodies:pruneNotInCampaign after this load. ` +
+        `${bodiesInFailedBatches} bodies in ${failedBatches} skipped batch(es) carry no ` +
+        `lastCampaignId, and the prune would delete them as "not in the master list". ` +
+        `Re-run this load (the upsert is idempotent) until it reports zero failed batches.\n`,
+    );
+    process.exitCode = 1;
+  } else {
+    logger.succeed();
+  }
 }
 
 main();

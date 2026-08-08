@@ -1,3 +1,4 @@
+import { validateStyleMin } from '@maplibre/maplibre-gl-style-spec';
 import { describe, expect, it } from 'vitest';
 import {
   boundsToViewport,
@@ -30,8 +31,10 @@ describe('putInsToFeatureCollection', () => {
 });
 
 describe('buildMapStyle', () => {
+  const WORLD = 'https://example.com/world.pmtiles';
+
   it('wires the Protomaps pmtiles source with the ODbL attribution and themed layers', () => {
-    const style = buildMapStyle(DEMO_PMTILES_URL, MAP_FLAVORS.light);
+    const style = buildMapStyle({ regionUrl: DEMO_PMTILES_URL, flavor: MAP_FLAVORS.light });
     expect(style.version).toBe(8);
     // Native MapLibre reads pmtiles directly via the pmtiles:// scheme (no JS protocol).
     const source = style.sources.protomaps as { url: string; attribution: string };
@@ -41,8 +44,59 @@ describe('buildMapStyle', () => {
   });
 
   it('selects the dark sprite for the dark flavor', () => {
-    expect(buildMapStyle(DEMO_PMTILES_URL, MAP_FLAVORS.dark).sprite).toMatch(/\/dark$/);
-    expect(buildMapStyle(DEMO_PMTILES_URL, MAP_FLAVORS.light).sprite).toMatch(/\/light$/);
+    expect(buildMapStyle({ regionUrl: DEMO_PMTILES_URL, flavor: MAP_FLAVORS.dark }).sprite).toMatch(
+      /\/dark$/,
+    );
+    expect(
+      buildMapStyle({ regionUrl: DEMO_PMTILES_URL, flavor: MAP_FLAVORS.light }).sprite,
+    ).toMatch(/\/light$/);
+  });
+
+  it('adds the whole-planet overview as a second source and masks between the two', () => {
+    const style = buildMapStyle({ regionUrl: DEMO_PMTILES_URL, worldUrl: WORLD });
+    expect(style.sources.world).toMatchObject({ type: 'vector', url: `pmtiles://${WORLD}` });
+    const ids = style.layers.map((l) => l.id);
+    const at = (id: string) => ids.indexOf(id);
+    expect(at('world_earth')).toBeLessThan(at('roads_highway'));
+    expect(at('roads_highway')).toBeLessThan(at('region-mask-land'));
+    expect(at('region-mask-land')).toBeLessThan(at('world_boundaries'));
+  });
+
+  it('carries the region mask as local geojson, so an offline map still stops at the border', () => {
+    const style = buildMapStyle({ regionUrl: 'file:///data/basemap.pmtiles' });
+    const mask = style.sources['region-mask'] as { type: string; data: GeoJSON.FeatureCollection };
+    expect(mask.type).toBe('geojson');
+    expect(mask.data.features.length).toBeGreaterThan(0);
+  });
+
+  it('keeps the mask a thousandth short of opaque, or it cannot hide a label', () => {
+    // Same renderer rule as web: an opaque fill is drawn in an earlier pass than every symbol, so
+    // an opaque mask never covers a label. Mirrored here because the two style builders are twins.
+    const style = buildMapStyle({ regionUrl: DEMO_PMTILES_URL, worldUrl: WORLD });
+    const masks = style.layers.filter((l) => l.id.startsWith('region-mask-'));
+    expect(masks).toHaveLength(3);
+    for (const layer of masks) {
+      const opacity = (layer as unknown as { paint: Record<string, number> }).paint['fill-opacity'];
+      expect(opacity).toBeLessThan(1);
+    }
+  });
+
+  it('validates against the style spec — a bad filter blanks the whole map, not one layer', () => {
+    // Mirrors web. The blank-map regression this catches was found on a device, not in a test.
+    const errors = validateStyleMin(
+      buildMapStyle({
+        regionUrl: DEMO_PMTILES_URL,
+        worldUrl: WORLD,
+        flavor: MAP_FLAVORS.dark,
+      }) as never,
+    );
+    expect(errors.map((e) => `${e.message}`)).toEqual([]);
+  });
+
+  it('renders from a local archive with no overview rather than failing', () => {
+    const alone = buildMapStyle({ regionUrl: 'file:///data/basemap.pmtiles' });
+    expect(alone.sources.world).toBeUndefined();
+    expect(alone.layers.length).toBeGreaterThan(0);
   });
 });
 

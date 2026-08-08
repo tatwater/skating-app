@@ -60,7 +60,7 @@ export function AdminLayout() {
 }
 
 /** Paths only an admin may reach — a moderator is bounced back to the dashboard. */
-const ADMIN_ONLY_PREFIXES = ['/admin/support', '/admin/tuning'];
+const ADMIN_ONLY_PREFIXES = ['/admin/support', '/admin/tuning', '/admin/imports'];
 
 interface NavItem {
   to: string;
@@ -73,10 +73,15 @@ const NAV: NavItem[] = [
   { to: '/admin/flags', label: 'Flags' },
   { to: '/admin/users', label: 'Users' },
   { to: '/admin/water', label: 'Water bodies' },
+  // Its own entry rather than a tab inside Water bodies: this is the *intake* queue — what the merge
+  // could not settle — and burying it one click deep is how 2,010 stored rows went unseen for a
+  // campaign. See `admin.water.review.tsx`.
+  { to: '/admin/water/review', label: 'Intake review' },
   { to: '/admin/features', label: 'Body features' },
   { to: '/admin/recurrence', label: 'Hazard identity' },
   { to: '/admin/support', label: 'Support', adminOnly: true },
   { to: '/admin/tuning', label: 'Tuning', adminOnly: true },
+  { to: '/admin/imports', label: 'Imports', adminOnly: true },
 ];
 
 const linkClass =

@@ -86,7 +86,7 @@ describe('accumulateCsv', () => {
 
   it('skips the two header lines and any malformed row', () => {
     const counts = emptyCounts();
-    expect(accumulateCsv(csv([[1, 0]]) + 'garbage\n,,,\n', counts)).toBe(1);
+    expect(accumulateCsv(`${csv([[1, 0]])}garbage\n,,,\n`, counts)).toBe(1);
   });
 
   it('accumulates across years into one set of counts', () => {

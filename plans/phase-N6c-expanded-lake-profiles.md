@@ -11,9 +11,13 @@
 >   `phase-N6c-1-lake-profiles` — unpushed, undeployed, ETL passes **not yet run**. See
 >   [*§What the N6c-1 build found*](#what-the-n6c-1-build-found).
 > - **N6c-2 — links, cards and observability.** Workstreams **B** (reference links, NWS alerts, the
->   short forecast), **B3a/D** (the seed script), **E** (per-body summary cards) and **F** (record
->   history + import observability). **Not built.** Everything below those headings stands as
->   written except where *§What the N6c-1 build found* corrects it.
+>   short forecast), **B3a/D** (the seed script), **E** (per-body summary cards) and **F1** (the
+>   per-lake activity timeline). **Not built.** Everything below those headings stands as written
+>   except where *§What the N6c-1 build found* corrects it.
+>   — **except F2, which was pulled forward into the data campaign** (founder ask, 2026-08-02) and
+>   is built: see [*§F2 as built*](#f2-as-built--the-run-history). Its own sequencing note asked for
+>   this and was nearly missed: *"F2 wants to exist **before** the N6a depth run, not after — the
+>   first real run is the one whose numbers matter most."*
 >
 > **Status:** 📋 Scoped, not built (2026-07-30). Founder ask, same day. **Workstream E (per-body map
 > summary cards) was folded in on 2026-07-30**, out of the roadmap's deferred design sketches.
@@ -54,6 +58,7 @@ memory of them. **Two specified items had been missed** and are now done; both a
 | **D2** `hasContours` term | ✅ **was dark, now live** | `bathymetryCoverage` table, `scripts/bathymetry coverage` |
 | **D2 / A4** constants surfaced read-only on the Phase 7b tuning page | ✅ **was missed, now done** | `apps/web/src/routes/admin.tuning.tsx` |
 | `centroid` → `representativePoint` rename | ◐ **stage 1 of 2** | blocked on the backfill running |
+| **F2** run history + full-path import observability — *pulled forward from N6c-2* | ✅ | `importRuns` table, `convex/importRuns.ts`, `scripts/run-log`, `/admin/imports` |
 
 **One deliberate deviation from the text.** A5 says the deciles are *"recomputed at the end of each
 state's import"*. `regionStats:recompute` instead recomputes **every state in one pass**, because it
@@ -952,6 +957,112 @@ one, which also gives F1's timeline its ETL half ("HydroLAKES filled this mean o
 Sequencing note: F2 wants to exist **before** the N6a depth run, not after — the first real run is the
 one whose numbers matter most, and it is also the run whose LAGOS-US findings (§5b of that runbook) want
 a durable home.
+
+---
+
+## F2 as built — the run history
+
+*Built 2026-08-02, immediately before the N6c data campaign's first pass, on the founder's ask to
+document failures and show the campaign's stats on the admin dashboard. Three deltas from the text
+above, one of them a genuine addition to the spec.*
+
+**The addition: `stages`, the full path.** The spec asked for *"source, target deployment,
+started/finished, the counts, and a bounded sample of itemized rejects"* — all of which describe the
+**load**. The founder asked instead for the whole path to be visible, which turned out to be the more
+useful shape by some distance, because the interesting questions cross stage boundaries. "The body
+count dropped 4% — did OSM change, or did our classifier?" is answerable only when the polygon count
+going *into* the transform sits beside the body count coming out, under the extract's build date and
+checksum. A run row now carries one entry per step — archived extract (resolved Geofabrik URL, build
+date, size, our sha256, whether the published md5 verified), `osmium` filter (the exact command),
+transform (features in / imported / dropped-by-type / skipped / depth-tagged / densest ring), load
+(batches applied and failed, inserted, updated) — and `/admin/imports` renders them as an ordered
+chain. Nothing downstream had ever read `fetchExtract`'s manifest before; provenance stopped at "an
+OSM extract".
+
+**`campaignId`.** Five state extracts are five loader invocations and five rows, but one canonical
+update, and *"how did the last import go"* is a question about the update. The page totals the most
+recent campaign and — deliberately — never shows it as clean while any member is `failed` or still
+`running`.
+
+**Coverage as a rate with a ledger, added on the founder's second ask.** Every loader already
+computed a coverage percentage and printed it; none of them stored it, and the first cut of F2 kept
+only free-form counts. `coverage` is now structured — `{ unit, eligible, covered, omissions[] }` —
+because **a count cannot be wrong**: "9,981 stamped" reads as complete whether the corpus is 10,000
+or 116,070. The load-bearing part is the ledger: `eligible − covered` minus the stated omissions is
+rendered as **unexplained**, which is the line between *"107,970 lakes are below HydroLAKES' 10 ha
+floor"* (a documented limit) and *"107,970 lakes went missing"* (a bug). A totals-only summary
+renders those identically. The denominator is chosen to keep declines visible — the water ETL counts
+polygon features the filter emitted, not bodies the transform kept, so "dropped as a river" stays in
+the ledger instead of vanishing from it.
+
+**All eight loaders are wired**, not just the water ETL: `canonical_water`, `osm_depths`,
+`admin_areas`, `lake_depth`, `elevation`, `wind_climate`, `bathymetry_coverage`, `region_stats`.
+Each invocation inserts a new row, so re-running one loader leaves the previous run beside it to
+compare against.
+
+**The acquisition steps are logged too**, added on the founder's third ask — and they are the half
+that matters most, because a loader can only ever report on what it was handed. Five more kinds:
+`raw_archive` (a `.raw/` archive populated from a third party, one row per source),
+`r2_mirror` (the push that makes an archive durable), `bathymetry_join`, `bathymetry_build`,
+`bathymetry_tiles`.
+
+Three things this needed that the loader path did not:
+- **A `record` CLI.** `scripts/lib/mirror-r2.sh` is bash shared by both archive mirrors; giving it a
+  Convex client would have meant rewriting it in TypeScript for no other reason. It now pipes one
+  JSON payload to `pnpm --filter @skating/run-log record`. The `rclone copy` outcome is captured with
+  `|| rc=$?` rather than letting `set -e` kill the script, so a **failed** push is recorded as failed
+  instead of vanishing — the outcome most worth knowing is the one that used to leave no trace. Object
+  and byte counts are read back out of the bucket *after* the push, so they describe what is actually
+  there.
+- **`importRuns:restamp`.** `start`/`finish` stamp the server clock, which is right for a live loader
+  and wrong for a historical run. Deliberately a separate mutation, so the ordinary path cannot set
+  its own clock.
+- **`backfill-archives`.** The raw archives were populated 2026-07-31, before this table existed, and
+  the question *"when did we last populate these buckets"* would otherwise have been answered with
+  silence — the same answer it gave before. Ten rows reconstructed from the manifests the fetchers
+  wrote at the time; nothing invented, and what it cannot know it does not claim (a manifest records
+  when a fetch *finished*, so there is no duration and the page shows none). It also re-checks each
+  archived file still exists at its recorded size, and says so in a note when it doesn't — otherwise
+  the reconstruction would cheerfully record a clean historical fetch for files that are gone.
+
+**The gap the join/build wiring closed.** `bathymetry_build`'s drop ledger was the largest blind spot
+in the pipeline: the join matches far more lakes than the build can draw (2,437 matched → 2,022
+drawn), every drop already had a reason attached, and all of it went to a terminal. Both stages now
+itemize every rejection and state coverage with the reasons as omissions.
+
+**Still not covered: `scripts/basemap`.** Bash + rclone pushing tiles to R2; it never writes to
+Convex and populates no part of the data model. The `record` CLI makes it technically possible now —
+the mirrors take exactly that route — so this is a scope decision rather than a limitation.
+
+**A latent bug the wiring surfaced.** `load-depths` guarded on a bare `process.env.CONVEX_DEPLOYMENT`,
+which is unset in normal use (the deployment lives in `packages/convex/.env.local`) — so `isDev` was
+false, the third clause of the guard was false, and **the non-dev refusal never fired**. Replaced
+with the shared `resolveDeployment`, which fails closed.
+
+**A `running` row is a finding, not a transient.** The row is opened *before* the first batch, so a
+loader killed halfway leaves a record naming what it was doing. The UI says *"no finish recorded"*
+rather than *"in progress"*, because the row genuinely cannot tell a live loader from a dead one and
+should not assert either.
+
+**The loader stopped dying on one bad batch.** A five-state run is ~830 `convex run` calls and ~40
+minutes; aborting at batch 700 over one malformed body threw away the wall clock for nothing (the
+upsert is idempotent, so the *work* was never lost). Isolated batch failures are now itemized on the
+run row — named by their first body's `externalId`, so "which lakes did it decline" survives the
+scratch files — and the load continues; **five consecutive** failures still abort, because that is a
+schema mismatch or a dead deployment rather than bad data, and grinding through 600 doomed batches
+would turn a clear error into a slow one. A run that skipped any batch closes as `failed` and exits
+non-zero: getting to the end is not the same as succeeding.
+
+Where it lives: `importRuns` table + `convex/importRuns.ts` (internal writes, admin-only reads);
+`scripts/run-log` (`@skating/run-log` — the shared `RunLogger`, deployment resolution and manifest
+reader every loader wraps its work in); `scripts/etl/run-canonical.sh` (the whole pass as one
+command, so the flags that carry provenance can't be the ones that get dropped);
+`/admin/imports`.
+
+**The one rule the implementation bends to.** Bookkeeping never breaks the thing it books — every
+call the `RunLogger` makes into Convex is swallowed and warned about. An import that died because
+its history row could not be written would be strictly worse than the printed summaries this
+replaces.
 
 ## Out of scope / explicitly not doing
 

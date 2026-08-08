@@ -9,7 +9,8 @@ Pipeline stages:
 
 1. **Fetch** — download a [Geofabrik](https://download.geofabrik.de/) regional extract.
 2. **Filter + convert** — `osmium` + `GDAL`: keep water features, export clean GeoJSON.
-3. **Transform** — TypeScript: classify OSM tags → our `type`, simplify to ~5 m, compute
+3. **Transform** — TypeScript: classify OSM tags → our `type`, drop what's under the
+   surface-area floor (D91: ≥ 5 acres, or ≥ 1 acre with a name), simplify to ~5 m, compute
    `bbox` / on-water `centroid` / `surfaceAreaSqM`, emit **NDJSON**.
 4. **Load** — chunk the NDJSON into the internal `importCanonical` Convex mutation.
 
@@ -108,7 +109,240 @@ someone runs the transform and loader against a new extract.
 
 ---
 
+## Pinning the NHD snapshot (N7)
+
+The second canonical-water catalogue. Same discipline, opposite provenance problem.
+
+```bash
+pnpm --filter @skating/etl archive-nhd              # all five states, smallest first
+pnpm --filter @skating/etl archive-nhd NH           # one
+pnpm --filter @skating/etl archive-nhd --refresh    # re-pull, overwriting
+scripts/etl/mirror-nhd-r2.sh push                   # the durable second copy
+```
+
+Geodatabases land in a gitignored **`.raw-nhd/<state>/`** — separate from `.raw/`, with its own
+`.env.nhd.local` and its own bucket (`skating-raw-nhd`), because the shared mirror body honours an
+inherited `RAW_BUCKET` and one config file for two archives would push a geodatabase into the OSM
+bucket and report success.
+
+**The pin is the freeze date.** Geofabrik rebuilds daily, so the OSM lane chases a moving target.
+**USGS retired NHD on 2023-10-01**; every state geodatabase carries `Last-Modified: 2023-12-27` and
+will never be rebuilt. So the question is not *which build did we get* but *is this still the same
+bytes* — and there is no published checksum to ask with. No `.md5`, no `.sha256` (both 404), and S3's
+`ETag` is a multipart digest rather than a usable md5. So:
+
+- **before** download, the integrity check is the **expected byte count**, pinned in `nhdArchive.ts`
+  from the bucket listing. A truncated geodatabase opens fine in `ogr2ogr` and simply holds fewer
+  lakes — indistinguishable from a real coverage gap once it is in the corpus, so a short read
+  **fails the state** rather than warning.
+- **after** download, our own sha256 is recorded so the next fetch has something to compare against.
+- the publisher's `Last-Modified` is checked against the freeze date. If it ever moves, something
+  republished a retired dataset under us.
+
+The ~29 KB FGDC `.xml` beside each payload is archived too — process lineage and the licence
+statement in USGS's own words. It costs nothing and nobody can reconstruct it once a retired dataset
+comes down.
+
+**Licence:** public domain (US Government work, 17 U.S.C. §105). Attribution — *"U.S. Geological
+Survey, National Hydrography Dataset"* — is courtesy rather than obligation, and is recorded in every
+manifest so it is not an oversight.
+
+### Reading a geodatabase
+
+`ogr2ogr` opens the zip directly; no unpacking needed.
+
+```bash
+Z=/vsizip/$PWD/.raw-nhd/nh/NHD_H_New_Hampshire_State_GDB.zip
+ogrinfo -so "$Z"                 # layer list
+ogrinfo -so "$Z" NHDWaterbody    # the layer we want
+```
+
+**Three things that will catch you out:**
+
+1. **Field names are lower-case in the geodatabase** (`permanent_identifier`, `gnis_name`,
+   `areasqkm`, `reachcode`, `ftype`) and **upper-case from the ArcGIS REST service**
+   (`PERMANENT_IDENTIFIER`). Every measurement taken before this archive existed used the REST
+   spelling.
+2. **The CRS is `NAD83 + NAVD88 height`, a compound 3D CRS** (EPSG:4269 + 5703), and the geometry is
+   3D multipolygon. Reproject explicitly to EPSG:4326 and drop Z; do not assume.
+3. **The state geodatabase is not clipped to the state.** Its `CLIPPOLY` layer is *empty*, and New
+   Hampshire's extract reaches 46.09°N — well into Maine and Québec. The five extracts overlap
+   heavily, so a five-state import **must** dedupe on `permanent_identifier`, and any per-state count
+   taken from a bounding box is measuring the bleed as well as the state.
+
+### Run table
+
+| State | Geodatabase | Bytes | Frozen 2023-12-27 | sha256 | Captured |
+| --- | --- | --- | --- | --- | --- |
+| NH | `NHD_H_New_Hampshire_State_GDB.zip` | ✓ | ✓ | `68c90ef7b0241624…` | 2026-08-03 |
+| MA | `NHD_H_Massachusetts_State_GDB.zip` | ✓ | ✓ | `b529e30886cc475f…` | 2026-08-03 |
+| VT | `NHD_H_Vermont_State_GDB.zip` | ✓ | ✓ | `d35026b193ecf18c…` | 2026-08-03 |
+| ME | `NHD_H_Maine_State_GDB.zip` | ✓ | ✓ | `75b193ccf345fdf6…` | 2026-08-03 |
+| NY | `NHD_H_New_York_State_GDB.zip` | ✓ | ✓ | `dd1bbe1b9b7f63c3…` | 2026-08-03 |
+
+924 MiB across five states, mirrored to `skating-raw-nhd` (15 objects — a zip, an `.xml` and a
+manifest each). Every state verified on both checks: exact byte count, and the freeze date unmoved.
+
+---
+
+## Pinning the 3DHP snapshot (N7)
+
+The third canonical-water catalogue, and **the only one of the three with a future**. NHD was retired;
+3DHP is its successor — elevation-derived hydrography where LiDAR exists, NHD elsewhere — published as
+an annual staged release with quarterly service updates.
+
+```bash
+pnpm --filter @skating/etl archive-3dhp                # download CONUS, clip, archive, delete source
+pnpm --filter @skating/etl archive-3dhp --keep-source  # keep the 11.9 GB (rarely wanted)
+pnpm --filter @skating/etl archive-3dhp --clip-only    # source already on disk; just re-clip
+pnpm --filter @skating/etl measure-3dhp                # file the EDH-coverage snapshot
+pnpm --filter @skating/etl measure-3dhp --dry-run      # print it, write nothing
+scripts/etl/mirror-3dhp-r2.sh push
+```
+
+### Why this one archives a derivative
+
+**It is the single break from the byte-faithful rule in this repo, and the reason is scale.** 3DHP has
+**no per-state and no per-HU4 staging** — it ships CONUS-wide as one **11.9 GB** geodatabase (FY26),
+holding flowlines, catchments and hydrolocations for the entire country, from which we want the
+`waterbody` feature class for five states: on the order of 300 MB.
+
+Mirroring the whole thing would grow R2 by **~12 GB per annual release** in data nothing reads. For a
+yearly cadence that is not a storage question, it is a design error — so:
+
+| | kept | mirrored |
+| --- | --- | --- |
+| `.raw-3dhp/source/` — the 11.9 GB download | **deleted after a successful clip** | never |
+| `.raw-3dhp/source/manifest.json` | yes | never |
+| `.raw-3dhp/waterbody/` — the Northeast clip | yes | **yes** (`skating-raw-3dhp`) |
+
+**What stands in for byte-faithfulness:** the source manifest records the URL, the byte count, the
+publisher's `Last-Modified` and **our sha256 of the full 11.9 GB**, and the clip manifest records that
+sha256 plus **the literal `ogr2ogr` command**. Re-deriving the clip needs the download again;
+re-deriving anything *downstream* of the clip does not — and that is the property the archive
+discipline exists to protect.
+
+A source manifest sitting next to no payload is therefore the **normal** post-run state, not a broken
+archive. The manifest says so in its own `retention` field, because whoever finds it next shouldn't
+have to infer that.
+
+### What 3DHP can and cannot be
+
+**It cannot be the identity spine.** Its waterbody layer carries `id3dhp`, `mainstemid` and `gnisid` —
+and **no `Permanent_Identifier`, no `ReachCode`**. Every reconciliation measurement in the N7 plan
+keys on `Permanent_Identifier`, including the five OSM duplicate pairs and the Maine MIDAS linkage. If
+3DHP wins D92 on geometry, it wins as a `geometrySource` value on a record whose identity is still
+OSM ↔ NHD.
+
+**And a 3DHP polygon identical to its NHD counterpart is expected, not a bug** — 3DHP falls back to
+NHD wherever elevation-derived hydrography does not yet exist. The bake-off must report how often that
+happens, or it claims a three-way comparison it did not make.
+
+The clip envelope (`NORTHEAST_CLIP`) is deliberately **wider** than the OSM lane's New York clip. That
+one keeps the downstate metro out of a *corpus*; this is an *acquisition* boundary, and clipping a
+border lake in half here is unrecoverable without re-downloading 11.9 GB. The floor and the classifier
+narrow later, where redoing it is cheap.
+
+**Measured against NHD over 7,878 lakes in ME/VT/NY (2026-08-03): zero disagreements at or above
+0.1%.** In our five states 3DHP *is* NHD, republished. That is why D92's bake-off is two-way and why
+this lane's real job is the coverage watch below.
+
+### Watching the base map get re-surveyed
+
+`workunitid` is 3DHP's **own provenance label**: the literal string `NHD` where a feature was
+inherited from the retired dataset, an EDH work-unit id where it was traced from LiDAR. So the
+measurement is USGS's claim, not our inference — which matters, because the alternative was diffing
+3DHP's areas against NHD's and calling a divergence a new survey, a proxy that needs both archives and
+cannot tell a re-trace from a typo fix.
+
+`measure-3dhp` tallies it and files a `catalogue_edh_coverage` snapshot, plotted on `/admin`.
+
+As of **2026-08-03** the FY26 archive reads **0 of 274,994** — nothing in our five states has been
+re-surveyed yet. The live service already reads **1,590 of 356,980 (0.445%)**, all of it in western
+Massachusetts (Pontoosuc, Onota, Stockbridge Bowl, Goose Pond, Cobble Mountain Reservoir). **That gap
+is what the annual cadence costs**, measured rather than assumed, and both numbers land in one row so
+the chart can draw the lag as its own line.
+
+---
+
+## The annual refresh runbook
+
+**Two of the three catalogues refresh; one cannot.**
+
+| catalogue | cadence | why |
+| --- | --- | --- |
+| **OSM** (`archive`) | any time — Geofabrik rebuilds daily | live, continuously edited |
+| **3DHP** (`archive-3dhp`) | **annually**, early in the federal fiscal year | new staged release, more EDH each year |
+| **NHD** (`archive-nhd`) | **never** | retired 2023-10-01; the 2023-12-27 snapshot is terminal |
+
+**That asymmetry compounds, and D92's bake-off has to weigh it:** every year that passes, NHD's
+outlines age by a year and 3DHP's do not. A conclusion that "NHD draws the better lake" is a statement
+about 2023 with a shelf life; one about OSM or 3DHP is not.
+
+### Yearly, when USGS publishes the new staged release
+
+1. **Check for it.** `https://prd-tnm.s3.amazonaws.com/?list-type=2&prefix=StagedProducts/Hydrography/3DHP/Annual/GDB/&delimiter=/`
+   lists the release directories. A new `FY<nn>_CONUS_<date>` is the signal.
+2. **Add it to `THREE_DHP_RELEASES` in `src/threeDhpArchive.ts`, at the head.** Take
+   `expectedBytes` and `publishedAt` from the bucket listing. **Add, never replace** — the point of
+   the yearly cadence is being able to say what changed, which needs last year's entry to still be
+   there. There is a test asserting exactly this.
+3. `pnpm --filter @skating/etl archive-3dhp` — downloads (~50 min at 6 MB/s), clips, archives, and
+   deletes the 11.9 GB.
+4. `pnpm --filter @skating/etl measure-3dhp` — files a `catalogue_edh_coverage` snapshot. **Run it
+   every year even while it reads zero**: `/admin` plots the series, and a series that starts at zero
+   is only legible if somebody recorded the zeroes.
+4. `pnpm --filter @skating/etl archive --refresh` — a fresh OSM extract for the same run.
+5. `scripts/etl/mirror-3dhp-r2.sh push` and `scripts/etl/mirror-r2.sh push`.
+6. Re-run the campaign from step 2 of the N7 order (reconcile → bake-off → import → prune → the
+   downstream passes). **Nothing metered runs before the prune** — D100.
+7. Append to the run tables below, and re-record the D92 bake-off result. If the geometry winner
+   changed, that is a `geometrySource` update per lake, not a re-key: D93 exists so this is a field
+   and not a migration.
+
+**Budget it.** Each year's 3DHP clip is ~300 MB in `skating-raw-3dhp` and each OSM refresh replaces
+~960 MB in `skating-raw-lake-osm`. Five years of 3DHP clips still fits the 10 GB free tier; if that
+ever tightens, drop the oldest clips rather than the manifests — the manifests are what make a clip
+re-derivable, and they are kilobytes.
+
+---
+
 ## Running the pipeline
+
+> **The short version.** Two paths, and which one you want depends on whether you are rebuilding
+> the *corpus* or re-importing one *state's OSM extract*.
+>
+> ```bash
+> ./run-corpus.sh n7-20260807            # N7: three catalogues → the master list → the corpus
+> ./run-canonical.sh n6c-20260802        # OSM-only, per state, from the archived .raw/ extracts
+> ./run-canonical.sh n6c-20260802 vt nh  # …or just some
+> ```
+> Each is the manual steps below, in order, with the arguments that carry provenance already
+> wired — the campaign id, and for the OSM path the extract manifest, transform summary and filter
+> command. Both write `importRuns` rows visible at **`/admin/imports`**. Read on if you are doing
+> something the scripts do not cover; the steps are still what they run.
+
+### Provenance is the default, not a flag
+
+A run row that cannot say which files produced it is the failure this whole workstream exists to
+prevent — and it happened anyway, on the pass that matters most. The 2026-08-07 corpus campaign was
+typed by hand as four commands, so the `corpus_merge` run landed with an **empty Path** and the load
+of all 25,050 bodies was labelled *"unscoped canonical water"*. Nothing was missing from disk; the
+loaders were simply never handed it.
+
+So the sidecars are now discovered rather than passed:
+
+| what | where it comes from |
+| --- | --- |
+| `merge` | reads all 17 archive manifests itself and records one stage per file (`osm · vt`, `nhd · VT`, `3dhp · clip`, `gnis · ME`, `mask · five-state`) |
+| `load` | reads `merge-manifest.json` **beside its input NDJSON**, replays the merge's stages, and inherits the campaign id and label |
+| `load-sub-areas` | the same |
+
+`--merge-manifest=<path>` overrides the location if the NDJSON was copied away from the manifest
+that produced it. A missing or unreadable manifest costs provenance, never the import: the pass
+warns and carries on with a hole in the path. A **missing source archive** is different — it becomes
+a stage saying `MISSING`, because a corpus built without one of its four catalogues is a different
+corpus and the run row is the only place that can ever surface.
 
 Work in a scratch dir (gitignored); nothing here is committed except the final DB rows.
 
@@ -164,14 +398,40 @@ osmium export water.osm.pbf \
 cd ..                                   # back to scripts/etl
 pnpm --filter @skating/etl transform .scratch/water.geojsonseq .scratch/bodies.ndjson \
   --depths=.scratch/depths.ndjson       # optional second stream, see step 5
+  --summary=.scratch/transform.json     # optional run summary, see below
 ```
 
-Classifies each feature, simplifies to ~5 m (D48), computes `bbox` / on-water `centroid` /
-`surfaceAreaSqM`, and writes one canonical body per line. A degenerate/bad feature is logged
-and skipped (never aborts the batch); the run summary prints imported / dropped / skipped
-counts and the **densest ring** (so any adaptive coarsening is visible). *(Reference: the
-2026-07-12 Vermont extract yields ~9,970 bodies from ~12,700 polygon features — the remainder
-are deferred rivers/wetland. Total NDJSON ≈ 6 MB.)*
+Classifies each feature, applies the **surface-area floor** (below), simplifies to ~5 m (D48),
+computes `bbox` / on-water `centroid` / `surfaceAreaSqM`, and writes one canonical body per line.
+A degenerate/bad feature is logged and skipped (never aborts the batch); the run summary prints
+imported / dropped / skipped counts and the **densest ring** (so any adaptive coarsening is
+visible). *(Reference: the 2026-07-12 Vermont extract yields ~9,970 bodies from ~12,700 polygon
+features before the floor — the remainder are deferred rivers/wetland. Total NDJSON ≈ 6 MB.)*
+
+**The surface-area floor (D91).** A feature is imported only if it is at least **5 acres**, or
+**named and at least 1 acre**. Nothing under an acre survives either way. The rest are dropped and
+counted as `droppedByAreaFloor`, separately from the classification drop. Expect it to be the largest
+number in the summary — **~4 of every 5 features** — because 64% of a raw extract is under one acre
+(median long axis 50 m: farm dugouts, retention basins, widenings in a brook).
+
+The name tier is a cheap hedge, not a rescue of known lakes: no water body discussed in the
+Google-Group corpus is under five acres, so everything we can name as a destination clears the floor
+on size. It stops at an acre because 98% of sub-acre bodies are unnamed and a name down there asserts
+nothing. There is **no bathymetry clause** — see D91 for why one was built and removed, and which 5
+bodies that knowingly drops.
+
+See [D91](../../plans/01-decisions.md) for why five and not the 25/30/50 that were also on the table,
+why three was rejected, and why a *higher* floor would need a `longAxisM` clause to be safe. Bodies a
+skater creates from a recorded track (Phase 8) never pass through here and are exempt.
+
+The rule itself lives in `@skating/core` (`meetsAreaFloor`), not here, because the ETL is not the
+only thing that applies it — see **[Pruning an already-loaded corpus](#pruning-an-already-loaded-corpus)**.
+
+**`--summary` — the durable copy of what you just watched scroll past (N6c F2).** The same counts,
+plus **every** skipped feature itemized rather than only tallied, as JSON. The loader folds it into
+the `importRuns` row as the `transform` stage, which is what lets `/admin/imports` answer *which
+features did it decline, and why* without re-running the pass. `"3 skipped"` is a number an operator
+can do nothing with.
 
 **`--depths` — OSM depth tags (N6a rung 7).** A second, much smaller NDJSON: the bodies carrying a
 `depth` / `maxdepth` / `depth:mean` tag we can read. The parse is deliberately strict — a bare value is
@@ -203,6 +463,32 @@ so the normal command can't upsert into production by accident — and prints th
 deployment before loading. Confirm the data renders on the read-only web map before touching
 prod. The import is **idempotent** (upsert on `source + externalId`) and **preserves removed
 state**, so re-running (or resuming after a failed batch, which the loader reports) is safe.
+
+**One bad batch no longer ends the run.** A five-state pass is ~830 `convex run` calls and ~40
+minutes; dying at batch 700 over one malformed body threw away the wall clock for nothing, since the
+upsert is idempotent and the work itself was never at risk. An isolated batch failure is now
+recorded — named by its first body's `externalId` — and the load continues. **Five consecutive**
+failures abort, because a streak is a schema mismatch or a dead deployment rather than bad data, and
+600 more doomed batches would turn a clear error into a slow one. A load that skipped any batch
+closes its run row as `failed` and exits non-zero: reaching the end is not the same as succeeding.
+
+**Run history flags (N6c F2).** Pass these and the load writes one `importRuns` row carrying the
+whole path, readable at `/admin/imports`:
+
+| flag | what it adds to the row |
+| --- | --- |
+| `--campaign=<id>` | groups the five state loads as one canonical update |
+| `--label=<text>` | the run's display name (defaults to `<STATE> canonical water`) |
+| `--manifest=.raw/<state>/manifest.json` | the `extract` stage — resolved Geofabrik URL, build date, size, sha256, whether the published md5 verified |
+| `--transform-summary=<transform.json>` | the `filter` + `transform` stages, including every itemized skip |
+| `--filter-command=<text>` | the exact `osmium` invocation, so the path is reproducible rather than merely described |
+| `--merge-manifest=<path>` | the N7 path's whole upstream — **discovered automatically** when a `merge-manifest.json` sits beside the input, so this flag is only for a relocated artifact |
+| `--no-run-log` | opt out; nothing else about the load changes |
+
+`run-canonical.sh` passes the OSM ones; `run-corpus.sh` needs none of them, because the merge writes
+its path and the loader finds it. Bookkeeping is best-effort throughout — a run-history write that
+fails warns and is ignored, never taking the import down with it.
+
 `importCanonical` also **cell-indexes each body** (N1) — one `waterBodyCells` row per grid cell its
 bbox covers, at a rung no finer than the zoom it first draws at — which is what `listInViewport`
 reads. Cells are reconciled, not appended, so a re-import of a redrawn lake moves its rows rather
@@ -232,6 +518,40 @@ since these depths came off the very features the bodies were built from. (The *
 need a geometric join and live in [`scripts/lake-depth`](../lake-depth/README.md).) The D68 ladder runs
 inside the mutation and `osm_tag` is its bottom rung, so a re-run can only fill a measurement nothing
 better has claimed, and it can never overwrite a moderator's reading or rejection.
+
+### Pruning an already-loaded corpus
+
+The floor above governs what a **future** import writes. It cannot reach rows already stored, because
+`importCanonical` upserts and never deletes — so a deployment loaded before 2026-08-02 still holds the
+~100,000 sub-floor bodies the transform now skips. `prune-floor` walks the table and deletes exactly
+those, applying the same `meetsAreaFloor` from `@skating/core` that the transform does (which is why
+the rule lives there and not in `transform.ts` — two copies would drift into a prune that deletes rows
+the next import puts straight back).
+
+```bash
+pnpm --filter @skating/etl prune-floor            # DRY RUN — counts, writes nothing
+pnpm --filter @skating/etl prune-floor --apply    # actually delete
+```
+
+**Dry by default, and dev-only unless `--prod`** — the same two guards the loader has, for a stronger
+reason: this is the only script here that destroys rows. A page is one transaction, so killing it
+mid-run leaves the corpus consistent and the next run resumes from the start of the table.
+
+It **refuses to delete a sub-floor body that anything speaks for**, and reports each kind separately
+so the summary shows why:
+
+| kept as | because |
+| --- | --- |
+| `clearsFloor` | ≥ 5 ac, or named ≥ 1 ac — the rule itself |
+| `areaUnknown` | `surfaceAreaSqM` is absent; "we can't measure it" is not "it's small" |
+| `userCreated` | `source: 'user'` — a skater drew it from a track they recorded (Phase 8) |
+| `curated` | an admin set a `curatedBoost` by hand (D49) |
+| `dedupOrMerged` | a merge pointer or non-`clean` dedup status; reads follow the survivor (D36) |
+| `delisted` | `removedAt` is set — a soft-delist carries a reason, sometimes a takedown (D48) |
+| `attached` | a report, hazard, bounty, favourite, put-in, track, sub-area or gate event names it |
+
+Expect the run to take roughly **20 ms per body** (it reads whole rows, polygons included), so a
+five-state corpus is ~40 minutes per pass.
 
 ### Repairing the spatial index without a re-import
 

@@ -74,37 +74,166 @@ mkdir -p .scratch && cd .scratch
 
 ### 1. Fetch
 
+> ✅ **The `.raw/` archive the note below asked for now exists** (built 2026-08-02). Downloads land in
+> `.raw/<key>/` with a machine-written `manifest.json` — source URL, fetch time, byte count, our
+> sha256, the publisher's checksum where one exists, and **the licence** — and `./mirror-r2.sh push`
+> puts a second copy in the private `skating-raw-lake-depth` bucket. Nothing here needs a run note.
+
 ```bash
-# HydroLAKES polygons (763 MB geodatabase; the shapefile is 820 MB and equivalent)
-curl -L -o HydroLAKES_polys_v10.gdb.zip \
-  https://data.hydrosheds.org/file/hydrolakes/HydroLAKES_polys_v10.gdb.zip
-unzip -q HydroLAKES_polys_v10.gdb.zip
+pnpm --filter @skating/lake-depth archive          # fetches everything fetchable
+pnpm --filter @skating/lake-depth archive --status # what is archived, and what is not runnable yet
+./mirror-r2.sh push                                # second copy, private bucket
 ```
 
-GLOBathy's basic-parameters CSV comes from its figshare collection (the collection also holds 1.4M
-bathymetry TIFFs — **don't download those**, see above). LAGOS-US DEPTH comes from its EDI package page.
-Record the download date and version of each in your run notes so the import is reproducible.
+Two of the three fetch themselves. **LAGOS-US DEPTH does not** — see below.
 
-> 📌 **Before you run this: move these three downloads into a `.raw/` archive first.**
+| source | how | licence |
+| --- | --- | --- |
+| HydroLAKES | direct HTTPS, 762.5 MB | CC-BY 4.0 (publishes no checksum → archived as `unverified`) |
+| GLOBathy | figshare API, 115.6 MB | **CC0**, confirmed by the API; md5 verified against the publisher's |
+| LAGOS-US DEPTH | **manual — a human with a browser** | **unread. You read it and record it.** |
+
+#### LAGOS-US DEPTH — the manual one
+
+**Why it is manual, so nobody wastes an afternoon automating it:** the EDI portal redirects
+`edi.1043.1` to a login page behind a Cloudflare Turnstile CAPTCHA, and PASTA's public API refuses
+both `listDataEntities` and the metadata endpoint for this package (all three checked 2026-08-02).
+There is no unauthenticated path to the bytes. This is also the only **measured** source of the three
+— ~65 compiled agency and university surveys, 17,675 maxima and 6,137 means — so it is worth the
+manual step.
+
+1. Open the package page and sign in / clear the CAPTCHA:
+   **<https://portal.edirepository.org/nis/mapbrowse?packageid=edi.1043.1>**
+
+2. **Read the *Intellectual Rights* statement and copy it.** This is the
+   [open question this phase has never resolved](../../plans/phase-N6a-lake-depth.md#open-questions),
+   and it closes here — by reading it, not by importing and hoping. If it requires attribution, that
+   joins the Open-Meteo / OSM attribution set, which is a solved pattern.
+
+3. Download **four of the package's entities** — not just the data. Under 2.5 MB in total, and three
+   of the four earn their place:
+
+   | entity | why |
+   | --- | --- |
+   | **`lake_depth`** (1.5 MiB) | The data. The only one the ETL parses. **One row per lake** — see the correction below. |
+   | **`data_dictionary_depth`** (8.4 KiB) | The authoritative column names **and units**, which is half of [this phase's open question](../../plans/phase-N6a-lake-depth.md#open-questions). Reading it beats inferring units from a header. |
+   | **`Metadata for LAGOS-US DEPTH v1.0`** (23.1 KiB) | The EML record, carrying the **recommended citation** CC BY obliges us to render, and the rights statement in machine-readable form so a future version's change is diffable rather than remembered. |
+   | **`Guide to LAGOS-US DEPTH v1.0`** (940 KiB) | The methods. The rights statement warns that *"misinterpretation of data may occur if used out of context of the original study"* — this is that context, and 940 KiB is a cheap insurance policy against a depth being read as something it isn't. |
+
+   Skip the **Full Data Package (Zip)** unless you'd rather: it holds the same four, but the archive
+   is byte-faithful by design and a zip means unpacking before anything can read the CSV.
+
+   *(The one thing genuinely not needed is nothing — all four are worth the disk.)*
+
+4. **Check the header row before archiving it.** The parser matches column names
+   case-insensitively against candidate lists and raises a named error listing the headers it *did*
+   find, so a wrong file fails loudly rather than importing zero depths — but checking now saves a
+   round trip:
+
+   | needs | accepted names |
+   | --- | --- |
+   | lake id — **required** | `lagoslakeid`, `lagos_lake_id` |
+   | latitude — **required** | `lake_lat_decdeg`, `lake_latitude`, `latitude`, `lat` |
+   | longitude — **required** | `lake_lon_decdeg`, `lake_longitude`, `longitude`, `lon`, `lng` |
+   | max depth — **at least one of these two** | `lake_maxdepth_m`, `lake_maxdepth`, `maxdepth_m`, `max_depth_m` |
+   | mean depth — *(the other of the two)* | `lake_meandepth_m`, `lake_meandepth`, `meandepth_m`, `mean_depth_m` |
+   | area — optional | `lake_waterarea_ha`, `lake_area_ha`, `lake_totalarea_ha` |
+
+   Depths must be in **metres** and area in **hectares**; the transform converts hectares to m² and
+   assumes metres for depth. If the file you have is in feet, say so rather than converting it by
+   hand — the conversion belongs in the transform where it can be tested.
+
+   If a column is named something not on these lists, **add it to the candidate list** in
+   `src/transform.ts` rather than renaming the third party's file. The file in `.raw/` must stay
+   byte-identical to what they served.
+
+5. Archive it, with the licence:
+
+   ```bash
+   pnpm --filter @skating/lake-depth archive \
+     --adopt=lagos-us-depth \
+     --file=~/Downloads/lake_depth.csv \
+     --file=~/Downloads/data_dictionary_depth.csv \
+     --file=~/Downloads/<metadata-file> \
+     --file=~/Downloads/<guide>.pdf \
+     --licence="<paste the Intellectual Rights statement>" \
+     --url="https://portal.edirepository.org/nis/mapbrowse?packageid=edi.1043.1"
+   ```
+
+   `--file` repeats. Every file is hashed and listed in the manifest; the ETL reads only
+   `lake_depth`, and the companions ride along because they are what make it legible.
+
+   `--licence` is **enforced, not decorative**: `isRunnable()` refuses an archive with no licence
+   recorded, so the ETL cannot quietly run from LAGOS-US while nobody has read its terms. That would
+   close the open question by forgetting it.
+
+6. `./mirror-r2.sh push` — and for this source that matters more than for the other two. It cannot be
+   re-fetched by a script, so the private-bucket copy is the only automatable copy that will ever
+   exist. Losing the laptop copy means a human repeats step 1 by hand.
+
+Every archive step writes an `importRuns` row, so `/admin/imports` shows what was fetched, from where,
+how big, whether the checksum verified, and what licence it came under.
+
+#### What the archived file turned out to be — read before the first run
+
+*Measured against `.raw/lagos-us-depth/lake_depth.csv`, 2026-08-02. Two of this runbook's own claims
+were wrong and one open question is now answered.*
+
+**1. It is one row per LAKE, not per observation.** 17,675 rows, 17,675 distinct `lagoslakeid` —
+**zero to merge**. This doc and [§5b](#5b-check-what-lagos-us-actually-gave-you--one-row-per-lake-or-many)
+both said to expect many rows per lake because the module is *compiled* from ~65 sources, and
+`mergeLagosRows` was built for that. The merge is now a **no-op that still earns its place**: it is
+the check that this stays true across versions, and it prints what it merged either way. If a future
+revision ships per-observation rows, nothing breaks and the count stops being zero.
+
+**2. Every column matched the transform's first candidate.** No guesswork survived contact:
+
+```
+lagoslakeid, lake_namegnis, lake_states, lake_depth_state, lake_lat_decdeg, lake_lon_decdeg,
+lake_maxdepth_m, lake_meandepth_m, lake_waterarea_ha, lake_depth_sourcename,
+lake_depth_sourceurl, lake_maxdepth_effort, lake_meandepth_effort
+```
+
+Units are in the names and match what the transform assumes: `_m` for depths, `_ha` for area. Missing
+values are `NA` (numbers) and `NULL` (strings); `parseNumber` already treats both as absent rather
+than zero, which was the one thing that could have silently imported a corpus of 0 m lakes.
+
+**3. Coverage in our five states — the other half of the open question, now a number.**
+
+| state | lakes | max depth | mean depth |
+| --- | ---: | ---: | ---: |
+| VT | 282 | 282 | 146 |
+| NH | 780 | 780 | 643 |
+| ME | 1,717 | 1,717 | 993 |
+| MA | 319 | 319 | 61 |
+| NY | 1,649 | 1,649 | 1,296 |
+| **total** | **4,747** | **4,747** | **3,139** |
+
+**4,747 of 17,675 rows — 27% of a national dataset in five states**, which confirms the plan's guess
+that New England is LAGOS' home region. Every row carries a max; mean is the sparse one, as expected.
+Nationwide totals are 17,675 max and 6,137 mean, matching the phase doc exactly.
+
+Two columns worth knowing about that nothing reads yet: `lake_depth_sourcename` gives **per-lake
+provenance** (e.g. `MA_DFW_bathymetry_maps`), which is a better `depthSourceNote` than the generic
+rung label, and `lake_maxdepth_effort` / `lake_meandepth_effort` record how the number was obtained.
+
+### 1b. Unpack — what the archives actually contain
+
+`.raw/` is byte-faithful, so both bulk sources are still zipped. Unpack into `.scratch/`, which is
+disposable by design:
+
+```bash
+cd scripts/lake-depth && mkdir -p .scratch && cd .scratch
+unzip -o -q ../.raw/hydrolakes/HydroLAKES_polys_v10.gdb.zip   # → HydroLAKES_polys_v10.gdb + TechDoc
+unzip -o -q ../.raw/globathy/GLOBathy_basic_parameters.zip    # → GLOBathy_basic_parameters/
+```
+
+> ⚠️ **GLOBathy is not one CSV.** The zip holds **17 files**: fifteen 100K-lake splits, a README, and
+> `GLOBathy_basic_parameters(ALL_LAKES).csv` — the whole 1,427,688 rows in one 294 MB file. **Use
+> `(ALL_LAKES)`**; the splits are the same data cut up, and globbing `*.csv` double-counts every lake.
+> Earlier text here said "GLOBathy's basic-parameters CSV", singular, which is why this warning exists.
 >
-> "Record the download date in your run notes" is provenance by human memory, and it is the weakest
-> part of this runbook. [`scripts/bathymetry`](../bathymetry/README.md) (N6b) solved the same problem
-> properly and the pattern is worth adopting here rather than reinventing:
->
-> - **`.raw/`** — exactly what the third party served, plus a machine-written `manifest.json` carrying
->   the source URL, fetch timestamp, sha256, byte + record counts, and the licence text. Never deleted.
-> - **`.scratch/`** — everything derived. Safe to `rm -rf`, because it rebuilds from `.raw/` with no
->   network.
-> - **`mirror-r2.sh push`** — a second copy in a private R2 bucket, so the archive isn't one laptop.
-> - **`verify`** — two cheap requests that say whether the source republished under you.
->
-> This matters more here than it did for the state agencies. HydroLAKES is a **763 MB** download and
-> LAGOS-US' licence and column names are [an open question this ETL has never resolved](../../plans/phase-N6a-lake-depth.md#open-questions)
-> — which means the first real run is also a debugging session, and every iteration of it currently
-> costs a re-download. Do this before the run, not after: afterwards the incentive disappears and the
-> download date goes back to living in someone's memory.
->
-> Deliberately **not** done as part of N6b, to keep a gated ETL out of that phase's diff.
+> The transform reads the file in one go, so give it room: `NODE_OPTIONS=--max-old-space-size=10240`.
 
 ### 2. Convert + clip (GDAL)
 
@@ -115,9 +244,15 @@ the same region the water ETL covers (NY upstate through Maine):
 ogr2ogr -f GeoJSONSeq hydrolakes.geojsonseq \
   HydroLAKES_polys_v10.gdb \
   -clipsrc -80.0 40.5 -66.8 47.6 \
-  -select Hylak_id,Lake_name,Lake_area,Depth_avg,Vol_src \
+  -select Hylak_id,Lake_name,Lake_area,Depth_avg,Vol_src,Shore_len \
   HydroLAKES_polys_v10
 ```
+
+> ⚠️ **`Shore_len` was missing from this `-select` until 2026-08-02, and that silently disabled D85's
+> shoreline cross-check.** The transform reads `feature.properties.Shore_len`; the clip never selected
+> it, so the value was always `undefined` and the comparison never ran — the first real run reported
+> `0 comparable, 0 disagreed`, which reads exactly like "we agreed everywhere". The check is free and
+> its whole point is catching a broken join, so it is worth the extra column.
 
 > `-clipsrc` cuts geometry at the box edge, which is fine here: the transform only needs a point inside
 > the lake and the **reported** `Lake_area` (which it prefers over recomputing from the clipped polygon,
@@ -135,9 +270,24 @@ wc -l hydrolakes.geojsonseq       # expect a few thousand for the region
 cd ..
 pnpm --filter @skating/lake-depth transform --out=.scratch/depths.ndjson \
   --hydrolakes=.scratch/hydrolakes.geojsonseq \
-  --globathy=.scratch/GLOBathy_basic_parameters.csv \
-  --lagos=.scratch/lagos_depth.csv
+  --globathy='.scratch/GLOBathy_basic_parameters/GLOBathy_basic_parameters(ALL_LAKES).csv' \
+  --lagos=.raw/lagos-us-depth/lake_depth.csv \
+  --states=VT,NH,ME,MA,NY
 ```
+
+> **Always pass `--states`.** LAGOS-US is nationwide and we cover five states, so **12,928 of its
+> 17,675 rows can never match anything** — and every one still costs a spatial query in the load.
+> Dropping them here does two things:
+>
+> 1. **Makes the coverage rate a rate.** The first run reported "21.2% matched" against a denominator
+>    three quarters of which was never eligible. A rate measured against lakes that could never match
+>    is not a rate, it is arithmetic.
+> 2. **Cuts about a third off the load's wall clock** — roughly 3.5 h → 2 h.
+>
+> The filter reads LAGOS' own `lake_states` column (e.g. `"NH-VT"`), so a border lake is kept if it
+> names *any* supported state. Dropped rows are reported as `outOfRegion`, named separately from
+> `skipped`, because being somewhere we don't cover is a scope boundary rather than a failure.
+> HydroLAKES needs no equivalent: its extract is already clipped geographically by `ogr2ogr`.
 
 Any subset of the three flags is valid — they're independent, and the ladder is enforced server-side, so
 load order never changes the result. (One exception, and it's refused rather than silently empty:
@@ -146,15 +296,55 @@ load order never changes the result. (One exception, and it's refused rather tha
 The run summary prints per-source read counts, how many records carry a mean vs a max, and every skip with
 its reason (capped at 20, with the withheld count stated).
 
+> **What the first real run printed (2026-08-02), so the next one has something to compare against:**
+>
+> ```
+> read 22585 HydroLAKES · 1427688 GLOBathy · 17675 LAGOS-US
+> emitted 40260 records (28722 with a mean · 40260 with a max) · 1405103 skipped
+> ```
+>
+> **The 1.4M skips are the expected shape, not a failure.** GLOBathy is global and `--hydrolakes` is
+> clipped to our bbox, so every GLOBathy row without a polygon in the clip is skipped by design — the
+> reason line says exactly that. If that number ever comes out *small*, the clip is wrong.
+>
+> Source mix of the 40,260: max from GLOBathy 22,585 + LAGOS-US 17,675; mean from HydroLAKES 22,585
+> (of which only **279 are `hydrolakes_reported`** — the rest modelled) + LAGOS-US 6,137. That 279 is
+> worth knowing: splitting the reported rung out of HydroLAKES is nearly free, and it is nearly empty.
+>
+> Spot-check that survived: Lake Ontario (`hylak/7`) came through at 84.8 m mean / 244 m max against
+> published ~86 m / 244 m.
+
 ### 4. Load into Convex (dev first)
 
 ```bash
 pnpm --filter @skating/lake-depth load .scratch/depths.ndjson
 ```
 
-Batches of 25 lakes — sized against the mutation **read** cap rather than the byte budget that binds the
-other loaders, since each lake costs a cell scan plus a few body reads. It **refuses a non-dev target
-unless you pass `--prod`**, and prints the resolved deployment first.
+Batches of **8** lakes, tunable with `--batch=N`. It **refuses a non-dev target unless you pass
+`--prod`**, and prints the resolved deployment first.
+
+> ⚠️ **The batch size is bounded by BYTES, not by reads — this cost the first run.**
+>
+> The original 25 was reasoned against Convex's 4,096-**read** cap, on the grounds that the input
+> records are tiny (a point and two numbers). They are, and it doesn't matter: **what the mutation
+> reads is the corpus.** Each lake pulls every listed body whose bbox covers its neighbourhood, and
+> Convex also caps a transaction at **16 MB of reads**. A body averages 1.8 KB — but the N1 cell index
+> files large bodies at coarse rungs, so a lookup anywhere near Champlain or Ontario drags a ~300 KB
+> polygon along with it. Twenty-five such lookups in one transaction blew the cap at batch 8 of 1,611
+> on 2026-08-02.
+>
+> **8 is marginal, not safe — measured on the real run.** It completed with zero failures, but Convex
+> warned on five batches, peaking at **16.2 MB against the 16.8 MB ceiling**. Within 4%. Use
+> **`--batch=4` for a first run against prod**: it roughly doubles a ~3-hour job, and there a
+> half-loaded pass costs more than the wall clock does.
+>
+> If you see `Too many bytes read in a single function execution`, lower `--batch`. The failing lakes
+> are named individually on the run row at `/admin/imports`, so they can be retried at `--batch=1`
+> without redoing the rest.
+>
+> **A failed batch no longer ends the run** (it did on 2026-08-02, taking 1,603 loadable batches with
+> it). Isolated failures are recorded and skipped; five consecutive aborts, on the theory that a
+> streak is systemic rather than a dense neighbourhood.
 
 **Re-running is safe and converges.** The D68 ladder lives inside the mutation: an `operator` value is
 never overwritten, a worse rung never displaces a better one per measurement, and an equal rung *does*

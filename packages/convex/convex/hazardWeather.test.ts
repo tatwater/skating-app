@@ -37,7 +37,8 @@ async function seedBody(
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Test Lake',
-      type: 'lake' as const,
+      searchText: 'Test Lake',
+      type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: square(0.05),
       bbox: { minLat: 43.95, minLng: -72.05, maxLat: 44.05, maxLng: -71.95 },

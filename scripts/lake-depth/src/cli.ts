@@ -5,7 +5,7 @@
  *
  *   pnpm --filter @skating/lake-depth transform --out=depths.ndjson \
  *     [--hydrolakes=hydrolakes.geojsonseq] [--globathy=GLOBathy_basic_parameters.csv] \
- *     [--lagos=lagos_depth.csv]
+ *     [--lagos=lagos_depth.csv] [--states=VT,NH,ME,MA,NY]
  *
  * Any subset is valid — the sources are independent (GLOBathy excepted, which needs HydroLAKES for its
  * geometry), so you can load LAGOS-US first and add the modelled rungs later. The D68 ladder is enforced
@@ -40,6 +40,11 @@ function main(): void {
   const hydroPath = flag(args, 'hydrolakes');
   const globathyPath = flag(args, 'globathy');
   const lagosPath = flag(args, 'lagos');
+  // Two-letter codes, comma-separated. Drops LAGOS rows naming none of them — see `TransformInput`.
+  const states = flag(args, 'states')
+    ?.split(',')
+    .map((st) => st.trim().toUpperCase())
+    .filter(Boolean);
 
   if (!hydroPath && !globathyPath && !lagosPath) {
     process.stderr.write(
@@ -61,6 +66,7 @@ function main(): void {
     hydroLakes: hydroPath ? readGeoJsonSeq(hydroPath) : undefined,
     globathy: globathyPath ? parseGlobathy(readFileSync(globathyPath, 'utf8')) : undefined,
     lagos: lagosPath ? parseLagosDepth(readFileSync(lagosPath, 'utf8')) : undefined,
+    states,
   });
 
   const ndjson = records.length > 0 ? `${records.map((r) => JSON.stringify(r)).join('\n')}\n` : '';
@@ -75,6 +81,14 @@ function main(): void {
       `[lake-depth] emitted ${summary.emitted} records (${withMean} with a mean · ${withMax} with a max) · ` +
       `${summary.skipped} skipped\n`,
   );
+  // Named separately from `skipped`, because it is a scope boundary rather than a failure: these
+  // lakes are fine, they are simply somewhere we do not cover.
+  if (summary.outOfRegion) {
+    process.stderr.write(
+      `[lake-depth] ${summary.outOfRegion} LAGOS-US lake(s) dropped for naming no supported state ` +
+        `(--states=${states?.join(',')})\n`,
+    );
+  }
   if (summary.lagosMerged > 0 || summary.lagosContested > 0) {
     // Step 0 of the runbook is "find out whether LAGOS-US even has duplicate rows". This line is the
     // answer, printed by the run that first has the file in hand.

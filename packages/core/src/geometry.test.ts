@@ -5,7 +5,9 @@ import {
   type BBox,
   type BodyCandidate,
   bboxIntersects,
+  bodiesCoveringPoint,
   bufferedLineOverlap,
+  containedFraction,
   destinationPoint,
   distanceToPolygonMeters,
   expandBBox,
@@ -447,6 +449,86 @@ describe('nearestBodyForPoint (shared point→lake resolver)', () => {
     ];
     // (0,0) is inside both (distance 0 each) → the smaller-area body wins.
     expect(nearestBodyForPoint({ lat: 0, lng: 0 }, nested, 300)).toBe('small');
+  });
+});
+
+describe('bodiesCoveringPoint (survey→lake resolver)', () => {
+  const big = rect({ minLat: -0.001, minLng: -0.001, maxLat: 0.001, maxLng: 0.001 });
+  const small = rect({ minLat: -0.0003, minLng: -0.0003, maxLat: 0.0003, maxLng: 0.0003 });
+  const nested: BodyCandidate<string>[] = [
+    { ref: 'small', polygon: small, surfaceAreaSqM: surfaceAreaSqM(small) },
+    { ref: 'big', polygon: big, surfaceAreaSqM: surfaceAreaSqM(big) },
+  ];
+
+  it('returns the whole containment chain, largest first — the opposite of nearestBodyForPoint', () => {
+    // The bug this exists for: (0,0) is inside both, and a survey belongs to the LAKE, not its bay.
+    expect(bodiesCoveringPoint({ lat: 0, lng: 0 }, nested, 0).map((h) => h.ref)).toEqual([
+      'big',
+      'small',
+    ]);
+    expect(nearestBodyForPoint({ lat: 0, lng: 0 }, nested, 0)).toBe('small');
+  });
+
+  it('is empty when nothing covers the point and the buffer cannot reach', () => {
+    expect(bodiesCoveringPoint({ lat: 0, lng: 0.01 }, nested, 25)).toEqual([]);
+  });
+
+  it('ranks a body that truly contains the point ahead of a larger one reached only by the buffer', () => {
+    // Containment is a stronger claim than proximity, so a 25 m reach never outranks being inside.
+    const aside = rect({ minLat: 0.0004, minLng: -0.002, maxLat: 0.003, maxLng: 0.002 });
+    const mixed: BodyCandidate<string>[] = [
+      { ref: 'contains', polygon: small, surfaceAreaSqM: surfaceAreaSqM(small) },
+      { ref: 'nearby-bigger', polygon: aside, surfaceAreaSqM: surfaceAreaSqM(aside) },
+    ];
+    const hits = bodiesCoveringPoint({ lat: 0, lng: 0 }, mixed, 300);
+    expect(hits[0]?.ref).toBe('contains');
+    expect(hits[0]?.distance).toBe(0);
+  });
+
+  it('reaches a body just outside the polygon once a buffer is allowed', () => {
+    // The 7 real lakes the zero buffer rejected sat 0–9 m outside a correctly-named shoreline.
+    // ~55 m past `big`'s eastern edge — outside it, not merely on the boundary.
+    const justOutside = { lat: 0, lng: 0.0015 };
+    expect(bodiesCoveringPoint(justOutside, nested, 0)).toEqual([]);
+    // Both are within 300 m, so both come back — but ordered by distance, so the nearer (and here
+    // larger) body leads. Nothing contains the point, so the containment-first rule doesn't bite.
+    const reached = bodiesCoveringPoint(justOutside, nested, 300);
+    expect(reached.map((h) => h.ref)).toEqual(['big', 'small']);
+    expect(reached[0]?.distance).toBeLessThan(reached[1]?.distance ?? 0);
+  });
+});
+
+describe('containedFraction (does this body hold the survey?)', () => {
+  const lake = rect({ minLat: -0.01, minLng: -0.01, maxLat: 0.01, maxLng: 0.01 });
+  const bay = rect({ minLat: -0.01, minLng: -0.01, maxLat: -0.008, maxLng: -0.008 });
+
+  /** `n` points spread across a square — a survey's sampled measurements. */
+  const spread = (half: number, n = 20): LatLng[] =>
+    Array.from({ length: n }, (_, i) => ({
+      lat: (((i + 0.5) / n) * 2 - 1) * half * 0.9,
+      lng: ((((i * 7) % n) / n) * 2 - 1) * half * 0.9,
+    }));
+
+  it('is ~1 for a survey of the lake and ~0 for the bay inside it', () => {
+    // The Moosehead case: ranking these by area had to ASSUME bigger-is-righter; this measures it.
+    const s = spread(0.01);
+    expect(containedFraction(s, lake)).toBeGreaterThan(0.95);
+    expect(containedFraction(s, bay)).toBeLessThan(0.15);
+  });
+
+  it('is ~1 for a SPARSE survey of the right lake — the 68-lake regression', () => {
+    // Four points clustered in the middle of a lake 100x their spread. An area comparison called
+    // this a 1,159x mismatch; a fraction cannot, because it never asks how big anything is.
+    expect(containedFraction(spread(0.0001, 4), lake)).toBe(1);
+  });
+
+  it('is ~0 for a cloud spread far beyond any lake, however many points it carries', () => {
+    // Two Maine MIDAS ids hold 30% of the state's soundings across 348 km and are not lakes.
+    expect(containedFraction(spread(3, 200), lake)).toBeLessThan(0.05);
+  });
+
+  it('returns 0 for an empty sample, which callers must read as unknown', () => {
+    expect(containedFraction([], lake)).toBe(0);
   });
 });
 

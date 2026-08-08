@@ -5,3 +5,9 @@
 # Intermediate artifacts if run outside .scratch/
 *.osm.pbf
 *.osm.pbf.md5
+
+# The Census TIGER state-boundary archive (N7). Same rule as the other packages' `.raw/`: not
+# disposable scratch but the thing that makes the five-state region mask reproducible. Unlike an OSM
+# extract it is a pinned annual vintage, so re-fetching next year yields DIFFERENT boundaries unless
+# `TIGER_STATES` is bumped deliberately. 10 MB of third-party data — mirror it, don't commit it.
+.raw/

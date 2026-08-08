@@ -154,6 +154,7 @@ function LakeEditor() {
         </div>
 
         <div className="flex flex-col gap-4 overflow-y-auto">
+          <NameTool body={body} onResult={setBanner} />
           <ProminenceTool body={body} onResult={setBanner} />
           <SubAreaTool
             waterBodyId={waterBodyId}
@@ -213,6 +214,119 @@ function ToolCard({ title, children }: { title: string; children: React.ReactNod
         {children}
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Which publisher's name this body displays (N7).
+ *
+ * **A picker, not a text field, and that is the design rather than a shortcut.** `NAME_SOURCE_RANK`
+ * stores the most authoritative name — `gnis > nhd > 3dhp > osm` — and that costs 463 bodies their
+ * local one: Auburn's own water supply is stored as `The Basin`, NHD's `gnis_name`, while everyone
+ * calls it `Lake Auburn`. The decision here is *which claim wins*, so offering free text would
+ * invite inventing a fourth name that no publisher can be pointed at, in the one field whose whole
+ * value is that every name on it is traceable.
+ *
+ * **Choosing does not lose the other name.** `searchText` is rebuilt from the winner plus every
+ * remaining claim, so both stay findable — what displays and what is searchable are different
+ * questions. The caption below says so, because a moderator hesitating over "will this break
+ * search?" is exactly the hesitation that leaves 463 rows unworked.
+ */
+function NameTool({
+  body,
+  onResult,
+}: {
+  body: {
+    _id: string;
+    name: string;
+    nameClaims?: { source: string; value: string }[];
+    confidence?: { name?: string };
+  };
+  onResult: SetBanner;
+}) {
+  const setName = useMutation(api.waterBodies.setWaterBodyName);
+  const claims = body.nameClaims ?? [];
+  const overridden = claims.some((c) => c.source === 'user');
+  // One row per distinct name, carrying every publisher that asserted it — the dedupe is here rather
+  // than in the mutation because the *storage* wants the provenance and the *reader* wants the choice.
+  const options = new Map<string, string[]>();
+  for (const c of claims) {
+    const key = c.value;
+    const sources = options.get(key);
+    if (sources) sources.push(c.source);
+    else options.set(key, [c.source]);
+  }
+
+  // A body every publisher agrees on has nothing to decide, and a card offering one button is noise
+  // on 24,000 of 25,136 rows.
+  if (options.size < 2) return null;
+
+  return (
+    <ToolCard title="Name">
+      <div className="flex flex-col gap-1.5">
+        {[...options].map(([value, sources]) => {
+          const isCurrent = value === body.name;
+          return (
+            <div key={value} className="flex items-center justify-between gap-2">
+              <span className="text-sm">
+                <span
+                  className={isCurrent ? 'font-medium text-foreground' : 'text-foreground-muted'}
+                >
+                  {value}
+                </span>{' '}
+                <span className="font-mono text-foreground-muted text-xs">
+                  {sources.join(' · ')}
+                </span>
+              </span>
+              {isCurrent ? (
+                <span className="font-mono text-foreground-muted text-xs uppercase">
+                  {overridden ? 'chosen' : 'ranked'}
+                </span>
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: value });
+                      onResult({ tone: 'ok', text: `Now displaying "${value}".` });
+                    } catch (err) {
+                      onResult({ tone: 'error', text: errorText(err) });
+                    }
+                  }}
+                >
+                  Use this
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-foreground-muted text-sm">
+        Every name here stays searchable whichever one displays. A choice overrides the catalogue
+        ranking and survives the next import.
+        {overridden ? (
+          <>
+            {' '}
+            <button
+              type="button"
+              className="underline underline-offset-2"
+              onClick={async () => {
+                try {
+                  await setName({ waterBodyId: body._id as Id<'waterBodies'>, name: null });
+                  onResult({ tone: 'ok', text: 'Back to the catalogue ranking.' });
+                } catch (err) {
+                  onResult({ tone: 'error', text: errorText(err) });
+                }
+              }}
+            >
+              Clear the override
+            </button>
+            .
+          </>
+        ) : null}
+      </p>
+    </ToolCard>
   );
 }
 

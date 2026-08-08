@@ -21,11 +21,11 @@
  * Subprocess + stream glue; excluded from coverage like the other loaders here.
  */
 
-import { execFileSync } from 'node:child_process';
-import { createReadStream, existsSync, readFileSync } from 'node:fs';
+import { createReadStream, existsSync, statSync } from 'node:fs';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
+import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 
 const CONTOURS_FILE = fileURLToPath(
   new URL('../.scratch/build/contours.geojsonl', import.meta.url),
@@ -53,30 +53,12 @@ async function contouredIds(): Promise<string[]> {
   return [...ids].sort();
 }
 
-function resolveDeployment(): { label: string; isDev: boolean } {
-  if (process.env.CONVEX_DEPLOY_KEY)
-    return { label: 'CONVEX_DEPLOY_KEY (target unknown)', isDev: false };
-  let deployment = process.env.CONVEX_DEPLOYMENT;
-  if (!deployment) {
-    try {
-      const envLocal = readFileSync(
-        new URL('../../../packages/convex/.env.local', import.meta.url),
-        'utf8',
-      );
-      deployment = envLocal.match(/^CONVEX_DEPLOYMENT=(.+)$/m)?.[1]?.trim();
-    } catch {
-      // unreachable .env.local — treated as non-dev
-    }
-  }
-  if (!deployment) return { label: 'unknown', isDev: false };
-  return { label: deployment, isDev: deployment.startsWith('dev:') };
-}
-
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const allowNonDev = args.includes('--prod');
   const dryRun = args.includes('--dry-run');
   const allowEmpty = args.includes('--allow-empty');
+  const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
 
   if (!existsSync(CONTOURS_FILE)) {
     process.stderr.write(
@@ -117,39 +99,92 @@ async function main(): Promise<void> {
   for (let i = 0; i < ids.length; i += BATCH) batches.push(ids.slice(i, i + BATCH));
   if (batches.length === 0) batches.push([]);
 
+  // Run history (N6c F2). This run is a *replacement* — the first batch clears the old set — so a
+  // pass that dies halfway leaves coverage genuinely truncated, and a row saying so is the only
+  // thing standing between that and a silently smaller `hasContours` population.
+  const logger = new RunLogger({
+    kind: 'bathymetry_coverage',
+    label: 'bathymetry coverage (D2 hasContours)',
+    campaignId,
+    target,
+    call: convexRun,
+    stages: [
+      {
+        name: 'scan',
+        detail: 'distinct bodyIds named by the built contour tileset',
+        input: CONTOURS_FILE,
+        bytes: statSync(CONTOURS_FILE).size,
+        counts: [{ name: 'contouredBodies', value: ids.length }],
+      },
+    ],
+  });
+  logger.start();
+
   let cleared = 0;
   let inserted = 0;
-  for (const [i, batch] of batches.entries()) {
-    const out = execFileSync(
-      'pnpm',
-      [
-        '--filter',
-        '@skating/convex',
-        'exec',
-        'convex',
-        'run',
+  try {
+    for (const [i, batch] of batches.entries()) {
+      const parsed = convexRun<{ cleared?: number; inserted?: number }>(
         'waterBodies:importContourCoverage',
-        JSON.stringify({
+        {
           source: 'osm',
           externalIds: batch,
           // Only the first batch clears, which is what makes the whole run a replacement.
           ...(i === 0 ? { clearFirst: true } : {}),
-        }),
-      ],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 64 * 1024 * 1024 },
-    );
-    const parsed = JSON.parse(out.trim().match(/\{[\s\S]*\}/)?.[0] ?? '{}') as {
-      cleared?: number;
-      inserted?: number;
-    };
-    cleared += parsed.cleared ?? 0;
-    inserted += parsed.inserted ?? 0;
+        },
+      );
+      cleared += parsed.cleared ?? 0;
+      inserted += parsed.inserted ?? 0;
+    }
+  } catch (err) {
+    // No continue-on-error here, unlike the other loaders: a replacement that skips a batch leaves
+    // the corpus in a state no re-run can distinguish from a smaller tileset. Fail loudly instead.
+    logger.fail({
+      stage: 'write',
+      reason: err instanceof Error ? err.message : String(err),
+    });
+    logger.count('inserted', inserted);
+    logger.count('cleared', cleared);
+    logger.failed(err, [
+      'PARTIAL REPLACEMENT — the old coverage set was cleared and not fully rewritten. Re-run before trusting hasContours.',
+    ]);
+    throw err;
   }
 
   process.stderr.write(
     `[coverage] complete: ${inserted} bodies stamped, ${cleared} stale rows cleared\n` +
       '[coverage] re-run the N6c re-score (waterBodies:backfillCells) for this to reach the map.\n',
   );
+
+  logger.count('contouredBodies', ids.length);
+  logger.count('inserted', inserted);
+  logger.count('cleared', cleared);
+  logger.stage({
+    name: 'write',
+    detail:
+      'waterBodies:importContourCoverage — a full replacement; the first batch clears the previous set',
+    output: target.label,
+    counts: [
+      { name: 'inserted', value: inserted },
+      { name: 'cleared', value: cleared },
+    ],
+  });
+  // A contoured body the corpus has no row for is the interesting omission here: it means the
+  // tileset draws a lake we do not have, which is a join or an id-scheme problem, not a gap.
+  logger.coverage({
+    unit: 'contoured bodies',
+    eligible: ids.length,
+    covered: inserted,
+    omissions: [
+      {
+        reason: 'named by the tileset but matched no body in the corpus',
+        count: ids.length - inserted,
+      },
+    ].filter((o) => o.count > 0),
+  });
+  logger.succeed([
+    'hasContours does not reach the map until the N6c re-score (waterBodies:backfillCells) runs.',
+  ]);
 }
 
 main().catch((err: unknown) => {

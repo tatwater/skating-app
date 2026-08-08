@@ -278,6 +278,98 @@ infrastructure, not a stand-in — which is a straight reversal of what the regi
 
 ---
 
+## What the first real run found — 2026-08-02
+
+*The gate lifted, the archive was built, and the ETL ran for the first time. Four corrections, three of
+them to things that had been written down confidently and never executed.*
+
+**1. The load batch was sized against the wrong limit.** `MAX_BATCH_COUNT = 25` carried a comment
+saying bytes "never bind here" because the input records are tiny — a point and two numbers. True, and
+beside the point: **what the mutation reads is the corpus, not the input.** Convex caps a transaction
+at **16 MB of reads** as well as 4,096 reads, a body averages 1.8 KB, and the N1 cell index files large
+bodies at coarse rungs — so a lookup anywhere near Champlain or Ontario drags a ~300 KB polygon in.
+Twenty-five of those blew the byte cap at batch 8 of 1,611. Now 8, tunable with `--batch=N`. This is
+the same class of finding as N1's original geospatial blowout, arrived at from the opposite direction.
+
+**2. The loader rethrew on the first failed batch**, so one dense neighbourhood killed a run with
+1,603 loadable batches behind it. The water ETL and admin-areas loaders had already learned this
+today; this one hadn't been updated to match. Isolated failures are now recorded and skipped, five
+consecutive aborts, and skipped batches are itemized **by lake key** — a batch index is meaningless
+once the scratch file is gone, and the named lakes are exactly what a `--batch=1` retry needs.
+
+**3. GLOBathy is not "the basic-parameters CSV".** The zip holds 17 files: fifteen 100K-lake splits,
+a README, and `GLOBathy_basic_parameters(ALL_LAKES).csv` with all 1,427,688 rows. Globbing `*.csv`
+double-counts every lake.
+
+**4. The `Dmax` column, and what it actually is.** The parser's candidate list led with `Dmax_use`;
+the published column is `Dmax_use_m`, so it refused the file — the fail-loud design working as
+designed. Checking *why* was the valuable part: measured over a 200k-row sample, `Dmax_use_m` equals
+`Dmax_est_PAVEW_m` (the shoreline/area/volume/elevation/watershed fit) for **99.5%** of lakes and
+carries a round, plainly *reported* figure for the rest. So it is the model **with known depths
+substituted in** — better than either pure column, and not simply "the random-forest column" as the
+docstring claimed. One consequence, left alone deliberately: for that 0.5% a `globathy` rung is a
+reported depth wearing a modelled label, so D68 under-rates it. The substitutions are the world's
+largest lakes, our region has almost none, and correcting it would mean carrying a second column to
+re-rank the ladder's floor.
+
+**5. `SHALLOW_MAX_DEPTH_M = 7` is right — the settlement plan ran, and the guess held.**
+
+This doc set 7 m provisionally and said so loudly: *"explicitly not because 7 is right"*, the middle of
+an honest 5–9 m band, with a named way to settle it — fit the max cutoff that best reproduces the
+`mean ≤ 3 m` classification against LAGOS-US' lakes carrying **both** a measured mean and max. That set
+now exists: **3,139 lakes in our five states**, 6,137 nationwide.
+
+| cutoff | accuracy (our 5 states) | over-classified (FP) | **missed (FN)** |
+| ---: | ---: | ---: | ---: |
+| 5 m | 83.8% | 19 | 489 |
+| 6 m | 87.0% | 62 | 346 |
+| **7 m** | **88.1%** ← best | 177 | 196 |
+| 8 m | 87.2% | 297 | 106 |
+| 9 m | 85.4% | 383 | 75 |
+
+**7.0 m maximises accuracy on our region, and independently on the national set (87.5%).** Two
+different populations, same answer, arrived at without reference to the reasoning that produced it.
+
+**But accuracy is the wrong objective here, and the doc already says why.** Under D69 the errors are
+asymmetric: a false positive makes a thaw warning linger (bounded by the never-hide rule), a false
+negative loses the signal on a lake that deserved it. At 7 m the two are nearly balanced — 177 against
+196 — which is *not* the "lean generous" this doc argues for. **8 m cuts misses from 196 to 106 for
+0.9 points of accuracy.** That is the real trade, and it is a founder call rather than an arithmetic
+one: the table above is what the settlement plan promised, not a recommendation to move the constant.
+
+Caveat worth keeping with the number: LAGOS-US lakes are > 1 ha, and 73% of our corpus is below every
+global source's area floor. This calibrates the rung that reaches the lakes we have data for; the
+`shallow_early_thaw` `bodyFeature` remains the only signal for the rest, as designed.
+
+**6. The match rate was measured against a denominator three quarters of which was never eligible.**
+LAGOS-US is nationwide; we cover five states. 12,928 of its 17,675 rows can never match, and each one
+still cost a spatial query. Fixed with a `--states=` filter on the transform, reading LAGOS' own
+`lake_states` column — which makes the rate a rate *and* cuts roughly a third off the load's wall
+clock. Dropped rows report as `outOfRegion`, named apart from `skipped`: a scope boundary is not a
+failure.
+
+**7. The zero-buffer join lost 40% of the prominent bodies, and now has a corroborated fallback.**
+`matchDepthSource` (`@skating/core`) keeps containment as the primary path and, when it finds
+nothing, looks within **500 m** — accepting only on independent corroboration: areas agreeing within
+**1.25×**, or names agreeing (≥ 0.8, the same `nameSimilarity` D36 uses) with areas inside the
+containment gate. The invariant, asserted as a property test: **the fallback is never looser than the
+primary.** Strong geometry can afford a loose attribute check; weak geometry cannot.
+
+Misses now split into `no_body_nearby` (the corpus has nothing here — 4 of 10 sampled misses) and
+`proximity_unconfirmed` (something was there and we declined it). Only the second is worth a human's
+attention, so they no longer share a counter. Proximity matches are counted apart as
+`matchedByProximity`, because it is a weaker claim than containment and should never be invisible.
+
+*An existing test asserted the old rule* — a point 330 m off shore with identical area, refused. That
+test was the decision that cost the 40%. Replaced with three: same-area nearby now matches,
+**different-area nearby is still refused** (3× area, which the containment gate would have allowed),
+and nothing-within-500 m still counts as unmatched.
+
+**What the transform emitted**, as a baseline for the next run: 40,260 records from 22,585 HydroLAKES
++ 1,427,688 GLOBathy + 17,675 LAGOS-US — 40,260 with a max, 28,722 with a mean. Only **279 of the
+HydroLAKES means are `hydrolakes_reported`**; splitting that rung out was nearly free and is nearly
+empty. Lake Ontario spot-checked at 84.8 m mean / 244 m max against published ~86 / 244.
+
 ## What the build found in the plan
 
 **This doc's stated D69 invariant was too strong, and a property test refuted it in about two seconds.**
@@ -479,9 +571,62 @@ be chosen out loud rather than arrived at by someone running the script because 
 
 ## Open questions
 
-1. **LAGOS-US DEPTH's licence and its coverage in our five states** → **not a founder call** (confirmed
-   2026-07-31): *"something we'll learn as we go."* Correct — both halves resolve at download and neither
-   has a decision inside it. The licence is whatever the EDI package's Intellectual Rights statement
+1. ~~**LAGOS-US DEPTH's licence**~~ → **ANSWERED 2026-08-02: CC BY 4.0.** Read off the package page by
+   the founder, since the EDI portal turned out to require a login and a CAPTCHA — PASTA's public API
+   refuses `listDataEntities` and the metadata endpoint for `edi.1043.1`, so no script could have
+   fetched it. The full Intellectual Rights statement is archived in
+   `scripts/lake-depth/.raw/lagos-us-depth/manifest.json`.
+
+   **What the answer costs us, which is the part that was never really about the licence field.** CC BY
+   is not "free to use" — it is an **attribution obligation**, and so is HydroLAKES' CC-BY 4.0. Two of
+   the three sources require credit wherever their data is displayed, and `DEPTH_SOURCE_LABELS`
+   does not discharge that: those are *caption labels* (`'LAGOS-US DEPTH'`), not attributions. This is
+   exactly the distinction `CONTOUR_SOURCE_TERMS` was built for in N6b — *"the tile carries a short
+   agency label; the licence requires particular words"* — and depth needed the same registry.
+
+   ✅ **Built and closed the same day: `DEPTH_SOURCE_TERMS` in `@skating/core`.** Both required
+   citations are recorded verbatim — HydroLAKES' from hydrosheds.org, LAGOS-US' from the EDI
+   package's own recommended form (Stachelek et al. 2021, DOI `10.6073/pasta/64ddc4d0…`). GLOBathy is
+   CC0 and records `requiresAttribution: false` explicitly, because *"nothing owed"* and *"nobody
+   checked"* look identical in a blank entry. `attributionGaps()` returns `[]` and a test asserts it,
+   so a future rung cannot ship a licensed depth without wording — the failure mode being silent
+   (nothing misbehaves, the number just appears) is exactly why it is a computed gate rather than a
+   remembered rule. `requiredDepthCredits(sources)` resolves the wording for the display layer,
+   deliberately separate from the four-word caption: CC BY permits attribution *"in any manner
+   reasonable to the medium"*, and a fifteen-author citation inside a map drawer's depth line would
+   make the common case unreadable to serve a requirement a sources line already meets.
+
+   **Still outstanding:** wiring `requiredDepthCredits` into the web and mobile drawers. Not yet
+   urgent — no depth is loaded — but it is the last thing between the ETL running and the values
+   being displayable.
+
+   Three further obligations fall out of the statement's own wording, none of them onerous:
+   - *"required to cite it appropriately in any publication"* — our display caption is the citation
+     surface, so it must name the creators, not just the dataset.
+   - *"data are updated periodically and it is the responsibility of the Data User to check for new
+     versions"* — a standing obligation, which is what `.raw/` + a re-check makes cheap rather than
+     forgotten. `scripts/bathymetry`'s `verify` is the pattern.
+   - *"All data are made available 'as is'"* + no liability for misinterpretation — sits comfortably
+     with D3 and D68, which already frame a modelled depth as an estimate rather than a survey.
+
+   ✅ **The coverage half is answered too, 2026-08-02, by counting the archived file: 4,747 lakes
+   across our five states** — VT 282 · NH 780 · ME 1,717 · MA 319 · NY 1,649. All 4,747 carry a max
+   depth; 3,139 carry a mean. That is **27% of a national dataset sitting in five states**, which
+   confirms the guess that New England is LAGOS' home region. Nationwide totals (17,675 max, 6,137
+   mean) match this doc's figures exactly.
+
+   ⚠ **And one of this doc's premises was wrong.** The file is **one row per lake**, not per
+   observation: 17,675 rows, 17,675 distinct `lagoslakeid`, **zero to merge**. §5b of the runbook and
+   `mergeLagosRows` were both built expecting many rows per lake, since the module is *compiled* from
+   ~65 sources. The merge survives as a no-op that is now a **version check** rather than dead code —
+   it prints what it merged either way, so a future revision that does ship per-observation rows is
+   handled silently and visibly at once.
+
+   The remaining unknown is not coverage but **match rate**: how many of those 4,747 resolve to a body
+   in our corpus. That genuinely does resolve by running.
+
+   *Original framing, kept because it was right about the method:* both halves resolve at download and
+   neither has a decision inside it. The licence is whatever the EDI package's Intellectual Rights statement
    says, and coverage is a number we count. What the founder's answer *does* settle is that **nobody is
    waiting on anyone**: the first run is the check, and the transform is already built to fail loudly
    (a named error listing the headers it actually found) rather than read zero depths and report success.

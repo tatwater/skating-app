@@ -1,5 +1,5 @@
 import { api } from '@skating/convex/api';
-import { humanizeEnum, searchQueryArg } from '@skating/core';
+import { searchQueryArg, waterBodyClassLabel } from '@skating/core';
 import { useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { SearchIcon } from 'lucide-react';
@@ -36,7 +36,7 @@ export type LakeHit = {
  */
 function hitMeta(hit: LakeHit): string {
   if (hit.kind === 'subArea' && hit.parentName) return `in ${hit.parentName}`;
-  const type = humanizeEnum(hit.type);
+  const type = waterBodyClassLabel(hit.type);
   return hit.states.length ? `${type} · ${hit.states.join(', ')}` : type;
 }
 

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "description": "Manual OSM → Convex water-body ETL (Phase 1). Not built or deployed.",
+  "description": "Manual OSM \u2192 Convex water-body ETL (Phase 1). Not built or deployed.",
   "scripts": {
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
@@ -11,11 +11,25 @@
     "transform": "tsx src/cli.ts",
     "load": "tsx src/load.ts",
     "load-depths": "tsx src/loadDepths.ts",
-    "archive": "tsx src/fetchExtract.ts"
+    "load-sub-areas": "tsx src/loadSubAreas.ts",
+    "prune-floor": "tsx src/pruneFloor.ts",
+    "archive": "tsx src/fetchExtract.ts",
+    "archive-nhd": "tsx src/fetchNhd.ts",
+    "archive-3dhp": "tsx src/fetch3dhp.ts",
+    "measure-3dhp": "tsx src/measure3dhp.ts",
+    "audit-archives": "tsx src/auditArchives.ts",
+    "merge": "tsx --max-old-space-size=12288 src/merge.ts",
+    "classify-dry-run": "tsx src/classifyDryRun.ts",
+    "reconcile": "tsx src/reconcileNhd.ts",
+    "load-reconciliation": "tsx src/loadReconciliation.ts",
+    "archive-gnis": "tsx src/gnisArchive.ts",
+    "bake-off": "tsx --max-old-space-size=12288 src/bakeOff.ts",
+    "resolve-merge-duplicates": "tsx src/resolveMergeDuplicates.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",
-    "@turf/simplify": "^7.3.0"
+    "@turf/simplify": "^7.3.0",
+    "@skating/run-log": "workspace:*"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

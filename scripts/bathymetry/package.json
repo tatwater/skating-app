@@ -18,10 +18,12 @@
     "join": "tsx src/join.ts",
     "build-contours": "tsx src/build.ts",
     "tile": "./tile.sh",
-    "coverage": "tsx src/coverage.ts"
+    "coverage": "tsx src/coverage.ts",
+    "export-soundings": "tsx src/exportSoundings.ts"
   },
   "dependencies": {
-    "@skating/core": "workspace:*"
+    "@skating/core": "workspace:*",
+    "@skating/run-log": "workspace:*"
   },
   "devDependencies": {
     "@types/geojson": "^7946.0.16",

@@ -329,3 +329,38 @@ describe('mergeLagosRows (many records, one lake)', () => {
     expect(errors[0]?.message).toContain('disagree across a shallow threshold');
   });
 });
+
+/**
+ * Against the real published files (2026-08-02). Both of these were guesses until the archive
+ * existed, and one of them was wrong — the kind of thing a fixture cannot tell you.
+ */
+describe('real published headers', () => {
+  it('reads GLOBathy’s actual Dmax column name', () => {
+    // Published header is `Dmax_use_m`; the candidate list led with `Dmax_use` and would have
+    // thrown. That it threw rather than importing zeros is the design working — but it still
+    // needed the real name.
+    const csv =
+      'Hylak_id,Lake_name,Country,Pour_long,Pour_lat,HYBAS_ID_LVL1,HYBAS_ID_LVL2,HYBAS_ID_LVL3,' +
+      'Dmax_box_m,Dmax_cone_m,Dmax_prism_m,Dmax_ellip_m,Dmax_est_PA_m,Dmax_est_PAVEW_m,Dmax_use_m\n' +
+      '9001,Some Pond,United States,-72.1,44.5,1,2,3,10,11,12,13,14,15.5,16.25\n';
+    expect(parseGlobathy(csv)).toEqual([{ hylakId: '9001', maxDepthM: 16.25 }]);
+  });
+
+  it('reads LAGOS-US DEPTH’s actual header, NA and all', () => {
+    // Every column matched the first candidate; the part worth pinning is that `NA` and `NULL`
+    // become absent rather than zero — a corpus of 0 m lakes would import perfectly cleanly.
+    const csv =
+      'lagoslakeid,lake_namegnis,lake_states,lake_depth_state,lake_lat_decdeg,lake_lon_decdeg,' +
+      'lake_maxdepth_m,lake_meandepth_m,lake_waterarea_ha,lake_depth_sourcename,' +
+      'lake_depth_sourceurl,lake_maxdepth_effort,lake_meandepth_effort\n' +
+      '1,NULL,MA,MA,42.5473372,-73.17393664,2.7,NA,114.9470119,MA_DFW_bathymetry_maps,NULL,LAGOSNE,NULL\n';
+    const rows = parseLagosDepth(csv);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.maxDepthM).toBe(2.7);
+    expect(rows[0]?.meanDepthM).toBeUndefined();
+    // Stored in m², not the file's hectares — pinning the conversion is worth more than pinning
+    // the raw cell, since a missed ×10,000 would put every lake three orders of magnitude out and
+    // sail straight through the area gate the join relies on.
+    expect(rows[0]?.areaSqM).toBeCloseTo(1_149_470.119, 3);
+  });
+});

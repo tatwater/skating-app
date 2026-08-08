@@ -751,7 +751,7 @@ eastern Maine returns **513** bodies where the old clamp returned 256 — 257 re
 missing from the map. `waterBodies:viewportReadStats` keeps that checkable, and every measured
 viewport is recorded with its exact bbox so the table can be re-run rather than trusted.
 
-*Left for later:* the notification **reverse spatial index** — still N7, since N1 only made the
+*Left for later:* the notification **reverse spatial index** — still N8, since N1 only made the
 profile walk bounded, not unnecessary.
 
 ~~**N2 — Operator surface completion + corpus curation.**~~ **✅ COMPLETE on dev (2026-07-26)** — see
@@ -1276,7 +1276,7 @@ blocker* by a founder call**, and merged at scoping with the duplicate-corrobora
   `shallow_early_thaw` at a raised bar, checked against N6a's depth (D68/D69) — recurrence proposes the
   flag from observation, depth checks the proposal.
 
-**N7 — Notification pipeline, the non-push half.** *(Grouped because both are pipeline internals that
+**N8 — Notification pipeline, the non-push half.** *(Grouped because both are pipeline internals that
 **don't** need push credentials — worth doing while push is blocked, so the pipeline is correct and
 scalable by the time delivery lands.)*
 - **Per-user local-time / true-sunset digest timing** (today: a fixed 8pm ET, fine for a

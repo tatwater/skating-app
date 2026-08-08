@@ -15,7 +15,7 @@
  * viewer's cached drive-time bands, so there's no index to look recipients up by — it means walking
  * profiles. N1 moved that walk out of `reports.create` and into a **scheduled, self-continuing paged
  * job** (`fanOutNearbyNotifications`), so the write path no longer scales with user count. Making the
- * walk itself unnecessary — a reverse spatial index — is still the future optimization (roadmap N7).
+ * walk itself unnecessary — a reverse spatial index — is still the future optimization (roadmap N8).
  */
 
 import {

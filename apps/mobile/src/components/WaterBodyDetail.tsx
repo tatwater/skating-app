@@ -8,6 +8,7 @@ import {
   formatSkateTime,
   humanizeEnum,
   SKATE_QUALITY_LABELS,
+  waterBodyClassLabel,
 } from '@skating/core';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useRouter } from 'expo-router';
@@ -147,7 +148,7 @@ export function WaterBodyDetail({
           <FavoriteButton waterBodyId={result.body._id} />
         </XStack>
         <Text color="$foregroundMuted">
-          {humanizeEnum(result.body.type)}
+          {waterBodyClassLabel(result.body.type)}
           {result.body.surfaceAreaSqM !== undefined
             ? ` · ${formatAreaAcres(result.body.surfaceAreaSqM)}`
             : ''}

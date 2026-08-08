@@ -16,6 +16,11 @@ export const env = {
   // Self-built Vermont `.pmtiles` extract later; empty ⇒ the map falls back to the Protomaps demo
   // tiles (§F, mirrors web's VITE_PMTILES_URL). Read natively by MapLibre via the pmtiles:// scheme.
   pmtilesUrl: process.env.EXPO_PUBLIC_PMTILES_URL ?? '',
+  // The whole-planet z0–6 overview archive that sits *under* the regional one, so the map has an
+  // ocean and a set of continents everywhere rather than ending in a straight line at the regional
+  // archive's edge (mirrors web's VITE_WORLD_PMTILES_URL). ~45 MB, hosted alongside the basemap.
+  // Blank ⇒ single-source style: renders, but stops dead outside the region.
+  worldPmtilesUrl: process.env.EXPO_PUBLIC_WORLD_PMTILES_URL ?? '',
   // Layer-3 offline-basemap spike, route (1) (Phase 9.5): when '1', download the regional `.pmtiles`
   // to device storage and render the map from that local `file://` archive. Off by default — it's an
   // unverified device experiment (does native pmtiles read `file://`?), see `offlineBasemap.ts`.

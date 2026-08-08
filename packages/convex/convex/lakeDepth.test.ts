@@ -37,9 +37,11 @@ async function seedBody(
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Test Lake',
-      type: 'lake' as const,
+      searchText: 'Test Lake',
+      type: 'lakePond' as const,
       source: 'osm' as const,
       externalId,
+      osmId: externalId,
       polygon: square(0.05),
       bbox: { minLat: 43.95, minLng: -72.05, maxLat: 44.05, maxLng: -71.95 },
       centroid: { lat: 44.0, lng: -72.0 },
@@ -403,9 +405,10 @@ describe('waterBodies.importDepths (the D68 ladder, enforced at the write bounda
       bodies: [
         {
           name: 'Test Lake (renamed upstream)',
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           externalId: 'way/42',
+          osmId: 'way/42',
           polygon: square(0.06),
           bbox: { minLat: 43.94, minLng: -72.06, maxLat: 44.06, maxLng: -71.94 },
           centroid: { lat: 44.0, lng: -72.0 },
@@ -459,9 +462,10 @@ describe('waterBodies.matchAndImportDepths (the geometric join)', () => {
       bodies: [
         {
           name,
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           externalId,
+          osmId: externalId,
           polygon,
           bbox,
           centroid: { lat: 44, lng: -72 },
@@ -511,16 +515,60 @@ describe('waterBodies.matchAndImportDepths (the geometric join)', () => {
     expect((await t.run((ctx) => ctx.db.get(body)))?.maxDepthM).toBeUndefined();
   });
 
-  test('counts a point that lands on no body, and does not fall back to the nearest', async () => {
+  test('accepts a point just off shore when the AREAS agree — the Sugar Hill case', async () => {
+    // The first real run stamped only 60% of prominent bodies. Sampling the misses found Sugar Hill
+    // Reservoir (23 ha) 260 m from `hylak/1047231` (22 ha): the same lake, unmatched, because the
+    // source's point sits on the source's polygon. This test used to assert the opposite — that a
+    // point off shore never matches — which was the decision that cost those 40%.
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t, 0.005, 1e5);
+    const result = await t.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [
+        {
+          key: 'hylak/7',
+          // ~330 m off the north shore, outside the body.
+          point: { lat: 44.008, lng: -72 },
+          areaSqM: 1e5, // identical area — the corroboration that makes this safe
+          maxDepthM: 9,
+          maxDepthSource: 'globathy' as const,
+        },
+      ],
+    });
+    expect(result).toMatchObject({ updated: 1, matchedByProximity: 1, unmatched: 0 });
+    const stored = await t.run((ctx) => ctx.db.get(body));
+    expect(stored?.maxDepthM).toBe(9);
+  });
+
+  test('still refuses a point off shore when nothing corroborates it', async () => {
+    // The safety half, and the reason the fallback is not simply a wider buffer: "a point just off
+    // one shoreline claiming the body across the road". Same geometry as above, but the areas
+    // disagree 3× — which the CONTAINMENT gate (4×) would have allowed, and proximity must not.
     const t = convexTest(schema, modules);
     await seedSquareBody(t, 0.005, 1e5);
     const result = await t.mutation(internal.waterBodies.matchAndImportDepths, {
       lakes: [
         {
-          key: 'hylak/7',
-          // The polygon spans 43.995–44.005 (0.005° ≈ 555 m), so this sits ~330 m off its north
-          // shore — outside the body, but well inside the 0.01° box the lookup searches.
+          key: 'hylak/8',
           point: { lat: 44.008, lng: -72 },
+          areaSqM: 3e5,
+          maxDepthM: 9,
+          maxDepthSource: 'globathy' as const,
+        },
+      ],
+    });
+    expect(result).toMatchObject({ updated: 0, proximityUnconfirmed: 1 });
+    expect(result.rejects[0]?.reason).toMatch(/within range but unconfirmed/);
+  });
+
+  test('counts a point with no body anywhere near it', async () => {
+    const t = convexTest(schema, modules);
+    await seedSquareBody(t, 0.005, 1e5);
+    const result = await t.mutation(internal.waterBodies.matchAndImportDepths, {
+      lakes: [
+        {
+          key: 'hylak/9',
+          // ~1.1 km north — past the 500 m fallback, so genuinely nothing here.
+          point: { lat: 44.015, lng: -72 },
           areaSqM: 1e5,
           maxDepthM: 9,
           maxDepthSource: 'globathy' as const,
@@ -656,9 +704,10 @@ describe('the depth pair is never left inverted', () => {
       bodies: [
         {
           name: 'Pair Lake',
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           externalId: 'way/pair',
+          osmId: 'way/pair',
           polygon: shifted,
           bbox,
           centroid: { lat: 44, lng: -72 },
@@ -851,9 +900,10 @@ describe("waterBodies.matchAndImportDepths — D85's shoreline cross-check", () 
       bodies: [
         {
           name: 'Cross-check Lake',
-          type: 'lake' as const,
+          type: 'lakePond' as const,
           source: 'osm' as const,
           externalId: 'way/xc',
+          osmId: 'way/xc',
           polygon: POLYGON,
           bbox,
           centroid: { lat: 44.05, lng: -72.95 },

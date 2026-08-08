@@ -75,7 +75,9 @@ export function LakeEditorMap({
 
   const { containerRef, mapRef, loaded } = useMapCanvas({
     pmtilesUrl,
+    worldPmtilesUrl: env.worldPmtilesUrl,
     flavor,
+    // The editor keeps its fence: it is a tool for one lake, and Decision 5 says so.
     maxBounds: bounds,
     fitBounds: bounds,
     initialCenter: [

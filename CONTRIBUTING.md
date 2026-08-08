@@ -90,6 +90,6 @@ New logic should land **with tests**. See
 ## Security & safety issues
 
 - For a **security vulnerability**, please **do not open a public issue** — email the
-  maintainer at teagan@newmoneycompany.com instead.
+  maintainer at desk@teaganatwater.com instead.
 - For a **dangerously false ice report** in a running deployment, use the in-app
   flag/report tools (that's what they're for).

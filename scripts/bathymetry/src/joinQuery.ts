@@ -21,16 +21,24 @@
  * — an ETL that silently resolves 60% looks exactly like one that resolved all of it.
  */
 
-/** What the query is asked about one lake. */
+/**
+ * What the query is asked about one lake.
+ *
+ * **`samplePoints` is not optional in practice, whatever this type says.** It is a strided sample of
+ * the survey's own measurements, and it is the only thing standing between the join and attributing a
+ * farm pond's soundings to the reservoir it sits beside. The equivalent field stayed unset for the
+ * whole first build — declared here and never populated — which silently disabled the gate on the
+ * server and shipped nine wrong lakes. It is typed optional only because the server tolerates its
+ * absence; a caller that omits it is choosing to run without the gate, and the ETL says so.
+ */
 export interface JoinCandidate {
   key: string;
   point: { lat: number; lng: number };
-  areaSqM?: number;
+  samplePoints?: { lat: number; lng: number }[];
 }
 
-/** What comes back for a lake that matched. */
-export interface JoinedBody {
-  key: string;
+/** One water body a lake resolved to. */
+export interface ResolvedBody {
   waterBodyId: string;
   externalId?: string;
   source: string;
@@ -38,6 +46,31 @@ export interface JoinedBody {
   surfaceAreaSqM?: number;
   states?: string[];
   polygon?: unknown;
+}
+
+/**
+ * What comes back for a lake that matched: the body the survey *is*, plus the bodies it also covers.
+ *
+ * `alsoCovers` is the bodies nested inside the surveyed lake, largest first. Empty for all but **9 of
+ * 2,353** lakes in the first build, so a caller that ignores it is wrong about a handful rather than
+ * broken. Those 9 are not all bays, and the mix is worth knowing before tuning anything here:
+ *
+ * - **1 true parent/bay** — Moosehead Lake over North Bay, the case this was built for.
+ * - **2 genuinely distinct nested waters** — an unnamed 41-acre pond inside Five Kezar Ponds; Upper
+ *   Artichoke Reservoir inside Artichoke River Reservoir.
+ * - **5 corpus duplicates** — one lake carrying two OSM features a few percent apart in area (Long
+ *   Pond 2,552 vs 2,532 ac, Lovell Lake 553 vs 540, Duncan Lake 85 vs 83, Meadow Lake, Bolster
+ *   Pond). Stamping both is a *workaround* for a D36 dedup gap, not a feature: the right fix is one
+ *   row per lake, and if dedup ever lands these should stop appearing here.
+ *
+ * Count them deduplicated by `externalId`. A raw read of the ETL's per-state `bodies.ndjson` counts
+ * Umbagog, Moore Reservoir and Great East Lake as duplicates because one OSM relation appears in
+ * every state extract it touches — but `importCanonical` upserts on `(source, externalId)`, so the
+ * corpus holds exactly one row for each. That artifact is what made this number look like 34.
+ */
+export interface JoinedBody extends ResolvedBody {
+  key: string;
+  alsoCovers?: ResolvedBody[];
 }
 
 export interface JoinResult {

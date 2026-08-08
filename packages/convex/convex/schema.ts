@@ -13,7 +13,9 @@
  */
 
 import {
+  CLAIM_SOURCES,
   CONDITION_SOURCES,
+  CONFIDENCE_LEVELS,
   DEPTH_SOURCES,
   ELEVATION_SOURCES,
   HAZARD_TYPES,
@@ -22,13 +24,14 @@ import {
   PROFILE_VISIBILITIES,
   RATING_TARGET_TYPES,
   RECURRENCE_FAMILIES,
+  REVIEW_REASONS,
   SKATE_QUALITIES,
   SKY_CONDITIONS,
   SURFACE_TAGS,
   THICKNESS_METHODS,
   USER_ROLES,
   USER_STATUSES,
-  WATER_BODY_TYPES,
+  WATER_BODY_CLASSES,
   WIND_ROSE_SOURCES,
 } from '@skating/core';
 import { defineSchema, defineTable } from 'convex/server';
@@ -47,11 +50,14 @@ import {
   FLAG_REASONS,
   FLAG_STATUSES,
   FLAG_TARGET_TYPES,
+  GEOMETRY_SOURCES,
   HAZARD_CONFIRM_VERDICTS,
   HAZARD_CONFIRM_VIA,
   HAZARD_GEOMETRY_KINDS,
   HAZARD_HEALING_STATES,
   HAZARD_STATUSES,
+  IMPORT_RUN_KINDS,
+  IMPORT_RUN_STATUSES,
   MODERATION_ACTIONS,
   MODERATION_STATUSES,
   MODERATION_TARGET_TYPES,
@@ -351,9 +357,251 @@ export default defineSchema({
 
   waterBodies: defineTable({
     name: v.string(),
-    type: literals(WATER_BODY_TYPES),
+    /**
+     * **Every name a publisher gave this water, including the ones that lost** (N7).
+     *
+     * `name` is chosen by authority — `gnis > nhd > 3dhp > osm` — and that rule costs **463 bodies**
+     * their local name. Auburn, Maine's water supply is stored as `The Basin` because that is NHD's
+     * `gnis_name`, while OSM calls it `Lake Auburn`; with a search index over `name` alone, typing
+     * "Lake Auburn" found nothing. The losing name was in the merge the whole time.
+     *
+     * **Claims, not strings, because the source is the content of the decision.** A moderator
+     * choosing between the two needs to know one is a gazetteer entry and the other a mapper's free
+     * text — `/admin/water/$id`'s name picker reads exactly this. A moderator's own alias is a claim
+     * with `source: 'user'`, which is why there is one field here and not two.
+     */
+    nameClaims: v.optional(
+      v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() })),
+    ),
+    /**
+     * `[name, ...aliases]` joined — **the field the search index actually covers.**
+     *
+     * Denormalised on every name write, never set by a client, same shape and same
+     * `@skating/core`'s `searchTextFor` as `waterBodySubAreas` — **and required, like that one.**
+     *
+     * It shipped optional for one campaign because Convex validates existing documents on push and
+     * 25,136 rows predated it; `backfillSearchText` filled them (25,049 already correct from the
+     * loader, 3 written for the prune-protected rows it cannot reach) and the index then moved off
+     * `name`. Required is the last step, and it is the one that matters: an optional search field is
+     * a field a row can lack, and a row lacking it is **a lake search cannot reach, silently**.
+     */
+    searchText: v.string(),
+    /**
+     * What kind of water this is — **`WATER_BODY_CLASSES`, and the D109 migration is finished**.
+     *
+     * This was `v.union(WATER_BODY_CLASSES, LEGACY_WATER_BODY_TYPES)` for one campaign, because
+     * **Convex validates existing documents on push**: narrowing before the backfill would not have
+     * produced a migration, it would have produced a failed deploy on a table of 25,136 rows with the
+     * new code already written and no way to run it. The order was widen → deploy → backfill →
+     * narrow, and this is the last step.
+     *
+     * `backfillWaterBodyClasses` rewrote the final 53 rows — the prune-protected ones, which the
+     * loader cannot reach by construction — and reports `unmappable: 0`. Measured on dev before
+     * narrowing: every one of the 25,136 rows carries a class value.
+     *
+     * ⚠ **`backfillWaterBodyClasses` was deleted with this change, not left in place.** Narrowing the
+     * validator makes it unreachable by construction — no row can hold a legacy value, and none can
+     * be written to test it or to restore one — so keeping it would keep a migration that cannot
+     * run. `LEGACY_TYPE_TO_CLASS` stays in `@skating/core`, where `isWetlandClass` still accepts
+     * both spellings; a restore from a pre-D109 export would need the union widened again first,
+     * which is the same four-step order this field just came through.
+     */
+    type: literals(WATER_BODY_CLASSES),
     source: literals(WATER_BODY_SOURCES),
     externalId: v.optional(v.string()), // OSM/NHD id when source != user
+    /**
+     * **Who this lake is, in each catalogue that knows it** — as against `externalId`, which is who
+     * we happened to import it from.
+     *
+     * The two are the same string today, and the split exists because that is a coincidence rather
+     * than a fact. `externalId` is a *key*: `importCanonical` upserts on it and contour tiles are
+     * stamped with it, so it must not move. These are *claims about identity*, and a lake can hold
+     * both — most do, once reconciled.
+     *
+     * **`nhdId` earns its place before any NHD geometry is ever imported.** OSM carries the same lake
+     * twice more often than it looks (Long Pond is `way/150404999` at 2,552 acres and
+     * `relation/2602300` at 2,532; Lovell Lake, Duncan Lake, Meadow Lake and Bolster Pond are the
+     * same shape), and OSM cannot see its own duplicates. NHD can: all five pairs collapse onto a
+     * single `Permanent_Identifier`. So this is a reconciliation key first and an import key second.
+     *
+     * **Reconcile by `polygonIoU`, never by point containment.** Measured, not assumed: North Bay's
+     * interior point sits inside NHD's *Moosehead Lake*, so a containment join would give a bay its
+     * parent's id and make the two look like duplicates of each other — while Moosehead itself
+     * matched nothing at all, because `centroid` is `pointOnFeature` and lands on the shoreline of a
+     * large irregular lake (D85 amendment). Both failures are silent.
+     */
+    /**
+     * **Our own id for this lake, minted once and never changed** (N7 / D93).
+     *
+     * `externalId` is doing three unrelated jobs — upsert key, tile stamp, and identity — which is
+     * why changing a lake's geometry source is currently impossible without re-tiling five states.
+     * This takes the identity job.
+     *
+     * **Opaque, and that is the point.** Not derived from `osmId`, because a key that encodes its
+     * origin reads as a claim about provenance the moment the origin changes; not derived from the
+     * geometry, because D92's whole purpose is to possibly change which catalogue draws a lake, and
+     * a bbox-derived key would move at exactly the moment identity must not. (The useful half of
+     * that idea — a cheap spatial blocking key for dedup — is what `waterBodyCells` already is.)
+     *
+     * **Why it exists at all, given `_id` never moves.** The re-import patches in place and never
+     * delete-recreates, so the Convex `_id` is stable in practice. The narrower reason is the **tile
+     * stamp**: contour tiles are built offline and reference bodies by id, so a restore-from-export
+     * would mint fresh `_id`s and break every tile in the basemap bucket with no error — just blank
+     * lakes. Portability off Convex is the second-order version of the same thing.
+     *
+     * **Not the upsert key.** A minted id cannot be derived from an incoming feature, so a re-import
+     * finds its row through the catalogue ids below — see `resolveUpsert` in `@skating/core`, which
+     * also defines what happens when two of them point at different rows.
+     */
+    waterBodyKey: v.optional(v.string()),
+    osmId: v.optional(v.string()), // `way/<id>` / `relation/<id>`
+    nhdId: v.optional(v.string()), // NHD `Permanent_Identifier`
+    /**
+     * 3DHP's `id3dhp` — **the third upsert key, and the one D93 named but nothing created.**
+     *
+     * `resolveUpsert`'s `CATALOGUE_ID_FIELDS` has always been `['osmId', 'nhdId', 'threeDhpId']`, so
+     * without this field a third of the upsert lookup could not be performed and a 3DHP-only feature
+     * had no way to find the row it already was.
+     *
+     * **It is a monitor's key, not a geometry one.** D92 measured 3DHP against NHD over 7,878 lakes
+     * and found the same data — 68% byte-identical, the rest float round-trip through Albers — so
+     * 3DHP earns its place as the tripwire for the year elevation-derived hydrography actually
+     * reaches the Northeast, and that tripwire cannot ask "did this feature change" without an id.
+     */
+    threeDhpId: v.optional(v.string()),
+    /**
+     * GNIS Feature ID — **deliberately not an upsert key**, and the comment matters more than the
+     * field.
+     *
+     * It is the one identifier all three catalogues share, which makes it the cheapest exact-match
+     * bridge between them and an excellent *candidate generator* for reconciliation. It is a terrible
+     * identity: GNIS names **places**, and a catalogue may split one place into several features.
+     * Measured against the archives, **92 GNIS ids resolve to more than one NHD body** (0.8% of
+     * 10,984). Upserting on it would merge those lakes.
+     *
+     * So it is stored to propose, never to decide — see `GNIS_IS_NOT_AN_UPSERT_KEY` in
+     * `@skating/core/bodyIdentity.ts`, which exists to make that refusal greppable.
+     */
+    gnisId: v.optional(v.string()),
+    /**
+     * Whose polygon `polygon` actually is — which `source` conflates with where the row came from.
+     *
+     * Separate so the two can diverge per lake without a migration: a body imported from OSM whose
+     * geometry we later take from NHD (Beau Lake, absent from OSM's Maine extract because Geofabrik
+     * clips the Québec half) keeps its OSM identity and access layer while drawing from NHD.
+     * Absent means "the same as `source`", which is true of every row imported so far.
+     */
+    geometrySource: v.optional(literals(GEOMETRY_SOURCES)),
+    /**
+     * The area the **admission decision** was made on, before simplification (N7 audit).
+     *
+     * `surfaceAreaSqM` is measured from the polygon we store, because that is what we draw. The D91
+     * floor is applied to the *source* geometry, because that is the more accurate measure. The two
+     * differ by well under a percent — and that was enough to be a live defect: `pruneBelowAreaFloor`
+     * reads the stored number, so a body admitted at 1.0001 acres and stored at 0.9999 was **added by
+     * every import and deleted by every prune, forever**, with nothing to show for it but a row count
+     * that never settled.
+     *
+     * The rule that osm.ts's floor comment states — *"two copies would drift into a prune that
+     * deletes what the next import re-adds"* — was being broken not by two copies of the rule but by
+     * two copies of the *input*. This is the one the rule was decided on; the prune prefers it and
+     * falls back to `surfaceAreaSqM` for rows written before it existed.
+     */
+    sourceAreaSqM: v.optional(v.number()),
+    /**
+     * What share of this body's outline lies inside our five states, in `[0, 1]` (N7 audit).
+     *
+     * The region clip is deliberately generous: **one** in-region vertex admits the whole polygon,
+     * which is what keeps Beau Lake — 1,875 acres, most of them in Québec, and the fixture this phase
+     * is named for. The cost of that generosity is that the corpus also holds bodies that are mostly
+     * somewhere else, at their full area, feeding the D85 deciles and every "lakes in Vermont" count,
+     * with nothing on the row saying so.
+     *
+     * **Recorded, not acted on.** It is the number a future rule would be set against, and measuring
+     * before deciding is the same discipline D96's wetland call used.
+     */
+    inRegionFraction: v.optional(v.number()),
+    /**
+     * How well corroborated each attribute is (D110): `high` · `medium` · `low` · `none`.
+     *
+     * `high` means two **independent** catalogues agree (NHD and 3DHP count as one — 3DHP
+     * re-publishes NHD, zero area disagreements ≥ 0.1% over 7,878 lakes). `medium` is one
+     * uncontested claim. `low` is a genuine conflict a precedence rule broke. `none` is silence.
+     *
+     * **Stored because it was computed and thrown away.** `@skating/core`'s `confidence.ts` is a
+     * fully tested module whose entire output existed as three lines of terminal text in a merge run
+     * that had already ended — so a 1,388-body review queue could never be opened by anyone, and the
+     * per-attribute design that makes the queue workable had no consumer at all.
+     */
+    confidence: v.optional(
+      v.object({
+        name: literals(CONFIDENCE_LEVELS),
+        polygon: literals(CONFIDENCE_LEVELS),
+        cls: literals(CONFIDENCE_LEVELS),
+      }),
+    ),
+    /**
+     * Why this body wants a human before it ships (D110).
+     *
+     * Distinct from `confidence` because two of the four are **structural rather than evidential**:
+     * `bay-without-parent` is a bay with nothing to be an arm of (Half Moon Cove: 330 acres, named
+     * "Cove", and a wetland), and `same-source-duplicate` is one merge group holding two features
+     * from one catalogue — which means our matching chained two lakes, or OSM carries a duplicate it
+     * cannot see. Neither is a confidence score and neither may merge unattended.
+     *
+     * Absent is the normal case: a low-confidence *polygon* deliberately does not queue anyone, since
+     * nobody can adjudicate "these outlines differ by 20%" by eye — that is D92's job, not a person's.
+     */
+    reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
+    /**
+     * The one reason this body is filed under — **stored because an array cannot be indexed** (N7).
+     *
+     * `reviewReasons` is what a moderator reads; this is what `/admin/water/review` ranges over.
+     * Convex has no index over array membership, and the alternative is scanning 25,136 rows to find
+     * ~2,000 — the read-cap failure N1 exists to have ended. Derived by `primaryReviewReason`, so a
+     * body that is both a duplicate and a name conflict is filed as the duplicate: the one a skater
+     * can see going wrong.
+     *
+     * Absent for a body with nothing to review, which is most of them, and which is what keeps the
+     * index small enough to page prominence-first.
+     */
+    reviewReason: v.optional(literals(REVIEW_REASONS)),
+    /**
+     * The last import campaign that **re-affirmed** this body — campaign membership (N7 step 6).
+     *
+     * `importCanonical` upserts and never deletes, so after a re-import the corpus is the *union* of
+     * the new master list and whatever was there before. Neither set contains the other (18,383
+     * stored against 27,074 merged), and every stored body the current rules now refuse — a vetoed
+     * Great Lake, an out-of-region row, an unnamed wetland under the 50-acre bar that was imported
+     * before D96 settled — survives forever, because `pruneBelowAreaFloor` can only see area and
+     * `pruneOutsideCoverage` only sees polygons handed to it.
+     *
+     * A stamp makes "was this body in the list?" a fact on the row rather than a rule re-derived by a
+     * second pass — and a second copy of the rules is precisely how a prune and an import come to
+     * disagree at the edges. See `pruneNotInCampaign`.
+     */
+    lastCampaignId: v.optional(v.string()),
+    /**
+     * **This body is in the corpus because somebody asked for it** — not because it cleared the D91
+     * area floor (N7b).
+     *
+     * A statement about **membership**, and deliberately nothing else. Not `curatedBoost`, which is a
+     * D2 *display* lever that gets tuned — the moment someone re-weighted prominence they would be
+     * silently changing what survives a prune, which is `externalId` doing three jobs all over again.
+     * And not "has this been skated?", even though that signal is durable (D62's second amendment
+     * keeps published observations forever, redacting only what a person typed) and is already
+     * honoured by the prune's attachment check.
+     *
+     * **Use cannot protect the moment that matters.** At the instant a body is admitted there is no
+     * report and no track, because the whole point is that someone is asking for a lake they *want*
+     * to skate. Protect it only by use and the next prune deletes it before anyone can use it — the
+     * feature would eat its own output.
+     *
+     * Read through `belongsInCorpus` (`@skating/core`), never directly, so the prune and the
+     * enrichment passes cannot drift apart again. Clearing it back to `false`/absent is a moderator
+     * reversing the decision, and must work.
+     */
+    includedByRequest: v.optional(v.boolean()),
     // Admin regions (2-letter US state codes) the body falls in, unioned from the per-state ETL
     // extracts at import — a border-spanning body (Lake Champlain) appears in multiple state
     // extracts and accumulates e.g. ["NY","VT"]. Powers the search-result location label +
@@ -524,6 +772,23 @@ export default defineSchema({
     .index('by_dedup_status', ['dedupStatus']) // dedup review queue (D36)
     .index('by_review_status', ['reviewStatus']) // user-body approval queue (D37)
     .index('by_external_id', ['source', 'externalId']) // idempotent canonical upsert (D14/D48)
+    // Reconciliation lookups only, and **equality only**. An index on an optional field is not
+    // sparse in Convex — every one of the 116,070 rows without an `nhdId` sits at the front under
+    // `undefined` — so a bare range scan here would read the whole corpus. `.eq()` is safe; `.lte()`
+    // is the trap.
+    // Point lookup for the tile stamp and any consumer holding a minted key. Like `by_nhd_id`, this
+    // index is NOT sparse — rows without a key sort first under `undefined` — so a lookup must always
+    // `eq()` a real value and never range-scan (see the `by_nhd_id` note below).
+    .index('by_water_body_key', ['waterBodyKey'])
+    // **`osmId` needs its own index; `by_external_id` is not it.** They hold the same string today
+    // and that is a coincidence D93 exists to end — `externalId` is where a row came from, `osmId` is
+    // who it is. Keying the OSM lookup on `externalId` worked until the two diverged and then
+    // silently inserted a duplicate, which is the exact failure the id-keyed upsert exists to
+    // prevent. NOT sparse, same as the others: `eq()` only, never a range scan.
+    .index('by_osm_id', ['osmId'])
+    .index('by_nhd_id', ['nhdId'])
+    // The third catalogue id, same shape and same trap as `by_nhd_id`: NOT sparse, so `eq()` only.
+    .index('by_three_dhp_id', ['threeDhpId'])
     // The curation list (N2). Until now there was NO index on `curatedBoost` and no query listing
     // boosted bodies — `WaterBodyModeratorControls` edits the boost on a body you already navigated
     // to, and nothing told you which of 116k carry one. The five known Phase-2.5 mis-matches (South
@@ -532,7 +797,19 @@ export default defineSchema({
     // rows and nothing else: `undefined` sorts before every number, so unboosted bodies are excluded
     // by the range rather than filtered after the read.
     .index('by_curated_boost', ['curatedBoost'])
-    .searchIndex('search_name', { searchField: 'name' }), // map search box: full-text lake lookup
+    // **Reason first, then prominence**, so the queue opens on the lakes anybody has heard of. An
+    // `.eq()` on the reason never reads the rows that carry none — `undefined` sorts before every
+    // value, but an equality range simply does not include it, which is what makes this cheap.
+    .index('by_review_reason', ['reviewReason', 'displayScore'])
+    // **`searchText`, not `name` — the last step of the four** (N7). `[name, ...aliases]` joined, so
+    // a lake is findable under every name a publisher gave it: Auburn's water supply stores as NHD's
+    // `The Basin` and a skater types "Lake Auburn". 583 bodies carry a distinct second name.
+    //
+    // The order was widen → deploy → backfill → narrow, the same as `type`: the field shipped
+    // optional, `backfillSearchText` filled it (25,049 already correct from the loader, 3 written
+    // for the prune-protected rows it cannot reach), and only then did the index move. Flipping
+    // first would have taken search down for every row the backfill had not yet reached.
+    .searchIndex('search_name', { searchField: 'searchText' }),
 
   // Which bodies the N6b contour tileset actually draws lines for (N6c-1 / D2).
   //
@@ -1640,4 +1917,115 @@ export default defineSchema({
   })
     // Point lookup for the upsert + the per-metric date-range read every chart makes.
     .index('by_metric_date', ['metric', 'date']),
+
+  /**
+   * One row per ETL run — the durable version of the summary every loader used to print to a
+   * terminal that scrolls (N6c Workstream F2).
+   *
+   * **The question this exists to answer is "how did the last import go", and the sharper one
+   * underneath it: "which bodies did it decline, and why".** Every loader we have (`etl`,
+   * `admin-areas`, `lake-depth`, `wind-climate`, `bathymetry`) already computes a genuinely useful
+   * summary — match rate, rejects by reason, overrides held, contested merges — and then throws it
+   * away. Nothing was ever wrong with the numbers; there was simply nowhere to put them, so
+   * coverage regressions between runs were invisible by construction.
+   *
+   * **One row per run, never one per body.** An 8k-row audit trail per run is a different feature
+   * with a different cost, and the per-body question is already answered by the depth/elevation
+   * provenance stored on the row itself. `failures` is therefore a *bounded sample* and
+   * `failuresTotal` is the honest count beside it — a truncated list that doesn't say it was
+   * truncated reads as "only three lakes failed", which is the specific lie this table exists to
+   * stop telling.
+   *
+   * **`stages` is the full path, and it is the point.** A run is not one step: an archived
+   * Geofabrik extract → an `osmium` filter → a tested transform → a batched load. Each stage
+   * carries whatever provenance it actually has — the source URL, the build date, the sha256 the
+   * archive verified, the exact command, the counts in and out — so an operator can trace a body
+   * on the map back to the byte range of a file with a checksum. Recording only the last stage
+   * would answer "how many rows landed" and never "landed from what".
+   *
+   * **`campaignId` groups the runs that were one operation.** Five state extracts are five loader
+   * invocations and five rows, but they are one canonical update, and "how did the last import go"
+   * is a question about the update rather than about Vermont.
+   */
+  importRuns: defineTable({
+    kind: literals(IMPORT_RUN_KINDS),
+    /** Human label for the run — 'VT canonical water', 'winter wind roses'. */
+    label: v.string(),
+    /** Operator-supplied grouping for runs that were one logical operation. */
+    campaignId: v.optional(v.string()),
+    /** Resolved target, recorded verbatim so a prod run is never mistaken for a dev one. */
+    deployment: v.string(),
+    isProd: v.boolean(),
+    status: literals(IMPORT_RUN_STATUSES),
+    startedAt: v.number(),
+    /** Absent while `status` is 'running' — including for a run whose process was killed. */
+    finishedAt: v.optional(v.number()),
+    /**
+     * Named tallies, deliberately free-form: each loader names its own (`inserted`, `updated`,
+     * `matched`, `unmatched`, `cellsFetched`). A fixed column set would have to be the union of
+     * five loaders' vocabularies and would still be wrong for the sixth.
+     */
+    counts: v.array(v.object({ name: v.string(), value: v.number() })),
+    stages: v.array(
+      v.object({
+        name: v.string(),
+        detail: v.optional(v.string()),
+        /** The command as run, so the path is reproducible rather than merely described. */
+        command: v.optional(v.string()),
+        input: v.optional(v.string()),
+        output: v.optional(v.string()),
+        sourceUrl: v.optional(v.string()),
+        bytes: v.optional(v.number()),
+        sha256: v.optional(v.string()),
+        md5: v.optional(v.string()),
+        /** Whether the archive verified the publisher's checksum at fetch time. */
+        checksumVerified: v.optional(v.boolean()),
+        /** When the *stage's input* was produced (an extract's build date), not when it ran. */
+        sourceAt: v.optional(v.number()),
+        counts: v.optional(v.array(v.object({ name: v.string(), value: v.number() }))),
+      }),
+    ),
+    /** Bounded sample — see `failuresTotal` for the real count. */
+    failures: v.array(
+      v.object({
+        stage: v.string(),
+        /** Whatever identifies the item: an `externalId`, a grid cell, a state code. */
+        key: v.optional(v.string()),
+        reason: v.string(),
+      }),
+    ),
+    failuresTotal: v.number(),
+    /**
+     * What share of what it *could* have covered, this run actually did — and where the rest went.
+     *
+     * **A rate, not a count, because a count cannot be wrong.** "9,981 bodies stamped" reads as a
+     * complete pass whether the corpus is 10,000 or 116,070; only a denominator makes a shortfall
+     * visible. Every loader here already knew its rate and printed it to a terminal.
+     *
+     * **`omissions` must account for the gap, and the UI checks that it does.** `eligible - covered`
+     * minus the omission counts is rendered as *unexplained* when it isn't zero — which is the
+     * difference between "we skipped 4,000 lakes below the HydroLAKES area floor" (a documented
+     * limit of the source) and "4,000 lakes went missing and nobody noticed" (a bug). Those two look
+     * identical in a totals-only summary, and they are the two readings that matter most.
+     */
+    coverage: v.optional(
+      v.object({
+        /** What is being counted — 'bodies', 'lakes', 'grid cells', 'towns'. */
+        unit: v.string(),
+        /** The honest denominator: everything this pass could in principle have stamped. */
+        eligible: v.number(),
+        /** What it actually stamped. */
+        covered: v.number(),
+        /** Where the difference went, by reason. Documented limits belong here, not in prose. */
+        omissions: v.array(v.object({ reason: v.string(), count: v.number() })),
+      }),
+    ),
+    /** The error that ended the run, when `status` is 'failed'. */
+    error: v.optional(v.string()),
+    notes: v.optional(v.array(v.string())),
+  })
+    // The admin list: newest first, optionally narrowed to one loader.
+    .index('by_started', ['startedAt'])
+    .index('by_kind_started', ['kind', 'startedAt'])
+    .index('by_campaign', ['campaignId', 'startedAt']),
 });

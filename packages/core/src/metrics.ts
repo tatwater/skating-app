@@ -120,8 +120,17 @@ export interface MetricSpec {
   label: string;
   /** What the number means and what it tells you — rendered under the chart in the control-room. */
   description: string;
-  /** `counter` = bumped at the event site (forward-only); `rollup` = computed by the daily cron. */
-  kind: 'counter' | 'rollup';
+  /**
+   * How a row gets written.
+   *
+   * - `counter` — bumped at the event site (forward-only).
+   * - `rollup` — computed by the daily cron from our own tables.
+   * - `external` — measured against a **third-party catalogue** by an ETL pass, on that catalogue's
+   *   own release cadence. The cron must not try to compute these and will find nothing to sweep;
+   *   the series is sparse by design (one row per release, not one per day) and is read through
+   *   `analytics.catalogueHistory` rather than the dense day-range `analytics.series`.
+   */
+  kind: 'counter' | 'rollup' | 'external';
   shape: MetricShape;
   /** Bucket edges, for `shape: 'buckets'` metrics. */
   edges?: readonly number[];
@@ -359,6 +368,28 @@ export const METRICS = {
     kind: 'rollup',
     shape: 'meta',
   },
+
+  // ── External catalogues (N7) ───────────────────────────────────────────────
+  /**
+   * **This one is expected to read zero for a while, and that is the point.**
+   *
+   * USGS retired NHD in 2023 and replaced it with the 3D Hydrography Program, whose promise is
+   * hydrography traced from LiDAR rather than compiled at 1:24,000. Where that elevation-derived
+   * hydrography (EDH) does not exist yet, 3DHP simply republishes NHD — and it says so per feature in
+   * `workunitid`, which reads the literal string `NHD` for a fallback and an EDH work-unit id
+   * otherwise. So this is a first-party provenance label, not our inference.
+   *
+   * Measured 2026-08-03 against the FY26 staged release: **0 of 274,994** features in our five states
+   * are elevation-derived. Nationally it is 14,024 of 7,158,943 — 0.196%. Watching this climb is
+   * watching the base map under the whole product get re-surveyed.
+   */
+  catalogue_edh_coverage: {
+    label: 'Elevation-derived hydrography',
+    description:
+      'Share of 3DHP water bodies in our five states traced from LiDAR rather than inherited from the retired NHD. USGS labels this per feature in `workunitid`, so it is their claim, not our inference. Expected to sit near zero for years and then step up a work unit at a time.',
+    kind: 'external',
+    shape: 'scalar',
+  },
 } as const satisfies Record<string, MetricSpec>;
 
 export type MetricKey = keyof typeof METRICS;
@@ -374,8 +405,21 @@ export const METRIC_SPECS: Record<MetricKey, MetricSpec> = METRICS;
 /** Every metric key — the cron's checklist and the control-room's index. */
 export const METRIC_KEYS = Object.keys(METRICS) as MetricKey[];
 
-/** The keys written at the event site (forward-only); the rest are computed by the daily cron. */
+/** The keys written at the event site (forward-only). */
 export const COUNTER_METRIC_KEYS = METRIC_KEYS.filter((k) => METRICS[k].kind === 'counter');
+
+/**
+ * The keys measured against a third-party catalogue by an ETL pass (N7).
+ *
+ * Split out for the same reason `COUNTER_METRIC_KEYS` is: **every key must have exactly one writer**,
+ * and the three families together have to account for the whole catalogue. That invariant used to be
+ * "counter or rollup" and is asserted in the tests — adding a third family without naming it would
+ * have left these keys looking like rollups the cron simply forgot to compute.
+ */
+export const EXTERNAL_METRIC_KEYS = METRIC_KEYS.filter((k) => METRICS[k].kind === 'external');
+
+/** The keys the daily cron sweeps from our own tables. */
+export const ROLLUP_METRIC_KEYS = METRIC_KEYS.filter((k) => METRICS[k].kind === 'rollup');
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Rollup helpers (pure — the cron does DB reads, this does the arithmetic)

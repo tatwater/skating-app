@@ -13,9 +13,9 @@
  * re-run can only fill a measurement nothing better has claimed.
  */
 
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
+import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 
 /** Tiny records (an id and two numbers), and each costs one indexed lookup — bytes never bind. */
 const MAX_BATCH_COUNT = 200;
@@ -23,18 +23,21 @@ const MAX_BATCH_COUNT = 200;
 function main(): void {
   const args = process.argv.slice(2);
   const allowNonDev = args.includes('--prod');
+  const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
   const inputPath = args.find((arg) => !arg.startsWith('--'));
   if (!inputPath) {
     process.stderr.write(
-      'usage: pnpm --filter @skating/etl load-depths <depths.ndjson> [--prod]\n',
+      'usage: pnpm --filter @skating/etl load-depths <depths.ndjson> [--prod] [--campaign=<id>]\n',
     );
     process.exit(1);
   }
 
-  const deployment = process.env.CONVEX_DEPLOYMENT ?? '';
-  const isDev = deployment.startsWith('dev:');
-  process.stderr.write(`[etl] target deployment: ${deployment || 'unknown (from .env.local)'}\n`);
-  if (!isDev && !allowNonDev && process.env.CONVEX_DEPLOYMENT !== undefined) {
+  // Was a bare `process.env.CONVEX_DEPLOYMENT` read, which meant the dev guard silently did nothing
+  // in the normal case — the deployment lives in `packages/convex/.env.local`, not the environment,
+  // so `isDev` was false, the third clause was false, and the refusal never fired.
+  const target = resolveDeployment();
+  process.stderr.write(`[etl] target deployment: ${target.label}\n`);
+  if (!target.isDev && !allowNonDev) {
     process.stderr.write(
       '[etl] refusing: target is not a dev deployment. Confirm, then re-run with --prod.\n',
     );
@@ -51,31 +54,43 @@ function main(): void {
     return;
   }
 
+  const logger = new RunLogger({
+    kind: 'osm_depths',
+    label: 'OSM depth tags (N6a rung 7)',
+    campaignId,
+    target,
+    call: convexRun,
+    stages: [
+      {
+        name: 'load',
+        detail:
+          'waterBodies:importDepths — the bottom rung of the D68 ladder, so it never displaces a survey',
+        input: inputPath,
+        output: target.label,
+      },
+    ],
+  });
+  logger.start();
+
   const totals = { updated: 0, unmatched: 0, skipped: 0, operatorHeld: 0, inverted: 0 };
-  for (let i = 0; i < depths.length; i += MAX_BATCH_COUNT) {
-    const stdout = execFileSync(
-      'pnpm',
-      [
-        '--filter',
-        '@skating/convex',
-        'exec',
-        'convex',
-        'run',
-        'waterBodies:importDepths',
-        JSON.stringify({ depths: depths.slice(i, i + MAX_BATCH_COUNT) }),
-      ],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 16 * 1024 * 1024 },
-    );
-    const match = stdout.trim().match(/\{[\s\S]*\}/)?.[0];
-    const result = match ? (JSON.parse(match) as Partial<typeof totals>) : undefined;
-    if (!result || typeof result.updated !== 'number') {
-      throw new Error(`convex run returned an unexpected response: ${stdout.trim() || '(empty)'}`);
+  try {
+    for (let i = 0; i < depths.length; i += MAX_BATCH_COUNT) {
+      const result = convexRun<Partial<typeof totals>>('waterBodies:importDepths', {
+        depths: depths.slice(i, i + MAX_BATCH_COUNT),
+      });
+      if (!result || typeof result.updated !== 'number') {
+        throw new Error(`convex run returned an unexpected response: ${JSON.stringify(result)}`);
+      }
+      totals.updated += result.updated ?? 0;
+      totals.unmatched += result.unmatched ?? 0;
+      totals.skipped += result.skipped ?? 0;
+      totals.operatorHeld += result.operatorHeld ?? 0;
+      totals.inverted += result.inverted ?? 0;
     }
-    totals.updated += result.updated ?? 0;
-    totals.unmatched += result.unmatched ?? 0;
-    totals.skipped += result.skipped ?? 0;
-    totals.operatorHeld += result.operatorHeld ?? 0;
-    totals.inverted += result.inverted ?? 0;
+  } catch (err) {
+    for (const [name, value] of Object.entries(totals)) logger.count(name, value);
+    logger.failed(err);
+    throw err;
   }
 
   process.stderr.write(
@@ -84,6 +99,28 @@ function main(): void {
       `${totals.operatorHeld} held by a moderator's override · ` +
       `${totals.inverted} contradictory mean/max pairs resolved\n`,
   );
+
+  for (const [name, value] of Object.entries(totals)) logger.count(name, value);
+  logger.count('tagsRead', depths.length);
+  logger.coverage({
+    unit: 'OSM-tagged bodies',
+    eligible: depths.length,
+    covered: totals.updated,
+    omissions: [
+      { reason: 'already had a higher-precedence source (D68)', count: totals.skipped },
+      { reason: 'matched no body in the corpus', count: totals.unmatched },
+      { reason: "held by a moderator's override", count: totals.operatorHeld },
+    ].filter((o) => o.count > 0),
+  });
+  logger.stage({
+    name: 'load',
+    detail:
+      'waterBodies:importDepths — the bottom rung of the D68 ladder, so it never displaces a survey',
+    input: inputPath,
+    output: target.label,
+    counts: Object.entries(totals).map(([name, value]) => ({ name, value })),
+  });
+  logger.succeed([`${totals.inverted} contradictory mean/max pairs resolved`]);
 }
 
 main();

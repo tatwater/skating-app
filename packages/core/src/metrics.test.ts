@@ -4,6 +4,7 @@ import {
   bucketLabels,
   COUNTER_METRIC_KEYS,
   countBy,
+  EXTERNAL_METRIC_KEYS,
   HOUR_BUCKETS,
   histogram,
   hoursBetween,
@@ -14,6 +15,7 @@ import {
   metricDayRange,
   metricDayStart,
   REPUTATION_POINT_BUCKETS,
+  ROLLUP_METRIC_KEYS,
   rate,
 } from './metrics';
 import { CONTRADICTION_FLAG_THRESHOLD, TRUST_CLASS_THRESHOLDS } from './reputationConfig';
@@ -141,12 +143,20 @@ describe('the metric vocabulary', () => {
     }
   });
 
-  it('splits the keys into exactly the counter and rollup families', () => {
+  it('splits the keys into exactly three families, so every metric has exactly one writer', () => {
+    // The real invariant is not "there are two families" but "no key is left without a writer, and
+    // no key has two". A third family (N7's external catalogue measurements) is admitted by naming
+    // it here; a key that belonged to none would still fail, which is the point.
     expect(COUNTER_METRIC_KEYS.length).toBeGreaterThan(0);
+    expect(ROLLUP_METRIC_KEYS.length).toBeGreaterThan(0);
     expect(COUNTER_METRIC_KEYS.every((k) => METRICS[k].kind === 'counter')).toBe(true);
-    const rollups = METRIC_KEYS.filter((k) => !COUNTER_METRIC_KEYS.includes(k));
-    expect(rollups.every((k) => METRICS[k].kind === 'rollup')).toBe(true);
-    expect(COUNTER_METRIC_KEYS.length + rollups.length).toBe(METRIC_KEYS.length);
+    expect(ROLLUP_METRIC_KEYS.every((k) => METRICS[k].kind === 'rollup')).toBe(true);
+    expect(EXTERNAL_METRIC_KEYS.every((k) => METRICS[k].kind === 'external')).toBe(true);
+
+    const families = [COUNTER_METRIC_KEYS, ROLLUP_METRIC_KEYS, EXTERNAL_METRIC_KEYS];
+    expect(families.reduce((n, f) => n + f.length, 0)).toBe(METRIC_KEYS.length);
+    // …and disjoint, so nothing is written twice.
+    expect(new Set(families.flat()).size).toBe(METRIC_KEYS.length);
   });
 });
 

@@ -1,10 +1,10 @@
 import { api } from '@skating/convex/api';
-import type { Id } from '@skating/convex/dataModel';
 import { searchQueryArg } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader, Table, Td, Th } from '../components/admin/adminUi';
+import { DuplicateGroupCard } from '../components/admin/DuplicateGroupCard';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
@@ -37,6 +37,7 @@ function AdminWater() {
   const approve = useMutation(api.waterBodies.approve);
   const reject = useMutation(api.waterBodies.reject);
   const merge = useMutation(api.waterBodies.merge);
+  const dismiss = useMutation(api.waterBodies.dismissDuplicates);
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,7 +75,7 @@ function AdminWater() {
 
       <section className="flex flex-col gap-2">
         <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-          Curated bodies
+          Curated bodies{curated ? ` (${curated.length})` : ''}
         </h2>
         <p className="text-foreground-muted text-sm">
           Every body carrying a prominence boost. Read the state and area columns as a check on the
@@ -121,7 +122,7 @@ function AdminWater() {
 
       <section className="flex flex-col gap-2">
         <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-          Pending review
+          Pending review{pending ? ` (${pending.length})` : ''}
         </h2>
         {pending === undefined ? (
           <AdminEmpty>Loading…</AdminEmpty>
@@ -167,48 +168,49 @@ function AdminWater() {
 
       <section className="flex flex-col gap-2">
         <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-          Suspected duplicates
+          Suspected duplicates{dedup ? ` (${dedup.total})` : ''}
         </h2>
+        {/* Both numbers, because they differ and the difference is confusing: reconciliation flags
+            every member of a group, so 50 decisions arrive as 100 flagged rows. A heading that
+            printed one of them over a list built from the other is how an operator stops trusting a
+            queue. */}
+        {dedup && dedup.total > 0 ? (
+          <p className="text-foreground-muted text-sm">
+            {dedup.total} decision{dedup.total === 1 ? '' : 's'} across {dedup.flaggedRows} flagged
+            row{dedup.flaggedRows === 1 ? '' : 's'}. Each card shows what the rows disagree about;
+            open the outlines when the fields don’t settle it.
+            {dedup.truncated ? ' More are flagged than this page reads.' : ''}
+          </p>
+        ) : null}
         {dedup === undefined ? (
           <AdminEmpty>Loading…</AdminEmpty>
-        ) : dedup.length === 0 ? (
-          <AdminEmpty>No suspected duplicates. (Populated once Phase 8 lands.)</AdminEmpty>
+        ) : dedup.total === 0 ? (
+          <AdminEmpty>No suspected duplicates.</AdminEmpty>
         ) : (
-          dedup.map(({ body, candidates }) => (
-            <Card key={body._id}>
-              <CardContent className="flex flex-col gap-2">
-                <p className="text-foreground text-sm">{body.name}</p>
-                <p className="text-foreground-muted text-xs">Merge into the canonical body:</p>
-                <div className="flex flex-wrap gap-2">
-                  {candidates.length === 0 ? (
-                    <span className="text-foreground-muted text-xs">No candidates recorded.</span>
-                  ) : (
-                    candidates.map((c) => (
-                      <ReasonDialog
-                        key={c.id}
-                        trigger={
-                          <Button variant="outline" size="sm">
-                            Merge → {c.name}
-                          </Button>
-                        }
-                        title={`Merge “${body.name}” into “${c.name}”`}
-                        description="Re-points reports/hazards/bounties to the survivor and tombstones this one."
-                        confirmLabel="Merge"
-                        confirmVariant="default"
-                        requireReason={false}
-                        onConfirm={(reason) =>
-                          merge({
-                            survivorId: c.id as Id<'waterBodies'>,
-                            loserId: body._id,
-                            ...(reason ? { reason } : {}),
-                          })
-                        }
-                      />
-                    ))
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+          dedup.groups.map((group) => (
+            <DuplicateGroupCard
+              key={group.key}
+              group={group}
+              // Sequential rather than parallel: each `merge` re-points every child of one body and
+              // schedules a re-stamp, and two of them racing onto the same survivor is not a thing
+              // worth finding out about from a queue page.
+              onMerge={async (survivorId, reason) => {
+                for (const loser of group.members) {
+                  if (loser._id === survivorId) continue;
+                  await merge({
+                    survivorId,
+                    loserId: loser._id,
+                    ...(reason ? { reason } : {}),
+                  });
+                }
+              }}
+              onDismiss={(reason) =>
+                dismiss({
+                  waterBodyIds: group.members.map((m) => m._id),
+                  ...(reason ? { reason } : {}),
+                })
+              }
+            />
           ))
         )}
       </section>

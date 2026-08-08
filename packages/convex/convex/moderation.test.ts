@@ -47,7 +47,8 @@ async function seedReport(t: ReturnType<typeof convexTest>, authorId: Id<'profil
   const waterBodyId = await t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Lake Morey',
-      type: 'lake' as const,
+      searchText: 'Lake Morey',
+      type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: {
         type: 'Polygon' as const,

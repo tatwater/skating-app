@@ -2863,3 +2863,844 @@ survives**: its rule was *"don't draw a line where no depth-sounder went"*, not 
 surveyed lines to show."*
 
 **Related:** [D82](#d82--bathymetry-is-context-not-counsel-n6b), [D83](#d83--contours-carry-their-sources-native-interval-and-units-labelled-we-never-resample-n6b), [`phase-N6b`](./phase-N6b-bathymetry-layer.md).
+
+## D91 — The canonical corpus has a floor: five acres, or one acre with a name
+
+**Decided (2026-08-02, founder call, from a measurement of the 2026-08-02 five-state transform —
+123,940 bodies.)**
+
+A body enters the canonical corpus only if it is **at least 5 acres**, or **named and at least
+1 acre** (`meetsAreaFloor`, `@skating/core`'s `osm.ts`). Nothing under an acre survives on any
+evidence. Everything else is dropped at transform time and tallied as `droppedByAreaFloor`, distinct
+from the classification drop. **Keeps 21,660 of 123,940 — 17.5%.**
+
+> *"If I get user feedback that someone's pond isn't there, then we can relax the rule and re-run the
+> import."* — founder. That is the fallback the whole decision rests on, and it is why the rule is
+> tuned to be cheap to loosen rather than safe to leave alone.
+
+The rule lives in core, not in the ETL that applies it, because two things enforce it: the transform
+(what a future import writes) and `waterBodies.pruneBelowAreaFloor` (what an existing corpus keeps).
+Two copies would drift into a prune that deletes rows the next import puts straight back.
+
+**Why there's a floor at all.** 64% of every feature the ETL imports is under one acre, with a median
+long axis of **50 m** — farm dugouts, retention basins, widenings in a brook. 84% is under five acres.
+Those ~104,000 rows are cell-indexed, searched, tiled and stat-computed, and none of them is a place
+anyone drives to.
+
+**Why five, when 25 / 30 / 50 were on the table.** Because the size argument cannot tell those apart
+and the cost argument can. All three floors delete ~95% of the corpus — 25 ac keeps 6,966 bodies,
+50 ac keeps 4,207, a gap of 2% of the corpus — while the difference between them is 2,759 real lakes.
+Above five acres you are no longer deleting junk, you are choosing how many lakes to lose for a
+rounding error in row count.
+
+Checked against the only two demand signals we have, and both said the same thing:
+
+- **The Google-Group gazetteer** (`training_data/google_group`, 117 discussed bodies). A 50-acre floor
+  deletes **Keiser Pond** (36 ac — and on our own VT curation seed), Boston Lot Lake (44.8), Drew Lake
+  (48.2), Ewell Pond (48.2) and Oliverian Pond (32.1). Nothing anyone has been recorded skating is
+  under five.
+- **State bathymetric surveys** (the N6b ingest, 2,022 lakes an agency paid to sound). **41% are under
+  50 acres, 23% under 25.** A 50-acre floor deletes 826 lakes whose contours we had already drawn.
+
+**Area is also the wrong axis, which is the second half of why the floor is set low.** The test being
+applied — "you can't skate a full circle" — is about *length*, and we store `longAxisM` (D85). Keiser
+Pond is 36 acres and **909 m** long: a 1.8 km out-and-back, better skating than a round 30-acre pond
+390 m across. There are 993 named bodies under 30 acres with a long axis over 600 m. At five acres the
+question doesn't arise, so no axis clause is needed; **if the floor is ever raised, it must gain one.**
+
+**The name tier is a hedge, and its evidence is thin — deliberately recorded as such.** It rescues
+2,398 named bodies between one and five acres, and **none of them is a known destination**: no body
+discussed in the Google-Group corpus is under five acres at all. Everything named above as a casualty
+of the *higher* floors — Keiser, Boston Lot, Solitude, Profile — clears five acres on size and needs
+no name.
+
+It stays because it is a cheap way to be wrong in the recoverable direction. A name in OSM is a human
+assertion that a place is a place, and it is the only such signal in the extract; search is name-driven,
+so a named pond returning nothing reads as broken rather than curated. It costs ~2% of the corpus
+against the 81% the floor removes. **If it is ever dropped, drop it on that trade and not on a belief
+that it is protecting known lakes.**
+
+**There is deliberately no "…or an agency surveyed it" tier, and that knowingly costs 5 bodies.**
+One was built on 2026-08-03 and removed the same day (founder call), because **agency coverage is
+downstream of this rule**: `waterBodies.matchBathymetryLakes` resolves a surveyed lake by looking for
+a *listed body in our corpus* at its deepest sounding, with a zero-metre buffer. A lake the floor
+excludes therefore can never be matched, contoured, or counted as covered.
+
+The consequence is a ratchet rather than a cycle. The clause could only ever protect lakes that a
+**previous, more permissive** corpus had already discovered — and for **any newly imported region it
+is a no-op by construction**, since the import runs before the join. Keeping it would have bought
+five bodies (3 in Maine, 2 in New Hampshire, all unnamed, 3.6–4.6 acres) in exchange for a permanent
+ordering rule nobody could enforce — *import unfiltered → join → build → coverage → prune* — plus a
+live trap: `importContourCoverage` **replaces** the coverage set, so pruning first and re-tiling later
+would silently drop those lakes from coverage and then delete them.
+
+Five bodies is the right price for deleting a whole class of ordering bug. **They are knowingly
+skipped**, and the fallback is the same one the rest of this decision rests on: someone reports a
+missing pond, we relax the rule and re-import.
+
+**The name tier stops at one acre**, because that is where a name stops asserting anything. 98% of
+sub-acre bodies are unnamed; of the 1,586 that are named, exactly **one** carries a state bathymetric
+survey and **one** has a long axis over 300 m. The largest are Quarry Pond (105 m long), Spring Pond
+(139 m) and Bog Pond (102 m) — an acre is 64 m across. The naming gradient only becomes informative
+above it: 2.0% named under an acre, then 5.6% / 10.4% / 16.1% / 19.7% through the 1–5 acre bands, then
+52.1% above five.
+
+Cutting the sub-acre named bodies costs one gazetteer name and it is a **false match**: "Button Bay"
+(32 mentions) resolves only to an unrelated 0.62-acre bay in *Maine*. The real Button Bay is on Lake
+Champlain and is not a body in the corpus under any rule — OSM models it as part of the lake, so it
+belongs to the sub-area layer with Malletts Bay and Dillenbeck Bay. Dropping it fixes a search that
+currently returns the wrong lake. Every other discussed name only loses redundant same-name matches
+(Beaver Pond drops 9 of 89, Mud Pond 2 of 180, Mill Pond 4 of 87) and keeps the lake itself.
+
+**Three acres for the unnamed tier was weighed and rejected** (same session). It would admit 4,988
+more bodies — +23% on the kept set — whose median shape is 235 × 117 m. **81% of them are `other` or
+`marsh`**, the buckets for water the classifier couldn't identify, and only **5** carry a state
+bathymetric survey: 0.10%, against 0.80% for the unnamed bodies already above five acres, an eightfold
+difference in the one independent quality signal available. The gazetteer cannot separate three from
+five, because nothing discussed is under five either way. If the worry is a skateable-but-unnamed pond,
+the honest lever is an axis clause — unnamed ≥ 3 ac **with a long axis ≥ 300 m** admits 1,174 of those
+4,988 and leaves the 3,814 round pockets (1,935 `other`, 1,085 `marsh`) out — not a lower area, which
+buys 4 junk rows for every plausible one.
+
+**Scope.** Canonical (OSM) import only. A body a skater creates from a recorded track (Phase 8,
+`waterBodies.create`) never passes through the transform and is exempt on purpose — someone skated it,
+which outranks any threshold. Sub-areas ([D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-n2))
+are untouched, which matters more than it looks: three of the seven most-discussed destinations in the
+corpus (Malletts Bay, Button Bay, Dillenbeck Bay) are bays of Champlain, not bodies.
+
+**What this does not do.** The floor alone doesn't remove anything already imported —
+`importCanonical` upserts and never deletes. `waterBodies.pruneBelowAreaFloor` is the other half: a
+paginated, **dry-by-default** pass that deletes the stored rows the floor would now refuse, and keeps
+anything with a claim on it (`source: 'user'`, a `curatedBoost`, a soft-delist, a dedup/merge pointer,
+an unknown area, or any attached report / hazard / bounty / favourite / put-in / track / sub-area).
+And this isn't a
+map-clutter fix: [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at)'s
+`minVisibleZoom` already bounds what a wide viewport reads, in-index. This buys storage, ETL time and a
+corpus that means something.
+
+**Related:** [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-n2), [D85](#d85--derived-geometry-stats-are-measured-on-the-source-geometry-not-the-simplified-copy-n6c), [`phase-1`](./phase-1-water-bodies.md).
+
+---
+
+## D111 — Rendering a place and covering it are two questions; New York south of I-84 gets one answer each (N7)
+
+**Decided (2026-08-05, founder call.)**
+
+The map draws downstate New York in full. The corpus does not include its water.
+
+These had always been the same question, and only because of an accident: the basemap was a rectangle,
+so wherever we stopped drawing was also wherever we stopped claiming to know anything. Giving the map
+a world separated them, and once separated they have different right answers. Poughkeepsie and
+Brooklyn are real places in one of our five states, and a user driving north deserves to see where
+they are starting from — a map that ends in grey at the Bronx is a bug. But we have no basis for
+saying anything about skating on water down there: no local knowledge, no sounding coverage, no
+reports, and a climate that makes the question mostly moot.
+
+**The cut is I-84, expressed as whole TIGER counties.** Not a latitude, because a straight line
+through the Hudson Valley would split counties and put half a reservoir in and half out. The excluded
+set is generated by `pnpm --filter @skating/admin-areas build-region` from the **same TIGER counties
+the map's mask is cut from**, so the line a user sees and the line the corpus enforces are one
+artifact and cannot drift apart.
+
+**A body is judged by its middle, not by its edge** (`inDownstate`), and the asymmetry with
+`inRegion` is deliberate. `inRegion` is generous — it keeps a body if *any* sampled point of its
+outline falls in the five states, because Beau Lake straddles the Québec border and only its edge
+proves it belongs to us. This test asks the opposite question: not whether a body *touches* downstate
+but whether it *is* downstate. So a reservoir lying across the Putnam/Dutchess line is decided by
+where its bulk sits rather than by whichever inlet reaches furthest south.
+
+**It is counted separately from the region clip**, and that is not bookkeeping. `outOfRegion` is the
+state geodatabases spilling over their own state lines — a data artifact, and a number that should
+stay roughly constant. `belowI84` is a coverage decision we made. Totalling them would hide the
+second inside the first, and the first is large enough (35,637 on the last run) to hide almost
+anything.
+
+**What this does not do.** It does not delist anything already stored — `importCanonical` never
+deletes, so downstate bodies imported under earlier runs survive until the campaign's re-affirmation
+prune removes them. It is not a statement that the water down there is unskateable, only that we do
+not claim to know; if that changes, the lever is one file and a re-run. And it does not touch
+rendering, admin areas, or drive-time: a user downstate still sees their own town, still gets
+isochrones northward, and still searches the whole corpus.
+
+**Related:** [D5](#d5--regions-are-a-data-concern-not-a-code-concern), [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D92 — OSM draws the lakes, because the bake-off found no reason to prefer NHD (N7)
+
+**Decided (2026-08-06) by measurement, not precedent.** The referee was our own bathymetry: **21.9
+million measurements** across 2,359 surveyed lakes, physical, and drawn by neither publisher.
+
+```
+metric            OSM wins    NHD wins        tie
+containment         235 10.0%   385 16.3%   1,739 73.7%
+coverage gap        315 13.4%   297 12.6%   1,747 74.1%
+COMBINED            382 16.2%   485 20.6%   1,492 63.2%
+medians:  containment 1.0000 / 1.0000 · gap 88 m / 87 m · area 68 ac / 68 ac
+```
+
+**They are indistinguishable, and D92 said in advance that this was a legitimate outcome that "must
+not be dressed up".** Every median is a tie to three significant figures. On the metric least
+confounded by size — the coverage gap, which asks how much of a polygon's own area sits far from any
+measurement — it is 13.4% against 12.6%, a coin flip over 2,359 lakes.
+
+So the rule is **OSM by default**, on the tie-break D92 specified: *pick the one with the cheaper
+pipeline.* OSM is already ingested, is the identity spine (`Permanent_Identifier` is a field on our
+record, not our key), and is the only source for D72's access layer — put-ins, parking, trails are not
+in NHD at all. Switching would mean re-importing 27,074 outlines to buy a difference we could not
+measure.
+
+### Two metrics, because either alone can be gamed
+
+`containedFraction` punishes a polygon that is **too small** and is blind to one that is too large — a
+polygon covering the lake and the field beside it contains every sounding and scores a perfect 1.0.
+`probeCoverage` (D98, `@skating/core/bodyProbe.ts`) is the mirror: probe the polygon's *own* area and
+measure the distance from each probe to the nearest measurement, so an over-drawn lake has probes in
+the pasture. Bounded on both sides.
+
+### What the measurement actually says, stated carefully
+
+**Containment is substantially a proxy for "which catalogue draws larger."** The loser is usually the
+smaller polygon, because the survey pokes outside it. NHD runs ~3% larger in Maine and ~6% smaller in
+Massachusetts, which is the whole of the apparent state split — **MA 53.7% OSM against ME 24.7% NHD is
+a size-convention difference, not a quality difference.** Big area disagreements (>25%) are a flat
+5–6% in every state, so it is not segmentation either.
+
+**NHD wins small lakes and OSM wins large ones** — 43.2% NHD under 10 acres, 18.1% OSM above 1,000 —
+which is consistent with a 1:24,000 compilation resolving a small pond better than a volunteer tracing
+imagery, and worse on a shoreline long enough for that volunteer to have walked it.
+
+**The two metrics disagree on 140 lakes (5.9%)**, counted as ties. Where one outline contains the
+survey better and the other describes the water better, picking a winner would mean inventing a
+weighting the evidence does not support. Those are the per-lake override candidates.
+
+### The per-lake override stays, and this is what makes D93 worth having
+
+`geometrySource` remains a field. The default is OSM; the override is for named cases where the margin
+is large — and it costs a field update rather than a migration precisely because D93 minted our own
+key. **Beau Lake is the standing example**: 1,875 acres, absent from OSM entirely because Geofabrik
+clips the Québec half, present in NHD at 1,876.6.
+
+### ⚠ The limits of this result, recorded rather than buried
+
+**It cannot measure coverage, only shoreline quality where both catalogues have a polygon.** The
+referee set is built from the bathymetry join, which needed an OSM body to exist — so the lakes OSM is
+*missing* are excluded by construction. **Beau Lake is not in this sample.** The 15 OSM-only against 7
+NHD-only surveys found here are therefore not a coverage measurement, and must not be quoted as one;
+the coverage claim rests on the separately-measured 36 Maine surveys with no polygon at all.
+
+**The first run of this bake-off was wrong and the numbers looked fine.** It took the OSM side from
+the bathymetry join — which only accepts a body holding ≥ 0.5 of the survey — so every OSM polygon had
+already passed the exact test it was about to be scored on. `osmContained` had a hard floor at 0.524
+with **zero lakes below 0.5**, against 12 for NHD and 8 at exactly zero, and that tail was where every
+"OSM wins" came from. It then picked the NHD counterpart by matching *against the OSM polygon*, so the
+second catalogue was selected to resemble the first. Both are fixed by anchoring on the survey's
+medoid — a real measurement, so on water by construction — with each catalogue independently supplying
+the smallest feature containing it, and neither selection rule reading either scored metric.
+
+**MA and NH contribute contour vertices rather than point soundings.** Checked for the obvious
+confound: neither ships a zero-depth shoreline trace (MA's shallowest contour is 2 ft, NH's 1 ft), so
+these are in-water measurements and not a re-tracing of the agency's own shoreline.
+
+**Related:** [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+## D112 — The map is two archives and a mask, and it stops drawing at our border rather than being fenced to it (N7)
+
+**Decided (2026-08-05, founder call.)**
+
+Zoom out and you see the whole world: oceans, continents, borders, a few country names. Zoom in and
+detail appears **only inside the five states** — towns, then highways and lakes. Everywhere else keeps
+its border and its name over flat, empty fill. And the camera is no longer fenced: you may pan to
+Australia, and a control offers the way back.
+
+**The old map was one `.pmtiles` extracted with `--bbox`, and both halves of that were wrong.** A
+rectangle cannot know where Connecticut starts, so Ottawa, Toronto and Hartford rendered in full; and
+its floor at 41.2°N is why the world ended in a straight line just above Manhattan. One cause, two
+complaints.
+
+**So: a whole-planet z0–6 overview beneath a polygon-clipped regional archive.** The overview is 43 MB
+and seven seconds to extract, and it is what gives the map an ocean everywhere. The regional archive
+is cut with `--region` against the five TIGER states, which also halved it (948 MB → 458 MB). Draw
+order and zoom policy live in `packages/core/src/basemapLayers.ts`, shared by both surfaces so they
+cannot drift.
+
+**`pmtiles extract --region` clips by *tile*, not by polygon**, so the mask is not optional. A tile
+grazing New York survives whole — a 2.4 km fringe at z14, and ~450 km at z6, which overzooming then
+drags across Québec at every higher zoom. `--region` is a size optimisation; the mask is what makes
+the border crisp.
+
+**The mask covers water as well as land**, in three layers — sea, land over it, then the big lakes.
+Land alone leaves the tail of "Madison" lying on Long Island Sound, because a label is wider than the
+ground it names. Its hole is our land grown five kilometres seaward, intersected back with the ocean
+so it can only ever grow into water and never into Connecticut; without that allowance a mask starting
+at Portland's shoreline eats half of "Portland".
+
+**Labels are filtered, not painted over, and this is the part that is easy to get wrong twice.** A
+mask cannot tell our labels from anyone else's: "New York" is anchored in Manhattan with half the word
+over New Jersey, and Seekonk and Rehoboth are Massachusetts towns whose names overhang Rhode Island.
+So the regional archive's **point- and line-sourced** symbol layers sit *above* the mask with a
+`["within", outline]` filter — theirs dropped rather than covered, ours legible over the flat fill.
+The outline is generated a kilometre **outside** the true border, because the failure modes are not
+symmetric: too small silently drops Vermont's own town names, too large shows one border town's name
+against flat fill.
+
+**Polygon-sourced labels are deliberately left under the mask**, and that qualifier is load-bearing
+rather than fussy — see the third warning below.
+
+### ⚠ Three renderer facts this rests on, all learned the hard way
+
+**An opaque fill cannot hide a label.** MapLibre sends a fill to the *opaque* render pass only at
+exactly `fill-opacity: 1`; symbols render in the *translucent* pass, which runs afterwards with depth
+testing off. So an opaque mask is drawn *before* the labels beneath it and every town in Québec
+rendered straight through it. The mask sits at 0.999 for that reason and no other.
+
+**A filter is judged legacy-or-expression as a whole.** The Protomaps flavour writes eight of its
+symbol filters in legacy syntax, so `["all", <legacy>, ["within", …]]` is read as legacy, `within` is
+not a legacy operator, and MapLibre rejects **the entire style** — not the layer. The map went blank
+on device. Every filter goes through the style spec's `convertFilter` first, and both app suites now
+run `validateStyleMin` over the composed style, because a filter-level mistake is a black screen
+rather than a wrong-looking layer.
+
+**`within` supports Point and LineString features only.** Handed a polygon it logs
+`within expression currently only support Point/LineString geometry type` and evaluates **false** — so
+filtering a polygon-sourced label layer does not filter it, it *deletes* it. Decoding real tiles says
+`places` and `pois` are Point and `roads` is LineString, while `water`, `earth` and `buildings` are
+Polygon. Filtering all symbol layers alike therefore took **every lake name off the map inside our own
+region**, which is the one label class this app can least afford to lose: the basemap is the only
+thing that draws it, since we label bays and not lakes. The filter is keyed on the *source layer*
+rather than the style layer's id, because geometry is a property of the source.
+
+**Related:** [D6](#d6--renderer-maplibre-gl-locked), [D49](#d49--zoom-scored-display-prominence-the-zoom-based-rendering-d48-gestured-at), [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D113 — Nothing leaves the pipeline uncounted, and the two artifacts have to balance (N7)
+
+**Decided 2026-08-06**, after an audit of the intake path found that the campaign's proudest claim —
+*"every number balances: 178,690 groups = 11,631 refused + 35,637 out of region + 104,348 filtered +
+27,074 kept"* — balanced only from the **grouping stage onward**. Upstream and downstream of it there
+were eight uncounted exits, and the largest single filter in the whole pipeline was one of them.
+
+| where | what vanished |
+| --- | --- |
+| the one-acre floor, all three lanes | ~64% of raw OSM, with **no number at all** |
+| `JSON.parse` in a `try`/`catch` | a truncated extract reads as a region with fewer lakes |
+| OSM features with no `@type`/`@id` | an export that lost `-a type,id` reads as an empty state |
+| `normalizeNhdId` rejections | the exact case `DropLedger` was built for, bypassed |
+| the `ogr2ogr -where` pre-filter | the publisher's own `areasqkm`, silently excluding NULLs |
+| emit failures | in `master.ndjson` as kept, absent from `bodies.ndjson` — the report was the pre-emit number |
+| `ambiguous` matches | counted, never named; each stays a singleton, i.e. a silent duplicate |
+| `no-class` groups | a count with no samples, mixing "a river, correctly refused" with "the classifier has a hole" |
+
+**The rule: a rejection must be counted, named, and sampled.** Every `continue` in a lane is now a
+`LaneDrop` with a reason; `LaneLedger` tallies them with five raw samples each; and the merge asserts
+two equations before it writes anything —
+
+```
+seen == kept + dropped        (per lane)
+kept == emitted + emitFailed  (the two artifacts)
+```
+
+— **throwing rather than warning**, on the same reasoning `expectAcceptance` already encodes: a
+warning inside a twenty-minute ETL log is indistinguishable from silence.
+
+**And the pass is run-logged.** D99 says every pass in the campaign carries an `importRuns` row;
+`reconcileNhd` and `auditArchives` did and the *merge* did not — the one pass that decides all 27,074
+rows reported to a terminal that scrolls. New kind: `corpus_merge`.
+
+**Related:** [D97](#d97--the-audit-reports-only-the-prune-deletes), [D99](#d99--every-pass-in-the-campaign-is-run-logged-and-the-ledger-is-wiped-first), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D114 — The ocean veto needs no match, and an explicit refusal beats another source's silence (N7)
+
+**Two corrections to the merge's refusal logic, founder-approved 2026-08-06.**
+
+### The veto was contingent on a `polygonIoU` succeeding
+
+`VETO_TOKENS` is keyed on a catalogue's own class — `3dhp:featuretype=4`, `nhd:ftype=445`,
+`nhd:ftype=493` — so it fires only when the vetoing feature lands in the merged group. **NHD publishes
+Lake Erie as FTYPE 390 `LakePond`**, so Erie's and Ontario's exclusion rested entirely on 3DHP's
+counterpart matching at IoU ≥ 0.5, over the largest and most awkwardly-clipped polygons in the
+archive. The merge's own test suite pinned this as a known hole rather than closing it. And
+`inRegion` would not have caught the escape: TIGER's state outline includes New York's share of both
+lakes.
+
+Two vetoes that need no match, no second catalogue and no geometry:
+
+1. **By name** — `assertsOceanOrGreatLake`: the Great Lakes, Long Island Sound, the Atlantic, the
+   Gulf of Maine. A bare `ocean` is deliberately *not* in the pattern, because New England names a
+   great many small things after the sea (Ocean Pond, Ocean Point) and a substring rule deletes them.
+2. **By area** — **100,000 acres** without an allow-list entry (founder call). Lake Champlain at
+   ~271,000 is the only body in our five states above the bar, which is the property that makes the
+   ceiling honest: if it needed twenty exceptions it would be measuring the wrong thing.
+
+**The ceiling is deliberately not read by `belongsInCorpus`.** The floor is enforced in two places
+and must mean the same thing in both; a ceiling wired into it would give `pruneBelowAreaFloor` the
+power to delete Champlain the first time somebody edited the list.
+
+**And the veto now reads `sourceToken`, not `token`.** `classifyWaterBody` returns early with
+`name:reservoir` when a name asserts one, which discarded the only evidence that a feature was a
+tidal estuary — so a vetoed body whose name happened to contain "Reservoir" entered on a technicality.
+A veto must not be overwritable by a naming rule.
+
+### `unclassified` is silence, and silence loses to a refusal
+
+`chooseClass` looked only at the non-null classes, and an explicit drop contributes none. So a group
+where 3DHP said `featuretype=1 River` and OSM said `natural=water` with no subtag resolved to
+`unclassified` and was **admitted** — one source's explicit identification beaten by another's
+silence.
+
+That was inconsistent with the layer directly below it: `strongerClaim` already ranks drop above
+silent *within* one source, on the reasoning that *"a drop is a decision and silence is not"*. The
+same rule now applies across sources. **It still loses to a real class**, which is what preserves the
+123-body rescue the merge exists for — only *silence* loses to a refusal, and the two outcomes are
+counted apart (`no-class` vs `refused-over-silence`) so the size of the change is visible.
+
+**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogues), [D109](#d109--the-stored-vocabulary-migrates-it-does-not-map-back), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D115 — What the merge learned rides on the row: confidence, region share, and campaign membership (N7)
+
+**Decided 2026-08-06.** Three things the merge computed and threw away, plus the prune that could not
+exist without the third.
+
+**1. `confidence` + `reviewReasons` are stored.** `@skating/core/confidence.ts` is a fully tested
+module implementing D110's four levels and its review-queue predicate — and its entire output existed
+as three lines of terminal text in a run that had already ended. A **1,388-body review queue** (664
+class-conflict, 512 name-conflict, 159 bay-without-parent, 92 same-source-duplicate) could never be
+opened by anyone, and the per-attribute design that makes the queue workable had no consumer at all.
+
+**2. `inRegionFraction` is stored.** `inRegion` admits on a **single** in-region vertex, which is what
+keeps Beau Lake — most of which is in Québec. The cost of that generosity is that the corpus also
+holds bodies mostly somewhere else, at full area, feeding the D85 deciles and every regional count,
+with nothing saying so. Recorded, not acted on: measure before deciding, as D96's wetland call did.
+
+**3. `lastCampaignId` is stamped, and step 6 finally has an implementation.** `importCanonical`
+upserts and never deletes, so after a re-import the corpus is the **union** of the new master list and
+whatever was there before — and the two sets do not contain each other (18,383 stored against 27,074
+merged). Every stored body the current rules refuse survives forever: a vetoed Great Lake, an
+out-of-region row, an unnamed wetland under the 50-acre bar D96 settled after it was imported.
+`pruneBelowAreaFloor` only sees area; `pruneOutsideCoverage` only sees polygons handed to it.
+
+`pruneNotInCampaign` asks the one question that covers every case: *did this campaign's master list
+re-affirm this body?* Membership is **asserted by the loader**, not re-derived here — a second copy of
+the rules is exactly how a prune and an import come to disagree at the edges. Every protection
+`pruneBelowAreaFloor` honours is honoured identically, and a body carrying user content is never
+deleted whatever the master list says.
+
+**Related:** [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D100](#d100--downstream-enrichment-runs-only-against-the-corpus-we-keep), [D110](#d110--confidence-is-per-attribute), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D116 — One area decides admission, and the producer decides `states` (N7)
+
+**Two wire defects between the merge and the loader, found by the same audit and fixed together.**
+
+### `states` was emitted, declared, and not in the validator
+
+`merge.ts` emitted `states`, `CanonicalBody` declared it, and Convex's `canonicalBody` validator did
+not have the field. **Convex object validators are exact**, so a merged load would have been rejected
+batch by batch — 27,074 bodies deep into a campaign, on the one field the plan had already recorded as
+*"the one thing that was not on the list and had to be added"*.
+
+Adding the field alone would have been worse than leaving it: the handler ignored it and wrote
+`unionState(existing.states, state)` from a `--state` CLI flag that a **single-pass merged load does
+not have**, producing 27,000 rows with no state at all and silently emptying every regional filter in
+the app.
+
+So `resolveStates`: **an explicit list from the producer is authoritative and replaces; a `--state`
+tag is a partial observation and unions.** Same rule `assertedCatalogueIds` follows for the catalogue
+ids, for the same reason — nothing inside the mutation can tell a complete record from a partial one,
+so the caller has to say.
+
+### The floor and the prune measured different areas
+
+`belongsInCorpus` is applied to the **source** geometry, because that is the more accurate measure.
+`surfaceAreaSqM` is measured from the **simplified** polygon, because that is what we draw. They
+differ by well under a percent — and that was enough: `pruneBelowAreaFloor` reads the stored number,
+so a body admitted at 1.0001 acres and stored at 0.9999 was **added by every import and deleted by
+every prune, forever**.
+
+The rule `osm.ts` already states — *"two copies would drift into a prune that deletes what the next
+import re-adds"* — was being broken not by two copies of the rule but by two copies of the **input**.
+`sourceAreaSqM` carries the number the decision was made on; the prune prefers it and falls back to
+`surfaceAreaSqM` for rows written before it existed.
+
+**Related:** [D91](#d91--the-canonical-corpus-has-a-floor-five-acres-or-one-acre-with-a-name), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D117 — A file that holds a decision is not glue, and D92's override finally has a producer (N7)
+
+**Decided 2026-08-06.** Four rules that were excluded from coverage as subprocess glue, and one that
+was specified and never built.
+
+**The coverage exclusion was measuring the wrong thing.** `scripts/etl` reported 99.31% over an
+`exclude` list that removed ~3,700 of ~5,400 non-test lines, and `scripts/admin-areas` covered only
+`transform.ts` (192 lines of 1,810). Both configs had a comment saying this was fine; the water ETL's
+was accurate the day it was written, and `admin-areas`'s explicitly predicted its own failure:
+
+> ⚠ `buildRegion.ts` is excluded on the same grounds … If this file keeps growing, split its geometry
+> rules out and drop the exclusion rather than widening it.
+
+It kept growing. The rule now, in both configs: **if a file holds a decision, extract the decision** —
+`mergeRules.ts`, `extract.ts`, `gnisSource.ts`, `regionRules.ts`, each at 100%.
+
+Three things that fell out of doing it:
+
+1. **`merge.ts` importing from `gnisArchive.ts` re-ran the five-state GNIS download on every run**,
+   because that module calls `main()` at import. Exactly the trap `admin-areas/tiger.ts` was split out
+   to escape, one package over, and it explains the handoff's note that the last `master.ndjson` came
+   from a build that "fetched GNIS inline".
+2. **Four copies of the `osmium`/`ogr2ogr` argv** across `merge`, `classifyDryRun` and the fetchers,
+   each of which must agree about which features exist. A narrowed `-select` does not error; it
+   produces a column of `undefined` that classifies as silence.
+3. **`buildRegion.ts`'s downstate county list is not scenery** — `merge.ts` reads
+   `downstate-ny.geojson` as the D111 corpus cut, so a county on or off that list adds or removes
+   **water bodies**, and it had no test.
+
+**And `GEOMETRY_OVERRIDES` exists.** D92 settled OSM-by-default on a tie-break and said, explicitly,
+that the default loses on named cases and that `geometrySource` stays a field so those can be fixed
+one lake at a time. Until now the override was **a decision with no producer**: the bake-off wrote
+its per-lake scores to a scratch file nothing read, and `chooseGeometry` was a hardcoded OSM-first
+placeholder. Beau Lake — the fixture this phase is named for — merged at **2,457 acres** against
+Maine's published **1,788** and Wikipedia's 7.23 km² (1,786 ac), two independent figures agreeing to
+within a percent. NHD's archived polygon is 1,876.6 ac, within 5% of both. The table's first entry is
+that lake, and the bake-off's 140 two-metric disagreements are the pool for extending it.
+
+**Related:** [D40](#d40--coverage-thresholds), [D92](#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-n7), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D118 — A missed match is a duplicate, so the name gets a lane — bounded by geometry (N7)
+
+**The second intake audit's headline** (2026-08-06), and the one finding that was not visible from
+any run report: **the matcher's false negatives do not produce gaps, they produce extra rows.**
+
+`resolveUpsert` keys identity on catalogue ids (D93). A merged group with no OSM member carries no
+`osmId`, so it meets a corpus that already holds that lake and **inserts a second row beside it**.
+Nothing downstream can tell the pair from two real lakes: not the loader, not the prune, not the map.
+
+Measured over the master list as it stood — **632 pairs of separate bodies overlapping at IoU ≥ 0.3**,
+34 of them above 0.5, and **408 of the pairs share a name**. `Peabody Pond` 7 ac beside `Peabody
+Pond` 16 ac. `Freeses Pond` 25 beside 55. `Birch Ridge Pond` beside itself at IoU 1.00.
+
+### Why they were missed, which is not a threshold to nudge
+
+`scoreCandidates` skips any pair whose **exact** IoU ceiling `min(area)/max(area)` falls below the
+bar. At `RECONCILE_MIN_IOU = 0.5` that means **any pair whose areas differ by more than 2× is
+rejected before an intersection is computed at all** — and on small ponds the catalogues differ by
+2–3× routinely, because they disagree about where a marshy margin stops being water. The bar is
+unreachable exactly where the disagreement lives. That is also the measured answer to the long-open
+*"OSM↔NHD matches 33% and nobody knows why"*.
+
+Lowering it is not available: 0.5 is what stops a bay inheriting its parent's identity.
+
+### The lane, and the founder's condition on it
+
+*"So long as we can be sure that the two bodies with the same name are also in the same-ish
+geolocation, I'm happy to use name to confirm the merge! But I do NOT want a name match to merge one
+pond in Maine with another pond in New York."*
+
+So the name is **never** a proximity rule and never fires alone. A pair qualifies only when:
+
+1. both names are non-empty and `sameName` (case, accent, apostrophe, possessive, word order);
+2. the two outlines **actually overlap**, by `NAME_MATCH_MIN_IOU` of shared area — not a shared
+   bounding box, not a distance;
+3. exactly **one** candidate qualifies, so a chain of same-named ponds refuses rather than guesses;
+4. the geometric lane has not already spoken for the target, including when it said `ambiguous`.
+
+Two lakes 400 km apart cannot overlap by any amount, so the condition is satisfied structurally
+rather than by a tuned radius. What the name buys is *permission to accept an overlap the
+area-ratio ceiling would have refused* — nothing else.
+
+### The bar is 0.3, and the first full run is what set it
+
+It shipped at 0.1 and the run corrected it. A **534-acre** OSM feature named `Indian Lake` was
+absorbed into the **3,743-acre** OSM `Indian Lake` beside it, because a lobe inside its parent scores
+IoU ≈ 0.12 and the two share a name exactly.
+
+D93 had already written the rule for this evidence class, for the *stronger* signal:
+
+> `RECONCILE_MIN_IOU_WITH_GNIS` **0.3** — both publishers independently naming the same place is real
+> evidence, but not a bypass, because a lake NHD splits shares its GNIS id with both halves.
+> **Accepting those merges a real lake into a fragment.**
+
+A matching *name* is weaker evidence than a matching *GNIS id* — the gazetteer is an authority, a name
+is a string two mappers typed — so this lane cannot justify a looser bar than the one already settled
+for the stronger one. `NAME_MATCH_MIN_IOU` is now pinned to that constant rather than restating it.
+
+It still covers what the lane exists for: Peabody Pond at 7 ac against 16 has an area-ratio ceiling of
+0.44, comfortably clear. What it declines is anything past a ~3.3× size difference, which is exactly
+where "the same lake drawn differently" stops being distinguishable from "an arm of it".
+
+### And a sweep, because the name cannot close the unnamed case
+
+4,070 of the NHD-only bodies in the master list are unnamed ponds. `overlapDuplicates` runs over the
+**surviving** set and flags both sides `duplicate-candidate`, which is a review reason a moderator can
+act on. It does not merge: *"if we can resolve any automatically with high confidence, then let's do
+it. Otherwise if we're not sure or there's a good chance we're wrong, put these in the queue."* The
+high-confidence half is the name lane, upstream, where the evidence is.
+
+**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D110](#d110--confidence-is-per-attribute), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D119 — No salt water, and the veto has to be spatial (N7)
+
+**Founder, 2026-08-06: no salt water.** The corpus held Great Bay (4,301 ac), Little Bay (1,826),
+Winter Harbor, Little Harbor, Pepperrell Cove, Little Pleasant Bay and ~360 more tidal bodies.
+
+`VETO_TOKENS` already refuses NHD's `Estuary` and `SeaOcean` and 3DHP's `Ocean or Great Lake` — and
+it fires **only when the vetoing feature lands in the merged group**, which needs a cross-catalogue
+`polygonIoU` match to have succeeded. It routinely does not: the federal catalogues draw one enormous
+estuary polygon where OSM draws forty separate coves, so the IoU between any cove and the estuary is
+near zero. The cove then arrives as its own body, `hasBayParent` finds no parent for it — because the
+parent *is* the ocean, which we refused — and the bay rule **demotes it to `unclassified` and admits
+it**. The worst available outcome: tidal water in the corpus wearing the label we give water nobody
+has described.
+
+**So the question is asked spatially instead.** `saltMask` collects every feature the federal
+catalogues class as sea (they are already in memory — the lanes keep them with `cls: null` rather than
+dropping them), and a merged body whose outline is `SALT_MIN_CONTAINMENT` inside one is refused.
+No match required, which is the property the token veto lacks.
+
+### Two measurements that set the rule
+
+**The threshold is 5%, read off the names in each band rather than off a gap in the histogram.** The
+containment distribution over the 364 intersecting bodies is smooth from 0 to 1 with nothing to cut
+at. Every band down to 0.08 is unmixed salt water — Waquoit Bay, New Bedford Harbor, Hampton Harbor,
+Plum Island Sound, Merrymeeting Bay, Seabrook Salt Marsh, Menemsha Pond, Sengekontacket Pond. Below
+that they are grazing contacts, where a freshwater pond behind a barrier beach shares vertices with
+the estuary that drains it.
+
+**The Great Lakes are not the sea, and the first version of the mask said they were.** 3DHP's type 4
+is spelled *Ocean or Great Lake*, and masking with the whole class flagged **Braddock Bay** and
+**Blind Sodus Bay** — freshwater embayments of Lake Ontario that people skate. The clip holds 19
+type-4 features: Huron, Erie, Ontario, and 16 Atlantic pieces whose 7 unnamed members all sit on the
+Maine coast. So the split is exact and needs only the name. The lakes themselves stay refused, by the
+token veto and by the area ceiling; what this preserves is their **shoreline**.
+
+### The two it gets wrong, and why they are a list rather than a rule
+
+The veto is right **943 times out of 945**. The two it is wrong about cannot be separated from the
+rest by any threshold, because they interleave:
+
+| body | contained | | |
+| --- | --- | --- | --- |
+| **Nequasset Lake**, Woolwich ME | 12.3% | 449 ac | **fresh** — the Bath Water District's supply |
+| Menemsha Pond, Martha's Vineyard | 15.6% | 695 ac | salt |
+| Cuttyhunk Pond | 17.3% | 112 ac | salt |
+| **Winnegance Lake**, Phippsburg ME | 46.3% | 187 ac | **fresh** — above the tidal dam |
+| Little Bay, NH | 47.8% | 1,827 ac | salt |
+
+Both are lakes dammed immediately above a tidal inlet **of the same name**, and NHD's estuary polygon
+simply runs past the dam. `FRESHWATER_ALLOW_LIST` names them, the same shape as
+`AREA_CEILING_ALLOW_LIST` and for the same reason: the rule is right and these are the exceptions.
+The general escape hatch stays N7b's `includedByRequest`.
+
+### And elevation, which this file had promised for months, does not work
+
+`waterClass.ts` said from the day it was written that an estuary is *"filtered by elevation, not by
+class"*, and OSM does carry `ele` on some water — so it looked like the principled answer was sitting
+in the tags all along. **Measured, it is not.** Of the 12 salt-refused bodies tagged `ele >= 3` m,
+where tidal is physically impossible, only Winnegance is actually fresh. The rest are Maine coves
+carrying an `ele` regardless — Gleason Cove 13 m, Federal Harbor 14 m, Morong Cove, Weir Cove — and
+**Crows Pond ends the argument with `ele=5` and `tidal=yes` on the same feature.**
+
+Recorded as a *negative* result because it is the kind that gets re-attempted: the comment promising
+it survived two audits, and the tag exists, so the next person to read one and grep for the other
+would build the rule and readmit ten tidal coves to save one lake.
+
+`tidal=yes` is the tag that does hold — 96 of the 595 refused OSM bodies carry it, every one already
+refused. That is 96 independent confirmations, not a rule we need.
+
+**Related:** [D96](#d96--settled-the-four-admission-rules-n7), [D114](#d114--the-ocean-veto-needs-no-match-and-an-explicit-refusal-beats-another-sources-silence-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D120 — A name veto that is not gated on size deletes real lakes (N7)
+
+D114 added `assertsOceanOrGreatLake` because NHD publishes Lake Erie as FTYPE 390 `LakePond`, so no
+class rule refuses it and the token veto was contingent on a geometric match. The rule was a
+**substring** match on a name, and the second audit measured what that costs against the master list:
+
+| | | |
+| --- | --- | --- |
+| **Lake Superior** | 179 ac, `lakePond`, **New York** | a real lake in Sullivan County, with a state park on it |
+| **Little Lake Erie** | 4 ac, `reservoir`, **New York** | matches because `\blake erie\b` sits inside "Little Lake Erie" |
+
+Both would have been deleted on the next run, and the only trace would have been `+2` on a
+`vetoed-name` counter. That is the exact failure D114's own docstring rejects a bare `ocean` pattern
+for, one paragraph before walking into it.
+
+**The fix is an area gate at 50,000 acres**, which sits far below the smallest body the list names
+(Long Island Sound, 801,802 ac) and far above anything that could be confused with one.
+
+**Kept rather than deleted, and that was the founder's call.** The area ceiling already refuses every
+body on the list on size alone, so the name rule is near-redundant *today* — but *"when adding Alaska
+and Québec, there's a chance we might still need it, gated on area."* The Gulf of St. Lawrence and
+Lake Huron become our neighbours the moment Québec does, and a categorical refusal that needs no
+cross-catalogue match is worth keeping for that. Gated, it costs nothing.
+
+**Related:** [D114](#d114--the-ocean-veto-needs-no-match-and-an-explicit-refusal-beats-another-sources-silence-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D121 — A bay with a parent is a sub-area; a bay without one is a question (N7)
+
+**Founder, 2026-08-06: sub-area.** The bay rule had two outcomes and both of them produced a
+top-level water body, which double-counts the water: the corpus carried `West Branch Keuka Lake`
+(2,707 ac), `Spencer Bay` (4,742 ac, on Moosehead) and Winnipesaukee's `Alton`, `Paugus` and
+`Meredith` bays as rows overlapping the very lakes they are arms of. A search for the lake returned
+it twice and the D2 deciles counted its water twice.
+
+N2 built `waterBodySubAreas` for exactly this shape — Malletts Bay is part of Champlain, not a lake
+beside it — so this is a new lane on an existing table, not a new concept:
+
+- **`bayParent` returns the parent** rather than a boolean, and prefers the **smallest** qualifying
+  one, which is Decision 9's smallest-containing rule one layer up (a cove in a bay in a lake belongs
+  to the bay). Without it the answer depended on grid iteration order.
+- **The merge emits `sub-areas.ndjson`** and `subAreas.importBaySubAreas` loads it, resolving the
+  parent by catalogue id (D93) and clipping the bay's own traced outline to the parent's polygon
+  (D60/Decision 10). Run **after** the body load — the parent has to exist.
+- **A bay whose parent did not survive falls back to the no-parent branch**: demoted to
+  `unclassified` and queued. A sub-area pointing at a body the loader will never create is the one
+  outcome that must not happen, because it fails at load time rather than at decision time.
+- **A bay with no parent at all is still demoted and queued**, unchanged. Half Moon Cove is 330
+  acres, named "Cove", contained in nothing, and is a wetland.
+
+**Related:** [D60](#d60--a-bay-is-a-named-sub-area-of-one-polygon-not-a-water-body-n2), [D96](#d96--settled-the-four-admission-rules-n7), [`phase-N2`](./phase-N2-subareas-lake-editor.md), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D122 — Cross-border bodies enter whole, and `inRegionFraction` is evidence rather than a gate (N7)
+
+**Founder, 2026-08-06:** *"It's okay that cross-border bodies enter whole, even if they only barely
+enter our five states… let's keep all cross-border bodies for now and trim later if we need to,
+especially if we have their name and full polygon."*
+
+The audit raised this because `Lac Saint-François` — 87,927 acres, the St. Lawrence widening on the
+NY/Ontario/Québec border — is the third-largest body in the corpus, and `inRegionFraction` was being
+computed and stored with nothing reading it. The answer is that storing it **is** the point: a trim
+later is a query over a field, where a threshold applied now is a decision taken without evidence and
+paid for in a re-import.
+
+Two things changed anyway, both about the number being worth trusting:
+
+1. **It is sampled to a total budget rather than per ring.** `sampleOutline` takes
+   `REGION_SAMPLE_POINTS` from *each* ring, which is right for "does any part touch the mask" (a
+   `true` from any ring is a proof) and quantises any *fraction* into ninths.
+2. **It is a share of the outline, not of the area**, and it says so.
+
+`inRegion` itself is unchanged and deliberately generous: one in-region vertex admits the whole
+polygon, which is what keeps Beau Lake — most of which is in Québec.
+
+**Related:** [D111](#d111--rendering-a-place-and-covering-it-are-two-questions-new-york-south-of-i-84-gets-one-answer-each-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D123 — Every refused group is named, and the campaign is diffable (N7)
+
+D113 made the pipeline's numbers balance. The second audit found that balancing is not the same as
+being **auditable**: the counts were right and the *identities* were nowhere.
+
+- The lane ledgers keep 5 samples per reason. The post-merge floor — the largest bucket in the
+  pipeline, ~100,000 groups — kept none at all, and neither did `outOfRegion` (35,637) or the
+  downstate cut. So *"what happened to Lake X"* had no answer, and a rule change that silently moved
+  a thousand bodies looked like a slightly different number in a run row.
+- Nothing compared a run to the one before it.
+
+Three artifacts close it, all of them cheap:
+
+| | |
+| --- | --- |
+| **`dropped.ndjson`** | one line per refused group — key, name, class, acres, reason, sources. ~150k lines, ~15 MB, and it makes the whole intake diffable. |
+| **`merge-manifest.json` outputs + delta** | the previous manifest is already on disk; every re-run now prints what moved and by how much. |
+| **`geometry-review.ndjson`** | the candidate pool for D92's per-lake override — bodies whose chosen outline scores `polygon: low` against another catalogue's, ranked by the area spread between the claims. The Beau Lake shape, mechanically. |
+
+**And the middle of the pipeline asserts.** `groups == bodies + subAreas + dropped` now throws, which
+is the equation between the two D113 already had: a `continue` added anywhere in the filter loop would
+otherwise remove lakes from the corpus and from the report at the same time.
+
+**Related:** [D99](#d99--every-pass-in-the-campaign-is-run-logged-and-the-ledger-is-wiped-first), [D113](#d113--nothing-leaves-the-pipeline-uncounted-and-the-two-artifacts-have-to-balance-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D124 — A prune may not act on evidence a failed load produced (N7)
+
+Step 6 deletes any stored body the campaign did not stamp. Its premise — *an unstamped row is a row
+the master list did not contain* — has two ways of being false, and both were live:
+
+1. **`importCanonical`'s `conflict` verdict wrote nothing at all.** That was right about the body and
+   catastrophic next to the prune: the rows an ambiguous id resolved to were left clean, unattached
+   and un-reaffirmed, so step 6 **deleted both** — resolving a corpus-uniqueness violation by
+   destroying the evidence of it. They are now flagged `near_certain` for D36's queue, the same as a
+   `merge` verdict, which is also what the prune's protection list already honours.
+2. **`load.ts` deliberately survives isolated batch failures**, and every body in a skipped batch of
+   ~150 is left unstamped and indistinguishable from a body the rules now refuse. A load reporting
+   success with three failed batches would hand the prune 450 real lakes.
+
+So the prune gained a **blast radius**: a page more than `maxDeleteFraction` (default a third)
+deletions refuses outright, in dry mode as well as in apply mode, because a number printed for
+somebody to act on is the same hazard one step removed. It does not fire on pages under 25 rows,
+where a fraction is dominated by its denominator and the tail page of every run would trip it.
+
+The mechanical guard is the backstop, not the check: the loader now prints, at the moment the
+operator can still act on it, that **`pruneNotInCampaign` must not be run after a load with failed
+batches** — the upsert is idempotent, so the answer is to re-run the load until it is clean.
+
+### One thing the audit flagged that turned out to be correct as it stood
+
+`source` is never patched by a re-import, so a body first imported from OSM and now drawn by NHD
+keeps `source: 'osm'` for ever. That reads like drift and is not: **`source` and `externalId` are one
+pair**, describing where the row *arrived* from, and `externalId` cannot move because the contour
+tiles are stamped with it (D93). `richnessFor` reads exactly that pair to find a body's contour
+coverage — so patching `source` alone would look up `('nhd', 'way/123')`, match nothing, and silently
+drop `hasContours` from the D2 prominence score of every body whose geometry source changed. Whose
+outline we drew is `geometrySource`, which *is* patched. The two disagreeing is the design working.
+
+Recorded here because the fix was written, tested, and reverted within the hour, and the next audit
+will find the same smell.
+
+**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D48](#d48--water-body-removal-reversible-soft-delist-curation--landowner-takedown), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D115](#d115--what-the-merge-learned-rides-on-the-row-confidence-region-share-and-campaign-membership-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D125 — One catalogue's account of one lake is represented by its **largest** feature (N7)
+
+**Found by running it, 2026-08-06.** `chooseGeometry` took `members.find(m => m.source === 'osm')` —
+the first OSM feature in array order, which is the order the extracts happened to stream in. A merge
+group routinely holds several features from one catalogue, because OSM carries invisible duplicates
+*and* traces a big lake as one relation with its arms as separate ways. So the stored outline was
+being chosen arbitrarily, and `geometry-review.ndjson` — an artifact built the same day, for D92's
+override, which had never had a producer — surfaced what that cost on its first run:
+
+| group | stored | other same-source members | NHD/3DHP |
+| --- | --- | --- | --- |
+| `Indian Lake` | **534 ac** | 3,743 ac | 4,296 ac |
+| `Blake Falls Reservoir` | 288 ac | 265 + 78 ac | 630 ac |
+| `Fairhill Swamp` | 28 ac | 153 ac | 187 ac |
+
+A fragment stored as the whole lake **under-draws silently**, where a wrong outline at least looks
+wrong on a map. The group carries `same-source-duplicate` so a human sees it eventually; the polygon
+was wrong in the meantime.
+
+**The rule is the largest member of the chosen catalogue**, and it is defensible in each of the three
+cases the flag covers: whole-versus-fragment, the largest is the lake; a genuine duplicate pair (Long
+Pond as a way and as a relation, within a percent of each other), it is a coin toss and at least a
+deterministic one; two distinct lakes wrongly chained, it is no worse than the first and the flag is
+what actually addresses that.
+
+**This is not D94's "never the larger of two claims".** That rule is about *area* and still holds —
+the stored area is measured from whichever polygon wins, never taken as the maximum of what the
+catalogues assert. This is about *which polygon*, within one catalogue's account of one lake.
+
+**And one helper answers it for all three callers.** `chooseGeometry`, `catalogueIdsOf` and the
+absorbed-member list each picked a representative separately, so a fix to one would have left a row
+whose `externalId` and `osmId` named two different OSM features. `representativeOf` is the single
+spelling.
+
+**Related:** [D92](#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-n7), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-n7), [`phase-N7`](./phase-N7-unified-corpus.md).

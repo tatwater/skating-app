@@ -32,11 +32,36 @@ export const ACTIVITY_PROVIDERS = [
 /** Lifecycle of a detected GPS skate → report prompt (D24). */
 export const ACTIVITY_PROMPT_STATES = ['pending', 'prompted', 'converted', 'dismissed'] as const;
 
-/** Where a water body came from (D14). */
-export const WATER_BODY_SOURCES = ['osm', 'nhd', 'user'] as const;
+/**
+ * Where a water body came from (D14).
+ *
+ * **`3dhp` is here for completeness rather than for traffic.** The merge's last run produced zero
+ * 3DHP-sourced bodies — 3DHP re-publishes NHD across the whole Northeast, so every 3DHP feature that
+ * survives the filter has an NHD counterpart that outranks it as identity (D92). But a 3DHP feature
+ * matching nothing is a lake neither other catalogue draws, and refusing to store it would mean the
+ * import silently dropping exactly the kind of body this phase exists to find.
+ */
+export const WATER_BODY_SOURCES = ['osm', 'nhd', '3dhp', 'user'] as const;
 
 /** Canonical (non-user) sources — the external feeds `importCanonical` upserts (D14). */
-export const CANONICAL_SOURCES = ['osm', 'nhd'] as const;
+export const CANONICAL_SOURCES = ['osm', 'nhd', '3dhp'] as const;
+
+/**
+ * Whose polygon a body actually draws — a superset of `WATER_BODY_SOURCES` (N7 / D92).
+ *
+ * **`3dhp` appears here and not in `WATER_BODY_SOURCES`**, and the asymmetry is the design. D92
+ * settled that 3DHP cannot be the identity spine — it carries no `Permanent_Identifier`, so it can
+ * hold neither the MIDAS bathymetry linkage nor the OSM duplicate collapse — but *geometry* is a
+ * separate question that `geometrySource` exists to answer per lake. A 3DHP-drawn body still has an
+ * OSM or NHD identity.
+ *
+ * It is empty in practice today: the merge's last run drew 19,455 bodies from OSM and 6,002 from NHD
+ * and **zero** from 3DHP, because 3DHP re-publishes NHD across the whole Northeast and every 3DHP
+ * feature that survives the filter has an NHD counterpart that outranks it. The value exists so that
+ * the day elevation-derived hydrography lands here, storing it is a field write rather than a
+ * migration — which is the entire argument for `geometrySource` being a field at all.
+ */
+export const GEOMETRY_SOURCES = ['osm', 'nhd', '3dhp', 'user'] as const;
 
 /** Moderation review lifecycle for user-created water bodies (D37). */
 export const REVIEW_STATUSES = ['pending', 'approved', 'rejected'] as const;
@@ -167,6 +192,11 @@ export const MODERATION_ACTIONS = [
   'approve_waterbody',
   'reject_waterbody',
   'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 2)
+  // Keep a body the admission rules refuse, or stop keeping one (N7b's primitive, seeded in N7).
+  // Distinct from `set_curated_boost` because it is a statement about **membership** rather than
+  // prominence — it overrides `belongsInCorpus` and both prunes, where a boost only moves a body up
+  // and down the zoom ladder.
+  'set_included_by_request',
   'set_put_in', // admin placed an official put-in marker (Phase 4, decision #7)
   'resolve_flag',
   'dismiss_flag',
@@ -184,6 +214,11 @@ export const MODERATION_ACTIONS = [
   // mechanism nobody can check, and this one is meant to be watched before it is trusted.
   'merge_hazards',
   'unmerge_hazards',
+  // A flagged duplicate group a moderator judged to be distinct bodies (D36, N7 review queue). The
+  // counterpart to `merge_waterbody`, and the reason the queue has an outcome other than "yes": a
+  // `same-source-duplicate` group can be two real lakes our matching chained together, and without a
+  // recorded "no" the only way to clear the card was to merge them.
+  'dismiss_duplicate',
   // A cross-season pattern a moderator judged not to be one (N5c / §7.3) — three pins in one cove
   // across three winters that are three people misreading the same shadow. Never a delete: the
   // cluster stops being suggested and stops being publicly advisable, and the reason stays readable.
@@ -199,6 +234,10 @@ export const MODERATION_ACTIONS = [
   'create_sub_area',
   'redraw_sub_area', // geometry changed — schedules a re-stamp of the parent's reports + hazards
   'rename_sub_area', // name or aliases changed — also a re-stamp, since the name is denormalized
+  // Chose which publisher's name a body displays (N7). Audited because it **overrides the import**:
+  // `NAME_SOURCE_RANK` would otherwise re-impose `gnis > nhd > 3dhp > osm` on the next campaign, and
+  // the stored `user` claim is the only thing standing between a moderator's decision and that.
+  'set_water_body_name',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
@@ -316,3 +355,46 @@ export const POINT_EVENT_REASONS = [
   'hazard_corroborated', // your hazard confirmed by ≥2 peers — author-side boost (D50, Phase 6)
   'bounty_fulfilled',
 ] as const;
+
+/**
+ * Which loader an `importRuns` row describes (N6c F2). One member per manual ETL under `scripts/`,
+ * because "how did the last import go" is a question about a *pipeline*, and the coverage of the
+ * depth join is not comparable to the coverage of the wind-rose fetch.
+ */
+export const IMPORT_RUN_KINDS = [
+  'canonical_water', // scripts/etl — OSM extract → waterBodies
+  // scripts/etl merge — the three archives reconciled offline into one master list (N7). Distinct
+  // from `canonical_water`, which is the *load*: this pass writes nothing to Convex and is where
+  // every admission decision is actually made, so "how many bodies did the corpus lose and why" is
+  // a question only this row can answer.
+  'corpus_merge',
+  // scripts/etl load-sub-areas — the bays the merge found a parent for (N7 second audit). A bay
+  // with a parent is an arm of it, not a lake beside it, so it lands in `waterBodySubAreas` and not
+  // in the corpus. Its own kind because it fails differently: a bay that cannot find its parent is
+  // an ordering error in the campaign, not a body that failed a rule.
+  'sub_area_seed',
+  // Deletes rather than adds — see the note on `ImportRunKind` in `@skating/run-log`.
+  'dedup_resolve',
+  'osm_depths', // scripts/etl load-depths — the N6a rung-7 tag stream
+  'admin_areas', // scripts/admin-areas
+  'lake_depth', // scripts/lake-depth — HydroLAKES/GLOBathy/LAGOS-US join
+  'elevation', // scripts/lake-depth load-elevation — Open-Meteo
+  'wind_climate', // scripts/wind-climate — NREL WIND Toolkit winter roses
+  'bathymetry_coverage', // scripts/bathymetry coverage — D2's hasContours
+  'region_stats', // convex regionStats:recompute — derived, but it is a pass and it can fail
+  // The steps *before* a loader — where the third-party data is actually acquired, and where a
+  // source most often turns out to have moved, changed schema, or quietly returned less than
+  // last time. Logging only the load answers "how many rows landed" and never "landed from what".
+  'raw_archive', // a `.raw/` archive populated from third parties (OSM extracts, agency services)
+  'r2_mirror', // scripts/lib/mirror-r2.sh — pushing an archive to its private R2 bucket
+  'bathymetry_join', // scripts/bathymetry join — archived lakes matched to corpus bodies
+  'bathymetry_build', // scripts/bathymetry build-contours — soundings/contours → drawable isobaths
+  'bathymetry_tiles', // scripts/bathymetry tile — contours → PMTiles
+] as const;
+
+/**
+ * A run's terminal state. **`running` is not merely a transient** — a row left in it is the
+ * signature of a loader whose process died without getting to write a summary, which is exactly
+ * the failure mode a printed-to-stderr summary could never record.
+ */
+export const IMPORT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;

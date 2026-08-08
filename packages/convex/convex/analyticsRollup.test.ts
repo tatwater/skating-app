@@ -72,7 +72,8 @@ async function seedBody(
   return t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: `Pond ${i}`,
-      type: 'lake' as const,
+      searchText: `Pond ${i}`,
+      type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: {
         type: 'Polygon' as const,
@@ -602,7 +603,8 @@ async function seedBodyAndHazard(t: ReturnType<typeof harness>) {
   const waterBodyId = await t.run((ctx) =>
     ctx.db.insert('waterBodies', {
       name: 'Shelburne Pond',
-      type: 'lake' as const,
+      searchText: 'Shelburne Pond',
+      type: 'lakePond' as const,
       source: 'osm' as const,
       polygon: {
         type: 'Polygon' as const,

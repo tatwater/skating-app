@@ -2,22 +2,32 @@
  * ETL transform (Phase 1) — the tested heart of the OSM water-body pipeline.
  *
  * Turns raw `osmium export` water features into canonical bodies for
- * `waterBodies.importCanonical`: classify OSM tags → our `type` (dropping non-still-water),
- * simplify to ~5 m fidelity (D48), then compute `bbox` / on-water `centroid` / surface area
+ * `waterBodies.importCanonical`: classify OSM tags → our `type` (dropping non-still-water), drop
+ * what does not belong in the corpus (`belongsInCorpus` — the D91 area floor plus D96's
+ * named-wetland rule), simplify to ~5 m fidelity (D48), then
+ * compute `bbox` / on-water `centroid` / surface area
  * from the *simplified* geometry (what actually gets stored). Pure and framework-free — the
  * geometry + classification live in `@skating/core`; this composes them and adds the
  * per-feature resilience the ETL needs (a degenerate polygon is skipped, never aborts a batch).
  */
 
 import {
+  belongsInCorpus,
+  classifyOsmTags,
+  classifyWaterBody,
   fetchOrigin,
+  HARD_MIN_SURFACE_AREA_ACRES,
+  HARD_MIN_SURFACE_AREA_SQM,
   lakeGeometryStats,
   MAX_PLAUSIBLE_DEPTH_M,
-  type OsmTags,
+  MIN_SURFACE_AREA_ACRES,
+  MIN_SURFACE_AREA_SQM,
+  meetsAreaFloor,
+  type OsmTagBag,
   polygonBBox,
   representativePoint,
   surfaceAreaSqM,
-  waterBodyTypeFromOsmTags,
+  type WaterBodyClass,
 } from '@skating/core';
 import simplify from '@turf/simplify';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -32,6 +42,29 @@ import type { CanonicalBody, OsmDepthRecord, OsmWaterFeature, OsmWaterProperties
  * item in the phase-1 plan).
  */
 export const SIMPLIFY_TOLERANCE_DEG = 0.00005;
+
+/**
+ * The corpus floor (D91) lives in `@skating/core` because the ETL is not the only thing that applies
+ * it — `waterBodies.pruneBelowAreaFloor` enforces the same rule over the rows already stored. Two
+ * copies would drift into a prune that deletes what the next import re-adds. Re-exported so the
+ * transform's own module stays the one place to read about the pipeline.
+ */
+export {
+  belongsInCorpus,
+  HARD_MIN_SURFACE_AREA_ACRES,
+  HARD_MIN_SURFACE_AREA_SQM,
+  MIN_SURFACE_AREA_ACRES,
+  MIN_SURFACE_AREA_SQM,
+  meetsAreaFloor,
+};
+
+/**
+ * Returned by `featureToCanonicalBody` for a feature that classified fine but is below the floor —
+ * distinct from `null` (classification) so the run summary can tally the two separately. "We import
+ * no rivers" and "we import no puddles" are different facts about a run and an operator reading
+ * `droppedByType: 60,000` should not be looking at a number that silently means both.
+ */
+export const BELOW_AREA_FLOOR = 'below_area_floor' as const;
 
 /**
  * Convex rejects any array longer than **8192 elements**. For a polygon that cap applies to
@@ -107,7 +140,7 @@ export function externalIdFromProperties(
  * the least coarsening that fits, rather than a blunt doubling. Fidelity-first everywhere else;
  * this is the hard-limit escape hatch, realistically hit by Lake Champlain alone (settles ~7 m).
  */
-function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygon {
+export function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygon {
   let tolerance = SIMPLIFY_TOLERANCE_DEG;
   let simplified = simplify(geom, { tolerance, highQuality: false, mutate: false });
   // Douglas–Peucker is monotonic in tolerance (a coarser pass never adds vertices), so stepping
@@ -120,8 +153,11 @@ function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygo
 }
 
 /**
- * Transform one OSM feature into a canonical body, or `null` to **skip by classification**
- * (rivers / streams / generic wetland / … — `waterBodyTypeFromOsmTags` returns `null`).
+ * Transform one OSM feature into a canonical body, or a skip:
+ *  - `null` — **skipped by classification** (rivers / streams / the ocean / … — `classifyWaterBody`
+ *    returns a `null` class, meaning "not water we cover" rather than "water of unknown kind").
+ *  - `BELOW_AREA_FLOOR` — real still water the corpus does not want (`belongsInCorpus`): too
+ *    small to be a destination, or unnamed wetland (D96).
  *
  * **Throws** on data we can't turn into a storable body: a missing `@type`/`@id`, a non-area
  * geometry, a degenerate polygon `representativePoint` can't place a point on, or a geometry
@@ -129,9 +165,133 @@ function simplifyForStorage(geom: Polygon | MultiPolygon): Polygon | MultiPolygo
  * catch per feature (see `transformFeatures`) — raw data carries enough junk geometry that a
  * single throw must not kill the import (phase-1 plan / PR#1 review P2).
  */
-export function featureToCanonicalBody(feature: OsmWaterFeature): CanonicalBody | null {
+/**
+ * Keep only the string-valued tags, because `osmium export -a type,id` does not emit only strings.
+ *
+ * The old call site cast straight through (`props as OsmTags`) and got away with it: OSM tag values
+ * genuinely are strings, and the classifier only reads `water` / `wetland` / `landuse` / `natural` /
+ * `waterway`. But `@id` is emitted as a **number**, so the cast was asserting something false about
+ * the same object — and `readTag` calls `.split(';')` on whatever it is handed, which turns a
+ * numeric tag into a `TypeError` inside a per-feature try/catch, i.e. a silently skipped body.
+ */
+function stringTags(props: OsmWaterProperties): OsmTagBag {
+  const out: OsmTagBag = {};
+  for (const [k, v] of Object.entries(props)) if (typeof v === 'string') out[k] = v;
+  return out;
+}
+
+/**
+ * Turn a **classified, admitted** body into the record `importCanonical` stores — source-agnostic
+ * (N7 step 5).
+ *
+ * ## Why this had to be lifted out of `featureToCanonicalBody`
+ *
+ * The geometry work below — D85's source-measured stats, ~5 m simplification, the Convex array cap,
+ * an on-water representative point — is identical whoever drew the polygon. It was welded to an
+ * `OsmWaterFeature`, which meant the merge had **no way to emit a loadable body at all**:
+ * `master.ndjson` carried a name, a class and an acreage and no geometry, so it was a report rather
+ * than an artifact. Re-using the OSM path was not an option either, because it re-runs its own
+ * classifier and floor and would have overruled the merge that just decided both.
+ *
+ * So the split is: **callers decide *whether* a body belongs and *what it is*; this decides what it
+ * looks like.** `featureToCanonicalBody` is now the OSM-only wrapper that classifies and applies the
+ * floor before calling in here.
+ *
+ * **Throws** on geometry we cannot store — a degenerate ring, or an array still over Convex's 8192
+ * cap after coarsening. Callers batching raw data must catch per body.
+ */
+export function toCanonicalBody(input: {
+  source: CanonicalBody['source'];
+  externalId: string;
+  name: string;
+  type: WaterBodyClass;
+  geometry: Polygon | MultiPolygon;
+  osmId?: string | undefined;
+  nhdId?: string | undefined;
+  threeDhpId?: string | undefined;
+  gnisId?: string | undefined;
+  geometrySource?: CanonicalBody['geometrySource'];
+  states?: string[] | undefined;
+  /** The admitting area — see `CanonicalBody.sourceAreaSqM`. */
+  sourceAreaSqM?: number | undefined;
+  inRegionFraction?: number | undefined;
+  confidence?: CanonicalBody['confidence'];
+  reviewReasons?: readonly string[] | undefined;
+  /** Every publisher's name, the losers included — see `CanonicalBody.nameClaims`. */
+  nameClaims?: readonly { source: string; value: string }[] | undefined;
+}): CanonicalBody {
+  const geom = input.geometry;
+  if (geom.type !== 'Polygon' && geom.type !== 'MultiPolygon') {
+    throw new Error(`unsupported geometry type "${(geom as { type: string }).type}"`);
+  }
+  // A closed linear ring needs four positions; anything less measures as zero area, which a floor
+  // would happily read as "a very small pond".
+  if (largestRingSize(geom) < 4) {
+    throw new Error('degenerate geometry: no ring with 4+ positions (cannot form a closed area)');
+  }
+
+  // ── D85: measure the SOURCE geometry, before anything touches it ────────────────────────────
+  // Perimeter is resolution-dependent — the coastline paradox — so measuring after `simplify()`
+  // under-reports systematically, worst on the big crenellated lakes where a shoreline figure is
+  // most interesting. **Do not move this below `simplifyForStorage`.**
+  const stats = lakeGeometryStats(geom);
+  const interiorPoint = fetchOrigin(geom) ?? undefined;
+
+  const polygon = simplifyForStorage(geom);
+  const maxArray = maxArrayLength(polygon);
+  if (maxArray > CONVEX_ARRAY_LIMIT) {
+    throw new Error(
+      `geometry array too large (${maxArray} > ${CONVEX_ARRAY_LIMIT}) after coarsening`,
+    );
+  }
+  const centroid = representativePoint(polygon); // throws on a collapsed / degenerate ring
+
+  return {
+    source: input.source,
+    externalId: input.externalId,
+    name: input.name,
+    type: input.type,
+    polygon,
+    bbox: polygonBBox(polygon),
+    centroid,
+    surfaceAreaSqM: surfaceAreaSqM(polygon),
+    ...(input.osmId ? { osmId: input.osmId } : {}),
+    ...(input.nhdId ? { nhdId: input.nhdId } : {}),
+    ...(input.threeDhpId ? { threeDhpId: input.threeDhpId } : {}),
+    ...(input.gnisId ? { gnisId: input.gnisId } : {}),
+    ...(input.geometrySource ? { geometrySource: input.geometrySource } : {}),
+    ...(input.states?.length ? { states: input.states } : {}),
+    // **The area the admission decision was actually made on.** `surfaceAreaSqM` above is measured
+    // from the simplified polygon, because that is what we draw; the floor is applied to the source
+    // geometry, because that is the more accurate measure. They differ by well under a percent — and
+    // that is enough to put a body admitted at 1.0001 acres under `pruneBelowAreaFloor`'s 1-acre
+    // bar, so the import adds it and the next prune deletes it, forever. Carrying both lets the two
+    // passes agree; see `waterBodies.sourceAreaSqM`.
+    ...(input.sourceAreaSqM !== undefined ? { sourceAreaSqM: input.sourceAreaSqM } : {}),
+    ...(input.inRegionFraction !== undefined ? { inRegionFraction: input.inRegionFraction } : {}),
+    ...(input.confidence ? { confidence: input.confidence } : {}),
+    ...(input.reviewReasons?.length ? { reviewReasons: [...input.reviewReasons] } : {}),
+    // Omitted rather than stored empty, like every other optional above: an unnamed body has no
+    // claims, and a row carrying `[]` reads as "we looked and found none" rather than "no name".
+    ...(input.nameClaims?.length ? { nameClaims: input.nameClaims.map((c) => ({ ...c })) } : {}),
+    ...(interiorPoint ? { interiorPoint } : {}),
+    ...stats,
+  };
+}
+
+export function featureToCanonicalBody(
+  feature: OsmWaterFeature,
+): CanonicalBody | null | typeof BELOW_AREA_FLOOR {
   const props: OsmWaterProperties = feature.properties ?? {};
-  const type = waterBodyTypeFromOsmTags(props as OsmTags);
+  const rawName = typeof props.name === 'string' ? props.name : '';
+  // **One classifier, shared with the merge** (N7, D109 amendment). This used to call an OSM-only
+  // mapper into the retired vocabulary; `classifyWaterBody` reads the same tags into the stored one
+  // and additionally lets a name overrule a tag — which is what keeps Higley Flow out of the drop
+  // list and Debsconeag Deadwater in the `river` class.
+  const { cls: type } = classifyWaterBody({
+    name: rawName,
+    claim: classifyOsmTags(stringTags(props)),
+  });
   if (type === null) return null;
 
   const externalId = externalIdFromProperties(props);
@@ -144,43 +304,44 @@ export function featureToCanonicalBody(feature: OsmWaterFeature): CanonicalBody 
     throw new Error(`unsupported geometry type "${geom.type}" (expected a polygon area)`);
   }
 
-  // ── D85: measure the SOURCE geometry, here, before anything touches it ──────────────────────
-  //
-  // This line is the whole of D85 and it is one line, which is exactly why it is easy to move by
-  // accident. `geom` is the full-resolution OSM ring; three lines down it becomes a ~5 m
-  // Douglas-Peucker approximation (~7 m for Champlain, coarsened to fit the D48 array cap).
-  // Perimeter is resolution-dependent — the coastline paradox — so measuring after `simplify()`
-  // under-reports systematically, and worst on the big crenellated lakes where a shoreline figure
-  // is most interesting. The stored polygon exists for drawing; these stats exist for describing.
-  //
-  // **Do not move this below `simplifyForStorage`.** The stats would still compute, still look
-  // plausible, and be quietly short on precisely the bodies that matter most.
-  const stats = lakeGeometryStats(geom);
-  const interiorPoint = fetchOrigin(geom) ?? undefined;
+  const name = rawName;
 
-  // Simplify, then derive bbox / centroid / area from the geometry we actually store.
-  const polygon = simplifyForStorage(geom);
-  // Coarsening thins ring positions but can't reduce component/hole counts; reject (→ skip)
-  // anything still over the array cap so one bad body never fails a whole loader batch.
-  const maxArray = maxArrayLength(polygon);
-  if (maxArray > CONVEX_ARRAY_LIMIT) {
-    throw new Error(
-      `geometry array too large (${maxArray} > ${CONVEX_ARRAY_LIMIT}) after coarsening`,
-    );
+  // Degenerate geometry has to fail **before** the floor, or it stops being visible. A closed linear
+  // ring needs four positions; anything less measures as zero area, which the floor would happily
+  // read as "a very small pond" and tally into a bucket of ~100,000. This used to surface as a throw
+  // from `representativePoint` further down — the check is now explicit and named, because the floor
+  // moved in front of it and a broken polygon must never be indistinguishable from a puddle.
+  if (largestRingSize(geom) < 4) {
+    throw new Error('degenerate geometry: no ring with 4+ positions (cannot form a closed area)');
   }
-  const centroid = representativePoint(polygon); // throws on a collapsed / degenerate ring
-  return {
+
+  // The floor (founder call, 2026-08-02), checked **here** — after classification, before any of the
+  // per-body geometry below. Four fifths of a raw extract fails it, and shoreline + axes + a
+  // 16-bearing fetch profile on 100,000 bodies we then discard is the most expensive way not to
+  // import something.
+  //
+  // Measured on the SOURCE geometry, like the D85 stats and unlike the stored `surfaceAreaSqM`
+  // (which is derived from the simplified polygon a few lines down, because that's what we draw).
+  // The two differ by well under a percent, so a body can in principle store an area a hair under
+  // the floor it cleared. That is the right way round: the source is the more accurate measure, and
+  // the alternative is doing the expensive work first to decide with a worse number.
+
+  if (!belongsInCorpus({ name, type, surfaceAreaSqM: surfaceAreaSqM(geom) })) {
+    return BELOW_AREA_FLOOR;
+  }
+
+  // The geometry half is shared with the merge's emit stage — see `toCanonicalBody`. `osmId` is
+  // stated explicitly rather than left for the server to infer from `source`: an incoming record
+  // asserts its own identity (D93), and this path knows perfectly well what OSM calls it.
+  return toCanonicalBody({
     source: 'osm',
     externalId,
-    name: typeof props.name === 'string' ? props.name : '',
+    name,
     type,
-    polygon,
-    bbox: polygonBBox(polygon),
-    centroid,
-    surfaceAreaSqM: surfaceAreaSqM(polygon),
-    ...(interiorPoint ? { interiorPoint } : {}),
-    ...stats,
-  };
+    geometry: geom,
+    osmId: externalId,
+    geometrySource: 'osm',
+  });
 }
 
 // ── OSM depth tags (N6a rung 7) ──────────────────────────────────────────────────────────────
@@ -255,6 +416,11 @@ export interface TransformSummary {
   imported: number;
   /** Skipped by classification — non-still-water we defer this phase (rivers, wetland, …). */
   droppedByType: number;
+  /**
+   * Skipped by `belongsInCorpus` — still water, too small and unnamed to be
+   * anywhere. Expect this to be the **largest** number in the summary: ~4 of every 5 features.
+   */
+  droppedByAreaFloor: number;
   /** Skipped because the feature threw (bad geometry / missing id) — see `errors`. */
   skipped: number;
   /** Bodies carrying a usable OSM depth tag (N6a rung 7). Expect a handful: inland coverage is ~nil. */
@@ -278,7 +444,8 @@ export interface TransformOutput {
 /**
  * Transform a batch of features, isolating each failure (skip + tally) so one bad polygon
  * never aborts the import (phase-1 plan / PR#1 review P2). `droppedByType` is intentional
- * classification skips; `skipped` (with `errors`) is features that threw.
+ * classification skips and `droppedByAreaFloor` is the intentional size floor; `skipped` (with
+ * `errors`) is features that threw.
  */
 export function transformFeatures(features: Iterable<OsmWaterFeature>): TransformOutput {
   const bodies: CanonicalBody[] = [];
@@ -286,6 +453,7 @@ export function transformFeatures(features: Iterable<OsmWaterFeature>): Transfor
   const errors: TransformError[] = [];
   let total = 0;
   let droppedByType = 0;
+  let droppedByAreaFloor = 0;
 
   for (const feature of features) {
     total++;
@@ -293,6 +461,10 @@ export function transformFeatures(features: Iterable<OsmWaterFeature>): Transfor
       const body = featureToCanonicalBody(feature);
       if (body === null) {
         droppedByType++;
+        continue;
+      }
+      if (body === BELOW_AREA_FLOOR) {
+        droppedByAreaFloor++;
         continue;
       }
       bodies.push(body);
@@ -316,6 +488,7 @@ export function transformFeatures(features: Iterable<OsmWaterFeature>): Transfor
       total,
       imported: bodies.length,
       droppedByType,
+      droppedByAreaFloor,
       skipped: errors.length,
       depthsTagged: depths.length,
     },

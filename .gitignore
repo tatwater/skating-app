@@ -19,13 +19,11 @@ web-build/
 /apps/*/android/
 *.orig.*
 
-# Convex
-**/convex/_generated/
-
 # Environment / secrets — never commit real values
 .env
 .env.*
 !.env.example
+!.env.*.example
 
 # Logs
 *.log
@@ -42,3 +40,4 @@ yarn-debug.log*
 
 # Training data
 training_data/
+app_ui_inspiration/

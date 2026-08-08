@@ -304,7 +304,8 @@ describe('activeBountyPostLimit', () => {
     return t.run((ctx) =>
       ctx.db.insert('waterBodies', {
         name: 'Lake Champlain',
-        type: 'lake' as const,
+        searchText: 'Lake Champlain',
+        type: 'lakePond' as const,
         source: 'osm' as const,
         polygon: {
           type: 'Polygon' as const,

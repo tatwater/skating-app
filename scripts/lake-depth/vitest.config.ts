@@ -10,6 +10,7 @@ export default defineConfig({
       // (untestable shells; all real work is in the covered transform + `@skating/core`), and
       // `types.ts` is type-only. Mirrors the water ETL and admin-areas configs.
       exclude: [
+        'src/archiveCli.ts',
         'src/**/*.test.ts',
         'src/cli.ts',
         'src/load.ts',

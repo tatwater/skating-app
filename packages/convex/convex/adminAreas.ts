@@ -13,7 +13,7 @@ import { allLevels, bboxIntersects, cellForPoint, pointInPolygon } from '@skatin
 import { v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type QueryCtx, query } from './_generated/server';
+import { internalMutation, internalQuery, type QueryCtx, query } from './_generated/server';
 import { ADMIN_AREA_LADDER, syncAdminAreaCells } from './lib/cellIndex';
 import { ADMIN_AREA_LEVELS } from './lib/enums';
 import { bbox, geoJson, latLng, literals } from './lib/validators';
@@ -189,4 +189,165 @@ export async function resolvePlaceForCoord(
 export const resolvePlace = query({
   args: { point: latLng },
   handler: (ctx, { point }) => resolvePlaceForCoord(ctx, point),
+});
+
+/**
+ * Page the boundary polygons out for an offline region clip — N7's merge step.
+ *
+ * **The five-state mask, and the only honest one we have.** The merge reads NHD and 3DHP from *state
+ * geodatabases that are not clipped to their states* — New Hampshire's reaches 46.09°N, into Maine
+ * and Québec — while OSM arrives as per-state extracts that are. Left unclipped the master list
+ * imports Québec (Grand lac Saint-François, Lac Aylmer), Ontario (Hamilton Harbor), New Jersey
+ * (Raritan Bay) and 1,300-odd others measured, purely because a neighbouring state's download
+ * happened to include them.
+ *
+ * **Counties and towns, not states.** Only three `state` rows exist — Vermont, Maine, Massachusetts
+ * — because New Hampshire's and New York's boundary relations reference ways outside their own
+ * extract and never close into a polygon. That failure is silent and it is why `resolvePlace`
+ * resolves those two through the finer levels instead. The 105 counties and 3,132 towns cover all
+ * five states, so their union is the mask.
+ *
+ * Paged at 100 like `listForReconcile`, for the same reason: a town polygon is not small, and
+ * Convex caps a transaction on read *bytes* well before it caps documents.
+ */
+export const listBoundariesForClip = internalQuery({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(200, Math.max(1, batchSize ?? 100));
+    const page = await ctx.db.query('adminAreas').paginate({ cursor: cursor ?? null, numItems });
+    return {
+      areas: page.page.map((a) => ({
+        level: a.level,
+        name: a.name,
+        bbox: a.bbox,
+        polygon: a.polygon,
+      })),
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+/**
+ * Delete named admin areas **and their cell rows** — the superseded-duplicate path (N7).
+ *
+ * ## Why this needs to exist at all
+ *
+ * `adminAreas` had three state rows where it should have had five: New Hampshire's and New York's
+ * OSM boundary relations never close into a polygon from a per-state extract, so they were dropped
+ * silently at import. The fix imports all five from Census TIGER, which leaves Vermont, Maine and
+ * Massachusetts present **twice** — once as `relation/…`, once as `tiger/…`. Two polygons for one
+ * state in a containment table is worse than the gap it replaced: `resolvePlace` would resolve
+ * through whichever cell it happened to read first, and the two outlines are not identical.
+ *
+ * ## Why deleting the row is not enough
+ *
+ * Containment does not scan `adminAreas`; it goes through `adminAreaCells`, and nothing in this file
+ * ever removed one. Deleting a row on its own leaves cells pointing at an id that no longer loads —
+ * a dangling reference on the read path that resolves a coordinate to nothing, or throws. The cells
+ * go first, the row second.
+ *
+ * **Takes explicit `externalId`s, never a pattern.** A prefix match would have made this a one-line
+ * way to empty the table, and the blast radius of a wrong argument here is every place label in the
+ * app. Naming the three rows is the point.
+ */
+export const deleteByExternalIds = internalMutation({
+  args: { externalIds: v.array(v.string()) },
+  handler: async (ctx, { externalIds }) => {
+    let deleted = 0;
+    let cellsDeleted = 0;
+    const missing: string[] = [];
+    for (const externalId of externalIds) {
+      const row = await ctx.db
+        .query('adminAreas')
+        .withIndex('by_external_id', (q) => q.eq('externalId', externalId))
+        .unique();
+      if (!row) {
+        missing.push(externalId);
+        continue;
+      }
+      const cells = await ctx.db
+        .query('adminAreaCells')
+        .withIndex('by_area', (q) => q.eq('adminAreaId', row._id))
+        .collect();
+      for (const cell of cells) {
+        await ctx.db.delete(cell._id);
+        cellsDeleted++;
+      }
+      await ctx.db.delete(row._id);
+      deleted++;
+    }
+    return { deleted, cellsDeleted, missing };
+  },
+});
+
+/**
+ * Retire the OSM-sourced boundary rows now that TIGER supplies all three levels (N7).
+ *
+ * ## Why they cannot simply be left alone
+ *
+ * TIGER keys on `tiger/<GEOID>` and OSM on `relation/<id>`, so loading TIGER **adds** rows beside the
+ * OSM ones rather than replacing them. Every state, county and town then exists twice with two
+ * slightly different outlines, and `resolvePlace` resolves through whichever cell it reads first.
+ * Two answers for one coordinate is worse than the gap this replaced.
+ *
+ * ## What TIGER actually fixes, measured
+ *
+ * - **States: 3 → 5.** New Hampshire's and New York's OSM relations never closed into a polygon.
+ * - **Counties: 105 → 116.** New Hampshire was missing Rockingham, its coastal county; New York was
+ *   missing ten. Nothing reported either.
+ * - **Towns: the overlap goes.** `levelFromAdminLevel` maps OSM `admin_level` **7 and 8 both** to
+ *   `town`, and in New York that is 999 towns *plus* 574 villages — and a village sits **inside** a
+ *   town. So the stored town layer self-overlapped and containment was order-dependent. TIGER's
+ *   county subdivisions do not overlap, which is why the count falls rather than rises.
+ *
+ * ## Dry by default
+ *
+ * The same discipline as `pruneBelowAreaFloor`, and for the same reason: this is the only mutation in
+ * the file that destroys rows, and it destroys the table every place label in the app reads from.
+ * Cells go before rows — containment reads through `adminAreaCells`, so a row deleted without them
+ * leaves the read path pointing at nothing.
+ */
+export const retireOsmSourcedAreas = internalMutation({
+  args: {
+    apply: v.optional(v.boolean()),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, { apply, cursor, batchSize }) => {
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('adminAreas').paginate({ cursor: cursor ?? null, numItems });
+
+    let wouldDelete = 0;
+    let deleted = 0;
+    let cellsDeleted = 0;
+    const byLevel: Record<string, number> = {};
+    for (const row of page.page) {
+      // Anything not from this campaign's TIGER load is superseded by construction: TIGER now covers
+      // all three levels for all five states, and the counts are asserted at extract time.
+      if (row.externalId.startsWith('tiger/')) continue;
+      wouldDelete++;
+      byLevel[row.level] = (byLevel[row.level] ?? 0) + 1;
+      if (apply !== true) continue;
+      const cells = await ctx.db
+        .query('adminAreaCells')
+        .withIndex('by_area', (q) => q.eq('adminAreaId', row._id))
+        .collect();
+      for (const cell of cells) {
+        await ctx.db.delete(cell._id);
+        cellsDeleted++;
+      }
+      await ctx.db.delete(row._id);
+      deleted++;
+    }
+    return {
+      scanned: page.page.length,
+      wouldDelete,
+      deleted,
+      cellsDeleted,
+      byLevel,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
 });

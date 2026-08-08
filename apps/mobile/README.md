@@ -45,18 +45,50 @@ app.config.ts                # dynamic Expo config (single source of truth; no a
 cp .env.example .env.local     # then fill in real keys (see below)
 ```
 
-`.env.local` (gitignored) holds three **public** client keys (Metro inlines `EXPO_PUBLIC_*`):
+`.env.local` (gitignored) holds two kinds of var. **Client** keys are inlined into the JS
+bundle by Metro (`EXPO_PUBLIC_*`) and are therefore public by construction — only ever put
+publishable keys here. **Build** vars are read by `app.config.ts` at native-build time (the
+`@sentry/react-native/expo` plugin) and never reach the bundle.
 
-| Var | What | Where from |
-|---|---|---|
-| `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk client key (`pk_…`) | Clerk dashboard → API keys |
-| `EXPO_PUBLIC_CONVEX_URL` | Convex deployment URL | `npx convex dev` / Convex dashboard |
-| `EXPO_PUBLIC_PMTILES_URL` | Basemap `.pmtiles` URL (public; **blank ⇒ the Protomaps demo, which is dev-only and expires — it will 404**) | The self-hosted extract's serving URL — the **same value as web's `VITE_PMTILES_URL`**; see [`scripts/basemap`](../../scripts/basemap/README.md) |
-| `EXPO_PUBLIC_SENTRY_DSN` | Sentry client DSN | Sentry project settings |
+| Var | Kind | What | Where from |
+|---|---|---|---|
+| `EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY` | client | Clerk client key (`pk_…`) | Clerk dashboard → API keys |
+| `EXPO_PUBLIC_CONVEX_URL` | client | Convex deployment URL | `pnpm convex-dev` / Convex dashboard |
+| `EXPO_PUBLIC_PMTILES_URL` | client | Basemap `.pmtiles` URL (public; **blank ⇒ the Protomaps demo, which is dev-only and expires — it will 404**) | The self-hosted extract's serving URL — the **same value as web's `VITE_PMTILES_URL`**; see [`scripts/basemap`](../../scripts/basemap/README.md) |
+| `EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` | client | Bathymetric-contour `.pmtiles` (N6b) — a *second* archive, added to the style only while a lake drawer is open. **Blank ⇒ the layer never mounts** | Same R2 bucket as the basemap; see [`scripts/bathymetry`](../../scripts/bathymetry/README.md) |
+| `EXPO_PUBLIC_SENTRY_DSN` | client | Sentry client DSN | Sentry project settings |
+| `EXPO_PUBLIC_OFFLINE_BASEMAP` | client | **Optional, off by default.** `1` enables the unverified Layer-3 offline-basemap spike (`src/lib/offlineBasemap.ts`). Leave blank unless you're actively testing it | n/a — a local flag |
+| `SENTRY_ORG` | build | Sentry org slug. **Falls back to `PLACEHOLDER_ORG`**, which silently breaks source-map upload — check with `eas config` | Sentry settings |
+| `SENTRY_PROJECT` | build | Sentry project slug — same silent-fallback caveat | Sentry settings |
+| `SENTRY_AUTH_TOKEN` | build | Uploads source maps so stack traces symbolicate. **Secret — never commit; store in EAS only** | Sentry → auth tokens |
 
 The app boots with placeholders — sign-in, data, and crash reporting simply stay inert
 until real keys land. Clerk also needs a JWT template named `convex` (D26) and the
 `CLERK_JWT_ISSUER_DOMAIN` env var set on the Convex deployment.
+
+### `.env.local` vs. EAS environments
+
+`.env.local` covers **local** builds (`pnpm --filter @skating/mobile android|ios`) and Metro.
+A **cloud EAS build never sees it** — the file is gitignored, so it isn't uploaded. Cloud builds
+read the same vars from the **EAS environment** named by the build profile's `environment` field
+in `eas.json`. Forgetting this is the classic failure: the build succeeds, then the app launches
+with no sign-in, no data, and a 404ing basemap.
+
+| EAS environment | Populated? |
+|---|---|
+| `development` | ✅ all 8 (the 5 required client keys + 3 Sentry build vars) |
+| `preview` | ✅ all 8 |
+| `production` | ❌ empty — prod deployment is still deferred |
+
+`EXPO_PUBLIC_OFFLINE_BASEMAP` is deliberately **not** in any EAS environment: it's an opt-in
+experiment that should stay off in shared builds.
+
+```bash
+eas env:list --scope project --environment preview    # what's stored
+eas config --profile preview --platform android      # what the build will actually resolve
+```
+
+Keep the two in sync by hand — nothing reconciles `.env.local` against EAS for you.
 
 ## Run (dev build — not Expo Go)
 

@@ -13,7 +13,12 @@ import {
 } from '@maplibre/maplibre-react-native';
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { applyDraftMapClick, type BBox, SUB_AREA_MIN_RENDER_ZOOM } from '@skating/core';
+import {
+  applyDraftMapClick,
+  type BBox,
+  isRegionOffscreen,
+  SUB_AREA_MIN_RENDER_ZOOM,
+} from '@skating/core';
 import { useQuery } from 'convex/react';
 import * as Location from 'expo-location';
 import { useRouter } from 'expo-router';
@@ -62,7 +67,7 @@ import {
   INITIAL_CENTER,
   INITIAL_ZOOM,
   MAP_FLAVORS,
-  NORTHEAST_MAX_BOUNDS,
+  NORTHEAST_REGION_BOUNDS,
   PHOTO_PIN_COLOR,
   PUT_IN_MARKER_DERIVED_COLOR,
   PUT_IN_MARKER_OFFICIAL_COLOR,
@@ -76,6 +81,7 @@ import {
   zoomForViewport,
 } from '../lib/waterMap';
 import { useMapSelection } from './MapSelectionContext';
+import { ReturnToRegion } from './ReturnToRegion';
 
 /**
  * Interactive native MapLibre map — the read side of the Phase 2 loop (§F, D5/D6/D47/D49), the
@@ -101,10 +107,10 @@ const HAZARD_PRESS_PRECEDENCE_MS = 300;
 // pan/zoom refines it. Mirrors web's regional framing (Burlington, z6.5, Phase 2.5).
 const INITIAL_QUERY: { viewport: BBox; zoom: number } = {
   viewport: {
-    minLng: NORTHEAST_MAX_BOUNDS[0][0],
-    minLat: NORTHEAST_MAX_BOUNDS[0][1],
-    maxLng: NORTHEAST_MAX_BOUNDS[1][0],
-    maxLat: NORTHEAST_MAX_BOUNDS[1][1],
+    minLng: NORTHEAST_REGION_BOUNDS[0][0],
+    minLat: NORTHEAST_REGION_BOUNDS[0][1],
+    maxLng: NORTHEAST_REGION_BOUNDS[1][0],
+    maxLat: NORTHEAST_REGION_BOUNDS[1][1],
   },
   zoom: Math.floor(INITIAL_ZOOM),
 };
@@ -182,14 +188,28 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     [pmtilesUrl, localBasemapUri],
   );
   const mapStyle = useMemo(
-    () => (basemapSource ? buildMapStyle(basemapSource, flavor) : null),
+    () =>
+      basemapSource
+        ? buildMapStyle({
+            regionUrl: basemapSource,
+            // Not offlined alongside the regional archive: the overview is what a skater sees when
+            // they are looking at the world rather than at ice, which is exactly when they are not
+            // standing on a lake with no signal. Blank simply drops the overview, never the map.
+            worldUrl: env.worldPmtilesUrl || undefined,
+            flavor,
+          })
+        : null,
     [basemapSource, flavor],
   );
 
   // Viewport bbox + zoom are the query key; seeded to the region so data shows before the first
   // region event, then `onRegionDidChange` refines it.
   const [queryArgs, setQueryArgs] = useState<{ viewport: BBox; zoom: number }>(INITIAL_QUERY);
-  const bodies = useQuery(api.waterBodies.listInViewport, queryArgs);
+  // Skipped outright once the region is off screen. Panning to Kansas cannot turn up a lake we
+  // hold, so the query would be a round trip for an answer known in advance — the same reasoning
+  // `subAreaArgs` applies below its zoom floor.
+  const regionOffscreen = isRegionOffscreen(queryArgs.viewport);
+  const bodies = useQuery(api.waterBodies.listInViewport, regionOffscreen ? 'skip' : queryArgs);
   // Named bays (N2/D60) — its own ladder-grid query. Rendering is not an operator affordance: mobile
   // draws the label, it just can't edit it (the Phase 7 rule).
   //
@@ -539,287 +559,295 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   }
 
   return (
-    <MapGL
-      style={StyleSheet.absoluteFill}
-      mapStyle={mapStyle}
-      attribution
-      logo={false}
-      compass={false}
-      onPress={onMapPress}
-      onRegionDidChange={onRegionDidChange}
-      // The settled read: the tiles for this view are in, so the ramp keeps up as the skater pans.
-      onDidFinishRenderingMapFully={() => void readDrawnContours()}
-      // And the reveal. Mounted only while a lake's contours are still unread, so it costs nothing
-      // for the great majority of bodies-and-moments where there is nothing to wait for — see
-      // `readDrawnContours` for why one settled callback is not enough to reveal a layer.
-      {...(contoursMounted && !contoursRevealed
-        ? { onDidFinishRenderingFrame: () => void readDrawnContours() }
-        : {})}
-    >
-      <Camera
-        ref={cameraRef}
-        initialViewState={{ center: INITIAL_CENTER, zoom: INITIAL_ZOOM }}
-        maxBounds={[
-          NORTHEAST_MAX_BOUNDS[0][0],
-          NORTHEAST_MAX_BOUNDS[0][1],
-          NORTHEAST_MAX_BOUNDS[1][0],
-          NORTHEAST_MAX_BOUNDS[1][1],
-        ]}
-      />
+    // Wrapped so the return-to-region control can sit over the canvas. The map keeps the absolute
+    // fill it always had, so nothing about the layout changes.
+    <View style={StyleSheet.absoluteFill}>
+      <MapGL
+        style={StyleSheet.absoluteFill}
+        mapStyle={mapStyle}
+        attribution
+        logo={false}
+        compass={false}
+        onPress={onMapPress}
+        onRegionDidChange={onRegionDidChange}
+        // The settled read: the tiles for this view are in, so the ramp keeps up as the skater pans.
+        onDidFinishRenderingMapFully={() => void readDrawnContours()}
+        // And the reveal. Mounted only while a lake's contours are still unread, so it costs nothing
+        // for the great majority of bodies-and-moments where there is nothing to wait for — see
+        // `readDrawnContours` for why one settled callback is not enough to reveal a layer.
+        {...(contoursMounted && !contoursRevealed
+          ? { onDidFinishRenderingFrame: () => void readDrawnContours() }
+          : {})}
+      >
+        {/* No `maxBounds`: with a whole-planet overview beneath the map there is a world worth
+          looking at, so `ReturnToRegion` offers the way back instead of a fence forbidding the
+          leaving (founder, 2026-08-05). */}
+        <Camera ref={cameraRef} initialViewState={{ center: INITIAL_CENTER, zoom: INITIAL_ZOOM }} />
 
-      <GeoJSONSource id="water" data={features} onPress={onWaterPress}>
-        <Layer
-          id="water-fill"
-          type="fill"
-          paint={{ 'fill-color': water.fill, 'fill-opacity': 0.35 }}
-        />
-        <Layer
-          id="water-fill-selected"
-          type="fill"
-          filter={['==', ['get', '_id'], highlightWaterBodyId ?? '']}
-          paint={{ 'fill-color': water.fill, 'fill-opacity': 0.6 }}
-        />
-        <Layer
-          id="water-outline"
-          type="line"
-          paint={{ 'line-color': water.outline, 'line-width': 1 }}
-        />
-        <Layer
-          id="water-outline-selected"
-          type="line"
-          filter={['==', ['get', '_id'], highlightWaterBodyId ?? '']}
-          paint={{ 'line-color': water.outline, 'line-width': 2.5 }}
-        />
-        {/* Favorited bodies read gold (Phase 4, decision #1) — a data-driven `in` filter over the
+        <GeoJSONSource id="water" data={features} onPress={onWaterPress}>
+          <Layer
+            id="water-fill"
+            type="fill"
+            paint={{ 'fill-color': water.fill, 'fill-opacity': 0.35 }}
+          />
+          <Layer
+            id="water-fill-selected"
+            type="fill"
+            filter={['==', ['get', '_id'], highlightWaterBodyId ?? '']}
+            paint={{ 'fill-color': water.fill, 'fill-opacity': 0.6 }}
+          />
+          <Layer
+            id="water-outline"
+            type="line"
+            paint={{ 'line-color': water.outline, 'line-width': 1 }}
+          />
+          <Layer
+            id="water-outline-selected"
+            type="line"
+            filter={['==', ['get', '_id'], highlightWaterBodyId ?? '']}
+            paint={{ 'line-color': water.outline, 'line-width': 2.5 }}
+          />
+          {/* Favorited bodies read gold (Phase 4, decision #1) — a data-driven `in` filter over the
             viewer's favorite id set (matches nothing when empty / signed out). */}
-        <Layer
-          id="water-outline-favorite"
-          type="line"
-          filter={['in', ['get', '_id'], ['literal', favoriteIds]]}
-          paint={{ 'line-color': FAVORITE_OUTLINE_COLOR, 'line-width': 2.5 }}
-        />
-      </GeoJSONSource>
+          <Layer
+            id="water-outline-favorite"
+            type="line"
+            filter={['in', ['get', '_id'], ['literal', favoriteIds]]}
+            paint={{ 'line-color': FAVORITE_OUTLINE_COLOR, 'line-width': 2.5 }}
+          />
+        </GeoJSONSource>
 
-      {/* Named bays, over the water fill and under every pin layer. Dashed, so it reads as a name
+        {/* Named bays, over the water fill and under every pin layer. Dashed, so it reads as a name
           for part of this lake rather than another lake's shoreline. No `onPress`: a tap falls
           through to the water source beneath and opens the parent, which is the right destination. */}
-      <GeoJSONSource id="sub-areas" data={subAreaFeatures}>
-        <Layer
-          id="sub-area-outline"
-          type="line"
-          filter={['!=', ['get', 'label'], true]}
-          paint={{
-            'line-color': subAreaPalette.outline,
-            'line-width': 1.25,
-            'line-opacity': 0.8,
-            'line-dasharray': [3, 2],
-          }}
-        />
-        <Layer
-          id="sub-area-label"
-          type="symbol"
-          filter={['==', ['get', 'label'], true]}
-          layout={{
-            'text-field': ['get', 'name'],
-            'text-size': 12,
-            // A bay name may never displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
-            'text-allow-overlap': false,
-            'text-optional': true,
-          }}
-          paint={{
-            'text-color': subAreaPalette.label,
-            'text-halo-color': subAreaPalette.halo,
-            'text-halo-width': 1.2,
-          }}
-        />
-      </GeoJSONSource>
+        <GeoJSONSource id="sub-areas" data={subAreaFeatures}>
+          <Layer
+            id="sub-area-outline"
+            type="line"
+            filter={['!=', ['get', 'label'], true]}
+            paint={{
+              'line-color': subAreaPalette.outline,
+              'line-width': 1.25,
+              'line-opacity': 0.8,
+              'line-dasharray': [3, 2],
+            }}
+          />
+          <Layer
+            id="sub-area-label"
+            type="symbol"
+            filter={['==', ['get', 'label'], true]}
+            layout={{
+              'text-field': ['get', 'name'],
+              'text-size': 12,
+              // A bay name may never displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
+              'text-allow-overlap': false,
+              'text-optional': true,
+            }}
+            paint={{
+              'text-color': subAreaPalette.label,
+              'text-halo-color': subAreaPalette.halo,
+              'text-halo-width': 1.2,
+            }}
+          />
+        </GeoJSONSource>
 
-      {/* ── Bathymetric contours for the open lake (N6b/D81), mounted only while its sheet is open.
+        {/* ── Bathymetric contours for the open lake (N6b/D81), mounted only while its sheet is open.
           `beforeId` puts them under every pin, track and hazard that follows: contours are
           decoration and hazards are the product, so if the two ever compete for legibility the
           contour is the one that loses (D82). Hairline, and a single hue varying only in lightness —
           a green→yellow→red depth ramp would be far more legible, and that is exactly the problem. */}
-      {contoursMounted ? (
-        <VectorSource
-          id={CONTOUR_SOURCE_ID}
-          ref={contourSourceRef}
-          url={contourSourceSpec(contourArchiveUrl).url}
-        >
+        {contoursMounted ? (
+          <VectorSource
+            id={CONTOUR_SOURCE_ID}
+            ref={contourSourceRef}
+            url={contourSourceSpec(contourArchiveUrl).url}
+          >
+            <Layer
+              id={CONTOUR_LAYER_ID}
+              type="line"
+              source-layer={CONTOUR_SOURCE_LAYER}
+              beforeId={CONTOUR_BEFORE_LAYER_ID}
+              // A guard rail, not the mechanism: a sheet can be open while the camera is zoomed out,
+              // and a lake's isobaths at z6 are a smear that says nothing.
+              minzoom={CONTOUR_MIN_ZOOM}
+              filter={contourFilter(contourBodyKey) as FilterSpecification}
+              layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+              paint={{
+                'line-color':
+                  contourMaxDepthFt > 0
+                    ? (contourColorExpression(contourPalette, contourMaxDepthFt) as never)
+                    : contourPalette.deep,
+                'line-width': contourWidthExpression() as never,
+                'line-opacity': contoursRevealed ? CONTOUR_OPACITY : 0,
+                'line-opacity-transition': { duration: CONTOUR_FADE_MS, delay: 0 },
+              }}
+            />
+          </VectorSource>
+        ) : null}
+
+        <GeoJSONSource id="photo-pins" data={photoPinsFC}>
           <Layer
-            id={CONTOUR_LAYER_ID}
-            type="line"
-            source-layer={CONTOUR_SOURCE_LAYER}
-            beforeId={CONTOUR_BEFORE_LAYER_ID}
-            // A guard rail, not the mechanism: a sheet can be open while the camera is zoomed out,
-            // and a lake's isobaths at z6 are a smear that says nothing.
-            minzoom={CONTOUR_MIN_ZOOM}
-            filter={contourFilter(contourBodyKey) as FilterSpecification}
-            layout={{ 'line-join': 'round', 'line-cap': 'round' }}
+            id="photo-pins"
+            type="circle"
             paint={{
-              'line-color':
-                contourMaxDepthFt > 0
-                  ? (contourColorExpression(contourPalette, contourMaxDepthFt) as never)
-                  : contourPalette.deep,
-              'line-width': contourWidthExpression() as never,
-              'line-opacity': contoursRevealed ? CONTOUR_OPACITY : 0,
-              'line-opacity-transition': { duration: CONTOUR_FADE_MS, delay: 0 },
+              'circle-radius': 6,
+              'circle-color': PHOTO_PIN_COLOR,
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 2,
             }}
           />
-        </VectorSource>
-      ) : null}
+        </GeoJSONSource>
 
-      <GeoJSONSource id="photo-pins" data={photoPinsFC}>
-        <Layer
-          id="photo-pins"
-          type="circle"
-          paint={{
-            'circle-radius': 6,
-            'circle-color': PHOTO_PIN_COLOR,
-            'circle-stroke-color': '#ffffff',
-            'circle-stroke-width': 2,
-          }}
-        />
-      </GeoJSONSource>
+        <GeoJSONSource id="put-in-pin" data={putInPinFC}>
+          <Layer
+            id="put-in-pin"
+            type="circle"
+            paint={{
+              'circle-radius': 7,
+              'circle-color': PUT_IN_PIN_COLOR,
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 2,
+            }}
+          />
+        </GeoJSONSource>
 
-      <GeoJSONSource id="put-in-pin" data={putInPinFC}>
-        <Layer
-          id="put-in-pin"
-          type="circle"
-          paint={{
-            'circle-radius': 7,
-            'circle-color': PUT_IN_PIN_COLOR,
-            'circle-stroke-color': '#ffffff',
-            'circle-stroke-width': 2,
-          }}
-        />
-      </GeoJSONSource>
-
-      {/* Put-in markers for the focused lake (Phase 4, decision #7): official = accurate cyan,
+        {/* Put-in markers for the focused lake (Phase 4, decision #7): official = accurate cyan,
           derived = approximate muted blue. Distinct from the amber report-photo pins. */}
-      <GeoJSONSource id="put-in-markers" data={putInsFC}>
-        <Layer
-          id="put-in-markers"
-          type="circle"
-          paint={{
-            'circle-radius': 6,
-            'circle-color': [
-              'case',
-              ['==', ['get', 'source'], 'official'],
-              PUT_IN_MARKER_OFFICIAL_COLOR,
-              PUT_IN_MARKER_DERIVED_COLOR,
-            ],
-            'circle-stroke-color': '#ffffff',
-            'circle-stroke-width': 2,
-          }}
-        />
-      </GeoJSONSource>
+        <GeoJSONSource id="put-in-markers" data={putInsFC}>
+          <Layer
+            id="put-in-markers"
+            type="circle"
+            paint={{
+              'circle-radius': 6,
+              'circle-color': [
+                'case',
+                ['==', ['get', 'source'], 'official'],
+                PUT_IN_MARKER_OFFICIAL_COLOR,
+                PUT_IN_MARKER_DERIVED_COLOR,
+              ],
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 2,
+            }}
+          />
+        </GeoJSONSource>
 
-      {/* ── Recorded GPS tracks (Phase 8). The path someone actually skated, under the hazard layers
+        {/* ── Recorded GPS tracks (Phase 8). The path someone actually skated, under the hazard layers
           so a warning is never hidden by a line. Display-only — a path can only come from a recorded
           track, so there is no draw interaction. Opacity is data-driven off the linked report's D59
           freshness, floored so an old path fades but never vanishes (a blank lake would read as
           "all clear", which we never assert). */}
-      <GeoJSONSource id="tracks" data={tracksFC}>
-        <Layer
-          id="track-line"
-          type="line"
-          layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-          paint={{
-            'line-color': trackColor,
-            'line-width': 3,
-            'line-opacity': ['coalesce', ['get', 'opacity'], 1] as never,
-          }}
-        />
-      </GeoJSONSource>
+        <GeoJSONSource id="tracks" data={tracksFC}>
+          <Layer
+            id="track-line"
+            type="line"
+            layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+            paint={{
+              'line-color': trackColor,
+              'line-width': 3,
+              'line-opacity': ['coalesce', ['get', 'opacity'], 1] as never,
+            }}
+          />
+        </GeoJSONSource>
 
-      {/* ── Known seasonal body features (D53). Permanent, so no freshness ramp: a steady neutral,
+        {/* ── Known seasonal body features (D53). Permanent, so no freshness ramp: a steady neutral,
           always visible, beneath the hazard pins that *do* decay. */}
-      <GeoJSONSource id="body-features" data={bodyFeaturesFC}>
-        <Layer
-          id="body-feature-fill"
-          type="fill"
-          paint={{ 'fill-color': hazardPalette.feature, 'fill-opacity': 0.22 }}
-        />
-        <Layer
-          id="body-feature-outline"
-          type="line"
-          paint={{
-            'line-color': hazardPalette.feature,
-            'line-width': 1.5,
-            'line-dasharray': [4, 2],
-          }}
-        />
-      </GeoJSONSource>
+        <GeoJSONSource id="body-features" data={bodyFeaturesFC}>
+          <Layer
+            id="body-feature-fill"
+            type="fill"
+            paint={{ 'fill-color': hazardPalette.feature, 'fill-opacity': 0.22 }}
+          />
+          <Layer
+            id="body-feature-outline"
+            type="line"
+            paint={{
+              'line-color': hazardPalette.feature,
+              'line-width': 1.5,
+              'line-dasharray': [4, 2],
+            }}
+          />
+        </GeoJSONSource>
 
-      {/* ── Hazards (Phase 9). Drawn as buffered *footprint* polygons, not markers, so the shape on
+        {/* ── Hazards (Phase 9). Drawn as buffered *footprint* polygons, not markers, so the shape on
           screen is literally the shape the proximity evaluator measures against. Soft fill + a dashed
           outline while provisional: a hazard is "reported around here", never a surveyed boundary. */}
-      <GeoJSONSource id="hazards" data={hazardsFC} onPress={onHazardPress}>
-        <Layer
-          id="hazard-fill"
-          type="fill"
-          paint={{
-            'fill-color': hazardColorExpression(hazardPalette) as never,
-            'fill-opacity': hazardFillOpacityExpression() as never,
-          }}
-        />
-        {/* Dashed while provisional (one unverified report), solid once independently confirmed —
+        <GeoJSONSource id="hazards" data={hazardsFC} onPress={onHazardPress}>
+          <Layer
+            id="hazard-fill"
+            type="fill"
+            paint={{
+              'fill-color': hazardColorExpression(hazardPalette) as never,
+              'fill-opacity': hazardFillOpacityExpression() as never,
+            }}
+          />
+          {/* Dashed while provisional (one unverified report), solid once independently confirmed —
             the same soft/hard distinction the on-ice banner makes (D54). **Two layers, not one
             expression:** `line-dasharray` takes no data expression, and the native renderer says so
             out loud ("line-dasharray data expressions not supported") before dropping the property.
             The filters partition the source, so every hazard is still drawn exactly once. */}
-        <Layer
-          id="hazard-outline-provisional"
-          type="line"
-          filter={PROVISIONAL_HAZARD_FILTER as never}
-          paint={{
-            'line-color': hazardColorExpression(hazardPalette) as never,
-            'line-width': 1.5,
-            'line-dasharray': [...PROVISIONAL_DASH_ARRAY],
-          }}
-        />
-        <Layer
-          id="hazard-outline-confirmed"
-          type="line"
-          filter={CONFIRMED_HAZARD_FILTER as never}
-          paint={{
-            'line-color': hazardColorExpression(hazardPalette) as never,
-            'line-width': 1.5,
-          }}
-        />
-      </GeoJSONSource>
+          <Layer
+            id="hazard-outline-provisional"
+            type="line"
+            filter={PROVISIONAL_HAZARD_FILTER as never}
+            paint={{
+              'line-color': hazardColorExpression(hazardPalette) as never,
+              'line-width': 1.5,
+              'line-dasharray': [...PROVISIONAL_DASH_ARRAY],
+            }}
+          />
+          <Layer
+            id="hazard-outline-confirmed"
+            type="line"
+            filter={CONFIRMED_HAZARD_FILTER as never}
+            paint={{
+              'line-color': hazardColorExpression(hazardPalette) as never,
+              'line-width': 1.5,
+            }}
+          />
+        </GeoJSONSource>
 
-      {/* The hazard being captured — the real metric footprint, updated live as vertices land and
+        {/* The hazard being captured — the real metric footprint, updated live as vertices land and
           the size changes, so what you see while placing is what gets stored. */}
-      <GeoJSONSource id="hazard-draft" data={hazardDraftFC}>
-        <Layer
-          id="hazard-draft-fill"
-          type="fill"
-          paint={{
-            'fill-color': hazardColorExpression(hazardPalette) as never,
-            'fill-opacity': 0.35,
-          }}
-        />
-        <Layer
-          id="hazard-draft-outline"
-          type="line"
-          paint={{ 'line-color': hazardColorExpression(hazardPalette) as never, 'line-width': 2 }}
-        />
-        {/* The tapped vertices. A one-vertex line has no honest footprint yet, so without these the
+        <GeoJSONSource id="hazard-draft" data={hazardDraftFC}>
+          <Layer
+            id="hazard-draft-fill"
+            type="fill"
+            paint={{
+              'fill-color': hazardColorExpression(hazardPalette) as never,
+              'fill-opacity': 0.35,
+            }}
+          />
+          <Layer
+            id="hazard-draft-outline"
+            type="line"
+            paint={{ 'line-color': hazardColorExpression(hazardPalette) as never, 'line-width': 2 }}
+          />
+          {/* The tapped vertices. A one-vertex line has no honest footprint yet, so without these the
             first tap of a trace would land with no feedback at all. */}
-        <Layer
-          id="hazard-draft-vertices"
-          type="circle"
-          filter={['==', ['get', 'role'], 'vertex']}
-          paint={{
-            'circle-radius': 6,
-            'circle-color': hazardColorExpression(hazardPalette) as never,
-            'circle-stroke-color': '#ffffff',
-            'circle-stroke-width': 2,
-          }}
-        />
-      </GeoJSONSource>
-    </MapGL>
+          <Layer
+            id="hazard-draft-vertices"
+            type="circle"
+            filter={['==', ['get', 'role'], 'vertex']}
+            paint={{
+              'circle-radius': 6,
+              'circle-color': hazardColorExpression(hazardPalette) as never,
+              'circle-stroke-color': '#ffffff',
+              'circle-stroke-width': 2,
+            }}
+          />
+        </GeoJSONSource>
+      </MapGL>
+      <ReturnToRegion
+        visible={regionOffscreen}
+        onReturn={() =>
+          cameraRef.current?.flyTo({
+            center: INITIAL_CENTER,
+            zoom: INITIAL_ZOOM,
+            duration: 900,
+          })
+        }
+      />
+    </View>
   );
 }
 

@@ -16,7 +16,9 @@
  * `manifest.ts`, tested.
  */
 
+import { readFileSync } from 'node:fs';
 import process from 'node:process';
+import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import {
   countUrl,
   descriptorUrl,
@@ -183,6 +185,7 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const refresh = args.includes('--refresh');
   const delayMs = Number(flag(args, 'delay') ?? 250);
+  const campaignId = flag(args, 'campaign');
   const selected = selectSources(SOURCES, parseSelection(args));
 
   const todo = selected.filter((source) => {
@@ -196,9 +199,98 @@ async function main(): Promise<void> {
     return;
   }
 
+  // One run row per source (N6c F2), labelled to match what the archive backfill reconstructs, so a
+  // re-fetch lands as the newest entry in that source's own history rather than as a stranger.
+  // Per-source rather than per-invocation because that is the unit that succeeds or fails: these are
+  // five independent state agencies, and "the snapshot failed" is never true of all of them at once.
+  const target = resolveDeployment();
+  let failed = 0;
   for (const source of todo) {
-    if (source.fetch.type === 'arcgis') await fetchArcGis(source, delayMs, refresh);
-    else await fetchFile(source);
+    const logger = new RunLogger({
+      kind: 'raw_archive',
+      label: `${source.key} archive`,
+      campaignId,
+      target,
+      call: convexRun,
+      stages: [
+        {
+          name: 'fetch',
+          detail: `${source.fetch.type} source — ${source.agency}`,
+          sourceUrl: source.fetch.url,
+          output: `.raw/${source.key}/`,
+        },
+      ],
+      notes: refresh ? ['--refresh: an existing snapshot was overwritten.'] : undefined,
+    });
+    logger.start();
+
+    try {
+      if (source.fetch.type === 'arcgis') await fetchArcGis(source, delayMs, refresh);
+      else await fetchFile(source);
+    } catch (err) {
+      failed++;
+      logger.fail({
+        stage: 'fetch',
+        key: source.key,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+      logger.failed(err);
+      // One agency's service being down is not a reason to skip the other four — each source is an
+      // independent archive, and a partial snapshot run is normal rather than exceptional.
+      log(`✗ ${source.key} failed: ${(err as Error).message}`);
+      continue;
+    }
+
+    // Read the counts back out of the manifest the fetch just wrote, rather than tallying them
+    // alongside: the manifest is what the rest of the pipeline reads, so it is the honest witness.
+    const manifest = readManifestCounts(source.key);
+    logger.stage({
+      name: 'fetch',
+      detail: `${source.fetch.type} source — ${source.agency}`,
+      sourceUrl: source.fetch.url,
+      output: `.raw/${source.key}/`,
+      bytes: manifest.bytes,
+      sha256: manifest.singleSha256,
+      counts: [
+        { name: 'files', value: manifest.files },
+        ...(manifest.records !== undefined ? [{ name: 'records', value: manifest.records }] : []),
+      ],
+    });
+    logger.count('files', manifest.files);
+    logger.count('bytes', manifest.bytes);
+    if (manifest.records !== undefined) logger.count('records', manifest.records);
+    logger.succeed();
+  }
+
+  if (failed > 0) {
+    log(`${failed}/${todo.length} source(s) failed — see /admin/imports`);
+    process.exitCode = 1;
+  }
+}
+
+/** Read back the manifest the fetch just wrote, for the run row's counts. */
+function readManifestCounts(key: string): {
+  files: number;
+  bytes: number;
+  records?: number;
+  singleSha256?: string;
+} {
+  try {
+    const raw = readFileSync(new URL(`../.raw/${key}/manifest.json`, import.meta.url), 'utf8');
+    const m = JSON.parse(raw) as {
+      files?: { name: string; bytes: number; sha256: string }[];
+      recordCount?: number;
+    };
+    const files = m.files ?? [];
+    return {
+      files: files.length,
+      bytes: files.reduce((sum, f) => sum + (f.bytes ?? 0), 0),
+      records: m.recordCount,
+      // A multi-page pull has one sha256 per page; only the single-file case has one for the stage.
+      singleSha256: files.length === 1 ? files[0]?.sha256 : undefined,
+    };
+  } catch {
+    return { files: 0, bytes: 0 };
   }
 }
 

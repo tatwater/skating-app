@@ -9,9 +9,11 @@
  * swap is a config change.
  */
 
+import { convertFilter } from '@maplibre/maplibre-gl-style-spec';
 import { layers, namedFlavor } from '@protomaps/basemaps';
-import type { BBox } from '@skating/core';
+import { type BBox, composeBasemapLayers, REGION_BOUNDS_CORNERS } from '@skating/core';
 import type { StyleSpecification } from 'maplibre-gl';
+import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
 
 /**
  * ODbL attribution for both the Protomaps basemap and our OSM-derived water data — a launch
@@ -66,39 +68,130 @@ export const TRACK_PALETTE = {
 export const INITIAL_CENTER: [number, number] = [-73.15, 44.46];
 export const INITIAL_ZOOM = 6.5;
 /**
- * Bounds MapLibre won't let the user pan out of — the Phase 2.5 Northeast skating region (NY north
- * of the NYC/Long Island metro + VT/NH/ME/MA). Kept in sync with the basemap `--bbox` and the NY
- * ETL downstate clip (see `plans/phase-2.5-regional-expansion.md`). A rectangle inevitably spans
- * some CT/RI/NJ/PA background land, which simply carries no water data.
+ * The region's extent, re-exported from `@skating/core` so the two apps cannot hold different
+ * numbers. **No longer a pan fence** — with a whole-planet overview under the map there is a world
+ * to look at, and `ReturnToRegion` brings a wandering user back rather than a wall stopping them
+ * leaving. It is still what decides whether a device fix is somewhere we know anything about.
  */
-export const NORTHEAST_MAX_BOUNDS: [[number, number], [number, number]] = [
-  [-79.9, 41.2],
-  [-66.8, 47.5],
-];
+export const NORTHEAST_REGION_BOUNDS = REGION_BOUNDS_CORNERS;
+
+/** The mask geometry, parsed once per session rather than per style rebuild (theme toggles). */
+const REGION_MASK = JSON.parse(REGION_MASK_JSON) as GeoJSON.FeatureCollection;
 
 /**
- * A MapLibre style: the Protomaps vector basemap (`pmtiles://` protocol, registered in the
- * component) themed by `flavor` (D6/D34 — see `MAP_FLAVORS`), under our water layers (added
- * imperatively in the component). `attribution` on the source is what the `AttributionControl`
- * surfaces. The sprite matches the flavor's light/dark icon set.
+ * The outline the basemap's own labels are filtered against, so a name belonging to one of our
+ * five states draws *over* the mask rather than under it. See `REGION_LABEL_FILTER_NOTE`.
  */
-export function buildMapStyle(pmtilesUrl: string, flavor: MapFlavor = 'white'): StyleSpecification {
+const REGION_FILTER = JSON.parse(REGION_FILTER_JSON) as GeoJSON.Polygon | GeoJSON.MultiPolygon;
+
+/** Source ids. `protomaps` is the regional archive and keeps its original name; `world` is new. */
+export const REGION_SOURCE = 'protomaps';
+export const WORLD_SOURCE = 'world';
+export const MASK_SOURCE = 'region-mask';
+
+/**
+ * A thousandth short of opaque, which is what puts the mask in the same render pass as the labels it
+ * has to cover. See `maskLayers`. Shared with mobile — if it ever goes back to 1, the map silently
+ * starts showing Québec again.
+ */
+const MASK_FILL_OPACITY = 0.999;
+
+/**
+ * The flat fills that make everywhere-but-here look like nowhere.
+ *
+ * Three layers, drawn in this order: **sea**, then **land** on top of it, then the major **lakes**.
+ * Together they tile the whole neighbourhood, which matters more than it sounds — see below.
+ *
+ * Coloured from the flavour itself — `earth` for land, `water` for sea and lakes — so the mask is not
+ * a grey rectangle laid over a map but the same white and the same pale grey the basemap already
+ * paints with. The seam where it meets the world overview's own earth is invisible by construction;
+ * the only seam a user can see is where it meets *our* detail, which is the border, which is the point.
+ *
+ * **`fill-opacity: 0.999`, and it is not a rounding artefact.** MapLibre sends a fill to the *opaque*
+ * render pass only at exactly opacity 1; everything else goes to the *translucent* pass. Symbols only
+ * ever render in the translucent pass, and it runs after the opaque one with depth testing off — so an
+ * opaque mask, however late in the layer order, was drawn *before* the labels beneath it and every
+ * town in Québec and Connecticut rendered straight through it. A thousandth of transparency moves the
+ * mask into the same pass as the labels, where being later in the list finally means being on top.
+ */
+function maskLayers(flavor: MapFlavor): StyleSpecification['layers'] {
+  const palette = namedFlavor(flavor) as unknown as Record<string, string>;
+  const water = palette.water ?? '#dcdcdc';
+  const fill = (id: string, kind: string, color: string) => ({
+    id,
+    type: 'fill' as const,
+    source: MASK_SOURCE,
+    filter: ['==', ['get', 'kind'], kind],
+    paint: { 'fill-color': color, 'fill-opacity': MASK_FILL_OPACITY },
+  });
+  return [
+    fill('region-mask-sea', 'sea', water),
+    fill('region-mask-land', 'land', palette.earth ?? '#ffffff'),
+    fill('region-mask-water', 'water', water),
+  ] as StyleSpecification['layers'];
+}
+
+/**
+ * A MapLibre style: **two** Protomaps vector archives plus the region mask, themed by `flavor`
+ * (D6/D34 — see `MAP_FLAVORS`), under our water layers (added imperatively in the component).
+ *
+ * `regionUrl` is the archive clipped to the five states — detail, from z6 up. `worldUrl` is a
+ * whole-planet z0–6 overview that gives the map its oceans, its landmasses and its country lines at
+ * every zoom, everywhere; without it the map ends in a straight line wherever the regional archive's
+ * bbox ended, which is the bug this pair of sources exists to fix. It is optional, and a build with
+ * no world archive configured degrades to what the map did before rather than to a blank screen.
+ *
+ * `composeBasemapLayers` owns the ordering and the zoom policy — see `@skating/core/basemapLayers`.
+ * `attribution` on the sources is what the `AttributionControl` surfaces. The sprite matches the
+ * flavour's light/dark icon set.
+ */
+export function buildMapStyle(input: {
+  regionUrl: string;
+  worldUrl?: string;
+  flavor?: MapFlavor;
+}): StyleSpecification {
+  const { regionUrl, worldUrl, flavor = 'white' } = input;
+  const themed = namedFlavor(flavor);
+  const region = layers(REGION_SOURCE, themed, { lang: 'en' });
+  // With no world archive there is nothing to compose against, so the regional set is used whole —
+  // including its own background and boundaries, which the two-source path deliberately drops.
+  const world = worldUrl ? layers(WORLD_SOURCE, themed, { lang: 'en' }) : [];
+
   return {
     version: 8,
     glyphs: GLYPHS_URL,
     sprite: `${SPRITE_BASE}/${flavor === 'dark' ? 'dark' : 'light'}`,
     sources: {
-      protomaps: {
+      [REGION_SOURCE]: {
         type: 'vector',
-        url: `pmtiles://${pmtilesUrl}`,
+        url: `pmtiles://${regionUrl}`,
         attribution: OSM_ATTRIBUTION,
       },
+      ...(worldUrl
+        ? {
+            [WORLD_SOURCE]: {
+              type: 'vector' as const,
+              url: `pmtiles://${worldUrl}`,
+              attribution: OSM_ATTRIBUTION,
+            },
+          }
+        : {}),
+      [MASK_SOURCE]: { type: 'geojson' as const, data: REGION_MASK },
     },
-    // `layers()` targets the source name ('protomaps') with the named flavor; cast bridges the
-    // style-spec LayerSpecification from @protomaps/basemaps to maplibre-gl's identical type.
-    layers: layers('protomaps', namedFlavor(flavor), {
-      lang: 'en',
-    }) as StyleSpecification['layers'],
+    // The cast bridges @protomaps/basemaps' LayerSpecification to maplibre-gl's identical type.
+    layers: (worldUrl
+      ? composeBasemapLayers({
+          world,
+          region,
+          mask: maskLayers(flavor) as never[],
+          regionFilter: {
+            outline: REGION_FILTER,
+            // The spec types `convertFilter` against its own `FilterSpecification`; core keeps the
+            // signature loose so it need not depend on the style spec at all.
+            convertFilter: convertFilter as (filter: unknown) => unknown,
+          },
+        })
+      : [...region, ...(maskLayers(flavor) as never[])]) as StyleSpecification['layers'],
   };
 }
 
@@ -285,10 +378,10 @@ export const GEOLOCATION_FRAME_ZOOM = 11;
  */
 export function frameForCoord(
   coord: { lat: number; lng: number },
-  maxBounds: [[number, number], [number, number]] = NORTHEAST_MAX_BOUNDS,
+  region: [[number, number], [number, number]] = NORTHEAST_REGION_BOUNDS,
   zoom: number = GEOLOCATION_FRAME_ZOOM,
 ): { center: [number, number]; zoom: number } | null {
-  const [[minLng, minLat], [maxLng, maxLat]] = maxBounds;
+  const [[minLng, minLat], [maxLng, maxLat]] = region;
   const inRegion =
     coord.lng >= minLng && coord.lng <= maxLng && coord.lat >= minLat && coord.lat <= maxLat;
   return inRegion ? { center: [coord.lng, coord.lat], zoom } : null;
