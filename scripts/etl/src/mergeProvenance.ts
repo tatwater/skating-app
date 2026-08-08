@@ -9,13 +9,13 @@
  * Path and the line "the loader was given no provenance sidecars" — technically true, and useless:
  * the sidecars were all on disk, sitting in the same function.
  *
- * ## One file, one stage — and the family is in the name
+ * ## One file, one stage — and the catalogue is in the name
  *
  * Seventeen archives is seventeen checksums, and rolling them into one `sources` stage would throw
  * away the only field that answers "is this the archive we think": `RunStage` carries exactly one
- * `sha256`, one URL, one date. So each file gets its own stage, named `source · osm/vt` — the
- * `STAGE_SEPARATOR` convention the admin page groups on, so the path still reads as five steps while
- * carrying twenty rows of evidence underneath.
+ * `sha256`, one URL, one date. So each file gets its own stage, named `osm · vt` — the
+ * `STAGE_SEPARATOR` convention the admin page groups on, so the path still reads as the six steps it
+ * conceptually is while carrying nineteen rows of evidence underneath.
  *
  * ## A missing archive is a stage that says so
  *
@@ -43,8 +43,19 @@ import {
   threeDhpSourceStage,
 } from '@skating/run-log';
 
-/** The family every archive stage is filed under. The admin page groups on it. */
-export const SOURCE_FAMILY = 'source';
+/**
+ * The families archive stages are filed under — **one per catalogue, not one for "sources"**.
+ *
+ * A single `source` family was the first cut and it read badly: seventeen files under one heading,
+ * with a checksum roll-up ("11/17 verified") that spans four publishers with four different
+ * verification stories. Geofabrik publishes an md5, USGS publishes nothing and we check byte counts,
+ * the 3DHP clip is derived and has no upstream to check at all. Per catalogue, each roll-up is a
+ * claim about one publisher, which is the form the question actually takes.
+ */
+export const OSM_FAMILY = 'osm';
+export const NHD_FAMILY = 'nhd';
+export const THREE_DHP_FAMILY = '3dhp';
+export const GNIS_FAMILY = 'gnis';
 /** The two region masks — derived inputs with no upstream checksum of their own. */
 export const MASK_FAMILY = 'mask';
 
@@ -77,7 +88,12 @@ export function buildSourceStages(paths: MergeSourcePaths): RunStage[] {
   const stages: RunStage[] = [];
 
   for (const state of paths.osmStates) {
-    const name = stageName(SOURCE_FAMILY, `osm/${state}`);
+    // **The state code, not the directory name.** OSM archives live in lowercase directories
+    // (`.raw/me/`) while NHD and GNIS key off uppercase codes, so naming the stage after the path
+    // produced a list where `osm · me` sat above `nhd · ME` and `gnis · ME` — and a reader scanning
+    // the column for Maine saw four states of OSM and concluded one was missing. It was the first
+    // row. The path is a thing an operator reads down; the key has to be the same key throughout.
+    const name = stageName(OSM_FAMILY, state.toUpperCase());
     const manifest = readManifest<ExtractManifest>(join(paths.osmDir, state, 'manifest.json'));
     stages.push(
       manifest === undefined
@@ -87,7 +103,7 @@ export function buildSourceStages(paths: MergeSourcePaths): RunStage[] {
   }
 
   for (const { key, state } of paths.nhdKeys) {
-    const name = stageName(SOURCE_FAMILY, `nhd/${state}`);
+    const name = stageName(NHD_FAMILY, state);
     const path = join(paths.nhdDir, key, 'manifest.json');
     const manifest = readManifest<NhdManifest>(path);
     stages.push(
@@ -104,31 +120,25 @@ export function buildSourceStages(paths: MergeSourcePaths): RunStage[] {
   const dhpSource = readManifest<ThreeDhpManifest>(dhpSourcePath);
   stages.push(
     dhpSource === undefined
-      ? missing(stageName(SOURCE_FAMILY, '3dhp/download'), dhpSourcePath, '3DHP national release')
-      : threeDhpSourceStage(dhpSource, stageName(SOURCE_FAMILY, '3dhp/download')),
+      ? missing(stageName(THREE_DHP_FAMILY, 'download'), dhpSourcePath, '3DHP national release')
+      : threeDhpSourceStage(dhpSource, stageName(THREE_DHP_FAMILY, 'download')),
   );
   const dhpClipPath = join(paths.threeDhpDir, 'waterbody', 'manifest.json');
   const dhpClip = readManifest<ThreeDhpManifest>(dhpClipPath);
   stages.push(
     dhpClip === undefined
-      ? missing(stageName(SOURCE_FAMILY, '3dhp/clip'), dhpClipPath, '3DHP Northeast waterbody clip')
-      : threeDhpClipStage(dhpClip, stageName(SOURCE_FAMILY, '3dhp/clip')),
+      ? missing(stageName(THREE_DHP_FAMILY, 'clip'), dhpClipPath, '3DHP Northeast waterbody clip')
+      : threeDhpClipStage(dhpClip, stageName(THREE_DHP_FAMILY, 'clip')),
   );
 
   // GNIS is one manifest listing every state, so a missing file costs the whole gazetteer at once —
   // and one stage saying that is clearer than five identical "missing" rows.
   const gnis = readManifest<{ states?: GnisStateManifest[] }>(paths.gnisManifest);
   if (gnis === undefined) {
-    stages.push(
-      missing(
-        stageName(SOURCE_FAMILY, 'gnis'),
-        paths.gnisManifest,
-        'GNIS Domestic Names gazetteer',
-      ),
-    );
+    stages.push(missing(GNIS_FAMILY, paths.gnisManifest, 'GNIS Domestic Names gazetteer'));
   } else {
     for (const state of gnis.states ?? []) {
-      stages.push(gnisStage(state, stageName(SOURCE_FAMILY, `gnis/${state.code ?? '??'}`)));
+      stages.push(gnisStage(state, stageName(GNIS_FAMILY, state.code ?? '??')));
     }
   }
 

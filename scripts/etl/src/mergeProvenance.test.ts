@@ -2,11 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  buildSourceStages,
-  loadMergeProvenance,
-  type MergeSourcePaths,
-} from './mergeProvenance';
+import { buildSourceStages, loadMergeProvenance, type MergeSourcePaths } from './mergeProvenance';
 
 /**
  * These tests exist because the failure mode is **silence**. A merge that cannot find its GNIS
@@ -47,6 +43,14 @@ function paths(overrides: Partial<MergeSourcePaths> = {}): MergeSourcePaths {
 }
 
 describe('buildSourceStages', () => {
+  it('keys OSM on the state code, not its lowercase directory name', () => {
+    // `osm · me` under `nhd · ME` reads as a gap in the OSM lane to anyone scanning the column.
+    write('.raw/vt/manifest.json', { slug: 'vermont' });
+    const names = buildSourceStages(paths()).map((s) => s.name);
+    expect(names).toContain('osm · VT');
+    expect(names).not.toContain('osm · vt');
+  });
+
   it('names every stage by family, so the page can group seventeen files as four steps', () => {
     write('.raw/vt/manifest.json', { slug: 'vermont', filename: 'vermont-260731.osm.pbf' });
     write('.raw-nhd/vt/manifest.json', { slug: 'Vermont', bytesVerified: true });
@@ -57,12 +61,12 @@ describe('buildSourceStages', () => {
     writeFileSync(join(dir, 'downstate-ny.geojson'), '{}');
 
     expect(buildSourceStages(paths()).map((s) => s.name)).toEqual([
-      'source · osm/vt',
-      'source · nhd/VT',
-      'source · 3dhp/download',
-      'source · 3dhp/clip',
-      'source · gnis/VT',
-      'source · gnis/NH',
+      'osm · VT',
+      'nhd · VT',
+      '3dhp · download',
+      '3dhp · clip',
+      'gnis · VT',
+      'gnis · NH',
       'mask · five-state',
       'mask · downstate-ny',
     ]);
@@ -79,7 +83,7 @@ describe('buildSourceStages', () => {
   it('survives an unreadable manifest the same way it survives an absent one', () => {
     mkdirSync(join(dir, '.raw', 'vt'), { recursive: true });
     writeFileSync(join(dir, '.raw', 'vt', 'manifest.json'), 'not json {');
-    const osm = buildSourceStages(paths()).find((s) => s.name === 'source · osm/vt');
+    const osm = buildSourceStages(paths()).find((s) => s.name === 'osm · VT');
     expect(osm?.detail).toMatch(/^MISSING/);
   });
 

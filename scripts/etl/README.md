@@ -309,15 +309,40 @@ re-derivable, and they are kilobytes.
 
 ## Running the pipeline
 
-> **The short version, for a normal re-import:**
+> **The short version.** Two paths, and which one you want depends on whether you are rebuilding
+> the *corpus* or re-importing one *state's OSM extract*.
+>
 > ```bash
-> ./run-canonical.sh n6c-20260802          # all five states, from the archived .raw/ extracts
-> ./run-canonical.sh n6c-20260802 vt nh    # or just some
+> ./run-corpus.sh n7-20260807            # N7: three catalogues → the master list → the corpus
+> ./run-canonical.sh n6c-20260802        # OSM-only, per state, from the archived .raw/ extracts
+> ./run-canonical.sh n6c-20260802 vt nh  # …or just some
 > ```
-> That is the manual steps below, in order, with the arguments that carry provenance — the
-> extract's manifest, the transform's summary sidecar, the campaign id — already wired. It writes
-> one `importRuns` row per state, visible at **`/admin/imports`**. Read on if you are doing
-> something the script does not cover; the steps are still what it runs.
+> Each is the manual steps below, in order, with the arguments that carry provenance already
+> wired — the campaign id, and for the OSM path the extract manifest, transform summary and filter
+> command. Both write `importRuns` rows visible at **`/admin/imports`**. Read on if you are doing
+> something the scripts do not cover; the steps are still what they run.
+
+### Provenance is the default, not a flag
+
+A run row that cannot say which files produced it is the failure this whole workstream exists to
+prevent — and it happened anyway, on the pass that matters most. The 2026-08-07 corpus campaign was
+typed by hand as four commands, so the `corpus_merge` run landed with an **empty Path** and the load
+of all 25,050 bodies was labelled *"unscoped canonical water"*. Nothing was missing from disk; the
+loaders were simply never handed it.
+
+So the sidecars are now discovered rather than passed:
+
+| what | where it comes from |
+| --- | --- |
+| `merge` | reads all 17 archive manifests itself and records one stage per file (`osm · vt`, `nhd · VT`, `3dhp · clip`, `gnis · ME`, `mask · five-state`) |
+| `load` | reads `merge-manifest.json` **beside its input NDJSON**, replays the merge's stages, and inherits the campaign id and label |
+| `load-sub-areas` | the same |
+
+`--merge-manifest=<path>` overrides the location if the NDJSON was copied away from the manifest
+that produced it. A missing or unreadable manifest costs provenance, never the import: the pass
+warns and carries on with a hole in the path. A **missing source archive** is different — it becomes
+a stage saying `MISSING`, because a corpus built without one of its four catalogues is a different
+corpus and the run row is the only place that can ever surface.
 
 Work in a scratch dir (gitignored); nothing here is committed except the final DB rows.
 
@@ -457,10 +482,12 @@ whole path, readable at `/admin/imports`:
 | `--manifest=.raw/<state>/manifest.json` | the `extract` stage — resolved Geofabrik URL, build date, size, sha256, whether the published md5 verified |
 | `--transform-summary=<transform.json>` | the `filter` + `transform` stages, including every itemized skip |
 | `--filter-command=<text>` | the exact `osmium` invocation, so the path is reproducible rather than merely described |
+| `--merge-manifest=<path>` | the N7 path's whole upstream — **discovered automatically** when a `merge-manifest.json` sits beside the input, so this flag is only for a relocated artifact |
 | `--no-run-log` | opt out; nothing else about the load changes |
 
-`run-canonical.sh` passes all of them. Bookkeeping is best-effort throughout — a run-history write
-that fails warns and is ignored, never taking the import down with it.
+`run-canonical.sh` passes the OSM ones; `run-corpus.sh` needs none of them, because the merge writes
+its path and the loader finds it. Bookkeeping is best-effort throughout — a run-history write that
+fails warns and is ignored, never taking the import down with it.
 
 `importCanonical` also **cell-indexes each body** (N1) — one `waterBodyCells` row per grid cell its
 bbox covers, at a rung no finer than the zoom it first draws at — which is what `listInViewport`

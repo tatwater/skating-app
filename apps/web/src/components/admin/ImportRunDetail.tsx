@@ -265,13 +265,21 @@ const COUNT_GROUPS: Record<string, { title: string; note?: string }> = {
   osm: { title: 'OSM lane', note: 'what the five Geofabrik extracts contributed' },
   nhd: { title: 'NHD lane', note: 'what the five USGS geodatabases contributed' },
   '3dhp': { title: '3DHP lane', note: 'what the national 3DHP clip contributed' },
-  nhdid: { title: 'NHD identifiers', note: 'how well `Permanent_Identifier` parsed' },
+  nhdId: { title: 'NHD identifiers', note: 'how well `Permanent_Identifier` parsed' },
 };
 
 /** The bucket for counts with no prefix at all — the run's own totals. */
 const UNGROUPED = 'Totals';
 
-/** Rows a group shows before the rest go behind a disclosure. */
+/**
+ * Rows a prefixed group shows before the rest go behind a disclosure.
+ *
+ * **Totals is deliberately never capped.** It is the group every other one is a breakdown of, the
+ * loaders emit it in a meaningful order (the N7 merge leads with groups → kept → emitted → dropped),
+ * and it is small by convention — nineteen at its largest anywhere in this repo. A cap there would
+ * hide `outOfRegion` behind a disclosure to save four lines, which is the exact trade this redesign
+ * exists to stop making.
+ */
 const GROUP_PREVIEW = 6;
 
 interface CountGroup {
@@ -338,8 +346,9 @@ function CountGroupCard({ group }: { group: CountGroup }) {
   // `kept` and `dropped` overlap by construction, so a share-of-total bar would sum past 100% and
   // claim a part-to-whole relationship that isn't there. Longest-is-biggest is true in every family.
   const widest = Math.max(1, ...group.counts.map((c) => c.value));
-  const shown = group.counts.slice(0, GROUP_PREVIEW);
-  const hidden = group.counts.slice(GROUP_PREVIEW);
+  const cap = group.key === UNGROUPED ? group.counts.length : GROUP_PREVIEW;
+  const shown = group.counts.slice(0, cap);
+  const hidden = group.counts.slice(cap);
   return (
     <Card>
       <CardContent className="flex flex-col gap-3 py-4">
@@ -428,8 +437,22 @@ function MeterRow({
 // 5. The path — every file, grouped into the steps they belong to
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** The convention loaders name multi-file stages with: `source · osm/vt`. Keep in step with run-log. */
+/** The convention loaders name multi-file stages with: `osm · vt`. Keep in step with run-log. */
 const STAGE_SEPARATOR = ' · ';
+
+/**
+ * What a stage family is, said once, in the words an operator uses.
+ *
+ * A family with no entry renders its key verbatim, so a loader that invents `hydrolakes · …`
+ * tomorrow groups correctly today and only lacks the prose.
+ */
+const STAGE_FAMILIES: Record<string, string> = {
+  osm: 'OSM extracts (Geofabrik)',
+  nhd: 'NHD geodatabases (USGS, frozen 2023-12-27)',
+  '3dhp': '3DHP (USGS annual release)',
+  gnis: 'GNIS gazetteer (USGS domestic names)',
+  mask: 'Region masks (TIGER)',
+};
 
 interface StageFamily {
   key: string;
@@ -504,8 +527,8 @@ function NoPath() {
           loader learns about the steps before its own from the <strong>manifests</strong> the
           fetchers write beside every archived file (<code className="text-xs">manifest.json</code>,{' '}
           <code className="text-xs">merge-manifest.json</code>). Those files carry the source URL,
-          the publisher's build date, the size and the checksum. A run with no stages either predates
-          that capture or was invoked without reaching them.
+          the publisher's build date, the size and the checksum. A run with no stages either
+          predates that capture or was invoked without reaching them.
         </p>
         <p className="text-foreground-muted">
           Re-running through <code className="text-xs">scripts/etl/run-corpus.sh</code> or{' '}
@@ -540,10 +563,11 @@ function StageFamilyCard({
             {index + 1}
             {family.stages.length > 1 ? ` · ${from}–${from + family.stages.length - 1}` : ''}
           </span>
-          <span className="font-medium text-foreground text-sm">{family.key}</span>
+          <span className="font-medium text-foreground text-sm">
+            {STAGE_FAMILIES[family.key] ?? family.key}
+          </span>
           <span className="text-foreground-muted text-xs">
-            {family.stages.length} files
-            {bytes > 0 ? ` · ${formatBytes(bytes)}` : ''}
+            {`${family.stages.length} files${bytes > 0 ? ` · ${formatBytes(bytes)}` : ''}`}
           </span>
           {verified > 0 ? (
             <Badge variant="outline">{`${verified}/${family.stages.length} checksum verified`}</Badge>
@@ -556,7 +580,9 @@ function StageFamilyCard({
         </div>
         <details>
           <summary className="cursor-pointer text-foreground-muted text-xs underline">
-            {family.stages.map((s) => s.name.slice(family.key.length + STAGE_SEPARATOR.length)).join(', ')}
+            {family.stages
+              .map((s) => s.name.slice(family.key.length + STAGE_SEPARATOR.length))
+              .join(', ')}
           </summary>
           <ol className="mt-2 flex flex-col gap-2">
             {family.stages.map((stage, i) => (
@@ -645,9 +671,7 @@ function StageCard({
   );
 
   if (nested) {
-    return (
-      <div className="flex flex-col gap-2 border-border border-l pl-3">{body}</div>
-    );
+    return <div className="flex flex-col gap-2 border-border border-l pl-3">{body}</div>;
   }
   return (
     <Card>
@@ -766,6 +790,9 @@ export function humanize(name: string): string {
   const spaced = name
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
     .replace(/[-_]+/g, ' ')
+    // A count can nest twice — `osm.dropped.below-hard-floor` keeps the middle segment after its
+    // family heading takes the first, and reads as a path rather than a run-on sentence.
+    .replace(/\./g, ' · ')
     .trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }

@@ -130,8 +130,12 @@ not duplicated.
 | `scripts/admin-areas/src/regionRules.ts` | the bleed box, the downstate county list, coordinate rounding |
 
 ```bash
+scripts/etl/run-corpus.sh <campaign-id>            # ← the whole campaign, in order, with provenance
+scripts/etl/run-corpus.sh <id> --apply-sub-areas --actor=<profileId>
+
+# …which is these, and they still work individually:
 pnpm --filter @skating/admin-areas build-region   # region masks + boundaries.ndjson (TIGER)
-pnpm --filter @skating/etl merge                  # the master list → .scratch/merge/*.ndjson
+pnpm --filter @skating/etl merge --campaign=<id>  # the master list → .scratch/merge/*.ndjson
 pnpm --filter @skating/etl load .scratch/merge/bodies.ndjson --campaign=<id>
 pnpm --filter @skating/etl load-sub-areas .scratch/merge/sub-areas.ndjson --actor=<profileId> --apply
 pnpm --filter @skating/etl classify-dry-run       # classification funnel, read-only
@@ -139,6 +143,12 @@ pnpm --filter @skating/etl archive-gnis           # GNIS → .raw-gnis/ (mirrore
 pnpm --filter @skating/admin-areas fetch-states   # TIGER → adminAreas
 scripts/etl/mirror-gnis-r2.sh push
 ```
+
+**Every pass records its path now, without being asked.** The merge reads all seventeen archive
+manifests and writes one run stage per file (`osm · vt`, `nhd · VT`, `3dhp · clip`, `gnis · ME`,
+`mask · five-state`); `load` and `load-sub-areas` discover `merge-manifest.json` beside their input
+and replay it, inheriting the campaign id and label. The 2026-08-07b campaign predates this and
+shows an empty Path at `/admin/imports` — re-running the merge is what backfills it.
 
 
 ## The rule that governs everything here

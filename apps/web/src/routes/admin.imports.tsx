@@ -21,13 +21,17 @@ export const Route = createFileRoute('/admin/imports')({
   component: AdminImports,
   validateSearch: (search: Record<string, unknown>) => ({
     run: typeof search.run === 'string' ? search.run : undefined,
+    // A campaign is one logical operation run as four passes; `run-corpus.sh` prints this URL when
+    // it finishes, so the whole thing can be read as the single update it was.
+    campaign: typeof search.campaign === 'string' ? search.campaign : undefined,
   }),
 });
 
 function AdminImports() {
-  const { run: selectedId } = Route.useSearch();
+  const { run: selectedId, campaign } = Route.useSearch();
   const navigate = useNavigate({ from: '/admin/imports' });
-  const runs = useQuery(api.importRuns.list, { limit: 50 });
+  const allRuns = useQuery(api.importRuns.list, { limit: 50 });
+  const runs = campaign === undefined ? allRuns : allRuns?.filter((r) => r.campaignId === campaign);
   const selected = useQuery(
     api.importRuns.get,
     selectedId ? { runId: selectedId as Id<'importRuns'> } : 'skip',
@@ -43,7 +47,7 @@ function AdminImports() {
             <button
               type="button"
               className="text-foreground-muted text-sm underline"
-              onClick={() => navigate({ search: { run: undefined } })}
+              onClick={() => navigate({ search: { run: undefined, campaign } })}
             >
               ← All runs
             </button>
@@ -63,11 +67,31 @@ function AdminImports() {
       <AdminPageHeader
         title="Imports"
         subtitle="Every ETL run, with what it wrote and what it declined. Newest first."
+        actions={
+          campaign ? (
+            <button
+              type="button"
+              className="text-foreground-muted text-sm underline"
+              onClick={() => navigate({ search: { run: undefined, campaign: undefined } })}
+            >
+              Clear campaign filter
+            </button>
+          ) : undefined
+        }
       />
+      {campaign ? (
+        <p className="text-foreground-muted text-sm">
+          Showing the <Badge variant="outline">{campaign}</Badge> campaign only.
+        </p>
+      ) : null}
       {runs === undefined ? (
         <AdminEmpty>Loading…</AdminEmpty>
       ) : runs.length === 0 ? (
-        <AdminEmpty>No import runs recorded yet.</AdminEmpty>
+        <AdminEmpty>
+          {campaign
+            ? `No runs recorded for campaign ${campaign} in the latest 50.`
+            : 'No import runs recorded yet.'}
+        </AdminEmpty>
       ) : (
         <>
           <LatestCampaign runs={runs} />
@@ -76,7 +100,12 @@ function AdminImports() {
               <RunRow
                 key={run._id}
                 run={run}
-                onOpen={() => navigate({ search: { run: run._id } })}
+                onOpen={() => navigate({ search: { run: run._id, campaign } })}
+                onOpenCampaign={
+                  run.campaignId === undefined || campaign !== undefined
+                    ? undefined
+                    : () => navigate({ search: { run: undefined, campaign: run.campaignId } })
+                }
               />
             ))}
           </div>
@@ -138,7 +167,16 @@ function LatestCampaign({ runs }: { runs: Doc<'importRuns'>[] }) {
   );
 }
 
-function RunRow({ run, onOpen }: { run: Doc<'importRuns'>; onOpen: () => void }) {
+function RunRow({
+  run,
+  onOpen,
+  onOpenCampaign,
+}: {
+  run: Doc<'importRuns'>;
+  onOpen: () => void;
+  /** Absent when the run has no campaign, or when the list is already filtered to one. */
+  onOpenCampaign?: () => void;
+}) {
   const inserted = run.counts.find((c) => c.name === 'inserted')?.value;
   const updated = run.counts.find((c) => c.name === 'updated')?.value;
   return (
@@ -150,6 +188,11 @@ function RunRow({ run, onOpen }: { run: Doc<'importRuns'>; onOpen: () => void })
             <span className="font-medium text-foreground text-sm">{run.label}</span>
             <Badge variant="outline">{run.kind}</Badge>
             {run.isProd ? <Badge variant="destructive">production</Badge> : null}
+            {run.campaignId !== undefined && onOpenCampaign ? (
+              <button type="button" className="cursor-pointer" onClick={onOpenCampaign}>
+                <Badge variant="outline">{run.campaignId}</Badge>
+              </button>
+            ) : null}
           </div>
           <span className="text-foreground-muted text-xs">
             {new Date(run.startedAt).toLocaleString()}
@@ -159,6 +202,9 @@ function RunRow({ run, onOpen }: { run: Doc<'importRuns'>; onOpen: () => void })
             {inserted !== undefined ? ` · ${inserted.toLocaleString()} inserted` : ''}
             {updated !== undefined ? ` · ${updated.toLocaleString()} updated` : ''}
             {run.failuresTotal > 0 ? ` · ${run.failuresTotal.toLocaleString()} failed` : ''}
+            {/* A run with no path is worth spotting from the list: it is the difference between
+                "this loader records its provenance" and "this one was invoked without it". */}
+            {run.stages.length === 0 ? ' · no path recorded' : ''}
           </span>
         </div>
         <button type="button" className="text-foreground text-sm underline" onClick={onOpen}>
