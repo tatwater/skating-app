@@ -27,6 +27,7 @@ import {
   chooseGeometry,
   chooseName,
   covers,
+  DUPLICATE_SWEEP_MIN_IOU,
   dropReason,
   type Feature,
   FRESHWATER_ALLOW_LIST,
@@ -61,6 +62,7 @@ import {
   REGION_SAMPLE_POINTS,
   resolveGnisNames,
   SQ_M_PER_ACRE,
+  STATE_SAMPLE_POINTS,
   saltContainment,
   saltMask,
   sampleOutline,
@@ -1523,7 +1525,7 @@ describe('the duplicate sweep', () => {
   it('finds two surviving bodies that cover the same water', () => {
     const a = merged({ key: 'osm:way/1', polygon: square(-70, 44, 0.02) });
     const b = merged({ key: 'nhd:n1', polygon: square(-70.001, 44.001, 0.02) });
-    const found = overlapDuplicates([a, b]);
+    const found = overlapDuplicates([a, b]).byKey;
     expect(found.get('osm:way/1')).toEqual(['nhd:n1']);
     expect(found.get('nhd:n1')).toEqual(['osm:way/1']);
   });
@@ -1531,7 +1533,7 @@ describe('the duplicate sweep', () => {
   it('leaves two genuinely separate lakes alone', () => {
     const a = merged({ key: 'osm:way/1', polygon: square(-70, 44, 0.02) });
     const b = merged({ key: 'osm:way/2', polygon: square(-71, 44, 0.02) });
-    expect(overlapDuplicates([a, b]).size).toBe(0);
+    expect(overlapDuplicates([a, b]).byKey.size).toBe(0);
   });
 
   it('does not flag a bay against its parent — that is containment, not duplication', () => {
@@ -1541,7 +1543,7 @@ describe('the duplicate sweep', () => {
       areaSqM: 1_000_000,
     });
     const bay = merged({ key: 'osm:way/2', polygon: square(-70, 44, 0.01), areaSqM: 10_000 });
-    expect(overlapDuplicates([parent, bay]).size).toBe(0);
+    expect(overlapDuplicates([parent, bay]).byKey.size).toBe(0);
   });
 
   it('reports each pair once per side and never against itself', () => {
@@ -1549,10 +1551,46 @@ describe('the duplicate sweep', () => {
     const b = merged({ key: 'nhd:n1', polygon: square(-70.001, 44.001, 0.02) });
     const c = merged({ key: '3dhp:d1', polygon: square(-70.002, 44.002, 0.02) });
     const found = overlapDuplicates([a, b, c]);
-    for (const [key, others] of found) {
+    for (const [key, others] of found.byKey) {
       expect(others).not.toContain(key);
       expect(new Set(others).size).toBe(others.length);
     }
+    // Once per PAIR in the list, where `byKey` records it once per side. Three mutually
+    // overlapping bodies are three pairs and six entries, and conflating the two is how a
+    // "497 duplicate pairs" figure ends up being 994.
+    expect(found.pairs).toHaveLength(3);
+  });
+
+  it('carries the score that flagged each pair, which is what a threshold can be tuned on', () => {
+    // **The sweep already computed this and threw it away** (N7-2). 287 surviving pairs sit at IoU
+    // 0.30–0.49, and whether that band is one lake drawn twice or a bay beside its parent cannot be
+    // decided from a count — only from where in the band each pair sits.
+    const a = merged({
+      key: 'osm:way/1',
+      name: 'Peabody Pond',
+      polygon: square(-70, 44, 0.02),
+      areaSqM: 28_328,
+    });
+    const b = merged({
+      key: 'nhd:n1',
+      name: 'Peabody Pond',
+      polygon: square(-70.004, 44.004, 0.02),
+      areaSqM: 64_749,
+    });
+    const [pair] = overlapDuplicates([a, b], DUPLICATE_SWEEP_MIN_IOU, sameName).pairs;
+    expect(pair).toMatchObject({ a: 'osm:way/1', b: 'nhd:n1', sameName: true });
+    expect(pair?.iou).toBeGreaterThan(DUPLICATE_SWEEP_MIN_IOU);
+    expect(pair?.iou).toBeLessThan(1);
+    expect(pair?.aName).toBe('Peabody Pond');
+  });
+
+  it('does not call two unnamed bodies same-named, which would be a match on nothing', () => {
+    // 4,070 of the NHD-only bodies in the master list are unnamed ponds. Two empty strings agreeing
+    // is not evidence, and treating it as evidence is how a referee gets a confident wrong answer.
+    const a = merged({ key: 'osm:way/1', polygon: square(-70, 44, 0.02) });
+    const b = merged({ key: 'nhd:n1', polygon: square(-70.001, 44.001, 0.02) });
+    const [pair] = overlapDuplicates([a, b], DUPLICATE_SWEEP_MIN_IOU, sameName).pairs;
+    expect(pair?.sameName).toBe(false);
   });
 });
 
@@ -1807,6 +1845,22 @@ describe('statesFor escalates the way inRegion does', () => {
     // The sparse pass alone sees only New Hampshire — this is the bug, stated as a precondition.
     expect(collectStatesSparsely(body, grid)).toEqual(['NH']);
     expect(statesFor(body, grid)).toEqual(['ME', 'NH']);
+  });
+
+  it('tests every vertex of a body smaller than the sampling budget', () => {
+    // The property the budget rests on: `sampleOutlineDense` steps by `floor(total / budget)`, so
+    // for anything under 256 vertices — which is most of the corpus — the "sample" IS the exhaustive
+    // walk. That is why 64 measured identical to walking every vertex over all 7,359 candidates.
+    const nh = state('New Hampshire', square(-72, 44, 1));
+    const me = state('Maine', square(-71, 44, 1));
+    const ring: [number, number][] = [];
+    for (let i = 0; i < 41; i++) ring.push([-71.9 + i * 0.02, 44.5]);
+    ring.push([-70.95, 44.6]);
+    for (let i = 40; i >= 0; i--) ring.push([-71.9 + i * 0.02, 44.7]);
+    ring.push(ring[0] as [number, number]);
+    const polygon = { type: 'Polygon' as const, coordinates: [ring] };
+    expect(ring.length).toBeLessThan(STATE_SAMPLE_POINTS);
+    expect(statesFor({ polygon, bbox: bboxOf(polygon) }, index([nh, me]))).toEqual(['ME', 'NH']);
   });
 
   it('unions every ring rather than returning on the first that answers', () => {

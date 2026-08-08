@@ -680,6 +680,21 @@ async function main(): Promise<void> {
     '    a real class beats a drop (the 123-body rescue), so these resolve SILENTLY today:',
   );
   for (const sample of stats.classDissentSamples) lines.push(`      ${sample}`);
+  // **Split by the refusing code, because a total cannot be triaged** (N7-2). The class-conflict
+  // queue was settled exactly this way — joining its 652 rows to the NHD FTYPE behind each split
+  // them 520 settled / 132 real. A code that accounts for hundreds of rows is a systematic property
+  // of that catalogue; one that accounts for three is a body worth looking at.
+  lines.push('    by refusing code → class kept:');
+  for (const [token, count] of [...stats.classDissentByToken].sort((a, b) => b[1] - a[1])) {
+    lines.push(`      ${String(count).padStart(6)}  ${token}`);
+  }
+  // The band the `RECONCILE_MIN_IOU` question lives in, printed rather than left to the artifact —
+  // the pairs at 0.30–0.49 are the ones the 0.5 merge bar refuses and this 0.3 sweep catches.
+  const band = stats.duplicatePairList.filter((p) => p.iou < 0.5);
+  lines.push(
+    `  duplicate band  ${n(band.length)} of ${n(stats.duplicatePairs)} pairs sit at IoU 0.30–0.49 — ` +
+      `${n(band.filter((p) => p.sameName).length)} of them share a name`,
+  );
   process.stdout.write(`${lines.join('\n')}\n`);
 
   // ── The artifacts ─────────────────────────────────────────────────────────
@@ -704,6 +719,18 @@ async function main(): Promise<void> {
 
   writeNdjson(join(SCRATCH, 'sub-areas.ndjson'), subAreas);
   log(`sub-areas → ${join(SCRATCH, 'sub-areas.ndjson')} (${subAreas.length.toLocaleString()})`);
+
+  // **Every flagged pair with the score that flagged it** (N7-2), so `RECONCILE_MIN_IOU` can be
+  // decided the way D92 was decided — refereed against evidence — rather than argued. Sorted by IoU
+  // so the band under the 0.5 merge bar reads as a block.
+  writeNdjson(
+    join(SCRATCH, 'duplicate-pairs.ndjson'),
+    [...stats.duplicatePairList].sort((a, b) => a.iou - b.iou),
+  );
+  log(
+    `duplicate pairs → ${join(SCRATCH, 'duplicate-pairs.ndjson')} ` +
+      `(${stats.duplicatePairList.length.toLocaleString()})`,
+  );
 
   // **Every group that did not become a body, by name** (N7 second audit). The counts always
   // balanced; the *identities* were never written down, so "what happened to Lake X" had no answer

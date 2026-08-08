@@ -951,17 +951,41 @@ export function nameMatchPairs(
  */
 export const DUPLICATE_SWEEP_MIN_IOU = 0.3;
 
+/**
+ * One flagged pair, **with the score that flagged it** — the referee's input (N7-2).
+ *
+ * The sweep used to return only "who overlaps whom", which is all a review queue needs and is not
+ * enough to answer the open question about `RECONCILE_MIN_IOU`: 287 of the surviving pairs sit at
+ * IoU 0.30–0.49, and deciding whether that band is *one lake drawn twice* or *a bay beside its
+ * parent* is impossible without knowing where in the band each pair sits. Carrying the number the
+ * sweep already computed costs nothing and is the difference between tuning a threshold on evidence
+ * and tuning it on a hunch.
+ */
+export interface DuplicatePair {
+  a: string;
+  b: string;
+  iou: number;
+  aName: string;
+  bName: string;
+  aAcres: number;
+  bAcres: number;
+  /** Whether the two carry the same name, which is the strongest cheap signal available here. */
+  sameName: boolean;
+}
+
 export function overlapDuplicates(
   bodies: readonly Merged[],
   minIou = DUPLICATE_SWEEP_MIN_IOU,
-): Map<string, string[]> {
+  namesMatch: (a: string, b: string) => boolean = () => false,
+): { byKey: Map<string, string[]>; pairs: DuplicatePair[] } {
   const grid = index(bodies);
-  const out = new Map<string, string[]>();
+  const byKey = new Map<string, string[]>();
+  const pairs: DuplicatePair[] = [];
   const tested = new Set<string>();
   const note = (a: string, b: string) => {
-    const list = out.get(a);
+    const list = byKey.get(a);
     if (list) list.push(b);
-    else out.set(a, [b]);
+    else byKey.set(a, [b]);
   };
   for (const body of bodies) {
     const seen = new Set<Merged>();
@@ -979,13 +1003,25 @@ export function overlapDuplicates(
           Math.min(body.areaSqM, other.areaSqM) /
           Math.max(body.areaSqM, other.areaSqM, Number.EPSILON);
         if (ratio < minIou) continue;
-        if (polygonIoU(body.polygon, other.polygon) < minIou) continue;
+        const iou = polygonIoU(body.polygon, other.polygon);
+        if (iou < minIou) continue;
         note(body.key, other.key);
         note(other.key, body.key);
+        pairs.push({
+          a: body.key,
+          b: other.key,
+          iou,
+          aName: body.name,
+          bName: other.name,
+          aAcres: Math.round(body.areaSqM / SQ_M_PER_ACRE),
+          bAcres: Math.round(other.areaSqM / SQ_M_PER_ACRE),
+          sameName:
+            body.name.length > 0 && other.name.length > 0 && namesMatch(body.name, other.name),
+        });
       }
     }
   }
-  return out;
+  return { byKey, pairs };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2103,71 +2139,45 @@ export function statesFor(
   body: { polygon: Polygon | MultiPolygon; bbox: BBox },
   stateGrid: Map<string, (Boundary & { name: string })[]>,
 ): string[] {
-  const found = collectStates(sampleOutline(body.polygon), stateGrid);
-
-  // ── The escalation, and why a sampled answer was never good enough ───────────────────────────
-  //
-  // **`inRegion` walks every vertex before it drops a body; this used to walk eight per ring.** Two
-  // functions asking nearly the same question at different rigour, and the gap between them is a
-  // body that is admitted to the corpus and belongs to no state — invisible in the feed, in the
-  // drive-time filter and in every state chip in the app, with nothing anywhere saying so.
-  //
-  // Measured on the 2026-08-06 run: **9 bodies**, every one of them a border-straddler admitted on a
-  // single vertex the sparse sample missed — Greenwood Lake on the NY/NJ line, 100 Acre Cove and
-  // Central Pond on the MA/RI line, a Québec-border pond in northern Maine.
-  //
-  // ## …and the first version of the escalation fixed only half of it (N7-2 audit, 2026-08-08)
-  //
-  // It escalated when the sample found **nothing**, which is the "belongs to no state" case. But a
-  // sparse `[NY]` is exactly as unproven as a sparse `[]`: eight points per ring that all land in New
-  // York say nothing about the 3% of the outline sitting in Vermont. The body is admitted, carries
-  // one state, and is invisible in the *other* one's filter — the same failure, one state along.
-  //
-  // Measured against the loaded corpus: **7 bodies**, and they are not obscure. `Province Lake` is
-  // 976 acres on the ME/NH line and was stored as New Hampshire's alone. (A floor, not a ceiling —
-  // the re-measure ran against the stored simplified outline, where the merge sees the full one.)
-  //
-  // So the trigger is *completeness*, not emptiness: escalate whenever a state is **reachable** from
-  // the body's own cells and the cheap pass did not find it. That is the same shape as
-  // `nearRegionCells` and costs the same nothing — a body in central Maine touches only cells that
-  // hold Maine, so `reachable` equals `found` and the walk is skipped. Only bodies genuinely near a
-  // border pay, which is what the cheap pass was for in the first place.
-  const reachable = reachableStates(body.bbox, stateGrid);
-  let missing = false;
-  for (const code of reachable) if (!found.has(code)) missing = true;
-  if (!missing) return [...found].sort();
-
-  // **Union across every ring, never `return` on the first that answers.** An archipelago's second
-  // component can be the one in the other state, and this function's own headline is "all of them,
-  // not the first".
-  const all = new Set(found);
-  for (const ring of outerRings(body.polygon)) {
-    if (!ring) continue;
-    for (const code of collectStates(ring as [number, number][], stateGrid)) all.add(code);
-  }
-  return [...all].sort();
+  // **One dense pass over the whole outline, and no tiering** — see `STATE_SAMPLE_POINTS`.
+  return [
+    ...collectStates(sampleOutlineDense(body.polygon, STATE_SAMPLE_POINTS), stateGrid),
+  ].sort();
 }
 
 /**
- * Which of the five states are even *reachable* from this body's cells — the escalation's cheap gate.
+ * Points sampled around a body's outline to decide which states it touches.
  *
- * Deliberately over-generous: it asks which states have a boundary indexed in a cell the body's
- * bounding box touches, which is a ~11 km neighbourhood rather than a containment test. Erring wide
- * here costs one full vertex walk on a body near a border; erring tight silently loses a state.
+ * ## Why this replaced a two-tier escalation, and what the measurement said
+ *
+ * This used to take `REGION_SAMPLE_POINTS` (eight) *per ring* and then escalate to every vertex only
+ * when the sample found **nothing** — the "belongs to no state" case D116 fixed. That fixed half of
+ * it. A sparse `[NY]` is exactly as unproven as a sparse `[]`: eight points that all land in New York
+ * say nothing about the 3% of the outline sitting in Vermont, and the body is then admitted carrying
+ * one state and invisible in the other one's filter. Same failure, one state along.
+ *
+ * Measured against the loaded corpus: **7 bodies**, and not obscure ones — `Province Lake` is 976
+ * acres on the ME/NH line and was stored as New Hampshire's alone.
+ *
+ * **The obvious fix was to escalate on incompleteness, and measuring it is what killed that.** The
+ * state grid indexes each boundary across its whole *bounding box*, so a body in western
+ * Massachusetts counts New York as reachable: **29.4% of the corpus (7,359 bodies) would escalate**,
+ * each one then tested vertex-by-vertex against outlines that run to 34,000 vertices at TIGER
+ * fidelity. A correctness fix that turns the emit stage quadratic is not a fix.
+ *
+ * **So: one bounded dense pass, which is what every other fraction-valued question here already
+ * does** (`inRegionFraction`, `saltContainment`). It is not a compromise between the two tiers — it
+ * is *strictly more thorough than either* for the bodies that matter, because `sampleOutlineDense`
+ * steps by `floor(total / budget)`: a body with fewer vertices than the budget has **every vertex
+ * tested**, and the budget only bites on large outlines, where a sliver in the next state is
+ * proportionally large and cannot hide between samples.
+ *
+ * **256, where 64 was already exact.** Measured over all 7,359 escalation candidates, a budget of 64
+ * returns the identical answer to walking every vertex, in 2.8 seconds. 256 is four times that for
+ * no meaningful cost, and the headroom is deliberate: the number that has to hold is not today's
+ * corpus but the next catalogue's geometry.
  */
-function reachableStates(
-  box: BBox,
-  stateGrid: Map<string, (Boundary & { name: string })[]>,
-): Set<string> {
-  const out = new Set<string>();
-  for (const cell of cellsFor(box)) {
-    for (const b of stateGrid.get(cell) ?? []) {
-      const code = STATE_CODE_BY_NAME[b.name];
-      if (code !== undefined) out.add(code);
-    }
-  }
-  return out;
-}
+export const STATE_SAMPLE_POINTS = 256;
 
 /** Which of the five states these points fall in. The shared inner loop of `statesFor`'s two passes. */
 function collectStates(

@@ -56,6 +56,7 @@ import {
   catalogueIdsOf,
   cellsFor,
   DUPLICATE_SWEEP_MIN_IOU,
+  type DuplicatePair,
   dropReason,
   type Feature,
   type GnisPoint,
@@ -184,6 +185,29 @@ export interface MasterListStats {
    */
   classDissent: number;
   classDissentSamples: string[];
+  /**
+   * `classDissent`, **split by which catalogue code did the refusing** (N7-2, founder 2026-08-08).
+   *
+   * The count above says 354 bodies are contested and nothing more, which is not enough to decide
+   * whether they belong in a review queue. The class-conflict queue met exactly this problem and was
+   * settled exactly this way: joining every one of its 652 rows to the NHD FTYPE behind it split
+   * them into **520 where the federal catalogue says LakePond and OSM says wetland** — the 123-body
+   * rescue, settled rather than contested — and **132 where the federal catalogue is the dissenter**,
+   * which are real. 652 → 162.
+   *
+   * Keyed `<refusing sourceToken> → <class kept>`, because both halves matter: NHD dropping 43% of
+   * its reservoirs by FCODE is a systematic property of *that code*, and a queue built without
+   * knowing which codes are systematic buries the cases that are not.
+   */
+  classDissentByToken: Map<string, number>;
+  /**
+   * Every flagged duplicate pair with its IoU — the input to the `RECONCILE_MIN_IOU` question.
+   *
+   * 287 of the surviving pairs sit at 0.30–0.49, below the 0.5 merge bar and above this sweep's
+   * 0.3. Whether that band is *one lake drawn twice* or *a bay beside its parent* is the open
+   * question, and it cannot be answered from a count. See `DuplicatePair`.
+   */
+  duplicatePairList: DuplicatePair[];
   /**
    * Groups where a federal open-water class beat an OSM `wetland` tag — **resolved rather than
    * queued**, and counted here because it is (founder, 2026-08-07).
@@ -447,6 +471,8 @@ export function buildMasterList(input: MasterListInput): MasterList {
     duplicatePairs: 0,
     classDissent: 0,
     classDissentSamples: [],
+    classDissentByToken: new Map(),
+    duplicatePairList: [],
     settledWetland: 0,
     greatLakeArms: 0,
     geometryOverridden: 0,
@@ -691,6 +717,15 @@ export function buildMasterList(input: MasterListInput): MasterList {
     // One catalogue refused this outright while another named a class. See `classDissent`.
     if (group.members.some((m) => m.cls === null) && group.members.some((m) => m.cls !== null)) {
       stats.classDissent++;
+      // **Which code refused, not just that something did.** A count cannot distinguish "NHD drops
+      // 43% of its reservoirs by FCODE" — systematic, settled, and no business in a queue — from a
+      // catalogue genuinely contradicting another about what a body is. Tallied per refusing token
+      // so the split is a measurement rather than a guess, exactly as the class-conflict queue's
+      // 652 → 162 was arrived at.
+      for (const refuser of group.members.filter((m) => m.cls === null)) {
+        const key = `${refuser.sourceToken} → ${cls}`;
+        stats.classDissentByToken.set(key, (stats.classDissentByToken.get(key) ?? 0) + 1);
+      }
       if (stats.classDissentSamples.length < CLASS_DISSENT_SAMPLE_CAP) {
         stats.classDissentSamples.push(
           `${group.key} ${name || '(unnamed)'} ${Math.round(group.areaSqM / SQ_M_PER_ACRE)}ac ` +
@@ -775,10 +810,11 @@ export function buildMasterList(input: MasterListInput): MasterList {
   }
 
   // ── The duplicate sweep ───────────────────────────────────────────────────
-  const duplicates = overlapDuplicates(bodies, DUPLICATE_SWEEP_MIN_IOU);
-  stats.duplicatePairs = [...duplicates.values()].reduce((n, v) => n + v.length, 0) / 2;
+  const duplicates = overlapDuplicates(bodies, DUPLICATE_SWEEP_MIN_IOU, sameName);
+  stats.duplicatePairs = duplicates.pairs.length;
+  stats.duplicatePairList = duplicates.pairs;
   for (const body of bodies) {
-    const overlaps = duplicates.get(body.key);
+    const overlaps = duplicates.byKey.get(body.key);
     if (overlaps) body.duplicateOf = overlaps;
     const state = pending.get(body.key);
     if (state === undefined) throw new Error(`no pending state for kept body ${body.key}`);
