@@ -64,6 +64,7 @@ import {
   expectAcceptance,
   formatLedger,
   RunLogger,
+  type RunStage,
   resolveDeployment,
 } from '@skating/run-log';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -80,6 +81,7 @@ import {
   isNullIsland,
 } from './gnisSource';
 import { buildMasterList, emitCanonicalBodies, type LaneStats } from './masterList';
+import { buildSourceStages } from './mergeProvenance';
 import {
   type Boundary,
   CELL_DEG,
@@ -412,15 +414,38 @@ async function main(): Promise<void> {
   // It writes nothing else to Convex, so the row is the only trace it leaves there; `--no-run-log`
   // opts out for a local experiment, and a logger whose `start` fails degrades every later call to a
   // no-op rather than taking the run down with it.
+  // **The path, assembled before a single lake is read.** Every archive that decides this corpus has
+  // a manifest on disk carrying its URL, size, checksum and vintage; until N7's provenance pass none
+  // of it reached the run row, so the pass that made 178,104 admission decisions rendered on
+  // `/admin/imports` with an empty Path. Built up-front so a merge that dies mid-load still leaves a
+  // row naming exactly which files it was reading — the failure a printed summary can never capture.
+  const sourceStages = buildSourceStages({
+    osmDir: OSM_DIR,
+    osmStates: OSM_STATES,
+    nhdDir: NHD_DIR,
+    nhdKeys: NHD_SOURCES.map((s) => ({ key: nhdArchiveKey(s), state: s.state })),
+    threeDhpDir: join(HERE, '..', '.raw-3dhp'),
+    gnisManifest: join(HERE, '..', '.raw-gnis', 'manifest.json'),
+    boundariesPath: boundariesPath(),
+    downstatePath: DOWNSTATE_FILE,
+  });
+  const absent = sourceStages.filter((s) => s.detail?.startsWith('MISSING'));
+
   const logger = new RunLogger({
     kind: 'corpus_merge',
     label: 'N7 master list — three catalogues, one filter',
     campaignId,
     target: resolveDeployment(),
+    stages: sourceStages,
     call: runLogEnabled ? convexRun : () => undefined as never,
     notes: [
       'Read-only against Convex: this pass writes only .scratch/merge/.',
       `sources: OSM ${OSM_STATES.join('/')} · NHD ${NHD_SOURCES.length} states · 3DHP clip · GNIS`,
+      // Named on the row, not just in the Path: a corpus built without one of its four catalogues is
+      // a different corpus, and it is worth seeing before scrolling.
+      ...(absent.length > 0
+        ? [`⚠ ${absent.length} source archive(s) had no readable manifest — see the path`]
+        : []),
     ],
   });
   if (runLogEnabled) logger.start();
@@ -660,6 +685,16 @@ async function main(): Promise<void> {
   );
   for (const [reason, count] of [...emit.failures].sort((a, b) => b[1] - a[1])) {
     log(`  ! ${count} body/bodies could not be emitted: ${reason}`);
+    // **Itemized on the run row, not just in the terminal.** These are bodies that passed every
+    // admission rule and still never reached the map — the most expensive kind of loss here, and the
+    // one a totals-only summary hides completely. One row per *reason* rather than per body, because
+    // the emitter counts by reason and samples keys separately; the body count rides in the text,
+    // and the coverage ledger below carries it as a number.
+    logger.fail({
+      stage: 'emit',
+      key: emit.failureKeys[0],
+      reason: `${count.toLocaleString()} body/bodies: ${reason}`,
+    });
   }
   if (emit.failureKeys.length > 0) log(`  ! e.g. ${emit.failureKeys.join(', ')}`);
 
@@ -745,20 +780,85 @@ async function main(): Promise<void> {
     greatLakeArms: stats.greatLakeArms,
     gazetteerIdsAttached: stats.gazetteerIdsAttached,
   };
+  // The merge's own step, closing the path the archives opened. Everything before it describes a
+  // file we downloaded; this one describes the decision, and its counts are the three numbers the
+  // whole pass exists to produce.
+  const mergeStage: RunStage = {
+    name: 'merge',
+    detail:
+      'merge first, filter once (D109/D110) — four matching lanes, then the region clip, the ' +
+      'gazetteer, and the admission floor applied ONCE to the merged body. Writes nothing to ' +
+      'Convex; the loader consumes bodies.ndjson.',
+    command: 'pnpm --filter @skating/etl merge',
+    input: `${sourceStages.length} archived files (see above)`,
+    output: join(SCRATCH, 'bodies.ndjson'),
+    counts: [
+      { name: 'groups', value: stats.groups },
+      { name: 'kept', value: kept.length },
+      { name: 'emitted', value: emit.emitted.length },
+      { name: 'subAreas', value: subAreas.length },
+      { name: 'dropped', value: dropped.length },
+      { name: 'reviewQueue', value: stats.queued },
+    ],
+  };
+  logger.stage(mergeStage);
+
+  // ── Coverage: the funnel, as a rate with every exit named ─────────────────
+  //
+  // **Counted off `dropped` rather than off the stat maps, and that is not a stylistic choice.**
+  // `salt-water` is recorded in BOTH `stats.saltWater` and `stats.refused`, so adding the maps
+  // together double-counts 941 bodies and drives the page's "unexplained" remainder negative — which
+  // would make a ledger built to catch miscounts the thing miscounting. Every dropped group is one
+  // row in `dropped` with exactly one reason, and `buildMasterList` asserts
+  // `groups == bodies + subAreas + dropped`, so counting there is the only version that cannot drift.
+  const floorReasons = new Set(stats.droppedByFloor.keys());
+  const GEOGRAPHIC: Record<string, string> = {
+    'out-of-region': 'outside the five states — clipped against the TIGER mask',
+    'ny-below-i84': 'New York below I-84 — in our states, deliberately not in the corpus (D111)',
+    'salt-water': 'salt water — tidal, so never skateable (founder, 2026-08-06)',
+  };
+  const omissionCounts = new Map<string, number>();
+  for (const d of dropped) {
+    const reason =
+      GEOGRAPHIC[d.reason] ??
+      (floorReasons.has(d.reason)
+        ? `below the post-merge admission floor — ${d.reason}`
+        : `no catalogue classed it as still water we carry — ${d.reason}`);
+    omissionCounts.set(reason, (omissionCounts.get(reason) ?? 0) + 1);
+  }
+  const omissions = [...omissionCounts].map(([reason, count]) => ({ reason, count }));
+  if (subAreas.length > 0) {
+    omissions.push({
+      reason: 'kept as a sub-area of a parent body rather than as a body of its own (N2/D60)',
+      count: subAreas.length,
+    });
+  }
+  if (failedCount > 0) {
+    omissions.push({
+      reason: 'passed every rule and still could not be emitted — see failures',
+      count: failedCount,
+    });
+  }
+  omissions.sort((a, b) => b.count - a.count);
+  logger.coverage({
+    unit: 'merged groups',
+    eligible: stats.groups,
+    covered: emit.emitted.length,
+    omissions,
+  });
+
   writeFileSync(
     manifestPath,
     `${JSON.stringify(
       {
         producedAt: new Date().toISOString(),
         campaignId,
-        inputs: {
-          osm: OSM_STATES.map((s) => manifestOf(join(OSM_DIR, s, 'manifest.json'))),
-          nhd: NHD_SOURCES.map((s) => manifestOf(join(NHD_DIR, nhdArchiveKey(s), 'manifest.json'))),
-          threeDhp: manifestOf(join(THREE_DHP_DIR, 'manifest.json')),
-          gnis: manifestOf(join(HERE, '..', '.raw-gnis', 'manifest.json')),
-          boundaries: fingerprint(boundariesPath()),
-          downstate: fingerprint(DOWNSTATE_FILE),
-        },
+        // **The path, verbatim, so the loader can replay it.** This replaced a hand-rolled `inputs`
+        // block that pulled seven fields per archive and dropped the ones that matter most — OSM's
+        // resolved URL and build date, NHD's freeze verdict, GNIS's per-state row counts. One
+        // producer, one shape: `load.ts` reads these straight back and its run row carries the same
+        // path this one does, rather than a summary of it.
+        stages: [...sourceStages, mergeStage],
         outputs,
       },
       null,
@@ -826,35 +926,10 @@ function readManifest(path: string): { producedAt?: unknown; outputs?: unknown }
   }
 }
 
-/** A source archive's manifest, or a marker saying it was missing — never a silent absence. */
-function manifestOf(path: string): Record<string, unknown> {
-  if (!existsSync(path)) return { path, missing: true };
-  try {
-    const m = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
-    // Only the provenance fields; a manifest can be large and this is a record, not a copy.
-    const { url, filename, bytes, sha256, lastModified, fetchedAt, vintage } = m;
-    return { path, url, filename, bytes, sha256, lastModified, fetchedAt, vintage };
-  } catch {
-    return { path, unreadable: true };
-  }
-}
-
-/**
- * Size + digest of an input that has no manifest of its own — the two region masks.
- *
- * They are derived artifacts rather than archives, so there is nothing upstream to checksum against.
- * Recording what we actually read at least makes "was this the same mask?" answerable, which is the
- * question a surprising `outOfRegion` count raises.
- */
-function fingerprint(path: string): Record<string, unknown> {
-  if (!existsSync(path)) return { path, missing: true };
-  const bytes = readFileSync(path);
-  return {
-    path,
-    bytes: bytes.length,
-    sha256: createHash('sha256').update(bytes).digest('hex'),
-  };
-}
+// `manifestOf` and `fingerprint` used to live here, pulling seven fields off each archive manifest
+// into the `inputs` block of `merge-manifest.json`. Both are now `mergeProvenance.buildSourceStages`,
+// which produces the same evidence in the shape the run row and the loader both already speak — so
+// there is one lossless producer instead of a private summary nothing downstream could read.
 
 main().catch((error: unknown) => {
   log(`FAILED: ${error instanceof Error ? error.message : String(error)}`);

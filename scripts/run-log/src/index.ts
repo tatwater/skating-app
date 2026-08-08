@@ -12,7 +12,22 @@ export {
   rejected,
 } from './ledger';
 export { parseConvexOutput } from './parseOutput';
-export { type ExtractManifest, extractStage, parseBuildDate } from './provenance';
+export {
+  derivedFileStage,
+  type ExtractManifest,
+  extractStage,
+  type GnisStateManifest,
+  gnisStage,
+  type NhdManifest,
+  nhdStage,
+  parseBuildDate,
+  parseHttpDate,
+  STAGE_SEPARATOR,
+  stageName,
+  type ThreeDhpManifest,
+  threeDhpClipStage,
+  threeDhpSourceStage,
+} from './provenance';
 export {
   type ConvexCaller,
   MAX_FORWARDED_FAILURES,

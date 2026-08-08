@@ -373,6 +373,8 @@ export const IMPORT_RUN_KINDS = [
   // in the corpus. Its own kind because it fails differently: a bay that cannot find its parent is
   // an ordering error in the campaign, not a body that failed a rule.
   'sub_area_seed',
+  // Deletes rather than adds — see the note on `ImportRunKind` in `@skating/run-log`.
+  'dedup_resolve',
   'osm_depths', // scripts/etl load-depths — the N6a rung-7 tag stream
   'admin_areas', // scripts/admin-areas
   'lake_depth', // scripts/lake-depth — HydroLAKES/GLOBathy/LAGOS-US join

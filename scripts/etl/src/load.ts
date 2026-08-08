@@ -10,16 +10,25 @@
  *
  *   pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]
  *     [--campaign=<id>] [--label=<text>] [--manifest=<manifest.json>]
- *     [--transform-summary=<run.json>] [--filter-command=<text>] [--no-run-log]
+ *     [--transform-summary=<run.json>] [--filter-command=<text>]
+ *     [--merge-manifest=<merge-manifest.json>] [--no-run-log]
  *
- * The second row of flags is the run history (N6c F2): the loader writes one `importRuns` row
+ * The second block of flags is the run history (N6c F2): the loader writes one `importRuns` row
  * carrying the **whole path** — the archived extract's URL/checksum/build date, the `osmium`
  * filter, the transform's own summary and itemized skips, and its own batch outcomes — so an
  * admin can answer "how did the last import go" and "which features did it decline" without
  * re-running it. `--no-run-log` opts out; nothing else about the load changes.
+ *
+ * **A full record is the default, not a flag.** Those sidecars describe the *OSM* path, and the N7
+ * corpus does not take it: `merge` reads seventeen archives and emits one NDJSON, so every flag
+ * above was inapplicable and the campaign was run with `--campaign=` alone — producing a run row
+ * labelled "unscoped canonical water" with an empty path, for the load of the entire corpus. The
+ * loader now looks for a `merge-manifest.json` beside its input and replays the merge's stages,
+ * campaign and label from it without being asked. See `mergeProvenance.loadMergeProvenance`.
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import process from 'node:process';
 
 import { isKnownStateCode, KNOWN_STATE_CODES } from '@skating/core';
@@ -31,6 +40,7 @@ import {
   type RunStage,
   resolveDeployment,
 } from '@skating/run-log';
+import { loadMergeProvenance } from './mergeProvenance';
 
 /**
  * Batches are bounded by two Convex/OS limits:
@@ -183,11 +193,11 @@ function main(): void {
     .toUpperCase();
   const flag = (name: string) =>
     args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
-  const campaignId = flag('campaign');
   const label = flag('label');
   const manifestPath = flag('manifest');
   const transformSummaryPath = flag('transform-summary');
   const filterCommand = flag('filter-command');
+  const mergeManifestFlag = flag('merge-manifest');
   const runLogEnabled = !args.includes('--no-run-log');
 
   const inputPath = args.find((arg) => !arg.startsWith('--'));
@@ -195,7 +205,12 @@ function main(): void {
     process.stderr.write(
       'usage: pnpm --filter @skating/etl load <bodies.ndjson> [--state=XX] [--prod]\n' +
         '       [--campaign=<id>] [--label=<text>] [--manifest=<manifest.json>]\n' +
-        '       [--transform-summary=<run.json>] [--filter-command=<text>] [--no-run-log]\n',
+        '       [--transform-summary=<run.json>] [--filter-command=<text>]\n' +
+        '       [--merge-manifest=<merge-manifest.json>] [--no-run-log]\n' +
+        '\n' +
+        'A merge-manifest.json sitting beside <bodies.ndjson> is read automatically: its stages,\n' +
+        "campaign id and label become this run's, so the corpus load carries the same path the\n" +
+        'merge did. --merge-manifest= overrides the location; --no-run-log opts out entirely.\n',
     );
     process.exit(1);
   }
@@ -226,6 +241,18 @@ function main(): void {
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
   const batches = chunk(lines);
+  /**
+   * Every record by its arrival key, so an unresolved verdict can be written back out whole.
+   *
+   * The parse is one the batches already pay for; this only keeps the index.
+   */
+  const byExternalId = new Map<string, string>();
+  for (const line of lines) {
+    const id = firstExternalId([line]);
+    if (id !== undefined) byExternalId.set(id, line);
+  }
+  /** Records the loader declined to write — see the `unresolved` handling below. */
+  const unresolvedRecords: string[] = [];
   process.stderr.write(
     `[etl] loading ${lines.length} bodies in ${batches.length} batch(es)` +
       `${state ? ` (state: ${state})` : ''}…\n`,
@@ -236,8 +263,20 @@ function main(): void {
   // doing. Everything here is best-effort: `RunLogger` swallows its own failures by design.
   const manifest = readJson<ExtractManifest>(manifestPath, 'extract manifest');
   const transform = readJson<TransformSummaryFile>(transformSummaryPath, 'transform summary');
+  const found = loadMergeProvenance(inputPath, mergeManifestFlag);
+  const merge = found?.manifest;
+  if (found) {
+    process.stderr.write(
+      `[etl] provenance: replaying ${merge?.stages?.length ?? 0} upstream stage(s) from ${found.path}\n`,
+    );
+  }
 
   const stages: RunStage[] = [];
+  // **The merge's path, replayed verbatim.** Not summarised: an operator looking at the load run
+  // asks the same question as one looking at the merge run — "which files became these rows" — and
+  // a load row that answers it only by cross-reference to another row is a row that answers it
+  // eventually, in a different tab, if the campaign id happened to be passed.
+  stages.push(...(merge?.stages ?? []));
   if (manifest) stages.push(extractStage(manifest));
   if (filterCommand) {
     stages.push({
@@ -276,19 +315,37 @@ function main(): void {
     });
   }
 
+  // **The campaign and the label are inherited when they weren't given.** An explicit flag always
+  // wins; the fallback exists because the merge already knows both, and a load row that says
+  // "unscoped canonical water" with no campaign cannot be grouped with the pass that produced its
+  // input — which is precisely how the N7 corpus load ended up sitting alone in the list.
+  const campaignId = flag('campaign') ?? merge?.campaignId;
+  const mergedLabel =
+    merge === undefined
+      ? undefined
+      : `N7 unified corpus — the master list${merge.producedAt ? `, merged ${merge.producedAt.slice(0, 10)}` : ''}`;
+
   const logger = new RunLogger({
     kind: 'canonical_water',
-    label: label ?? `${state ?? 'unscoped'} canonical water`,
+    label: label ?? mergedLabel ?? `${state ?? 'unscoped'} canonical water`,
     campaignId,
     target,
     stages,
     call: convexRun,
-    notes: transform?.densestRing
-      ? [
-          `densest ring: ${transform.densestRing.externalId} "${transform.densestRing.name ?? ''}" — ` +
-            `${transform.densestRing.vertices} vertices (cap ${transform.densestRing.cap})`,
-        ]
-      : undefined,
+    notes: [
+      ...(found
+        ? [
+            `path replayed from ${found.path}` +
+              (merge?.producedAt ? ` (merged ${merge.producedAt})` : ''),
+          ]
+        : []),
+      ...(transform?.densestRing
+        ? [
+            `densest ring: ${transform.densestRing.externalId} "${transform.densestRing.name ?? ''}" — ` +
+              `${transform.densestRing.vertices} vertices (cap ${transform.densestRing.cap})`,
+          ]
+        : []),
+    ].filter((note) => note.length > 0),
   });
   if (runLogEnabled) logger.start();
 
@@ -328,6 +385,13 @@ function main(): void {
           key: u.externalId,
           reason: `${u.action}: ${u.reason}`,
         });
+        // **Kept as records, not just as reasons.** A run-row failure names the body; resolving one
+        // needs its *identity fields*, because the survivor is the stored row whose `externalId`
+        // matches the incoming key. Re-deriving that from a log meant joining a run row back to a
+        // 65 MB artifact by hand, so the loader writes the artifact itself — the same discipline
+        // `dropped.ndjson` applies to the merge.
+        const record = byExternalId.get(u.externalId);
+        if (record) unresolvedRecords.push(record);
       }
       applied++;
       consecutiveFailures = 0;
@@ -420,6 +484,17 @@ function main(): void {
     );
     logger.failed(aborted);
     throw aborted;
+  }
+
+  // **The records the loader declined, as records** — beside the artifact they came from, so
+  // resolving them is a file read rather than a hand-join of a run row against 65 MB of NDJSON.
+  if (unresolvedRecords.length > 0) {
+    const path = join(dirname(inputPath), 'unresolved.ndjson');
+    writeFileSync(path, `${unresolvedRecords.join('\n')}\n`);
+    process.stderr.write(
+      `[etl] ${unresolvedRecords.length} unresolved → ${path}\n` +
+        '[etl]   resolve with `pnpm --filter @skating/etl resolve-merge-duplicates` (dry by default)\n',
+    );
   }
 
   const declined = logger.totalFailures;

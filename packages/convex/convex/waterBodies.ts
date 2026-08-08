@@ -4799,6 +4799,214 @@ async function clearDuplicateFlag(
  *
  * **Dry by default**, and it names every row in all four outcomes rather than counting them.
  */
+/**
+ * Resolve the `merge` verdicts a load declined — **survivor chosen by the arrival key** (N7).
+ *
+ * ## Why `resolveCampaignDuplicates` cannot do this
+ *
+ * That pass answers a different question. Its survivor is *"the partner this campaign re-affirmed"*,
+ * which works when the master list still emits both halves and one of them wins. Here the master
+ * list emits **one record carrying both catalogue ids**, so `resolveUpsert` returns `merge`, nothing
+ * is written, and **neither** stored row is re-affirmed. Run 7 produced 110 of these — every one a
+ * pair the gazetteer fix correctly collapsed, met by a corpus still holding both halves.
+ *
+ * ## The rule, and why it is this one
+ *
+ * The survivor is the stored row whose `externalId` equals the incoming record's. That is not a
+ * tie-break, it is the identity D93 already settled: `externalId` is the *arrival key*, it is what
+ * contour tiles are stamped with, and it is the id of whichever catalogue drew the outline we are
+ * about to store. Keeping any other row would leave the corpus stamped with a key no tile resolves.
+ *
+ * **Deterministic, and it refuses rather than guesses.** No survivor matching the key, a loser
+ * carrying user content, or a loser a `bathymetryCoverage` row points at — each is skipped by name.
+ * The pass never picks "the bigger one" or "the older one", because a wrong automatic merge is
+ * unrecoverable in a way a queued one is not (D36/D93).
+ *
+ * **Dry by default**, like every other deleting pass here, and it names every row it would remove.
+ */
+export const resolveIncomingMergeDuplicates = internalMutation({
+  args: {
+    /** The identity fields of records the loader declined — `unresolved.ndjson`, as emitted. */
+    records: v.array(
+      v.object({
+        externalId: v.string(),
+        osmId: v.optional(v.string()),
+        nhdId: v.optional(v.string()),
+        threeDhpId: v.optional(v.string()),
+      }),
+    ),
+    apply: v.optional(v.boolean()),
+    /** Also delete a loser a contour tileset points at — see `resolveCampaignDuplicates`'s rule 3. */
+    includeCoverageReferenced: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { records, apply, includeCoverageReferenced }) => {
+    const deleted: {
+      name: string;
+      externalId?: string;
+      acres: number;
+      survivor: string;
+      /** Fields the survivor had none of and took from the row about to be deleted. */
+      inherited?: string[];
+    }[] = [];
+    const skipped: { externalId: string; reason: string; detail?: string }[] = [];
+    let alreadyResolved = 0;
+
+    for (const record of records) {
+      const rows = new Map<Id<'waterBodies'>, Doc<'waterBodies'>>();
+      for (const [index, id] of [record.osmId, record.nhdId, record.threeDhpId].entries()) {
+        if (id === undefined) continue;
+        const indexName = (['by_osm_id', 'by_nhd_id', 'by_three_dhp_id'] as const)[index];
+        const field = (['osmId', 'nhdId', 'threeDhpId'] as const)[index];
+        if (indexName === undefined || field === undefined) continue;
+        const hits = await ctx.db
+          .query('waterBodies')
+          // biome-ignore lint/suspicious/noExplicitAny: three index names, one loop, same shape.
+          .withIndex(indexName, (q: any) => q.eq(field, id))
+          .take(4);
+        for (const hit of hits) rows.set(hit._id, hit);
+      }
+      if (rows.size <= 1) {
+        // The load has since written it, or a previous run of this pass already resolved it.
+        alreadyResolved++;
+        continue;
+      }
+
+      const all = [...rows.values()];
+      const survivor = all.find((r) => r.externalId === record.externalId);
+      if (survivor === undefined) {
+        skipped.push({
+          externalId: record.externalId,
+          reason: 'no-row-carries-the-arrival-key',
+          detail: all.map((r) => r.externalId ?? '(none)').join(' / '),
+        });
+        continue;
+      }
+
+      for (const loser of all) {
+        if (loser._id === survivor._id) continue;
+        const attachment = await bodyAttachmentKind(ctx, loser._id);
+        if (attachment !== null) {
+          skipped.push({
+            externalId: record.externalId,
+            reason: 'loser-is-attached',
+            detail: `${loser.name || '(unnamed)'}: ${attachment}`,
+          });
+          continue;
+        }
+        const coverage = await ctx.db
+          .query('bathymetryCoverage')
+          .withIndex('by_external_id', (q) =>
+            q
+              .eq('source', loser.source === 'nhd' ? 'nhd' : 'osm')
+              .eq('externalId', loser.externalId ?? ''),
+          )
+          .take(1);
+        if (coverage.length > 0 && includeCoverageReferenced !== true) {
+          skipped.push({
+            externalId: record.externalId,
+            reason: 'loser-has-contour-coverage',
+            detail: loser.externalId,
+          });
+          continue;
+        }
+        // **Carry the enrichment the survivor lacks, before deleting the row that holds it.**
+        //
+        // Measured on run 7's 109 losers: 9 carry a depth and 5 an elevation. None is
+        // operator-set — they are all `lagos_us`, `globathy` and `hydrolakes_modeled` — so the
+        // depth pass would re-stamp them. But "a later pass will recompute it" is an assumption,
+        // and this one is doing real work: the join matches a source lake to a body by containment
+        // and area ratio, and the survivor's outline is not the loser's. A pair of rows that a
+        // moderator merged by hand would carry the values across, so this does too.
+        //
+        // Only where the survivor has nothing — a value it already holds was chosen by its own
+        // rung of the D68 ladder and outranks anything inherited from a row we are deleting.
+        const inherit: Record<string, unknown> = {};
+        /**
+         * Copy `field` when the survivor has none — and **omit an undefined companion rather than
+         * writing one**, because in Convex an explicit `undefined` is a *clear*, not a no-op. A
+         * value gets its provenance or it gets nothing; it never gets the other row's silence.
+         */
+        const take = (field: keyof Doc<'waterBodies'>) => {
+          if (survivor[field] === undefined && loser[field] !== undefined) {
+            inherit[field] = loser[field];
+          }
+        };
+        // A value the survivor already holds was chosen by its own rung of the D68 ladder and
+        // outranks anything inherited from a row we are deleting — so each of these is gated on the
+        // survivor having nothing, and a source rides along only with the measurement it describes.
+        if (survivor.maxDepthM === undefined) {
+          take('maxDepthM');
+          if (inherit.maxDepthM !== undefined) take('maxDepthSource');
+        }
+        if (survivor.meanDepthM === undefined) {
+          take('meanDepthM');
+          if (inherit.meanDepthM !== undefined) take('meanDepthSource');
+        }
+        take('depthSourceNote');
+        if (survivor.elevationM === undefined) {
+          take('elevationM');
+          if (inherit.elevationM !== undefined) take('elevationSource');
+        }
+        if (survivor.windRose === undefined) {
+          take('windRose');
+          if (inherit.windRose !== undefined) take('windRoseSource');
+        }
+        // **Decisions, not measurements — and the reason they are here is that losing one is worse
+        // than losing a modelled depth.** A curated boost is an operator saying this lake matters;
+        // `includedByRequest` is N7b's override saying it exists *despite* a corpus rule. Both
+        // survive every prune by design, and deleting the row that carries one would revoke a human
+        // judgement with no trace. Neither is present on run 7's losers — which is exactly why it
+        // is cheap to be right about now rather than after the first one appears.
+        if ((survivor.curatedBoost ?? 0) === 0 && (loser.curatedBoost ?? 0) !== 0) {
+          inherit.curatedBoost = loser.curatedBoost;
+        }
+        if (survivor.includedByRequest !== true && loser.includedByRequest === true) {
+          inherit.includedByRequest = true;
+        }
+        const inherited = Object.keys(inherit);
+        if (inherited.length > 0 && apply === true) {
+          await ctx.db.patch(survivor._id, inherit as Partial<Doc<'waterBodies'>>);
+        }
+
+        deleted.push({
+          ...(inherited.length > 0 ? { inherited } : {}),
+          name: loser.name || '(unnamed)',
+          externalId: loser.externalId,
+          acres: Math.round((loser.surfaceAreaSqM ?? 0) / SQ_M_PER_ACRE_LOCAL),
+          survivor: survivor.externalId ?? String(survivor._id),
+        });
+        if (apply === true) {
+          // Unlist before deleting, exactly as both prunes do: the cell rows are a separate table
+          // and a deleted body whose cells survive is a viewport hit that resolves to nothing.
+          await syncWaterBodyCells(ctx, loser._id, {
+            bbox: loser.bbox,
+            minVisibleZoom: loser.minVisibleZoom ?? MIN_VISIBLE_ZOOM_FLOOR,
+            listed: false,
+          });
+          await ctx.db.delete(loser._id);
+        }
+      }
+
+      // The survivor keeps no pointer at a row that no longer exists.
+      if (apply === true) {
+        await ctx.db.patch(survivor._id, {
+          dedupStatus: 'clean',
+          duplicateCandidateIds: undefined,
+        });
+      }
+    }
+
+    return {
+      applied: apply === true,
+      considered: records.length,
+      alreadyResolved,
+      deletedCount: deleted.length,
+      deleted,
+      skipped,
+    };
+  },
+});
+
 export const resolveCampaignDuplicates = internalMutation({
   args: {
     /** The campaign whose master list decides which half of a pair survives. */

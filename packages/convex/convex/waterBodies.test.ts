@@ -4150,3 +4150,212 @@ describe('importCanonical duplicate flagging (N7)', () => {
     expect(after?.duplicateCandidateIds).toEqual([stranger]);
   });
 });
+
+describe('resolveIncomingMergeDuplicates (N7)', () => {
+  /** The corpus shape run 7 met: two stored rows the new master list emits as one record. */
+  async function seedSplitPair(t: ReturnType<typeof convexTest>) {
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        { ...CANONICAL_ITEM, externalId: 'way/1', osmId: 'way/1', nhdId: undefined },
+        {
+          ...CANONICAL_ITEM,
+          source: 'nhd' as const,
+          externalId: 'nhd-1',
+          osmId: undefined,
+          nhdId: 'nhd-1',
+        },
+      ],
+    });
+    return { externalId: 'way/1', osmId: 'way/1', nhdId: 'nhd-1' };
+  }
+
+  test('keeps the row carrying the arrival key and deletes the other', async () => {
+    const t = convexTestWithGeo();
+    const record = await seedSplitPair(t);
+
+    // Dry by default — the deletion is named before it happens.
+    const dry = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+    });
+    expect(dry).toMatchObject({ applied: false, deletedCount: 1 });
+    expect(dry.deleted[0]).toMatchObject({ externalId: 'nhd-1', survivor: 'way/1' });
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(2);
+
+    const applied = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+      apply: true,
+    });
+    expect(applied).toMatchObject({ applied: true, deletedCount: 1 });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    expect(rows).toHaveLength(1);
+    // `externalId` is the arrival key AND the contour tile stamp (D93) — keeping any other row
+    // leaves the corpus stamped with a key no tile resolves.
+    expect(rows[0]?.externalId).toBe('way/1');
+    // And the survivor stops claiming a duplicate that no longer exists.
+    expect(rows[0]?.dedupStatus).toBe('clean');
+    expect(rows[0]?.duplicateCandidateIds ?? []).toEqual([]);
+  });
+
+  test('after resolving, the load that was declined finally lands', async () => {
+    const t = convexTestWithGeo();
+    const record = await seedSplitPair(t);
+    await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+      apply: true,
+    });
+    const result = await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [{ ...CANONICAL_ITEM, externalId: 'way/1', osmId: 'way/1', nhdId: 'nhd-1' }],
+      campaignId: 'n7-test',
+    });
+    expect(result).toMatchObject({ updated: 1, queuedForMerge: 0 });
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.nhdId).toBe('nhd-1');
+    expect(rows[0]?.lastCampaignId).toBe('n7-test');
+  });
+
+  test('refuses rather than guesses when no row carries the arrival key', async () => {
+    const t = convexTestWithGeo();
+    await seedSplitPair(t);
+    const out = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [{ externalId: '3dhp-XYZ', osmId: 'way/1', nhdId: 'nhd-1' }],
+      apply: true,
+    });
+    expect(out.deletedCount).toBe(0);
+    expect(out.skipped[0]).toMatchObject({ reason: 'no-row-carries-the-arrival-key' });
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(2);
+  });
+
+  test('never deletes a loser somebody has attached content to', async () => {
+    const t = convexTestWithGeo();
+    const record = await seedSplitPair(t);
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    const loser = rows.find((r) => r.externalId === 'nhd-1');
+    if (!loser) throw new Error('expected the nhd row');
+    const author = await seedUser(t, 'clerk_attach_author', 'member');
+    await t.run(async (ctx) => {
+      const profile = (await ctx.db.query('profiles').first())?._id;
+      if (!profile) throw new Error('expected a profile');
+      await ctx.db.insert('putIns', {
+        waterBodyId: loser._id,
+        coord: CANONICAL_ITEM.centroid,
+        source: 'official',
+        status: 'visible',
+        createdAt: Date.now(),
+      });
+    });
+    void author;
+
+    const out = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+      apply: true,
+    });
+    expect(out.deletedCount).toBe(0);
+    expect(out.skipped[0]).toMatchObject({ reason: 'loser-is-attached' });
+    expect(await t.run((ctx) => ctx.db.query('waterBodies').collect())).toHaveLength(2);
+  });
+
+  // 9 of run 7's 109 losers carried a depth and 5 an elevation. None was operator-set, so the depth
+  // pass would re-stamp them — but that is an assumption doing real work: the join matches a source
+  // lake to a body by containment and area ratio, and the survivor's outline is not the loser's.
+  test('carries enrichment the survivor lacks before deleting the row that holds it', async () => {
+    const t = convexTestWithGeo();
+    const record = await seedSplitPair(t);
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    const loser = rows.find((r) => r.externalId === 'nhd-1');
+    const survivor = rows.find((r) => r.externalId === 'way/1');
+    if (!loser || !survivor) throw new Error('expected both halves');
+    await t.run((ctx) =>
+      ctx.db.patch(loser._id, {
+        maxDepthM: 4,
+        maxDepthSource: 'lagos_us',
+        elevationM: 120,
+      }),
+    );
+    // The survivor already knows its own mean depth, from a different rung.
+    await t.run((ctx) =>
+      ctx.db.patch(survivor._id, { meanDepthM: 2, meanDepthSource: 'globathy' }),
+    );
+
+    const out = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+      apply: true,
+    });
+    expect(out.deleted[0]?.inherited).toEqual(['maxDepthM', 'maxDepthSource', 'elevationM']);
+
+    const kept = await t.run((ctx) => ctx.db.get(survivor._id));
+    expect(kept?.maxDepthM).toBe(4);
+    expect(kept?.elevationM).toBe(120);
+    // …and a value the survivor already held is NOT overwritten: it was chosen by its own rung of
+    // the D68 ladder and outranks anything inherited from a row we are deleting.
+    expect(kept?.meanDepthM).toBe(2);
+    expect(kept?.meanDepthSource).toBe('globathy');
+  });
+
+  test('inherits nothing on a dry run', async () => {
+    const t = convexTestWithGeo();
+    const record = await seedSplitPair(t);
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    const loser = rows.find((r) => r.externalId === 'nhd-1');
+    const survivor = rows.find((r) => r.externalId === 'way/1');
+    if (!loser || !survivor) throw new Error('expected both halves');
+    await t.run((ctx) => ctx.db.patch(loser._id, { elevationM: 120 }));
+
+    const dry = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+    });
+    // Named in the plan, so a reviewer sees what would move — and not written.
+    expect(dry.deleted[0]?.inherited).toEqual(['elevationM']);
+    expect((await t.run((ctx) => ctx.db.get(survivor._id)))?.elevationM).toBeUndefined();
+  });
+
+  // Losing a modelled depth costs a recompute. Losing a curation decision costs a human judgement
+  // with no trace of it ever having been made — and both survive every prune precisely because they
+  // are decisions rather than data.
+  test('carries a curation decision across, never revokes it by deleting the row', async () => {
+    const t = convexTestWithGeo();
+    const record = await seedSplitPair(t);
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    const loser = rows.find((r) => r.externalId === 'nhd-1');
+    if (!loser) throw new Error('expected the nhd row');
+    await t.run((ctx) => ctx.db.patch(loser._id, { curatedBoost: 0.3, includedByRequest: true }));
+
+    const out = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+      apply: true,
+    });
+    expect(out.deleted[0]?.inherited).toEqual(['curatedBoost', 'includedByRequest']);
+    const kept = await t.run(async (ctx) => (await ctx.db.query('waterBodies').collect())[0]);
+    expect(kept?.curatedBoost).toBe(0.3);
+    expect(kept?.includedByRequest).toBe(true);
+  });
+
+  // A boost of zero is not a curation decision — the same rule both prunes settled on 2026-08-07.
+  test('does not treat a no-op boost as a decision worth carrying', async () => {
+    const t = convexTestWithGeo();
+    const record = await seedSplitPair(t);
+    const rows = await t.run((ctx) => ctx.db.query('waterBodies').collect());
+    const loser = rows.find((r) => r.externalId === 'nhd-1');
+    if (!loser) throw new Error('expected the nhd row');
+    await t.run((ctx) => ctx.db.patch(loser._id, { curatedBoost: 0 }));
+    const out = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+      apply: true,
+    });
+    expect(out.deleted[0]?.inherited).toBeUndefined();
+  });
+
+  test('is a no-op once the pair is already one row', async () => {
+    const t = convexTestWithGeo();
+    const record = await seedSplitPair(t);
+    await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+      apply: true,
+    });
+    const again = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [record],
+      apply: true,
+    });
+    expect(again).toMatchObject({ deletedCount: 0, alreadyResolved: 1 });
+  });
+});

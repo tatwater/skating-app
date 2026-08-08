@@ -26,6 +26,7 @@ import { readFileSync } from 'node:fs';
 import process from 'node:process';
 
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import { loadMergeProvenance } from './mergeProvenance';
 
 /** One line of `sub-areas.ndjson`, as `masterList.ts` emits it. */
 interface SubAreaRow {
@@ -67,13 +68,17 @@ function main(): void {
   const apply = args.includes('--apply');
   const actorUserId = args.find((a) => a.startsWith('--actor='))?.slice('--actor='.length);
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
+  const mergeManifestFlag = args
+    .find((a) => a.startsWith('--merge-manifest='))
+    ?.slice('--merge-manifest='.length);
   const inputPath = args.find((a) => !a.startsWith('--'));
 
   if (!inputPath || !actorUserId) {
     process.stderr.write(
       'usage: pnpm --filter @skating/etl load-sub-areas <sub-areas.ndjson> ' +
-        '--actor=<profileId> [--campaign=<id>] [--apply]\n' +
-        '  --actor is required: every sub-area write is audited to a person (N2/D60).\n',
+        '--actor=<profileId> [--campaign=<id>] [--merge-manifest=<path>] [--apply]\n' +
+        '  --actor is required: every sub-area write is audited to a person (N2/D60).\n' +
+        '  A merge-manifest.json beside the input is read automatically for the run path.\n',
     );
     process.exit(1);
   }
@@ -86,15 +91,27 @@ function main(): void {
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as SubAreaRow);
 
+  // The same default as `load.ts`: the merge writes its whole path beside the artifact, so the bay
+  // seed inherits it without being asked. A sub-area load whose Path stops at "load" cannot answer
+  // which archives its parents came from, and the answer is sitting in the same directory.
+  const found = loadMergeProvenance(inputPath, mergeManifestFlag);
+  if (found) {
+    process.stderr.write(
+      `[etl] provenance: replaying ${found.manifest.stages?.length ?? 0} upstream stage(s) from ${found.path}\n`,
+    );
+  }
+
   const logger = new RunLogger({
     kind: 'sub_area_seed',
     label: 'N7 bays — an arm is not a lake',
-    campaignId,
+    campaignId: campaignId ?? found?.manifest.campaignId,
     target,
+    stages: found?.manifest.stages ?? [],
     call: convexRun,
     notes: [
       'Bays the merge found a parent for. Parent resolved by catalogue id, outline clipped to it.',
       'Run AFTER waterBodies:importCanonical — the parent has to exist.',
+      ...(found ? [`path replayed from ${found.path}`] : []),
     ],
   });
   logger.start();

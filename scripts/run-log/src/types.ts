@@ -18,6 +18,14 @@ export type ImportRunKind =
    * body that failed a rule.
    */
   | 'sub_area_seed'
+  /**
+   * `scripts/etl resolve-merge-duplicates` — the `merge` verdicts a load declined (N7).
+   *
+   * Its own kind because it **deletes**, and a pass that removes rows must never be filed under the
+   * one that adds them: `/admin/imports` is where an operator goes to ask what a campaign did, and
+   * "the load" and "the thing that deleted 110 rows" are not the same answer.
+   */
+  | 'dedup_resolve'
   | 'osm_depths'
   | 'admin_areas'
   | 'lake_depth'

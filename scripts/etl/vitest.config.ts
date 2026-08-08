@@ -27,6 +27,7 @@ export default defineConfig({
         'src/loadDepths.ts',
         'src/loadSubAreas.ts', // reads the artifact, calls one mutation; the rules are both tested
         'src/loadReconciliation.ts',
+        'src/resolveMergeDuplicates.ts', // reads the artifact, calls one mutation; the rules are tested
         'src/pruneFloor.ts', // drives `waterBodies.pruneBelowAreaFloor`, which has its own tests
         // `main()` + `spawnSync` + the report. **The orchestration is no longer in here either**:
         // the second N7 audit found that the extraction to `mergeRules.ts` had stopped at the

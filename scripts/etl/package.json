@@ -23,7 +23,8 @@
     "reconcile": "tsx src/reconcileNhd.ts",
     "load-reconciliation": "tsx src/loadReconciliation.ts",
     "archive-gnis": "tsx src/gnisArchive.ts",
-    "bake-off": "tsx --max-old-space-size=12288 src/bakeOff.ts"
+    "bake-off": "tsx --max-old-space-size=12288 src/bakeOff.ts",
+    "resolve-merge-duplicates": "tsx src/resolveMergeDuplicates.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",
