@@ -31,6 +31,31 @@
  *    record is *"no published terms"*, and the response to that is **attribution**, which
  *    `DEPTH_SOURCE_TERMS` carries.
  *
+ * ## What the archived set actually is, measured (2026-08-08)
+ *
+ * **1,345 ponds, every one carrying both a max and a mean depth, zero refusals.** Internally
+ * consistent — no mean deeper than its max, every coordinate inside the Adirondack box, elevations
+ * 137–1,129 m. And it corroborates itself: the parsed maximum surface area is **287 ha = 709
+ * acres**, against the ALSC's own prose describing a survey of lakes *"ranging in size from about
+ * 0.5 to 700 acres"*. The data matches the published description of itself.
+ *
+ * ⚠ **That size ceiling is the honest limit of this source.** It is a survey of *small* ponds:
+ * median 6 ha. Lake George, Schroon and Indian Lake are not in it, so the largest Adirondack water
+ * — the water most people skate — still has no measured depth from here.
+ *
+ * ## Join on the NAME, never on the coordinate — measured, not assumed
+ *
+ * The published coordinates are DMS to the second and are **imprecise rather than merely offset**.
+ * Against name-matched corpus bodies the offset has a small systematic component (~72 m north,
+ * ~97 m east, about the size of a NAD27→WGS84 shift for New York) and a much larger random one
+ * (**sd ~340 m**, median error 289 m). A pond of the median size is ~275 m across, so a datum
+ * correction would recover a third of the error and leave the rest.
+ *
+ * The consequence is concrete: point-in-polygon matches **326** of 1,345, and a name match within
+ * 2 km matches **866**. So the depth join is a name join with a distance bound — and it should read
+ * `nameClaims`, not the stored name, because N7 keeps every publisher's name and ALSC's spelling
+ * may agree with OSM's where the stored one is NHD's.
+ *
  * The pure half is here and tested; the fetching, pacing and archiving is `snapshotAlsc.ts`.
  */
 
