@@ -15,6 +15,7 @@ export default defineConfig({
         'src/cli.ts',
         'src/load.ts',
         'src/loadElevation.ts',
+        'src/snapshotElevation.ts', // argv + concurrency + file I/O; the rules are in epqs/elevationArchive
         'src/types.ts',
       ],
       thresholds: {
