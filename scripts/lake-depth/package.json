@@ -12,7 +12,8 @@
     "load": "tsx src/load.ts",
     "load-elevation": "tsx src/loadElevation.ts",
     "archive": "tsx src/archiveCli.ts",
-    "snapshot-elevation": "tsx src/snapshotElevation.ts"
+    "snapshot-elevation": "tsx src/snapshotElevation.ts",
+    "snapshot-alsc": "tsx src/snapshotAlsc.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",
