@@ -34,10 +34,12 @@ import { join as pathJoin } from 'node:path';
 import process from 'node:process';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { SCRATCH_ROOT } from './cache';
-import { type JoinCandidate, joinInBatches } from './joinQuery';
-import { runJoinQuery } from './joinRunner';
+import { inAdaptiveBatches, type JoinCandidate, joinInBatches } from './joinQuery';
+import { runCoveringBodyQuery, runJoinQuery } from './joinRunner';
 import { readAllLakes } from './lakeSources';
 import { type ArchivedLake, representativePoint, shapePoints, splitByBody } from './lakes';
+import { crosswalkFromNdjson, crosswalkNhdId, type MidasEntry } from './midasCrosswalk';
+import { dedupeForLookup, isRekeyEligible, type PointAssignment, rekeyByBody } from './rekey';
 
 const JOIN_DIR = pathJoin(SCRATCH_ROOT, 'join');
 const JOIN_FILE = pathJoin(JOIN_DIR, 'lakes.json');
@@ -66,10 +68,36 @@ export interface JoinedLake {
    * each of these, so opening a bay shows the bay's share of its lake's basin rather than nothing.
    */
   alsoCovers?: { externalId?: string; waterBodyId: string; name: string; polygon?: unknown }[];
+  /**
+   * Whether the publisher's crosswalk agreed with the geometry, where an id was sent (N7-3).
+   *
+   * ⚠ **This was computed and then dropped on the first run**, because the record below is built
+   * from an explicit field list and nobody added it — 2,463 rows, every one `undefined`, including
+   * the 1,474 that carried an id. Reading that as "no disagreements" would have been a finding
+   * about the writer rather than about Maine. Same shape as the wind lane fetching speed and
+   * discarding it, and the same lesson: a measurement that reaches no artifact is not a measurement.
+   */
+  crosswalk?: 'confirmed' | 'promoted' | 'disagreed';
 }
+
+/** Disagreeing keys named in the log. Enough to recognise a pattern, small enough to read. */
+const CROSSWALK_SAMPLE_CAP = 15;
 
 function log(message: string): void {
   process.stderr.write(`[bathymetry] ${message}\n`);
+}
+
+/**
+ * The archived MIDAS crosswalk, or an empty map.
+ *
+ * **Absent is a legitimate state, not an error.** Every non-Maine lane joins on geometry alone and
+ * always has; a missing archive simply means the Maine lane does too. Failing here would make an
+ * optional improvement a hard dependency of the whole layer.
+ */
+function readMidasCrosswalk(): Map<number, MidasEntry> {
+  const path = pathJoin(SCRATCH_ROOT, '..', '.raw', 'me-midas-crosswalk', 'rows.ndjson');
+  if (!existsSync(path)) return new Map();
+  return crosswalkFromNdjson(readFileSync(path, 'utf8'));
 }
 
 export function lakeId(lake: ArchivedLake): string {
@@ -106,6 +134,110 @@ export function sampleFootprint(
     if (p) out.push({ lat: p.lat, lng: p.lng });
   }
   return out;
+}
+
+/**
+ * Points per `coveringBodyForPoints` call, optimistically.
+ *
+ * Smaller than `BATCH` because the unit is a *point* rather than a lake, and each one pulls every
+ * listed body near it with polygons attached. `joinInBatches` splits anything that trips the read
+ * cap, so this is sized for the common case like every other batch constant here.
+ */
+const POINT_BATCH = 250;
+
+/**
+ * Re-key every containment-rejected survey against corpus membership — **D95's lane** (N7-3).
+ *
+ * Rule 0 lives in the first line: only `isRekeyEligible` rejects get here, which is the containment
+ * gate and nothing else. Everything downstream operates on measurements that some key claimed and
+ * geography refused.
+ *
+ * Returns candidates for a **second ordinary join**, not admissions. The lane's job is to say which
+ * lakes a bucket key was actually holding; whether each of those is a lake we will draw is still the
+ * containment gate's decision, taken on the regrouped survey.
+ */
+export async function rekeyRejected(
+  rejects: readonly { key: string; reason: string }[],
+  byKey: ReadonlyMap<string, ArchivedLake>,
+  log: (message: string) => void,
+): Promise<{
+  candidates: JoinCandidate[];
+  lakes: ArchivedLake[];
+  eligible: number;
+  unmatched: number;
+  bodiesTouched: number;
+}> {
+  const eligible = rejects.filter((r) => isRekeyEligible(r.reason));
+  const candidates: JoinCandidate[] = [];
+  const lakes: ArchivedLake[] = [];
+  let unmatched = 0;
+  let bodiesTouched = 0;
+  if (eligible.length === 0) return { candidates, lakes, eligible: 0, unmatched, bodiesTouched };
+
+  log(`re-key: ${eligible.length} containment reject(s) eligible (Rule 0)`);
+  for (const reject of eligible) {
+    const lake = byKey.get(reject.key);
+    if (!lake) continue;
+    const points = shapePoints(lake);
+    if (points.length === 0) continue;
+    // Every measurement, not a sample: the whole point is to know which body each one is in, and a
+    // sample would place the groups it happened to hit and silently discard the rest.
+    //
+    // **Indexed, not positional.** `inAdaptiveBatches` halves a batch that trips the read cap, so
+    // results arrive in batch order rather than in one flat sequence. Carrying each point's own index
+    // and writing into a pre-sized array is what keeps a split from shifting every later assignment
+    // by one — a failure that would attribute soundings to the wrong lakes with nothing to show for it.
+    //
+    // **Asked once per ~11 m cell, not once per measurement.** See `LOOKUP_GRID_PLACES`: the read cap
+    // counts bytes and re-reading one document counts every time, so a survey lying inside one large
+    // lake pulls that lake's ~300 KB shoreline once per point. Dedup attacks the cause; the adaptive
+    // splitter alone would survive by halving 250 → 1 and turn one query into hundreds.
+    const { cells, indices } = dedupeForLookup(points);
+    log(`  re-key ${reject.key}: ${points.length} measurement(s) → ${cells.length} lookup cell(s)`);
+    const assignments: PointAssignment[] = new Array(points.length).fill(null);
+    let failedCells = 0;
+    await inAdaptiveBatches(
+      cells.map((p, i) => ({ at: i, lat: p.lat, lng: p.lng })),
+      POINT_BATCH,
+      async (batch) => {
+        const { bodies } = await runCoveringBodyQuery(
+          batch.map((p) => ({ lat: p.lat, lng: p.lng })),
+        );
+        batch.forEach((cell, i) => {
+          const body = bodies[i] ?? null;
+          for (const at of indices[cell.at] ?? []) assignments[at] = body;
+        });
+      },
+      // An unresolved cell leaves its points `null`, which `rekeyByBody` counts as unmatched.
+      // Counted separately too, so "in no body" and "we never asked" stay distinguishable — the
+      // distinction the whole no-silent-caps rule rests on.
+      (batch) => {
+        failedCells += batch.length;
+      },
+      (done, total) => {
+        if (done % (POINT_BATCH * 20) < POINT_BATCH)
+          log(`  re-key ${reject.key}: ${done}/${total} cells`);
+      },
+    );
+    if (failedCells > 0) {
+      log(`  ⚠ ${reject.key}: ${failedCells} cell(s) unresolved; their points count as unmatched`);
+    }
+    const result = rekeyByBody(lake, assignments);
+    unmatched += result.unmatched;
+    bodiesTouched += result.bodiesTouched;
+    for (const part of result.parts) {
+      const point = representativePoint(part);
+      if (!point) continue;
+      const samplePoints = sampleFootprint(shapePoints(part));
+      lakes.push(part);
+      candidates.push({
+        key: lakeId(part),
+        point,
+        ...(samplePoints.length > 0 ? { samplePoints } : {}),
+      });
+    }
+  }
+  return { candidates, lakes, eligible: eligible.length, unmatched, bodiesTouched };
 }
 
 /** Read a cached join, for the builder and the sample renderer. */
@@ -171,8 +303,21 @@ async function main(): Promise<void> {
   // under-states its lake — they sample the interior — so the first version rejected 68 correct lakes
   // as thousand-fold mismatches, worst on Maine's sparse surveys. What the server can answer reliably
   // is "how much of this survey is inside that polygon", and that needs the points themselves.
+  // **Maine's own MIDAS → NHD crosswalk**, where it is archived (N7-3). It resolves 5,611 of 5,803
+  // MIDAS numbers and settles the one question geometry cannot: which of several adjacent bodies
+  // the state meant. Absent archive → the join runs exactly as it did, which is why nothing here
+  // fails when the file is missing.
+  const crosswalk = readMidasCrosswalk();
+  if (crosswalk.size > 0) log(`${crosswalk.size} MIDAS keys carry an NHD id (Maine crosswalk)`);
+  else log('no MIDAS crosswalk archived — the Maine lane joins on geometry alone');
+
   const candidates: JoinCandidate[] = [];
   const noPoint: string[] = [];
+  let crosswalkConfirmed = 0;
+  const crosswalkPromoted: string[] = [];
+  const crosswalkDisagreed: string[] = [];
+  let keyed = 0;
+  let unconfidentKey = 0;
   for (const lake of lakes) {
     const point = representativePoint(lake);
     if (!point) {
@@ -180,11 +325,24 @@ async function main(): Promise<void> {
       continue;
     }
     const samplePoints = sampleFootprint(shapePoints(lake));
+    const resolved = crosswalkNhdId(lake, crosswalk);
+    const nhdId = 'nhdId' in resolved ? resolved.nhdId : undefined;
+    if ('nhdId' in resolved) keyed++;
+    else if (resolved.skip === 'ambiguous' || resolved.skip === 'split-key') unconfidentKey++;
     candidates.push({
       key: lakeId(lake),
       point,
       ...(samplePoints.length > 0 ? { samplePoints } : {}),
+      ...(nhdId !== undefined ? { nhdId } : {}),
     });
+  }
+  if (keyed > 0) {
+    log(`  ${keyed} candidate(s) carry the publisher's NHD id`);
+  }
+  if (unconfidentKey > 0) {
+    // One MIDAS number can hold two real lakes (9861 = Long Pond 651 ac + Lewiston Pond 24 ac).
+    // Sending the larger would be a coin toss dressed as an id, so those go ungated instead.
+    log(`  ${unconfidentKey} MIDAS key(s) map to more than one body — sent WITHOUT an id`);
   }
   const unsampled = candidates.filter((c) => c.samplePoints === undefined).length;
   if (unsampled > 0) {
@@ -203,7 +361,34 @@ async function main(): Promise<void> {
     },
   );
 
+  // ── D95's re-key lane ─────────────────────────────────────────────────────
+  //
+  // Runs on the rejects and **only** on the rejects, and only on the ones the containment gate
+  // refused — Rule 0. See `rekey.ts`: a key whose soundings land inside the body its own id resolves
+  // to is finished, and China Lake is the fixture that says so.
   const byKey = new Map(lakes.map((l) => [lakeId(l), l]));
+  const rekeyed = await rekeyRejected(rejects, byKey, log);
+  if (rekeyed.candidates.length > 0) {
+    log(
+      `re-key: ${rekeyed.eligible} containment reject(s) → ${rekeyed.candidates.length} lake(s) ` +
+        `across ${rekeyed.bodiesTouched} bodies · ${rekeyed.unmatched} measurement(s) in no body`,
+    );
+    const second = await joinInBatches(
+      rekeyed.candidates,
+      BATCH,
+      async (batch) => runJoinQuery(batch),
+      (done, total) => {
+        if (done % (BATCH * 10) < BATCH) log(`  re-key ${done}/${total}`);
+      },
+    );
+    // **Through the ordinary gated join, not around it.** The lane regroups; it does not admit. A
+    // re-keyed group that still fails containment is still a reject, and it is reported as one.
+    log(`re-key: ${second.matches.length} recovered, ${second.rejects.length} still refused`);
+    for (const lake of rekeyed.lakes) byKey.set(lakeId(lake), lake);
+    matches.push(...second.matches);
+    rejects.push(...second.rejects);
+  }
+
   const joined: Record<string, JoinedLake> = {};
   let bays = 0;
   for (const m of matches) {
@@ -214,6 +399,9 @@ async function main(): Promise<void> {
       polygon: b.polygon,
     }));
     bays += alsoCovers.length;
+    if (m.crosswalk === 'confirmed') crosswalkConfirmed++;
+    else if (m.crosswalk === 'promoted') crosswalkPromoted.push(m.key);
+    else if (m.crosswalk === 'disagreed') crosswalkDisagreed.push(m.key);
     joined[m.key] = {
       externalId: m.externalId,
       waterBodyId: m.waterBodyId,
@@ -221,6 +409,7 @@ async function main(): Promise<void> {
       state: byKey.get(m.key)?.state ?? '',
       polygon: m.polygon,
       ...(alsoCovers.length > 0 ? { alsoCovers } : {}),
+      ...(m.crosswalk ? { crosswalk: m.crosswalk } : {}),
     };
   }
 
@@ -231,6 +420,20 @@ async function main(): Promise<void> {
   log(`✓ matched ${Object.keys(joined).length}/${candidates.length} (${pct}%)`);
   if (noPoint.length > 0) log(`  ${noPoint.length} lake(s) had no usable representative point`);
   if (bays > 0) log(`  ${bays} nested body/bodies also covered by a surveyed lake`);
+  if (keyed > 0) {
+    // **The crosswalk's own report card.** `agreed` means the state's id named a body the survey is
+    // genuinely in and the promotion fired; `disagreed` means it named one the soundings are not in,
+    // which is a finding about the key (MIDAS 870) or about our polygon, and is deliberately not
+    // acted on. Named, not just counted — a disagreement you cannot look up is a number nobody works.
+    log(
+      `  crosswalk of ${keyed} keyed: ${crosswalkConfirmed} confirmed what geometry chose · ` +
+        `${crosswalkPromoted.length} CORRECTED it · ${crosswalkDisagreed.length} disagreed`,
+    );
+    for (const key of crosswalkPromoted.slice(0, CROSSWALK_SAMPLE_CAP))
+      log(`      corrected ${key}`);
+    for (const key of crosswalkDisagreed.slice(0, CROSSWALK_SAMPLE_CAP))
+      log(`      disagreed ${key}`);
+  }
 
   // Group the rejections by kind. An ETL that silently matches 60% looks exactly like one that
   // matched all of it, so the shape of the misses is the output that matters most here.
@@ -266,6 +469,11 @@ async function main(): Promise<void> {
   logger.count('noRepresentativePoint', noPoint.length);
   logger.count('nestedBodiesAlsoCovered', bays);
   logger.count('surveysWithNoSampledMeasurements', unsampled);
+  logger.count('crosswalkKeyed', keyed);
+  logger.count('crosswalkConfirmed', crosswalkConfirmed);
+  logger.count('crosswalkCorrected', crosswalkPromoted.length);
+  logger.count('crosswalkDisagreed', crosswalkDisagreed.length);
+  logger.count('crosswalkUnusable', unconfidentKey);
   logger.coverage({
     unit: 'archived lakes',
     eligible: lakes.length,

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { isReadLimitError, type JoinCandidate, joinInBatches } from './joinQuery';
+import {
+  inAdaptiveBatches,
+  isReadLimitError,
+  type JoinCandidate,
+  joinInBatches,
+} from './joinQuery';
 
 const READ_LIMIT =
   'Uncaught Error: Too many bytes read in a single function execution (limit: 16777216 bytes).';
@@ -106,6 +111,97 @@ describe('joinInBatches', () => {
   it('handles an empty input without calling the deployment', async () => {
     const run = vi.fn(async (batch: readonly JoinCandidate[]) => matched(batch));
     expect(await joinInBatches([], 10, run)).toEqual({ matches: [], rejects: [] });
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe('inAdaptiveBatches — the splitting core both lanes share', () => {
+  const items = (n: number) => Array.from({ length: n }, (_, i) => i);
+  const readLimit = () => new Error('Too many bytes read in a single function execution');
+
+  it('runs every item exactly once when nothing fails', () => {
+    const seen: number[] = [];
+    return inAdaptiveBatches(
+      items(10),
+      3,
+      async (batch) => {
+        seen.push(...batch);
+      },
+      () => expect.unreachable('nothing should fail'),
+    ).then(() => {
+      expect(seen.sort((a, b) => a - b)).toEqual(items(10));
+    });
+  });
+
+  it('halves a batch that trips the read cap, losing no item', async () => {
+    const seen: number[] = [];
+    let firstCall = true;
+    await inAdaptiveBatches(
+      items(8),
+      8,
+      async (batch) => {
+        // The whole batch fails once; both halves then succeed.
+        if (firstCall) {
+          firstCall = false;
+          throw readLimit();
+        }
+        seen.push(...batch);
+      },
+      () => expect.unreachable('a halved batch should succeed'),
+    );
+    expect(seen.sort((a, b) => a - b)).toEqual(items(8));
+  });
+
+  it('stops splitting at one item and reports it rather than recursing forever', async () => {
+    const failed: number[] = [];
+    await inAdaptiveBatches(
+      items(4),
+      4,
+      async () => {
+        throw readLimit();
+      },
+      (batch) => failed.push(...batch),
+    );
+    // Every item ends up named — the alternative is an ETL that resolves 60% and looks complete.
+    expect(failed.sort((a, b) => a - b)).toEqual(items(4));
+  });
+
+  it('does not split an error that is not about the read cap', async () => {
+    let calls = 0;
+    const failed: number[] = [];
+    await inAdaptiveBatches(
+      items(8),
+      8,
+      async () => {
+        calls++;
+        throw new Error('function not found');
+      },
+      (batch) => failed.push(...batch),
+    );
+    // One attempt, one failure report. Halving a broken query just fails 8 times instead of once.
+    expect(calls).toBe(1);
+    expect(failed).toHaveLength(8);
+  });
+
+  it('counts progress only for batches that succeeded', async () => {
+    const progress: number[] = [];
+    await inAdaptiveBatches(
+      items(4),
+      2,
+      async (batch) => {
+        if (batch[0] === 0) throw new Error('nope');
+      },
+      () => undefined,
+      (done) => progress.push(done),
+    );
+    // The first pair failed and must not count toward "done" — a progress line that advances on
+    // failure is how a half-finished run reads as complete.
+    expect(progress).toEqual([2]);
+  });
+
+  it('does nothing at all for an empty list', async () => {
+    const run = vi.fn(async () => undefined);
+    await inAdaptiveBatches([], 10, run, () => undefined);
     expect(run).not.toHaveBeenCalled();
   });
 });

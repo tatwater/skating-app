@@ -35,7 +35,18 @@ export interface JoinCandidate {
   key: string;
   point: { lat: number; lng: number };
   samplePoints?: { lat: number; lng: number }[];
+  /**
+   * The NHD `Permanent_Identifier` the publisher assigns this survey, where one exists (N7-3).
+   *
+   * Maine only, via `me-midas-crosswalk`. **Evidence, never gospel** — the server promotes a body
+   * the survey already covers and reports a disagreement rather than acting on one. See
+   * `matchBathymetryLakes`.
+   */
+  nhdId?: string;
 }
+
+/** Whether the publisher's crosswalk agreed with the geometry, where one was supplied. */
+export type CrosswalkOutcome = 'confirmed' | 'promoted' | 'disagreed';
 
 /** One water body a lake resolved to. */
 export interface ResolvedBody {
@@ -71,6 +82,8 @@ export interface ResolvedBody {
 export interface JoinedBody extends ResolvedBody {
   key: string;
   alsoCovers?: ResolvedBody[];
+  /** Absent for every lane that sends no id — which must not read as a disagreement. */
+  crosswalk?: CrosswalkOutcome;
 }
 
 export interface JoinResult {
@@ -105,22 +118,62 @@ export async function joinInBatches(
 ): Promise<JoinResult> {
   const matches: JoinedBody[] = [];
   const rejects: { key: string; reason: string }[] = [];
-  let done = 0;
-
-  async function attempt(batch: readonly JoinCandidate[]): Promise<void> {
-    if (batch.length === 0) return;
-    try {
+  await inAdaptiveBatches(
+    candidates,
+    batchSize,
+    async (batch) => {
       const result = await run(batch);
       matches.push(...result.matches);
       rejects.push(...result.rejects);
+    },
+    (batch, message) => {
+      // Named, never dropped. A single lake too expensive to resolve is a finding about our corpus
+      // (a dense cell, or a shoreline with a very large vertex count), not a lake to lose quietly.
+      for (const candidate of batch) {
+        rejects.push({ key: candidate.key, reason: `join failed: ${message.slice(0, 200)}` });
+      }
+    },
+    onProgress,
+  );
+  return { matches, rejects };
+}
+
+/**
+ * Run `items` through `run` in batches, halving any batch that trips the read cap.
+ *
+ * **Extracted from `joinInBatches` so the D95 re-key lane can reuse it** (N7-3). That lane resolves
+ * *points* to bodies rather than lakes to bodies, and it hits the identical wall for the identical
+ * reason — `listedBodiesNearCoord` pulls polygons, so a batch of points in the middle of Champlain
+ * reads three orders of magnitude more than a batch in a farm pond. The alternative was a second
+ * copy of the splitting logic, which is precisely the part this module's docstring calls out as
+ * *"the part that can be wrong in a way that still looks right"* — dropping a half, or recursing
+ * forever on one item that fails for an unrelated reason.
+ *
+ * The caller accumulates. That keeps this generic over the result shape without a type parameter
+ * that every call site would have to satisfy, and it is what lets `joinInBatches` keep its two-channel
+ * `{ matches, rejects }` return while the point resolver keeps a flat one.
+ *
+ * `onFailure` is called instead of throwing, and only once a batch is down to a single item or the
+ * error is not a read-limit error. **A failure must never be silent**: an ETL that resolves 60% looks
+ * exactly like one that resolved all of it.
+ */
+export async function inAdaptiveBatches<Item>(
+  items: readonly Item[],
+  batchSize: number,
+  run: (batch: readonly Item[]) => Promise<void>,
+  onFailure: (batch: readonly Item[], message: string) => void,
+  onProgress?: (done: number, total: number) => void,
+): Promise<void> {
+  let done = 0;
+
+  async function attempt(batch: readonly Item[]): Promise<void> {
+    if (batch.length === 0) return;
+    try {
+      await run(batch);
     } catch (error) {
       const message = (error as Error).message ?? String(error);
       if (batch.length === 1 || !isReadLimitError(message)) {
-        // Named, never dropped. A single lake too expensive to resolve is a finding about our corpus
-        // (a dense cell, or a shoreline with a very large vertex count), not a lake to lose quietly.
-        for (const candidate of batch) {
-          rejects.push({ key: candidate.key, reason: `join failed: ${message.slice(0, 200)}` });
-        }
+        onFailure(batch, message);
         return;
       }
       const half = Math.floor(batch.length / 2);
@@ -129,11 +182,10 @@ export async function joinInBatches(
       return;
     }
     done += batch.length;
-    onProgress?.(done, candidates.length);
+    onProgress?.(done, items.length);
   }
 
-  for (let i = 0; i < candidates.length; i += batchSize) {
-    await attempt(candidates.slice(i, i + batchSize));
+  for (let i = 0; i < items.length; i += batchSize) {
+    await attempt(items.slice(i, i + batchSize));
   }
-  return { matches, rejects };
 }
