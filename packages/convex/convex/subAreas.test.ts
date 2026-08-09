@@ -1594,5 +1594,9 @@ describe('subAreas.importBaySubAreas (the N7 bay lane)', () => {
     expect(result.results).toHaveLength(50);
     // One name, 60 times: the first lands and the other 59 are already present.
     expect(result.created + (result.refused ?? 0)).toBeGreaterThan(0);
+    // 15s, not the 5s default. This seeds 60 bays and runs the whole import; it takes ~0.4s
+    // locally and CI is comfortably 8x slower, so the default made it flake rather than fail.
+    // See the repo note on heavy convex-test cases: give a legitimately slow test its own bound
+    // instead of raising the global one, which would hide a genuine hang everywhere else.
   });
 });
