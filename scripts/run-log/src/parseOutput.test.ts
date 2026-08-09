@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseConvexOutput } from './parseOutput';
+import { failureReason, MAX_FAILURE_REASON_CHARS, parseConvexOutput } from './parseOutput';
 
 /**
  * The array case is why this is tested at all: it shipped broken, and the failure mode of the fix
@@ -40,5 +40,42 @@ describe('parseConvexOutput', () => {
 
   it('throws on output with nothing JSON-shaped in it', () => {
     expect(() => parseConvexOutput('command not found')).toThrow(/unparseable/);
+  });
+});
+
+describe('failureReason — a failure record that cannot be stored is a failure nobody sees', () => {
+  it('drops the command echo, which is the payload and the least informative part', () => {
+    // Measured 2026-08-08: 19 failed loader batches each recorded their whole argv — 150 bodies of
+    // GeoJSON apiece — and the run row hit 1.65 MiB, so `importRuns:progress` threw
+    // `Value is too large` and the failure record was lost entirely.
+    const message = [
+      `Command failed: pnpm exec convex run waterBodies:importCanonical {"bodies":[${'x'.repeat(400_000)}]}`,
+      '✖ Failed to run function "waterBodies:importCanonical":',
+      'ArgumentValidationError: Value does not match validator.',
+      'Path: .bodies[116].reviewReasons[0]',
+      'Value: "class-dissent"',
+    ].join('\n');
+    const reason = failureReason(message);
+    expect(reason).not.toContain('xxxx');
+    expect(reason).toContain('ArgumentValidationError');
+    expect(reason).toContain('.bodies[116].reviewReasons[0]');
+    expect(reason.length).toBeLessThanOrEqual(MAX_FAILURE_REASON_CHARS);
+  });
+
+  it('keeps a short message exactly as it was', () => {
+    expect(failureReason('ENOENT: no such file')).toBe('ENOENT: no such file');
+  });
+
+  it('marks a truncation rather than trimming silently', () => {
+    // A reason that has been cut and does not say so reads as a complete message that ends oddly.
+    const reason = failureReason(`${'y'.repeat(900)}`, 100);
+    expect(reason).toMatch(/… \[truncated 800 chars\]$/);
+  });
+
+  it('keeps a bounded head when the whole message was the command echo', () => {
+    // "It failed and we saved nothing" is worse than a truncated argv.
+    const reason = failureReason(`Command failed: ${'z'.repeat(5000)}`, 80);
+    expect(reason.length).toBeGreaterThan(0);
+    expect(reason).toContain('Command failed');
   });
 });

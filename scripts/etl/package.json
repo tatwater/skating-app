@@ -24,7 +24,9 @@
     "load-reconciliation": "tsx src/loadReconciliation.ts",
     "archive-gnis": "tsx src/gnisArchive.ts",
     "bake-off": "tsx --max-old-space-size=12288 src/bakeOff.ts",
-    "resolve-merge-duplicates": "tsx src/resolveMergeDuplicates.ts"
+    "resolve-merge-duplicates": "tsx src/resolveMergeDuplicates.ts",
+    "referee-duplicates": "tsx --max-old-space-size=12288 src/refereeDuplicates.ts",
+    "tidal-band": "tsx --max-old-space-size=8192 src/tidalBand.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

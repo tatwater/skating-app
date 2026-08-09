@@ -158,9 +158,8 @@ export function vetoReason(members: readonly Feature[]): VetoReason | undefined 
   // `Lake Superior` is a 179-acre body in Sullivan County, New York, and `Little Lake Erie` a
   // 4-acre reservoir. See `OCEAN_NAME_VETO_MIN_ACRES`. Measured against the *largest* member for the
   // same reason the ceiling is: the group's own outline has not been chosen yet.
-  const biggest = members.reduce((max, m) => Math.max(max, m.areaSqM), 0);
-  if (members.some((m) => assertsOceanOrGreatLake(m.name, biggest))) return 'name';
   const largest = members.reduce((max, m) => Math.max(max, m.areaSqM), 0);
+  if (members.some((m) => assertsOceanOrGreatLake(m.name, largest))) return 'name';
   // **Every name any member offers**, not the first one. Champlain is the allow-list's only entry and
   // three catalogues spell it three ways; testing only the first named member would veto the largest
   // body we cover on whichever ordering the union-find happened to produce.
@@ -332,6 +331,96 @@ export const FRESHWATER_ALLOW_LIST: ReadonlySet<string> = new Set([
 /** Is this body named as one of the freshwater exceptions the salt veto must not take? */
 export function isFreshwaterException(name: string): boolean {
   return FRESHWATER_ALLOW_LIST.has(name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim());
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The tidal referee — elevation, where the federal polygons say nothing
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A catalogue **explicitly calling this salt**, where our classifier then let another one overrule it.
+ *
+ * Surfaced by the `classDissent` split (N7-2): 92 kept bodies carry one of these tags. `chooseClass`
+ * lets a real class beat a drop — that rule is load-bearing, it is the 123-body wetland rescue — but
+ * it means an OSM mapper writing `wetland=saltmarsh` is silently outvoted by a federal `LakePond`,
+ * under a founder rule of *no salt water*.
+ *
+ * These are publisher **claims**, which is why they are a candidate set and a name is not. `bay` is a
+ * class somebody assigned; `saltmarsh` is a tag somebody typed about the water itself. A body called
+ * "Mill Creek" is a string.
+ */
+export const SALT_CLAIM_TOKENS: ReadonlySet<string> = new Set([
+  'osm:wetland=saltmarsh',
+  'osm:wetland=tidalflat',
+  'osm:water=salt_pool',
+]);
+
+/**
+ * Highest a body may sit and still be judged tidal — **five metres above the vertical datum**.
+ *
+ * ## The measurement, which for once handed over a threshold rather than a judgement call
+ *
+ * The salt-containment histogram was *"smooth from 0 to 1 with no gap to cut at"* and had to be set
+ * by reading names in each band. This one is the opposite. Probed against 3DEP at 1 m LiDAR over
+ * every bay-class body (2026-08-08):
+ *
+ * | | |
+ * | --- | --- |
+ * | Lake Ontario's eleven arms | **74.9 m** — Ontario's own surface, all eleven |
+ * | Paugus Bay and Melvin Bay | **153.1 m** — Winnipesaukee's surface, from two independent points |
+ * | Wares / Cram's Cove, on the Charles | 10.4 m |
+ * | Snow's Cove | 9.7 m |
+ * | *— nothing at all in between —* | |
+ * | Frost Cove, on the St. Croix estuary | 2.6 m |
+ * | Salt Bay · The Pool · 100 Acre Cove · Mill Cove | 0.3 · −2.5 · −0.7 · −2.8 m |
+ *
+ * Five sits inside that gap and above every astronomical tide in the region — eastern Maine's runs to
+ * ~3.5 m above NAVD88, and it is the largest in the region by a distance.
+ *
+ * ## ⚠ Only ever applied to a body a publisher already called salt or called a bay
+ *
+ * **Measured, because the temptation is to make it general and that would be a catastrophe.** 1,002
+ * bodies in the corpus sit at or below five metres and only 81 are bay-class or tidally named. A
+ * corpus-wide rule would delete ~920 freshwater bodies — including **Nequasset Lake** (449 ac) and
+ * **Winnegance Lake** (187 ac), which are the *entire contents of `FRESHWATER_ALLOW_LIST`*, plus two
+ * separate ponds named **Fresh Pond**. Coastal Maine and Cape Cod are full of freshwater kettle
+ * ponds and impoundments sitting a metre or two above the sea.
+ *
+ * So elevation is a **referee between two publishers**, never an admission rule of its own.
+ */
+export const TIDAL_MAX_ELEVATION_M = 5;
+
+/**
+ * Is this group one the elevation referee is entitled to judge?
+ *
+ * Two ways in, both of them a publisher asserting something about the water: a catalogue classed it
+ * a `bay` (an arm of something, and the something is often the sea), or a catalogue tagged it salt
+ * outright. See `SALT_CLAIM_TOKENS`.
+ */
+export function isTidalCandidate(members: readonly Feature[], cls: WaterBodyClass): boolean {
+  if (cls === 'bay') return true;
+  return members.some((m) => SALT_CLAIM_TOKENS.has(m.sourceToken));
+}
+
+/**
+ * The referee: does 3DEP put this candidate at sea level?
+ *
+ * `undefined` when the archive has no reading for the body's interior point — and that is returned
+ * rather than defaulted, because "we have no elevation" must not read as "it is high up" *or* as "it
+ * is tidal". A missing reading leaves the body exactly where the other rules put it.
+ *
+ * Keyed on the interior point rather than `representativePoint`, and the caller must use the same
+ * function the emit stage does, or the key will not be found — see `snapshotElevation.ts`, where
+ * sampling the shoreline instead read a bank 17 m above the lake.
+ */
+export function isTidalByElevation(
+  key: string,
+  elevation: ReadonlyMap<string, number>,
+  maxElevationM = TIDAL_MAX_ELEVATION_M,
+): boolean | undefined {
+  const metres = elevation.get(key);
+  if (metres === undefined) return undefined;
+  return metres <= maxElevationM;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -952,17 +1041,114 @@ export function nameMatchPairs(
  */
 export const DUPLICATE_SWEEP_MIN_IOU = 0.3;
 
+/**
+ * One flagged pair, **with the score that flagged it** — the referee's input (N7-2).
+ *
+ * The sweep used to return only "who overlaps whom", which is all a review queue needs and is not
+ * enough to answer the open question about `RECONCILE_MIN_IOU`: 287 of the surviving pairs sit at
+ * IoU 0.30–0.49, and deciding whether that band is *one lake drawn twice* or *a bay beside its
+ * parent* is impossible without knowing where in the band each pair sits. Carrying the number the
+ * sweep already computed costs nothing and is the difference between tuning a threshold on evidence
+ * and tuning it on a hunch.
+ */
+export interface DuplicatePair {
+  a: string;
+  b: string;
+  iou: number;
+  aName: string;
+  bName: string;
+  aAcres: number;
+  bAcres: number;
+  /** Whether the two carry the same name, which is the strongest cheap signal available here. */
+  sameName: boolean;
+}
+
+/**
+ * **The nine pairs the soundings refereed** — merged on evidence, not on a lowered threshold
+ * (founder call, 2026-08-08).
+ *
+ * ## The question, and why the threshold did not move
+ *
+ * 292 flagged pairs sit at IoU 0.30–0.49, below `RECONCILE_MIN_IOU`. D92 was settled by refereeing
+ * against 2.4M soundings, so the same referee was asked a different question: *a survey is taken over
+ * one lake, so does a single survey's points fall inside **both** halves of a pair?*
+ *
+ * | | |
+ * | --- | --- |
+ * | one lake drawn twice | **9** |
+ * | two distinct lakes | **0** |
+ * | no survey reaches it | **283** |
+ *
+ * The evidence is one-sided and it is also **3% of the band**. The archive covers 2,383 prominent
+ * lakes and the rest of the band is unsurveyed water, so lowering the bar would act on 292 pairs
+ * using evidence from nine — and the 283 unreached ones are exactly where D93's warning lives:
+ * *"accepting those merges a real lake into a fragment"*. A wrong merge is unrecoverable; a queued
+ * duplicate is visible. **`RECONCILE_MIN_IOU` stays at 0.5** and the other 283 stay queued.
+ *
+ * ## Why these nine may merge anyway
+ *
+ * Two independent systems agree **per row**: the geometric sweep flagged the pair, and a state survey
+ * crossed both halves. That is the exact standard that licensed `resolveCampaignDuplicates` to delete
+ * 34 rows last campaign — *"what made this safe is that two independent systems had already agreed,
+ * and the pass verifies that agreement per row"* — rather than a rule being relaxed.
+ *
+ * **Every one is an OSM body against an NHD one, and every one is named-whole against unnamed-part.**
+ * That is D118's structural miss with a face on it: `scoreCandidates` refuses any pair whose areas
+ * differ by more than 2×, which is most of these, so the matcher never compared them and the corpus
+ * got two rows. The name lane cannot reach them either, because the NHD half is unnamed.
+ *
+ * ⚠ A pair here is joined **before** the class, name and geometry rules run, so the merged body is
+ * whatever those rules make of the union — this asserts identity, never content.
+ *
+ * Regenerate with `pnpm --filter @skating/etl referee-duplicates`; the comments are its output verbatim.
+ */
+export const REFEREED_DUPLICATES: readonly (readonly [string, string])[] = [
+  // Bellamy Reservoir 310 ac + (unnamed) 122 ac at IoU 34%, one survey across both: nh-granit-contours:NHLAK600030903-02
+  ['osm:way/46912541', 'nhd:141033525'],
+  // Hamilton Reservoir 407 ac + (unnamed) 164 ac at IoU 36%, one survey across both: ma-massgis-contours:41019
+  ['osm:way/212398609', 'nhd:122374027'],
+  // Buffumville Lake 202 ac + (unnamed) 93 ac at IoU 42%, one survey across both: ma-massgis-contours:42005
+  ['osm:relation/3406018', 'nhd:122373728'],
+  // Daigle Pond 37 ac + (unnamed) 16 ac at IoU 42%, one survey across both: me-dep-soundings:1665
+  ['osm:relation/12483763', 'nhd:142978553'],
+  // Ashmere Lake 277 ac + (unnamed) 134 ac at IoU 43%, one survey across both: ma-massgis-contours:21005
+  ['osm:relation/309305', 'nhd:122985595'],
+  // Moosehorn Pond 118 ac + (unnamed) 55 ac at IoU 43%, one survey across both: ma-massgis-contours:36097
+  ['osm:relation/12462742', 'nhd:9e764f5d-d8dd-4836-81ea-f46365e904f9'],
+  // (unnamed) 7 ac + (unnamed) 9 ac at IoU 44%, one survey across both: ma-massgis-contours:82020
+  ['osm:way/180999064', 'nhd:129735311'],
+  // Little Black Ponds 17 ac + (unnamed) 9 ac at IoU 46%, one survey across both: me-dep-soundings:1510
+  ['osm:relation/11589189', 'nhd:142978841'],
+  // Scott Pond 146 ac + (unnamed) 71 ac at IoU 49%, one survey across both: nh-granit-contours:NHLAK802020102-01
+  ['osm:relation/8035915', 'nhd:136017581'],
+];
+
+/**
+ * The refereed pairs as bare feature ids, ready for the union-find.
+ *
+ * The table is keyed `<source>:<id>` because that is what a `Merged.key` looks like and what the
+ * referee's artifact prints; the union operates on the bare ids the lanes emit. Converting here
+ * rather than storing both keeps the table in the form a human can check against the artifact.
+ */
+export function refereedDuplicatePairs(
+  table: readonly (readonly [string, string])[] = REFEREED_DUPLICATES,
+): [string, string][] {
+  return table.map(([a, b]) => [idFromKey(a), idFromKey(b)]);
+}
+
 export function overlapDuplicates(
   bodies: readonly Merged[],
   minIou = DUPLICATE_SWEEP_MIN_IOU,
-): Map<string, string[]> {
+  namesMatch: (a: string, b: string) => boolean = () => false,
+): { byKey: Map<string, string[]>; pairs: DuplicatePair[] } {
   const grid = index(bodies);
-  const out = new Map<string, string[]>();
+  const byKey = new Map<string, string[]>();
+  const pairs: DuplicatePair[] = [];
   const tested = new Set<string>();
   const note = (a: string, b: string) => {
-    const list = out.get(a);
+    const list = byKey.get(a);
     if (list) list.push(b);
-    else out.set(a, [b]);
+    else byKey.set(a, [b]);
   };
   for (const body of bodies) {
     const seen = new Set<Merged>();
@@ -980,13 +1166,25 @@ export function overlapDuplicates(
           Math.min(body.areaSqM, other.areaSqM) /
           Math.max(body.areaSqM, other.areaSqM, Number.EPSILON);
         if (ratio < minIou) continue;
-        if (polygonIoU(body.polygon, other.polygon) < minIou) continue;
+        const iou = polygonIoU(body.polygon, other.polygon);
+        if (iou < minIou) continue;
         note(body.key, other.key);
         note(other.key, body.key);
+        pairs.push({
+          a: body.key,
+          b: other.key,
+          iou,
+          aName: body.name,
+          bName: other.name,
+          aAcres: Math.round(body.areaSqM / SQ_M_PER_ACRE),
+          bAcres: Math.round(other.areaSqM / SQ_M_PER_ACRE),
+          sameName:
+            body.name.length > 0 && other.name.length > 0 && namesMatch(body.name, other.name),
+        });
       }
     }
   }
-  return out;
+  return { byKey, pairs };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1184,10 +1382,20 @@ export function overrideGeometryForContainedBays(
         };
         // Already contains it — nothing to correct, and `bayParent` will find it unaided.
         if (held(candidate.polygon) >= BAY_PARENT_MIN_CONTAINMENT) continue;
-        const better = candidate.members.find(
-          (f) =>
-            f.source !== candidate.geometrySource && held(f.polygon) >= BAY_PARENT_MIN_CONTAINMENT,
-        );
+        // **The largest qualifying member, never the first** — `representativeOf`'s rule, and the
+        // reason it exists (N7-2 audit, 2026-08-08). This shipped as `.find()`, which is precisely
+        // the pattern D125 removed from `chooseGeometry` after `Indian Lake` was stored at 534 acres
+        // with a 3,743-acre member in the same group. A catalogue can put several features in one
+        // group, more than one of them can contain the bay, and array order is the order the
+        // extracts happened to stream in. Harmless on the four overrides this fires on today, which
+        // is exactly when a latent ordering bug is cheapest to remove.
+        let better: Feature | undefined;
+        for (const f of candidate.members) {
+          if (f.source === candidate.geometrySource) continue;
+          if (better !== undefined && f.areaSqM <= better.areaSqM) continue;
+          if (held(f.polygon) < BAY_PARENT_MIN_CONTAINMENT) continue;
+          better = f;
+        }
         if (better === undefined) continue;
         moved.push({
           name: candidate.name || '(unnamed)',
@@ -2094,29 +2302,45 @@ export function statesFor(
   body: { polygon: Polygon | MultiPolygon; bbox: BBox },
   stateGrid: Map<string, (Boundary & { name: string })[]>,
 ): string[] {
-  const found = collectStates(sampleOutline(body.polygon), stateGrid);
-  if (found.size > 0) return [...found].sort();
-
-  // ── The escalation, and why a sampled empty was never good enough ────────────────────────────
-  //
-  // **`inRegion` walks every vertex before it drops a body; this used to walk eight per ring.** Two
-  // functions asking nearly the same question at different rigour, and the gap between them is a
-  // body that is admitted to the corpus and belongs to no state — invisible in the feed, in the
-  // drive-time filter and in every state chip in the app, with nothing anywhere saying so.
-  //
-  // Measured on the 2026-08-06 run: **9 bodies**, every one of them a border-straddler admitted on a
-  // single vertex the sparse sample missed — Greenwood Lake on the NY/NJ line, 100 Acre Cove and
-  // Central Pond on the MA/RI line, a Québec-border pond in northern Maine.
-  //
-  // Only paid when the cheap pass found nothing, which is those nine bodies and not the other
-  // 25,463.
-  for (const ring of outerRings(body.polygon)) {
-    if (!ring) continue;
-    const all = collectStates(ring as [number, number][], stateGrid);
-    if (all.size > 0) return [...all].sort();
-  }
-  return [];
+  // **One dense pass over the whole outline, and no tiering** — see `STATE_SAMPLE_POINTS`.
+  return [
+    ...collectStates(sampleOutlineDense(body.polygon, STATE_SAMPLE_POINTS), stateGrid),
+  ].sort();
 }
+
+/**
+ * Points sampled around a body's outline to decide which states it touches.
+ *
+ * ## Why this replaced a two-tier escalation, and what the measurement said
+ *
+ * This used to take `REGION_SAMPLE_POINTS` (eight) *per ring* and then escalate to every vertex only
+ * when the sample found **nothing** — the "belongs to no state" case D116 fixed. That fixed half of
+ * it. A sparse `[NY]` is exactly as unproven as a sparse `[]`: eight points that all land in New York
+ * say nothing about the 3% of the outline sitting in Vermont, and the body is then admitted carrying
+ * one state and invisible in the other one's filter. Same failure, one state along.
+ *
+ * Measured against the loaded corpus: **7 bodies**, and not obscure ones — `Province Lake` is 976
+ * acres on the ME/NH line and was stored as New Hampshire's alone.
+ *
+ * **The obvious fix was to escalate on incompleteness, and measuring it is what killed that.** The
+ * state grid indexes each boundary across its whole *bounding box*, so a body in western
+ * Massachusetts counts New York as reachable: **29.4% of the corpus (7,359 bodies) would escalate**,
+ * each one then tested vertex-by-vertex against outlines that run to 34,000 vertices at TIGER
+ * fidelity. A correctness fix that turns the emit stage quadratic is not a fix.
+ *
+ * **So: one bounded dense pass, which is what every other fraction-valued question here already
+ * does** (`inRegionFraction`, `saltContainment`). It is not a compromise between the two tiers — it
+ * is *strictly more thorough than either* for the bodies that matter, because `sampleOutlineDense`
+ * steps by `floor(total / budget)`: a body with fewer vertices than the budget has **every vertex
+ * tested**, and the budget only bites on large outlines, where a sliver in the next state is
+ * proportionally large and cannot hide between samples.
+ *
+ * **256, where 64 was already exact.** Measured over all 7,359 escalation candidates, a budget of 64
+ * returns the identical answer to walking every vertex, in 2.8 seconds. 256 is four times that for
+ * no meaningful cost, and the headroom is deliberate: the number that has to hold is not today's
+ * corpus but the next catalogue's geometry.
+ */
+export const STATE_SAMPLE_POINTS = 256;
 
 /** Which of the five states these points fall in. The shared inner loop of `statesFor`'s two passes. */
 function collectStates(

@@ -10,6 +10,7 @@
 import {
   type BBox,
   type ClaimSource,
+  pointInPolygon,
   RECONCILE_MIN_IOU_WITH_GNIS,
   sameName,
   type WaterBodyClass,
@@ -26,6 +27,7 @@ import {
   chooseGeometry,
   chooseName,
   covers,
+  DUPLICATE_SWEEP_MIN_IOU,
   dropReason,
   type Feature,
   FRESHWATER_ALLOW_LIST,
@@ -39,6 +41,8 @@ import {
   inRegion,
   inRegionFraction,
   isFreshwaterException,
+  isTidalByElevation,
+  isTidalCandidate,
   isVetoed,
   type LaneDrop,
   LaneLedger,
@@ -50,20 +54,25 @@ import {
   nameMatchPairs,
   outerRings,
   overlapDuplicates,
+  overrideGeometryForContainedBays,
   parseLine,
   parseNhdFeature,
   parseOsmFeature,
   parseThreeDhpFeature,
   polygonClaims,
   type RawOsmFeature,
+  REFEREED_DUPLICATES,
   REGION_SAMPLE_POINTS,
+  refereedDuplicatePairs,
   resolveGnisNames,
   SQ_M_PER_ACRE,
+  STATE_SAMPLE_POINTS,
   saltContainment,
   saltMask,
   sampleOutline,
   sampleOutlineDense,
   statesFor,
+  TIDAL_MAX_ELEVATION_M,
   Union,
   vetoReason,
 } from './mergeRules';
@@ -1521,7 +1530,7 @@ describe('the duplicate sweep', () => {
   it('finds two surviving bodies that cover the same water', () => {
     const a = merged({ key: 'osm:way/1', polygon: square(-70, 44, 0.02) });
     const b = merged({ key: 'nhd:n1', polygon: square(-70.001, 44.001, 0.02) });
-    const found = overlapDuplicates([a, b]);
+    const found = overlapDuplicates([a, b]).byKey;
     expect(found.get('osm:way/1')).toEqual(['nhd:n1']);
     expect(found.get('nhd:n1')).toEqual(['osm:way/1']);
   });
@@ -1529,7 +1538,7 @@ describe('the duplicate sweep', () => {
   it('leaves two genuinely separate lakes alone', () => {
     const a = merged({ key: 'osm:way/1', polygon: square(-70, 44, 0.02) });
     const b = merged({ key: 'osm:way/2', polygon: square(-71, 44, 0.02) });
-    expect(overlapDuplicates([a, b]).size).toBe(0);
+    expect(overlapDuplicates([a, b]).byKey.size).toBe(0);
   });
 
   it('does not flag a bay against its parent — that is containment, not duplication', () => {
@@ -1539,7 +1548,7 @@ describe('the duplicate sweep', () => {
       areaSqM: 1_000_000,
     });
     const bay = merged({ key: 'osm:way/2', polygon: square(-70, 44, 0.01), areaSqM: 10_000 });
-    expect(overlapDuplicates([parent, bay]).size).toBe(0);
+    expect(overlapDuplicates([parent, bay]).byKey.size).toBe(0);
   });
 
   it('reports each pair once per side and never against itself', () => {
@@ -1547,10 +1556,46 @@ describe('the duplicate sweep', () => {
     const b = merged({ key: 'nhd:n1', polygon: square(-70.001, 44.001, 0.02) });
     const c = merged({ key: '3dhp:d1', polygon: square(-70.002, 44.002, 0.02) });
     const found = overlapDuplicates([a, b, c]);
-    for (const [key, others] of found) {
+    for (const [key, others] of found.byKey) {
       expect(others).not.toContain(key);
       expect(new Set(others).size).toBe(others.length);
     }
+    // Once per PAIR in the list, where `byKey` records it once per side. Three mutually
+    // overlapping bodies are three pairs and six entries, and conflating the two is how a
+    // "497 duplicate pairs" figure ends up being 994.
+    expect(found.pairs).toHaveLength(3);
+  });
+
+  it('carries the score that flagged each pair, which is what a threshold can be tuned on', () => {
+    // **The sweep already computed this and threw it away** (N7-2). 287 surviving pairs sit at IoU
+    // 0.30–0.49, and whether that band is one lake drawn twice or a bay beside its parent cannot be
+    // decided from a count — only from where in the band each pair sits.
+    const a = merged({
+      key: 'osm:way/1',
+      name: 'Peabody Pond',
+      polygon: square(-70, 44, 0.02),
+      areaSqM: 28_328,
+    });
+    const b = merged({
+      key: 'nhd:n1',
+      name: 'Peabody Pond',
+      polygon: square(-70.004, 44.004, 0.02),
+      areaSqM: 64_749,
+    });
+    const [pair] = overlapDuplicates([a, b], DUPLICATE_SWEEP_MIN_IOU, sameName).pairs;
+    expect(pair).toMatchObject({ a: 'osm:way/1', b: 'nhd:n1', sameName: true });
+    expect(pair?.iou).toBeGreaterThan(DUPLICATE_SWEEP_MIN_IOU);
+    expect(pair?.iou).toBeLessThan(1);
+    expect(pair?.aName).toBe('Peabody Pond');
+  });
+
+  it('does not call two unnamed bodies same-named, which would be a match on nothing', () => {
+    // 4,070 of the NHD-only bodies in the master list are unnamed ponds. Two empty strings agreeing
+    // is not evidence, and treating it as evidence is how a referee gets a confident wrong answer.
+    const a = merged({ key: 'osm:way/1', polygon: square(-70, 44, 0.02) });
+    const b = merged({ key: 'nhd:n1', polygon: square(-70.001, 44.001, 0.02) });
+    const [pair] = overlapDuplicates([a, b], DUPLICATE_SWEEP_MIN_IOU, sameName).pairs;
+    expect(pair?.sameName).toBe(false);
   });
 });
 
@@ -1642,6 +1687,140 @@ describe('dense outline sampling', () => {
   });
 });
 
+describe('the tidal referee — elevation, where the federal polygons say nothing', () => {
+  const salty = (token: string) =>
+    feature('osm', 'way/1', { sourceToken: token, areaSqM: 100 * SQ_M_PER_ACRE });
+
+  it('judges a bay-class body, because a bay is an arm and the sea is often the something', () => {
+    expect(isTidalCandidate([feature('osm', 'way/1')], 'bay')).toBe(true);
+  });
+
+  it('judges a body a catalogue tagged salt outright, whatever class won', () => {
+    // The `classDissent` split found 92 of these: `chooseClass` lets a real class beat a drop, so a
+    // mapper writing `wetland=saltmarsh` is silently outvoted by a federal `LakePond`.
+    for (const token of ['osm:wetland=saltmarsh', 'osm:wetland=tidalflat', 'osm:water=salt_pool']) {
+      expect(isTidalCandidate([salty(token)], 'lakePond')).toBe(true);
+    }
+  });
+
+  it('judges NOTHING on a name, which is the trap this rule must not fall into', () => {
+    // `bay` is a class somebody assigned and `saltmarsh` is a tag somebody typed about the water.
+    // A name is a string — and "Estuary" is a 32 m oxbow in Northampton, 150 km inland.
+    expect(isTidalCandidate([feature('osm', 'way/1', { name: 'Salt Bay' })], 'lakePond')).toBe(
+      false,
+    );
+    expect(isTidalCandidate([feature('nhd', 'n1', { name: 'Estuary' })], 'lakePond')).toBe(false);
+  });
+
+  it('calls a body at sea level tidal, and one on Winnipesaukee fresh', () => {
+    // Measured 2026-08-08 at 1 m LiDAR: Salt Bay 0.3 m, Paugus Bay 153.1 m — the same figure Melvin
+    // Bay returns from an independent point on the same lake.
+    const elevation = new Map([
+      ['43.99349,-69.91340', 0.3],
+      ['43.55860,-71.46610', 153.1],
+    ]);
+    expect(isTidalByElevation('43.99349,-69.91340', elevation)).toBe(true);
+    expect(isTidalByElevation('43.55860,-71.46610', elevation)).toBe(false);
+  });
+
+  it('keeps Lake Ontario’s arms, which sit at the lake’s own surface', () => {
+    // All eleven returned 74.9 m — Ontario's surface. Braddock Bay is skated, and D119 already had
+    // to rescue it from the spatial veto once.
+    expect(isTidalByElevation('k', new Map([['k', 74.9]]))).toBe(false);
+  });
+
+  it('returns undefined for a body with no reading, never a default', () => {
+    // "We have no elevation" must not read as "it is high up" OR as "it is tidal". A missing reading
+    // leaves the body exactly where the other rules put it — and a whole-archive miss (a key-format
+    // drift, say) then shows up as a referee that took nobody, rather than one that took everybody.
+    expect(isTidalByElevation('absent', new Map())).toBeUndefined();
+  });
+
+  it('sits above every astronomical tide in the region and below the lowest fresh body', () => {
+    // The gap the probe measured: nothing between 2.6 m (Frost Cove, tidal) and 9.7 m (Snow's Cove,
+    // fresh). Eastern Maine's highest astronomical tide is ~3.5 m above NAVD88.
+    expect(TIDAL_MAX_ELEVATION_M).toBeGreaterThan(3.5);
+    expect(TIDAL_MAX_ELEVATION_M).toBeLessThan(9.7);
+  });
+});
+
+describe("D92's override picks the largest qualifying member, not the first", () => {
+  it('takes the bigger of two same-source outlines that both contain the bay', () => {
+    // **The same latent bug D125 removed from `chooseGeometry`, sitting in the file written to fix
+    // it** (N7-2 audit, 2026-08-08). This was `.find()`, so when one catalogue puts several features
+    // in a group and more than one of them contains the bay, the stored outline was decided by the
+    // order the extracts happened to stream in. That is exactly how `Indian Lake` came to be stored
+    // at 534 acres with a 3,743-acre member beside it.
+    //
+    // Driven against the function rather than through `buildMasterList`, because the lanes cannot
+    // produce a two-NHD-member group from two NHD features alone — it takes a transitive chain
+    // through 3DHP — and the rule under test has nothing to do with how the group formed.
+    const bayPoly = square(-70.3, 44.9, 0.02);
+    const bay = merged({
+      key: 'osm:way/cove',
+      name: 'Draft Cove',
+      cls: 'bay',
+      polygon: bayPoly,
+      areaSqM: 1_000,
+    });
+    /** OSM draws the lake short of the cove; both NHD members reach past it. */
+    const osmShort = square(-70.5, 44.5, 0.3);
+    const nhdSmall = square(-70.5, 44.5, 0.45);
+    const nhdWhole = square(-70.5, 44.5, 0.6);
+    const lake = merged({
+      key: 'osm:way/lake',
+      name: 'Two Draft Lake',
+      polygon: osmShort,
+      areaSqM: 900_000,
+      geometrySource: 'osm',
+      members: [
+        feature('osm', 'way/lake', { polygon: osmShort, areaSqM: 900_000 }),
+        // The SMALLER federal outline first in array order — the trap the old `.find()` fell into.
+        feature('nhd', 'nhd-small', { polygon: nhdSmall, areaSqM: 1_100_000 }),
+        feature('nhd', 'nhd-whole', { polygon: nhdWhole, areaSqM: 1_400_000 }),
+      ],
+    });
+
+    const moved = overrideGeometryForContainedBays([lake, bay]);
+    expect(moved).toHaveLength(1);
+    expect(moved[0]).toMatchObject({ name: 'Two Draft Lake', from: 'osm', to: 'nhd' });
+    expect(lake.polygon).toEqual(nhdWhole);
+    expect(lake.areaSqM).toBe(1_400_000);
+  });
+
+  it('re-points a lake at most once per run, however many bays it holds', () => {
+    // Two bays would otherwise re-test an outline just chosen for exactly this reason, and the lake
+    // would end up drawn by whichever bay happened to be iterated last.
+    const osmShort = square(-70.5, 44.5, 0.3);
+    const nhdWhole = square(-70.5, 44.5, 0.6);
+    const lake = merged({
+      key: 'osm:way/lake',
+      name: 'Two Bay Lake',
+      polygon: osmShort,
+      areaSqM: 900_000,
+      members: [
+        feature('osm', 'way/lake', { polygon: osmShort, areaSqM: 900_000 }),
+        feature('nhd', 'nhd-whole', { polygon: nhdWhole, areaSqM: 1_400_000 }),
+      ],
+    });
+    const bayA = merged({
+      key: 'osm:way/a',
+      name: 'North Arm',
+      cls: 'bay',
+      polygon: square(-70.3, 44.9, 0.02),
+      areaSqM: 1_000,
+    });
+    const bayB = merged({
+      key: 'osm:way/b',
+      name: 'South Arm',
+      cls: 'bay',
+      polygon: square(-70.2, 44.85, 0.02),
+      areaSqM: 1_000,
+    });
+    expect(overrideGeometryForContainedBays([lake, bayA, bayB])).toHaveLength(1);
+  });
+});
+
 describe('statesFor escalates the way inRegion does', () => {
   /** A state whose eastern edge is at -71: everything west of it is out. */
   const state = (name: string, poly: Polygon) => ({
@@ -1650,6 +1829,28 @@ describe('statesFor escalates the way inRegion does', () => {
     polygon: poly,
     bbox: bboxOf(poly),
   });
+
+  /**
+   * What the sparse first pass alone would answer — `statesFor` without its escalation.
+   *
+   * Written out rather than exported from the module, so a test asserting "the cheap pass was
+   * wrong here" keeps saying that even if the escalation's trigger changes.
+   */
+  const collectStatesSparsely = (
+    body: { polygon: Polygon | MultiPolygon },
+    grid: Map<string, (Boundary & { name: string })[]>,
+  ): string[] => {
+    const found = new Set<string>();
+    for (const [lng, lat] of sampleOutline(body.polygon)) {
+      const cell = `${Math.floor(lng / CELL_DEG)}:${Math.floor(lat / CELL_DEG)}`;
+      for (const b of grid.get(cell) ?? []) {
+        if (pointInPolygon({ lat, lng }, b.polygon)) {
+          found.add(b.name === 'Maine' ? 'ME' : b.name === 'New Hampshire' ? 'NH' : b.name);
+        }
+      }
+    }
+    return [...found].sort();
+  };
 
   it('finds the state a body reaches on ONE vertex the sparse sample missed', () => {
     // **`inRegion` walks every vertex before it drops a body; this used to walk eight per ring.**
@@ -1680,6 +1881,70 @@ describe('statesFor escalates the way inRegion does', () => {
     const maine = state('Maine', square(-71, 44, 2));
     const inside = merged({ polygon: square(-70, 45, 0.01) });
     expect(statesFor(inside, index([maine]))).toEqual(['ME']);
+  });
+
+  it('finds the SECOND state a body reaches on one vertex, not just the first', () => {
+    // **The half the first escalation missed** (N7-2 audit, 2026-08-08). It triggered on an *empty*
+    // answer, which covers "belongs to no state" and not "belongs to one state and also another".
+    // A sparse `[NH]` is exactly as unproven as a sparse `[]`.
+    //
+    // Measured against the loaded corpus: 7 bodies, `Province Lake` (976 ac, ME/NH) among them,
+    // stored as New Hampshire's alone.
+    const nh = state('New Hampshire', square(-72, 44, 1)); // -72..-71
+    const me = state('Maine', square(-71, 44, 1)); //        -71..-70
+    const grid = index([nh, me]);
+    // Overwhelmingly in New Hampshire, with a single vertex across the -71 line into Maine.
+    // 41 points a side puts that vertex at index 41, which the 8-per-ring stride of 10 steps over —
+    // the whole point of the fixture is that the cheap pass cannot see it.
+    const ring: [number, number][] = [];
+    for (let i = 0; i < 41; i++) ring.push([-71.9 + i * 0.02, 44.5]);
+    ring.push([-70.95, 44.6]); // the one vertex in Maine
+    for (let i = 40; i >= 0; i--) ring.push([-71.9 + i * 0.02, 44.7]);
+    ring.push(ring[0] as [number, number]);
+    const polygon = { type: 'Polygon' as const, coordinates: [ring] };
+    const body = { polygon, bbox: bboxOf(polygon) };
+
+    // The sparse pass alone sees only New Hampshire — this is the bug, stated as a precondition.
+    expect(collectStatesSparsely(body, grid)).toEqual(['NH']);
+    expect(statesFor(body, grid)).toEqual(['ME', 'NH']);
+  });
+
+  it('tests every vertex of a body smaller than the sampling budget', () => {
+    // The property the budget rests on: `sampleOutlineDense` steps by `floor(total / budget)`, so
+    // for anything under 256 vertices — which is most of the corpus — the "sample" IS the exhaustive
+    // walk. That is why 64 measured identical to walking every vertex over all 7,359 candidates.
+    const nh = state('New Hampshire', square(-72, 44, 1));
+    const me = state('Maine', square(-71, 44, 1));
+    const ring: [number, number][] = [];
+    for (let i = 0; i < 41; i++) ring.push([-71.9 + i * 0.02, 44.5]);
+    ring.push([-70.95, 44.6]);
+    for (let i = 40; i >= 0; i--) ring.push([-71.9 + i * 0.02, 44.7]);
+    ring.push(ring[0] as [number, number]);
+    const polygon = { type: 'Polygon' as const, coordinates: [ring] };
+    expect(ring.length).toBeLessThan(STATE_SAMPLE_POINTS);
+    expect(statesFor({ polygon, bbox: bboxOf(polygon) }, index([nh, me]))).toEqual(['ME', 'NH']);
+  });
+
+  it('unions every ring rather than returning on the first that answers', () => {
+    // An archipelago's second component can be the one in the other state. The escalation used to
+    // `return` on the first productive ring, which is this function's own headline inverted.
+    const nh = state('New Hampshire', square(-72, 44, 1));
+    const me = state('Maine', square(-71, 44, 1));
+    const grid = index([nh, me]);
+    const inNh = square(-71.5, 44.5, 0.01).coordinates[0] as number[][];
+    const inMe = square(-70.5, 44.5, 0.01).coordinates[0] as number[][];
+    const polygon = { type: 'MultiPolygon' as const, coordinates: [[inNh], [inMe]] };
+    expect(statesFor({ polygon, bbox: bboxOf(polygon) }, grid)).toEqual(['ME', 'NH']);
+  });
+
+  it('skips the walk when no other state is even reachable from the body cells', () => {
+    // The gate that keeps the fix free: a body in the middle of Maine touches only cells holding
+    // Maine, so `reachable` equals `found` and no vertex walk happens. Asserted through behaviour —
+    // a body whose sparse sample answers is unchanged by a second state 300 km away.
+    const me = state('Maine', square(-71, 44, 2));
+    const ny = state('New York', square(-76, 42, 1));
+    const inside = merged({ polygon: square(-70, 45, 0.01) });
+    expect(statesFor(inside, index([me, ny]))).toEqual(['ME']);
   });
 });
 
@@ -1808,5 +2073,39 @@ describe('the gazetteer resolves globally — a point names at most one body', (
 
   it('leaves a body the gazetteer has never heard of unnamed', () => {
     expect(resolveGnisNames([body('osm:way/1', -70, 44)], gridOf([])).size).toBe(0);
+  });
+});
+
+describe('the refereed duplicates — evidence, not a lowered threshold', () => {
+  it('leaves RECONCILE_MIN_IOU where it was', () => {
+    // The referee reached 9 of 292 pairs. One-sided evidence over 3% of a band does not move a bar
+    // that governs all of it — and the 283 it could not reach are unsurveyed water, which is exactly
+    // where D93's "merges a real lake into a fragment" would hide.
+    expect(NAME_MATCH_MIN_IOU).toBe(RECONCILE_MIN_IOU_WITH_GNIS);
+    expect(DUPLICATE_SWEEP_MIN_IOU).toBeLessThan(0.5);
+  });
+
+  it('converts the table to the bare ids the union-find joins on', () => {
+    // The table is written `<source>:<id>` so a human can check it against the referee's artifact;
+    // the lanes emit bare ids. Converting at the boundary keeps both readable.
+    expect(refereedDuplicatePairs([['osm:way/1', 'nhd:abc-123']])).toEqual([['way/1', 'abc-123']]);
+  });
+
+  it('pairs an OSM body with an NHD one every time, which is the structural miss it fixes', () => {
+    // D118: `scoreCandidates` refuses any pair whose areas differ by more than 2×, so the matcher
+    // never compared these — and the name lane cannot reach them either, because in every case the
+    // NHD half is unnamed. If a future entry is OSM↔OSM, it is a different finding wearing this
+    // table's clothes and deserves its own reasoning.
+    for (const [a, b] of REFEREED_DUPLICATES) {
+      expect(a.startsWith('osm:')).toBe(true);
+      expect(b.startsWith('nhd:')).toBe(true);
+    }
+  });
+
+  it('names no body twice, so one lake cannot be chained through the table', () => {
+    // A key appearing in two rows would union three bodies transitively on evidence gathered about
+    // two — the same shape as the name lane swallowing Indian Lake's lobe at 0.1.
+    const seen = REFEREED_DUPLICATES.flat();
+    expect(new Set(seen).size).toBe(seen.length);
   });
 });

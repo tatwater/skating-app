@@ -11,7 +11,11 @@ export {
   type RejectionReason,
   rejected,
 } from './ledger';
-export { parseConvexOutput } from './parseOutput';
+export {
+  failureReason,
+  MAX_FAILURE_REASON_CHARS,
+  parseConvexOutput,
+} from './parseOutput';
 export {
   derivedFileStage,
   type ExtractManifest,

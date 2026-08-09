@@ -3704,3 +3704,243 @@ whose `externalId` and `osmId` named two different OSM features. `representative
 spelling.
 
 **Related:** [D92](#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-n7), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-n7), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D126 — The sea is settled by **how high the water sits**, not by what it is called (N7-2)
+
+**Founder call, 2026-08-08.** D119 made the salt veto spatial — is this body inside water a federal
+catalogue calls the sea? — and that settles 941 bodies and is silent about the ones those polygons
+never cover. Tested against 4,794 `NHDArea` polygons, only **3** hit. Salt Bay, The Pool at
+Biddeford, 100 Acre Cove and Mill Cove are all tidal and all invisible to it.
+
+So the second question is one no catalogue had to answer: **how high is it?** Tidal water is at sea
+level by definition. Probed against 3DEP at 1 m LiDAR:
+
+| | |
+| --- | --- |
+| Lake Ontario's eleven arms | **74.9 m** — Ontario's own surface, all eleven |
+| Paugus Bay · Melvin Bay | **153.1 m** — Winnipesaukee's, from two independent points |
+| Wares / Cram's Cove, on the Charles | 10.4 m |
+| Snow's Cove | 9.7 m |
+| *— nothing whatsoever in between —* | |
+| Frost Cove, on the St. Croix estuary | 2.6 m |
+| Salt Bay · The Pool · 100 Acre Cove · Mill Cove | 0.3 · −2.5 · −0.7 · −2.8 m |
+
+**For once the measurement handed over the threshold.** The salt-containment histogram was *"smooth
+from 0 to 1 with no gap to cut at"* and had to be set by reading names in each band; this one has a
+7-metre hole in it. `TIDAL_MAX_ELEVATION_M = 5` sits inside that hole and above every astronomical
+tide in the region — eastern Maine's runs to ~3.5 m above NAVD88 and is the largest here by a
+distance.
+
+### ⚠ It is a referee between two publishers, never an admission rule
+
+**The same measurement is what stopped it being general.** 1,002 corpus bodies sit at or under five
+metres and only 81 are bay-class or tidally named. A corpus-wide rule would delete **~920 freshwater
+bodies**, beginning with **Nequasset Lake** (4.8 m) and **Winnegance Lake** (1.1 m) — which are the
+*entire contents of* `FRESHWATER_ALLOW_LIST`, the two lakes D119 hand-verified as fresh — plus two
+separate ponds named **Fresh Pond**. Coastal Maine and Cape Cod are full of kettle ponds a metre
+above the sea.
+
+So a candidate is a **publisher's claim** and never a name: a catalogue classed it `bay`, or tagged
+it `saltmarsh` / `tidalflat` / `salt_pool`. A name is a string — `Estuary` is a 32 m oxbow in
+Northampton, 150 km inland. That second limb also closes the 92 bodies D128's split surfaced, where
+`chooseClass` lets a federal `LakePond` silently overrule an OSM mapper writing `saltmarsh`.
+
+**Result, campaign `n7-2-20260808`: 98 refused** — 12 bay-class and 86 salt-tagged, dominated by
+named coastal salt marshes (Great Marshes, Sandwich Harbor Marshes, Parkers River Marshes) that were
+in the corpus as `wetland`. Every freshwater fixture survived. `bay-without-parent` fell 26 → 14,
+because twelve of those bays were tidal — the queue shrank by the question being answered.
+
+A missing reading returns `undefined` and never a default: *"we have no elevation"* must not read as
+"high up" **or** as "tidal". A merge with no archive still runs, on the spatial veto alone.
+
+**Related:** [D119](#d119--no-salt-water-and-the-veto-has-to-be-spatial-n7), [D127](#d127--elevation-comes-from-3dep-and-the-archive-is-keyed-on-the-coordinate-n7-2), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D127 — Elevation comes from **3DEP**, and the archive is keyed on the coordinate (N7-2)
+
+**D101 and D104 were approved on 2026-08-03 and never built.** Elevation sat at **22.7%**, still
+coming from Open-Meteo — whose free tier counts each *coordinate*, which the product's own weather
+crons are also spending, and which stalled the pass at 5,975 bodies on page 86 of ~248.
+
+**It is also a data upgrade, which was not the argument for it.** `core`'s `elevation.ts` records
+GLO-90 reading Shelburne Pond **20 m high**, the expected behaviour of a 90 m radar *surface* model
+over water. EPQS serves 3DEP. Measured over the whole corpus: **24,601 of 25,044 readings at 1 m
+LiDAR (98.2%)**, 157 at 3 m, 284 at 10 m, 2 at 30 m, 1 refused as implausible.
+
+D104 asked for a throughput test before committing: ~4 s latency, one coordinate per request with no
+batch form, no key and no documented cap — so throughput is concurrency divided by latency and
+nothing else. **4.9/s at concurrency 12 → ~1.5 h for the corpus.**
+
+### Three things that are not obvious
+
+**Sample `interiorPoint`, never `representativePoint`.** The latter is Turf `pointOnFeature` and
+lands *on the shoreline*, so a DEM read there returns the height of the bank — a hand-picked
+shoreline point near Paugus Bay read 171 m against the lake's 153 m. See
+[D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-n6a).
+
+**3DEP's `resolution` is not always in metres.** Most tiles answer `1`; some answer in *degrees*
+(`3.086e-5`, which is 3.4 m and not a 31-micrometre DEM). Normalized on the way in, or D104's
+*"re-stamp the lakes that came from a coarse raster"* comparison breaks the day two rows carry two
+units.
+
+**The archive is keyed on the rounded coordinate, never on a body id.** That is what survives a
+corpus rebuild — a lake whose polygon did not move has the same interior point next campaign and
+costs no request, which is D104's *"near zero"* recurring cost made real. It is also what lets the
+**merge** read it, since the tidal referee needs an elevation before the body exists as a row.
+
+Fetch is split from load, before the mistake rather than after it: `HANDOFF-wind-climate-archive.md`
+exists because that pass fetched, parsed and discarded, and one derived statistic then cost a
+7.7-hour re-fetch.
+
+**Related:** [D101](#d101--elevation-comes-from-data-we-already-hold-not-from-a-metered-forecast-api), [D104](#d104--elevation-from-3dep-and-the-recurring-cost-is-near-zero), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-n7-2), [`phase-N7`](./phase-N7-unified-corpus.md).
+
+---
+
+## D128 — A contested class is **triaged before it is queued** (N7-2)
+
+**Founder call, 2026-08-08.** D123 measured `classDissent` — a body one catalogue refused outright
+while another classified it — at **354**. That is a number, not a queue: nobody can work 354 rows
+without knowing which are our own rules firing correctly.
+
+The class-conflict queue met exactly this and was settled exactly this way, joining its 652 rows to
+the NHD FTYPE behind each and splitting them **520 settled / 132 real**. This is that move one layer
+along, keyed on the token of whichever member refused.
+
+| family | what it is | measured |
+| --- | --- | --- |
+| **`flowing`** | a catalogue calls it moving water, another calls it a lake — the impoundment and deadwater case D96 already settles in our favour, and we carry 26 `river`-class bodies on purpose | **164** (`osm:water=river` 109, `3dhp:featuretype=1` 43) |
+| **`engineered`** | refused as built infrastructure. **NHD drops 43% of its reservoirs** by purpose code, which is the volume D96 warned would bury the queue | **~87** (`nhd:fcode=436*`, `water=wastewater`, `water=basin`) |
+| *residue* | a contradiction nothing in our rules explains | **the queue** |
+
+Matched on the `nhd:fcode=436` **prefix** rather than an enumeration, because the family is
+`Reservoir: <purpose>` and NHD extends the purposes between releases — a new purpose code is the same
+finding as an existing one.
+
+**Salt is deliberately not a family.** `saltmarsh` / `tidalflat` / `salt_pool` are explicit tidal
+claims, and they are settled by D126's referee *refusing* them, not by being outvoted. Folding them
+in here would launder exactly what that rule exists to catch.
+
+Only the residue becomes `class-dissent`, a review reason ranked **above** `class-conflict`: a body
+one catalogue says is not water we cover at all is a bigger question than two catalogues disagreeing
+about which kind of water it is, and it is rarer.
+
+⚠ **The residue count is the tripwire, not the token table.** Token strings drift with the
+catalogues; what does not drift is that a sharp move in the *unsettled* count means a source changed
+shape. The merge reports both halves.
+
+**Related:** [D96](#d96--accepted-classes-are-chosen-for-parity-between-the-two-catalogues), [D110](#d110--how-much-the-catalogues-agree-is-stored-per-attribute-n7), [D123](#d123--every-refused-group-is-named-and-the-middle-of-the-pipeline-asserts-n7), [D126](#d126--the-sea-is-settled-by-how-high-the-water-sits-not-by-what-it-is-called-n7-2).
+
+---
+
+## D129 — `RECONCILE_MIN_IOU` **holds at 0.5**, and nine pairs merge on evidence instead (N7-2)
+
+**Founder call, 2026-08-08: run a refereed pass, then decide.** 292 flagged duplicate pairs sit at
+IoU 0.30–0.49, below the merge bar and above the sweep. D92 was settled by refereeing against 2.4M
+soundings, so the same referee was asked a different question: *a survey is taken over one lake, so
+does a single survey's points fall inside **both** halves of a pair?*
+
+| | |
+| --- | --- |
+| one lake drawn twice | **9** |
+| two distinct lakes | **0** |
+| no survey reaches it | **283** |
+
+The evidence is one-sided **and it is 3% of the band**. The archive covers 2,383 prominent lakes and
+the rest of the band is unsurveyed water, so lowering the bar would act on 292 pairs using evidence
+from nine — and the 283 unreached ones are exactly where D93's warning lives: *"accepting those
+merges a real lake into a fragment"*. A wrong merge is unrecoverable; a queued duplicate is visible.
+**The threshold does not move and the other 283 stay queued.**
+
+**The nine merge anyway**, as a named table with its evidence in the comment, because two independent
+systems agree *per row*: the geometric sweep flagged the pair and a state survey crossed both halves.
+That is the standard that licensed `resolveCampaignDuplicates` to delete 34 rows in the previous
+campaign — *"what made this safe is that two independent systems had already agreed, and the pass
+verifies that agreement per row"* — rather than a rule being relaxed.
+
+**Every one is OSM-named-whole against NHD-unnamed-part**, which is D118's structural miss with a
+face on it: `scoreCandidates` refuses any pair whose areas differ by more than 2×, so the matcher
+never compared them, and the name lane cannot reach them because the NHD half is unnamed.
+
+### ⚠ Two reasoning errors on the way, both worth keeping
+
+**A null result read as a negative one, twice.** First: *"only 16 of 292 pairs share a name, so they
+are probably not duplicates."* They are named↔unnamed pairs — name agreement was **structurally
+impossible**, so its absence was never evidence. Second: the referee's first run returned `0
+conclusive` with total confidence, because the sounding export stores **flat** `[lng, lat, lng, lat…]`
+and it was read as tuples. That is the D85 shoreline cross-check's `0 comparable` again — a null
+result that reads exactly like agreement. It was caught only because zero bbox overlaps out of 569
+is implausible by chance.
+
+**Related:** [D36](#d36--water-body-dedup-match-on-create--soft-tombstone-merge-resolves-q12), [D92](#d92--osm-draws-the-lakes-because-the-bake-off-found-no-reason-to-prefer-nhd-n7), [D93](#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D118](#d118--a-missed-match-is-a-duplicate-so-the-name-gets-a-lane--bounded-by-geometry-n7).
+
+---
+
+## D130 — ALSC is **pre-fill**: measured, forty years old, and below every newer source (N7-2)
+
+**Founder call, 2026-08-08.** New York is 9,422 bodies of the corpus and had effectively no measured
+depth — the statewide bathymetry search came back empty twice, and NYSDEC's CSLAP layer carries 278
+lakes. The **Adirondack Lakes Survey** sounded 1,469 ponds in 1984–87; **1,345 are reachable** through
+its county form, every one with both a max and a mean depth.
+
+> *"ALSC is great for data pre-fill, so we have some data in places we otherwise wouldn't. But it's
+> 40 years old, and from well before 2000, when GPS became available to civilians with high accuracy.
+> We should trust our own coordinates for bodies, not theirs. And we should trust any newer source of
+> depth information that we find, even when they disagree with ALSC."*
+
+That resolves into **one position in one array** and no other machinery — `alsc_1987` sits above every
+model (somebody put a line in the water, and a basin does not move in forty years) and below
+`state_agency` and `lagos_us` (a newer instrument simply wins). Because D68's ladder is *ordered*,
+nothing downstream needs to know the data is old.
+
+**It contributes depth only.** Its coordinates, elevation and surface area are all superseded by what
+we already hold, and the coordinates are pre-GPS: measured against name-matched corpus bodies they
+carry a small systematic offset (~72 m N, ~97 m E, about a NAD27→WGS84 shift for New York) and a much
+larger random one — **sd ~340 m** against a median error of 289 m, on ponds whose median size is
+~275 m across. So point-in-polygon matches **326** of 1,345 and a name match within 2 km matches
+**866**.
+
+**What ships is the shared join, not a wider one for this source.** `transform --alsc=` emits the
+archive as ordinary depth records and `matchAndImportDepths` matches them exactly as it matches
+HydroLAKES and LAGOS-US: containment first, then proximity inside 500 m with the name or the area
+corroborating. The source with the *worst* coordinates is the last one that should be handed a looser
+rule on the strength of its own numbers, and the loader names every pond it declined, so the
+shortfall is a count on the run row rather than an assumption. The 2 km name join — a per-source
+distance bound, read against `nameClaims` rather than the stored name — remains the upgrade worth
+making and is not built.
+
+**The vintage lives in the label** (`1984–87 Adirondack survey`), not as an exception in
+`MEASURED_DEPTH_SOURCES`. Calling a forty-year-old sounding measured is honest; calling it measured
+without saying when is not.
+
+### The three things checked before a line was written
+
+1. **The TLS certificate does not validate** — a Let's Encrypt cert for `www.server266.com`, the
+   shared host. Benign, and the answer is not to trust harder: the payload is corroborated against
+   GNIS names and polygons we drew from OSM and NHD. **81.3% of areas agree within 35%, median ratio
+   88.9%; 74.8% of names identical.** Three publishers who have never met, which is better evidence
+   than a certificate. The archive's own manifest records that the transport was unverified.
+
+   ⚠ **And the exception is pinned to that one host.** It was first written as
+   `NODE_TLS_REJECT_UNAUTHORIZED = '0'` at module scope, reasoned as *"this CLI talks to one origin,
+   so the blast radius is the file"* — which is wrong twice: the env var governs every TLS socket in
+   the process **and is inherited by child processes**, and this command shells out to `convex run`
+   with the deployment's admin credentials. It now rides a dedicated `https.Agent` plus an
+   origin assertion, so the authenticated run-log writes verify normally and a second fetch target
+   raises instead of inheriting the exception.
+2. **`robots.txt` is a blanket `Disallow: /`** — treated as aimed at search indexers, on the ALSC's
+   published mission (*"for the benefit of … the general public … through an exchange of objective
+   information"*). Fetched serially at 1 req/s with an identifying User-Agent, **once**, and archived
+   to R2 so it never repeats.
+3. **There is no licence** — and that is a finding, not a gap. Every page was checked: no terms of
+   use, no data-use statement, no rights page, only a footer `copyright ©` whose year is generated by
+   JavaScript. So the licence reads *"No published terms (checked 2026-08-08)"* and
+   `requiresAttribution` is **true**: where a licence is silent we credit rather than assume.
+
+⚠ **It is a survey of small ponds** — median 6 ha, maximum 709 acres, which matches the ALSC's own
+description of itself. Lake George, Schroon and Indian Lake are not in it, so the largest Adirondack
+water still has no measured depth.
+
+**Related:** [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-n6a), [D3](#d3--attribution-and-licensing-are-a-product-surface-not-a-footnote), [`phase-N6a`](./phase-N6a-lake-depth.md).

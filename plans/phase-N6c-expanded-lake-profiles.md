@@ -1,5 +1,20 @@
 # Phase N6c — Expanded lake profiles: derived stats, captions, reference links, and map summary cards
 
+> ### ⚠ The elevation source changed (N7-2, 2026-08-08)
+>
+> Workstream A1 is described throughout this document against **Open-Meteo / Copernicus GLO-90**.
+> That lane is retired. Elevation now comes from USGS **3DEP** via `epqs.nationalmap.gov` — see
+> **D127** — at **98.2% 1 m LiDAR** across the corpus, with no key and no quota shared with the
+> product's own weather crons.
+>
+> What that changes in here: the per-coordinate quota arithmetic, the `~1,161 requests` figure, and
+> the resumability story are all history. What holds: **sample `interiorPoint`, never the
+> shoreline**, and the framing rule that the copy must never imply two lakes' elevations are
+> comparable at tens of feet — which matters *less* at 1 m than at 90 m, but is still the rule.
+>
+> The wind pass is untouched and still blocked on the archive rebuild in
+> `HANDOFF-wind-climate-archive.md`.
+
 > **⚠️ SPLIT INTO TWO PHASES, 2026-08-02 (founder call at kickoff).** As scoped this was ~15
 > workstreams across schema, ETL, two clients, a new external API, an admin surface and a
 > corpus-wide re-score — comfortably the largest phase on the roadmap and one review surface for all

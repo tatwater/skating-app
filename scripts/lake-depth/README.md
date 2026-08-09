@@ -9,6 +9,46 @@ shows both numbers to skaters **framed by where they came from**. That framing i
 a stored field rather than a footnote — see *Sources*, below, and note that two of the three sources are
 **modelled, not measured**.
 
+> ### What N7-2 added (2026-08-08)
+>
+> Two commands and two archives that are not in the pipeline description below, because they are
+> **fetch-and-archive lanes** rather than stages of the depth transform:
+>
+> ```bash
+> pnpm --filter @skating/lake-depth snapshot-elevation --from=<bodies.ndjson>   # USGS 3DEP → .raw-elevation/
+> pnpm --filter @skating/lake-depth snapshot-alsc                               # ALSC 1984–87 → .raw/alsc/
+>
+> ./mirror-elevation-r2.sh push|pull|status    # skating-raw-elevation
+> ./mirror-r2.sh push|pull|status              # skating-raw-lake-depth (now includes .raw/alsc/)
+> ```
+>
+> **`snapshot-elevation`** replaces the Open-Meteo elevation lane (**D127**). 3DEP via
+> `epqs.nationalmap.gov`: no key, no documented cap, **98.2% of readings at 1 m LiDAR**, ~1.5 h for
+> the corpus at concurrency 12. The archive is keyed on the **rounded coordinate**, never a body id,
+> which is what survives a corpus rebuild and what lets the *merge* read it before a body exists as
+> a row. `loadElevation.ts` still reads Open-Meteo and is the next thing to convert.
+>
+> **`snapshot-alsc`** is the Adirondack Lakes Survey (**D130**) — 1,345 ponds, every one with a max
+> *and* a mean depth, and New York's first measured-depth source. It is a **scraper**, deliberately
+> serial at 1 req/s with an identifying User-Agent, run **once**, and archived so it never repeats.
+> Read `src/alsc.ts` before touching it: the certificate does not validate, `robots.txt` is a blanket
+> disallow, and there is no published licence — all three are recorded in the archive manifest along
+> with the reasoning, and the payload is corroborated against GNIS and our own polygons rather than
+> trusted.
+>
+> ⚠ **ALSC contributes depth only.** Its coordinates are pre-GPS and measure out at sd ~340 m
+> against our outlines, so it is matched by the **shared** join — containment, then proximity within
+> 500 m corroborated by the name or the area — rather than a looser rule of its own. Point-in-polygon
+> alone reaches 326 of the 1,345; a 2 km name join would reach 866 and is the upgrade this source
+> wants (see `src/alsc.ts`). The load names every pond it declines, so the shortfall is a number on
+> the run row and not an assumption.
+>
+> The archive is **read back by `transform --alsc=`** — see step 3 of the runbook. Without that flag
+> the scrape is a directory nothing reads, which is what it was for one release.
+>
+> ⚠ **`state_agency` is still a rung with no producer** — 0 rows carry it, while 298 MB of state
+> survey data sits in `scripts/bathymetry/.raw/`. That is the largest depth win available.
+
 Pipeline stages, mirroring the water and admin-areas ETLs:
 
 1. **Fetch** — three third-party datasets (below). All one-time downloads; none are committed.
@@ -42,8 +82,9 @@ workspace dependencies.
 | --- | --- | --- | --- | --- | --- |
 | 1 | operator override (`/admin/water/:id`) | **measured** | — | mean + max | — |
 | 2 | [LAGOS-US DEPTH v1.0](https://portal.edirepository.org/nis/mapbrowse?packageid=edi.1043.1) | **measured**, ~65 compiled sources | > 1 ha | 17,675 max · 6,137 mean | ⚠ confirm at download |
-| 3 | [HydroLAKES v1.0](https://www.hydrosheds.org/products/hydrolakes) `Depth_avg` | `Vol_total / Lake_area`; `Vol_src` splits reported from modelled | ≥ 10 ha | mean | CC-BY 4.0 |
-| 4 | [GLOBathy](https://springernature.figshare.com/collections/GLOBathy_the_Global_Lakes_Bathymetry_Dataset/5243309) `Dmax` | random forest over shoreline / area / volume / elevation / watershed | ≥ 10 ha (HydroLAKES-keyed) | max | CC0 1.0 |
+| 3 | [Adirondack Lakes Survey](https://www.adirondacklakessurvey.org) 1984–87 (`--alsc`) | **measured**, one survey, pre-GPS coordinates | ~0.5–700 acres | 1,345 max · 1,345 mean | **no published terms** — attribution only |
+| 4 | [HydroLAKES v1.0](https://www.hydrosheds.org/products/hydrolakes) `Depth_avg` | `Vol_total / Lake_area`; `Vol_src` splits reported from modelled | ≥ 10 ha | mean | CC-BY 4.0 |
+| 5 | [GLOBathy](https://springernature.figshare.com/collections/GLOBathy_the_Global_Lakes_Bathymetry_Dataset/5243309) `Dmax` | random forest over shoreline / area / volume / elevation / watershed | ≥ 10 ha (HydroLAKES-keyed) | max | CC0 1.0 |
 
 > **⚠ Before the first real run:** confirm LAGOS-US DEPTH's Intellectual Rights statement on its EDI
 > package page, and confirm the column names the transform looks for. The candidate lists in
@@ -272,8 +313,18 @@ pnpm --filter @skating/lake-depth transform --out=.scratch/depths.ndjson \
   --hydrolakes=.scratch/hydrolakes.geojsonseq \
   --globathy='.scratch/GLOBathy_basic_parameters/GLOBathy_basic_parameters(ALL_LAKES).csv' \
   --lagos=.raw/lagos-us-depth/lake_depth.csv \
+  --alsc=.raw/alsc/ponds.ndjson \
   --states=VT,NH,ME,MA,NY
 ```
+
+> **`--alsc` is the flag that makes the scrape a source.** It reads the archive `snapshot-alsc`
+> wrote — 1,345 ponds, each emitted at the `alsc_1987` rung with both depths, its name and its area
+> (the last two for the join's corroboration; neither is ever stored on a body). It needs no
+> `--states`: the survey is the Adirondack Park by construction.
+>
+> **Depth only, on purpose.** The archive also carries elevation, watershed area, shoreline and
+> volume, all 1984–87 readings of a different outline than ours. Elevation comes from 3DEP at 1 m
+> (D127) and shoreline is ours; only the depth travels.
 
 > **Always pass `--states`.** LAGOS-US is nationwide and we cover five states, so **12,928 of its
 > 17,675 rows can never match anything** — and every one still costs a spatial query in the load.

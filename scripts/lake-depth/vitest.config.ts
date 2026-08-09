@@ -13,8 +13,11 @@ export default defineConfig({
         'src/archiveCli.ts',
         'src/**/*.test.ts',
         'src/cli.ts',
+        'src/corroborateAlsc.ts', // read-only census joining the ALSC archive to the merge artifacts
         'src/load.ts',
         'src/loadElevation.ts',
+        'src/snapshotAlsc.ts', // serial fetch + file I/O; the parser is in alsc.ts and covered
+        'src/snapshotElevation.ts', // argv + concurrency + file I/O; the rules are in epqs/elevationArchive
         'src/types.ts',
       ],
       thresholds: {

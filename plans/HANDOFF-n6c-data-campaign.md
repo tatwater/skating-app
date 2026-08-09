@@ -12,6 +12,33 @@
 
 ---
 
+> ## ⚠ SUPERSEDED IN PART — read this first (2026-08-08)
+>
+> **The elevation lane described below is retired.** D101 and D104 were approved on 2026-08-03 and
+> finally built as **D127**: elevation now comes from USGS **3DEP** via `epqs.nationalmap.gov`, not
+> from Open-Meteo. There is nothing to "resume at page 86" — the whole corpus is archived at
+> `scripts/lake-depth/.raw-elevation/`, **25,044 readings, 98.2% of them at 1 m LiDAR**, in ~1.5 h
+> with no key and no shared quota.
+>
+> Everything below about Open-Meteo's per-coordinate accounting, its `Retry-After` handling and the
+> daily-quota arithmetic is **kept as the reasoning for why we left**, not as instructions.
+>
+> **What in here is still live:**
+>
+> - **§7 `backfillRepresentativePoint` + the `centroid` rename** — never started, still wanted, and
+>   the warning at the end of it (*never make it a true centroid*) is load-bearing. See
+>   [[waterbodies-centroid-is-not-a-centroid]].
+> - **The depth caveat** — `8,517 / 40,260` is still a misleading denominator, and the three built-but-
+>   never-re-run improvements are still unrun. Depth is **22.6% of the loaded corpus**, and the
+>   biggest single win is not in this document at all: `state_agency` is a ladder rung with **no
+>   producer**, while 298 MB of state survey data has been on disk since N6b.
+> - **`regionStats:recompute`** — still gated on elevation, which is now archived but not yet loaded.
+> - **Every gotcha under §Gotchas worth not re-learning**, all of which still apply and one of which
+>   (*"denominators lie by default"*) this campaign proved again twice.
+>
+> **What is dead:** the pass ordering at the top, the `--import-floor` quota reasoning as it applies
+> to elevation, and the three orphaned `running` rows, which are long gone.
+
 ## Read this first: two things that will bite
 
 **1. Nothing of mine is deployed.** `packages/convex/convex/waterBodies.ts` has uncommitted changes

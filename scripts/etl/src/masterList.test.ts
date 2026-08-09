@@ -12,7 +12,12 @@
 
 import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
-import { buildMasterList, emitCanonicalBodies, type MasterListInput } from './masterList';
+import {
+  buildMasterList,
+  elevationKeyFor,
+  emitCanonicalBodies,
+  type MasterListInput,
+} from './masterList';
 import {
   type Boundary,
   type Feature,
@@ -111,7 +116,9 @@ const MAINE: Boundary & { name: string; level: string } = {
 };
 
 function inputFor(
-  parts: Partial<Pick<MasterListInput, 'osm' | 'nhd' | 'dhp' | 'gnisGrid' | 'downstate'>> = {},
+  parts: Partial<
+    Pick<MasterListInput, 'osm' | 'nhd' | 'dhp' | 'gnisGrid' | 'downstate' | 'elevation'>
+  > = {},
 ): MasterListInput {
   const boundaries = [MAINE];
   return {
@@ -121,14 +128,115 @@ function inputFor(
     gnisGrid: parts.gnisGrid ?? new Map<string, GnisPoint[]>(),
     boundaryGrid: index(boundaries) as Map<string, Boundary[]>,
     downstate: parts.downstate ?? [],
+    ...(parts.elevation ? { elevation: parts.elevation } : {}),
   };
 }
 
 const keys = (bodies: { key: string }[]) => bodies.map((b) => b.key).sort();
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Every group is accounted for
+// The tidal referee, in the order it actually runs
 // ─────────────────────────────────────────────────────────────────────────────
+
+describe('elevation as the tidal referee (founder, 2026-08-08)', () => {
+  /** Where `elevationKeyFor` will look this body up — the same interior point the emit stage uses. */
+  const keyOf = (f: Feature) => elevationKeyFor(f.polygon);
+
+  const saltBay = () =>
+    feat('osm', 'way/saltbay', {
+      name: 'Salt Bay',
+      cls: 'bay',
+      polygon: square(-70.4, 44.4, sideForAcres(542)),
+    });
+
+  it('refuses a bay at sea level that no federal estuary polygon covers', () => {
+    // Salt Bay, Damariscotta — 542 acres, measured at 0.3 m. The spatial veto never saw it: tested
+    // against 4,794 NHDArea polygons, only 3 hit.
+    const bay = saltBay();
+    const result = buildMasterList(
+      inputFor({ osm: [bay], elevation: new Map([[keyOf(bay), 0.3]]) }),
+    );
+    expect(result.bodies).toHaveLength(0);
+    expect(result.stats.tidalByElevation).toBe(1);
+    expect(result.dropped[0]?.reason).toBe('salt-water-elevation');
+  });
+
+  it('keeps Paugus Bay, which is 153 m of Winnipesaukee', () => {
+    const bay = feat('osm', 'way/paugus', {
+      name: 'Paugus Bay',
+      cls: 'bay',
+      polygon: square(-70.4, 44.4, sideForAcres(1241)),
+    });
+    const result = buildMasterList(
+      inputFor({ osm: [bay], elevation: new Map([[keyOf(bay), 153.1]]) }),
+    );
+    expect(keys(result.bodies)).toEqual(['osm:way/paugus']);
+    expect(result.stats.tidalByElevation).toBe(0);
+  });
+
+  it('refuses a low body a catalogue tagged saltmarsh, whatever class won the vote', () => {
+    // The 92 the `classDissent` split found: OSM says saltmarsh, a federal catalogue says LakePond,
+    // and `chooseClass` lets the class win — correctly, since that rule is the wetland rescue. The
+    // referee is what stops that from quietly admitting tidal water.
+    const marsh = feat('osm', 'way/marsh', {
+      name: 'Broad Marsh',
+      cls: 'wetland',
+      sourceToken: 'osm:wetland=saltmarsh',
+      polygon: square(-70.4, 44.4, sideForAcres(200)),
+    });
+    const federal = feat('nhd', 'n-marsh', {
+      name: 'Broad Marsh',
+      cls: 'lakePond',
+      polygon: square(-70.4, 44.4, sideForAcres(200)),
+    });
+    const result = buildMasterList(
+      inputFor({ osm: [marsh], nhd: [federal], elevation: new Map([[keyOf(marsh), 1.2]]) }),
+    );
+    expect(result.bodies).toHaveLength(0);
+    expect(result.stats.tidalByElevation).toBe(1);
+  });
+
+  it('spares Nequasset Lake, which is on the allow-list AND under five metres', () => {
+    // **The measurement that forced the scoping.** 1,002 corpus bodies sit at or under 5 m and only
+    // 81 are bay-class or tidally named — so a general rule would delete ~920 freshwater bodies,
+    // starting with the two that FRESHWATER_ALLOW_LIST was hand-built to protect. Nequasset is
+    // 4.8 m; Winnegance is 1.1 m.
+    const lake = feat('osm', 'way/nequasset', {
+      name: 'Nequasset Lake',
+      cls: 'bay',
+      polygon: square(-70.4, 44.4, sideForAcres(449)),
+    });
+    const result = buildMasterList(
+      inputFor({ osm: [lake], elevation: new Map([[keyOf(lake), 4.8]]) }),
+    );
+    expect(keys(result.bodies)).toEqual(['osm:way/nequasset']);
+  });
+
+  it('leaves an ordinary low-lying pond alone, because it is not a candidate', () => {
+    // `Fresh Pond`, Maine, 2.9 m and 102 acres. No catalogue called it a bay or tagged it salt, so
+    // the referee never looks at it — which is the whole reason this rule is scoped.
+    const pond = feat('osm', 'way/fresh', {
+      name: 'Fresh Pond',
+      polygon: square(-70.4, 44.4, sideForAcres(102)),
+    });
+    const result = buildMasterList(
+      inputFor({ osm: [pond], elevation: new Map([[keyOf(pond), 2.9]]) }),
+    );
+    expect(keys(result.bodies)).toEqual(['osm:way/fresh']);
+    expect(result.stats.tidalByElevation).toBe(0);
+  });
+
+  it('runs at all with no archive, and simply takes nobody', () => {
+    // A contributor without the 3DEP archive still gets a merge — one whose salt handling is the
+    // spatial veto alone, which is what the pipeline did until 2026-08-08. A missing reading must
+    // never read as "tidal", and must never read as "fresh" either; it leaves the body where the
+    // other rules put it.
+    const bay = saltBay();
+    const result = buildMasterList(inputFor({ osm: [bay] }));
+    expect(keys(result.bodies)).toEqual(['osm:way/saltbay']);
+    expect(result.stats.tidalByElevation).toBe(0);
+  });
+});
 
 describe('the balance', () => {
   it('accounts for every group as a body, a sub-area or a named drop', () => {
@@ -524,14 +632,15 @@ describe('a bay is an arm, not a lake', () => {
     });
   });
 
+  /** An unnamed 40-acre wetland: big enough to be a parent, refused by D96's fifty-acre bar. */
+  const bog = feat('osm', 'way/bog', {
+    cls: 'wetland',
+    polygon: square(-70.5, 44.5, sideForAcres(40)),
+  });
+
   it('falls back to a queued body when the parent itself did not survive', () => {
     // A sub-area pointing at a body the loader will never create fails at *load* time rather than
-    // here, which is the one outcome that must not happen. The parent here is an unnamed 40-acre
-    // wetland — big enough to be a parent, and refused by D96's fifty-acre bar.
-    const bog = feat('osm', 'way/bog', {
-      cls: 'wetland',
-      polygon: square(-70.5, 44.5, sideForAcres(40)),
-    });
+    // here, which is the one outcome that must not happen.
     const coveInIt = feat('osm', 'way/cove', {
       name: 'Bog Cove',
       cls: 'bay',
@@ -540,6 +649,23 @@ describe('a bay is an arm, not a lake', () => {
     const result = buildMasterList(inputFor({ osm: [bog, coveInIt] }));
     expect(result.subAreas).toHaveLength(0);
     expect(keys(result.bodies)).toEqual(['osm:way/cove']);
+    expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
+    // **Named, so it keeps `bay`** — the same answer a bay whose parent was never *found* gets.
+    //
+    // ⚠ This asserted `unclassified` until the N7-2 audit, and that was the rule twenty lines up
+    // inverted: `Paugus Bay` keeps its class because no catalogue draws it inside anything, while a
+    // bay whose parent was found and then refused — for region, salt or the floor — was relabelled.
+    // Same epistemic position, and the answer was decided by which way the parent happened to die.
+    expect(result.bodies[0]?.cls).toBe('bay');
+  });
+
+  it('demotes an UNNAMED bay whose parent did not survive, where there is nothing to go on', () => {
+    const nameless = feat('osm', 'way/namelesscove', {
+      cls: 'bay',
+      polygon: square(-70.5, 44.5, sideForAcres(10)),
+    });
+    const result = buildMasterList(inputFor({ osm: [bog, nameless] }));
+    expect(result.subAreas).toHaveLength(0);
     expect(result.bodies[0]?.cls).toBe('unclassified');
     expect(result.bodies[0]?.reviewReasons).toContain('bay-without-parent');
   });
@@ -827,5 +953,64 @@ describe('the conflict nothing else can see', () => {
       inputFor({ osm: [feat('osm', 'way/1', { name: 'Ordinary Pond' })] }),
     );
     expect(result.stats.classDissent).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The classDissent triage
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('class dissent, triaged rather than counted (founder, 2026-08-08)', () => {
+  /** A federal body that says `lakePond`, against an OSM feature that refuses outright. */
+  const contested = (sourceToken: string) => ({
+    osm: [
+      feat('osm', 'way/x', {
+        name: 'Contested Pond',
+        cls: null,
+        sourceToken,
+        polygon: square(-70.4, 44.4, sideForAcres(300)),
+      }),
+    ],
+    nhd: [
+      feat('nhd', 'n-x', {
+        name: 'Contested Pond',
+        cls: 'lakePond',
+        polygon: square(-70.4, 44.4, sideForAcres(300)),
+      }),
+    ],
+  });
+
+  it('settles an impoundment a catalogue calls a river, and does not queue it', () => {
+    // The largest measured pattern (109 bodies) and the one D96 already settles in our favour — we
+    // carry 26 `river`-class bodies on purpose. Queueing these repeats the 1,437-row mistake
+    // `RECONCILABLE_CLASS_PAIRS` had to undo.
+    const result = buildMasterList(inputFor(contested('osm:water=river')));
+    expect(result.stats.classDissent).toBe(1);
+    expect(result.stats.classDissentSettled).toBe(1);
+    expect(result.stats.classDissentUnsettled).toBe(0);
+    expect(result.bodies[0]?.reviewReasons).not.toContain('class-dissent');
+  });
+
+  it('settles a treatment pond NHD drops by purpose code', () => {
+    // "NHD drops 43% of its reservoirs by FCODE" — the volume D96 warned would bury the queue.
+    const result = buildMasterList(inputFor(contested('nhd:fcode=43612')));
+    expect(result.stats.classDissentSettled).toBe(1);
+    expect(result.bodies[0]?.reviewReasons).not.toContain('class-dissent');
+  });
+
+  it('QUEUES a refusal nothing in our rules explains', () => {
+    // `osm:natural=water` refusing at all was a surprise on the run (18 bodies). A contradiction we
+    // cannot account for is the whole reason the queue exists.
+    const result = buildMasterList(inputFor(contested('osm:natural=water')));
+    expect(result.stats.classDissentUnsettled).toBe(1);
+    expect(result.bodies[0]?.reviewReasons).toContain('class-dissent');
+  });
+
+  it('counts no dissent at all when every catalogue agrees it is water', () => {
+    const result = buildMasterList(
+      inputFor({ osm: [feat('osm', 'way/y', { name: 'Plain Pond' })] }),
+    );
+    expect(result.stats.classDissent).toBe(0);
+    expect(result.stats.classDissentUnsettled).toBe(0);
   });
 });

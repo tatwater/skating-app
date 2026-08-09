@@ -38,6 +38,7 @@
 import {
   belongsInCorpus,
   type ClaimSource,
+  fetchOrigin,
   isNearMiss,
   mergeReviewReasons,
   needsAttention,
@@ -46,6 +47,7 @@ import {
   reconcileOne,
   sameName,
   scoreBody,
+  settledClassDissent,
   settledWetlandDissent,
   type WaterBodyClass,
 } from '@skating/core';
@@ -56,6 +58,7 @@ import {
   catalogueIdsOf,
   cellsFor,
   DUPLICATE_SWEEP_MIN_IOU,
+  type DuplicatePair,
   dropReason,
   type Feature,
   type GnisPoint,
@@ -67,6 +70,8 @@ import {
   inRegion,
   inRegionFraction,
   isFreshwaterException,
+  isTidalByElevation,
+  isTidalCandidate,
   type Merged,
   mergeGroupWithReason,
   nameClaimsOf,
@@ -75,6 +80,7 @@ import {
   overrideGeometryForContainedBays,
   polygonClaims,
   type RefusalReason,
+  refereedDuplicatePairs,
   resolveGnisNames,
   SALT_MIN_CONTAINMENT,
   SQ_M_PER_ACRE,
@@ -154,6 +160,15 @@ export interface MasterListStats {
   outOfRegion: number;
   belowI84: number;
   saltWater: number;
+  /**
+   * Of the salt refusals, how many the **elevation referee** took rather than the spatial veto.
+   *
+   * Counted apart because the two are different instruments answering the same question: one is a
+   * federal estuary polygon covering the body, the other is a 1 m DEM reading at its interior point.
+   * A single `saltWater` total could not say which moved, and they move for different reasons — the
+   * first when a catalogue redraws, the second when the corpus does.
+   */
+  tidalByElevation: number;
   subAreas: number;
   gnisNamed: number;
   gnisRescued: number;
@@ -183,7 +198,44 @@ export interface MasterListStats {
    * a review reason without knowing the volume could bury the queue. Measure, then decide.
    */
   classDissent: number;
+  /**
+   * The dissents our own rules deliberately overrule — `flowing` and `engineered`. See
+   * `settledClassDissent`. Counted rather than queued, and watched: a sharp move here means a
+   * catalogue changed shape, the same tripwire `settledWetland` provides one layer up.
+   */
+  classDissentSettled: number;
+  /**
+   * The dissents nobody has ruled on — **the ones that become a review reason.**
+   *
+   * This is the number the queue is sized by, and the reason the split was worth doing: 354 rows of
+   * "two catalogues disagree" is not workable, where the residue after subtracting the known
+   * patterns is.
+   */
+  classDissentUnsettled: number;
   classDissentSamples: string[];
+  /**
+   * `classDissent`, **split by which catalogue code did the refusing** (N7-2, founder 2026-08-08).
+   *
+   * The count above says 354 bodies are contested and nothing more, which is not enough to decide
+   * whether they belong in a review queue. The class-conflict queue met exactly this problem and was
+   * settled exactly this way: joining every one of its 652 rows to the NHD FTYPE behind it split
+   * them into **520 where the federal catalogue says LakePond and OSM says wetland** — the 123-body
+   * rescue, settled rather than contested — and **132 where the federal catalogue is the dissenter**,
+   * which are real. 652 → 162.
+   *
+   * Keyed `<refusing sourceToken> → <class kept>`, because both halves matter: NHD dropping 43% of
+   * its reservoirs by FCODE is a systematic property of *that code*, and a queue built without
+   * knowing which codes are systematic buries the cases that are not.
+   */
+  classDissentByToken: Map<string, number>;
+  /**
+   * Every flagged duplicate pair with its IoU — the input to the `RECONCILE_MIN_IOU` question.
+   *
+   * 287 of the surviving pairs sit at 0.30–0.49, below the 0.5 merge bar and above this sweep's
+   * 0.3. Whether that band is *one lake drawn twice* or *a bay beside its parent* is the open
+   * question, and it cannot be answered from a count. See `DuplicatePair`.
+   */
+  duplicatePairList: DuplicatePair[];
   /**
    * Groups where a federal open-water class beat an OSM `wetland` tag — **resolved rather than
    * queued**, and counted here because it is (founder, 2026-08-07).
@@ -303,6 +355,24 @@ export function matchLane(
 // The master list
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Decimal places in an elevation-archive key — **must match `COORDINATE_KEY_PLACES`** in
+ * `scripts/lake-depth/src/epqs.ts`, which is what wrote the archive.
+ *
+ * Restated rather than imported because the two packages do not depend on each other, and a lookup
+ * that silently misses is the failure mode here: every candidate would come back `undefined` and the
+ * referee would quietly do nothing at all. `merge.ts` asserts the archive resolves for a known body
+ * before the run starts, so a drift fails loudly instead.
+ */
+export const ELEVATION_KEY_PLACES = 5;
+
+/** The archive key for a body's interior point — the same point `toCanonicalBody` stores. */
+export function elevationKeyFor(polygon: Merged['polygon']): string {
+  const point = fetchOrigin(polygon);
+  if (point === null) return '';
+  return `${point.lat.toFixed(ELEVATION_KEY_PLACES)},${point.lng.toFixed(ELEVATION_KEY_PLACES)}`;
+}
+
 export interface MasterListInput {
   osm: readonly Feature[];
   nhd: readonly Feature[];
@@ -310,6 +380,15 @@ export interface MasterListInput {
   gnisGrid: Map<string, GnisPoint[]>;
   boundaryGrid: Map<string, Boundary[]>;
   downstate: readonly Boundary[];
+  /**
+   * 3DEP elevation by coordinate key — the tidal referee's evidence (D104 archive).
+   *
+   * Optional, and an empty map is a legitimate state: a merge run with no archive present simply
+   * gets no elevation referee and falls back to the spatial salt veto alone. That is the honest
+   * degradation — better than refusing to run, and better than pretending a missing reading means
+   * "not tidal", which is what a default would do.
+   */
+  elevation?: ReadonlyMap<string, number>;
   /**
    * The **state** outlines are deliberately not here: `statesFor` runs in `emitCanonicalBodies`,
    * where the record is built, and nothing in the admission decision reads a state code. Passing a
@@ -327,6 +406,7 @@ export interface MasterListInput {
  */
 export function buildMasterList(input: MasterListInput): MasterList {
   const { gnisGrid, boundaryGrid, downstate } = input;
+  const elevation = input.elevation ?? new Map<string, number>();
   const log = input.log ?? (() => undefined);
 
   // ── Stage 0: the gazetteer settles the IDS, before anything matches ───────
@@ -390,9 +470,21 @@ export function buildMasterList(input: MasterListInput): MasterList {
   // ── Grouping ──────────────────────────────────────────────────────────────
   const iou = new Map([...federal.iou, ...osmNhd.iou, ...osmDhp.iou]);
   const union = new Union();
-  for (const [a, b] of [...federal.pairs, ...osmNhd.pairs, ...osmDhp.pairs, ...named.pairs]) {
+  // **The refereed pairs join alongside the lanes' own**, not as a later correction. Nine pairs the
+  // 2.4M soundings confirmed are one lake drawn twice — see `REFEREED_DUPLICATES` for why the
+  // threshold did NOT move with them. Joining here means the class, name and geometry rules see one
+  // group and decide its content normally; the table asserts identity and nothing else.
+  const refereed = refereedDuplicatePairs();
+  for (const [a, b] of [
+    ...federal.pairs,
+    ...osmNhd.pairs,
+    ...osmDhp.pairs,
+    ...named.pairs,
+    ...refereed,
+  ]) {
     union.join(a, b);
   }
+  log(`  ${refereed.length} refereed duplicate pair(s) joined on sounding evidence`);
 
   const all = [...osm, ...nhd, ...dhp];
   // **The three id namespaces must not collide**, and nothing used to say so. They happen not to
@@ -436,6 +528,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     outOfRegion: 0,
     belowI84: 0,
     saltWater: 0,
+    tidalByElevation: 0,
     subAreas: 0,
     gnisNamed: 0,
     gnisRescued: 0,
@@ -446,7 +539,11 @@ export function buildMasterList(input: MasterListInput): MasterList {
     backlog: 0,
     duplicatePairs: 0,
     classDissent: 0,
+    classDissentSettled: 0,
+    classDissentUnsettled: 0,
     classDissentSamples: [],
+    classDissentByToken: new Map(),
+    duplicatePairList: [],
     settledWetland: 0,
     greatLakeArms: 0,
     geometryOverridden: 0,
@@ -508,6 +605,8 @@ export function buildMasterList(input: MasterListInput): MasterList {
     parent: Merged | undefined;
   }[] = [];
   const kept: KeptBody[] = [];
+  /** Bodies whose class dissent nothing explains — they become a review reason after the sweep. */
+  const unsettledDissent = new Set<string>();
   /**
    * What each survivor needs in order to have its review reasons computed — held **beside** the
    * bodies rather than on them, because `duplicate-candidate` cannot be decided until the whole
@@ -601,9 +700,26 @@ export function buildMasterList(input: MasterListInput): MasterList {
     // still rescued by whichever catalogue named it. See `FRESHWATER_ALLOW_LIST` — two lakes dammed
     // above a tidal inlet of the same name, which no threshold can separate from the salt ponds
     // sitting either side of them.
+    // **The elevation referee, for what the federal polygons cannot see** (founder, 2026-08-08).
+    //
+    // The spatial veto above asks "is this body inside water a federal catalogue calls the sea",
+    // which settles 941 bodies and says nothing about the ones those polygons never cover — Salt
+    // Bay, The Pool at Biddeford, 100 Acre Cove. Tested against 4,794 `NHDArea` polygons, only 3
+    // hit. So the second question is one no catalogue had to answer: **how high is it?** Tidal water
+    // is at sea level by definition; Paugus Bay is a 153 m arm of Winnipesaukee.
+    //
+    // Runs after the containment test, because containment is the stronger claim — a federal
+    // estuary polygon covering the body is direct evidence, where elevation is an inference from a
+    // DEM. Both are gated on the same allow-list.
+    const tidal =
+      !isFreshwaterException(group.name) && isTidalCandidate(group.members, cls)
+        ? isTidalByElevation(elevationKeyFor(group.polygon), elevation)
+        : undefined;
+    if (tidal === true) stats.tidalByElevation++;
+
     if (
       !isFreshwaterException(group.name) &&
-      saltContainment(group, saltGrid) >= SALT_MIN_CONTAINMENT
+      (tidal === true || saltContainment(group, saltGrid) >= SALT_MIN_CONTAINMENT)
     ) {
       stats.saltWater++;
       stats.refused.set('salt-water', (stats.refused.get('salt-water') ?? 0) + 1);
@@ -617,7 +733,10 @@ export function buildMasterList(input: MasterListInput): MasterList {
       dropped.push({
         ...describe(group.members, group.name, cls, group.areaSqM),
         key: group.key,
-        reason: 'salt-water',
+        // Named apart from the containment refusal: one is a federal polygon covering the body,
+        // the other is a DEM reading. If either count moves sharply, they moved for different
+        // reasons and a single `salt-water` label could not say which.
+        reason: tidal === true ? 'salt-water-elevation' : 'salt-water',
       });
       continue;
     }
@@ -691,6 +810,25 @@ export function buildMasterList(input: MasterListInput): MasterList {
     // One catalogue refused this outright while another named a class. See `classDissent`.
     if (group.members.some((m) => m.cls === null) && group.members.some((m) => m.cls !== null)) {
       stats.classDissent++;
+      // **Triaged, not just counted** (founder, 2026-08-08). 354 rows is a number, not a queue —
+      // nobody can work it without knowing which are our own rules firing correctly. `flowing` is
+      // the impoundment case D96 already settles in our favour; `engineered` is NHD dropping 43% of
+      // its reservoirs by purpose code. What is left is a contradiction nobody has ruled on.
+      const refusingTokens = group.members.filter((m) => m.cls === null).map((m) => m.sourceToken);
+      if (settledClassDissent(refusingTokens)) stats.classDissentSettled++;
+      else {
+        stats.classDissentUnsettled++;
+        unsettledDissent.add(group.key);
+      }
+      // **Which code refused, not just that something did.** A count cannot distinguish "NHD drops
+      // 43% of its reservoirs by FCODE" — systematic, settled, and no business in a queue — from a
+      // catalogue genuinely contradicting another about what a body is. Tallied per refusing token
+      // so the split is a measurement rather than a guess, exactly as the class-conflict queue's
+      // 652 → 162 was arrived at.
+      for (const refuser of group.members.filter((m) => m.cls === null)) {
+        const key = `${refuser.sourceToken} → ${cls}`;
+        stats.classDissentByToken.set(key, (stats.classDissentByToken.get(key) ?? 0) + 1);
+      }
       if (stats.classDissentSamples.length < CLASS_DISSENT_SAMPLE_CAP) {
         stats.classDissentSamples.push(
           `${group.key} ${name || '(unnamed)'} ${Math.round(group.areaSqM / SQ_M_PER_ACRE)}ac ` +
@@ -737,8 +875,18 @@ export function buildMasterList(input: MasterListInput): MasterList {
     const parentKey = state?.bayParentKey;
     if (parentKey === undefined || !keptKeys.has(parentKey)) {
       if (parentKey !== undefined && state) {
-        // The parent did not survive: this is a bay without a parent after all.
-        body.cls = 'unclassified';
+        // The parent did not survive: this is a bay without a parent after all — so it takes the
+        // **same** branch as one whose parent was never found, rather than a stricter one.
+        //
+        // ⚠ It used to demote unconditionally, which contradicted the rule twenty lines up: a named
+        // bay the grid never found a parent for keeps `bay` (the Paugus Bay call, founder
+        // 2026-08-07), while a named bay whose parent was found and *then* refused — for being out
+        // of region, tidal, or under the floor — was relabelled `unclassified`. Those are the same
+        // epistemic position, "a named arm of something we do not carry", and the answer was being
+        // decided by which way the parent happened to die.
+        //
+        // Unnamed, we still have nothing to go on and the demotion stands.
+        if (body.name.length === 0) body.cls = 'unclassified';
         state.bayWithoutParent = true;
       }
       bodies.push(body);
@@ -765,10 +913,11 @@ export function buildMasterList(input: MasterListInput): MasterList {
   }
 
   // ── The duplicate sweep ───────────────────────────────────────────────────
-  const duplicates = overlapDuplicates(bodies, DUPLICATE_SWEEP_MIN_IOU);
-  stats.duplicatePairs = [...duplicates.values()].reduce((n, v) => n + v.length, 0) / 2;
+  const duplicates = overlapDuplicates(bodies, DUPLICATE_SWEEP_MIN_IOU, sameName);
+  stats.duplicatePairs = duplicates.pairs.length;
+  stats.duplicatePairList = duplicates.pairs;
   for (const body of bodies) {
-    const overlaps = duplicates.get(body.key);
+    const overlaps = duplicates.byKey.get(body.key);
     if (overlaps) body.duplicateOf = overlaps;
     const state = pending.get(body.key);
     if (state === undefined) throw new Error(`no pending state for kept body ${body.key}`);
@@ -777,6 +926,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       bayWithoutParent: state.bayWithoutParent,
       sameSourceDuplicate: body.sameSourceDuplicate,
       overlapDuplicate: overlaps !== undefined,
+      classDissent: unsettledDissent.has(body.key),
     });
     if (body.reviewReasons.length > 0) {
       stats.queued++;

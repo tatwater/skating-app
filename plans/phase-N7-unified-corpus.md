@@ -1,11 +1,58 @@
 # N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign on top
 
-> **Status:** ✅ **The corpus is LIVE on dev — campaign `n7-2026-08-07`, steps 0–6 complete**
-> (2026-08-07). Originally written 2026-08-03 after a measurement session that corrected four of its
-> own findings; the numbers below are the survivors, and anything still marked *unverified* is marked
-> that way on purpose.
+> **Status:** ✅ **The corpus is LIVE on dev — campaign `n7-2-20260808`, steps 0–6 complete and
+> refereed** (2026-08-08). Originally written 2026-08-03 after a measurement session that corrected
+> four of its own findings; the numbers below are the survivors, and anything still marked
+> *unverified* is marked that way on purpose.
 >
-> ### ✅ The campaign, as run — steps 5, 5b and 6 (2026-08-07)
+> ### ✅ The corpus as it stands — campaign `n7-2-20260808` (2026-08-08)
+>
+> ```
+> 25,050 before  −  105 pruned  =  24,945 bodies · 126 sub-areas
+>
+> kept, by reason:  reaffirmed 24,942 · dedupOrMerged 2 · includedByRequest 1
+> ```
+>
+> **Every number balances.** The 105 the prune took are the difference between the two master lists
+> (107) minus the 2 the dedup resolver had already deleted — 0.42% of the corpus, well inside the
+> blast-radius guard. 0 orphaned sub-areas and 0 dangling duplicate pointers after those deletions.
+>
+> **The three open items this document carried are all closed**, each on a measurement rather than a
+> judgement call: the salt-water question by **D126**'s elevation referee (98 refused), `classDissent`
+> by **D128**'s triage (354 → the residue only), and `RECONCILE_MIN_IOU` by **D129**'s soundings pass
+> (held at 0.5; nine pairs merged on per-row evidence). Elevation moved to 3DEP under **D127**, and
+> New York gained a measured-depth source under **D130**.
+>
+> **by type** — `lakePond` 17,587 · `wetland` 3,729 · `reservoir` 2,463 · `unclassified` 1,116 ·
+> `bay` 24 · `river` 26 · **by state** — NY 9,422 · MA 5,681 · ME 5,496 · NH 3,071 · VT 1,334
+> *(border bodies count in each)*
+>
+> **Named fixtures verified in the loaded corpus:** Beau Lake **1,871 ac from NHD** · Champlain
+> 276,374 ac `[NY,VT]` · Sebago 30,487 ac from 3dhp · Nequasset (4.8 m) and Winnegance (1.1 m) kept ·
+> Paugus Bay 1,241 ac `bay` · Braddock / Chaumont / Blind Sodus kept · `Lake Superior` NY and
+> `Little Lake Erie` kept · Bellamy Reservoir and Scott Pond **merged on sounding evidence**. Gone:
+> Salt Bay, 100 Acre Cove, Great Marshes, and the 106-acre `The Basin` — while four other bodies
+> named `The Basin` elsewhere are untouched.
+>
+> ### ⚠ Two failures in the campaign run, both worth keeping
+>
+> **A stale deployment.** `class-dissent` was added to `REVIEW_REASONS` in core and never pushed, so
+> the dev deployment kept validating against the old five-value union and refused **19 of 174 load
+> batches**. 3,990 green tests said nothing about it — `convex-test` runs local code. *Tests are not
+> a deploy.*
+>
+> **And D124's guard fired for the first time, correctly.** The loader counted the skipped batches,
+> printed *"DO NOT RUN `pruneNotInCampaign` — 2,807 bodies carry no `lastCampaignId` and the prune
+> would delete them"*, and exited non-zero, so `run-corpus.sh` never reached sub-areas or the prune.
+> **Nothing was deleted.**
+>
+> **The record of the failure could not be written.** `execSync` throws with the whole command line,
+> which for this loader is 150 bodies of GeoJSON; nineteen failures took the run row to **1.65 MiB**
+> and `importRuns:progress` threw `Value is too large`, losing the record of the very failures it was
+> recording. `failureReason` now drops the command echo and caps at 600 chars — enough for a full
+> `ArgumentValidationError`, which is the whole diagnosis.
+>
+> ### ✅ The campaign, as previously run — steps 5, 5b and 6 (2026-08-07, superseded)
 >
 > ```
 > 25,133 bodies loaded    9,136 inserted · 15,997 updated · 175/175 batches
@@ -1687,6 +1734,31 @@ known and wasted if it isn't.
 ---
 
 ## Open items, flagged rather than buried
+
+### ✅ The three that were open at the end of PR #39 — all closed on measurement (2026-08-08)
+
+| | how it was settled | |
+| --- | --- | --- |
+| **Salt water on the 26 named bays** | 3DEP at 1 m LiDAR. The distribution has a **7-metre hole** in it — Ontario's arms at 74.9 m, Winnipesaukee's at 153.1, nothing between 9.7 and 2.6, then Salt Bay at 0.3. **98 refused.** | **D126** |
+| **`classDissent` (354)** | Joined to the refusing code: 164 `flowing`, ~87 `engineered`, both of them our own rules overruling a catalogue. Only the residue queues. | **D128** |
+| **`RECONCILE_MIN_IOU` (287 pairs)** | The soundings refereed 9 of 292 — all nine one lake, none two. One-sided **and 3% of the band**, so the threshold **held at 0.5** and the nine merged as a named table. | **D129** |
+
+**The thing worth carrying out of it:** the salt question looked like a judgement call for a week and
+turned out to have a measurement sitting behind it that nobody had taken. The same measurement is
+what stopped the rule being *general* — 1,002 bodies sit under five metres and only 81 are
+candidates, so a corpus-wide cut would have deleted ~920 freshwater bodies including both entries of
+`FRESHWATER_ALLOW_LIST`.
+
+### ⚠ Still open, and now measured rather than assumed
+
+- **283 duplicate pairs at IoU 0.30–0.49 that no survey reaches.** Queued as `duplicate-candidate`.
+  The bathymetry archive covers 2,383 prominent lakes and this band is unsurveyed water, so no amount
+  of care with *this* referee will reach them — it wants a different instrument or a moderator.
+- **One unresolved merge verdict**, `way/522157160`, refused because the losing row carries contour
+  coverage. Deleting it would orphan a tileset; correctly skipped, and it needs the contour re-key
+  (step 10) before it can be resolved.
+- **8 sub-areas from the previous campaign** beyond the master list's 118. None orphaned.
+
 
 ### ✅ The 61 the prune spared — resolved, and the dedup queue is empty (2026-08-07)
 

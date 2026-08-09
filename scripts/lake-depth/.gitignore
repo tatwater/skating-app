@@ -1,3 +1,4 @@
 .raw/
+.raw-elevation/
 .scratch/
 .env.local

@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import type { AlscPond } from './alsc';
 import {
   findColumn,
   hydroLakesRung,
   mergeLagosRows,
+  parseAlscArchive,
   parseGlobathy,
   parseLagosDepth,
   parseNumber,
@@ -327,6 +329,96 @@ describe('mergeLagosRows (many records, one lake)', () => {
     expect(summary).toMatchObject({ lagosRead: 2, lagosMerged: 1, lagosContested: 1 });
     expect(errors[0]?.key).toBe('lagos/7');
     expect(errors[0]?.message).toContain('disagree across a shallow threshold');
+  });
+});
+
+/**
+ * The ALSC lane (D130). The scrape's archive is only a data source if something reads it back —
+ * `snapshot-alsc` wrote `.raw/alsc/ponds.ndjson` for a release where nothing did, so these tests
+ * pin the read-back end to end: archive line → `DepthRecord` → the `alsc_1987` rung the ladder
+ * already knows about.
+ */
+describe('ALSC', () => {
+  /** Verbatim shape of an archive line, as `snapshotAlsc.ts` writes it. */
+  const pond = (over: Partial<AlscPond> = {}): AlscPond => ({
+    pondNumber: '060315',
+    name: 'Aluminum Pond',
+    county: 'Hamilton',
+    lat: 43.768_888,
+    lng: -74.528_333,
+    elevationM: 533,
+    surfaceAreaHa: 4.5,
+    maxDepthM: 6.1,
+    meanDepthM: 2.4,
+    ...over,
+  });
+
+  it('reads the archive back, blank lines and all', () => {
+    const ndjson = `${JSON.stringify(pond())}\n\n${JSON.stringify(pond({ pondNumber: '060316' }))}\n`;
+    expect(parseAlscArchive(ndjson).map((p) => p.pondNumber)).toEqual(['060315', '060316']);
+  });
+
+  it('refuses a truncated archive rather than loading what survived', () => {
+    // The archive is checkpointed every 100 ponds, so a half-written line is a damaged file — and a
+    // damaged file that loads quietly reads exactly like "New York has fewer ponds than we thought".
+    expect(() => parseAlscArchive(`${JSON.stringify(pond())}\n{"pondNumber":"0603`)).toThrow(
+      /line 2 is not JSON/,
+    );
+  });
+
+  it('emits both depths at the alsc_1987 rung, with the area in m²', () => {
+    const { records, summary } = transformDepths({ alsc: [pond()] });
+    expect(summary.alscRead).toBe(1);
+    expect(records[0]).toMatchObject({
+      key: 'alsc/060315',
+      point: { lat: 43.768_888, lng: -74.528_333 },
+      // Carried for the proximity match's corroboration only — never stored on a body.
+      name: 'Aluminum Pond',
+      areaSqM: 45_000, // 4.5 ha
+      meanDepthM: 2.4,
+      meanDepthSource: 'alsc_1987',
+      maxDepthM: 6.1,
+      maxDepthSource: 'alsc_1987',
+    });
+  });
+
+  it('contributes depth ONLY — elevation never becomes a field', () => {
+    // ALSC publishes elevation, watershed area, shoreline and volume too, all of them 1984–87
+    // readings of a different outline than ours. D130: the depth is the only thing that travels.
+    const { records } = transformDepths({ alsc: [pond({ elevationM: 533 })] });
+    expect(records[0]).not.toHaveProperty('elevationM');
+    expect(records[0]).not.toHaveProperty('shorelineM');
+  });
+
+  it('names a pond it cannot place instead of dropping it', () => {
+    const { records, errors, summary } = transformDepths({
+      alsc: [pond({ lat: undefined, lng: undefined })],
+    });
+    expect(records).toHaveLength(0);
+    expect(summary.skipped).toBe(1);
+    expect(errors[0]).toMatchObject({ key: 'alsc/060315' });
+    expect(errors[0]?.message).toMatch(/no coordinate/);
+  });
+
+  it('names a depthless pond, which the scraper should never have archived', () => {
+    const { records, errors } = transformDepths({
+      alsc: [pond({ maxDepthM: undefined, meanDepthM: 0 })],
+    });
+    expect(records).toHaveLength(0);
+    expect(errors[0]?.message).toMatch(/no usable depth/);
+  });
+
+  it('runs alongside the other sources without touching them', () => {
+    const { records, summary } = transformDepths({
+      hydroLakes: [hydroFeature({ Hylak_id: 42, Depth_avg: 5.5 })],
+      lagos: [{ lagoslakeid: '99', lat: 44, lng: -72, meanDepthM: 4, states: 'VT' }],
+      alsc: [pond()],
+      // The state filter is LAGOS-only: ALSC is the Adirondacks by construction, so a run that
+      // scoped itself to Vermont must not silently drop New York's only measured source.
+      states: ['VT'],
+    });
+    expect(records.map((r) => r.key)).toEqual(['hylak/42', 'lagos/99', 'alsc/060315']);
+    expect(summary).toMatchObject({ hydroLakesRead: 1, lagosRead: 1, alscRead: 1 });
   });
 });
 

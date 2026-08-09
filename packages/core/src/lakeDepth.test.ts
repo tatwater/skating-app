@@ -60,6 +60,62 @@ describe('the depth source ladder (D68)', () => {
   });
 });
 
+// **The founder's rule for a forty-year-old survey, pinned by position** (2026-08-08): *"we should
+// trust our own coordinates for bodies, not theirs. And we should trust any newer source of depth
+// information that we find, even when they disagree with ALSC."*
+//
+// The whole implementation of that rule is where `alsc_1987` sits in one array — no special case,
+// nothing downstream that has to remember the data is old. These tests are what makes that true,
+// because the day someone appends a new rung in the wrong place, the ladder silently starts
+// preferring 1986 over it.
+describe('the ALSC rung — measured, and older than everything', () => {
+  /** Sources that postdate ALSC and are also somebody putting an instrument in the water. */
+  const newerMeasured = ['operator', 'state_agency', 'lagos_us'] as const;
+
+  it('loses to every newer measurement, which is the rule', () => {
+    for (const source of newerMeasured) {
+      expect(DEPTH_SOURCE_RANK[source]).toBeLessThan(DEPTH_SOURCE_RANK.alsc_1987);
+    }
+  });
+
+  it('still beats every model, because a 1986 sounding is a sounding', () => {
+    // A lake's basin does not move in forty years. Where ALSC and a random forest disagree, the
+    // random forest is the one guessing.
+    for (const source of DEPTH_SOURCES) {
+      if (isMeasuredDepthSource(source)) continue;
+      expect(DEPTH_SOURCE_RANK.alsc_1987).toBeLessThan(DEPTH_SOURCE_RANK[source]);
+    }
+  });
+
+  it('counts as measured, and carries its vintage in the label rather than as an exception', () => {
+    // Framing a forty-year-old sounding as measured is honest. Framing it as measured without
+    // saying *when* is not — so the date lives in the one string a skater actually reads.
+    expect(isMeasuredDepthSource('alsc_1987')).toBe(true);
+    expect(DEPTH_SOURCE_LABELS.alsc_1987).toMatch(/1984.?87/);
+  });
+
+  it('records that no licence was published, and credits the survey anyway', () => {
+    // "No published terms" is a measurement — every page was checked. `requiresAttribution` is true
+    // in the conservative direction: where a licence is silent we credit rather than assume.
+    const terms = DEPTH_SOURCE_TERMS.alsc_1987;
+    expect(terms).not.toBeNull();
+    expect(terms?.requiresAttribution).toBe(true);
+    expect(terms?.credit).toContain('Adirondack Lakes Survey');
+    expect(terms?.credit).toContain('New York State Department of Environmental Conservation');
+    // A credit that exists discharges the obligation; one that does not is a gap. So adding a
+    // source that *requires* attribution must not open one — `attributionGaps` walks the whole
+    // registry and `alsc_1987` must not appear in it.
+    expect(attributionGaps()).not.toContain('alsc_1987');
+    // …and the check is meaningful: strip the credit and it does appear.
+    expect(
+      attributionGaps({
+        ...DEPTH_SOURCE_TERMS,
+        alsc_1987: { licence: 'No published terms', requiresAttribution: true },
+      }),
+    ).toContain('alsc_1987');
+  });
+});
+
 describe('isShallowDepth (D69)', () => {
   it('unknown depth is not shallow — absent data never applies the amplifier', () => {
     expect(isShallowDepth({})).toBe(false);

@@ -31,6 +31,9 @@ import { formatDepthFeet } from './units';
  *  - `state_agency`        — bulk-loaded from a state bathymetry dataset (deferred to N6b, where those
  *                            datasets are fetched for their contours anyway).
  *  - `lagos_us`            — LAGOS-US DEPTH v1.0: *observed* depth compiled from ~65 sources, lakes > 1 ha.
+ *  - `alsc_1987`           — the Adirondack Lakes Survey, 1,345 ponds sounded **1984–87**. Measured, so
+ *                            it outranks every model below it; four decades old, so it loses to every
+ *                            newer measurement above it. See the note under `DEPTH_SOURCES`.
  *  - `hydrolakes_reported` — HydroLAKES `Depth_avg` where `Vol_src` is 1 or 2, i.e. derived from a
  *                            **reported** volume rather than the geostatistical model. Splitting this out
  *                            is free and treating all of HydroLAKES as modelled would discard real data.
@@ -41,10 +44,37 @@ import { formatDepthFeet } from './units';
  *                            because inland coverage is near-zero and the tag's datum and units are
  *                            unverifiable per-feature; a real one is usually nautical.
  */
+/**
+ * ## Where `alsc_1987` sits, and why it is one rung rather than a rule (founder, 2026-08-08)
+ *
+ * *"ALSC is great for data pre-fill, so we have some data in places we otherwise wouldn't. But it's
+ * 40 years old, and from well before 2000, when GPS became available to civilians with high
+ * accuracy. We should trust our own coordinates for bodies, not theirs. And we should trust any
+ * newer source of depth information that we find, even when they disagree with ALSC."*
+ *
+ * That resolves into exactly one position on this ladder, and no other machinery:
+ *
+ * - **Above every model.** Somebody put a line in the water. A sounding taken in 1986 is still a
+ *   measurement, and a lake's basin does not move — where the two disagree, the random forest is the
+ *   one guessing.
+ * - **Below every newer measurement**, which is `state_agency` (the modern state surveys: NH since
+ *   2000, VT's 2020 BioBase logs, MA, ME) and `lagos_us`. A newer instrument simply wins, and
+ *   because the ladder is *ordered*, that is enforced by position rather than by a special case
+ *   anybody has to remember. Nothing needs to know ALSC is old except this array.
+ *
+ * **And it contributes depth ONLY.** ALSC publishes coordinates, elevation and surface area too, and
+ * we take none of them: our polygons are drawn by OSM and NHD, our elevation is 1 m 3DEP LiDAR, and
+ * D94 measures area from the polygon we actually store. Its coordinates are pre-GPS and measured
+ * out at **sd ~340 m** against our own outlines, so a pond only lands where our polygon contains its
+ * point or sits within the shared 500 m proximity bound with its name or area corroborating — the
+ * same join every other source gets, and never a looser one. See `scripts/lake-depth/src/alsc.ts`
+ * for the measurement behind that, and for the wider name join it argues for.
+ */
 export const DEPTH_SOURCES = [
   'operator',
   'state_agency',
   'lagos_us',
+  'alsc_1987',
   'hydrolakes_reported',
   'hydrolakes_modeled',
   'globathy',
@@ -67,6 +97,11 @@ const MEASURED_DEPTH_SOURCES = new Set<DepthSource>([
   'operator',
   'state_agency',
   'lagos_us',
+  // Somebody put a line in the water in 1986. Its **label** carries the vintage rather than this
+  // set carrying an exception — see `DEPTH_SOURCE_LABELS`, where it reads "1984–87 Adirondack
+  // survey". Framing a forty-year-old sounding as measured is honest; framing it as measured
+  // *without saying when* is not, and the label is the place that belongs.
+  'alsc_1987',
   'osm_tag',
 ]);
 
@@ -161,6 +196,11 @@ export const DEPTH_SOURCE_LABELS: Record<DepthSource, string> = {
   operator: 'entered by a moderator',
   state_agency: 'state survey',
   lagos_us: 'LAGOS-US DEPTH',
+  // **The vintage is in the label on purpose.** This is the one measured source old enough that
+  // "measured" alone would mislead, and a skater reading a depth deserves to know it was sounded
+  // before they were born. Every other label names a publisher; this one names a publisher and a
+  // date, because the date is the thing that qualifies it.
+  alsc_1987: '1984–87 Adirondack survey',
   hydrolakes_reported: 'HydroLAKES (reported volume)',
   hydrolakes_modeled: 'HydroLAKES (modeled)',
   globathy: 'GLOBathy (modeled)',
@@ -224,6 +264,33 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
     // repository asks for precisely because the package can be revised.
     credit:
       'Stachelek, J., L.K. Rodriguez, J. Díaz Vázquez, A. Hawkins, E. Phillips, A. Shoffner, I.M. McCullough, K.B. King, J. Namovich, L.A. Egedy, M. Haite, P.J. Hanly, K.E. Webster, K.S. Cheruvelil, and P.A. Soranno. 2021. LAGOS-US DEPTH v1.0: Data module of observed maximum and mean lake depths for a subset of lakes in the conterminous U.S. ver 1. Environmental Data Initiative. https://doi.org/10.6073/pasta/64ddc4d04661d9aef4bd702dc5d8984f (Accessed 2026-08-02).',
+  },
+  /**
+   * **No published licence — and that is a finding, not a gap.**
+   *
+   * Every page of adirondacklakessurvey.org was checked on 2026-08-08: no terms-of-use, no data-use
+   * statement, no rights page. The only assertion anywhere is a footer `copyright ©` whose year is
+   * generated by JavaScript from the current date, i.e. template furniture rather than a claim about
+   * a 1984–87 dataset.
+   *
+   * So `requiresAttribution` is **true** and the licence reads as unstated. That is deliberate and it
+   * is the conservative direction: where a licence is silent we credit rather than assume permission,
+   * and the ALSC's own mission — *"for the benefit of regulatory agencies and the general public …
+   * through an exchange of objective information"* — is the basis on which the data was taken
+   * (founder call, 2026-08-08). Crediting the people who did the work is the least this owes them.
+   *
+   * ⚠ Do **not** rewrite `licence` to something tidier. "No published terms" is the measurement;
+   * anything shorter would be an invention, and {@link attributionGaps} depends on the distinction
+   * between a licence that asks for nothing and one nobody has read.
+   */
+  alsc_1987: {
+    licence: 'No published terms (checked 2026-08-08)',
+    licenceUrl: 'https://www.adirondacklakessurvey.org/als.shtml',
+    requiresAttribution: true,
+    credit:
+      'Adirondack Lakes Survey Corporation, Adirondack Lakes Survey 1984–1987 — a cooperative ' +
+      'effort of the New York State Department of Environmental Conservation and the Empire State ' +
+      'Electric Energy Research Corporation.',
   },
   hydrolakes_reported: HYDROLAKES_TERMS(),
   hydrolakes_modeled: HYDROLAKES_TERMS(),

@@ -100,6 +100,8 @@ export interface TransformSummary {
   hydroLakesRead: number;
   globathyRead: number;
   lagosRead: number;
+  /** ALSC ponds read out of `.raw/alsc/ponds.ndjson`. Depth only — see `transformDepths`. */
+  alscRead: number;
   emitted: number;
   skipped: number;
   /** LAGOS-US rows that shared a `lagoslakeid` with another and were merged into one record. */

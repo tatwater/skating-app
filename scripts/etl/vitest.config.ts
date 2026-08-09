@@ -40,6 +40,8 @@ export default defineConfig({
         // `@skating/core`'s `waterClass`, tested there against named real bodies.
         'src/auditArchives.ts',
         'src/bakeOff.ts',
+        'src/refereeDuplicates.ts', // read-only census over the merge artifacts + the sounding export
+        'src/tidalBand.ts', //          read-only census; D126's blast-radius check
         'src/classifyDryRun.ts',
         'src/measure3dhp.ts',
         'src/reconcileNhd.ts',
