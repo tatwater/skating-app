@@ -558,7 +558,10 @@ export function transformDepths(input: TransformInput): TransformResult {
       !Number.isFinite(pond.lng)
     ) {
       skipped++;
-      errors.push({ key, message: `"${pond.name}" published no coordinate — nothing to match against` });
+      errors.push({
+        key,
+        message: `"${pond.name}" published no coordinate — nothing to match against`,
+      });
       continue;
     }
     const positive = (v: number | undefined) => (v !== undefined && v > 0 ? v : undefined);
@@ -577,9 +580,7 @@ export function transformDepths(input: TransformInput): TransformResult {
       point: { lat: pond.lat, lng: pond.lng },
       ...(areaSqM !== undefined ? { areaSqM: areaSqM * HA_TO_SQ_M } : {}),
       ...(pond.name ? { name: pond.name } : {}),
-      ...(meanDepthM !== undefined
-        ? { meanDepthM, meanDepthSource: 'alsc_1987' as const }
-        : {}),
+      ...(meanDepthM !== undefined ? { meanDepthM, meanDepthSource: 'alsc_1987' as const } : {}),
       ...(maxDepthM !== undefined ? { maxDepthM, maxDepthSource: 'alsc_1987' as const } : {}),
     });
   }

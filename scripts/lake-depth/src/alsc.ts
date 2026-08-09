@@ -52,11 +52,23 @@
  * correction would recover a third of the error and leave the rest.
  *
  * The consequence is concrete: point-in-polygon matches **326** of 1,345, and a name match within
- * 2 km matches **866**. So the depth join is a name join with a distance bound — and it should read
- * `nameClaims`, not the stored name, because N7 keeps every publisher's name and ALSC's spelling
- * may agree with OSM's where the stored one is NHD's.
+ * 2 km matches **866**.
  *
- * The pure half is here and tested; the fetching, pacing and archiving is `snapshotAlsc.ts`.
+ * **What actually ships is the shared join, not a wider one for this source.** `transform.ts` emits
+ * ALSC as ordinary `DepthRecord`s and `matchAndImportDepths` matches them the way it matches every
+ * other source: containment first, then proximity inside `DEPTH_PROXIMITY_METERS` (500 m) with the
+ * name or the area corroborating. So the ceiling here is 500 m, not the 2 km the measurement above
+ * describes, and the difference is deliberate — the source with the *worst* coordinates is the last
+ * one that should be handed a looser rule, and the load names every pond it declined.
+ *
+ * The 2 km name join remains the upgrade worth making, and it wants two things this one does not
+ * have: a distance bound passed per source rather than per deployment, and `nameClaims` rather than
+ * the stored name, because N7 keeps every publisher's name and ALSC's spelling may agree with OSM's
+ * where the stored one is NHD's. Until then the shortfall is visible in the run row instead of
+ * assumed away.
+ *
+ * The pure half is here and tested; the fetching, pacing and archiving is `snapshotAlsc.ts`, and
+ * the read-back into the depth pipeline is `parseAlscArchive` in `transform.ts`.
  */
 
 import { isPlausibleElevationM } from '@skating/core';

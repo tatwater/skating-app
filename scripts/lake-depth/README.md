@@ -36,8 +36,15 @@ a stored field rather than a footnote — see *Sources*, below, and note that tw
 > with the reasoning, and the payload is corroborated against GNIS and our own polygons rather than
 > trusted.
 >
-> ⚠ **ALSC contributes depth only**, and joins on the **name** with a distance bound — its
-> coordinates are pre-GPS and measure out at sd ~340 m against our outlines.
+> ⚠ **ALSC contributes depth only.** Its coordinates are pre-GPS and measure out at sd ~340 m
+> against our outlines, so it is matched by the **shared** join — containment, then proximity within
+> 500 m corroborated by the name or the area — rather than a looser rule of its own. Point-in-polygon
+> alone reaches 326 of the 1,345; a 2 km name join would reach 866 and is the upgrade this source
+> wants (see `src/alsc.ts`). The load names every pond it declines, so the shortfall is a number on
+> the run row and not an assumption.
+>
+> The archive is **read back by `transform --alsc=`** — see step 3 of the runbook. Without that flag
+> the scrape is a directory nothing reads, which is what it was for one release.
 >
 > ⚠ **`state_agency` is still a rung with no producer** — 0 rows carry it, while 298 MB of state
 > survey data sits in `scripts/bathymetry/.raw/`. That is the largest depth win available.
@@ -75,8 +82,9 @@ workspace dependencies.
 | --- | --- | --- | --- | --- | --- |
 | 1 | operator override (`/admin/water/:id`) | **measured** | — | mean + max | — |
 | 2 | [LAGOS-US DEPTH v1.0](https://portal.edirepository.org/nis/mapbrowse?packageid=edi.1043.1) | **measured**, ~65 compiled sources | > 1 ha | 17,675 max · 6,137 mean | ⚠ confirm at download |
-| 3 | [HydroLAKES v1.0](https://www.hydrosheds.org/products/hydrolakes) `Depth_avg` | `Vol_total / Lake_area`; `Vol_src` splits reported from modelled | ≥ 10 ha | mean | CC-BY 4.0 |
-| 4 | [GLOBathy](https://springernature.figshare.com/collections/GLOBathy_the_Global_Lakes_Bathymetry_Dataset/5243309) `Dmax` | random forest over shoreline / area / volume / elevation / watershed | ≥ 10 ha (HydroLAKES-keyed) | max | CC0 1.0 |
+| 3 | [Adirondack Lakes Survey](https://www.adirondacklakessurvey.org) 1984–87 (`--alsc`) | **measured**, one survey, pre-GPS coordinates | ~0.5–700 acres | 1,345 max · 1,345 mean | **no published terms** — attribution only |
+| 4 | [HydroLAKES v1.0](https://www.hydrosheds.org/products/hydrolakes) `Depth_avg` | `Vol_total / Lake_area`; `Vol_src` splits reported from modelled | ≥ 10 ha | mean | CC-BY 4.0 |
+| 5 | [GLOBathy](https://springernature.figshare.com/collections/GLOBathy_the_Global_Lakes_Bathymetry_Dataset/5243309) `Dmax` | random forest over shoreline / area / volume / elevation / watershed | ≥ 10 ha (HydroLAKES-keyed) | max | CC0 1.0 |
 
 > **⚠ Before the first real run:** confirm LAGOS-US DEPTH's Intellectual Rights statement on its EDI
 > package page, and confirm the column names the transform looks for. The candidate lists in
@@ -305,8 +313,18 @@ pnpm --filter @skating/lake-depth transform --out=.scratch/depths.ndjson \
   --hydrolakes=.scratch/hydrolakes.geojsonseq \
   --globathy='.scratch/GLOBathy_basic_parameters/GLOBathy_basic_parameters(ALL_LAKES).csv' \
   --lagos=.raw/lagos-us-depth/lake_depth.csv \
+  --alsc=.raw/alsc/ponds.ndjson \
   --states=VT,NH,ME,MA,NY
 ```
+
+> **`--alsc` is the flag that makes the scrape a source.** It reads the archive `snapshot-alsc`
+> wrote — 1,345 ponds, each emitted at the `alsc_1987` rung with both depths, its name and its area
+> (the last two for the join's corroboration; neither is ever stored on a body). It needs no
+> `--states`: the survey is the Adirondack Park by construction.
+>
+> **Depth only, on purpose.** The archive also carries elevation, watershed area, shoreline and
+> volume, all 1984–87 readings of a different outline than ours. Elevation comes from 3DEP at 1 m
+> (D127) and shoreline is ours; only the depth travels.
 
 > **Always pass `--states`.** LAGOS-US is nationwide and we cover five states, so **12,928 of its
 > 17,675 rows can never match anything** — and every one still costs a spatial query in the load.

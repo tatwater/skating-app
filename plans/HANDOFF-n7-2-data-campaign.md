@@ -72,13 +72,23 @@ normalizes the degrees-vs-metres quirk.
 1,345 Adirondack ponds at `scripts/lake-depth/.raw/alsc/ponds.ndjson` (mirrored in
 `skating-raw-lake-depth`), every one with a max **and** a mean depth. See **D130**.
 
-⚠ **Join on the NAME with a distance bound, never on the coordinate.** Measured: point-in-polygon
-matches **326**, a name match within 2 km matches **866**. The coordinates are pre-GPS — a small
-systematic offset (~72 m N, ~97 m E) and a much larger random one (**sd ~340 m**). Read
-`nameClaims`, not the stored name: ALSC's spelling may agree with OSM's where the stored one is
-NHD's.
+**The lane exists as of PR A** — `transform --alsc=.raw/alsc/ponds.ndjson` reads the archive back and
+emits one record per pond at the `alsc_1987` rung, which `load` then feeds to the ordinary join. It
+had to: the archive shipped for one release with nothing reading it, so the scrape produced a
+directory rather than a depth. **So this step is a run, not a build.**
 
-⚠ **Depth only.** Its coordinates, elevation and area are all superseded by what we hold.
+⚠ **What it runs at is the shared 500 m bound, and that is the part still worth building.** Measured:
+point-in-polygon matches **326**, a name match within 2 km matches **866**. The coordinates are
+pre-GPS — a small systematic offset (~72 m N, ~97 m E) and a much larger random one (**sd ~340 m**).
+The shipped join gives ALSC no special treatment (containment, then proximity ≤ 500 m corroborated by
+name or area), so somewhere between those two numbers lands and the rest is named on the run row.
+Widening it means two things that do not exist yet: a **per-source distance bound** passed into
+`matchAndImportDepths`, and reading **`nameClaims`** rather than the stored name — ALSC's spelling
+may agree with OSM's where the stored one is NHD's. Run it first and read the actual rejection
+counts; they decide whether the wider join is worth the machinery.
+
+⚠ **Depth only.** Its coordinates, elevation and area are all superseded by what we hold — the
+transform reads name and area purely as match corroboration and emits neither as a stored field.
 
 Report the **incremental** figure, not 1,345: LAGOS covers New York too, and under the ladder ALSC
 correctly declines to overwrite it. The honest headline is *"ponds that gained a depth they did not
@@ -175,6 +185,10 @@ pnpm --filter @skating/lake-depth snapshot-elevation --from=<bodies.ndjson>
 pnpm --filter @skating/lake-depth snapshot-alsc
 scripts/lake-depth/mirror-elevation-r2.sh push|pull|status
 scripts/lake-depth/mirror-r2.sh push|pull|status
+
+# step 3 — the ALSC archive into the corpus (dev; `load` refuses a non-dev target without --prod)
+pnpm --filter @skating/lake-depth transform --out=.scratch/alsc.ndjson --alsc=.raw/alsc/ponds.ndjson
+pnpm --filter @skating/lake-depth load .scratch/alsc.ndjson --campaign=<campaign-id>
 ```
 
 **Prerequisite for the referee:** `pnpm --filter @skating/bathymetry export-soundings` writes the

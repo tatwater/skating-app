@@ -146,7 +146,7 @@ function main(): void {
 
   const logger = new RunLogger({
     kind: 'lake_depth',
-    label: 'lake depth join (HydroLAKES / GLOBathy / LAGOS-US)',
+    label: 'lake depth join (HydroLAKES / GLOBathy / LAGOS-US / ALSC)',
     campaignId,
     target,
     call: convexRun,

@@ -1,20 +1,24 @@
 /**
- * Lake-depth transform CLI (glue). Reads whichever of the three sources you point it at and writes
+ * Lake-depth transform CLI (glue). Reads whichever of the four sources you point it at and writes
  * depth NDJSON for the loader, printing a per-source summary + named skips to stderr. All real logic is
  * in `./transform` (tested); this is thin file I/O and is excluded from coverage.
  *
  *   pnpm --filter @skating/lake-depth transform --out=depths.ndjson \
  *     [--hydrolakes=hydrolakes.geojsonseq] [--globathy=GLOBathy_basic_parameters.csv] \
- *     [--lagos=lagos_depth.csv] [--states=VT,NH,ME,MA,NY]
+ *     [--lagos=lagos_depth.csv] [--alsc=.raw/alsc/ponds.ndjson] [--states=VT,NH,ME,MA,NY]
  *
  * Any subset is valid — the sources are independent (GLOBathy excepted, which needs HydroLAKES for its
  * geometry), so you can load LAGOS-US first and add the modelled rungs later. The D68 ladder is enforced
  * server-side, so load order never changes the result.
+ *
+ * `--alsc` reads the archive `snapshot-alsc` wrote. It is the one source that is already local by the
+ * time it gets here: the scrape is a one-time fetch-and-archive, and this is the flag that turns that
+ * archive into loadable records rather than a directory nothing reads.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
-import { parseGlobathy, parseLagosDepth, transformDepths } from './transform';
+import { parseAlscArchive, parseGlobathy, parseLagosDepth, transformDepths } from './transform';
 import type { HydroLakesFeature } from './types';
 
 /** RFC 8142 record separator (U+001E) — GeoJSONSeq may prefix each line with it. */
@@ -40,16 +44,17 @@ function main(): void {
   const hydroPath = flag(args, 'hydrolakes');
   const globathyPath = flag(args, 'globathy');
   const lagosPath = flag(args, 'lagos');
+  const alscPath = flag(args, 'alsc');
   // Two-letter codes, comma-separated. Drops LAGOS rows naming none of them — see `TransformInput`.
   const states = flag(args, 'states')
     ?.split(',')
     .map((st) => st.trim().toUpperCase())
     .filter(Boolean);
 
-  if (!hydroPath && !globathyPath && !lagosPath) {
+  if (!hydroPath && !globathyPath && !lagosPath && !alscPath) {
     process.stderr.write(
       'usage: pnpm --filter @skating/lake-depth transform --out=depths.ndjson ' +
-        '[--hydrolakes=…geojsonseq] [--globathy=…csv] [--lagos=…csv]\n',
+        '[--hydrolakes=…geojsonseq] [--globathy=…csv] [--lagos=…csv] [--alsc=…ndjson]\n',
     );
     process.exit(1);
   }
@@ -66,6 +71,7 @@ function main(): void {
     hydroLakes: hydroPath ? readGeoJsonSeq(hydroPath) : undefined,
     globathy: globathyPath ? parseGlobathy(readFileSync(globathyPath, 'utf8')) : undefined,
     lagos: lagosPath ? parseLagosDepth(readFileSync(lagosPath, 'utf8')) : undefined,
+    alsc: alscPath ? parseAlscArchive(readFileSync(alscPath, 'utf8')) : undefined,
     states,
   });
 
@@ -77,7 +83,7 @@ function main(): void {
   const withMax = records.filter((r) => r.maxDepthM !== undefined).length;
   process.stderr.write(
     `\n[lake-depth] read ${summary.hydroLakesRead} HydroLAKES · ${summary.globathyRead} GLOBathy · ` +
-      `${summary.lagosRead} LAGOS-US\n` +
+      `${summary.lagosRead} LAGOS-US · ${summary.alscRead} ALSC\n` +
       `[lake-depth] emitted ${summary.emitted} records (${withMean} with a mean · ${withMax} with a max) · ` +
       `${summary.skipped} skipped\n`,
   );

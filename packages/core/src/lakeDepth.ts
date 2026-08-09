@@ -65,8 +65,10 @@ import { formatDepthFeet } from './units';
  * **And it contributes depth ONLY.** ALSC publishes coordinates, elevation and surface area too, and
  * we take none of them: our polygons are drawn by OSM and NHD, our elevation is 1 m 3DEP LiDAR, and
  * D94 measures area from the polygon we actually store. Its coordinates are pre-GPS and measured
- * out at **sd ~340 m** against our own outlines, so they are used as a distance *bound* on a name
- * match and never as a join key or a stored value. See `scripts/lake-depth/src/alsc.ts`.
+ * out at **sd ~340 m** against our own outlines, so a pond only lands where our polygon contains its
+ * point or sits within the shared 500 m proximity bound with its name or area corroborating — the
+ * same join every other source gets, and never a looser one. See `scripts/lake-depth/src/alsc.ts`
+ * for the measurement behind that, and for the wider name join it argues for.
  */
 export const DEPTH_SOURCES = [
   'operator',

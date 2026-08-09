@@ -22,6 +22,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { Agent, request } from 'node:https';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -54,37 +55,117 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /**
  * The certificate does not validate — a Let's Encrypt cert for the shared host `www.server266.com`.
  *
- * ⚠ `NODE_TLS_REJECT_UNAUTHORIZED` is **process-wide**, not per-host — Node offers no per-host
- * escape. What makes it acceptable is that this CLI talks to exactly one origin and does nothing
- * else, so the blast radius is this file. **Do not import anything from here**, and do not add a
- * second fetch target to this command; either would silently extend an unverified transport to it.
+ * ⚠ **The exception is scoped to this agent, and therefore to this one host.** It used to be
+ * `process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0'` at module scope, on the reasoning that this CLI
+ * talks to exactly one origin so the blast radius is the file. That reasoning was wrong in a way
+ * worth recording: the env var is read by every TLS socket in the process **and inherited by every
+ * child process**, and this command shells out to `convex run` (via `RunLogger` → `convexRun`) with
+ * the deployment's admin credentials. So the setting silently turned off verification for the
+ * authenticated run-log writes too — the one thing here actually worth impersonating.
+ *
+ * An `https.Agent` carries `rejectUnauthorized` per *connection pool* instead, so nothing outside
+ * `alscRequest` below can ever use it. `assertAlscOrigin` is the second half: the unverified
+ * transport is pinned to the host we decided to accept it for, and pointing this command at a
+ * second target is a thrown error rather than a quiet extension of the exception.
  *
  * Recorded in the manifest so the archive states its own transport honestly. The answer to "was
  * this really the survey?" is `corroborate()` against GNIS names and our own polygon areas — three
  * publishers that have never met — which is stronger evidence than a certificate anyway.
  */
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+const ALSC_AGENT = new Agent({ rejectUnauthorized: false, keepAlive: true });
 
-async function get(url: string, body?: string): Promise<string | undefined> {
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    if (attempt > 0) await sleep(2_000 * attempt);
+/** The one host the unverified agent may ever talk to. */
+const ALSC_HOST = new URL(ALSC_BASE).host;
+
+function assertAlscOrigin(url: URL): void {
+  if (url.protocol !== 'https:' || url.host !== ALSC_HOST) {
+    throw new Error(
+      `refusing to send an unverified-TLS request to ${url.origin}. The certificate exception in ` +
+        `this file is pinned to https://${ALSC_HOST}; a second target needs its own decision, not ` +
+        'this one by inheritance.',
+    );
+  }
+}
+
+/**
+ * One request against the ALSC host, over the pinned agent. Resolves to the body, or `undefined`
+ * for any non-2xx / transport failure — a pond is a pond, never the run.
+ *
+ * Hand-rolled on `node:https` rather than `fetch` because a per-request TLS override is the whole
+ * point and Node's `fetch` has no supported way to take one (its `dispatcher` option needs an
+ * `undici` object, which is not a public built-in export). Same-origin redirects are followed
+ * because `https.request` does not follow them and `fetch` did.
+ */
+function alscRequest(url: string, body: string | undefined, hops = 0): Promise<string | undefined> {
+  return new Promise((settle, fail) => {
+    let target: URL;
     try {
-      const res = await fetch(url, {
-        signal: AbortSignal.timeout(45_000),
+      target = new URL(url);
+      assertAlscOrigin(target);
+    } catch (err) {
+      // A wrong *target* is a configuration error and ends the run; a wrong *response* is one pond.
+      // Rejecting rather than resolving `undefined` is what keeps those two apart.
+      fail(err);
+      return;
+    }
+    const req = request(
+      {
+        agent: ALSC_AGENT,
+        hostname: target.hostname,
+        port: target.port === '' ? 443 : Number(target.port),
+        path: `${target.pathname}${target.search}`,
+        method: body === undefined ? 'GET' : 'POST',
+        timeout: 45_000,
         // A scrape should say what it is. An honest UA is the minimum courtesy owed to a site we
         // are reading at volume, and it gives the operator something to contact if we are a problem.
         headers: {
           'User-Agent':
             'skating-corpus/1.0 (open-source outdoor-recreation project; contact desk@teaganatwater.com)',
-          ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
+          ...(body === undefined
+            ? {}
+            : {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Length': Buffer.byteLength(body),
+              }),
         },
-        ...(body ? { method: 'POST', body } : {}),
-      });
-      if (!res.ok) continue;
-      return await res.text();
-    } catch {
-      // network / TLS / timeout — worth another go
-    }
+      },
+      (res) => {
+        const status = res.statusCode ?? 0;
+        const location = res.headers.location;
+        if (status >= 300 && status < 400 && location !== undefined && hops < 3) {
+          res.resume();
+          // Resolved against the current URL, then re-pinned: a redirect off-host raises rather
+          // than quietly carrying the exception somewhere it was never granted.
+          alscRequest(new URL(location, target).toString(), body, hops + 1).then(settle, fail);
+          return;
+        }
+        if (status < 200 || status >= 300) {
+          res.resume();
+          settle(undefined);
+          return;
+        }
+        res.setEncoding('utf8');
+        let text = '';
+        res.on('data', (chunk: string) => {
+          text += chunk;
+        });
+        res.on('end', () => settle(text));
+        res.on('error', () => settle(undefined));
+      },
+    );
+    req.on('timeout', () => req.destroy(new Error('timeout')));
+    // Network / TLS / timeout. `settle` is idempotent, so a late error after a partial read is safe.
+    req.on('error', () => settle(undefined));
+    if (body !== undefined) req.write(body);
+    req.end();
+  });
+}
+
+async function get(url: string, body?: string): Promise<string | undefined> {
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) await sleep(2_000 * attempt);
+    const text = await alscRequest(url, body);
+    if (text !== undefined) return text;
   }
   return undefined;
 }
@@ -130,8 +211,10 @@ function writeArchive(
           'exchange of objective information"). Attribution is carried in DEPTH_SOURCE_TERMS.',
         transport:
           'TLS certificate did NOT validate: a Let\'s Encrypt certificate for "www.server266.com", ' +
-          'the shared host, which never issued one for this domain. Verification disabled for this ' +
-          'one fetch. The payload is corroborated instead against GNIS names and our own polygon ' +
+          'the shared host, which never issued one for this domain. Verification was disabled ONLY ' +
+          `for this host, on a dedicated https.Agent pinned to ${ALSC_BASE} — not process-wide, so ` +
+          "no other request of this command's (including its authenticated Convex run-log writes) " +
+          'was affected. The payload is corroborated instead against GNIS names and our own polygon ' +
           'areas — three publishers that have never met — which is stronger evidence than a cert.',
         robots:
           'robots.txt is a blanket "User-agent: * / Disallow: /". Founder call 2026-08-08: treated ' +
@@ -259,6 +342,11 @@ async function main(): Promise<void> {
   } catch (err) {
     logger.failed(err);
     throw err;
+  } finally {
+    // The agent keeps sockets alive between the ~1,470 paced requests — one handshake instead of
+    // 1,470 is the polite shape against a small shared host — so it has to be closed or the process
+    // sits idle waiting for them to time out.
+    ALSC_AGENT.destroy();
   }
 }
 

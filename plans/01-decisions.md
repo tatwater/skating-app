@@ -3900,8 +3900,16 @@ we already hold, and the coordinates are pre-GPS: measured against name-matched 
 carry a small systematic offset (~72 m N, ~97 m E, about a NAD27→WGS84 shift for New York) and a much
 larger random one — **sd ~340 m** against a median error of 289 m, on ponds whose median size is
 ~275 m across. So point-in-polygon matches **326** of 1,345 and a name match within 2 km matches
-**866**: the join is a name join with a distance bound, reading `nameClaims` rather than the stored
-name.
+**866**.
+
+**What ships is the shared join, not a wider one for this source.** `transform --alsc=` emits the
+archive as ordinary depth records and `matchAndImportDepths` matches them exactly as it matches
+HydroLAKES and LAGOS-US: containment first, then proximity inside 500 m with the name or the area
+corroborating. The source with the *worst* coordinates is the last one that should be handed a looser
+rule on the strength of its own numbers, and the loader names every pond it declined, so the
+shortfall is a count on the run row rather than an assumption. The 2 km name join — a per-source
+distance bound, read against `nameClaims` rather than the stored name — remains the upgrade worth
+making and is not built.
 
 **The vintage lives in the label** (`1984–87 Adirondack survey`), not as an exception in
 `MEASURED_DEPTH_SOURCES`. Calling a forty-year-old sounding measured is honest; calling it measured
@@ -3914,6 +3922,14 @@ without saying when is not.
    GNIS names and polygons we drew from OSM and NHD. **81.3% of areas agree within 35%, median ratio
    88.9%; 74.8% of names identical.** Three publishers who have never met, which is better evidence
    than a certificate. The archive's own manifest records that the transport was unverified.
+
+   ⚠ **And the exception is pinned to that one host.** It was first written as
+   `NODE_TLS_REJECT_UNAUTHORIZED = '0'` at module scope, reasoned as *"this CLI talks to one origin,
+   so the blast radius is the file"* — which is wrong twice: the env var governs every TLS socket in
+   the process **and is inherited by child processes**, and this command shells out to `convex run`
+   with the deployment's admin credentials. It now rides a dedicated `https.Agent` plus an
+   origin assertion, so the authenticated run-log writes verify normally and a second fetch target
+   raises instead of inheriting the exception.
 2. **`robots.txt` is a blanket `Disallow: /`** — treated as aimed at search indexers, on the ALSC's
    published mission (*"for the benefit of … the general public … through an exchange of objective
    information"*). Fetched serially at 1 req/s with an identifying User-Agent, **once**, and archived
