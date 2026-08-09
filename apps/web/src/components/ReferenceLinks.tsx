@@ -1,4 +1,4 @@
-import { allReferenceLinks, type ReferenceLinkBody } from '@skating/core';
+import { allReferenceLinks, type ReferenceLinkBody, revealPlaceholder } from '@skating/core';
 
 /**
  * The lake drawer's reference-link list (N6c Workstream B).
@@ -14,15 +14,25 @@ import { allReferenceLinks, type ReferenceLinkBody } from '@skating/core';
  * Plain `target="_blank"` on web, per D76: the in-app browser rule is a *mobile* rule, and a new tab
  * is what a desktop user expects. Mobile's `openBrowserAsync` path lives in the mobile component.
  */
-export function ReferenceLinks({ body }: { body: ReferenceLinkBody | null | undefined }) {
+export function ReferenceLinks({
+  body,
+  reveal = false,
+}: {
+  body: ReferenceLinkBody | null | undefined;
+  /** N6c-2's reveal flag — states the absence instead of hiding the section. */
+  reveal?: boolean;
+}) {
   const links = allReferenceLinks(body);
-  if (links.length === 0) return null;
+  if (links.length === 0 && !reveal) return null;
 
   return (
     <section className="flex flex-col gap-2">
       <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
         Elsewhere
       </h3>
+      {links.length === 0 ? (
+        <p className="text-foreground-muted text-sm italic">{revealPlaceholder('links')}</p>
+      ) : null}
       <ul className="flex flex-col gap-2">
         {links.map((link) => (
           <li key={link.id}>

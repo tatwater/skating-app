@@ -30,6 +30,7 @@
  * quality mark would be a category error that gets more wrong the better the reporting is.
  */
 
+import { revealBelowQuorum } from './profileReveal';
 import { SKATE_QUALITIES, type SkateQuality } from './types';
 
 /**
@@ -115,6 +116,29 @@ export function summarizeQuality(
   return { qualityDots: qualityDotsFor(mean), qualityCount: rated.length };
 }
 
+/**
+ * The same summary, with the quorum bypassed for the reveal flag (N6c-2).
+ *
+ * **A separate function rather than a parameter on {@link summarizeQuality}**, and the separation is
+ * the safety argument: the stored summary is written by the server, which has no business knowing
+ * about a client display flag, and a boolean threaded through the storage path is one default away
+ * from persisting a below-quorum mark. So the *stored* `qualityDots` is always quorum-respecting,
+ * and this is a render-time-only widening that reads the raw qualities again.
+ *
+ * Returns `revealed: true` when the mark exists only because of the flag, so the caller can label it.
+ */
+export function summarizeQualityRevealed(
+  qualities: readonly (SkateQuality | undefined)[],
+  enabled: boolean,
+): Pick<BodySummary, 'qualityDots' | 'qualityCount'> & { revealed?: boolean } {
+  const honest = summarizeQuality(qualities);
+  if (honest.qualityDots !== undefined || !revealBelowQuorum(enabled)) return honest;
+  const rated = qualities.filter((q): q is SkateQuality => q !== undefined && q in QUALITY_VALUE);
+  if (rated.length === 0) return honest;
+  const mean = rated.reduce((sum, q) => sum + QUALITY_VALUE[q], 0) / rated.length;
+  return { qualityDots: qualityDotsFor(mean), qualityCount: rated.length, revealed: true };
+}
+
 /** The most frequent hazard types, most frequent first, capped for glanceability. */
 export function topHazardTypes(
   types: readonly string[],
@@ -133,8 +157,20 @@ export function topHazardTypes(
  *
  * Activity — a recent report or an active hazard — and nothing else. A name is not a reason.
  */
-export function summaryHasCard(summary: BodySummary | null | undefined): boolean {
+export function summaryHasCard(
+  summary: BodySummary | null | undefined,
+  /**
+   * The reveal flag (N6c-2). When on, **every body with a summary row draws a card**, including the
+   * ones with nothing to report — so a walk-through can see where cards land, how they collide and
+   * what they look like empty, none of which is observable on a corpus holding one report.
+   *
+   * Note it still requires a `summary` to exist: the flag reveals what the rules hide, not bodies
+   * the sweep has never touched.
+   */
+  reveal = false,
+): boolean {
   if (!summary) return false;
+  if (reveal) return true;
   return summary.recentReportCount > 0 || summary.topHazardTypes.length > 0;
 }
 

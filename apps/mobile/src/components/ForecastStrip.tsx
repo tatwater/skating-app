@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { type ForecastSummary, formatForecastStrip } from '@skating/core';
+import { type ForecastSummary, formatForecastStrip, revealPlaceholder } from '@skating/core';
 import { useAction } from 'convex/react';
 import { useEffect, useState } from 'react';
 import { Paragraph, Text } from 'tamagui';
@@ -15,7 +15,14 @@ import { Section } from './detailUi';
  *
  * D3 holds at the copy: the line names weather and a clock, never the ice.
  */
-export function ForecastStrip({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+export function ForecastStrip({
+  waterBodyId,
+  reveal = false,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** N6c-2's reveal flag — states the absence instead of hiding the strip. */
+  reveal?: boolean;
+}) {
   const getForecast = useAction(api.weather.getForecastForBody);
   const [summary, setSummary] = useState<ForecastSummary | null>(null);
 
@@ -34,13 +41,19 @@ export function ForecastStrip({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
   }, [getForecast, waterBodyId]);
 
   const line = formatForecastStrip(summary);
-  if (!line) return null;
+  if (!line && !reveal) return null;
 
   return (
     <Section label="What's coming">
-      <Paragraph color="$foreground" fontSize={14}>
-        {line}
-      </Paragraph>
+      {line ? (
+        <Paragraph color="$foreground" fontSize={14}>
+          {line}
+        </Paragraph>
+      ) : (
+        <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
+          {revealPlaceholder('forecast')}
+        </Paragraph>
+      )}
       <Text color="$foregroundMuted" fontSize={11}>
         Forecast: Open-Meteo
       </Text>

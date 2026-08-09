@@ -11,7 +11,12 @@
 
 import { convertFilter } from '@maplibre/maplibre-gl-style-spec';
 import { layers, namedFlavor } from '@protomaps/basemaps';
-import { type BBox, composeBasemapLayers, REGION_BOUNDS_CORNERS } from '@skating/core';
+import {
+  type BBox,
+  composeBasemapLayers,
+  REGION_BOUNDS_CORNERS,
+  REVEAL_MARKER,
+} from '@skating/core';
 import type { StyleSpecification } from 'maplibre-gl';
 import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
 
@@ -452,10 +457,11 @@ export function qualityDotString(dots: number, total = 4): string {
  * is read at a glance from a moving map — anything longer and MapLibre's collision detection starts
  * hiding cards that would otherwise fit.
  */
-export function summaryCardText(body: MappableSummaryBody): string | null {
+export function summaryCardText(body: MappableSummaryBody, reveal = false): string | null {
   const summary = body.summary;
   if (!summary) return null;
-  if (summary.recentReportCount === 0 && summary.topHazardTypes.length === 0) return null;
+  const hasActivity = summary.recentReportCount > 0 || summary.topHazardTypes.length > 0;
+  if (!hasActivity && !reveal) return null;
 
   const lines: string[] = [];
   // A name is not a reason to draw a card, but it is always on one when there is a card.
@@ -466,13 +472,24 @@ export function summaryCardText(body: MappableSummaryBody): string | null {
     activity.push(
       `${summary.recentReportCount} report${summary.recentReportCount === 1 ? '' : 's'}`,
     );
+  } else if (reveal) {
+    activity.push('0 reports');
   }
   // The mark renders only above quorum — `qualityDots` is absent below it, never zero (D86).
+  //
+  // **Under the reveal it draws an EMPTY mark, never a computed one.** The stored summary is
+  // quorum-respecting by construction and the raw per-report qualities are not shipped to the map,
+  // so there is nothing here to widen even if we wanted to — which is the right answer anyway. An
+  // empty mark shows the slot, its size and where it collides; a fabricated one would be the exact
+  // claim D86's quorum exists to prevent, wearing a dev label nobody reads at a glance.
   if (summary.qualityDots !== undefined) activity.push(qualityDotString(summary.qualityDots));
+  else if (reveal) activity.push(`${qualityDotString(0)} ${REVEAL_MARKER}`);
   if (activity.length > 0) lines.push(activity.join('  '));
 
   if (summary.topHazardTypes.length > 0) {
     lines.push(summary.topHazardTypes.map((type) => type.replaceAll('_', ' ')).join(', '));
+  } else if (reveal) {
+    lines.push(`no hazards ${REVEAL_MARKER}`);
   }
   return lines.length > 0 ? lines.join('\n') : null;
 }
@@ -492,10 +509,12 @@ export function summaryCardText(body: MappableSummaryBody): string | null {
  */
 export function summaryCardsToFeatureCollection(
   bodies: readonly MappableSummaryBody[],
+  /** The N6c-2 reveal flag — draws a card for every body carrying a summary, empty ones included. */
+  reveal = false,
 ): GeoJSON.FeatureCollection {
   const features: GeoJSON.Feature[] = [];
   for (const body of bodies) {
-    const text = summaryCardText(body);
+    const text = summaryCardText(body, reveal);
     if (text === null) continue;
     const point = body.interiorPoint ?? body.representativePoint ?? body.centroid;
     features.push({

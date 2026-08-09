@@ -1,4 +1,4 @@
-import { allReferenceLinks, type ReferenceLinkBody } from '@skating/core';
+import { allReferenceLinks, type ReferenceLinkBody, revealPlaceholder } from '@skating/core';
 import { openBrowserAsync } from 'expo-web-browser';
 import { Paragraph, Text, YStack } from 'tamagui';
 import { Section } from './detailUi';
@@ -20,12 +20,24 @@ import { Section } from './detailUi';
  *
  * Renders nothing when there is nothing to link to, matching the caption and the bathymetry credit.
  */
-export function ReferenceLinks({ body }: { body: ReferenceLinkBody | null | undefined }) {
+export function ReferenceLinks({
+  body,
+  reveal = false,
+}: {
+  body: ReferenceLinkBody | null | undefined;
+  /** N6c-2's reveal flag — states the absence instead of hiding the section. */
+  reveal?: boolean;
+}) {
   const links = allReferenceLinks(body);
-  if (links.length === 0) return null;
+  if (links.length === 0 && !reveal) return null;
 
   return (
     <Section label="Elsewhere">
+      {links.length === 0 ? (
+        <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
+          {revealPlaceholder('links')}
+        </Paragraph>
+      ) : null}
       {links.map((link) => (
         <YStack key={link.id} gap="$1" paddingBottom="$2">
           <Paragraph

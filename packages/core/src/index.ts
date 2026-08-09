@@ -56,6 +56,7 @@ export * from './osm';
 export * from './pathToBody';
 export * from './photo';
 export * from './profile';
+export * from './profileReveal';
 export * from './putIn';
 export * from './recommended';
 export * from './reconcile';

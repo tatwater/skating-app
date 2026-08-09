@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { type ForecastSummary, formatForecastStrip } from '@skating/core';
+import { type ForecastSummary, formatForecastStrip, revealPlaceholder } from '@skating/core';
 import { useAction } from 'convex/react';
 import { useEffect, useState } from 'react';
 
@@ -19,7 +19,14 @@ import { useEffect, useState } from 'react';
  * Keyed on the **body**, not on a report or hazard, because the question "will it be snowing when I
  * get there" is about the lake — and it is asked most on the lakes that have no reports at all.
  */
-export function ForecastStrip({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+export function ForecastStrip({
+  waterBodyId,
+  reveal = false,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** N6c-2's reveal flag — states the absence instead of hiding the strip. */
+  reveal?: boolean;
+}) {
   const getForecast = useAction(api.weather.getForecastForBody);
   const [summary, setSummary] = useState<ForecastSummary | null>(null);
 
@@ -40,14 +47,18 @@ export function ForecastStrip({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
   }, [getForecast, waterBodyId]);
 
   const line = formatForecastStrip(summary);
-  if (!line) return null;
+  if (!line && !reveal) return null;
 
   return (
     <div className="flex flex-col gap-1">
       <h3 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
         What's coming
       </h3>
-      <p className="text-foreground text-sm">{line}</p>
+      {line ? (
+        <p className="text-foreground text-sm">{line}</p>
+      ) : (
+        <p className="text-foreground-muted text-sm italic">{revealPlaceholder('forecast')}</p>
+      )}
       <p className="text-foreground-muted text-xs">Forecast: Open-Meteo</p>
     </div>
   );

@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { formatAlertLine } from '@skating/core';
+import { formatAlertLine, revealPlaceholder } from '@skating/core';
 import { useQuery } from 'convex/react';
 
 /**
@@ -17,9 +17,16 @@ import { useQuery } from 'convex/react';
  *
  * It renders nothing when there is no active alert — which is almost always, and is the point.
  */
-export function AlertStrip({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+export function AlertStrip({
+  waterBodyId,
+  reveal = false,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** N6c-2's reveal flag — states the absence instead of hiding the strip. */
+  reveal?: boolean;
+}) {
   const alerts = useQuery(api.weatherAlerts.listForBody, { waterBodyId });
-  if (!alerts || alerts.length === 0) return null;
+  if ((!alerts || alerts.length === 0) && !reveal) return null;
 
   return (
     <section
@@ -29,8 +36,11 @@ export function AlertStrip({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) 
       <h3 className="font-mono text-amber-700 text-xs uppercase tracking-widest dark:text-amber-400">
         Weather alerts
       </h3>
+      {!alerts || alerts.length === 0 ? (
+        <p className="text-foreground-muted text-sm italic">{revealPlaceholder('active alerts')}</p>
+      ) : null}
       <ul className="flex flex-col gap-1">
-        {alerts.map((alert) => (
+        {(alerts ?? []).map((alert) => (
           <li key={alert.id} className="text-foreground text-sm">
             {formatAlertLine(alert)}
             {/* NWS's own headline, when they wrote one. Never paraphrased: the whole value of this

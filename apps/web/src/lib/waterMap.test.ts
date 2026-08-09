@@ -488,3 +488,67 @@ describe('qualityDotString', () => {
     expect(qualityDotString(4)).toBe('●●●●');
   });
 });
+
+describe('summary cards under the reveal flag (N6c-2)', () => {
+  const base = {
+    _id: 'body1',
+    name: 'Beaver Pond',
+    centroid: { lat: 44.2757, lng: -73.3894 },
+    interiorPoint: { lat: 44.5325, lng: -73.3251 },
+  };
+
+  it('draws an empty card so the slot is visible on a corpus with no reports', () => {
+    const text = summaryCardText(
+      { ...base, summary: { recentReportCount: 0, topHazardTypes: [] } },
+      true,
+    );
+    expect(text).toContain('Beaver Pond');
+    expect(text).toContain('0 reports');
+    expect(text).toContain('no hazards');
+  });
+
+  /**
+   * The line that must not move. A revealed mark is EMPTY — the stored summary is
+   * quorum-respecting by construction and the raw qualities never reach the map, so there is
+   * nothing here to widen. A fabricated mark would be exactly the claim D86's quorum prevents.
+   */
+  it('renders an empty mark, never a computed one', () => {
+    const text =
+      summaryCardText({ ...base, summary: { recentReportCount: 1, topHazardTypes: [] } }, true) ??
+      '';
+    expect(text).toContain('○○○○');
+    expect(text).not.toContain('●');
+  });
+
+  it('marks everything it revealed, so nothing reads as real content', () => {
+    const text =
+      summaryCardText({ ...base, summary: { recentReportCount: 0, topHazardTypes: [] } }, true) ??
+      '';
+    expect(text).toContain('·dev');
+  });
+
+  it('leaves a real card alone', () => {
+    const text =
+      summaryCardText(
+        {
+          ...base,
+          summary: { recentReportCount: 4, topHazardTypes: ['open_water'], qualityDots: 3 },
+        },
+        true,
+      ) ?? '';
+    expect(text).toContain('●●●○');
+    expect(text).toContain('4 reports');
+    expect(text).not.toContain('no hazards');
+  });
+
+  it('still draws nothing for a body with no summary at all', () => {
+    expect(summaryCardText({ ...base }, true)).toBeNull();
+    expect(summaryCardsToFeatureCollection([{ ...base }], true).features).toHaveLength(0);
+  });
+
+  it('changes nothing when off', () => {
+    expect(
+      summaryCardText({ ...base, summary: { recentReportCount: 0, topHazardTypes: [] } }, false),
+    ).toBeNull();
+  });
+});

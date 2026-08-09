@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { formatAlertLine } from '@skating/core';
+import { formatAlertLine, revealPlaceholder } from '@skating/core';
 import { useQuery } from 'convex/react';
 import { Paragraph, Text, YStack } from 'tamagui';
 
@@ -14,9 +14,16 @@ import { Paragraph, Text, YStack } from 'tamagui';
  * A plain query with no fetch behind it — the cron owns the network — so opening a sheet costs one
  * bounded table read no matter how many skaters open the same lake.
  */
-export function AlertStrip({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+export function AlertStrip({
+  waterBodyId,
+  reveal = false,
+}: {
+  waterBodyId: Id<'waterBodies'>;
+  /** N6c-2's reveal flag — states the absence instead of hiding the strip. */
+  reveal?: boolean;
+}) {
   const alerts = useQuery(api.weatherAlerts.listForBody, { waterBodyId });
-  if (!alerts || alerts.length === 0) return null;
+  if ((!alerts || alerts.length === 0) && !reveal) return null;
 
   return (
     <YStack
@@ -31,7 +38,12 @@ export function AlertStrip({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) 
       <Text color="$foregroundMuted" fontSize={11} textTransform="uppercase">
         Weather alerts
       </Text>
-      {alerts.map((alert) => (
+      {!alerts || alerts.length === 0 ? (
+        <Paragraph color="$foregroundMuted" fontSize={14} fontStyle="italic">
+          {revealPlaceholder('active alerts')}
+        </Paragraph>
+      ) : null}
+      {(alerts ?? []).map((alert) => (
         <YStack key={alert.id} gap="$1">
           <Paragraph color="$foreground" fontSize={14}>
             {formatAlertLine(alert)}

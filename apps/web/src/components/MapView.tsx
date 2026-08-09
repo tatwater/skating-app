@@ -8,6 +8,7 @@ import {
   isRegionOffscreen,
   type LatLng,
   polygonShape,
+  profileRevealEnabled,
   SUB_AREA_MIN_RENDER_ZOOM,
   undoDraftPlacement,
 } from '@skating/core';
@@ -217,9 +218,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   // `listInViewport` rows the water source already has, because `summary` is denormalized onto the
   // body. That is the whole argument for denormalizing it: a card costs no read at all.
   const [summaryFeatures, setSummaryFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
+  // The N6c-2 reveal flag: on dev it draws a card for every body carrying a summary, so a
+  // walk-through can see where cards land and how they collide on a corpus with almost no reports.
+  // Forced off against the production deployment regardless of the constant — see `profileReveal`.
+  const reveal = profileRevealEnabled(env.convexUrl);
   useEffect(() => {
-    if (bodies !== undefined) setSummaryFeatures(summaryCardsToFeatureCollection(bodies));
-  }, [bodies]);
+    if (bodies !== undefined) setSummaryFeatures(summaryCardsToFeatureCollection(bodies, reveal));
+  }, [bodies, reveal]);
 
   // Named sub-areas in view (N2/D60) — a second layer on its own ladder-grid query.
   //

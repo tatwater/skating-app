@@ -8,12 +8,16 @@ import {
   formatSkateTime,
   humanizeEnum,
   isLeaving,
+  profileRevealEnabled,
+  revealEmptySections,
+  revealPlaceholder,
   SKATE_QUALITY_LABELS,
   waterBodyClassLabel,
 } from '@skating/core';
 import { Link } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
+import { env } from '../lib/env';
 import { AlertStrip } from './AlertStrip';
 import { WaterBodyModeratorControls } from './admin/WaterBodyModeratorControls';
 import { BountyForm } from './BountyForm';
@@ -133,6 +137,11 @@ export function WaterBodyDetail({
 
   const depth = describeLakeDepth(result.body);
   const caption = buildLakeCaption(result.body, regionStats);
+  // N6c-2's reveal flag. Every surface below is built to render nothing when it has nothing to say,
+  // which is right for skaters and hostile to testing — on this corpus almost all of them are
+  // invisible, and "invisible because there is no data" looks exactly like "invisible because it
+  // broke". Under the reveal each states its absence instead. It never invents a value.
+  const reveal = revealEmptySections(profileRevealEnabled(env.convexUrl));
 
   return (
     <>
@@ -159,7 +168,16 @@ export function WaterBodyDetail({
         {/* The derived profile (N6c/C). Renders NOTHING — no heading, no empty section — when
             there is nothing to say, which is most of the corpus and is the correct outcome rather
             than a gap to fill with hedged filler. */}
-        {caption ? <p className="pt-1 text-muted-foreground text-sm">{caption}</p> : null}
+        {caption ? (
+          <p className="pt-1 text-muted-foreground text-sm">{caption}</p>
+        ) : reveal ? (
+          <p className="pt-1 text-muted-foreground text-sm italic">
+            {revealPlaceholder('profile caption')}
+          </p>
+        ) : null}
+        {depth ? null : reveal ? (
+          <p className="text-muted-foreground text-xs italic">{revealPlaceholder('depth')}</p>
+        ) : null}
       </SheetHeader>
       <div className="flex flex-col gap-4 px-4 pb-4">
         {/* Report creation + directions to a put-in (never the on-water centroid, D#7).
@@ -182,11 +200,11 @@ export function WaterBodyDetail({
         {leaving ? <LeavingNotice /> : null}
         {/* Official NWS alerts (N6c/B5) first — a warning from the local forecast office outranks
             both our observations and anybody's forecast, so it sits above both strips. */}
-        <AlertStrip waterBodyId={result.body._id} />
+        <AlertStrip waterBodyId={result.body._id} reveal={reveal} />
         {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline, and the
             half that answers "should I bother driving". Above the season filter so it sits with the
             body's current state rather than inside its history. */}
-        <ForecastStrip waterBodyId={result.body._id} />
+        <ForecastStrip waterBodyId={result.body._id} reveal={reveal} />
         <WaterBodyModeratorControls body={result.body} />
         <SeasonFilter waterBodyId={result.body._id} />
         <BountyList waterBodyId={result.body._id} />
@@ -202,7 +220,7 @@ export function WaterBodyDetail({
         {/* Reference links (N6c/B), below our own content and above the credits. Everything here
             leaves the app, so it sits after everything a skater came for — and it renders nothing at
             all on a body with no coordinate and no regional community. */}
-        <ReferenceLinks body={result.body} />
+        <ReferenceLinks body={result.body} reveal={reveal} />
         {/* The bathymetry credit (N6b §5), last in the drawer and absent on the great majority of
             lakes no agency ever surveyed. "How far away can we put it" resolved to *here*, and that
             is not a compromise: nothing requires a contour credit on the map surface, and this is

@@ -6,6 +6,7 @@ import {
   SUMMARY_QUALITY_DOTS,
   SUMMARY_QUALITY_QUORUM,
   summarizeQuality,
+  summarizeQualityRevealed,
   summaryHasCard,
   summaryTitle,
   topHazardTypes,
@@ -139,5 +140,53 @@ describe('qualityMarkLabel', () => {
 
   it('has no label when there is no mark', () => {
     expect(qualityMarkLabel(summary())).toBeUndefined();
+  });
+});
+
+describe('the reveal flag (N6c-2)', () => {
+  it('draws a card for every body with a summary, empty ones included', () => {
+    expect(summaryHasCard(summary(), true)).toBe(true);
+    expect(summaryHasCard(summary({ recentReportCount: 3 }), true)).toBe(true);
+  });
+
+  /** The flag reveals what the rules hide — not bodies the sweep has never touched. */
+  it('still needs a summary to exist', () => {
+    expect(summaryHasCard(null, true)).toBe(false);
+    expect(summaryHasCard(undefined, true)).toBe(false);
+  });
+
+  it('changes nothing when off', () => {
+    expect(summaryHasCard(summary(), false)).toBe(false);
+    expect(summaryHasCard(summary())).toBe(false);
+  });
+
+  it('widens the quality mark below quorum, and says that it did', () => {
+    const revealed = summarizeQualityRevealed(['great', 'good'], true);
+    expect(revealed.qualityDots).toBe(4); // (4+3)/2 = 3.5 → 4
+    expect(revealed.qualityCount).toBe(2);
+    expect(revealed.revealed).toBe(true);
+  });
+
+  it('does not mark an honestly-earned score as revealed', () => {
+    const honest = summarizeQualityRevealed(['good', 'good', 'good'], true);
+    expect(honest.qualityDots).toBe(3);
+    expect(honest.revealed).toBeUndefined();
+  });
+
+  it('invents nothing when there are no ratings at all', () => {
+    expect(summarizeQualityRevealed([undefined, undefined], true)).toEqual({});
+  });
+
+  it('leaves the honest summary untouched when off', () => {
+    expect(summarizeQualityRevealed(['great', 'good'], false)).toEqual({});
+  });
+
+  /**
+   * The stored summary is written by the server, which has no business knowing about a client
+   * display flag — so the quorum-respecting function is the one the storage path calls, and a
+   * below-quorum mark can never be persisted.
+   */
+  it('leaves `summarizeQuality` — the stored path — strictly quorum-respecting', () => {
+    expect(summarizeQuality(['great', 'good'])).toEqual({});
   });
 });
