@@ -4297,3 +4297,94 @@ This is the same correction the campaign has now made five times. **Report `cove
 name what was walked past.**
 
 **Related:** [D96](./phase-N7-unified-corpus.md#d96--settled-the-four-admission-rules--approved), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-n7-3).
+
+---
+
+## D138 — The Copernicus deep link ships **with** the imagery layer, not a phase ahead of it (N6c-2)
+
+**2026-08-09, founder call at N6c-2 kickoff:** *"let's postpone any satellite imagery part until N6e
+so we can do it all together."*
+
+N6c's Workstream **B3** specified a Copernicus Browser deep link, a `satelliteImagery:
+'auto'|'on'|'off'` per-row override and a `SATELLITE_MIN_AREA_SQM` threshold — all of it now deferred
+to [N6e](./phase-N6e-satellite-imagery.md).
+
+**Why this is the right split rather than a slip.** B3's own argument for shipping the link early was
+that it is *"zero cost, zero quota, no license question, works today"* — true, and it is also the
+half that teaches us least. The three things B3a's proving run was meant to establish (the URL shape
+is right, name-matching works, imagery is legible at these bodies' sizes) are all things N6e has to
+establish anyway for the in-app tier, against the same bodies. Doing them twice, a phase apart, means
+the second pass re-derives what the first learned and the deep link spends a phase as the only
+imagery surface in the product — which is exactly the "a toggle appears later and works differently"
+seam N6e exists to avoid.
+
+**What this does NOT defer:** Workstream **D**'s curated boosts, which were bundled with B3a because
+they share a matcher. They ship in N6c-2 — see [D139](#d139--the-seed-script-is-named-for-the-job-it-does-today-n6c-2).
+
+`referenceLinks.ts` carries a test asserting no Copernicus URL is emitted, so the link cannot creep
+back in ahead of the layer.
+
+**Related:** [D75](#d75--copernicus-deep-link), [D84](#d84--two-imagery-tiers), D139.
+
+---
+
+## D139 — The seed script is named for the job it does **today** (N6c-2)
+
+**2026-08-09, founder call.** `scripts/seed-satellite` becomes **`scripts/seed-destinations`**.
+
+The original rename (2026-07-31) was argued well: *"`seed-destinations` names the **input** — a list
+of lakes — which is the thing most likely to change. `seed-satellite` names the **job**."* That
+reasoning holds, and D138 changed which job it is. With the imagery half deferred, what this script
+does is match a curated shortlist to corpus rows and set `curatedBoost` (Workstream D). Naming it
+after work it will not do for a phase is the same failure the first rename was avoiding, pointed the
+other way.
+
+N6e re-adds the URL verification on top; the **input file** is what changes then, not the name — which
+was the durable half of the original argument all along.
+
+**Related:** [D49](#d49--display-prominence), D138.
+
+---
+
+## D140 — A forecast and an observation are separated by a **type**, not a rule (N6c-2 / B5b)
+
+**2026-08-09.** `fetchOpenMeteoHourly` returns `{ past, forecast, utcOffsetMs }`. Every calculation —
+the D56 decay multiplier, the bounty gate, the contradiction settle — reads `.past` and only `.past`.
+
+**Why the type rather than a filter.** B5b is described in the plan as nearly free, because
+`weather.ts` already sent `forecast_days: '1'` and threw the forward hours away. That is accurate,
+and it is the trap: the filter discarding them is the *same* filter that feeds
+`summarizeWeatherSince`, so the cheap version of the change — widen the window — puts predictions
+into the decay math. A hazard whose confidence decayed on snow that never fell could not be
+re-derived afterwards, and **nothing would report it**. D74 says the advisory layer never feeds a
+calculation; this makes that structural, so the guarantee lives in one return type instead of in
+every call site's memory.
+
+Pinned by a convex test whose fixture puts all the snow in the forward half and asserts
+`summarizeWeatherSince` still reports zero.
+
+**Related:** [D74](#d74--one-weather-physics-source-plus-a-separate-advisory-layer), [D56](#d56--weather-driven-hazard-decay), [D3](#d3--never-a-safety-verdict).
+
+---
+
+## D141 — The map card's counts are **recomputed**, never incremented (N6c-2 / E)
+
+**2026-08-09.** `waterBodies.summary` is re-derived from a bounded index range on every write that
+could change it, plus a six-hourly cron for pure time decay.
+
+The plan specified a counter *"generalizing the Phase 4 contribution-counter pattern"*, and
+`lib/contributionCounts.ts` sitting next door makes ±1 look like the obvious shape. It is the wrong
+shape for half of what the card carries:
+
+- A profile's `reportCount` is a **lifetime total**. Every event that changes it is a ±1, and nothing
+  changes it by the passage of time.
+- A card's counts are **window- and season-scoped**. A report ageing out of the 14-day window
+  decrements the count with no event to hang the decrement on — and it changes the *mean* behind the
+  D86 dots, which cannot be maintained incrementally at all: you cannot remove a value from a mean
+  without knowing which value left.
+
+The recompute is exact by construction rather than exact-until-a-path-is-missed, and it costs one
+index range over a fortnight of one body's reports. A no-op result short-circuits before the write,
+so the common case is a read and nothing else.
+
+**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D49](#d49--display-prominence).

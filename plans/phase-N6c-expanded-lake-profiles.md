@@ -1,5 +1,33 @@
 # Phase N6c — Expanded lake profiles: derived stats, captions, reference links, and map summary cards
 
+> ### ✅ N6c-2 IS BUILT (2026-08-09) — and four things in this document are wrong
+>
+> Branch `phase-n6c-2-links-cards`, off `phase-n7-3-unified-corpus`. **Unpushed, undeployed, and
+> deliberately so:** a second session was mid-campaign against the dev deployment when this was
+> built, and `HANDOFF-n6c-data-campaign.md`'s rule — *"do not run `convex dev --once` while any
+> loader or prune is running"* — is the reason nothing here has been deployed. See
+> [*§What the N6c-2 build found*](#what-the-n6c-2-build-found).
+>
+> Shipped: **B** (reference links), **B5** (NWS alerts), **B5b** (the forward forecast), **B7** (the
+> stored link + its editor), **B3a/D** (`scripts/seed-destinations`), **E** (map summary cards),
+> **F1** (the per-lake timeline), and mobile parity for all three drawer strips.
+>
+> **Deferred by founder call: everything satellite** (**D138**) — B3's Copernicus deep link, the
+> `satelliteImagery` per-row override and `SATELLITE_MIN_AREA_SQM` all move to
+> [N6e](./phase-N6e-satellite-imagery.md) so the imagery story lands in one piece.
+>
+> | this doc says | actually |
+> | --- | --- |
+> | **"We have 116,070"** — in P1, P2, D2 and a dozen other places | **24,948** as of the N7-3 re-merge. Off by 4.65×. The rules survive; the cost arguments were measured on a corpus that no longer exists |
+> | Workstream B derives links from **`centroid`** | `centroid` is a **shoreline** point — this doc proves it in finding 2 and then B uses it anyway. Links read `interiorPoint` |
+> | D86's dots derive from **the Phase 6 thumbs** | `reports.skateQuality`, per the roadmap's own D86 amendment. The thumbs measure whether a *report* was helpful |
+> | Sequencing: elevation must precede an **unrun** N6a loader | Both ran, in the N7-2/N7-3 campaign. The whole section is history |
+> | `regionStats` deciles are available to the caption | **The table is empty on dev.** A5 is built and dark; `regionStats:recompute` is the campaign's last pass and belongs to whoever finishes it |
+>
+> **Workstream F is split, not whole:** F2 was pulled forward into the data campaign and shipped
+> months of runs ago; only F1 was N6c-2's.
+
+
 > ### ⚠ The elevation source changed (N7-2, 2026-08-08)
 >
 > Workstream A1 is described throughout this document against **Open-Meteo / Copernicus GLO-90**.
@@ -296,6 +324,83 @@ on-water guarantee display, drive-time and the town stamp all depend on. N6b alr
 > It isn't — it is waiting.
 
 ---
+
+---
+
+## What the N6c-2 build found
+
+*Written 2026-08-09, against the code. The pattern from N6c-1 repeated: **the plan's own earlier
+findings had not been propagated into its later workstreams.***
+
+### 1. Workstream B was still built on the shoreline
+
+B says every link is *"a pure function of `(centroid, name, states[])`"*. Finding 2 of this same
+document measured what `centroid` actually is — Turf `pointOnFeature`, which returns a point on the
+**boundary** whenever the bbox centre falls outside the polygon, so Willoughby's is ring vertex 199
+and Champlain's sits **30.7 km** from mid-lake.
+
+B predates that measurement and was never re-checked against it. A Windy link for Champlain would
+have opened 30 km from the lake — silently, because a shoreline coordinate is a perfectly valid
+coordinate and nothing downstream can tell. Same class as the fetch profile, and the second time this
+exact field has produced it.
+
+`linkCoordinate()` reads `interiorPoint ?? representativePoint ?? centroid`, and a test pins it. The
+same fix applies to the E card's placement, which would otherwise have hung the card off the edge of
+the water it describes.
+
+### 2. B5b is cheap, and the cheap way to build it is wrong — **D140**
+
+The plan's argument is exactly right: `weather.ts:112` sent `forecast_days: '1'` and the window
+filter threw the forward hours away, so a forecast costs one changed parameter.
+
+What it does not say is that **the filter discarding those hours is the same filter that feeds
+`summarizeWeatherSince`** — the input to the D56 decay multiplier, the bounty gate and the
+contradiction settle. Widening it, which is the one-line version of this feature, puts a prediction
+into all three. A hazard whose confidence decayed on snow that never fell could not be re-derived
+afterwards and nothing would say so.
+
+So the fetch returns `{ past, forecast, utcOffsetMs }` and the D74 wall is a return type rather than
+a rule each call site remembers. A convex test puts all the snow in the forward half and asserts the
+weather-since summary still reports zero.
+
+*(The `utcOffsetMs` is the second half of that: hours carry local-shifted timestamps, and applying a
+12-hour horizon against a UTC `now` slides the whole strip by 4–5 hours in this region — most of its
+own length.)*
+
+### 3. E's counter is the wrong shape, and the neighbouring file is why — **D141**
+
+E2 specifies `summary` as a counter *"generalizing the Phase 4 contribution-counter pattern"*, and
+`lib/contributionCounts.ts` makes ±1 look obvious. But a profile's `reportCount` is a lifetime total
+where a card's counts are **window- and season-scoped**: a report ageing out has no event to hang a
+decrement on, and the D86 mean cannot be maintained incrementally at all — you cannot remove a value
+from a mean without knowing which value left.
+
+Recomputed from a bounded index range instead, with a cron for the decay no write can catch. Exact by
+construction rather than exact-until-a-path-is-missed.
+
+### 4. E cannot be validated on this deployment, and that is fine
+
+Dev holds **1 report and 2 hazards**. E3's rule is that no activity means no card, and D86's quorum
+is three rated reports — so the feature ships correct and renders nothing anywhere. Founder call:
+build it, defer validation to N6d or device testing. Worth stating plainly rather than discovering it
+at a demo.
+
+### 5. Two bugs the tests caught that review would not have
+
+- `replaceStateAlerts` spread an `NwsAlert` into `ctx.db.insert`, carrying its `id` field into a table
+  whose column is `alertId`. Convex rejected it outright; on a schema that tolerated extra fields it
+  would have been a silent stray column.
+- The seed shortlist shipped with a corrupted latitude (`43.8materials`) that made
+  `destinations.json` invalid JSON. Caught by parsing it, which is the cheapest possible test and was
+  not otherwise in the plan.
+
+### 6. Four property tests flake under coverage
+
+`dedup`, `geometry`, `samplePoints` and `subArea` each have one property test that intermittently
+exceeds vitest's 5 s default under `--coverage` on a loaded machine. Pre-existing, unrelated to this
+phase, and reproducible: they pass alone and in a second full run. Left alone here rather than fixed
+in an unrelated branch, but they want explicit timeouts.
+
 
 ## Why this phase exists
 

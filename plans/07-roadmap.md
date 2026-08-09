@@ -1026,9 +1026,47 @@ passed its unit tests:
 everything above it.
 
 **N6c-2 — reference links, NWS alerts, the short forecast, the seed script, per-body summary cards,
-and import observability.** **Not built.** Carries the **D86 amendment**: the consensus dots read
-`reports.skateQuality`, not the Phase 6 thumbs, which measure whether a *report* was helpful rather
-than what the ice was like.
+and the per-lake timeline.** ✅ **BUILT 2026-08-09** on branch `phase-n6c-2-links-cards` (off
+`phase-n7-3-unified-corpus`; **unpushed and undeployed on purpose** — a second session was mid-campaign
+against dev, and a redeploy mid-pass is the one way to break an otherwise resumable run). Tests green:
+core 1,738 · convex 1,141 · web 291 · mobile 95 · seed-destinations 15. New decisions **D138–D141**.
+
+Shipped: **B** (Windy + the regional community archive, derived and stored nowhere), **B5** (NWS
+alerts on a 15-minute cron, state rung of the zone ladder), **B5b** (the forward forecast), **B7**
+(the one stored link, with its editor), **B3a/D** (`scripts/seed-destinations`), **E** (map summary
+cards with D86's dots), **F1** (the per-lake activity timeline), and mobile parity for all three
+drawer strips through `openBrowserAsync` (D76).
+
+**Everything satellite deferred to [N6e](./phase-N6e-satellite-imagery.md) at the founder's ask
+(D138)** — the Copernicus deep link, the `satelliteImagery` override and `SATELLITE_MIN_AREA_SQM` —
+so the imagery story lands in one piece rather than a link one phase and a layer the next. That split
+renamed the seed script to `seed-destinations` (**D139**), since the job it does today is Workstream
+D's boosts.
+
+Carries the **D86 amendment**: the consensus dots read `reports.skateQuality`, not the Phase 6
+thumbs, which measure whether a *report* was helpful rather than what the ice was like.
+
+**What the build found — the plan's own findings had not reached its later workstreams:**
+
+- **Workstream B was still built on `centroid`**, which this same plan proves in its finding 2 is a
+  *shoreline* point (Willoughby = ring vertex 199; Champlain 30.7 km off mid-lake). A Windy link for
+  Champlain would have opened 30 km away, silently, because a shoreline coordinate is a valid
+  coordinate. Links and summary cards read `interiorPoint`; a test pins it.
+- **B5b's cheap build is the wrong build (D140).** The forward hours were being discarded by the same
+  filter that feeds `summarizeWeatherSince`, so widening it — the one-line version — would have put
+  predictions into the decay multiplier, the bounty gate and the contradiction settle. The fetch now
+  returns `{ past, forecast }` and D74 is a return type rather than a rule each call site remembers.
+- **E's counter is the wrong shape (D141).** Card counts are window- and season-scoped, so a report
+  ageing out has no event to decrement on, and the D86 mean cannot be maintained incrementally at all.
+  Recomputed from a bounded index range, with a cron for the decay no write can catch.
+- **E cannot be validated on dev**, which holds 1 report and 2 hazards. It ships correct and renders
+  nothing anywhere. Founder call: build it, validate at N6d or device testing.
+- **The corpus is 24,948, not the 116,070 the plan says throughout** — including in P1 and P2, its two
+  governing rules. The rules survive; every cost argument in the doc was measured on a corpus that no
+  longer exists.
+
+⛔ **`regionStats` is still empty on dev**, so A5's decile clauses render nothing. That is the data
+campaign's last pass, not this branch's.
 
 **N6b — The bathymetry layer: real isobaths inside the lake.** ✅ **COMPLETE (2026-08-01); prod
 deferred.** See [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
