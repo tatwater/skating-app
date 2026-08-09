@@ -1,0 +1,245 @@
+[
+  {
+    "name": "Lake Willoughby",
+    "state": "VT",
+    "near": { "lat": 44.7419, "lng": -72.0537 },
+    "sources": ["community", "atlas"],
+    "notes": "The regional archetype — deep, fjord-like, bimodal wind rose along the NNW–SSE trough."
+  },
+  {
+    "name": "Caspian Lake",
+    "state": "VT",
+    "near": { "lat": 44.6217, "lng": -72.3676 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Lake Memphremagog",
+    "state": "VT",
+    "near": { "lat": 44.9736, "lng": -72.2093 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Lake Champlain",
+    "state": "VT",
+    "near": { "lat": 44.5325, "lng": -73.3251 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Joe's Pond",
+    "state": "VT",
+    "near": { "lat": 44.4189, "lng": -72.1748 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Lake Elmore",
+    "state": "VT",
+    "near": { "lat": 44.5397, "lng": -72.5312 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Lake Morey",
+    "state": "VT",
+    "near": { "lat": 43.9265, "lng": -72.1548 },
+    "sources": ["community", "atlas"],
+    "notes": "Home of the plowed skating trail."
+  },
+  {
+    "name": "Curtis Pond",
+    "state": "VT",
+    "near": { "lat": 44.4128, "lng": -72.5665 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Wrightsville Reservoir",
+    "state": "VT",
+    "near": { "lat": 44.3167, "lng": -72.5833 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Waterbury Reservoir",
+    "state": "VT",
+    "near": { "lat": 44.3906, "lng": -72.7712 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Lake Dunmore",
+    "state": "VT",
+    "near": { "lat": 43.9017, "lng": -73.0912 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Lake Bomoseen",
+    "state": "VT",
+    "near": { "lat": 43.6472, "lng": -73.2062 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Lake Groton",
+    "state": "VT",
+    "near": { "lat": 44.2456, "lng": -72.2723 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Lake Winnipesaukee",
+    "state": "NH",
+    "near": { "lat": 43.6156, "lng": -71.3286 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Squam Lake",
+    "state": "NH",
+    "near": { "lat": 43.7712, "lng": -71.5384 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Newfound Lake",
+    "state": "NH",
+    "near": { "lat": 43.6659, "lng": -71.7573 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Lake Sunapee",
+    "state": "NH",
+    "near": { "lat": 43.3878, "lng": -72.0501 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Ossipee Lake",
+    "state": "NH",
+    "near": { "lat": 43.8081, "lng": -71.1281 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Lake Winnisquam",
+    "state": "NH",
+    "near": { "lat": 43.5342, "lng": -71.5031 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Mascoma Lake",
+    "state": "NH",
+    "near": { "lat": 43.6395, "lng": -72.1665 },
+    "sources": ["community"]
+  },
+  {
+    "name": "First Connecticut Lake",
+    "state": "NH",
+    "near": { "lat": 45.0906, "lng": -71.2606 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Umbagog Lake",
+    "state": "NH",
+    "near": { "lat": 44.7581, "lng": -71.0567 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Sebago Lake",
+    "state": "ME",
+    "near": { "lat": 43.8534, "lng": -70.5606 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Moosehead Lake",
+    "state": "ME",
+    "near": { "lat": 45.6153, "lng": -69.6817 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Rangeley Lake",
+    "state": "ME",
+    "near": { "lat": 44.9581, "lng": -70.6803 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "China Lake",
+    "state": "ME",
+    "near": { "lat": 44.4453, "lng": -69.5484 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Long Lake",
+    "state": "ME",
+    "near": { "lat": 44.0384, "lng": -70.5701 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Damariscotta Lake",
+    "state": "ME",
+    "near": { "lat": 44.1017, "lng": -69.4767 },
+    "sources": ["community"]
+  },
+  {
+    "name": "Great Pond",
+    "state": "ME",
+    "near": { "lat": 44.5606, "lng": -69.8567 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Flagstaff Lake",
+    "state": "ME",
+    "near": { "lat": 45.1728, "lng": -70.3417 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Lake Placid",
+    "state": "NY",
+    "near": { "lat": 44.3128, "lng": -73.9856 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Mirror Lake",
+    "state": "NY",
+    "near": { "lat": 44.2861, "lng": -73.9812 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Lake George",
+    "state": "NY",
+    "near": { "lat": 43.5378, "lng": -73.6501 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Saranac Lake",
+    "state": "NY",
+    "near": { "lat": 44.3295, "lng": -74.1312 },
+    "sources": ["community", "atlas"]
+  },
+  {
+    "name": "Lake Champlain",
+    "state": "NY",
+    "near": { "lat": 44.4653, "lng": -73.3812 },
+    "sources": ["community"],
+    "notes": "The NY side — expect this to match the same body as the VT entry."
+  },
+  {
+    "name": "Schroon Lake",
+    "state": "NY",
+    "near": { "lat": 43.8356, "lng": -73.7667 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Indian Lake",
+    "state": "NY",
+    "near": { "lat": 43.7856, "lng": -74.2656 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Quabbin Reservoir",
+    "state": "MA",
+    "near": { "lat": 42.3612, "lng": -72.3312 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Wachusett Reservoir",
+    "state": "MA",
+    "near": { "lat": 42.3878, "lng": -71.7434 },
+    "sources": ["atlas"]
+  },
+  {
+    "name": "Lake Quinsigamond",
+    "state": "MA",
+    "near": { "lat": 42.2634, "lng": -71.7501 },
+    "sources": ["community"]
+  }
+]

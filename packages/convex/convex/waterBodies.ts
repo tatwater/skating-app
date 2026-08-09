@@ -5648,3 +5648,33 @@ export const sweepAllBodySummaries = internalAction({
     return { swept, pages };
   },
 });
+
+/**
+ * Named bodies, paged, for the destination seeding script (N6c B3a/D).
+ *
+ * **Named only.** A curated destination has a name by definition, so the unnamed ~92% of the corpus
+ * can never match one — and filtering here rather than in the script is the difference between the
+ * loader reading a few thousand rows and reading all 24,948. Returns the small field set the matcher
+ * actually reads: shipping polygons through would make this a hundred-megabyte pass for a job that
+ * compares strings and one coordinate.
+ */
+export const listNamedForSeeding = internalQuery({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(2000, Math.max(1, batchSize ?? 1000));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    const bodies = page.page
+      .filter((body) => body.name !== undefined && isListed(body))
+      .map((body) => ({
+        _id: body._id,
+        name: body.name,
+        states: body.states,
+        surfaceAreaSqM: body.surfaceAreaSqM,
+        curatedBoost: body.curatedBoost,
+        interiorPoint: body.interiorPoint,
+        representativePoint: body.representativePoint,
+        centroid: body.centroid,
+      }));
+    return { bodies, cursor: page.continueCursor, isDone: page.isDone };
+  },
+});

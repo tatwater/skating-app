@@ -385,6 +385,10 @@ export const IMPORT_RUN_KINDS = [
   'elevation', // scripts/lake-depth load-elevation — Open-Meteo
   'wind_climate', // scripts/wind-climate — NREL WIND Toolkit winter roses
   'bathymetry_coverage', // scripts/bathymetry coverage — D2's hasContours
+  // scripts/seed-destinations — the curated shortlist → `curatedBoost` (N6c B3a/D). A pass rather
+  // than a one-off because the shortlist grows and the interesting output is what it *declined* to
+  // match: an ambiguous name, or a well-known lake absent from the corpus entirely.
+  'seed_destinations',
   'region_stats', // convex regionStats:recompute — derived, but it is a pass and it can fail
   // The steps *before* a loader — where the third-party data is actually acquired, and where a
   // source most often turns out to have moved, changed schema, or quietly returned less than
