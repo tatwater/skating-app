@@ -41,6 +41,7 @@ export * from './hazardRecurrence';
 export * from './hazardWeatherDecay';
 export * from './lakeCaption';
 export * from './lakeDepth';
+export * from './lakeForecast';
 export * from './lakeGeometry';
 export * from './lakeProfile';
 export * from './lakeSearch';

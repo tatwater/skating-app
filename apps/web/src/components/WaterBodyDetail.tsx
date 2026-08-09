@@ -20,6 +20,7 @@ import { BountyList } from './BountyList';
 import { DirectionsButton } from './DirectionsButton';
 import { DetailSkeleton, UnavailableState } from './DrawerStates';
 import { FavoriteButton } from './FavoriteButton';
+import { ForecastStrip } from './ForecastStrip';
 import { HazardForm } from './HazardForm';
 import { HazardList } from './HazardList';
 import { IceHistory } from './IceHistory';
@@ -178,6 +179,10 @@ export function WaterBodyDetail({
           <DirectionsButton waterBodyId={result.body._id} />
         </div>
         {leaving ? <LeavingNotice /> : null}
+        {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline, and the
+            half that answers "should I bother driving". Above the season filter so it sits with the
+            body's current state rather than inside its history. */}
+        <ForecastStrip waterBodyId={result.body._id} />
         <WaterBodyModeratorControls body={result.body} />
         <SeasonFilter waterBodyId={result.body._id} />
         <BountyList waterBodyId={result.body._id} />

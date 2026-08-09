@@ -47,6 +47,22 @@ export function nearestSamplePoint(
   return best;
 }
 
+/**
+ * The point to sample when there is no anchor to be near (N6c B5b).
+ *
+ * The weather-since strip always has one — a report's put-in, a hazard's centre — because it is
+ * *about* something that happened somewhere. A body-level forward forecast is about the lake, so it
+ * samples the lake: the same interior point every other consumer falls back to, which on a
+ * multi-sample-point giant like Champlain resolves to whichever stored point is nearest mid-lake.
+ *
+ * Deliberately the same fallback chain as `nearestSamplePoint`'s, in the same order — two places
+ * deciding "which point represents this body" by different rules is how the fetch profile ended up
+ * casting rays from the shoreline.
+ */
+export function defaultSampleAnchor(body: Doc<'waterBodies'>): { lat: number; lng: number } {
+  return body.interiorPoint ?? body.representativePoint ?? body.centroid;
+}
+
 /** Center of a hazard's footprint bbox — its representative point for nearest-sample-point selection. */
 export function hazardCenter(hazard: Doc<'hazards'>): { lat: number; lng: number } {
   return {

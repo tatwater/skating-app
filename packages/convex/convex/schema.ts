@@ -1067,6 +1067,45 @@ export default defineSchema({
     // point: the end bucket is what makes a row reachable at all (see `pruneWeatherCache`).
     .index('by_window_end', ['windowEndBucketMs']),
 
+  /**
+   * The short forward forecast for the drive decision (N6c B5b).
+   *
+   * **A separate table from `weatherCache`, deliberately.** That one is keyed on a *past window*
+   * (`windowStartMs` + `windowEndBucketMs`) because its rows describe what happened between two
+   * instants and stay true for ever. A forecast has no window — it is "the next twelve hours as of
+   * an hour bucket" — and it stops being true almost immediately. Sharing a table would mean a key
+   * whose second and third components are meaningless for half its rows, and a retention sweep that
+   * cannot tell a durable observation from a stale prediction.
+   *
+   * Keyed on `(samplePointKey, forecastBucketMs)` so every body sharing a ~110 m sample point shares
+   * one row per hour, exactly like the weather-since cache — the read cost stays independent of how
+   * many skaters open the same lake.
+   */
+  weatherForecastCache: defineTable({
+    samplePointKey: v.string(), // rounded "lat,lng" — the same grid-ish key `weatherCache` uses
+    forecastBucketMs: v.number(), // `now` bucketed to the hour: how fresh this prediction is
+    hours: v.array(
+      v.object({
+        startMs: v.number(),
+        temperatureC: v.number(),
+        windSpeedKph: v.number(),
+        precipitationMm: v.number(),
+        snowfallCm: v.number(),
+      }),
+    ),
+    precipStartsMs: v.optional(v.number()),
+    precipIsSnow: v.optional(v.boolean()),
+    minTemperatureC: v.optional(v.number()),
+    maxTemperatureC: v.optional(v.number()),
+    fetchedAt: v.number(),
+  })
+    .index('by_key', ['samplePointKey', 'forecastBucketMs'])
+    // Retention sweep (N3), same shape and same reasoning as `weatherCache.by_window_end`: the
+    // bucket is what makes a row reachable, so it is what the pruner orders on. A forecast row is
+    // garbage far sooner than a weather-since row, since nothing can ever read it again once its
+    // bucket passes.
+    .index('by_forecast_bucket', ['forecastBucketMs']),
+
   reports: defineTable({
     authorId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
