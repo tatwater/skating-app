@@ -4388,3 +4388,48 @@ index range over a fortnight of one body's reports. A no-op result short-circuit
 so the common case is a read and nothing else.
 
 **Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D49](#d49--display-prominence).
+
+---
+
+## D142 — The profile reveal flag shows the **slots**, never invents what fills them (N6c-2)
+
+**2026-08-09, founder call:** *"Can we put this display calc behind a flag, so we can see all of the
+possible parts of a lake profile while testing dev… I'd rather not forget to test something in the
+wild before the season starts just because I couldn't see it."*
+
+Nearly every profile surface is built to render nothing when it has nothing to say — the caption's
+clauses, the reference links, both weather strips, the bathymetry credit, E3's cards and D86's mark.
+That is right for skaters and hostile to testing: on a corpus holding one report almost all of them
+are invisible, and *"invisible because there is no data"* is indistinguishable from *"invisible
+because I broke it."*
+
+`PROFILE_REVEAL_ALL` (`@skating/core/profileReveal.ts`) makes the slots visible. **It never
+fabricates a value** — a lake with no depth still has no depth, and the section says so. What it
+bypasses is the *suppression of data we do have* (E3's activity gate, D86's quorum) and the hiding of
+empty sections.
+
+**Three properties stop it becoming the bug it prevents:**
+
+1. **Forced off against the production deployment**, whatever the constant says. A flag whose only
+   protection is "remember to turn it off" is a flag that ships on — and what it would ship is a
+   one-person opinion rendered as a consensus mark. Matched on the **Convex URL**, not a build mode:
+   the EAS internal-distribution build is a *release* build pointing at dev, so `!__DEV__` would hide
+   exactly the surfaces a device test exists to look at.
+2. **The map card's revealed mark is empty (`○○○○`), never computed.** The stored summary is
+   quorum-respecting by construction and the raw per-report qualities never reach the map, so there is
+   nothing there to widen — which is the right answer anyway. An empty mark shows the slot, its size
+   and where it collides; a fabricated one would be the exact claim D86's quorum exists to prevent,
+   wearing a dev label nobody reads at a glance.
+3. **The two bypasses are separate predicates.** `revealEmptySections` is harmless;
+   `revealBelowQuorum` is not. Split so a future change wanting empty sections somewhere cannot
+   silently acquire the dangerous one, and so each is greppable alone.
+
+`summarizeQualityRevealed` is a second function rather than a parameter on `summarizeQuality`,
+because the stored summary is written by the **server** — which has no business knowing about a
+client display flag, and a boolean threaded through the storage path is one default away from
+persisting a below-quorum mark.
+
+Everything revealed carries `·dev`. **Flip the constant to `false` before the season**; the guard
+means forgetting is survivable rather than harmful.
+
+**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D141](#d141--the-map-cards-counts-are-recomputed-never-incremented-n6c-2--e), [D3](#d3--never-a-safety-verdict).

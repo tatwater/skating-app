@@ -1029,7 +1029,7 @@ everything above it.
 and the per-lake timeline.** ✅ **BUILT 2026-08-09** on branch `phase-n6c-2-links-cards` (off
 `phase-n7-3-unified-corpus`; **unpushed and undeployed on purpose** — a second session was mid-campaign
 against dev, and a redeploy mid-pass is the one way to break an otherwise resumable run). Tests green:
-core 1,738 · convex 1,141 · web 291 · mobile 95 · seed-destinations 15. New decisions **D138–D141**.
+core 1,738+ · convex 1,141 · web 291+ · mobile 95 · seed-destinations 15. New decisions **D138–D142**.
 
 Shipped: **B** (Windy + the regional community archive, derived and stored nowhere), **B5** (NWS
 alerts on a 15-minute cron, state rung of the zone ladder), **B5b** (the forward forecast), **B7**
@@ -1064,6 +1064,12 @@ thumbs, which measure whether a *report* was helpful rather than what the ice wa
 - **The corpus is 24,948, not the 116,070 the plan says throughout** — including in P1 and P2, its two
   governing rules. The rules survive; every cost argument in the doc was measured on a corpus that no
   longer exists.
+
+**A reveal flag, so nothing goes untested for being invisible (D142).** Founder ask after the build:
+almost every surface here renders nothing on a corpus with one report, and a missing surface looks
+exactly like a broken one. `PROFILE_REVEAL_ALL` states each absence instead — it never invents a
+value, the revealed card mark is empty rather than computed, and it is **forced off against
+production** whatever the constant says. Flip it to `false` before the season.
 
 ⛔ **`regionStats` is still empty on dev**, so A5's decile clauses render nothing. That is the data
 campaign's last pass, not this branch's.

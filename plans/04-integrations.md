@@ -226,10 +226,28 @@ a **build-time acceptance criterion**, the same class of obligation as "Powered 
   has *done*, to support the skater's own judgment. **Never** used to assert ice safety.
 - **Attribution:** show a small "Weather: Open-Meteo" credit wherever the strip appears (legal checklist
   **L13** — same class as "Powered by Strava" / "© OpenStreetMap contributors").
+- ⚠️ **STALE (D127, N7-2):** elevation no longer comes from Open-Meteo. It is USGS **3DEP** via
+  `epqs.nationalmap.gov` — no key, no quota shared with the product's weather crons, and **98.2% of the
+  corpus at 1 m LiDAR** against Copernicus GLO-90's 90 m. Kept below as the reasoning for why we left.
 - **Also Open-Meteo, no account:** the **elevation endpoint** (`/v1/elevation`, Copernicus GLO-90 DEM,
   batched coordinates) — N6c's lake-elevation pass, ~1,200 requests for all 116,070 centroids.
 
-### NWS alerts — a second provider that never touches a calculation (D74, N6c)
+### The short forward forecast — same call, same quota (N6c/B5b, D140) ✅ **BUILT 2026-08-09**
+
+- **No new provider and no new quota.** `weather.ts` already sent `forecast_days: '1'` so the series
+  covered today's elapsed hours; the forward hours arrived in that same response and were discarded.
+  Two days instead of one lets a 12-hour horizon survive a day boundary, so an evening skater sees
+  tomorrow morning.
+- **The forward hours are a separate array, not a widened window (D140).** The filter that discarded
+  them is the same one feeding `summarizeWeatherSince` — the input to the decay multiplier, the bounty
+  gate and the contradiction settle. Widening it would make all three unreproducible after the fact,
+  silently. `fetchOpenMeteoHourly` returns `{ past, forecast }` so D74 is a return type rather than a
+  rule each call site remembers.
+- **Attribution:** a "Forecast: Open-Meteo" credit beside the strip, same L13 family as the rest.
+- **D3 holds at the copy:** the strip names weather and a clock — *"snow starting around 3pm"* — and
+  never the ice. A test greps the rendered line for ice/skate/safe/condition.
+
+### NWS alerts — a second provider that never touches a calculation (D74, N6c) ✅ **BUILT 2026-08-09**
 
 - Provider: **`api.weather.gov`** — free, **no account and no API key**, US-only. Requires a `User-Agent`
   header identifying the app; rate limits are unpublished (retry a 429 after ~5 s), and their docs warn a

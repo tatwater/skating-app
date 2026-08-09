@@ -385,7 +385,23 @@ is three rated reports — so the feature ships correct and renders nothing anyw
 build it, defer validation to N6d or device testing. Worth stating plainly rather than discovering it
 at a demo.
 
-### 5. Two bugs the tests caught that review would not have
+### 5. Every profile surface is invisible on this corpus — so there is a flag now (**D142**)
+
+Founder ask, after the build: *"I'd rather not forget to test something in the wild before the season
+starts just because I couldn't see it."*
+
+The "render nothing when there is nothing to say" rule runs through the caption, the links, both
+strips, the credit, E3's cards and D86's mark — and on a corpus with one report it makes almost the
+whole phase invisible, where a missing surface and a broken one look identical.
+
+`PROFILE_REVEAL_ALL` states each absence instead. It **never invents a value**: the revealed card
+mark is empty (`○○○○`), not computed, because the stored summary is quorum-respecting by construction
+and the raw qualities never reach the map. It is **forced off against production** whatever the
+constant says, matched on the Convex URL rather than a build mode — the EAS device build is a release
+build pointing at dev, and `!__DEV__` would hide exactly what that test is for. Everything revealed
+carries `·dev`. Flip to `false` before the season.
+
+### 6. Two bugs the tests caught that review would not have
 
 - `replaceStateAlerts` spread an `NwsAlert` into `ctx.db.insert`, carrying its `id` field into a table
   whose column is `alertId`. Convex rejected it outright; on a schema that tolerated extra fields it
@@ -394,7 +410,7 @@ at a demo.
   `destinations.json` invalid JSON. Caught by parsing it, which is the cheapest possible test and was
   not otherwise in the plan.
 
-### 6. Four property tests flake under coverage
+### 7. Four property tests flake under coverage
 
 `dedup`, `geometry`, `samplePoints` and `subArea` each have one property test that intermittently
 exceeds vitest's 5 s default under `--coverage` on a loaded machine. Pre-existing, unrelated to this
@@ -1049,7 +1065,19 @@ just **Pond** is worse than no title at all — it looks like a bug and it's amb
 - **A body with no name at all still gets its counts**, because the card's job on an unnamed body is to
   say *someone skated here* — which is arguably more valuable there than on a lake everyone knows.
 
-### E4 — The sub-questions to settle at build
+### E4 — The sub-questions to settle at build ✅ *all four answered at the N6c-2 build, 2026-08-09*
+
+> - **What "recent" means:** `SUMMARY_RECENT_DAYS = 14`, the same window the feed and report list use.
+> - **Rendering:** a MapLibre **`symbol` layer** (founder call), which buys collision detection for
+>   free — a card that would overlap a hazard pin simply does not draw. The cost is that D86's mark is
+>   dot characters rather than styled elements; the agreed escape hatch if that proves too little is
+>   HTML overlays for the *selected* body only.
+> - **Interaction with `minVisibleZoom`:** the card layer re-states the filter `listInViewport`
+>   already applies server-side. Belt and braces on purpose — a quiet lake acquiring prominence by
+>   having been skated once would be reported as "the map is broken" rather than diagnosed.
+> - **Season scoping:** applied in `lib/bodySummary.ts` alongside the window. This *is* the one line
+>   E4 predicted would be forgotten, and a convex test pins it.
+
 
 - **What "recent" means.** Probably the same freshness window the feed and the report list already use,
   rather than a fourth number.
