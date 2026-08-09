@@ -1,5 +1,5 @@
 import { api } from '@skating/convex/api';
-import type { Id } from '@skating/convex/dataModel';
+import type { Doc, Id } from '@skating/convex/dataModel';
 import {
   BODY_FEATURE_TYPE_LABELS,
   BODY_FEATURE_TYPES,
@@ -14,6 +14,7 @@ import {
   type LatLng,
   minVisibleZoom,
   type PromotionTarget,
+  referenceLinkError,
   seasonOf,
   suggestSamplePoints,
   timingWindowLabel,
@@ -26,6 +27,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
 import { ReasonDialog } from '../components/admin/ReasonDialog';
+import { WaterBodyTimeline } from '../components/admin/WaterBodyTimeline';
 import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 import { Input } from '../components/ui/input';
@@ -188,6 +190,12 @@ function LakeEditor() {
           <RecurrenceTool waterBodyId={waterBodyId} onResult={setBanner} />
           <PromotionTool waterBodyId={waterBodyId} onResult={setBanner} />
           <TrackTool tracks={Array.isArray(tracks) ? [] : (tracks?.tracks ?? [])} />
+          <ReferenceLinkTool body={body} onResult={setBanner} />
+          {/* Last in the column (N6c/F1): the log answers "what happened to this lake", which is a
+              question you ask after looking at the levers, not before. */}
+          <ToolCard title="History">
+            <WaterBodyTimeline waterBodyId={waterBodyId} />
+          </ToolCard>
         </div>
       </div>
     </div>
@@ -1622,6 +1630,90 @@ function PromotionTool({
         Ranked by how the type behaves and how many people confirmed it — a queue for your
         judgement, not a prediction that any of them will be back.
       </p>
+    </ToolCard>
+  );
+}
+
+/**
+ * Operator-entered reference links (N6c Workstream B7) — the phase's only stored link.
+ *
+ * Everything else in the lake drawer's link list is derived from the row at render time (P2/D71) and
+ * has no editor because there is nothing to edit. A lake association's URL is genuinely
+ * non-derivable, so it gets one, and it is expected to be used on **tens** of bodies rather than
+ * thousands. That is the exception proving the rule, not a coverage gap.
+ */
+function ReferenceLinkTool({ body, onResult }: { body: Doc<'waterBodies'>; onResult: SetBanner }) {
+  const setLinks = useMutation(api.waterBodies.setReferenceLinks);
+  const [links, setLinks_] = useState<{ label: string; url: string }[]>(body.referenceLinks ?? []);
+  const [busy, setBusy] = useState(false);
+
+  // The same validator the mutation runs, so an operator sees the error without a round trip. The
+  // server check is the guarantee; this one is the courtesy.
+  const firstError = links.map((link) => referenceLinkError(link)).find((e) => e !== null) ?? null;
+
+  async function save() {
+    setBusy(true);
+    try {
+      await setLinks({ waterBodyId: body._id, links });
+      onResult({ tone: 'ok', text: 'Reference links saved.' });
+    } catch (err) {
+      onResult({ tone: 'error', text: errorText(err) });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <ToolCard title="Reference links">
+      <div className="flex flex-col gap-2">
+        {links.map((link, index) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: the row IS its index; there is no stable id.
+          <div key={index} className="flex flex-col gap-1">
+            <input
+              className="rounded border border-border bg-surface px-2 py-1 text-sm"
+              placeholder="Label — e.g. Westmore Association"
+              value={link.label}
+              onChange={(e) =>
+                setLinks_(links.map((l, i) => (i === index ? { ...l, label: e.target.value } : l)))
+              }
+            />
+            <div className="flex gap-1">
+              <input
+                className="flex-1 rounded border border-border bg-surface px-2 py-1 text-sm"
+                placeholder="https://…"
+                value={link.url}
+                onChange={(e) =>
+                  setLinks_(links.map((l, i) => (i === index ? { ...l, url: e.target.value } : l)))
+                }
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setLinks_(links.filter((_, i) => i !== index))}
+              >
+                Remove
+              </Button>
+            </div>
+          </div>
+        ))}
+        {firstError ? <p className="text-danger text-xs">{firstError}</p> : null}
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setLinks_([...links, { label: '', url: '' }])}
+          >
+            Add a link
+          </Button>
+          <Button size="sm" disabled={busy || firstError !== null} onClick={save}>
+            {busy ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+        <p className="text-foreground-muted text-xs">
+          For things no algorithm can derive — a lake association, a town page. Windy and the
+          regional community link are generated automatically and need no entry here.
+        </p>
+      </div>
     </ToolCard>
   );
 }
