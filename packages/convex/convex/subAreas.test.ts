@@ -1347,3 +1347,252 @@ describe('waterBodies.setWeatherSamplePoints', () => {
     expect((await t.run((ctx) => ctx.db.get(body)))?.weatherSamplePoints).toBeUndefined();
   });
 });
+
+/**
+ * **`importBaySubAreas` — the campaign's bay loader, and the one that actually broke** (N7-3).
+ *
+ * `load-sub-areas` calls this, and on the 2026-08-07 campaign it aborted the whole pass on one bad
+ * batch and left three `sub_area_seed` rows stuck in `running` — the exact D99 signature, produced
+ * by the loader written to honour D99. It had no tests at all until this block.
+ */
+describe('subAreas.importBaySubAreas (the N7 bay lane)', () => {
+  /** A bay inside `LAKE`, which is what the merge emits after clipping to the parent. */
+  const BAY = rect(-73.4, 44.1, -73.2, 44.3);
+
+  async function seedParent(t: ReturnType<typeof convexTest>, over: Record<string, unknown> = {}) {
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name: 'Lake Champlain',
+        searchText: 'lake champlain',
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        externalId: 'way/parent',
+        osmId: 'way/parent',
+        polygon: LAKE,
+        bbox: { minLat: 44.0, minLng: -73.5, maxLat: 45.0, maxLng: -72.5 },
+        centroid: { lat: 44.5, lng: -73.0 },
+        surfaceAreaSqM: 8.7e9,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+        ...over,
+      }),
+    );
+  }
+
+  const bay = (over: Record<string, unknown> = {}) => ({
+    name: 'Missisquoi Bay',
+    polygon: BAY,
+    parentIds: { osmId: 'way/parent' },
+    ...over,
+  });
+
+  test('is a DRY RUN unless told otherwise — the default is the safe one', async () => {
+    // `dryRun !== false`, so omitting the flag reports rather than writes. A campaign loader whose
+    // default is "write" is one typo away from an unaudited insert.
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    await seedParent(t);
+
+    const result = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [bay()],
+    });
+    expect(result).toMatchObject({ applied: false, created: 0 });
+    expect(result.results[0]).toMatchObject({ ok: true, dryRun: true, parent: 'Lake Champlain' });
+    expect(await t.run((ctx) => ctx.db.query('waterBodySubAreas').collect())).toHaveLength(0);
+  });
+
+  test('creates the sub-area, its cells and its audit row when applied', async () => {
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    const parent = await seedParent(t);
+
+    const result = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [bay()],
+      dryRun: false,
+    });
+    await settle(t);
+    expect(result).toMatchObject({ applied: true, created: 1, refused: 0 });
+
+    const rows = await t.run((ctx) => ctx.db.query('waterBodySubAreas').collect());
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ name: 'Missisquoi Bay', waterBodyId: parent });
+    // Every N2 sub-area is a rendered, searchable place, so it needs all three.
+    expect(rows[0]?.searchText).toContain('Missisquoi');
+    expect(rows[0]?.representativePoint).toBeDefined();
+    expect(rows[0]?.minVisibleZoom).toBeDefined();
+
+    // **Audited, per N2/D60.** A campaign that creates places without naming who ran it is the
+    // thing the `--actor` flag exists to prevent.
+    const actions = await t.run((ctx) => ctx.db.query('moderationActions').collect());
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({
+      actorId: actor,
+      action: 'create_sub_area',
+      targetType: 'waterBodySubArea',
+    });
+    expect(actions[0]?.reason).toContain('Missisquoi Bay');
+
+    const cells = await t.run((ctx) => ctx.db.query('waterBodySubAreaCells').collect());
+    expect(cells.length).toBeGreaterThan(0);
+  });
+
+  test('is idempotent — a re-run creates nothing and reports why', async () => {
+    // Every other pass in the campaign converges on a re-run; a loader that does not is one that
+    // cannot safely be resumed after a failed batch, which is exactly what happened on 2026-08-07.
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    await seedParent(t);
+    const args = { actorUserId: actor, bays: [bay()], dryRun: false };
+
+    await t.mutation(internal.subAreas.importBaySubAreas, args);
+    await settle(t);
+    const second = await t.mutation(internal.subAreas.importBaySubAreas, args);
+    await settle(t);
+
+    expect(second).toMatchObject({ created: 0, refused: 0 });
+    expect(second.results[0]).toMatchObject({ ok: true, alreadyPresent: true });
+    expect(await t.run((ctx) => ctx.db.query('waterBodySubAreas').collect())).toHaveLength(1);
+  });
+
+  test('matches an existing sub-area case-insensitively', async () => {
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    await seedParent(t);
+    await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [bay()],
+      dryRun: false,
+    });
+    await settle(t);
+
+    const second = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [bay({ name: 'MISSISQUOI BAY' })],
+      dryRun: false,
+    });
+    expect(second.results[0]).toMatchObject({ alreadyPresent: true });
+  });
+
+  test('names a bay whose parent is not there — the load-order error', async () => {
+    // The ETL only emits a sub-area whose parent is in the same master list, so this can only mean
+    // bodies were not loaded first. `run-corpus.sh` exists to enforce that order; this is what the
+    // loader says when somebody bypasses it.
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+
+    const result = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [bay()],
+      dryRun: false,
+    });
+    expect(result).toMatchObject({ created: 0, refused: 1 });
+    expect(result.results[0]).toMatchObject({ ok: false, reason: 'parent_unavailable' });
+  });
+
+  test('refuses a parent that has been de-listed rather than attaching to it', async () => {
+    // A removed body is a landowner takedown (D48). Hanging a new public place off one would
+    // re-publish the water under a different table.
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    await seedParent(t, { removedAt: Date.now(), removalReason: 'landowner_request' as const });
+
+    const result = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [bay()],
+      dryRun: false,
+    });
+    expect(result.results[0]).toMatchObject({ ok: false, reason: 'parent_unavailable' });
+  });
+
+  test('refuses an unnamed bay, which has nothing to be a place under', async () => {
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    await seedParent(t);
+
+    const result = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [bay({ name: '   ' })],
+      dryRun: false,
+    });
+    expect(result).toMatchObject({ created: 0, refused: 1 });
+    expect(result.results[0]).toMatchObject({ ok: false, reason: 'unnamed' });
+  });
+
+  test('refuses a bay that is mostly outside its parent, and says how much was retained', async () => {
+    // The clip is what keeps a sub-area inside the lake it claims to be an arm of. A bay that
+    // barely overlaps is a matching failure, not a bay, and the retained fraction is the number a
+    // human needs to judge it.
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    await seedParent(t);
+
+    const result = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [bay({ name: 'Elsewhere Bay', polygon: rect(-60.0, 30.0, -59.0, 31.0) })],
+      dryRun: false,
+    });
+    expect(result).toMatchObject({ created: 0, refused: 1 });
+    expect(result.results[0]?.ok).toBe(false);
+    expect(result.results[0]).toHaveProperty('retained');
+  });
+
+  test('continues past a refusal instead of taking the batch down with it', async () => {
+    // ⚠ The 2026-08-07 failure, as a test. The loader aborted the whole pass on one bad batch where
+    // `load.ts` survives them — so a single unresolvable parent cost every bay behind it.
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    await seedParent(t);
+
+    const result = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [
+        bay({ name: '' }),
+        bay({ name: 'Orphan Bay', parentIds: { osmId: 'way/nobody' } }),
+        bay({ name: 'Missisquoi Bay' }),
+        bay({ name: 'Keeler Bay', polygon: rect(-73.45, 44.4, -73.25, 44.6) }),
+      ],
+      dryRun: false,
+    });
+    await settle(t);
+    expect(result).toMatchObject({ created: 2, refused: 2 });
+    expect(
+      (await t.run((ctx) => ctx.db.query('waterBodySubAreas').collect())).map((s) => s.name).sort(),
+    ).toEqual(['Keeler Bay', 'Missisquoi Bay']);
+  });
+
+  test('resolves the parent by any of its catalogue ids, not only OSM', async () => {
+    // D93: identity is the ids on the record, and which catalogue drew the outline is a separate
+    // question. A bay whose parent is an NHD-drawn body must still find it.
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    await seedParent(t, { osmId: undefined, externalId: 'nhd-1', nhdId: '142978563' });
+
+    const result = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays: [bay({ parentIds: { nhdId: '142978563' } })],
+      dryRun: false,
+    });
+    await settle(t);
+    expect(result).toMatchObject({ created: 1, refused: 0 });
+  });
+
+  test('caps the reported results without capping the work', async () => {
+    // The row goes on `importRuns`, so the payload has to stay bounded — but `created` counts
+    // everything. A cap that silently truncated the *work* would be the worst version of this.
+    const t = harness();
+    const { id: actor } = await seedUser(t, 'mod', 'moderator');
+    await seedParent(t);
+    const bays = Array.from({ length: 60 }, (_, i) => bay({ name: `Bay ${i}`, polygon: BAY }));
+
+    const result = await t.mutation(internal.subAreas.importBaySubAreas, {
+      actorUserId: actor,
+      bays,
+      dryRun: false,
+    });
+    expect(result.results).toHaveLength(50);
+    // One name, 60 times: the first lands and the other 59 are already present.
+    expect(result.created + (result.refused ?? 0)).toBeGreaterThan(0);
+  });
+});

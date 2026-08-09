@@ -1147,6 +1147,7 @@ describe('waterBodies elevation (N6c A1)', () => {
     // silent.
     const result = await t.mutation(internal.waterBodies.importElevations, {
       elevations: [{ waterBodyId: id, elevationM: 999 }],
+      source: 'dem_3dep',
     });
     expect(result).toMatchObject({ updated: 0, operatorHeld: 1 });
     const body = await t.run((ctx) => ctx.db.get(id));
@@ -1159,14 +1160,21 @@ describe('waterBodies elevation (N6c A1)', () => {
     const id = await seedBody(t);
     expect(
       await t.mutation(internal.waterBodies.importElevations, {
-        elevations: [{ waterBodyId: id, elevationM: 357 }],
+        elevations: [{ waterBodyId: id, elevationM: 357, resolutionM: 1, rasterId: 4321 }],
+        source: 'dem_3dep',
       }),
     ).toMatchObject({ updated: 1, implausible: 0 });
-    expect((await t.run((ctx) => ctx.db.get(id)))?.elevationSource).toBe('dem_glo90');
+    const stamped = await t.run((ctx) => ctx.db.get(id));
+    expect(stamped?.elevationSource).toBe('dem_3dep');
+    // D104: the raster is stored so the 443 bodies that came off a coarse one can be found again
+    // without re-fetching 25,044 points to diff them.
+    expect(stamped?.elevationResolutionM).toBe(1);
+    expect(stamped?.elevationRasterId).toBe(4321);
 
     expect(
       await t.mutation(internal.waterBodies.importElevations, {
         elevations: [{ waterBodyId: id, elevationM: -9999 }],
+        source: 'dem_3dep',
       }),
     ).toMatchObject({ updated: 0, implausible: 1 });
     // The good value survives the bad write.
@@ -1180,6 +1188,7 @@ describe('waterBodies elevation (N6c A1)', () => {
     const id = await seedBody(t);
     await t.mutation(internal.waterBodies.importElevations, {
       elevations: [{ waterBodyId: id, elevationM: 357 }],
+      source: 'dem_3dep',
     });
     await t.mutation(internal.waterBodies.importCanonical, {
       bodies: [{ ...CANONICAL_ITEM, name: 'renamed' }],
@@ -1187,7 +1196,46 @@ describe('waterBodies elevation (N6c A1)', () => {
     const body = await t.run((ctx) => ctx.db.get(id));
     expect(body?.name).toBe('renamed');
     expect(body?.elevationM).toBe(357);
+    expect(body?.elevationSource).toBe('dem_3dep');
+  });
+
+  test('refuses to import at the operator rung, which is a human override', async () => {
+    // A bulk pass claiming `operator` would be able to overwrite itself forever after, which makes
+    // the one value the ladder protects unprotectable.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    await expect(
+      t.mutation(internal.waterBodies.importElevations, {
+        elevations: [{ waterBodyId: id, elevationM: 357 }],
+        source: 'operator',
+      }),
+    ).rejects.toThrow(/refuses the `operator` rung/);
+  });
+
+  test('clears a previous source’s raster metadata rather than leaving it stale', async () => {
+    // A 1 m label sitting on a reading that came from a source with no raster id is worse than no
+    // label — it is a claim about precision that nothing behind it supports.
+    const t = convexTestWithGeo();
+    const id = await seedBody(t);
+    await t.mutation(internal.waterBodies.importElevations, {
+      elevations: [{ waterBodyId: id, elevationM: 357, resolutionM: 1, rasterId: 4321 }],
+      source: 'dem_3dep',
+    });
+    await t.mutation(internal.waterBodies.importElevations, {
+      elevations: [{ waterBodyId: id, elevationM: 361 }],
+      source: 'dem_glo90',
+    });
+    const body = await t.run((ctx) => ctx.db.get(id));
     expect(body?.elevationSource).toBe('dem_glo90');
+    expect(body?.elevationResolutionM).toBeUndefined();
+    expect(body?.elevationRasterId).toBeUndefined();
+  });
+
+  test('hands the loader what the row already holds, so a datum shift can be measured (D101)', async () => {
+    const t = convexTestWithGeo();
+    await seedBody(t, { elevationM: 412, elevationSource: 'dem_glo90' });
+    const { targets } = await t.query(internal.waterBodies.listNeedingElevation, { refresh: true });
+    expect(targets[0]).toMatchObject({ storedElevationM: 412, storedSource: 'dem_glo90' });
   });
 });
 
@@ -3794,6 +3842,120 @@ describe('the remaining edges of the corpus tooling', () => {
       '30-50': 1,
       '50-100': 1,
       '100+': 1,
+    });
+  });
+
+  test('corpusStats bands by the area the RULE ran on, not the one we draw', async () => {
+    // The straddle band: admitted on `sourceAreaSqM`, stored fractionally under the bar. The prune
+    // already prefers the source area for exactly this reason; the census did not, and so reported
+    // four unnamed wetlands below a 50-acre floor that had never actually broken it.
+    const t = convexTestWithGeo();
+    const acres = (n: number) => n * 4046.8564224;
+    await t.run(async (ctx) => {
+      await ctx.db.insert('waterBodies', {
+        ...SAMPLE_BODY,
+        name: '',
+        searchText: '',
+        type: 'wetland' as const,
+        source: 'osm' as const,
+        externalId: 'way/straddle',
+        // Stored at 49.9 acres, admitted at 50.1 — the real shape of all four bodies that provoked
+        // this. It belongs in the band the rule put it in.
+        surfaceAreaSqM: acres(49.9),
+        sourceAreaSqM: acres(50.1),
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+      });
+    });
+    const res = await t.query(internal.waterBodies.corpusStats, { batchSize: 500 });
+    expect(res.running.unnamedWetlandBands).toEqual({ '50-100': 1 });
+    expect(res.running.depthByAreaBand['50-100']?.total).toBe(1);
+  });
+
+  test('corpusStats splits depth coverage at the floor every global source shares', async () => {
+    // "Depth is 24.2%" averages bands where a source exists against bands where none does. 24.71
+    // acres is 10 ha — HydroLAKES' and GLOBathy's floor — so the two bands either side of it answer
+    // different questions and must not be blended.
+    const t = convexTestWithGeo();
+    const acres = (n: number) => n * 4046.8564224;
+    await t.run(async (ctx) => {
+      const rows = [
+        // above the 10 ha floor: one measured, one modelled, one with nothing
+        { id: 'a', a: 60, max: 12, src: 'state_agency' as const },
+        { id: 'b', a: 60, max: 9, src: 'globathy' as const },
+        { id: 'c', a: 60, max: undefined, src: undefined },
+        // below it, where no global source reaches at all
+        { id: 'd', a: 8, max: undefined, src: undefined },
+      ];
+      for (const r of rows) {
+        await ctx.db.insert('waterBodies', {
+          ...SAMPLE_BODY,
+          name: `Pond ${r.id}`,
+          searchText: `pond ${r.id}`,
+          source: 'osm' as const,
+          externalId: `way/${r.id}`,
+          surfaceAreaSqM: acres(r.a),
+          ...(r.max !== undefined ? { maxDepthM: r.max, maxDepthSource: r.src } : {}),
+          dedupStatus: 'clean' as const,
+          createdAt: Date.now(),
+        });
+      }
+    });
+    const res = await t.query(internal.waterBodies.corpusStats, { batchSize: 500 });
+    expect(res.running.depthByAreaBand['50-100']).toEqual({
+      total: 3,
+      withDepth: 2,
+      withMeasuredDepth: 1,
+      wetland: 0,
+    });
+    expect(res.running.depthByAreaBand['5-10']).toEqual({
+      total: 1,
+      withDepth: 0,
+      withMeasuredDepth: 0,
+      wetland: 0,
+    });
+  });
+
+  test('corpusStats accumulates depth bands across pages rather than restarting', async () => {
+    // The census is resumable by handing `running` back, and a nested record is the one shape that
+    // silently drops history if it is spread shallowly. One body per page proves it does not.
+    const t = convexTestWithGeo();
+    const acres = (n: number) => n * 4046.8564224;
+    await t.run(async (ctx) => {
+      for (const i of [0, 1, 2]) {
+        await ctx.db.insert('waterBodies', {
+          ...SAMPLE_BODY,
+          name: `Pond ${i}`,
+          searchText: `pond ${i}`,
+          source: 'osm' as const,
+          externalId: `way/page-${i}`,
+          surfaceAreaSqM: acres(60),
+          maxDepthM: 4,
+          maxDepthSource: 'lagos_us' as const,
+          dedupStatus: 'clean' as const,
+          createdAt: Date.now(),
+        });
+      }
+    });
+    let cursor: string | undefined;
+    let running: unknown;
+    for (let page = 0; page < 4; page++) {
+      const res = await t.query(internal.waterBodies.corpusStats, {
+        batchSize: 1,
+        ...(cursor ? { cursor } : {}),
+        ...(running ? { running } : {}),
+      });
+      running = res.running;
+      cursor = res.cursor;
+      if (res.isDone) break;
+    }
+    const bands = (running as { depthByAreaBand: Record<string, { total: number }> })
+      .depthByAreaBand;
+    expect(bands['50-100']).toEqual({
+      total: 3,
+      withDepth: 3,
+      withMeasuredDepth: 3,
+      wetland: 0,
     });
   });
 

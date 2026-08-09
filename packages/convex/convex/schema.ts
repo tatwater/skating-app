@@ -707,6 +707,32 @@ export default defineSchema({
      * already-stored rose stays attributable instead of becoming ambiguous.
      */
     windRoseSource: v.optional(v.literal(WIND_ROSE_SOURCES[0])),
+    /**
+     * **Sustained wind — the speed question the rose cannot answer** (N7-3).
+     *
+     * `windRose` is sixteen frequencies: which way the wind comes from, and nothing about how hard
+     * it blows. The two wind hazards on a lake are different questions — pressure ridges are a
+     * *fetch* problem (frequency × fetch, gated at `MIN_FETCH_CLAUSE_M`), and wind holes are a
+     * *speed* problem with no comparable fetch minimum (founder, 2026-08-02).
+     *
+     * The WTK fetch had been requesting `windspeed_10m` on every one of its 5,225 requests and
+     * reading only `winddirection_10m`. These three fields are what it should have been storing.
+     *
+     * **Counts, not frequencies, deliberately** — the opposite of `windRose`. The question a reader
+     * asks is a threshold on an absolute number of hours, so storing frequencies would force every
+     * consumer to multiply back through the sample, and the cells do not all carry the same sample.
+     *
+     * All three travel together or not at all: counts without `sampledWindHours` cannot become a
+     * rate, and counts without `strongWindMinMps` cannot be compared across a corpus that has been
+     * re-derived at a different bar — which `derive --min-mps` makes routine. Read through
+     * `windHoleSectors` (`@skating/core`), never directly.
+     */
+    /** Winter hours at or above `strongWindMinMps`, by the same 16 sectors as `windRose`. */
+    strongWindHours: v.optional(v.array(v.number())),
+    /** Total winter hours the counts were accumulated from — the honest denominator. */
+    sampledWindHours: v.optional(v.number()),
+    /** The m/s bar those counts were taken at, so a mixed-threshold corpus is detectable. */
+    strongWindMinMps: v.optional(v.number()),
     // Lake depth (N6a / D68). Best-available value plus **per-measurement** provenance: mean and max
     // routinely come from different rungs of the ladder (LAGOS-US holds 17,675 maxima against 6,137
     // means), so one `depthSource` could not honestly describe both. The ladder itself lives in
@@ -751,6 +777,20 @@ export default defineSchema({
     // canonical re-import because `importCanonical` patches an explicit field list.
     elevationM: v.optional(v.number()),
     elevationSource: v.optional(literals(ELEVATION_SOURCES)),
+    /**
+     * The source raster's ground sample distance in metres, and its 3DEP raster id (D104).
+     *
+     * **Both exist so a coarse reading can be found again.** 3DEP's coverage improves — a lake
+     * stamped from a 30 m raster today may be re-stampable from 1 m LiDAR next year — and without
+     * these two fields the only way to find those rows is to re-fetch the whole corpus and diff it.
+     * On the 2026-08-08 archive the split is **24,601 at 1 m · 157 at 3 m · 284 at 10 m · 2 at
+     * 30 m**, so the cohort worth revisiting is 443 bodies rather than 25,044.
+     *
+     * Absent on every `dem_glo90` row, which is correct: GLO-90 is one global raster at one
+     * resolution and had neither number to give. Absent on an `operator` value for the same reason.
+     */
+    elevationResolutionM: v.optional(v.number()),
+    elevationRasterId: v.optional(v.number()),
     // Zoom-scored display prominence (D49). `displayScore` = normalize(log area) + `curatedBoost`;
     // `minVisibleZoom` is its integer bucket, ALSO denormalized onto `waterBodyCells` so
     // `listInViewport` filters `minVisibleZoom <= zoom` in-query. All optional ⇒ migration-free;

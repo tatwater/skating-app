@@ -28,12 +28,15 @@ import {
   type DepthSource,
   displayScore,
   distinctNameClaims,
+  ELEVATION_SOURCES,
   haversineMeters,
   type IdMatch,
   isAdvisoryReviewReason,
   isKnownStateCode,
+  isMeasuredDepthSource,
   isMinor,
   isPlausibleElevationM,
+  isPlausibleStrongWindHours,
   isPlausibleWindRose,
   isWetlandClass,
   KNOWN_STATE_CODES,
@@ -828,6 +831,77 @@ export const importCanonical = internalMutation({
 /** Square metres in an acre — local, so this query needs no extra import. */
 const SQ_M_PER_ACRE_LOCAL = 4046.8564224;
 
+/**
+ * The area a *rule* was decided on, which is not always the area we draw.
+ *
+ * `surfaceAreaSqM` is measured from the simplified polygon; `sourceAreaSqM` is the number the
+ * admission floor actually ran against, and they differ by a fraction of a percent. Corpus-wide,
+ * **126 bodies sit in the straddle band** — admitted on one measure, below the bar on the other.
+ *
+ * `pruneBelowAreaFloor` already prefers `sourceAreaSqM` for exactly this reason (see the schema note:
+ * a body admitted at 1.0001 acres and stored at 0.9999 was added by every import and deleted by
+ * every prune, forever). The census did **not**, and so it reported four unnamed wetlands in a
+ * 30–50 acre band that a 50-acre rule should have refused — all four measuring 49.7–50.0 acres
+ * stored and ≥50.0 at source. Nothing was wrong with the corpus; the instrument was reading a
+ * different number from the rule it was auditing.
+ *
+ * A census that can report a rule violation which did not happen is worse than no census, because
+ * the next person spends a day on it. Same input as the rule, or do not band by it.
+ */
+function ruleAreaSqM(body: {
+  surfaceAreaSqM?: number;
+  sourceAreaSqM?: number;
+}): number | undefined {
+  return body.sourceAreaSqM ?? body.surfaceAreaSqM;
+}
+
+/** One area band's depth tally — see `DEPTH_AREA_BANDS`. */
+interface DepthBandTally {
+  /** Bodies in the band. */
+  total: number;
+  /** …carrying any depth at all. */
+  withDepth: number;
+  /** …whose depth came from someone putting an instrument in the water (D68). */
+  withMeasuredDepth: number;
+  /** …that are wetland, which no bathymetry source models. Kept separate so the band's own
+   *  denominator can be read with them excluded, which is the only honest reading. */
+  wetland: number;
+}
+
+/**
+ * Area bands for the depth census, in acres — **the denominator "depth is 24.2%" is missing**.
+ *
+ * Every global depth source has a floor: HydroLAKES and GLOBathy start at **10 ha (24.7 acres)** and
+ * LAGOS-US at 1 ha. So a corpus-wide percentage silently averages bands where near-total coverage is
+ * achievable against bands where *no source exists at all*, and reports the result as one number
+ * that no decision can be taken from. `24.71` is a band edge on purpose: it is the HydroLAKES floor,
+ * so the two bands either side of it answer "how well is the join doing" and "is there any source"
+ * respectively, rather than blending them.
+ *
+ * This is the same correction the campaign has now made four times — the depth join's
+ * `8,517 / 40,260`, the matcher error rate, the corroboration rate, and this. Report `covered /
+ * inScope` and name what was walked past.
+ */
+const DEPTH_AREA_BANDS: readonly (readonly [label: string, minAcres: number])[] = [
+  ['1000+', 1000],
+  ['250-1000', 250],
+  ['100-250', 100],
+  ['50-100', 50],
+  ['24.71-50', 24.71],
+  ['10-24.71', 10],
+  ['5-10', 5],
+  ['1-5', 1],
+  ['<1', 0],
+] as const;
+
+/** The band an area falls in. Bands are descending, so the first match is the tightest. */
+function depthAreaBand(acres: number): string {
+  for (const [label, min] of DEPTH_AREA_BANDS) {
+    if (acres >= min) return label;
+  }
+  return '<1';
+}
+
 export const corpusStats = internalQuery({
   args: {
     cursor: v.optional(v.string()),
@@ -847,21 +921,33 @@ export const corpusStats = internalQuery({
       withNhdId?: number;
       withGeometrySource?: number;
       withDepth?: number;
+      withMeasuredDepth?: number;
+      byDepthSource?: Record<string, number>;
       withElevation?: number;
       withWindRose?: number;
       byState?: Record<string, number>;
       byType?: Record<string, number>;
       unnamedWetlandBands?: Record<string, number>;
+      depthByAreaBand?: Record<string, DepthBandTally>;
     };
     const byState: Record<string, number> = { ...(prior.byState ?? {}) };
     const byType: Record<string, number> = { ...(prior.byType ?? {}) };
     const unnamedWetlandBands: Record<string, number> = { ...(prior.unnamedWetlandBands ?? {}) };
+    const depthByAreaBand: Record<string, DepthBandTally> = Object.fromEntries(
+      Object.entries(prior.depthByAreaBand ?? {}).map(([band, tally]) => [band, { ...tally }]),
+    );
+    // **Which rung, not just whether.** A corpus-wide `withDepth` cannot see the campaign's largest
+    // effect: 2,887 bodies whose depth moved from a random forest to somebody's depth sounder without
+    // the count changing at all. D3 makes that distinction a product surface, so the census has to
+    // carry it or the only visible number understates the work by an order of magnitude.
+    const byDepthSource: Record<string, number> = { ...(prior.byDepthSource ?? {}) };
     let total = prior.total ?? 0;
     let listed = prior.listed ?? 0;
     let withOsmId = prior.withOsmId ?? 0;
     let withNhdId = prior.withNhdId ?? 0;
     let withGeometrySource = prior.withGeometrySource ?? 0;
     let withDepth = prior.withDepth ?? 0;
+    let withMeasuredDepth = prior.withMeasuredDepth ?? 0;
     let withElevation = prior.withElevation ?? 0;
     let withWindRose = prior.withWindRose ?? 0;
 
@@ -871,10 +957,43 @@ export const corpusStats = internalQuery({
       if (body.osmId) withOsmId++;
       if (body.nhdId) withNhdId++;
       if (body.geometrySource) withGeometrySource++;
-      if (body.maxDepthM !== undefined || body.meanDepthM !== undefined) withDepth++;
+      if (body.maxDepthM !== undefined || body.meanDepthM !== undefined) {
+        withDepth++;
+        // Per MEASUREMENT, because D68 makes provenance per measurement: a body routinely carries a
+        // measured max beside a modelled mean, and counting it once would have to pick one.
+        for (const source of [body.maxDepthSource, body.meanDepthSource]) {
+          if (source === undefined) continue;
+          byDepthSource[source] = (byDepthSource[source] ?? 0) + 1;
+        }
+        const measured =
+          (body.maxDepthSource !== undefined && isMeasuredDepthSource(body.maxDepthSource)) ||
+          (body.meanDepthSource !== undefined && isMeasuredDepthSource(body.meanDepthSource));
+        if (measured) withMeasuredDepth++;
+      }
       if (body.elevationM !== undefined) withElevation++;
       if (body.windRose) withWindRose++;
       byType[body.type] = (byType[body.type] ?? 0) + 1;
+      // **Depth, against a denominator that can be acted on.** See `DEPTH_AREA_BANDS`: a single
+      // corpus-wide percentage averages bands where a source exists against bands where none does.
+      {
+        const ruleArea = ruleAreaSqM(body);
+        if (ruleArea !== undefined) {
+          const band = depthAreaBand(ruleArea / SQ_M_PER_ACRE_LOCAL);
+          depthByAreaBand[band] ??= { total: 0, withDepth: 0, withMeasuredDepth: 0, wetland: 0 };
+          const tally = depthByAreaBand[band];
+          tally.total++;
+          if (isWetlandClass(body.type)) tally.wetland++;
+          if (body.maxDepthM !== undefined || body.meanDepthM !== undefined) {
+            tally.withDepth++;
+            if (
+              (body.maxDepthSource !== undefined && isMeasuredDepthSource(body.maxDepthSource)) ||
+              (body.meanDepthSource !== undefined && isMeasuredDepthSource(body.meanDepthSource))
+            ) {
+              tally.withMeasuredDepth++;
+            }
+          }
+        }
+      }
       // **The unnamed-wetland size distribution, because D96 is the rule most likely to be re-tuned.**
       // "Omit unnamed wetland" removes 96% of the class, and whether that is the right trade depends
       // on how much of it is big — which no whole-corpus aggregate answers. Banded here so a
@@ -883,12 +1002,12 @@ export const corpusStats = internalQuery({
       // **`isWetlandClass`, not `type === 'marsh'`.** The D109 migration renames this value, and a
       // literal comparison would not fail — it would return zero for every band, which reads exactly
       // like "there is no unnamed wetland left" for the one rule most likely to be re-tuned.
-      if (
-        isWetlandClass(body.type) &&
-        body.name.length === 0 &&
-        body.surfaceAreaSqM !== undefined
-      ) {
-        const acres = body.surfaceAreaSqM / SQ_M_PER_ACRE_LOCAL;
+      // **`ruleAreaSqM`, not `surfaceAreaSqM`** — this bands by the number D96's rule was decided
+      // on. Reading the stored area instead reported four bodies in a 30–50 acre band that a
+      // 50-acre rule should have refused, none of which was a real violation. See `ruleAreaSqM`.
+      const wetlandBandArea = ruleAreaSqM(body);
+      if (isWetlandClass(body.type) && body.name.length === 0 && wetlandBandArea !== undefined) {
+        const acres = wetlandBandArea / SQ_M_PER_ACRE_LOCAL;
         if (acres >= 5) {
           const band =
             acres >= 100
@@ -918,11 +1037,14 @@ export const corpusStats = internalQuery({
         withNhdId,
         withGeometrySource,
         withDepth,
+        withMeasuredDepth,
+        byDepthSource,
         withElevation,
         withWindRose,
         byState,
         byType,
         unnamedWetlandBands,
+        depthByAreaBand,
       },
       scanned: page.page.length,
       cursor: page.continueCursor,
@@ -1997,7 +2119,18 @@ export const listNeedingElevation = internalQuery({
       })
       .map((body) => {
         const point = body.interiorPoint ?? body.representativePoint ?? body.centroid;
-        return { waterBodyId: body._id, lat: point.lat, lng: point.lng };
+        return {
+          waterBodyId: body._id,
+          lat: point.lat,
+          lng: point.lng,
+          // **What the row already holds, so a source swap can be measured before it happens.**
+          // D101 asks for the datum comparison *before* re-stamping — "a source swap that silently
+          // changes a datum would move every decile in `regionStats` and look like a data-quality
+          // improvement" — and the loader cannot compute a delta against a value it was never
+          // handed. Free here: the document is already read.
+          ...(body.elevationM !== undefined ? { storedElevationM: body.elevationM } : {}),
+          ...(body.elevationSource !== undefined ? { storedSource: body.elevationSource } : {}),
+        };
       });
     return {
       targets,
@@ -2025,14 +2158,41 @@ export const listNeedingElevation = internalQuery({
  */
 export const importElevations = internalMutation({
   args: {
-    elevations: v.array(v.object({ waterBodyId: v.id('waterBodies'), elevationM: v.number() })),
+    elevations: v.array(
+      v.object({
+        waterBodyId: v.id('waterBodies'),
+        elevationM: v.number(),
+        /**
+         * The raster this reading came off (D104). Optional so a 3DEP row that answered without
+         * them still lands — the elevation is the payload, and refusing it for missing metadata
+         * would trade a real number for bookkeeping.
+         */
+        resolutionM: v.optional(v.number()),
+        rasterId: v.optional(v.number()),
+      }),
+    ),
+    /**
+     * Which DEM these readings came from. **Required, and not defaulted**, because this mutation
+     * used to hardcode `dem_glo90` — so the day the source changed, every 1 m LiDAR reading would
+     * have been stamped as a 90 m Copernicus one and the D101 datum comparison would have had
+     * nothing left to compare.
+     */
+    source: literals(ELEVATION_SOURCES),
   },
-  handler: async (ctx, { elevations }) => {
+  handler: async (ctx, { elevations, source }) => {
+    if (source === 'operator') {
+      // A bulk import is by definition not a moderator typing a surveyed number, and letting it
+      // claim that rung would make the one value the ladder protects unprotectable.
+      throw new Error(
+        'importElevations refuses the `operator` rung: it is a human override, set through the ' +
+          'editor, and an import claiming it would be able to overwrite itself forever after.',
+      );
+    }
     let updated = 0;
     let operatorHeld = 0;
     let implausible = 0;
     let missing = 0;
-    for (const { waterBodyId, elevationM } of elevations) {
+    for (const { waterBodyId, elevationM, resolutionM, rasterId } of elevations) {
       const body = await ctx.db.get(waterBodyId);
       if (!body) {
         missing++;
@@ -2046,7 +2206,15 @@ export const importElevations = internalMutation({
         implausible++;
         continue;
       }
-      await ctx.db.patch(waterBodyId, { elevationM, elevationSource: 'dem_glo90' });
+      await ctx.db.patch(waterBodyId, {
+        elevationM,
+        elevationSource: source,
+        // Written as `undefined` rather than skipped when absent, so a re-stamp from a source that
+        // carries no raster metadata clears the previous source's — a stale 1 m label on a 90 m
+        // reading is worse than no label.
+        elevationResolutionM: resolutionM,
+        elevationRasterId: rasterId,
+      });
       updated++;
     }
     return { updated, operatorHeld, implausible, missing };
@@ -2132,23 +2300,62 @@ export const listNeedingWindRose = internalQuery({
  */
 export const importWindRoses = internalMutation({
   args: {
-    roses: v.array(v.object({ waterBodyId: v.id('waterBodies'), rose: v.array(v.number()) })),
+    roses: v.array(
+      v.object({
+        waterBodyId: v.id('waterBodies'),
+        /**
+         * **Optional, and that is the point of the N7-3 split.** A cell with too few winter hours
+         * stores no rose — a percentage of a thin sample renders identically to one of a thick
+         * sample — but its strong-wind *counts* are absolute and carry their own denominator, so
+         * they are honest at any sample size. One of the two can arrive without the other.
+         */
+        rose: v.optional(v.array(v.number())),
+        strongWindHours: v.optional(v.array(v.number())),
+        sampledWindHours: v.optional(v.number()),
+        strongWindMinMps: v.optional(v.number()),
+      }),
+    ),
   },
   handler: async (ctx, { roses }) => {
     let updated = 0;
     let malformed = 0;
     let missing = 0;
-    for (const { waterBodyId, rose } of roses) {
-      const body = await ctx.db.get(waterBodyId);
+    for (const entry of roses) {
+      const body = await ctx.db.get(entry.waterBodyId);
       if (!body) {
         missing++;
         continue;
       }
-      if (!isPlausibleWindRose(rose)) {
+      const patch: Partial<Doc<'waterBodies'>> = {};
+      if (entry.rose !== undefined) {
+        if (!isPlausibleWindRose(entry.rose)) {
+          malformed++;
+          continue;
+        }
+        patch.windRose = entry.rose;
+        patch.windRoseSource = 'wtk_2km';
+      }
+      const sustained = {
+        strongWindHours: entry.strongWindHours,
+        sampledWindHours: entry.sampledWindHours,
+      };
+      if (entry.strongWindHours !== undefined || entry.sampledWindHours !== undefined) {
+        // **The three travel together or not at all.** Counts without their denominator cannot be
+        // turned into a rate, and counts without the threshold they were taken at cannot be
+        // compared across a corpus that has been re-derived — which `--min-mps` makes routine.
+        if (!isPlausibleStrongWindHours(sustained) || entry.strongWindMinMps === undefined) {
+          malformed++;
+          continue;
+        }
+        patch.strongWindHours = entry.strongWindHours;
+        patch.sampledWindHours = entry.sampledWindHours;
+        patch.strongWindMinMps = entry.strongWindMinMps;
+      }
+      if (Object.keys(patch).length === 0) {
         malformed++;
         continue;
       }
-      await ctx.db.patch(waterBodyId, { windRose: rose, windRoseSource: 'wtk_2km' });
+      await ctx.db.patch(entry.waterBodyId, patch);
       updated++;
     }
     return { updated, malformed, missing };
@@ -3731,6 +3938,81 @@ export const matchAndImportDepths = internalMutation({
  * call, so a run can inspect its own join before changing anything — which matters more than usual
  * here, because a bad join silently attributes one lake's basin to another.
  */
+/**
+ * Which corpus body contains each of these points — **the D95 re-key lane's only server call**.
+ *
+ * ## The problem this exists for
+ *
+ * `matchBathymetryLakes` asks *"which body is this survey in?"* and answers it once per source key.
+ * That is the right question for a key that names a lake, and the wrong one for a key that does not:
+ * **MIDAS 870 is filed as North Pond (59 acres) and holds 17,922 soundings spread over 151 × 348 km**
+ * — essentially all of Maine — of which 0.51% are actually inside North Pond. Every row is
+ * `FMSRC=depthmap`: the digitised IF&W paper maps, where anything the digitisation could not key
+ * landed. There is no single body to resolve it to, so the containment gate correctly rejects it and
+ * 17,922 real measurements go nowhere.
+ *
+ * D95's answer is to stop asking about the key and start asking about the **points**: assign each
+ * sounding to the body that contains it, and let the groups that fall out be the lakes. Measured,
+ * 96.3% of them land in a body, across 263 distinct bodies — 217 of which clear the sounding and
+ * density gates, and **all 217 are net new**.
+ *
+ * ## Why this is a separate query rather than a flag on the other one
+ *
+ * The two ask different questions and must not share a code path. `matchBathymetryLakes` resolves an
+ * *identity* and is gated on containment precisely so a mis-keyed survey cannot claim a lake. This
+ * resolves *membership*, one point at a time, with no identity claim at all — the caller regroups and
+ * then re-runs the ordinary gated join over the results. Folding this in as an option would make the
+ * containment gate conditional, and that gate is the only thing standing between a junk key and a
+ * wrong basin.
+ *
+ * ⚠ **Rule 0: the caller decides eligibility, and it is the containment gate, nothing else**
+ * (founder, 2026-08-03): *"We should only do this if the soundings source points at a lake and then
+ * doesn't match up with the lake's polygon."* A key whose soundings land inside the body its own id
+ * resolves to is finished — not re-examined, not re-clustered, not split. This query cannot enforce
+ * that (it sees points, not keys), which is exactly why `rekey.ts` enforces it and asserts it with
+ * China Lake, MIDAS 5448: a real 3,939-acre lake with 25,807 legitimate soundings that must be
+ * provably untouched by the lane.
+ *
+ * **Largest-first, like the join.** `bodiesCoveringPoint` ranks containment before proximity and then
+ * by area, so a point inside a bay that is inside a lake is attributed to the lake — the same rule
+ * that stopped Moosehead Lake arriving as North Bay. Buffer zero: this is membership, and a sounding
+ * outside every polygon is a fact to report rather than one to round away.
+ */
+export const coveringBodyForPoints = internalQuery({
+  args: { points: v.array(latLng) },
+  handler: async (ctx, { points }) => {
+    const out: ({ externalId?: string; waterBodyId: Id<'waterBodies'>; name: string } | null)[] =
+      [];
+    for (const point of points) {
+      const byId = await listedBodiesNearCoord(ctx, point);
+      const covering = bodiesCoveringPoint(
+        point,
+        [...byId.values()].map((b) => ({
+          ref: b._id,
+          polygon: b.polygon as unknown as Polygon | MultiPolygon,
+          surfaceAreaSqM: b.surfaceAreaSqM ?? 0,
+        })),
+        // Zero, deliberately. A sounding that is *near* a lake is not *in* it, and the ordinary join
+        // that runs afterwards has its own proximity rules. Widening here would let one lake's
+        // shoreline collect the pond next door's survey before any gate could see it happen.
+        0,
+      );
+      const best = covering[0];
+      const body = best ? byId.get(best.ref) : undefined;
+      out.push(
+        body
+          ? {
+              ...(body.externalId !== undefined ? { externalId: body.externalId } : {}),
+              waterBodyId: body._id,
+              name: body.name,
+            }
+          : null,
+      );
+    }
+    return { bodies: out };
+  },
+});
+
 export const matchBathymetryLakes = internalQuery({
   args: {
     lakes: v.array(
@@ -3744,6 +4026,23 @@ export const matchBathymetryLakes = internalQuery({
          * won't send; omitting it runs the join ungated, which the ETL counts and reports.
          */
         samplePoints: v.optional(v.array(latLng)),
+        /**
+         * The NHD `Permanent_Identifier` the **publisher** says this survey belongs to (N7-3).
+         *
+         * Maine publishes a MIDAS → NHD crosswalk (`MaineDEP_Lakes_Data/MapServer/3`), which
+         * resolves **5,611 of 5,803** MIDAS numbers and therefore 98.1% of the sounding sets. Where
+         * it is present it settles a question geometry has to guess at: which of several adjacent
+         * bodies the state meant. Caribou Lake arriving as Ripogenus (15.7× the area) and Fahi Pond
+         * as Mud Pond (22.3×) are both this failure.
+         *
+         * ⚠ **Evidence, never gospel — D95's whole premise.** *"The state's lake id is evidence, not
+         * gospel; where it disagrees with geography, geography wins."* So this only ever **promotes
+         * a body the survey already covers**; it can never introduce one the soundings are not in,
+         * and it cannot rescue a key that fails the containment gate. A crosswalk that points
+         * somewhere the survey isn't is a *finding* — MIDAS 870 is filed as a 59-acre pond and holds
+         * 17,922 soundings spanning 348 km — and it is reported as one rather than acted on.
+         */
+        nhdId: v.optional(v.string()),
       }),
     ),
     /** Omit the polygon when only the identity is wanted — a coverage count, say. */
@@ -3759,7 +4058,20 @@ export const matchBathymetryLakes = internalQuery({
       states?: string[];
       polygon?: unknown;
     }
-    const matches: Array<Resolved & { key: string; alsoCovers: Resolved[] }> = [];
+    const matches: Array<
+      Resolved & {
+        key: string;
+        alsoCovers: Resolved[];
+        /**
+         * Whether the publisher's crosswalk agreed with the geometry, where one was supplied.
+         *
+         * Counted by the ETL rather than acted on: `disagreed` means the state's key points at a
+         * body this survey is not in, which is either a broken key (MIDAS 870) or a broken polygon,
+         * and both deserve a number rather than a silent resolution.
+         */
+        crosswalk?: 'confirmed' | 'promoted' | 'disagreed';
+      }
+    > = [];
     const rejects: { key: string; reason: string }[] = [];
 
     for (const lake of lakes) {
@@ -3828,8 +4140,40 @@ export const matchBathymetryLakes = internalQuery({
         };
       };
 
+      // ── The publisher's own id, where it agrees with the survey ────────────
+      //
+      // **A promotion within `eligible`, never a substitution for it.** Everything here has already
+      // cleared `MIN_SURVEY_CONTAINMENT`, so the crosswalk is only ever choosing *between bodies the
+      // soundings are genuinely in* — which is the case geometry cannot settle, and the case
+      // Caribou/Ripogenus and Fahi/Mud both are. It cannot admit a body the survey misses, and it
+      // cannot rescue a rejected key: those are D95's re-key lane, and that lane is deliberately
+      // gated on the containment test failing.
+      //
+      // The disagreement is recorded rather than silently resolved. A crosswalk pointing outside the
+      // survey means the state's key is wrong (MIDAS 870) or our polygon is, and both are findings.
+      // **Three outcomes, not two, because "agreed" was two different facts wearing one word.**
+      // `confirmed` is the crosswalk naming the body geometry had already chosen — corroboration,
+      // and worth knowing, but it changed nothing. `promoted` is the crosswalk actually moving the
+      // answer, which is the only one that is a *correction*. Reporting them together would let a
+      // number that is mostly corroboration read as mostly repair.
+      let crosswalkOutcome: 'confirmed' | 'promoted' | 'disagreed' | undefined;
+      let eligibleOrdered = eligible;
+      if (lake.nhdId !== undefined && lake.nhdId.length > 0) {
+        const claimed = await ctx.db
+          .query('waterBodies')
+          .withIndex('by_nhd_id', (q) => q.eq('nhdId', lake.nhdId))
+          .first();
+        const named = claimed ? eligible.find((h) => h.ref === claimed._id) : undefined;
+        if (named) {
+          crosswalkOutcome = named.ref === eligible[0]?.ref ? 'confirmed' : 'promoted';
+          eligibleOrdered = [named, ...eligible.filter((h) => h.ref !== named.ref)];
+        } else {
+          crosswalkOutcome = 'disagreed';
+        }
+      }
+
       // The body holding most of the survey — the lake, not one of its bays.
-      const primaryHit = eligible[0];
+      const primaryHit = eligibleOrdered[0];
       const primary = primaryHit ? resolve(primaryHit.ref) : undefined;
       if (!primaryHit || !primary) {
         rejects.push({ key: lake.key, reason: 'body vanished between lookup and resolve' });
@@ -3849,7 +4193,12 @@ export const matchBathymetryLakes = internalQuery({
         .map((h) => resolve(h.ref))
         .filter((r): r is Resolved => r !== undefined);
 
-      matches.push({ key: lake.key, ...primary, alsoCovers });
+      matches.push({
+        key: lake.key,
+        ...primary,
+        alsoCovers,
+        ...(crosswalkOutcome ? { crosswalk: crosswalkOutcome } : {}),
+      });
     }
 
     return { matches, rejects };
