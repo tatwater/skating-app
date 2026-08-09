@@ -192,6 +192,10 @@ export const MODERATION_ACTIONS = [
   'approve_waterbody',
   'reject_waterbody',
   'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 2)
+  // Operator-entered reference links — a lake association's URL (N6c B7). The only *stored* link in
+  // the phase; every other one in the drawer is derived from the row at render time (P2/D71), so
+  // this is the only link surface with a writer to audit at all.
+  'set_reference_links',
   // Keep a body the admission rules refuse, or stop keeping one (N7b's primitive, seeded in N7).
   // Distinct from `set_curated_boost` because it is a statement about **membership** rather than
   // prominence — it overrides `belongsInCorpus` and both prunes, where a boost only moves a body up

@@ -42,6 +42,7 @@ import {
   KNOWN_STATE_CODES,
   type LatLng,
   MAX_PLAUSIBLE_DEPTH_M,
+  MAX_REFERENCE_LINKS,
   MAX_SUGGESTED_SAMPLE_POINTS,
   MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
@@ -57,6 +58,7 @@ import {
   primaryReviewReason,
   REVIEW_REASONS,
   type ReviewReason,
+  referenceLinkError,
   resolveUpsert,
   searchTextFor,
   WATER_BODY_CLASSES,
@@ -2887,6 +2889,61 @@ export const setCuratedBoost = mutation({
       targetId: waterBodyId,
       reason: `Set curatedBoost to ${curatedBoost}`,
       metadata: { curatedBoost, minVisibleZoom: scores.minVisibleZoom },
+      createdAt: Date.now(),
+    });
+    return waterBodyId;
+  },
+});
+
+/**
+ * Moderator: set a body's operator-entered reference links (N6c Workstream B7).
+ *
+ * The one link in the phase that is stored rather than derived, because no algorithm turns a lake's
+ * name into its association's URL. Everything else in the drawer's link list is computed at render
+ * time from the row (P2/D71) and has no writer at all.
+ *
+ * **The scheme check is re-run here and that is not redundant with the editor's.** The client check
+ * exists so an operator sees the error without a round trip; this one exists because a mutation is
+ * the trust boundary and a client check is a suggestion. An `href` is an execution context, so a
+ * stored `javascript:` URL would run for every visitor to the lake page.
+ *
+ * Passing an empty array clears the list, which is the only way to remove the last link — there is
+ * deliberately no separate delete mutation for a field whose whole value is a handful of rows.
+ */
+export const setReferenceLinks = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    links: v.array(v.object({ label: v.string(), url: v.string() })),
+  },
+  handler: async (ctx, { waterBodyId, links }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+    if (links.length > MAX_REFERENCE_LINKS) {
+      throw new ConvexError(
+        `A body carries at most ${MAX_REFERENCE_LINKS} reference links — this is an association or two, not a directory.`,
+      );
+    }
+    for (const link of links) {
+      const error = referenceLinkError(link);
+      if (error) throw new ConvexError(error);
+    }
+
+    const trimmed = links.map((link) => ({ label: link.label.trim(), url: link.url.trim() }));
+    await ctx.db.patch(waterBodyId, { referenceLinks: trimmed });
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_reference_links',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason:
+        trimmed.length === 0
+          ? 'Cleared the reference links'
+          : `Set ${trimmed.length} reference link${trimmed.length === 1 ? '' : 's'}`,
+      // **`prev` alongside the new value (F1).** An audit row that records only what a field *became*
+      // can answer "who changed this" and never "changed it from what", which is most of what someone
+      // reading the timeline actually wants. Same convention as `setDepth`.
+      metadata: { referenceLinks: trimmed, prev: { referenceLinks: body.referenceLinks ?? [] } },
       createdAt: Date.now(),
     });
     return waterBodyId;

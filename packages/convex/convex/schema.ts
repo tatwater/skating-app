@@ -799,6 +799,19 @@ export default defineSchema({
     displayScore: v.optional(v.number()),
     curatedBoost: v.optional(v.number()),
     minVisibleZoom: v.optional(v.number()),
+    /**
+     * Operator-entered reference links (N6c Workstream B7) — the phase's **only** stored link.
+     *
+     * Every other link in the drawer is derived at render time from `(interiorPoint, name, states)`
+     * and stored nowhere (P2/D71), because a derivable string stored 24,948 times is 24,948 strings
+     * to migrate when a provider changes its query params. A lake association's URL is the one thing
+     * no algorithm produces from a lake's name, so it is the exception that proves the rule.
+     *
+     * **Expect this on tens of bodies, not thousands**, and that is the correct outcome rather than
+     * a coverage gap. Preserved across re-import for free: `importCanonical` patches named fields
+     * only, and it does not name this one — the same way `curatedBoost` survives.
+     */
+    referenceLinks: v.optional(v.array(v.object({ label: v.string(), url: v.string() }))),
     createdByUserId: v.optional(v.id('profiles')), // when source == user
     reviewStatus: v.optional(literals(REVIEW_STATUSES)), // source==user only (D37)
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)

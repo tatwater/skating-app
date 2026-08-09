@@ -25,6 +25,7 @@ import { HazardList } from './HazardList';
 import { IceHistory } from './IceHistory';
 import { LeavingNotice } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
+import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
 import { Badge } from './ui/badge';
@@ -189,6 +190,10 @@ export function WaterBodyDetail({
           waterBodyId={result.body._id}
           {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}
         />
+        {/* Reference links (N6c/B), below our own content and above the credits. Everything here
+            leaves the app, so it sits after everything a skater came for — and it renders nothing at
+            all on a body with no coordinate and no regional community. */}
+        <ReferenceLinks body={result.body} />
         {/* The bathymetry credit (N6b §5), last in the drawer and absent on the great majority of
             lakes no agency ever surveyed. "How far away can we put it" resolved to *here*, and that
             is not a compromise: nothing requires a contour credit on the map surface, and this is
