@@ -24,6 +24,8 @@ import {
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { AlscPond } from './alsc';
+import type { CslapLake } from './cslap';
+import { type NhBandRow, nhLakeDepths } from './nhBands';
 import type {
   DepthRecord,
   GlobathyRow,
@@ -38,6 +40,10 @@ const SQ_KM_TO_SQ_M = 1_000_000;
 
 /** Hectares → m², for LAGOS-US and ALSC, both of which report lake area in hectares. */
 const HA_TO_SQ_M = 10_000;
+
+/** Feet → metres, and acres → m². NH publishes its bathymetry in both imperial units. */
+const FEET_PER_METRE = 3.28084;
+const SQ_M_PER_ACRE = 4046.8564224;
 
 // --- CSV ---
 
@@ -363,21 +369,45 @@ export function mergeLagosRows(rows: readonly LagosDepthRow[]): {
  * quietly dropping it would turn "the mirror copy is damaged" into "New York got fewer depths".
  */
 export function parseAlscArchive(ndjson: string): AlscPond[] {
-  const ponds: AlscPond[] = [];
+  return parseNdjsonArchive<AlscPond>(ndjson, 'ALSC');
+}
+
+/** `.raw/cslap/lakes.ndjson` → the lakes it holds. Same contract as the ALSC reader. */
+export function parseCslapArchive(ndjson: string): CslapLake[] {
+  return parseNdjsonArchive<CslapLake>(ndjson, 'CSLAP');
+}
+
+/** `.raw/nh-bathy-bands/bands.ndjson` → the band rows it holds, one per polygon. */
+export function parseNhBandArchive(ndjson: string): NhBandRow[] {
+  return parseNdjsonArchive<NhBandRow>(ndjson, 'NH bands');
+}
+
+/**
+ * Read one of the machine-written NDJSON archives.
+ *
+ * **A malformed line is a hard, named error, never a skipped one.** These files are written by our
+ * own snapshot commands and checkpointed; a line that isn't JSON means a truncated or half-written
+ * archive, and quietly dropping it would turn "the mirror copy is damaged" into "New York got fewer
+ * depths". The validation itself already happened at fetch time — `parseAlscReport` and
+ * `parseCslapRow` refuse a depthless or implausible row — so this side is a reader rather than a
+ * second parser. Re-validating here would mean two files disagreeing about what a lake is.
+ */
+function parseNdjsonArchive<T>(ndjson: string, label: string): T[] {
+  const out: T[] = [];
   for (const [index, line] of ndjson.split('\n').entries()) {
     const trimmed = line.trim();
     if (trimmed.length === 0) continue;
     try {
-      ponds.push(JSON.parse(trimmed) as AlscPond);
+      out.push(JSON.parse(trimmed) as T);
     } catch {
       throw new Error(
-        `ALSC archive: line ${index + 1} is not JSON. This archive is machine-written NDJSON, so a ` +
-          'broken line means a truncated or half-written file — re-pull it from the mirror rather ' +
-          'than loading what survived.',
+        `${label} archive: line ${index + 1} is not JSON. This archive is machine-written NDJSON, ` +
+          'so a broken line means a truncated or half-written file — re-pull it from the mirror ' +
+          'rather than loading what survived.',
       );
     }
   }
-  return ponds;
+  return out;
 }
 
 // --- The join ---
@@ -396,6 +426,20 @@ export interface TransformInput {
    * construction, so a state filter would have nothing to do.
    */
   alsc?: readonly AlscPond[];
+  /**
+   * CSLAP lakes, read back out of `.raw/cslap/lakes.ndjson` (founder, 2026-08-09).
+   *
+   * Independent of `--states` for the same reason ALSC is: the programme is New York's by
+   * construction, so a state filter would have nothing to do.
+   */
+  cslap?: readonly CslapLake[];
+  /**
+   * New Hampshire's published depth bands, read back out of `.raw/nh-bathy-bands/bands.ndjson`.
+   *
+   * One row per band polygon, not per lake — `nhLakeDepths` does the grouping and the integration,
+   * because the arithmetic is the part that can be wrong in a way that still looks right.
+   */
+  nhBands?: readonly NhBandRow[];
   /**
    * Two-letter state codes we support. When set, LAGOS rows naming none of them are dropped.
    *
@@ -585,6 +629,61 @@ export function transformDepths(input: TransformInput): TransformResult {
     });
   }
 
+  // ── CSLAP: 278 New York means, and the coordinates are the good part ──────
+  //
+  // The mirror image of ALSC. That source has the depths and pre-GPS coordinates; this one has
+  // fewer depths and a modern point, so it joins on containment far more often and needs no
+  // special handling at all. Mean only — the programme publishes no maximum.
+  for (const lake of input.cslap ?? []) {
+    const key = `cslap/${lake.cslapNumber}`;
+    if (!(lake.meanDepthM > 0)) {
+      // `parseCslapRow` refuses a depthless row at fetch time, so reaching here means the archive
+      // was hand-edited or written by an older parser. Named rather than counted silently.
+      skipped++;
+      errors.push({ key, message: `"${lake.name}" carries no usable mean depth` });
+      continue;
+    }
+    records.push({
+      key,
+      point: { lat: lake.lat, lng: lake.lng },
+      ...(lake.surfaceAreaHa !== undefined && lake.surfaceAreaHa > 0
+        ? { areaSqM: lake.surfaceAreaHa * HA_TO_SQ_M }
+        : {}),
+      ...(lake.name ? { name: lake.name } : {}),
+      meanDepthM: lake.meanDepthM,
+      meanDepthSource: 'cslap' as const,
+    });
+  }
+
+  // ── NH's published bands: a real max AND an integrated mean, both at `state_agency` ──────
+  //
+  // The only source in the set that gives both from the agency's own numbers. See `nhBands.ts` for
+  // the frustum rule and for why NH's depth comes from here rather than from the contour lines
+  // `scripts/bathymetry` reads — two producers writing one rung for one lake is an ambiguity, not
+  // redundancy.
+  const nh = nhLakeDepths(input.nhBands ?? []);
+  for (const lake of nh.lakes) {
+    const key = `nh-bands/${lake.auId}`;
+    const maxDepthM = lake.maxDepthFt / FEET_PER_METRE;
+    const meanDepthM = lake.meanDepthFt / FEET_PER_METRE;
+    records.push({
+      key,
+      point: { lat: lake.lat, lng: lake.lng },
+      // Σ of the published band areas, i.e. the surveyed lake. Doubles as the join's area
+      // corroboration, which is exactly the check that should fail if a survey covers one arm.
+      areaSqM: lake.areaAcres * SQ_M_PER_ACRE,
+      ...(lake.name ? { name: lake.name } : {}),
+      meanDepthM,
+      meanDepthSource: 'state_agency' as const,
+      maxDepthM,
+      maxDepthSource: 'state_agency' as const,
+    });
+  }
+  for (const s of nh.skippedKeys) {
+    skipped++;
+    errors.push({ key: `nh-bands/${s.auId}`, message: `NH band set refused: ${s.reason}` });
+  }
+
   return {
     records,
     summary: {
@@ -592,6 +691,9 @@ export function transformDepths(input: TransformInput): TransformResult {
       globathyRead: input.globathy?.length ?? 0,
       lagosRead: input.lagos?.length ?? 0,
       alscRead: input.alsc?.length ?? 0,
+      cslapRead: input.cslap?.length ?? 0,
+      nhBandsRead: input.nhBands?.length ?? 0,
+      nhLakesRead: nh.lakes.length,
       outOfRegion,
       emitted: records.length,
       skipped,

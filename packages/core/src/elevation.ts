@@ -43,10 +43,22 @@
 /**
  * Where a body's elevation came from.
  *
- * - `operator` — entered by a moderator. Wins over everything; the loader refuses to overwrite it.
- * - `dem_glo90` — Copernicus GLO-90 via Open-Meteo's elevation endpoint.
+ * - `operator`   — entered by a moderator. Wins over everything; the loader refuses to overwrite it.
+ * - `dem_3dep`   — USGS 3D Elevation Program via `epqs.nationalmap.gov` (D127). **98.2% of our
+ *                  readings come back at 1 m LiDAR**, against GLO-90's 90 m — two orders of
+ *                  magnitude, no key, no shared quota, and it is the reason the metered lane was
+ *                  retired.
+ * - `dem_glo90`  — Copernicus GLO-90 via Open-Meteo's elevation endpoint. **Superseded**, and kept
+ *                  because 5,692 rows were written with it: a source that stops existing the moment
+ *                  it is replaced makes every row it wrote unattributable, and the datum comparison
+ *                  D101 asks for needs both labels to survive side by side to be possible at all.
+ *
+ * ⚠ **Order is not precedence here, unlike `DEPTH_SOURCES`.** Elevation has one automated source at
+ * a time; `canOverwriteElevation` is the whole rule, and it turns on `operator` alone. A newer DEM
+ * simply replaces an older one — which is what makes swapping them safe, and what makes measuring
+ * the datum shift before doing it mandatory rather than polite.
  */
-export const ELEVATION_SOURCES = ['operator', 'dem_glo90'] as const;
+export const ELEVATION_SOURCES = ['operator', 'dem_3dep', 'dem_glo90'] as const;
 export type ElevationSource = (typeof ELEVATION_SOURCES)[number];
 
 /**

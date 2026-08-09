@@ -393,6 +393,23 @@ export function classifyThreeDhp(featureType: number): SourceClaim {
  * both lead with theirs, and an earlier draft of this analysis only looked at the last word — which
  * made the unresolved set look tidier than it was.
  */
+/**
+ * The regional words for water that is **still despite a catalogue calling it a river** (founder,
+ * 2026-08-09).
+ *
+ * Every term here also appears in `NAME_KEEP` below, and this is deliberately the *narrow* subset of
+ * it: these are the names that outrank an explicit flowing-water refusal, where the rest of
+ * `NAME_KEEP` only outranks silence. See `classifyWaterBody`'s rung 2 for the measurement that
+ * forced the distinction, and `waterClass.test.ts` for the test that stops the two lists drifting —
+ * a term added here but not to `NAME_KEEP` would rescue a body and then have no class to give it.
+ *
+ * **`flow`, `flowage` and `impoundment` are here even though they resolve to `lakePond`.** The class
+ * each name gets still comes from `NAME_KEEP`, so `Debsconeag Deadwater` is a `river` and
+ * `Higley Flow` is a `lakePond`; this pattern decides only *whether the name gets to speak*.
+ */
+const STILL_WATER_NAME =
+  /\bdead ?waters?\b|\bstill ?waters?\b|\bdead river\b|\blogans?\b|\bbogans?\b|\bflowages?\b|\bflows?\b|\bimpoundments?\b/;
+
 const NAME_KEEP: readonly (readonly [RegExp, WaterBodyClass])[] = [
   [/\breservoirs?\b/, 'reservoir'],
   [
@@ -455,6 +472,20 @@ export function classifyName(name: string): SourceClaim | undefined {
   return NAME_DROP.test(folded) ? drop('name:flowing-or-built') : undefined;
 }
 
+/**
+ * The class a **still-water name** asserts, where it asserts one — `undefined` otherwise.
+ *
+ * The class comes from `NAME_KEEP`, never from `STILL_WATER_NAME`, so the two can only ever agree:
+ * this function decides whether the name is allowed to outrank a catalogue, and `classifyName`
+ * decides what it says. `Sewall Deadwater Pond` therefore resolves to `river` rather than `lakePond`,
+ * because `NAME_KEEP` already orders the slow-reach entry above the pond one.
+ */
+export function stillWaterClass(name: string): WaterBodyClass | undefined {
+  if (!STILL_WATER_NAME.test(fold(name))) return undefined;
+  const fromName = classifyName(name);
+  return fromName?.outcome === 'class' ? fromName.cls : undefined;
+}
+
 /** Does this name assert a reservoir? The one case where a name outranks a catalogue's own class. */
 export function nameAssertsReservoir(name: string): boolean {
   return /\breservoirs?\b/.test(fold(name));
@@ -467,6 +498,7 @@ export function nameAssertsReservoir(name: string): boolean {
 /** Where a verdict's class came from — the axis the dry-run funnel is reported along. */
 export type ClassBasis =
   | 'name-reservoir' // a name said "reservoir" and outranked the catalogue
+  | 'name-still-water' // the catalogue refused it as flowing; a regional still-water name overruled
   | 'source-class' // the catalogue named a class we map
   | 'name-keyword' // the catalogue was silent; a name keyword decided it
   | 'dropped-by-class' // the catalogue named something we refuse
@@ -500,10 +532,32 @@ export interface ClassVerdict {
  * 1. **A name containing "reservoir" wins outright.** Overrides the catalogue in ~407 measured cases,
  *    deliberately: NHD classes a dammed lake by what it is, and we class it by what it is *used for*,
  *    because that is what carries access rules.
- * 2. **The catalogue's own class**, where it has one we map.
- * 3. **A name keyword**, where the catalogue is silent.
- * 4. **`unclassified`** — and this is a real answer, not a failure. It is the prompt that puts a body
+ * 2. **A regional still-water name outranks a *flowing* refusal** (founder, 2026-08-09). See below.
+ * 3. **The catalogue's own class**, where it has one we map.
+ * 4. **A name keyword**, where the catalogue is silent.
+ * 5. **`unclassified`** — and this is a real answer, not a failure. It is the prompt that puts a body
  *    in front of a moderator, which is why it is named for what it is rather than called `other`.
+ *
+ * ## Why rung 2 exists — the same question answered two ways
+ *
+ * Rung 4 only fires on **silence**, so a name keyword could never overrule a catalogue that had
+ * spoken. That produced two opposite answers to one question, decided by whether a mapper had
+ * bothered to add a subtag: `Debsconeag Deadwater` is in the corpus as a `river` because OSM tags it
+ * `natural=water` and nothing else, while `Pockwockamus Deadwater` (335 ac), `Ninemile Deadwater`
+ * (212 ac), `Abol Deadwater` (66 ac) and `Musquacook Deadwater` (62 ac) were **deleted as `no-class`**
+ * because OSM tags those `water=river`. Twelve named Maine deadwaters against twenty-six identical
+ * ones we keep, measured over the 2026-08-08 merge artifacts.
+ *
+ * **Narrow on both sides, on purpose.** The refusal must be in the `flowing` family — a body a
+ * catalogue calls wastewater, a settling basin or a salt pool is not rescued by any name — and the
+ * name must be in `STILL_WATER_NAME` rather than anywhere in `NAME_KEEP`. Widening the name side to
+ * every keep-word would also admit `Round Pond Rips` and `Cedar Pond Brook`, which are the rapids and
+ * the brook their names say they are. This is `NAME_DROP`'s asymmetry pointed the other way: keeping
+ * a rapid costs one row nobody skates, and dropping a deadwater deletes real ice.
+ *
+ * ⚠ **It cannot launder a veto.** `sourceToken` still carries the catalogue's own word, so
+ * `VETO_TOKENS` reads what NHD said rather than what this ladder concluded — the same hole rung 1
+ * had to be closed against.
  *
  * Cross-source reconciliation is **not** here: this answers "what does *this* catalogue say", one
  * feature at a time. Combining two catalogues' verdicts happens at merge time, where the evidence for
@@ -532,6 +586,20 @@ export function classifyWaterBody(input: { name: string; claim: SourceClaim }): 
     };
   }
   if (sourceClaim.outcome === 'drop') {
+    // Rung 2 — and it is checked here rather than above the class rung because a catalogue that
+    // names a class we map has said something more specific than "river", and there is nothing to
+    // overrule. `refusalFamily` is the same triage `settledClassDissent` reads, so "which refusals
+    // are the flowing ones" is answered in exactly one place.
+    const stillWater =
+      refusalFamily(sourceClaim.token) === 'flowing' ? stillWaterClass(name) : undefined;
+    if (stillWater !== undefined) {
+      return {
+        cls: stillWater,
+        basis: 'name-still-water',
+        token: `name:${stillWater}`,
+        sourceToken,
+      };
+    }
     return { cls: null, basis: 'dropped-by-class', token: sourceClaim.token, sourceToken };
   }
 

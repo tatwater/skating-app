@@ -102,6 +102,12 @@ export interface TransformSummary {
   lagosRead: number;
   /** ALSC ponds read out of `.raw/alsc/ponds.ndjson`. Depth only — see `transformDepths`. */
   alscRead: number;
+  /** CSLAP lakes read out of `.raw/cslap/lakes.ndjson`. Mean depth only — the source has no max. */
+  cslapRead: number;
+  /** NH band POLYGONS read out of `.raw/nh-bathy-bands/bands.ndjson` — 7,351 of them. */
+  nhBandsRead: number;
+  /** …which group into this many lakes carrying both a max and an integrated mean. */
+  nhLakesRead: number;
   emitted: number;
   skipped: number;
   /** LAGOS-US rows that shared a `lagoslakeid` with another and were merged into one record. */

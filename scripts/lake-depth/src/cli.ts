@@ -5,20 +5,30 @@
  *
  *   pnpm --filter @skating/lake-depth transform --out=depths.ndjson \
  *     [--hydrolakes=hydrolakes.geojsonseq] [--globathy=GLOBathy_basic_parameters.csv] \
- *     [--lagos=lagos_depth.csv] [--alsc=.raw/alsc/ponds.ndjson] [--states=VT,NH,ME,MA,NY]
+ *     [--lagos=lagos_depth.csv] [--alsc=.raw/alsc/ponds.ndjson] [--cslap=.raw/cslap/lakes.ndjson] \
+ *     [--nh-bands=.raw/nh-bathy-bands/bands.ndjson] [--states=VT,NH,ME,MA,NY]
  *
  * Any subset is valid — the sources are independent (GLOBathy excepted, which needs HydroLAKES for its
  * geometry), so you can load LAGOS-US first and add the modelled rungs later. The D68 ladder is enforced
  * server-side, so load order never changes the result.
  *
- * `--alsc` reads the archive `snapshot-alsc` wrote. It is the one source that is already local by the
- * time it gets here: the scrape is a one-time fetch-and-archive, and this is the flag that turns that
- * archive into loadable records rather than a directory nothing reads.
+ * `--alsc` and `--cslap` read the archives `snapshot-alsc` and `snapshot-cslap` wrote. They are the
+ * sources already local by the time they get here — a one-time fetch-and-archive each — and these are
+ * the flags that turn those archives into loadable records rather than directories nothing reads.
+ * That failure is not hypothetical: the ALSC archive shipped for one release with no reader, so the
+ * scrape produced a directory instead of a depth.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
-import { parseAlscArchive, parseGlobathy, parseLagosDepth, transformDepths } from './transform';
+import {
+  parseAlscArchive,
+  parseCslapArchive,
+  parseGlobathy,
+  parseLagosDepth,
+  parseNhBandArchive,
+  transformDepths,
+} from './transform';
 import type { HydroLakesFeature } from './types';
 
 /** RFC 8142 record separator (U+001E) — GeoJSONSeq may prefix each line with it. */
@@ -45,16 +55,19 @@ function main(): void {
   const globathyPath = flag(args, 'globathy');
   const lagosPath = flag(args, 'lagos');
   const alscPath = flag(args, 'alsc');
+  const cslapPath = flag(args, 'cslap');
+  const nhBandsPath = flag(args, 'nh-bands');
   // Two-letter codes, comma-separated. Drops LAGOS rows naming none of them — see `TransformInput`.
   const states = flag(args, 'states')
     ?.split(',')
     .map((st) => st.trim().toUpperCase())
     .filter(Boolean);
 
-  if (!hydroPath && !globathyPath && !lagosPath && !alscPath) {
+  if (!hydroPath && !globathyPath && !lagosPath && !alscPath && !cslapPath && !nhBandsPath) {
     process.stderr.write(
       'usage: pnpm --filter @skating/lake-depth transform --out=depths.ndjson ' +
-        '[--hydrolakes=…geojsonseq] [--globathy=…csv] [--lagos=…csv] [--alsc=…ndjson]\n',
+        '[--hydrolakes=…geojsonseq] [--globathy=…csv] [--lagos=…csv] [--alsc=…ndjson] ' +
+        '[--cslap=…ndjson] [--nh-bands=…ndjson]\n',
     );
     process.exit(1);
   }
@@ -72,6 +85,8 @@ function main(): void {
     globathy: globathyPath ? parseGlobathy(readFileSync(globathyPath, 'utf8')) : undefined,
     lagos: lagosPath ? parseLagosDepth(readFileSync(lagosPath, 'utf8')) : undefined,
     alsc: alscPath ? parseAlscArchive(readFileSync(alscPath, 'utf8')) : undefined,
+    cslap: cslapPath ? parseCslapArchive(readFileSync(cslapPath, 'utf8')) : undefined,
+    nhBands: nhBandsPath ? parseNhBandArchive(readFileSync(nhBandsPath, 'utf8')) : undefined,
     states,
   });
 
@@ -83,7 +98,8 @@ function main(): void {
   const withMax = records.filter((r) => r.maxDepthM !== undefined).length;
   process.stderr.write(
     `\n[lake-depth] read ${summary.hydroLakesRead} HydroLAKES · ${summary.globathyRead} GLOBathy · ` +
-      `${summary.lagosRead} LAGOS-US · ${summary.alscRead} ALSC\n` +
+      `${summary.lagosRead} LAGOS-US · ${summary.alscRead} ALSC · ${summary.cslapRead} CSLAP · ` +
+      `${summary.nhBandsRead} NH bands → ${summary.nhLakesRead} NH lakes\n` +
       `[lake-depth] emitted ${summary.emitted} records (${withMean} with a mean · ${withMax} with a max) · ` +
       `${summary.skipped} skipped\n`,
   );

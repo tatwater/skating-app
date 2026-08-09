@@ -17,6 +17,7 @@ a stored field rather than a footnote — see *Sources*, below, and note that tw
 > ```bash
 > pnpm --filter @skating/lake-depth snapshot-elevation --from=<bodies.ndjson>   # USGS 3DEP → .raw-elevation/
 > pnpm --filter @skating/lake-depth snapshot-alsc                               # ALSC 1984–87 → .raw/alsc/
+> pnpm --filter @skating/lake-depth snapshot-cslap                              # NY CSLAP → .raw/cslap/
 >
 > ./mirror-elevation-r2.sh push|pull|status    # skating-raw-elevation
 > ./mirror-r2.sh push|pull|status              # skating-raw-lake-depth (now includes .raw/alsc/)
@@ -26,7 +27,19 @@ a stored field rather than a footnote — see *Sources*, below, and note that tw
 > `epqs.nationalmap.gov`: no key, no documented cap, **98.2% of readings at 1 m LiDAR**, ~1.5 h for
 > the corpus at concurrency 12. The archive is keyed on the **rounded coordinate**, never a body id,
 > which is what survives a corpus rebuild and what lets the *merge* read it before a body exists as
-> a row. `loadElevation.ts` still reads Open-Meteo and is the next thing to convert.
+> a row.
+>
+> **`load-elevation` now reads that archive and the Open-Meteo module is deleted** (N7-3). Run
+> `load-elevation --compare` **first**: D101 asks for the datum comparison against the 5,692 rows
+> already stamped `dem_glo90` *before* re-stamping, because a swap that silently moves a datum moves
+> every `regionStats` decile and looks like a data-quality improvement. A delta distribution centred
+> on zero is GLO-90 being coarse; one displaced off zero is a datum shift.
+>
+> **`snapshot-cslap`** is NYSDEC's Citizens Statewide Lake Assessment Program (founder, 2026-08-09) —
+> **278 lakes with a published mean depth**, sampled through 2024, at its own `cslap` ladder rung
+> between `state_agency` and `lagos_us`. Mean only; the programme publishes no maximum. Like ALSC it
+> has **no published licence** (the hosting item's `licenseInfo` and `accessInformation` are both
+> empty), so it is credited rather than assumed permissive.
 >
 > **`snapshot-alsc`** is the Adirondack Lakes Survey (**D130**) — 1,345 ponds, every one with a max
 > *and* a mean depth, and New York's first measured-depth source. It is a **scraper**, deliberately

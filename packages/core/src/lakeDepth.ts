@@ -70,9 +70,27 @@ import { formatDepthFeet } from './units';
  * same join every other source gets, and never a looser one. See `scripts/lake-depth/src/alsc.ts`
  * for the measurement behind that, and for the wider name join it argues for.
  */
+/**
+ * ## Where `cslap` sits, and why it is its own rung (founder, 2026-08-09)
+ *
+ * NYSDEC's **Citizen Statewide Lake Monitoring Assessment Program** publishes a mean depth for
+ * **278 of its 294 New York lakes**, sampled through 2024. It is measured, it is current, and DEC
+ * publishes it — but volunteers collect it, which is not the same claim as a NHDES depth-sounder
+ * transect. Folding it into `state_agency` would make those two indistinguishable in a stored row
+ * and in the caption; a separate rung keeps the difference visible at no cost, because the ladder is
+ * ordered and position *is* the precedence rule.
+ *
+ * **Above `lagos_us` deliberately, even though LAGOS-US probably contains it.** LAGOS-US DEPTH is a
+ * compilation of ~65 programmes and CSLAP is plausibly one of them — so where the two disagree, this
+ * is the primary source and that is the compilation, one re-publication removed and possibly a
+ * decade stale. A primary beats its own aggregator.
+ *
+ * It contributes **mean depth only**: the programme does not publish a maximum.
+ */
 export const DEPTH_SOURCES = [
   'operator',
   'state_agency',
+  'cslap',
   'lagos_us',
   'alsc_1987',
   'hydrolakes_reported',
@@ -96,6 +114,9 @@ export const DEPTH_SOURCE_RANK: Record<DepthSource, number> = Object.fromEntries
 const MEASURED_DEPTH_SOURCES = new Set<DepthSource>([
   'operator',
   'state_agency',
+  // Volunteers, but they went out in a boat with a line. See `DEPTH_SOURCES` for why the *rung* is
+  // separate while the *framing* is the same.
+  'cslap',
   'lagos_us',
   // Somebody put a line in the water in 1986. Its **label** carries the vintage rather than this
   // set carrying an exception — see `DEPTH_SOURCE_LABELS`, where it reads "1984–87 Adirondack
@@ -195,6 +216,9 @@ export function isShallowDepth(depths: LakeDepths): boolean {
 export const DEPTH_SOURCE_LABELS: Record<DepthSource, string> = {
   operator: 'entered by a moderator',
   state_agency: 'state survey',
+  // Names the programme rather than "New York State", because who took the reading is the thing a
+  // reader would want to weigh — the same reason `alsc_1987` names a date.
+  cslap: 'NY Citizen Statewide Lake Monitoring (CSLAP)',
   lagos_us: 'LAGOS-US DEPTH',
   // **The vintage is in the label on purpose.** This is the one measured source old enough that
   // "measured" alone would mislead, and a skater reading a depth deserves to know it was sounded
@@ -254,6 +278,28 @@ export const DEPTH_SOURCE_TERMS: Readonly<Record<DepthSource, DepthSourceTerms |
   // Each agency's wording lives in `CONTOUR_SOURCE_TERMS`, keyed by agency rather than by rung:
   // `state_agency` spans five publishers with five different required strings.
   state_agency: null,
+  /**
+   * **No published licence either, and checked the same way** (2026-08-09).
+   *
+   * The hosting ArcGIS item (`e3332be9630a4bd9978f0bdc8a67a3cd`, owned by `…@dec.ny.gov_nysdec`)
+   * has an **empty `licenseInfo` and an empty `accessInformation`**, and the service itself carries
+   * no `copyrightText`. Sharing is `public`. So this takes the same conservative reading as
+   * `alsc_1987`: silence is not permission to go uncredited.
+   *
+   * The credit names the **two** organisations the programme is run by, because CSLAP is a
+   * partnership and crediting only the state would misdescribe who takes the readings — which is the
+   * very distinction this rung exists to preserve.
+   */
+  cslap: {
+    licence: 'No published terms (checked 2026-08-09)',
+    licenceUrl:
+      'https://www.dec.ny.gov/environmental-protection/water/water-quality/lakes/citizens-statewide-lake-assessment-program',
+    requiresAttribution: true,
+    credit:
+      'Citizens Statewide Lake Assessment Program (CSLAP), a cooperative programme of the New York ' +
+      'State Department of Environmental Conservation and the New York State Federation of Lake ' +
+      'Associations.',
+  },
   lagos_us: {
     licence: 'CC BY 4.0',
     licenceUrl: 'https://creativecommons.org/licenses/by/4.0/',

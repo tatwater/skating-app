@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { AlscPond } from './alsc';
+import type { CslapLake } from './cslap';
+import type { NhBandRow } from './nhBands';
 import {
   findColumn,
   hydroLakesRung,
   mergeLagosRows,
   parseAlscArchive,
+  parseCslapArchive,
   parseGlobathy,
   parseLagosDepth,
+  parseNhBandArchive,
   parseNumber,
   splitCsvLine,
   transformDepths,
@@ -419,6 +423,176 @@ describe('ALSC', () => {
     });
     expect(records.map((r) => r.key)).toEqual(['hylak/42', 'lagos/99', 'alsc/060315']);
     expect(summary).toMatchObject({ hydroLakesRead: 1, lagosRead: 1, alscRead: 1 });
+  });
+});
+
+/**
+ * The CSLAP lane (founder, 2026-08-09). The mirror image of ALSC: fewer depths, better coordinates,
+ * current rather than 1984–87 — and mean only, because the programme publishes no maximum.
+ */
+describe('CSLAP', () => {
+  /** Verbatim shape of an archive line, as `snapshotCslap.ts` writes it. */
+  const lake = (over: Partial<CslapLake> = {}): CslapLake => ({
+    cslapNumber: '18',
+    name: 'Lake Moraine',
+    lat: 42.855_758,
+    lng: -75.517_344,
+    meanDepthM: 5.5,
+    surfaceAreaHa: 101,
+    county: 'Madison',
+    lastYearSampled: '2024',
+    ...over,
+  });
+
+  it('reads the archive back, blank lines and all', () => {
+    const ndjson = `${JSON.stringify(lake())}\n\n${JSON.stringify(lake({ cslapNumber: '12' }))}\n`;
+    expect(parseCslapArchive(ndjson).map((l) => l.cslapNumber)).toEqual(['18', '12']);
+  });
+
+  it('refuses a truncated archive rather than loading what survived', () => {
+    expect(() => parseCslapArchive(`${JSON.stringify(lake())}\n{"cslapNum`)).toThrow(
+      /line 2 is not JSON/,
+    );
+  });
+
+  it('emits a MEAN at the cslap rung and no max at all', () => {
+    const { records, summary } = transformDepths({ cslap: [lake()] });
+    expect(summary.cslapRead).toBe(1);
+    expect(records[0]).toMatchObject({
+      key: 'cslap/18',
+      point: { lat: 42.855_758, lng: -75.517_344 },
+      name: 'Lake Moraine',
+      areaSqM: 1_010_000, // 101 ha
+      meanDepthM: 5.5,
+      meanDepthSource: 'cslap',
+    });
+    // The source has no maximum, so inventing one — even from the mean — would be a number nobody
+    // measured wearing a measured source's label.
+    expect(records[0]).not.toHaveProperty('maxDepthM');
+    expect(records[0]).not.toHaveProperty('maxDepthSource');
+  });
+
+  it('names a depthless lake, which the snapshot should never have archived', () => {
+    const { records, errors, summary } = transformDepths({ cslap: [lake({ meanDepthM: 0 })] });
+    expect(records).toHaveLength(0);
+    expect(summary.skipped).toBe(1);
+    expect(errors[0]).toMatchObject({ key: 'cslap/18' });
+    expect(errors[0]?.message).toMatch(/no usable mean depth/);
+  });
+
+  it('runs alongside ALSC without either touching the other', () => {
+    // Both are New York and both are exempt from `--states` for the same reason. A run scoped to
+    // Vermont must not silently drop the only two measured sources the state of New York has.
+    const { records, summary } = transformDepths({
+      alsc: [
+        {
+          pondNumber: '060315',
+          name: 'Aluminum Pond',
+          lat: 43.768_888,
+          lng: -74.528_333,
+          maxDepthM: 6.1,
+          meanDepthM: 2.4,
+        },
+      ],
+      cslap: [lake()],
+      states: ['VT'],
+    });
+    expect(records.map((r) => r.key)).toEqual(['alsc/060315', 'cslap/18']);
+    expect(summary).toMatchObject({ alscRead: 1, cslapRead: 1 });
+  });
+});
+
+/**
+ * The NH band lane (founder, 2026-08-09). The only source in the set that gives a max AND a mean
+ * from the agency's own published numbers — see `nhBands.ts` for the frustum rule.
+ */
+describe('NH depth bands', () => {
+  /** Horn Pond, verbatim from the service. Three disjoint bands totalling 226.1 acres. */
+  const HORN: NhBandRow[] = [
+    {
+      auId: 'ME-1',
+      lakeName: 'HORN POND',
+      depthMinFt: 0,
+      depthMaxFt: 10,
+      acres: 111.19289283,
+      lat: 43.56295,
+      lng: -70.96159,
+    },
+    {
+      auId: 'ME-1',
+      lakeName: 'HORN POND',
+      depthMinFt: 10,
+      depthMaxFt: 20,
+      acres: 63.9379306,
+      lat: 43.56148,
+      lng: -70.9593,
+    },
+    {
+      auId: 'ME-1',
+      lakeName: 'HORN POND',
+      depthMinFt: 20,
+      depthMaxFt: 30,
+      acres: 50.96942014,
+      lat: 43.56074,
+      lng: -70.95686,
+    },
+  ];
+
+  it('reads the archive back, blank lines and all', () => {
+    const ndjson = `${JSON.stringify(HORN[0])}\n\n${JSON.stringify(HORN[1])}\n`;
+    expect(parseNhBandArchive(ndjson)).toHaveLength(2);
+  });
+
+  it('refuses a truncated archive rather than loading what survived', () => {
+    expect(() => parseNhBandArchive(`${JSON.stringify(HORN[0])}\n{"auId":"ME`)).toThrow(
+      /line 2 is not JSON/,
+    );
+  });
+
+  it('emits BOTH depths at state_agency, in metres, with the surveyed area', () => {
+    const { records, summary } = transformDepths({ nhBands: HORN });
+    expect(summary).toMatchObject({ nhBandsRead: 3, nhLakesRead: 1 });
+    expect(records).toHaveLength(1);
+    const record = records[0];
+    expect(record?.key).toBe('nh-bands/ME-1');
+    expect(record?.maxDepthM).toBeCloseTo(30 / 3.28084, 3);
+    expect(record?.maxDepthSource).toBe('state_agency');
+    expect(record?.meanDepthM).toBeCloseTo(11.73 / 3.28084, 1);
+    expect(record?.meanDepthSource).toBe('state_agency');
+    // Σ of the published band areas — the join's area corroboration, and the check that should
+    // fail if a survey only covered one arm of a lake.
+    expect(record?.areaSqM).toBeCloseTo(226.1 * 4046.8564224, -3);
+    // The deepest band's centroid: a disk, not an annulus, so the point is on water.
+    expect(record?.point).toEqual({ lat: 43.56074, lng: -70.95686 });
+  });
+
+  it('names a lake the layer lists but nobody sounded', () => {
+    const { records, errors, summary } = transformDepths({
+      nhBands: [
+        {
+          auId: 'NH-x',
+          lakeName: 'JONES POND',
+          depthMinFt: 0,
+          depthMaxFt: 0,
+          acres: 3.12,
+          lat: 43,
+          lng: -71,
+        },
+      ],
+    });
+    expect(records).toHaveLength(0);
+    expect(summary.skipped).toBe(1);
+    expect(errors[0]?.message).toMatch(/no-bathymetry/);
+  });
+
+  it('runs alongside the other sources without touching them', () => {
+    const { records, summary } = transformDepths({
+      lagos: [{ lagoslakeid: '99', lat: 44, lng: -72, meanDepthM: 4, states: 'VT' }],
+      nhBands: HORN,
+      states: ['VT'],
+    });
+    expect(records.map((r) => r.key)).toEqual(['lagos/99', 'nh-bands/ME-1']);
+    expect(summary).toMatchObject({ lagosRead: 1, nhLakesRead: 1 });
   });
 });
 

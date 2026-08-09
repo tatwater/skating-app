@@ -710,6 +710,19 @@ async function main(): Promise<void> {
   );
   lines.push('    which we render from the basemap and deliberately do not store as bodies.');
   lines.push(
+    `  still water    ${n(stats.stillWaterRescued)}  kept bodies with a member a deadwater / flow / logan name`,
+  );
+  lines.push(
+    "    rescued from a catalogue's flowing refusal. Zero means the rung is dead and the region's",
+  );
+  lines.push(
+    '    deadwaters are gone again. ⚠ NOT the number of bodies it ADDED — where another member',
+  );
+  lines.push(
+    '    already carried a class the body existed either way (46 fired, +13 corpus, on run 1):',
+  );
+  for (const sample of stats.stillWaterRescuedSamples) lines.push(`      ${sample}`);
+  lines.push(
     `  settled wetland ${n(stats.settledWetland)}  a federal open-water class beating an OSM wetland tag —`,
   );
   lines.push(
@@ -855,6 +868,7 @@ async function main(): Promise<void> {
     classDissent: stats.classDissent,
     settledWetland: stats.settledWetland,
     greatLakeArms: stats.greatLakeArms,
+    stillWaterRescued: stats.stillWaterRescued,
     gazetteerIdsAttached: stats.gazetteerIdsAttached,
     geometryOverridden: stats.geometryOverridden,
   };

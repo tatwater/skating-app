@@ -28,6 +28,14 @@ export default defineConfig({
         'src/probe.ts',
         'src/verify.ts',
         'src/provenanceCli.ts',
+        // Both were **included and at 0%**, which is worse than excluded: the config's stated rule is
+        // that a CLI shell is exempt, so an unexempted one silently spent everybody else's coverage
+        // budget and read as though somebody had decided it was worth measuring. Each is argv,
+        // `readAllLakes()`, a file and a run row; the decisions are in `lakes.ts` and `lakeDepths.ts`,
+        // both at 100%.
+        'src/exportSoundings.ts',
+        'src/exportDepths.ts',
+        'src/snapshotMidas.ts', // paged query + file I/O; the rules are in midasCrosswalk.ts
         'src/sweep.ts',
         'src/samples.ts',
         'src/join.ts',
