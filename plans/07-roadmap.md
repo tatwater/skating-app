@@ -981,6 +981,15 @@ and **N6c-2** — links, cards and observability. As scoped it was ~15 workstrea
 two clients, a new external API, an admin surface and a corpus-wide re-score, i.e. one review surface
 for all of it.)*
 
+> **⏰ Its data gate is CLEARED as of 2026-08-09 (N7-3).** Everything below that reads *"ETL passes
+> not yet run"* was written before the data campaign. Against the loaded corpus today: **elevation
+> 99.5%** (24,834 of 24,958, 3DEP, 98.2% at 1 m LiDAR), **wind roses 1,193 bodies** stamped from the
+> archive, **depth 24.2% overall but 83–90% above 50 acres**, and **bathymetry coverage 2,057
+> bodies**. The one number still outstanding is `regionStats:recompute`, which is the last pass of the
+> campaign and gates only the **decile** copy (A5), not the rest of N6c-1.
+>
+> See [`HANDOFF-n7-2-data-campaign.md`](./HANDOFF-n7-2-data-campaign.md) for the live campaign state.
+
 **N6c-1 — geometry stats, elevation, the caption, and profile-richness prominence.** ✅ **BUILT
 2026-08-02** (branch `phase-N6c-1-lake-profiles`; **unpushed, undeployed, ETL passes not yet run**)
 — see [`phase-N6c-expanded-lake-profiles.md`](./phase-N6c-expanded-lake-profiles.md) *§What the
@@ -1243,6 +1252,48 @@ I want to do it ASAP."* The Copernicus deep link (D75) ships in N6c either way.
 - **The pairing that justifies it: imagery + N6d.** *"Park here, then 400 m on foot"* is a claim; a 0.6 m
   photo of the pull-off, the gap in the trees and the path to the shore is the confirmation — at home, in
   daylight, before the drive. NAIP's leaf-on summer imagery is useless for ice and ideal for access.
+
+**N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
+🔄 **In flight, 2026-08-09** — the phase this roadmap had no entry for at all until now. See
+[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md),
+[`HANDOFF-n7-classification.md`](./HANDOFF-n7-classification.md) and
+[`HANDOFF-n7-2-data-campaign.md`](./HANDOFF-n7-2-data-campaign.md). Decisions **D92–D105** and
+**D109–D137**.
+
+Three PRs so far: **#39** (the merge, the master list, the review queue), **#40** (the audit and the
+referee), and the current unmerged branch `phase-n7-3-unified-corpus` (the data campaign).
+
+**What it replaced.** The corpus was OSM-only, per-state, and a lake split across two features was two
+rows. N7 merges **OSM + NHD + 3DHP + GNIS** into one record per lake with our own minted key (D93),
+best-of-both per field (D94), and one admission floor applied **once** to the merged body rather than
+per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
+
+**Where the data campaign stands** (`n7-3-20260809`):
+
+| lane | state |
+| --- | --- |
+| elevation | ✅ **99.5%** — 3DEP, 98.2% at 1 m LiDAR, replacing a metered forecast API (D127) |
+| depth | ✅ 24.2% overall, **83–90% above 50 acres**, 81.2% of stored depths measured |
+| wind roses | ✅ 1,193 bodies, derived offline from a byte-faithful archive (D134) |
+| wind, widened | 🔄 250 m fetch gate (D135) — 41,855 requests, ~60 h, running |
+| bathymetry | ✅ 2,066 lakes → 49,362 contour lines → 2,057 bodies |
+| `regionStats` | ⬜ last pass, always |
+
+**Four findings worth carrying forward.**
+
+- **`state_agency` was a ladder rung with no producer.** Rank 1 on D68's ladder, above LAGOS and
+  HydroLAKES, and nothing had ever written to it while 298 MB of state survey data sat on disk from
+  N6b. It now holds **3,033 measurements**.
+- **There was no `osm→osm` matching lane** (D136). Three lanes ran and none matched a catalogue
+  against itself, so an OSM multipolygon relation and its own outer way both shipped as corpus rows.
+  Every one of the 18 duplicate pairs at IoU ≥ 0.6 was OSM–OSM; two scored 1.000.
+- **One constant was doing two jobs** (D135). `MIN_FETCH_CLAUSE_M`, chosen for pressure-ridge captions,
+  was silently deciding which lakes got wind data fetched at all — and wind holes have no fetch
+  minimum.
+- **Denominators lie by default, and so do instruments.** The campaign corrected five misleading
+  denominators, and a "the coverage table is empty" finding turned out to be a query against a table
+  name that does not exist. *If a measurement comes back suspiciously clean, check the instrument is
+  reaching the data.*
 
 **N5c — Hazard identity: one clustering primitive, two time windows.** ✅ **Built 2026-07-31, both
 halves.** The within-season half shipped as **PR #34** (clustering, nudge, pooling, consensus

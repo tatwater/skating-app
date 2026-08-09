@@ -3944,3 +3944,356 @@ description of itself. Lake George, Schroon and Indian Lake are not in it, so th
 water still has no measured depth.
 
 **Related:** [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-n6a), [D3](#d3--attribution-and-licensing-are-a-product-surface-not-a-footnote), [`phase-N6a`](./phase-N6a-lake-depth.md).
+
+---
+
+## D131 — A **still-water name** outranks a catalogue's flowing-water refusal (N7-3)
+
+**Decided 2026-08-09 (founder).** A name in the still-water family — `deadwater`, `stillwater`,
+`dead river`, `logan`, `bogan`, `flow`, `flowage`, `impoundment` — overrules a catalogue that has
+explicitly refused the feature as moving water. It stores the class `NAME_KEEP` gives that name, so
+`Debsconeag Deadwater` is a `river` and `Higley Flow` is a `lakePond`.
+
+### The defect it fixes: one question, two answers
+
+`classifyWaterBody` checked the catalogue's class (rung 2 of 4) **before** the name keyword (rung 3),
+so a name could only ever outrank *silence*. The corpus therefore split on whether a mapper had
+bothered to add a subtag:
+
+| in the corpus | deleted as `no-class` |
+| --- | --- |
+| `Debsconeag Deadwater` 525 ac — OSM says `natural=water`, nothing else | `Pockwockamus Deadwater` **335 ac** — OSM says `water=river` |
+| `Nesowadnehunk Deadwater` 175 ac | `Ninemile Deadwater` **212 ac** |
+| 26 river-class deadwaters in total | `Abol Deadwater` 66 ac · `Musquacook Deadwater` 62 ac · 8 more |
+
+Measured over `dropped.ndjson` from the 2026-08-08 merge: **72 named groups** refused as `no-class`
+carry a name our own `NAME_KEEP` table maps to a class we keep, of which 12 are the deadwater family
+and 15 more are `lakePond` (including `Ricker Pond State Park` and `botheration flow`). The rest are
+salt marshes and tidal flats that the salt veto would have refused a stage later anyway.
+
+### Narrow on **both** sides, and the founder chose the narrow option deliberately
+
+- **The refusal must be `flowing`**, decided by `refusalFamily` — the same triage
+  [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-n7-2) reads, so "which refusals are
+  the flowing ones" is answered in exactly one place. A body a catalogue calls wastewater, a settling
+  basin or a salt pool is rescued by no name at all.
+- **The name must be in `STILL_WATER_NAME`**, not anywhere in `NAME_KEEP`. The wider rule was offered
+  and declined: it would also admit `Round Pond Rips` and `Cedar Pond Brook`, which are the rapids
+  and the brook their names say they are.
+
+This is `NAME_DROP`'s asymmetry pointed the other way, and the asymmetry is the whole argument:
+**keeping a rapid costs one row nobody skates; dropping a deadwater deletes real ice.**
+
+⚠ **It cannot launder a veto.** `sourceToken` still carries the catalogue's own word, so
+`VETO_TOKENS` reads what NHD said rather than what the ladder concluded — the same hole rung 1 had to
+be closed against, and `3dhp:featuretype=4` (Ocean or Great Lake) is not a `flowing` refusal, so no
+name reaches it.
+
+**And the rescue leaves a number behind.** `stillWaterRescued` is counted and sampled on the merge's
+run row, detected from the member's own tokens rather than by re-deciding the name — the rung is the
+only way a member can carry a `name:` token *and* a flowing `sourceToken`, because the ordinary
+name-keyword rung fires on silence and silence is never `flowing`. The 123-body wetland deletion went
+unnoticed for a year precisely because the rule that caused it left no count.
+
+**Related:** [D96](#d96--the-four-admission-rules), [D109](#d109--every-catalogues-vocabulary-maps-into-ours), [D128](#d128--a-contested-class-is-triaged-before-it-is-queued-n7-2).
+
+---
+
+## D132 — Depth stays **measured only**; the corpus accepts a ~30% ceiling (N7-3)
+
+**Decided 2026-08-09 (founder).** No modelled depth rung beyond the global ones already loaded. Depth
+coverage tops out around 30% of the corpus and that is an accepted limit, not an outstanding gap.
+
+### What was on the table
+
+Coverage today is **5,633 / 24,945 (22.6%)**, and the ceiling is set by *area*, not by effort:
+
+| corpus band | bodies | what can reach it |
+| --- | --- | --- |
+| 100+ ac | 3,295 | everything |
+| 20–100 ac | 6,958 | HydroLAKES / GLOBathy only above 24.7 ac (their 10 ha floor) |
+| **5–20 ac** | **12,406** | **nothing global** |
+| < 5 ac | 2,284 | nothing |
+
+Half the corpus sits below every model's floor, and state surveys are biased to large lakes too. The
+one candidate that reaches the 5–20 acre band is **Hollister & Milstead** (EPA, *PLoS ONE* 2011):
+maximum depth predicted from the slope of the surrounding topography, validated on ~28,000 lakes in
+**exactly our region** (HUC 01 and 02) at cross-validated RMSE 5.95 m / 5.09 m, correlation 0.82 /
+0.69, implemented in the `lakemorpho` R package. It has **no area floor** — it needs a DEM and a
+shoreline, both of which we hold.
+
+### Why it was declined
+
+A ±6 m error bar on a pond that is 3 m deep is not a depth; it is a number shaped like one. D3
+already requires a modelled value to read as an estimate, and D68's ladder would have placed this
+below `globathy` — so the rung would have supplied a guess to precisely the bodies where a guess is
+least separable from a fact, and where `isShallowBody` turns depth into a **safety-adjacent bit**.
+
+**The honest consequence is stated rather than worked around:** the 12,406 bodies in the 5–20 acre
+band will carry no depth, the `shallow_early_thaw` `bodyFeature` remains the only signal for them
+(which N6a already called *"permanent infrastructure, not a stand-in"*), and the operator override
+remains the path for any specific lake worth the minutes.
+
+**Related:** [D3](#d3--attribution-and-licensing-are-a-product-surface-not-a-footnote), [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-n6a), [D69](#d69--shallowness-amplifies-the-thaw-response-only-and-never-the-cold-one).
+
+---
+
+## D133 — **CSLAP is its own rung**, and NH's published bands may yield a computed mean (N7-3)
+
+**Decided 2026-08-09 (founder).** Two calls about what counts as a state-agency depth, taken
+together because they draw the same line from opposite sides.
+
+### CSLAP sits between `state_agency` and `lagos_us`
+
+NYSDEC's **Citizens Statewide Lake Assessment Program** publishes a mean depth for **278 of its 294
+lakes**, sampled through 2024. It is measured, current, and published by the state — but volunteers
+collect it, which is not the same claim as a NHDES depth-sounder transect. Folding it into
+`state_agency` would make those indistinguishable in a stored row and in the caption; a separate rung
+keeps the difference visible at no cost, because the ladder is ordered and position **is** the
+precedence rule.
+
+**Above `lagos_us` deliberately, even though LAGOS-US probably contains it.** LAGOS-US DEPTH is a
+compilation of ~65 programmes and CSLAP is plausibly one of them, so where they disagree this is the
+primary source and that is the aggregator, one re-publication removed and possibly a decade stale.
+It contributes **mean only** — the programme publishes no maximum.
+
+Like ALSC ([D130](#d130--alsc-is-pre-fill-measured-forty-years-old-and-below-every-newer-source-n7-2))
+it has **no published licence**: the hosting ArcGIS item's `licenseInfo` *and* `accessInformation` are
+both empty and the service carries no `copyrightText`. Same response — credit rather than assume.
+
+### NH's bands may be integrated; our own surfaces may not
+
+NH GRANIT publishes `EDP_Bathymetry_Lakes` as two layers. N6b read layer 0, the contour **lines**.
+Layer 1 is the same survey as **polygons** — 7,351 rows carrying `depthmin`, `depthmax` and `acres`
+over 636 assessment units. That is a published hypsographic curve per lake, and integrating it gives
+**624 New Hampshire lakes a max *and* a mean**.
+
+**The line the founder drew:** the arithmetic runs over *the agency's own published areas*.
+Integrating our N6b interpolated surface would produce a mean for every contoured lake in four states
+— and it would be our model wearing an agency's label, which is a weaker claim than it looks.
+
+Three consequences worth recording:
+
+- **NH's depth comes from the bands, not from the contour lines.** Two producers writing one rung for
+  one lake is an ambiguity, not redundancy; `export-depths` skips `nh-granit-contours` by name.
+- **NH's maximum stops being a lower bound.** The innermost polygon's `depthmax` is the deepest
+  reading in that basin — Beaver Pond's is `40–47` — where the lines layer would only ever have said
+  40. Every other contour-derived maximum in the corpus is still a floor on the truth, and
+  `understatesMax` carries that distinction.
+- **The mean uses the frustum rule over the cumulative curve, not band midpoints.** Checked against a
+  cone, where the true mean is exactly `max / 3`: frustum **9.997**, midpoints **10.56**, truth
+  **10**. Validated against published figures — Winnipesaukee 180 ft max / 41.5 ft mean (published
+  180 / ~43), Little Squam 70 / 30 (published 68 / ~30).
+
+**Related:** [D68](#d68--lake-depth-is-a-five-rung-ladder-and-the-rung-is-stored-with-the-number-n6a), [D130](#d130--alsc-is-pre-fill-measured-forty-years-old-and-below-every-newer-source-n7-2), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-n7-3).
+
+---
+
+## D134 — The wind lane **archives responses**, and captures the speed it was already fetching (N7-3)
+
+**Decided 2026-08-09 (founder: keep WTK, build the archive first).** `wind-climate` gains a
+byte-faithful `.raw/` archive and a `snapshot` / `derive` split, and stores per-sector **strong-wind
+hours** beside the direction rose.
+
+### The regret, stated as the argument
+
+The 2026-08-02 pass requested `attributes: 'winddirection_10m,windspeed_10m'`, read `cells[5]` and
+never touched `cells[6]`. **It fetched wind speed on every one of its requests and discarded it.**
+So adding sustained-wind capture — which should have been a local recompute — became a second
+multi-hour fetch against a shared daily quota. `scripts/etl`, `scripts/bathymetry` and
+`scripts/lake-depth` all keep archives with manifests and R2 mirrors; `wind-climate` was the only
+fetching ETL that fetched, parsed and discarded, and that asymmetry was the bug.
+
+After the split, changing a threshold, adding a statistic or rebuilding from scratch is
+`mirror-r2.sh pull` + `derive` — minutes, and zero requests. `derive` **fails loudly** when a cell it
+needs is absent rather than quietly fetching it: a derive that hits the network is how an archive
+stops being the source of truth.
+
+### What is stored, and why counts rather than frequencies
+
+`strongWindHours` (16 sectors, absolute), `sampledWindHours` (the honest denominator) and
+`strongWindMinMps` (the bar they were taken at) — the deliberate opposite of `windRose`, which stores
+frequencies. The question a reader asks is a threshold on an **absolute number of hours**, and the
+cells do not all carry the same sample, so frequencies would force every consumer to multiply back
+through the denominator.
+
+**The two thresholds live in different places, on purpose.** Speed is baked into the counts and
+changing it needs a `derive`; **duration is applied at read time** in `windHoleSectors` and changing
+it needs no recompute at all — the strongest form of "configurable" available.
+
+**One asymmetry falls out of this and is worth keeping.** A rose is suppressed below `MIN_ROSE_HOURS`
+because it renders as a percentage, and a percentage of 300 hours reads identically to one of 14,000.
+Counts carry their own denominator, so a thin sample there is a small number honestly reported. **A
+cell can therefore contribute strong-wind hours and no rose.**
+
+⚠ **No copy, deliberately.** Whether a wind-hole clause belongs in the caption, only in the profile,
+or nowhere is a founder call that has **not** been taken. `windHoleSectors` returns data; nothing
+writes a sentence. Same discipline as [D82](#d82--bathymetry-is-context-not-counsel), and this is the
+same class of number wearing a scarier name.
+
+⚠ **`WIND_HOLE_MIN_HOURS` is a rate, not an episode length.** Strict consecutiveness was ruled out
+(founder, 2026-08-02: *"if the wind dies down for an hour and picks back up I bet it would do just as
+much damage"*), which is what makes plain counts sufficient — but it also means nothing stored can
+answer *"was there a three-hour blow"*. The question the counts answer is *"how much strong wind does
+this shore get in a season"*, and the default is a magnitude to refit rather than a number with
+outside support.
+
+### Two numbers the handoff got wrong, re-measured
+
+| | handoff (old corpus) | measured 2026-08-09 |
+| --- | --- | --- |
+| qualifying bodies | 1,061 | **1,193** |
+| distinct 2 km cells | 1,045 | **1,182** |
+| requests | 5,225 | **5,910** |
+| wall clock | 7.7 h | **10.5 h** |
+
+The handoff predicted the scope *"can only have gone down"*. It went **up**, and the reason is a good
+one: `fetchProfileM` is measured on the **merged** outline, so N7 turning fragments into whole lakes
+pushed more bodies over the 1 km fetch bar. The wall clock also grew because the estimate now counts
+the **measured 5.3 s response latency** plus pacing, where the old loader's *"~96 min at 1/s"*
+counted only the deliberate pause and was wrong by 5×.
+
+**Related:** [D82](#d82--bathymetry-is-context-not-counsel), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin), [`HANDOFF-wind-climate-archive.md`](./HANDOFF-wind-climate-archive.md).
+
+---
+
+## D135 — The wind **fetch** gate is not the wind **caption** gate (N7-3)
+
+**Founder call, 2026-08-09.** `WIND_ARCHIVE_MIN_FETCH_M` = **250 m**, separate from
+`MIN_FETCH_CLAUSE_M` = 1,000 m, and neither may be collapsed into the other.
+
+### The bug was a constant doing two jobs
+
+`MIN_FETCH_CLAUSE_M` was chosen for **pressure ridges**, which are a fetch problem: a lake with no
+fetch has no ridge to warn about, so gating that caption clause at a kilometre is right and stays.
+
+It was also, silently, deciding which bodies got a WTK cell **fetched at all** — and
+[D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3)
+had just added sustained-wind capture for **wind holes**, which are a *speed* problem with **no
+comparable fetch minimum** (founder, 2026-08-02). So the new lane was scoped by a bar chosen for the
+old one, and reached 1,193 of 24,958 bodies — 4.8% — by accident rather than by decision.
+
+Two questions, two numbers. A body between 250 m and 1 km now carries strong-wind hours and **no**
+exposure clause, which is the correct pair of answers.
+
+### The scope, measured against the loaded corpus (2026-08-09)
+
+| min fetch | bodies | 2 km cells | requests | fetch hours |
+| --- | --- | --- | --- | --- |
+| 1,000 m (the old bar) | 1,193 | 1,182 | 5,910 | 10.5 |
+| **250 m** ✅ | **11,118** | **9,553** | 47,765 (**41,855 new**) | **~60** |
+| 0 — everything | 24,956 | 18,355 | 91,775 | ~163 |
+
+250 m reaches **45% of the corpus** for roughly a third of the wall clock of taking everything, and
+what it walks past is ponds under about six acres of open water in their longest direction — where a
+wind hole is not the hazard deciding whether the ice is safe.
+
+**The cost is one-time, and the archive is the reason.** `snapshot` writes every response to `.raw/`
+and mirrors it to R2, and `missingResponses` diffs against what is on disk — so widening this again
+re-fetches only the difference, and re-deriving at a different *speed* threshold costs minutes and
+zero requests. The 5,910 responses already archived were reused, not re-fetched.
+
+### ⚠ A shared constant, never a `--min-fetch` flag
+
+`snapshot` and `derive` both scope themselves with it, and **`derive` refuses when a cell it wants is
+absent from the archive**. A flag that could be passed to one and not the other turns a scope
+decision into a failed run — or worse, into a coverage figure quoted over whatever cells happened to
+be there, which is the misleading-denominator shape this campaign has now corrected five times.
+
+This is the same reasoning that retired `--min-area-acres=N` in favour of `meetsAreaFloor`: *a
+parameter invites a caller to invent a floor; a shared constant cannot drift.*
+
+**Related:** [D134](#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3), [D86](#d86--a-rose-is-suppressed-rather-than-rendered-thin).
+
+---
+
+## D136 — OSM is matched **against itself**, at a much higher bar (N7-3)
+
+**Founder call, 2026-08-09.** A fourth matching lane, `osm→osm`, at `SAME_SOURCE_MIN_IOU` = **0.9**.
+
+### The gap: three lanes, and none of them looked at one catalogue twice
+
+The merge ran `3dhp→nhd`, `osm→nhd` and `osm→3dhp`. **Nothing matched OSM against itself** — and OSM
+is the one catalogue that routinely publishes a lake twice, as a multipolygon **relation** and its own
+outer **way**, both tagged and both arriving as features. Where NHD carries no counterpart, which is
+the normal case for wetland, neither cross-catalogue lane can see it and **both halves ship as
+separate corpus rows**.
+
+Measured on the 2026-08-09 corpus by `overlapDuplicates`, which is exhaustive over the kept set — so
+this is the complete count, not a sample:
+
+| | pairs |
+| --- | --- |
+| OSM–OSM | **37** |
+| cross-catalogue | 268 |
+| NHD–NHD | 0 |
+| **every pair at IoU ≥ 0.6** | **all 18 are OSM–OSM** |
+| at IoU **1.000** | 2 |
+
+Verified live on dev: `relation/2405214` and `way/180258202`, 62 acres each, IoU 1.000, two rows.
+**`Mud Pond Swamp` was in the corpus twice.** Every one of the 37 is `type: wetland`.
+
+### Why 0.9 and not `RECONCILE_MIN_IOU`
+
+Cross-catalogue overlap is two independent publishers agreeing about a shoreline — real evidence.
+**Same-catalogue overlap is not**: it is one publisher's data disagreeing with itself, where the
+innocent explanations (a chain of ponds, a bay tagged separately, a reservoir over its river) are at
+least as likely as a duplicate.
+
+So this lane is deliberately **not** tuned to catch as many as possible. It collapses only what is
+mechanically certain and leaves the rest in the review queue, where a same-source overlap has always
+belonged. A relation and its outer ring score 1.000; a bay against its parent is *"typically well
+under 0.3"* by `RECONCILE_MIN_IOU`'s own docstring.
+
+### ⚠ `minIouWithGnis` must move with it
+
+`decideMatch` drops the bar to `RECONCILE_MIN_IOU_WITH_GNIS` (0.3) whenever both sides assert the same
+GNIS id. That is sound across two catalogues and **actively wrong within one**: two OSM features
+sharing a GNIS id are most often a lake and its own named arm, both tagged with the place name.
+Leaving that bar at 0.3 would merge precisely the pairs this lane exists to leave alone. Both bars go
+to 0.9 together, and there is a test that fails if only one moves.
+
+**A collapsed group is still flagged `sameSourceDuplicate`** and still reaches a moderator. That is
+not a half-measure: the corpus stops carrying two rows, and the finding is still recorded. *"Two
+features from ONE catalogue in one group means either our matching chained two distinct lakes, or the
+catalogue carries a duplicate it cannot see. Both are findings."*
+
+**Related:** [D93](./phase-N7-unified-corpus.md#d93--we-mint-the-body-key-osm-and-nhd-become-claims-on-our-record), [D129](#d129--reconcile_min_iou-holds-at-05-and-nine-pairs-merge-on-evidence-instead).
+
+---
+
+## D137 — A census must read the same number as the rule it audits (N7-3)
+
+**2026-08-09.** `corpusStats` bands by `sourceAreaSqM ?? surfaceAreaSqM` — the area the admission
+rule actually ran on — and reports depth coverage **by area band** rather than as one percentage.
+
+### Half of this was a false alarm the instrument manufactured
+
+The census reported **four unnamed wetlands in a 30–50 acre band** that D96's 50-acre rule should have
+refused. None was a real violation: all four measure 49.7–50.0 acres *stored* and ≥ 50.0 acres *at
+source*. `surfaceAreaSqM` is measured from the simplified polygon; `sourceAreaSqM` is the number the
+floor was applied to, and **126 bodies corpus-wide sit in that straddle band**.
+
+`pruneBelowAreaFloor` already prefers `sourceAreaSqM` for exactly this reason — the schema note
+records that a body admitted at 1.0001 acres and stored at 0.9999 was *"added by every import and
+deleted by every prune, forever"*. The census did not, so it audited one rule while reading a
+different number. **A census that can report a violation which did not happen is worse than no
+census**, because the next person spends a day on it.
+
+### The other half: "depth is 24.2%" has no actionable denominator
+
+Every global depth source has a floor — HydroLAKES and GLOBathy start at **10 ha (24.71 acres)**,
+LAGOS-US at 1 ha — so one corpus-wide percentage averages bands where near-total coverage is
+achievable against bands where **no source exists at all**, and reports a number no decision can be
+taken from. `DEPTH_AREA_BANDS` puts a band edge exactly on the HydroLAKES floor, so the two bands
+either side of it answer *"how well is the join doing"* and *"is there any source"* separately.
+
+The corpus holds **5,882 non-wetland bodies over 10 ha** against **6,033 with a depth**, which
+suggests depth is near-saturated against what global sources can physically reach — the remaining
+~18,900 being 3,127 wetlands (nothing models those) plus ~15,800 bodies below every global floor. That
+is a hypothesis this census exists to confirm or refute; two numbers landing close is not a finding.
+
+This is the same correction the campaign has now made five times. **Report `covered / inScope`, and
+name what was walked past.**
+
+**Related:** [D96](./phase-N7-unified-corpus.md#d96--settled-the-four-admission-rules--approved), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-n7-3).

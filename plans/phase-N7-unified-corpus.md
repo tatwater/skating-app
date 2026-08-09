@@ -1,9 +1,31 @@
 # N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign on top
 
-> **Status:** ✅ **The corpus is LIVE on dev — campaign `n7-2-20260808`, steps 0–6 complete and
-> refereed** (2026-08-08). Originally written 2026-08-03 after a measurement session that corrected
-> four of its own findings; the numbers below are the survivors, and anything still marked
-> *unverified* is marked that way on purpose.
+> **Status:** 🔄 **Campaign `n7-3-20260809` in flight** (2026-08-09). The corpus is live on dev and
+> the enrichment is most of the way through. Originally written 2026-08-03 after a measurement session
+> that corrected four of its own findings; the numbers below are the survivors, and anything still
+> marked *unverified* is marked that way on purpose.
+>
+> ### 🔄 Campaign `n7-3-20260809` — where it stands, 2026-08-09
+>
+> | lane | state |
+> | --- | --- |
+> | corpus | 24,958 bodies · 126 sub-areas · **re-merging now** with D136's `osm→osm` lane |
+> | elevation | ✅ **99.5%** — 24,834, 3DEP, 98.2% at 1 m LiDAR (D127) |
+> | depth | ✅ 24.2% overall · **83–90% above 50 acres** · 81.2% of stored depths measured |
+> | wind roses | ✅ **1,193 / 1,193** derived from the archive, zero requests (D134) |
+> | wind, widened | 🔄 250 m gate (D135) — 41,855 requests, ~60 h, running |
+> | bathymetry | ✅ 2,066 lakes → 49,362 lines → **2,057 bodies** in `bathymetryCoverage` |
+> | D95 re-key lane | ✅ built + tested — **runs in the next join** |
+> | `regionStats` | ⬜ the campaign's last pass |
+>
+> **Decisions added this round: D135–D137.** ⚠ **`bathymetryCoverage` is the table's name** — a
+> 2026-08-09 audit reported it empty, which was an artifact of querying `contourCoverage`, a table
+> that does not exist. It held 2,022 rows throughout. *Check the instrument before reporting a zero.*
+>
+> **The one gap the banded census opened:** **1,530 non-wetland bodies sit above HydroLAKES' and
+> GLOBathy's 10 ha floor with no depth**, most of them in the 24.71–50 acre band (55.7% covered
+> against 83–90% above 50 acres). That is a join or source-coverage gap, not a floor problem, and it
+> is the largest remaining depth lever — larger than the ALSC and CSLAP lanes combined.
 >
 > ### ✅ The corpus as it stands — campaign `n7-2-20260808` (2026-08-08)
 >
@@ -728,6 +750,37 @@ inventing an association the state didn't make."* We are now overriding that for
 gate rejects. We will publish bathymetry for ~217 lakes on an attribution the surveying agency never
 made. The lane already renders as `interpolated` rather than `surveyed`; **the credit line should say
 that the lake assignment is ours.**
+
+### ✅ Built 2026-08-09 (N7-3) — and the reject list confirmed the diagnosis exactly
+
+`scripts/bathymetry/src/rekey.ts`, wired into `join.ts` as a second pass over the rejects.
+
+**The prediction held.** This document said `splitByBody`'s bootstrapped threshold would collapse the
+state into one cluster; the live join's reject list shows it split MIDAS 870 into precisely **two**,
+and rejected both — `me-dep-soundings:870#1` at **0%** containment and `870#2` at **8%**.
+
+| piece | where |
+| --- | --- |
+| Rule 0 gate | `isRekeyEligible` — the containment reject prefix, nothing else |
+| the split | `rekeyByBody`, pure over `(lake, assignments)`; keyed `<lakeKey>@<externalId>` |
+| membership | `waterBodies:coveringBodyForPoints`, buffer **zero** — near a lake is not in it |
+| read-cap survival | `inAdaptiveBatches`, **extracted** from `joinInBatches` so both lanes share one splitter |
+| China Lake | a **test**, as this document asked — `rekey.test.ts`, four assertions |
+
+**Two things the build added that the design did not anticipate.**
+
+1. **A lookup grid** (`LOOKUP_GRID_PLACES`, 4 dp ≈ 11 m). Convex counts *bytes* read and re-reading
+   one document counts every time, so a survey lying inside one large lake pulls that lake's ~300 KB
+   shoreline once per sounding — 250 points is ~75 MB against a 16 MB cap. The adaptive splitter
+   would survive by halving 250 → 1, correctly and pathologically slowly. Dedup attacks the cause.
+   The rounding is for the **lookup only**; measurements keep their exact coordinates.
+2. **Results are indexed, never positional.** The first draft read them by position, which is wrong
+   the moment a batch splits — every later assignment shifts by one and soundings land in the wrong
+   lakes with nothing in the log. Caught before it ran; there is a test for the ordering.
+
+⚠ **Still to run.** The lane is built and tested but has never executed against the archive, so the
+217 figure remains this document's projection rather than a measurement. It runs as part of the
+re-merge chain, and `--keys` is not a thing — eligibility is the gate, by design.
 
 ---
 

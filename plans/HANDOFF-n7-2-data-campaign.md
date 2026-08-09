@@ -11,22 +11,49 @@
 
 ## Where things stand
 
-**The corpus is stable and that is the precondition D100 asks for.** Campaign **`n7-2-20260808`** on
-dev: **24,945 bodies · 126 sub-areas**, every fixture verified, 0 orphans, 0 dangling pointers. Prod
-has never been deployed and is not in scope.
-
-Branch `phase-n7-2-unified-corpus` is PR A. **Start PR B on a new branch off it** (or off `main` once
-#40 merges) — nothing in PR B needs to change the merge.
-
-| pass | coverage today | |
-| --- | --- | --- |
-| elevation | **archived, not loaded** — 25,044 readings, 98.2% at 1 m LiDAR | D127 |
-| depth | **5,633 / 24,945 (22.6%)**, three global sources | |
-| bathymetry | **`contourCoverage` = 0 rows** — the N6b join has never run against this corpus | |
-| wind | **0** — `scripts/wind-climate/.raw/` does not exist | |
-| `regionStats` | empty — computed *from* elevation, so it runs last | |
-
----
+> ### 🔄 In flight — campaign `n7-3-20260809`, updated 2026-08-09 afternoon (N7-3)
+>
+> Branch **`phase-n7-3-unified-corpus`**. Decisions **D131–D137** in
+> [`01-decisions.md`](./01-decisions.md).
+>
+> | pass | state |
+> | --- | --- |
+> | elevation | ✅ **99.5%** — 24,834 of 24,958, all at 1 m LiDAR |
+> | depth | ✅ 24.2%, **81.2% of stored depths measured**; `state_agency` 0 → **3,033** |
+> | wind fetch (1 km) | ✅ **5,910 cell-years archived**, 7,092 objects mirrored to R2 |
+> | wind `derive` | ✅ **1,193 / 1,193 bodies stamped**, zero requests, zero cells missing |
+> | wind fetch (250 m) | ⬜ **D135** — 41,855 new requests, ~60 h. Resumable; start it and leave it |
+> | bathymetry chain | ✅ ran end to end: **2,066 lakes → 49,362 lines**, 2,057 bodies stamped (was 2,022). Tiles NOT uploaded — see below |
+> | `osm→osm` lane | ✅ **D136** built + tested, **not yet re-merged** |
+> | D95 re-key lane | ✅ built + tested, **not yet run** |
+> | `regionStats:recompute` | ⬜ last, always |
+>
+> #### ⚠ The ordering that matters
+>
+> **Both corpus fixes must land before the bathymetry chain re-runs.** The join is keyed on
+> `externalId`, so a re-merge that collapses duplicates while a tileset exists orphans coverage.
+> Order: re-merge → re-load → prune → join → build → tile → coverage → `regionStats`.
+>
+> #### What the audit found that this document did not know
+>
+> - **There was no `osm→osm` matching lane** (D136). Three lanes ran; none matched a catalogue
+>   against itself, so an OSM relation and its own outer way both shipped. 37 pairs, **every one of
+>   the 18 at IoU ≥ 0.6 is OSM–OSM**, two at IoU 1.000, all wetland. `Mud Pond Swamp` is in the
+>   corpus twice. Fixed at a 0.9 bar; the loose cross-catalogue pairs stay queued.
+> - **The wind fetch was gated by the caption's constant** (D135). `MIN_FETCH_CLAUSE_M` was chosen
+>   for pressure ridges and was silently deciding wind-hole coverage too, which has no fetch minimum.
+> - **The census read a different number from the rule it audits** (D137). Four "under-floor"
+>   wetlands were an artifact of banding on `surfaceAreaSqM` where the floor ran on `sourceAreaSqM`.
+>   126 bodies sit in that straddle band; the prune already got this right, the census did not.
+> - **Depth's 24.2% probably has the wrong denominator.** The corpus holds **5,882 non-wetland bodies
+>   over 10 ha** — HydroLAKES' and GLOBathy's floor — against 6,033 with a depth. `corpusStats` now
+>   bands by area so this can be confirmed rather than inferred from two close numbers.
+>
+> #### Three sources loaded that predate this document
+>
+> NH depth **band polygons** (624 lakes, max *and* integrated mean — layer 1 of the service N6b read
+> layer 0 of), NYSDEC **CSLAP** (278 lakes, its own rung per D133), and Maine's **MIDAS → NHD
+> crosswalk** (5,611 of 5,803 keys).
 
 ## The order, and why it is this order
 
@@ -96,7 +123,12 @@ have"*.
 
 ### 4. Bathymetry: re-key → join → build → tile → coverage
 
-`contourCoverage` is empty, so the layer currently ships against nothing.
+⚠ **CORRECTION (2026-08-09): the table was never empty, and it is not called `contourCoverage`.**
+It is **`bathymetryCoverage`**, and it held **2,022 rows** — N6b's build — for as long as this
+document has claimed otherwise. The claim came from querying a table name that does not exist and
+reading the empty result as a finding: *"a null result reads exactly like a negative one"*, the exact
+trap listed under §Things it would be expensive to re-learn. **Query the schema for the table name
+before reporting a zero.**
 
 **Maine publishes a MIDAS→NHD crosswalk** and this is the find that unblocks D95's re-key lane:
 `https://gis.maine.gov/mapservices/rest/services/dep/MaineDEP_Lakes_Data/MapServer/3`
@@ -152,6 +184,18 @@ batches to exactly this. `pnpm convex-dev --once` before any load that touches a
 **A failed load must never be followed by the prune.** D124's guard prints it and exits non-zero;
 `run-corpus.sh` honours the exit code. The upsert is idempotent — re-run the load until it reports
 zero failed batches, *then* prune.
+
+**A wrapper's pipe eats the exit code, and `pipefail` does not save you.** `./run-corpus.sh … | tee
+run.log` reports **success for a run that failed** — a pipeline's status is its last command's, and
+`pipefail` governs pipelines *inside* a script rather than one a caller wraps around it. Hit on
+2026-08-09: the sub-area step exited 1, the wrapper reported 0. `run-corpus.sh` now logs itself to
+`.scratch/merge/run-<campaign>.log`, so there is no reason left to pipe it.
+
+**A cheap argument must not be able to fail an expensive campaign at the last step.** The same run
+died after a 45-minute merge and a 25,000-body load because `load-sub-areas` requires `--actor`
+*unconditionally* while the wrapper only guarded the `--apply` case. Everything expensive had
+succeeded; the campaign read as a failure and the non-zero exit suppressed the prune. Now skipped
+with a message that prints the command to run instead.
 
 **Denominators lie by default.** This campaign corrected three: the depth join's `8,517 / 40,260`,
 the matcher error rate measuring coverage, and a corroboration rate that would have counted
