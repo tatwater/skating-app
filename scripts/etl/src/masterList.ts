@@ -45,6 +45,7 @@ import {
   type ReconcileCandidate,
   type ReviewReason,
   reconcileOne,
+  refusalFamily,
   sameName,
   scoreBody,
   settledClassDissent,
@@ -258,6 +259,27 @@ export interface MasterListStats {
    */
   greatLakeArms: number;
   /**
+   * Kept bodies with **at least one member** a still-water name rescued from a flowing refusal
+   * (founder, 2026-08-09) — see `classifyWaterBody`'s rung 2.
+   *
+   * Counted for the reason the 123-body wetland deletion went unnoticed for a year: the rule that
+   * changes a corpus has to leave a number behind.
+   *
+   * ⚠ **This is not the number of bodies the rung added, and the first run proved the gap is
+   * large.** It counted **46** while the corpus grew by **13**: in the other 33 groups a *different*
+   * member already carried a class, so the body existed either way and the rescue only changed how
+   * it was classified. Both numbers are worth having and they answer different questions — this one
+   * is "how often does the rung fire", the manifest delta is "what did it cost the corpus" — but
+   * reading this one as the second is the misleading-denominator shape this campaign keeps
+   * correcting. The honest headline is the delta.
+   *
+   * Detected from the member's own tokens rather than by re-deciding the name: the rung is the only
+   * way a member can carry a `name:` token **and** a flowing `sourceToken`, because the ordinary
+   * name-keyword rung fires on silence and silence is never `flowing`.
+   */
+  stillWaterRescued: number;
+  stillWaterRescuedSamples: string[];
+  /**
    * Lakes re-drawn from the catalogue that contains their own named bay — **D92's per-lake
    * `geometrySource` override, applied on evidence** (founder, 2026-08-07).
    *
@@ -297,16 +319,81 @@ export const CLASS_DISSENT_SAMPLE_CAP = 10;
 export const GEOMETRY_OVERRIDE_SAMPLE_CAP = 10;
 /** Samples kept per lane of targets geometry could not separate. Each is a possible duplicate. */
 export const AMBIGUOUS_SAMPLE_CAP = 10;
+/** Samples of bodies a still-water name rescued from a flowing refusal. */
+export const STILL_WATER_SAMPLE_CAP = 10;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Matching
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * How much two features from the **same** catalogue must overlap before we call them one lake.
+ *
+ * ## Why a same-source lane exists at all
+ *
+ * The three geometric lanes are `3dhp→nhd`, `osm→nhd` and `osm→3dhp`. Nothing matched OSM against
+ * itself, and OSM is the one catalogue that routinely publishes a lake twice: a multipolygon
+ * **relation** and its own outer **way** are both tagged, both valid, and both arrive as features.
+ * Neither cross-catalogue lane can see it, so where NHD carries no counterpart — which is the normal
+ * case for wetland — both halves shipped as separate corpus rows.
+ *
+ * Measured on the 2026-08-09 corpus, `overlapDuplicates` (exhaustive over the kept set) found **37
+ * OSM–OSM pairs, 18 of them at IoU ≥ 0.6, two at IoU 1.000**, every one of them wetland. `Mud Pond
+ * Swamp` was in the corpus twice.
+ *
+ * ## Why the bar is 0.9 and not `RECONCILE_MIN_IOU`
+ *
+ * Cross-catalogue overlap is two independent publishers agreeing about a shoreline, which is real
+ * evidence. **Same-catalogue overlap is not** — it is one publisher's data disagreeing with itself,
+ * and the innocent explanation (a chain of ponds, a bay tagged separately, a reservoir over its
+ * river) is at least as likely as the duplicate. So this lane is deliberately not tuned to catch as
+ * many as possible: it collapses only what is mechanically certain and leaves the rest in the review
+ * queue, where a same-source overlap has always belonged (founder, 2026-08-09).
+ *
+ * At 0.9 two features share nine tenths of their area. A relation and its outer ring score 1.000; a
+ * bay against its parent, or two neighbours in a chain, are far below it — `RECONCILE_MIN_IOU`'s own
+ * docstring puts a bay "typically well under 0.3 of its parent".
+ *
+ * ⚠ **`minIouWithGnis` must be raised with it, and that is not cosmetic.** `decideMatch` lowers the
+ * bar to `RECONCILE_MIN_IOU_WITH_GNIS` (0.3) whenever both sides assert the same GNIS id — sound for
+ * two catalogues, and actively wrong here: two OSM features sharing a GNIS id are most often a lake
+ * and its own named arm, both tagged with the place name. Leaving that bar at 0.3 would merge
+ * exactly the pairs this lane is built to leave alone.
+ */
+export const SAME_SOURCE_MIN_IOU = 0.9;
+
+/** What a lane may override about the matcher. */
+export interface MatchLaneOptions {
+  /** The overlap bar. Defaults to `RECONCILE_MIN_IOU`. */
+  minIou?: number;
+  /** The bar when both sides assert one GNIS id. Defaults to `RECONCILE_MIN_IOU_WITH_GNIS`. */
+  minIouWithGnis?: number;
+  /**
+   * Drop the target from its own candidate set — required whenever `targets` and `candidates` are
+   * the same array, or every feature matches itself at IoU 1.0 and the lane returns nothing else.
+   */
+  excludeSelf?: boolean;
+  /**
+   * Targets between progress reports. Defaults to `LANE_PROGRESS_EVERY`.
+   *
+   * Exists because a 20,000-target cadence is unreachable from a test — the callback is dead code as
+   * far as any fixture is concerned, and "never invoked" and "broken" look identical from here.
+   */
+  progressEvery?: number;
+}
+
+/**
+ * Targets between progress lines. A lane walks tens of thousands of features against a spatial grid
+ * and takes minutes; silence for that long reads as a hang.
+ */
+export const LANE_PROGRESS_EVERY = 20_000;
 
 /** Match every feature in `targets` against `candidates`, returning id→id pairs and a tally. */
 export function matchLane(
   targets: readonly Feature[],
   candidates: readonly Feature[],
   onProgress?: (done: number, total: number) => void,
+  options: MatchLaneOptions = {},
 ): {
   pairs: [string, string][];
   stats: LaneStats;
@@ -317,19 +404,36 @@ export function matchLane(
   const pairs: [string, string][] = [];
   const iou = new Map<string, number>();
   const stats: LaneStats = { matched: 0, ambiguous: 0, none: 0, nearMiss: 0, ambiguousIds: [] };
+  // A same-source lane is symmetric: a↔b is found once from each side. The union-find would absorb
+  // the repeat harmlessly, but `stats.matched` and the reported pair list would both read double.
+  const seenPairs = new Set<string>();
+  const reconcileOptions = {
+    ...(options.minIou !== undefined ? { minIou: options.minIou } : {}),
+    ...(options.minIouWithGnis !== undefined ? { minIouWithGnis: options.minIouWithGnis } : {}),
+  };
+  const progressEvery = options.progressEvery ?? LANE_PROGRESS_EVERY;
   let done = 0;
   for (const target of targets) {
-    if (++done % 20000 === 0) onProgress?.(done, targets.length);
+    if (++done % progressEvery === 0) onProgress?.(done, targets.length);
     const nearby = new Map<string, Feature>();
     for (const cell of cellsFor(target.bbox)) {
       for (const c of grid.get(cell) ?? []) nearby.set(c.id, c);
     }
+    if (options.excludeSelf) nearby.delete(target.id);
     if (nearby.size === 0) {
       stats.none++;
       continue;
     }
-    const outcome = reconcileOne(target, [...nearby.values()] as unknown as ReconcileCandidate[]);
+    const outcome = reconcileOne(
+      target,
+      [...nearby.values()] as unknown as ReconcileCandidate[],
+      reconcileOptions,
+    );
     if (outcome.verdict === 'matched') {
+      const canonical =
+        target.id < outcome.id ? `${target.id}|${outcome.id}` : `${outcome.id}|${target.id}`;
+      if (seenPairs.has(canonical)) continue;
+      seenPairs.add(canonical);
       stats.matched++;
       pairs.push([target.id, outcome.id]);
       iou.set(`${target.id}|${outcome.id}`, outcome.iou);
@@ -436,6 +540,20 @@ export function buildMasterList(input: MasterListInput): MasterList {
   log('stage 3: OSM ↔ 3DHP…');
   const osmDhp = matchLane(osm, dhp, (d, t) => log(`  osm→3dhp: ${d} / ${t}`));
 
+  // ── Stage 3b: OSM against itself, at a much higher bar ────────────────────
+  //
+  // The lane the first three could not cover. A multipolygon relation and its own outer way are one
+  // lake published twice, and no cross-catalogue lane sees it when NHD carries no counterpart —
+  // which is the normal case for wetland, and every pair this found is wetland. See
+  // `SAME_SOURCE_MIN_IOU` for why the bar is 0.9 rather than 0.5, and why the GNIS bar moves with it.
+  log('stage 3b: OSM ↔ OSM (same-source duplicates)…');
+  const osmSelf = matchLane(osm, osm, (d, t) => log(`  osm→osm: ${d} / ${t}`), {
+    minIou: SAME_SOURCE_MIN_IOU,
+    minIouWithGnis: SAME_SOURCE_MIN_IOU,
+    excludeSelf: true,
+  });
+  log(`  ${osmSelf.pairs.length.toLocaleString()} same-source pair(s) collapse into one body`);
+
   // ── Stage 4: the name lane ────────────────────────────────────────────────
   // What the area-ratio ceiling cannot reach. See `nameMatchPairs` — overlap is still required, so a
   // Mud Pond in Maine can never match a Mud Pond in New York.
@@ -468,7 +586,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
   const onlyDhp = [...dhpHits].filter((a) => !eligible.has(a)).length;
 
   // ── Grouping ──────────────────────────────────────────────────────────────
-  const iou = new Map([...federal.iou, ...osmNhd.iou, ...osmDhp.iou]);
+  const iou = new Map([...federal.iou, ...osmNhd.iou, ...osmDhp.iou, ...osmSelf.iou]);
   const union = new Union();
   // **The refereed pairs join alongside the lanes' own**, not as a later correction. Nine pairs the
   // 2.4M soundings confirmed are one lake drawn twice — see `REFEREED_DUPLICATES` for why the
@@ -479,6 +597,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
     ...federal.pairs,
     ...osmNhd.pairs,
     ...osmDhp.pairs,
+    ...osmSelf.pairs,
     ...named.pairs,
     ...refereed,
   ]) {
@@ -546,6 +665,8 @@ export function buildMasterList(input: MasterListInput): MasterList {
     duplicatePairList: [],
     settledWetland: 0,
     greatLakeArms: 0,
+    stillWaterRescued: 0,
+    stillWaterRescuedSamples: [],
     geometryOverridden: 0,
     geometryOverriddenSamples: [],
     gazetteerIdsAttached,
@@ -553,6 +674,9 @@ export function buildMasterList(input: MasterListInput): MasterList {
       { label: '3dhp→nhd', stats: federal.stats },
       { label: 'osm→nhd', stats: osmNhd.stats },
       { label: 'osm→3dhp', stats: osmDhp.stats },
+      // Reported beside the others so `matched` here is directly comparable — and so a run where it
+      // drops to zero says the lane stopped firing, rather than saying nothing at all.
+      { label: `osm→osm @${SAME_SOURCE_MIN_IOU}`, stats: osmSelf.stats },
     ],
     nameLane: { pairs: named.pairs.length, ambiguous: named.ambiguous },
     matcher: { onlyNhd, onlyDhp, nhdHits: eligible.size, dhpHits: dhpHits.size },
@@ -787,6 +911,24 @@ export function buildMasterList(input: MasterListInput): MasterList {
         reason,
       });
       continue;
+    }
+
+    // See `MasterListStats.stillWaterRescued`. Counted after the floor, so the number is bodies in
+    // the corpus rather than features that happened to be rescued and then dropped for size.
+    if (
+      group.members.some(
+        (m) =>
+          m.cls !== null &&
+          m.token.startsWith('name:') &&
+          refusalFamily(m.sourceToken) === 'flowing',
+      )
+    ) {
+      stats.stillWaterRescued++;
+      if (stats.stillWaterRescuedSamples.length < STILL_WATER_SAMPLE_CAP) {
+        stats.stillWaterRescuedSamples.push(
+          `${group.key} ${name} ${Math.round(group.areaSqM / SQ_M_PER_ACRE)}ac → ${cls}`,
+        );
+      }
     }
 
     const classClaims = group.members

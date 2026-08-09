@@ -16,7 +16,10 @@ import {
   buildMasterList,
   elevationKeyFor,
   emitCanonicalBodies,
+  LANE_PROGRESS_EVERY,
   type MasterListInput,
+  matchLane,
+  SAME_SOURCE_MIN_IOU,
 } from './masterList';
 import {
   type Boundary,
@@ -1012,5 +1015,218 @@ describe('class dissent, triaged rather than counted (founder, 2026-08-08)', () 
     );
     expect(result.stats.classDissent).toBe(0);
     expect(result.stats.classDissentUnsettled).toBe(0);
+  });
+});
+
+describe('the still-water rescue leaves a number behind (founder, 2026-08-09)', () => {
+  /**
+   * A deadwater as the OSM lane now produces it: the catalogue refused it as a river, and
+   * `classifyWaterBody`'s rung 2 let the name overrule that. The pair of tokens IS the signature —
+   * the ordinary name-keyword rung fires only on silence, and silence is never `flowing`.
+   */
+  const deadwater = (id: string, name: string, acres: number) =>
+    feat('osm', id, {
+      name,
+      cls: 'river',
+      token: 'name:river',
+      sourceToken: 'osm:water=river',
+      polygon: square(-70.3, 44.3, sideForAcres(acres)),
+    });
+
+  it('counts the body and names it', () => {
+    // 335 acres on the West Branch Penobscot, deleted as `no-class` on the 2026-08-08 run.
+    const result = buildMasterList(
+      inputFor({ osm: [deadwater('way/pockwockamus', 'Pockwockamus Deadwater', 335)] }),
+    );
+    expect(keys(result.bodies)).toEqual(['osm:way/pockwockamus']);
+    expect(result.stats.stillWaterRescued).toBe(1);
+    expect(result.stats.stillWaterRescuedSamples[0]).toContain('Pockwockamus Deadwater');
+    expect(result.stats.stillWaterRescuedSamples[0]).toContain('river');
+  });
+
+  it('counts nothing for a body no catalogue refused', () => {
+    // Debsconeag Deadwater is in the corpus because OSM says `natural=water` and nothing else — the
+    // silence case, which is the name-keyword rung and not this one.
+    const silent = feat('osm', 'way/debsconeag', {
+      name: 'Debsconeag Deadwater',
+      cls: 'river',
+      token: 'name:river',
+      sourceToken: 'osm:natural=water',
+    });
+    const result = buildMasterList(inputFor({ osm: [silent] }));
+    expect(keys(result.bodies)).toEqual(['osm:way/debsconeag']);
+    expect(result.stats.stillWaterRescued).toBe(0);
+  });
+
+  it('counts a rescue even where another member would have kept the body anyway', () => {
+    // ⚠ The distinction the first real run made expensive to ignore: 46 fired, the corpus grew by
+    // 13. In the other 33 groups a different member already carried a class, so the rescue changed
+    // the CLASS rather than adding the body. This counter answers "how often does the rung fire";
+    // the manifest delta answers "what did it cost the corpus", and they are not the same question.
+    const rescued = deadwater('way/a', 'Abol Deadwater', 66);
+    const alsoClassed = feat('nhd', 'n-abol', {
+      name: 'Abol Deadwater',
+      cls: 'lakePond',
+      polygon: square(-70.3, 44.3, sideForAcres(66)),
+    });
+    const result = buildMasterList(inputFor({ osm: [rescued], nhd: [alsoClassed] }));
+    expect(result.bodies).toHaveLength(1);
+    expect(result.stats.stillWaterRescued).toBe(1);
+  });
+
+  it('counts bodies in the corpus, not features rescued and then dropped for size', () => {
+    // The counter sits after the admission floor on purpose: a rescue that the one-acre rule then
+    // deletes is not a body, and reporting it as one would overstate what the rung buys.
+    const tiny = deadwater('way/tiny', 'Turner Deadwater', 0.5);
+    const result = buildMasterList(inputFor({ osm: [tiny] }));
+    expect(result.bodies).toHaveLength(0);
+    expect(result.stats.stillWaterRescued).toBe(0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The same-source lane (N7-3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('osm → osm: the lane the other three could not cover', () => {
+  /**
+   * The fixture is the real one. OSM publishes this 62-acre New York wetland as both
+   * `relation/2405214` and `way/180258202` — the multipolygon and its own outer ring — and the
+   * duplicate sweep scored them at IoU **1.000**. NHD carries no counterpart, which is the normal
+   * case for wetland, so `osm→nhd` and `osm→3dhp` both saw nothing and **both halves shipped as
+   * separate corpus rows**.
+   */
+  const side62 = sideForAcres(62);
+  const relation = () =>
+    feat('osm', 'relation/2405214', { cls: 'wetland', polygon: square(-70.1, 44.1, side62) });
+  const outerWay = () =>
+    feat('osm', 'way/180258202', { cls: 'wetland', polygon: square(-70.1, 44.1, side62) });
+
+  it('collapses a relation and its own outer way into one body', () => {
+    const result = buildMasterList(inputFor({ osm: [relation(), outerWay()] }));
+    expect(result.bodies).toHaveLength(1);
+    // One body, so there is no longer an overlapping pair for the sweep to flag.
+    expect(result.stats.duplicatePairs).toBe(0);
+    // …and it is still reported, because a same-catalogue collapse is a finding either way.
+    expect(result.bodies[0]?.sameSourceDuplicate).toBe(true);
+  });
+
+  it('reports the lane beside the other three, so a run where it stops firing says so', () => {
+    const result = buildMasterList(inputFor({ osm: [relation(), outerWay()] }));
+    const lane = result.stats.lanes.find((l) => l.label.startsWith('osm→osm'));
+    expect(lane?.label).toBe(`osm→osm @${SAME_SOURCE_MIN_IOU}`);
+    expect(lane?.stats.matched).toBe(1);
+  });
+
+  it('counts a symmetric pair once, not once from each side', () => {
+    // targets and candidates are the same array, so a↔b is reached twice. The union-find would
+    // absorb the repeat silently and `matched` would read double.
+    const result = buildMasterList(inputFor({ osm: [relation(), outerWay()] }));
+    expect(result.stats.lanes.find((l) => l.label.startsWith('osm→osm'))?.stats.matched).toBe(1);
+  });
+
+  it('never matches a feature to itself', () => {
+    // Without `excludeSelf` every feature scores 1.0 against itself, the lane reports a match for
+    // every body in the corpus, and nothing else can ever be the best candidate.
+    const result = buildMasterList(inputFor({ osm: [relation()] }));
+    expect(result.bodies).toHaveLength(1);
+    expect(result.stats.lanes.find((l) => l.label.startsWith('osm→osm'))?.stats.matched).toBe(0);
+    expect(result.bodies[0]?.sameSourceDuplicate).toBe(false);
+  });
+
+  it('leaves two overlapping-but-distinct OSM bodies alone, and queues them', () => {
+    // The reason the bar is 0.9. Two ponds in a chain overlapping by about half is exactly what a
+    // cross-catalogue lane is allowed to merge at 0.5 and a same-source lane must not: one
+    // publisher's data disagreeing with itself is not two publishers agreeing.
+    const a = feat('osm', 'way/chain-a', {
+      name: 'First Pond',
+      polygon: square(-70.5, 44.5, side62),
+    });
+    const b = feat('osm', 'way/chain-b', {
+      name: 'Second Pond',
+      polygon: square(-70.5 + side62 * 0.4, 44.5, side62),
+    });
+    const result = buildMasterList(inputFor({ osm: [a, b] }));
+    expect(result.bodies).toHaveLength(2);
+    // Still visible to a moderator — the sweep flags it, which is where it has always belonged.
+    expect(result.stats.duplicatePairs).toBe(1);
+  });
+
+  it('does NOT let a shared GNIS id drop the bar to 0.3', () => {
+    // `decideMatch` lowers the bar whenever both sides assert one GNIS id — sound across two
+    // catalogues, wrong within one: two OSM features sharing a GNIS id are most often a lake and its
+    // own named arm. Leaving `minIouWithGnis` at 0.3 would merge exactly what this lane must not.
+    const lake = feat('osm', 'way/gnis-lake', {
+      name: 'Long Pond',
+      gnisId: '12345',
+      polygon: square(-69.5, 44.6, side62),
+    });
+    const arm = feat('osm', 'way/gnis-arm', {
+      name: 'Long Pond',
+      gnisId: '12345',
+      polygon: square(-69.5 + side62 * 0.55, 44.6, side62),
+    });
+    const result = buildMasterList(inputFor({ osm: [lake, arm] }));
+    expect(result.bodies).toHaveLength(2);
+  });
+});
+
+describe('matchLane, directly — the options the same-source lane needs', () => {
+  const side = sideForAcres(62);
+  const a = feat('osm', 'way/a', { polygon: square(-70.1, 44.1, side) });
+  const twin = feat('osm', 'way/a-twin', { polygon: square(-70.1, 44.1, side) });
+
+  it('excludeSelf stops a feature matching itself, and finds its twin instead', () => {
+    // Alone in its own candidate set, a feature matches itself at IoU 1.0 — a self-pair the
+    // union-find would happily absorb while the lane reported a match for every body in the corpus.
+    const selfOnly = matchLane([a], [a], undefined, { minIou: SAME_SOURCE_MIN_IOU });
+    expect(selfOnly.pairs).toEqual([['way/a', 'way/a']]);
+
+    const excluded = matchLane([a], [a, twin], undefined, {
+      minIou: SAME_SOURCE_MIN_IOU,
+      excludeSelf: true,
+    });
+    expect(excluded.pairs).toEqual([['way/a', 'way/a-twin']]);
+  });
+
+  it('reads a feature and its own twin as AMBIGUOUS when self is left in', () => {
+    // The subtler half, and the reason `excludeSelf` is not merely an optimisation: the target and
+    // its duplicate both score 1.0, `decideMatch`'s margin rule cannot separate them, and the lane
+    // returns nothing at all rather than the wrong thing. A silent zero, from a lane that is working.
+    const both = matchLane([a], [a, twin], undefined, { minIou: SAME_SOURCE_MIN_IOU });
+    expect(both.pairs).toEqual([]);
+    expect(both.stats.ambiguous).toBe(1);
+  });
+
+  it('honours a raised minIou', () => {
+    const half = feat('osm', 'way/half', { polygon: square(-70.1 + side * 0.4, 44.1, side) });
+    // Comfortably over the cross-catalogue bar…
+    expect(matchLane([a], [half], undefined, { minIou: 0.4 }).pairs).toHaveLength(1);
+    // …and nowhere near the same-source one.
+    expect(matchLane([a], [half], undefined, { minIou: SAME_SOURCE_MIN_IOU }).pairs).toHaveLength(
+      0,
+    );
+  });
+
+  it('reports progress on the cadence it is given', () => {
+    // The callback is unreachable at the 20,000 default, so "never invoked" and "throws" look the
+    // same. Driving it at 1 is the only way the lane's own progress line is ever executed.
+    const seen: [number, number][] = [];
+    matchLane([a, twin], [a, twin], (d, t) => seen.push([d, t]), {
+      minIou: SAME_SOURCE_MIN_IOU,
+      excludeSelf: true,
+      progressEvery: 1,
+    });
+    expect(seen).toEqual([
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+
+  it('defaults to LANE_PROGRESS_EVERY, which no fixture can reach', () => {
+    const seen: number[] = [];
+    matchLane([a, twin], [a, twin], (d) => seen.push(d), { excludeSelf: true });
+    expect(LANE_PROGRESS_EVERY).toBe(20_000);
+    expect(seen).toEqual([]);
   });
 });
