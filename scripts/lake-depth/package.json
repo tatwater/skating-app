@@ -13,7 +13,8 @@
     "load-elevation": "tsx src/loadElevation.ts",
     "archive": "tsx src/archiveCli.ts",
     "snapshot-elevation": "tsx src/snapshotElevation.ts",
-    "snapshot-alsc": "tsx src/snapshotAlsc.ts"
+    "snapshot-alsc": "tsx src/snapshotAlsc.ts",
+    "corroborate-alsc": "tsx --max-old-space-size=8192 src/corroborateAlsc.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

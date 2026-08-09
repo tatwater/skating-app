@@ -248,6 +248,11 @@ drop-word in the same name.
 
 ## What is next, in order
 
+> **➡ PR B has its own document: [`HANDOFF-n7-2-data-campaign.md`](./HANDOFF-n7-2-data-campaign.md).**
+> Start there — it carries the order, the measured baseline, the two unread sources and the traps.
+> What follows is the summary.
+
+
 > **PR A is complete: the corpus itself is audited, refereed and loaded** (`n7-2-20260808`,
 > 2026-08-08). Items 1–4 of the old list are closed — the `WATER_BODY_CLASSES` narrowing landed with
 > PR #39, the 61-row dedup queue was resolved, the review queue got its `/admin/water/review`

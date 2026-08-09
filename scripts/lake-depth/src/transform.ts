@@ -1,5 +1,5 @@
 /**
- * Lake-depth transform (N6a) — parse three sources, resolve the D68 ladder per lake, emit one
+ * Lake-depth transform (N6a) — parse four sources, resolve the D68 ladder per lake, emit one
  * normalized record each. **No matching happens here**: the spatial join runs in Convex, where the N1
  * cell index lives (`waterBodies.matchAndImportDepths`), because resolving ~8k source lakes against an
  * index is cheap and exporting 116,070 polygons to do it locally is not.
@@ -23,6 +23,7 @@ import {
   SHALLOW_MEAN_DEPTH_M,
 } from '@skating/core';
 import type { MultiPolygon, Polygon } from 'geojson';
+import type { AlscPond } from './alsc';
 import type {
   DepthRecord,
   GlobathyRow,
@@ -35,7 +36,7 @@ import type {
 /** `Lake_area` is km² in HydroLAKES; everything downstream is m². */
 const SQ_KM_TO_SQ_M = 1_000_000;
 
-/** Hectares → m², for LAGOS-US, which reports lake area in hectares. */
+/** Hectares → m², for LAGOS-US and ALSC, both of which report lake area in hectares. */
 const HA_TO_SQ_M = 10_000;
 
 // --- CSV ---
@@ -347,6 +348,38 @@ export function mergeLagosRows(rows: readonly LagosDepthRow[]): {
   return { lakes, merged, contested };
 }
 
+// --- ALSC: the archive of a scrape, read back as a source ---
+
+/**
+ * `.raw/alsc/ponds.ndjson` → the ponds it holds.
+ *
+ * One JSON object per line, exactly as `snapshotAlsc.ts` wrote them — the parsing and validation
+ * already happened at fetch time in `alsc.ts` (`parseAlscReport` refuses a report with no depth, an
+ * implausible one, or a mean deeper than its max), so this side is a reader rather than a second
+ * parser. Re-validating here would mean two files disagreeing about what a pond is.
+ *
+ * **A malformed line is a hard, named error, never a skipped one.** This file is machine-written and
+ * checkpointed every 100 ponds; a line that isn't JSON means a truncated or half-written archive, and
+ * quietly dropping it would turn "the mirror copy is damaged" into "New York got fewer depths".
+ */
+export function parseAlscArchive(ndjson: string): AlscPond[] {
+  const ponds: AlscPond[] = [];
+  for (const [index, line] of ndjson.split('\n').entries()) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    try {
+      ponds.push(JSON.parse(trimmed) as AlscPond);
+    } catch {
+      throw new Error(
+        `ALSC archive: line ${index + 1} is not JSON. This archive is machine-written NDJSON, so a ` +
+          'broken line means a truncated or half-written file — re-pull it from the mirror rather ' +
+          'than loading what survived.',
+      );
+    }
+  }
+  return ponds;
+}
+
 // --- The join ---
 
 export interface TransformInput {
@@ -356,6 +389,13 @@ export interface TransformInput {
   globathy?: readonly GlobathyRow[];
   /** LAGOS-US DEPTH rows — independent of the other two. */
   lagos?: readonly LagosDepthRow[];
+  /**
+   * Adirondack Lakes Survey ponds, read back out of `.raw/alsc/ponds.ndjson` (D130).
+   *
+   * Independent of every other source and of `--states`: the survey is New York's Adirondack Park by
+   * construction, so a state filter would have nothing to do.
+   */
+  alsc?: readonly AlscPond[];
   /**
    * Two-letter state codes we support. When set, LAGOS rows naming none of them are dropped.
    *
@@ -494,12 +534,63 @@ export function transformDepths(input: TransformInput): TransformResult {
     });
   }
 
+  // ── ALSC (D130) ───────────────────────────────────────────────────────────────────────────────
+  //
+  // **Depth only.** ALSC publishes elevation, surface area, watershed area, shoreline and volume too,
+  // and every one of those is a 1984–87 reading of a *different* lake outline than ours. Area and name
+  // are read here as **match inputs** — they are what corroborates a proximity match — and neither is
+  // stored on a body; `matchAndImportDepths` takes `name` for corroboration and never writes it.
+  //
+  // ⚠ **The coordinates are the weak part, and the join is bounded because of it.** They are
+  // pre-GPS DMS-to-the-second, measuring out at a median 289 m from our outlines with sd ~340 m (see
+  // `alsc.ts`). So a pond only lands if our polygon contains its point, or sits within
+  // `DEPTH_PROXIMITY_METERS` (500 m) of it *and* the name or the area agrees — the same rule every
+  // other source is held to, and deliberately not a looser one for the source with the worst
+  // coordinates. Expect the rejections to be dominated by `no listed body at or near this point`;
+  // those are ponds our corpus does not carry or whose published point drifted past the bound, and
+  // they are named individually on the run row.
+  for (const pond of input.alsc ?? []) {
+    const key = `alsc/${pond.pondNumber}`;
+    if (
+      pond.lat === undefined ||
+      pond.lng === undefined ||
+      !Number.isFinite(pond.lat) ||
+      !Number.isFinite(pond.lng)
+    ) {
+      skipped++;
+      errors.push({ key, message: `"${pond.name}" published no coordinate — nothing to match against` });
+      continue;
+    }
+    const positive = (v: number | undefined) => (v !== undefined && v > 0 ? v : undefined);
+    const maxDepthM = positive(pond.maxDepthM);
+    const meanDepthM = positive(pond.meanDepthM);
+    if (maxDepthM === undefined && meanDepthM === undefined) {
+      // The scraper already refuses a depthless report, so reaching here means the archive was
+      // hand-edited or written by an older parser. Named rather than counted silently.
+      skipped++;
+      errors.push({ key, message: `"${pond.name}" carries no usable depth` });
+      continue;
+    }
+    const areaSqM = positive(pond.surfaceAreaHa);
+    records.push({
+      key,
+      point: { lat: pond.lat, lng: pond.lng },
+      ...(areaSqM !== undefined ? { areaSqM: areaSqM * HA_TO_SQ_M } : {}),
+      ...(pond.name ? { name: pond.name } : {}),
+      ...(meanDepthM !== undefined
+        ? { meanDepthM, meanDepthSource: 'alsc_1987' as const }
+        : {}),
+      ...(maxDepthM !== undefined ? { maxDepthM, maxDepthSource: 'alsc_1987' as const } : {}),
+    });
+  }
+
   return {
     records,
     summary: {
       hydroLakesRead: input.hydroLakes?.length ?? 0,
       globathyRead: input.globathy?.length ?? 0,
       lagosRead: input.lagos?.length ?? 0,
+      alscRead: input.alsc?.length ?? 0,
       outOfRegion,
       emitted: records.length,
       skipped,

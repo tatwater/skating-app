@@ -1100,7 +1100,7 @@ export interface DuplicatePair {
  * ⚠ A pair here is joined **before** the class, name and geometry rules run, so the merged body is
  * whatever those rules make of the union — this asserts identity, never content.
  *
- * Regenerate with `scripts/etl/.scratch/referee-iou.mts`; the comments are its output verbatim.
+ * Regenerate with `pnpm --filter @skating/etl referee-duplicates`; the comments are its output verbatim.
  */
 export const REFEREED_DUPLICATES: readonly (readonly [string, string])[] = [
   // Bellamy Reservoir 310 ac + (unnamed) 122 ac at IoU 34%, one survey across both: nh-granit-contours:NHLAK600030903-02
