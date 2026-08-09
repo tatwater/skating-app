@@ -9,6 +9,39 @@ shows both numbers to skaters **framed by where they came from**. That framing i
 a stored field rather than a footnote — see *Sources*, below, and note that two of the three sources are
 **modelled, not measured**.
 
+> ### What N7-2 added (2026-08-08)
+>
+> Two commands and two archives that are not in the pipeline description below, because they are
+> **fetch-and-archive lanes** rather than stages of the depth transform:
+>
+> ```bash
+> pnpm --filter @skating/lake-depth snapshot-elevation --from=<bodies.ndjson>   # USGS 3DEP → .raw-elevation/
+> pnpm --filter @skating/lake-depth snapshot-alsc                               # ALSC 1984–87 → .raw/alsc/
+>
+> ./mirror-elevation-r2.sh push|pull|status    # skating-raw-elevation
+> ./mirror-r2.sh push|pull|status              # skating-raw-lake-depth (now includes .raw/alsc/)
+> ```
+>
+> **`snapshot-elevation`** replaces the Open-Meteo elevation lane (**D127**). 3DEP via
+> `epqs.nationalmap.gov`: no key, no documented cap, **98.2% of readings at 1 m LiDAR**, ~1.5 h for
+> the corpus at concurrency 12. The archive is keyed on the **rounded coordinate**, never a body id,
+> which is what survives a corpus rebuild and what lets the *merge* read it before a body exists as
+> a row. `loadElevation.ts` still reads Open-Meteo and is the next thing to convert.
+>
+> **`snapshot-alsc`** is the Adirondack Lakes Survey (**D130**) — 1,345 ponds, every one with a max
+> *and* a mean depth, and New York's first measured-depth source. It is a **scraper**, deliberately
+> serial at 1 req/s with an identifying User-Agent, run **once**, and archived so it never repeats.
+> Read `src/alsc.ts` before touching it: the certificate does not validate, `robots.txt` is a blanket
+> disallow, and there is no published licence — all three are recorded in the archive manifest along
+> with the reasoning, and the payload is corroborated against GNIS and our own polygons rather than
+> trusted.
+>
+> ⚠ **ALSC contributes depth only**, and joins on the **name** with a distance bound — its
+> coordinates are pre-GPS and measure out at sd ~340 m against our outlines.
+>
+> ⚠ **`state_agency` is still a rung with no producer** — 0 rows carry it, while 298 MB of state
+> survey data sits in `scripts/bathymetry/.raw/`. That is the largest depth win available.
+
 Pipeline stages, mirroring the water and admin-areas ETLs:
 
 1. **Fetch** — three third-party datasets (below). All one-time downloads; none are committed.

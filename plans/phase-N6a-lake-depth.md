@@ -1,5 +1,22 @@
 # N6a — Lake depth: the precedence ladder and the shallow signal
 
+> ### ⚠ Two corrections from N7-2 (2026-08-08)
+>
+> **`state_agency` is a rung with no producer.** Confirmed against the loaded corpus: **0 rows carry
+> it.** Its own docstring says it was *"deferred to N6b, where those datasets are fetched for their
+> contours anyway"* — N6b fetched them and never came back for the depth. **298 MB and ~2,400 lakes
+> are on disk** at `scripts/bathymetry/.raw/` (ME 1,528 sounding sets, NH 558 contour sets, MA
+> contours, VT 66 lakes at 2.4M points). This is the largest depth win available and it needs no new
+> source. Exactly the shape of the `osm_tag` no-producer finding this phase's own review caught, one
+> rung up.
+>
+> **The ladder gained `alsc_1987`** between `lagos_us` and `hydrolakes_reported` — the Adirondack
+> Lakes Survey, 1,345 ponds sounded 1984–87, New York's first measured-depth source. Measured, so it
+> beats every model; forty years old, so it loses to every newer measurement. See **D130** for why
+> that is one position in one array and no other machinery, and why it contributes *depth only*.
+>
+> Depth stands at **5,633 / 24,945 (22.6%)** of the loaded corpus.
+
 *The body-level depth attribute the D56 decay model was designed around and never got, plus the
 consumer that makes it mean something. One ETL, one core change, one display surface.*
 

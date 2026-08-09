@@ -8,6 +8,25 @@
 
 ---
 
+> ### ✅ Still accurate, still unbuilt — re-scoped 2026-08-08 (N7-2)
+>
+> Nothing in this document has been done: `scripts/wind-climate/.raw/` does not exist and wind
+> coverage is **0**. Everything it argues for still stands, and the argument got stronger — the
+> elevation lane was built to this exact shape (fetch split from derive, byte-faithful archive,
+> mirrored to R2) and it is why re-asking "could we also derive X?" now costs minutes there.
+>
+> **Two numbers to re-measure before spending the 7.7 hours**, both of which predate the corpus that
+> now exists:
+>
+> - the **1,061 qualifying bodies / 1,045 cells** scope was measured against the *old* area floor and
+>   a 123,952-body corpus. The corpus is now **24,945** and the floor is settled. Re-run with
+>   `--dry-run` first; the number can only have gone down.
+> - the README's **3,184** predates both the canonical re-import and the floor, and is simply wrong.
+>
+> **And the bucket exists but has never been written to** — `skating-raw-wind-climate` was created on
+> 2026-08-02 and confirmed on the API token 2026-08-08, so the permission has never actually been
+> exercised. Run `mirror-r2.sh status` before the fetch, not after it.
+
 ## Why this exists
 
 Two findings from the 2026-08-02 N6c data campaign, both caught while the wind pass was already

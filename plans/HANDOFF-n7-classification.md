@@ -1,13 +1,33 @@
 # HANDOFF — N7: the master list, and everything building it exposed
 
-> **Rewritten 2026-08-05, re-measured 2026-08-06, and the campaign RAN on 2026-08-07.** The numbers
-> below are from the run that was loaded; earlier ones are kept only where they are the comparison.
+> **Rewritten 2026-08-05, re-measured 2026-08-06, campaign run 2026-08-07, and re-run refereed on
+> 2026-08-08.** The numbers below are from the run that is loaded; earlier ones are kept only where
+> they are the comparison.
 >
-> Branch **`phase-n7-unified-corpus`**, three commits for the audit and the load, nothing pushed.
-> Full suite green: 11 packages, **3,772 tests**, lint and typecheck clean.
+> **✅ The corpus is live on dev: `waterBodies` 24,945 · `waterBodySubAreas` 126**, campaign
+> **`n7-2-20260808`**. Prod remains untouched and has never been deployed.
 >
-> **✅ The corpus is live on dev.** `waterBodies` holds **25,136** rows and `waterBodySubAreas` **120**,
-> under campaign `n7-2026-08-07`. Prod remains untouched and has never been deployed.
+> Branch **`phase-n7-2-unified-corpus`** (PR #39 merged the previous one). Full suite green across 11
+> packages, lint and typecheck clean.
+>
+> ### What N7-2 changed, and it is mostly things that were open rather than wrong
+>
+> The three items PR #39 left open are closed, each on a measurement: **D126** settles salt water by
+> elevation (98 refused, and the distribution has a 7-metre hole to cut in), **D128** triages
+> `classDissent` by refusing code so only the residue queues, **D129** referees `RECONCILE_MIN_IOU`
+> against the soundings and *holds it at 0.5* while merging the nine pairs the evidence reached.
+> **D127** moves elevation to 3DEP (22.7% → ~100%, 98.2% of it at 1 m LiDAR) and **D130** gives New
+> York a measured-depth source for the first time.
+>
+> Three defects in the merge, all one shape — a rule answering the same question two ways:
+> `statesFor` losing a state on 7 border-straddlers, a named bay demoted or not depending on *how* it
+> lost its parent, and `overrideGeometryForContainedBays` taking the first member where D125 had
+> already established largest.
+>
+> ⚠ **Two things bit during the run and both are in `phase-N7-unified-corpus.md`:** a stale Convex
+> deployment refused 19 load batches (tests are not a deploy — `convex-test` runs local code), and
+> the run row could not record those failures because `execSync` throws with 150 bodies of GeoJSON
+> attached. D124's guard caught the first and nothing was deleted.
 
 ---
 
@@ -228,31 +248,48 @@ drop-word in the same name.
 
 ## What is next, in order
 
-> **Everything through campaign step 6 is done and live on dev** (2026-08-07). Items 1–8 of the old
-> list are all closed; the two that were still open — the `WATER_BODY_CLASSES` migration and D92's
-> bake-off — both landed, the migration finishing with `backfillWaterBodyClasses` reporting
-> `unmappable: 0` against the corpus.
+> **PR A is complete: the corpus itself is audited, refereed and loaded** (`n7-2-20260808`,
+> 2026-08-08). Items 1–4 of the old list are closed — the `WATER_BODY_CLASSES` narrowing landed with
+> PR #39, the 61-row dedup queue was resolved, the review queue got its `/admin/water/review`
+> surface, and `classDissent` is decided (**D128**). What remains is the data campaign on top, which
+> is PR B and is the larger half.
 
-1. **Narrow the schema's `type` union to `WATER_BODY_CLASSES`.** This is the last step of the
-   widen→deploy→backfill→narrow order and it is now *available*: the backfill rewrote the final 53
-   rows (the prune-protected ones, which the loader can never reach by construction) and reports zero
-   unmappable. Check every writer first — `waterBodies.create` takes its value from the mobile
-   picker, which is the one path that does not come through the ETL.
-2. **Work the 61-row dedup queue.** The prune spared them and they are all the losing halves of OSM
-   duplicate pairs — Long Pond, Lovell Lake, Duncan Lake among them. Two independent systems now
-   agree they are duplicates, so the merges are pre-answered; until somebody does them the corpus
-   renders 61 known duplicates. **Never auto-merge** (D36/D93). See the plan doc's open items.
-3. **Surface the review queue in `/admin`.** 2,010 rows — 812 duplicate-candidate, 652
-   class-conflict, 463 name-conflict, 93 same-source-duplicate, 43 bay-without-parent — are stored on
-   the rows and nothing shows them. `Lake Auburn` stored as `The Basin` is the clearest single
-   example of why the name half matters.
-4. **Decide `classDissent`** — 314 bodies one catalogue refused outright while another classified
-   them. Counted rather than queued on purpose, because NHD drops 43% of its reservoirs by FCODE and
-   the queue should not be buried before the volume is known. The volume is now known.
-5. **Step 7, D97's audit report**, then the metered passes: depth + elevation (9), bathymetry re-key
-   → join → build → tile → coverage (10), wind climate (11), `regionStats` (12). All of them now have
-   the stable post-prune corpus D100 said they should wait for.
-6. **Québec, still deliberately not done.** Three new source lanes — StatCan boundaries, NHN/CanVec
+**The enrichment baseline, measured against the loaded corpus.** This is the weak half and the whole
+point of what follows:
+
+| pass | coverage | |
+| --- | --- | --- |
+| elevation | **~100%**, 98.2% at 1 m LiDAR | ✅ archived (D127); the load to Convex is PR B |
+| depth | **5,633 / 24,945 (22.6%)** | three global sources only |
+| bathymetry | **`contourCoverage` = 0 rows** | the N6b join has never run against the N7 corpus |
+| wind | **0** | `.raw/` does not exist; the archive rebuild is a hard prerequisite |
+| `regionStats` | empty | deciles are computed *from* elevation, so it runs last |
+
+1. **Give `state_agency` a producer — it is a depth rung with no writer.** Confirmed against dev: 0
+   rows carry it. Its docstring says it was *"deferred to N6b, where those datasets are fetched for
+   their contours anyway"* — N6b fetched them and never came back. **298 MB and ~2,400 lakes are on
+   disk** (ME 1,528 sounding sets, NH 558 contour sets, MA contours, VT 66 lakes at 2.4M points).
+   Largest depth win available and it needs no new source. Same shape as the `osm_tag` no-producer
+   finding, one rung up.
+2. **Load the 3DEP archive and retire the Open-Meteo lane.** 25,044 readings are archived and
+   mirrored; `loadElevation.ts` still reads Open-Meteo. Compare the datum against the 5,692 rows
+   already stamped `dem_glo90` **before** re-stamping — D101 asked for exactly that, because a source
+   swap that silently moves a datum looks like a data-quality improvement.
+3. **Join ALSC by name** (D130). 1,345 Adirondack ponds, all with max *and* mean depth. Its
+   coordinates are pre-GPS (sd ~340 m) so the join is a name join with a distance bound, reading
+   `nameClaims` rather than the stored name — 866 matches against 326 by point-in-polygon.
+4. **Bathymetry: re-key → join → build → tile → coverage.** And **Maine publishes a MIDAS→NHD
+   crosswalk** — `MaineDEP_Lakes_Data/MapServer/3`, 5,640 of 5,831 rows carrying a
+   `Permanent_Identifier` — which turns the Maine half of D95's re-key from a geometric guess into an
+   id lookup. The 9 containment rejects at 39–49% and the Caribou→Ripogenus mismatch are waiting on it.
+5. **Wind climate**, and `HANDOFF-wind-climate-archive.md` is still accurate: build the `.raw/`
+   archive and the snapshot/derive split **before** re-running the 7.7-hour fetch. Re-measure the
+   scope first — its 1,061-body figure predates both the settled area floor and this corpus.
+6. **`regionStats:recompute`**, last, once elevation is loaded.
+7. **Two sources found but not yet read**: NH's `EDP_Bathymetry_Lakes/FeatureServer/1` carries
+   `depthmin`/`depthmax` per lake (we only read the contour lines), and NYSDEC's `All_CSLAP_Lakes`
+   has official mean depth for 278 NY lakes.
+8. **Québec, still deliberately not done.** Three new source lanes — StatCan boundaries, NHN/CanVec
    hydrography, CGNDB names. Only OSM crosses the border. The classifier's French keywords are in,
    and `OCEAN_NAME_VETO_MIN_ACRES` was kept rather than deleted specifically for this.
 
