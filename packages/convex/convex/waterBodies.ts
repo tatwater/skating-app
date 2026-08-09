@@ -2718,7 +2718,49 @@ export const merge = mutation({
       throw new ConvexError('Survivor is itself merged — pick the canonical body');
     }
     if (loser.dedupStatus === 'merged') throw new ConvexError('Water body is already merged');
+    await mergeBodyInto(ctx, {
+      survivor,
+      loser,
+      actorId: actor._id,
+      reason: reason?.trim() || `Merged into ${survivor.name}`,
+    });
+    return survivorId;
+  },
+});
 
+/**
+ * Fold one body into another: re-point every child, tombstone the loser, audit it.
+ *
+ * **Extracted from `merge` so the ETL cannot grow a second, subtly different version** (N7-3). The
+ * import path needs exactly this — see `retireAbsorbedBodies` — and the parts that are easy to omit
+ * when reimplementing are the ones that lose data silently: a stranded `bodyFeature` known-hazard
+ * pin, a suppressed put-in whose suppression is forgotten, a favouriter cut off from drive-time
+ * matching, a hand-drawn sub-area left on a tombstone. None of those throw.
+ *
+ * `actorId` is **optional, and absent means the system acted** — the precedent is N5c/D80's
+ * auto-merge, and the schema note on `moderationActions.actorId` argues it: naming a human who took
+ * no action is worse than an honest absence, and "no actor" already reads as "automatic" everywhere
+ * it is rendered.
+ *
+ * The caller validates. This does the work.
+ */
+export async function mergeBodyInto(
+  ctx: MutationCtx,
+  {
+    survivor,
+    loser,
+    actorId,
+    reason,
+  }: {
+    survivor: Doc<'waterBodies'>;
+    loser: Doc<'waterBodies'>;
+    actorId?: Id<'profiles'>;
+    reason: string;
+  },
+): Promise<{ repointed: Record<string, number> }> {
+  const survivorId = survivor._id;
+  const loserId = loser._id;
+  {
     // Re-point every child from loser → survivor. Merge is a rare manual action on a typically-small
     // dedup loser, so a bounded `collect()` per child table is acceptable (cf. `listPendingReview`).
     // Unrolled per table so each `withIndex` keeps its exact type (Convex index builders are per-table).
@@ -2779,7 +2821,7 @@ export const merge = mutation({
     // tombstone whose `isListed` is permanently false — unreachable from the map and the editor, yet
     // still named on every report this merge just moved to the survivor. Re-clipped against the
     // survivor's outline on the way, since near-identical is what made these a duplicate pair.
-    const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor, actor._id);
+    const subAreas = await repointSubAreasOnMerge(ctx, loserId, survivor, actorId);
 
     const repointed = {
       reports: reports.length,
@@ -2814,11 +2856,11 @@ export const merge = mutation({
       listed: isListed({ ...loser, dedupStatus: 'merged' }),
     });
     await ctx.db.insert('moderationActions', {
-      actorId: actor._id,
+      ...(actorId !== undefined ? { actorId } : {}),
       action: 'merge_waterbody',
       targetType: 'waterbody',
       targetId: loserId,
-      reason: reason?.trim() || `Merged into ${survivor.name}`,
+      reason,
       metadata: { survivorId, repointed },
       createdAt: Date.now(),
     });
@@ -2832,7 +2874,185 @@ export const merge = mutation({
     // more full pass inside it is the transaction size nobody wants to debug.
     await ctx.scheduler.runAfter(0, internal.recurrence.enqueueBody, { waterBodyId: survivorId });
     await ctx.scheduler.runAfter(0, internal.recurrence.enqueueBody, { waterBodyId: loserId });
-    return survivorId;
+    return { repointed };
+  }
+}
+
+/**
+ * Retire the rows the merge absorbed — **the half of `osm→osm` that was missing** (N7-3, D136).
+ *
+ * ## The defect this closes
+ *
+ * `importCanonical` is an **upsert**. It writes what the merge emitted and never deletes a row that
+ * *stopped* being emitted. So when D136's lane decided `relation/3165273` and `way/235156742` are
+ * one lake, the corpus kept both: the survivor was updated, and the absorbed row sat there, listed,
+ * `dedupStatus: clean`, indistinguishable from a real body. `Mud Pond Swamp` stayed in the corpus
+ * twice **after** the lane built to collapse it had run.
+ *
+ * `pruneNotInCampaign` could not see them either, and that is the subtle half. It deletes rows the
+ * campaign did not stamp — but a campaign re-run under its **own id** re-stamps nothing and unstamps
+ * nothing, so a row that dropped out between two runs of `n7-3-20260809` still carries that id and
+ * reads as current. The only mechanism that would have caught this is blinded by the ordinary act of
+ * re-running a campaign.
+ *
+ * ## Why the evidence comes from the merge, not from an inference
+ *
+ * `absorbedIds` was computed by `mergeGroup`, written to `master.ndjson`, and **consumed by
+ * nothing**. That is the third time this campaign has found the same shape — the wind lane requested
+ * `windspeed_10m` on 5,225 requests and read only the direction; the bathymetry join computed a
+ * crosswalk verdict and dropped it from the record it wrote. *A measurement that reaches no artifact
+ * is not a measurement.*
+ *
+ * The merge **knows** these rows are duplicates: it put both features in one group and picked a
+ * representative. Re-deriving that later from a campaign stamp is strictly weaker evidence about a
+ * strictly destructive action. So this takes the pairs directly.
+ *
+ * ## What it will not do
+ *
+ * - **It never deletes.** `mergeBodyInto` soft-tombstones the loser and re-points every child, so a
+ *   report, track, hazard, favourite, put-in or hand-drawn sub-area on an absorbed row survives on
+ *   the survivor. A deletion here would be silent data loss on rows a skater may have used.
+ * - **It never merges into a tombstone, and never re-merges.** Both are skipped and counted, which
+ *   is what makes the pass idempotent — re-running a campaign must not walk a merge chain.
+ * - **It never acts on a pair it cannot fully resolve.** An absent absorbed row is the *expected*
+ *   steady state (it was retired by an earlier run, or never existed), not an error.
+ *
+ * `apply` defaults to **false**: this reports what it would do and changes nothing, like every other
+ * destructive pass in the campaign.
+ */
+export const retireAbsorbedBodies = internalMutation({
+  args: {
+    pairs: v.array(
+      v.object({
+        survivor: v.object({ source: v.string(), externalId: v.string() }),
+        absorbed: v.object({ source: v.string(), externalId: v.string() }),
+      }),
+    ),
+    campaignId: v.optional(v.string()),
+    apply: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { pairs, campaignId, apply }) => {
+    /**
+     * Resolve a merge-group key to the row that actually holds it.
+     *
+     * ⚠ **`(source, externalId)` is not enough, and assuming it was produced a misleading skip.**
+     * D93 mints our own key and `resolveUpsert` resolves an import by **catalogue id**, so a body
+     * first seen under one key and later merged under another keeps its original `externalId` while
+     * carrying the new group's `osmId` / `nhdId` / `threeDhpId`. `Ripple Pond` is stored as
+     * `osm:way/1327067961` and carries `osmId: way/1228071699` — so a lookup for the survivor
+     * `way/1228071699` found nothing, and the pass reported *"survivor not in the corpus"* for 15
+     * pairs that were **already correctly merged into one row**.
+     *
+     * With the catalogue-id fallback both halves of such a pair resolve to the same document and the
+     * self-pair guard below reports it as what it is. The fallback cannot cause a wrong retirement:
+     * every path still ends at that guard.
+     */
+    const byKey = async (ref: { source: string; externalId: string }) => {
+      const direct = await ctx.db
+        .query('waterBodies')
+        .withIndex('by_external_id', (q) =>
+          q
+            .eq('source', ref.source as Doc<'waterBodies'>['source'])
+            .eq('externalId', ref.externalId),
+        )
+        .unique();
+      if (direct) return direct;
+      if (ref.source === 'osm') {
+        return await ctx.db
+          .query('waterBodies')
+          .withIndex('by_osm_id', (q) => q.eq('osmId', ref.externalId))
+          .first();
+      }
+      if (ref.source === 'nhd') {
+        return await ctx.db
+          .query('waterBodies')
+          .withIndex('by_nhd_id', (q) => q.eq('nhdId', ref.externalId))
+          .first();
+      }
+      if (ref.source === '3dhp') {
+        return await ctx.db
+          .query('waterBodies')
+          .withIndex('by_three_dhp_id', (q) => q.eq('threeDhpId', ref.externalId))
+          .first();
+      }
+      return null;
+    };
+
+    const skipped: Record<string, number> = {};
+    // **Named, not just counted.** The first version tallied skips and named only the retirements,
+    // which is exactly the asymmetry the drop ledger and the reject list exist to prevent: "15
+    // skipped — survivor not in the corpus" is a number nobody can work. A skip here means a
+    // duplicate row STAYS in the corpus, so it is at least as worth naming as a retirement.
+    const skippedSamples: { pair: string; why: string }[] = [];
+    const skip = (why: string, pair: string) => {
+      skipped[why] = (skipped[why] ?? 0) + 1;
+      if (skippedSamples.length < 25) skippedSamples.push({ pair, why });
+    };
+    const retired: { absorbed: string; into: string; name: string }[] = [];
+    // **One row is retired once, even when two pairs point at it.** With the catalogue-id fallback
+    // above, two different merge-group keys can resolve to the same document — `Divol Pond` arrives
+    // as both an OSM key and an NHD one. Under `--apply` the second attempt would harmlessly skip as
+    // `already merged`, but the DRY RUN would count it, and a dry run that does not predict the
+    // apply is worse than no dry run.
+    const handled = new Set<Id<'waterBodies'>>();
+
+    for (const pair of pairs) {
+      const label = `${pair.absorbed.source}:${pair.absorbed.externalId} → ${pair.survivor.source}:${pair.survivor.externalId}`;
+      const absorbed = await byKey(pair.absorbed);
+      // The steady state, not a failure: an earlier run already retired it, or it was never a row.
+      if (!absorbed) {
+        skip('absorbed row does not exist', label);
+        continue;
+      }
+      if (absorbed.dedupStatus === 'merged') {
+        skip('already merged', label);
+        continue;
+      }
+      const survivor = await byKey(pair.survivor);
+      if (!survivor) {
+        // Refuse rather than guess. Retiring a row whose survivor is missing would strand its
+        // content with nowhere to re-point it, which is the one outcome worse than a duplicate.
+        skip('survivor not in the corpus', label);
+        continue;
+      }
+      if (survivor._id === absorbed._id) {
+        skip('survivor and absorbed are the same row', label);
+        continue;
+      }
+      if (survivor.mergedIntoId !== undefined) {
+        skip('survivor is itself merged', label);
+        continue;
+      }
+      if (handled.has(absorbed._id)) {
+        skip('already retired by an earlier pair in this pass', label);
+        continue;
+      }
+      handled.add(absorbed._id);
+      retired.push({
+        absorbed: `${absorbed.source}:${absorbed.externalId}`,
+        into: `${survivor.source}:${survivor.externalId}`,
+        name: absorbed.name || '(unnamed)',
+      });
+      if (apply === true) {
+        await mergeBodyInto(ctx, {
+          survivor,
+          loser: absorbed,
+          reason:
+            `Absorbed by the merge${campaignId ? ` (${campaignId})` : ''}: one catalogue published ` +
+            `this lake twice and D136's same-source lane collapsed it into ${survivor.name || 'the survivor'}.`,
+        });
+      }
+    }
+
+    return {
+      applied: apply === true,
+      scanned: pairs.length,
+      retired: retired.length,
+      // Named rather than only counted: a retirement you cannot look up is a deletion nobody can check.
+      samples: retired.slice(0, 20),
+      skipped,
+      skippedSamples,
+    };
   },
 });
 
