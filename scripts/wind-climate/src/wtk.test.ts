@@ -1,6 +1,9 @@
+import { STRONG_WIND_MIN_MPS } from '@skating/core';
 import { describe, expect, it, vi } from 'vitest';
 import {
   accumulateCsv,
+  climateFromAccumulator,
+  emptyAccumulator,
   emptyCounts,
   fetchCellYear,
   gridKey,
@@ -11,11 +14,19 @@ import {
   wtkUrl,
 } from './wtk';
 
-/** A WTK CSV: two header lines, then Year,Month,Day,Hour,Minute,direction,speed. */
-function csv(rows: Array<[number, number]>): string {
+/**
+ * A WTK CSV: two header lines, then Year,Month,Day,Hour,Minute,direction,speed.
+ *
+ * The speed column defaults to 4.2 m/s — below `STRONG_WIND_MIN_MPS`, so a row is an ordinary hour
+ * unless a test says otherwise. It is the seventh column, `cells[6]`, which every run before N7-3
+ * fetched and never read.
+ */
+function csv(rows: Array<[number, number] | [number, number, number]>): string {
   const head =
     'SiteID,1,Site Timezone,-5,Data Timezone,0,Longitude,-72.05,Latitude,44.75\nYear,Month,Day,Hour,Minute,wind direction at 10m (deg),wind speed at 10m (m/s)';
-  const body = rows.map(([month, dir]) => `2012,${month},1,0,30,${dir},4.2`).join('\n');
+  const body = rows
+    .map(([month, dir, speed]) => `2012,${month},1,0,30,${dir},${speed ?? 4.2}`)
+    .join('\n');
   return `${head}\n${body}\n`;
 }
 
@@ -51,7 +62,7 @@ describe('wtkUrl', () => {
 
 describe('accumulateCsv', () => {
   it('counts only the winter months', () => {
-    const counts = emptyCounts();
+    const acc = emptyAccumulator();
     // Three winter hours due north, two July hours due south.
     const hours = accumulateCsv(
       csv([
@@ -61,15 +72,15 @@ describe('accumulateCsv', () => {
         [7, 180],
         [7, 180],
       ]),
-      counts,
+      acc,
     );
     expect(hours).toBe(3);
-    expect(counts[0]).toBe(3);
-    expect(counts[8]).toBe(0);
+    expect(acc.counts[0]).toBe(3);
+    expect(acc.counts[8]).toBe(0);
   });
 
   it('bins directions to the nearest of 16 sectors and wraps 350 to north', () => {
-    const counts = emptyCounts();
+    const acc = emptyAccumulator();
     accumulateCsv(
       csv([
         [1, 0],
@@ -77,23 +88,109 @@ describe('accumulateCsv', () => {
         [1, 90],
         [1, 22.5],
       ]),
-      counts,
+      acc,
     );
-    expect(counts[0]).toBe(2);
-    expect(counts[4]).toBe(1);
-    expect(counts[1]).toBe(1);
+    expect(acc.counts[0]).toBe(2);
+    expect(acc.counts[4]).toBe(1);
+    expect(acc.counts[1]).toBe(1);
   });
 
   it('skips the two header lines and any malformed row', () => {
-    const counts = emptyCounts();
-    expect(accumulateCsv(`${csv([[1, 0]])}garbage\n,,,\n`, counts)).toBe(1);
+    const acc = emptyAccumulator();
+    expect(accumulateCsv(`${csv([[1, 0]])}garbage\n,,,\n`, acc)).toBe(1);
   });
 
   it('accumulates across years into one set of counts', () => {
-    const counts = emptyCounts();
-    accumulateCsv(csv([[1, 0]]), counts);
-    accumulateCsv(csv([[1, 0]]), counts);
-    expect(counts[0]).toBe(2);
+    const acc = emptyAccumulator();
+    accumulateCsv(csv([[1, 0]]), acc);
+    accumulateCsv(csv([[1, 0]]), acc);
+    expect(acc.counts[0]).toBe(2);
+    expect(acc.sampledHours).toBe(2);
+  });
+});
+
+describe('the speed column, which every run before N7-3 discarded', () => {
+  it('counts an hour at or above the threshold as strong, in its own sector', () => {
+    const acc = emptyAccumulator();
+    accumulateCsv(
+      csv([
+        [1, 0, 12],
+        [1, 0, 4],
+        [1, 90, 20],
+      ]),
+      acc,
+    );
+    expect(acc.counts[0]).toBe(2); // both north hours are in the rose
+    expect(acc.strongHours[0]).toBe(1); // only the 12 m/s one is strong
+    expect(acc.strongHours[4]).toBe(1);
+    expect(acc.sampledHours).toBe(3);
+  });
+
+  it('treats the threshold as inclusive', () => {
+    const acc = emptyAccumulator(10);
+    accumulateCsv(csv([[1, 0, 10]]), acc);
+    expect(acc.strongHours[0]).toBe(1);
+  });
+
+  it('re-derives at a different bar with no re-fetch — the point of the archive', () => {
+    const rows: Array<[number, number, number]> = [
+      [1, 0, 5],
+      [1, 0, 9],
+      [1, 0, 15],
+    ];
+    const lenient = emptyAccumulator(4);
+    const strict = emptyAccumulator(12);
+    accumulateCsv(csv(rows), lenient);
+    accumulateCsv(csv(rows), strict);
+    expect(lenient.strongHours[0]).toBe(3);
+    expect(strict.strongHours[0]).toBe(1);
+    // The rose is identical either way: the threshold is a speed question, not a direction one.
+    expect(lenient.counts).toEqual(strict.counts);
+  });
+
+  it('keeps an hour in the rose when its SPEED is unreadable', () => {
+    // Direction and speed are separate claims. Dropping the hour entirely would bias the rose
+    // toward whatever conditions happen to produce a clean speed field.
+    const acc = emptyAccumulator();
+    const broken = csv([[1, 0]]).replace(',4.2', ',');
+    expect(accumulateCsv(broken, acc)).toBe(1);
+    expect(acc.counts[0]).toBe(1);
+    expect(acc.strongHours[0]).toBe(0);
+  });
+
+  it('carries the threshold it was accumulated at, so a row is self-describing', () => {
+    expect(emptyAccumulator().strongMinMps).toBe(STRONG_WIND_MIN_MPS);
+    expect(climateFromAccumulator(emptyAccumulator(11)).strongWindMinMps).toBe(11);
+  });
+});
+
+describe('climateFromAccumulator', () => {
+  it('suppresses a thin rose but still reports the strong-hour counts', () => {
+    // The asymmetry that makes the two fields independent: a rose renders as a percentage and a
+    // percentage of 3 hours reads identically to one of 14,000. A count carries its own denominator.
+    const acc = emptyAccumulator();
+    accumulateCsv(csv([[1, 0, 20]]), acc);
+    const climate = climateFromAccumulator(acc);
+    expect(climate.rose).toBeNull();
+    expect(climate.strongWindHours[0]).toBe(1);
+    expect(climate.sampledWindHours).toBe(1);
+  });
+
+  it('emits a rose once the sample clears MIN_ROSE_HOURS', () => {
+    const acc = emptyAccumulator();
+    acc.counts[0] = MIN_ROSE_HOURS;
+    acc.sampledHours = MIN_ROSE_HOURS;
+    const climate = climateFromAccumulator(acc);
+    expect(climate.rose?.[0]).toBe(1);
+  });
+
+  it('copies the counts rather than aliasing the accumulator', () => {
+    // A stored array that keeps mutating with the accumulator behind it is the kind of bug that
+    // only shows up once a second year is read.
+    const acc = emptyAccumulator();
+    const climate = climateFromAccumulator(acc);
+    acc.strongHours[0] = 99;
+    expect(climate.strongWindHours[0]).toBe(0);
   });
 });
 

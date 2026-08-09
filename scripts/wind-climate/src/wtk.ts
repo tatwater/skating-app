@@ -21,7 +21,12 @@
  *    and a rose is a property of the cell, not of the lake.
  */
 
-import { normalizeRose, WIND_ROSE_MONTHS, WIND_ROSE_SECTORS } from '@skating/core';
+import {
+  normalizeRose,
+  STRONG_WIND_MIN_MPS,
+  WIND_ROSE_MONTHS,
+  WIND_ROSE_SECTORS,
+} from '@skating/core';
 
 /** Where the API lives. The host moved from `developer.nrel.gov`, which no longer resolves at all. */
 export const WTK_BASE = 'https://developer.nlr.gov/api/wind-toolkit/v2/wind/wtk-download.csv';
@@ -81,6 +86,33 @@ export function emptyCounts(): SectorCounts {
 }
 
 /**
+ * Everything one cell's winters accumulate into — **direction and speed, not just direction**.
+ *
+ * `counts` was the whole accumulator until N7-3, and `cells[6]` was fetched on every request and
+ * never read. That is what turned "could we also derive strong-wind hours?" into a 7.7-hour
+ * re-fetch, and it is the reason this package now archives responses. See `archive.ts`.
+ */
+export interface WindAccumulator {
+  /** Winter hours per sector, whatever the speed — the rose. */
+  counts: SectorCounts;
+  /** Winter hours per sector **at or above the strong threshold** — the wind-hole signal. */
+  strongHours: SectorCounts;
+  /** Every winter hour accepted, the honest denominator for both. */
+  sampledHours: number;
+  /** The m/s bar `strongHours` was taken at, carried so a stored row is self-describing. */
+  strongMinMps: number;
+}
+
+export function emptyAccumulator(strongMinMps: number = STRONG_WIND_MIN_MPS): WindAccumulator {
+  return {
+    counts: emptyCounts(),
+    strongHours: emptyCounts(),
+    sampledHours: 0,
+    strongMinMps,
+  };
+}
+
+/**
  * Accumulate one year's CSV into per-sector winter-hour counts.
  *
  * The WTK CSV carries **two header lines** — a site-metadata row then the column names — before
@@ -92,7 +124,7 @@ export function emptyCounts(): SectorCounts {
  * Returns the number of hours accepted so a caller can tell "no winter data" from "parsed nothing",
  * which otherwise look identical downstream.
  */
-export function accumulateCsv(csv: string, into: SectorCounts): number {
+export function accumulateCsv(csv: string, into: WindAccumulator): number {
   let accepted = 0;
   const lines = csv.split('\n');
   for (let i = 2; i < lines.length; i++) {
@@ -102,11 +134,20 @@ export function accumulateCsv(csv: string, into: SectorCounts): number {
     if (cells.length < 7) continue;
     const month = Number(cells[1]);
     const direction = Number(cells[5]);
+    // **`cells[6]`, which every previous run fetched and ignored.**
+    const speed = Number(cells[6]);
     if (!Number.isFinite(month) || !Number.isFinite(direction)) continue;
     if (!(WIND_ROSE_MONTHS as readonly number[]).includes(month)) continue;
     const sector = Math.round((((direction % 360) + 360) % 360) / (360 / WIND_ROSE_SECTORS));
     const index = sector % WIND_ROSE_SECTORS;
-    into[index] = (into[index] ?? 0) + 1;
+    into.counts[index] = (into.counts[index] ?? 0) + 1;
+    // A row with a readable direction and an unreadable speed still counts toward the rose — the
+    // two are separate claims, and dropping the hour entirely would silently bias the rose toward
+    // whatever conditions happen to produce a clean speed field.
+    if (Number.isFinite(speed) && speed >= into.strongMinMps) {
+      into.strongHours[index] = (into.strongHours[index] ?? 0) + 1;
+    }
+    into.sampledHours++;
     accepted++;
   }
   return accepted;
@@ -126,6 +167,32 @@ export const MIN_ROSE_HOURS = 4000;
 export function roseFromCounts(counts: SectorCounts, hours: number): number[] | null {
   if (hours < MIN_ROSE_HOURS) return null;
   return normalizeRose(counts);
+}
+
+/** What one cell contributes to every body in it. `null` where the sample is too thin for a rose. */
+export interface CellClimate {
+  rose: number[] | null;
+  strongWindHours: number[];
+  sampledWindHours: number;
+  strongWindMinMps: number;
+}
+
+/**
+ * An accumulator → what gets stored.
+ *
+ * **The rose can be `null` while the strong-hour counts are still real**, and that asymmetry is
+ * deliberate. A rose is rendered as a percentage, so a thin sample is actively misleading —
+ * `MIN_ROSE_HOURS` exists for that. Strong-hour counts are absolute and carry their own denominator,
+ * so a thin sample is merely a small number honestly reported. Suppressing both on one threshold
+ * would discard usable data to protect against a failure mode only one of them has.
+ */
+export function climateFromAccumulator(acc: WindAccumulator): CellClimate {
+  return {
+    rose: roseFromCounts(acc.counts, acc.sampledHours),
+    strongWindHours: [...acc.strongHours],
+    sampledWindHours: acc.sampledHours,
+    strongWindMinMps: acc.strongMinMps,
+  };
 }
 
 export function sleep(ms: number): Promise<void> {
