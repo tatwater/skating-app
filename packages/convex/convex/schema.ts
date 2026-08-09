@@ -1106,6 +1106,40 @@ export default defineSchema({
     // bucket passes.
     .index('by_forecast_bucket', ['forecastBucketMs']),
 
+  /**
+   * Cached NWS active alerts (N6c B5, D74) — the advisory layer, kept strictly apart from the
+   * physics source.
+   *
+   * **One row per (state, alert), refreshed by a cron that polls five states.** Alerts are issued
+   * over zones and counties, so state-level polling serves every body in the state and the read cost
+   * is independent of corpus size. A body spanning two states legitimately matches rows under both,
+   * which is why the alert's own `states` array is stored alongside the row's single `state`: the
+   * former is what the core matcher reads, the latter is what a per-state replace keys on.
+   *
+   * Nothing on this table ever reaches a calculation. It is text, a severity string and a set of
+   * zone ids.
+   */
+  weatherAlerts: defineTable({
+    state: v.string(), // the state this row was polled under — the replace key
+    alertId: v.string(), // NWS `properties.id`
+    event: v.string(), // "Winter Storm Warning"
+    headline: v.optional(v.string()),
+    severity: v.string(), // NWS's own vocabulary, deliberately unmapped
+    areaDesc: v.optional(v.string()),
+    onsetMs: v.optional(v.number()),
+    endsMs: v.optional(v.number()),
+    // Forecast-zone AND county ids, both spaces in one array — rung 1 of the match ladder, unused
+    // until a body carries `nwsZoneIds`. Stored now so the zone import has somewhere to land.
+    zones: v.array(v.string()),
+    states: v.array(v.string()),
+    fetchedAt: v.number(),
+  })
+    .index('by_state', ['state'])
+    .index('by_alert_id', ['alertId'])
+    // Staleness sweep. A range read on `fetchedAt` is safe here — unlike the optional-field indexes
+    // on `waterBodies`, this column is required, so there is no `undefined` band sorting first.
+    .index('by_fetched_at', ['fetchedAt']),
+
   reports: defineTable({
     authorId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),

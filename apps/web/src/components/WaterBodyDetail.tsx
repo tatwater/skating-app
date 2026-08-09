@@ -14,6 +14,7 @@ import {
 import { Link } from '@tanstack/react-router';
 import { usePaginatedQuery, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
+import { AlertStrip } from './AlertStrip';
 import { WaterBodyModeratorControls } from './admin/WaterBodyModeratorControls';
 import { BountyForm } from './BountyForm';
 import { BountyList } from './BountyList';
@@ -179,6 +180,9 @@ export function WaterBodyDetail({
           <DirectionsButton waterBodyId={result.body._id} />
         </div>
         {leaving ? <LeavingNotice /> : null}
+        {/* Official NWS alerts (N6c/B5) first — a warning from the local forecast office outranks
+            both our observations and anybody's forecast, so it sits above both strips. */}
+        <AlertStrip waterBodyId={result.body._id} />
         {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline, and the
             half that answers "should I bother driving". Above the season filter so it sits with the
             body's current state rather than inside its history. */}

@@ -131,4 +131,12 @@ crons.interval(
   {},
 );
 
+/**
+ * NWS active alerts (N6c B5). Fifteen minutes because a winter storm warning is issued on that kind
+ * of timescale and a skater deciding at 7am should not be reading 6am's picture — and because five
+ * requests a quarter-hour is nothing to an unauthenticated public API that asks only for a
+ * `User-Agent`. The sweep that retires a silent state's rows rides the same tick.
+ */
+crons.interval('refresh nws alerts', { minutes: 15 }, internal.weatherAlerts.refreshAlerts, {});
+
 export default crons;
