@@ -17,6 +17,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation, type QueryCtx, query } from './_generated/server';
 import { requireContributorRole, requireRole } from './lib/auth';
+import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount, visibleDelta } from './lib/contributionCounts';
 import { MODERATION_ACTIONS, MODERATION_STATUSES, MODERATION_TARGET_TYPES } from './lib/enums';
 import { bumpMetricMetaCounter } from './lib/metrics';
@@ -71,6 +72,14 @@ export const setModerationStatus = mutation({
         args.targetType === 'report' ? 'reportCount' : 'commentCount',
         visibleDelta(priorStatus, args.status),
       );
+    }
+
+    // A hidden report or hazard must leave the map card too (N6c/E) — otherwise moderating content
+    // away would still leave its count on the map, which is the one surface where a stale number
+    // reads as a live condition.
+    if (args.targetType === 'report' || args.targetType === 'hazard') {
+      const onBody = target as Doc<'reports'> | Doc<'hazards'>;
+      await recomputeBodySummary(ctx, onBody.waterBodyId);
     }
 
     await ctx.db.insert('moderationActions', {

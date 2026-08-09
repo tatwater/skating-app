@@ -408,3 +408,105 @@ export function boundsForBody(
     [bbox.maxLng + lngPad, bbox.maxLat + latPad],
   ];
 }
+
+/**
+ * Per-body summary cards (N6c Workstream E).
+ *
+ * **A MapLibre `symbol` layer, not HTML overlays.** Symbol layers keep the cards inside the style,
+ * so they scale to a viewport full of bodies, and — the load-bearing reason — MapLibre's own collision
+ * detection hides a card that would overlap another rather than stacking illegible text. An overlay
+ * would need that written by hand. The cost is that a card is text and an icon, so the D86 mark is
+ * drawn with filled and hollow dot characters rather than styled elements; if that turns out to be
+ * too little, the escape hatch is HTML overlays for the *selected* body only.
+ */
+export const SUMMARY_CARD_PALETTE = {
+  white: { label: '#12303f', halo: '#ffffff' },
+  dark: { label: '#e6f2f8', halo: '#0b1622' },
+} as const;
+
+/** The minimal shape a card needs. Structural, so a `Doc<'waterBodies'>` satisfies it. */
+export interface MappableSummaryBody {
+  _id: string;
+  name?: string;
+  minVisibleZoom?: number;
+  representativePoint?: { lat: number; lng: number };
+  interiorPoint?: { lat: number; lng: number };
+  centroid: { lat: number; lng: number };
+  summary?: {
+    recentReportCount: number;
+    topHazardTypes: string[];
+    qualityDots?: number;
+    qualityCount?: number;
+  };
+}
+
+/** Filled/hollow dots for the D86 mark, e.g. 3 of 4 → "●●●○". */
+export function qualityDotString(dots: number, total = 4): string {
+  return '●'.repeat(Math.max(0, dots)) + '○'.repeat(Math.max(0, total - dots));
+}
+
+/**
+ * The card's text block, or `null` when there is nothing to say (E3).
+ *
+ * Two or three short lines: the title, the activity, and the hazards. Kept this terse because a card
+ * is read at a glance from a moving map — anything longer and MapLibre's collision detection starts
+ * hiding cards that would otherwise fit.
+ */
+export function summaryCardText(body: MappableSummaryBody): string | null {
+  const summary = body.summary;
+  if (!summary) return null;
+  if (summary.recentReportCount === 0 && summary.topHazardTypes.length === 0) return null;
+
+  const lines: string[] = [];
+  // A name is not a reason to draw a card, but it is always on one when there is a card.
+  if (body.name) lines.push(body.name);
+
+  const activity: string[] = [];
+  if (summary.recentReportCount > 0) {
+    activity.push(
+      `${summary.recentReportCount} report${summary.recentReportCount === 1 ? '' : 's'}`,
+    );
+  }
+  // The mark renders only above quorum — `qualityDots` is absent below it, never zero (D86).
+  if (summary.qualityDots !== undefined) activity.push(qualityDotString(summary.qualityDots));
+  if (activity.length > 0) lines.push(activity.join('  '));
+
+  if (summary.topHazardTypes.length > 0) {
+    lines.push(summary.topHazardTypes.map((type) => type.replaceAll('_', ' ')).join(', '));
+  }
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+/**
+ * Summary cards → the `summary-cards` source: one point feature per body that has something to say.
+ *
+ * Placed at the body's **interior point**, not its `centroid` — `centroid` is Turf `pointOnFeature`
+ * and lands on the shoreline for any curved lake, which would hang the card off the edge of the
+ * water it describes (the same measurement that moved the fetch profile and the reference links).
+ *
+ * `minVisibleZoom` rides along as a property so the layer can filter on it: E4 requires that a card
+ * never reintroduce a body the prominence scoring suppressed at this zoom. `listInViewport` already
+ * applies that filter server-side, so this is a second belt on the same trousers — cheap, and the
+ * failure it prevents (a quiet lake acquiring prominence by having been skated once) is exactly the
+ * kind that would be reported as "the map is broken" rather than diagnosed.
+ */
+export function summaryCardsToFeatureCollection(
+  bodies: readonly MappableSummaryBody[],
+): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = [];
+  for (const body of bodies) {
+    const text = summaryCardText(body);
+    if (text === null) continue;
+    const point = body.interiorPoint ?? body.representativePoint ?? body.centroid;
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [point.lng, point.lat] },
+      properties: {
+        _id: body._id,
+        text,
+        minVisibleZoom: body.minVisibleZoom ?? 0,
+      },
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}

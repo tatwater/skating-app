@@ -68,6 +68,7 @@ import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
+  internalAction,
   internalMutation,
   internalQuery,
   type MutationCtx,
@@ -82,6 +83,7 @@ import {
   requireProfile,
   requireRole,
 } from './lib/auth';
+import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import {
@@ -5587,5 +5589,62 @@ export const setIncludedByRequest = internalMutation({
       createdAt: Date.now(),
     });
     return { waterBodyId: key, name: body.name, includedByRequest: included };
+  },
+});
+
+/**
+ * Sweep stale map summaries (N6c Workstream E).
+ *
+ * **The counts decay with no write to hang the decay on.** Every other path that touches
+ * `summary` is an event — a report created, a hazard archived, a moderator hiding something — but a
+ * report simply *ageing out* of the 14-day window is not an event anywhere in the system. Without
+ * this tick, a lake that was busy in January still shows January's card in March, which is the exact
+ * failure mode E4 named: a card carrying last season's numbers into a month when the lake is open
+ * water.
+ *
+ * Walks only bodies that **have** a summary, which is the small minority — the whole point of E3 is
+ * that most of the corpus carries none — so this is cheap despite running over the corpus. It pages,
+ * because "the small minority" is a claim about today and not a guarantee.
+ */
+export const sweepBodySummaries = internalMutation({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    let swept = 0;
+    for (const body of page.page) {
+      if (!body.summary) continue; // no card, nothing to decay
+      await recomputeBodySummary(ctx, body._id);
+      swept++;
+    }
+    return { cursor: page.continueCursor, isDone: page.isDone, swept, scanned: page.page.length };
+  },
+});
+
+/**
+ * The cron entry point: sweep every page of summaries in one go.
+ *
+ * An action rather than a mutation because it pages, and Convex allows exactly one paginated query
+ * per function — the same constraint `regionStats:recompute` works around the same way.
+ */
+export const sweepAllBodySummaries = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ swept: number; pages: number }> => {
+    let cursor: string | undefined;
+    let isDone = false;
+    let swept = 0;
+    let pages = 0;
+    while (!isDone && pages < 500) {
+      const page: { cursor: string; isDone: boolean; swept: number } = await ctx.runMutation(
+        internal.waterBodies.sweepBodySummaries,
+        cursor === undefined ? {} : { cursor },
+      );
+      cursor = page.cursor;
+      isDone = page.isDone;
+      swept += page.swept;
+      pages++;
+    }
+    return { swept, pages };
   },
 });

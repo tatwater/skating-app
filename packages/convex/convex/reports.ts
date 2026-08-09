@@ -73,6 +73,7 @@ import {
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
+import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount } from './lib/contributionCounts';
 import { tryAutoMerge } from './lib/hazardMerge';
 import { isListed } from './lib/listing';
@@ -320,6 +321,11 @@ export const create = mutation({
     // Bump the author's denormalized report counter (born visible) so the profile shows a true total
     // without scanning their history (D13). Moderation transitions adjust it symmetrically.
     await bumpContributionCount(ctx, profile._id, 'reportCount', 1);
+
+    // And the body's map summary card (N6c/E). Recomputed rather than incremented — see
+    // `lib/bodySummary.ts`: the count is window- and season-scoped, so a ±1 would drift the moment a
+    // report aged out, and the D86 quality mean cannot be maintained incrementally at all.
+    await recomputeBodySummary(ctx, args.waterBodyId);
 
     // Reputation (D50): per-report author awards + retroactive corroboration (both authors, capped),
     // then a single badge recompute per affected author. Read the inserted doc once (photoIds /

@@ -37,6 +37,7 @@ import type * as lib_auth from "../lib/auth.js";
 import type * as lib_authorView from "../lib/authorView.js";
 import type * as lib_autoFlag from "../lib/autoFlag.js";
 import type * as lib_bodies from "../lib/bodies.js";
+import type * as lib_bodySummary from "../lib/bodySummary.js";
 import type * as lib_cellIndex from "../lib/cellIndex.js";
 import type * as lib_cellScan from "../lib/cellScan.js";
 import type * as lib_contentPurge from "../lib/contentPurge.js";
@@ -108,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   "lib/authorView": typeof lib_authorView;
   "lib/autoFlag": typeof lib_autoFlag;
   "lib/bodies": typeof lib_bodies;
+  "lib/bodySummary": typeof lib_bodySummary;
   "lib/cellIndex": typeof lib_cellIndex;
   "lib/cellScan": typeof lib_cellScan;
   "lib/contentPurge": typeof lib_contentPurge;

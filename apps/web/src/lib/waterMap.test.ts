@@ -13,7 +13,10 @@ import {
   NORTHEAST_REGION_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
+  qualityDotString,
   subAreasToFeatureCollection,
+  summaryCardsToFeatureCollection,
+  summaryCardText,
   waterBodiesToFeatureCollection,
   zoomForViewport,
 } from './waterMap';
@@ -378,5 +381,104 @@ describe('subAreasToFeatureCollection', () => {
 
   it('is empty for no sub-areas — the case for all but a handful of lakes', () => {
     expect(subAreasToFeatureCollection([]).features).toEqual([]);
+  });
+});
+
+describe('summary cards (N6c/E)', () => {
+  const base = {
+    _id: 'body1',
+    name: 'Beaver Pond',
+    centroid: { lat: 44.2757, lng: -73.3894 }, // a shoreline point, as `centroid` really is
+    interiorPoint: { lat: 44.5325, lng: -73.3251 },
+  };
+
+  it('draws no card for a body with no summary', () => {
+    expect(summaryCardText({ ...base })).toBeNull();
+    expect(summaryCardsToFeatureCollection([{ ...base }]).features).toHaveLength(0);
+  });
+
+  /** E3: no activity ⇒ no card at all, not an empty one. */
+  it('draws no card for a body with a summary but no activity', () => {
+    expect(
+      summaryCardText({ ...base, summary: { recentReportCount: 0, topHazardTypes: [] } }),
+    ).toBeNull();
+  });
+
+  it('draws a card for recent reports', () => {
+    const text = summaryCardText({
+      ...base,
+      summary: { recentReportCount: 3, topHazardTypes: [] },
+    });
+    expect(text).toContain('Beaver Pond');
+    expect(text).toContain('3 reports');
+  });
+
+  it('draws a card for hazards alone, and humanizes the type', () => {
+    const text = summaryCardText({
+      ...base,
+      summary: { recentReportCount: 0, topHazardTypes: ['open_water', 'thin_ice'] },
+    });
+    expect(text).toContain('open water, thin ice');
+  });
+
+  it('draws a card on an unnamed body, because "someone skated here" is the point', () => {
+    const text = summaryCardText({
+      ...base,
+      name: undefined,
+      summary: { recentReportCount: 1, topHazardTypes: [] },
+    });
+    expect(text).toBe('1 report');
+  });
+
+  it('renders the D86 mark as dots, and only above quorum', () => {
+    const withMark = summaryCardText({
+      ...base,
+      summary: { recentReportCount: 5, topHazardTypes: [], qualityDots: 3, qualityCount: 5 },
+    });
+    expect(withMark).toContain('●●●○');
+
+    const belowQuorum = summaryCardText({
+      ...base,
+      summary: { recentReportCount: 2, topHazardTypes: [] },
+    });
+    expect(belowQuorum).not.toContain('●');
+    expect(belowQuorum).not.toContain('○');
+  });
+
+  /**
+   * The same measurement that moved the fetch profile and the reference links: `centroid` is a
+   * shoreline point, so a card placed there hangs off the edge of the water it describes.
+   */
+  it('places the card at the interior point, never the shoreline centroid', () => {
+    const [feature] = summaryCardsToFeatureCollection([
+      { ...base, summary: { recentReportCount: 1, topHazardTypes: [] } },
+    ]).features;
+    expect((feature?.geometry as GeoJSON.Point).coordinates).toEqual([-73.3251, 44.5325]);
+  });
+
+  it('falls back to the centroid when no interior point exists', () => {
+    const [feature] = summaryCardsToFeatureCollection([
+      {
+        ...base,
+        interiorPoint: undefined,
+        summary: { recentReportCount: 1, topHazardTypes: [] },
+      },
+    ]).features;
+    expect((feature?.geometry as GeoJSON.Point).coordinates).toEqual([-73.3894, 44.2757]);
+  });
+
+  it('carries minVisibleZoom so the layer cannot reintroduce a suppressed body (E4)', () => {
+    const [feature] = summaryCardsToFeatureCollection([
+      { ...base, minVisibleZoom: 12, summary: { recentReportCount: 1, topHazardTypes: [] } },
+    ]).features;
+    expect(feature?.properties?.minVisibleZoom).toBe(12);
+  });
+});
+
+describe('qualityDotString', () => {
+  it('fills left to right', () => {
+    expect(qualityDotString(0)).toBe('○○○○');
+    expect(qualityDotString(2)).toBe('●●○○');
+    expect(qualityDotString(4)).toBe('●●●●');
   });
 });

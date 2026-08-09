@@ -6,6 +6,7 @@ export * from './block';
 export * from './bodyCompare';
 export * from './bodyIdentity';
 export * from './bodyProbe';
+export * from './bodySummary';
 export * from './bounties';
 export * from './coalesce';
 export * from './comment';

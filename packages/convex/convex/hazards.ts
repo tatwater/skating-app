@@ -56,6 +56,7 @@ import {
   requireProfile,
 } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
+import { recomputeBodySummary } from './lib/bodySummary';
 import { resolveHazardSurvivor, tryAutoMerge, unmergeHazard } from './lib/hazardMerge';
 import { HAZARD_GEOMETRY_KINDS, HAZARD_TYPES_VALIDATOR } from './lib/hazardValidators';
 import { isListed } from './lib/listing';
@@ -275,6 +276,9 @@ export const create = mutation({
     // **survivor**, so a client that navigates to what it just created lands on the live pin rather
     // than on a tombstone.
     const { survivorId } = await tryAutoMerge(ctx, hazardId);
+    // The map card learns about the new pin (N6c/E). After the auto-merge, not before: a hazard that
+    // was just folded into an existing one must not make the card claim two.
+    await recomputeBodySummary(ctx, args.waterBodyId);
     return survivorId;
   },
 });

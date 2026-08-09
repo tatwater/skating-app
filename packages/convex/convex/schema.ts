@@ -812,6 +812,37 @@ export default defineSchema({
      * only, and it does not name this one — the same way `curatedBoost` survives.
      */
     referenceLinks: v.optional(v.array(v.object({ label: v.string(), url: v.string() }))),
+    /**
+     * The map summary card's denormalized counts (N6c Workstream E).
+     *
+     * **Denormalized on write, not aggregated on read.** N1 changed the argument for this rather
+     * than against it: a viewport read is now bounded (the ladder grid replaced the geospatial
+     * component), so aggregating per read is no longer a crash risk — just a cost proportional to
+     * bodies × reports on every map pan. The denormalized shape still wins, and now it wins on cost
+     * rather than on survival.
+     *
+     * **Absent means no card, and that is the whole of E3.** A body with no recent activity carries
+     * no summary and draws nothing — not an empty card. That retires the old "wait for report
+     * density" deferral by design rather than by waiting: the feature is correct at any density,
+     * showing up only on the lakes people are actually using.
+     *
+     * Window- and season-scoped, so `lib/bodySummary.ts` recomputes rather than increments — a
+     * report ageing out of the window has no write to hang a decrement on, and the D86 mean cannot
+     * be maintained incrementally at all.
+     */
+    summary: v.optional(
+      v.object({
+        recentReportCount: v.number(),
+        topHazardTypes: v.array(v.string()),
+        latestReportAt: v.optional(v.number()),
+        // Filled dots out of 4 (D86). Absent below the 3-report quorum — deliberately NOT zero,
+        // because one person's opinion rendered as a consensus mark is this feature's worst
+        // failure mode and it fails silently.
+        qualityDots: v.optional(v.number()),
+        qualityCount: v.optional(v.number()),
+        updatedAt: v.number(),
+      }),
+    ),
     createdByUserId: v.optional(v.id('profiles')), // when source == user
     reviewStatus: v.optional(literals(REVIEW_STATUSES)), // source==user only (D37)
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)

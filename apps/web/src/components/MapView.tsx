@@ -60,7 +60,9 @@ import {
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
   SUB_AREA_PALETTE,
+  SUMMARY_CARD_PALETTE,
   subAreasToFeatureCollection,
+  summaryCardsToFeatureCollection,
   TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
@@ -144,6 +146,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const water = WATER_PALETTE[flavor];
   const subAreaPalette = SUB_AREA_PALETTE[flavor];
+  const summaryCardPalette = SUMMARY_CARD_PALETTE[flavor];
   const hazardPalette = HAZARD_PALETTE[flavor];
   const trackColor = TRACK_PALETTE[flavor];
   const contourPalette = CONTOUR_PALETTE[flavor];
@@ -208,6 +211,14 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const [features, setFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
   useEffect(() => {
     if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
+  }, [bodies]);
+
+  // Per-body summary cards (N6c/E). **No extra query** — the cards are derived from the same
+  // `listInViewport` rows the water source already has, because `summary` is denormalized onto the
+  // body. That is the whole argument for denormalizing it: a card costs no read at all.
+  const [summaryFeatures, setSummaryFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
+  useEffect(() => {
+    if (bodies !== undefined) setSummaryFeatures(summaryCardsToFeatureCollection(bodies));
   }, [bodies]);
 
   // Named sub-areas in view (N2/D60) — a second layer on its own ladder-grid query.
@@ -400,6 +411,37 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'text-halo-width': 1.2,
         },
       });
+      // Per-body summary cards (N6c/E). Added HERE — after the bay labels and before the hazard,
+      // put-in and bounty pins — so it inherits the same collision posture the bay label documents:
+      // a card may not displace a marker a skater needs to see, and if it doesn't fit it doesn't
+      // draw. `text-optional` plus `text-allow-overlap: false` is what makes that true.
+      map.addSource('summary-cards', { type: 'geojson', data: EMPTY_FEATURES });
+      map.addLayer({
+        id: 'summary-card',
+        type: 'symbol',
+        source: 'summary-cards',
+        // E4: a card must never reintroduce a body the prominence scoring suppressed at this zoom.
+        // `listInViewport` already filters on `minVisibleZoom` server-side; this is the same rule
+        // restated where the drawing happens, because the failure it prevents would be read as
+        // "the map is broken" rather than diagnosed as a prominence leak.
+        filter: ['<=', ['get', 'minVisibleZoom'], ['zoom']],
+        layout: {
+          'text-field': ['get', 'text'],
+          'text-size': 11,
+          'text-font': ['Noto Sans Regular'],
+          'text-line-height': 1.2,
+          'text-anchor': 'top',
+          'text-offset': [0, 0.6],
+          'text-allow-overlap': false,
+          'text-optional': true,
+        },
+        paint: {
+          'text-color': summaryCardPalette.label,
+          'text-halo-color': summaryCardPalette.halo,
+          'text-halo-width': 1.4,
+        },
+      });
+
       map.addSource('photo-pins', { type: 'geojson', data: EMPTY_FEATURES });
       map.addLayer({
         id: 'photo-pins',
@@ -647,6 +689,16 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     (map.getSource('sub-areas') as maplibregl.GeoJSONSource | undefined)?.setData(subAreaFeatures);
   }, [subAreaFeatures, loaded, mapRef.current]);
+
+  // Push the summary cards. Its own source for the same reason the bays have one: a pan that changes
+  // which lakes have news should not redraw the water fill.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    (map.getSource('summary-cards') as maplibregl.GeoJSONSource | undefined)?.setData(
+      summaryFeatures,
+    );
+  }, [summaryFeatures, loaded, mapRef.current]);
 
   // Re-apply the highlight when the selected body changes (deep-link or navigating between lakes).
   // biome-ignore lint/correctness/useExhaustiveDependencies: applyHighlight reads refs; re-run on selection.
