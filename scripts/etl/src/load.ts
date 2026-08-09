@@ -36,6 +36,7 @@ import {
   convexRun,
   type ExtractManifest,
   extractStage,
+  failureReason,
   RunLogger,
   type RunStage,
   resolveDeployment,
@@ -401,16 +402,21 @@ function main(): void {
       bodiesInFailedBatches += batch.length;
       consecutiveFailures++;
       const message = err instanceof Error ? err.message : String(err);
+      // **The reason has to fit in a run row.** `execSync` throws with the whole command line, and
+      // for this loader that is 150 bodies of GeoJSON — nineteen failures took the row to 1.65 MiB
+      // on 2026-08-08 and `importRuns:progress` threw `Value is too large`, losing the record of
+      // the very failures it was recording. See `failureReason`.
+      const recorded = failureReason(message);
       // Name the batch by its first body, so "which lakes did it decline" has an answer that
       // survives the run — a bare batch index is meaningless once the scratch files are gone.
       const firstId = firstExternalId(batch);
       logger.fail({
         stage: 'load',
         key: `batch ${index + 1}/${batches.length} (from ${firstId ?? 'unknown'}, ${batch.length} bodies)`,
-        reason: message,
+        reason: recorded,
       });
       process.stderr.write(
-        `[etl] batch ${index + 1}/${batches.length} FAILED (${consecutiveFailures} in a row): ${message}\n`,
+        `[etl] batch ${index + 1}/${batches.length} FAILED (${consecutiveFailures} in a row): ${recorded}\n`,
       );
       if (consecutiveFailures >= MAX_CONSECUTIVE_BATCH_FAILURES) {
         aborted = err instanceof Error ? err : new Error(message);
