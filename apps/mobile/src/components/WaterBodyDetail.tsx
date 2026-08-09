@@ -17,13 +17,17 @@ import { useEffect, useState } from 'react';
 import { Button, H4, Paragraph, Spinner, Text, XStack, YStack } from 'tamagui';
 import { cacheBody } from '../lib/bodyCache';
 import { cacheReports } from '../lib/reportCache';
+import { AlertStrip } from './AlertStrip';
 import { BountyForm } from './BountyForm';
 import { BountyList } from './BountyList';
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
 import { DirectionsButton, FavoriteButton } from './FavoriteButton';
+import { ForecastStrip } from './ForecastStrip';
 import { IceHistory } from './IceHistory';
+
 import { LeavingNotice, useIsLeaving } from './LeavingNotice';
 import { useMapSelection } from './MapSelectionContext';
+import { ReferenceLinks } from './ReferenceLinks';
 import { ReportForm } from './ReportForm';
 import { SeasonEmptyState, SeasonFilter } from './SeasonFilter';
 
@@ -204,6 +208,11 @@ export function WaterBodyDetail({
               </Button>
             </>
           )}
+          {/* Official NWS alerts (N6c/B5) above everything — a warning from the local forecast
+              office outranks both our observations and anybody's forecast. */}
+          <AlertStrip waterBodyId={result.body._id} />
+          {/* The forward forecast (N6c/B5b) — the other half of the weather-since timeline. */}
+          <ForecastStrip waterBodyId={result.body._id} />
           <SeasonFilter waterBodyId={result.body._id} />
           <BountyList waterBodyId={result.body._id} />
           {/* The lake page and nowhere else (§9.1) — not the map, the feed, notifications or the
@@ -214,6 +223,9 @@ export function WaterBodyDetail({
             waterBodyId={result.body._id}
             {...(focusSubArea ? { initialSubAreaId: focusSubArea._id } : {})}
           />
+          {/* Reference links (N6c/B), below our own content and above the credits. Every one opens
+              in-app via `openBrowserAsync` (D76), never by ejecting the skater into Safari. */}
+          <ReferenceLinks body={result.body} />
           {/* The bathymetry credit (N6b §5), last in the sheet and absent on the great majority of
               lakes no agency ever surveyed. "How far away can we put it" resolved to *here*, and
               that is not a compromise: nothing requires a contour credit on the map surface, and
