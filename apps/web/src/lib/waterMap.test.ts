@@ -453,7 +453,10 @@ describe('summary cards (N6c/E)', () => {
     const [feature] = summaryCardsToFeatureCollection([
       { ...base, summary: { recentReportCount: 1, topHazardTypes: [] } },
     ]).features;
-    expect((feature?.geometry as GeoJSON.Point).coordinates).toEqual([-73.3251, 44.5325]);
+    expect(feature).toBeDefined();
+    expect((feature?.geometry as GeoJSON.Point | undefined)?.coordinates).toEqual([
+      -73.3251, 44.5325,
+    ]);
   });
 
   it('falls back to the centroid when no interior point exists', () => {
@@ -464,7 +467,10 @@ describe('summary cards (N6c/E)', () => {
         summary: { recentReportCount: 1, topHazardTypes: [] },
       },
     ]).features;
-    expect((feature?.geometry as GeoJSON.Point).coordinates).toEqual([-73.3894, 44.2757]);
+    expect(feature).toBeDefined();
+    expect((feature?.geometry as GeoJSON.Point | undefined)?.coordinates).toEqual([
+      -73.3894, 44.2757,
+    ]);
   });
 
   it('carries minVisibleZoom so the layer cannot reintroduce a suppressed body (E4)', () => {

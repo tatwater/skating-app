@@ -23,9 +23,6 @@ const NOTIF_PREFS = {
   greatReportNearby: false,
 };
 
-const ADULT_DOB = Date.UTC(1990, 0, 1);
-const MINOR_DOB = Date.UTC(2015, 0, 1);
-
 function square(half: number): Polygon {
   return {
     type: 'Polygon',
@@ -237,7 +234,11 @@ describe('waterBodies.sweepAllBodySummaries', () => {
     await seedReport(t, waterBodyId, now - (SUMMARY_RECENT_DAYS + 2) * DAY_MS);
     await t.run((ctx) =>
       ctx.db.patch(waterBodyId, {
-        summary: { recentReportCount: 5, topHazardTypes: ['thin_ice'], updatedAt: now - 30 * DAY_MS },
+        summary: {
+          recentReportCount: 5,
+          topHazardTypes: ['thin_ice'],
+          updatedAt: now - 30 * DAY_MS,
+        },
       }),
     );
 
