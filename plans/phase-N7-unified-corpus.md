@@ -92,7 +92,8 @@
 > **D109's vocabulary migration is finished**: `backfillWaterBodyClasses` rewrote the last 53 rows —
 > the protected ones, which by definition the loader can never reach — and reports `unmappable: 0`.
 > The schema's `type` union may now be **narrowed** to `WATER_BODY_CLASSES`; that is the one step of
-> the widen→deploy→backfill→narrow order still outstanding.
+> the widen→deploy→backfill→narrow order still outstanding. ✅ **Done since** — `schema.ts` reads
+> `type: literals(WATER_BODY_CLASSES)` and the legacy half of the union is gone.
 >
 > **Three limits that only bind on real data**, all found by the load and all fixed:
 > `pruneNotInCampaign` advertised a 500-row page while `bodyAttachmentKind` costs **10 index reads**
@@ -2148,6 +2149,20 @@ matches **its own command line** and can never fire.
 **A cheap argument must not be able to fail an expensive campaign at its last step.** A run died after
 a 45-minute merge and a 25,000-body load because `load-sub-areas` requires `--actor` unconditionally
 while the wrapper only guarded `--apply`. Everything expensive had succeeded.
+
+**…and the fix for that must not turn an explicit request into a silent skip.** Making the missing
+actor a *skip* was right for a plain `./run-corpus.sh <id>` and wrong for one that typed
+`--apply-sub-areas`: the second asked for a write and got a SKIP line and **exit 0**, which is the
+`| tee` lie in a different costume. Validate cheap arguments **at the parse**, where refusing costs
+two seconds — not at the step, where it costs the campaign, and not by shrugging, which costs the
+truth.
+
+**A guard scoped to one call does not hold for a caller that batches.** `retireAbsorbedBodies`
+retires a row once per invocation, and `retire-absorbed` sends 20 pairs at a time — so two keys for
+the same row (`Divol Pond` as both an OSM and an NHD key) double-counted whenever the batch boundary
+fell between them, in the DRY RUN only. The apply saw a tombstone and got it right, which is what
+made it invisible. Cross-batch state has to be **carried** (`alreadyRetired`), and on the *resolved*
+key rather than the input ref, or two names for one row never collapse.
 
 **Every loader continues past an isolated batch failure and aborts on a streak** (5 consecutive; 10
 for wind cells). Skipped items are itemized **by key**, so a targeted retry is cheap.
