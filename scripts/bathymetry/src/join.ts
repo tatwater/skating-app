@@ -34,15 +34,26 @@ import { join as pathJoin } from 'node:path';
 import process from 'node:process';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { SCRATCH_ROOT } from './cache';
-import { inAdaptiveBatches, type JoinCandidate, joinInBatches } from './joinQuery';
-import { runCoveringBodyQuery, runJoinQuery } from './joinRunner';
+import { buildCorpusIndex, type CorpusIndex, coveringBody, readCorpusBodies } from './corpusIndex';
+import { type JoinCandidate, joinInBatches } from './joinQuery';
+import { runJoinQuery } from './joinRunner';
 import { readAllLakes } from './lakeSources';
 import { type ArchivedLake, representativePoint, shapePoints, splitByBody } from './lakes';
 import { crosswalkFromNdjson, crosswalkNhdId, type MidasEntry } from './midasCrosswalk';
-import { dedupeForLookup, isRekeyEligible, type PointAssignment, rekeyByBody } from './rekey';
+import { isRekeyEligible, type PointAssignment, rekeyByBody } from './rekey';
 
 const JOIN_DIR = pathJoin(SCRATCH_ROOT, 'join');
 const JOIN_FILE = pathJoin(JOIN_DIR, 'lakes.json');
+/**
+ * The synthetic lakes D95's re-key produced — **and the reason they need a file at all**.
+ *
+ * `build.ts` composes its work list from `readAllLakes()` + `splitByBody`, i.e. from the ARCHIVES.
+ * A re-keyed lake is not in any archive: it is a slice of one, cut against the corpus, and it exists
+ * only inside the join's process. Without this the join would report *"293 recovered"*, the build
+ * would look up keys like `870@way/1234`, find nothing, and the layer would draw **none of them** —
+ * a lane that reports success and ships nothing.
+ */
+const REKEYED_FILE = pathJoin(JOIN_DIR, 'rekeyed-lakes.json');
 
 /**
  * Lakes per query, optimistically.
@@ -137,13 +148,21 @@ export function sampleFootprint(
 }
 
 /**
- * Points per `coveringBodyForPoints` call, optimistically.
+ * The merge's own corpus, which the re-key resolves against.
  *
- * Smaller than `BATCH` because the unit is a *point* rather than a lake, and each one pulls every
- * listed body near it with polygons attached. `joinInBatches` splits anything that trips the read
- * cap, so this is sized for the common case like every other batch constant here.
+ * Cross-package on purpose: this IS the artifact the campaign just loaded, so resolving against
+ * anything else would mean the re-key and the corpus could disagree about which lakes exist.
+ * `--corpus=<path>` overrides it.
  */
-const POINT_BATCH = 250;
+const CORPUS_NDJSON = pathJoin(
+  SCRATCH_ROOT,
+  '..',
+  '..',
+  'etl',
+  '.scratch',
+  'merge',
+  'bodies.ndjson',
+);
 
 /**
  * Re-key every containment-rejected survey against corpus membership — **D95's lane** (N7-3).
@@ -159,6 +178,7 @@ const POINT_BATCH = 250;
 export async function rekeyRejected(
   rejects: readonly { key: string; reason: string }[],
   byKey: ReadonlyMap<string, ArchivedLake>,
+  corpus: CorpusIndex,
   log: (message: string) => void,
 ): Promise<{
   candidates: JoinCandidate[];
@@ -183,46 +203,22 @@ export async function rekeyRejected(
     // Every measurement, not a sample: the whole point is to know which body each one is in, and a
     // sample would place the groups it happened to hit and silently discard the rest.
     //
-    // **Indexed, not positional.** `inAdaptiveBatches` halves a batch that trips the read cap, so
-    // results arrive in batch order rather than in one flat sequence. Carrying each point's own index
-    // and writing into a pre-sized array is what keeps a split from shifting every later assignment
-    // by one — a failure that would attribute soundings to the wrong lakes with nothing to show for it.
-    //
-    // **Asked once per ~11 m cell, not once per measurement.** See `LOOKUP_GRID_PLACES`: the read cap
-    // counts bytes and re-reading one document counts every time, so a survey lying inside one large
-    // lake pulls that lake's ~300 KB shoreline once per point. Dedup attacks the cause; the adaptive
-    // splitter alone would survive by halving 250 → 1 and turn one query into hundreds.
-    const { cells, indices } = dedupeForLookup(points);
-    log(`  re-key ${reject.key}: ${points.length} measurement(s) → ${cells.length} lookup cell(s)`);
-    const assignments: PointAssignment[] = new Array(points.length).fill(null);
-    let failedCells = 0;
-    await inAdaptiveBatches(
-      cells.map((p, i) => ({ at: i, lat: p.lat, lng: p.lng })),
-      POINT_BATCH,
-      async (batch) => {
-        const { bodies } = await runCoveringBodyQuery(
-          batch.map((p) => ({ lat: p.lat, lng: p.lng })),
-        );
-        batch.forEach((cell, i) => {
-          const body = bodies[i] ?? null;
-          for (const at of indices[cell.at] ?? []) assignments[at] = body;
-        });
-      },
-      // An unresolved cell leaves its points `null`, which `rekeyByBody` counts as unmatched.
-      // Counted separately too, so "in no body" and "we never asked" stay distinguishable — the
-      // distinction the whole no-silent-caps rule rests on.
-      (batch) => {
-        failedCells += batch.length;
-      },
-      (done, total) => {
-        if (done % (POINT_BATCH * 20) < POINT_BATCH)
-          log(`  re-key ${reject.key}: ${done}/${total} cells`);
-      },
-    );
-    if (failedCells > 0) {
-      log(`  ⚠ ${reject.key}: ${failedCells} cell(s) unresolved; their points count as unmatched`);
-    }
+    // **Resolved locally, against the corpus the merge just wrote.** This used to be a server query
+    // per point — batched, adaptively split around the 16 MB read cap, then fronted by a lookup grid
+    // to cut the call count. It took 4+ hours on one key and the grid did nothing on the key that
+    // matters (MIDAS 870: 16,191 measurements, 16,155 distinct cells) because those soundings are
+    // scattered one per lake rather than dense within one. See `corpusIndex.ts`. Nothing here needs
+    // the deployment: the lane only SPLITS a survey, and the ordinary join afterwards is what
+    // resolves each part to a `waterBodyId`.
+    const assignments: PointAssignment[] = points.map((p) => {
+      const body = coveringBody(corpus, p);
+      return body ? { externalId: body.externalId, name: body.name } : null;
+    });
     const result = rekeyByBody(lake, assignments);
+    log(
+      `  re-key ${reject.key}: ${points.length} measurement(s) → ${result.bodiesTouched} bodies · ` +
+        `${result.unmatched} in no body`,
+    );
     unmatched += result.unmatched;
     bodiesTouched += result.bodiesTouched;
     for (const part of result.parts) {
@@ -238,6 +234,17 @@ export async function rekeyRejected(
     }
   }
   return { candidates, lakes, eligible: eligible.length, unmatched, bodiesTouched };
+}
+
+/**
+ * The re-keyed lakes, for the builder. Empty when the lane found nothing or never ran.
+ *
+ * Absent is a legitimate state — every run before N7-3 produced no such file — so this returns `[]`
+ * rather than throwing, and the build simply has nothing extra to draw.
+ */
+export function readRekeyedLakes(): ArchivedLake[] {
+  if (!existsSync(REKEYED_FILE)) return [];
+  return JSON.parse(readFileSync(REKEYED_FILE, 'utf8')) as ArchivedLake[];
 }
 
 /** Read a cached join, for the builder and the sample renderer. */
@@ -367,7 +374,25 @@ async function main(): Promise<void> {
   // refused — Rule 0. See `rekey.ts`: a key whose soundings land inside the body its own id resolves
   // to is finished, and China Lake is the fixture that says so.
   const byKey = new Map(lakes.map((l) => [lakeId(l), l]));
-  const rekeyed = await rekeyRejected(rejects, byKey, log);
+  const corpusPath =
+    args.find((a) => a.startsWith('--corpus='))?.slice('--corpus='.length) ?? CORPUS_NDJSON;
+  let rekeyed: Awaited<ReturnType<typeof rekeyRejected>> = {
+    candidates: [],
+    lakes: [],
+    eligible: 0,
+    unmatched: 0,
+    bodiesTouched: 0,
+  };
+  if (rejects.some((r) => isRekeyEligible(r.reason))) {
+    if (!existsSync(corpusPath)) {
+      // Loud, not silent. Skipping the lane would look identical to "nothing was recoverable".
+      log(`⚠ re-key SKIPPED — no corpus at ${corpusPath}. Run the merge, or pass --corpus=<path>.`);
+    } else {
+      const bodies = await readCorpusBodies(corpusPath);
+      log(`re-key: indexing ${bodies.length.toLocaleString()} corpus bodies from ${corpusPath}`);
+      rekeyed = await rekeyRejected(rejects, byKey, buildCorpusIndex(bodies), log);
+    }
+  }
   if (rekeyed.candidates.length > 0) {
     log(
       `re-key: ${rekeyed.eligible} containment reject(s) → ${rekeyed.candidates.length} lake(s) ` +
@@ -415,9 +440,23 @@ async function main(): Promise<void> {
 
   mkdirSync(JOIN_DIR, { recursive: true });
   writeFileSync(JOIN_FILE, JSON.stringify({ joined, rejects, noPoint }, null, 0));
+  // Written even when empty, so a stale file from a previous run can never make a later build draw
+  // lakes this run did not produce.
+  writeFileSync(REKEYED_FILE, JSON.stringify(rekeyed.lakes, null, 0));
 
-  const pct = ((Object.keys(joined).length / Math.max(1, candidates.length)) * 100).toFixed(0);
-  log(`✓ matched ${Object.keys(joined).length}/${candidates.length} (${pct}%)`);
+  // **The denominator has to include what the re-key added.** `candidates` is the count taken BEFORE
+  // the lane ran, so measuring against it reported `2756/2491 (111%)` — a coverage figure over 100%,
+  // which is always a denominator that moved rather than a result to celebrate. Same shape as the
+  // depth join's `8,517 / 40,260` and the three others this campaign has corrected: report
+  // `covered / inScope`, and let the re-keyed lakes into `inScope` because they were resolved too.
+  const inScope = candidates.length + rekeyed.candidates.length;
+  const pct = ((Object.keys(joined).length / Math.max(1, inScope)) * 100).toFixed(0);
+  log(
+    `✓ matched ${Object.keys(joined).length}/${inScope} (${pct}%)` +
+      (rekeyed.candidates.length > 0
+        ? ` — ${candidates.length} archived key(s) + ${rekeyed.candidates.length} re-keyed`
+        : ''),
+  );
   if (noPoint.length > 0) log(`  ${noPoint.length} lake(s) had no usable representative point`);
   if (bays > 0) log(`  ${bays} nested body/bodies also covered by a surveyed lake`);
   if (keyed > 0) {

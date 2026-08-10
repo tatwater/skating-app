@@ -141,13 +141,15 @@ export async function joinInBatches(
 /**
  * Run `items` through `run` in batches, halving any batch that trips the read cap.
  *
- * **Extracted from `joinInBatches` so the D95 re-key lane can reuse it** (N7-3). That lane resolves
- * *points* to bodies rather than lakes to bodies, and it hits the identical wall for the identical
- * reason — `listedBodiesNearCoord` pulls polygons, so a batch of points in the middle of Champlain
- * reads three orders of magnitude more than a batch in a farm pond. The alternative was a second
- * copy of the splitting logic, which is precisely the part this module's docstring calls out as
- * *"the part that can be wrong in a way that still looks right"* — dropping a half, or recursing
- * forever on one item that fails for an unrelated reason.
+ * **Extracted so the splitting logic is directly testable** (N7-3). It is the part this module's
+ * docstring calls out as *"the part that can be wrong in a way that still looks right"* — dropping a
+ * half, or recursing forever on one item that fails for an unrelated reason — and it was reachable
+ * only through a query before.
+ *
+ * It briefly had a second caller: the D95 re-key resolved points to bodies server-side and hit the
+ * same read cap. That lane now resolves locally against `corpusIndex.ts` and needs no batching at
+ * all, so this has one caller again. Kept extracted because its tests are the reason the halving is
+ * known to be correct.
  *
  * The caller accumulates. That keeps this generic over the result shape without a type parameter
  * that every call site would have to satisfy, and it is what lets `joinInBatches` keep its two-channel

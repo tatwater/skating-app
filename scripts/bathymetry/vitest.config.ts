@@ -36,6 +36,8 @@ export default defineConfig({
         'src/cache.ts',
         'src/lakeSources.ts',
         'src/joinRunner.ts',
+        // `readCorpusBodies` is a file stream; the index and the probe are tested in
+        // `corpusIndex.test.ts` and are the whole of the logic.
         'src/contour.ts',
         'src/build.ts',
         'src/fetch.ts',

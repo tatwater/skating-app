@@ -2,10 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ArchivedLake } from './lakes';
 import {
   CONTAINMENT_REJECT_PREFIX,
-  dedupeForLookup,
   isRekeyEligible,
-  LOOKUP_GRID_PLACES,
-  lookupCell,
   type PointAssignment,
   rekeyByBody,
 } from './rekey';
@@ -211,57 +208,5 @@ describe('rekeyByBody — the contour lane', () => {
     expect(result.parts).toHaveLength(2);
     expect(result.parts.every((p) => p.contours?.length === 1)).toBe(true);
     expect(result.parts.every((p) => p.soundings === undefined)).toBe(true);
-  });
-});
-
-describe('dedupeForLookup — asking the corpus once per cell, not once per sounding', () => {
-  it('collapses measurements sharing a ~11 m cell into one lookup', () => {
-    // A sounding transect runs tens of metres apart, so a dense survey collapses hard. This is the
-    // difference between one query and hundreds: the read cap counts BYTES, and a survey inside one
-    // large lake re-reads that lake's shoreline once per point.
-    // ⚠ Kept away from a rounding boundary on purpose. `toFixed` splits at the .00005 edge, so two
-    // points a millionth of a degree apart CAN land in different cells if they straddle one. That is
-    // harmless — the grid only has to be a consistent partition, not a nearest-neighbour rule — but
-    // a fixture sitting on the edge tests float rounding rather than the dedup, and the first draft
-    // of this test did exactly that.
-    const points = [
-      { lat: 44.12341, lng: -70.98761 },
-      { lat: 44.12342, lng: -70.98762 }, // same cell at 4 dp
-      { lat: 44.99991, lng: -70.99991 }, // elsewhere
-    ];
-    const { cells, indices } = dedupeForLookup(points);
-    expect(cells).toHaveLength(2);
-    expect(indices).toEqual([[0, 1], [2]]);
-  });
-
-  it('asks about a REAL measurement, never a rounded coordinate', () => {
-    // A rounded point can land just outside the water on a narrow lake, which would answer the
-    // wrong question. The first measurement in each cell is the one sent.
-    const points = [{ lat: 44.123456789, lng: -70.987654321 }];
-    expect(dedupeForLookup(points).cells).toEqual([{ lat: 44.123456789, lng: -70.987654321 }]);
-  });
-
-  it('maps every point to exactly one cell, losing none', () => {
-    const points = Array.from({ length: 50 }, (_, i) => ({
-      lat: 44 + Math.floor(i / 5) / 1000,
-      lng: -70,
-    }));
-    const { cells, indices } = dedupeForLookup(points);
-    expect(indices.flat().sort((a, b) => a - b)).toEqual(points.map((_, i) => i));
-    expect(cells.length).toBe(10);
-  });
-
-  it('handles an empty survey', () => {
-    expect(dedupeForLookup([])).toEqual({ cells: [], indices: [] });
-  });
-
-  it('lookupCell is stable and grid-aligned', () => {
-    expect(lookupCell({ lat: 44.1, lng: -70.2 })).toBe(
-      lookupCell({ lat: 44.10001, lng: -70.20001 }),
-    );
-    expect(lookupCell({ lat: 44.1234, lng: -70.9876 })).not.toBe(
-      lookupCell({ lat: 44.2234, lng: -70.9876 }),
-    );
-    expect(LOOKUP_GRID_PLACES).toBe(4);
   });
 });
