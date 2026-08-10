@@ -158,7 +158,11 @@ export function topHazardTypes(
  * Activity — a recent report or an active hazard — and nothing else. A name is not a reason.
  */
 export function summaryHasCard(
-  summary: BodySummary | null | undefined,
+  /**
+   * Only the two fields the rule reads, so the map's lighter feature type satisfies it without
+   * carrying `updatedAt` — which the rule has no opinion about.
+   */
+  summary: Pick<BodySummary, 'recentReportCount' | 'topHazardTypes'> | null | undefined,
   /**
    * The reveal flag (N6c-2). When on, **every body with a summary row draws a card**, including the
    * ones with nothing to report — so a walk-through can see where cards land, how they collide and

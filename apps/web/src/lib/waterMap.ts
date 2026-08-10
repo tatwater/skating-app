@@ -16,6 +16,7 @@ import {
   composeBasemapLayers,
   REGION_BOUNDS_CORNERS,
   REVEAL_MARKER,
+  summaryHasCard,
 } from '@skating/core';
 import type { StyleSpecification } from 'maplibre-gl';
 import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
@@ -460,8 +461,11 @@ export function qualityDotString(dots: number, total = 4): string {
 export function summaryCardText(body: MappableSummaryBody, reveal = false): string | null {
   const summary = body.summary;
   if (!summary) return null;
-  const hasActivity = summary.recentReportCount > 0 || summary.topHazardTypes.length > 0;
-  if (!hasActivity && !reveal) return null;
+  // **E3's rule, via `summaryHasCard` rather than restated here.** It was inlined at first, which
+  // left the rule implemented in two places that agreed — the shape that drifts silently, and the
+  // one this codebase has already been bitten by (a hand-copied area floor became *more* permissive
+  // than the import it mirrored). One definition, in core, where both clients can reach it.
+  if (!summaryHasCard(summary, reveal)) return null;
 
   const lines: string[] = [];
   // A name is not a reason to draw a card, but it is always on one when there is a card.
@@ -528,4 +532,47 @@ export function summaryCardsToFeatureCollection(
     });
   }
   return { type: 'FeatureCollection', features };
+}
+
+/**
+ * The `summary-card` symbol layer (N6c/E).
+ *
+ * Lives here rather than inline in `MapView` so it can be run through the style-spec validator in a
+ * test — which is the point, because **an invalid layer fails silently**: MapLibre logs and declines
+ * to draw, so the symptom is "the cards never appeared", indistinguishable from "no body had
+ * anything to say", which is E3's *correct* behaviour on this corpus. There is no louder failure
+ * available, so the check has to happen before the browser sees it.
+ *
+ * `['zoom']` inside a filter is the specific thing worth pinning: it is legal in MapLibre but
+ * restricted in nearby contexts (in layout/paint it may only feed a top-level `step`/`interpolate`),
+ * so it is easy to write a version that validates in one place and not the other.
+ */
+export function summaryCardLayer(
+  palette: (typeof SUMMARY_CARD_PALETTE)[keyof typeof SUMMARY_CARD_PALETTE],
+): StyleSpecification['layers'][number] {
+  return {
+    id: 'summary-card',
+    type: 'symbol',
+    source: 'summary-cards',
+    // E4: a card must never reintroduce a body the prominence scoring suppressed at this zoom.
+    // `listInViewport` already applies this server-side; restated here where the drawing happens,
+    // because the failure it prevents would be read as "the map is broken" rather than diagnosed.
+    filter: ['<=', ['get', 'minVisibleZoom'], ['zoom']],
+    layout: {
+      'text-field': ['get', 'text'],
+      'text-size': 11,
+      'text-font': ['Noto Sans Regular'],
+      'text-line-height': 1.2,
+      'text-anchor': 'top',
+      'text-offset': [0, 0.6],
+      // A card may not displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
+      'text-allow-overlap': false,
+      'text-optional': true,
+    },
+    paint: {
+      'text-color': palette.label,
+      'text-halo-color': palette.halo,
+      'text-halo-width': 1.4,
+    },
+  } as StyleSpecification['layers'][number];
 }

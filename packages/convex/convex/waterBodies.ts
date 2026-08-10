@@ -5779,13 +5779,21 @@ export const setIncludedByRequest = internalMutation({
 export const sweepBodySummaries = internalMutation({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {
-    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    // **50, and this is a byte budget rather than a row budget.** Convex caps a transaction at
+    // **16 MB of reads**, not just 4,096 rows, and a `waterBodies` doc carries its `polygon` —
+    // ~300 KB for Champlain against a 1.8 KB average. A page is not a random sample of that
+    // distribution either: the import writes in catalogue order, so large lakes arrive together.
+    // The depth loader learned this the expensive way, blowing the byte cap at batch 8 of 1,611
+    // with a size chosen against the row cap. 50 leaves an order of magnitude of headroom even on
+    // a page that is all Champlains.
+    const numItems = Math.min(200, Math.max(1, batchSize ?? 50));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
 
     let swept = 0;
     for (const body of page.page) {
       if (!body.summary) continue; // no card, nothing to decay
-      await recomputeBodySummary(ctx, body._id);
+      // Hand the row we already read straight through — see `recomputeBodySummary`'s `known`.
+      await recomputeBodySummary(ctx, body._id, Date.now(), body);
       swept++;
     }
     return { cursor: page.continueCursor, isDone: page.isDone, swept, scanned: page.page.length };
@@ -5805,7 +5813,9 @@ export const sweepAllBodySummaries = internalAction({
     let isDone = false;
     let swept = 0;
     let pages = 0;
-    while (!isDone && pages < 500) {
+    // 24,953 bodies at 50 a page is ~500 pages, so the ceiling is a runaway guard rather than a
+    // budget — it must sit above a full walk or the sweep would silently stop half way.
+    while (!isDone && pages < 2000) {
       const page: { cursor: string; isDone: boolean; swept: number } = await ctx.runMutation(
         internal.waterBodies.sweepBodySummaries,
         cursor === undefined ? {} : { cursor },
@@ -5831,7 +5841,11 @@ export const sweepAllBodySummaries = internalAction({
 export const listNamedForSeeding = internalQuery({
   args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
   handler: async (ctx, { cursor, batchSize }) => {
-    const numItems = Math.min(2000, Math.max(1, batchSize ?? 1000));
+    // **A byte budget, not a row budget** — same reasoning as `sweepBodySummaries`. The projection
+    // below is small, but `paginate` reads whole documents *before* it runs: a page of 1,000 bodies
+    // drags 1,000 polygons through the 16 MB read cap to return a name and a coordinate. 200 is the
+    // page size; the cheapness of the *return* value is a separate win and not a substitute.
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
     const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
     const bodies = page.page
       .filter((body) => body.name !== undefined && isListed(body))

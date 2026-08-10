@@ -63,6 +63,7 @@ import {
   SUB_AREA_PALETTE,
   SUMMARY_CARD_PALETTE,
   subAreasToFeatureCollection,
+  summaryCardLayer,
   summaryCardsToFeatureCollection,
   TRACK_PALETTE,
   WATER_PALETTE,
@@ -421,31 +422,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
       // a card may not displace a marker a skater needs to see, and if it doesn't fit it doesn't
       // draw. `text-optional` plus `text-allow-overlap: false` is what makes that true.
       map.addSource('summary-cards', { type: 'geojson', data: EMPTY_FEATURES });
-      map.addLayer({
-        id: 'summary-card',
-        type: 'symbol',
-        source: 'summary-cards',
-        // E4: a card must never reintroduce a body the prominence scoring suppressed at this zoom.
-        // `listInViewport` already filters on `minVisibleZoom` server-side; this is the same rule
-        // restated where the drawing happens, because the failure it prevents would be read as
-        // "the map is broken" rather than diagnosed as a prominence leak.
-        filter: ['<=', ['get', 'minVisibleZoom'], ['zoom']],
-        layout: {
-          'text-field': ['get', 'text'],
-          'text-size': 11,
-          'text-font': ['Noto Sans Regular'],
-          'text-line-height': 1.2,
-          'text-anchor': 'top',
-          'text-offset': [0, 0.6],
-          'text-allow-overlap': false,
-          'text-optional': true,
-        },
-        paint: {
-          'text-color': summaryCardPalette.label,
-          'text-halo-color': summaryCardPalette.halo,
-          'text-halo-width': 1.4,
-        },
-      });
+      map.addLayer(summaryCardLayer(summaryCardPalette));
 
       map.addSource('photo-pins', { type: 'geojson', data: EMPTY_FEATURES });
       map.addLayer({

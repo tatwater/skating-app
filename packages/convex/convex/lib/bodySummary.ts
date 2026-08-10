@@ -29,7 +29,7 @@ import {
   summarizeQuality,
   topHazardTypes,
 } from '@skating/core';
-import type { Id } from '../_generated/dataModel';
+import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
 
 const DAY_MS = 86_400_000;
@@ -56,6 +56,16 @@ export async function recomputeBodySummary(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
   now: number = Date.now(),
+  /**
+   * The body doc, when the caller already holds it.
+   *
+   * The sweep pages `waterBodies` and therefore *has* every row it is about to recompute; without
+   * this it would re-read each one, and a `waterBodies` doc carries its `polygon` — ~300 KB for
+   * Champlain against a 1.8 KB average. Doubling the byte cost of the heaviest rows in a
+   * transaction already reading a page of them is how the depth loader blew Convex's 16 MB read cap
+   * at batch 8 of 1,611.
+   */
+  known?: Doc<'waterBodies'>,
 ): Promise<void> {
   const windowStart = now - SUMMARY_RECENT_DAYS * DAY_MS;
   const season = currentSeason(now);
@@ -92,7 +102,7 @@ export async function recomputeBodySummary(
     updatedAt: now,
   };
 
-  const body = await ctx.db.get(waterBodyId);
+  const body = known ?? (await ctx.db.get(waterBodyId));
   if (!body) return;
   // **Skip the write when nothing changed.** A recompute runs on every report and hazard transition,
   // and a no-op patch is still a document write, a mutation conflict surface and a subscription

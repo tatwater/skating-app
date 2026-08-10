@@ -14,7 +14,9 @@ import {
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
   qualityDotString,
+  SUMMARY_CARD_PALETTE,
   subAreasToFeatureCollection,
+  summaryCardLayer,
   summaryCardsToFeatureCollection,
   summaryCardText,
   waterBodiesToFeatureCollection,
@@ -550,5 +552,52 @@ describe('summary cards under the reveal flag (N6c-2)', () => {
     expect(
       summaryCardText({ ...base, summary: { recentReportCount: 0, topHazardTypes: [] } }, false),
     ).toBeNull();
+  });
+});
+
+describe('summaryCardLayer', () => {
+  /**
+   * An invalid layer fails **silently**: MapLibre logs and declines to draw, so the symptom is "no
+   * cards appeared" — indistinguishable from E3 correctly finding nothing to say. This is the only
+   * loud check available.
+   */
+  it('is a valid MapLibre layer', () => {
+    const errors = validateStyleMin({
+      version: 8,
+      sources: {
+        'summary-cards': {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        },
+      },
+      layers: [summaryCardLayer(SUMMARY_CARD_PALETTE.white)],
+    } as never);
+    expect(errors.map((e) => e.message)).toEqual([]);
+  });
+
+  it('is valid in the dark palette too', () => {
+    const errors = validateStyleMin({
+      version: 8,
+      sources: {
+        'summary-cards': {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        },
+      },
+      layers: [summaryCardLayer(SUMMARY_CARD_PALETTE.dark)],
+    } as never);
+    expect(errors.map((e) => e.message)).toEqual([]);
+  });
+
+  /** E4's rule, and the reason `['zoom']`-in-a-filter is worth pinning rather than assuming. */
+  it('filters on minVisibleZoom so a suppressed body cannot acquire a card', () => {
+    const layer = summaryCardLayer(SUMMARY_CARD_PALETTE.white) as { filter?: unknown };
+    expect(layer.filter).toEqual(['<=', ['get', 'minVisibleZoom'], ['zoom']]);
+  });
+
+  it('yields to markers rather than overlapping them', () => {
+    const layout = summaryCardLayer(SUMMARY_CARD_PALETTE.white).layout as Record<string, unknown>;
+    expect(layout['text-allow-overlap']).toBe(false);
+    expect(layout['text-optional']).toBe(true);
   });
 });
