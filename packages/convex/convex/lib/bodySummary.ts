@@ -89,7 +89,18 @@ export async function recomputeBodySummary(
     )
     .take(MAX_SUMMARY_ROWS);
 
-  const visibleHazards = hazards.filter((hazard) => hazard.moderationStatus === 'visible');
+  // **A merged-away tombstone is not a second hazard.** D80's auto-merge sets `mergedIntoHazardId`
+  // and deliberately leaves `status`/`moderationStatus` alone — the row stays `active` and `visible`
+  // so a link to it still resolves — so filtering on those two alone counts one ridge twice the
+  // moment two skaters pin it. The map's own renderer already excludes them
+  // (`hazards.ts`: `inScope.filter((h) => h.mergedIntoHazardId === undefined)`); the card has to
+  // agree with the map it sits on, or it claims two hazards over a lake showing one pin.
+  //
+  // It is worse than a wrong count: `topHazardTypes` is capped at three, so a duplicated type can
+  // push a genuinely different one off the card entirely.
+  const visibleHazards = hazards.filter(
+    (hazard) => hazard.moderationStatus === 'visible' && hazard.mergedIntoHazardId === undefined,
+  );
 
   const qualities: (SkateQuality | undefined)[] = visible.map((report) => report.skateQuality);
   const latestReportAt = visible[0]?.skateEndTime;

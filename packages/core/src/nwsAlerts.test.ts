@@ -134,3 +134,34 @@ describe('formatAlertLine', () => {
     expect(formatAlertLine(alert())).toBe('Winter Storm Warning');
   });
 });
+
+describe('cross-state alerts (Greptile P1, 2026-08-10)', () => {
+  /**
+   * The cache stores one row per (state, alert) so a state can be replaced on its own. A warning
+   * covering VT and NH is therefore two rows sharing one `alertId` — and Lake Champlain, the most
+   * prominent body in the corpus, spans two states.
+   */
+  it('renders a multi-state warning once, not once per state', () => {
+    const matched = alertsForBody({ states: ['NY', 'VT'] }, [
+      alert({ id: 'urn:oid:storm', states: ['VT'], areaDesc: 'Northern Vermont' }),
+      alert({ id: 'urn:oid:storm', states: ['NY'], areaDesc: 'Eastern New York' }),
+    ]);
+    expect(matched).toHaveLength(1);
+  });
+
+  it('still keeps genuinely different alerts that share a state', () => {
+    const matched = alertsForBody({ states: ['VT'] }, [
+      alert({ id: 'urn:oid:storm', states: ['VT'] }),
+      alert({ id: 'urn:oid:windchill', event: 'Wind Chill Advisory', states: ['VT'] }),
+    ]);
+    expect(matched).toHaveLength(2);
+  });
+
+  it('dedupes on the zone rung too, where one alert lists several of a body’s zones', () => {
+    const matched = alertsForBody({ states: ['VT'], nwsZoneIds: ['VTZ001', 'VTZ002'] }, [
+      alert({ id: 'urn:oid:storm', zones: ['VTZ001'], states: ['VT'] }),
+      alert({ id: 'urn:oid:storm', zones: ['VTZ002'], states: ['VT'] }),
+    ]);
+    expect(matched).toHaveLength(1);
+  });
+});

@@ -1325,3 +1325,74 @@ describe('reports counters + offline read-cache', () => {
     expect(await t.query(api.reports.recentCardsForBodies, { waterBodyIds: [] })).toEqual([]);
   });
 });
+
+/**
+ * A body's map summary (N6c/E). `seedBody` returns an untyped id, so `db.get` widens to the union of
+ * every table's document and `summary` is invisible without narrowing.
+ */
+async function cardFor(t: ReturnType<typeof convexTest>, bodyId: string) {
+  return t.run(async (ctx) => (await ctx.db.get(bodyId as Id<'waterBodies'>))?.summary);
+}
+
+describe('reports.update refreshes the map summary (Greptile P1, 2026-08-10)', () => {
+  const DAY = 86_400_000;
+
+  /**
+   * `update` patches `skateEndTime` and `skateQuality`, and both feed `waterBodies.summary`
+   * directly. Before this fix nothing recomputed on edit, so a re-dated or re-rated report left the
+   * map card wrong until the six-hourly sweep — while `lib/bodySummary.ts` claimed the write paths
+   * were "exact by construction rather than exact-until-a-path-is-missed".
+   */
+  test('re-dating a report out of the window drops it from the card immediately', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asAuthor = await seedUser(t, 'clerk_edit_window');
+    const recent = Date.now() - 2 * DAY;
+
+    const reportId = await asAuthor.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: recent,
+      skateQuality: 'good',
+    });
+    expect((await cardFor(t, id))?.recentReportCount).toBe(1);
+
+    // Push it well outside SUMMARY_RECENT_DAYS.
+    await asAuthor.mutation(api.reports.update, {
+      reportId,
+      skateEndTime: Date.now() - 40 * DAY,
+      skateQuality: 'good',
+    });
+
+    expect((await cardFor(t, id))?.recentReportCount).toBe(0);
+  });
+
+  test('re-rating a report moves the D86 mark without waiting for the sweep', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const recent = Date.now() - 2 * DAY;
+
+    // Three rated reports clear the quorum; all "poor" ⇒ one dot.
+    const authors = [];
+    for (let i = 0; i < 3; i++) authors.push(await seedUser(t, `clerk_edit_rate_${i}`));
+    const ids = [];
+    for (const author of authors) {
+      ids.push(
+        await author.mutation(api.reports.create, {
+          waterBodyId: id,
+          skateEndTime: recent,
+          skateQuality: 'poor',
+        }),
+      );
+    }
+    expect((await cardFor(t, id))?.qualityDots).toBe(1);
+
+    // One author changes their mind: (1 + 1 + 4) / 3 = 2 ⇒ two dots.
+    await authors[0]?.mutation(api.reports.update, {
+      reportId: ids[0] as Id<'reports'>,
+      skateEndTime: recent,
+      skateQuality: 'great',
+    });
+
+    expect((await cardFor(t, id))?.qualityDots).toBe(2);
+  });
+});

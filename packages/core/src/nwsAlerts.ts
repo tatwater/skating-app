@@ -124,7 +124,25 @@ export function alertsForBody(body: AlertMatchBody, alerts: readonly NwsAlert[])
       ? alerts.filter((a) => a.zones.some((z) => zones.includes(z)))
       : alerts.filter((a) => a.states.some((s) => body.states?.includes(s)));
 
-  return [...matched].sort((a, b) => {
+  // **Deduplicate on NWS's own alert id, and this is not defensive coding — it is load-bearing.**
+  // The cache stores **one row per (state, alert)** because the poll is per state and a state has to
+  // be replaceable on its own (a Vermont poll must not clear Maine's warnings). So a single winter
+  // storm warning covering Vermont *and* New Hampshire is stored twice, under one `alertId`.
+  //
+  // Every border-spanning body then matches both rows — and Lake Champlain, the most prominent body
+  // in the corpus, spans two states. Without this it renders the same warning twice, which reads as
+  // two warnings.
+  //
+  // The first occurrence wins; the rows are byte-identical apart from which state they were polled
+  // under, and that field is not rendered.
+  const seen = new Set<string>();
+  const deduped = matched.filter((a) => {
+    if (seen.has(a.id)) return false;
+    seen.add(a.id);
+    return true;
+  });
+
+  return [...deduped].sort((a, b) => {
     const bySeverity = nwsSeverityRank(b.severity) - nwsSeverityRank(a.severity);
     if (bySeverity !== 0) return bySeverity;
     // Stable tie-break so the list does not shuffle between renders.

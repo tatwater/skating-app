@@ -1,4 +1,4 @@
-import { SUMMARY_RECENT_DAYS } from '@skating/core';
+import { SUMMARY_RECENT_DAYS, summaryHasCard } from '@skating/core';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { describe, expect, test } from 'vitest';
@@ -257,5 +257,54 @@ describe('waterBodies.sweepAllBodySummaries', () => {
 
     // Convex serialises an absent optional as `null` across the `t.run` boundary.
     expect(await summaryOf(t, waterBodyId)).toBeNull();
+  });
+});
+
+describe('Greptile P1 regressions (2026-08-10)', () => {
+  /**
+   * D80's auto-merge sets `mergedIntoHazardId` and deliberately leaves `status`/`moderationStatus`
+   * alone, so a tombstone stays `active` and `visible`. The map's own renderer excludes them
+   * (`hazards.ts`: `inScope.filter((h) => h.mergedIntoHazardId === undefined)`); the card has to
+   * agree with the map it sits on.
+   *
+   * **Note on what is observable.** `topHazardTypes` returns *unique* types, so counting a
+   * same-type tombstone twice does not change the list — the harm shows up in the two places the
+   * count actually reaches: whether a card is drawn at all, and the frequency ordering.
+   */
+  test('a body whose only hazard is a merged tombstone draws no card', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const survivorBody = await seedBody(t); // the survivor lives on a different lake
+    const loser = await seedHazard(t, waterBodyId, 'open_water');
+    const survivor = await seedHazard(t, survivorBody, 'open_water');
+    await t.run((ctx) => ctx.db.patch(loser, { mergedIntoHazardId: survivor }));
+
+    await t.run((ctx) => recomputeBodySummary(ctx, waterBodyId));
+
+    const summary = await summaryOf(t, waterBodyId);
+    // No reports, and its one hazard is a tombstone ⇒ nothing to say ⇒ no card (E3).
+    expect(summary?.topHazardTypes).toEqual([]);
+    expect(summaryHasCard(summary ?? undefined)).toBe(false);
+  });
+
+  test('merged duplicates do not out-rank a genuinely more common type', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+
+    // One real thin_ice pin, plus three tombstones merged into it.
+    const thinIce = await seedHazard(t, waterBodyId, 'thin_ice');
+    for (let i = 0; i < 3; i++) {
+      const dup = await seedHazard(t, waterBodyId, 'thin_ice');
+      await t.run((ctx) => ctx.db.patch(dup, { mergedIntoHazardId: thinIce }));
+    }
+    // Two genuinely distinct open_water pins.
+    await seedHazard(t, waterBodyId, 'open_water');
+    await seedHazard(t, waterBodyId, 'open_water');
+
+    await t.run((ctx) => recomputeBodySummary(ctx, waterBodyId));
+
+    // Counting tombstones would read thin_ice 4 vs open_water 2 and put thin_ice first. The map
+    // shows one thin-ice pin and two open-water ones, so open_water leads.
+    expect((await summaryOf(t, waterBodyId))?.topHazardTypes).toEqual(['open_water', 'thin_ice']);
   });
 });
