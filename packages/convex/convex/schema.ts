@@ -628,9 +628,22 @@ export default defineSchema({
      */
     representativePoint: v.optional(latLng),
     /**
-     * @deprecated Renamed to `representativePoint`. Kept optional through the transition window so
-     * the schema still validates against rows written before the rename; every writer now sets both
-     * and `backfillRepresentativePoint` fills the rest. Dropped once that has run everywhere.
+     * @deprecated Renamed to `representativePoint`. **Stage 2 of that rename is deferred, not
+     * forgotten — see `07-roadmap.md` → "N8b — Finish the `centroid` → `representativePoint`
+     * rename".**
+     *
+     * ✅ **The data half is done** (2026-08-10): `backfillRepresentativePoint` ran across all three
+     * tables — `waterBodies` 24,961, `adminAreas` 2,546, `waterBodySubAreas` 126 with nine filled —
+     * so every row carries `representativePoint` and nothing is blocked on a pass. What remains is a
+     * code sweep: migrate the ~100 read sites, make `representativePoint` required, drop this field,
+     * remove the double-write.
+     *
+     * ⚠️ **Until then, three field names describe two points, and that is a live trap rather than
+     * cosmetic debt.** `representativePoint` *is* this field (byte-identical); `interiorPoint` is the
+     * genuinely different, strictly-interior one. N6c's Workstream B was written against `centroid`
+     * and would have opened Windy 30 km off Lake Champlain — a shoreline coordinate is a perfectly
+     * valid coordinate, so nothing downstream catches it. **If you want a point in the water, you
+     * want `interiorPoint`.**
      */
     centroid: latLng, // on-water representative point (D48); display + distance, not lookup
     // Weather sampling escape hatch (Phase 10 / D56 §5). Weather doesn't vary below Open-Meteo's grid

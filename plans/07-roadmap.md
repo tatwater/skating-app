@@ -1395,6 +1395,30 @@ opportunistically or when a trigger fires, not as a planned phase.)*
 - **Code-level GPS replay rig for CI** — the Android emulator's GPX playback covers manual QA today.
 - **First-class in-app avatar upload** — Clerk manages avatars for now; revisit only if its UX bites.
 
+**N8b — Finish the `centroid` → `representativePoint` rename (stage 2).** ⏰ **Deferred 2026-08-10, and
+it should not sit long.** The data half is **done** — `backfillRepresentativePoint` ran across all
+three tables (`waterBodies` 24,961 · `adminAreas` 2,546 · `waterBodySubAreas` 126, nine filled), so
+every row now carries the field and nothing is blocked on a pass.
+
+What is left is purely a code sweep: **migrate ~100 read sites** to `representativePoint`, make the
+field required, drop `centroid`, and remove the double-write. Readers were deliberately left alone in
+stage 1, because migrating them to `representativePoint ?? centroid` then would have been a hundred
+edits immediately undone here — where no fallback is needed at all.
+
+**Why it should not linger.** Three fields currently describe two points, and one pair is a rename:
+`representativePoint` *is* `centroid` (byte-identical — 126 of 126 sub-areas match exactly), while
+`interiorPoint` is the genuinely different, strictly-interior one. That is a live trap rather than
+cosmetic debt: **N6c's Workstream B was written against `centroid` and would have opened Windy 30 km
+off Lake Champlain**, because a shoreline coordinate is a perfectly valid coordinate and nothing
+downstream can tell. Every extra week the three names coexist is another chance to reach for the wrong
+one — and the fallback chains N6c-2 wrote (`interiorPoint ?? representativePoint ?? centroid`) exist
+only to be deleted by this.
+
+⚠️ **Never make it a true centroid.** The name was the bug, not the maths — the area centroid of a
+crescent lake is on land, and drive-time bands plus the pin-less report's town stamp deliberately want
+a shoreline-ish point. See [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) *§The three point
+fields*.
+
 ### Waiting on a blocker
 
 Grouped by *what* is blocking, because that's what determines when it moves.
