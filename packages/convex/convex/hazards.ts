@@ -276,9 +276,18 @@ export const create = mutation({
     // **survivor**, so a client that navigates to what it just created lands on the live pin rather
     // than on a tombstone.
     const { survivorId } = await tryAutoMerge(ctx, hazardId);
-    // The map card learns about the new pin (N6c/E). After the auto-merge, not before: a hazard that
-    // was just folded into an existing one must not make the card claim two.
-    await recomputeBodySummary(ctx, args.waterBodyId);
+    // The map card learns about the new pin (N6c/E). Two things about *which* card:
+    //
+    // **After the auto-merge, not before** — a hazard just folded into an existing one must not make
+    // the card claim two.
+    //
+    // **The body is read off the stored hazard, never from `args`.** `insertHazard` resolves the
+    // requested id through `resolveSurvivor` (an offline draft can carry a body id merged away before
+    // the queue flushed, D36), so the pin may have landed on a different lake than the caller named.
+    // Recomputing `args.waterBodyId` would refresh the loser's card — a row nothing renders, since a
+    // merged body is unlisted — and leave the survivor's stale until the sweep.
+    const stored = await ctx.db.get(survivorId);
+    if (stored) await recomputeBodySummary(ctx, stored.waterBodyId);
     return survivorId;
   },
 });

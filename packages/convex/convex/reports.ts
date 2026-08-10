@@ -325,7 +325,13 @@ export const create = mutation({
     // And the body's map summary card (N6c/E). Recomputed rather than incremented — see
     // `lib/bodySummary.ts`: the count is window- and season-scoped, so a ±1 would drift the moment a
     // report aged out, and the D86 quality mean cannot be maintained incrementally at all.
-    await recomputeBodySummary(ctx, args.waterBodyId);
+    // **`body._id`, not `args.waterBodyId`** — the same distinction the insert above already makes,
+    // for the same reason. An offline draft can carry a body id that was merged away before the
+    // queue flushed (D36/F2), and `resolveSurvivor` sends the report to the canonical lake.
+    // Recomputing the requested id would refresh the *loser's* card — a row nothing renders, since a
+    // merged body is unlisted — and leave the survivor, the card a skater is actually looking at,
+    // stale until the six-hourly sweep.
+    await recomputeBodySummary(ctx, body._id);
 
     // Reputation (D50): per-report author awards + retroactive corroboration (both authors, capped),
     // then a single badge recompute per affected author. Read the inserted doc once (photoIds /

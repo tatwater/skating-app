@@ -2859,6 +2859,17 @@ export async function mergeBodyInto(
       minVisibleZoom: zoomSortKey(loser),
       listed: isListed({ ...loser, dedupStatus: 'merged' }),
     });
+    // **Both map cards move, so both are recomputed (N6c/E).** A merge re-points the loser's reports
+    // and hazards onto the survivor, which is a change to the survivor's counts with no report or
+    // hazard mutation to hang the recompute on — the one shape `lib/bodySummary.ts`'s write-path
+    // coverage cannot see. Left alone, the survivor understates its activity until the six-hourly
+    // sweep, on a lake that just absorbed another's whole history.
+    //
+    // The loser is recomputed too. Its card never draws (a merged body is unlisted), but leaving a
+    // stale summary on the row means an unmerge would restore a body advertising reports that no
+    // longer belong to it.
+    await recomputeBodySummary(ctx, survivorId);
+    await recomputeBodySummary(ctx, loserId);
     await ctx.db.insert('moderationActions', {
       ...(actorId !== undefined ? { actorId } : {}),
       action: 'merge_waterbody',

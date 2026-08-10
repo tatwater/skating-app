@@ -22,6 +22,7 @@ import {
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalAction, internalMutation, internalQuery, query } from './_generated/server';
+import { resolveSurvivor } from './lib/bodies';
 
 const NWS_ALERTS_URL = 'https://api.weather.gov/alerts/active';
 
@@ -235,7 +236,12 @@ export const listAll = internalQuery({
 export const listForBody = query({
   args: { waterBodyId: v.id('waterBodies') },
   handler: async (ctx, { waterBodyId }) => {
-    const body = await ctx.db.get(waterBodyId);
+    // `resolveSurvivor`, matching every other per-body query in the codebase (bounties, hazards,
+    // put-ins): a deep link to a merged body follows the merge rather than reading a tombstone's
+    // row. The drawer already resolves before it gets here, so this is consistency insurance rather
+    // than a live fix — but a per-body query that behaves differently from its neighbours is how the
+    // next caller gets surprised.
+    const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || body.removedAt) return [];
     const rows = await ctx.db.query('weatherAlerts').take(500);
     const alerts: NwsAlert[] = rows.map((row) => {

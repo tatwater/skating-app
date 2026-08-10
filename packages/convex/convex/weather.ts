@@ -30,6 +30,7 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, internalQuery } from './_generated/server';
+import { resolveSurvivor } from './lib/bodies';
 import { defaultSampleAnchor, hazardCenter, nearestSamplePoint } from './lib/sampling';
 import { weatherSinceSummary } from './lib/validators';
 
@@ -324,7 +325,10 @@ export const resolveStripAnchor = internalQuery({
     } else {
       return null;
     }
-    const body = await ctx.db.get(waterBodyId);
+    // `resolveSurvivor` for the same reason `weatherAlerts.listForBody` uses it: every other
+    // per-body read in the codebase follows a merge, and a sample point taken from a tombstone's row
+    // is a forecast for whichever duplicate happened to lose.
+    const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || body.removedAt) return null;
     const point = nearestSamplePoint(body, near);
     return { lat: point.lat, lng: point.lng, startMs };

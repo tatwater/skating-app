@@ -19,6 +19,27 @@
  * is an index range over one body's reports inside a 14-day window, which is a handful of rows even
  * on the busiest lake, and it is exact by construction rather than exact-until-a-path-is-missed.
  * The cron sweep then handles pure time decay, which has no write to ride on.
+ *
+ * ## ⚠ The caller invariant: pass the id off a STORED document, never off mutation args
+ *
+ * Review found this violated twice, in the two places it was easiest to violate. `reports.create`
+ * and `hazards.create` both run their requested `waterBodyId` through `resolveSurvivor` before
+ * storing — an offline draft can carry a body id that was merged away before the queue flushed
+ * (D36/F2) — so the content lands on the canonical survivor while `args.waterBodyId` still names the
+ * loser. Recomputing the argument refreshes a row nothing renders, because a merged body is
+ * unlisted, and leaves the card a skater is actually looking at stale until the sweep.
+ *
+ * Every call site now reads its id from something already written: `body._id` after
+ * `resolveSurvivor`, `stored.waterBodyId` off the inserted hazard, `existing.waterBodyId` off the
+ * report being edited, `onBody.waterBodyId` off the moderated document. **If you are about to pass
+ * something that came from `args`, resolve it first.**
+ *
+ * ## The one write path that has no content mutation to ride on
+ *
+ * `waterBodies.merge` re-points the loser's reports and hazards onto the survivor. That changes both
+ * bodies' counts without touching a single report or hazard row, so it is invisible to every rule
+ * above and calls this directly for both bodies. It is the exception worth knowing about, because
+ * anything else that moves content between bodies wholesale will need the same treatment.
  */
 
 import {

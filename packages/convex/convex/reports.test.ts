@@ -1396,3 +1396,33 @@ describe('reports.update refreshes the map summary (Greptile P1, 2026-08-10)', (
     expect((await cardFor(t, id))?.qualityDots).toBe(2);
   });
 });
+
+describe('creation recomputes the SURVIVOR body’s card (Greptile P1, 2026-08-10)', () => {
+  const DAY = 86_400_000;
+
+  /**
+   * An offline draft can hold a body id that was merged away before the queue flushed (D36/F2).
+   * `create` sends the report to the canonical survivor — so the card that must move is the
+   * survivor's. Recomputing the requested id refreshes a row nothing renders (a merged body is
+   * unlisted) and leaves the visible card stale until the sweep.
+   */
+  test('a report filed against a merged-away body updates the survivor’s card, not the loser’s', async () => {
+    const t = convexTestWithGeo();
+    const loser = await seedBody(t, 'osm/loser');
+    const survivor = await seedBody(t, 'osm/survivor');
+    await t.run((ctx) =>
+      ctx.db.patch(loser.id, { dedupStatus: 'merged', mergedIntoId: survivor.id }),
+    );
+    const asAuthor = await seedUser(t, 'clerk_merged_card');
+
+    await asAuthor.mutation(api.reports.create, {
+      waterBodyId: loser.id, // the stale id the draft was carrying
+      skateEndTime: Date.now() - 2 * DAY,
+      skateQuality: 'good',
+    });
+
+    expect((await cardFor(t, survivor.id))?.recentReportCount).toBe(1);
+    // And the loser's card stays empty — it is not where the report went.
+    expect((await cardFor(t, loser.id))?.recentReportCount ?? 0).toBe(0);
+  });
+});
