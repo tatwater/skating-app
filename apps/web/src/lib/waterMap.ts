@@ -11,7 +11,13 @@
 
 import { convertFilter } from '@maplibre/maplibre-gl-style-spec';
 import { layers, namedFlavor } from '@protomaps/basemaps';
-import { type BBox, composeBasemapLayers, REGION_BOUNDS_CORNERS } from '@skating/core';
+import {
+  type BBox,
+  composeBasemapLayers,
+  REGION_BOUNDS_CORNERS,
+  REVEAL_MARKER,
+  summaryHasCard,
+} from '@skating/core';
 import type { StyleSpecification } from 'maplibre-gl';
 import { REGION_FILTER_JSON, REGION_MASK_JSON } from '../assets/regionMask';
 
@@ -407,4 +413,166 @@ export function boundsForBody(
     [bbox.minLng - lngPad, bbox.minLat - latPad],
     [bbox.maxLng + lngPad, bbox.maxLat + latPad],
   ];
+}
+
+/**
+ * Per-body summary cards (N6c Workstream E).
+ *
+ * **A MapLibre `symbol` layer, not HTML overlays.** Symbol layers keep the cards inside the style,
+ * so they scale to a viewport full of bodies, and — the load-bearing reason — MapLibre's own collision
+ * detection hides a card that would overlap another rather than stacking illegible text. An overlay
+ * would need that written by hand. The cost is that a card is text and an icon, so the D86 mark is
+ * drawn with filled and hollow dot characters rather than styled elements; if that turns out to be
+ * too little, the escape hatch is HTML overlays for the *selected* body only.
+ */
+export const SUMMARY_CARD_PALETTE = {
+  white: { label: '#12303f', halo: '#ffffff' },
+  dark: { label: '#e6f2f8', halo: '#0b1622' },
+} as const;
+
+/** The minimal shape a card needs. Structural, so a `Doc<'waterBodies'>` satisfies it. */
+export interface MappableSummaryBody {
+  _id: string;
+  name?: string;
+  minVisibleZoom?: number;
+  representativePoint?: { lat: number; lng: number };
+  interiorPoint?: { lat: number; lng: number };
+  centroid: { lat: number; lng: number };
+  summary?: {
+    recentReportCount: number;
+    topHazardTypes: string[];
+    qualityDots?: number;
+    qualityCount?: number;
+  };
+}
+
+/** Filled/hollow dots for the D86 mark, e.g. 3 of 4 → "●●●○". */
+export function qualityDotString(dots: number, total = 4): string {
+  return '●'.repeat(Math.max(0, dots)) + '○'.repeat(Math.max(0, total - dots));
+}
+
+/**
+ * The card's text block, or `null` when there is nothing to say (E3).
+ *
+ * Two or three short lines: the title, the activity, and the hazards. Kept this terse because a card
+ * is read at a glance from a moving map — anything longer and MapLibre's collision detection starts
+ * hiding cards that would otherwise fit.
+ */
+export function summaryCardText(body: MappableSummaryBody, reveal = false): string | null {
+  const summary = body.summary;
+  if (!summary) return null;
+  // **E3's rule, via `summaryHasCard` rather than restated here.** It was inlined at first, which
+  // left the rule implemented in two places that agreed — the shape that drifts silently, and the
+  // one this codebase has already been bitten by (a hand-copied area floor became *more* permissive
+  // than the import it mirrored). One definition, in core, where both clients can reach it.
+  if (!summaryHasCard(summary, reveal)) return null;
+
+  const lines: string[] = [];
+  // A name is not a reason to draw a card, but it is always on one when there is a card.
+  if (body.name) lines.push(body.name);
+
+  const activity: string[] = [];
+  if (summary.recentReportCount > 0) {
+    activity.push(
+      `${summary.recentReportCount} report${summary.recentReportCount === 1 ? '' : 's'}`,
+    );
+  } else if (reveal) {
+    activity.push('0 reports');
+  }
+  // The mark renders only above quorum — `qualityDots` is absent below it, never zero (D86).
+  //
+  // **Under the reveal it draws an EMPTY mark, never a computed one.** The stored summary is
+  // quorum-respecting by construction and the raw per-report qualities are not shipped to the map,
+  // so there is nothing here to widen even if we wanted to — which is the right answer anyway. An
+  // empty mark shows the slot, its size and where it collides; a fabricated one would be the exact
+  // claim D86's quorum exists to prevent, wearing a dev label nobody reads at a glance.
+  if (summary.qualityDots !== undefined) activity.push(qualityDotString(summary.qualityDots));
+  else if (reveal) activity.push(`${qualityDotString(0)} ${REVEAL_MARKER}`);
+  if (activity.length > 0) lines.push(activity.join('  '));
+
+  if (summary.topHazardTypes.length > 0) {
+    lines.push(summary.topHazardTypes.map((type) => type.replaceAll('_', ' ')).join(', '));
+  } else if (reveal) {
+    lines.push(`no hazards ${REVEAL_MARKER}`);
+  }
+  return lines.length > 0 ? lines.join('\n') : null;
+}
+
+/**
+ * Summary cards → the `summary-cards` source: one point feature per body that has something to say.
+ *
+ * Placed at the body's **interior point**, not its `centroid` — `centroid` is Turf `pointOnFeature`
+ * and lands on the shoreline for any curved lake, which would hang the card off the edge of the
+ * water it describes (the same measurement that moved the fetch profile and the reference links).
+ *
+ * `minVisibleZoom` rides along as a property so the layer can filter on it: E4 requires that a card
+ * never reintroduce a body the prominence scoring suppressed at this zoom. `listInViewport` already
+ * applies that filter server-side, so this is a second belt on the same trousers — cheap, and the
+ * failure it prevents (a quiet lake acquiring prominence by having been skated once) is exactly the
+ * kind that would be reported as "the map is broken" rather than diagnosed.
+ */
+export function summaryCardsToFeatureCollection(
+  bodies: readonly MappableSummaryBody[],
+  /** The N6c-2 reveal flag — draws a card for every body carrying a summary, empty ones included. */
+  reveal = false,
+): GeoJSON.FeatureCollection {
+  const features: GeoJSON.Feature[] = [];
+  for (const body of bodies) {
+    const text = summaryCardText(body, reveal);
+    if (text === null) continue;
+    const point = body.interiorPoint ?? body.representativePoint ?? body.centroid;
+    features.push({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [point.lng, point.lat] },
+      properties: {
+        _id: body._id,
+        text,
+        minVisibleZoom: body.minVisibleZoom ?? 0,
+      },
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
+
+/**
+ * The `summary-card` symbol layer (N6c/E).
+ *
+ * Lives here rather than inline in `MapView` so it can be run through the style-spec validator in a
+ * test — which is the point, because **an invalid layer fails silently**: MapLibre logs and declines
+ * to draw, so the symptom is "the cards never appeared", indistinguishable from "no body had
+ * anything to say", which is E3's *correct* behaviour on this corpus. There is no louder failure
+ * available, so the check has to happen before the browser sees it.
+ *
+ * `['zoom']` inside a filter is the specific thing worth pinning: it is legal in MapLibre but
+ * restricted in nearby contexts (in layout/paint it may only feed a top-level `step`/`interpolate`),
+ * so it is easy to write a version that validates in one place and not the other.
+ */
+export function summaryCardLayer(
+  palette: (typeof SUMMARY_CARD_PALETTE)[keyof typeof SUMMARY_CARD_PALETTE],
+): StyleSpecification['layers'][number] {
+  return {
+    id: 'summary-card',
+    type: 'symbol',
+    source: 'summary-cards',
+    // E4: a card must never reintroduce a body the prominence scoring suppressed at this zoom.
+    // `listInViewport` already applies this server-side; restated here where the drawing happens,
+    // because the failure it prevents would be read as "the map is broken" rather than diagnosed.
+    filter: ['<=', ['get', 'minVisibleZoom'], ['zoom']],
+    layout: {
+      'text-field': ['get', 'text'],
+      'text-size': 11,
+      'text-font': ['Noto Sans Regular'],
+      'text-line-height': 1.2,
+      'text-anchor': 'top',
+      'text-offset': [0, 0.6],
+      // A card may not displace a hazard or put-in marker; if it doesn't fit, it doesn't draw.
+      'text-allow-overlap': false,
+      'text-optional': true,
+    },
+    paint: {
+      'text-color': palette.label,
+      'text-halo-color': palette.halo,
+      'text-halo-width': 1.4,
+    },
+  } as StyleSpecification['layers'][number];
 }

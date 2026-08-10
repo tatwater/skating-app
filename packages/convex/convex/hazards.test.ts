@@ -1693,3 +1693,26 @@ describe('hazards.listRecentMerges', () => {
     await expect(member.as.query(api.hazards.listRecentMerges, {})).rejects.toThrow();
   });
 });
+
+describe('creation recomputes the SURVIVOR body’s card (Greptile P1, 2026-08-10)', () => {
+  /**
+   * `insertHazard` resolves the requested body through `resolveSurvivor` — an offline draft can
+   * carry a body id merged away before the queue flushed (D36) — so the pin may land on a different
+   * lake than the caller named. The card that has to move is the one the pin actually landed on.
+   */
+  test('a hazard drawn on a merged-away body updates the survivor’s card', async () => {
+    const t = harness();
+    const user = await seedUser(t, 'author');
+    const loser = await seedBody(t);
+    const survivor = await seedBody(t);
+    await t.run((ctx) => ctx.db.patch(loser, { dedupStatus: 'merged', mergedIntoId: survivor }));
+
+    await user.as.mutation(api.hazards.create, createArgs(loser));
+
+    const survivorCard = await t.run(async (ctx) => (await ctx.db.get(survivor))?.summary);
+    const loserCard = await t.run(async (ctx) => (await ctx.db.get(loser))?.summary);
+
+    expect(survivorCard?.topHazardTypes).toEqual(['open_water']);
+    expect(loserCard?.topHazardTypes ?? []).toEqual([]);
+  });
+});

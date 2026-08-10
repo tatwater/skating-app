@@ -42,6 +42,7 @@ import {
   KNOWN_STATE_CODES,
   type LatLng,
   MAX_PLAUSIBLE_DEPTH_M,
+  MAX_REFERENCE_LINKS,
   MAX_SUGGESTED_SAMPLE_POINTS,
   MIN_FETCH_CLAUSE_M,
   MIN_VISIBLE_ZOOM_FLOOR,
@@ -57,6 +58,7 @@ import {
   primaryReviewReason,
   REVIEW_REASONS,
   type ReviewReason,
+  referenceLinkError,
   resolveUpsert,
   searchTextFor,
   WATER_BODY_CLASSES,
@@ -66,6 +68,7 @@ import type { LineString, MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
+  internalAction,
   internalMutation,
   internalQuery,
   type MutationCtx,
@@ -80,6 +83,7 @@ import {
   requireProfile,
   requireRole,
 } from './lib/auth';
+import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { rankCandidates, scanCells } from './lib/cellScan';
 import {
@@ -2855,6 +2859,17 @@ export async function mergeBodyInto(
       minVisibleZoom: zoomSortKey(loser),
       listed: isListed({ ...loser, dedupStatus: 'merged' }),
     });
+    // **Both map cards move, so both are recomputed (N6c/E).** A merge re-points the loser's reports
+    // and hazards onto the survivor, which is a change to the survivor's counts with no report or
+    // hazard mutation to hang the recompute on — the one shape `lib/bodySummary.ts`'s write-path
+    // coverage cannot see. Left alone, the survivor understates its activity until the six-hourly
+    // sweep, on a lake that just absorbed another's whole history.
+    //
+    // The loser is recomputed too. Its card never draws (a merged body is unlisted), but leaving a
+    // stale summary on the row means an unmerge would restore a body advertising reports that no
+    // longer belong to it.
+    await recomputeBodySummary(ctx, survivorId);
+    await recomputeBodySummary(ctx, loserId);
     await ctx.db.insert('moderationActions', {
       ...(actorId !== undefined ? { actorId } : {}),
       action: 'merge_waterbody',
@@ -3132,6 +3147,61 @@ export const setCuratedBoost = mutation({
       targetId: waterBodyId,
       reason: `Set curatedBoost to ${curatedBoost}`,
       metadata: { curatedBoost, minVisibleZoom: scores.minVisibleZoom },
+      createdAt: Date.now(),
+    });
+    return waterBodyId;
+  },
+});
+
+/**
+ * Moderator: set a body's operator-entered reference links (N6c Workstream B7).
+ *
+ * The one link in the phase that is stored rather than derived, because no algorithm turns a lake's
+ * name into its association's URL. Everything else in the drawer's link list is computed at render
+ * time from the row (P2/D71) and has no writer at all.
+ *
+ * **The scheme check is re-run here and that is not redundant with the editor's.** The client check
+ * exists so an operator sees the error without a round trip; this one exists because a mutation is
+ * the trust boundary and a client check is a suggestion. An `href` is an execution context, so a
+ * stored `javascript:` URL would run for every visitor to the lake page.
+ *
+ * Passing an empty array clears the list, which is the only way to remove the last link — there is
+ * deliberately no separate delete mutation for a field whose whole value is a handful of rows.
+ */
+export const setReferenceLinks = mutation({
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    links: v.array(v.object({ label: v.string(), url: v.string() })),
+  },
+  handler: async (ctx, { waterBodyId, links }) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) throw new ConvexError('Water body not found');
+    if (links.length > MAX_REFERENCE_LINKS) {
+      throw new ConvexError(
+        `A body carries at most ${MAX_REFERENCE_LINKS} reference links — this is an association or two, not a directory.`,
+      );
+    }
+    for (const link of links) {
+      const error = referenceLinkError(link);
+      if (error) throw new ConvexError(error);
+    }
+
+    const trimmed = links.map((link) => ({ label: link.label.trim(), url: link.url.trim() }));
+    await ctx.db.patch(waterBodyId, { referenceLinks: trimmed });
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_reference_links',
+      targetType: 'waterbody',
+      targetId: waterBodyId,
+      reason:
+        trimmed.length === 0
+          ? 'Cleared the reference links'
+          : `Set ${trimmed.length} reference link${trimmed.length === 1 ? '' : 's'}`,
+      // **`prev` alongside the new value (F1).** An audit row that records only what a field *became*
+      // can answer "who changed this" and never "changed it from what", which is most of what someone
+      // reading the timeline actually wants. Same convention as `setDepth`.
+      metadata: { referenceLinks: trimmed, prev: { referenceLinks: body.referenceLinks ?? [] } },
       createdAt: Date.now(),
     });
     return waterBodyId;
@@ -5700,5 +5770,106 @@ export const setIncludedByRequest = internalMutation({
       createdAt: Date.now(),
     });
     return { waterBodyId: key, name: body.name, includedByRequest: included };
+  },
+});
+
+/**
+ * Sweep stale map summaries (N6c Workstream E).
+ *
+ * **The counts decay with no write to hang the decay on.** Every other path that touches
+ * `summary` is an event — a report created, a hazard archived, a moderator hiding something — but a
+ * report simply *ageing out* of the 14-day window is not an event anywhere in the system. Without
+ * this tick, a lake that was busy in January still shows January's card in March, which is the exact
+ * failure mode E4 named: a card carrying last season's numbers into a month when the lake is open
+ * water.
+ *
+ * Walks only bodies that **have** a summary, which is the small minority — the whole point of E3 is
+ * that most of the corpus carries none — so this is cheap despite running over the corpus. It pages,
+ * because "the small minority" is a claim about today and not a guarantee.
+ */
+export const sweepBodySummaries = internalMutation({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    // **50, and this is a byte budget rather than a row budget.** Convex caps a transaction at
+    // **16 MB of reads**, not just 4,096 rows, and a `waterBodies` doc carries its `polygon` —
+    // ~300 KB for Champlain against a 1.8 KB average. A page is not a random sample of that
+    // distribution either: the import writes in catalogue order, so large lakes arrive together.
+    // The depth loader learned this the expensive way, blowing the byte cap at batch 8 of 1,611
+    // with a size chosen against the row cap. 50 leaves an order of magnitude of headroom even on
+    // a page that is all Champlains.
+    const numItems = Math.min(200, Math.max(1, batchSize ?? 50));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+
+    let swept = 0;
+    for (const body of page.page) {
+      if (!body.summary) continue; // no card, nothing to decay
+      // Hand the row we already read straight through — see `recomputeBodySummary`'s `known`.
+      await recomputeBodySummary(ctx, body._id, Date.now(), body);
+      swept++;
+    }
+    return { cursor: page.continueCursor, isDone: page.isDone, swept, scanned: page.page.length };
+  },
+});
+
+/**
+ * The cron entry point: sweep every page of summaries in one go.
+ *
+ * An action rather than a mutation because it pages, and Convex allows exactly one paginated query
+ * per function — the same constraint `regionStats:recompute` works around the same way.
+ */
+export const sweepAllBodySummaries = internalAction({
+  args: {},
+  handler: async (ctx): Promise<{ swept: number; pages: number }> => {
+    let cursor: string | undefined;
+    let isDone = false;
+    let swept = 0;
+    let pages = 0;
+    // 24,953 bodies at 50 a page is ~500 pages, so the ceiling is a runaway guard rather than a
+    // budget — it must sit above a full walk or the sweep would silently stop half way.
+    while (!isDone && pages < 2000) {
+      const page: { cursor: string; isDone: boolean; swept: number } = await ctx.runMutation(
+        internal.waterBodies.sweepBodySummaries,
+        cursor === undefined ? {} : { cursor },
+      );
+      cursor = page.cursor;
+      isDone = page.isDone;
+      swept += page.swept;
+      pages++;
+    }
+    return { swept, pages };
+  },
+});
+
+/**
+ * Named bodies, paged, for the destination seeding script (N6c B3a/D).
+ *
+ * **Named only.** A curated destination has a name by definition, so the unnamed ~92% of the corpus
+ * can never match one — and filtering here rather than in the script is the difference between the
+ * loader reading a few thousand rows and reading all 24,953. Returns the small field set the matcher
+ * actually reads: shipping polygons through would make this a hundred-megabyte pass for a job that
+ * compares strings and one coordinate.
+ */
+export const listNamedForSeeding = internalQuery({
+  args: { cursor: v.optional(v.string()), batchSize: v.optional(v.number()) },
+  handler: async (ctx, { cursor, batchSize }) => {
+    // **A byte budget, not a row budget** — same reasoning as `sweepBodySummaries`. The projection
+    // below is small, but `paginate` reads whole documents *before* it runs: a page of 1,000 bodies
+    // drags 1,000 polygons through the 16 MB read cap to return a name and a coordinate. 200 is the
+    // page size; the cheapness of the *return* value is a separate win and not a substitute.
+    const numItems = Math.min(500, Math.max(1, batchSize ?? 200));
+    const page = await ctx.db.query('waterBodies').paginate({ cursor: cursor ?? null, numItems });
+    const bodies = page.page
+      .filter((body) => body.name !== undefined && isListed(body))
+      .map((body) => ({
+        _id: body._id,
+        name: body.name,
+        states: body.states,
+        surfaceAreaSqM: body.surfaceAreaSqM,
+        curatedBoost: body.curatedBoost,
+        interiorPoint: body.interiorPoint,
+        representativePoint: body.representativePoint,
+        centroid: body.centroid,
+      }));
+    return { bodies, cursor: page.continueCursor, isDone: page.isDone };
   },
 });

@@ -1026,9 +1026,55 @@ passed its unit tests:
 everything above it.
 
 **N6c-2 — reference links, NWS alerts, the short forecast, the seed script, per-body summary cards,
-and import observability.** **Not built.** Carries the **D86 amendment**: the consensus dots read
-`reports.skateQuality`, not the Phase 6 thumbs, which measure whether a *report* was helpful rather
-than what the ice was like.
+and the per-lake timeline.** ✅ **BUILT 2026-08-09** on branch `phase-n6c-2-links-cards` (off
+`phase-n7-3-unified-corpus`; **unpushed and undeployed on purpose** — a second session was mid-campaign
+against dev, and a redeploy mid-pass is the one way to break an otherwise resumable run). Tests green:
+core 1,738+ · convex 1,141 · web 291+ · mobile 95 · seed-destinations 15. New decisions **D138–D142**.
+
+Shipped: **B** (Windy + the regional community archive, derived and stored nowhere), **B5** (NWS
+alerts on a 15-minute cron, state rung of the zone ladder), **B5b** (the forward forecast), **B7**
+(the one stored link, with its editor), **B3a/D** (`scripts/seed-destinations`), **E** (map summary
+cards with D86's dots), **F1** (the per-lake activity timeline), and mobile parity for all three
+drawer strips through `openBrowserAsync` (D76).
+
+**Everything satellite deferred to [N6e](./phase-N6e-satellite-imagery.md) at the founder's ask
+(D138)** — the Copernicus deep link, the `satelliteImagery` override and `SATELLITE_MIN_AREA_SQM` —
+so the imagery story lands in one piece rather than a link one phase and a layer the next. That split
+renamed the seed script to `seed-destinations` (**D139**), since the job it does today is Workstream
+D's boosts.
+
+Carries the **D86 amendment**: the consensus dots read `reports.skateQuality`, not the Phase 6
+thumbs, which measure whether a *report* was helpful rather than what the ice was like.
+
+**What the build found — the plan's own findings had not reached its later workstreams:**
+
+- **Workstream B was still built on `centroid`**, which this same plan proves in its finding 2 is a
+  *shoreline* point (Willoughby = ring vertex 199; Champlain 30.7 km off mid-lake). A Windy link for
+  Champlain would have opened 30 km away, silently, because a shoreline coordinate is a valid
+  coordinate. Links and summary cards read `interiorPoint`; a test pins it.
+- **B5b's cheap build is the wrong build (D140).** The forward hours were being discarded by the same
+  filter that feeds `summarizeWeatherSince`, so widening it — the one-line version — would have put
+  predictions into the decay multiplier, the bounty gate and the contradiction settle. The fetch now
+  returns `{ past, forecast }` and D74 is a return type rather than a rule each call site remembers.
+- **E's counter is the wrong shape (D141).** Card counts are window- and season-scoped, so a report
+  ageing out has no event to decrement on, and the D86 mean cannot be maintained incrementally at all.
+  Recomputed from a bounded index range, with a cron for the decay no write can catch.
+- **E cannot be validated on dev**, which holds 1 report and 2 hazards. It ships correct and renders
+  nothing anywhere. Founder call: build it, validate at N6d or device testing.
+- **The corpus is 24,953 listed, not the 116,070 the plan says throughout** — including in P1 and P2, its two
+  governing rules. The rules survive; every cost argument in the doc was measured on a corpus that no
+  longer exists.
+
+**A reveal flag, so nothing goes untested for being invisible (D142).** Founder ask after the build:
+almost every surface here renders nothing on a corpus with one report, and a missing surface looks
+exactly like a broken one. `PROFILE_REVEAL_ALL` states each absence instead — it never invents a
+value, the revealed card mark is empty rather than computed, and it is **forced off against
+production** whatever the constant says. Flip it to `false` before the season.
+
+✅ **`regionStats` is populated** — 5 states × 5 metrics, recomputed over 24,953 bodies as the N7-3
+campaign's last pass (PR #41, merged after this branch was cut). So A5's decile clauses are **live**,
+not dark: a caption can now say a lake is among the deepest in Vermont. This branch asserted the
+opposite until it merged main; corrected here rather than left standing.
 
 **N6b — The bathymetry layer: real isobaths inside the lake.** ✅ **COMPLETE (2026-08-01); prod
 deferred.** See [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
@@ -1348,6 +1394,30 @@ opportunistically or when a trigger fires, not as a planned phase.)*
   sparse.
 - **Code-level GPS replay rig for CI** — the Android emulator's GPX playback covers manual QA today.
 - **First-class in-app avatar upload** — Clerk manages avatars for now; revisit only if its UX bites.
+
+**N8b — Finish the `centroid` → `representativePoint` rename (stage 2).** ⏰ **Deferred 2026-08-10, and
+it should not sit long.** The data half is **done** — `backfillRepresentativePoint` ran across all
+three tables (`waterBodies` 24,961 · `adminAreas` 2,546 · `waterBodySubAreas` 126, nine filled), so
+every row now carries the field and nothing is blocked on a pass.
+
+What is left is purely a code sweep: **migrate ~100 read sites** to `representativePoint`, make the
+field required, drop `centroid`, and remove the double-write. Readers were deliberately left alone in
+stage 1, because migrating them to `representativePoint ?? centroid` then would have been a hundred
+edits immediately undone here — where no fallback is needed at all.
+
+**Why it should not linger.** Three fields currently describe two points, and one pair is a rename:
+`representativePoint` *is* `centroid` (byte-identical — 126 of 126 sub-areas match exactly), while
+`interiorPoint` is the genuinely different, strictly-interior one. That is a live trap rather than
+cosmetic debt: **N6c's Workstream B was written against `centroid` and would have opened Windy 30 km
+off Lake Champlain**, because a shoreline coordinate is a perfectly valid coordinate and nothing
+downstream can tell. Every extra week the three names coexist is another chance to reach for the wrong
+one — and the fallback chains N6c-2 wrote (`interiorPoint ?? representativePoint ?? centroid`) exist
+only to be deleted by this.
+
+⚠️ **Never make it a true centroid.** The name was the bug, not the maths — the area centroid of a
+crescent lake is on land, and drive-time bands plus the pin-less report's town stamp deliberately want
+a shoreline-ish point. See [`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) *§The three point
+fields*.
 
 ### Waiting on a blocker
 

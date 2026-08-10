@@ -31,6 +31,7 @@ import { type MutationCtx, mutation, query } from './_generated/server';
 import { clusterScopeFor, loadVisibleHazard, poolConsensus } from './hazards';
 import { requireContributor } from './lib/auth';
 import { fileOrBumpAutoFlag } from './lib/autoFlag';
+import { recomputeBodySummary } from './lib/bodySummary';
 import { HAZARD_CONFIRM_VERDICTS, HAZARD_CONFIRM_VIA } from './lib/enums';
 import { awardPointEvent, checkAndAwardBadges } from './lib/reputation';
 import { latLng, literals } from './lib/validators';
@@ -280,6 +281,10 @@ async function recomputeLifecycle(
       ? { decayMultiplier: undefined, snowHidden: undefined, weatherAdjustedAt: undefined }
       : {}),
   });
+  // A vote that archived the pin takes it off the map card too (N6c/E). Only a `status` change can
+  // do that, so this is cheap in the common case: the recompute short-circuits on an unchanged
+  // summary rather than writing the body again.
+  await recomputeBodySummary(ctx, hazard.waterBodyId);
   return records;
 }
 

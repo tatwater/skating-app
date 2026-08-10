@@ -17,8 +17,10 @@
  */
 
 import {
+  type ForecastSummary,
   HAZARD_WEATHER_LOOKBACK_DAYS,
   type HourlyWeather,
+  summarizeForecast,
   summarizeWeatherSince,
   type WeatherSinceSummary,
 } from '@skating/core';
@@ -28,7 +30,8 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, internalQuery } from './_generated/server';
-import { hazardCenter, nearestSamplePoint } from './lib/sampling';
+import { resolveSurvivor } from './lib/bodies';
+import { defaultSampleAnchor, hazardCenter, nearestSamplePoint } from './lib/sampling';
 import { weatherSinceSummary } from './lib/validators';
 
 // The validator and the core type must stay structurally identical — assert it at compile time so drift
@@ -83,16 +86,44 @@ function num(x: number | null | undefined): number {
 }
 
 /**
- * Fetch the hourly series for [windowStartMs, nowMs] at a point, mapped to `HourlyWeather`. Returns `null`
+ * The split return: hours at or before `nowMs`, and hours after it.
+ *
+ * **The two arrays are the D74 wall, and they are separate on purpose (N6c B5b).** `past` is what
+ * every calculation reads — the decay cron, the bounty gate, the contradiction settle — and its
+ * reproducibility depends on it containing only observations. `forecast` is render-only. Returning
+ * one array with a timestamp filter each caller must remember to apply would put that guarantee in
+ * every call site instead of in the type, and the failure mode is silent: a hazard whose confidence
+ * decayed on a forecast that did not happen cannot be re-derived afterwards, and nothing would say so.
+ */
+interface OpenMeteoHours {
+  past: HourlyWeather[];
+  forecast: HourlyWeather[];
+  /**
+   * `utc_offset_seconds × 1000` — the shift already baked into every `startMs` above.
+   *
+   * Returned rather than recovered downstream because the forecast horizon is applied against these
+   * local-shifted timestamps, and this region sits 4–5 hours off UTC: comparing them to a UTC `now`
+   * slides the whole strip by most of its own length. Deriving the offset from the first hour's
+   * timestamp instead would work until the hour Open-Meteo returns a gap at the front, and then it
+   * would be wrong by exactly one hour with nothing to show for it.
+   */
+  utcOffsetMs: number;
+}
+
+/**
+ * Fetch the hourly series around `nowMs` at a point, mapped to `HourlyWeather`. Returns `null`
  * on any failure (the caller then fails open — empty summary, no cache write, retried next drawer-open).
  * `startMs` (local, for night-bucketing) = unix + `utc_offset_seconds`; window filtering uses absolute UTC.
+ *
+ * Past hours span [windowStartMs, nowMs]; forward hours span (nowMs, +∞), trimmed to the horizon by
+ * `summarizeForecast` rather than here, so this stays a transport function with no policy in it.
  */
 async function fetchOpenMeteoHourly(
   lat: number,
   lng: number,
   windowStartMs: number,
   nowMs: number,
-): Promise<HourlyWeather[] | null> {
+): Promise<OpenMeteoHours | null> {
   // Open-Meteo anchors `past_days` to the REAL current date, so size it from `Date.now()`, never from the
   // window end `nowMs` (which a caller may set in the past — e.g. the contradiction settle passes the older
   // report's skate time). Sizing from `nowMs` would make the returned series start at `realNow − (nowMs −
@@ -109,7 +140,13 @@ async function fetchOpenMeteoHourly(
     longitude: String(lng),
     hourly: HOURLY_VARS.join(','),
     past_days: String(pastDays),
-    forecast_days: '1', // include today's already-elapsed hours up to now
+    // **Two days, not one, and this is the entire cost of B5b.** One day was already here so the
+    // series included today's elapsed hours up to now; the forward hours arrived in that same
+    // response and were thrown away by the window filter. Asking for two means the 12-hour horizon
+    // survives a day boundary, so an evening skater still sees tomorrow morning. Same endpoint, same
+    // variables, same attribution, no new provider and no new quota — D74 holds untouched, because
+    // this is still Open-Meteo and there is no second opinion being blended.
+    forecast_days: '2',
     timezone: 'auto',
     timeformat: 'unixtime',
     temperature_unit: 'celsius',
@@ -147,11 +184,14 @@ async function fetchOpenMeteoHourly(
   const shortwave = col('shortwave_radiation');
 
   const out: HourlyWeather[] = [];
+  const forecast: HourlyWeather[] = [];
   for (let i = 0; i < time.length; i++) {
     const ts = time[i];
     if (typeof ts !== 'number') continue;
     const tsMs = ts * 1000;
-    if (tsMs < windowStartMs || tsMs > nowMs) continue; // window filter (absolute UTC)
+    // Below the window start is neither past-we-asked-for nor future — drop it outright.
+    if (tsMs < windowStartMs) continue;
+    const isForecast = tsMs > nowMs; // window filter (absolute UTC); above `nowMs` is the forward half
     const t = temp?.[i];
     if (typeof t !== 'number') continue; // no temperature ⇒ unusable hour
 
@@ -175,13 +215,22 @@ async function fetchOpenMeteoHourly(
     if (typeof sunshineV === 'number') h.sunshineSeconds = sunshineV;
     const shortwaveV = shortwave?.[i];
     if (typeof shortwaveV === 'number') h.shortwaveWm2 = shortwaveV;
-    out.push(h);
+    if (isForecast) forecast.push(h);
+    else out.push(h);
   }
   // A 200 that yields zero usable hours (Open-Meteo's most recent hours can lag a live window) is a soft
   // failure, not a real "no weather" result — the sub-hour-window case is already handled upstream before
   // we ever fetch. Return `null` so the caller fails open and DOESN'T cache it, and the next drawer-open /
   // cron tick retries instead of serving a blank strip for the rest of the hour bucket.
-  return out.length > 0 ? out : null;
+  //
+  // **Emptiness is judged per half by the caller, not here.** This transport says "nothing usable
+  // came back at all"; whether an empty `past` is a soft failure is `resolveWeatherSince`'s rule and
+  // whether an empty `forecast` is one is `resolveForecast`'s. Collapsing them here would let a
+  // response carrying forward hours but no past ones look like a success to the decay path, which
+  // would then cache an empty summary — the precise failure this comment was written about.
+  return out.length > 0 || forecast.length > 0
+    ? { past: out, forecast, utcOffsetMs: offsetMs }
+    : null;
 }
 
 /** Read a cached summary for an exact (key, window) triple, or null on miss. */
@@ -276,7 +325,10 @@ export const resolveStripAnchor = internalQuery({
     } else {
       return null;
     }
-    const body = await ctx.db.get(waterBodyId);
+    // `resolveSurvivor` for the same reason `weatherAlerts.listForBody` uses it: every other
+    // per-body read in the codebase follows a merge, and a sample point taken from a tombstone's row
+    // is a forecast for whichever duplicate happened to lose.
+    const body = await resolveSurvivor(ctx, waterBodyId);
     if (!body || body.removedAt) return null;
     const point = nearestSamplePoint(body, near);
     return { lat: point.lat, lng: point.lng, startMs };
@@ -325,8 +377,15 @@ export async function resolveWeatherSince(
 
   const hourly = await fetchOpenMeteoHourly(lat, lng, windowStartMs, nowMs);
   if (hourly === null) return null; // fetch failed — don't cache, let the caller retry next time
+  // **`.past` only, and never `.forecast` (D74).** Everything downstream of this line is a
+  // calculation whose result must be re-derivable from what actually happened — the decay
+  // multiplier, the bounty gate, the contradiction settle. A forward hour reaching
+  // `summarizeWeatherSince` would make all three unreproducible after the fact and nothing would
+  // report it. The soft-failure rule below is unchanged: an empty past half is still "couldn't
+  // tell", regardless of how many forward hours came with it.
+  if (hourly.past.length === 0) return null;
 
-  const summary = summarizeWeatherSince(hourly);
+  const summary = summarizeWeatherSince(hourly.past);
   await ctx.runMutation(internal.weather.writeWeatherCache, {
     samplePointKey,
     windowStartMs,
@@ -336,6 +395,135 @@ export async function resolveWeatherSince(
   });
   return summary;
 }
+
+/** Read a cached forecast for a sample point + hour bucket, or null on miss. */
+export const readForecastCache = internalQuery({
+  args: { samplePointKey: v.string(), forecastBucketMs: v.number() },
+  handler: async (ctx, a) => {
+    const row = await ctx.db
+      .query('weatherForecastCache')
+      .withIndex('by_key', (q) =>
+        q.eq('samplePointKey', a.samplePointKey).eq('forecastBucketMs', a.forecastBucketMs),
+      )
+      .first();
+    if (!row) return null;
+    const summary: ForecastSummary = { hours: row.hours };
+    if (row.precipStartsMs !== undefined) summary.precipStartsMs = row.precipStartsMs;
+    if (row.precipIsSnow !== undefined) summary.precipIsSnow = row.precipIsSnow;
+    if (row.minTemperatureC !== undefined) summary.minTemperatureC = row.minTemperatureC;
+    if (row.maxTemperatureC !== undefined) summary.maxTemperatureC = row.maxTemperatureC;
+    return summary;
+  },
+});
+
+/** Upsert a cached forecast (idempotent on the key pair). */
+export const writeForecastCache = internalMutation({
+  args: {
+    samplePointKey: v.string(),
+    forecastBucketMs: v.number(),
+    hours: v.array(
+      v.object({
+        startMs: v.number(),
+        temperatureC: v.number(),
+        windSpeedKph: v.number(),
+        precipitationMm: v.number(),
+        snowfallCm: v.number(),
+      }),
+    ),
+    precipStartsMs: v.optional(v.number()),
+    precipIsSnow: v.optional(v.boolean()),
+    minTemperatureC: v.optional(v.number()),
+    maxTemperatureC: v.optional(v.number()),
+    fetchedAt: v.number(),
+  },
+  handler: async (ctx, a) => {
+    const existing = await ctx.db
+      .query('weatherForecastCache')
+      .withIndex('by_key', (q) =>
+        q.eq('samplePointKey', a.samplePointKey).eq('forecastBucketMs', a.forecastBucketMs),
+      )
+      .first();
+    if (existing) await ctx.db.patch(existing._id, a);
+    else await ctx.db.insert('weatherForecastCache', a);
+  },
+});
+
+/**
+ * Resolve the forward forecast for a point, cache-first (N6c B5b).
+ *
+ * **The window it asks for is one hour of past, and that is not waste.** Open-Meteo's `past_days`
+ * has a floor of 1, so the smallest honest request already spans today; asking for a one-hour window
+ * costs exactly what asking for none would, and it keeps this on the identical code path as the
+ * weather-since fetch rather than adding a second, subtly-different request builder.
+ *
+ * Returns `null` when the fetch failed, so the caller fails open and the next drawer-open retries —
+ * the same contract as `resolveWeatherSince`, and for the same reason: caching a blank strip for an
+ * hour because of a transient blip is worse than fetching twice.
+ */
+export async function resolveForecast(
+  ctx: ActionCtx,
+  lat: number,
+  lng: number,
+  nowMs: number,
+): Promise<ForecastSummary | null> {
+  const samplePointKey = samplePointKeyFor(lat, lng);
+  const forecastBucketMs = hourBucket(nowMs);
+  const cached = await ctx.runQuery(internal.weather.readForecastCache, {
+    samplePointKey,
+    forecastBucketMs,
+  });
+  if (cached) return cached;
+
+  const hourly = await fetchOpenMeteoHourly(lat, lng, hourBucket(nowMs - HOUR_MS), nowMs);
+  if (hourly === null || hourly.forecast.length === 0) return null;
+
+  // **`nowMs` is shifted into the body's local clock before the horizon is applied**, because the
+  // hours carry local-shifted timestamps and comparing them against a UTC `now` would slide the
+  // whole strip by the offset — 4–5 hours in this region, i.e. most of a 12-hour horizon.
+  const summary = summarizeForecast(hourly.forecast, nowMs + hourly.utcOffsetMs);
+  if (summary.hours.length === 0) return null;
+
+  await ctx.runMutation(internal.weather.writeForecastCache, {
+    samplePointKey,
+    forecastBucketMs,
+    ...summary,
+    fetchedAt: nowMs,
+  });
+  return summary;
+}
+
+/**
+ * Public: the short forward forecast for a **water body**'s drawer (N6c B5b).
+ *
+ * Keyed on the body rather than on a report or hazard, because unlike the weather-since strip this
+ * has nothing to anchor to — the question "will it be snowing when I get there" is about the lake,
+ * and it is asked most often on the lakes with no reports at all.
+ *
+ * **The resource guard is the same shape as `getWeatherSinceForBody`'s and it matters more here**,
+ * since there is no entity to derive a window from: the only client-supplied value is a body id, and
+ * the window is `now` on the server. So the reachable fetch set is one per body per hour bucket,
+ * which is exactly what the cache already collapses.
+ */
+export const getForecastForBody = action({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }): Promise<ForecastSummary | null> => {
+    if (!(await ctx.auth.getUserIdentity())) return null;
+    const point = await ctx.runQuery(internal.weather.resolveBodySamplePoint, { waterBodyId });
+    if (!point) return null;
+    return await resolveForecast(ctx, point.lat, point.lng, Date.now());
+  },
+});
+
+/** The body's default weather sample point — `interiorPoint` where present, per `lib/sampling`. */
+export const resolveBodySamplePoint = internalQuery({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    const body = await ctx.db.get(waterBodyId);
+    if (!body || body.removedAt) return null;
+    const point = nearestSamplePoint(body, defaultSampleAnchor(body));
+    return { lat: point.lat, lng: point.lng };
+  },
+});
 
 /**
  * Public: the weather-since summary for the strip on a **report** or **hazard** drawer (web + mobile),

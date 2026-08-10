@@ -1325,3 +1325,104 @@ describe('reports counters + offline read-cache', () => {
     expect(await t.query(api.reports.recentCardsForBodies, { waterBodyIds: [] })).toEqual([]);
   });
 });
+
+/**
+ * A body's map summary (N6c/E). `seedBody` returns an untyped id, so `db.get` widens to the union of
+ * every table's document and `summary` is invisible without narrowing.
+ */
+async function cardFor(t: ReturnType<typeof convexTest>, bodyId: string) {
+  return t.run(async (ctx) => (await ctx.db.get(bodyId as Id<'waterBodies'>))?.summary);
+}
+
+describe('reports.update refreshes the map summary (Greptile P1, 2026-08-10)', () => {
+  const DAY = 86_400_000;
+
+  /**
+   * `update` patches `skateEndTime` and `skateQuality`, and both feed `waterBodies.summary`
+   * directly. Before this fix nothing recomputed on edit, so a re-dated or re-rated report left the
+   * map card wrong until the six-hourly sweep — while `lib/bodySummary.ts` claimed the write paths
+   * were "exact by construction rather than exact-until-a-path-is-missed".
+   */
+  test('re-dating a report out of the window drops it from the card immediately', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const asAuthor = await seedUser(t, 'clerk_edit_window');
+    const recent = Date.now() - 2 * DAY;
+
+    const reportId = await asAuthor.mutation(api.reports.create, {
+      waterBodyId: id,
+      skateEndTime: recent,
+      skateQuality: 'good',
+    });
+    expect((await cardFor(t, id))?.recentReportCount).toBe(1);
+
+    // Push it well outside SUMMARY_RECENT_DAYS.
+    await asAuthor.mutation(api.reports.update, {
+      reportId,
+      skateEndTime: Date.now() - 40 * DAY,
+      skateQuality: 'good',
+    });
+
+    expect((await cardFor(t, id))?.recentReportCount).toBe(0);
+  });
+
+  test('re-rating a report moves the D86 mark without waiting for the sweep', async () => {
+    const t = convexTestWithGeo();
+    const { id } = await seedBody(t);
+    const recent = Date.now() - 2 * DAY;
+
+    // Three rated reports clear the quorum; all "poor" ⇒ one dot.
+    const authors = [];
+    for (let i = 0; i < 3; i++) authors.push(await seedUser(t, `clerk_edit_rate_${i}`));
+    const ids = [];
+    for (const author of authors) {
+      ids.push(
+        await author.mutation(api.reports.create, {
+          waterBodyId: id,
+          skateEndTime: recent,
+          skateQuality: 'poor',
+        }),
+      );
+    }
+    expect((await cardFor(t, id))?.qualityDots).toBe(1);
+
+    // One author changes their mind: (1 + 1 + 4) / 3 = 2 ⇒ two dots.
+    await authors[0]?.mutation(api.reports.update, {
+      reportId: ids[0] as Id<'reports'>,
+      skateEndTime: recent,
+      skateQuality: 'great',
+    });
+
+    expect((await cardFor(t, id))?.qualityDots).toBe(2);
+  });
+});
+
+describe('creation recomputes the SURVIVOR body’s card (Greptile P1, 2026-08-10)', () => {
+  const DAY = 86_400_000;
+
+  /**
+   * An offline draft can hold a body id that was merged away before the queue flushed (D36/F2).
+   * `create` sends the report to the canonical survivor — so the card that must move is the
+   * survivor's. Recomputing the requested id refreshes a row nothing renders (a merged body is
+   * unlisted) and leaves the visible card stale until the sweep.
+   */
+  test('a report filed against a merged-away body updates the survivor’s card, not the loser’s', async () => {
+    const t = convexTestWithGeo();
+    const loser = await seedBody(t, 'osm/loser');
+    const survivor = await seedBody(t, 'osm/survivor');
+    await t.run((ctx) =>
+      ctx.db.patch(loser.id, { dedupStatus: 'merged', mergedIntoId: survivor.id }),
+    );
+    const asAuthor = await seedUser(t, 'clerk_merged_card');
+
+    await asAuthor.mutation(api.reports.create, {
+      waterBodyId: loser.id, // the stale id the draft was carrying
+      skateEndTime: Date.now() - 2 * DAY,
+      skateQuality: 'good',
+    });
+
+    expect((await cardFor(t, survivor.id))?.recentReportCount).toBe(1);
+    // And the loser's card stays empty — it is not where the report went.
+    expect((await cardFor(t, loser.id))?.recentReportCount ?? 0).toBe(0);
+  });
+});

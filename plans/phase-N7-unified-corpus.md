@@ -2210,8 +2210,11 @@ reading did.
 
 **This is the only N7 document.** `HANDOFF-n7-classification.md` and
 `HANDOFF-n7-2-data-campaign.md` were folded in above and deleted (2026-08-10);
-`HANDOFF-wind-climate-archive.md` and `HANDOFF-n6c-data-campaign.md` are historical and superseded by
-D134/D135 and D127 respectively.
+`HANDOFF-n6c-data-campaign.md` was audited against the deployment, folded into
+[`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) and [`phase-N6a`](./phase-N6a-lake-depth.md), and
+deleted (2026-08-10) — its one still-live item was `backfillRepresentativePoint`, since **run**: all
+three tables clean, 9 sub-areas filled, 24,961 bodies and 2,546 admin areas already complete. `HANDOFF-wind-climate-archive.md` is historical (superseded by D134/D135) and is the last one
+left; it self-declares as history in its own banner and can go the same way.
 
 [`01-decisions.md`](./01-decisions.md) — **D92–D105**, **D109–D137** ·
 [`docs/water-body-data.md`](../docs/water-body-data.md) — the same story for humans ·

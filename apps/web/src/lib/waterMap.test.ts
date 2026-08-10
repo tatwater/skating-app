@@ -13,7 +13,12 @@ import {
   NORTHEAST_REGION_BOUNDS,
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
+  qualityDotString,
+  SUMMARY_CARD_PALETTE,
   subAreasToFeatureCollection,
+  summaryCardLayer,
+  summaryCardsToFeatureCollection,
+  summaryCardText,
   waterBodiesToFeatureCollection,
   zoomForViewport,
 } from './waterMap';
@@ -378,5 +383,221 @@ describe('subAreasToFeatureCollection', () => {
 
   it('is empty for no sub-areas — the case for all but a handful of lakes', () => {
     expect(subAreasToFeatureCollection([]).features).toEqual([]);
+  });
+});
+
+describe('summary cards (N6c/E)', () => {
+  const base = {
+    _id: 'body1',
+    name: 'Beaver Pond',
+    centroid: { lat: 44.2757, lng: -73.3894 }, // a shoreline point, as `centroid` really is
+    interiorPoint: { lat: 44.5325, lng: -73.3251 },
+  };
+
+  it('draws no card for a body with no summary', () => {
+    expect(summaryCardText({ ...base })).toBeNull();
+    expect(summaryCardsToFeatureCollection([{ ...base }]).features).toHaveLength(0);
+  });
+
+  /** E3: no activity ⇒ no card at all, not an empty one. */
+  it('draws no card for a body with a summary but no activity', () => {
+    expect(
+      summaryCardText({ ...base, summary: { recentReportCount: 0, topHazardTypes: [] } }),
+    ).toBeNull();
+  });
+
+  it('draws a card for recent reports', () => {
+    const text = summaryCardText({
+      ...base,
+      summary: { recentReportCount: 3, topHazardTypes: [] },
+    });
+    expect(text).toContain('Beaver Pond');
+    expect(text).toContain('3 reports');
+  });
+
+  it('draws a card for hazards alone, and humanizes the type', () => {
+    const text = summaryCardText({
+      ...base,
+      summary: { recentReportCount: 0, topHazardTypes: ['open_water', 'thin_ice'] },
+    });
+    expect(text).toContain('open water, thin ice');
+  });
+
+  it('draws a card on an unnamed body, because "someone skated here" is the point', () => {
+    const text = summaryCardText({
+      ...base,
+      name: undefined,
+      summary: { recentReportCount: 1, topHazardTypes: [] },
+    });
+    expect(text).toBe('1 report');
+  });
+
+  it('renders the D86 mark as dots, and only above quorum', () => {
+    const withMark = summaryCardText({
+      ...base,
+      summary: { recentReportCount: 5, topHazardTypes: [], qualityDots: 3, qualityCount: 5 },
+    });
+    expect(withMark).toContain('●●●○');
+
+    const belowQuorum = summaryCardText({
+      ...base,
+      summary: { recentReportCount: 2, topHazardTypes: [] },
+    });
+    expect(belowQuorum).not.toContain('●');
+    expect(belowQuorum).not.toContain('○');
+  });
+
+  /**
+   * The same measurement that moved the fetch profile and the reference links: `centroid` is a
+   * shoreline point, so a card placed there hangs off the edge of the water it describes.
+   */
+  it('places the card at the interior point, never the shoreline centroid', () => {
+    const [feature] = summaryCardsToFeatureCollection([
+      { ...base, summary: { recentReportCount: 1, topHazardTypes: [] } },
+    ]).features;
+    expect(feature).toBeDefined();
+    expect((feature?.geometry as GeoJSON.Point | undefined)?.coordinates).toEqual([
+      -73.3251, 44.5325,
+    ]);
+  });
+
+  it('falls back to the centroid when no interior point exists', () => {
+    const [feature] = summaryCardsToFeatureCollection([
+      {
+        ...base,
+        interiorPoint: undefined,
+        summary: { recentReportCount: 1, topHazardTypes: [] },
+      },
+    ]).features;
+    expect(feature).toBeDefined();
+    expect((feature?.geometry as GeoJSON.Point | undefined)?.coordinates).toEqual([
+      -73.3894, 44.2757,
+    ]);
+  });
+
+  it('carries minVisibleZoom so the layer cannot reintroduce a suppressed body (E4)', () => {
+    const [feature] = summaryCardsToFeatureCollection([
+      { ...base, minVisibleZoom: 12, summary: { recentReportCount: 1, topHazardTypes: [] } },
+    ]).features;
+    expect(feature?.properties?.minVisibleZoom).toBe(12);
+  });
+});
+
+describe('qualityDotString', () => {
+  it('fills left to right', () => {
+    expect(qualityDotString(0)).toBe('○○○○');
+    expect(qualityDotString(2)).toBe('●●○○');
+    expect(qualityDotString(4)).toBe('●●●●');
+  });
+});
+
+describe('summary cards under the reveal flag (N6c-2)', () => {
+  const base = {
+    _id: 'body1',
+    name: 'Beaver Pond',
+    centroid: { lat: 44.2757, lng: -73.3894 },
+    interiorPoint: { lat: 44.5325, lng: -73.3251 },
+  };
+
+  it('draws an empty card so the slot is visible on a corpus with no reports', () => {
+    const text = summaryCardText(
+      { ...base, summary: { recentReportCount: 0, topHazardTypes: [] } },
+      true,
+    );
+    expect(text).toContain('Beaver Pond');
+    expect(text).toContain('0 reports');
+    expect(text).toContain('no hazards');
+  });
+
+  /**
+   * The line that must not move. A revealed mark is EMPTY — the stored summary is
+   * quorum-respecting by construction and the raw qualities never reach the map, so there is
+   * nothing here to widen. A fabricated mark would be exactly the claim D86's quorum prevents.
+   */
+  it('renders an empty mark, never a computed one', () => {
+    const text =
+      summaryCardText({ ...base, summary: { recentReportCount: 1, topHazardTypes: [] } }, true) ??
+      '';
+    expect(text).toContain('○○○○');
+    expect(text).not.toContain('●');
+  });
+
+  it('marks everything it revealed, so nothing reads as real content', () => {
+    const text =
+      summaryCardText({ ...base, summary: { recentReportCount: 0, topHazardTypes: [] } }, true) ??
+      '';
+    expect(text).toContain('·dev');
+  });
+
+  it('leaves a real card alone', () => {
+    const text =
+      summaryCardText(
+        {
+          ...base,
+          summary: { recentReportCount: 4, topHazardTypes: ['open_water'], qualityDots: 3 },
+        },
+        true,
+      ) ?? '';
+    expect(text).toContain('●●●○');
+    expect(text).toContain('4 reports');
+    expect(text).not.toContain('no hazards');
+  });
+
+  it('still draws nothing for a body with no summary at all', () => {
+    expect(summaryCardText({ ...base }, true)).toBeNull();
+    expect(summaryCardsToFeatureCollection([{ ...base }], true).features).toHaveLength(0);
+  });
+
+  it('changes nothing when off', () => {
+    expect(
+      summaryCardText({ ...base, summary: { recentReportCount: 0, topHazardTypes: [] } }, false),
+    ).toBeNull();
+  });
+});
+
+describe('summaryCardLayer', () => {
+  /**
+   * An invalid layer fails **silently**: MapLibre logs and declines to draw, so the symptom is "no
+   * cards appeared" — indistinguishable from E3 correctly finding nothing to say. This is the only
+   * loud check available.
+   */
+  it('is a valid MapLibre layer', () => {
+    const errors = validateStyleMin({
+      version: 8,
+      sources: {
+        'summary-cards': {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        },
+      },
+      layers: [summaryCardLayer(SUMMARY_CARD_PALETTE.white)],
+    } as never);
+    expect(errors.map((e) => e.message)).toEqual([]);
+  });
+
+  it('is valid in the dark palette too', () => {
+    const errors = validateStyleMin({
+      version: 8,
+      sources: {
+        'summary-cards': {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] },
+        },
+      },
+      layers: [summaryCardLayer(SUMMARY_CARD_PALETTE.dark)],
+    } as never);
+    expect(errors.map((e) => e.message)).toEqual([]);
+  });
+
+  /** E4's rule, and the reason `['zoom']`-in-a-filter is worth pinning rather than assuming. */
+  it('filters on minVisibleZoom so a suppressed body cannot acquire a card', () => {
+    const layer = summaryCardLayer(SUMMARY_CARD_PALETTE.white) as { filter?: unknown };
+    expect(layer.filter).toEqual(['<=', ['get', 'minVisibleZoom'], ['zoom']]);
+  });
+
+  it('yields to markers rather than overlapping them', () => {
+    const layout = summaryCardLayer(SUMMARY_CARD_PALETTE.white).layout as Record<string, unknown>;
+    expect(layout['text-allow-overlap']).toBe(false);
+    expect(layout['text-optional']).toBe(true);
   });
 });

@@ -504,3 +504,51 @@ describe('expireDepartedPhotos (D66)', () => {
     expect(result.accounts).toBe(1);
   });
 });
+
+describe('pruneForecastCache (N6c/B5b, self-review 2026-08-10)', () => {
+  const HOUR = 3_600_000;
+  function row(forecastBucketMs: number) {
+    return {
+      samplePointKey: '44.5,-73.2',
+      forecastBucketMs,
+      hours: [
+        {
+          startMs: forecastBucketMs,
+          temperatureC: -4,
+          windSpeedKph: 8,
+          precipitationMm: 0,
+          snowfallCm: 0,
+        },
+      ],
+      fetchedAt: forecastBucketMs,
+    };
+  }
+
+  /**
+   * The index for this sweep shipped before the sweep did. Without it the table grows by one row per
+   * sample point per hour, for ever — and every one of those rows is *unaddressable* the moment its
+   * bucket passes, since the cache key contains the bucket.
+   */
+  test('deletes rows whose hour bucket has passed and keeps the current one', async () => {
+    const t = harness();
+    const now = Date.now();
+    const stale = (await t.run((ctx) =>
+      ctx.db.insert('weatherForecastCache', row(now - 48 * HOUR)),
+    )) as Id<'weatherForecastCache'>;
+    const live = (await t.run((ctx) =>
+      ctx.db.insert('weatherForecastCache', row(now)),
+    )) as Id<'weatherForecastCache'>;
+
+    expect(await t.mutation(internal.storageHygiene.pruneForecastCache, {})).toMatchObject({
+      deleted: 1,
+    });
+    expect(await t.run((ctx) => ctx.db.get(stale))).toBeNull();
+    expect(await t.run((ctx) => ctx.db.get(live))).not.toBeNull();
+  });
+
+  test('reports truncation so a backlog is visible rather than silently half-swept', async () => {
+    const t = harness();
+    const result = await t.mutation(internal.storageHygiene.pruneForecastCache, {});
+    expect(result).toMatchObject({ deleted: 0, truncated: false });
+  });
+});

@@ -226,8 +226,20 @@ shortAxisM?: number          // perpendicular hull width — gives the "5 × 1 m
 longAxisBearingDeg?: number  // 0–180, undirected: an axis has no head
 shorelineM?: number          // perimeter at ~5 m simplification fidelity — NOT survey-comparable
 fetchProfileM?: number[]     // 16 bearings @ 22.5°: contiguous over-water run through the centroid
-satelliteImagery?: enum(auto, on, off)  // default auto → resolved off surface area (D75)
+satelliteImagery?: enum(auto, on, off)  // NOT BUILT — moved to N6e with the imagery layer (D138)
 referenceLinks?: { label, url }[]       // the ONE non-derivable link class: lake associations (D71)
+// ── The map summary card (N6c/E, D141). Absent ⇒ no card at all, which is E3's whole rule.
+//    Recomputed from a bounded window on every write that could change it, never incremented:
+//    the counts are window- AND season-scoped, so a report ageing out has no event to decrement
+//    on, and the D86 mean cannot be maintained incrementally at all.
+summary?: {
+  recentReportCount: number             // visible reports in the 14d window, current season
+  topHazardTypes: string[]              // most frequent active types, capped at 3
+  latestReportAt?: number
+  qualityDots?: number                  // 1–4 (D86). ABSENT below the 3-report quorum — never 0
+  qualityCount?: number                 // the denominator the glance omits
+  updatedAt: number
+}
 createdByUserId?: ref(profiles) // when source == user
 reviewStatus?: enum(pending, approved, rejected)  // source==user only; auto-visible then review-after (D37)
 dedupStatus: enum(clean, suspected_duplicate, near_certain, merged)  // default clean (D36)
@@ -277,9 +289,17 @@ createdAt: timestamp
 > read as precise — a shoreline number *looks* like a hard fact in a way a modelled depth doesn't, which
 > makes it more dangerous, not less.
 > **Reference links are generated, not stored (D71)** — every other outbound link is a pure function of
-> `(centroid, name, states)` computed in `@skating/core`, which is what gives all 116,070 bodies coverage
-> with no migration and no stale URLs. `referenceLinks` exists only for lake associations, which no
-> algorithm can derive; expect tens of rows, not thousands.
+> **`(interiorPoint, name, states)`** computed in `@skating/core`, which is what gives all 24,953 bodies
+> coverage with no migration and no stale URLs. `referenceLinks` exists only for lake associations, which
+> no algorithm can derive; expect tens of rows, not thousands.
+> ⚠ **`interiorPoint`, not `centroid`** — this doc and N6c's Workstream B both said `centroid` until
+> 2026-08-09, and both were wrong for the reason the block above already states: `centroid` is
+> `pointOnFeature` and lands **on the shoreline** for any curved lake. Champlain's is 30.7 km from
+> mid-lake, so a Windy or Copernicus link built from it opens 30 km off the water. Caught at the N6c-2
+> build; a test pins it.
+> **`summary` is written only by `lib/bodySummary.ts`** (D141) and swept six-hourly for the time decay
+> no write can catch. Nothing indexes it: the map reads it off rows `listInViewport` already returned,
+> which is the entire argument for denormalizing it — a card costs no read at all.
 
 ### `waterBodySubAreas`  (named regions inside one body — N2 / D60)
 ```
@@ -340,6 +360,55 @@ createdAt: timestamp
 > is the fallback for any gap. `resolvePlaceForCoord` (bbox prefilter → Turf `pointInPolygon`, the
 > D5/D36 machinery) returns the most-specific match; stamped onto `reports.place` at create (no
 > per-read geocode). Reused by GPS ingest (Phase 8) + hazards (Phase 9).
+
+### `weatherAlerts`  (NWS active alerts — N6c/B5, D74)
+```
+_id
+state: string                  // the state this row was polled under — the per-state replace key
+alertId: string                // NWS `properties.id`
+event: string                  // "Winter Storm Warning"
+headline?: string              // NWS's own line, never paraphrased
+severity: string               // NWS's vocabulary, deliberately unmapped
+areaDesc?: string
+onsetMs?: number
+endsMs?: number
+zones: string[]                // forecast-zone AND county (SAME/FIPS) ids, both spaces in one array
+states: string[]               // what the core matcher reads; a border body matches on either
+fetchedAt: number
+```
+> **Polled per state on a 15-minute cron, never per body per view.** Alerts are issued over zones and
+> counties, so one state-level fetch serves every body in it and the read cost is independent of corpus
+> size — the `listInViewport` lesson applied before it could bite.
+> **This never feeds a calculation (D74).** The decay math, the bounty gate and the contradiction settle
+> read Open-Meteo and only Open-Meteo. Nothing in `weatherAlerts.ts` is imported by those paths, and
+> there is no number on this table to tempt one.
+> **A state whose poll fails keeps its rows.** Clearing on a provider blip would show "no alerts" to a
+> whole state during the storm the alert was issued for. Stale rows retire on a 6-hour sweep instead.
+> **`zones` holds two id spaces on purpose** — most products are issued over forecast zones (`VTZ001`),
+> some by county. Handling one silently misses a class of alerts, and a missing warning is
+> indistinguishable from no warning. Unused until a body carries `nwsZoneIds` (rung 1 of the ladder,
+> unbuilt); every match today falls to the `states` rung, which over-shows, which is the safe direction.
+
+### `weatherForecastCache`  (the short forward forecast — N6c/B5b, D140)
+```
+_id
+samplePointKey: string         // rounded "lat,lng" — the same ~110 m key `weatherCache` uses
+forecastBucketMs: number       // `now` bucketed to the hour: how fresh this prediction is
+hours: { startMs, temperatureC, windSpeedKph, precipitationMm, snowfallCm }[]
+precipStartsMs?: number        // when snow or rain begins — the whole point of the feature
+precipIsSnow?: boolean
+minTemperatureC?: number
+maxTemperatureC?: number
+fetchedAt: number
+```
+> **A separate table from `weatherCache`, deliberately.** That one is keyed on a *past window* and its
+> rows stay true for ever; a forecast is "the next twelve hours as of an hour bucket" and stops being
+> true almost immediately. Sharing would mean a key whose second and third components are meaningless
+> for half its rows, and a retention sweep unable to tell a durable observation from a stale guess.
+> **D140 — the split is a type, not a rule.** `fetchOpenMeteoHourly` returns `{ past, forecast }`, and
+> every calculation reads `.past`. B5b's cheap build — widening the window filter — would have put
+> predictions into the decay multiplier, the bounty gate and the contradiction settle, where a hazard
+> that decayed on snow which never fell could not be re-derived afterwards and nothing would say so.
 
 ### `reports`  (the core)
 ```

@@ -32,6 +32,7 @@ export type ImportRunKind =
   | 'elevation'
   | 'wind_climate'
   | 'bathymetry_coverage'
+  | 'seed_destinations'
   | 'region_stats'
   // The acquisition steps, ahead of any loader — where a source turns out to have moved, changed
   // schema, or quietly returned less than last time.

@@ -8,6 +8,7 @@ import {
   isRegionOffscreen,
   type LatLng,
   polygonShape,
+  profileRevealEnabled,
   SUB_AREA_MIN_RENDER_ZOOM,
   undoDraftPlacement,
 } from '@skating/core';
@@ -60,7 +61,10 @@ import {
   OSM_ATTRIBUTION,
   putInsToFeatureCollection,
   SUB_AREA_PALETTE,
+  SUMMARY_CARD_PALETTE,
   subAreasToFeatureCollection,
+  summaryCardLayer,
+  summaryCardsToFeatureCollection,
   TRACK_PALETTE,
   WATER_PALETTE,
   waterBodiesToFeatureCollection,
@@ -144,6 +148,7 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   const flavor = resolvedTheme === 'dark' ? MAP_FLAVORS.dark : MAP_FLAVORS.light;
   const water = WATER_PALETTE[flavor];
   const subAreaPalette = SUB_AREA_PALETTE[flavor];
+  const summaryCardPalette = SUMMARY_CARD_PALETTE[flavor];
   const hazardPalette = HAZARD_PALETTE[flavor];
   const trackColor = TRACK_PALETTE[flavor];
   const contourPalette = CONTOUR_PALETTE[flavor];
@@ -209,6 +214,18 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
   useEffect(() => {
     if (bodies !== undefined) setFeatures(waterBodiesToFeatureCollection(bodies));
   }, [bodies]);
+
+  // Per-body summary cards (N6c/E). **No extra query** — the cards are derived from the same
+  // `listInViewport` rows the water source already has, because `summary` is denormalized onto the
+  // body. That is the whole argument for denormalizing it: a card costs no read at all.
+  const [summaryFeatures, setSummaryFeatures] = useState<GeoJSON.FeatureCollection>(EMPTY_FEATURES);
+  // The N6c-2 reveal flag: on dev it draws a card for every body carrying a summary, so a
+  // walk-through can see where cards land and how they collide on a corpus with almost no reports.
+  // Forced off against the production deployment regardless of the constant — see `profileReveal`.
+  const reveal = profileRevealEnabled(env.convexUrl);
+  useEffect(() => {
+    if (bodies !== undefined) setSummaryFeatures(summaryCardsToFeatureCollection(bodies, reveal));
+  }, [bodies, reveal]);
 
   // Named sub-areas in view (N2/D60) — a second layer on its own ladder-grid query.
   //
@@ -400,6 +417,13 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
           'text-halo-width': 1.2,
         },
       });
+      // Per-body summary cards (N6c/E). Added HERE — after the bay labels and before the hazard,
+      // put-in and bounty pins — so it inherits the same collision posture the bay label documents:
+      // a card may not displace a marker a skater needs to see, and if it doesn't fit it doesn't
+      // draw. `text-optional` plus `text-allow-overlap: false` is what makes that true.
+      map.addSource('summary-cards', { type: 'geojson', data: EMPTY_FEATURES });
+      map.addLayer(summaryCardLayer(summaryCardPalette));
+
       map.addSource('photo-pins', { type: 'geojson', data: EMPTY_FEATURES });
       map.addLayer({
         id: 'photo-pins',
@@ -647,6 +671,16 @@ export default function MapView({ geolocateOnMount }: { geolocateOnMount: boolea
     if (!map || !loaded) return;
     (map.getSource('sub-areas') as maplibregl.GeoJSONSource | undefined)?.setData(subAreaFeatures);
   }, [subAreaFeatures, loaded, mapRef.current]);
+
+  // Push the summary cards. Its own source for the same reason the bays have one: a pan that changes
+  // which lakes have news should not redraw the water fill.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !loaded) return;
+    (map.getSource('summary-cards') as maplibregl.GeoJSONSource | undefined)?.setData(
+      summaryFeatures,
+    );
+  }, [summaryFeatures, loaded, mapRef.current]);
 
   // Re-apply the highlight when the selected body changes (deep-link or navigating between lakes).
   // biome-ignore lint/correctness/useExhaustiveDependencies: applyHighlight reads refs; re-run on selection.

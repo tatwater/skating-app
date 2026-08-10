@@ -6,13 +6,32 @@ everything we draw on top stays drawn.*
 > **Status:** 📋 Scoped, not built (2026-07-31). Founder ask, same day — *"Can you please spec out the
 > phase that will bring satellite imagery into the app while we're thinking about it? I don't want to lose
 > track of this, because I want to do it ASAP."*
-> **Split out of** [N6c](./phase-N6c-expanded-lake-profiles.md)'s Workstream B3, which ships the
-> Copernicus Browser **deep link** and defers imagery *in* the app. This is that deferral, specced.
+> **⚠ SCOPE GREW, 2026-08-09 (founder call at N6c-2 kickoff — D138): the Copernicus deep link is
+> now N6e's too.** *"Let's postpone any satellite imagery part until N6e so we can do it all
+> together."* N6c-2 shipped without it, so this phase now owns **all three** of B3's pieces:
+>
+> - the **Copernicus Browser deep link** per body (D75), built from `interiorPoint` — *not*
+>   `centroid`, which is a shoreline point and would open the browser off the edge of the lake;
+> - the **`satelliteImagery: 'auto' | 'on' | 'off'`** per-row override and its
+>   `SATELLITE_MIN_AREA_SQM` threshold, so a 10 m pixel never opens on a smear of pond;
+> - **B3a's proving run** — verifying the generated URL resolves per body. `scripts/seed-destinations`
+>   already exists (D139) and already does the matching half, so this is a flag on a working script
+>   rather than a new one.
+>
+> The argument for the move: B3's three lessons (the URL shape is right, name-matching works, imagery
+> is legible at these sizes) all have to be re-established here anyway, against the same bodies. Doing
+> them a phase apart means the second pass re-derives the first, and the deep link spends a phase as
+> the product's only imagery surface — the "a toggle appears later and works differently" seam this
+> phase exists to avoid. `referenceLinks.ts` carries a test asserting no Copernicus URL is emitted, so
+> the link cannot creep back in ahead of the layer; delete it here.
+>
+> **Split out of** [N6c](./phase-N6c-expanded-lake-profiles.md)'s Workstream B3, originally as the
+> in-app half alone. This is that deferral, specced — plus the deep link, as of D138.
 > **Sibling of** [N6b](./phase-N6b-bathymetry-layer.md) — the two share **D81**, the map's one-toggle
 > rule, from opposite sides: contours follow the detail view, satellite is the switch.
 > **N6 is now a five-way split:** N6a depth → N6b contours → N6c profiles → N6d access points → **N6e
 > imagery**.
-> **Decisions:** **D81** (second half — satellite is the map's only layer toggle and it replaces the base
+> **Decisions:** **D138** (the deep link ships with the layer, not a phase ahead), **D81** (second half — satellite is the map's only layer toggle and it replaces the base
 > map), **D84** (two imagery tiers). D75 stays true and is now the *first* half of a two-step.
 
 ---

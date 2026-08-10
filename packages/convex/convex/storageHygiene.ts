@@ -67,6 +67,34 @@ export const pruneWeatherCache = internalMutation({
 });
 
 /**
+ * Delete `weatherForecastCache` rows whose hour bucket has passed (N6c/B5b).
+ *
+ * **The same unaddressable-by-construction argument as `pruneWeatherCache` above**, and it applies
+ * more forcefully: a forecast row is keyed on `(samplePointKey, forecastBucketMs)`, so the instant
+ * the clock ticks into the next hour every row from the previous one is permanently unreadable. They
+ * are not stale, they are unreachable — and unlike a weather-since row they were never durable in the
+ * first place, because a prediction stops being true almost immediately.
+ *
+ * **This existed as an index with no sweep behind it until a self-review caught it.** The table would
+ * have grown by one row per sample point per hour, for ever — roughly 24 rows a day for every lake
+ * anyone opened, with nothing to reclaim them. The `by_forecast_bucket` index was added *for* this
+ * pruner and then the pruner was never written, which is the same shape as N6b's `hasContours`
+ * shipping with no producer.
+ */
+export const pruneForecastCache = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const cutoff = Date.now() - WEATHER_CACHE_RETENTION_MS;
+    const stale = await ctx.db
+      .query('weatherForecastCache')
+      .withIndex('by_forecast_bucket', (q) => q.lt('forecastBucketMs', cutoff))
+      .take(SWEEP_LIMIT);
+    for (const row of stale) await ctx.db.delete(row._id);
+    return { deleted: stale.length, truncated: stale.length >= SWEEP_LIMIT };
+  },
+});
+
+/**
  * Delete photos past the grace window that no report or hazard references, plus their storage blobs.
  *
  * The durable backstop behind the client's best-effort reclaim (`photos.remove` / `removeBlob`): those

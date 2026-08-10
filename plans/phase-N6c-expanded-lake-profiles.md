@@ -1,5 +1,34 @@
 # Phase N6c — Expanded lake profiles: derived stats, captions, reference links, and map summary cards
 
+> ### ✅ N6c-2 IS BUILT (2026-08-09) — and four things in this document are wrong
+>
+> Branch `phase-n6c-2-links-cards`, off `phase-n7-3-unified-corpus`. **Unpushed, undeployed, and
+> deliberately so:** a second session was mid-campaign against the dev deployment when this was
+> built, and the campaign's standing rule — *"do not run `convex dev --once` while any loader or
+> prune is running"*, since a redeploy swaps functions out from under a resumable pass — is the reason
+> nothing here has been deployed. See
+> [*§What the N6c-2 build found*](#what-the-n6c-2-build-found).
+>
+> Shipped: **B** (reference links), **B5** (NWS alerts), **B5b** (the forward forecast), **B7** (the
+> stored link + its editor), **B3a/D** (`scripts/seed-destinations`), **E** (map summary cards),
+> **F1** (the per-lake timeline), and mobile parity for all three drawer strips.
+>
+> **Deferred by founder call: everything satellite** (**D138**) — B3's Copernicus deep link, the
+> `satelliteImagery` per-row override and `SATELLITE_MIN_AREA_SQM` all move to
+> [N6e](./phase-N6e-satellite-imagery.md) so the imagery story lands in one piece.
+>
+> | this doc says | actually |
+> | --- | --- |
+> | **"We have 116,070"** — in P1, P2, D2 and a dozen other places | **24,953 listed** (24,961 rows incl. 8 tombstones). Off by 4.65×. The rules survive; the cost arguments were measured on a corpus that no longer exists |
+> | Workstream B derives links from **`centroid`** | `centroid` is a **shoreline** point — this doc proves it in finding 2 and then B uses it anyway. Links read `interiorPoint` |
+> | D86's dots derive from **the Phase 6 thumbs** | `reports.skateQuality`, per the roadmap's own D86 amendment. The thumbs measure whether a *report* was helpful |
+> | Sequencing: elevation must precede an **unrun** N6a loader | Both ran, in the N7-2/N7-3 campaign. The whole section is history |
+> | *(this branch previously said `regionStats` was empty)* | ✅ **Populated** — 5 states × 5 metrics over 24,953 bodies, recomputed as N7-3's last pass (PR #41, merged after this branch was cut). A5's decile clauses are **live** |
+>
+> **Workstream F is split, not whole:** F2 was pulled forward into the data campaign and shipped
+> months of runs ago; only F1 was N6c-2's.
+
+
 > ### ⚠ The elevation source changed (N7-2, 2026-08-08)
 >
 > Workstream A1 is described throughout this document against **Open-Meteo / Copernicus GLO-90**.
@@ -296,6 +325,208 @@ on-water guarantee display, drive-time and the town stamp all depend on. N6b alr
 > It isn't — it is waiting.
 
 ---
+
+---
+
+## What the N6c-2 build found
+
+*Written 2026-08-09, against the code. The pattern from N6c-1 repeated: **the plan's own earlier
+findings had not been propagated into its later workstreams.***
+
+### 1. Workstream B was still built on the shoreline
+
+B says every link is *"a pure function of `(centroid, name, states[])`"*. Finding 2 of this same
+document measured what `centroid` actually is — Turf `pointOnFeature`, which returns a point on the
+**boundary** whenever the bbox centre falls outside the polygon, so Willoughby's is ring vertex 199
+and Champlain's sits **30.7 km** from mid-lake.
+
+B predates that measurement and was never re-checked against it. A Windy link for Champlain would
+have opened 30 km from the lake — silently, because a shoreline coordinate is a perfectly valid
+coordinate and nothing downstream can tell. Same class as the fetch profile, and the second time this
+exact field has produced it.
+
+`linkCoordinate()` reads `interiorPoint ?? representativePoint ?? centroid`, and a test pins it. The
+same fix applies to the E card's placement, which would otherwise have hung the card off the edge of
+the water it describes.
+
+### 2. B5b is cheap, and the cheap way to build it is wrong — **D140**
+
+The plan's argument is exactly right: `weather.ts:112` sent `forecast_days: '1'` and the window
+filter threw the forward hours away, so a forecast costs one changed parameter.
+
+What it does not say is that **the filter discarding those hours is the same filter that feeds
+`summarizeWeatherSince`** — the input to the D56 decay multiplier, the bounty gate and the
+contradiction settle. Widening it, which is the one-line version of this feature, puts a prediction
+into all three. A hazard whose confidence decayed on snow that never fell could not be re-derived
+afterwards and nothing would say so.
+
+So the fetch returns `{ past, forecast, utcOffsetMs }` and the D74 wall is a return type rather than
+a rule each call site remembers. A convex test puts all the snow in the forward half and asserts the
+weather-since summary still reports zero.
+
+*(The `utcOffsetMs` is the second half of that: hours carry local-shifted timestamps, and applying a
+12-hour horizon against a UTC `now` slides the whole strip by 4–5 hours in this region — most of its
+own length.)*
+
+### 3. E's counter is the wrong shape, and the neighbouring file is why — **D141**
+
+E2 specifies `summary` as a counter *"generalizing the Phase 4 contribution-counter pattern"*, and
+`lib/contributionCounts.ts` makes ±1 look obvious. But a profile's `reportCount` is a lifetime total
+where a card's counts are **window- and season-scoped**: a report ageing out has no event to hang a
+decrement on, and the D86 mean cannot be maintained incrementally at all — you cannot remove a value
+from a mean without knowing which value left.
+
+Recomputed from a bounded index range instead, with a cron for the decay no write can catch. Exact by
+construction rather than exact-until-a-path-is-missed.
+
+### 4. E cannot be validated on this deployment, and that is fine
+
+Dev holds **1 report and 2 hazards**. E3's rule is that no activity means no card, and D86's quorum
+is three rated reports — so the feature ships correct and renders nothing anywhere. Founder call:
+build it, defer validation to N6d or device testing. Worth stating plainly rather than discovering it
+at a demo.
+
+### 5. Every profile surface is invisible on this corpus — so there is a flag now (**D142**)
+
+Founder ask, after the build: *"I'd rather not forget to test something in the wild before the season
+starts just because I couldn't see it."*
+
+The "render nothing when there is nothing to say" rule runs through the caption, the links, both
+strips, the credit, E3's cards and D86's mark — and on a corpus with one report it makes almost the
+whole phase invisible, where a missing surface and a broken one look identical.
+
+`PROFILE_REVEAL_ALL` states each absence instead. It **never invents a value**: the revealed card
+mark is empty (`○○○○`), not computed, because the stored summary is quorum-respecting by construction
+and the raw qualities never reach the map. It is **forced off against production** whatever the
+constant says, matched on the Convex URL rather than a build mode — the EAS device build is a release
+build pointing at dev, and `!__DEV__` would hide exactly what that test is for. Everything revealed
+carries `·dev`. Flip to `false` before the season.
+
+### 6. Two bugs the tests caught that review would not have
+
+- `replaceStateAlerts` spread an `NwsAlert` into `ctx.db.insert`, carrying its `id` field into a table
+  whose column is `alertId`. Convex rejected it outright; on a schema that tolerated extra fields it
+  would have been a silent stray column.
+- The seed shortlist shipped with a corrupted latitude (`43.8materials`) that made
+  `destinations.json` invalid JSON. Caught by parsing it, which is the cheapest possible test and was
+  not otherwise in the plan.
+
+### 7. Four property tests flaked under coverage — ✅ **fixed on main, and this branch nearly re-opened it**
+
+`dedup`, `geometry`, `samplePoints` and `subArea` each intermittently exceeded vitest's 5 s default
+under `--coverage` on a loaded machine. Noted here and deliberately left alone as pre-existing.
+
+**Main fixed it while this branch was open** (`fd7156a`): `testTimeout: 20_000` in all eleven vitest
+configs, because the flaking set is *load-dependent* — turbo runs the packages at once and CI is ~8×
+slower than local, so whichever test loses the race times out while being fast in isolation.
+
+The merge is where this got interesting. `scripts/seed-destinations/vitest.config.ts` was copied from
+`scripts/lake-depth` **before** that fix landed, so this branch added a twelfth config and it was the
+only one without the bound — a fix silently un-applied by a new package, which is the exact shape the
+fix's own commit message warns about (*"there is no shared base config to put it in"*). Added by hand
+at merge. **A shared base vitest config is now worth having**; the next new package will miss it too.
+
+
+---
+
+## The campaign's leftovers — folded in from `HANDOFF-n6c-data-campaign.md` (deleted 2026-08-10)
+
+*That handoff was a temporary working doc for campaign `n6c-20260802`, and its own header said to
+delete it once the findings landed here. Audited line by line against the deployment before deleting;
+**most of it was already true somewhere else**, and what wasn't is below.*
+
+**What needed no carrying.** Passes 1–3 (canonical re-import, depth join, bathymetry coverage) were
+superseded wholesale by N7's re-merge and are recorded in
+[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md). Pass 4's Open-Meteo elevation lane is
+dead (**D127** → USGS 3DEP, 99.5%). Pass 5's wind roses ran (1,193 bodies). Pass 6's
+`regionStats:recompute` ran. And **all six of its "gotchas worth not re-learning" are already written
+down** — the 16 MB read cap in the roadmap, N6a, N6b and N7; *"denominators lie by default"* in the
+roadmap and N7; measured-sample wall-clock estimates, the abort-on-a-streak rule, the
+`biome --write --unsafe` trap and the scripted-string-replace trap all in N7. Nothing was lost by
+deleting it.
+
+### ✅ `backfillRepresentativePoint` — **run 2026-08-10**, all three tables clean
+
+The one genuinely live item in that handoff. Run before this phase's PR, against dev:
+
+| table | scanned | filled | note |
+| --- | --- | --- | --- |
+| `waterBodies` | **24,961** | 0 | already complete — the canonical re-import writes it |
+| `adminAreas` | 2,546 | 0 | already complete |
+| **`waterBodySubAreas`** | 126 | **9** | the N2-era Champlain bays, which predate the double-write |
+
+The nine were Malletts Bay, Outer Malletts Bay, Burlington Bay, Shelburne Bay, Appletree Bay, Broad
+Lake, Arnold Bay, Little Eagle Bay and Inland Sea — every one of them hand-drawn in N2, before the
+stage-1 double-write existed. All 126 sub-areas now carry the field and **all 126 match `centroid`
+exactly**, which is the point: this was never a bad *assignment*, it was rows written before the
+writer.
+
+*(24,961 = 24,953 listed + 8 retired-duplicate tombstones, which is the same arithmetic
+[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) reports — an independent cross-check
+that the pass walked the whole table.)*
+
+> ### The three point fields, since two of them are the same thing
+>
+> This is the confusion the rename created and the reason it is still only half done:
+>
+> | field | what it is | on how many |
+> | --- | --- | --- |
+> | `centroid` | Turf `pointOnFeature`. Lands **on the shoreline** whenever the bbox centre falls outside the polygon | all rows, all three tables |
+> | `representativePoint` | **A rename of `centroid`, not a different point.** Byte-identical wherever both exist — measured: 126 of 126 sub-areas match exactly, zero differ | all rows, all three tables |
+> | `interiorPoint` | **The genuinely different one** — strictly interior, added by N6c-1 for weather sampling. Measured: differs from `centroid` on **1,200 of 1,200** sampled bodies | `waterBodies` only |
+>
+> So a reader asking *"don't we already have a point that isn't the centroid?"* is right — it is
+> `interiorPoint`, and it is on every body. `representativePoint` answers a different question: it is
+> the new **name**, mid-migration.
+
+### ⬜ Still outstanding: the rename's second stage
+
+A code change rather than a data pass, and now unblocked by the backfill above: ~100 read sites
+migrate to `representativePoint`, the field becomes required, `centroid` is dropped and the
+double-write removed. Readers were deliberately **left alone** in stage 1 — migrating them to
+`representativePoint ?? centroid` then would have been a hundred edits immediately undone by stage 2,
+where no fallback is needed at all.
+
+> ⚠️ **Never make it a true centroid.** The tempting reading of the name mismatch is to "fix" the
+> maths; it is the *name* that was wrong. `centroid` lands on the shoreline for any curved lake —
+> Willoughby's is ring vertex 199, Champlain's sits 30.7 km off. Drive-time bands and the pin-less
+> report's town stamp deliberately want a shoreline-ish point, and the area centroid of a crescent
+> lake is on land. `interiorPoint` exists separately for the one consumer the offset genuinely hurt.
+
+**N6c-2 note:** the reference links, the summary cards and the forecast's sample point all read
+`interiorPoint` first and fall back through `representativePoint` to `centroid`. That fallback chain
+is exactly what stage 2 exists to delete.
+
+### The `meetsAreaFloor` rule, which is durable and worth restating
+
+`listNeedingElevation` and `listNeedingWindRose` **import `meetsAreaFloor` from `@skating/core`
+rather than restating the rule, and take a boolean `--import-floor` rather than a threshold.**
+
+The reason is a bug that already happened: the floor was hand-copied as `named OR ≥ 5 acres`, then
+settled the next day as `≥ 5 acres OR (named AND ≥ 1 acre)` — *stricter* — so the copy silently became
+**more permissive than the import it mirrored**, and would have spent third-party quota on
+sub-one-acre bodies that `pruneBelowAreaFloor` deletes.
+
+> **Do not reintroduce a threshold argument here.** A parameter invites a caller to invent a floor; a
+> predicate cannot drift. This is the same shape as N6c-2's own finding that E3's card rule was
+> implemented twice — two definitions that agree are the ones that drift silently.
+
+### `/admin/imports` has no delete path for an orphaned `running` row
+
+A run row is opened *before* the work, so a killed process leaves a record rather than nothing — the
+design working as intended. The UI says *"no finish recorded"* rather than *"in progress"* because it
+genuinely cannot tell a live loader from a dead one.
+
+The campaign's three orphaned rows are long gone, but **there is still no way to delete one**. If they
+become noise that is a small feature to add, not a bug to chase.
+
+### ⛔ `backfillCells` is still held until after N6d
+
+Unchanged since the 2026-08-02 founder call, and the reason is unchanged too: D2's put-in terms
+(+0.06 derived, +0.12 official) are the strongest static signals in the richness model and stay dark
+until N6d lands. So **N6d is what finally unblocks the single re-score pass** — worth knowing as that
+phase's actual finish line rather than a detail of this one.
+
 
 ## Why this phase exists
 
@@ -944,7 +1175,19 @@ just **Pond** is worse than no title at all — it looks like a bug and it's amb
 - **A body with no name at all still gets its counts**, because the card's job on an unnamed body is to
   say *someone skated here* — which is arguably more valuable there than on a lake everyone knows.
 
-### E4 — The sub-questions to settle at build
+### E4 — The sub-questions to settle at build ✅ *all four answered at the N6c-2 build, 2026-08-09*
+
+> - **What "recent" means:** `SUMMARY_RECENT_DAYS = 14`, the same window the feed and report list use.
+> - **Rendering:** a MapLibre **`symbol` layer** (founder call), which buys collision detection for
+>   free — a card that would overlap a hazard pin simply does not draw. The cost is that D86's mark is
+>   dot characters rather than styled elements; the agreed escape hatch if that proves too little is
+>   HTML overlays for the *selected* body only.
+> - **Interaction with `minVisibleZoom`:** the card layer re-states the filter `listInViewport`
+>   already applies server-side. Belt and braces on purpose — a quiet lake acquiring prominence by
+>   having been skated once would be reported as "the map is broken" rather than diagnosed.
+> - **Season scoping:** applied in `lib/bodySummary.ts` alongside the window. This *is* the one line
+>   E4 predicted would be forgotten, and a convex test pins it.
+
 
 - **What "recent" means.** Probably the same freshness window the feed and the report list already use,
   rather than a fourth number.

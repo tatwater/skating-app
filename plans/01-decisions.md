@@ -4297,3 +4297,139 @@ This is the same correction the campaign has now made five times. **Report `cove
 name what was walked past.**
 
 **Related:** [D96](./phase-N7-unified-corpus.md#d96--settled-the-four-admission-rules--approved), [D132](#d132--depth-stays-measured-only-the-corpus-accepts-a-30-ceiling-n7-3).
+
+---
+
+## D138 — The Copernicus deep link ships **with** the imagery layer, not a phase ahead of it (N6c-2)
+
+**2026-08-09, founder call at N6c-2 kickoff:** *"let's postpone any satellite imagery part until N6e
+so we can do it all together."*
+
+N6c's Workstream **B3** specified a Copernicus Browser deep link, a `satelliteImagery:
+'auto'|'on'|'off'` per-row override and a `SATELLITE_MIN_AREA_SQM` threshold — all of it now deferred
+to [N6e](./phase-N6e-satellite-imagery.md).
+
+**Why this is the right split rather than a slip.** B3's own argument for shipping the link early was
+that it is *"zero cost, zero quota, no license question, works today"* — true, and it is also the
+half that teaches us least. The three things B3a's proving run was meant to establish (the URL shape
+is right, name-matching works, imagery is legible at these bodies' sizes) are all things N6e has to
+establish anyway for the in-app tier, against the same bodies. Doing them twice, a phase apart, means
+the second pass re-derives what the first learned and the deep link spends a phase as the only
+imagery surface in the product — which is exactly the "a toggle appears later and works differently"
+seam N6e exists to avoid.
+
+**What this does NOT defer:** Workstream **D**'s curated boosts, which were bundled with B3a because
+they share a matcher. They ship in N6c-2 — see [D139](#d139--the-seed-script-is-named-for-the-job-it-does-today-n6c-2).
+
+`referenceLinks.ts` carries a test asserting no Copernicus URL is emitted, so the link cannot creep
+back in ahead of the layer.
+
+**Related:** [D75](#d75--copernicus-deep-link), [D84](#d84--two-imagery-tiers), D139.
+
+---
+
+## D139 — The seed script is named for the job it does **today** (N6c-2)
+
+**2026-08-09, founder call.** `scripts/seed-satellite` becomes **`scripts/seed-destinations`**.
+
+The original rename (2026-07-31) was argued well: *"`seed-destinations` names the **input** — a list
+of lakes — which is the thing most likely to change. `seed-satellite` names the **job**."* That
+reasoning holds, and D138 changed which job it is. With the imagery half deferred, what this script
+does is match a curated shortlist to corpus rows and set `curatedBoost` (Workstream D). Naming it
+after work it will not do for a phase is the same failure the first rename was avoiding, pointed the
+other way.
+
+N6e re-adds the URL verification on top; the **input file** is what changes then, not the name — which
+was the durable half of the original argument all along.
+
+**Related:** [D49](#d49--display-prominence), D138.
+
+---
+
+## D140 — A forecast and an observation are separated by a **type**, not a rule (N6c-2 / B5b)
+
+**2026-08-09.** `fetchOpenMeteoHourly` returns `{ past, forecast, utcOffsetMs }`. Every calculation —
+the D56 decay multiplier, the bounty gate, the contradiction settle — reads `.past` and only `.past`.
+
+**Why the type rather than a filter.** B5b is described in the plan as nearly free, because
+`weather.ts` already sent `forecast_days: '1'` and threw the forward hours away. That is accurate,
+and it is the trap: the filter discarding them is the *same* filter that feeds
+`summarizeWeatherSince`, so the cheap version of the change — widen the window — puts predictions
+into the decay math. A hazard whose confidence decayed on snow that never fell could not be
+re-derived afterwards, and **nothing would report it**. D74 says the advisory layer never feeds a
+calculation; this makes that structural, so the guarantee lives in one return type instead of in
+every call site's memory.
+
+Pinned by a convex test whose fixture puts all the snow in the forward half and asserts
+`summarizeWeatherSince` still reports zero.
+
+**Related:** [D74](#d74--one-weather-physics-source-plus-a-separate-advisory-layer), [D56](#d56--weather-driven-hazard-decay), [D3](#d3--never-a-safety-verdict).
+
+---
+
+## D141 — The map card's counts are **recomputed**, never incremented (N6c-2 / E)
+
+**2026-08-09.** `waterBodies.summary` is re-derived from a bounded index range on every write that
+could change it, plus a six-hourly cron for pure time decay.
+
+The plan specified a counter *"generalizing the Phase 4 contribution-counter pattern"*, and
+`lib/contributionCounts.ts` sitting next door makes ±1 look like the obvious shape. It is the wrong
+shape for half of what the card carries:
+
+- A profile's `reportCount` is a **lifetime total**. Every event that changes it is a ±1, and nothing
+  changes it by the passage of time.
+- A card's counts are **window- and season-scoped**. A report ageing out of the 14-day window
+  decrements the count with no event to hang the decrement on — and it changes the *mean* behind the
+  D86 dots, which cannot be maintained incrementally at all: you cannot remove a value from a mean
+  without knowing which value left.
+
+The recompute is exact by construction rather than exact-until-a-path-is-missed, and it costs one
+index range over a fortnight of one body's reports. A no-op result short-circuits before the write,
+so the common case is a read and nothing else.
+
+**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D49](#d49--display-prominence).
+
+---
+
+## D142 — The profile reveal flag shows the **slots**, never invents what fills them (N6c-2)
+
+**2026-08-09, founder call:** *"Can we put this display calc behind a flag, so we can see all of the
+possible parts of a lake profile while testing dev… I'd rather not forget to test something in the
+wild before the season starts just because I couldn't see it."*
+
+Nearly every profile surface is built to render nothing when it has nothing to say — the caption's
+clauses, the reference links, both weather strips, the bathymetry credit, E3's cards and D86's mark.
+That is right for skaters and hostile to testing: on a corpus holding one report almost all of them
+are invisible, and *"invisible because there is no data"* is indistinguishable from *"invisible
+because I broke it."*
+
+`PROFILE_REVEAL_ALL` (`@skating/core/profileReveal.ts`) makes the slots visible. **It never
+fabricates a value** — a lake with no depth still has no depth, and the section says so. What it
+bypasses is the *suppression of data we do have* (E3's activity gate, D86's quorum) and the hiding of
+empty sections.
+
+**Three properties stop it becoming the bug it prevents:**
+
+1. **Forced off against the production deployment**, whatever the constant says. A flag whose only
+   protection is "remember to turn it off" is a flag that ships on — and what it would ship is a
+   one-person opinion rendered as a consensus mark. Matched on the **Convex URL**, not a build mode:
+   the EAS internal-distribution build is a *release* build pointing at dev, so `!__DEV__` would hide
+   exactly the surfaces a device test exists to look at.
+2. **The map card's revealed mark is empty (`○○○○`), never computed.** The stored summary is
+   quorum-respecting by construction and the raw per-report qualities never reach the map, so there is
+   nothing there to widen — which is the right answer anyway. An empty mark shows the slot, its size
+   and where it collides; a fabricated one would be the exact claim D86's quorum exists to prevent,
+   wearing a dev label nobody reads at a glance.
+3. **The two bypasses are separate predicates.** `revealEmptySections` is harmless;
+   `revealBelowQuorum` is not. Split so a future change wanting empty sections somewhere cannot
+   silently acquire the dangerous one, and so each is greppable alone.
+
+`summarizeQualityRevealed` is a second function rather than a parameter on `summarizeQuality`,
+because the stored summary is written by the **server** — which has no business knowing about a
+client display flag, and a boolean threaded through the storage path is one default away from
+persisting a below-quorum mark.
+
+Everything revealed carries `·dev`. **Flip the constant to `false` before the season**; the guard
+means forgetting is survivable rather than harmful.
+
+**Related:** [D86](#d86--aggregate-quality-renders-as-a-graded-mark-never-as-a-word), [D141](#d141--the-map-cards-counts-are-recomputed-never-incremented-n6c-2--e), [D3](#d3--never-a-safety-verdict).

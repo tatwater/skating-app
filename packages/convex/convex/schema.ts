@@ -628,9 +628,22 @@ export default defineSchema({
      */
     representativePoint: v.optional(latLng),
     /**
-     * @deprecated Renamed to `representativePoint`. Kept optional through the transition window so
-     * the schema still validates against rows written before the rename; every writer now sets both
-     * and `backfillRepresentativePoint` fills the rest. Dropped once that has run everywhere.
+     * @deprecated Renamed to `representativePoint`. **Stage 2 of that rename is deferred, not
+     * forgotten — see `07-roadmap.md` → "N8b — Finish the `centroid` → `representativePoint`
+     * rename".**
+     *
+     * ✅ **The data half is done** (2026-08-10): `backfillRepresentativePoint` ran across all three
+     * tables — `waterBodies` 24,961, `adminAreas` 2,546, `waterBodySubAreas` 126 with nine filled —
+     * so every row carries `representativePoint` and nothing is blocked on a pass. What remains is a
+     * code sweep: migrate the ~100 read sites, make `representativePoint` required, drop this field,
+     * remove the double-write.
+     *
+     * ⚠️ **Until then, three field names describe two points, and that is a live trap rather than
+     * cosmetic debt.** `representativePoint` *is* this field (byte-identical); `interiorPoint` is the
+     * genuinely different, strictly-interior one. N6c's Workstream B was written against `centroid`
+     * and would have opened Windy 30 km off Lake Champlain — a shoreline coordinate is a perfectly
+     * valid coordinate, so nothing downstream catches it. **If you want a point in the water, you
+     * want `interiorPoint`.**
      */
     centroid: latLng, // on-water representative point (D48); display + distance, not lookup
     // Weather sampling escape hatch (Phase 10 / D56 §5). Weather doesn't vary below Open-Meteo's grid
@@ -799,6 +812,50 @@ export default defineSchema({
     displayScore: v.optional(v.number()),
     curatedBoost: v.optional(v.number()),
     minVisibleZoom: v.optional(v.number()),
+    /**
+     * Operator-entered reference links (N6c Workstream B7) — the phase's **only** stored link.
+     *
+     * Every other link in the drawer is derived at render time from `(interiorPoint, name, states)`
+     * and stored nowhere (P2/D71), because a derivable string stored 24,953 times is 24,953 strings
+     * to migrate when a provider changes its query params. A lake association's URL is the one thing
+     * no algorithm produces from a lake's name, so it is the exception that proves the rule.
+     *
+     * **Expect this on tens of bodies, not thousands**, and that is the correct outcome rather than
+     * a coverage gap. Preserved across re-import for free: `importCanonical` patches named fields
+     * only, and it does not name this one — the same way `curatedBoost` survives.
+     */
+    referenceLinks: v.optional(v.array(v.object({ label: v.string(), url: v.string() }))),
+    /**
+     * The map summary card's denormalized counts (N6c Workstream E).
+     *
+     * **Denormalized on write, not aggregated on read.** N1 changed the argument for this rather
+     * than against it: a viewport read is now bounded (the ladder grid replaced the geospatial
+     * component), so aggregating per read is no longer a crash risk — just a cost proportional to
+     * bodies × reports on every map pan. The denormalized shape still wins, and now it wins on cost
+     * rather than on survival.
+     *
+     * **Absent means no card, and that is the whole of E3.** A body with no recent activity carries
+     * no summary and draws nothing — not an empty card. That retires the old "wait for report
+     * density" deferral by design rather than by waiting: the feature is correct at any density,
+     * showing up only on the lakes people are actually using.
+     *
+     * Window- and season-scoped, so `lib/bodySummary.ts` recomputes rather than increments — a
+     * report ageing out of the window has no write to hang a decrement on, and the D86 mean cannot
+     * be maintained incrementally at all.
+     */
+    summary: v.optional(
+      v.object({
+        recentReportCount: v.number(),
+        topHazardTypes: v.array(v.string()),
+        latestReportAt: v.optional(v.number()),
+        // Filled dots out of 4 (D86). Absent below the 3-report quorum — deliberately NOT zero,
+        // because one person's opinion rendered as a consensus mark is this feature's worst
+        // failure mode and it fails silently.
+        qualityDots: v.optional(v.number()),
+        qualityCount: v.optional(v.number()),
+        updatedAt: v.number(),
+      }),
+    ),
     createdByUserId: v.optional(v.id('profiles')), // when source == user
     reviewStatus: v.optional(literals(REVIEW_STATUSES)), // source==user only (D37)
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)
@@ -1053,6 +1110,83 @@ export default defineSchema({
     // the pruner reads this instead. Ordering on the *window end* rather than `fetchedAt` is the
     // point: the end bucket is what makes a row reachable at all (see `pruneWeatherCache`).
     .index('by_window_end', ['windowEndBucketMs']),
+
+  /**
+   * The short forward forecast for the drive decision (N6c B5b).
+   *
+   * **A separate table from `weatherCache`, deliberately.** That one is keyed on a *past window*
+   * (`windowStartMs` + `windowEndBucketMs`) because its rows describe what happened between two
+   * instants and stay true for ever. A forecast has no window — it is "the next twelve hours as of
+   * an hour bucket" — and it stops being true almost immediately. Sharing a table would mean a key
+   * whose second and third components are meaningless for half its rows, and a retention sweep that
+   * cannot tell a durable observation from a stale prediction.
+   *
+   * Keyed on `(samplePointKey, forecastBucketMs)` so every body sharing a ~110 m sample point shares
+   * one row per hour, exactly like the weather-since cache — the read cost stays independent of how
+   * many skaters open the same lake.
+   */
+  weatherForecastCache: defineTable({
+    samplePointKey: v.string(), // rounded "lat,lng" — the same grid-ish key `weatherCache` uses
+    forecastBucketMs: v.number(), // `now` bucketed to the hour: how fresh this prediction is
+    hours: v.array(
+      v.object({
+        startMs: v.number(),
+        temperatureC: v.number(),
+        windSpeedKph: v.number(),
+        precipitationMm: v.number(),
+        snowfallCm: v.number(),
+      }),
+    ),
+    precipStartsMs: v.optional(v.number()),
+    precipIsSnow: v.optional(v.boolean()),
+    minTemperatureC: v.optional(v.number()),
+    maxTemperatureC: v.optional(v.number()),
+    fetchedAt: v.number(),
+  })
+    .index('by_key', ['samplePointKey', 'forecastBucketMs'])
+    // Retention sweep (N3), same shape and same reasoning as `weatherCache.by_window_end`: the
+    // bucket is what makes a row reachable, so it is what the pruner orders on. A forecast row is
+    // garbage far sooner than a weather-since row, since nothing can ever read it again once its
+    // bucket passes.
+    .index('by_forecast_bucket', ['forecastBucketMs']),
+
+  /**
+   * Cached NWS active alerts (N6c B5, D74) — the advisory layer, kept strictly apart from the
+   * physics source.
+   *
+   * **One row per (state, alert), refreshed by a cron that polls five states.** Alerts are issued
+   * over zones and counties, so state-level polling serves every body in the state and the read cost
+   * is independent of corpus size. A body spanning two states legitimately matches rows under both,
+   * which is why the alert's own `states` array is stored alongside the row's single `state`: the
+   * former is what the core matcher reads, the latter is what a per-state replace keys on.
+   *
+   * Nothing on this table ever reaches a calculation. It is text, a severity string and a set of
+   * zone ids.
+   */
+  weatherAlerts: defineTable({
+    state: v.string(), // the state this row was polled under — the replace key
+    alertId: v.string(), // NWS `properties.id`
+    event: v.string(), // "Winter Storm Warning"
+    headline: v.optional(v.string()),
+    severity: v.string(), // NWS's own vocabulary, deliberately unmapped
+    areaDesc: v.optional(v.string()),
+    // NWS `properties.sent` — when they issued THIS version of the alert. The authoritative
+    // comparator when two states hold copies of one alert, because it is a property of the message
+    // rather than of our polling; our `fetchedAt` is only a tiebreak. See `alertVersionRank`.
+    sentMs: v.optional(v.number()),
+    onsetMs: v.optional(v.number()),
+    endsMs: v.optional(v.number()),
+    // Forecast-zone AND county ids, both spaces in one array — rung 1 of the match ladder, unused
+    // until a body carries `nwsZoneIds`. Stored now so the zone import has somewhere to land.
+    zones: v.array(v.string()),
+    states: v.array(v.string()),
+    fetchedAt: v.number(),
+  })
+    .index('by_state', ['state'])
+    .index('by_alert_id', ['alertId'])
+    // Staleness sweep. A range read on `fetchedAt` is safe here — unlike the optional-field indexes
+    // on `waterBodies`, this column is required, so there is no `undefined` band sorting first.
+    .index('by_fetched_at', ['fetchedAt']),
 
   reports: defineTable({
     authorId: v.id('profiles'),

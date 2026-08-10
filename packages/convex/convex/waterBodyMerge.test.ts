@@ -616,3 +616,69 @@ describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert 
     expect(action?.reason).toContain('n7-3-20260809');
   });
 });
+
+describe('a merge moves both map cards (N6c/E, self-review 2026-08-10)', () => {
+  /**
+   * A merge re-points the loser's reports and hazards onto the survivor. That changes the survivor's
+   * counts with **no report or hazard mutation to hang a recompute on** — the one shape
+   * `lib/bodySummary.ts`'s write-path coverage cannot see on its own. Without this the survivor
+   * understates its activity until the six-hourly sweep, on a lake that has just absorbed another's
+   * entire history.
+   */
+  test('the survivor absorbs the loser’s activity, and the loser’s card empties', async () => {
+    const t = harness();
+    const mod = await seedMod(t);
+    const survivor = await seedBody(t, 'Survivor Lake');
+    const loser = await seedBody(t, 'Loser Pond');
+
+    const author = await t.run(async (ctx) => await ctx.db.query('profiles').first());
+    const authorId = author?._id as Id<'profiles'>;
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert('reports', {
+        authorId,
+        waterBodyId: loser,
+        point: CENTROID,
+        skateEndTime: Date.now(),
+        reportTime: Date.now(),
+        source: 'native',
+        iceTypes: ['black_ice'],
+        surfaceTags: [],
+        photoIds: [],
+        moderationStatus: 'visible',
+        hazardIdsCreated: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+      await ctx.db.insert('hazards', {
+        waterBodyId: loser,
+        type: 'open_water',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [0.5, 0.5] },
+        radiusMeters: 30,
+        bbox: { minLat: 0.49, minLng: 0.49, maxLat: 0.51, maxLng: 0.51 },
+        createdByUserId: authorId,
+        photoIds: [],
+        status: 'active',
+        moderationStatus: 'visible',
+        firstReportedAt: Date.now(),
+        lastConfirmedAt: Date.now(),
+        confirmCount: 0,
+        goneCount: 0,
+        createdAt: Date.now(),
+      });
+    });
+
+    await mod.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
+
+    const survivorCard = await t.run(async (ctx) => (await ctx.db.get(survivor))?.summary);
+    const loserCard = await t.run(async (ctx) => (await ctx.db.get(loser))?.summary);
+
+    expect(survivorCard?.recentReportCount).toBe(1);
+    expect(survivorCard?.topHazardTypes).toEqual(['open_water']);
+    // The loser's card never draws (a merged body is unlisted), but it must not keep advertising
+    // activity that has moved away — an unmerge would restore a body claiming reports it lost.
+    expect(loserCard?.recentReportCount ?? 0).toBe(0);
+    expect(loserCard?.topHazardTypes ?? []).toEqual([]);
+  });
+});

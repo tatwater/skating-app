@@ -192,6 +192,10 @@ export const MODERATION_ACTIONS = [
   'approve_waterbody',
   'reject_waterbody',
   'set_curated_boost', // adjust a body's D49 display prominence (admin, Phase 2)
+  // Operator-entered reference links — a lake association's URL (N6c B7). The only *stored* link in
+  // the phase; every other one in the drawer is derived from the row at render time (P2/D71), so
+  // this is the only link surface with a writer to audit at all.
+  'set_reference_links',
   // Keep a body the admission rules refuse, or stop keeping one (N7b's primitive, seeded in N7).
   // Distinct from `set_curated_boost` because it is a statement about **membership** rather than
   // prominence — it overrides `belongsInCorpus` and both prunes, where a boost only moves a body up
@@ -381,6 +385,10 @@ export const IMPORT_RUN_KINDS = [
   'elevation', // scripts/lake-depth load-elevation — Open-Meteo
   'wind_climate', // scripts/wind-climate — NREL WIND Toolkit winter roses
   'bathymetry_coverage', // scripts/bathymetry coverage — D2's hasContours
+  // scripts/seed-destinations — the curated shortlist → `curatedBoost` (N6c B3a/D). A pass rather
+  // than a one-off because the shortlist grows and the interesting output is what it *declined* to
+  // match: an ambiguous name, or a well-known lake absent from the corpus entirely.
+  'seed_destinations',
   'region_stats', // convex regionStats:recompute — derived, but it is a pass and it can fail
   // The steps *before* a loader — where the third-party data is actually acquired, and where a
   // source most often turns out to have moved, changed schema, or quietly returned less than

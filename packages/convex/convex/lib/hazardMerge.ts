@@ -25,6 +25,7 @@ import {
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { recomputeBodySummary } from './bodySummary';
 
 /**
  * Follow a merged hazard to its surviving row, or `null` if the chain dead-ends.
@@ -180,6 +181,11 @@ export async function mergeHazards(
   { actorId, reason }: { actorId?: Id<'profiles'>; reason: string },
 ): Promise<void> {
   await ctx.db.patch(loser._id, { mergedIntoHazardId: survivor._id });
+  // **The map card counts un-merged hazards only (N6c/E), so writing this field changes it.**
+  // Recomputed *here*, beside the write, rather than in each caller — every previous round of this
+  // review found a caller that forgot, and `mergedIntoHazardId` now has exactly two writers. Callers
+  // may recompute again afterwards; the recompute short-circuits when nothing changed.
+  await recomputeBodySummary(ctx, loser.waterBodyId);
   const fresh = await ctx.db.get(survivor._id);
   if (fresh) await refreshMergedFootprint(ctx, fresh);
   // Every merge is audited, including the automatic ones — that is the whole reason auto-merge is
@@ -209,6 +215,10 @@ export async function unmergeHazard(
     mergedIntoHazardId: undefined,
     noMergeWith: [...(loser.noMergeWith ?? []), survivorId],
   });
+  // The other writer, and the direction that is easy to miss: un-merging puts a hazard *back* into
+  // the card's count. `hazards.unmerge` is a moderator action with no report or hazard *creation* to
+  // ride on, so nothing else would have refreshed it.
+  await recomputeBodySummary(ctx, loser.waterBodyId);
   if (survivor) {
     await ctx.db.patch(survivor._id, {
       noMergeWith: [...(survivor.noMergeWith ?? []), loser._id],

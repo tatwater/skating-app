@@ -311,3 +311,109 @@ describe('weather.getWeatherSinceForBody', () => {
     expect(cached[0]?.windowStartMs).toBeLessThanOrEqual(clampFloor + HOUR_MS);
   });
 });
+
+/**
+ * A response carrying both past and forward hours, for the B5b split.
+ *
+ * The forward half deliberately includes a snow onset, because "when does it start snowing" is the
+ * whole question the feature exists to answer.
+ */
+function openMeteoWithForecast(nowMs: number) {
+  const s = (msOffset: number) => Math.floor((nowMs + msOffset) / 1000);
+  return {
+    utc_offset_seconds: -18000, // −5h (US Eastern) — the offset the horizon must be applied in
+    hourly: {
+      time: [
+        s(-2 * HOUR_MS),
+        s(-1 * HOUR_MS),
+        s(1 * HOUR_MS),
+        s(2 * HOUR_MS),
+        s(3 * HOUR_MS),
+        s(4 * HOUR_MS),
+      ],
+      temperature_2m: [-6, -5, -4, -3, -2, -1],
+      precipitation: [0, 0, 0, 0, 2, 3],
+      rain: [0, 0, 0, 0, 0, 0],
+      snowfall: [0, 0, 0, 0, 2, 3],
+      snow_depth: [0.1, 0.1, 0.1, 0.1, 0.12, 0.15],
+      wind_speed_10m: [5, 6, 7, 8, 9, 10],
+      wind_gusts_10m: [12, 13, 14, 15, 16, 17],
+      cloud_cover: [10, 20, 40, 60, 90, 100],
+      sunshine_duration: [3600, 3600, 1800, 0, 0, 0],
+      shortwave_radiation: [200, 150, 100, 50, 0, 0],
+    },
+  };
+}
+
+describe('weather.getForecastForBody (N6c B5b)', () => {
+  test('returns the forward hours and names when snow starts', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify(openMeteoWithForecast(now)), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const forecast = await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+
+    expect(forecast).not.toBeNull();
+    expect(forecast?.hours.length).toBeGreaterThan(0);
+    // Every hour is in the future relative to the request.
+    for (const h of forecast?.hours ?? []) expect(h.startMs).toBeGreaterThan(now - 18_000_000);
+    expect(forecast?.precipStartsMs).toBeDefined();
+    expect(forecast?.precipIsSnow).toBe(true);
+  });
+
+  test('caches per sample point + hour bucket, so a second open does not refetch', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify(openMeteoWithForecast(now)), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+    await asViewer(t).action(api.weather.getForecastForBody, { waterBodyId });
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const cached = await t.run((ctx) => ctx.db.query('weatherForecastCache').collect());
+    expect(cached).toHaveLength(1);
+  });
+
+  test('an unauthenticated caller gets nothing and triggers no fetch', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    expect(await t.action(api.weather.getForecastForBody, { waterBodyId })).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  /**
+   * **The D74 wall.** The weather-since summary is the input to the decay math, the bounty gate and
+   * the contradiction settle, all of which must be re-derivable from what actually happened. This
+   * asserts that widening `forecast_days` to 2 did not let a single forward hour into that number —
+   * the failure would be silent, and it would make every downstream decision unreproducible.
+   */
+  test('forward hours never reach the weather-since summary', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const now = Date.now();
+    const reportId = await seedReport(t, waterBodyId, now - 3 * HOUR_MS);
+    const fetchMock = vi.fn(
+      async () => new Response(JSON.stringify(openMeteoWithForecast(now)), { status: 200 }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const summary = await asViewer(t).action(api.weather.getWeatherSinceForBody, { reportId });
+
+    // Two past hours in the fixture; the four forward ones carry all 5 cm of the snow and both
+    // warm hours. If any leaked in, `hours` would exceed 2 and `snowfallCm` would be non-zero.
+    expect(summary.hours).toBe(2);
+    expect(summary.snowfallCm).toBe(0);
+    expect(summary.maxWindGustKph).toBe(13);
+  });
+});

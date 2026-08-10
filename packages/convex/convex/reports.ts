@@ -73,6 +73,7 @@ import {
 } from './lib/auth';
 import { publicAuthor } from './lib/authorView';
 import { resolveSurvivor } from './lib/bodies';
+import { recomputeBodySummary } from './lib/bodySummary';
 import { bumpContributionCount } from './lib/contributionCounts';
 import { tryAutoMerge } from './lib/hazardMerge';
 import { isListed } from './lib/listing';
@@ -320,6 +321,17 @@ export const create = mutation({
     // Bump the author's denormalized report counter (born visible) so the profile shows a true total
     // without scanning their history (D13). Moderation transitions adjust it symmetrically.
     await bumpContributionCount(ctx, profile._id, 'reportCount', 1);
+
+    // And the body's map summary card (N6c/E). Recomputed rather than incremented — see
+    // `lib/bodySummary.ts`: the count is window- and season-scoped, so a ±1 would drift the moment a
+    // report aged out, and the D86 quality mean cannot be maintained incrementally at all.
+    // **`body._id`, not `args.waterBodyId`** — the same distinction the insert above already makes,
+    // for the same reason. An offline draft can carry a body id that was merged away before the
+    // queue flushed (D36/F2), and `resolveSurvivor` sends the report to the canonical lake.
+    // Recomputing the requested id would refresh the *loser's* card — a row nothing renders, since a
+    // merged body is unlisted — and leave the survivor, the card a skater is actually looking at,
+    // stale until the six-hourly sweep.
+    await recomputeBodySummary(ctx, body._id);
 
     // Reputation (D50): per-report author awards + retroactive corroboration (both authors, capped),
     // then a single badge recompute per affected author. Read the inserted doc once (photoIds /
@@ -1051,6 +1063,17 @@ export const update = mutation({
       photoIds,
       updatedAt: now,
     });
+
+    // **An edit changes the card's inputs, so the card is recomputed (N6c/E).** `skateEndTime` and
+    // `skateQuality` are both patched above and both feed the summary directly: re-dating a report
+    // can move it in or out of the 14-day window, and re-rating it moves the D86 mean. Without this
+    // the card would be wrong until the six-hourly sweep — and the module doc for
+    // `lib/bodySummary.ts` claims the write paths are "exact by construction rather than
+    // exact-until-a-path-is-missed", which was untrue for exactly this path.
+    //
+    // The body cannot change here (`update` reads `existing.waterBodyId` and never takes one), so
+    // there is a single card to refresh rather than an old one and a new one.
+    await recomputeBodySummary(ctx, existing.waterBodyId);
     return args.reportId;
   },
 });

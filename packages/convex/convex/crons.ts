@@ -87,6 +87,15 @@ crons.interval(
 // contains it), so yesterday's rows are unreachable rather than merely stale — this is reclaiming
 // dead weight, and N2's per-sample-point weather grid multiplied how fast it accrues.
 crons.interval('prune weather cache', { hours: 6 }, internal.storageHygiene.pruneWeatherCache, {});
+// The forward-forecast cache (N6c/B5b), same cadence and the same argument: its rows become
+// unaddressable the moment their hour bucket passes, so this is reclaiming space rather than
+// invalidating anything.
+crons.interval(
+  'prune forecast cache',
+  { hours: 6 },
+  internal.storageHygiene.pruneForecastCache,
+  {},
+);
 
 // Photo-orphan GC — the durable backstop behind the client's best-effort reclaim. Daily, because an
 // orphan costs only storage and the grace window before a photo is even a candidate is 30 days.
@@ -128,6 +137,26 @@ crons.interval(
   'recompute hazard recurrence at the rollover',
   { hours: 24 },
   internal.recurrence.maybeRunRollover,
+  {},
+);
+
+/**
+ * NWS active alerts (N6c B5). Fifteen minutes because a winter storm warning is issued on that kind
+ * of timescale and a skater deciding at 7am should not be reading 6am's picture — and because five
+ * requests a quarter-hour is nothing to an unauthenticated public API that asks only for a
+ * `User-Agent`. The sweep that retires a silent state's rows rides the same tick.
+ */
+crons.interval('refresh nws alerts', { minutes: 15 }, internal.weatherAlerts.refreshAlerts, {});
+
+/**
+ * Map summary cards (N6c/E). Six-hourly because the only thing this catches is *time* — a report
+ * ageing out of the 14-day window, or a season boundary — and neither is urgent to the hour. Every
+ * event-driven change to a card already happens synchronously on the write that caused it.
+ */
+crons.interval(
+  'sweep body summaries',
+  { hours: 6 },
+  internal.waterBodies.sweepAllBodySummaries,
   {},
 );
 
