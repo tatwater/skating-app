@@ -2,8 +2,16 @@
 
 > ### ⚠ Two corrections from N7-2 (2026-08-08)
 >
-> **`state_agency` is a rung with no producer.** Confirmed against the loaded corpus: **0 rows carry
-> it.** Its own docstring says it was *"deferred to N6b, where those datasets are fetched for their
+> ### ✅ RESOLVED (N7-3, 2026-08-09) — `state_agency` now has a producer and **3,033 measurements**
+> >
+> > The rung below was the largest depth win available and it has been taken: the state survey data
+> > that was already on disk is loaded, `state_agency` went **0 → 3,033**, and corpus depth is 24.2%
+> > overall with **81.2% of stored depths measured**. See
+> > [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md). The paragraph below is kept as the
+> > diagnosis that led there, not as an open item.
+>
+> **`state_agency` is a rung with no producer.** *(As of 2026-08-08 — resolved above.)* Confirmed
+> against the loaded corpus at the time: **0 rows carry it.** Its own docstring says it was *"deferred to N6b, where those datasets are fetched for their
 > contours anyway"* — N6b fetched them and never came back for the depth. **298 MB and ~2,400 lakes
 > are on disk** at `scripts/bathymetry/.raw/` (ME 1,528 sounding sets, NH 558 contour sets, MA
 > contours, VT 66 lakes at 2.4M points). This is the largest depth win available and it needs no new
@@ -386,6 +394,30 @@ and nothing-within-500 m still counts as unmatched.
 + 1,427,688 GLOBathy + 17,675 LAGOS-US — 40,260 with a max, 28,722 with a mean. Only **279 of the
 HydroLAKES means are `hydrolakes_reported`**; splitting that rung out was nearly free and is nearly
 empty. Lake Ontario spot-checked at 84.8 m mean / 244 m max against published ~86 / 244.
+
+### The depth denominator, and why `8,517 / 40,260` was never the rate
+
+*Folded in from `HANDOFF-n6c-data-campaign.md` before that document was deleted (2026-08-10).*
+
+The N6c-campaign depth join reported **`8,517 / 40,260 source lakes`**, which reads as a 21% match
+rate and is not one. **The denominator is the wrong population**: it includes ~12,900 LAGOS rows
+outside our five states and a HydroLAKES bbox covering Ontario, Québec, PA, NJ, CT and RI — bodies we
+were never going to match because we do not carry them.
+
+Corpus-side coverage is the honest figure, and it is a different story: **~60% of bodies that draw at
+z ≤ 10**, 74% of bodies over 100 ha, and 0% under 1 ha — the last being by design, since that is below
+every source's own floor.
+
+This is the *"denominators lie by default"* rule, which the campaign went on to prove twice more:
+**report `covered / inScope`, and name what the pass walked past.** `corpusStats` now bands by area so
+the question can be answered rather than inferred from two close numbers (**D137**).
+
+Three improvements were built and tested during that campaign but not re-run at the time — all three
+have since landed with the N7-3 re-run: `--states=VT,NH,ME,MA,NY` on the transform (an honest
+denominator, and ~⅓ faster), `Shore_len` in the `ogr2ogr -select` so **D85's shoreline cross-check
+actually executes** (it had reported `0 comparable`, which reads exactly like "we agreed everywhere"),
+and the corroborated proximity fallback in `matchDepthSource`, which recovers the ~40% of prominent
+bodies lost to source points landing just outside our polygons.
 
 ## What the build found in the plan
 

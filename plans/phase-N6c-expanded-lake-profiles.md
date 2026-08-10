@@ -4,8 +4,9 @@
 >
 > Branch `phase-n6c-2-links-cards`, off `phase-n7-3-unified-corpus`. **Unpushed, undeployed, and
 > deliberately so:** a second session was mid-campaign against the dev deployment when this was
-> built, and `HANDOFF-n6c-data-campaign.md`'s rule — *"do not run `convex dev --once` while any
-> loader or prune is running"* — is the reason nothing here has been deployed. See
+> built, and the campaign's standing rule — *"do not run `convex dev --once` while any loader or
+> prune is running"*, since a redeploy swaps functions out from under a resumable pass — is the reason
+> nothing here has been deployed. See
 > [*§What the N6c-2 build found*](#what-the-n6c-2-build-found).
 >
 > Shipped: **B** (reference links), **B5** (NWS alerts), **B5b** (the forward forecast), **B7** (the
@@ -424,6 +425,86 @@ The merge is where this got interesting. `scripts/seed-destinations/vitest.confi
 only one without the bound — a fix silently un-applied by a new package, which is the exact shape the
 fix's own commit message warns about (*"there is no shared base config to put it in"*). Added by hand
 at merge. **A shared base vitest config is now worth having**; the next new package will miss it too.
+
+
+---
+
+## The campaign's leftovers — folded in from `HANDOFF-n6c-data-campaign.md` (deleted 2026-08-10)
+
+*That handoff was a temporary working doc for campaign `n6c-20260802`, and its own header said to
+delete it once the findings landed here. Audited line by line against the deployment before deleting;
+**most of it was already true somewhere else**, and what wasn't is below.*
+
+**What needed no carrying.** Passes 1–3 (canonical re-import, depth join, bathymetry coverage) were
+superseded wholesale by N7's re-merge and are recorded in
+[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md). Pass 4's Open-Meteo elevation lane is
+dead (**D127** → USGS 3DEP, 99.5%). Pass 5's wind roses ran (1,193 bodies). Pass 6's
+`regionStats:recompute` ran. And **all six of its "gotchas worth not re-learning" are already written
+down** — the 16 MB read cap in the roadmap, N6a, N6b and N7; *"denominators lie by default"* in the
+roadmap and N7; measured-sample wall-clock estimates, the abort-on-a-streak rule, the
+`biome --write --unsafe` trap and the scripted-string-replace trap all in N7. Nothing was lost by
+deleting it.
+
+### ⬜ Still outstanding: `backfillRepresentativePoint`, and the rename's second stage
+
+**The one genuinely live item in that document, and it is still live.** Measured against dev,
+2026-08-10:
+
+| table | has `representativePoint` | still has `centroid` |
+| --- | --- | --- |
+| `waterBodies` | ✅ all (written by the re-import) | yes |
+| `adminAreas` | ✅ all | yes |
+| **`waterBodySubAreas`** | ⬜ **117 of 126 — nine short** | yes |
+
+```bash
+pnpm --filter @skating/convex exec convex run waterBodies:backfillRepresentativePoint '{}'
+```
+
+Once that is clean, **stage 2 of the `centroid` → `representativePoint` rename** can land: ~100 read
+sites, make the field required, drop `centroid`, remove the double-write. It is deliberately still
+unstarted — see [*§7*](#7-centroid-was-never-a-centroid-and-now-says-so) for why the readers were left
+alone in stage 1.
+
+> ⚠️ **Never make it a true centroid.** The tempting reading of the name mismatch is to "fix" the
+> maths; it is the *name* that was wrong. `centroid` is Turf `pointOnFeature` and lands **on the
+> shoreline** for any curved lake — Willoughby's is ring vertex 199, Champlain's sits 30.7 km off.
+> Drive-time bands and the pin-less report's town stamp deliberately want a shoreline-ish point, and
+> the area centroid of a crescent lake is on land. `interiorPoint` exists separately for the one
+> consumer the offset genuinely hurt.
+
+**N6c-2 note:** the reference links, the summary cards and the forecast's sample point all read
+`interiorPoint` first and fall back through `representativePoint` to `centroid`, so none of them is
+blocked on this — but the fallback chain is what stage 2 exists to delete.
+
+### The `meetsAreaFloor` rule, which is durable and worth restating
+
+`listNeedingElevation` and `listNeedingWindRose` **import `meetsAreaFloor` from `@skating/core`
+rather than restating the rule, and take a boolean `--import-floor` rather than a threshold.**
+
+The reason is a bug that already happened: the floor was hand-copied as `named OR ≥ 5 acres`, then
+settled the next day as `≥ 5 acres OR (named AND ≥ 1 acre)` — *stricter* — so the copy silently became
+**more permissive than the import it mirrored**, and would have spent third-party quota on
+sub-one-acre bodies that `pruneBelowAreaFloor` deletes.
+
+> **Do not reintroduce a threshold argument here.** A parameter invites a caller to invent a floor; a
+> predicate cannot drift. This is the same shape as N6c-2's own finding that E3's card rule was
+> implemented twice — two definitions that agree are the ones that drift silently.
+
+### `/admin/imports` has no delete path for an orphaned `running` row
+
+A run row is opened *before* the work, so a killed process leaves a record rather than nothing — the
+design working as intended. The UI says *"no finish recorded"* rather than *"in progress"* because it
+genuinely cannot tell a live loader from a dead one.
+
+The campaign's three orphaned rows are long gone, but **there is still no way to delete one**. If they
+become noise that is a small feature to add, not a bug to chase.
+
+### ⛔ `backfillCells` is still held until after N6d
+
+Unchanged since the 2026-08-02 founder call, and the reason is unchanged too: D2's put-in terms
+(+0.06 derived, +0.12 official) are the strongest static signals in the richness model and stay dark
+until N6d lands. So **N6d is what finally unblocks the single re-score pass** — worth knowing as that
+phase's actual finish line rather than a detail of this one.
 
 
 ## Why this phase exists
