@@ -48,6 +48,7 @@ interface NwsFeature {
     headline?: string;
     severity?: string;
     areaDesc?: string;
+    sent?: string;
     onset?: string;
     ends?: string;
     expires?: string;
@@ -91,6 +92,10 @@ export function alertFromFeature(feature: NwsFeature, state: string): NwsAlert |
   };
   if (p.headline) alert.headline = p.headline;
   if (p.areaDesc) alert.areaDesc = p.areaDesc;
+  // NWS's own version marker — see `alertVersionRank`. Preferred over our fetch clock when picking
+  // between two states' copies of the same alert.
+  const sentMs = parseMs(p.sent);
+  if (sentMs !== undefined) alert.sentMs = sentMs;
   const onsetMs = parseMs(p.onset);
   if (onsetMs !== undefined) alert.onsetMs = onsetMs;
   const endsMs = parseMs(p.ends ?? p.expires);
@@ -149,6 +154,7 @@ export const replaceStateAlerts = internalMutation({
         headline: v.optional(v.string()),
         severity: v.string(),
         areaDesc: v.optional(v.string()),
+        sentMs: v.optional(v.number()),
         onsetMs: v.optional(v.number()),
         endsMs: v.optional(v.number()),
         zones: v.array(v.string()),
@@ -175,6 +181,7 @@ export const replaceStateAlerts = internalMutation({
         ...(alert.headline !== undefined ? { headline: alert.headline } : {}),
         severity: alert.severity,
         ...(alert.areaDesc !== undefined ? { areaDesc: alert.areaDesc } : {}),
+        ...(alert.sentMs !== undefined ? { sentMs: alert.sentMs } : {}),
         ...(alert.onsetMs !== undefined ? { onsetMs: alert.onsetMs } : {}),
         ...(alert.endsMs !== undefined ? { endsMs: alert.endsMs } : {}),
         zones: alert.zones,
@@ -204,15 +211,18 @@ export const sweepStaleAlerts = internalMutation({
 export const refreshAlerts = internalAction({
   args: {},
   handler: async (ctx) => {
-    const fetchedAt = Date.now();
     let refreshed = 0;
     for (const state of KNOWN_STATE_CODES) {
       const alerts = await fetchStateAlerts(state);
       if (alerts === null) continue; // see `replaceStateAlerts` — a blip must not clear a state
+      // **Stamped per state, after that state's response, not once before the loop.** The poll is
+      // sequential and a 429 costs a 5 s pause, so five states can span minutes — long enough for
+      // NWS to re-issue an alert in between. One shared timestamp would mark two genuinely different
+      // versions as equally fresh, and the dedupe would then pick between them by insertion order.
       await ctx.runMutation(internal.weatherAlerts.replaceStateAlerts, {
         state,
         alerts,
-        fetchedAt,
+        fetchedAt: Date.now(),
       });
       refreshed++;
     }
@@ -258,6 +268,7 @@ export const listForBody = query({
       };
       if (row.headline) alert.headline = row.headline;
       if (row.areaDesc) alert.areaDesc = row.areaDesc;
+      if (row.sentMs !== undefined) alert.sentMs = row.sentMs;
       if (row.onsetMs !== undefined) alert.onsetMs = row.onsetMs;
       if (row.endsMs !== undefined) alert.endsMs = row.endsMs;
       return alert;

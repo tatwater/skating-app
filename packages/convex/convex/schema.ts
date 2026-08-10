@@ -1170,6 +1170,10 @@ export default defineSchema({
     headline: v.optional(v.string()),
     severity: v.string(), // NWS's own vocabulary, deliberately unmapped
     areaDesc: v.optional(v.string()),
+    // NWS `properties.sent` — when they issued THIS version of the alert. The authoritative
+    // comparator when two states hold copies of one alert, because it is a property of the message
+    // rather than of our polling; our `fetchedAt` is only a tiebreak. See `alertVersionRank`.
+    sentMs: v.optional(v.number()),
     onsetMs: v.optional(v.number()),
     endsMs: v.optional(v.number()),
     // Forecast-zone AND county ids, both spaces in one array — rung 1 of the match ladder, unused

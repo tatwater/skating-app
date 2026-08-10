@@ -132,6 +132,10 @@ async function seedHazard(
   ) as Promise<Id<'hazards'>>;
 }
 
+async function seedAuthorId(t: ReturnType<typeof convexTest>): Promise<Id<'profiles'>> {
+  return seedAuthor(t);
+}
+
 function summaryOf(t: ReturnType<typeof convexTest>, id: Id<'waterBodies'>) {
   return t.run(async (ctx) => (await ctx.db.get(id))?.summary);
 }
@@ -305,6 +309,40 @@ describe('Greptile P1 regressions (2026-08-10)', () => {
 
     // Counting tombstones would read thin_ice 4 vs open_water 2 and put thin_ice first. The map
     // shows one thin-ice pin and two open-water ones, so open_water leads.
+    expect((await summaryOf(t, waterBodyId))?.topHazardTypes).toEqual(['open_water', 'thin_ice']);
+  });
+});
+
+describe('merge/unmerge keep the card in step (Greptile P1 + self-review, 2026-08-10)', () => {
+  /**
+   * The direction the first fix missed. Excluding merged tombstones made
+   * `mergedIntoHazardId` a summary input — so **both** writers of that field have to recompute, and
+   * `hazards.unmerge` is a moderator action with no creation to ride on. The recompute now lives
+   * beside the field write in `lib/hazardMerge.ts` rather than in each caller, because every round of
+   * this review found a caller that forgot.
+   */
+  test('un-merging puts the hazard back on the card', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const survivor = await seedHazard(t, waterBodyId, 'open_water');
+    const loser = await seedHazard(t, waterBodyId, 'thin_ice');
+
+    // Merged: the card shows one type.
+    await t.run((ctx) => ctx.db.patch(loser, { mergedIntoHazardId: survivor }));
+    await t.run((ctx) => recomputeBodySummary(ctx, waterBodyId));
+    expect((await summaryOf(t, waterBodyId))?.topHazardTypes).toEqual(['open_water']);
+
+    // Un-merged through the real path: the card gains it back, with no extra recompute by the caller.
+    const loserDoc = await t.run((ctx) => ctx.db.get(loser));
+    const actorId = await seedAuthorId(t);
+    await t.run(async (ctx) => {
+      const { unmergeHazard } = await import('./lib/hazardMerge');
+      await unmergeHazard(ctx, loserDoc as NonNullable<typeof loserDoc>, {
+        actorId,
+        reason: 'distinct pins',
+      });
+    });
+
     expect((await summaryOf(t, waterBodyId))?.topHazardTypes).toEqual(['open_water', 'thin_ice']);
   });
 });

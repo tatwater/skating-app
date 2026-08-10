@@ -56,6 +56,14 @@ export interface NwsAlert {
   /** The 2-letter states this alert was polled under. Rung 2's matcher. */
   states: string[];
   /**
+   * `properties.sent` — when **NWS issued this version** of the alert.
+   *
+   * The authoritative answer to "which of these two copies is newer", because it is a property of
+   * the message rather than of our polling. An update to a warning is a re-issue with a later
+   * `sent`; two copies sharing a `sent` are the same version and are interchangeable.
+   */
+  sentMs?: number;
+  /**
    * When the row carrying this copy was last polled.
    *
    * **Present only on alerts read back from the cache**, which is why it is optional —
@@ -153,7 +161,7 @@ export function alertsForBody(body: AlertMatchBody, alerts: readonly NwsAlert[])
   const freshest = new Map<string, NwsAlert>();
   for (const a of matched) {
     const held = freshest.get(a.id);
-    if (!held || (a.fetchedAt ?? 0) > (held.fetchedAt ?? 0)) freshest.set(a.id, a);
+    if (!held || compareAlertVersion(a, held) > 0) freshest.set(a.id, a);
   }
 
   return [...freshest.values()].sort((a, b) => {
@@ -162,6 +170,34 @@ export function alertsForBody(body: AlertMatchBody, alerts: readonly NwsAlert[])
     // Stable tie-break so the list does not shuffle between renders.
     return a.id.localeCompare(b.id);
   });
+}
+
+/**
+ * Order two copies of the same alert by how recent they are. Positive when `a` is newer.
+ *
+ * **Tiered, because `sent` and `fetchedAt` are different clocks and must not be compared to each
+ * other.** Both are epoch milliseconds, so collapsing them into one scalar type-checks and quietly
+ * does the wrong thing: a fetch time is always *later* than the issue time of the version it
+ * retrieved, so a copy we can only date by our own clock would out-rank one NWS actually
+ * version-stamped. (Caught by a test written against the scalar version of this function.)
+ *
+ * So: a copy carrying NWS's `sent` outranks one that doesn't, and only then do like clocks compare.
+ *
+ * **Why `sent` leads at all.** `refreshAlerts` polls five states **sequentially**, and a 429 costs a
+ * 5 s pause, so two states' copies of one alert are retrieved seconds to minutes apart — long enough
+ * for NWS to re-issue in between. Fetch time answers "when did we ask", which is a fact about our
+ * cron; `sent` answers "which version is this", which is a fact about the alert.
+ */
+export function compareAlertVersion(a: NwsAlert, b: NwsAlert): number {
+  const aStamped = a.sentMs !== undefined;
+  const bStamped = b.sentMs !== undefined;
+  if (aStamped !== bStamped) return aStamped ? 1 : -1;
+  if (aStamped && bStamped) {
+    const bySent = (a.sentMs as number) - (b.sentMs as number);
+    if (bySent !== 0) return bySent;
+  }
+  // Same version (or neither stamped) — fall back to which copy we refreshed most recently.
+  return (a.fetchedAt ?? 0) - (b.fetchedAt ?? 0);
 }
 
 /** Normalize an `affectedZones` URI (".../zones/forecast/VTZ001") to its bare id. */

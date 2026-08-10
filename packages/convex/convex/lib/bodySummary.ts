@@ -40,6 +40,34 @@
  * bodies' counts without touching a single report or hazard row, so it is invisible to every rule
  * above and calls this directly for both bodies. It is the exception worth knowing about, because
  * anything else that moves content between bodies wholesale will need the same treatment.
+ *
+ * ## The complete writer set, audited 2026-08-10
+ *
+ * Every production path that can change what this function would return, and where it recomputes:
+ *
+ * | input | writers | covered by |
+ * | --- | --- | --- |
+ * | `reports.skateEndTime` / `skateQuality` | `reports.create`, `reports.update` | both call directly |
+ * | `reports.moderationStatus` | `moderation.setStatus` | calls directly |
+ * | `hazards.status` | `hazardConfirmations` (the archive vote) | calls directly |
+ * | `hazards.moderationStatus` | `moderation.setStatus` | calls directly |
+ * | **`hazards.mergedIntoHazardId`** | `applyMerge`, `unmergeHazard` | **`lib/hazardMerge.ts`, beside each write** |
+ * | which body content belongs to | `waterBodies.merge` | calls directly, for both bodies |
+ * | the passage of time | nothing | the six-hourly `sweepAllBodySummaries` cron |
+ *
+ * The merge/unmerge pair sits in the lib rather than in its callers on purpose: `mergedIntoHazardId`
+ * became a summary input only when the card started excluding tombstones, and the first attempt
+ * covered the merge direction and forgot the unmerge. Putting the recompute beside the field write
+ * means a third writer cannot be added without meeting it.
+ *
+ * **One deliberate omission.** `reports.renameSkateTimeToSkateEndTime` patches `skateEndTime`, but it
+ * is the one-time Phase 5 field rename — already run, against reports far outside any card's window —
+ * and the sweep would reconcile it within six hours regardless. Named here so its absence reads as a
+ * decision rather than a miss.
+ *
+ * Nothing on the hazard *decay* path appears above, and that is correct: `hazardWeather` patches
+ * `decayMultiplier` and `snowHidden` only. A decayed hazard is still an active hazard on the map, so
+ * it is still one on the card.
  */
 
 import {

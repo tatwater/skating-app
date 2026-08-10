@@ -260,3 +260,41 @@ describe('a partial poll failure must not surface a stale copy (Greptile P1, 202
     expect(alerts[0]?.headline).toBe('upgraded');
   });
 });
+
+describe('fetchedAt is stamped per state (Greptile P1, 2026-08-10)', () => {
+  /**
+   * The poll is sequential and a 429 costs a 5 s pause, so five states can span minutes. A single
+   * timestamp captured before the loop marks every state's copy equally fresh — and the dedupe then
+   * has nothing to order them by but insertion order.
+   *
+   * The clock is faked and advanced inside the fetch mock so this is deterministic rather than a
+   * race against how fast the suite runs.
+   */
+  test('each state carries the time its own response came back', async () => {
+    const t = convexTest(schema, modules);
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000_000);
+    try {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          // Every state's poll takes a minute of wall clock.
+          vi.advanceTimersByTime(60_000);
+          return alertsResponse([feature()]);
+        }),
+      );
+
+      await t.action(internal.weatherAlerts.refreshAlerts, {});
+
+      const stamps = (await t.run((ctx) => ctx.db.query('weatherAlerts').collect()))
+        .map((r) => r.fetchedAt)
+        .sort((a, b) => a - b);
+
+      // Five states, five distinct stamps — not one shared value.
+      expect(new Set(stamps).size).toBe(5);
+      expect((stamps.at(-1) as number) - (stamps[0] as number)).toBe(4 * 60_000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

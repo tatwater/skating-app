@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   alertsForBody,
+  compareAlertVersion,
   formatAlertLine,
   isSkatingRelevantAlert,
   type NwsAlert,
@@ -230,5 +231,59 @@ describe('stale-copy selection after a partial poll failure (Greptile P1, 2026-0
       alert({ id: 'x', states: ['VT'], areaDesc: 'second', fetchedAt: 7 }),
     ]);
     expect(matched[0]?.areaDesc).toBe('first');
+  });
+});
+
+describe('same-refresh version selection (Greptile P1, 2026-08-10)', () => {
+  /**
+   * `refreshAlerts` polls five states **sequentially**, and a 429 costs a 5 s pause — so two states'
+   * copies of one alert are retrieved seconds to minutes apart, long enough for NWS to re-issue in
+   * between. Ranking on our fetch clock alone would call those copies equally fresh.
+   */
+  it('prefers NWS’s own `sent` over our fetch time', () => {
+    const matched = alertsForBody({ states: ['NH', 'VT'] }, [
+      // Fetched LATER by our clock, but an OLDER version by NWS's.
+      alert({ id: 'x', states: ['NH'], severity: 'Moderate', sentMs: 1_000, fetchedAt: 9_000 }),
+      alert({ id: 'x', states: ['VT'], severity: 'Severe', sentMs: 5_000, fetchedAt: 2_000 }),
+    ]);
+    expect(matched).toHaveLength(1);
+    expect(matched[0]?.severity).toBe('Severe');
+  });
+
+  it('falls back to fetch time when NWS omits `sent`', () => {
+    const matched = alertsForBody({ states: ['NH', 'VT'] }, [
+      alert({ id: 'x', states: ['NH'], severity: 'Moderate', fetchedAt: 1_000 }),
+      alert({ id: 'x', states: ['VT'], severity: 'Severe', fetchedAt: 2_000 }),
+    ]);
+    expect(matched[0]?.severity).toBe('Severe');
+  });
+
+  it('prefers a copy with `sent` over one carrying only a fetch time', () => {
+    const matched = alertsForBody({ states: ['NH', 'VT'] }, [
+      alert({ id: 'x', states: ['NH'], severity: 'Moderate', fetchedAt: 9_999 }),
+      alert({ id: 'x', states: ['VT'], severity: 'Severe', sentMs: 1 }),
+    ]);
+    expect(matched[0]?.severity).toBe('Severe');
+  });
+
+  it('never compares a `sent` against a `fetchedAt` — they are different clocks', () => {
+    // A fetch time is always later than the issue time of the version it retrieved, so a scalar
+    // `sentMs ?? fetchedAt` would let an unstamped copy win on a bigger number.
+    const stamped = alert({ sentMs: 1, fetchedAt: 1 });
+    const unstamped = alert({ fetchedAt: 9_999_999 });
+    expect(compareAlertVersion(stamped, unstamped)).toBeGreaterThan(0);
+    expect(compareAlertVersion(unstamped, stamped)).toBeLessThan(0);
+  });
+
+  it('orders like clocks against like, and ties on fetch time', () => {
+    expect(compareAlertVersion(alert({ sentMs: 5 }), alert({ sentMs: 1 }))).toBeGreaterThan(0);
+    expect(compareAlertVersion(alert({ fetchedAt: 5 }), alert({ fetchedAt: 1 }))).toBeGreaterThan(
+      0,
+    );
+    // Same NWS version ⇒ same content; the more recently refreshed copy wins, harmlessly.
+    expect(
+      compareAlertVersion(alert({ sentMs: 5, fetchedAt: 9 }), alert({ sentMs: 5, fetchedAt: 1 })),
+    ).toBeGreaterThan(0);
+    expect(compareAlertVersion(alert({}), alert({}))).toBe(0);
   });
 });

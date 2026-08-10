@@ -87,6 +87,15 @@ crons.interval(
 // contains it), so yesterday's rows are unreachable rather than merely stale — this is reclaiming
 // dead weight, and N2's per-sample-point weather grid multiplied how fast it accrues.
 crons.interval('prune weather cache', { hours: 6 }, internal.storageHygiene.pruneWeatherCache, {});
+// The forward-forecast cache (N6c/B5b), same cadence and the same argument: its rows become
+// unaddressable the moment their hour bucket passes, so this is reclaiming space rather than
+// invalidating anything.
+crons.interval(
+  'prune forecast cache',
+  { hours: 6 },
+  internal.storageHygiene.pruneForecastCache,
+  {},
+);
 
 // Photo-orphan GC — the durable backstop behind the client's best-effort reclaim. Daily, because an
 // orphan costs only storage and the grace window before a photo is even a candidate is 30 days.
