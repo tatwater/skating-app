@@ -988,7 +988,7 @@ for all of it.)*
 > bodies**. The one number still outstanding is `regionStats:recompute`, which is the last pass of the
 > campaign and gates only the **decile** copy (A5), not the rest of N6c-1.
 >
-> See [`HANDOFF-n7-2-data-campaign.md`](./HANDOFF-n7-2-data-campaign.md) for the live campaign state.
+> See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) for the campaign's final state.
 
 **N6c-1 — geometry stats, elevation, the caption, and profile-richness prominence.** ✅ **BUILT
 2026-08-02** (branch `phase-N6c-1-lake-profiles`; **unpushed, undeployed, ETL passes not yet run**)
@@ -1061,7 +1061,7 @@ thumbs, which measure whether a *report* was helpful rather than what the ice wa
   Recomputed from a bounded index range, with a cron for the decay no write can catch.
 - **E cannot be validated on dev**, which holds 1 report and 2 hazards. It ships correct and renders
   nothing anywhere. Founder call: build it, validate at N6d or device testing.
-- **The corpus is 24,948, not the 116,070 the plan says throughout** — including in P1 and P2, its two
+- **The corpus is 24,953 listed, not the 116,070 the plan says throughout** — including in P1 and P2, its two
   governing rules. The rules survive; every cost argument in the doc was measured on a corpus that no
   longer exists.
 
@@ -1071,8 +1071,10 @@ exactly like a broken one. `PROFILE_REVEAL_ALL` states each absence instead — 
 value, the revealed card mark is empty rather than computed, and it is **forced off against
 production** whatever the constant says. Flip it to `false` before the season.
 
-⛔ **`regionStats` is still empty on dev**, so A5's decile clauses render nothing. That is the data
-campaign's last pass, not this branch's.
+✅ **`regionStats` is populated** — 5 states × 5 metrics, recomputed over 24,953 bodies as the N7-3
+campaign's last pass (PR #41, merged after this branch was cut). So A5's decile clauses are **live**,
+not dark: a caption can now say a lake is among the deepest in Vermont. This branch asserted the
+opposite until it merged main; corrected here rather than left standing.
 
 **N6b — The bathymetry layer: real isobaths inside the lake.** ✅ **COMPLETE (2026-08-01); prod
 deferred.** See [`phase-N6b-bathymetry-layer.md`](./phase-N6b-bathymetry-layer.md).
@@ -1298,11 +1300,10 @@ I want to do it ASAP."* The Copernicus deep link (D75) ships in N6c either way.
   daylight, before the drive. NAIP's leaf-on summer imagery is useless for ice and ideal for access.
 
 **N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
-🔄 **In flight, 2026-08-09** — the phase this roadmap had no entry for at all until now. See
-[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md),
-[`HANDOFF-n7-classification.md`](./HANDOFF-n7-classification.md) and
-[`HANDOFF-n7-2-data-campaign.md`](./HANDOFF-n7-2-data-campaign.md). Decisions **D92–D105** and
-**D109–D137**.
+✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) — the one N7 document, with the
+operator's half (commands, the governing rule, and everything expensive to re-learn) at the bottom —
+and [`docs/water-body-data.md`](../docs/water-body-data.md) for the same story written for humans.
+Decisions **D92–D105** and **D109–D137**.
 
 Three PRs so far: **#39** (the merge, the master list, the review queue), **#40** (the audit and the
 referee), and the current unmerged branch `phase-n7-3-unified-corpus` (the data campaign).
@@ -1319,9 +1320,9 @@ per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
 | elevation | ✅ **99.5%** — 3DEP, 98.2% at 1 m LiDAR, replacing a metered forecast API (D127) |
 | depth | ✅ 24.2% overall, **83–90% above 50 acres**, 81.2% of stored depths measured |
 | wind roses | ✅ 1,193 bodies, derived offline from a byte-faithful archive (D134) |
-| wind, widened | 🔄 250 m fetch gate (D135) — 41,855 requests, ~60 h, running |
-| bathymetry | ✅ 2,066 lakes → 49,362 contour lines → 2,057 bodies |
-| `regionStats` | ⬜ last pass, always |
+| wind, widened | 🔄 250 m fetch gate (D135) — 41,855 requests, ~53 h left, 0 failed |
+| bathymetry | ✅ **2,298 lakes → 52,522 contour lines → 2,287 bodies** (D95 re-key: +232 net-new) |
+| `regionStats` | ✅ recomputed — 24,953 bodies × 5 metrics × 5 states |
 
 **Four findings worth carrying forward.**
 

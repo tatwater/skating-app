@@ -17,7 +17,7 @@
  * Willoughby" matched a row called Lake Willoughby, but catching the two cases the script cannot
  * judge — a destination that matched the *wrong* body of a similar name in the wrong town, and a
  * destination with **no** match. The second is the interesting one: a well-known skating lake absent
- * from a 24,948-body corpus means either a naming mismatch or a genuine gap, and both are worth
+ * from a 24,953-body corpus means either a naming mismatch or a genuine gap, and both are worth
  * knowing before boosts go in.
  */
 

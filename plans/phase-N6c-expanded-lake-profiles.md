@@ -18,11 +18,11 @@
 >
 > | this doc says | actually |
 > | --- | --- |
-> | **"We have 116,070"** — in P1, P2, D2 and a dozen other places | **24,948** as of the N7-3 re-merge. Off by 4.65×. The rules survive; the cost arguments were measured on a corpus that no longer exists |
+> | **"We have 116,070"** — in P1, P2, D2 and a dozen other places | **24,953 listed** (24,961 rows incl. 8 tombstones). Off by 4.65×. The rules survive; the cost arguments were measured on a corpus that no longer exists |
 > | Workstream B derives links from **`centroid`** | `centroid` is a **shoreline** point — this doc proves it in finding 2 and then B uses it anyway. Links read `interiorPoint` |
 > | D86's dots derive from **the Phase 6 thumbs** | `reports.skateQuality`, per the roadmap's own D86 amendment. The thumbs measure whether a *report* was helpful |
 > | Sequencing: elevation must precede an **unrun** N6a loader | Both ran, in the N7-2/N7-3 campaign. The whole section is history |
-> | `regionStats` deciles are available to the caption | **The table is empty on dev.** A5 is built and dark; `regionStats:recompute` is the campaign's last pass and belongs to whoever finishes it |
+> | *(this branch previously said `regionStats` was empty)* | ✅ **Populated** — 5 states × 5 metrics over 24,953 bodies, recomputed as N7-3's last pass (PR #41, merged after this branch was cut). A5's decile clauses are **live** |
 >
 > **Workstream F is split, not whole:** F2 was pulled forward into the data campaign and shipped
 > months of runs ago; only F1 was N6c-2's.
@@ -410,12 +410,20 @@ carries `·dev`. Flip to `false` before the season.
   `destinations.json` invalid JSON. Caught by parsing it, which is the cheapest possible test and was
   not otherwise in the plan.
 
-### 7. Four property tests flake under coverage
+### 7. Four property tests flaked under coverage — ✅ **fixed on main, and this branch nearly re-opened it**
 
-`dedup`, `geometry`, `samplePoints` and `subArea` each have one property test that intermittently
-exceeds vitest's 5 s default under `--coverage` on a loaded machine. Pre-existing, unrelated to this
-phase, and reproducible: they pass alone and in a second full run. Left alone here rather than fixed
-in an unrelated branch, but they want explicit timeouts.
+`dedup`, `geometry`, `samplePoints` and `subArea` each intermittently exceeded vitest's 5 s default
+under `--coverage` on a loaded machine. Noted here and deliberately left alone as pre-existing.
+
+**Main fixed it while this branch was open** (`fd7156a`): `testTimeout: 20_000` in all eleven vitest
+configs, because the flaking set is *load-dependent* — turbo runs the packages at once and CI is ~8×
+slower than local, so whichever test loses the race times out while being fast in isolation.
+
+The merge is where this got interesting. `scripts/seed-destinations/vitest.config.ts` was copied from
+`scripts/lake-depth` **before** that fix landed, so this branch added a twelfth config and it was the
+only one without the bound — a fix silently un-applied by a new package, which is the exact shape the
+fix's own commit message warns about (*"there is no shared base config to put it in"*). Added by hand
+at merge. **A shared base vitest config is now worth having**; the next new package will miss it too.
 
 
 ## Why this phase exists

@@ -13,6 +13,11 @@ export default defineConfig({
   // under Vitest too, letting component tests render the ui primitives.
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   test: {
+    // 20s, not vitest's 5s default — see the note in `packages/convex/vitest.config.ts`. The
+    // flaking set is load-dependent: turbo runs 11 packages at once and CI is ~8x slower than
+    // local, so whichever test loses the race times out while being fast in isolation. A hang is
+    // unbounded and still fails; this only stops green code reporting red.
+    testTimeout: 20_000,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     coverage: {

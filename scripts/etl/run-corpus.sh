@@ -49,6 +49,20 @@ for arg in "$@"; do
   esac
 done
 
+# ⚠ **An explicit `--apply-sub-areas` must never be silently skipped**, and this is the only place
+# that can say so cheaply. The sub-area step below treats a missing `--actor` as "skip and carry on",
+# which is right for a plain `./run-corpus.sh <id>` — but an operator who typed `--apply-sub-areas`
+# asked for a write, and answering that with a SKIP line and exit 0 is the same class of lie as the
+# `| tee` trap in the header: a run that reports success for something it did not do.
+#
+# Checked HERE rather than at the step, because the rule this campaign already paid to learn is that
+# *a cheap argument must not be able to fail an expensive campaign at its last step*. Two seconds in
+# is the honest place to refuse; forty-five minutes and 25,000 bodies later is not.
+if [ -n "$APPLY_SUB_AREAS" ] && [ -z "$ACTOR" ]; then
+  echo "--apply-sub-areas needs --actor=<profileId>: every sub-area write is audited (N2/D60)" >&2
+  exit 1
+fi
+
 SCRATCH=".scratch/merge"
 MANIFEST="${SCRATCH}/merge-manifest.json"
 
@@ -58,6 +72,19 @@ MANIFEST="${SCRATCH}/merge-manifest.json"
 mkdir -p "$SCRATCH"
 LOG="${SCRATCH}/run-${CAMPAIGN}.log"
 exec > >(tee "$LOG") 2>&1
+TEE_PID=$!
+# **And the script waits for its own logger.** Bash does not wait for a process substitution at exit,
+# so `tee` can be torn down with the pipe still holding the last lines — which on a FAILING run are
+# exactly the lines worth keeping. Closing both descriptors gives `tee` its EOF, `wait` reaps it, and
+# the original status is re-raised explicitly so the trap itself cannot become the thing that eats the
+# exit code the header is about.
+finish() {
+  local status=$?
+  exec 1>&- 2>&-
+  wait "$TEE_PID" 2>/dev/null || true
+  exit "$status"
+}
+trap finish EXIT
 echo "══ logging to ${SCRATCH#./}/run-${CAMPAIGN}.log — do NOT pipe this script; it eats the exit code"
 
 # The region masks come first and are not optional: the merge clips against `boundaries.ndjson` and
@@ -96,6 +123,10 @@ elif [ -z "$ACTOR" ]; then
   # own comment already said it needs *both* an actor and `--apply-sub-areas`. So the honest
   # behaviour when neither is present is to say what was not done and carry on — the bay lane is
   # idempotent and can be run on its own afterwards, which is exactly what the message tells you.
+  #
+  # This branch is reachable only when the operator asked for **neither**. `--apply-sub-areas` with no
+  # actor is refused up at the argument parse, because a skip is an honest answer to a request that
+  # was never made and a dishonest one to a request that was.
   echo "══ sub-areas: SKIPPED — no --actor given, and every sub-area write is audited (N2/D60)"
   echo "   the bodies above are loaded and this changes nothing about them. To seed bays:"
   echo "   pnpm --filter @skating/etl load-sub-areas ${SCRATCH}/sub-areas.ndjson \\"
@@ -108,5 +139,13 @@ fi
 
 echo
 echo "campaign ${CAMPAIGN} complete — the path is at /admin/imports?campaign=${CAMPAIGN}"
-echo "Still manual, and deliberately so: prune-floor deletes rows the new rules refuse."
-echo "  pnpm --filter @skating/etl prune-floor            # dry run"
+echo "Still manual, and deliberately so — both of these can remove a body from the map, so both are"
+echo "dry by default and neither runs without you. Order does not matter; skipping either is silent."
+echo
+echo "  pnpm --filter @skating/etl prune-floor            # dry run; --apply to delete"
+echo "      rows the current admission rules refuse."
+echo
+echo "  pnpm --filter @skating/etl retire-absorbed \\"
+echo "    --campaign=${CAMPAIGN}                          # dry run; --apply to fold"
+echo "      the duplicate rows this merge collapsed (D136). REQUIRED after any merge that absorbed"
+echo "      pairs: the load is an upsert, so it never removes a row it simply stopped emitting."

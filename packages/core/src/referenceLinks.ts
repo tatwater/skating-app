@@ -4,7 +4,7 @@
  * **P2 (D71): a link is not an integration.** Every link here is a pure function of
  * `(coordinate, name, states[])`, all already on the row, so the whole corpus is covered the day
  * this ships and a provider changing its query-param format is one function to fix rather than
- * 24,948 stored strings to migrate. Storing a derivable string 24,948 times would be the expensive
+ * 24,953 stored strings to migrate. Storing a derivable string 24,953 times would be the expensive
  * way to get a worse result.
  *
  * The one exception is B7 — a lake association's URL, which no algorithm produces from a lake's

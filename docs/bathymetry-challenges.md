@@ -380,3 +380,11 @@ Open questions before believing any of this:
    ramp would be far easier to read than our single-hue one — and would read as a *danger scale*,
    reintroducing through colour a claim we deliberately refuse to make in words. Legibility is not
    automatically the thing to optimise.
+
+---
+
+## Related
+
+Contours are one layer of a larger data pipeline. For where the lakes themselves come from, how four
+catalogues get merged into one record, and what coverage looks like for depth, elevation and wind,
+see [Where the lakes come from](./water-body-data.md).

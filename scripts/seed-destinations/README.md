@@ -33,7 +33,7 @@ cannot judge:
   than picking the largest — because picking the largest is exactly how the Phase-2.5 seed put five
   curated boosts on same-named lakes in the wrong towns, invisible until N2 built a screen.
 - **No match at all**, which is the interesting one. A well-known skating lake absent from a
-  24,948-body corpus means either a naming mismatch or a genuine gap. Every unmatched entry is named
+  24,953-body corpus means either a naming mismatch or a genuine gap. Every unmatched entry is named
   individually on stderr, not just counted; the list is short and it is a to-do.
 
 ## The shortlist

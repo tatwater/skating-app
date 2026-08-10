@@ -2,6 +2,15 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // 20s, not vitest's 5s default — see the note in `packages/convex/vitest.config.ts`. The
+    // flaking set is load-dependent: turbo runs the packages at once and CI is ~8x slower than
+    // local, so whichever test loses the race times out while being fast in isolation. A hang is
+    // unbounded and still fails; this only stops green code reporting red.
+    //
+    // **This package is the 12th config and there is still no shared base to put this in**, so it
+    // had to be added by hand — which is exactly how it was missed: the file was copied from
+    // `scripts/lake-depth` before that fix landed on main.
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

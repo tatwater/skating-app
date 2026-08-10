@@ -4,7 +4,7 @@
  * **Polled per state on a cron, never per body per view.** Alerts are issued over counties and
  * forecast zones, so one state-level fetch serves every body in that state and the read cost stays
  * independent of corpus size. This is the `listInViewport` lesson applied before it can bite: the
- * per-body-per-view shape would be 24,948 potential fetches behind a map pan.
+ * per-body-per-view shape would be 24,953 potential fetches behind a map pan.
  *
  * **This never feeds a calculation (D74).** The decay math, the bounty gate and the contradiction
  * settle all read Open-Meteo and only Open-Meteo. Blending a second provider into any of them would

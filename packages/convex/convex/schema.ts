@@ -803,7 +803,7 @@ export default defineSchema({
      * Operator-entered reference links (N6c Workstream B7) — the phase's **only** stored link.
      *
      * Every other link in the drawer is derived at render time from `(interiorPoint, name, states)`
-     * and stored nowhere (P2/D71), because a derivable string stored 24,948 times is 24,948 strings
+     * and stored nowhere (P2/D71), because a derivable string stored 24,953 times is 24,953 strings
      * to migrate when a provider changes its query params. A lake association's URL is the one thing
      * no algorithm produces from a lake's name, so it is the exception that proves the rule.
      *

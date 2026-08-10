@@ -71,70 +71,6 @@ export function isRekeyEligible(reason: string): boolean {
 /** What the corpus said about one point. `null` = it is inside no body we carry. */
 export type PointAssignment = { externalId?: string; name: string } | null;
 
-/**
- * Decimal places a point is rounded to before the corpus is asked about it. **Four ≈ 11 m.**
- *
- * ## Why the lane cannot ask about every point directly
- *
- * `coveringBodyForPoints` runs `listedBodiesNearCoord` per point, and Convex counts **bytes read**
- * per function execution — re-reading one document counts every time. A batch of points in the
- * middle of Champlain therefore pulls that ~300 KB shoreline once per point, so 250 points is ~75 MB
- * against a 16 MB cap. `inAdaptiveBatches` would survive it by halving, but a survey lying wholly
- * inside one large lake fails *every* batch and splits 250 → 125 → … → 1, turning one query into
- * hundreds. Correct, and pathologically slow.
- *
- * Dedup fixes the cause rather than the symptom: a sounding survey is dense — transects run tens of
- * metres apart — so rounding collapses many measurements onto one lookup, and the *distinct* count
- * is what the read cap actually cares about.
- *
- * ## Why 11 m is safe here, and where it is not
- *
- * A body boundary is the only place two nearby points can disagree, and 11 m is well inside the
- * tolerance this pipeline already accepts elsewhere: the join's own reject reason is *"no listed body
- * within **25 m** of this point"*. A shoreline sounding that takes its neighbour cell's answer moves
- * between two adjacent bodies, and the ordinary containment gate then judges the regrouped survey
- * anyway — so the failure mode is a handful of edge measurements in the wrong bucket, not a wrong
- * lake.
- *
- * ⚠ **This rounding is for the LOOKUP only.** The measurements keep their exact coordinates: only the
- * question *"which body is around here"* is asked on a grid. Rounding a stored sounding would move
- * the data, which is a different and much worse thing.
- */
-export const LOOKUP_GRID_PLACES = 4;
-
-/** The lookup cell a point falls in. */
-export function lookupCell(point: { lat: number; lng: number }): string {
-  return `${point.lat.toFixed(LOOKUP_GRID_PLACES)},${point.lng.toFixed(LOOKUP_GRID_PLACES)}`;
-}
-
-/**
- * The distinct cells a survey occupies, and the map back to every point in each.
- *
- * The caller resolves `cells` (far fewer queries) and then expands the answers back over `indices`.
- */
-export function dedupeForLookup(points: readonly { lat: number; lng: number }[]): {
-  cells: { lat: number; lng: number }[];
-  /** For each entry of `cells`, the indices into `points` that share it. */
-  indices: number[][];
-} {
-  const byCell = new Map<string, { point: { lat: number; lng: number }; at: number[] }>();
-  points.forEach((p, i) => {
-    const cell = lookupCell(p);
-    const found = byCell.get(cell);
-    if (found) found.at.push(i);
-    // The first point in a cell is the one asked about, so the query point is always a real
-    // measurement rather than a rounded coordinate that might sit just outside the water.
-    else byCell.set(cell, { point: { lat: p.lat, lng: p.lng }, at: [i] });
-  });
-  const cells: { lat: number; lng: number }[] = [];
-  const indices: number[][] = [];
-  for (const { point, at } of byCell.values()) {
-    cells.push(point);
-    indices.push(at);
-  }
-  return { cells, indices };
-}
-
 /** One re-keyed group, plus the bookkeeping that keeps the lane honest. */
 export interface RekeyResult {
   /**
@@ -156,9 +92,10 @@ export interface RekeyResult {
 /**
  * Split one lake's measurements by which corpus body contains each of them.
  *
- * `assignments` is parallel to `shapePoints(lake)` — the caller resolves them (in batches, server
- * side) and hands them back in order. Keeping the resolution outside makes this a pure function over
- * two arrays, which is what lets the fixtures below be named lakes rather than a mocked deployment.
+ * `assignments` is parallel to `shapePoints(lake)` — the caller resolves each point against the
+ * corpus index and hands them back in order. Keeping the resolution outside makes this a pure
+ * function over two arrays, which is what lets the fixtures below be named lakes rather than a
+ * mocked deployment or a loaded corpus.
  *
  * **A contour is assigned by its first vertex, matching `splitByBody`.** A contour line that
  * straddles two bodies cannot exist — that is what "separate bodies" means — and a per-vertex split

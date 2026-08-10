@@ -9,7 +9,10 @@ import {
   gridKey,
   MIN_ROSE_HOURS,
   pointForGridKey,
+  retryAfterMs,
   roseFromCounts,
+  WTK_MAX_BACKOFF_MS,
+  WTK_RATE_LIMIT_RETRIES,
   WTK_YEARS,
   wtkUrl,
 } from './wtk';
@@ -252,4 +255,111 @@ describe('fetchCellYear', () => {
     expect(await fetchCellYear({ lat: 44, lng: -72 }, 2012, 'K', 'a@b.c', impl)).toBe('x');
     expect(calls).toBe(2);
   }, 30_000);
+});
+
+describe('retryAfterMs — the header the 250 m fetch lost 18 requests by ignoring', () => {
+  const NOW = Date.UTC(2026, 9, 21, 7, 26, 0);
+
+  it('reads delta-seconds', () => {
+    expect(retryAfterMs('120', NOW)).toBe(120_000);
+    expect(retryAfterMs('  30  ', NOW)).toBe(30_000);
+  });
+
+  it('reads an HTTP-date, which is the form that silently produced NaN', () => {
+    // RFC 9110 allows both and services use both. Parsing only delta-seconds returns NaN here, and a
+    // NaN wait is an IMMEDIATE retry straight back into the same limit — worse than not reading it.
+    expect(retryAfterMs('Wed, 21 Oct 2026 07:28:00 GMT', NOW)).toBe(120_000);
+  });
+
+  it('treats a date already in the past as "go now"', () => {
+    expect(retryAfterMs('Wed, 21 Oct 2026 07:00:00 GMT', NOW)).toBe(0);
+  });
+
+  it('returns null when the server said nothing, so the caller falls back to its own backoff', () => {
+    expect(retryAfterMs(null, NOW)).toBeNull();
+    expect(retryAfterMs(undefined, NOW)).toBeNull();
+    expect(retryAfterMs('', NOW)).toBeNull();
+    expect(retryAfterMs('soon please', NOW)).toBeNull();
+  });
+
+  it('caps a pathological value rather than parking the run', () => {
+    expect(retryAfterMs('99999', NOW)).toBe(WTK_MAX_BACKOFF_MS);
+    expect(retryAfterMs('Fri, 21 Oct 2050 00:00:00 GMT', NOW)).toBe(WTK_MAX_BACKOFF_MS);
+  });
+});
+
+describe('fetchCellYear rate-limit budget', () => {
+  const ok = (body = 'Year,Month,Day,Hour,Minute,dir,spd\n') =>
+    ({ ok: true, status: 200, text: async () => body }) as unknown as Response;
+  const tooMany = (retryAfter?: string) =>
+    ({
+      ok: false,
+      status: 429,
+      headers: {
+        get: (k: string) => (k.toLowerCase() === 'retry-after' ? (retryAfter ?? null) : null),
+      },
+    }) as unknown as Response;
+  const point = { lat: 44.5, lng: -73.3 };
+
+  it('gives a 429 more attempts than a 5xx, because they are different failures', async () => {
+    // Four attempts spanning ~92s was not enough: the 250 m fetch lost 18 cell-years to one burst,
+    // every one recoverable by waiting. A 5xx keeps the short budget — a broken service should be
+    // reported, not retried for four minutes.
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return calls < WTK_RATE_LIMIT_RETRIES ? tooMany('0') : ok();
+    }) as unknown as typeof fetch;
+    await expect(fetchCellYear(point, 2012, 'k', 'e@x', fetchImpl, 4, () => 0)).resolves.toContain(
+      'Year',
+    );
+    expect(calls).toBe(WTK_RATE_LIMIT_RETRIES);
+  });
+
+  it('still gives up on a 5xx at the short budget', async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return { ok: false, status: 503 } as unknown as Response;
+    }) as unknown as typeof fetch;
+    const waits: number[] = [];
+    await expect(
+      fetchCellYear(
+        point,
+        2012,
+        'k',
+        'e@x',
+        fetchImpl,
+        4,
+        () => 0,
+        async (ms) => {
+          waits.push(ms);
+        },
+      ),
+    ).rejects.toThrow('503');
+    expect(calls).toBe(4);
+    // Geometric, and it must not be flat — a "backoff" that does not back off just spends the budget.
+    expect(waits).toEqual([4400, 17_600, 70_400]);
+  });
+
+  it('never retries a 4xx that is not 429', async () => {
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls++;
+      return { ok: false, status: 403 } as unknown as Response;
+    }) as unknown as typeof fetch;
+    await expect(
+      fetchCellYear(
+        point,
+        2012,
+        'k',
+        'e@x',
+        fetchImpl,
+        4,
+        () => 0,
+        async () => undefined,
+      ),
+    ).rejects.toThrow('403');
+    expect(calls).toBe(1);
+  });
 });

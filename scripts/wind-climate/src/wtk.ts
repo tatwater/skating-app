@@ -200,10 +200,50 @@ export function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Attempts for a **429 specifically**, which is a different failure from a 500 (N7-3).
+ *
+ * A 5xx is the service being broken and retrying hard is rude; a 429 is the service telling us to
+ * slow down, and the correct response is to wait longer and try again. Four attempts spanning ~92
+ * seconds was not enough: the 250 m fetch lost **18 cell-years to 429 in one burst** at 13% through,
+ * every one of them recoverable by simply having waited.
+ *
+ * The handoff asked for this check — *"`fetchCellYear` already has 429 backoff; check it is as
+ * patient"* as the elevation lane's — and it was never done before the fetch started.
+ */
+export const WTK_RATE_LIMIT_RETRIES = 8;
+
+/** Longest single wait, so a pathological `Retry-After` cannot park the run for an hour. */
+export const WTK_MAX_BACKOFF_MS = 240_000;
+
+/**
+ * How long the server asked us to wait, in ms, or `null` when it did not say.
+ *
+ * **RFC 9110 allows two forms** and services use both: delta-seconds (`120`) and an HTTP-date
+ * (`Wed, 21 Oct 2026 07:28:00 GMT`). Reading only the first silently returns `NaN` for the second,
+ * which is worse than not reading it at all — a `NaN` wait becomes an immediate retry into the same
+ * limit. `now` is injected so the date branch is testable without freezing the clock.
+ */
+export function retryAfterMs(header: string | null | undefined, now: number): number | null {
+  if (header === null || header === undefined) return null;
+  const trimmed = header.trim();
+  if (trimmed.length === 0) return null;
+  if (/^\d+$/.test(trimmed)) return Math.min(Number(trimmed) * 1000, WTK_MAX_BACKOFF_MS);
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return null;
+  // A date already in the past means "go now", not "go back in time".
+  return Math.min(Math.max(0, at - now), WTK_MAX_BACKOFF_MS);
+}
+
+/**
  * Fetch one cell-year's CSV, retrying transient failures.
  *
  * A 429 is expected in normal operation — the daily and per-second limits are real — so it backs
  * off rather than failing the run. A 4xx that is not 429 is not retried: it will not become valid.
+ *
+ * **A 429 gets its own, longer budget** (`WTK_RATE_LIMIT_RETRIES`) and honours `Retry-After` when the
+ * server sends one, because being told exactly how long to wait and then guessing is how a run loses
+ * requests it could have kept. Everything else keeps the short budget: a broken service should fail
+ * fast and be reported, not retried for four minutes.
  */
 export async function fetchCellYear(
   point: WtkPoint,
@@ -212,10 +252,22 @@ export async function fetchCellYear(
   email: string,
   fetchImpl: typeof fetch = fetch,
   maxRetries = 4,
+  now: () => number = Date.now,
+  /** Injected so the backoff SCHEDULE is assertable without a test that waits 92 seconds. */
+  sleepImpl: (ms: number) => Promise<void> = sleep,
 ): Promise<string> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    if (attempt > 0) await sleep(WTK_REQUEST_DELAY_MS * 4 ** attempt);
+  let lastRetryAfter: number | null = null;
+  // The budget is the larger of the two, and a non-429 failure stops consuming it at `maxRetries`.
+  const attempts = Math.max(maxRetries, WTK_RATE_LIMIT_RETRIES);
+  let rateLimited = false;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0 && !rateLimited && attempt >= maxRetries) break;
+    if (attempt > 0) {
+      const backoff = Math.min(WTK_REQUEST_DELAY_MS * 4 ** attempt, WTK_MAX_BACKOFF_MS);
+      await sleepImpl(lastRetryAfter ?? backoff);
+    }
+    lastRetryAfter = null;
     let res: Response;
     try {
       res = await fetchImpl(wtkUrl(point, year, apiKey, email));
@@ -226,6 +278,10 @@ export async function fetchCellYear(
     if (!res.ok) {
       const err = new Error(`WTK request failed: ${res.status}`);
       if (res.status !== 429 && res.status < 500) throw err;
+      if (res.status === 429) {
+        rateLimited = true;
+        lastRetryAfter = retryAfterMs(res.headers?.get?.('retry-after'), now());
+      }
       lastError = err;
       continue;
     }

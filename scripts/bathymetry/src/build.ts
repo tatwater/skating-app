@@ -31,7 +31,7 @@ import type { MultiPolygon, Polygon, Position } from 'geojson';
 import { SCRATCH_ROOT } from './cache';
 import { clipDrawnToBody, type Drawn, interpolate, lakeId, publishedContours } from './contour';
 import { contourFeature, type StampBody, stampBodyId } from './feature';
-import { readJoin } from './join';
+import { readJoin, readRekeyedLakes } from './join';
 import { readAllLakes } from './lakeSources';
 import { measure, preferSurveyedLane, splitByBody } from './lakes';
 import { sourceByKey } from './sources';
@@ -86,7 +86,12 @@ async function main(): Promise<void> {
 
   log('reading every archived source…');
   const all = (await readAllLakes()).filter((l) => !states || states.includes(l.state));
-  const split = all.flatMap(splitByBody);
+  // **The re-keyed lakes come from the join, not from the archives.** They are slices of an archived
+  // key cut against the corpus (D95), so `readAllLakes` cannot produce them and `splitByBody` must
+  // not re-split them — they are already split, by the only evidence that works for a junk key.
+  const rekeyed = readRekeyedLakes().filter((l) => !states || states.includes(l.state));
+  if (rekeyed.length > 0) log(`${rekeyed.length} re-keyed lake(s) from the D95 lane`);
+  const split = [...all.flatMap(splitByBody), ...rekeyed];
   log(`${split.length} lakes (${split.length - all.length} from split keys)`);
 
   // A border lake is filed by both states, so it joins twice and both lanes would write under one

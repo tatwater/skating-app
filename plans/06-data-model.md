@@ -289,7 +289,7 @@ createdAt: timestamp
 > read as precise — a shoreline number *looks* like a hard fact in a way a modelled depth doesn't, which
 > makes it more dangerous, not less.
 > **Reference links are generated, not stored (D71)** — every other outbound link is a pure function of
-> **`(interiorPoint, name, states)`** computed in `@skating/core`, which is what gives all 24,948 bodies
+> **`(interiorPoint, name, states)`** computed in `@skating/core`, which is what gives all 24,953 bodies
 > coverage with no migration and no stale URLs. `referenceLinks` exists only for lake associations, which
 > no algorithm can derive; expect tens of rows, not thousands.
 > ⚠ **`interiorPoint`, not `centroid`** — this doc and N6c's Workstream B both said `centroid` until

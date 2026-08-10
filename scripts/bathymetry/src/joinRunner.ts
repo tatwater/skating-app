@@ -20,20 +20,6 @@ export async function runJoinQuery(batch: readonly JoinCandidate[]): Promise<Joi
   return runConvexQuery<JoinResult>('waterBodies:matchBathymetryLakes', { lakes: batch });
 }
 
-/**
- * Which corpus body contains each point — the D95 re-key lane's resolver.
- *
- * Same shape and the same "must throw" contract as `runJoinQuery`, so `joinInBatches` can drive it
- * with the same adaptive splitting. It needs that as much as the join does: `listedBodiesNearCoord`
- * pulls polygons, and a batch of points in the middle of Champlain reads three orders of magnitude
- * more than a batch in a farm pond.
- */
-export async function runCoveringBodyQuery(
-  points: readonly { lat: number; lng: number }[],
-): Promise<{ bodies: ({ externalId?: string; name: string } | null)[] }> {
-  return runConvexQuery('waterBodies:coveringBodyForPoints', { points });
-}
-
 function runConvexQuery<T>(functionName: string, args: unknown): T {
   const result = spawnSync(
     'pnpm',
