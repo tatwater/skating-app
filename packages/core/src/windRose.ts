@@ -156,3 +156,172 @@ export function mostExposedSector(
     fetchM: (fetchProfileM as readonly number[])[best] as number,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sustained wind — the speed question a rose cannot answer (N7-3)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * ## Why any of this exists
+ *
+ * `windRose` is sixteen **frequencies**. It says which way the wind comes from and nothing about
+ * how hard it blows — and the WTK fetch has been requesting `windspeed_10m` all along and
+ * discarding it, reading `cells[5]` (direction) and never `cells[6]`.
+ *
+ * That matters because the two wind hazards on a lake are different questions:
+ *
+ * - **Pressure ridges** are a *fetch* problem. Frequency × fetch, which `mostExposedSector` answers,
+ *   and which is why `MIN_FETCH_CLAUSE_M` gates that clause at a kilometre.
+ * - **Wind holes** are a *speed* problem. They are driven by sustained strong wind and have **no
+ *   comparable fetch minimum** — so the 1 km gate is meaningful for the first and must not be
+ *   assumed meaningful for the second (founder, 2026-08-02).
+ */
+
+/**
+ * The speed at or above which an hour counts as strong, in m/s. **8.94 m/s is 20 mph.**
+ *
+ * WTK's `windspeed_10m` is measured at 10 m, which is standard anemometer height — so this compares
+ * directly with a reported wind speed and needs no conversion fudge. Somebody will otherwise wonder.
+ *
+ * **Changing it requires a recompute**, because the counts are accumulated at this threshold. After
+ * the snapshot/derive split that recompute is a local `derive` over the archive rather than a
+ * 7.7-hour re-fetch — which is the entire point of the archive. The value used is stored alongside
+ * the counts (`strongWindMinMps`) so a row is self-describing and a mixed-threshold corpus is
+ * detectable rather than silent.
+ */
+export const STRONG_WIND_MIN_MPS = 8.94;
+
+/**
+ * The longest-fetch bar a body must clear to get a WTK cell fetched at all. **250 m** (founder,
+ * 2026-08-09).
+ *
+ * ## Why this is not `MIN_FETCH_CLAUSE_M`, and must never be collapsed into it
+ *
+ * `MIN_FETCH_CLAUSE_M` (1 km) gates the *wind-exposure caption clause*, and it is right for that:
+ * pressure ridges are a fetch problem, so a lake with no fetch has no ridge to warn about. It was
+ * also, for one campaign, doing a second job it was never chosen for — deciding which bodies got a
+ * rose **fetched**. Wind holes are a speed problem with no comparable fetch minimum, so gating the
+ * fetch at the caption's bar under-served the wind-hole lane by construction.
+ *
+ * Two separate numbers, because they answer two separate questions. A body between 250 m and 1 km
+ * now carries strong-wind hours and no exposure clause, which is the correct pair of answers.
+ *
+ * ## Why 250 and not 0, measured against the loaded corpus (2026-08-09)
+ *
+ * | min fetch | bodies | 2 km cells | requests | fetch hours |
+ * | --- | --- | --- | --- | --- |
+ * | 1000 m (the old bar) | 1,193 | 1,182 | 5,910 | 10.5 |
+ * | **250 m** | **11,121** | **9,555** | **47,775** | **~85** |
+ * | 0 (everything) | 24,956 | 18,355 | 91,775 | ~163 |
+ *
+ * 250 m reaches 45% of the corpus for roughly half the wall clock of taking everything, and the
+ * bodies it walks past are ponds under about six acres of open water in their longest direction —
+ * where a wind hole is not the hazard that decides whether the ice is safe.
+ *
+ * **The cost is one-time and the archive is what makes it so.** `snapshot` writes every response to
+ * `.raw/` and mirrors it to R2, so widening this again later re-fetches only the *difference*
+ * (`missingResponses` diffs against what is on disk), and re-deriving at a different speed threshold
+ * costs minutes and zero requests.
+ *
+ * ⚠ **A constant, deliberately, rather than a `--min-fetch` flag on either command.** `snapshot` and
+ * `derive` both scope themselves with it, and `derive` **refuses** when a cell it wants is absent
+ * from the archive — so a flag that could be passed to one and not the other turns a scope decision
+ * into a failed run, or worse, a coverage figure quoted over the cells that happened to be there.
+ * The same reasoning retired `--min-area-acres=N` in favour of `meetsAreaFloor`: a parameter invites
+ * a caller to invent a floor; a shared constant cannot drift.
+ */
+export const WIND_ARCHIVE_MIN_FETCH_M = 250;
+
+/**
+ * How many strong-wind hours in an average winter make a sector worth calling out. Default **3**.
+ *
+ * **Applied at read time, which is the strongest form of "configurable" available**: changing it
+ * needs no recompute at all, where changing the speed needs a `derive`. That asymmetry is why the
+ * two thresholds live in different places.
+ *
+ * ⚠ **This is a rate, not an episode length, and the difference is not cosmetic.** The founder's
+ * decision was that strict consecutiveness is not required — *"if the wind dies down for an hour and
+ * picks back up I bet it would do just as much damage"* — which is what makes storing plain counts
+ * sufficient and rules out run-length detection. But it also means nothing stored here can answer
+ * *"was there a three-hour blow"*; the honest question the counts can answer is *"how much strong
+ * wind does this shore get in a season"*. Read `windHoleSectors` with that in mind, and treat the
+ * default as a magnitude to refit rather than a number with outside support.
+ */
+export const WIND_HOLE_MIN_HOURS = 3;
+
+/** What a body stores about sustained wind. All three travel together or not at all. */
+export interface SustainedWind {
+  /** Winter hours at or above the threshold, by the same 16 sectors as `windRose`. Absolute. */
+  strongWindHours?: readonly number[] | undefined;
+  /** Total winter hours the counts were accumulated from — the honest denominator. */
+  sampledWindHours?: number | undefined;
+  /** The m/s threshold those counts were taken at. Self-describing; see `STRONG_WIND_MIN_MPS`. */
+  strongWindMinMps?: number | undefined;
+}
+
+/**
+ * Is this a usable stored strong-hour array?
+ *
+ * **Counts, not frequencies** — deliberately the opposite of `windRose`, and so the sum check that
+ * validates a rose would be wrong here. What can be checked is that no sector claims more strong
+ * hours than the total sample contained, which is the shape a units error or a mixed-threshold
+ * merge would take.
+ */
+export function isPlausibleStrongWindHours(wind: SustainedWind): boolean {
+  const { strongWindHours, sampledWindHours } = wind;
+  if (!Array.isArray(strongWindHours) || strongWindHours.length !== WIND_ROSE_SECTORS) return false;
+  if (typeof sampledWindHours !== 'number' || !Number.isFinite(sampledWindHours)) return false;
+  if (sampledWindHours <= 0) return false;
+  let total = 0;
+  for (const hours of strongWindHours) {
+    if (typeof hours !== 'number' || !Number.isFinite(hours) || hours < 0) return false;
+    total += hours;
+  }
+  return total <= sampledWindHours;
+}
+
+export interface WindHoleSector {
+  /** Index into the 16 compass points — the direction wind blows FROM. */
+  sector: number;
+  /** Strong-wind hours per winter from this sector, averaged over the sampled record. */
+  hoursPerWinter: number;
+  /** Share of all sampled winter hours that are strong from this sector, in `[0, 1]`. */
+  share: number;
+}
+
+/** Winter hours in a Dec–Mar season, for turning a multi-winter total into a per-winter rate. */
+const HOURS_PER_WINTER = 24 * (31 + 31 + 28 + 31);
+
+/**
+ * Sectors delivering at least `minHours` of strong wind in an average winter, **worst first**.
+ *
+ * Returns `[]` rather than `null` for a body with no sustained-wind data, because "no sectors
+ * qualify" and "we never measured" are the same *action* — say nothing — and a caller forced to
+ * distinguish them would have to handle a null it has no use for. The distinction is available from
+ * `isPlausibleStrongWindHours` where it matters.
+ *
+ * ⚠ **Deliberately no copy.** D82 settled that bathymetry is context rather than counsel, and this
+ * is the same class of number wearing a scarier name. Whether a wind-hole clause belongs in the
+ * caption, only in the profile, or nowhere is a founder call that has not been taken — so this
+ * returns data and nothing here writes a sentence.
+ */
+export function windHoleSectors(
+  wind: SustainedWind,
+  minHours: number = WIND_HOLE_MIN_HOURS,
+): WindHoleSector[] {
+  if (!isPlausibleStrongWindHours(wind)) return [];
+  const hours = wind.strongWindHours as readonly number[];
+  const sampled = wind.sampledWindHours as number;
+  const winters = sampled / HOURS_PER_WINTER;
+  if (!(winters > 0)) return [];
+  const out: WindHoleSector[] = [];
+  for (let k = 0; k < WIND_ROSE_SECTORS; k++) {
+    const total = hours[k] as number;
+    const hoursPerWinter = total / winters;
+    if (hoursPerWinter < minHours) continue;
+    out.push({ sector: k, hoursPerWinter, share: total / sampled });
+  }
+  // Ties break toward the lower sector index — arbitrary and stable, the same rule
+  // `mostExposedSector` uses and for the same reason.
+  return out.sort((a, b) => b.hoursPerWinter - a.hoursPerWinter || a.sector - b.sector);
+}

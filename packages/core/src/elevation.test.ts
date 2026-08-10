@@ -9,11 +9,25 @@ import {
 } from './elevation';
 
 describe('ELEVATION_SOURCES', () => {
-  it('is one automated source plus the operator rung — not a ladder', () => {
-    // Depth needed five rungs because measured bathymetry is scarce. A 90 m global DEM is not, so
-    // a second automated source here would be ceremony. If this ever grows, the precedence rule
-    // below has to grow with it.
-    expect([...ELEVATION_SOURCES]).toEqual(['operator', 'dem_glo90']);
+  it('is the operator rung plus the DEMs — and it is still not a ladder', () => {
+    // **This test failed when 3DEP was added, which is the point of it.** Its previous premise was
+    // "one automated source", and its own comment said that if the list ever grew, the precedence
+    // rule had to grow with it. It grew and the rule did not have to: `canOverwriteElevation` turns
+    // on `operator` alone, so a newer DEM simply replaces an older one. That is what makes the swap
+    // safe, and what makes measuring the datum shift first (D101) mandatory rather than polite.
+    //
+    // `dem_glo90` survives the switch deliberately — 5,692 rows were written with it, and a source
+    // that stops existing the moment it is replaced makes every row it wrote unattributable.
+    expect([...ELEVATION_SOURCES]).toEqual(['operator', 'dem_3dep', 'dem_glo90']);
+  });
+
+  it('lets either DEM be overwritten, and neither overwrite a moderator', () => {
+    // The whole precedence rule, stated once. Order in the array above is documentation; this is
+    // the behaviour.
+    expect(canOverwriteElevation('dem_glo90')).toBe(true);
+    expect(canOverwriteElevation('dem_3dep')).toBe(true);
+    expect(canOverwriteElevation(undefined)).toBe(true);
+    expect(canOverwriteElevation('operator')).toBe(false);
   });
 });
 

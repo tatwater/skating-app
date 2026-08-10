@@ -14,7 +14,9 @@
     "archive": "tsx src/archiveCli.ts",
     "snapshot-elevation": "tsx src/snapshotElevation.ts",
     "snapshot-alsc": "tsx src/snapshotAlsc.ts",
-    "corroborate-alsc": "tsx --max-old-space-size=8192 src/corroborateAlsc.ts"
+    "corroborate-alsc": "tsx --max-old-space-size=8192 src/corroborateAlsc.ts",
+    "snapshot-cslap": "tsx src/snapshotCslap.ts",
+    "snapshot-nh-bands": "tsx src/snapshotNhBands.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

@@ -1,11 +1,32 @@
 # N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign on top
 
-> **Status:** ✅ **The corpus is LIVE on dev — campaign `n7-2-20260808`, steps 0–6 complete and
-> refereed** (2026-08-08). Originally written 2026-08-03 after a measurement session that corrected
-> four of its own findings; the numbers below are the survivors, and anything still marked
-> *unverified* is marked that way on purpose.
+> **Status:** ✅ **Campaign `n7-3-20260809` COMPLETE** (2026-08-09) — every pass run, `regionStats` last. The corpus is live on dev and
+> the enrichment is most of the way through. Originally written 2026-08-03 after a measurement session
+> that corrected four of its own findings; the numbers below are the survivors, and anything still
+> marked *unverified* is marked that way on purpose.
 >
-> ### ✅ The corpus as it stands — campaign `n7-2-20260808` (2026-08-08)
+> ### ✅ Campaign `n7-3-20260809` — as it finished, 2026-08-09/10
+>
+> | lane | final |
+> | --- | --- |
+> | corpus | **24,953 listed** (24,961 rows incl. 8 retired-duplicate tombstones) · 126 sub-areas |
+> | elevation | **99.5%** — 24,834, USGS 3DEP, 98.2% at 1 m LiDAR (D127) |
+> | depth | 24.2% overall · **83–90% above 50 acres** · **81.2% of stored depths measured** |
+> | `state_agency` rung | **0 → 3,033 measurements** (it had never had a writer) |
+> | wind roses | **1,193 / 1,193** derived from the archive, zero requests (D134) |
+> | wind, widened | 🔄 250 m gate (D135) — 41,855 requests, then `derive` again for ~11,118 bodies |
+> | bathymetry | **2,298 lakes → 52,522 contour lines → 2,287 bodies**, tiles published |
+> | D95 re-key | **293 recovered, +232 net-new** after the density gate (projected +217) |
+> | `regionStats` | ✅ recomputed — 24,953 bodies × 5 metrics × 5 states |
+>
+> Decisions **D131–D137**. Every cross-check agrees: 8 tombstones, 24,953 listed, and `regionStats`
+> scanned exactly 24,953.
+>
+> **Read [*The operator's half*](#-the-operators-half-) at the bottom** — the commands, the governing
+> rule, everything expensive to re-learn, and what is still open. It is where the two `HANDOFF-n7-*`
+> documents went.
+>
+### ✅ The corpus as it stands — campaign `n7-2-20260808` (2026-08-08)
 >
 > ```
 > 25,050 before  −  105 pruned  =  24,945 bodies · 126 sub-areas
@@ -71,7 +92,8 @@
 > **D109's vocabulary migration is finished**: `backfillWaterBodyClasses` rewrote the last 53 rows —
 > the protected ones, which by definition the loader can never reach — and reports `unmappable: 0`.
 > The schema's `type` union may now be **narrowed** to `WATER_BODY_CLASSES`; that is the one step of
-> the widen→deploy→backfill→narrow order still outstanding.
+> the widen→deploy→backfill→narrow order still outstanding. ✅ **Done since** — `schema.ts` reads
+> `type: literals(WATER_BODY_CLASSES)` and the legacy half of the union is gone.
 >
 > **Three limits that only bind on real data**, all found by the load and all fixed:
 > `pruneNotInCampaign` advertised a 500-row page while `bodyAttachmentKind` costs **10 index reads**
@@ -140,7 +162,7 @@
 > filters each source, reconciles against the *live corpus*, and imports on top of it. What got built
 > inverts that: `scripts/etl/src/merge.ts` reconciles the three archives **offline** and emits one
 > master list, on the rule **merge first, filter once**. Sections written against the old shape are
-> flagged inline. See [`HANDOFF-n7-classification.md`](./HANDOFF-n7-classification.md).
+> flagged inline; *The operator's half* below carries what that rebuild actually produced.
 >
 > **Depends on:** the D91 area floor and its prune (both landed, 2026-08-03), the N6b containment join
 > (landed, tiles **not** rebuilt), and the `osmId`/`nhdId`/`geometrySource` fields — **landed and now
@@ -728,6 +750,52 @@ inventing an association the state didn't make."* We are now overriding that for
 gate rejects. We will publish bathymetry for ~217 lakes on an attribution the surveying agency never
 made. The lane already renders as `interpolated` rather than `surveyed`; **the credit line should say
 that the lake assignment is ours.**
+
+### ✅ Built 2026-08-09 (N7-3) — and the reject list confirmed the diagnosis exactly
+
+`scripts/bathymetry/src/rekey.ts`, wired into `join.ts` as a second pass over the rejects.
+
+**The prediction held.** This document said `splitByBody`'s bootstrapped threshold would collapse the
+state into one cluster; the live join's reject list shows it split MIDAS 870 into precisely **two**,
+and rejected both — `me-dep-soundings:870#1` at **0%** containment and `870#2` at **8%**.
+
+| piece | where |
+| --- | --- |
+| Rule 0 gate | `isRekeyEligible` — the containment reject prefix, nothing else |
+| the split | `rekeyByBody`, pure over `(lake, assignments)`; keyed `<lakeKey>@<externalId>` |
+| membership | `waterBodies:coveringBodyForPoints`, buffer **zero** — near a lake is not in it |
+| read-cap survival | `inAdaptiveBatches`, **extracted** from `joinInBatches` so both lanes share one splitter |
+| China Lake | a **test**, as this document asked — `rekey.test.ts`, four assertions |
+
+**Two things the build added that the design did not anticipate.**
+
+1. **A lookup grid** (`LOOKUP_GRID_PLACES`, 4 dp ≈ 11 m). Convex counts *bytes* read and re-reading
+   one document counts every time, so a survey lying inside one large lake pulls that lake's ~300 KB
+   shoreline once per sounding — 250 points is ~75 MB against a 16 MB cap. The adaptive splitter
+   would survive by halving 250 → 1, correctly and pathologically slowly. Dedup attacks the cause.
+   The rounding is for the **lookup only**; measurements keep their exact coordinates.
+2. **Results are indexed, never positional.** The first draft read them by position, which is wrong
+   the moment a batch splits — every later assignment shifts by one and soundings land in the wrong
+   lakes with nothing in the log. Caught before it ran; there is a test for the ordering.
+
+### ✅ RUN 2026-08-09 — and it beat the projection
+
+| | projected here | measured |
+| --- | --- | --- |
+| bodies MIDAS 870 holds | ~263 | **270** (251 + 19 across its two clusters) |
+| soundings landing in no body | 3.7% | **1.7%** (580 of 34,805) |
+| net-new lakes after the density gate | 217 | **232** |
+
+11 containment rejects entered the lane and **0 were still refused** after it. The layer went
+2,066 → **2,298 lakes**.
+
+⚠ **Two things the run found that the design did not.** The point resolver was a server query fronted
+by a lookup grid; the grid was validated on a dense MassGIS survey (28.6× fewer calls) and did
+nothing at all on MIDAS 870 (16,191 measurements → 16,155 cells, 0.2%) — the one key the lane exists
+for. It now resolves **locally** against `bodies.ndjson` in seconds; see `corpusIndex.ts`. And **the
+build could not see the re-keyed lakes**, because it composes its work list from the archives while a
+re-keyed lake exists only inside the join's process — it would have reported *"293 recovered"* and
+drawn none of them.
 
 ---
 
@@ -1898,11 +1966,255 @@ establishes. The wind archive rebuild described in `HANDOFF-wind-climate-archive
 prerequisite of step 11**: without the `.raw/` split, the 7.7-hour fetch is spent and then spent again
 the first time a threshold moves.
 
+
+---
+
+# ═══ The operator's half ═══
+
+*Everything below was folded in from `HANDOFF-n7-classification.md` and
+`HANDOFF-n7-2-data-campaign.md` when the campaign finished (2026-08-10). Both are deleted; this is
+the one N7 document.*
+
+## How to run it
+
+```bash
+# ── the corpus ────────────────────────────────────────────────────────────────
+scripts/etl/run-corpus.sh <campaign-id>          # masks → merge → load bodies → load sub-areas
+pnpm --filter @skating/etl prune-floor           # dry; --apply to delete
+pnpm --filter @skating/etl retire-absorbed       # dry; --apply. MUST run after a merge that collapsed
+                                                 # duplicates — the load is an upsert and will not
+                                                 # remove the rows it stopped emitting.
+# sub-areas need --actor=<moderator profileId>: every sub-area write is audited (N2/D60)
+
+# ── enrichment, in the order the data allows ──────────────────────────────────
+pnpm --filter @skating/lake-depth transform … && … load …        # depth (all rungs)
+pnpm --filter @skating/lake-depth load-elevation --import-floor  # 3DEP
+pnpm --filter @skating/bathymetry join --refresh                 # + D95's re-key lane
+pnpm --filter @skating/bathymetry build-contours
+scripts/bathymetry/tile.sh [--upload dev/bathymetry-<date>.pmtiles]
+pnpm --filter @skating/bathymetry coverage
+pnpm --filter @skating/wind-climate snapshot   # the expensive half; resumable, incremental
+pnpm --filter @skating/wind-climate derive     # the cheap half; zero requests
+pnpm --filter @skating/convex exec convex run regionStats:recompute '{"campaignId":"…"}'   # LAST
+
+# ── read-only measurement tools ───────────────────────────────────────────────
+pnpm --filter @skating/etl referee-duplicates    # D129's soundings referee
+pnpm --filter @skating/etl tidal-band            # D126's blast-radius check
+pnpm --filter @skating/lake-depth corroborate-alsc
+
+# ── the archives (mirror before you need them, not after) ─────────────────────
+scripts/lake-depth/mirror-r2.sh push|pull|status
+scripts/lake-depth/mirror-elevation-r2.sh push|pull|status
+scripts/wind-climate/mirror-r2.sh push|pull|status
+```
+
+⚠ **`regionStats:recompute` runs last, always.** Its deciles are computed *from* elevation. Its own
+docstring: *"Running it early is not harmful, just wrong: it would describe the corpus as it was."*
+
+⚠ **Uploading the tileset is a separate, deliberate step.** `coverage` writes which bodies have
+contours; `tile.sh --upload` publishes the lines themselves. Ship them together or the corpus claims
+a survey the map cannot draw. The client reads `VITE_BATHYMETRY_PMTILES_URL` /
+`EXPO_PUBLIC_BATHYMETRY_PMTILES_URL` — and **mobile device builds read that from the EAS
+environment, not `.env.local`**.
+
+## The rule that governs everything here
+
+**Merge first, filter once.** The campaign as originally built filtered each source *before* anything
+merged, which is how OSM's `wetland=marsh` tag deleted **123 bodies NHD calls `LakePond`**, 17 of them
+GNIS-named. The only rule safe to apply pre-merge is D96 rule 1 (nothing under an acre), because it is
+the only admission rule no other source can overturn.
+
+**That principle recurs at three depths, and each was a separate near-miss:**
+
+1. **Class** — a body OSM calls wetland and NHD calls LakePond. Merge, then filter.
+2. **Region** — the state geodatabases are not clipped to their states. Clip the *merged* body.
+3. **Name** — GNIS must be read *before* the floor, because D96 admits a named wetland at 5 acres and
+   refuses an unnamed one under 50. **306 bodies exist solely because of that ordering.**
+
+## Things it would be expensive to re-learn
+
+*The single most valuable section in this document. Every line is a bug that reached real data.*
+
+### About measurement
+
+**Denominators lie by default.** This campaign corrected **six**: the depth join's `8,517 / 40,260`;
+the matcher error rate measuring coverage rather than error; a corroboration rate that counted
+un-comparable rows as agreement; the census banding on a different area from the rule it audited
+(D137); the depth headline that averaged bands where a source exists against bands where none does;
+and the bathymetry join reporting `2756/2491 (111%)` because the re-key added candidates after the
+denominator was taken. **A coverage figure over 100% is always a denominator that moved.** Report
+`covered / inScope` and name what was walked past.
+
+**A null result reads exactly like a negative one.** Four times: a duplicate band where name agreement
+was structurally impossible; a referee returning `0 conclusive` because a flat `[lng, lat, lng, lat…]`
+array was read as tuples; `assessDensity` reporting `0 comparable` which read as "we agreed
+everywhere"; and — the worst — a query against **`contourCoverage`, a table that does not exist**
+(it is `bathymetryCoverage`), whose empty result was reported as *"the layer ships against nothing"*
+when the table held 2,022 rows. **If a measurement comes back suspiciously clean, check the instrument
+is reaching the data at all.** Check the schema for the table name before reporting a zero.
+
+**A control experiment over features only one source has measures coverage, not error.** The matcher
+error rate read 15.53% until it was restricted to features *both* federal catalogues publish. The real
+figure is **1.14%**.
+
+**A threshold taken from prose is a guess.** The polygon-agreement bar was set at 0.85 from a sentence
+in this plan. The measured OSM-vs-NHD median over 12,643 pairs is **0.883** — the bar sat *below* the
+median and called 38.6% of all matched pairs a disagreement.
+
+**Estimate wall clock from a measured sample, never from the pacing delay.** The wind loader's
+"~96 min at 1/s" was off ~5×: WTK takes ~4–5.3 s per request, not 1 s.
+
+**An optimisation is only as good as the workload it was measured on.** The re-key's 11 m lookup grid
+cut calls **28.6×** on a dense MassGIS survey and **0.2%** on MIDAS 870 — the one key the lane exists
+for, whose soundings are scattered one per lake across 348 km. It cost 4+ hours per key before being
+deleted entirely. Measure the pathological case, because that is usually the whole job.
+
+### About the pipeline's shape
+
+**A measurement that reaches no artifact is not a measurement.** Found **four** times: the wind lane
+requested `windspeed_10m` on 5,225 requests and read only the direction; the bathymetry join computed
+a crosswalk verdict and dropped it from the record it wrote; the bake-off's per-lake scores went to a
+scratch file nothing read, leaving D92's override with no producer; and `absorbedIds` was computed by
+the merge, written to `master.ndjson`, and consumed by nothing — so the corpus kept every duplicate
+the merge had just collapsed.
+
+**A ladder rung with no producer is invisible.** `state_agency` was rank 1 on D68's depth ladder,
+above LAGOS and HydroLAKES, and **nothing had ever written to it** while 298 MB of state survey data
+sat on disk. Same shape as the `osm_tag` rung one level down. **Grep for a writer before trusting a
+schema.**
+
+**An upsert never deletes.** `importCanonical` writes what the merge emits and leaves untouched
+anything it stopped emitting. And `pruneNotInCampaign` cannot cover that gap when a campaign is
+**re-run under its own id** — the rows still carry a current stamp. This is why `retire-absorbed`
+exists and why it takes the merge's own `absorbedIds` rather than inferring from a stamp.
+
+**A refusal that survives a merge is worse than no refusal.** `null` means "not water we cover";
+`unclassified` means "water, nobody said what kind". Collapsing the first into the second admitted
+**Lake Huron and seven polygons of the Atlantic Ocean**. Some refusals must *veto* rather than be
+weighed — NHD publishes Lake Erie as FTYPE 390 LakePond and Long Island Sound as 493 Estuary. And a
+veto **must not depend on a match succeeding**: Erie's exclusion rested on 3DHP matching it
+geometrically until a name rule and an area ceiling replaced that.
+
+**`unclassified` and `silent` are not votes.** Scoring `unclassified` as a class claim made 6,756
+bodies read as "the catalogues conflict". 3DHP publishes **no wetland class at all**, so its silence
+is never dissent.
+
+**One source agreeing with itself is not corroboration.** NHD and 3DHP collapse to one vote (3DHP
+re-publishes NHD; 7,878 lakes, zero disagreements ≥ 0.1%). So does GNIS, because **NHD's `gnis_name`
+column IS GNIS**.
+
+**A module with a `main()` exports nothing anybody else needs.** `merge.ts` imported one constant from
+`gnisArchive.ts` and thereby re-ran the entire five-state GNIS download on every merge.
+
+**A downstream stage builds its work list from somewhere.** The re-key recovered 293 lakes and
+`build.ts` could not see a single one, because it composes its list from the **archives** while a
+re-keyed lake exists only inside the join's process. It would have shipped as *"293 recovered"*
+drawing none of them.
+
+### About limits that only bind on real data
+
+**Convex caps a transaction at 16 MB of READS, not just 4,096 documents.** A body averages 1.8 KB but
+the cell index files large bodies at coarse rungs, so one lookup near Champlain drags in a ~300 KB
+polygon. Bytes are counted **per read**, so re-reading one document counts every time — which is what
+made a per-point resolver hopeless and a local point-in-polygon trivial.
+
+**A page size that is safe on the first page is not a safe page size.** `pruneNotInCampaign`
+advertised 500 rows while `bodyAttachmentKind` costs 10 index reads per *candidate*. The first real
+page had 11 candidates and sailed through; the wall is wherever the un-reaffirmed rows cluster.
+
+**A stored polygon is a stored polygon.** The sub-area artifact carried unsimplified source geometry
+and blew a mutation's 1-second budget when clipped against Moosehead. The bay loader shipped at 25,
+then 4, and the data settled it at **1**.
+
+**Tests are not a deploy.** `convex-test` runs local code. Widening a union in `@skating/core` and
+running 3,990 green tests says *nothing* about what the deployment will accept — PR A lost 19 load
+batches to exactly this. `pnpm convex-dev --once` before any load that touches a validator.
+
+**A 429 is not a 500.** A 5xx is the service being broken; a 429 is it asking you to wait. The wind
+fetch lost **18 cell-years** to 429 because both got the same four attempts and `Retry-After` was
+ignored. `Retry-After` has two RFC-legal forms, and parsing only delta-seconds returns `NaN` for an
+HTTP-date — which becomes an *immediate* retry into the same limit, strictly worse than ignoring it.
+
+### About running the thing
+
+**A failed load must never be followed by the prune.** D124's guard prints it and exits non-zero;
+`run-corpus.sh` honours the exit code. The upsert is idempotent — re-run the load until it reports
+zero failed batches, *then* prune.
+
+**A wrapper's pipe eats the exit code, and `pipefail` does not save you.** `./run-corpus.sh … | tee
+run.log` reports **success for a run that failed**. `run-corpus.sh` now logs itself, so there is no
+reason left to pipe it. The same trap in miniature: a monitor watching `pgrep -f "src/build.ts"`
+matches **its own command line** and can never fire.
+
+**A cheap argument must not be able to fail an expensive campaign at its last step.** A run died after
+a 45-minute merge and a 25,000-body load because `load-sub-areas` requires `--actor` unconditionally
+while the wrapper only guarded `--apply`. Everything expensive had succeeded.
+
+**…and the fix for that must not turn an explicit request into a silent skip.** Making the missing
+actor a *skip* was right for a plain `./run-corpus.sh <id>` and wrong for one that typed
+`--apply-sub-areas`: the second asked for a write and got a SKIP line and **exit 0**, which is the
+`| tee` lie in a different costume. Validate cheap arguments **at the parse**, where refusing costs
+two seconds — not at the step, where it costs the campaign, and not by shrugging, which costs the
+truth.
+
+**A guard scoped to one call does not hold for a caller that batches.** `retireAbsorbedBodies`
+retires a row once per invocation, and `retire-absorbed` sends 20 pairs at a time — so two keys for
+the same row (`Divol Pond` as both an OSM and an NHD key) double-counted whenever the batch boundary
+fell between them, in the DRY RUN only. The apply saw a tombstone and got it right, which is what
+made it invisible. Cross-batch state has to be **carried** (`alreadyRetired`), and on the *resolved*
+key rather than the input ref, or two names for one row never collapse.
+
+**Every loader continues past an isolated batch failure and aborts on a streak** (5 consecutive; 10
+for wind cells). Skipped items are itemized **by key**, so a targeted retry is cheap.
+
+**A parameter invites a caller to invent a floor; a shared constant cannot drift.** `--min-area-acres=N`
+became `meetsAreaFloor`. `--min-fetch=N` was never built for the same reason: `snapshot` and `derive`
+share `WIND_ARCHIVE_MIN_FETCH_M`, because a scope they disagree about is a failed run.
+
+**The artifacts find the bugs, not the review.** `dropped.ndjson`, the manifest delta,
+`geometry-review.ndjson` and the reject list were built as bookkeeping and caught more than static
+reading did.
+
+### Small, sharp, and each cost real time
+
+- **`ogr2ogr -overwrite` does not replace a single-file datasource; it APPENDS.** Bit three times in
+  one session. `rmSync` first.
+- **`\b` is ASCII-only in JavaScript**, so `/\bétang\b/` matches nothing, silently. Names are folded
+  through NFD before matching.
+- **A drop-word list will delete real water.** `flow` names eight Adirondack impoundments including
+  Higley Flow, a state park; `deadwater` names Debsconeag and Nesowadnehunk. A keep-word now outranks
+  a drop-word in the same name.
+- **OSM maps `admin_level` 7 AND 8 both to `town`.** In New York that is 999 towns plus 574 villages,
+  and a village sits *inside* a town.
+- **OSM relation assembly is silently unreliable** from a clipped extract. `adminAreas` had 3 state
+  rows and 105 of 116 counties for a year, and nothing said so.
+- **`biome check --write --unsafe` mid-edit** renamed new counters as "unused", silently breaking a
+  later edit. Don't run it on a file you are part-way through.
+- **Prefer `Edit` against read content over scripted string-replace** — two bugs came from a `python`
+  replace failing silently.
+
+## Still open
+
+| | |
+| --- | --- |
+| **Refactor `waterBodies.ts`** | **5,400+ lines, 49 exported Convex functions** — the import/ETL path, the read path, moderation, and per-body editing in one module. Every loader calls `convexRun('waterBodies:X')` **by string**, so splitting it renames function paths; it wants its own PR with nothing else in flight. Flagged during the N7-3 audit and deliberately not done during a campaign. |
+| **MA and NY depth sources** | The largest remaining data gap, and it is **research, not engineering**. Measured: the join is lossless (stored coverage tracks source reach within 1–2 points in every area band), and **1,489 bodies ≥ 10 ha have no source point inside them at all** — MA 443 (reach 58.7%, vs 82–86% for ME/NH/VT) and NY 629. MassGIS is a dead end: it holds only **265 distinct lakes** and all 265 are already used. Needs new state/agency datasets found and vetted. |
+| **Québec** | Deliberately not done. Three new source lanes — StatCan boundaries, NHN/CanVec hydrography, CGNDB names. Only OSM crosses the border today. The classifier's French keywords are already in, and `OCEAN_NAME_VETO_MIN_ACRES` was kept rather than deleted specifically for this. |
+| **The 250 m wind fetch** | Running at the time of writing (~52 h). `derive` again afterwards to stamp ~11,118 bodies, and a `snapshot` resume pass to pick up the 18 cell-years lost to 429 under the old retry policy. |
+| **Prod** | The whole corpus is dev-only, like every phase since 2.5. |
+| **The regression corpus** | Still deferred, with the setup written down — see *Verification*. |
+
 ---
 
 ## Related
 
-[D48](./01-decisions.md), [D72](./01-decisions.md), [D85](./01-decisions.md),
-[D91](./01-decisions.md), [`phase-1`](./phase-1-water-bodies.md),
-[`phase-N6a`](./phase-N6a-lake-depth.md), [`phase-N6b`](./phase-N6b-bathymetry-layer.md),
-[`phase-N6c`](./phase-N6c-expanded-lake-profiles.md).
+**This is the only N7 document.** `HANDOFF-n7-classification.md` and
+`HANDOFF-n7-2-data-campaign.md` were folded in above and deleted (2026-08-10);
+`HANDOFF-wind-climate-archive.md` and `HANDOFF-n6c-data-campaign.md` are historical and superseded by
+D134/D135 and D127 respectively.
+
+[`01-decisions.md`](./01-decisions.md) — **D92–D105**, **D109–D137** ·
+[`docs/water-body-data.md`](../docs/water-body-data.md) — the same story for humans ·
+[`phase-1`](./phase-1-water-bodies.md) · [`phase-N6a`](./phase-N6a-lake-depth.md) ·
+[`phase-N6b`](./phase-N6b-bathymetry-layer.md) ·
+[`phase-N6c`](./phase-N6c-expanded-lake-profiles.md) · [`phase-N7b`](./phase-N7b-corpus-by-request.md).

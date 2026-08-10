@@ -397,6 +397,7 @@ function parseCsvLine(line: string): string[] {
 
 const BASIS_LABEL: Record<ClassBasis, string> = {
   'name-reservoir': 'kept · name said "reservoir" (outranks the catalogue)',
+  'name-still-water': 'kept · catalogue said flowing, a still-water name overruled it',
   'source-class': 'kept · the catalogue named a class we map',
   'name-keyword': 'kept · catalogue silent, a name keyword decided it',
   'dropped-by-class': 'DROPPED · the catalogue named a class we refuse',
@@ -408,6 +409,7 @@ const BASIS_LABEL: Record<ClassBasis, string> = {
 const BASIS_ORDER: ClassBasis[] = [
   'source-class',
   'name-reservoir',
+  'name-still-water',
   'name-keyword',
   'dropped-by-class',
   'dropped-by-name',

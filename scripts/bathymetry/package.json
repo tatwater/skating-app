@@ -19,7 +19,9 @@
     "build-contours": "tsx src/build.ts",
     "tile": "./tile.sh",
     "coverage": "tsx src/coverage.ts",
-    "export-soundings": "tsx src/exportSoundings.ts"
+    "export-soundings": "tsx src/exportSoundings.ts",
+    "export-depths": "tsx --max-old-space-size=12288 src/exportDepths.ts",
+    "snapshot-midas": "tsx src/snapshotMidas.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

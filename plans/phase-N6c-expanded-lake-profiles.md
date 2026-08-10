@@ -15,6 +15,28 @@
 > The wind pass is untouched and still blocked on the archive rebuild in
 > `HANDOFF-wind-climate-archive.md`.
 
+> ### ✅ EVERY DATA GATE IN THIS DOCUMENT IS CLEARED (2026-08-09, N7-3)
+>
+> Read this before believing any *"not yet run"* in what follows. All of it predates the data
+> campaign. Measured against the loaded corpus today:
+>
+> | this doc says | actually |
+> | --- | --- |
+> | elevation blocked on an unrun ETL / a metered quota | ✅ **99.5%** — 24,834 of 24,958, 3DEP, 98.2% at 1 m LiDAR (**D127**) |
+> | wind blocked on the archive rebuild | ✅ **built and run** — 5,910 cell-years archived + mirrored, **1,193 bodies** derived offline (**D134**) |
+> | depth ETL not yet run | ✅ run — 24.2% of the corpus, **83–90% above 50 acres**, 81.2% measured |
+> | contour coverage feeding the `+2` prominence term | ✅ **2,057 bodies** in `bathymetryCoverage` |
+> | `regionStats` deciles | ⬜ **the one thing still outstanding** — it is the campaign's last pass |
+>
+> **So N6c-1's numbers exist and N6c-2 is buildable now.** The only copy still gated is A5's decile
+> phrasing, which needs `regionStats:recompute`.
+>
+> ⚠ **Two things this document says about wind are now wrong.** The fetch gate is **`WIND_ARCHIVE_MIN_FETCH_M`
+> (250 m)**, not `MIN_FETCH_CLAUSE_M` (1 km) — they are separate questions and D135 explains why. And
+> bodies now carry **sustained-wind hours** (`strongWindHours` / `sampledWindHours` /
+> `strongWindMinMps`) beside the rose, read through `windHoleSectors`. Whether a wind-hole clause
+> belongs in the caption is **still an open founder call**; nothing writes that sentence.
+
 > **⚠️ SPLIT INTO TWO PHASES, 2026-08-02 (founder call at kickoff).** As scoped this was ~15
 > workstreams across schema, ETL, two clients, a new external API, an admin surface and a
 > corpus-wide re-score — comfortably the largest phase on the roadmap and one review surface for all

@@ -26,7 +26,8 @@
     "bake-off": "tsx --max-old-space-size=12288 src/bakeOff.ts",
     "resolve-merge-duplicates": "tsx src/resolveMergeDuplicates.ts",
     "referee-duplicates": "tsx --max-old-space-size=12288 src/refereeDuplicates.ts",
-    "tidal-band": "tsx --max-old-space-size=8192 src/tidalBand.ts"
+    "tidal-band": "tsx --max-old-space-size=8192 src/tidalBand.ts",
+    "retire-absorbed": "tsx src/retireAbsorbed.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

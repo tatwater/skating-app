@@ -1063,6 +1063,20 @@ describe('the lanes', () => {
       expect(f.sourceToken).toBe('osm:water=lake'); // …and the tag survived anyway
     });
 
+    it('lets a deadwater name overrule an explicit water=river, with both tokens intact', () => {
+      // The lane is where the rescue has to actually land: `classifyWaterBody` can only see a name
+      // the parser bothered to read. Pockwockamus Deadwater, 335 ac, was deleted as `no-class` on
+      // the 2026-08-08 run while twenty-six identically-named deadwaters sat in the corpus.
+      const out = parseOsmFeature(
+        raw({ name: 'Pockwockamus Deadwater', water: 'river' }),
+        new Set(),
+      );
+      const f = (out as { ok: true; feature: Feature }).feature;
+      expect(f.cls).toBe('river');
+      expect(f.token).toBe('name:river'); // the name overruled the tag…
+      expect(f.sourceToken).toBe('osm:water=river'); // …and the tag survived, so the veto can read it
+    });
+
     it('counts a feature with no @type/@id rather than skipping it', () => {
       const out = parseOsmFeature(
         { properties: { natural: 'water' }, geometry: bigEnough() },

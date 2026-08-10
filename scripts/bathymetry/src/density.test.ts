@@ -143,7 +143,11 @@ describe('assessDensity', () => {
     const result = assessDensity({ lakeKey: 'huge', points: many });
     expect(result.verdict).toBe('ok');
     expect(result.extentM).toBeGreaterThan(0);
-  });
+    // 20s, not the 5s default. 140,000 points through the probe grid is genuinely slow, and the
+    // default made this flake under load rather than fail — which is the worse outcome, because a
+    // flake gets re-run and a failure gets read. Bound the one slow test; do NOT raise the global
+    // default, which would hide a real hang in the other 361.
+  }, 20_000);
 
   it('names every rejected lake, per the no-silent-caps rule', () => {
     const result = assessDensity({ lakeKey: 'named', points: grid(2) });

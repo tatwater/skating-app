@@ -4,7 +4,7 @@
  */
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api } from './_generated/api';
+import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
@@ -329,5 +329,290 @@ describe('waterBodies.reject (D37)', () => {
     await expect(mod.mutation(api.waterBodies.reject, { waterBodyId: canonical })).rejects.toThrow(
       /user-created/,
     );
+  });
+});
+
+describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert never did (N7-3)', () => {
+  /** A body with the catalogue identity the ETL keys on. */
+  function seedKeyed(
+    t: ReturnType<typeof convexTest>,
+    name: string,
+    externalId: string,
+    opts: {
+      dedupStatus?: 'clean' | 'merged';
+      mergedIntoId?: Id<'waterBodies'>;
+      /** A catalogue id that differs from `externalId` — the second key the same row answers to. */
+      osmId?: string;
+    } = {},
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        name,
+        searchText: name,
+        type: 'lakePond',
+        source: 'osm' as const,
+        externalId,
+        polygon: POLY,
+        bbox: BBOX,
+        centroid: CENTROID,
+        dedupStatus: opts.dedupStatus ?? ('clean' as const),
+        ...(opts.mergedIntoId ? { mergedIntoId: opts.mergedIntoId } : {}),
+        ...(opts.osmId ? { osmId: opts.osmId } : {}),
+        createdAt: Date.now(),
+      }),
+    ) as Promise<Id<'waterBodies'>>;
+  }
+  const ref = (externalId: string) => ({ source: 'osm', externalId });
+
+  test('folds the absorbed row into its survivor, and never deletes it', async () => {
+    // The real fixture: OSM published this wetland as a relation AND its own outer way, D136's lane
+    // collapsed them, and `importCanonical` — an upsert — left the absorbed row in the corpus.
+    const t = harness();
+    const survivor = await seedKeyed(t, 'Mud Pond Swamp', 'way/235156742');
+    const absorbed = await seedKeyed(t, 'Mud Pond Swamp', 'relation/3165273');
+
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/235156742'), absorbed: ref('relation/3165273') }],
+      apply: true,
+    });
+    expect(res.retired).toBe(1);
+    expect(res.applied).toBe(true);
+
+    const row = await t.run((ctx) => ctx.db.get(absorbed));
+    // Tombstoned, NOT deleted — a deep link to the retired duplicate still resolves to the survivor.
+    expect(row).not.toBeNull();
+    expect(row?.dedupStatus).toBe('merged');
+    expect(row?.mergedIntoId).toBe(survivor);
+  });
+
+  test('changes nothing without --apply', async () => {
+    // Dry by default, like `prune-floor`. This is the campaign's second pass that can take a body
+    // off the map.
+    const t = harness();
+    await seedKeyed(t, 'Survivor', 'way/1');
+    const absorbed = await seedKeyed(t, 'Absorbed', 'way/2');
+
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/2') }],
+    });
+    expect(res.applied).toBe(false);
+    expect(res.retired).toBe(1); // it reports what it WOULD do
+    expect((await t.run((ctx) => ctx.db.get(absorbed)))?.dedupStatus).toBe('clean');
+  });
+
+  test('carries the absorbed row’s content to the survivor rather than stranding it', async () => {
+    // The reason this never deletes. A report on a duplicate row is a real skater's observation.
+    const t = harness();
+    const survivor = await seedKeyed(t, 'Survivor', 'way/1');
+    const absorbed = await seedKeyed(t, 'Absorbed', 'way/2');
+    await seedMod(t, 'skater');
+    const authorId = (
+      await t.run((ctx) =>
+        ctx.db
+          .query('profiles')
+          .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', 'skater'))
+          .unique(),
+      )
+    )?._id as Id<'profiles'>;
+    const reportId = await t.run((ctx) =>
+      ctx.db.insert('reports', {
+        authorId,
+        waterBodyId: absorbed,
+        point: CENTROID,
+        skateEndTime: Date.now(),
+        reportTime: Date.now(),
+        source: 'native' as const,
+        iceTypes: ['black_ice' as const],
+        surfaceTags: [],
+        photoIds: [],
+        moderationStatus: 'visible' as const,
+        hazardIdsCreated: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+
+    await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/2') }],
+      apply: true,
+    });
+    expect((await t.run((ctx) => ctx.db.get(reportId)))?.waterBodyId).toBe(survivor);
+  });
+
+  test('is idempotent — re-running a campaign must not walk a merge chain', async () => {
+    const t = harness();
+    await seedKeyed(t, 'Survivor', 'way/1');
+    await seedKeyed(t, 'Absorbed', 'way/2');
+    const pairs = [{ survivor: ref('way/1'), absorbed: ref('way/2') }];
+
+    const first = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs,
+      apply: true,
+    });
+    expect(first.retired).toBe(1);
+    const second = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs,
+      apply: true,
+    });
+    expect(second.retired).toBe(0);
+    expect(second.skipped['already merged']).toBe(1);
+  });
+
+  test('an absent absorbed row is the steady state, not an error', async () => {
+    // Expected on every re-run: an earlier pass retired it, or it was never a row at all.
+    const t = harness();
+    await seedKeyed(t, 'Survivor', 'way/1');
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/never-existed') }],
+      apply: true,
+    });
+    expect(res.retired).toBe(0);
+    expect(res.skipped['absorbed row does not exist']).toBe(1);
+  });
+
+  test('refuses when the survivor is missing, rather than stranding the content', async () => {
+    // The one outcome worse than a duplicate: retiring a row with nowhere to re-point its reports.
+    const t = harness();
+    const absorbed = await seedKeyed(t, 'Absorbed', 'way/2');
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/gone'), absorbed: ref('way/2') }],
+      apply: true,
+    });
+    expect(res.retired).toBe(0);
+    expect(res.skipped['survivor not in the corpus']).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(absorbed)))?.dedupStatus).toBe('clean');
+  });
+
+  test('refuses to merge a row into itself', async () => {
+    const t = harness();
+    await seedKeyed(t, 'Solo', 'way/1');
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/1') }],
+      apply: true,
+    });
+    expect(res.retired).toBe(0);
+    expect(res.skipped['survivor and absorbed are the same row']).toBe(1);
+  });
+
+  test('refuses a survivor that is itself a tombstone, keeping the chain one hop', async () => {
+    const t = harness();
+    const canonical = await seedKeyed(t, 'Canonical', 'way/1');
+    await seedKeyed(t, 'Already merged', 'way/2', {
+      dedupStatus: 'merged',
+      mergedIntoId: canonical,
+    });
+    await seedKeyed(t, 'Absorbed', 'way/3');
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/2'), absorbed: ref('way/3') }],
+      apply: true,
+    });
+    expect(res.retired).toBe(0);
+    expect(res.skipped['survivor is itself merged']).toBe(1);
+  });
+
+  test('names what it retired, because a deletion nobody can look up is unauditable', async () => {
+    const t = harness();
+    await seedKeyed(t, 'Survivor', 'way/1');
+    await seedKeyed(t, 'Mud Pond Swamp', 'way/2');
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/2') }],
+      apply: true,
+    });
+    expect(res.samples[0]).toEqual({
+      absorbed: 'osm:way/2',
+      into: 'osm:way/1',
+      name: 'Mud Pond Swamp',
+    });
+  });
+
+  test('retires a row once when two pairs in ONE call resolve to it', async () => {
+    // `Divol Pond` arrives as both an OSM key and an NHD one: the row is stored under `way/2` and
+    // carries `osmId: way/dup`, so the catalogue-id fallback lands both pairs on the same document.
+    const t = harness();
+    await seedKeyed(t, 'Survivor', 'way/1');
+    await seedKeyed(t, 'Divol Pond', 'way/2', { osmId: 'way/dup' });
+
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [
+        { survivor: ref('way/1'), absorbed: ref('way/2') },
+        { survivor: ref('way/1'), absorbed: ref('way/dup') },
+      ],
+    });
+    expect(res.retired).toBe(1);
+    expect(res.skipped['already retired by an earlier pair in this pass']).toBe(1);
+  });
+
+  test('and once when those two pairs land in DIFFERENT batches', async () => {
+    // The guard above is per-call and the driver batches, so the boundary can fall between the two
+    // keys for one row. `alreadyRetired` carries the resolved keys across — without it the dry run
+    // counted this row twice while `--apply` counted it once, and a dry run that does not predict
+    // the apply is worse than no dry run.
+    const t = harness();
+    await seedKeyed(t, 'Survivor', 'way/1');
+    await seedKeyed(t, 'Divol Pond', 'way/2', { osmId: 'way/dup' });
+
+    const first = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/2') }],
+    });
+    expect(first.retired).toBe(1);
+    // The RESOLVED key, not the input ref — which is what lets a differing key collapse onto it.
+    expect(first.retiredKeys).toEqual(['osm:way/2']);
+
+    const second = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/dup') }],
+      alreadyRetired: first.retiredKeys,
+    });
+    expect(second.retired).toBe(0);
+    expect(second.skipped['already retired by an earlier pair in this pass']).toBe(1);
+  });
+
+  test('the batched dry run predicts the batched apply', async () => {
+    // The property the two tests above exist to protect, asserted directly: same pairs, same batch
+    // boundary, same total. It failed at 1 vs 2 before `alreadyRetired`.
+    const pairs = [
+      { survivor: ref('way/1'), absorbed: ref('way/2') },
+      { survivor: ref('way/1'), absorbed: ref('way/dup') },
+    ];
+    const runBatched = async (apply: boolean) => {
+      const t2 = harness();
+      await seedKeyed(t2, 'Survivor', 'way/1');
+      await seedKeyed(t2, 'Divol Pond', 'way/2', { osmId: 'way/dup' });
+      const keys: string[] = [];
+      let total = 0;
+      for (const pair of pairs) {
+        const res = await t2.mutation(internal.waterBodies.retireAbsorbedBodies, {
+          pairs: [pair],
+          ...(apply ? { apply: true } : {}),
+          ...(keys.length > 0 ? { alreadyRetired: keys } : {}),
+        });
+        keys.push(...res.retiredKeys);
+        total += res.retired;
+      }
+      return total;
+    };
+    expect(await runBatched(false)).toBe(await runBatched(true));
+    expect(await runBatched(false)).toBe(1);
+  });
+
+  test('audits with no actor, because the system acted and no human did', async () => {
+    // Precedent: N5c/D80's auto-merge. Naming a moderator who never clicked would be worse than an
+    // honest absence, and "no actor" already renders as "automatic".
+    const t = harness();
+    await seedKeyed(t, 'Survivor', 'way/1');
+    const absorbed = await seedKeyed(t, 'Absorbed', 'way/2');
+    await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/2') }],
+      campaignId: 'n7-3-20260809',
+      apply: true,
+    });
+    const action = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) => q.eq('targetType', 'waterbody').eq('targetId', absorbed))
+        .unique(),
+    );
+    expect(action?.action).toBe('merge_waterbody');
+    expect(action?.actorId).toBeUndefined();
+    expect(action?.reason).toContain('n7-3-20260809');
   });
 });

@@ -17,17 +17,13 @@ import type { JoinCandidate, JoinResult } from './joinQuery';
  * "split" or "give up", and it can only do that if the failure reaches it.
  */
 export async function runJoinQuery(batch: readonly JoinCandidate[]): Promise<JoinResult> {
+  return runConvexQuery<JoinResult>('waterBodies:matchBathymetryLakes', { lakes: batch });
+}
+
+function runConvexQuery<T>(functionName: string, args: unknown): T {
   const result = spawnSync(
     'pnpm',
-    [
-      '--filter',
-      '@skating/convex',
-      'exec',
-      'convex',
-      'run',
-      'waterBodies:matchBathymetryLakes',
-      JSON.stringify({ lakes: batch }),
-    ],
+    ['--filter', '@skating/convex', 'exec', 'convex', 'run', functionName, JSON.stringify(args)],
     // A generous buffer, not a guess: a batch each carrying a full OSM shoreline polygon back is
     // megabytes of JSON on one stdout, and node's 1 MB default truncates it into a parse error that
     // reads like a query failure.
@@ -40,5 +36,5 @@ export async function runJoinQuery(batch: readonly JoinCandidate[]): Promise<Joi
   const out = result.stdout ?? '';
   const start = out.indexOf('{');
   if (start < 0) throw new Error(`convex run returned no JSON: ${out.slice(0, 300)}`);
-  return JSON.parse(out.slice(start)) as JoinResult;
+  return JSON.parse(out.slice(start)) as T;
 }

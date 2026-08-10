@@ -710,6 +710,19 @@ async function main(): Promise<void> {
   );
   lines.push('    which we render from the basemap and deliberately do not store as bodies.');
   lines.push(
+    `  still water    ${n(stats.stillWaterRescued)}  kept bodies with a member a deadwater / flow / logan name`,
+  );
+  lines.push(
+    "    rescued from a catalogue's flowing refusal. Zero means the rung is dead and the region's",
+  );
+  lines.push(
+    '    deadwaters are gone again. ⚠ NOT the number of bodies it ADDED — where another member',
+  );
+  lines.push(
+    '    already carried a class the body existed either way (46 fired, +13 corpus, on run 1):',
+  );
+  for (const sample of stats.stillWaterRescuedSamples) lines.push(`      ${sample}`);
+  lines.push(
     `  settled wetland ${n(stats.settledWetland)}  a federal open-water class beating an OSM wetland tag —`,
   );
   lines.push(
@@ -786,6 +799,29 @@ async function main(): Promise<void> {
   writeNdjson(join(SCRATCH, 'dropped.ndjson'), dropped);
   log(`dropped → ${join(SCRATCH, 'dropped.ndjson')} (${dropped.length.toLocaleString()})`);
 
+  // **`absorbed.ndjson` — the rows the corpus must retire** (N7-3, D136 follow-up).
+  //
+  // `absorbedIds` was computed here, written into `master.ndjson`, and consumed by nothing. That gap
+  // was invisible because `importCanonical` is an UPSERT: it writes what this emits and never deletes
+  // a row that stopped being emitted. So the same-source lane collapsed `Mud Pond Swamp` in the
+  // artifact and the corpus kept both rows, listed and `clean`.
+  //
+  // Its own file rather than a field on `bodies.ndjson`, for the same reason `prune-floor` is its own
+  // command: this drives a **destructive** pass, and the campaign's rule is that only a deliberate,
+  // dry-by-default step deletes. `retire-absorbed` reads this; nothing else does.
+  const absorbedPairs = kept.flatMap((k) =>
+    k.absorbedIds.map((absorbed) => ({
+      survivor: refOf(k.key),
+      absorbed: refOf(absorbed),
+      name: k.name,
+    })),
+  );
+  writeNdjson(join(SCRATCH, 'absorbed.ndjson'), absorbedPairs);
+  log(
+    `absorbed → ${join(SCRATCH, 'absorbed.ndjson')} (${absorbedPairs.length.toLocaleString()}) ` +
+      '— retire with `pnpm --filter @skating/etl retire-absorbed` (dry by default)',
+  );
+
   // `master.ndjson` is the REPORT half: no geometry, one line per body, readable by eye.
   writeNdjson(
     join(SCRATCH, 'master.ndjson'),
@@ -855,6 +891,7 @@ async function main(): Promise<void> {
     classDissent: stats.classDissent,
     settledWetland: stats.settledWetland,
     greatLakeArms: stats.greatLakeArms,
+    stillWaterRescued: stats.stillWaterRescued,
     gazetteerIdsAttached: stats.gazetteerIdsAttached,
     geometryOverridden: stats.geometryOverridden,
   };
@@ -1017,3 +1054,16 @@ main().catch((error: unknown) => {
   activeLogger?.failed(error);
   process.exitCode = 1;
 });
+
+/**
+ * `osm:way/123` → `{ source: 'osm', externalId: 'way/123' }`.
+ *
+ * Split on the FIRST colon only: an OSM id contains a slash, a 3DHP id is opaque, and an NHD
+ * `Permanent_Identifier` is a GUID — none may be assumed colon-free. Mirrors `idFromKey`.
+ */
+function refOf(key: string): { source: string; externalId: string } {
+  const at = key.indexOf(':');
+  return at < 0
+    ? { source: 'osm', externalId: key }
+    : { source: key.slice(0, at), externalId: key.slice(at + 1) };
+}

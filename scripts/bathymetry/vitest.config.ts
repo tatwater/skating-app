@@ -2,6 +2,20 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    /**
+     * 20s, not vitest's 5s default.
+     *
+     * **The flaking set is load-dependent, which is why per-test bounds could not fix it.** Three
+     * different tests timed out across three consecutive full-suite runs — a 60-bay convex-test
+     * import, a 140,000-point density probe, a union-find chain sized to the call stack — and none
+     * of them is slow in isolation (0.3-0.5s). They lose the race only when turbo runs 11 packages
+     * at once on a machine already doing something else, and CI is measured at ~8x slower than
+     * local. Bounding whichever test happened to lose is chasing the symptom.
+     *
+     * This does not hide a hang: a hang is unbounded and still fails, 15 seconds later. What it
+     * stops is a green suite reporting red for reasons that have nothing to do with the code.
+     */
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
@@ -22,12 +36,22 @@ export default defineConfig({
         'src/cache.ts',
         'src/lakeSources.ts',
         'src/joinRunner.ts',
+        // `readCorpusBodies` is a file stream; the index and the probe are tested in
+        // `corpusIndex.test.ts` and are the whole of the logic.
         'src/contour.ts',
         'src/build.ts',
         'src/fetch.ts',
         'src/probe.ts',
         'src/verify.ts',
         'src/provenanceCli.ts',
+        // Both were **included and at 0%**, which is worse than excluded: the config's stated rule is
+        // that a CLI shell is exempt, so an unexempted one silently spent everybody else's coverage
+        // budget and read as though somebody had decided it was worth measuring. Each is argv,
+        // `readAllLakes()`, a file and a run row; the decisions are in `lakes.ts` and `lakeDepths.ts`,
+        // both at 100%.
+        'src/exportSoundings.ts',
+        'src/exportDepths.ts',
+        'src/snapshotMidas.ts', // paged query + file I/O; the rules are in midasCrosswalk.ts
         'src/sweep.ts',
         'src/samples.ts',
         'src/join.ts',

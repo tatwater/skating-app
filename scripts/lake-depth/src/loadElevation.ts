@@ -1,56 +1,198 @@
 /**
- * Elevation loader (glue) — N6c Workstream A1.
+ * Elevation loader (glue) — **reads the 3DEP archive, not a metered API** (D127, N7-3).
  *
- * Walks the corpus through `waterBodies.listNeedingElevation`, looks each page up against the
- * Open-Meteo Elevation API 100 coordinates at a time, and writes the results back through
- * `waterBodies.importElevations`. Loads the **dev** deployment by default; refuses a non-dev target
- * unless `--prod` is passed, matching the other three loaders.
+ *   pnpm --filter @skating/lake-depth load-elevation --compare        # D101, and run this FIRST
+ *   pnpm --filter @skating/lake-depth load-elevation [--import-floor] [--campaign=<id>] [--prod]
  *
- *   pnpm --filter @skating/lake-depth load-elevation [--prod] [--refresh] [--limit=N]
+ * ## What changed, and why the old lane is gone rather than kept as a fallback
  *
- * **Resumable by construction, and that is not incidental.** The server-side query skips rows that
- * already carry a reading, so an interrupted run continues where it stopped rather than restarting
- * a 116,070-body pass — and re-running it is a cheap no-op. `--refresh` re-reads rows that already
- * have one (for the day the DEM changes); it is not the normal path. An `operator` elevation is
- * never returned and never overwritten (D68's precedence rule, re-checked at write time because the
- * read and the write are separate transactions).
+ * This used to walk the corpus against Open-Meteo's elevation endpoint, 100 coordinates per request
+ * against a free tier that counts each **coordinate** — about twelve days of allowance for one pass,
+ * shared with the product's own weather crons, and it stopped on a daily quota at page 86 of ~248.
+ * D127 replaced it with **USGS 3DEP** (`epqs.nationalmap.gov`): no key, no shared quota, 25,044
+ * readings in ~1.5 hours, and **98.2% of them at 1 m LiDAR** against GLO-90's 90 m.
  *
- * All real logic lives in `./elevation` (tested) and in the two Convex functions (tested); this is
- * subprocess + loop, and is excluded from coverage.
+ * That archive is on disk and mirrored. So this file is now a **reader**, and the fetching half
+ * lives in `snapshotElevation.ts` — the same split the wind lane is being rebuilt to have, and for
+ * the same reason: after the one fetch, changing anything downstream costs minutes.
+ *
+ * **The Open-Meteo module was deleted rather than left in place.** A fetcher nothing calls is the
+ * mirror of the finding that started this campaign — an archive nothing reads is not a source — and
+ * keeping a second, worse elevation path around invites somebody to run it.
+ *
+ * ## `--compare` exists because D101 asked for it, and it is easy to skip
+ *
+ * *"A source swap that silently changes a datum would move every decile in `regionStats` and look
+ * like a data-quality improvement."* 5,692 rows are already stamped `dem_glo90`. So the first thing
+ * to do is not to load: it is to read the signed deltas against those rows and decide what they say.
+ * **A one-sided distribution is a datum shift. A two-sided one is an accuracy improvement.**
+ * `--compare` writes nothing and exits non-zero on nothing; it prints and stops.
+ *
+ * All real logic lives in `./elevationArchive` and `./epqs` (both tested) and in the two Convex
+ * functions (tested); this is subprocess + loop, and is excluded from coverage.
  */
 
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
-import {
-  batchTargets,
-  ELEVATION_REQUEST_DELAY_MS,
-  type ElevationRecord,
-  type ElevationTarget,
-  fetchElevationBatch,
-  sleep,
-} from './elevation';
+import { type ElevationArchiveEntry, elevationDeltas, resolutionBands } from './elevationArchive';
+import { coordinateKey } from './epqs';
 
-/** Rows written per mutation. Two small scalars per row, so the read cap binds long before bytes. */
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ARCHIVE = resolve(HERE, '../.raw-elevation/readings.ndjson');
+
+/** Rows written per mutation. Four small scalars per row, so the read cap binds long before bytes. */
 const WRITE_BATCH_SIZE = 200;
+
+/** Targets named on the run row when the archive cannot answer them. Enough to chase, not to bury. */
+const MISSING_SAMPLE_CAP = 10;
+
+/**
+ * Delta bands for `--compare`, in metres.
+ *
+ * Chosen against what the two sources *are* rather than by taste: GLO-90 is a 90 m posting, so a
+ * lake surface read off it is routinely a few metres from a 1 m LiDAR reading of the same point
+ * with no datum shift involved at all. The question the bands have to answer is whether the
+ * disagreement is **centred on zero**.
+ */
+const DELTA_BANDS = [1, 3, 10, 30] as const;
+
+interface Target {
+  waterBodyId: string;
+  lat: number;
+  lng: number;
+  storedElevationM?: number;
+  storedSource?: string;
+}
+
+function readArchive(): Map<string, ElevationArchiveEntry> {
+  if (!existsSync(ARCHIVE)) {
+    throw new Error(
+      `no 3DEP archive at ${ARCHIVE}. Run \`pnpm --filter @skating/lake-depth snapshot-elevation\`, ` +
+        'or pull the mirrored copy with `scripts/lake-depth/mirror-elevation-r2.sh pull`. This ' +
+        'loader deliberately cannot fetch: a reader that quietly hits the network is how an archive ' +
+        'stops being the source of truth.',
+    );
+  }
+  const byKey = new Map<string, ElevationArchiveEntry>();
+  for (const [index, line] of readFileSync(ARCHIVE, 'utf8').split('\n').entries()) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    let entry: ElevationArchiveEntry;
+    try {
+      entry = JSON.parse(trimmed) as ElevationArchiveEntry;
+    } catch {
+      throw new Error(
+        `3DEP archive: line ${index + 1} is not JSON — a truncated or half-written file. Re-pull it ` +
+          'from the mirror rather than loading what survived.',
+      );
+    }
+    byKey.set(entry.key, entry);
+  }
+  return byKey;
+}
+
+/** Every page of the corpus this pass is in scope for. */
+function* pages(
+  refresh: boolean,
+  importFloorOnly: boolean,
+): Generator<{
+  targets: Target[];
+  scanned: number;
+  belowFloor: number;
+}> {
+  let cursor: string | undefined;
+  for (;;) {
+    const page = convexRun<{
+      targets: Target[];
+      scanned: number;
+      belowFloor?: number;
+      cursor: string;
+      isDone: boolean;
+    }>('waterBodies:listNeedingElevation', {
+      ...(cursor ? { cursor } : {}),
+      ...(refresh ? { refresh: true } : {}),
+      ...(importFloorOnly ? { importFloorOnly: true } : {}),
+    });
+    yield { targets: page.targets, scanned: page.scanned, belowFloor: page.belowFloor ?? 0 };
+    if (page.isDone) return;
+    cursor = page.cursor;
+  }
+}
+
+/** D101's comparison: what the swap does to the rows already stamped. Writes nothing. */
+function compare(archive: Map<string, ElevationArchiveEntry>, importFloorOnly: boolean): void {
+  const stored: { elevationM: number; lat: number; lng: number; source: string }[] = [];
+  let scanned = 0;
+  // `refresh` so bodies that already carry a reading are returned — they are the whole subject.
+  for (const page of pages(true, importFloorOnly)) {
+    scanned += page.scanned;
+    for (const t of page.targets) {
+      if (t.storedElevationM === undefined) continue;
+      stored.push({
+        elevationM: t.storedElevationM,
+        lat: t.lat,
+        lng: t.lng,
+        source: t.storedSource ?? 'unknown',
+      });
+    }
+    process.stderr.write(
+      `[elevation] compare: scanned ${scanned}, ${stored.length} stamped rows\n`,
+    );
+  }
+
+  const deltas = elevationDeltas(stored, archive, coordinateKey);
+  if (deltas.length === 0) {
+    process.stderr.write(
+      '[elevation] compare: NOTHING COMPARABLE. Either no row carries an elevation yet, or no ' +
+        'stored coordinate resolves to an archived key — check the second before believing the ' +
+        'first, because a key mismatch produces exactly this output and looks like a clean result.\n',
+    );
+    return;
+  }
+
+  const signed = deltas.map((d) => d.deltaM).sort((a, b) => a - b);
+  const at = (q: number) => signed[Math.min(signed.length - 1, Math.floor(signed.length * q))] ?? 0;
+  const mean = signed.reduce((a, b) => a + b, 0) / signed.length;
+  const above = signed.filter((d) => d > 0).length;
+
+  process.stderr.write(
+    `\n[elevation] ── D101 datum comparison: 3DEP minus stored, over ${signed.length} bodies ──\n` +
+      `  mean ${mean.toFixed(2)} m · median ${at(0.5).toFixed(2)} m\n` +
+      `  p05 ${at(0.05).toFixed(2)} · p25 ${at(0.25).toFixed(2)} · p75 ${at(0.75).toFixed(2)} · ` +
+      `p95 ${at(0.95).toFixed(2)} m\n` +
+      `  ${above} of ${signed.length} (${((above / signed.length) * 100).toFixed(1)}%) read HIGHER on 3DEP\n`,
+  );
+  for (const band of DELTA_BANDS) {
+    const within = signed.filter((d) => Math.abs(d) <= band).length;
+    process.stderr.write(
+      `  |Δ| ≤ ${String(band).padStart(2)} m: ${String(within).padStart(6)} ` +
+        `(${((within / signed.length) * 100).toFixed(1)}%)\n`,
+    );
+  }
+  process.stderr.write(
+    '\n  Read it this way: a distribution centred near zero with both tails is GLO-90 being coarse,\n' +
+      '  which is an accuracy improvement. A distribution displaced off zero — most bodies moving\n' +
+      '  the same way by a similar amount — is a DATUM shift, and every `regionStats` decile moves\n' +
+      '  with it. Do not load until this reads as the first one.\n\n',
+  );
+}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const allowNonDev = args.includes('--prod');
   const refresh = args.includes('--refresh');
-  const limit = Number(args.find((a) => a.startsWith('--limit='))?.slice('--limit='.length));
+  const comparing = args.includes('--compare');
   const campaignId = args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length);
   /**
-   * `--import-floor` — only look up bodies the canonical import keeps (`meetsAreaFloor`).
+   * `--import-floor` — only stamp bodies the canonical import keeps (`belongsInCorpus`).
    *
-   * Open-Meteo's free tier counts each **coordinate**, not each request, so batching at 100 saves
-   * HTTP overhead and no quota at all: the whole corpus is ~116,070 calls against a 10,000/day
-   * allowance, or about twelve days. Restricting to what survives the floor is a fraction of that —
-   * and it is the *correct* set regardless of quota, because `pruneBelowAreaFloor` deletes the rest.
-   *
-   * **A switch, not a number.** It was briefly `--min-area-acres=N`, which meant this file carried
-   * its own copy of the rule — and the rule changed under it the same day. The server now applies
-   * `meetsAreaFloor` directly, so "the current floor" is true by construction rather than by
-   * somebody remembering to update two places.
+   * **Quota is no longer the argument**, since the archive is local and free to read. Correctness
+   * is: `pruneBelowAreaFloor` deletes the rest, so stamping them writes rows about to be removed.
+   * A switch rather than a threshold, because a threshold here is a second copy of a rule that has
+   * already drifted once — see the server-side note on `listNeedingElevation`.
    */
   const importFloorOnly = args.includes('--import-floor');
 
@@ -62,35 +204,38 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
-  if (importFloorOnly) {
-    process.stderr.write(
-      '[elevation] floor: only bodies the canonical import keeps (meetsAreaFloor)\n',
-    );
-  }
-  if (refresh) {
-    process.stderr.write(
-      '[elevation] --refresh: re-reading bodies that already carry a DEM elevation.\n',
-    );
+
+  const archive = readArchive();
+  process.stderr.write(
+    `[elevation] archive: ${archive.size.toLocaleString()} 3DEP readings · ` +
+      `${JSON.stringify(resolutionBands([...archive.values()]))}\n`,
+  );
+
+  if (comparing) {
+    compare(archive, importFloorOnly);
+    return;
   }
 
-  // Run history (N6c F2). Opened before the first page so a killed pass still leaves a record.
   const logger = new RunLogger({
     kind: 'elevation',
-    label: refresh ? 'elevation (refresh)' : 'elevation',
+    label: refresh ? '3DEP elevation (refresh)' : '3DEP elevation',
     campaignId,
     target,
     call: convexRun,
     stages: [
       {
-        name: 'lookup',
+        name: 'archive · read',
         detail:
-          'Open-Meteo Elevation API — free and keyless, batched at exactly 100 coordinates per request (its hard cap)',
-        sourceUrl: 'https://open-meteo.com/en/docs/elevation-api',
+          `${archive.size} USGS 3DEP readings from .raw-elevation/readings.ndjson — no network. ` +
+          'Public domain (17 U.S.C. § 105).',
+        sourceUrl: 'https://epqs.nationalmap.gov/v1/json',
       },
       {
         name: 'write',
         detail:
-          "waterBodies:importElevations — D68 precedence re-checked at write time, so a moderator's override is never overwritten",
+          'waterBodies:importElevations at the `dem_3dep` rung — D68 precedence re-checked at write ' +
+          'time, so a moderator override is never overwritten, and the raster id travels with the ' +
+          'reading so a coarse cohort can be re-stamped later (D104).',
         output: target.label,
       },
     ],
@@ -99,7 +244,8 @@ async function main(): Promise<void> {
 
   const totals = {
     scanned: 0,
-    looked: 0,
+    inArchive: 0,
+    notInArchive: 0,
     updated: 0,
     operatorHeld: 0,
     implausible: 0,
@@ -107,36 +253,37 @@ async function main(): Promise<void> {
     /** Walked past deliberately by `--import-floor`, so a filtered run isn't read as a failure. */
     belowFloor: 0,
   };
-  let cursor: string | undefined;
-  let isDone = false;
-  let pages = 0;
+  const missingSamples: string[] = [];
+  let pageCount = 0;
 
   try {
-    while (!isDone) {
-      const page = convexRun<{
-        targets: ElevationTarget[];
-        scanned: number;
-        belowFloor?: number;
-        cursor: string;
-        isDone: boolean;
-      }>('waterBodies:listNeedingElevation', {
-        ...(cursor ? { cursor } : {}),
-        ...(refresh ? { refresh: true } : {}),
-        ...(importFloorOnly ? { importFloorOnly: true } : {}),
-      });
-      cursor = page.cursor;
-      isDone = page.isDone;
+    for (const page of pages(refresh, importFloorOnly)) {
       totals.scanned += page.scanned;
-      totals.belowFloor += page.belowFloor ?? 0;
-      pages++;
+      totals.belowFloor += page.belowFloor;
+      pageCount++;
 
-      const records: ElevationRecord[] = [];
-      for (const batch of batchTargets(page.targets)) {
-        const { records: got, implausible } = await fetchElevationBatch(batch);
-        records.push(...got);
-        totals.implausible += implausible;
-        totals.looked += batch.length;
-        await sleep(ELEVATION_REQUEST_DELAY_MS);
+      const records: {
+        waterBodyId: string;
+        elevationM: number;
+        resolutionM?: number;
+        rasterId?: number;
+      }[] = [];
+      for (const t of page.targets) {
+        const entry = archive.get(coordinateKey(t.lat, t.lng));
+        if (entry === undefined) {
+          totals.notInArchive++;
+          if (missingSamples.length < MISSING_SAMPLE_CAP) {
+            missingSamples.push(`${t.waterBodyId} @ ${coordinateKey(t.lat, t.lng)}`);
+          }
+          continue;
+        }
+        totals.inArchive++;
+        records.push({
+          waterBodyId: t.waterBodyId,
+          elevationM: entry.elevationM,
+          ...(entry.resolutionM !== undefined ? { resolutionM: entry.resolutionM } : {}),
+          ...(entry.rasterId !== undefined ? { rasterId: entry.rasterId } : {}),
+        });
       }
 
       for (let i = 0; i < records.length; i += WRITE_BATCH_SIZE) {
@@ -145,7 +292,10 @@ async function main(): Promise<void> {
           operatorHeld: number;
           implausible: number;
           missing: number;
-        }>('waterBodies:importElevations', { elevations: records.slice(i, i + WRITE_BATCH_SIZE) });
+        }>('waterBodies:importElevations', {
+          elevations: records.slice(i, i + WRITE_BATCH_SIZE),
+          source: 'dem_3dep',
+        });
         totals.updated += result.updated;
         totals.operatorHeld += result.operatorHeld;
         totals.implausible += result.implausible;
@@ -153,92 +303,62 @@ async function main(): Promise<void> {
       }
 
       process.stderr.write(
-        `[elevation] page ${pages}: scanned ${totals.scanned}, looked up ${totals.looked}, wrote ${totals.updated}\n`,
+        `[elevation] page ${pageCount}: scanned ${totals.scanned}, ` +
+          `resolved ${totals.inArchive}, wrote ${totals.updated}\n`,
       );
       for (const [name, value] of Object.entries(totals)) logger.count(name, value);
-      logger.count('pages', pages);
+      logger.count('pages', pageCount);
       logger.flush();
-
-      if (Number.isFinite(limit) && totals.looked >= limit) {
-        process.stderr.write(`[elevation] stopping early at --limit=${limit}\n`);
-        // A bounded run must say it was bounded — a `--limit` pass and a complete one produce the
-        // same-shaped row, and only this note distinguishes them once the terminal is gone.
-        logger.stage({
-          name: 'lookup',
-          detail: `stopped early at --limit=${limit} — this run did NOT cover the corpus`,
-        });
-        break;
-      }
     }
   } catch (err) {
     logger.failed(err);
     throw err;
   }
 
-  // A coverage RATE, not a count, for the same reason the depth loader prints one: a pass that
-  // stamped 60% of what it scanned reads exactly like a complete one if you only print totals.
-  // **The denominator is the bodies in scope, not the bodies scanned.** With `--import-floor` the
-  // pass deliberately walks past most of the corpus, and dividing by everything it *looked at*
-  // reports a 14% success rate for a run that covered 100% of its target. That is the same
-  // misleading-denominator shape the depth join's coverage block was rebuilt to avoid; it does not
-  // get to reappear here just because this loader prints rather than stores.
+  // A coverage RATE, not a count, and **the denominator is the bodies in scope** — with
+  // `--import-floor` the pass deliberately walks past most of the corpus, and dividing by
+  // everything it scanned reports a 14% success rate for a run that covered 100% of its target.
   const inScope = Math.max(0, totals.scanned - totals.belowFloor);
   const rate = inScope > 0 ? ((totals.updated / inScope) * 100).toFixed(1) : '0.0';
   process.stderr.write(
-    `[elevation] complete: ${totals.updated}/${inScope} in-scope bodies stamped (${rate}%) over ${pages} page(s)\n`,
+    `[elevation] complete: ${totals.updated}/${inScope} in-scope bodies stamped (${rate}%) over ` +
+      `${pageCount} page(s)\n` +
+      `[elevation] of those: ${totals.notInArchive} not in the archive · ` +
+      `${totals.operatorHeld} held by a moderator's override · ` +
+      `${totals.implausible} outside the plausible window · ${totals.missing} rows gone\n`,
   );
-  if (totals.belowFloor > 0) {
+  if (totals.notInArchive > 0) {
+    // **The archive is keyed on the interior point, and the corpus moves.** A body re-drawn by a
+    // later merge gets a new interior point and therefore a new key, so this number is the corpus
+    // having changed under the archive rather than 3DEP having failed. Re-run `snapshot-elevation`
+    // to fill them; it is incremental and asks only for what is missing.
     process.stderr.write(
-      `[elevation] ${totals.belowFloor} body(s) walked past below the import floor — not failures, ` +
-        'not eligible, and about to be removed by the canonical re-import\n',
+      `[elevation] ${totals.notInArchive} target(s) the archive cannot answer — re-run ` +
+        'snapshot-elevation, which fetches only the difference. e.g. ' +
+        `${missingSamples.join(', ')}\n`,
     );
   }
-  // The numbers that are expected to be non-zero and wrong if LARGE — and none of which is visible
-  // from the rate alone, which is the shape of every silent-cap bug this repo has hit before.
-  process.stderr.write(
-    `[elevation] of those: ${totals.operatorHeld} held by a moderator's override · ` +
-      `${totals.implausible} readings outside the plausible window · ` +
-      `${totals.missing} rows vanished mid-pass\n`,
-  );
 
-  for (const [name, value] of Object.entries(totals)) logger.count(name, value);
-  logger.count('pages', pages);
-  logger.stage({
-    name: 'write',
-    detail:
-      "waterBodies:importElevations — D68 precedence re-checked at write time, so a moderator's override is never overwritten",
-    output: target.label,
-    counts: [
-      { name: 'updated', value: totals.updated },
-      { name: 'operatorHeld', value: totals.operatorHeld },
-      { name: 'implausible', value: totals.implausible },
-      { name: 'missing', value: totals.missing },
-    ],
-  });
   logger.coverage({
     unit: 'bodies',
     eligible: inScope,
     covered: totals.updated,
     omissions: [
-      { reason: "held by a moderator's override (D68)", count: totals.operatorHeld },
-      { reason: 'reading outside the plausible window', count: totals.implausible },
-      { reason: 'row vanished mid-pass', count: totals.missing },
-      // Everything scanned but never looked up — the shape a silent cap takes.
-      { reason: 'scanned but never looked up', count: Math.max(0, totals.scanned - totals.looked) },
+      { reason: 'not in the 3DEP archive', count: totals.notInArchive },
+      { reason: "held by a moderator's override", count: totals.operatorHeld },
+      { reason: 'outside the plausible window', count: totals.implausible },
     ].filter((o) => o.count > 0),
   });
   logger.succeed([
-    `coverage: ${totals.updated}/${inScope} in-scope bodies stamped (${rate}%)`,
-    ...(totals.belowFloor > 0
-      ? [`${totals.belowFloor} walked past below the canonical import floor (meetsAreaFloor)`]
-      : []),
+    `${totals.updated} bodies stamped from USGS 3DEP`,
+    ...(missingSamples.length > 0 ? [`unanswered keys: ${missingSamples.join(', ')}`] : []),
   ]);
 }
 
 main().catch((err: unknown) => {
   process.stderr.write(
     `[elevation] FAILED: ${err instanceof Error ? err.message : String(err)}\n` +
-      '[elevation] Re-running is safe and resumes: rows already stamped are skipped server-side.\n',
+      '[elevation] Re-running is safe and resumes: stamped rows are skipped server-side.\n',
   );
   process.exit(1);
 });

@@ -2,6 +2,11 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // 20s, not vitest's 5s default — see the note in `packages/convex/vitest.config.ts`. The
+    // flaking set is load-dependent: turbo runs 11 packages at once and CI is ~8x slower than
+    // local, so whichever test loses the race times out while being fast in isolation. A hang is
+    // unbounded and still fails; this only stops green code reporting red.
+    testTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
@@ -15,8 +20,10 @@ export default defineConfig({
         'src/cli.ts',
         'src/corroborateAlsc.ts', // read-only census joining the ALSC archive to the merge artifacts
         'src/load.ts',
-        'src/loadElevation.ts',
+        'src/loadElevation.ts', // reads the archive + writes; the rules are in elevationArchive/epqs
         'src/snapshotAlsc.ts', // serial fetch + file I/O; the parser is in alsc.ts and covered
+        'src/snapshotCslap.ts', // one query + file I/O; the parser is in cslap.ts and covered
+        'src/snapshotNhBands.ts', // paged query + file I/O; the rules are in nhBands.ts and covered
         'src/snapshotElevation.ts', // argv + concurrency + file I/O; the rules are in epqs/elevationArchive
         'src/types.ts',
       ],

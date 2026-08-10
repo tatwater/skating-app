@@ -8,7 +8,8 @@
     "check-types": "tsc --noEmit",
     "test": "vitest run --coverage",
     "test:watch": "vitest",
-    "load": "tsx src/load.ts"
+    "snapshot": "tsx src/snapshot.ts",
+    "derive": "tsx src/derive.ts"
   },
   "dependencies": {
     "@skating/core": "workspace:*",

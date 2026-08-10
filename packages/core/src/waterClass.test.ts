@@ -10,6 +10,7 @@ import {
   nameAssertsReservoir,
   OCEAN_NAME_VETO_MIN_ACRES,
   type SourceClaim,
+  stillWaterClass,
 } from './waterClass';
 
 /** Local, so this file needs no import for the one unit its area cases are written in. */
@@ -414,6 +415,100 @@ describe('assertsOceanOrGreatLake (N7 audit)', () => {
     expect(OCEAN_NAME_VETO_MIN_ACRES).toBeLessThan(801_802);
     expect(assertsOceanOrGreatLake('Moosehead Lake', 75_416 * SQ_M_PER_ACRE_TEST)).toBe(false);
     expect(assertsOceanOrGreatLake('Lake Champlain', 271_000 * SQ_M_PER_ACRE_TEST)).toBe(false);
+  });
+});
+
+describe('a still-water name outranks a flowing refusal (founder, 2026-08-09)', () => {
+  // Every acreage below is measured, from `dropped.ndjson` on the 2026-08-08 merge. Each of these
+  // was deleted as `no-class` while twenty-six identically-named deadwaters sat in the corpus as
+  // `river` — the difference being only whether a mapper had typed the subtag.
+  it.each([
+    ['Pockwockamus Deadwater', 335],
+    ['Ninemile Deadwater', 212],
+    ['Abol Deadwater', 66],
+    ['Musquacook Deadwater', 62],
+    ['Haskell Deadwater', 30],
+    ['Cooper Brook Deadwater', 28],
+    ['Seboeis Deadwater', 20],
+  ])('rescues %s (%i ac) from an explicit osm:water=river', (name) => {
+    const v = osm(name, { natural: 'water', water: 'river' });
+    expect(v.cls).toBe('river');
+    expect(v.basis).toBe('name-still-water');
+  });
+
+  it('rescues one the federal catalogue calls a River', () => {
+    // 3DHP `featuretype=1` is an opaque integer, which is why `refusalFamily` names it explicitly
+    // rather than reading the value the way it reads `osm:water=river`.
+    expect(
+      classifyWaterBody({ name: 'Ninemile Deadwater', claim: classifyThreeDhp(1) }),
+    ).toMatchObject({ cls: 'river', basis: 'name-still-water' });
+  });
+
+  it('gives each name the class NAME_KEEP gives it, not one blanket class', () => {
+    // An Adirondack Flow is an impoundment behind a dam and reads as a lake; a deadwater is a slow
+    // reach with current under the ice. Both are still water; they are not the same thing.
+    expect(osm('Higley Flow', { natural: 'water', water: 'river' }).cls).toBe('lakePond');
+    expect(osm('Debsconeag Deadwater', { natural: 'water', water: 'river' }).cls).toBe('river');
+    // `NAME_KEEP` orders the slow-reach entry above the pond one, and this inherits that.
+    expect(osm('Sewall Deadwater Pond', { natural: 'water', water: 'river' }).cls).toBe('river');
+  });
+
+  it('is narrow on the NAME side: an ordinary keep-word does not overrule a catalogue', () => {
+    // These are the rapids and the brook their names say they are, and the wider rule the founder
+    // declined would have admitted both. `classifyName` still resolves them — the point is that a
+    // resolved name is not enough here.
+    expect(classifyName('Round Pond Rips')).toMatchObject({ cls: 'lakePond' });
+    expect(osm('Round Pond Rips', { natural: 'water', water: 'rapids' }).cls).toBeNull();
+    expect(osm('Cedar Pond Brook', { natural: 'water', water: 'stream' }).cls).toBeNull();
+  });
+
+  it('is narrow on the REFUSAL side: only a flowing refusal can be overruled', () => {
+    // Built infrastructure and salt are not rescued by any name. `refusalFamily` decides which is
+    // which, so this and `settledClassDissent` can never disagree about what "flowing" means.
+    expect(osm('Deadwater Lagoon', { natural: 'water', water: 'wastewater' }).cls).toBeNull();
+    expect(osm('Deadwater Panne', { natural: 'water', water: 'salt_pool' }).cls).toBeNull();
+    expect(osm('Deadwater Basin', { natural: 'water', water: 'basin' }).cls).toBeNull();
+  });
+
+  it('cannot launder a veto: an ocean refusal is not a flowing one', () => {
+    // 3DHP files the Atlantic and the Great Lakes under `featuretype=4`, which `VETO_TOKENS` refuses
+    // outright. It is not in the `flowing` family, so no name reaches it — and `sourceToken` still
+    // carries the catalogue's own word either way, which is what the veto reads.
+    const v = classifyWaterBody({ name: 'Huron Flow', claim: classifyThreeDhp(4) });
+    expect(v.cls).toBeNull();
+    expect(v.basis).toBe('dropped-by-class');
+    expect(v.sourceToken).toBe('3dhp:featuretype=4');
+  });
+
+  it('every still-water term also resolves to a class in NAME_KEEP', () => {
+    // The two lists are separate on purpose — one decides whether the name may speak, the other what
+    // it says — so a term added to only one of them would rescue a body and have nothing to give it.
+    for (const name of [
+      'Smith Deadwater',
+      'Smith Dead Water',
+      'Smith Deadwaters',
+      'Smith Stillwater',
+      'Smith Still Water',
+      'Smith Dead River',
+      'Smith Logan',
+      'Smith Logans',
+      'Smith Bogan',
+      'Smith Bogans',
+      'Smith Flow',
+      'Smith Flows',
+      'Smith Flowage',
+      'Smith Flowages',
+      'Smith Impoundment',
+      'Smith Impoundments',
+    ]) {
+      expect(stillWaterClass(name), name).toBeDefined();
+      expect(classifyName(name)?.outcome, name).toBe('class');
+    }
+  });
+
+  it('says nothing about a name with no still-water term in it', () => {
+    expect(stillWaterClass('Mud Pond')).toBeUndefined();
+    expect(stillWaterClass('')).toBeUndefined();
   });
 });
 

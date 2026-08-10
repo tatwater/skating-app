@@ -21,7 +21,12 @@
  *    and a rose is a property of the cell, not of the lake.
  */
 
-import { normalizeRose, WIND_ROSE_MONTHS, WIND_ROSE_SECTORS } from '@skating/core';
+import {
+  normalizeRose,
+  STRONG_WIND_MIN_MPS,
+  WIND_ROSE_MONTHS,
+  WIND_ROSE_SECTORS,
+} from '@skating/core';
 
 /** Where the API lives. The host moved from `developer.nrel.gov`, which no longer resolves at all. */
 export const WTK_BASE = 'https://developer.nlr.gov/api/wind-toolkit/v2/wind/wtk-download.csv';
@@ -81,6 +86,33 @@ export function emptyCounts(): SectorCounts {
 }
 
 /**
+ * Everything one cell's winters accumulate into — **direction and speed, not just direction**.
+ *
+ * `counts` was the whole accumulator until N7-3, and `cells[6]` was fetched on every request and
+ * never read. That is what turned "could we also derive strong-wind hours?" into a 7.7-hour
+ * re-fetch, and it is the reason this package now archives responses. See `archive.ts`.
+ */
+export interface WindAccumulator {
+  /** Winter hours per sector, whatever the speed — the rose. */
+  counts: SectorCounts;
+  /** Winter hours per sector **at or above the strong threshold** — the wind-hole signal. */
+  strongHours: SectorCounts;
+  /** Every winter hour accepted, the honest denominator for both. */
+  sampledHours: number;
+  /** The m/s bar `strongHours` was taken at, carried so a stored row is self-describing. */
+  strongMinMps: number;
+}
+
+export function emptyAccumulator(strongMinMps: number = STRONG_WIND_MIN_MPS): WindAccumulator {
+  return {
+    counts: emptyCounts(),
+    strongHours: emptyCounts(),
+    sampledHours: 0,
+    strongMinMps,
+  };
+}
+
+/**
  * Accumulate one year's CSV into per-sector winter-hour counts.
  *
  * The WTK CSV carries **two header lines** — a site-metadata row then the column names — before
@@ -92,7 +124,7 @@ export function emptyCounts(): SectorCounts {
  * Returns the number of hours accepted so a caller can tell "no winter data" from "parsed nothing",
  * which otherwise look identical downstream.
  */
-export function accumulateCsv(csv: string, into: SectorCounts): number {
+export function accumulateCsv(csv: string, into: WindAccumulator): number {
   let accepted = 0;
   const lines = csv.split('\n');
   for (let i = 2; i < lines.length; i++) {
@@ -102,11 +134,20 @@ export function accumulateCsv(csv: string, into: SectorCounts): number {
     if (cells.length < 7) continue;
     const month = Number(cells[1]);
     const direction = Number(cells[5]);
+    // **`cells[6]`, which every previous run fetched and ignored.**
+    const speed = Number(cells[6]);
     if (!Number.isFinite(month) || !Number.isFinite(direction)) continue;
     if (!(WIND_ROSE_MONTHS as readonly number[]).includes(month)) continue;
     const sector = Math.round((((direction % 360) + 360) % 360) / (360 / WIND_ROSE_SECTORS));
     const index = sector % WIND_ROSE_SECTORS;
-    into[index] = (into[index] ?? 0) + 1;
+    into.counts[index] = (into.counts[index] ?? 0) + 1;
+    // A row with a readable direction and an unreadable speed still counts toward the rose — the
+    // two are separate claims, and dropping the hour entirely would silently bias the rose toward
+    // whatever conditions happen to produce a clean speed field.
+    if (Number.isFinite(speed) && speed >= into.strongMinMps) {
+      into.strongHours[index] = (into.strongHours[index] ?? 0) + 1;
+    }
+    into.sampledHours++;
     accepted++;
   }
   return accepted;
@@ -128,8 +169,69 @@ export function roseFromCounts(counts: SectorCounts, hours: number): number[] | 
   return normalizeRose(counts);
 }
 
+/** What one cell contributes to every body in it. `null` where the sample is too thin for a rose. */
+export interface CellClimate {
+  rose: number[] | null;
+  strongWindHours: number[];
+  sampledWindHours: number;
+  strongWindMinMps: number;
+}
+
+/**
+ * An accumulator → what gets stored.
+ *
+ * **The rose can be `null` while the strong-hour counts are still real**, and that asymmetry is
+ * deliberate. A rose is rendered as a percentage, so a thin sample is actively misleading —
+ * `MIN_ROSE_HOURS` exists for that. Strong-hour counts are absolute and carry their own denominator,
+ * so a thin sample is merely a small number honestly reported. Suppressing both on one threshold
+ * would discard usable data to protect against a failure mode only one of them has.
+ */
+export function climateFromAccumulator(acc: WindAccumulator): CellClimate {
+  return {
+    rose: roseFromCounts(acc.counts, acc.sampledHours),
+    strongWindHours: [...acc.strongHours],
+    sampledWindHours: acc.sampledHours,
+    strongWindMinMps: acc.strongMinMps,
+  };
+}
+
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Attempts for a **429 specifically**, which is a different failure from a 500 (N7-3).
+ *
+ * A 5xx is the service being broken and retrying hard is rude; a 429 is the service telling us to
+ * slow down, and the correct response is to wait longer and try again. Four attempts spanning ~92
+ * seconds was not enough: the 250 m fetch lost **18 cell-years to 429 in one burst** at 13% through,
+ * every one of them recoverable by simply having waited.
+ *
+ * The handoff asked for this check — *"`fetchCellYear` already has 429 backoff; check it is as
+ * patient"* as the elevation lane's — and it was never done before the fetch started.
+ */
+export const WTK_RATE_LIMIT_RETRIES = 8;
+
+/** Longest single wait, so a pathological `Retry-After` cannot park the run for an hour. */
+export const WTK_MAX_BACKOFF_MS = 240_000;
+
+/**
+ * How long the server asked us to wait, in ms, or `null` when it did not say.
+ *
+ * **RFC 9110 allows two forms** and services use both: delta-seconds (`120`) and an HTTP-date
+ * (`Wed, 21 Oct 2026 07:28:00 GMT`). Reading only the first silently returns `NaN` for the second,
+ * which is worse than not reading it at all — a `NaN` wait becomes an immediate retry into the same
+ * limit. `now` is injected so the date branch is testable without freezing the clock.
+ */
+export function retryAfterMs(header: string | null | undefined, now: number): number | null {
+  if (header === null || header === undefined) return null;
+  const trimmed = header.trim();
+  if (trimmed.length === 0) return null;
+  if (/^\d+$/.test(trimmed)) return Math.min(Number(trimmed) * 1000, WTK_MAX_BACKOFF_MS);
+  const at = Date.parse(trimmed);
+  if (Number.isNaN(at)) return null;
+  // A date already in the past means "go now", not "go back in time".
+  return Math.min(Math.max(0, at - now), WTK_MAX_BACKOFF_MS);
 }
 
 /**
@@ -137,6 +239,11 @@ export function sleep(ms: number): Promise<void> {
  *
  * A 429 is expected in normal operation — the daily and per-second limits are real — so it backs
  * off rather than failing the run. A 4xx that is not 429 is not retried: it will not become valid.
+ *
+ * **A 429 gets its own, longer budget** (`WTK_RATE_LIMIT_RETRIES`) and honours `Retry-After` when the
+ * server sends one, because being told exactly how long to wait and then guessing is how a run loses
+ * requests it could have kept. Everything else keeps the short budget: a broken service should fail
+ * fast and be reported, not retried for four minutes.
  */
 export async function fetchCellYear(
   point: WtkPoint,
@@ -145,10 +252,22 @@ export async function fetchCellYear(
   email: string,
   fetchImpl: typeof fetch = fetch,
   maxRetries = 4,
+  now: () => number = Date.now,
+  /** Injected so the backoff SCHEDULE is assertable without a test that waits 92 seconds. */
+  sleepImpl: (ms: number) => Promise<void> = sleep,
 ): Promise<string> {
   let lastError: unknown;
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    if (attempt > 0) await sleep(WTK_REQUEST_DELAY_MS * 4 ** attempt);
+  let lastRetryAfter: number | null = null;
+  // The budget is the larger of the two, and a non-429 failure stops consuming it at `maxRetries`.
+  const attempts = Math.max(maxRetries, WTK_RATE_LIMIT_RETRIES);
+  let rateLimited = false;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    if (attempt > 0 && !rateLimited && attempt >= maxRetries) break;
+    if (attempt > 0) {
+      const backoff = Math.min(WTK_REQUEST_DELAY_MS * 4 ** attempt, WTK_MAX_BACKOFF_MS);
+      await sleepImpl(lastRetryAfter ?? backoff);
+    }
+    lastRetryAfter = null;
     let res: Response;
     try {
       res = await fetchImpl(wtkUrl(point, year, apiKey, email));
@@ -159,6 +278,10 @@ export async function fetchCellYear(
     if (!res.ok) {
       const err = new Error(`WTK request failed: ${res.status}`);
       if (res.status !== 429 && res.status < 500) throw err;
+      if (res.status === 429) {
+        rateLimited = true;
+        lastRetryAfter = retryAfterMs(res.headers?.get?.('retry-after'), now());
+      }
       lastError = err;
       continue;
     }

@@ -8,24 +8,55 @@
 
 ---
 
-> ### ✅ Still accurate, still unbuilt — re-scoped 2026-08-08 (N7-2)
+> ### ✅ BUILT **AND RUN** 2026-08-09 (N7-3) — this document is history, not instructions
 >
-> Nothing in this document has been done: `scripts/wind-climate/.raw/` does not exist and wind
-> coverage is **0**. Everything it argues for still stands, and the argument got stronger — the
-> elevation lane was built to this exact shape (fetch split from derive, byte-faithful archive,
-> mirrored to R2) and it is why re-asking "could we also derive X?" now costs minutes there.
+> **The fetch happened and the split is proven.** 5,910 cell-years archived, 0 failed, mirrored to R2
+> as 7,092 objects / 401 MiB. `derive` then stamped **1,193 of 1,193 qualifying bodies with zero
+> network requests** — which is the entire thesis of this document, demonstrated.
 >
-> **Two numbers to re-measure before spending the 7.7 hours**, both of which predate the corpus that
-> now exists:
+> **Verification §5's delete-and-pull-back test has NOT been run**, and it is the one item here still
+> owed. What *has* been shown is the cheaper half of the same claim: the widened 250 m fetch (D135)
+> re-read all 5,910 archived responses and asked WTK only for the 41,855 it did not have.
 >
-> - the **1,061 qualifying bodies / 1,045 cells** scope was measured against the *old* area floor and
->   a 123,952-body corpus. The corpus is now **24,945** and the floor is settled. Re-run with
->   `--dry-run` first; the number can only have gone down.
-> - the README's **3,184** predates both the canonical re-import and the floor, and is simply wrong.
+> **The scope figures below are superseded twice over.** This document said 1,061 bodies; the first
+> banner corrected that to 1,193; **D135 then widened the gate to 250 m and the real scope is 11,118
+> bodies / 9,553 cells.** The 1 km bar was `MIN_FETCH_CLAUSE_M` doing a second job it was never
+> chosen for — see D135.
 >
-> **And the bucket exists but has never been written to** — `skating-raw-wind-climate` was created on
-> 2026-08-02 and confirmed on the API token 2026-08-08, so the permission has never actually been
-> exercised. Run `mirror-r2.sh status` before the fetch, not after it.
+> ### The original banner, kept
+>
+> Everything §What to build asks for exists, and the fetch is running. **Read
+> [`D134`](./01-decisions.md#d134--the-wind-lane-archives-responses-and-captures-the-speed-it-was-already-fetching-n7-3)
+> instead**; what follows is kept for the reasoning, which is unchanged and was right.
+>
+> | asked for | built |
+> | --- | --- |
+> | `.raw/` byte-faithful archive, one gzipped file per response | `scripts/wind-climate/src/archive.ts` + `snapshot.ts`; `<gridKey>/<year>.csv.gz` + a per-cell manifest with sha256, bytes, rows and the resolved URL **with the API key redacted** |
+> | `mirror-r2.sh` | already existed; `status` verified against the empty bucket before the fetch, as this doc asked |
+> | split fetch from derive | `pnpm --filter @skating/wind-climate snapshot` / `derive`. `derive` **refuses** to run when a cell is missing rather than fetching it |
+> | sustained-wind capture | `strongWindHours` / `sampledWindHours` / `strongWindMinMps` on `waterBodies`; `accumulateCsv` now reads `cells[6]` |
+> | `windHoleSectors` read-time helper | `@skating/core`'s `windRose.ts`, with `STRONG_WIND_MIN_MPS` (8.94) and `WIND_HOLE_MIN_HOURS` (3) |
+> | fix the "~96 min at 1/s" estimate | `estimateFetchMinutes` takes a **measured** latency; the constant is `WTK_MEASURED_LATENCY_MS = 5300` and its own test asserts the old estimate was wrong by more than 4× |
+>
+> **Three corrections to the numbers below, all measured against the loaded corpus.**
+>
+> - Scope went **up**, not down: **1,193 qualifying bodies / 1,182 cells / 5,910 requests**, against
+>   this doc's 1,061 / 1,045 / 5,225. The prediction that it *"can only have gone down"* was wrong
+>   because `fetchProfileM` is measured on the **merged** outline — N7 turning fragments into whole
+>   lakes pushed more bodies over the 1 km fetch bar.
+> - Wall clock is **10.5 h**, not 7.7: 5,910 requests at a measured 5.3 s plus 1.1 s of pacing.
+> - The bucket's write permission had still never been exercised. `mirror-r2.sh status` was run
+>   first, as §Verification asks; it lists clean and empty.
+>
+> **What is still open and is a founder call, not a build:** whether a wind-hole clause belongs in the
+> caption, only in the profile, or nowhere. §5 says *do not add safety-sounding copy without asking*,
+> so nothing writes a sentence — `windHoleSectors` returns data and stops.
+>
+> ⚠ **`WIND_HOLE_MIN_HOURS` is a rate, not an episode length**, and §4's design makes that
+> unavoidable: with plain counts and no run-length detection, nothing stored can answer *"was there a
+> three-hour blow"*. The question the counts answer is *"how much strong wind does this shore get in a
+> season"*. That is the right trade — it is what makes a threshold change free — but the field name
+> invites the other reading, so it is written down here and in the constant's docstring.
 
 ## Why this exists
 

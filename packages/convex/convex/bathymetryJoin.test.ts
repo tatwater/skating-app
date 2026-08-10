@@ -339,3 +339,227 @@ describe('waterBodies.matchBathymetryLakes', () => {
     expect(after).toEqual(before);
   });
 });
+
+/**
+ * **The publisher's crosswalk, as evidence rather than as gospel** (N7-3).
+ *
+ * Maine publishes a MIDAS → NHD crosswalk resolving 5,611 of 5,803 keys, and it settles the question
+ * geometry has to guess at: which of several adjacent bodies the state meant. Caribou Lake arriving
+ * as Ripogenus (15.7× the area) and Fahi Pond as Mud Pond (22.3×) are both that failure.
+ *
+ * The rule it must obey is D95's: *"the state's lake id is evidence, not gospel; where it disagrees
+ * with geography, geography wins."* So these tests are mostly about what it **cannot** do.
+ */
+describe('matchBathymetryLakes — the MIDAS crosswalk', () => {
+  async function insertBody(
+    t: ReturnType<typeof convexTest>,
+    externalId: string,
+    extra: Record<string, unknown>,
+  ) {
+    return t.run((ctx) =>
+      ctx.db.insert('waterBodies', {
+        type: 'lakePond' as const,
+        source: 'osm' as const,
+        externalId,
+        searchText: String(extra.name ?? ''),
+        osmId: externalId,
+        dedupStatus: 'clean' as const,
+        createdAt: Date.now(),
+        ...extra,
+      }),
+    ) as Promise<Id<'waterBodies'>>;
+  }
+
+  /** A square body, reachable from the cell index, optionally carrying an NHD id. */
+  async function seedBody(
+    t: ReturnType<typeof convexTest>,
+    name: string,
+    half: number,
+    areaSqM: number,
+    nhdId?: string,
+    centre = { lat: 44, lng: -72 },
+  ) {
+    const externalId = `way/${name.replace(/\s+/g, '-')}`;
+    const polygon = {
+      type: 'Polygon' as const,
+      coordinates: [
+        [
+          [centre.lng - half, centre.lat - half],
+          [centre.lng + half, centre.lat - half],
+          [centre.lng + half, centre.lat + half],
+          [centre.lng - half, centre.lat + half],
+          [centre.lng - half, centre.lat - half],
+        ],
+      ],
+    };
+    const bbox = {
+      minLat: centre.lat - half,
+      minLng: centre.lng - half,
+      maxLat: centre.lat + half,
+      maxLng: centre.lng + half,
+    };
+    const id = await insertBody(t, externalId, {
+      name,
+      polygon,
+      bbox,
+      centroid: centre,
+      surfaceAreaSqM: areaSqM,
+      ...(nhdId ? { nhdId } : {}),
+    });
+    await t.mutation(internal.waterBodies.importCanonical, {
+      bodies: [
+        {
+          name,
+          type: 'lakePond' as const,
+          source: 'osm' as const,
+          externalId,
+          osmId: externalId,
+          ...(nhdId ? { nhdId } : {}),
+          polygon,
+          bbox,
+          centroid: centre,
+          surfaceAreaSqM: areaSqM,
+        },
+      ],
+    });
+    return id;
+  }
+
+  /** A survey confined to the SMALL lake, so both bodies cover it and only one is right. */
+  function smallSurvey(half: number, centre = { lat: 44, lng: -72 }, n = 16) {
+    return Array.from({ length: n }, (_, i) => {
+      const a = ((i + 0.5) / n) * 2 - 1;
+      const b = (((i * 5) % n) / n) * 2 - 1;
+      return { lat: centre.lat + a * half * 0.8, lng: centre.lng + b * half * 0.8 };
+    });
+  }
+
+  test('picks the body the publisher names over the larger one geometry prefers', async () => {
+    // Caribou Lake as Ripogenus, in miniature: the survey sits inside both outlines, so both clear
+    // the containment gate, and largest-first takes the wrong one. The crosswalk knows which.
+    const t = convexTest(schema, modules);
+    const big = await seedBody(t, 'Ripogenus Lake', 0.2, 1.57e8);
+    const small = await seedBody(t, 'Caribou Lake', 0.05, 1e7, '142978563');
+
+    const ungated = await t.query(internal.waterBodies.matchBathymetryLakes, {
+      lakes: [{ key: '870', point: { lat: 44, lng: -72 }, samplePoints: smallSurvey(0.05) }],
+    });
+    expect(ungated.matches[0]?.waterBodyId).toBe(big); // the failure, reproduced
+
+    const keyed = await t.query(internal.waterBodies.matchBathymetryLakes, {
+      lakes: [
+        {
+          key: '870',
+          point: { lat: 44, lng: -72 },
+          samplePoints: smallSurvey(0.05),
+          nhdId: '142978563',
+        },
+      ],
+    });
+    expect(keyed.matches[0]?.waterBodyId).toBe(small);
+    expect(keyed.matches[0]?.crosswalk).toBe('promoted'); // it CORRECTED the winner
+
+    // **And the lake it displaced drops out of `alsoCovers`**, which is the right consequence and
+    // worth pinning rather than discovering. That list is "bodies nested inside the one that was
+    // surveyed" — it filters on the primary's area — so promoting the smaller body stops the larger
+    // one being drawn with these isobaths. For two adjacent lakes where only one was sounded, that
+    // is exactly what should happen; for a genuine lake-and-its-bay pair the primary is the lake
+    // and the bay still nests, which the ungated case above shows.
+    expect(ungated.matches[0]?.alsoCovers.map((a) => a.waterBodyId)).toContain(small);
+    expect(keyed.matches[0]?.alsoCovers.map((a) => a.waterBodyId)).not.toContain(big);
+  });
+
+  test('cannot introduce a body the survey is not in — geography still wins', async () => {
+    // ⚠ D95's premise. A crosswalk pointing somewhere the soundings are not is MIDAS 870: a key
+    // filed as a 59-acre pond holding 17,922 soundings across 348 km. It is a finding, not an
+    // instruction, and acting on it would attribute a whole state's measurements to one pond.
+    const t = convexTest(schema, modules);
+    const surveyed = await seedBody(t, 'Great Pond', 0.05, 1e7);
+    await seedBody(t, 'North Pond', 0.01, 2.4e5, '999999', { lat: 46, lng: -69 });
+
+    const result = await t.query(internal.waterBodies.matchBathymetryLakes, {
+      lakes: [
+        {
+          key: '870',
+          point: { lat: 44, lng: -72 },
+          samplePoints: smallSurvey(0.05),
+          nhdId: '999999',
+        },
+      ],
+    });
+    expect(result.matches[0]?.waterBodyId).toBe(surveyed);
+    expect(result.matches[0]?.crosswalk).toBe('disagreed');
+  });
+
+  test('cannot rescue a key the containment gate rejected', async () => {
+    // The re-key lane is gated on the containment test FAILING (D95 rule 0), and it is a separate
+    // piece of work. The crosswalk must not quietly become a back door into it.
+    const t = convexTest(schema, modules);
+    await seedBody(t, 'Wallagrass First Lake', 0.02, 1.6e6, '142978563');
+
+    const result = await t.query(internal.waterBodies.matchBathymetryLakes, {
+      lakes: [
+        {
+          key: '9861',
+          // A survey far wider than the body: containment fails, and an id cannot fix that.
+          point: { lat: 44, lng: -72 },
+          samplePoints: smallSurvey(0.5),
+          nhdId: '142978563',
+        },
+      ],
+    });
+    expect(result.matches).toEqual([]);
+    expect(result.rejects[0]?.key).toBe('9861');
+  });
+
+  test('says nothing about the crosswalk when none was supplied', async () => {
+    // Every non-Maine lane sends no id, and an absent field must not read as a disagreement.
+    const t = convexTest(schema, modules);
+    await seedBody(t, 'Winnipesaukee', 0.05, 1e7);
+    const result = await t.query(internal.waterBodies.matchBathymetryLakes, {
+      lakes: [{ key: 'NHLAK1', point: { lat: 44, lng: -72 }, samplePoints: smallSurvey(0.05) }],
+    });
+    expect(result.matches[0]?.crosswalk).toBeUndefined();
+  });
+
+  test('says `confirmed`, not `promoted`, when it only agrees with geometry', () => {
+    // ⚠ The distinction the first run's counter could not make. 1,418 of 1,474 keyed lakes "agreed"
+    // — but agreement is mostly corroboration, and reporting it as repair would let a number that is
+    // mostly "we were already right" read as "we fixed 1,418 lakes".
+    const t = convexTest(schema, modules);
+    return (async () => {
+      const only = await seedBody(t, 'Sebago Lake', 0.05, 1e7, '142978563');
+      const result = await t.query(internal.waterBodies.matchBathymetryLakes, {
+        lakes: [
+          {
+            key: '5271',
+            point: { lat: 44, lng: -72 },
+            samplePoints: smallSurvey(0.05),
+            nhdId: '142978563',
+          },
+        ],
+      });
+      expect(result.matches[0]?.waterBodyId).toBe(only);
+      expect(result.matches[0]?.crosswalk).toBe('confirmed');
+    })();
+  });
+
+  test('records a disagreement when the id resolves to nothing at all', async () => {
+    // 192 MIDAS numbers carry no Permanent_Identifier, and a body can also have been pruned since
+    // the crosswalk was archived. Neither is a reason to drop a survey that geography placed.
+    const t = convexTest(schema, modules);
+    const id = await seedBody(t, 'Sebago Lake', 0.05, 1e7);
+    const result = await t.query(internal.waterBodies.matchBathymetryLakes, {
+      lakes: [
+        {
+          key: '5271',
+          point: { lat: 44, lng: -72 },
+          samplePoints: smallSurvey(0.05),
+          nhdId: 'not-a-body',
+        },
+      ],
+    });
+    expect(result.matches[0]?.waterBodyId).toBe(id);
+    expect(result.matches[0]?.crosswalk).toBe('disagreed');
+  });
+});

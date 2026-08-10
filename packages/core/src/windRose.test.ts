@@ -1,12 +1,17 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
+import { MIN_FETCH_CLAUSE_M } from './lakeCaption';
 import {
   exposureIndex,
+  isPlausibleStrongWindHours,
   isPlausibleWindRose,
   mostExposedSector,
   normalizeRose,
+  STRONG_WIND_MIN_MPS,
+  WIND_ARCHIVE_MIN_FETCH_M,
   WIND_ROSE_MONTHS,
   WIND_ROSE_SECTORS,
+  windHoleSectors,
 } from './windRose';
 
 /** Willoughby's real winter rose counts, NREL WTK 2 km, Dec–Mar 2012. Bimodal along the trough. */
@@ -163,5 +168,111 @@ describe('mostExposedSector', () => {
         },
       ),
     );
+  });
+});
+
+describe('sustained wind (N7-3)', () => {
+  /** Five winters of Dec–Mar, which is what `WTK_YEARS` fetches. */
+  const FIVE_WINTERS = 5 * 24 * (31 + 31 + 28 + 31);
+
+  const sixteen = (over: Record<number, number> = {}) =>
+    Array.from({ length: 16 }, (_, i) => over[i] ?? 0);
+
+  it('20 mph is the threshold, at the height WTK reports', () => {
+    // 20 mph is 8.9408 m/s; the constant is rounded to 8.94, which is 0.8 mm/s of daylight and
+    // deliberate — this is a tunable magnitude, not a physical boundary, and a threshold written to
+    // four decimal places invites somebody to think the fourth one means something.
+    expect(STRONG_WIND_MIN_MPS).toBeCloseTo(20 * 0.44704, 2);
+    // `windspeed_10m` is at 10 m, which is standard anemometer height, so this compares directly
+    // with a reported wind speed and needs no conversion fudge.
+    expect(STRONG_WIND_MIN_MPS).toBe(8.94);
+  });
+
+  it('validates counts against the sample rather than against a sum of one', () => {
+    // The opposite check to a rose's. These are absolute hours, so the failure to catch is a sector
+    // claiming more strong hours than the record contained.
+    expect(
+      isPlausibleStrongWindHours({
+        strongWindHours: sixteen({ 3: 400, 4: 250 }),
+        sampledWindHours: FIVE_WINTERS,
+      }),
+    ).toBe(true);
+    expect(
+      isPlausibleStrongWindHours({
+        strongWindHours: sixteen({ 3: FIVE_WINTERS + 1 }),
+        sampledWindHours: FIVE_WINTERS,
+      }),
+    ).toBe(false);
+  });
+
+  it('rejects the shapes a half-written row takes', () => {
+    expect(isPlausibleStrongWindHours({})).toBe(false);
+    expect(isPlausibleStrongWindHours({ strongWindHours: [1, 2, 3] })).toBe(false);
+    expect(isPlausibleStrongWindHours({ strongWindHours: sixteen(), sampledWindHours: 0 })).toBe(
+      false,
+    );
+    expect(
+      isPlausibleStrongWindHours({ strongWindHours: sixteen({ 0: -1 }), sampledWindHours: 100 }),
+    ).toBe(false);
+  });
+
+  it('reports per-winter rates, worst first', () => {
+    const wind = {
+      strongWindHours: sixteen({ 3: 500, 4: 250, 12: 50 }),
+      sampledWindHours: FIVE_WINTERS,
+      strongWindMinMps: STRONG_WIND_MIN_MPS,
+    };
+    const sectors = windHoleSectors(wind);
+    expect(sectors.map((s) => s.sector)).toEqual([3, 4, 12]);
+    // 500 hours over five winters is 100 a winter.
+    expect(sectors[0]?.hoursPerWinter).toBeCloseTo(100, 6);
+    expect(sectors[0]?.share).toBeCloseTo(500 / FIVE_WINTERS, 6);
+  });
+
+  it('applies the duration threshold at READ time, with no recompute', () => {
+    // The whole reason the duration lives here and the speed lives in the stored counts: this is
+    // the strongest form of configurable available.
+    const wind = {
+      strongWindHours: sixteen({ 3: 500, 4: 10 }),
+      sampledWindHours: FIVE_WINTERS,
+    };
+    expect(windHoleSectors(wind, 1).map((s) => s.sector)).toEqual([3, 4]);
+    expect(windHoleSectors(wind, 50).map((s) => s.sector)).toEqual([3]);
+    expect(windHoleSectors(wind, 500)).toEqual([]);
+  });
+
+  it('says nothing at all for a body with no sustained-wind data', () => {
+    // `[]` rather than `null`: "no sectors qualify" and "we never measured" call for the same
+    // action, and a caller forced to distinguish them would handle a null it has no use for.
+    expect(windHoleSectors({})).toEqual([]);
+    expect(windHoleSectors({ strongWindHours: sixteen({ 0: 5 }) })).toEqual([]);
+  });
+
+  it('breaks ties toward the lower sector, stably', () => {
+    const sectors = windHoleSectors({
+      strongWindHours: sixteen({ 9: 300, 2: 300 }),
+      sampledWindHours: FIVE_WINTERS,
+    });
+    expect(sectors.map((s) => s.sector)).toEqual([2, 9]);
+  });
+});
+
+describe('WIND_ARCHIVE_MIN_FETCH_M', () => {
+  // The whole point of the constant is that it is NOT the caption's bar. For one campaign the two
+  // were the same number, and `MIN_FETCH_CLAUSE_M` — chosen for pressure ridges — silently decided
+  // which bodies got a rose fetched at all, which under-served the wind-hole lane by construction.
+  // If someone ever collapses them back into one constant, this is what says so.
+  it('is a separate, lower bar than the caption clause', () => {
+    expect(WIND_ARCHIVE_MIN_FETCH_M).toBe(250);
+    expect(MIN_FETCH_CLAUSE_M).toBe(1000);
+    expect(WIND_ARCHIVE_MIN_FETCH_M).toBeLessThan(MIN_FETCH_CLAUSE_M);
+  });
+
+  it('leaves a band that carries sustained wind and no exposure clause', () => {
+    // A body between the two bars is the case the split exists for: it gets strong-wind hours
+    // (a speed question, no fetch minimum) and no pressure-ridge sentence (a fetch question).
+    const between = 500;
+    expect(between).toBeGreaterThanOrEqual(WIND_ARCHIVE_MIN_FETCH_M);
+    expect(between).toBeLessThan(MIN_FETCH_CLAUSE_M);
   });
 });
