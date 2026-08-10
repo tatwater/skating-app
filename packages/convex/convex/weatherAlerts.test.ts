@@ -213,3 +213,50 @@ describe('weatherAlerts.listForBody', () => {
     expect(await t.query(api.weatherAlerts.listForBody, { waterBodyId })).toEqual([]);
   });
 });
+
+describe('a partial poll failure must not surface a stale copy (Greptile P1, 2026-08-10)', () => {
+  /**
+   * The whole scenario end to end, through the real mutations rather than hand-built rows.
+   *
+   * A warning covering VT and NY is cached once per state. On the next poll NY answers with updated
+   * text and VT fails, so the two rows diverge — and the stale VT row was inserted first and never
+   * replaced, so it is the one `.take()` returns first. A first-wins dedupe shows the old severity.
+   */
+  test('a body spanning two states sees the freshest copy of one warning', async () => {
+    const t = convexTest(schema, modules);
+    // Champlain: the real reason this matters — the corpus's most prominent body spans VT and NY.
+    const waterBodyId = await seedBody(t, ['NY', 'VT']);
+
+    // Poll 1: both states answer, one warning, Moderate.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        alertsResponse([feature({ id: 'urn:oid:storm', severity: 'Moderate', headline: 'old' })]),
+      ),
+    );
+    await t.action(internal.weatherAlerts.refreshAlerts, {});
+
+    // Poll 2: NWS has upgraded it to Severe — but only NY answers. VT keeps its Moderate copy.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('area=VT')) return new Response('down', { status: 503 });
+        return alertsResponse([
+          feature({ id: 'urn:oid:storm', severity: 'Severe', headline: 'upgraded' }),
+        ]);
+      }),
+    );
+    await t.action(internal.weatherAlerts.refreshAlerts, {});
+
+    // Both copies are still cached — the failed state deliberately keeps what it had.
+    const rows = await t.run((ctx) => ctx.db.query('weatherAlerts').collect());
+    expect(rows.filter((r) => r.alertId === 'urn:oid:storm').length).toBeGreaterThan(1);
+
+    const alerts = await t.query(api.weatherAlerts.listForBody, { waterBodyId });
+
+    // One warning, and the upgraded text — not the stale copy that happens to sort first.
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]?.severity).toBe('Severe');
+    expect(alerts[0]?.headline).toBe('upgraded');
+  });
+});

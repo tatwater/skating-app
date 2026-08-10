@@ -55,6 +55,15 @@ export interface NwsAlert {
   zones: string[];
   /** The 2-letter states this alert was polled under. Rung 2's matcher. */
   states: string[];
+  /**
+   * When the row carrying this copy was last polled.
+   *
+   * **Present only on alerts read back from the cache**, which is why it is optional —
+   * `alertFromFeature` builds an alert before anything has stored it. It exists so
+   * {@link alertsForBody} can pick the *freshest* copy when the same alert arrives more than once;
+   * see the dedupe there for why that is not a tie-break detail.
+   */
+  fetchedAt?: number;
 }
 
 /**
@@ -124,25 +133,30 @@ export function alertsForBody(body: AlertMatchBody, alerts: readonly NwsAlert[])
       ? alerts.filter((a) => a.zones.some((z) => zones.includes(z)))
       : alerts.filter((a) => a.states.some((s) => body.states?.includes(s)));
 
-  // **Deduplicate on NWS's own alert id, and this is not defensive coding — it is load-bearing.**
+  // **Deduplicate on NWS's own alert id, keeping the FRESHEST copy.**
+  //
   // The cache stores **one row per (state, alert)** because the poll is per state and a state has to
   // be replaceable on its own (a Vermont poll must not clear Maine's warnings). So a single winter
-  // storm warning covering Vermont *and* New Hampshire is stored twice, under one `alertId`.
+  // storm warning covering Vermont *and* New Hampshire is stored twice under one `alertId`, and every
+  // border-spanning body matches both — including Lake Champlain, the most prominent body in the
+  // corpus. Without deduping, one warning renders as two.
   //
-  // Every border-spanning body then matches both rows — and Lake Champlain, the most prominent body
-  // in the corpus, spans two states. Without this it renders the same warning twice, which reads as
-  // two warnings.
+  // **Freshest rather than first, because "first" is reliably the stale one.** The two copies are
+  // identical only while both states are polling successfully. After a partial failure they diverge:
+  // Vermont refreshes to NWS's current text while New Hampshire keeps the copy it had, so severity,
+  // `endsMs` and the headline can all be a version behind. And `replaceStateAlerts` deletes and
+  // re-inserts, so a *refreshed* row has a newer `_creationTime` and sorts **later** than the stale
+  // one it should beat — first-wins would pick the stale copy as the default case, not the edge case.
   //
-  // The first occurrence wins; the rows are byte-identical apart from which state they were polled
-  // under, and that field is not rendered.
-  const seen = new Set<string>();
-  const deduped = matched.filter((a) => {
-    if (seen.has(a.id)) return false;
-    seen.add(a.id);
-    return true;
-  });
+  // An absent `fetchedAt` loses to any timestamp and ties keep the earlier element, so the order is
+  // total and stable either way.
+  const freshest = new Map<string, NwsAlert>();
+  for (const a of matched) {
+    const held = freshest.get(a.id);
+    if (!held || (a.fetchedAt ?? 0) > (held.fetchedAt ?? 0)) freshest.set(a.id, a);
+  }
 
-  return [...deduped].sort((a, b) => {
+  return [...freshest.values()].sort((a, b) => {
     const bySeverity = nwsSeverityRank(b.severity) - nwsSeverityRank(a.severity);
     if (bySeverity !== 0) return bySeverity;
     // Stable tie-break so the list does not shuffle between renders.

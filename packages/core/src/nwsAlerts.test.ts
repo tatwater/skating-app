@@ -165,3 +165,70 @@ describe('cross-state alerts (Greptile P1, 2026-08-10)', () => {
     expect(matched).toHaveLength(1);
   });
 });
+
+describe('stale-copy selection after a partial poll failure (Greptile P1, 2026-08-10)', () => {
+  /**
+   * The follow-on from the dedupe fix. Per-state rows are refreshed independently, so after a
+   * partial failure the two copies of one alert diverge — and the *stale* one sorts first, because
+   * `replaceStateAlerts` deletes and re-inserts so a refreshed row has a newer `_creationTime`.
+   */
+  it('keeps the freshest copy, not the first one seen', () => {
+    const stale = alert({
+      id: 'urn:oid:storm',
+      states: ['NH'],
+      severity: 'Moderate',
+      fetchedAt: 1_000,
+    });
+    const fresh = alert({
+      id: 'urn:oid:storm',
+      states: ['VT'],
+      severity: 'Severe',
+      fetchedAt: 2_000,
+    });
+    // Stale first — the order `.take()` actually returns.
+    const matched = alertsForBody({ states: ['NH', 'VT'] }, [stale, fresh]);
+    expect(matched).toHaveLength(1);
+    expect(matched[0]?.severity).toBe('Severe');
+  });
+
+  it('is order-independent', () => {
+    const stale = alert({
+      id: 'urn:oid:storm',
+      states: ['NH'],
+      severity: 'Moderate',
+      fetchedAt: 1_000,
+    });
+    const fresh = alert({
+      id: 'urn:oid:storm',
+      states: ['VT'],
+      severity: 'Severe',
+      fetchedAt: 2_000,
+    });
+    expect(alertsForBody({ states: ['NH', 'VT'] }, [fresh, stale])[0]?.severity).toBe('Severe');
+  });
+
+  it('carries the freshest copy’s end time and headline, not a mixture', () => {
+    const matched = alertsForBody({ states: ['NH', 'VT'] }, [
+      alert({ id: 'x', states: ['NH'], fetchedAt: 1_000, endsMs: 100, headline: 'old' }),
+      alert({ id: 'x', states: ['VT'], fetchedAt: 2_000, endsMs: 999, headline: 'new' }),
+    ]);
+    expect(matched[0]?.endsMs).toBe(999);
+    expect(matched[0]?.headline).toBe('new');
+  });
+
+  it('prefers a timestamped copy over one with no timestamp', () => {
+    const matched = alertsForBody({ states: ['NH', 'VT'] }, [
+      alert({ id: 'x', states: ['NH'], severity: 'Minor' }),
+      alert({ id: 'x', states: ['VT'], severity: 'Severe', fetchedAt: 5 }),
+    ]);
+    expect(matched[0]?.severity).toBe('Severe');
+  });
+
+  it('keeps the earlier element on an exact tie, so the result is stable', () => {
+    const matched = alertsForBody({ states: ['NH', 'VT'] }, [
+      alert({ id: 'x', states: ['NH'], areaDesc: 'first', fetchedAt: 7 }),
+      alert({ id: 'x', states: ['VT'], areaDesc: 'second', fetchedAt: 7 }),
+    ]);
+    expect(matched[0]?.areaDesc).toBe('first');
+  });
+});

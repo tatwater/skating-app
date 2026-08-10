@@ -245,6 +245,10 @@ export const listForBody = query({
         severity: row.severity,
         zones: row.zones,
         states: row.states,
+        // Carried so `alertsForBody` can prefer the freshest copy of a multi-state alert — after a
+        // partial poll failure the per-state rows diverge, and without this the matcher cannot tell
+        // which one NWS updated most recently.
+        fetchedAt: row.fetchedAt,
       };
       if (row.headline) alert.headline = row.headline;
       if (row.areaDesc) alert.areaDesc = row.areaDesc;
