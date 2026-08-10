@@ -11,49 +11,47 @@
 
 ## Where things stand
 
-> ### 🔄 In flight — campaign `n7-3-20260809`, updated 2026-08-09 afternoon (N7-3)
+> ### ✅ COMPLETE — campaign `n7-3-20260809`, 2026-08-09
 >
-> Branch **`phase-n7-3-unified-corpus`**. Decisions **D131–D137** in
-> [`01-decisions.md`](./01-decisions.md).
+> Branch **`phase-n7-3-unified-corpus`**, pushed. Decisions **D131–D137**. Every pass has run and
+> every number below is measured.
 >
-> | pass | state |
+> | pass | result |
 > | --- | --- |
-> | elevation | ✅ **99.5%** — 24,834 of 24,958, all at 1 m LiDAR |
-> | depth | ✅ 24.2%, **81.2% of stored depths measured**; `state_agency` 0 → **3,033** |
-> | wind fetch (1 km) | ✅ **5,910 cell-years archived**, 7,092 objects mirrored to R2 |
-> | wind `derive` | ✅ **1,193 / 1,193 bodies stamped**, zero requests, zero cells missing |
-> | wind fetch (250 m) | ⬜ **D135** — 41,855 new requests, ~60 h. Resumable; start it and leave it |
-> | bathymetry chain | ✅ ran end to end: **2,066 lakes → 49,362 lines**, 2,057 bodies stamped (was 2,022). Tiles NOT uploaded — see below |
-> | `osm→osm` lane | ✅ **D136** built + tested, **not yet re-merged** |
-> | D95 re-key lane | ✅ built + tested, **not yet run** |
-> | `regionStats:recompute` | ⬜ last, always |
+> | corpus | **24,953 listed** (24,961 rows incl. 8 retired-duplicate tombstones) |
+> | elevation | **99.5%** — 24,834, 3DEP, 98.2% at 1 m LiDAR |
+> | depth | 24.2% overall · **83–90% above 50 acres** · 81.2% of stored depths measured |
+> | `state_agency` | 0 → **3,033 measurements** |
+> | wind `derive` | **1,193 / 1,193**, zero requests, from the archive |
+> | wind fetch (250 m) | 🔄 running — 41,855 requests, ~53 h left, **0 failed** |
+> | bathymetry | join **2,756/2,784 (99%)** → build **2,298 lakes / 52,522 lines** → **2,287 bodies** |
+> | D95 re-key | **293 recovered, +232 net-new after the density gate** (projected +217) |
+> | `regionStats` | ✅ recomputed — 24,953 bodies × 5 metrics × 5 states |
 >
-> #### ⚠ The ordering that matters
+> #### What the campaign found that no plan predicted
 >
-> **Both corpus fixes must land before the bathymetry chain re-runs.** The join is keyed on
-> `externalId`, so a re-merge that collapses duplicates while a tileset exists orphans coverage.
-> Order: re-merge → re-load → prune → join → build → tile → coverage → `regionStats`.
+> - **There was no `osm→osm` matching lane** (D136). `Mud Pond Swamp` was in the corpus twice.
+> - **The merge collapsed duplicates and the corpus kept them** — `importCanonical` is an upsert, and
+>   `pruneNotInCampaign` is blinded by re-running a campaign under its own id. `absorbed.ndjson` +
+>   `retire-absorbed` closes it; 8 rows retired, nothing deleted.
+> - **One constant was doing two jobs** (D135) — the wind fetch was gated by the caption's bar.
+> - **The census read a different number from the rule it audits** (D137).
+> - **Depth's shortfall is source coverage, not the join.** Measured by point-in-polygon of all 40,260
+>   source records: stored coverage tracks source reach within 1–2 points in every area band. 1,489
+>   bodies ≥ 10 ha have no source point inside them at all, concentrated in **MA (443, reach 58.7%)**
+>   and **NY (629)**. MassGIS is already fully exploited — it holds only **265 distinct lakes**.
+>   Closing this needs new state sources, not better joining.
+> - **A re-key optimisation validated on the wrong workload** cost 4 h/key before being deleted; and
+>   the build could not see the re-keyed lakes at all, which would have shipped as "293 recovered"
+>   drawing none of them.
 >
-> #### What the audit found that this document did not know
+> #### Outstanding
 >
-> - **There was no `osm→osm` matching lane** (D136). Three lanes ran; none matched a catalogue
->   against itself, so an OSM relation and its own outer way both shipped. 37 pairs, **every one of
->   the 18 at IoU ≥ 0.6 is OSM–OSM**, two at IoU 1.000, all wetland. `Mud Pond Swamp` is in the
->   corpus twice. Fixed at a 0.9 bar; the loose cross-catalogue pairs stay queued.
-> - **The wind fetch was gated by the caption's constant** (D135). `MIN_FETCH_CLAUSE_M` was chosen
->   for pressure ridges and was silently deciding wind-hole coverage too, which has no fetch minimum.
-> - **The census read a different number from the rule it audits** (D137). Four "under-floor"
->   wetlands were an artifact of banding on `surfaceAreaSqM` where the floor ran on `sourceAreaSqM`.
->   126 bodies sit in that straddle band; the prune already got this right, the census did not.
-> - **Depth's 24.2% probably has the wrong denominator.** The corpus holds **5,882 non-wetland bodies
->   over 10 ha** — HydroLAKES' and GLOBathy's floor — against 6,033 with a depth. `corpusStats` now
->   bands by area so this can be confirmed rather than inferred from two close numbers.
->
-> #### Three sources loaded that predate this document
->
-> NH depth **band polygons** (624 lakes, max *and* integrated mean — layer 1 of the service N6b read
-> layer 0 of), NYSDEC **CSLAP** (278 lakes, its own rung per D133), and Maine's **MIDAS → NHD
-> crosswalk** (5,611 of 5,803 keys).
+> - The **250 m wind fetch** (~53 h), then `derive` again to stamp ~11,118 bodies.
+> - The tileset is **built but not uploaded** — `VITE_BATHYMETRY_PMTILES_URL` still points at the
+>   N6b key. Publishing is a deliberate step.
+> - **MA/NY depth sources** — a research question, now scoped: two states, ~1,072 lakes, mostly
+>   25–50 acres.
 
 ## The order, and why it is this order
 

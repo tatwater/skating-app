@@ -1254,7 +1254,7 @@ I want to do it ASAP."* The Copernicus deep link (D75) ships in N6c either way.
   daylight, before the drive. NAIP's leaf-on summer imagery is useless for ice and ideal for access.
 
 **N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
-🔄 **In flight, 2026-08-09** — the phase this roadmap had no entry for at all until now. See
+✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See
 [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md),
 [`HANDOFF-n7-classification.md`](./HANDOFF-n7-classification.md) and
 [`HANDOFF-n7-2-data-campaign.md`](./HANDOFF-n7-2-data-campaign.md). Decisions **D92–D105** and
@@ -1275,9 +1275,9 @@ per catalogue (D109/D110). 178,095 groups in, **24,958 bodies** out.
 | elevation | ✅ **99.5%** — 3DEP, 98.2% at 1 m LiDAR, replacing a metered forecast API (D127) |
 | depth | ✅ 24.2% overall, **83–90% above 50 acres**, 81.2% of stored depths measured |
 | wind roses | ✅ 1,193 bodies, derived offline from a byte-faithful archive (D134) |
-| wind, widened | 🔄 250 m fetch gate (D135) — 41,855 requests, ~60 h, running |
-| bathymetry | ✅ 2,066 lakes → 49,362 contour lines → 2,057 bodies |
-| `regionStats` | ⬜ last pass, always |
+| wind, widened | 🔄 250 m fetch gate (D135) — 41,855 requests, ~53 h left, 0 failed |
+| bathymetry | ✅ **2,298 lakes → 52,522 contour lines → 2,287 bodies** (D95 re-key: +232 net-new) |
+| `regionStats` | ✅ recomputed — 24,953 bodies × 5 metrics × 5 states |
 
 **Four findings worth carrying forward.**
 

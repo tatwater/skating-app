@@ -1,22 +1,22 @@
 # N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign on top
 
-> **Status:** 🔄 **Campaign `n7-3-20260809` in flight** (2026-08-09). The corpus is live on dev and
+> **Status:** ✅ **Campaign `n7-3-20260809` COMPLETE** (2026-08-09) — every pass run, `regionStats` last. The corpus is live on dev and
 > the enrichment is most of the way through. Originally written 2026-08-03 after a measurement session
 > that corrected four of its own findings; the numbers below are the survivors, and anything still
 > marked *unverified* is marked that way on purpose.
 >
-> ### 🔄 Campaign `n7-3-20260809` — where it stands, 2026-08-09
+> ### ✅ Campaign `n7-3-20260809` — as it finished, 2026-08-09
 >
 > | lane | state |
 > | --- | --- |
-> | corpus | 24,958 bodies · 126 sub-areas · **re-merging now** with D136's `osm→osm` lane |
+> | corpus | **24,953 listed** · 126 sub-areas · D136's `osm→osm` lane ran, 8 duplicates retired |
 > | elevation | ✅ **99.5%** — 24,834, 3DEP, 98.2% at 1 m LiDAR (D127) |
 > | depth | ✅ 24.2% overall · **83–90% above 50 acres** · 81.2% of stored depths measured |
 > | wind roses | ✅ **1,193 / 1,193** derived from the archive, zero requests (D134) |
-> | wind, widened | 🔄 250 m gate (D135) — 41,855 requests, ~60 h, running |
-> | bathymetry | ✅ 2,066 lakes → 49,362 lines → **2,057 bodies** in `bathymetryCoverage` |
-> | D95 re-key lane | ✅ built + tested — **runs in the next join** |
-> | `regionStats` | ⬜ the campaign's last pass |
+> | wind, widened | 🔄 250 m gate (D135) — 41,855 requests, ~53 h left, **0 failed** |
+> | bathymetry | ✅ 2,298 lakes → 52,522 lines → **2,287 bodies** in `bathymetryCoverage` |
+> | D95 re-key lane | ✅ **RUN** — 293 recovered, **+232 net-new** after the gate (projected +217) |
+> | `regionStats` | ✅ recomputed — 24,953 bodies × 5 metrics × 5 states |
 >
 > **Decisions added this round: D135–D137.** ⚠ **`bathymetryCoverage` is the table's name** — a
 > 2026-08-09 audit reported it empty, which was an artifact of querying `contourCoverage`, a table
@@ -778,9 +778,24 @@ and rejected both — `me-dep-soundings:870#1` at **0%** containment and `870#2`
    the moment a batch splits — every later assignment shifts by one and soundings land in the wrong
    lakes with nothing in the log. Caught before it ran; there is a test for the ordering.
 
-⚠ **Still to run.** The lane is built and tested but has never executed against the archive, so the
-217 figure remains this document's projection rather than a measurement. It runs as part of the
-re-merge chain, and `--keys` is not a thing — eligibility is the gate, by design.
+### ✅ RUN 2026-08-09 — and it beat the projection
+
+| | projected here | measured |
+| --- | --- | --- |
+| bodies MIDAS 870 holds | ~263 | **270** (251 + 19 across its two clusters) |
+| soundings landing in no body | 3.7% | **1.7%** (580 of 34,805) |
+| net-new lakes after the density gate | 217 | **232** |
+
+11 containment rejects entered the lane and **0 were still refused** after it. The layer went
+2,066 → **2,298 lakes**.
+
+⚠ **Two things the run found that the design did not.** The point resolver was a server query fronted
+by a lookup grid; the grid was validated on a dense MassGIS survey (28.6× fewer calls) and did
+nothing at all on MIDAS 870 (16,191 measurements → 16,155 cells, 0.2%) — the one key the lane exists
+for. It now resolves **locally** against `bodies.ndjson` in seconds; see `corpusIndex.ts`. And **the
+build could not see the re-keyed lakes**, because it composes its work list from the archives while a
+re-keyed lake exists only inside the join's process — it would have reported *"293 recovered"* and
+drawn none of them.
 
 ---
 
