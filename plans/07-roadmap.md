@@ -988,7 +988,7 @@ for all of it.)*
 > bodies**. The one number still outstanding is `regionStats:recompute`, which is the last pass of the
 > campaign and gates only the **decile** copy (A5), not the rest of N6c-1.
 >
-> See [`HANDOFF-n7-2-data-campaign.md`](./HANDOFF-n7-2-data-campaign.md) for the live campaign state.
+> See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) for the campaign's final state.
 
 **N6c-1 — geometry stats, elevation, the caption, and profile-richness prominence.** ✅ **BUILT
 2026-08-02** (branch `phase-N6c-1-lake-profiles`; **unpushed, undeployed, ETL passes not yet run**)
@@ -1254,11 +1254,10 @@ I want to do it ASAP."* The Copernicus deep link (D75) ships in N6c either way.
   daylight, before the drive. NAIP's leaf-on summer imagery is useless for ice and ideal for access.
 
 **N7 — The unified corpus: one record per lake, two catalogues behind it, and a full data campaign.**
-✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See
-[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md),
-[`HANDOFF-n7-classification.md`](./HANDOFF-n7-classification.md) and
-[`HANDOFF-n7-2-data-campaign.md`](./HANDOFF-n7-2-data-campaign.md). Decisions **D92–D105** and
-**D109–D137**.
+✅ **Corpus + campaign complete on dev, 2026-08-09** (the 250 m wind fetch runs on; prod deferred) — the phase this roadmap had no entry for at all until now. See [`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) — the one N7 document, with the
+operator's half (commands, the governing rule, and everything expensive to re-learn) at the bottom —
+and [`docs/water-body-data.md`](../docs/water-body-data.md) for the same story written for humans.
+Decisions **D92–D105** and **D109–D137**.
 
 Three PRs so far: **#39** (the merge, the master list, the review queue), **#40** (the audit and the
 referee), and the current unmerged branch `phase-n7-3-unified-corpus` (the data campaign).
