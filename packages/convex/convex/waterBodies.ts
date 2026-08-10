@@ -2930,8 +2930,23 @@ export const retireAbsorbedBodies = internalMutation({
     ),
     campaignId: v.optional(v.string()),
     apply: v.optional(v.boolean()),
+    /**
+     * `source:externalId` of every row **already retired by an earlier batch of the same pass**.
+     *
+     * ⚠ **The in-handler dedup below is per-call, and the caller batches.** Two merge-group keys can
+     * resolve to the same document — `Divol Pond` arrives as both an OSM key and an NHD one — and
+     * within one call the `handled` set catches that. Split across a batch boundary it did not, so
+     * the DRY RUN counted the row twice while the apply (which sees a tombstone the second time)
+     * counted it once. *A dry run that does not predict the apply is worse than no dry run*, and
+     * that claim was only true inside a batch until this argument existed.
+     *
+     * Keyed on the **resolved** row's own `source:externalId`, not on the input ref, which is what
+     * makes it work across differing keys: both of Divol Pond's pairs resolve to the same document
+     * and therefore to the same string. `retiredKeys` in the return value is what to feed back.
+     */
+    alreadyRetired: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, { pairs, campaignId, apply }) => {
+  handler: async (ctx, { pairs, campaignId, apply, alreadyRetired }) => {
     /**
      * Resolve a merge-group key to the row that actually holds it.
      *
@@ -2994,7 +3009,12 @@ export const retireAbsorbedBodies = internalMutation({
     // as both an OSM key and an NHD one. Under `--apply` the second attempt would harmlessly skip as
     // `already merged`, but the DRY RUN would count it, and a dry run that does not predict the
     // apply is worse than no dry run.
+    //
+    // Seeded from `alreadyRetired` so this holds **across the caller's batches too**, not only within
+    // one call — the resolved key rather than the input ref, so differing keys for one row collapse.
     const handled = new Set<Id<'waterBodies'>>();
+    const handledKeys = new Set<string>(alreadyRetired ?? []);
+    const keyOf = (b: Doc<'waterBodies'>) => `${b.source}:${b.externalId}`;
 
     for (const pair of pairs) {
       const label = `${pair.absorbed.source}:${pair.absorbed.externalId} → ${pair.survivor.source}:${pair.survivor.externalId}`;
@@ -3023,14 +3043,15 @@ export const retireAbsorbedBodies = internalMutation({
         skip('survivor is itself merged', label);
         continue;
       }
-      if (handled.has(absorbed._id)) {
+      if (handled.has(absorbed._id) || handledKeys.has(keyOf(absorbed))) {
         skip('already retired by an earlier pair in this pass', label);
         continue;
       }
       handled.add(absorbed._id);
+      handledKeys.add(keyOf(absorbed));
       retired.push({
-        absorbed: `${absorbed.source}:${absorbed.externalId}`,
-        into: `${survivor.source}:${survivor.externalId}`,
+        absorbed: keyOf(absorbed),
+        into: keyOf(survivor),
         name: absorbed.name || '(unnamed)',
       });
       if (apply === true) {
@@ -3050,6 +3071,10 @@ export const retireAbsorbedBodies = internalMutation({
       retired: retired.length,
       // Named rather than only counted: a retirement you cannot look up is a deletion nobody can check.
       samples: retired.slice(0, 20),
+      // **Uncapped, unlike `samples`, because this one is machinery rather than a report.** The
+      // caller feeds it back as the next batch's `alreadyRetired`, so truncating it would silently
+      // re-open the cross-batch double-count at whatever `--batch` exceeds the sample cap.
+      retiredKeys: retired.map((r) => r.absorbed),
       skipped,
       skippedSamples,
     };

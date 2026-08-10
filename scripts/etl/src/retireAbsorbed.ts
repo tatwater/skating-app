@@ -108,6 +108,16 @@ function main(): void {
   // A skip means a duplicate row STAYS. That is at least as worth naming as a retirement.
   const skippedSamples: { pair: string; why: string }[] = [];
 
+  // **Carried across batches, because one row can arrive under two keys.** The mutation's own
+  // one-row-once guard is per-call, and two merge-group keys resolving to the same document —
+  // `Divol Pond` as both an OSM key and an NHD one — land in different batches whenever the boundary
+  // falls between them. Without this the dry run counted such a row twice while `--apply` counted it
+  // once, so the dry run stopped predicting the apply at exactly the sizes nobody tests at.
+  //
+  // These are the RESOLVED row keys the mutation returns, not the input refs, which is what lets two
+  // differing keys collapse to one string.
+  const retiredKeys: string[] = [];
+
   for (let i = 0; i < pairs.length; i += batch) {
     const slice = pairs
       .slice(i, i + batch)
@@ -117,13 +127,16 @@ function main(): void {
       scanned: number;
       retired: number;
       samples: { absorbed: string; into: string; name: string }[];
+      retiredKeys: string[];
       skipped: Record<string, number>;
       skippedSamples: { pair: string; why: string }[];
     }>('waterBodies:retireAbsorbedBodies', {
       pairs: slice,
       ...(campaignId ? { campaignId } : {}),
       ...(apply ? { apply: true } : {}),
+      ...(retiredKeys.length > 0 ? { alreadyRetired: retiredKeys } : {}),
     });
+    retiredKeys.push(...result.retiredKeys);
     totals.scanned += result.scanned;
     totals.retired += result.retired;
     for (const [why, n] of Object.entries(result.skipped)) skipped[why] = (skipped[why] ?? 0) + n;

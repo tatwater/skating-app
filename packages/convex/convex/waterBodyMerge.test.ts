@@ -338,7 +338,12 @@ describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert 
     t: ReturnType<typeof convexTest>,
     name: string,
     externalId: string,
-    opts: { dedupStatus?: 'clean' | 'merged'; mergedIntoId?: Id<'waterBodies'> } = {},
+    opts: {
+      dedupStatus?: 'clean' | 'merged';
+      mergedIntoId?: Id<'waterBodies'>;
+      /** A catalogue id that differs from `externalId` — the second key the same row answers to. */
+      osmId?: string;
+    } = {},
   ) {
     return t.run((ctx) =>
       ctx.db.insert('waterBodies', {
@@ -352,6 +357,7 @@ describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert 
         centroid: CENTROID,
         dedupStatus: opts.dedupStatus ?? ('clean' as const),
         ...(opts.mergedIntoId ? { mergedIntoId: opts.mergedIntoId } : {}),
+        ...(opts.osmId ? { osmId: opts.osmId } : {}),
         createdAt: Date.now(),
       }),
     ) as Promise<Id<'waterBodies'>>;
@@ -517,6 +523,75 @@ describe('waterBodies.retireAbsorbedBodies — the half of the merge the upsert 
       into: 'osm:way/1',
       name: 'Mud Pond Swamp',
     });
+  });
+
+  test('retires a row once when two pairs in ONE call resolve to it', async () => {
+    // `Divol Pond` arrives as both an OSM key and an NHD one: the row is stored under `way/2` and
+    // carries `osmId: way/dup`, so the catalogue-id fallback lands both pairs on the same document.
+    const t = harness();
+    await seedKeyed(t, 'Survivor', 'way/1');
+    await seedKeyed(t, 'Divol Pond', 'way/2', { osmId: 'way/dup' });
+
+    const res = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [
+        { survivor: ref('way/1'), absorbed: ref('way/2') },
+        { survivor: ref('way/1'), absorbed: ref('way/dup') },
+      ],
+    });
+    expect(res.retired).toBe(1);
+    expect(res.skipped['already retired by an earlier pair in this pass']).toBe(1);
+  });
+
+  test('and once when those two pairs land in DIFFERENT batches', async () => {
+    // The guard above is per-call and the driver batches, so the boundary can fall between the two
+    // keys for one row. `alreadyRetired` carries the resolved keys across — without it the dry run
+    // counted this row twice while `--apply` counted it once, and a dry run that does not predict
+    // the apply is worse than no dry run.
+    const t = harness();
+    await seedKeyed(t, 'Survivor', 'way/1');
+    await seedKeyed(t, 'Divol Pond', 'way/2', { osmId: 'way/dup' });
+
+    const first = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/2') }],
+    });
+    expect(first.retired).toBe(1);
+    // The RESOLVED key, not the input ref — which is what lets a differing key collapse onto it.
+    expect(first.retiredKeys).toEqual(['osm:way/2']);
+
+    const second = await t.mutation(internal.waterBodies.retireAbsorbedBodies, {
+      pairs: [{ survivor: ref('way/1'), absorbed: ref('way/dup') }],
+      alreadyRetired: first.retiredKeys,
+    });
+    expect(second.retired).toBe(0);
+    expect(second.skipped['already retired by an earlier pair in this pass']).toBe(1);
+  });
+
+  test('the batched dry run predicts the batched apply', async () => {
+    // The property the two tests above exist to protect, asserted directly: same pairs, same batch
+    // boundary, same total. It failed at 1 vs 2 before `alreadyRetired`.
+    const pairs = [
+      { survivor: ref('way/1'), absorbed: ref('way/2') },
+      { survivor: ref('way/1'), absorbed: ref('way/dup') },
+    ];
+    const runBatched = async (apply: boolean) => {
+      const t2 = harness();
+      await seedKeyed(t2, 'Survivor', 'way/1');
+      await seedKeyed(t2, 'Divol Pond', 'way/2', { osmId: 'way/dup' });
+      const keys: string[] = [];
+      let total = 0;
+      for (const pair of pairs) {
+        const res = await t2.mutation(internal.waterBodies.retireAbsorbedBodies, {
+          pairs: [pair],
+          ...(apply ? { apply: true } : {}),
+          ...(keys.length > 0 ? { alreadyRetired: keys } : {}),
+        });
+        keys.push(...res.retiredKeys);
+        total += res.retired;
+      }
+      return total;
+    };
+    expect(await runBatched(false)).toBe(await runBatched(true));
+    expect(await runBatched(false)).toBe(1);
   });
 
   test('audits with no actor, because the system acted and no human did', async () => {
