@@ -445,36 +445,57 @@ roadmap and N7; measured-sample wall-clock estimates, the abort-on-a-streak rule
 `biome --write --unsafe` trap and the scripted-string-replace trap all in N7. Nothing was lost by
 deleting it.
 
-### ⬜ Still outstanding: `backfillRepresentativePoint`, and the rename's second stage
+### ✅ `backfillRepresentativePoint` — **run 2026-08-10**, all three tables clean
 
-**The one genuinely live item in that document, and it is still live.** Measured against dev,
-2026-08-10:
+The one genuinely live item in that handoff. Run before this phase's PR, against dev:
 
-| table | has `representativePoint` | still has `centroid` |
-| --- | --- | --- |
-| `waterBodies` | ✅ all (written by the re-import) | yes |
-| `adminAreas` | ✅ all | yes |
-| **`waterBodySubAreas`** | ⬜ **117 of 126 — nine short** | yes |
+| table | scanned | filled | note |
+| --- | --- | --- | --- |
+| `waterBodies` | **24,961** | 0 | already complete — the canonical re-import writes it |
+| `adminAreas` | 2,546 | 0 | already complete |
+| **`waterBodySubAreas`** | 126 | **9** | the N2-era Champlain bays, which predate the double-write |
 
-```bash
-pnpm --filter @skating/convex exec convex run waterBodies:backfillRepresentativePoint '{}'
-```
+The nine were Malletts Bay, Outer Malletts Bay, Burlington Bay, Shelburne Bay, Appletree Bay, Broad
+Lake, Arnold Bay, Little Eagle Bay and Inland Sea — every one of them hand-drawn in N2, before the
+stage-1 double-write existed. All 126 sub-areas now carry the field and **all 126 match `centroid`
+exactly**, which is the point: this was never a bad *assignment*, it was rows written before the
+writer.
 
-Once that is clean, **stage 2 of the `centroid` → `representativePoint` rename** can land: ~100 read
-sites, make the field required, drop `centroid`, remove the double-write. It is deliberately still
-unstarted — see [*§7*](#7-centroid-was-never-a-centroid-and-now-says-so) for why the readers were left
-alone in stage 1.
+*(24,961 = 24,953 listed + 8 retired-duplicate tombstones, which is the same arithmetic
+[`phase-N7-unified-corpus.md`](./phase-N7-unified-corpus.md) reports — an independent cross-check
+that the pass walked the whole table.)*
+
+> ### The three point fields, since two of them are the same thing
+>
+> This is the confusion the rename created and the reason it is still only half done:
+>
+> | field | what it is | on how many |
+> | --- | --- | --- |
+> | `centroid` | Turf `pointOnFeature`. Lands **on the shoreline** whenever the bbox centre falls outside the polygon | all rows, all three tables |
+> | `representativePoint` | **A rename of `centroid`, not a different point.** Byte-identical wherever both exist — measured: 126 of 126 sub-areas match exactly, zero differ | all rows, all three tables |
+> | `interiorPoint` | **The genuinely different one** — strictly interior, added by N6c-1 for weather sampling. Measured: differs from `centroid` on **1,200 of 1,200** sampled bodies | `waterBodies` only |
+>
+> So a reader asking *"don't we already have a point that isn't the centroid?"* is right — it is
+> `interiorPoint`, and it is on every body. `representativePoint` answers a different question: it is
+> the new **name**, mid-migration.
+
+### ⬜ Still outstanding: the rename's second stage
+
+A code change rather than a data pass, and now unblocked by the backfill above: ~100 read sites
+migrate to `representativePoint`, the field becomes required, `centroid` is dropped and the
+double-write removed. Readers were deliberately **left alone** in stage 1 — migrating them to
+`representativePoint ?? centroid` then would have been a hundred edits immediately undone by stage 2,
+where no fallback is needed at all.
 
 > ⚠️ **Never make it a true centroid.** The tempting reading of the name mismatch is to "fix" the
-> maths; it is the *name* that was wrong. `centroid` is Turf `pointOnFeature` and lands **on the
-> shoreline** for any curved lake — Willoughby's is ring vertex 199, Champlain's sits 30.7 km off.
-> Drive-time bands and the pin-less report's town stamp deliberately want a shoreline-ish point, and
-> the area centroid of a crescent lake is on land. `interiorPoint` exists separately for the one
-> consumer the offset genuinely hurt.
+> maths; it is the *name* that was wrong. `centroid` lands on the shoreline for any curved lake —
+> Willoughby's is ring vertex 199, Champlain's sits 30.7 km off. Drive-time bands and the pin-less
+> report's town stamp deliberately want a shoreline-ish point, and the area centroid of a crescent
+> lake is on land. `interiorPoint` exists separately for the one consumer the offset genuinely hurt.
 
 **N6c-2 note:** the reference links, the summary cards and the forecast's sample point all read
-`interiorPoint` first and fall back through `representativePoint` to `centroid`, so none of them is
-blocked on this — but the fallback chain is what stage 2 exists to delete.
+`interiorPoint` first and fall back through `representativePoint` to `centroid`. That fallback chain
+is exactly what stage 2 exists to delete.
 
 ### The `meetsAreaFloor` rule, which is durable and worth restating
 
