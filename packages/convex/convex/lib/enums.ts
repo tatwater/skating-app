@@ -498,6 +498,12 @@ export const IMPORT_RUN_KINDS = [
   'bathymetry_join', // scripts/bathymetry join — archived lakes matched to corpus bodies
   'bathymetry_build', // scripts/bathymetry build-contours — soundings/contours → drawable isobaths
   'bathymetry_tiles', // scripts/bathymetry tile — contours → PMTiles
+  // scripts/etl load-access — the N6d access pass. **Two kinds rather than one**, because they fail
+  // differently and in a fixed order: the parking stage failing leaves put-ins with lots they cannot
+  // resolve (`parkingMissing`), which is a *sequencing* error and reads as a data error if the two
+  // share a row. The put-in stage failing leaves lots nothing points at, which is merely incomplete.
+  'access_parking',
+  'access_put_ins',
 ] as const;
 
 /**

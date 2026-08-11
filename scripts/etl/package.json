@@ -12,6 +12,7 @@
     "load": "tsx src/load.ts",
     "load-depths": "tsx src/loadDepths.ts",
     "access-transform": "tsx src/accessCli.ts",
+    "load-access": "tsx src/loadAccess.ts",
     "load-sub-areas": "tsx src/loadSubAreas.ts",
     "prune-floor": "tsx src/pruneFloor.ts",
     "archive": "tsx src/fetchExtract.ts",

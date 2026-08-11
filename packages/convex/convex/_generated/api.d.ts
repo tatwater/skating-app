@@ -9,6 +9,7 @@
  */
 
 import type { ApiFromModules, FilterApi, FunctionReference } from "convex/server";
+import type * as accessPoints from "../accessPoints.js";
 import type * as accountDeletion from "../accountDeletion.js";
 import type * as admin from "../admin.js";
 import type * as adminAreas from "../adminAreas.js";
@@ -81,6 +82,7 @@ import type * as weather from "../weather.js";
 import type * as weatherAlerts from "../weatherAlerts.js";
 
 declare const fullApi: ApiFromModules<{
+  "accessPoints": typeof accessPoints;
   "accountDeletion": typeof accountDeletion;
   "admin": typeof admin;
   "adminAreas": typeof adminAreas;
