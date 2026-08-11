@@ -657,3 +657,189 @@ describe('D2 richness — the term this phase unblocks (D143)', () => {
     expect(await scoreWithPutIn(null)).toBeCloseTo(0, 6);
   });
 });
+
+describe('the operator write path (D72 amendment / D144)', () => {
+  async function seedModerator(t: ReturnType<typeof convexTest>) {
+    const subject = 'mod';
+    await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: subject,
+        displayName: subject,
+        username: subject,
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyFulfilled: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: false,
+          greatReportNearby: false,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'moderator' as const,
+        status: 'active' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    return t.withIdentity({ subject });
+  }
+
+  /**
+   * The amendment, as a test. The ~250 m radius bounds what the ETL will *guess*; a human's assertion
+   * has no distance limit, and a mile-away trailhead is the case this phase exists for.
+   */
+  test('an operator may associate a lot with a body at any distance whatsoever', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    const mod = await seedModerator(t);
+
+    const parkingAreaId = await mod.mutation(api.accessPoints.setOfficialParking, {
+      coord: northOfShore(5_000), // three miles from the ice
+      name: 'Trailhead Lot',
+      amenities: ['trail'],
+      waterBodyIds: [body],
+    });
+
+    const links = await t.run((ctx) => ctx.db.query('parkingAreaBodies').collect());
+    expect(links).toHaveLength(1);
+    expect(links[0]?.inferred).toBe(false);
+    expect((await t.run((ctx) => ctx.db.get(parkingAreaId)))?.source).toBe('official');
+  });
+
+  test('a member cannot write the operator rung', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    await expect(
+      t.mutation(api.accessPoints.setOfficialParking, {
+        coord: northOfShore(50),
+        amenities: [],
+        waterBodyIds: [body],
+      }),
+    ).rejects.toThrow();
+  });
+
+  /**
+   * D144's gate, enforced server-side as well as in the form — a rule only the UI knows is a rule the
+   * next UI forgets. It **refuses** rather than defaulting, because stamping `hike_in` silently would
+   * be the system making the assertion on the author's behalf.
+   */
+  test('a mile-long approach is refused unless hike-in is asserted explicitly', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    const mod = await seedModerator(t);
+    const putInId = (await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: northOfShore(5),
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'putIns'>;
+    const parkingAreaId = await mod.mutation(api.accessPoints.setOfficialParking, {
+      coord: northOfShore(3_000),
+      amenities: [],
+      waterBodyIds: [body],
+    });
+
+    await expect(
+      mod.mutation(api.accessPoints.setPutInAccess, { putInId, parkingAreaId }),
+    ).rejects.toThrow(/asserted as hike-in/);
+
+    await mod.mutation(api.accessPoints.setPutInAccess, {
+      putInId,
+      parkingAreaId,
+      approachKindOverride: 'hike_in',
+    });
+    const row = await t.run((ctx) => ctx.db.get(putInId));
+    expect(row?.approachKindOverride).toBe('hike_in');
+    // Straight-line and flagged as such: this is a request path, and D87 says never route from one.
+    expect(row?.approachRouted).toBe(false);
+    expect(row?.approachMeters).toBeGreaterThan(2_000);
+  });
+
+  test('a short association needs no assertion', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    const mod = await seedModerator(t);
+    const putInId = (await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: northOfShore(5),
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'putIns'>;
+    const parkingAreaId = await mod.mutation(api.accessPoints.setOfficialParking, {
+      coord: northOfShore(120),
+      amenities: [],
+      waterBodyIds: [body],
+    });
+
+    await mod.mutation(api.accessPoints.setPutInAccess, { putInId, parkingAreaId });
+    expect((await t.run((ctx) => ctx.db.get(putInId)))?.parkingAreaId).toBe(parkingAreaId);
+  });
+
+  /** A distance with nothing to walk from is worse than no distance. */
+  test('clearing the parking clears the approach it measured', async () => {
+    const t = convexTest(schema, modules);
+    const body = await seedSquareBody(t);
+    const mod = await seedModerator(t);
+    const putInId = (await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId: body,
+        coord: northOfShore(5),
+        source: 'osm' as const,
+        status: 'visible' as const,
+        approachMeters: 400,
+        approachRouted: true,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'putIns'>;
+
+    await mod.mutation(api.accessPoints.setPutInAccess, { putInId, clearParking: true });
+    const row = await t.run((ctx) => ctx.db.get(putInId));
+    expect(row?.parkingAreaId).toBeUndefined();
+    expect(row?.approachMeters).toBeUndefined();
+    expect(row?.approachRouted).toBeUndefined();
+  });
+
+  /** Hand edits and the ETL must not fight: an inference nobody thought about is left alone. */
+  test('an operator edit does not delete OSM inferences it simply did not mention', async () => {
+    const t = convexTest(schema, modules);
+    const a = await seedSquareBody(t, { name: 'Pond A' });
+    const b = await seedSquareBody(t, { name: 'Pond B', lat: 45 });
+    const mod = await seedModerator(t);
+
+    const parkingAreaId = await mod.mutation(api.accessPoints.setOfficialParking, {
+      coord: northOfShore(50),
+      amenities: [],
+      waterBodyIds: [a],
+    });
+    await t.run((ctx) =>
+      ctx.db.insert('parkingAreaBodies', {
+        parkingAreaId,
+        waterBodyId: b,
+        inferred: true,
+        createdAt: Date.now(),
+      }),
+    );
+
+    await mod.mutation(api.accessPoints.setOfficialParking, {
+      parkingAreaId,
+      coord: northOfShore(60),
+      amenities: [],
+      waterBodyIds: [a],
+    });
+
+    const links = await t.run((ctx) => ctx.db.query('parkingAreaBodies').collect());
+    expect(links).toHaveLength(2);
+  });
+});

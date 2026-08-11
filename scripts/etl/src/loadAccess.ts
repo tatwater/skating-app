@@ -29,7 +29,7 @@
 
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
-import { convexRun, type ImportRunKind, resolveDeployment, RunLogger } from '@skating/run-log';
+import { convexRun, type ImportRunKind, RunLogger, resolveDeployment } from '@skating/run-log';
 
 /** See the header: the corpus is what the mutation reads, so the input's own size proves nothing. */
 const DEFAULT_BATCH = 8;
@@ -166,7 +166,10 @@ function main(): void {
     covered: landed,
     omissions: [
       { reason: 'no corpus body within the association radius', count: totals.noBodyNearby ?? 0 },
-      { reason: 'a moderator had hidden this access point', count: totals.moderatorSuppressed ?? 0 },
+      {
+        reason: 'a moderator had hidden this access point',
+        count: totals.moderatorSuppressed ?? 0,
+      },
       { reason: "held by an operator's row (fields untouched)", count: totals.operatorHeld ?? 0 },
       { reason: 'batch failed and was skipped', count: skippedKeys.length },
     ].filter((o) => o.count > 0),

@@ -29,8 +29,8 @@
 
 import {
   ACCESS_ALERT_TTL_MS,
-  accessAlertExpiryFor,
   type AccessAlertVote,
+  accessAlertExpiryFor,
   accessAlertIsLive,
   currentSeason,
   deriveAccessAlertLifecycle,
@@ -43,8 +43,8 @@ import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
   type MutationCtx,
-  type QueryCtx,
   mutation,
+  type QueryCtx,
   query,
 } from './_generated/server';
 import { requireContributor, requireContributorRole } from './lib/auth';
@@ -108,19 +108,21 @@ export const create = mutation({
     if (args.targetType === 'put_in') {
       if (!args.putInId) throw new ConvexError('A put-in is required');
       const putIn = await ctx.db.get(args.putInId);
-      if (!putIn || putIn.status !== 'visible') throw new ConvexError('Put-in not found');
+      if (putIn?.status !== 'visible') throw new ConvexError('Put-in not found');
       waterBodyId = putIn.waterBodyId;
     } else {
       if (!args.parkingAreaId) throw new ConvexError('A parking area is required');
       const lot = await ctx.db.get(args.parkingAreaId);
-      if (!lot || lot.status !== 'visible') throw new ConvexError('Parking area not found');
+      if (lot?.status !== 'visible') throw new ConvexError('Parking area not found');
       // A lot can serve several bodies (D72 amendment). The alert is about the *lot*, so it is filed
       // against one body for the read path and shown on every body the lot serves — picking the
       // first association rather than fanning out a row per body, which would make one locked gate
       // look like three.
       const link = await ctx.db
         .query('parkingAreaBodies')
-        .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', args.parkingAreaId as Id<'parkingAreas'>))
+        .withIndex('by_parking_area', (q) =>
+          q.eq('parkingAreaId', args.parkingAreaId as Id<'parkingAreas'>),
+        )
         .first();
       if (!link) throw new ConvexError('This parking area is not associated with any water body');
       waterBodyId = link.waterBodyId;
@@ -348,7 +350,9 @@ export async function loadLiveAlertsForBody(
     .collect();
   return rows
     .filter((r) => accessAlertIsLive(r, now))
-    .sort((a, b) => (a.status === b.status ? b.createdAt - a.createdAt : a.status === 'official' ? -1 : 1))
+    .sort((a, b) =>
+      a.status === b.status ? b.createdAt - a.createdAt : a.status === 'official' ? -1 : 1,
+    )
     .map(toView);
 }
 

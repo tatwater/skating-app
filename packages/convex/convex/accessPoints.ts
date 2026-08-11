@@ -31,13 +31,16 @@
 
 import {
   distanceToPolygonMeters,
+  HIKE_IN_ASSERT_M,
   haversineMeters,
   isMinor,
   type LatLng,
   MAX_ACCESS_PHOTOS,
   PARKING_INFER_RADIUS_M,
   PUTIN_SHORE_RADIUS_M,
+  requiresHikeInAssertion,
   resolvePutInName,
+  straightLineApproach,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -50,8 +53,8 @@ import {
   query,
 } from './_generated/server';
 import { loadLiveAlertsForBody } from './accessAlerts';
-import { requireContributor } from './lib/auth';
-import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES } from './lib/enums';
+import { requireContributor, requireContributorRole } from './lib/auth';
+import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES, APPROACH_KINDS } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
 import { latLng, literals } from './lib/validators';
 import { listedBodiesNearCoord } from './waterBodies';
@@ -76,7 +79,10 @@ async function bodiesWithin(
   const byId = await listedBodiesNearCoord(ctx, coord);
   const hits: { body: Doc<'waterBodies'>; distance: number }[] = [];
   for (const body of byId.values()) {
-    const distance = distanceToPolygonMeters(coord, body.polygon as unknown as Polygon | MultiPolygon);
+    const distance = distanceToPolygonMeters(
+      coord,
+      body.polygon as unknown as Polygon | MultiPolygon,
+    );
     if (distance <= radiusMeters) hits.push({ body, distance });
   }
   return hits.sort((a, b) => a.distance - b.distance);
@@ -375,7 +381,7 @@ export async function loadParkingForBody(
   const lots: ParkingMarker[] = [];
   for (const link of links) {
     const lot = await ctx.db.get(link.parkingAreaId);
-    if (!lot || lot.status !== 'visible') continue;
+    if (lot?.status !== 'visible') continue;
     lots.push({
       id: lot._id,
       coord: lot.coord,
@@ -435,7 +441,8 @@ export const attachPhoto = mutation({
     await assertOwnedPhotos(ctx, [photoId], profile._id);
 
     const existing = await loadAccessPhotoRows(ctx, targetType, putInId, parkingAreaId);
-    if (existing.some((row) => row.photoId === photoId)) return existing.find((r) => r.photoId === photoId)?._id;
+    if (existing.some((row) => row.photoId === photoId))
+      return existing.find((r) => r.photoId === photoId)?._id;
     if (existing.length >= MAX_ACCESS_PHOTOS) {
       throw new ConvexError(`An access point carries at most ${MAX_ACCESS_PHOTOS} photos`);
     }
@@ -443,11 +450,11 @@ export const attachPhoto = mutation({
     if (targetType === 'put_in') {
       if (!putInId) throw new ConvexError('A put-in is required');
       const putIn = await ctx.db.get(putInId);
-      if (!putIn || putIn.status !== 'visible') throw new ConvexError('Put-in not found');
+      if (putIn?.status !== 'visible') throw new ConvexError('Put-in not found');
     } else {
       if (!parkingAreaId) throw new ConvexError('A parking area is required');
       const lot = await ctx.db.get(parkingAreaId);
-      if (!lot || lot.status !== 'visible') throw new ConvexError('Parking area not found');
+      if (lot?.status !== 'visible') throw new ConvexError('Parking area not found');
     }
 
     return ctx.db.insert('accessPhotos', {
@@ -596,5 +603,178 @@ export const accessForBody = query({
         .filter((id): id is NonNullable<typeof id> => id !== undefined),
       alerts,
     };
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The operator write path — where D72's amendment actually lives
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Create or update an `official` parking area (moderator).
+ *
+ * This is rung 1 of the ladder, and the ETL will never overwrite what it writes. It is also the path
+ * the D72 amendment was made for: **a human's association has no distance limit.** The ~250 m radius
+ * bounds what the OSM pass is willing to *guess*; a mile-away trailhead lot is not an edge case to
+ * tolerate here, it is the case the phase exists for, and this mutation deliberately performs no
+ * distance check at all.
+ *
+ * The associations written here are `inferred: false`, which is what protects them: a later ETL run
+ * may promote an inference to an assertion but never the reverse.
+ */
+export const setOfficialParking = mutation({
+  args: {
+    parkingAreaId: v.optional(v.id('parkingAreas')),
+    coord: latLng,
+    name: v.optional(v.string()),
+    amenities: v.array(literals(ACCESS_AMENITIES)),
+    capacity: v.optional(v.number()),
+    fee: v.optional(v.boolean()),
+    waterBodyIds: v.array(v.id('waterBodies')),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const now = Date.now();
+    const name = args.name?.trim() || undefined;
+
+    let parkingAreaId = args.parkingAreaId;
+    if (parkingAreaId) {
+      const existing = await ctx.db.get(parkingAreaId);
+      if (!existing) throw new ConvexError('Parking area not found');
+      await ctx.db.patch(parkingAreaId, {
+        coord: args.coord,
+        name,
+        source: 'official',
+        amenities: args.amenities,
+        capacity: args.capacity,
+        fee: args.fee,
+      });
+    } else {
+      parkingAreaId = await ctx.db.insert('parkingAreas', {
+        coord: args.coord,
+        name,
+        source: 'official',
+        status: 'visible',
+        amenities: args.amenities,
+        capacity: args.capacity,
+        fee: args.fee,
+        createdByUserId: actor._id,
+        createdAt: now,
+      });
+    }
+
+    // Reconcile the association set. An association this pass does not name is removed **only if it
+    // was itself asserted** — an OSM inference the operator simply didn't think about is left alone,
+    // because silently deleting the ETL's work on every hand edit would make the two paths fight.
+    const existingLinks = await ctx.db
+      .query('parkingAreaBodies')
+      .withIndex('by_parking_area', (q) =>
+        q.eq('parkingAreaId', parkingAreaId as Id<'parkingAreas'>),
+      )
+      .collect();
+    const wanted = new Set(args.waterBodyIds.map(String));
+    for (const link of existingLinks) {
+      if (!wanted.has(String(link.waterBodyId)) && !link.inferred) await ctx.db.delete(link._id);
+    }
+    for (const waterBodyId of args.waterBodyIds) {
+      await linkParkingToBody(ctx, parkingAreaId, waterBodyId, false);
+    }
+
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action: 'set_parking_area',
+      targetType: 'parkingArea',
+      targetId: parkingAreaId,
+      reason: args.reason ?? 'Set an official parking area',
+      metadata: { coord: args.coord, waterBodyIds: args.waterBodyIds, name },
+      createdAt: now,
+    });
+    return parkingAreaId;
+  },
+});
+
+/**
+ * Attach a put-in to a parking area, and/or override its derived approach kind (moderator).
+ *
+ * **The D144 assertion gate lives here, and it is a gate on the *caller*, not a validation.** Above
+ * `HIKE_IN_ASSERT_M` the mutation refuses an association that does not also assert `hike_in`, because
+ * a far-flung association is the one input in this phase that costs its author nothing and costs a
+ * stranger a night. It is enforced server-side as well as in the UI for the ordinary reason: a rule
+ * only the form knows is a rule the next form forgets.
+ *
+ * It refuses rather than defaults — silently stamping `hike_in` would be the system making the
+ * assertion on the author's behalf, which is exactly what D144 says must not happen.
+ */
+export const setPutInAccess = mutation({
+  args: {
+    putInId: v.id('putIns'),
+    parkingAreaId: v.optional(v.id('parkingAreas')),
+    clearParking: v.optional(v.boolean()),
+    approachKindOverride: v.optional(literals(APPROACH_KINDS)),
+    clearApproachOverride: v.optional(v.boolean()),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await requireContributorRole(ctx, 'moderator');
+    const putIn = await ctx.db.get(args.putInId);
+    if (!putIn) throw new ConvexError('Put-in not found');
+
+    let approachMeters = putIn.approachMeters;
+    let approachRouted = putIn.approachRouted;
+    let approachAscentM = putIn.approachAscentM;
+    let parkingAreaId = putIn.parkingAreaId;
+
+    if (args.clearParking) {
+      parkingAreaId = undefined;
+      // The measurements described a walk from a lot that is no longer associated. Keeping them would
+      // leave a distance with nothing to walk from — the same reasoning N6a used for retracting the
+      // losing half of a contradictory depth pair.
+      approachMeters = undefined;
+      approachAscentM = undefined;
+      approachRouted = undefined;
+    } else if (args.parkingAreaId) {
+      const lot = await ctx.db.get(args.parkingAreaId);
+      if (!lot) throw new ConvexError('Parking area not found');
+      parkingAreaId = args.parkingAreaId;
+      // Straight-line, flagged. A hand association gets no ORS call — this is a request path, and
+      // "never route from a request path" is the one rule D87 asks to be written at the call site.
+      // The ETL's next pass replaces it with a routed figure.
+      const leg = straightLineApproach(lot.coord, putIn.coord);
+      approachMeters = Math.round(leg.meters);
+      approachAscentM = undefined;
+      approachRouted = false;
+    }
+
+    const override = args.clearApproachOverride
+      ? undefined
+      : (args.approachKindOverride ?? putIn.approachKindOverride);
+
+    if (requiresHikeInAssertion(approachMeters) && override !== 'hike_in') {
+      throw new ConvexError(
+        `An approach this long must be asserted as hike-in (over ${HIKE_IN_ASSERT_M} m) — set the approach kind explicitly rather than letting it be derived.`,
+      );
+    }
+
+    await ctx.db.patch(args.putInId, {
+      parkingAreaId,
+      approachMeters,
+      approachAscentM,
+      approachRouted,
+      approachKindOverride: override,
+    });
+
+    await ctx.db.insert('moderationActions', {
+      actorId: actor._id,
+      action:
+        args.approachKindOverride || args.clearApproachOverride
+          ? 'set_approach_kind'
+          : 'set_parking_area',
+      targetType: 'putIn',
+      targetId: args.putInId,
+      reason: args.reason ?? 'Set put-in access',
+      metadata: { parkingAreaId, approachMeters, approachKindOverride: override },
+      createdAt: Date.now(),
+    });
   },
 });

@@ -5,6 +5,7 @@ import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Panel } from './Panel';
 import { Button } from './ui/button';
+import { Textarea } from './ui/textarea';
 
 /** How each alert reason reads to a skater. Short, because it sits beside a launch name. */
 const REASON_LABELS: Record<string, string> = {
@@ -39,7 +40,11 @@ const AMENITY_LABELS: Record<string, string> = {
 export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
   const vote = useMutation(api.accessAlerts.vote);
+  const createAlert = useMutation(api.accessAlerts.create);
   const [busy, setBusy] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const [reason, setReason] = useState('gate_locked');
+  const [note, setNote] = useState('');
 
   if (!access || (access.putIns.length === 0 && access.parking.length === 0)) return null;
 
@@ -79,7 +84,9 @@ export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
       {access.parking.some((p) => p.amenities.length > 0) ? (
         <p className="text-foreground-muted text-xs">
           {[
-            ...new Set(access.parking.flatMap((p) => p.amenities.map((a) => AMENITY_LABELS[a] ?? a))),
+            ...new Set(
+              access.parking.flatMap((p) => p.amenities.map((a) => AMENITY_LABELS[a] ?? a)),
+            ),
           ].join(' · ')}
         </p>
       ) : null}
@@ -87,6 +94,63 @@ export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
       {/* The drive time and the walk are NEVER summed (D72 amendment, ramification 2). A 55-minute
           drive plus a 25-minute walk is not an 80-minute drive, and folding one into the other would
           corrupt the filter a skater is actually using. They are two lines for that reason. */}
+
+      {/* The entry point for D73's lifecycle. Below the access description, because reporting a
+          blocked gate is something you do *after* reading where you'd have gone. */}
+      {target ? (
+        reporting ? (
+          <div className="mt-2 space-y-2">
+            <select
+              className="w-full rounded border p-1 text-sm"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              aria-label="What's the problem?"
+            >
+              {Object.entries(REASON_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Anything else worth knowing (optional)"
+              rows={2}
+            />
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                disabled={busy === 'new'}
+                onClick={async () => {
+                  setBusy('new');
+                  try {
+                    await createAlert({
+                      targetType: 'put_in',
+                      putInId: target.putIn.id as Id<'putIns'>,
+                      reason: reason as 'gate_locked',
+                      ...(note.trim() ? { note: note.trim() } : {}),
+                    });
+                    setReporting(false);
+                    setNote('');
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+              >
+                Post
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setReporting(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button size="sm" variant="outline" className="mt-2" onClick={() => setReporting(true)}>
+            Report an access problem
+          </Button>
+        )
+      ) : null}
 
       {alerts.length > 0 ? (
         <ul className="mt-2 space-y-2">
