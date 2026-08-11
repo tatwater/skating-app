@@ -76,6 +76,15 @@ export const HIKE_IN_ASSERT_M = 1600;
 export const PARKING_INFER_RADIUS_M = 250;
 
 /**
+ * How many photos one access point carries (N6d Workstream D).
+ *
+ * Three, so it answers *"is this the right dirt road"* and does not become a gallery. The cap is also
+ * the abuse surface: combined with minors being read-only (Phase 3), it bounds what any single point
+ * can be turned into, which is half of why D88 could decline to invent a new posting permission.
+ */
+export const MAX_ACCESS_PHOTOS = 3;
+
+/**
  * How close a standalone amenity — a toilet block — must be to a lot to count as *at* that lot.
  *
  * Much tighter than `PARKING_INFER_RADIUS_M`, and the asymmetry is deliberate: 250 m is a plausible

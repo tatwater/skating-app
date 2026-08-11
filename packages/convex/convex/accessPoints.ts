@@ -32,15 +32,25 @@
 import {
   distanceToPolygonMeters,
   haversineMeters,
+  isMinor,
   type LatLng,
+  MAX_ACCESS_PHOTOS,
   PARKING_INFER_RADIUS_M,
   PUTIN_SHORE_RADIUS_M,
 } from '@skating/core';
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from './_generated/dataModel';
-import { internalMutation, type MutationCtx, type QueryCtx, query } from './_generated/server';
-import { ACCESS_AMENITIES } from './lib/enums';
+import {
+  internalMutation,
+  type MutationCtx,
+  mutation,
+  type QueryCtx,
+  query,
+} from './_generated/server';
+import { requireContributor } from './lib/auth';
+import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES } from './lib/enums';
+import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
 import { latLng, literals } from './lib/validators';
 import { listedBodiesNearCoord } from './waterBodies';
 
@@ -386,5 +396,147 @@ export const listParkingForBody = query({
     const body = await ctx.db.get(waterBodyId);
     if (!body) return [];
     return loadParkingForBody(ctx, waterBodyId);
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Photos (Workstream D / D88) — infrastructure, not conditions
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Attach a photo to a put-in or parking area.
+ *
+ * **No new permission** (D88). Access photos ride D57's existing report/hazard posting right, because
+ * they sit *below* reports and hazards in risk rather than beside them: a bad ice report is a safety
+ * problem, a bad photo of a parking lot is wrong but not dangerous. A permission that is always equal
+ * to another permission is one that drifts out of sync and confuses somebody in a year.
+ *
+ * Two inherited constraints do the protective work instead — the `MAX_ACCESS_PHOTOS` cap bounds any
+ * single point's abuse surface, and minors are read-only (Phase 3), so the population that can upload
+ * is already the population trusted with reports.
+ */
+export const attachPhoto = mutation({
+  args: {
+    targetType: literals(ACCESS_ALERT_TARGETS),
+    putInId: v.optional(v.id('putIns')),
+    parkingAreaId: v.optional(v.id('parkingAreas')),
+    photoId: v.id('photos'),
+  },
+  handler: async (ctx, { targetType, putInId, parkingAreaId, photoId }) => {
+    const profile = await requireContributor(ctx);
+    if (isMinor(profile.dateOfBirth, Date.now())) {
+      throw new ConvexError('Users under 18 cannot upload access-point photos');
+    }
+    // The same ownership rule reports and hazards hold. It is not merely defensive here: it is what
+    // keeps `photoOrphans`' scan-by-author sound, since a photo attached by someone other than its
+    // uploader would be referenced by a row no scan of that uploader could reach.
+    await assertOwnedPhotos(ctx, [photoId], profile._id);
+
+    const existing = await loadAccessPhotoRows(ctx, targetType, putInId, parkingAreaId);
+    if (existing.some((row) => row.photoId === photoId)) return existing.find((r) => r.photoId === photoId)?._id;
+    if (existing.length >= MAX_ACCESS_PHOTOS) {
+      throw new ConvexError(`An access point carries at most ${MAX_ACCESS_PHOTOS} photos`);
+    }
+
+    if (targetType === 'put_in') {
+      if (!putInId) throw new ConvexError('A put-in is required');
+      const putIn = await ctx.db.get(putInId);
+      if (!putIn || putIn.status !== 'visible') throw new ConvexError('Put-in not found');
+    } else {
+      if (!parkingAreaId) throw new ConvexError('A parking area is required');
+      const lot = await ctx.db.get(parkingAreaId);
+      if (!lot || lot.status !== 'visible') throw new ConvexError('Parking area not found');
+    }
+
+    return ctx.db.insert('accessPhotos', {
+      targetType,
+      putInId,
+      parkingAreaId,
+      photoId,
+      uploaderId: profile._id,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+/**
+ * Detach a photo. The uploader may remove their own; a moderator may remove anyone's.
+ *
+ * **Detaching is not deleting.** The `photos` row survives, and whether the image itself goes is left
+ * to the orphan sweep — which, now that this attachment is gone, will find nothing referencing it and
+ * remove it after the grace window. Deleting here would duplicate a decision `lib/photoOrphans` exists
+ * to make in exactly one place.
+ */
+export const detachPhoto = mutation({
+  args: { accessPhotoId: v.id('accessPhotos'), reason: v.optional(v.string()) },
+  handler: async (ctx, { accessPhotoId, reason }) => {
+    const profile = await requireContributor(ctx);
+    const row = await ctx.db.get(accessPhotoId);
+    if (!row) throw new ConvexError('Photo attachment not found');
+
+    const isUploader = row.uploaderId === profile._id;
+    const isModerator = profile.role === 'moderator' || profile.role === 'admin';
+    if (!isUploader && !isModerator) {
+      throw new ConvexError('Only the uploader or a moderator can remove this photo');
+    }
+
+    await ctx.db.delete(accessPhotoId);
+
+    if (isModerator && !isUploader) {
+      await ctx.db.insert('moderationActions', {
+        actorId: profile._id,
+        action: 'remove',
+        targetType: row.targetType === 'put_in' ? 'putIn' : 'parkingArea',
+        targetId: (row.putInId ?? row.parkingAreaId) as string,
+        reason: reason ?? 'Removed an access-point photo',
+        metadata: { photoId: row.photoId },
+        createdAt: Date.now(),
+      });
+    }
+  },
+});
+
+/** The attachment rows for one access point. Shared by the cap check and the read path. */
+async function loadAccessPhotoRows(
+  ctx: QueryCtx,
+  targetType: 'put_in' | 'parking_area',
+  putInId: Id<'putIns'> | undefined,
+  parkingAreaId: Id<'parkingAreas'> | undefined,
+) {
+  if (targetType === 'put_in') {
+    if (!putInId) return [];
+    return ctx.db
+      .query('accessPhotos')
+      .withIndex('by_put_in', (q) => q.eq('putInId', putInId))
+      .collect();
+  }
+  if (!parkingAreaId) return [];
+  return ctx.db
+    .query('accessPhotos')
+    .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', parkingAreaId))
+    .collect();
+}
+
+/**
+ * Serving URLs for one access point's photos.
+ *
+ * **No visibility gate beyond the access point's own**, unlike a report's photos — and that is a
+ * deliberate difference rather than an omission. A report's photos inherit its moderation status
+ * because they document a claim about ice; a picture of a gravel pull-off is public infrastructure and
+ * has no private referent to protect. The same reasoning that put these under redact-don't-erase.
+ */
+export const listPhotos = query({
+  args: {
+    targetType: literals(ACCESS_ALERT_TARGETS),
+    putInId: v.optional(v.id('putIns')),
+    parkingAreaId: v.optional(v.id('parkingAreas')),
+  },
+  handler: async (ctx, { targetType, putInId, parkingAreaId }) => {
+    const rows = await loadAccessPhotoRows(ctx, targetType, putInId, parkingAreaId);
+    const resolved = await resolvePhotoUrls(
+      ctx,
+      rows.map((r) => r.photoId),
+    );
+    return resolved.map((photo, i) => ({ ...photo, accessPhotoId: rows[i]?._id }));
   },
 });

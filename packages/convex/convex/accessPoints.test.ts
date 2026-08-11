@@ -429,3 +429,178 @@ describe('accessPoints.listParkingForBody', () => {
     expect(lots.map((l) => l.name)).toEqual(['official-lot', 'osm-lot']);
   });
 });
+
+describe('access-point photos (Workstream D / D88)', () => {
+  async function seedUploader(t: ReturnType<typeof convexTest>, subject: string, role: 'member' | 'moderator' = 'member') {
+    const id = await t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: subject,
+        displayName: subject,
+        username: subject,
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyFulfilled: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: false,
+          greatReportNearby: false,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role,
+        status: 'active' as const,
+        createdAt: Date.now(),
+      }),
+    );
+    return { id, as: t.withIdentity({ subject }) };
+  }
+
+  /**
+   * Real stored blobs, not string placeholders. `deletePhotoAndBlobs` deliberately keeps a row whose
+   * blob it could not prove gone — the row is the only pointer to those bytes — so a fake storage id
+   * makes every photo look undeletable and quietly turns a sweep test into a no-op.
+   */
+  async function seedPhoto(t: ReturnType<typeof convexTest>, uploaderId: Id<'profiles'>, createdAt = Date.now()) {
+    return t.run(async (ctx) => {
+      const storageId = await ctx.storage.store(new Blob([`photo-${createdAt}-${Math.random()}`]));
+      const thumbStorageId = await ctx.storage.store(new Blob([`thumb-${createdAt}-${Math.random()}`]));
+      return ctx.db.insert('photos', {
+        storageId,
+        thumbStorageId,
+        uploaderId,
+        placeOnMap: false,
+        createdAt,
+      });
+    }) as Promise<Id<'photos'>>;
+  }
+
+  async function seedVisiblePutIn(t: ReturnType<typeof convexTest>) {
+    const waterBodyId = await seedSquareBody(t);
+    const putInId = (await t.run((ctx) =>
+      ctx.db.insert('putIns', {
+        waterBodyId,
+        coord: { lat: 44.01, lng: -72 },
+        source: 'osm' as const,
+        status: 'visible' as const,
+        createdAt: Date.now(),
+      }),
+    )) as Id<'putIns'>;
+    return { waterBodyId, putInId };
+  }
+
+  test('attaches a photo and serves it back', async () => {
+    const t = convexTest(schema, modules);
+    const { putInId } = await seedVisiblePutIn(t);
+    const user = await seedUploader(t, 'skater');
+    const photoId = await seedPhoto(t, user.id);
+
+    await user.as.mutation(api.accessPoints.attachPhoto, {
+      targetType: 'put_in',
+      putInId,
+      photoId,
+    });
+
+    const photos = await t.query(api.accessPoints.listPhotos, { targetType: 'put_in', putInId });
+    expect(photos).toHaveLength(1);
+    expect(photos[0]?.photoId).toBe(photoId);
+  });
+
+  test('caps an access point at three photos', async () => {
+    const t = convexTest(schema, modules);
+    const { putInId } = await seedVisiblePutIn(t);
+    const user = await seedUploader(t, 'skater');
+
+    for (let i = 0; i < 3; i++) {
+      const photoId = await seedPhoto(t, user.id, Date.now() - i);
+      await user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId });
+    }
+    const overflow = await seedPhoto(t, user.id, Date.now() - 99);
+    await expect(
+      user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId: overflow }),
+    ).rejects.toThrow(/at most 3 photos/);
+  });
+
+  /** The invariant `photoOrphans`' scan-by-author rests on. */
+  test("you cannot attach someone else's photo", async () => {
+    const t = convexTest(schema, modules);
+    const { putInId } = await seedVisiblePutIn(t);
+    const owner = await seedUploader(t, 'owner');
+    const other = await seedUploader(t, 'other');
+    const photoId = await seedPhoto(t, owner.id);
+
+    await expect(
+      other.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId }),
+    ).rejects.toThrow(/not owned/);
+  });
+
+  test('re-attaching the same photo is idempotent rather than a second row', async () => {
+    const t = convexTest(schema, modules);
+    const { putInId } = await seedVisiblePutIn(t);
+    const user = await seedUploader(t, 'skater');
+    const photoId = await seedPhoto(t, user.id);
+
+    await user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId });
+    await user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId });
+    expect(await t.run((ctx) => ctx.db.query('accessPhotos').collect())).toHaveLength(1);
+  });
+
+  test('the uploader or a moderator may detach; a stranger may not', async () => {
+    const t = convexTest(schema, modules);
+    const { putInId } = await seedVisiblePutIn(t);
+    const user = await seedUploader(t, 'skater');
+    const stranger = await seedUploader(t, 'stranger');
+    const mod = await seedUploader(t, 'mod', 'moderator');
+    const photoId = await seedPhoto(t, user.id);
+    const accessPhotoId = (await user.as.mutation(api.accessPoints.attachPhoto, {
+      targetType: 'put_in',
+      putInId,
+      photoId,
+    })) as Id<'accessPhotos'>;
+
+    await expect(
+      stranger.as.mutation(api.accessPoints.detachPhoto, { accessPhotoId }),
+    ).rejects.toThrow(/uploader or a moderator/);
+
+    await mod.as.mutation(api.accessPoints.detachPhoto, { accessPhotoId, reason: 'Wrong lot' });
+    expect(await t.run((ctx) => ctx.db.query('accessPhotos').collect())).toHaveLength(0);
+    // Detaching is not deleting — the decision to destroy the image belongs to the orphan sweep alone.
+    expect(await t.run((ctx) => ctx.db.get(photoId))).not.toBeNull();
+  });
+
+  /**
+   * ⚠ The N6d kickoff's data-loss finding, pinned.
+   *
+   * `referencedPhotoIds` decides whether a photo may be destroyed by scanning the uploader's own
+   * reports and hazards. An access photo hangs off a put-in the *ETL* created, so before `accessPhotos`
+   * carried its own `uploaderId` this photo was an orphan by construction — swept thirty days later,
+   * silently, by a cron.
+   */
+  test('an attached access photo is not an orphan', async () => {
+    const t = convexTest(schema, modules);
+    const { putInId } = await seedVisiblePutIn(t);
+    const user = await seedUploader(t, 'skater');
+    // Older than the 30-day grace, so the sweep would genuinely consider it.
+    const photoId = await seedPhoto(t, user.id, Date.now() - 60 * 24 * 60 * 60 * 1000);
+    await user.as.mutation(api.accessPoints.attachPhoto, { targetType: 'put_in', putInId, photoId });
+
+    await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
+
+    expect(await t.run((ctx) => ctx.db.get(photoId))).not.toBeNull();
+  });
+
+  test('an unattached photo past the grace window still is', async () => {
+    const t = convexTest(schema, modules);
+    const user = await seedUploader(t, 'skater');
+    const photoId = await seedPhoto(t, user.id, Date.now() - 60 * 24 * 60 * 60 * 1000);
+
+    await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
+
+    expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull();
+  });
+});

@@ -2059,14 +2059,6 @@ export default defineSchema({
      */
     approachKindOverride: v.optional(literals(APPROACH_KINDS)),
 
-    /**
-     * Photos of the launch (N6d Workstream D, D88), capped at `MAX_ACCESS_PHOTOS`.
-     *
-     * ⚠ These are **infrastructure, not conditions**, which is why they are exempt from D66's seasonal
-     * purge and why `lib/photoOrphans` had to learn about a third owner class. A parking lot looks the
-     * same next November; a photo of the ice does not.
-     */
-    photoIds: v.optional(v.array(v.id('photos'))),
   })
     .index('by_water_body', ['waterBodyId'])
     // Idempotent OSM upsert (N6d B3), mirroring `waterBodies.by_external_id`.
@@ -2099,7 +2091,6 @@ export default defineSchema({
     /** OSM `fee` where tagged. Tri-state by omission: absent means nobody said, not "free". */
     fee: v.optional(v.boolean()),
     externalId: v.optional(v.string()), // `way/123` — idempotent re-import key
-    photoIds: v.optional(v.array(v.id('photos'))),
     createdByUserId: v.optional(v.id('profiles')),
     createdAt: v.number(),
   })
@@ -2202,6 +2193,55 @@ export default defineSchema({
     .index('by_status_expires_at', ['status', 'expiresAt'])
     // A departing user's alerts (N3/D62), and the author-side half of the orphan-photo scan.
     .index('by_author', ['createdByUserId']),
+
+  /**
+   * Photos of an access point (N6d Workstream D / D88) — *"is this the right dirt road"*.
+   *
+   * ## Why this is a join table and not a `photoIds` array on the access point
+   *
+   * The plan says attach photos to the access point, and the obvious shape is an array on `putIns`
+   * exactly like the one on `reports` and `hazards`. That shape would have been **silently deleted by
+   * a cron thirty days later**, and the reason is worth stating because it is not obvious.
+   *
+   * `lib/photoOrphans.referencedPhotoIds` decides whether a photo is referenced — and therefore whether
+   * it may be destroyed — by scanning **the uploader's own reports and hazards**. That is not an
+   * implementation shortcut; it is the function's soundness argument, and it holds because
+   * `assertOwnedPhotos` means a report may only carry photos its own author uploaded. So "scan by
+   * author" and "find every referencing row" are the same query.
+   *
+   * **Access points break that identity.** A put-in is created by the *ETL* — `createdByUserId` is
+   * absent on every OSM row — while the photo is uploaded by a passing skater. Scanning that skater's
+   * own access points would find nothing, so their photo would look abandoned and be swept.
+   *
+   * A join row carrying `uploaderId` restores the property rather than patching around it: the scan
+   * stays by author, stays bounded by one person's contribution count, and stays sound. It also gives
+   * the per-point cap and the moderation surface somewhere to live.
+   *
+   * ## The lifecycle carve-out
+   *
+   * Report and hazard photos purge at season end (D66) because they document **conditions**, which
+   * expire. This documents **infrastructure**, which does not — a parking lot looks the same next
+   * November. So these are exempt from the seasonal purge while staying inside N3 deletion under the
+   * D62 second amendment's redact-don't-erase rule: a departing skater's photo of a gravel pull-off is
+   * reassigned to anonymous, not destroyed. Erasing it would degrade the map for everyone else to no
+   * privacy benefit, and there is no personal information in a photograph of a pull-off.
+   */
+  accessPhotos: defineTable({
+    targetType: literals(ACCESS_ALERT_TARGETS), // the same two things an alert can hang off
+    putInId: v.optional(v.id('putIns')),
+    parkingAreaId: v.optional(v.id('parkingAreas')),
+    photoId: v.id('photos'),
+    /** **The load-bearing column.** See the note above: this is what keeps the orphan scan sound. */
+    uploaderId: v.id('profiles'),
+    createdAt: v.number(),
+  })
+    // The orphan-GC and account-deletion reference scan (N3). Without it a photo attached here is
+    // invisible to the only query that decides whether it may be deleted.
+    .index('by_uploader', ['uploaderId'])
+    .index('by_put_in', ['putInId'])
+    .index('by_parking_area', ['parkingAreaId'])
+    // Detaching by photo, and the uniqueness check behind the per-point cap.
+    .index('by_photo', ['photoId']),
 
   /**
    * One skater's latest word on one access alert (N6d / D73).

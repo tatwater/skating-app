@@ -16,8 +16,14 @@
  *
  * What closes that hole cheaply is `assertOwnedPhotos` — a report or hazard may only carry photos its
  * own author uploaded. So **the only rows that can ever reference a photo are its uploader's own
- * reports and hazards**, whenever they were written. Scanning by author is therefore both sound and
- * bounded by one person's contribution count rather than by the corpus.
+ * reports, hazards and access-point attachments**, whenever they were written. Scanning by author is
+ * therefore both sound and bounded by one person's contribution count rather than by the corpus.
+ *
+ * ⚠ **N6d nearly broke that identity, and the fix is in the schema rather than here.** An access-point
+ * photo hangs off a `putIns` row the *ETL* created, so "the uploader's own access points" is empty and
+ * a photo attached to one would have looked abandoned and been swept thirty days later — silently, by
+ * a cron, a month after upload. `accessPhotos` therefore carries its own `uploaderId` and is indexed
+ * by it, which restores the property instead of adding an exception to it. See that table's note.
  */
 
 import type { Doc, Id } from '../_generated/dataModel';
@@ -77,26 +83,46 @@ export async function referencedPhotoIds(
     .take(REFERENCE_SCAN_CAP);
   if (hazards.length >= REFERENCE_SCAN_CAP) return null;
 
+  // The third arm, added by N6d. Not optional and not a nicety: without it every access-point photo
+  // is an orphan by construction, because the put-in it hangs off was created by the ETL and so is
+  // invisible to any scan keyed on this uploader.
+  const access = await ctx.db
+    .query('accessPhotos')
+    .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
+    .take(REFERENCE_SCAN_CAP);
+  if (access.length >= REFERENCE_SCAN_CAP) return null;
+
   const referenced = new Set<string>();
   for (const r of reports) for (const id of r.photoIds) referenced.add(id);
   for (const h of hazards) for (const id of h.photoIds) referenced.add(id);
+  for (const a of access) referenced.add(a.photoId);
   return referenced;
 }
 
 /**
- * The subset of an uploader's photos that are attached to a **hazard** (D66).
+ * The subset of an uploader's photos that **outlive their season** (D66, extended by N6d).
  *
- * The seam the seasonal photo expiry rests on: a picture of an open lead is worth more than any
- * sentence describing one, and it is exactly what the next skater on that shore needs — so a departed
- * skater's hazard photos are kept whole and everything else expires with its season. `null` means the
- * scan hit its cap, which is "couldn't determine" and never "nothing is attached": the caller keeps
- * the photo, because deleting an image on an unanswered question is the one mistake here that can't
- * be undone.
+ * The seam the seasonal photo expiry rests on. Two kinds qualify, for two different reasons:
  *
- * Deliberately *not* expressed as a filter over {@link referencedPhotoIds}: that set unions reports
- * and hazards, and the whole point of this one is that those two answers are now different.
+ * - **Hazard photos.** A picture of an open lead is worth more than any sentence describing one, and
+ *   it is exactly what the next skater on that shore needs.
+ * - **Access-point photos.** They document **infrastructure, not conditions** — a parking lot looks
+ *   the same next November — so the argument that retires a report photo does not reach them. This is
+ *   the N6d carve-out from D66, and it is a carve-out from the *seasonal* rule only: N3 deletion still
+ *   applies, under the D62 second amendment's redact-don't-erase.
+ *
+ * `null` means the scan hit its cap, which is "couldn't determine" and never "nothing is attached":
+ * the caller keeps the photo, because deleting an image on an unanswered question is the one mistake
+ * here that can't be undone.
+ *
+ * Deliberately *not* expressed as a filter over {@link referencedPhotoIds}: that set unions everything
+ * that references a photo at all, and the whole point of this one is that those answers differ — a
+ * report photo is referenced and still expires.
+ *
+ * *(Named `hazardPhotoIds` until N6d gave it a second member. Renamed rather than extended silently,
+ * so a caller reasoning about "hazards" has to notice that it now says something broader.)*
  */
-export async function hazardPhotoIds(
+export async function durablePhotoIds(
   ctx: QueryCtx | MutationCtx,
   uploaderId: Id<'profiles'>,
   /**
@@ -111,8 +137,16 @@ export async function hazardPhotoIds(
     .withIndex('by_author_and_water_body', (q) => q.eq('createdByUserId', uploaderId))
     .take(cap);
   if (hazards.length >= cap) return null;
+
+  const access = await ctx.db
+    .query('accessPhotos')
+    .withIndex('by_uploader', (q) => q.eq('uploaderId', uploaderId))
+    .take(cap);
+  if (access.length >= cap) return null;
+
   const referenced = new Set<string>();
   for (const h of hazards) for (const id of h.photoIds) referenced.add(id);
+  for (const a of access) referenced.add(a.photoId);
   return referenced;
 }
 
