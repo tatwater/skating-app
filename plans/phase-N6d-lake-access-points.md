@@ -1,9 +1,10 @@
 # Phase N6d — Lake access points: parking, named put-ins, and access alerts
 
-> **Status:** 🔨 **Data path built 2026-08-11, four UI surfaces outstanding; ETL not yet run** —
+> **Status:** 🔨 **Built 2026-08-11 — all five workstreams and every UI surface; ETL running** —
 > scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
 > the scoping. Suites green: core 1,837 · convex 1,220 · web 301 · mobile 95 · etl 407.
-> See *§What the build found* for what is and is not finished.
+> See *§What the build found* and *§What the first real run found*. Outstanding: the routing pass
+> spans a few days on ORS's free tier, the loaders have not run, and `backfillCells` waits on them.
 > **Split from** [N6c](./phase-N6c-expanded-lake-profiles.md) at scoping — it was roughly the size of
 > everything else in that phase combined, and it is the only part touching a new lifecycle.
 > **Depends on:** nothing in N6c. These two can run in parallel or in either order.
@@ -419,14 +420,59 @@ cron, the photo model, the operator write path, and the D2 richness rung that fi
 `backfillCells`. **The ETL has not been run**, so no access data is loaded and none of it has been seen
 against real output — including the `PARKING_INFER_RADIUS_M` eyeballing pass the plan asks for.
 
-Four **UI surfaces remain unbuilt**, all of them additive to shipped components:
+**All four remaining UI surfaces landed the same day** (founder ask): the Hike-In chip on the map
+summary card and the feed card, access photos on both clients, parking + approach editing in the N2
+lake editor, and alert posting on mobile.
 
-| surface | state |
-|---|---|
-| Hike-In chip on the **map summary card** and the **feed card** | the drawer and the directions button carry it; D87 named three surfaces |
-| **Access photos** on either client | mutations, cap, orphan-safety and the read query exist; no upload/gallery UI |
-| **Parking editing** in the N2 per-lake editor (`/admin/water/$id`) | `setOfficialParking` / `setPutInAccess` exist and are tested, including D144's refusal; no form calls them |
-| **Alert posting on mobile** | web has the form; mobile renders and votes on alerts but cannot open one |
+The chip's two card surfaces read a new **`accessKind` column on `waterBodies`**, denormalized by the
+join — `listInViewport` already returns whole body docs and the feed already caches the body per
+query, so neither costs a read. It is deliberately *not* inside `summary`: that object is
+activity-scoped and absent on a body with no recent reports, so a hike-in pond nobody has skated would
+carry no chip — exactly the lake the warning is for. `bodyAccessKind` takes the **easiest** launch,
+not the hardest, or a lake with one drive-up ramp and one remote launch would wear a chip it doesn't
+deserve.
+
+---
+
+## What the first real run found — 2026-08-11
+
+*Three corrections, all from running the thing rather than reading it. The first is the eyeballing
+pass B2 asked for, and it earned its keep on the first state.*
+
+**1. `amenity=parking` is one of OSM's most common tags, and the plan had no gate for it.** Vermont
+alone yields **4,656 parking areas, 202 of which pair with a launch**; across five states it is
+**95,294 lots, 92,384 unpaired**. The rest are supermarkets, schools and — literally, from the
+artifact — *"East Montpelier Fire Department, Incorporated"* and *"Camels Hump Skiers' Association"*.
+Loading them would put a directions target on every downtown lot in every lakeside town.
+
+The gate: a lot is stored when a put-in claimed it **or** a corpus body is within
+`PARKING_INFER_RADIUS_M`; neither ⇒ `notNearWater`. Worth recording *why the original rule was wrong*
+rather than only that it was — it stored every lot, justified by the mile-away trailhead, but that
+case is **paired**, so the justification never covered the lots it was letting through. Pairing is a
+human-mapped relationship between a lot and a launch and outranks any proximity guess, which is what
+lets the gate be strict without losing the case the phase exists for.
+
+**2. The ORS rate limit was wrong by 2×, and the run measured it exactly.** The free tier caps
+directions at **40 per minute**; a 700 ms gap is ~85/minute. Exactly **40 legs succeeded and the next
+1,963 came back `429`**. Now 1,600 ms with a 20 s backoff and three retries — 127 consecutive legs
+routed with zero rejections after the change.
+
+**3. ⚠ The worse half: a rate limit was being cached as an answer.** The response cache exists so a
+crash 3,000 requests in doesn't re-spend the first 2,999 — but it stored the *fallback* too. A
+straight-line result caused by a `429` is a fact about our request rate, not about the lake, and
+storing it made the damage permanent: the next run reads `routed: false`, skips the request, and that
+leg is never routed again however patient anyone is. **2,173 legs were poisoned** before this was
+caught, and the cache had to be purged of them.
+
+A `404` is genuinely different — ORS has no path between those two points, and that answer is stable —
+so it still caches. `cacheable` is now an explicit part of the routing result rather than an
+inference, and `retryableFallbacks` is counted apart from `fellBackToStraightLine` so the summary says
+whether re-running tomorrow buys anything.
+
+**On the daily cap.** ORS allows ~2,000 directions/day and the corpus has **4,980 paired put-ins**, so
+a full routing pass spans two to three days. That needs no decision: the cache resumes, and every
+unrouted leg is stored straight-line *flagged*, so the drawer says *"at least 900 m on foot"* until
+the number improves.
 
 ---
 

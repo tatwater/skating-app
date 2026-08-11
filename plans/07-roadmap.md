@@ -1244,8 +1244,8 @@ elevation, and where else to look.
   **Two commands, not one:** a `--dry-run` emitting reviewable matches, then an apply step, because the
   founder reviews the list before boosts land. The unmatched entries are the interesting output.
 
-**N6d — Lake access points: parking, named put-ins, and access alerts.** 🔨 **Data path built
-2026-08-11** (four UI surfaces outstanding, ETL not yet run) —
+**N6d — Lake access points: parking, named put-ins, and access alerts.** 🔨 **Built 2026-08-11**
+(all five workstreams + every UI surface; ETL routing pass running, loaders not yet run) —
 scoped 2026-07-30; see [`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md); decisions
 **D72** (parking modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes), plus
 **D143**/**D144** and a **D72 second amendment** taken at the 2026-08-10 kickoff. **Split out of N6c at
@@ -1263,6 +1263,13 @@ a new lifecycle. Independent of N6c; either order.
 > **+0.06** (D143); approach thresholds are **150 / 800 / 1,600 m** (D144). A moderator-pinned access
 > alert **never expires** — the analogue of an official put-in outranks the seasonal reset — and posting
 > one notifies nobody.
+>
+> **The first real run found three things** — see the doc's *§What the first real run found*. The
+> eyeballing pass B2 asked for paid off immediately: `amenity=parking` yields **95,294 lots across
+> five states, 92,384 unpaired** (fire departments, ski clubs, supermarkets), so the loader gained a
+> water-relevance gate. ORS's free tier caps directions at **40/minute**, not the ~85 the gap assumed
+> — and worse, a `429` fallback was being **cached as an answer**, which would have made 2,173 legs
+> permanently unroutable.
 >
 > **⛔ `backfillCells` is released but not run.** D2's put-in terms have never fired (dev carried 0
 > `putIns` rows), and the held re-score bakes D143's rung in on its first pass. The order is: run the
