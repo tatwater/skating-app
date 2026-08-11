@@ -269,6 +269,17 @@ describe('pairAccessFeatures', () => {
     expect(forwards).toEqual(backwards);
   });
 
+  test('the paired flag is set for the loader\'s water-relevance gate', () => {
+    // `amenity=parking` is one of OSM's most common tags — 4,656 lots in Vermont alone, 202 of them
+    // paired. The loader keeps an unpaired lot only if it finds water near it, which it can test and
+    // this transform cannot.
+    const lot = access({ kind: 'parking', externalId: 'way/70', point: LAKE });
+    const lonely = access({ kind: 'parking', externalId: 'way/71', point: destinationPoint(LAKE, 0, 5_000) });
+    const paired = pairAccessFeatures([launch, lot, lonely]).parking;
+    expect(paired.find((p) => p.externalId === 'way/70')?.paired).toBe(true);
+    expect(paired.find((p) => p.externalId === 'way/71')?.paired).toBe(false);
+  });
+
   test('an unpaired launch is emitted with no parking rather than dropped', () => {
     const paired = pairAccessFeatures([launch]);
     expect(paired.putIns).toHaveLength(1);

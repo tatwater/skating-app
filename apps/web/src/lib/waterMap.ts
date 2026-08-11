@@ -444,6 +444,14 @@ export interface MappableSummaryBody {
     qualityDots?: number;
     qualityCount?: number;
   };
+  /**
+   * The easiest known way onto this body (N6d / D144), denormalized onto the row by the access join.
+   *
+   * Read off `listInViewport`'s own rows — **no extra query**, the same property that makes the cards
+   * affordable at all. It is deliberately *not* inside `summary`: that object is activity-scoped, and
+   * access is a static property of the place.
+   */
+  accessKind?: string;
 }
 
 /** Filled/hollow dots for the D86 mark, e.g. 3 of 4 → "●●●○". */
@@ -495,6 +503,18 @@ export function summaryCardText(body: MappableSummaryBody, reveal = false): stri
   } else if (reveal) {
     lines.push(`no hazards ${REVEAL_MARKER}`);
   }
+
+  // The Hike-In chip (D87), on the browse surface because the whole point is that a skater should
+  // learn this *before* committing rather than at the trailhead.
+  //
+  // **Only `hike_in` prints.** `drive_up` and `short_walk` are the unremarkable cases, and a card
+  // that announced them would spend its two legible lines saying nothing — the same reasoning that
+  // keeps `describeApproach` silent for a pull-off. E3 still governs whether there is a card at all:
+  // a hike-in pond nobody has reported draws nothing, which is correct, and the body's own drawer
+  // carries the chip regardless.
+  if (body.accessKind === 'hike_in') lines.push('Hike-in');
+  else if (reveal && body.accessKind === undefined) lines.push(`no access data ${REVEAL_MARKER}`);
+
   return lines.length > 0 ? lines.join('\n') : null;
 }
 

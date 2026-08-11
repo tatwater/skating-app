@@ -7,6 +7,7 @@ import {
   HIKE_IN_ASSERT_M,
   type AccessParking,
   type AccessPutIn,
+  bodyAccessKind,
   chooseAccessTarget,
   describeApproach,
   isHikeIn,
@@ -429,5 +430,28 @@ describe('describeApproach', () => {
       describeApproach({ ...base, approachMeters: 40, approachKind: 'drive_up' }, 'metric'),
     ).toBeNull();
     expect(describeApproach(base, 'metric')).toBeNull();
+  });
+});
+
+describe('bodyAccessKind', () => {
+  /**
+   * The minimum, not the maximum. A lake with a drive-up ramp and a remote hike-in launch is not a
+   * hike-in lake — the trip a skater will actually make is the easy one. Taking the maximum would put
+   * a Hike-In chip on Lake Champlain.
+   */
+  test('reports the easiest known way onto the lake', () => {
+    expect(bodyAccessKind(['hike_in', 'drive_up'])).toBe('drive_up');
+    expect(bodyAccessKind(['hike_in', 'short_walk'])).toBe('short_walk');
+    expect(bodyAccessKind(['hike_in'])).toBe('hike_in');
+  });
+
+  test('ignores launches with no known approach, and says nothing when none are known', () => {
+    expect(bodyAccessKind([undefined, 'hike_in', undefined])).toBe('hike_in');
+    expect(bodyAccessKind([undefined, undefined])).toBeUndefined();
+    expect(bodyAccessKind([])).toBeUndefined();
+  });
+
+  test('is order-independent', () => {
+    expect(bodyAccessKind(['drive_up', 'hike_in'])).toBe(bodyAccessKind(['hike_in', 'drive_up']));
   });
 });

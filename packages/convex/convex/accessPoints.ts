@@ -30,6 +30,7 @@
  */
 
 import {
+  bodyAccessKind,
   distanceToPolygonMeters,
   HIKE_IN_ASSERT_M,
   haversineMeters,
@@ -39,6 +40,7 @@ import {
   PARKING_INFER_RADIUS_M,
   PUTIN_SHORE_RADIUS_M,
   requiresHikeInAssertion,
+  resolveApproachKind,
   resolvePutInName,
   straightLineApproach,
 } from '@skating/core';
@@ -136,15 +138,56 @@ async function linkParkingToBody(
 }
 
 /**
+ * Re-derive a body's denormalized `accessKind` from its visible put-ins.
+ *
+ * Recomputed rather than incremented, the `recomputeBodySummary` discipline: a put-in losing its
+ * parking has no ±1 to hang a decrement on, and "the easiest of a set" cannot be maintained
+ * incrementally without knowing which value left. Skips the write when nothing changed, because a
+ * no-op patch is still a document write and a subscription invalidation for every client watching
+ * this lake.
+ */
+async function recomputeAccessKind(
+  ctx: MutationCtx,
+  waterBodyId: Id<'waterBodies'>,
+): Promise<void> {
+  const rows = await ctx.db
+    .query('putIns')
+    .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+    .collect();
+  const kind = bodyAccessKind(
+    rows
+      .filter((r) => r.status === 'visible')
+      .map((r) => resolveApproachKind(r.approachMeters, r.approachKindOverride)),
+  );
+  const body = await ctx.db.get(waterBodyId);
+  if (!body || body.accessKind === kind) return;
+  await ctx.db.patch(waterBodyId, { accessKind: kind });
+}
+
+/**
  * Load a batch of parking areas and attach them to every body they plausibly serve (N6d B3).
  *
  * Runs **before** the put-in lane, because a put-in references its lot by OSM id and cannot be
  * resolved until the lot is a row. That ordering is why the transform emits two files rather than one
  * mixed stream: a mixed stream works right up until a pair straddles a batch boundary.
  *
- * A lot with no body in range is still stored. It may be a mile from the ice and paired to a launch
- * that *is* on the water, in which case the put-in lane attaches it — which is the case the whole
- * phase exists for, and dropping it here would be the phase deleting its own subject.
+ * ## The water-relevance gate, and the run that produced it
+ *
+ * `amenity=parking` is one of the most common tags in OSM. The first real transform measured what
+ * that means: **Vermont alone yields 4,656 lots, of which 202 pair with a launch** — the rest are
+ * supermarkets, schools, fire departments and ski clubs. Loading them would put a directions target on
+ * every downtown lot in every lakeside town, and the D72 amendment's "a human may associate at any
+ * distance" is emphatically not an argument for the ETL doing so on its own.
+ *
+ * So a lot is stored when **either**:
+ *
+ * - a put-in candidate claimed it (`paired`) — a human-mapped relationship between a lot and a launch,
+ *   which outranks any proximity guess and is exactly the mile-in trailhead this phase exists for; or
+ * - a corpus body is within `PARKING_INFER_RADIUS_M` — the ETL's own guess, bounded.
+ *
+ * Neither ⇒ it is not an access point, and it is counted as `notNearWater` rather than dropped
+ * silently. The original rule here stored every lot, justified by the mile-away trailhead — but that
+ * case is *paired*, so the justification never covered the lots it was letting through.
  */
 export const matchAndImportParking = internalMutation({
   args: {
@@ -156,6 +199,8 @@ export const matchAndImportParking = internalMutation({
         amenities: v.array(literals(ACCESS_AMENITIES)),
         capacity: v.optional(v.number()),
         fee: v.optional(v.boolean()),
+        /** A put-in candidate claimed this lot. Optional so an older artifact still loads. */
+        paired: v.optional(v.boolean()),
       }),
     ),
   },
@@ -166,9 +211,18 @@ export const matchAndImportParking = internalMutation({
     let linksCreated = 0;
     let linksPromoted = 0;
     let withoutBody = 0;
+    let notNearWater = 0;
     const notes: { key: string; reason: string }[] = [];
 
     for (const lot of lots) {
+      // The gate. Resolved before the upsert so an unpaired supermarket never becomes a row at all —
+      // not even a row we later ignore, since a row is a thing an operator has to look at.
+      const nearby = await bodiesWithin(ctx, lot.point, PARKING_INFER_RADIUS_M);
+      if (nearby.length === 0 && lot.paired !== true) {
+        notNearWater++;
+        continue;
+      }
+
       const existing = await ctx.db
         .query('parkingAreas')
         .withIndex('by_external_id', (q) => q.eq('externalId', lot.externalId))
@@ -210,7 +264,8 @@ export const matchAndImportParking = internalMutation({
         updated++;
       }
 
-      const nearby = await bodiesWithin(ctx, lot.point, PARKING_INFER_RADIUS_M);
+      // Paired-but-far is the trailhead case: no body in range, and the put-in lane attaches it from
+      // the launch's own body. Counted so that population stays visible rather than looking like a miss.
       if (nearby.length === 0) withoutBody++;
       for (const { body } of nearby) {
         const outcome = await linkParkingToBody(ctx, parkingAreaId, body._id, true);
@@ -219,7 +274,16 @@ export const matchAndImportParking = internalMutation({
       }
     }
 
-    return { created, updated, operatorHeld, linksCreated, linksPromoted, withoutBody, notes };
+    return {
+      created,
+      updated,
+      operatorHeld,
+      linksCreated,
+      linksPromoted,
+      withoutBody,
+      notNearWater,
+      notes,
+    };
   },
 });
 
@@ -255,6 +319,7 @@ export const matchAndImportPutIns = internalMutation({
     let parkingLinked = 0;
     let parkingMissing = 0;
     const notes: { key: string; reason: string }[] = [];
+    const touchedBodies = new Set<Id<'waterBodies'>>();
 
     for (const candidate of putIns) {
       const nearby = await bodiesWithin(ctx, candidate.point, PUTIN_SHORE_RADIUS_M);
@@ -264,6 +329,7 @@ export const matchAndImportPutIns = internalMutation({
         continue;
       }
       const waterBodyId = nearest.body._id;
+      touchedBodies.add(waterBodyId);
 
       if (await isModeratorSuppressed(ctx, waterBodyId, candidate.point)) {
         moderatorSuppressed++;
@@ -344,6 +410,10 @@ export const matchAndImportPutIns = internalMutation({
         updated++;
       }
     }
+
+    // One recompute per distinct body rather than one per put-in: a lake with six launches would
+    // otherwise re-read and re-derive the same set six times inside one batch.
+    for (const waterBodyId of touchedBodies) await recomputeAccessKind(ctx, waterBodyId);
 
     return {
       created,

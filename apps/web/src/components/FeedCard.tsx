@@ -46,6 +46,14 @@ export function FeedCard({
           {card.locationSecondary ? (
             <p className="truncate text-foreground-muted text-sm">{card.locationSecondary}</p>
           ) : null}
+          {/* D87's third surface. The feed is where the **drive-time** filter lives, and a hike-in
+              lake inside a "within 60 minutes" band is not the trip a skater thinks they are being
+              offered. Shown beside the drive time, never folded into it. */}
+          {card.isHikeIn ? (
+            <span className="mt-1 inline-block rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-900 text-xs">
+              Hike-in
+            </span>
+          ) : null}
         </div>
         <span className="shrink-0 text-foreground-muted text-xs">{card.relativeTime}</span>
       </div>

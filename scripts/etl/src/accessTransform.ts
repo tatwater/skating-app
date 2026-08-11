@@ -198,6 +198,20 @@ export interface ParkingRecord {
   amenities: ('toilets' | 'trail' | 'boat_ramp')[];
   capacity?: number;
   fee?: boolean;
+  /**
+   * Did a put-in candidate claim this lot?
+   *
+   * **The loader's water-relevance gate, and it exists because the first real run measured the
+   * problem.** `amenity=parking` is one of the most common tags in OSM: Vermont alone yields 4,656
+   * lots, of which 202 pair with a launch — the rest are supermarkets, schools, fire departments and
+   * ski clubs. ("East Montpelier Fire Department, Incorporated" is a real row from that run.)
+   *
+   * An unpaired lot is kept only if the *loader* finds water near it, which the transform cannot test
+   * because it has no polygons. A **paired** lot is kept regardless of distance, because that is
+   * exactly the mile-in trailhead this phase exists for — pairing is a human-mapped relationship
+   * between a lot and a launch, and it outranks any proximity guess.
+   */
+  paired: boolean;
 }
 
 /** A put-in candidate as the loader receives it, with its approach already resolved. */
@@ -299,6 +313,7 @@ export function pairAccessFeatures(
     amenities: [...(amenitiesByParking.get(lot.externalId) ?? [])].sort(),
     capacity: lot.capacity,
     fee: lot.fee,
+    paired: pairedParking.has(lot.externalId),
   }));
 
   return {

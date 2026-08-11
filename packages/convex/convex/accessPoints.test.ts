@@ -120,18 +120,50 @@ describe('accessPoints.matchAndImportParking', () => {
     expect(result.linksCreated).toBe(2);
   });
 
-  test('a lot beyond the inference radius attaches to nothing but is still stored', async () => {
+  /**
+   * ⚠ The water-relevance gate, and the number that forced it. The first real transform found **4,656
+   * parking lots in Vermont, 202 of them paired with a launch** — the rest supermarkets, schools and
+   * fire departments. Without this, every downtown lot in every lakeside town becomes a directions
+   * target.
+   */
+  test('an unpaired lot with no water near it is refused, not stored', async () => {
     const t = convexTest(schema, modules);
     await seedSquareBody(t);
 
     const result = await t.mutation(internal.accessPoints.matchAndImportParking, {
-      lots: [{ ...LOT, point: northOfShore(PARKING_INFER_RADIUS_M + 200) }],
+      lots: [{ ...LOT, point: northOfShore(PARKING_INFER_RADIUS_M + 200), paired: false }],
     });
-    // Stored, because it may be a mile from the ice and paired to a launch that is on it — the case
-    // the whole phase exists for. Dropping it here would be the phase deleting its own subject.
+    expect(result.created).toBe(0);
+    expect(result.notNearWater).toBe(1);
+    expect(await t.run((ctx) => ctx.db.query('parkingAreas').collect())).toHaveLength(0);
+  });
+
+  /**
+   * The other side of the same gate: pairing is a human-mapped relationship between a lot and a
+   * launch, and it outranks any proximity guess. This is the mile-in trailhead the phase exists for.
+   */
+  test('a paired lot is stored however far from the water it sits', async () => {
+    const t = convexTest(schema, modules);
+    await seedSquareBody(t);
+
+    const result = await t.mutation(internal.accessPoints.matchAndImportParking, {
+      lots: [{ ...LOT, point: northOfShore(PARKING_INFER_RADIUS_M + 5_000), paired: true }],
+    });
     expect(result.created).toBe(1);
     expect(result.withoutBody).toBe(1);
     expect(result.linksCreated).toBe(0);
+    expect(result.notNearWater).toBe(0);
+  });
+
+  test('an unpaired lot beside the water is still stored — the gate is water, not pairing', async () => {
+    const t = convexTest(schema, modules);
+    await seedSquareBody(t);
+
+    const result = await t.mutation(internal.accessPoints.matchAndImportParking, {
+      lots: [{ ...LOT, point: northOfShore(80), paired: false }],
+    });
+    expect(result.created).toBe(1);
+    expect(result.linksCreated).toBe(1);
   });
 
   test('a re-run updates in place rather than duplicating', async () => {
@@ -309,7 +341,7 @@ describe('accessPoints.matchAndImportPutIns', () => {
     const t = convexTest(schema, modules);
     const body = await seedSquareBody(t);
     await t.mutation(internal.accessPoints.matchAndImportParking, {
-      lots: [{ ...LOT, point: northOfShore(PARKING_INFER_RADIUS_M + 900) }],
+      lots: [{ ...LOT, point: northOfShore(PARKING_INFER_RADIUS_M + 900), paired: true }],
     });
     expect(await t.run((ctx) => ctx.db.query('parkingAreaBodies').collect())).toHaveLength(0);
 

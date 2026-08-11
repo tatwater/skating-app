@@ -429,3 +429,24 @@ export function describeApproach(
 
   return `Park here, then ${hedge} ${distance} on foot${climb}.`;
 }
+
+/** Easiest first — the order `bodyAccessKind` minimises over. */
+const APPROACH_EASE: Record<ApproachKind, number> = { drive_up: 0, short_walk: 1, hike_in: 2 };
+
+/**
+ * One body's access kind: **the easiest way onto it that we know of.**
+ *
+ * The minimum rather than the maximum, and that is the whole content of the rule. The chip is a
+ * warning about the trip — *you cannot park at the ice here* — and a lake with one drive-up boat ramp
+ * and one remote hike-in launch does not deserve it, because the trip a skater will actually make is
+ * the easy one. Taking the maximum would put a Hike-In chip on Lake Champlain.
+ *
+ * `undefined` when no launch has a known approach, which is most of the corpus and renders as nothing.
+ */
+export function bodyAccessKind(
+  kinds: readonly (ApproachKind | undefined)[],
+): ApproachKind | undefined {
+  const known = kinds.filter((k): k is ApproachKind => k !== undefined);
+  if (known.length === 0) return undefined;
+  return known.reduce((best, k) => (APPROACH_EASE[k] < APPROACH_EASE[best] ? k : best));
+}

@@ -864,6 +864,23 @@ export default defineSchema({
         updatedAt: v.number(),
       }),
     ),
+    /**
+     * The **easiest** known way onto this body (N6d / D144) — denormalized from its put-ins.
+     *
+     * Stamped by the access join and the operator mutations, never by hand. It exists so the map
+     * summary card and the feed card can render the Hike-In chip off the body row they already hold,
+     * rather than issuing a per-body access query on surfaces that draw hundreds of bodies at once —
+     * the `listInViewport` lesson applied before it can bite.
+     *
+     * **Deliberately not part of `summary`.** That object is activity-scoped and absent on a body with
+     * no recent reports, so a hike-in pond nobody has skated yet would carry no chip — which is
+     * exactly the lake the warning is for. Access is a static property of the place, so it is a
+     * column.
+     *
+     * The *easiest*, not the hardest: a lake with a drive-up ramp and a remote hike-in launch is not a
+     * hike-in lake, because the trip a skater will actually make is the easy one.
+     */
+    accessKind: v.optional(literals(APPROACH_KINDS)),
     createdByUserId: v.optional(v.id('profiles')), // when source == user
     reviewStatus: v.optional(literals(REVIEW_STATUSES)), // source==user only (D37)
     dedupStatus: literals(DEDUP_STATUSES), // default clean (D36)
