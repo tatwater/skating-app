@@ -4,6 +4,7 @@ import { chooseAccessTarget, describeApproach, isHikeIn } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { Button, Paragraph, Text, XStack, YStack } from 'tamagui';
+import { AccessPhotos } from './AccessPhotos';
 import { Badge, Section } from './detailUi';
 
 /** How each alert reason reads. Short, because it sits beside a launch name on a phone. */
@@ -35,7 +36,9 @@ const AMENITY_LABELS: Record<string, string> = {
 export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
   const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
   const vote = useMutation(api.accessAlerts.vote);
+  const createAlert = useMutation(api.accessAlerts.create);
   const [busy, setBusy] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
 
   if (!access || (access.putIns.length === 0 && access.parking.length === 0)) return null;
 
@@ -77,6 +80,64 @@ export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
       ) : null}
 
       {/* Drive time and the walk are never summed (D72 amendment) — two lines, deliberately. */}
+
+      {/* "Is this the right dirt road?" — and the phone is where that gets asked, in the car, at a
+          junction, in the dark. Infrastructure rather than conditions, so exempt from D66's purge. */}
+      {target ? (
+        <AccessPhotos
+          putInId={target.putIn.id as Id<'putIns'>}
+          label={`Photos — ${target.putIn.name ?? 'the launch'}`}
+        />
+      ) : null}
+
+      {/* D73's entry point, the mobile half. One tap per reason rather than a picker: this is a
+          thing you report standing at a locked gate with gloves on, so the interaction has to survive
+          being cold and one-handed. Free text is web's — a note typed at a trailhead is a note nobody
+          types. */}
+      {target ? (
+        reporting ? (
+          <YStack gap="$1.5">
+            {Object.entries(REASON_LABELS).map(([value, label]) => (
+              <Button
+                key={value}
+                size="$2"
+                chromeless
+                borderWidth={1}
+                borderColor="$border"
+                disabled={busy === 'new'}
+                onPress={async () => {
+                  setBusy('new');
+                  try {
+                    await createAlert({
+                      targetType: 'put_in',
+                      putInId: target.putIn.id as Id<'putIns'>,
+                      reason: value as 'gate_locked',
+                    });
+                    setReporting(false);
+                  } finally {
+                    setBusy(null);
+                  }
+                }}
+              >
+                <Text>{label}</Text>
+              </Button>
+            ))}
+            <Button size="$2" chromeless onPress={() => setReporting(false)}>
+              <Text color="$foregroundMuted">Cancel</Text>
+            </Button>
+          </YStack>
+        ) : (
+          <Button
+            size="$2"
+            chromeless
+            borderWidth={1}
+            borderColor="$border"
+            onPress={() => setReporting(true)}
+          >
+            <Text>Report an access problem</Text>
+          </Button>
+        )
+      ) : null}
 
       {alerts.map((alert) => (
         <YStack

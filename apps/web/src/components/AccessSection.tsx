@@ -3,6 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import { chooseAccessTarget, describeApproach, isHikeIn } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
+import { AccessPhotos } from './AccessPhotos';
 import { Panel } from './Panel';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
@@ -94,6 +95,18 @@ export function AccessSection({ waterBodyId }: { waterBodyId: Id<'waterBodies'> 
       {/* The drive time and the walk are NEVER summed (D72 amendment, ramification 2). A 55-minute
           drive plus a 25-minute walk is not an 80-minute drive, and folding one into the other would
           corrupt the filter a skater is actually using. They are two lines for that reason. */}
+
+      {/* "Is this the right dirt road?" — the founder's rationale, and the reason these hang off the
+          access point rather than a report: a parking lot looks the same next November, so they are
+          infrastructure and exempt from the seasonal purge (D66 carve-out). */}
+      {target ? (
+        <div className="mt-3">
+          <AccessPhotos
+            putInId={target.putIn.id as Id<'putIns'>}
+            label={`Photos — ${target.putIn.name ?? 'the launch'}`}
+          />
+        </div>
+      ) : null}
 
       {/* The entry point for D73's lifecycle. Below the access description, because reporting a
           blocked gate is something you do *after* reading where you'd have gone. */}

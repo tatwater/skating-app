@@ -71,11 +71,20 @@ function log(message: string): void {
 }
 
 /**
- * ORS's free tier is rate-limited per minute as well as per day. Serialized with a gap rather than
- * parallelized with a retry: this pass has no deadline, and the failure mode of hammering a free
- * endpoint is losing the key for everything else Phase 4 depends on.
+ * ORS's free tier caps **directions at 40 requests per minute**, and the first real run found that
+ * out the hard way: at a 700 ms gap (~85/min) exactly 40 legs succeeded and the next 1,963 came back
+ * `429`. 1,600 ms sits just under the ceiling.
+ *
+ * Serialized with a gap rather than parallelized with a retry: this pass has no deadline, and the
+ * failure mode of hammering a free endpoint is losing the key for everything else Phase 4 depends on.
  */
-const ORS_GAP_MS = 700;
+const ORS_GAP_MS = 1_600;
+
+/** How many times a rate-limited leg is retried before it gives up and flies straight. */
+const ORS_MAX_RETRIES = 3;
+
+/** Backoff after a 429. Generous — the limit is per minute, so waiting one out is the cheap fix. */
+const ORS_BACKOFF_MS = 20_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -163,33 +172,70 @@ function cacheKey(from: LatLng, to: LatLng): string {
   return `${r(from.lat)},${r(from.lng)}|${r(to.lat)},${r(to.lng)}`;
 }
 
+/**
+ * A resolved leg, plus **whether the answer is worth remembering**.
+ *
+ * The distinction is the whole point, and the first real run is why it exists. A straight-line
+ * fallback caused by a `429` is not an answer about this lake — it is an answer about how fast we
+ * were asking — and caching it makes the damage permanent: the next run reads a stored
+ * `routed: false`, skips the request, and the leg is never routed again however patient we are.
+ * 2,173 legs were poisoned that way before this was fixed.
+ *
+ * A `404` is different. ORS genuinely has no path between these two points (an unmapped herd path
+ * routes to nothing — the B4 caveat in another form), and that answer is stable, so it caches.
+ */
+interface RoutedLeg {
+  leg: ApproachLeg;
+  cacheable: boolean;
+}
+
 async function routeApproach(
   from: LatLng,
   to: LatLng,
   apiKey: string | undefined,
-): Promise<ApproachLeg> {
-  if (!apiKey) return straightLineApproach(from, to);
-  try {
-    const res = await fetch(ORS_FOOT_HIKING_URL, {
-      method: 'POST',
-      headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify(orsFootHikingBody(from, to)),
-    });
-    if (!res.ok) {
-      // A 404 here is ORS saying "no routable path", which is the B4 caveat arriving in a different
-      // form and is not an error. Anything else is worth seeing, but never worth aborting a pass
-      // over: one unroutable pair should cost that pair its precision, not the run its progress.
-      if (res.status !== 404) log(`ORS ${res.status} for ${cacheKey(from, to)} — falling back`);
-      return straightLineApproach(from, to);
+): Promise<RoutedLeg> {
+  // No key at all is a stable fact about this run, not a transient failure — but it is also not a
+  // fact about the lake, so it is not written to an archive a keyed run will later read.
+  if (!apiKey) return { leg: straightLineApproach(from, to), cacheable: false };
+
+  for (let attempt = 0; attempt <= ORS_MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(ORS_FOOT_HIKING_URL, {
+        method: 'POST',
+        headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify(orsFootHikingBody(from, to)),
+      });
+
+      if (res.status === 429) {
+        // Per-minute cap. Waiting it out is the cheap fix; the daily cap is the one that ends a run,
+        // and it ends it by exhausting these retries rather than by being detectable here.
+        if (attempt < ORS_MAX_RETRIES) {
+          log(`ORS 429 — backing off ${ORS_BACKOFF_MS / 1000}s (attempt ${attempt + 1})`);
+          await sleep(ORS_BACKOFF_MS);
+          continue;
+        }
+        log(`ORS 429 after ${ORS_MAX_RETRIES} retries for ${cacheKey(from, to)} — flying straight`);
+        return { leg: straightLineApproach(from, to), cacheable: false };
+      }
+
+      if (!res.ok) {
+        // A 404 is "no routable path" and is a stable fact about these two points, so it caches.
+        // Anything else is worth seeing and is not worth aborting a pass over: one bad pair should
+        // cost that pair its precision, not the run its progress.
+        if (res.status !== 404) log(`ORS ${res.status} for ${cacheKey(from, to)} — falling back`);
+        return { leg: straightLineApproach(from, to), cacheable: res.status === 404 };
+      }
+
+      const parsed = parseOrsFootHikingRoute((await res.json()) as OrsRouteResponse);
+      return parsed
+        ? { leg: parsed, cacheable: true }
+        : { leg: straightLineApproach(from, to), cacheable: true };
+    } catch (err) {
+      log(`ORS threw for ${cacheKey(from, to)} (${String(err)}) — falling back`);
+      return { leg: straightLineApproach(from, to), cacheable: false };
     }
-    return (
-      parseOrsFootHikingRoute((await res.json()) as OrsRouteResponse) ??
-      straightLineApproach(from, to)
-    );
-  } catch (err) {
-    log(`ORS threw for ${cacheKey(from, to)} (${String(err)}) — falling back`);
-    return straightLineApproach(from, to);
   }
+  return { leg: straightLineApproach(from, to), cacheable: false };
 }
 
 async function main(): Promise<void> {
@@ -225,6 +271,8 @@ async function main(): Promise<void> {
   let routed = 0;
   let fellBack = 0;
   let cacheHits = 0;
+  /** Legs that flew straight for a *transient* reason — the number a re-run will retry. */
+  let uncached = 0;
 
   for (const putIn of pairing.putIns) {
     if (!putIn.parkingExternalId) continue;
@@ -236,11 +284,18 @@ async function main(): Promise<void> {
     if (leg) {
       cacheHits++;
     } else {
-      leg = await routeApproach(lot.point, putIn.point, apiKey);
-      cache[key] = leg;
-      // Written every time rather than at the end: the whole value of the cache is surviving a crash
-      // partway through a pass that costs thousands of requests.
-      writeFileSync(ROUTE_CACHE, `${JSON.stringify(cache)}\n`);
+      const routedLeg = await routeApproach(lot.point, putIn.point, apiKey);
+      leg = routedLeg.leg;
+      // **Only real answers are archived.** A rate-limited fallback is a fact about our request rate,
+      // not about this lake, and storing it would make the next run skip the leg for ever.
+      if (routedLeg.cacheable) {
+        cache[key] = leg;
+        // Written every time rather than at the end: the whole value of the cache is surviving a
+        // crash partway through a pass that costs thousands of requests.
+        writeFileSync(ROUTE_CACHE, `${JSON.stringify(cache)}\n`);
+      } else {
+        uncached++;
+      }
       if (apiKey) await sleep(ORS_GAP_MS);
     }
 
@@ -281,6 +336,9 @@ async function main(): Promise<void> {
     ...pairing.stats,
     routed,
     fellBackToStraightLine: fellBack,
+    // Named apart from `fellBackToStraightLine`: this is the retryable half, and it is the number
+    // that says whether re-running tomorrow is worth anything.
+    retryableFallbacks: uncached,
     cacheHits,
     routingEnabled: Boolean(apiKey),
   };
