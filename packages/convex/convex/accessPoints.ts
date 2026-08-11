@@ -37,6 +37,7 @@ import {
   MAX_ACCESS_PHOTOS,
   PARKING_INFER_RADIUS_M,
   PUTIN_SHORE_RADIUS_M,
+  resolvePutInName,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
@@ -48,6 +49,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { loadLiveAlertsForBody } from './accessAlerts';
 import { requireContributor } from './lib/auth';
 import { ACCESS_ALERT_TARGETS, ACCESS_AMENITIES } from './lib/enums';
 import { assertOwnedPhotos, resolvePhotoUrls } from './lib/photoAccess';
@@ -538,5 +540,61 @@ export const listPhotos = query({
       rows.map((r) => r.photoId),
     );
     return resolved.map((photo, i) => ({ ...photo, accessPhotoId: rows[i]?._id }));
+  },
+});
+
+/**
+ * Everything the drawer needs to describe getting onto this lake, in **one round trip**.
+ *
+ * Put-ins, the lots that serve them, and the live alerts that annotate either — assembled server-side
+ * rather than left to three client queries, because the answer the client actually wants is a single
+ * choice (`chooseAccessTarget`) computed over all three. Three subscriptions would render a directions
+ * button that changes target as they resolve.
+ *
+ * The put-in list is the **stored** rows only, not `putIns.listForBody`'s derived clusters: a cluster
+ * has no id to hang an alert or a photo on, and no parking. Callers that want the map's full marker
+ * set still use that query — this one answers "where do I park and how far is the walk".
+ */
+export const accessForBody = query({
+  args: { waterBodyId: v.id('waterBodies') },
+  handler: async (ctx, { waterBodyId }) => {
+    const body = await ctx.db.get(waterBodyId);
+    if (!body) return { putIns: [], parking: [], blockedIds: [] };
+
+    const rows = await ctx.db
+      .query('putIns')
+      .withIndex('by_water_body', (q) => q.eq('waterBodyId', waterBodyId))
+      .collect();
+    const parking = await loadParkingForBody(ctx, waterBodyId);
+    const alerts = await loadLiveAlertsForBody(ctx, waterBodyId);
+
+    const interior = (body.interiorPoint ?? body.centroid) as LatLng | undefined;
+    const putIns = rows
+      .filter((r) => r.status === 'visible')
+      .map((r) => ({
+        id: r._id,
+        coord: r.coord,
+        // Resolved here so both clients get the same fallback label — a compass side derived from the
+        // body's *interior* point, never its `centroid`, which is Turf's `pointOnFeature` and lands on
+        // the shoreline (a bearing taken from there is noise).
+        name: resolvePutInName(r.name, r.coord, interior),
+        source: r.source,
+        parkingAreaId: r.parkingAreaId,
+        approachMeters: r.approachMeters,
+        approachAscentM: r.approachAscentM,
+        approachRouted: r.approachRouted,
+        approachKindOverride: r.approachKindOverride,
+      }));
+
+    return {
+      putIns,
+      parking,
+      // Flattened to the ids the resolver tests against, so the client does not re-derive "is this
+      // launch blocked" from two shapes and get it subtly different from the server.
+      blockedIds: alerts
+        .map((a) => a.putInId ?? a.parkingAreaId)
+        .filter((id): id is NonNullable<typeof id> => id !== undefined),
+      alerts,
+    };
   },
 });

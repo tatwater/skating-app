@@ -1,6 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { type DirectionsPlatform, directionsUrl } from '@skating/core';
+import {
+  chooseAccessTarget,
+  type DirectionsPlatform,
+  directionsUrl,
+  isHikeIn,
+} from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { Linking, Platform } from 'react-native';
 import { Button, Text } from 'tamagui';
@@ -36,14 +41,32 @@ function detectPlatform(): DirectionsPlatform {
 }
 
 /**
- * Directions button (Phase 4, decision #7) — opens the platform maps app to the lake's highest-priority
- * **put-in coord** (official first, else the top derived cluster), never the on-water centroid. Renders
- * nothing until a put-in is known (nothing safe to route to yet).
+ * Directions button (Phase 4 decision #7; re-targeted by N6d / D72) — opens the platform maps app to
+ * the **parking area** when the chosen launch has one, else to the launch itself.
+ *
+ * The change is the phase's whole point: routing a car to a put-in on a hike-in pond hands a maps app
+ * a destination it cannot reach, and the skater finds out at the trailhead. `directionsUrl` is
+ * unchanged; only the coordinate handed to it moved. The choice runs through `chooseAccessTarget` so
+ * this button and the web one cannot recommend different ways in.
+ *
+ * Falls back to the derived clusters when a lake has no stored access point — those have no id and no
+ * parking, so they can't go through the resolver, but a lake whose only signal is "people put in
+ * around here" should still offer directions exactly as it did before.
  */
 export function DirectionsButton({ waterBodyId }: { waterBodyId: Id<'waterBodies'> }) {
+  const access = useQuery(api.accessPoints.accessForBody, { waterBodyId });
   const markers = useQuery(api.putIns.listForBody, { waterBodyId });
-  const target = markers?.[0];
-  if (!target) return null;
+
+  const target = access
+    ? chooseAccessTarget(access.putIns, access.parking, new Set(access.blockedIds))
+    : null;
+  const fallback = !target ? markers?.[0] : undefined;
+  const coord = target?.coord ?? fallback?.coord;
+  if (!coord) return null;
+
+  const approximate = target
+    ? target.via === 'put_in' && target.putIn.source !== 'official'
+    : fallback?.source !== 'official';
 
   return (
     <Button
@@ -51,9 +74,13 @@ export function DirectionsButton({ waterBodyId }: { waterBodyId: Id<'waterBodies
       chromeless
       borderWidth={1}
       borderColor="$border"
-      onPress={() => void Linking.openURL(directionsUrl(target.coord, detectPlatform()))}
+      onPress={() => void Linking.openURL(directionsUrl(coord, detectPlatform()))}
     >
-      <Text color="$foreground">Directions{target.source === 'official' ? '' : ' (approx.)'}</Text>
+      <Text color="$foreground">
+        {target?.via === 'parking' ? 'Directions to parking' : 'Directions'}
+        {approximate ? ' (approx.)' : ''}
+        {isHikeIn(target?.approachKind) ? ' · hike-in' : ''}
+      </Text>
     </Button>
   );
 }

@@ -24,6 +24,7 @@ import { AlertStrip } from './AlertStrip';
 import { BountyForm } from './BountyForm';
 import { BountyList } from './BountyList';
 import { Badge, DetailLoading, Section, Unavailable } from './detailUi';
+import { AccessSection } from './AccessSection';
 import { DirectionsButton, FavoriteButton } from './FavoriteButton';
 import { ForecastStrip } from './ForecastStrip';
 import { IceHistory } from './IceHistory';
@@ -180,6 +181,9 @@ export function WaterBodyDetail({
           </Paragraph>
         ) : null}
         <DirectionsButton waterBodyId={result.body._id} />
+        {/* How you get onto the ice (N6d) — beneath the directions button it explains, and absent on
+            the great majority of bodies OSM has never mapped access for. */}
+        <AccessSection waterBodyId={result.body._id} />
       </YStack>
 
       {formOpen ? (

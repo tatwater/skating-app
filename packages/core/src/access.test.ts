@@ -5,6 +5,10 @@ import {
   compassSideLabel,
   DRIVE_UP_MAX_M,
   HIKE_IN_ASSERT_M,
+  type AccessParking,
+  type AccessPutIn,
+  chooseAccessTarget,
+  describeApproach,
   isHikeIn,
   orsFootHikingBody,
   PARKING_INFER_RADIUS_M,
@@ -274,5 +278,156 @@ describe('the approach leg (D87)', () => {
       features: [{ properties: { summary: { distance: 1500 } } }],
     });
     expect(straightLineApproach(LOT, LAUNCH).meters).toBeLessThan(routed?.meters ?? 0);
+  });
+});
+
+describe('chooseAccessTarget — the routing rule (D72)', () => {
+  const LAUNCH = { lat: 44.51, lng: -72.5 };
+  const LOT_COORD = { lat: 44.515, lng: -72.502 };
+
+  const launch = (over: Partial<AccessPutIn> = {}): AccessPutIn => ({
+    id: 'p1',
+    coord: LAUNCH,
+    source: 'osm',
+    ...over,
+  });
+  const lot = (over: Partial<AccessParking> = {}): AccessParking => ({
+    id: 'lot1',
+    coord: LOT_COORD,
+    source: 'osm',
+    ...over,
+  });
+
+  /** The bug the phase exists for: a maps app handed a destination it cannot route a car to. */
+  test('directions target the lot when one exists, and the launch when none does', () => {
+    const withLot = chooseAccessTarget([launch({ parkingAreaId: 'lot1' })], [lot()]);
+    expect(withLot?.coord).toEqual(LOT_COORD);
+    expect(withLot?.via).toBe('parking');
+
+    const without = chooseAccessTarget([launch()], []);
+    expect(without?.coord).toEqual(LAUNCH);
+    expect(without?.via).toBe('put_in');
+  });
+
+  test('the source ladder decides between launches', () => {
+    const chosen = chooseAccessTarget(
+      [launch({ id: 'derived', source: 'derived' }), launch({ id: 'official', source: 'official' })],
+      [],
+    );
+    expect(chosen?.putIn.id).toBe('official');
+  });
+
+  test('between equals, the shorter walk wins', () => {
+    const chosen = chooseAccessTarget(
+      [
+        launch({ id: 'far', approachMeters: 900 }),
+        launch({ id: 'near', approachMeters: 120 }),
+      ],
+      [],
+    );
+    expect(chosen?.putIn.id).toBe('near');
+  });
+
+  /**
+   * Annotate, never suppress (open question 3). A lake with three launches and one blocked gate is
+   * still a lake worth telling someone about.
+   */
+  test('a blocked launch is de-prioritized, not removed', () => {
+    const chosen = chooseAccessTarget(
+      [launch({ id: 'blocked', source: 'official' }), launch({ id: 'open', source: 'derived' })],
+      [],
+      new Set(['blocked']),
+    );
+    // Sorts below an open one *despite* outranking it on the ladder.
+    expect(chosen?.putIn.id).toBe('open');
+    expect(chosen?.alerted).toBe(false);
+  });
+
+  test('when every launch is blocked, the best one is still returned and flagged', () => {
+    const chosen = chooseAccessTarget([launch({ id: 'only' })], [], new Set(['only']));
+    expect(chosen?.putIn.id).toBe('only');
+    expect(chosen?.alerted).toBe(true);
+  });
+
+  test('an alert on the lot blocks the launch it serves', () => {
+    const chosen = chooseAccessTarget(
+      [launch({ parkingAreaId: 'lot1' })],
+      [lot()],
+      new Set(['lot1']),
+    );
+    expect(chosen?.alerted).toBe(true);
+  });
+
+  /** No access point is honestly nothing — never the centroid, which is water. */
+  test('returns null when there is no access point at all', () => {
+    expect(chooseAccessTarget([], [lot()])).toBeNull();
+  });
+
+  test('an operator override survives even with no parking to measure from', () => {
+    const chosen = chooseAccessTarget([launch({ approachKindOverride: 'hike_in' })], []);
+    expect(chosen?.approachKind).toBe('hike_in');
+    expect(chosen?.approachMeters).toBeUndefined();
+  });
+
+  test('the approach is only reported when there is a lot to walk from', () => {
+    const chosen = chooseAccessTarget([launch({ approachMeters: 700 })], []);
+    expect(chosen?.approachMeters).toBeUndefined();
+  });
+});
+
+describe('describeApproach', () => {
+  const base = {
+    coord: { lat: 44, lng: -72 },
+    via: 'parking' as const,
+    putIn: { id: 'p', coord: { lat: 44, lng: -72 }, source: 'osm' as const },
+    alerted: false,
+  };
+
+  test('a routed walk reads "about"; a straight-line fallback reads "at least"', () => {
+    const routed = describeApproach(
+      { ...base, approachMeters: 400, approachRouted: true, approachKind: 'short_walk' },
+      'metric',
+    );
+    expect(routed).toBe('Park here, then about 400 m on foot.');
+
+    const flown = describeApproach(
+      { ...base, approachMeters: 400, approachRouted: false, approachKind: 'short_walk' },
+      'metric',
+    );
+    // A straight line under-reports, so the floor has to sound like one.
+    expect(flown).toBe('Park here, then at least 400 m on foot.');
+  });
+
+  test('climb is included when measured and omitted when not — never zeroed', () => {
+    expect(
+      describeApproach(
+        { ...base, approachMeters: 1100, approachAscentM: 90, approachRouted: true, approachKind: 'hike_in' },
+        'metric',
+      ),
+    ).toBe('Park here, then about 1.1 km on foot, 90 m of climb.');
+
+    expect(
+      describeApproach(
+        { ...base, approachMeters: 1100, approachRouted: true, approachKind: 'hike_in' },
+        'metric',
+      ),
+    ).toBe('Park here, then about 1.1 km on foot.');
+  });
+
+  test('imperial switches units without changing the hedge', () => {
+    expect(
+      describeApproach(
+        { ...base, approachMeters: 2000, approachAscentM: 30, approachRouted: true, approachKind: 'hike_in' },
+        'imperial',
+      ),
+    ).toBe('Park here, then about 1.2 mi on foot, 98 ft of climb.');
+  });
+
+  /** For a pull-off and a bank, the honest thing to say is nothing at all. */
+  test('says nothing for a drive-up, or when no walk was measured', () => {
+    expect(
+      describeApproach({ ...base, approachMeters: 40, approachKind: 'drive_up' }, 'metric'),
+    ).toBeNull();
+    expect(describeApproach(base, 'metric')).toBeNull();
   });
 });

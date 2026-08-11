@@ -288,3 +288,144 @@ export function parseOrsFootHikingRoute(response: OrsRouteResponse): ApproachLeg
 export function straightLineApproach(from: LatLng, to: LatLng): ApproachLeg {
   return { meters: haversineMeters(from, to), routed: false };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Choosing where to send the car, and what to say about the rest of the trip
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** A put-in as the access resolver sees it. Ids are opaque strings so both clients can pass their own. */
+export interface AccessPutIn {
+  id: string;
+  coord: LatLng;
+  name?: string;
+  source: 'derived' | 'osm' | 'official';
+  parkingAreaId?: string;
+  approachMeters?: number;
+  approachAscentM?: number;
+  approachRouted?: boolean;
+  approachKindOverride?: ApproachKind;
+}
+
+/** A parking area as the access resolver sees it. */
+export interface AccessParking {
+  id: string;
+  coord: LatLng;
+  name?: string;
+  source: 'osm' | 'official';
+}
+
+/** Where to send the car, and everything the drawer needs to describe the rest of the trip. */
+export interface AccessTarget {
+  /** The coordinate the directions deep link is aimed at. */
+  coord: LatLng;
+  /** What that coordinate *is* — the fix D72 exists for. */
+  via: 'parking' | 'put_in';
+  putIn: AccessPutIn;
+  parking?: AccessParking;
+  approachMeters?: number;
+  approachAscentM?: number;
+  approachRouted?: boolean;
+  approachKind?: ApproachKind;
+  /** A live access alert names this launch or its lot. Annotates; never suppresses (open question 3). */
+  alerted: boolean;
+}
+
+/** Rank order for the put-in ladder — higher wins. Mirrors `PUTIN_SOURCES`, weakest first. */
+const PUTIN_RANK: Record<AccessPutIn['source'], number> = { derived: 0, osm: 1, official: 2 };
+
+/**
+ * Pick the access point to route to, and resolve the walk that follows it.
+ *
+ * **The routing rule (D72), and the whole bug this phase exists to fix.** For a hike-in pond we have
+ * been handing a maps app the *launch* coordinate — a destination it cannot route a car to — and the
+ * skater finds out at the trailhead, in winter, an hour from home. So directions target the **parking
+ * area** when the launch has one, and the drawer shows the remainder: *"park here, then about 400 m on
+ * foot."* `directionsUrl` itself is unchanged; its call sites pick a better target.
+ *
+ * **Alerts de-prioritize but never suppress** (open question 3). A launch with a live "gate locked" on
+ * it sorts below one without, so directions prefer the way in that still works — but if every launch
+ * is alerted the best one is still returned, flagged. A lake with three launches and one blocked gate
+ * is still a lake worth telling someone about, which is the same never-hide invariant hazards hold.
+ *
+ * Returns `null` only when there is no access point at all, which is most of the corpus and is
+ * honestly nothing rather than a centroid to route into the middle of a lake.
+ */
+export function chooseAccessTarget(
+  putIns: readonly AccessPutIn[],
+  parking: readonly AccessParking[],
+  blockedIds: ReadonlySet<string> = new Set(),
+): AccessTarget | null {
+  if (putIns.length === 0) return null;
+  const parkingById = new Map(parking.map((p) => [p.id, p]));
+
+  const isBlocked = (p: AccessPutIn) =>
+    blockedIds.has(p.id) || (p.parkingAreaId !== undefined && blockedIds.has(p.parkingAreaId));
+
+  const best = [...putIns].sort((a, b) => {
+    // Unblocked before blocked, then the source ladder, then the shorter walk — a skater choosing
+    // between two open launches on the same lake wants the nearer one.
+    const blocked = Number(isBlocked(a)) - Number(isBlocked(b));
+    if (blocked !== 0) return blocked;
+    const rank = PUTIN_RANK[b.source] - PUTIN_RANK[a.source];
+    if (rank !== 0) return rank;
+    return (a.approachMeters ?? 0) - (b.approachMeters ?? 0);
+  })[0];
+  if (!best) return null;
+
+  const lot = best.parkingAreaId ? parkingById.get(best.parkingAreaId) : undefined;
+  return {
+    coord: lot?.coord ?? best.coord,
+    via: lot ? 'parking' : 'put_in',
+    putIn: best,
+    parking: lot,
+    approachMeters: lot ? best.approachMeters : undefined,
+    approachAscentM: lot ? best.approachAscentM : undefined,
+    approachRouted: lot ? best.approachRouted : undefined,
+    // Derived even without a lot, because an operator's override is a claim about the trip rather than
+    // about the measurement — a launch a moderator marked `hike_in` says so with no parking on record.
+    approachKind: lot
+      ? resolveApproachKind(best.approachMeters, best.approachKindOverride)
+      : best.approachKindOverride,
+    alerted: isBlocked(best),
+  };
+}
+
+/**
+ * The approach sentence — *"park here, then about 1.1 km on foot, 90 m of climb."*
+ *
+ * Two things it is careful about, both D87's:
+ *
+ * - **"about" vs "at least".** A straight-line fallback under-reports, because trails weave. Saying
+ *   "about" over a floor would understate exactly the trips that most need not to be understated.
+ * - **Climb is omitted, not zeroed.** No ascent on the row means ORS did not return one; rendering
+ *   "0 m of climb" would assert flat ground we never measured.
+ *
+ * Returns `null` when there is no walk to describe, so a caller renders nothing rather than an empty
+ * clause — and specifically for `drive_up`, where the honest thing to say is nothing at all.
+ */
+export function describeApproach(
+  target: AccessTarget,
+  units: 'metric' | 'imperial' = 'imperial',
+): string | null {
+  const meters = target.approachMeters;
+  if (meters === undefined || target.approachKind === 'drive_up') return null;
+
+  const hedge = target.approachRouted === false ? 'at least' : 'about';
+  const distance =
+    units === 'metric'
+      ? meters >= 1000
+        ? `${(meters / 1000).toFixed(1)} km`
+        : `${Math.round(meters)} m`
+      : meters * 3.28084 >= 1000
+        ? `${(meters / 1609.344).toFixed(1)} mi`
+        : `${Math.round(meters * 3.28084)} ft`;
+
+  const climb =
+    target.approachAscentM === undefined || target.approachAscentM < 5
+      ? ''
+      : units === 'metric'
+        ? `, ${Math.round(target.approachAscentM)} m of climb`
+        : `, ${Math.round(target.approachAscentM * 3.28084)} ft of climb`;
+
+  return `Park here, then ${hedge} ${distance} on foot${climb}.`;
+}
