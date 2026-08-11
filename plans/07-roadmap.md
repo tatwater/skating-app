@@ -1244,7 +1244,8 @@ elevation, and where else to look.
   **Two commands, not one:** a `--dry-run` emitting reviewable matches, then an apply step, because the
   founder reviews the list before boosts land. The unmatched entries are the interesting output.
 
-**N6d — Lake access points: parking, named put-ins, and access alerts.** 🔨 **In build 2026-08-10** —
+**N6d — Lake access points: parking, named put-ins, and access alerts.** 🔨 **Data path built
+2026-08-11** (four UI surfaces outstanding, ETL not yet run) —
 scoped 2026-07-30; see [`phase-N6d-lake-access-points.md`](./phase-N6d-lake-access-points.md); decisions
 **D72** (parking modelled apart from put-ins) and **D73** (access blockers decay, they aren't notes), plus
 **D143**/**D144** and a **D72 second amendment** taken at the 2026-08-10 kickoff. **Split out of N6c at
@@ -1259,7 +1260,14 @@ a new lifecycle. Independent of N6c; either order.
 > argument is that only an uploader's own reports and hazards can reference a photo.
 > **Founder calls (2026-08-10):** all five workstreams ship together; the **directions link** re-targets
 > to parking but the **drive-time bands do not** (D72 amendment); an `osm` put-in scores as `derived`
-> **+0.06** (D143); approach thresholds are **150 / 800 / 1,600 m** (D144).
+> **+0.06** (D143); approach thresholds are **150 / 800 / 1,600 m** (D144). A moderator-pinned access
+> alert **never expires** — the analogue of an official put-in outranks the seasonal reset — and posting
+> one notifies nobody.
+>
+> **⛔ `backfillCells` is released but not run.** D2's put-in terms have never fired (dev carried 0
+> `putIns` rows), and the held re-score bakes D143's rung in on its first pass. The order is: run the
+> access ETL, *then* `backfillCells` — running the re-score first would score a corpus with no access
+> data and have to be repeated, which is the duplicated work that gate exists to avoid.
 
 - **The bug this fixes:** `putIns` is a bare coordinate and `directionsUrl` routes a car to it. For a
   hike-in pond that's a destination a maps app cannot route to, discovered at the trailhead in winter.

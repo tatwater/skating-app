@@ -580,6 +580,61 @@ pnpm --filter @skating/etl transform fixtures/vermont-sample.geojsonseq .scratch
 
 ---
 
+## The access pass (N6d) — parking, put-ins, and the walk between them
+
+A **second `osmium tags-filter` pass over the same archived extracts** the water pass already pinned.
+No new source, no new download, no new account — and because `.raw/<state>/` is never deleted, its
+provenance is the manifest that is already there.
+
+```bash
+pnpm --filter @skating/etl access-transform                      # all five states
+pnpm --filter @skating/etl access-transform VT                   # one, for the eyeballing pass
+pnpm --filter @skating/etl access-transform --parking-radius=400 # try a different inference radius
+pnpm --filter @skating/etl access-transform --no-route           # skip ORS entirely
+
+# ⚠ Order matters — see below.
+pnpm --filter @skating/etl load-access parking .scratch/access/parking.ndjson
+pnpm --filter @skating/etl load-access put-ins .scratch/access/put-ins.ndjson
+```
+
+### Three things that are not obvious
+
+**1. The two stages have a hard order.** A put-in references its lot by OSM id, so every lot must be a
+row before the put-in stage runs. Backwards, every paired put-in reports `parkingMissing` and silently
+loses its parking association. They are separate `importRuns` kinds (`access_parking`,
+`access_put_ins`) precisely so that mistake reads as a sequencing error on `/admin/imports` rather than
+as a data-quality finding.
+
+**2. Half the join is local and half is not, and the split is load-bearing.** Parking↔put-in and
+toilets↔parking are OSM-to-OSM, so they run in the transform where the features are — which is also
+what lets the ORS `foot-hiking` leg be computed there. *Which body* a launch belongs to cannot: the
+transform has no polygons, and post-N7 the merge output is not the loaded corpus. That runs
+server-side in `accessPoints:matchAndImportPutIns` against the N1 cell index, the same shape N6a's
+depth join settled on.
+
+**3. ORS is optional but the flag it sets is not.** Set `ORS_API_KEY` in `scripts/etl/.env.local`
+(the same key Phase 4's isochrones use — D87). Without it every approach falls back to straight-line
+and is stored `approachRouted: false`, which the drawer renders as *"at least 900 m on foot"* rather
+than *"about"*. Responses are cached in `.scratch/access/ors-cache.json` and written after **every**
+request, so a crash 3,000 requests into a pass does not re-spend the first 2,999.
+
+### Before the full run: eyeball one state
+
+`PARKING_INFER_RADIUS_M` (250 m) is the one constant here that is a guess about geometry rather than a
+product line, and it will be falsified by a dense state. Run `access-transform MA` first and read
+`summary.json` — `putInsWithParking` against `putInsWithoutParking`, and `parkingWithoutPutIn`. Getting
+it wrong costs some missed or spurious **inferences** and never a rejected human assertion, which is
+the bounded blast radius the D72 amendment bought.
+
+### What the pass will not find
+
+OSM's coverage of parking and slipways in the rural Northeast is real and patchy. Expect good results
+on well-known bodies and nothing on most of the corpus — that is fine, it is strictly more than the
+zero we had, and the gaps are exactly where the community layer and operator edits fill in. **Do not**
+let the patchiness argue for hand-entering the rest; that is the trap D70 exists to prevent.
+
+---
+
 ## Regional expansion (Phase 2.5)
 
 To widen the corpus beyond Vermont, run the same pipeline **once per state** — no code change; the

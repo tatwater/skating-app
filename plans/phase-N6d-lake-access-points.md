@@ -1,7 +1,9 @@
 # Phase N6d — Lake access points: parking, named put-ins, and access alerts
 
-> **Status:** 🔨 **In build, 2026-08-10** — scoped 2026-07-30, kickoff re-read against the post-N7
-> codebase 2026-08-10. Founder ask, same day as the scoping.
+> **Status:** 🔨 **Data path built 2026-08-11, four UI surfaces outstanding; ETL not yet run** —
+> scoped 2026-07-30, kickoff re-read against the post-N7 codebase 2026-08-10. Founder ask, same day as
+> the scoping. Suites green: core 1,837 · convex 1,220 · web 301 · mobile 95 · etl 407.
+> See *§What the build found* for what is and is not finished.
 > **Split from** [N6c](./phase-N6c-expanded-lake-profiles.md) at scoping — it was roughly the size of
 > everything else in that phase combined, and it is the only part touching a new lifecycle.
 > **Depends on:** nothing in N6c. These two can run in parallel or in either order.
@@ -370,6 +372,61 @@ community layer), and the first three are where most of the value is.
 > because the split remains the correct fallback if the phase stalls — the finish line that matters to
 > everything downstream is step 2, since that is what puts `putIns` rows in the corpus and releases
 > N6c's held `backfillCells` re-score (correction 5).
+
+---
+
+## What the build found — 2026-08-11
+
+*Five things the plan did not anticipate. Two are corrections to the plan, two are decisions it left
+implicit, and one is the shape of an unfinished edge.*
+
+**1. `parkingAreas.waterBodyIds` could not be an array, and the reason is the read.** A1's field
+sketch stores the association on the parking row. That records the fact and cannot answer what every
+read actually asks — *"what parking serves this lake?"* — because Convex has no array-contains index,
+so a body-side lookup is a full table scan on a table that grows with the corpus. It is the
+`listInViewport` failure in a new coat. So the association is a **`parkingAreaBodies` join table**
+indexed both directions, and the array is deliberately not kept beside it: two copies of one fact is
+what N7 spent a phase undoing. Its `inferred` column is the D72 amendment written into the data.
+
+**2. `photoIds` on the access point could not work either, and that one would have shipped as data
+loss.** Covered in the kickoff as a `photoOrphans` gap; the build found it was a *schema* problem
+rather than a scan problem. `referencedPhotoIds` derives "may this be deleted" by scanning **the
+uploader's own reports and hazards**, and that is sound because `assertOwnedPhotos` makes "scan by
+author" and "find every referrer" the same query. An access point breaks the identity — the put-in is
+created by the ETL, the photo by a passing skater — so a `photoIds` array would have left every access
+photo an orphan by construction, swept thirty days later by a cron. `accessPhotos` carries its own
+`uploaderId`, which restores the property instead of adding an exception to it. **Both** destructive
+paths needed it: `photoReconcile` gained an `access` phase, and it is the only clearing phase besides
+`hazards` that runs in *both* modes — which is the D66 carve-out expressed as a list entry.
+
+**3. `approachKind` is not stored, and `official` had to become a status.** Two schema calls the plan
+left implicit and the build had to make. The kind is a pure function of the distance, so persisting it
+would be a cached derivation that goes stale on the next re-route — only the *override* is stored,
+because a human disagreeing with a measurement is the part no function can recompute. And the founder's
+"a pin never expires" exemption forced `official` to be a status rather than a flag: Convex indexes on
+optional fields are not sparse, so an absent `expiresAt` sorts **first** and a bare `lte(now)` sweep
+would have expired exactly the rows that are exempt from expiry. A distinct status puts them in a
+different equality prefix, so the sweep cannot reach them at all.
+
+**4. The `trail` amenity comes from the router, not the extract** — the kickoff's correction 9, and it
+held up in the build. Dropping `highway=path` / `route=hiking` removed the only line geometry this
+pipeline would have had to handle, and a routed `foot-hiking` leg longer than 150 m stamps the amenity.
+A drive-up ramp routes over the car park's own service road, which is why the length test is there.
+
+**5. What is built and what is not.** The data path is complete end to end — the second osmium pass,
+the OSM-to-OSM pairing, the ORS leg, the server-side join, both loaders, the alert lifecycle with its
+cron, the photo model, the operator write path, and the D2 richness rung that finally releases
+`backfillCells`. **The ETL has not been run**, so no access data is loaded and none of it has been seen
+against real output — including the `PARKING_INFER_RADIUS_M` eyeballing pass the plan asks for.
+
+Four **UI surfaces remain unbuilt**, all of them additive to shipped components:
+
+| surface | state |
+|---|---|
+| Hike-In chip on the **map summary card** and the **feed card** | the drawer and the directions button carry it; D87 named three surfaces |
+| **Access photos** on either client | mutations, cap, orphan-safety and the read query exist; no upload/gallery UI |
+| **Parking editing** in the N2 per-lake editor (`/admin/water/$id`) | `setOfficialParking` / `setPutInAccess` exist and are tested, including D144's refusal; no form calls them |
+| **Alert posting on mobile** | web has the form; mobile renders and votes on alerts but cannot open one |
 
 ---
 
