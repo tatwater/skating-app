@@ -39,6 +39,12 @@ export default defineConfig({
         'src/cli.ts',
         'src/load.ts', // batching + `convex run`; every decision is in the transform
         'src/loadDepths.ts',
+        // osmium + ORS + file I/O. Every rule it applies — what counts as access, which lot serves
+        // which launch, how an ORS response is read, what a fallback is flagged as — lives in
+        // `accessTransform.ts` and `@skating/core`'s `access.ts`, both at full coverage. What is left
+        // here is the subprocess, the response cache and the report.
+        'src/accessCli.ts',
+        'src/loadAccess.ts', // batching + `convex run`; the join and the ladder are in the mutation
         'src/loadSubAreas.ts', // reads the artifact, calls one mutation; the rules are both tested
         'src/loadReconciliation.ts',
         'src/resolveMergeDuplicates.ts', // reads the artifact, calls one mutation; the rules are tested

@@ -18,7 +18,7 @@
  * falsified by a dense state — see its own note.
  */
 
-import { bearingDegrees, type LatLng } from './geometry';
+import { bearingDegrees, haversineMeters, type LatLng } from './geometry';
 import { compassPointFor } from './lakeGeometry';
 
 /**
@@ -74,6 +74,17 @@ export const HIKE_IN_ASSERT_M = 1600;
  * bounded blast radius the amendment bought.
  */
 export const PARKING_INFER_RADIUS_M = 250;
+
+/**
+ * How close a standalone amenity — a toilet block — must be to a lot to count as *at* that lot.
+ *
+ * Much tighter than `PARKING_INFER_RADIUS_M`, and the asymmetry is deliberate: 250 m is a plausible
+ * walk from a car to a launch, and it is not a plausible distance to a toilet you would describe as
+ * being at the parking area. Getting this too generous attaches a village's public convenience to a
+ * boat launch across the road from it, which is a small lie that a skater plans a trip with children
+ * around.
+ */
+export const AMENITY_NEAR_PARKING_M = 150;
 
 /**
  * How close an OSM access feature must be to a body's shoreline to attach to it.
@@ -173,4 +184,98 @@ export function resolvePutInName(
   const trimmed = storedName?.trim();
   if (trimmed) return trimmed;
   return interiorPoint ? compassSideLabel(point, interiorPoint) : undefined;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// The approach leg (D87) — walked, not flown
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The ORS `foot-hiking` **GeoJSON** directions endpoint.
+ *
+ * The GeoJSON variant rather than the default, deliberately: the plain endpoint returns an encoded
+ * polyline and puts the summary somewhere subtly different per version, while this one puts
+ * `summary.distance` and `ascent` in a documented place on `features[0].properties`. Same key, same
+ * account, same free tier as Phase 4's `driving-car` isochrones (D87).
+ */
+export const ORS_FOOT_HIKING_URL =
+  'https://api.openrouteservice.org/v2/directions/foot-hiking/geojson';
+
+/** The subset of an ORS directions response the approach leg reads. */
+export interface OrsRouteResponse {
+  features?: {
+    properties?: {
+      summary?: { distance?: number; duration?: number };
+      ascent?: number;
+      descent?: number;
+    };
+  }[];
+}
+
+/** A resolved approach: how far, how much climb, and whether anybody actually routed it. */
+export interface ApproachLeg {
+  meters: number;
+  ascentM?: number;
+  /** `false` ⇒ straight-line. The number is a **floor**, not an estimate — say "at least". */
+  routed: boolean;
+}
+
+/**
+ * The request body for one parking → put-in leg.
+ *
+ * **Exactly two coordinates, and never a `round_trip` option.** This is the guard D87 asked for in as
+ * many words: ORS has known oddities in how `ascent`/`descent` resolve on out-and-back routes, and the
+ * figure we want is the **one-way** climb from the car to the ice — the return trip's climb is the
+ * descent, and the skater can infer it. Building the body here rather than at the call site is what
+ * makes "we never asked for a round trip" a property of the code instead of a thing somebody
+ * remembered.
+ *
+ * `elevation: true` is not optional: without it ORS returns no `ascent` at all, which would silently
+ * turn every approach into a distance with no climb — a plausible-looking answer, and exactly wrong
+ * for the half of the founder's question that motivated the routing in the first place.
+ */
+export function orsFootHikingBody(from: LatLng, to: LatLng): Record<string, unknown> {
+  return {
+    coordinates: [
+      [from.lng, from.lat],
+      [to.lng, to.lat],
+    ],
+    elevation: true,
+  };
+}
+
+/**
+ * Pull the one-way distance and ascent out of an ORS `foot-hiking` response.
+ *
+ * Reads `summary.distance` — the total for the *requested* route — rather than summing `segments`,
+ * which is the shape that produces a doubled figure the moment anything adds a via-point. Returns
+ * `null` when ORS found no path (an unmapped herd path routes to nothing, which is the B4 caveat
+ * arriving in a different form), so the caller can fall back rather than record a zero.
+ */
+export function parseOrsFootHikingRoute(response: OrsRouteResponse): ApproachLeg | null {
+  const properties = response.features?.[0]?.properties;
+  const meters = properties?.summary?.distance;
+  if (typeof meters !== 'number' || !Number.isFinite(meters) || meters < 0) return null;
+  const ascent = properties?.ascent;
+  return {
+    meters,
+    ascentM: typeof ascent === 'number' && Number.isFinite(ascent) ? ascent : undefined,
+    routed: true,
+  };
+}
+
+/**
+ * The fallback rung: crow-flies, **flagged as such** (D87 ladder rung 2).
+ *
+ * The flag is the whole point. A straight line between a lot and a launch **under-reports** a real
+ * walk — trails weave, and the more they weave the more it under-reports — so the difference between
+ * this and a routed number is the difference between *"about 900 m on foot"* and *"at least 900 m on
+ * foot"*. Reporting it unflagged would understate exactly the trips that most need not to be
+ * understated.
+ *
+ * No ascent: we have no terrain model of our own, and a zero would read as "flat" rather than as
+ * "unknown".
+ */
+export function straightLineApproach(from: LatLng, to: LatLng): ApproachLeg {
+  return { meters: haversineMeters(from, to), routed: false };
 }

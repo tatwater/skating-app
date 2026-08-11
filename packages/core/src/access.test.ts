@@ -6,12 +6,15 @@ import {
   DRIVE_UP_MAX_M,
   HIKE_IN_ASSERT_M,
   isHikeIn,
+  orsFootHikingBody,
   PARKING_INFER_RADIUS_M,
+  parseOrsFootHikingRoute,
   PUTIN_SHORE_RADIUS_M,
   requiresHikeInAssertion,
   resolveApproachKind,
   resolvePutInName,
   SHORT_WALK_MAX_M,
+  straightLineApproach,
 } from './access';
 import { bearingDegrees, destinationPoint, haversineMeters } from './geometry';
 
@@ -183,5 +186,93 @@ describe('the association radii', () => {
     const far = destinationPoint(CENTRE, 90, PUTIN_SHORE_RADIUS_M + 5);
     expect(haversineMeters(CENTRE, near)).toBeLessThan(PUTIN_SHORE_RADIUS_M);
     expect(haversineMeters(CENTRE, far)).toBeGreaterThan(PUTIN_SHORE_RADIUS_M);
+  });
+});
+
+describe('the approach leg (D87)', () => {
+  const LOT = { lat: 44.5, lng: -72.5 };
+  const LAUNCH = { lat: 44.507, lng: -72.495 };
+
+  /**
+   * The guard D87 asked for in as many words. ORS's ascent/descent oddities live on out-and-back
+   * routes, and the figure we want is one-way parking → put-in; the return climb is the descent.
+   * Building the body in core is what makes "we never asked for a round trip" a property of the code.
+   */
+  test('the request is exactly two coordinates and never a round trip', () => {
+    const body = orsFootHikingBody(LOT, LAUNCH) as {
+      coordinates: number[][];
+      elevation: boolean;
+      options?: unknown;
+    };
+    expect(body.coordinates).toHaveLength(2);
+    expect(body.coordinates[0]).toEqual([LOT.lng, LOT.lat]);
+    expect(body.coordinates[1]).toEqual([LAUNCH.lng, LAUNCH.lat]);
+    expect(body.coordinates[0]).not.toEqual(body.coordinates[1]);
+    expect(body.options).toBeUndefined();
+    expect(JSON.stringify(body)).not.toContain('round_trip');
+  });
+
+  /** No `elevation: true`, no ascent at all — a distance with a silently missing climb. */
+  test('elevation is always requested, because ascent does not come back without it', () => {
+    expect((orsFootHikingBody(LOT, LAUNCH) as { elevation: boolean }).elevation).toBe(true);
+  });
+
+  test('parses the one-way distance and ascent off the first feature', () => {
+    const leg = parseOrsFootHikingRoute({
+      features: [{ properties: { summary: { distance: 1123.4, duration: 900 }, ascent: 91.2, descent: 12 } }],
+    });
+    expect(leg).toEqual({ meters: 1123.4, ascentM: 91.2, routed: true });
+  });
+
+  /**
+   * `summary.distance` is the total for the requested route. Summing `segments` is the shape that
+   * doubles the moment anything adds a via-point, which is precisely the round-trip failure.
+   */
+  test('reads the summary, not a sum over segments', () => {
+    const leg = parseOrsFootHikingRoute({
+      features: [
+        {
+          properties: {
+            summary: { distance: 1000 },
+            ascent: 50,
+            // A hostile shape: were we summing segments, this would read 2000.
+            ...({ segments: [{ distance: 1000 }, { distance: 1000 }] } as object),
+          },
+        },
+      ],
+    });
+    expect(leg?.meters).toBe(1000);
+  });
+
+  test('missing elevation data yields a distance with no climb rather than a zero climb', () => {
+    const leg = parseOrsFootHikingRoute({ features: [{ properties: { summary: { distance: 400 } } }] });
+    expect(leg).toEqual({ meters: 400, ascentM: undefined, routed: true });
+  });
+
+  test.each([
+    ['no path found', {}],
+    ['an empty feature list', { features: [] }],
+    ['a feature with no summary', { features: [{ properties: {} }] }],
+    ['a non-numeric distance', { features: [{ properties: { summary: { distance: Number.NaN } } }] }],
+  ])('returns null for %s, so the caller falls back rather than recording a zero', (_label, res) => {
+    expect(parseOrsFootHikingRoute(res)).toBeNull();
+  });
+
+  test('the straight-line fallback is flagged, and carries no invented climb', () => {
+    const leg = straightLineApproach(LOT, LAUNCH);
+    expect(leg.routed).toBe(false);
+    expect(leg.ascentM).toBeUndefined();
+    expect(leg.meters).toBeCloseTo(haversineMeters(LOT, LAUNCH), 6);
+  });
+
+  /**
+   * The reason the flag exists: a straight line is a **floor**. A caption that says "about" where it
+   * should say "at least" understates exactly the trips that most need not to be understated.
+   */
+  test('the fallback never exceeds the routed distance for the same pair', () => {
+    const routed = parseOrsFootHikingRoute({
+      features: [{ properties: { summary: { distance: 1500 } } }],
+    });
+    expect(straightLineApproach(LOT, LAUNCH).meters).toBeLessThan(routed?.meters ?? 0);
   });
 });

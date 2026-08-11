@@ -75,6 +75,74 @@ export function osmExportArgs(filtered: string, out: string): string[] {
 }
 
 /**
+ * The OSM tags the **access** pass keeps (N6d B1) — a second filter over the same state extract.
+ *
+ * A superset again, and for the same reason: `parseAccessFeature` makes the final call, so this only
+ * has to be wide enough not to lose anything. What it must *not* do is overlap the water pass — these
+ * are the features beside the water, not the water.
+ *
+ * - `leisure=slipway` / `waterway=slipway` — a boat ramp. The single highest-value tag here, and the
+ *   one that most often carries a `name` worth showing.
+ * - `amenity=parking` — where the car goes. Usually a way, sometimes a node.
+ * - `amenity=toilets` — almost always a node, and it changes whether a trip works with kids.
+ * - `natural=beach` / `leisure=fishing` / `man_made=pier` — the other three ways onto a lake.
+ *
+ * ⚠ **No trail tags.** `highway=path` / `route=hiking` were in the plan and are deliberately absent:
+ * ORS `foot-hiking` routes over exactly those ways, so a successful approach route *is* the evidence a
+ * trail exists (N6d correction 9). Extracting them would be a second, larger geometry class parsed to
+ * answer a question the routing step already answers — and it is the one class that would have forced
+ * line handling into this pipeline.
+ */
+export const OSM_ACCESS_TAGS = [
+  'leisure=slipway',
+  'waterway=slipway',
+  'amenity=parking',
+  'amenity=toilets',
+  'natural=beach',
+  'leisure=fishing',
+  'man_made=pier',
+] as const;
+
+/** `osmium tags-filter` argv — the access subset of a state extract (N6d B1). */
+export function osmAccessFilterArgs(pbf: string, out: string): string[] {
+  return ['tags-filter', '-t', pbf, ...OSM_ACCESS_TAGS, '-o', out, '--overwrite'];
+}
+
+/**
+ * `osmium export` argv for the access pass — **points and polygons**, where the water pass takes
+ * polygons alone.
+ *
+ * This is the difference that made the second pass a second *configuration* rather than a reuse, and
+ * it is not cosmetic: a toilet block is a node, a slipway is a node about as often as it is a way, and
+ * `--geometry-types=polygon` would silently drop both. Silently is the operative word — `osmium
+ * export` emits fewer features rather than failing, so the pass would report success over an extract
+ * missing most of its put-in candidates.
+ *
+ * Lines are still excluded. Nothing here is a line once trails are out (correction 9), and admitting
+ * them would mean a centroid rule for a geometry type with no member worth centroiding.
+ *
+ * `-a type,id` carries the stable OSM identity (`way/123`) exactly as the water pass does — it is the
+ * idempotent upsert key for `putIns.externalId` and `parkingAreas.externalId`, so an export without it
+ * would make every re-run duplicate every access point it found.
+ */
+export function osmAccessExportArgs(filtered: string, out: string): string[] {
+  return [
+    'export',
+    filtered,
+    '--geometry-types=point,polygon',
+    '-a',
+    'type,id',
+    '-f',
+    'geojsonseq',
+    '-x',
+    'print_record_separator=false',
+    '-o',
+    out,
+    '--overwrite',
+  ];
+}
+
+/**
  * One acre in km², the unit NHD and 3DHP both publish `areasqkm` in.
  *
  * Expressed exactly rather than rounded, because it is compared with `>=` against a float the
