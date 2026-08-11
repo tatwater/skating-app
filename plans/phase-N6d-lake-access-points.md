@@ -1,6 +1,7 @@
 # Phase N6d — Lake access points: parking, named put-ins, and access alerts
 
-> **Status:** 📋 Scoped, not built (2026-07-30). Founder ask, same day.
+> **Status:** 🔨 **In build, 2026-08-10** — scoped 2026-07-30, kickoff re-read against the post-N7
+> codebase 2026-08-10. Founder ask, same day as the scoping.
 > **Split from** [N6c](./phase-N6c-expanded-lake-profiles.md) at scoping — it was roughly the size of
 > everything else in that phase combined, and it is the only part touching a new lifecycle.
 > **Depends on:** nothing in N6c. These two can run in parallel or in either order.
@@ -11,6 +12,22 @@
 > routed via OpenRouteService `foot-hiking`** (D87 — the account Phase 4 already uses, and it returns
 > elevation gain), and **`parkingAreas` is many-to-many with bodies** because the association radius caps
 > inference, not human assertion (D72 amendment).
+>
+> ### ⚠ This doc was written before N7, and three of its premises moved
+>
+> Scoped 2026-07-30; [N7](./phase-N7-unified-corpus.md) landed 2026-08-07 and rebuilt the corpus under
+> it. See *§What the kickoff found in the plan*, which is the first section below — the corrections are
+> **not** cosmetic: one of them changes where the join runs.
+>
+> ### Founder calls, 2026-08-10 — four, taken at kickoff
+>
+> 1. **All five workstreams ship in one phase.** The doc's own *"suggested split"* (1–3 without 4–5) was
+>    offered and declined. So the access alert lifecycle and the photo carve-out are in scope here, not
+>    deferred to an N6d-2.
+> 2. **Directions re-target to parking; drive-time bands do not.** See correction 6.
+> 3. **An `osm` put-in scores as `derived` (+0.06) in D2's richness ladder.** See correction 5.
+> 4. **The approach thresholds:** `drive_up` ≤ 150 m · `short_walk` ≤ 800 m · `hike_in` > 800 m, and the
+>    UI **demands** an explicit `hike_in` assertion above **1,600 m**. See correction 7.
 
 ---
 
@@ -36,6 +53,106 @@ This phase inherits N6c's governing rule, and it is the harder test of it:
 Access information is exactly the content that rots. A gate that reopened in April still reads "closed"
 in December, because the person who wrote it moved on. So everything here either comes from OSM, comes
 from a skater, or expires on its own. **No free-text field in this phase is permanent.**
+
+---
+
+## What the kickoff found in the plan — 2026-08-10
+
+Same discipline N1/N2/N6a applied to their own entries: every load-bearing claim re-checked against a
+file before a line was written. Seven corrections. The third is the one that changes the build.
+
+**1. "116,070 bodies" is now ~25,197, and the correction is good news.** `regionStats` sums to
+**25,011** across the five states (NY 9,420 · ME 5,507 · MA 5,681 · NH 3,069 · VT 1,334). This doc leans
+on the old figure four times — *"what makes named access points a 116k feature rather than a 36-lake
+one"*, *"nothing on most of the 116k"*. But N7 did not merely shrink the corpus, it **changed its
+composition**: one admission floor now applies once to the merged body (≥ 5 acres, or ≥ 1 acre if named
+— D91), so the ~90k sub-acre ponds B4's pessimism was calibrated against are no longer rows at all. The
+surviving population is exactly the set OSM is most likely to have named a slipway or a lot for. B4's
+*"expect solid results on well-known bodies and nothing on most"* should be re-read as a much narrower
+gap than it was written to describe.
+
+**2. The archive premise held, and got stronger.** *"No new source, no new download, no new account"* is
+still true, and `scripts/etl/.raw/<state>/` now holds **pinned, md5-verified, dated** extracts
+(`vermont-260731.osm.pbf` and its four siblings) with manifests that `scripts/run-log`'s
+`provenance.ts` replays into an `/admin/imports` run row. So this pass's provenance is free and its
+inputs are byte-identical to the ones behind the current corpus.
+
+**3. ⚠ B2's association rule cannot be implemented as written — the join has to run server-side.**
+*"Put-in candidates within ~30 m of a body's polygon boundary attach to that body"* reads as something
+the transform does. It can't: the transform has no access to our polygons, and post-N7 the merge output
+is **not** the loaded corpus (bodies are pruned, deduped, re-keyed and retired after it). This is
+precisely what [N6a](./phase-N6a-lake-depth.md) discovered mid-build and it has the same fix —
+`waterBodies.matchAndImportDepths` does the geometric join in Convex against the N1 cell index, and
+`matchAndImportAccessPoints` will mirror it. The same free benefit comes with it: an access point and
+the app's own *"you're at Lake X"* resolution agree by construction, because both go through
+`listedBodiesNearCoord`. `distanceToPolygonMeters` and `pointNearPolygon` already exist in
+`@skating/core`.
+
+**The half that *is* local, and this is what keeps the ETL's four-stage shape.** Pairing a parking lot
+to a put-in candidate is **OSM-to-OSM** — both are features in the same extract — so B2's ~250 m
+inference, and the ORS `foot-hiking` leg that rides on it, need no corpus and happen in the transform.
+Only *which body this serves* needs the server. Without that split the pipeline would have to
+load → query back the unrouted pairs → route → patch, which is a shape none of the other three ETLs
+has.
+
+**4. The second `osmium` pass needs geometry types the first one throws away.**
+`scripts/etl/src/extract.ts` centralises the argv — deliberately, after five copies drifted — and its
+`osmExportArgs` exports `--geometry-types=polygon`. N6d's features are **nodes** (toilets, many
+slipways), **polygons** (parking) and **lines** (trails, slipway ways). That is a second export
+configuration, and by that file's own docstring it belongs *in* it rather than beside it.
+
+**5. `osm` as a `putIns` rung collides with D2's richness ladder, and the collision is load-bearing.**
+`PUTIN_SOURCES` is `['derived', 'official']` and `staticRichness` has exactly two matching terms —
+derived **+0.06**, official **+0.12**, official superseding rather than stacking. An OSM slipway is
+stored like an `official` row and approximate like a `derived` one, so it needed a call rather than a
+default. **Founder call: it scores as `derived`.** An OSM feature is *data*; `official` still means an
+operator vouched for access, which is what makes it *"the strongest static signal we have"*.
+
+This matters more than a constant usually would, because **`backfillCells` — the single full-corpus
+re-score N6c has been holding since 2026-08-02 — is gated on this phase precisely for these two
+terms.** They have never fired: dev carries **0 `putIns` rows**, 1 report and 2 hazards. So the OSM pass
+is not merely the best put-in producer, it is in practice the *only* one, and this phase is that held
+pass's actual finish line.
+
+**6. Open question 4's first ramification is right and costlier than it reads.** *"Drive time must
+target the parking, not the put-in"* is true — but `bandForCoord` classifies on **`body.centroid`**, at
+two call sites: `notifications.ts:175` (the fan-out) and `reports.ts:795` (the feed filter). Re-targeting
+means a per-body access-coord lookup inside both, one of which runs per report in a feed page. That is a
+read-cost decision, not a call-site tweak.
+
+> **Founder call, 2026-08-10: the directions link re-targets; the bands stay on `body.centroid`.**
+> This fixes the bug the phase exists for — a maps app handed a destination it cannot route to — with
+> no change to notification fan-out or feed filtering. The residue is stated rather than hidden: a
+> mile-away trailhead still bands against the water rather than the car, so its 30/60/90 classification
+> is slightly optimistic. Revisit with a denormalised access coord if that ever bites.
+
+**7. Three constants this doc names had no numbers, and one of them is a product line.**
+`HIKE_IN_THRESHOLD_M` is called *"a product line, not a geometry one"* and left blank; the
+`drive_up`/`short_walk` boundary is never named at all; and the *"above some distance the UI **requires**
+`approachKind = hike_in`"* rule has no distance.
+
+> **Founder call, 2026-08-10:** `drive_up` ≤ **150 m** · `short_walk` ≤ **800 m** · `hike_in` >
+> **800 m**, and the UI demands an explicit assertion above **1,600 m**. 800 m is roughly ten minutes in
+> boots carrying gear — where it stops being *park and go*. 1,600 m is the founder's own example of the
+> lakes this phase exists for, so an association at that range has to be asserted rather than derived.
+
+**8. Two things the plan says ride existing machinery, and one of them doesn't.**
+
+- **Photos:** ⚠ `lib/photoOrphans.referencedPhotoIds` decides "referenced" by scanning **only the
+  uploader's own reports and hazards**, and states that as its soundness argument: *"the only rows that
+  can ever reference a photo are its uploader's own reports and hazards."* Workstream D breaks that
+  invariant, so an access-point photo becomes an orphan and is **deleted after the 30-day grace** —
+  silently, by a cron, a month later. `photoReconcile` has the same shape. Extending both is
+  unbudgeted work inside D, and it is the one finding here that would have shipped as data loss.
+- **Flags:** `FLAG_TARGET_TYPES` is `['report','comment','photo','user','hazard']` and
+  `MODERATION_TARGET_TYPES` likewise. Photos ride it as C2 claims; an access **alert** has no slot yet.
+
+**9. Extracting trails may be redundant, and dropping them removes a geometry class.** B1 extracts
+`highway=path|footway|track` + `route=hiking` for a `trail` amenity. But ORS `foot-hiking` (D87) routes
+over *exactly those ways* — so **"a route was found" is the trail signal**, already paid for, with no
+line geometry in the extract at all. The only residue is a trail beside a put-in that has no parking to
+route from, which is a case with no consumer in this phase. Trails are therefore derived from the
+routing result rather than extracted, and the line-geometry export goes away with them.
 
 ---
 
@@ -77,7 +194,9 @@ the remaining approach — *"park here, then about 400 m on foot."*
 
 ### A3 — Names come from OSM, and fall back to a derived label
 
-This is what makes the phase work at 116k scale rather than 36.
+This is what makes the phase work at corpus scale rather than for the 36 lakes someone would hand-type.
+*(Written as "116k scale"; the corpus is ~25.2k post-N7 — see correction 1, which makes the argument
+stronger rather than weaker.)*
 
 **OSM already names these features.** "Lake Fairlee Boat Ramp" *is* an OSM `leisure=slipway` with a
 `name` tag. So does a state fishing access area, a town beach, a trailhead lot. The founder's "derive
@@ -102,15 +221,18 @@ Over the *same* Geofabrik state extract the water pass already downloads
 | `leisure=slipway` / `waterway=slipway` | put-in candidate + `boat_ramp` amenity |
 | `amenity=parking` (+ `parking=*`, `access=*`, `fee=*`, `capacity=*`) | parking area |
 | `amenity=toilets` | `toilets` amenity |
-| `highway=path\|footway\|track`, `route=hiking` | `trail` amenity + approach path |
+| ~~`highway=path\|footway\|track`, `route=hiking`~~ | ~~`trail` amenity + approach path~~ — **dropped, correction 9**: ORS routes over these ways already, so a successful `foot-hiking` leg *is* the trail signal. Removes the line-geometry export entirely. |
 | `natural=beach`, `leisure=fishing`, `man_made=pier` | put-in candidate |
 
 ### B2 — Association rules
 
-- Put-in candidates within **~30 m** of a body's polygon boundary attach to that body.
-- Parking within **~250 m** (`PARKING_INFER_RADIUS_M`) of a put-in candidate or the shoreline attaches to
-  it. **This bounds the ETL's guessing only** — a human can associate parking at any distance (D72
-  amendment, open question 4).
+- Put-in candidates within **~30 m** of a body's polygon boundary attach to that body. **This test runs
+  server-side** (correction 3), in `matchAndImportAccessPoints`, against the N1 cell index — the
+  transform has no polygons to measure against.
+- Parking within **~250 m** (`PARKING_INFER_RADIUS_M`) of a put-in candidate attaches to it. **This one
+  runs in the transform**, because it is an OSM-to-OSM question that needs no corpus — which is what
+  lets the ORS leg be computed locally in the same stage. **It bounds the ETL's guessing only** — a
+  human can associate parking at any distance (D72 amendment, open question 4).
 - `approachMeters` + `approachAscentM` = a routed **ORS `foot-hiking`** leg from parking to put-in
   (D87), falling back to straight-line **flagged as such**, since straight-line under-reports. Computed
   once at ETL and cached on the row; **never from a request path**.
@@ -129,10 +251,18 @@ are keyed on OSM id, so a re-run updates in place rather than duplicating — th
 ### B4 — Coverage expectation, stated honestly
 
 OSM's coverage of parking and slipways in the rural Northeast is real but patchy. Expect solid results on
-well-known bodies and nothing on most of the 116k.
+well-known bodies and nothing on most of the corpus.
 
-That is fine. It is strictly more than the zero we have now, it costs one ETL pass over a file we already
-download, and the gaps are exactly where Workstream C's community layer and operator edits fill in.
+> **Re-read against N7 (correction 1).** This was written against 116,070 bodies, ~90k of which were
+> under an acre and had no chance of a mapped lot. The post-N7 corpus is ~25.2k at a ≥ 5 acre floor
+> (≥ 1 acre if named), so the denominator this pessimism divides by is four times smaller and made of
+> exactly the bodies OSM bothers to map access for. **The rate will be better than this paragraph
+> expects — and it is still a rate to measure rather than assume.** Report `matched / inScope` and name
+> what the pass walked past (the N7-3 *"denominators lie by default"* rule, D137).
+
+That is fine. It is strictly more than the zero we have now — dev carries **0 put-in rows today** — it
+costs one ETL pass over a file we already download, and the gaps are exactly where Workstream C's
+community layer and operator edits fill in.
 **Do not** let the patchiness argue for hand-entering the rest — that is the trap P1 exists to prevent.
 
 ---
@@ -165,6 +295,10 @@ Reusing machinery we already built, which is most of the argument for this shape
 - **Never hides the put-in** — same never-hide invariant as hazards. It annotates and de-prioritizes for
   directions; it does not make an access point disappear.
 - **Moderators can pin an `official` alert** that doesn't decay — the analogue of an official put-in.
+- ⚠ **Flagging an alert needs a new target type** (correction 8). `FLAG_TARGET_TYPES` and
+  `MODERATION_TARGET_TYPES` cover `report · comment · photo · user · hazard`. Access **photos** ride
+  `photo` as this section assumes; an access **alert** has no slot, so *"reuses machinery we already
+  built"* is true of the confirm/deny half and one enum short of true for the moderation half.
 
 This gets the *value* of a seasonal access note with none of its rot, because freshness is enforced by
 the people who benefit from it.
@@ -195,7 +329,15 @@ parking lot is reassigned to anonymous, not destroyed. Erasing it would degrade 
 to no privacy benefit; there is no personal information in a photograph of a gravel pull-off.
 
 **Constraints:** cap per access point (~3) so it doesn't become a gallery; moderation rides the existing
-`contentFlags`; the Phase 2 photo-upload pipeline and N3's orphan-GC cron apply unchanged.
+`contentFlags`; the Phase 2 photo-upload pipeline applies unchanged.
+
+> ⚠ **"N3's orphan-GC cron applies unchanged" is false, and it is this phase's one data-loss finding**
+> (correction 8). `lib/photoOrphans.referencedPhotoIds` derives "referenced" by scanning **only the
+> uploader's own reports and hazards** — and that is not an implementation detail, it is the function's
+> stated soundness argument for being allowed to *delete*. An access-point photo satisfies none of it,
+> so the sweep would classify it as abandoned and destroy it once past `PHOTO_ORPHAN_GRACE_MS` (30
+> days). Silently, by a cron, a month after upload. `photoReconcile` — the escalation path for prolific
+> uploaders — has the same shape and needs the same extension. Both are in scope here.
 
 ---
 
@@ -223,6 +365,11 @@ to no privacy benefit; there is no personal information in a photograph of a gra
 
 **Suggested split if this grows:** steps 1–3 (derived access data) are shippable without 4–5 (the
 community layer), and the first three are where most of the value is.
+
+> **Offered and declined at kickoff (founder call, 2026-08-10): all five ship together.** Recorded
+> because the split remains the correct fallback if the phase stalls — the finish line that matters to
+> everything downstream is step 2, since that is what puts `putIns` rows in the corpus and releases
+> N6c's held `backfillCells` re-score (correction 5).
 
 ---
 
@@ -367,6 +514,12 @@ handled:
 |---|---|---|
 | `PARKING_INFER_RADIUS_M` (~250) | the **OSM pass's** willingness to guess | a tuning value — check against one state's output first |
 | `HIKE_IN_THRESHOLD_M` | where `approachKind` derives to `hike_in`, and where the UI starts demanding it | a product line, not a geometry one |
+
+> **They became four, and only one is still a cap (founder call, 2026-08-10 — correction 7).**
+> `DRIVE_UP_MAX_M` = **150**, `SHORT_WALK_MAX_M` = **800** (so `hike_in` is anything beyond),
+> `HIKE_IN_ASSERT_M` = **1,600** — above which the UI demands the assertion rather than deriving it —
+> and `PARKING_INFER_RADIUS_M` = **250**, the only one of the four that caps anything. The first three
+> are product lines and move by founder call; the fourth is a guess and moves by eyeballing a state.
 
 **And the original question stands, unanswered by any of this:** whether ~250 m is right for the rural
 Northeast. It is a guess, it will be falsified quickly by a dense state, and it should be eyeballed
