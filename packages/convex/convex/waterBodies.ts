@@ -456,7 +456,15 @@ async function richnessFor(ctx: QueryCtx, body: Doc<'waterBodies'>): Promise<Pro
     hasName: body.name.trim().length > 0,
     hasContours: coverage !== null,
     hasDepth: body.meanDepthM !== undefined || body.maxDepthM !== undefined,
-    hasDerivedPutIn: visiblePutIns.some((p) => p.source === 'derived'),
+    // ⚠ **`osm` counts as derived, not official** (D143, founder call 2026-08-10). An OSM slipway is
+    // stored like an operator's pin and approximate like a report cluster, so neither term was the
+    // obvious default — and the resemblance that matters is provenance, not storage. `official` means
+    // *a human confirmed you can get on the ice here*, which is what makes it the strongest static
+    // signal we have; letting an ETL reach it would not raise OSM's standing, it would lower
+    // `official`'s, across the whole corpus in one pass. Both terms have never fired (dev carried 0
+    // put-in rows before N6d), so the held `backfillCells` re-score bakes this choice in on its first
+    // run with no incumbent to compare against — which is the argument for the conservative rung.
+    hasDerivedPutIn: visiblePutIns.some((p) => p.source === 'derived' || p.source === 'osm'),
     hasOfficialPutIn: visiblePutIns.some((p) => p.source === 'official'),
     hasActivity: report !== null || hazard !== null,
   };

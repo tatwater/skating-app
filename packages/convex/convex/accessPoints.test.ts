@@ -7,7 +7,12 @@
  * rather than no answer, which is why `PUTIN_SHORE_RADIUS_M` is tight where the parking radius is not.
  */
 
-import { PARKING_INFER_RADIUS_M, PUTIN_SHORE_RADIUS_M } from '@skating/core';
+import {
+  PARKING_INFER_RADIUS_M,
+  PUTIN_SHORE_RADIUS_M,
+  RICHNESS_PUT_IN_DERIVED,
+  RICHNESS_PUT_IN_OFFICIAL,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -602,5 +607,53 @@ describe('access-point photos (Workstream D / D88)', () => {
     await t.mutation(internal.storageHygiene.sweepOrphanPhotos, {});
 
     expect(await t.run((ctx) => ctx.db.get(photoId))).toBeNull();
+  });
+});
+
+describe('D2 richness — the term this phase unblocks (D143)', () => {
+  /**
+   * `backfillCells` has been held since 2026-08-02 waiting for this phase, because D2's put-in terms
+   * are the strongest static signals in the richness model and nothing had ever written a put-in row.
+   * These are that rung assignment, pinned.
+   *
+   * Measured as the gap between two otherwise-identical bodies rather than as a before/after on one,
+   * because `importCanonical` resets `displayScore` to area + boost — so a before/after also picks up
+   * every *other* richness term the backfill adds (the name, most obviously).
+   */
+  async function scoreWithPutIn(source: 'osm' | 'official' | null) {
+    const t = convexTest(schema, modules);
+    const withPutIn = await seedSquareBody(t, { name: 'With Access' });
+    const without = await seedSquareBody(t, { name: 'With Access Bare', lat: 45 });
+    if (source) {
+      await t.run((ctx) =>
+        ctx.db.insert('putIns', {
+          waterBodyId: withPutIn,
+          coord: { lat: 44.01, lng: -72 },
+          source,
+          status: 'visible' as const,
+          createdAt: Date.now(),
+        }),
+      );
+    }
+    await t.mutation(internal.waterBodies.backfillCells, {});
+    const a = (await t.run((ctx) => ctx.db.get(withPutIn)))?.displayScore ?? 0;
+    const b = (await t.run((ctx) => ctx.db.get(without)))?.displayScore ?? 0;
+    return a - b;
+  }
+
+  test('an OSM put-in scores as derived, never as official', async () => {
+    const gap = await scoreWithPutIn('osm');
+    expect(gap).toBeCloseTo(RICHNESS_PUT_IN_DERIVED, 6);
+    expect(gap).not.toBeCloseTo(RICHNESS_PUT_IN_OFFICIAL, 6);
+  });
+
+  test('an operator promoting it to official moves the body further up the ladder', async () => {
+    const gap = await scoreWithPutIn('official');
+    expect(gap).toBeCloseTo(RICHNESS_PUT_IN_OFFICIAL, 6);
+    expect(gap).toBeGreaterThan(RICHNESS_PUT_IN_DERIVED);
+  });
+
+  test('no put-in, no term — the two bodies score identically', async () => {
+    expect(await scoreWithPutIn(null)).toBeCloseTo(0, 6);
   });
 });
